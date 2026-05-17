@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react"
 import { Exit } from "effect"
-import { HazelStartConnectRequest } from "@maple/domain/http"
+import { GithubStartConnectRequest, HazelStartConnectRequest } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { toast } from "sonner"
 
-import { HazelIcon, LoaderIcon } from "@/components/icons"
+import { GithubIcon, HazelIcon, LoaderIcon } from "@/components/icons"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { GithubServiceRepos } from "./github-service-repos"
 
 const HAZEL_DOCS_URL = "https://hazel.sh/docs/integrations/maple"
 
@@ -21,6 +22,165 @@ export function IntegrationsSection() {
 				</p>
 			</header>
 			<HazelIntegrationCard />
+			<GithubIntegrationCard />
+		</div>
+	)
+}
+
+function GithubIntegrationCard() {
+	const statusResult = useAtomValue(
+		MapleApiAtomClient.query("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
+		}),
+	)
+
+	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubStart"), {
+		mode: "promiseExit",
+	})
+	const disconnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "githubDisconnect"), {
+		mode: "promiseExit",
+	})
+
+	const [busy, setBusy] = useState<"connect" | "disconnect" | null>(null)
+
+	useEffect(() => {
+		function onMessage(event: MessageEvent) {
+			if (event.data?.type === "maple:integration:github") {
+				if (event.data.status === "success") {
+					toast.success("GitHub connected")
+				} else if (event.data.status === "error") {
+					toast.error(event.data.message ?? "GitHub connection failed")
+				}
+			}
+		}
+		window.addEventListener("message", onMessage)
+		return () => window.removeEventListener("message", onMessage)
+	}, [])
+
+	const status = Result.builder(statusResult)
+		.onSuccess((s) => s)
+		.orElse(() => null)
+
+	async function handleConnect() {
+		const popup = window.open("", "maple-github-connect", "popup,width=520,height=640")
+		setBusy("connect")
+		const result = await startConnect({
+			payload: new GithubStartConnectRequest({ returnTo: window.location.href }),
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		setBusy(null)
+		if (Exit.isSuccess(result)) {
+			const url = result.value.redirectUrl
+			if (popup) popup.location.href = url
+			else window.open(url, "maple-github-connect", "popup,width=520,height=640")
+		} else {
+			popup?.close()
+			toast.error("Failed to start GitHub connect flow")
+		}
+	}
+
+	async function handleDisconnect() {
+		setBusy("disconnect")
+		const result = await disconnect({
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		setBusy(null)
+		if (Exit.isSuccess(result)) {
+			toast.success("GitHub disconnected")
+		} else {
+			toast.error("Failed to disconnect GitHub")
+		}
+	}
+
+	const isConnected = status?.connected === true
+
+	return (
+		<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
+			<span
+				className="relative inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card"
+				aria-hidden
+			>
+				<GithubIcon size={22} />
+			</span>
+
+			<div className="flex flex-1 flex-col gap-2">
+				<div className="flex items-start justify-between gap-3">
+					<div>
+						<div className="flex items-center gap-2">
+							<h3 className="text-sm font-semibold">GitHub</h3>
+							{isConnected ? (
+								<span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-400">
+									Connected
+								</span>
+							) : (
+								<span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+									Not connected
+								</span>
+							)}
+						</div>
+						<p className="mt-1 text-xs text-muted-foreground">
+							Connect GitHub via OAuth, then map services to repositories. Commit SHAs
+							captured on traces become clickable links to the matching GitHub commit.
+						</p>
+					</div>
+				</div>
+
+				{isConnected && status ? (
+					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
+						{status.externalUserLogin ? (
+							<div>
+								Connected as{" "}
+								<span className="text-foreground">@{status.externalUserLogin}</span>
+							</div>
+						) : status.externalUserId ? (
+							<div>External account: {status.externalUserId}</div>
+						) : null}
+						{status.scope ? <div>Scopes: {status.scope}</div> : null}
+					</div>
+				) : null}
+
+				<div className="flex flex-wrap gap-2">
+					{isConnected ? (
+						<>
+							<Button
+								size="sm"
+								onClick={handleConnect}
+								disabled={busy !== null}
+								variant="outline"
+							>
+								{busy === "connect" ? (
+									<LoaderIcon size={14} className="animate-spin" />
+								) : null}
+								Reconnect
+							</Button>
+							<Button
+								size="sm"
+								onClick={handleDisconnect}
+								disabled={busy !== null}
+								variant="outline"
+							>
+								{busy === "disconnect" ? (
+									<LoaderIcon size={14} className="animate-spin" />
+								) : null}
+								Disconnect
+							</Button>
+						</>
+					) : (
+						<Button size="sm" onClick={handleConnect} disabled={busy !== null}>
+							{busy === "connect" ? (
+								<LoaderIcon size={14} className="animate-spin" />
+							) : null}
+							Connect GitHub
+						</Button>
+					)}
+				</div>
+
+				{isConnected ? (
+					<div className="mt-2 border-t border-border/60 pt-3">
+						<GithubServiceRepos />
+					</div>
+				) : null}
+			</div>
 		</div>
 	)
 }

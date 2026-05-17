@@ -26,6 +26,7 @@ import { HttpServiceDiscoveryLive } from "./routes/sd.http"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
 import { BucketCacheService } from "./services/BucketCacheService"
 import { ErrorsService } from "./services/ErrorsService"
+import { GitHubOAuthService } from "./services/GitHubOAuthService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
 import { ApiKeysService } from "./services/ApiKeysService"
@@ -67,6 +68,7 @@ export const CoreServicesLive = Layer.mergeAll(
 	ApiKeysService.layer,
 	CloudflareLogpushService.layer,
 	DashboardPersistenceService.layer,
+	GitHubOAuthService.layer,
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OrgIngestKeysService.layer,

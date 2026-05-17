@@ -8,6 +8,7 @@ export const oauthConnections = sqliteTable(
 		provider: text("provider").notNull(),
 		externalUserId: text("external_user_id").notNull(),
 		externalUserEmail: text("external_user_email"),
+		externalUserLabel: text("external_user_label"),
 		connectedByUserId: text("connected_by_user_id").notNull(),
 		scope: text("scope").notNull().default(""),
 		accessTokenCiphertext: text("access_token_ciphertext").notNull(),

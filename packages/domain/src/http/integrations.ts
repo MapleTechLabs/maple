@@ -63,6 +63,68 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 	},
 ) {}
 
+export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")({
+	connected: Schema.Boolean,
+	externalUserId: Schema.NullOr(Schema.String),
+	externalUserLogin: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(Schema.String),
+	scope: Schema.NullOr(Schema.String),
+}) {}
+
+export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRequest>(
+	"GithubStartConnectRequest",
+)({
+	returnTo: Schema.optional(Schema.String),
+}) {}
+
+export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectResponse>(
+	"GithubStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class GithubDisconnectResponse extends Schema.Class<GithubDisconnectResponse>(
+	"GithubDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRepoSummary")({
+	owner: Schema.String,
+	name: Schema.String,
+	fullName: Schema.String,
+	private: Schema.Boolean,
+}) {}
+
+export class GithubReposListResponse extends Schema.Class<GithubReposListResponse>("GithubReposListResponse")({
+	repos: Schema.Array(GithubRepoSummary),
+}) {}
+
+export class ServiceRepoMapping extends Schema.Class<ServiceRepoMapping>("ServiceRepoMapping")({
+	serviceName: Schema.String,
+	repoOwner: Schema.String,
+	repoName: Schema.String,
+}) {}
+
+export class ServiceRepoMappingsResponse extends Schema.Class<ServiceRepoMappingsResponse>(
+	"ServiceRepoMappingsResponse",
+)({
+	mappings: Schema.Array(ServiceRepoMapping),
+}) {}
+
+export class SetServiceRepoRequest extends Schema.Class<SetServiceRepoRequest>("SetServiceRepoRequest")({
+	serviceName: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	repoOwner: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	repoName: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed())),
+}) {}
+
+export class DeleteServiceRepoResponse extends Schema.Class<DeleteServiceRepoResponse>(
+	"DeleteServiceRepoResponse",
+)({
+	deleted: Schema.Boolean,
+}) {}
+
 export class IntegrationsForbiddenError extends Schema.TaggedErrorClass<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
 	{
@@ -161,6 +223,68 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
 			success: HazelDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("githubStatus", "/github/status", {
+			success: GithubIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("githubStart", "/github/start", {
+			payload: GithubStartConnectRequest,
+			success: GithubStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("githubRepos", "/github/repos", {
+			success: GithubReposListResponse,
+			error: [
+				IntegrationsValidationError,
+				IntegrationsNotConnectedError,
+				IntegrationsRevokedError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("githubServiceRepos", "/github/service-repos", {
+			success: ServiceRepoMappingsResponse,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("githubSetServiceRepo", "/github/service-repos", {
+			payload: SetServiceRepoRequest,
+			success: ServiceRepoMapping,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("githubDeleteServiceRepo", "/github/service-repos/:serviceName", {
+			params: {
+				serviceName: Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed())),
+			},
+			success: DeleteServiceRepoResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("githubDisconnect", "/github", {
+			success: GithubDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

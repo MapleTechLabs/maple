@@ -2,6 +2,11 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	CurrentTenant,
+	DeleteServiceRepoResponse,
+	GithubDisconnectResponse,
+	GithubIntegrationStatus,
+	GithubReposListResponse,
+	GithubStartConnectResponse,
 	HazelChannelsListResponse,
 	HazelDisconnectResponse,
 	HazelIntegrationStatus,
@@ -10,11 +15,15 @@ import {
 	IntegrationsForbiddenError,
 	IntegrationsValidationError,
 	MapleApi,
+	ServiceRepoMapping,
+	ServiceRepoMappingsResponse,
 } from "@maple/domain/http"
 import { Effect } from "effect"
+import { GitHubOAuthService } from "../services/GitHubOAuthService"
 import { HazelOAuthService } from "../services/HazelOAuthService"
 
 const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
+const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
 
 const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
 	const headers = req.headers as Record<string, string | undefined>
@@ -35,8 +44,8 @@ const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string 
 	}
 }
 
-const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
-	`${resolveRequestOrigin(req)}${HAZEL_CALLBACK_PATH}`
+const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest, path: string): string =>
+	`${resolveRequestOrigin(req)}${path}`
 
 const ADMIN_ROLES = new Set(["root", "org:admin"])
 
@@ -53,6 +62,7 @@ const requireAdmin = (roles: ReadonlyArray<string>) =>
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
+		const github = yield* GitHubOAuthService
 
 		return handlers
 			.handle("hazelStatus", () =>
@@ -83,7 +93,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
 					const req = yield* HttpServerRequest.HttpServerRequest
 					const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
-						callbackUrl: resolveCallbackUrl(req),
+						callbackUrl: resolveCallbackUrl(req, HAZEL_CALLBACK_PATH),
 						returnTo: payload.returnTo,
 					})
 					return new HazelStartConnectResponse(result)
@@ -125,6 +135,91 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 					return new HazelDisconnectResponse(result)
 				}),
 			)
+			.handle("githubStatus", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const status = yield* github.getStatus(tenant.orgId)
+					if (!status.connected) {
+						return new GithubIntegrationStatus({
+							connected: false,
+							externalUserId: null,
+							externalUserLogin: null,
+							connectedByUserId: null,
+							scope: null,
+						})
+					}
+					return new GithubIntegrationStatus({
+						connected: true,
+						externalUserId: status.externalUserId,
+						externalUserLogin: status.externalUserLogin,
+						connectedByUserId: status.connectedByUserId,
+						scope: status.scope,
+					})
+				}),
+			)
+			.handle("githubStart", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					const req = yield* HttpServerRequest.HttpServerRequest
+					const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
+						callbackUrl: resolveCallbackUrl(req, GITHUB_CALLBACK_PATH),
+						returnTo: payload.returnTo,
+					})
+					return new GithubStartConnectResponse(result)
+				}),
+			)
+			.handle("githubRepos", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const repos = yield* github.listRepos(tenant.orgId)
+					return new GithubReposListResponse({
+						repos: repos.map((r) => ({
+							owner: r.owner,
+							name: r.name,
+							fullName: r.fullName,
+							private: r.private,
+						})),
+					})
+				}),
+			)
+			.handle("githubServiceRepos", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const mappings = yield* github.listServiceRepos(tenant.orgId)
+					return new ServiceRepoMappingsResponse({
+						mappings: mappings.map((m) => new ServiceRepoMapping(m)),
+					})
+				}),
+			)
+			.handle("githubSetServiceRepo", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					const mapping = yield* github.setServiceRepo(tenant.orgId, tenant.userId, {
+						serviceName: payload.serviceName,
+						repoOwner: payload.repoOwner,
+						repoName: payload.repoName,
+					})
+					return new ServiceRepoMapping(mapping)
+				}),
+			)
+			.handle("githubDeleteServiceRepo", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					const result = yield* github.deleteServiceRepo(tenant.orgId, params.serviceName)
+					return new DeleteServiceRepoResponse(result)
+				}),
+			)
+			.handle("githubDisconnect", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					const result = yield* github.disconnect(tenant.orgId)
+					return new GithubDisconnectResponse(result)
+				}),
+			)
 	}),
 )
 
@@ -154,15 +249,17 @@ const escapeJsonInHtml = (json: string) =>
 		.join("\\u2029")
 
 const renderCallbackPage = (params: {
+	provider: { key: string; label: string }
 	status: "success" | "error"
 	message: string
 	returnTo: string | null
 }) => {
 	const safeMessage = escapeHtml(params.message)
 	const safeReturn = params.returnTo ? escapeHtml(params.returnTo) : null
+	const safeLabel = escapeHtml(params.provider.label)
 	const payload = escapeJsonInHtml(
 		JSON.stringify({
-			type: "maple:integration:hazel",
+			type: `maple:integration:${params.provider.key}`,
 			status: params.status,
 			message: params.message,
 		}),
@@ -171,7 +268,7 @@ const renderCallbackPage = (params: {
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Maple — Hazel integration</title>
+    <title>Maple — ${safeLabel} integration</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <style>
       body { font-family: -apple-system, system-ui, sans-serif; padding: 2rem; max-width: 28rem; margin: 0 auto; color: #111; }
@@ -182,7 +279,7 @@ const renderCallbackPage = (params: {
   </head>
   <body>
     <h1 class="${params.status === "success" ? "ok" : "err"}">
-      ${params.status === "success" ? "Hazel connected" : "Hazel connection failed"}
+      ${params.status === "success" ? `${safeLabel} connected` : `${safeLabel} connection failed`}
     </h1>
     <p>${safeMessage}</p>
     ${safeReturn ? `<p><a class="button" href="${safeReturn}">Return to Maple</a></p>` : ""}
@@ -203,66 +300,87 @@ const htmlResponse = (body: string, status?: number) => {
 	return status === undefined ? response : HttpServerResponse.setStatus(response, status)
 }
 
+type CompleteConnect = (
+	code: string,
+	state: string,
+) => Effect.Effect<{ readonly returnTo: string | null }, { readonly message: string }>
+
+const makeCallbackHandler =
+	(provider: { key: string; label: string }, completeConnect: CompleteConnect) =>
+	(req: HttpServerRequest.HttpServerRequest) =>
+		Effect.gen(function* () {
+			const url = new URL(req.url, "http://localhost")
+			const code = url.searchParams.get("code")
+			const state = url.searchParams.get("state")
+			const oauthError = url.searchParams.get("error")
+			const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError
+
+			if (oauthError) {
+				return htmlResponse(
+					renderCallbackPage({
+						provider,
+						status: "error",
+						message: oauthErrorDescription || `${provider.label} returned an error`,
+						returnTo: null,
+					}),
+					400,
+				)
+			}
+
+			if (!code || !state) {
+				return htmlResponse(
+					renderCallbackPage({
+						provider,
+						status: "error",
+						message: "Missing code or state in callback",
+						returnTo: null,
+					}),
+					400,
+				)
+			}
+
+			return yield* completeConnect(code, state).pipe(
+				Effect.match({
+					onFailure: (error) =>
+						htmlResponse(
+							renderCallbackPage({
+								provider,
+								status: "error",
+								message:
+									error instanceof IntegrationsValidationError
+										? error.message
+										: `Failed to complete ${provider.label} connection`,
+								returnTo: null,
+							}),
+							400,
+						),
+					onSuccess: (result) =>
+						htmlResponse(
+							renderCallbackPage({
+								provider,
+								status: "success",
+								message: "You can close this window and return to Maple.",
+								returnTo: result.returnTo,
+							}),
+						),
+				}),
+			)
+		})
+
 export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
+		const github = yield* GitHubOAuthService
 
-		const handle = (req: HttpServerRequest.HttpServerRequest) =>
-			Effect.gen(function* () {
-				const url = new URL(req.url, "http://localhost")
-				const code = url.searchParams.get("code")
-				const state = url.searchParams.get("state")
-				const oauthError = url.searchParams.get("error")
-				const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError
-
-				if (oauthError) {
-					return htmlResponse(
-						renderCallbackPage({
-							status: "error",
-							message: oauthErrorDescription || "Hazel returned an error",
-							returnTo: null,
-						}),
-						400,
-					)
-				}
-
-				if (!code || !state) {
-					return htmlResponse(
-						renderCallbackPage({
-							status: "error",
-							message: "Missing code or state in callback",
-							returnTo: null,
-						}),
-						400,
-					)
-				}
-
-				return yield* hazel.completeConnect(code, state).pipe(
-					Effect.match({
-						onFailure: (error) =>
-							htmlResponse(
-								renderCallbackPage({
-									status: "error",
-									message:
-										error instanceof IntegrationsValidationError
-											? error.message
-											: "Failed to complete Hazel connection",
-									returnTo: null,
-								}),
-								400,
-							),
-						onSuccess: (result) =>
-							htmlResponse(
-								renderCallbackPage({
-									status: "success",
-									message: "You can close this window and return to Maple.",
-									returnTo: result.returnTo,
-								}),
-							),
-					}),
-				)
-			})
-
-		yield* router.add("GET", "/api/integrations/hazel/callback", handle)
+		yield* router.add(
+			"GET",
+			HAZEL_CALLBACK_PATH,
+			makeCallbackHandler({ key: "hazel", label: "Hazel" }, hazel.completeConnect),
+		)
+		yield* router.add(
+			"GET",
+			GITHUB_CALLBACK_PATH,
+			makeCallbackHandler({ key: "github", label: "GitHub" }, github.completeConnect),
+		)
 	}),
 )

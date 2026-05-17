@@ -19,6 +19,7 @@ import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/tinybird-query-
 import { findSpanById } from "@/components/traces/flow-utils"
 import { HttpSpanLabel } from "@/components/traces/http-span-label"
 import { getHttpInfo } from "@maple/ui/lib/http"
+import { commitUrl, useServiceRepoMap } from "@/hooks/use-service-repo-map"
 
 const TraceDetailSearchSchema = Schema.Struct({
 	spanId: Schema.optional(Schema.String),
@@ -59,6 +60,7 @@ function TraceDetailPage() {
 			data: { traceId: Schema.decodeSync(TraceId)(traceId), timestamp: search.t },
 		}),
 	)
+	const serviceRepoMap = useServiceRepoMap()
 
 	return Result.builder(result)
 		.onInitial(() => (
@@ -211,6 +213,7 @@ function TraceDetailPage() {
 			const rootHttpInfo = rootSpan ? getHttpInfo(rootSpan.spanName, rootSpan.spanAttributes) : null
 			const deploymentEnv = rootSpan?.resourceAttributes?.["deployment.environment"]
 			const commitSha = rootSpan?.resourceAttributes?.["deployment.commit_sha"]
+			const commitRepo = rootSpan ? serviceRepoMap.get(rootSpan.serviceName) : undefined
 			const hasError = data.spans.some((s: Span) => {
 				if (s.statusCode === "Error") return true
 				const httpStatus = s.spanAttributes?.["http.status_code"]
@@ -341,9 +344,25 @@ function TraceDetailPage() {
 							{commitSha && (
 								<>
 									<span className="ml-4 text-xs text-muted-foreground">Commit:</span>
-									<Badge variant="outline" className="font-mono text-xs">
-										{commitSha.slice(0, 7)}
-									</Badge>
+									{commitRepo ? (
+										<a
+											href={commitUrl(commitRepo, commitSha)}
+											target="_blank"
+											rel="noreferrer"
+											title={`View ${commitSha} on GitHub`}
+										>
+											<Badge
+												variant="outline"
+												className="font-mono text-xs hover:bg-muted hover:underline underline-offset-4"
+											>
+												{commitSha.slice(0, 7)} ↗
+											</Badge>
+										</a>
+									) : (
+										<Badge variant="outline" className="font-mono text-xs">
+											{commitSha.slice(0, 7)}
+										</Badge>
+									)}
 								</>
 							)}
 						</div>
