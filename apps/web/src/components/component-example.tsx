@@ -125,7 +125,7 @@ function CardExample() {
 							<PlusIcon strokeWidth={2} data-icon="inline-start" />
 							Show Dialog
 						</AlertDialogTrigger>
-						<AlertDialogContent size="sm">
+						<AlertDialogContent>
 							<AlertDialogHeader>
 								<AlertDialogMedia>
 									<BluetoothIcon strokeWidth={2} />
@@ -464,7 +464,7 @@ function FormExample() {
 									placeholder="Add any additional comments"
 								/>
 							</Field>
-							<Field orientation="horizontal">
+							<Field>
 								<Button type="submit">Save changes</Button>
 								<Button variant="outline" type="button">
 									Cancel

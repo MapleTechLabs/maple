@@ -381,7 +381,9 @@ function AlertsPage() {
 		mode: "promiseExit",
 	})
 
-	const activeTab: AlertsTab = tabValues.includes(search.tab as AlertsTab) ? (search.tab as AlertsTab) : "monitor"
+	const activeTab: AlertsTab = tabValues.includes(search.tab as AlertsTab)
+		? (search.tab as AlertsTab)
+		: "monitor"
 
 	const destinations = Result.builder(destinationsResult)
 		.onSuccess((response) => [...response.destinations] as AlertDestination[])
@@ -529,7 +531,7 @@ function AlertsPage() {
 
 	const tabBar = (
 		<Tabs value={activeTab} onValueChange={(v) => handleTabSelect(v as AlertsTab)}>
-			<TabsList variant="line">
+			<TabsList variant="underline">
 				<TabsTrigger value="monitor">Monitor</TabsTrigger>
 				<TabsTrigger value="rules">Rules</TabsTrigger>
 				<TabsTrigger value="settings">Settings</TabsTrigger>
@@ -557,7 +559,6 @@ function AlertsPage() {
 				headerActions={
 					<Button
 						size="sm"
-						nativeButton={false}
 						render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
 					>
 						<PlusIcon size={14} />
@@ -628,7 +629,6 @@ function AlertsPage() {
 									{isAdmin && (
 										<Button
 											size="sm"
-											nativeButton={false}
 											render={
 												<Link
 													to="/alerts/create"

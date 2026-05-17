@@ -35,7 +35,7 @@ function ConnectorsPage() {
 					})
 				}
 			>
-				<TabsList variant="line">
+				<TabsList variant="underline">
 					<TabsTrigger value="cloudflare">
 						<ShieldIcon size={14} />
 						Cloudflare Logpush

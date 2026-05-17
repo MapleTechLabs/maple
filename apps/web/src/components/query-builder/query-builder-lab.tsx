@@ -520,7 +520,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 
 			<ScrollArea className="h-[min(72vh,52rem)]">
 				<CardContent className="space-y-3 p-3">
-					<Card size="sm" className="gap-2">
+					<Card className="gap-2">
 						<CardHeader className="pb-1">
 							<CardTitle className="text-xs">Execution Results</CardTitle>
 						</CardHeader>
@@ -565,7 +565,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 										{query.name}
 									</Badge>
 
-									<Card size="sm" className={query.enabled ? "" : "opacity-60"}>
+									<Card className={query.enabled ? "" : "opacity-60"}>
 										<CardHeader className="pb-2">
 											<div className="flex flex-wrap items-center justify-between gap-2">
 												<div className="flex items-center gap-2">
@@ -661,8 +661,10 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 																		current.dataSource === "metrics"
 																			? {
 																					...current,
-																					metricName: parsed.metricName,
-																					metricType: parsed.metricType,
+																					metricName:
+																						parsed.metricName,
+																					metricType:
+																						parsed.metricType,
 																				}
 																			: current,
 																	)
@@ -990,7 +992,7 @@ function QueryBuilderLabInner({ startTime, endTime }: QueryBuilderLabProps) {
 								>
 									{formula.name}
 								</Badge>
-								<Card size="sm" className="border-dashed">
+								<Card className="border-dashed">
 									<CardHeader className="pb-2">
 										<div className="flex items-center justify-between gap-2">
 											<span className="text-xs text-muted-foreground">

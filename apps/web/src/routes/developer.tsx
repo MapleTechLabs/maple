@@ -30,7 +30,7 @@ function DeveloperPage() {
 				value={search.tab ?? "ingestion"}
 				onValueChange={(tab) => navigate({ search: { tab: tab as "ingestion" | "api-keys" } })}
 			>
-				<TabsList variant="line">
+				<TabsList variant="underline">
 					<TabsTrigger value="ingestion">Ingestion</TabsTrigger>
 					<TabsTrigger value="api-keys">API Keys</TabsTrigger>
 				</TabsList>

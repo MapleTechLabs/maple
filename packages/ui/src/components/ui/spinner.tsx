@@ -1,20 +1,12 @@
-import { cn } from "../../lib/utils"
 import { LoaderIcon } from "../icons"
+import type React from "react"
+import { cn } from "../../lib/utils"
 
-function Spinner({
+export function Spinner({
 	className,
-	strokeWidth,
 	...props
-}: React.ComponentProps<"svg"> & { strokeWidth?: number }) {
+}: React.ComponentProps<typeof LoaderIcon>): React.ReactElement {
 	return (
-		<LoaderIcon
-			strokeWidth={strokeWidth ?? 2}
-			role="status"
-			aria-label="Loading"
-			className={cn("size-4 animate-spin", className)}
-			{...props}
-		/>
+		<LoaderIcon aria-label="Loading" className={cn("animate-spin", className)} role="status" {...props} />
 	)
 }
-
-export { Spinner }

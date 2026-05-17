@@ -10,7 +10,7 @@ export function ConnectorsSection() {
 
 	return (
 		<Tabs value={tab} onValueChange={(v) => setTab(v as "cloudflare" | "prometheus")}>
-			<TabsList variant="line">
+			<TabsList variant="underline">
 				<TabsTrigger value="cloudflare">
 					<ShieldIcon size={14} />
 					Cloudflare Logpush

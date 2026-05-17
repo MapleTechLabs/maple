@@ -59,7 +59,6 @@ export function AlertMultiSegmentedSelect<T extends string>({
 	onChange,
 	size = "default",
 	className,
-	spacing = 6,
 	"aria-label": ariaLabel,
 }: {
 	options: ReadonlyArray<AlertSegmentedOption<T>>
@@ -67,7 +66,6 @@ export function AlertMultiSegmentedSelect<T extends string>({
 	onChange: (value: T[]) => void
 	size?: Size
 	className?: string
-	spacing?: number
 	"aria-label"?: string
 }) {
 	return (
@@ -77,7 +75,6 @@ export function AlertMultiSegmentedSelect<T extends string>({
 			onValueChange={(next) => onChange(next as T[])}
 			variant="outline"
 			size={size}
-			spacing={spacing}
 			aria-label={ariaLabel}
 			className={cn("flex-wrap", className)}
 		>

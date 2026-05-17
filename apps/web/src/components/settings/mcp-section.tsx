@@ -122,7 +122,7 @@ export function McpSection() {
 				</CardHeader>
 				<CardContent>
 					<Tabs value={configTab} onValueChange={setConfigTab}>
-						<TabsList variant="line">
+						<TabsList variant="underline">
 							<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
 							<TabsTrigger value="cursor">Cursor</TabsTrigger>
 							<TabsTrigger value="windsurf">Windsurf</TabsTrigger>

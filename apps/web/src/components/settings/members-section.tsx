@@ -244,7 +244,7 @@ export function MembersSection() {
 										<TableRow key={member.id}>
 											<TableCell>
 												<div className="flex items-center gap-3">
-													<Avatar size="sm">
+													<Avatar className="size-6">
 														<AvatarImage src={userData?.imageUrl} />
 														<AvatarFallback>
 															{getInitials(
@@ -352,7 +352,7 @@ export function MembersSection() {
 									<TableRow key={invitation.id}>
 										<TableCell>
 											<div className="flex items-center gap-3">
-												<Avatar size="sm">
+												<Avatar className="size-6">
 													<AvatarFallback>
 														<EnvelopeIcon size={12} />
 													</AvatarFallback>

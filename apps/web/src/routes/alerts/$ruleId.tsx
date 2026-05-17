@@ -174,7 +174,6 @@ function RuleDetailPage() {
 					<Button
 						variant="outline"
 						size="sm"
-						nativeButton={false}
 						render={<Link to="/alerts" search={{ tab: "rules" }} />}
 					>
 						Back to rules
@@ -236,7 +235,7 @@ function RuleDetailPage() {
 				value={activeTab}
 				onValueChange={(v) => navigate({ search: (prev) => ({ ...prev, tab: v as RuleDetailTab }) })}
 			>
-				<TabsList variant="line">
+				<TabsList variant="underline">
 					<TabsTrigger value="overview">Overview</TabsTrigger>
 					<TabsTrigger value="history">History</TabsTrigger>
 					<TabsTrigger value="checks">Checks</TabsTrigger>
@@ -271,7 +270,6 @@ function RuleDetailPage() {
 				<Button
 					variant="outline"
 					size="sm"
-					nativeButton={false}
 					render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
 				>
 					<PencilIcon size={14} />

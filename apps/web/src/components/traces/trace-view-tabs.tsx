@@ -45,7 +45,7 @@ export function TraceViewTabs({
 			setColorBy={setColorBy}
 		>
 			<Tabs defaultValue="waterfall" className="flex flex-col h-full">
-				<TabsList variant="line" className="shrink-0">
+				<TabsList variant="underline" className="shrink-0">
 					<TabsTrigger value="waterfall">
 						<MenuIcon size={14} />
 						Waterfall

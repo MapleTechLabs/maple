@@ -197,11 +197,7 @@ function ServiceDetailContent() {
 						presetValue={search.timePreset ?? "12h"}
 						onTimeChange={handleTimeChange}
 					/>
-					<Button
-						variant="outline"
-						nativeButton={false}
-						render={<Link to="/alerts/create" search={{ serviceName }} />}
-					>
+					<Button variant="outline" render={<Link to="/alerts/create" search={{ serviceName }} />}>
 						<BellIcon size={14} />
 						Create Alert
 					</Button>

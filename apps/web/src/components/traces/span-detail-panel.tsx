@@ -144,7 +144,7 @@ function ErrorSection({ message, serviceName, spanName, attributes }: ErrorSecti
 	}
 
 	return (
-		<Alert variant="destructive" className="mx-3 my-2 rounded-md border-destructive/30">
+		<Alert variant="error" className="mx-3 my-2 rounded-md border-destructive/30">
 			<CircleWarningIcon size={14} />
 			<AlertTitle className="flex items-center justify-between">
 				<span>Error</span>
@@ -341,7 +341,7 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 
 			{/* Tabs content */}
 			<Tabs defaultValue="details" className="flex-1 flex flex-col min-h-0">
-				<TabsList variant="line" className="shrink-0 px-4">
+				<TabsList variant="underline" className="shrink-0 px-4">
 					<TabsTrigger value="details">
 						<CircleInfoIcon size={14} /> Details
 					</TabsTrigger>

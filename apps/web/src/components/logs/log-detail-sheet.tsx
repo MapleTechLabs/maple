@@ -243,7 +243,7 @@ export function LogDetailSheet({ log, open, onOpenChange }: LogDetailSheetProps)
 				{showErrorBanner && <LogErrorBanner log={viewedLog} />}
 
 				<Tabs defaultValue="attributes" className="flex-1 flex flex-col min-h-0">
-					<TabsList variant="line" className="shrink-0 px-4">
+					<TabsList variant="underline" className="shrink-0 px-4">
 						<TabsTrigger value="attributes">
 							<CircleInfoIcon size={14} /> Attributes
 						</TabsTrigger>

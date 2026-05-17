@@ -1093,9 +1093,7 @@ export const PromptInputTabItem = ({ className, ...props }: PromptInputTabItemPr
 
 export type PromptInputCommandProps = ComponentProps<typeof Command>
 
-export const PromptInputCommand = ({ className, ...props }: PromptInputCommandProps) => (
-	<Command className={cn(className)} {...props} />
-)
+export const PromptInputCommand = (props: PromptInputCommandProps) => <Command {...props} />
 
 export type PromptInputCommandInputProps = ComponentProps<typeof CommandInput>
 

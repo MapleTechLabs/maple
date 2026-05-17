@@ -184,7 +184,7 @@ function ServiceDetailPanel({
 			</div>
 
 			<Tabs defaultValue="service" className="flex flex-col flex-1 min-h-0">
-				<TabsList variant="line" className="shrink-0 px-4 pt-2">
+				<TabsList variant="underline" className="shrink-0 px-4 pt-2">
 					<TabsTrigger value="service">
 						<NetworkNodesIcon size={12} />
 						Service
@@ -544,9 +544,7 @@ function DatabaseDetailPanel({
 	const errorRate = totalCalls > 0 ? totalErrors / totalCalls : 0
 	const callsPerSecond = totalCalls / Math.max(durationSeconds, 1)
 	const avgLatencyMs =
-		totalCalls > 0
-			? callers.reduce((sum, e) => sum + e.avgDurationMs * e.callCount, 0) / totalCalls
-			: 0
+		totalCalls > 0 ? callers.reduce((sum, e) => sum + e.avgDurationMs * e.callCount, 0) / totalCalls : 0
 	const p95LatencyMs = callers.reduce((max, e) => Math.max(max, e.p95DurationMs), 0)
 
 	return (
@@ -1041,19 +1039,21 @@ function ServiceMapCanvas({
 							{colorMode === "platform" && (
 								<>
 									<span className="text-foreground/30">|</span>
-									{(["kubernetes", "cloudflare", "lambda", "web", "unknown"] as const).map((p) => (
-										<div key={p} className="flex items-center gap-1.5">
-											<div
-												className="size-2.5 rounded-sm shrink-0"
-												style={{
-													backgroundColor: getPlatformColor(
-														p === "unknown" ? undefined : p,
-													),
-												}}
-											/>
-											<span className="font-medium capitalize">{p}</span>
-										</div>
-									))}
+									{(["kubernetes", "cloudflare", "lambda", "web", "unknown"] as const).map(
+										(p) => (
+											<div key={p} className="flex items-center gap-1.5">
+												<div
+													className="size-2.5 rounded-sm shrink-0"
+													style={{
+														backgroundColor: getPlatformColor(
+															p === "unknown" ? undefined : p,
+														),
+													}}
+												/>
+												<span className="font-medium capitalize">{p}</span>
+											</div>
+										),
+									)}
 								</>
 							)}
 							<span className="flex-1" />

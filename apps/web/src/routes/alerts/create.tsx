@@ -78,7 +78,12 @@ const AlertCreateSearch = Schema.Struct({
  * query-driven chart.
  */
 function widgetToRuleForm(
-	widget: { id: string; visualization: string; dataSource?: { endpoint?: string; params?: unknown }; display?: { title?: string } },
+	widget: {
+		id: string
+		visualization: string
+		dataSource?: { endpoint?: string; params?: unknown }
+		display?: { title?: string }
+	},
 	base: RuleFormState,
 ): RuleFormState | null {
 	const endpoint = widget.dataSource?.endpoint
@@ -98,9 +103,7 @@ function widgetToRuleForm(
 		const queries = Array.isArray(params.queries) ? params.queries : []
 		const query = (queries[0] ?? {}) as Record<string, unknown>
 		const dataSource =
-			query.dataSource === "logs" || query.dataSource === "metrics"
-				? query.dataSource
-				: "traces"
+			query.dataSource === "logs" || query.dataSource === "metrics" ? query.dataSource : "traces"
 		return {
 			...base,
 			name,
@@ -272,11 +275,7 @@ function AlertCreatePage() {
 			}
 			headerActions={
 				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						nativeButton={false}
-						render={<Link to="/alerts" search={{ tab: "rules" }} />}
-					>
+					<Button variant="outline" render={<Link to="/alerts" search={{ tab: "rules" }} />}>
 						Cancel
 					</Button>
 					<Button onClick={handleSave} disabled={savingRule || destinations.length === 0}>
@@ -506,7 +505,8 @@ function AlertCreatePage() {
 											if (value)
 												setRuleForm((c) => ({
 													...c,
-													rawQueryReducer: value as RuleFormState["rawQueryReducer"],
+													rawQueryReducer:
+														value as RuleFormState["rawQueryReducer"],
 												}))
 										}}
 									>

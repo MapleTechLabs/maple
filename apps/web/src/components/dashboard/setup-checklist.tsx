@@ -108,9 +108,7 @@ export function SetupChecklist() {
 	)
 	const hasRealData = realServices.length > 0
 	const firstRealService =
-		typeof realServices[0]?.serviceName === "string"
-			? (realServices[0].serviceName as string)
-			: undefined
+		typeof realServices[0]?.serviceName === "string" ? (realServices[0].serviceName as string) : undefined
 
 	if (checklistDismissed) return null
 
@@ -150,11 +148,7 @@ export function SetupChecklist() {
 						className="size-8 p-0"
 						onClick={() => setChecklistExpanded(!checklistExpanded)}
 					>
-						{checklistExpanded ? (
-							<ChevronUpIcon size={14} />
-						) : (
-							<ChevronDownIcon size={14} />
-						)}
+						{checklistExpanded ? <ChevronUpIcon size={14} /> : <ChevronDownIcon size={14} />}
 					</Button>
 					<Button
 						variant="ghost"
@@ -179,10 +173,7 @@ export function SetupChecklist() {
 					<CardContent className="border-t border-primary/20 p-5 space-y-5">
 						<FrameworkPicker selected={framework} onSelect={setSelectedFramework} />
 						<ConnectInstructions framework={framework} apiKey={apiKey} />
-						<ListeningStatus
-							apiKey={apiKey}
-							onTestSent={() => setPollCount((c) => c + 1)}
-						/>
+						<ListeningStatus apiKey={apiKey} onTestSent={() => setPollCount((c) => c + 1)} />
 					</CardContent>
 				</div>
 			</div>
@@ -252,7 +243,7 @@ function ConnectInstructions({ framework, apiKey }: { framework: FrameworkId; ap
 			<div className="rounded-lg border bg-card overflow-hidden">
 				<Tabs defaultValue="install" className="flex flex-col">
 					<div className="border-b px-3">
-						<TabsList variant="line" className="h-9">
+						<TabsList variant="underline" className="h-9">
 							<TabsTrigger value="install">Install</TabsTrigger>
 							<TabsTrigger value="instrument">Instrument</TabsTrigger>
 							<TabsTrigger value="claude-code">Claude Code</TabsTrigger>
@@ -276,10 +267,10 @@ function ConnectInstructions({ framework, apiKey }: { framework: FrameworkId; ap
 
 					<TabsContent value="claude-code" className="overflow-auto p-3 mt-0 space-y-2">
 						<p className="text-xs text-muted-foreground">
-							Run this prompt in Claude Code (or Codex / Cursor with the skill
-							installed). The <code className="rounded bg-muted px-1">maple-onboard</code>{" "}
-							skill walks every service in the repo, installs OpenTelemetry, wires
-							traces / logs / metrics, and verifies the bootstrap end-to-end.
+							Run this prompt in Claude Code (or Codex / Cursor with the skill installed). The{" "}
+							<code className="rounded bg-muted px-1">maple-onboard</code> skill walks every
+							service in the repo, installs OpenTelemetry, wires traces / logs / metrics, and
+							verifies the bootstrap end-to-end.
 						</p>
 						<CodeBlock
 							code={`Install Maple in this repo using the maple-onboard skill.\nMy ingest key is ${apiKey || "<your-api-key>"}.`}
@@ -292,13 +283,7 @@ function ConnectInstructions({ framework, apiKey }: { framework: FrameworkId; ap
 	)
 }
 
-function ListeningStatus({
-	apiKey,
-	onTestSent,
-}: {
-	apiKey: string
-	onTestSent: () => void
-}) {
+function ListeningStatus({ apiKey, onTestSent }: { apiKey: string; onTestSent: () => void }) {
 	const [sending, setSending] = useState(false)
 
 	async function handleSendTest() {
@@ -319,9 +304,7 @@ function ListeningStatus({
 		<div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/30 bg-primary/5 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
 			<div className="flex items-center gap-2.5">
 				<PulseIcon size={14} className="text-primary animate-pulse" />
-				<span className="text-xs text-muted-foreground">
-					Watching for your first trace…
-				</span>
+				<span className="text-xs text-muted-foreground">Watching for your first trace…</span>
 			</div>
 			<div className="flex items-center gap-2">
 				<span className="hidden text-[11px] text-muted-foreground sm:inline">
@@ -342,13 +325,7 @@ function ListeningStatus({
 	)
 }
 
-function FirstTraceCelebration({
-	serviceName,
-	onDismiss,
-}: {
-	serviceName?: string
-	onDismiss: () => void
-}) {
+function FirstTraceCelebration({ serviceName, onDismiss }: { serviceName?: string; onDismiss: () => void }) {
 	const navigate = useNavigate()
 
 	function handleExplore() {
@@ -367,9 +344,7 @@ function FirstTraceCelebration({
 					<CircleCheckIcon size={20} />
 				</div>
 				<div className="flex-1 min-w-0">
-					<p className="text-sm font-semibold tracking-tight">
-						First trace received — you're live
-					</p>
+					<p className="text-sm font-semibold tracking-tight">First trace received — you're live</p>
 					<p className="text-xs text-muted-foreground mt-0.5">
 						{serviceName
 							? `We're seeing telemetry from ${serviceName}. Open it to explore.`
@@ -498,4 +473,3 @@ function CopyableInput({ value, label, masked }: { value: string; label: string;
 		</div>
 	)
 }
-
