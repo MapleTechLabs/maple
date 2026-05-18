@@ -10,6 +10,7 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { AlertPreviewChart } from "@/components/alerts/alert-preview-chart"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { RuleSentenceBuilder } from "@/components/alerts/rule-sentence-builder"
+import { ProviderLogo } from "@/components/alerts/destination-provider"
 import {
 	AlertSegmentedSelect,
 	AlertMultiSegmentedSelect,
@@ -636,6 +637,7 @@ function AlertCreatePage() {
 								options={
 									destinations.map((d) => ({
 										value: d.id as unknown as string,
+										icon: <ProviderLogo type={d.type} size={28} bare />,
 										label: (
 											<span className="flex items-center gap-2">
 												<span className="font-medium">{d.name}</span>
