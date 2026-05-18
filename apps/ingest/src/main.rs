@@ -29,7 +29,10 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
 use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
-use maple_ingest::telemetry::{PipelineError, SamplingPolicy, TelemetryPipeline, TinybirdConfig};
+use maple_ingest::telemetry::{
+    AttributeMappingRule, MappingOperation, MappingSourceContext, PipelineError, SamplingPolicy,
+    TelemetryPipeline, TinybirdConfig,
+};
 use metrics::{counter, gauge, histogram};
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -437,10 +440,15 @@ struct SamplingPolicyResolver {
     cache: Cache<String, SamplingPolicy>,
 }
 
-/// Database-agnostic surface used by the two resolvers. Implementations:
-/// `LibsqlKeyStore` (local dev / legacy) and `D1KeyStore` (Cloudflare D1 REST
-/// in production, where the API service writes ingest-key rows). Both back
-/// the same four operations.
+struct AttributeMappingResolver {
+    store: Arc<dyn KeyStore>,
+    cache: Cache<String, Arc<Vec<AttributeMappingRule>>>,
+}
+
+/// Database-agnostic surface used by the resolvers. Implementations:
+/// `StaticKeyStore` (local dev / single-tenant) and `D1KeyStore` (Cloudflare
+/// D1 REST in production, where the API service writes ingest-key rows). Both
+/// back the same operations.
 #[async_trait::async_trait]
 trait KeyStore: Send + Sync {
     async fn fetch_ingest_key(
@@ -459,6 +467,11 @@ trait KeyStore: Send + Sync {
         &self,
         org_id: &str,
     ) -> Result<Option<SamplingPolicyRow>, String>;
+
+    async fn fetch_attribute_mappings(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<AttributeMappingRow>, String>;
 
     async fn record_connector_success(&self, connector_id: &str, now_ms: i64)
         -> Result<(), String>;
@@ -493,6 +506,14 @@ struct SamplingPolicyRow {
     always_keep_slow_spans_ms: Option<u64>,
 }
 
+#[derive(Clone, Debug)]
+struct AttributeMappingRow {
+    source_context: String,
+    source_key: String,
+    target_key: String,
+    operation: String,
+}
+
 struct AppState {
     config: AppConfig,
     http_client: Client,
@@ -500,6 +521,7 @@ struct AppState {
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
+    attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
     metrics_handle: metrics_exporter_prometheus::PrometheusHandle,
     autumn_tracker: Option<AutumnTracker>,
@@ -906,6 +928,10 @@ async fn main() {
         .time_to_live(Duration::from_secs(30))
         .max_capacity(10_000)
         .build();
+    let attribute_mapping_cache = Cache::builder()
+        .time_to_live(Duration::from_secs(30))
+        .max_capacity(10_000)
+        .build();
 
     let state = Arc::new(AppState {
         resolver: IngestKeyResolver {
@@ -917,6 +943,10 @@ async fn main() {
         sampling_resolver: SamplingPolicyResolver {
             store: Arc::clone(&store),
             cache: sampling_policy_cache,
+        },
+        attribute_mapping_resolver: AttributeMappingResolver {
+            store: Arc::clone(&store),
+            cache: attribute_mapping_cache,
         },
         cloudflare_resolver: CloudflareConnectorResolver {
             store: Arc::clone(&store),
@@ -2483,8 +2513,17 @@ async fn process_decoded_payload(
                     .sampling_resolver
                     .resolve_policy(&resolved_key.org_id)
                     .await;
+                let attribute_mappings = state
+                    .attribute_mapping_resolver
+                    .resolve_mappings(&resolved_key.org_id)
+                    .await;
                 pipeline
-                    .accept_traces(&resolved_key.org_id, request, &policy)
+                    .accept_traces(
+                        &resolved_key.org_id,
+                        request,
+                        &policy,
+                        attribute_mappings.as_slice(),
+                    )
                     .await
             }
             DecodedPayload::Logs(request) => {
@@ -2667,6 +2706,67 @@ impl SamplingPolicyResolver {
         };
         self.cache.insert(org_id.to_string(), policy.clone()).await;
         policy
+    }
+}
+
+/// Translates a stored mapping row into a usable rule, dropping rows whose
+/// `source_context` / `operation` strings fall outside the known enums.
+fn parse_attribute_mapping_row(row: AttributeMappingRow) -> Option<AttributeMappingRule> {
+    let source_context = match row.source_context.as_str() {
+        "span" => MappingSourceContext::Span,
+        "resource" => MappingSourceContext::Resource,
+        other => {
+            warn!(
+                source_context = other,
+                "Skipping attribute mapping with unknown source context"
+            );
+            return None;
+        }
+    };
+    let operation = match row.operation.as_str() {
+        "move" => MappingOperation::Move,
+        "copy" => MappingOperation::Copy,
+        other => {
+            warn!(
+                operation = other,
+                "Skipping attribute mapping with unknown operation"
+            );
+            return None;
+        }
+    };
+    Some(AttributeMappingRule {
+        source_context,
+        source_key: row.source_key,
+        target_key: row.target_key,
+        operation,
+    })
+}
+
+impl AttributeMappingResolver {
+    async fn resolve_mappings(&self, org_id: &str) -> Arc<Vec<AttributeMappingRule>> {
+        if let Some(rules) = self.cache.get(org_id).await {
+            return rules;
+        }
+
+        let rules = match self.store.fetch_attribute_mappings(org_id).await {
+            Ok(rows) => Arc::new(
+                rows.into_iter()
+                    .filter_map(parse_attribute_mapping_row)
+                    .collect::<Vec<_>>(),
+            ),
+            Err(error) => {
+                warn!(
+                    org_id,
+                    error = %error,
+                    "Attribute mapping lookup failed; ingesting without remapping"
+                );
+                Arc::new(Vec::new())
+            }
+        };
+        self.cache
+            .insert(org_id.to_string(), Arc::clone(&rules))
+            .await;
+        rules
     }
 }
 
@@ -2889,6 +2989,27 @@ impl KeyStore for D1KeyStore {
         }))
     }
 
+    async fn fetch_attribute_mappings(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<AttributeMappingRow>, String> {
+        let sql = "SELECT source_context, source_key, target_key, operation \
+                   FROM org_ingest_attribute_mappings WHERE org_id = ? AND enabled = 1";
+        let rows = self
+            .query(sql, vec![serde_json::Value::String(org_id.to_string())])
+            .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(AttributeMappingRow {
+                    source_context: d1_str(&row, "source_context")?,
+                    source_key: d1_str(&row, "source_key")?,
+                    target_key: d1_str(&row, "target_key")?,
+                    operation: d1_str(&row, "operation")?,
+                })
+            })
+            .collect()
+    }
+
     async fn record_connector_success(
         &self,
         connector_id: &str,
@@ -2956,6 +3077,13 @@ impl KeyStore for StaticKeyStore {
         _org_id: &str,
     ) -> Result<Option<SamplingPolicyRow>, String> {
         Ok(None)
+    }
+
+    async fn fetch_attribute_mappings(
+        &self,
+        _org_id: &str,
+    ) -> Result<Vec<AttributeMappingRow>, String> {
+        Ok(Vec::new())
     }
 
     async fn record_connector_success(
@@ -3415,6 +3543,12 @@ mod tests {
             _org_id: &str,
         ) -> Result<Option<SamplingPolicyRow>, String> {
             Ok(None)
+        }
+        async fn fetch_attribute_mappings(
+            &self,
+            _org_id: &str,
+        ) -> Result<Vec<AttributeMappingRow>, String> {
+            Ok(Vec::new())
         }
         async fn record_connector_success(
             &self,

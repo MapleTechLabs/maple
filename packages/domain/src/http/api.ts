@@ -7,6 +7,7 @@ import { DashboardsApiGroup } from "./dashboards"
 import { DemoApiGroup } from "./demo"
 import { DigestApiGroup } from "./digest"
 import { ErrorsApiGroup } from "./errors"
+import { IngestAttributeMappingsApiGroup } from "./ingest-attribute-mappings"
 import { IngestKeysApiGroup } from "./ingest-keys"
 import { IntegrationsApiGroup } from "./integrations"
 import { ObservabilityApiGroup } from "./observability"
@@ -27,6 +28,7 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(DemoApiGroup)
 	.add(DigestApiGroup)
 	.add(ErrorsApiGroup)
+	.add(IngestAttributeMappingsApiGroup)
 	.add(IngestKeysApiGroup)
 	.add(IntegrationsApiGroup)
 	.add(ObservabilityApiGroup)

@@ -13,6 +13,7 @@ import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
 import { HttpDigestLive } from "./routes/digest.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "./routes/integrations.http"
+import { HttpIngestAttributeMappingsLive } from "./routes/ingest-attribute-mappings.http"
 import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
 import { HttpObservabilityLive } from "./routes/observability.http"
 import { HttpOnboardingLive } from "./routes/onboarding.http"
@@ -39,6 +40,7 @@ import { EdgeCacheService } from "./services/EdgeCacheService"
 import { OnboardingService } from "./services/OnboardingService"
 import { EmailService } from "./services/EmailService"
 import { Env } from "./services/Env"
+import { IngestAttributeMappingService } from "./services/IngestAttributeMappingService"
 import { OrgIngestKeysService } from "./services/OrgIngestKeysService"
 import { OrgOpenRouterSettingsService } from "./services/OrgOpenRouterSettingsService"
 import { OrgClickHouseSettingsService } from "./services/OrgClickHouseSettingsService"
@@ -74,6 +76,7 @@ export const CoreServicesLive = Layer.mergeAll(
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
 	ScrapeTargetsService.layer,
+	IngestAttributeMappingService.layer,
 ).pipe(Layer.provideMerge(InfraLive))
 
 export const DemoServiceLive = DemoService.layer.pipe(Layer.provideMerge(CoreServicesLive))
@@ -129,6 +132,7 @@ export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpDashboardsLive),
 	Layer.provide(HttpDemoLive),
 	Layer.provide(HttpDigestLive),
+	Layer.provide(HttpIngestAttributeMappingsLive),
 	Layer.provide(HttpIngestKeysLive),
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpObservabilityLive),

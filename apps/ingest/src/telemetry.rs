@@ -124,6 +124,62 @@ impl SamplingPolicy {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MappingSourceContext {
+    Span,
+    Resource,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MappingOperation {
+    Move,
+    Copy,
+}
+
+/// One org-configured attribute remapping rule. The target is always a span
+/// attribute; `source_context` selects whether the value is read from the
+/// span's own attributes or from its resource attributes.
+#[derive(Clone, Debug)]
+pub struct AttributeMappingRule {
+    pub source_context: MappingSourceContext,
+    pub source_key: String,
+    pub target_key: String,
+    pub operation: MappingOperation,
+}
+
+/// Rewrites a single span's attribute map per the org's mapping rules. Rules
+/// apply in order; an existing target key is never overwritten so customer-set
+/// values win. `Move` deletes the source only when the source is a span
+/// attribute — a resource attribute is shared across every span in the batch,
+/// so deleting it per-span is ill-defined and is treated as `Copy`.
+fn apply_attribute_mappings(
+    rules: &[AttributeMappingRule],
+    resource_attrs: &Map<String, Value>,
+    span_attrs: &mut Map<String, Value>,
+) {
+    for rule in rules {
+        if span_attrs.contains_key(&rule.target_key) {
+            continue;
+        }
+        match rule.source_context {
+            MappingSourceContext::Span => {
+                let Some(value) = span_attrs.get(&rule.source_key).cloned() else {
+                    continue;
+                };
+                span_attrs.insert(rule.target_key.clone(), value);
+                if rule.operation == MappingOperation::Move {
+                    span_attrs.remove(&rule.source_key);
+                }
+            }
+            MappingSourceContext::Resource => {
+                if let Some(value) = resource_attrs.get(&rule.source_key) {
+                    span_attrs.insert(rule.target_key.clone(), value.clone());
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum PipelineError {
     Backpressure(&'static str),
@@ -227,8 +283,15 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportTraceServiceRequest,
         sampling_policy: &SamplingPolicy,
+        attribute_mappings: &[AttributeMappingRule],
     ) -> Result<AcceptStats, PipelineError> {
-        let (frames, stats) = encode_traces(&self.inner.cfg, org_id, request, sampling_policy)?;
+        let (frames, stats) = encode_traces(
+            &self.inner.cfg,
+            org_id,
+            request,
+            sampling_policy,
+            attribute_mappings,
+        )?;
         self.commit_frames(frames).await?;
         Ok(stats)
     }
@@ -908,6 +971,7 @@ fn encode_traces(
     org_id: &str,
     request: &ExportTraceServiceRequest,
     policy: &SamplingPolicy,
+    attribute_mappings: &[AttributeMappingRule],
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
     let mut rows = Vec::with_capacity(count_trace_rows(request));
     let mut dropped = 0usize;
@@ -956,6 +1020,7 @@ fn encode_traces(
                         json!(format_sample_rate(sample_rate)),
                     );
                 }
+                apply_attribute_mappings(attribute_mappings, &resource_attrs, &mut span_attrs);
 
                 let events_timestamp: Vec<Value> = span
                     .events
@@ -1867,7 +1932,7 @@ mod tests {
         };
 
         let (frames, stats) =
-            encode_traces(&test_cfg(), "org_1", &request, &SamplingPolicy::default()).unwrap();
+            encode_traces(&test_cfg(), "org_1", &request, &SamplingPolicy::default(), &[]).unwrap();
         assert_eq!(stats.rows, 1);
         assert_eq!(stats.dropped, 0);
         assert_eq!(frames.len(), 1);
@@ -1886,6 +1951,99 @@ mod tests {
         assert_eq!(row["resource_attributes"]["maple_org_id"], "org_1");
         assert_eq!(row["span_attributes"]["http.route"], "/checkout");
         assert!(row["span_attributes"].get("SampleRate").is_none());
+    }
+
+    #[test]
+    fn apply_attribute_mappings_rewrites_span_attributes() {
+        let rule = |source_context, source_key: &str, target_key: &str, operation| {
+            AttributeMappingRule {
+                source_context,
+                source_key: source_key.to_string(),
+                target_key: target_key.to_string(),
+                operation,
+            }
+        };
+
+        // span -> span copy keeps the source key.
+        let mut span_attrs = Map::new();
+        span_attrs.insert("http.status_code".to_string(), json!("200"));
+        apply_attribute_mappings(
+            &[rule(
+                MappingSourceContext::Span,
+                "http.status_code",
+                "http.response.status_code",
+                MappingOperation::Copy,
+            )],
+            &Map::new(),
+            &mut span_attrs,
+        );
+        assert_eq!(span_attrs["http.response.status_code"], json!("200"));
+        assert_eq!(span_attrs["http.status_code"], json!("200"));
+
+        // span -> span move deletes the source key.
+        let mut span_attrs = Map::new();
+        span_attrs.insert("old.key".to_string(), json!("v"));
+        apply_attribute_mappings(
+            &[rule(
+                MappingSourceContext::Span,
+                "old.key",
+                "new.key",
+                MappingOperation::Move,
+            )],
+            &Map::new(),
+            &mut span_attrs,
+        );
+        assert_eq!(span_attrs["new.key"], json!("v"));
+        assert!(span_attrs.get("old.key").is_none());
+
+        // resource -> span promotes a resource attribute onto the span.
+        let mut resource_attrs = Map::new();
+        resource_attrs.insert("deployment.env".to_string(), json!("prod"));
+        let mut span_attrs = Map::new();
+        apply_attribute_mappings(
+            &[rule(
+                MappingSourceContext::Resource,
+                "deployment.env",
+                "deployment.environment",
+                MappingOperation::Move,
+            )],
+            &resource_attrs,
+            &mut span_attrs,
+        );
+        assert_eq!(span_attrs["deployment.environment"], json!("prod"));
+        // resource source is never deleted, even for a Move rule.
+        assert_eq!(resource_attrs["deployment.env"], json!("prod"));
+
+        // an existing target key is never overwritten.
+        let mut span_attrs = Map::new();
+        span_attrs.insert("src".to_string(), json!("from-src"));
+        span_attrs.insert("dst".to_string(), json!("customer-set"));
+        apply_attribute_mappings(
+            &[rule(
+                MappingSourceContext::Span,
+                "src",
+                "dst",
+                MappingOperation::Move,
+            )],
+            &Map::new(),
+            &mut span_attrs,
+        );
+        assert_eq!(span_attrs["dst"], json!("customer-set"));
+        assert_eq!(span_attrs["src"], json!("from-src"));
+
+        // a missing source key is a no-op.
+        let mut span_attrs = Map::new();
+        apply_attribute_mappings(
+            &[rule(
+                MappingSourceContext::Span,
+                "absent",
+                "dst",
+                MappingOperation::Copy,
+            )],
+            &Map::new(),
+            &mut span_attrs,
+        );
+        assert!(span_attrs.is_empty());
     }
 
     #[test]
@@ -2527,7 +2685,7 @@ mod tests {
     #[test]
     fn traces_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
         let (frames, _) =
-            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default())
+            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         let row = frame_row(&frames[0]);
         assert_row_keys_match(&row, schema_contract::TRACES, "traces");
@@ -2580,7 +2738,7 @@ mod tests {
         assert!(pattern(ts), "logs.timestamp not DateTime64(9): {ts:?}");
 
         let (trace_frames, _) =
-            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default())
+            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         let trace_row = frame_row(&trace_frames[0]);
         let ts = trace_row["start_time"].as_str().unwrap();
@@ -2623,7 +2781,7 @@ mod tests {
         assert_eq!(log_frames[0].datasource, "tenant_logs_v2");
 
         let (trace_frames, _) =
-            encode_traces(&cfg, "org_contract", &populated_trace_request(), &SamplingPolicy::default())
+            encode_traces(&cfg, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         assert_eq!(trace_frames[0].datasource, "tenant_traces_v2");
 
@@ -2747,7 +2905,7 @@ mod tests {
 
         let request = populated_trace_request();
         let stats = pipeline
-            .accept_traces("org_contract", &request, &SamplingPolicy::default())
+            .accept_traces("org_contract", &request, &SamplingPolicy::default(), &[])
             .await
             .unwrap();
         assert_eq!(stats.rows, 1);

@@ -141,6 +141,24 @@ export const ScrapeAuthType = Schema.Literals(["none", "bearer", "basic"]).annot
 })
 export type ScrapeAuthType = Schema.Schema.Type<typeof ScrapeAuthType>
 
+export const IngestAttributeMappingId = MapleUuidId(
+	"@maple/IngestAttributeMappingId",
+	"Ingest Attribute Mapping ID",
+)
+export type IngestAttributeMappingId = Schema.Schema.Type<typeof IngestAttributeMappingId>
+
+export const IngestMappingSourceContext = Schema.Literals(["span", "resource"]).annotate({
+	identifier: "@maple/IngestMappingSourceContext",
+	title: "Ingest Mapping Source Context",
+})
+export type IngestMappingSourceContext = Schema.Schema.Type<typeof IngestMappingSourceContext>
+
+export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate({
+	identifier: "@maple/IngestMappingOperation",
+	title: "Ingest Mapping Operation",
+})
+export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
+
 export const TinybirdDeploymentId = MapleId("@maple/TinybirdDeploymentId", "Tinybird Deployment ID")
 export type TinybirdDeploymentId = Schema.Schema.Type<typeof TinybirdDeploymentId>
 
