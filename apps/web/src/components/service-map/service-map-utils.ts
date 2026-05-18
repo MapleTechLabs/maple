@@ -3,6 +3,7 @@ import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/tinybird
 import type { ServiceOverview } from "@/api/tinybird/services"
 import type { ServiceWorkload } from "@/api/tinybird/service-infra"
 import { getServiceLegendColor } from "@maple/ui/colors"
+import { getDbColor } from "./service-map-db"
 
 export interface ServiceNodeInfra {
 	podCount: number
@@ -32,8 +33,6 @@ export interface ServiceNodeData {
 	[key: string]: unknown
 }
 
-const DB_NODE_COLOR = "oklch(0.55 0.05 250)"
-
 const PLATFORM_COLORS: Record<ServicePlatform | "unknown", string> = {
 	kubernetes: "oklch(0.62 0.16 250)",
 	cloudflare: "oklch(0.7 0.16 50)",
@@ -55,15 +54,15 @@ export function getHealthColor(errorRate: number): string {
 /**
  * Color used for a service-map node's accent stripe / minimap fill / legend swatch.
  *
- * Database nodes always use the dedicated db color regardless of mode — the
- * "color by" affordance is for slicing service nodes only.
+ * Database nodes always use their per-system brand color regardless of mode —
+ * the "color by" affordance is for slicing service nodes only.
  */
 export function getServiceMapNodeColor(
-	data: Pick<ServiceNodeData, "label" | "kind" | "errorRate" | "platform">,
+	data: Pick<ServiceNodeData, "label" | "kind" | "errorRate" | "platform" | "dbSystem">,
 	services: string[],
 	mode: ServiceMapColorMode,
 ): string {
-	if (data.kind === "database") return DB_NODE_COLOR
+	if (data.kind === "database") return getDbColor(data.dbSystem)
 	switch (mode) {
 		case "health":
 			return getHealthColor(data.errorRate)

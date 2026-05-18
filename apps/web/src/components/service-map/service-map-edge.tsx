@@ -2,11 +2,13 @@ import { memo, useId } from "react"
 import { getSmoothStepPath, type EdgeProps } from "@xyflow/react"
 import { getServiceLegendColor } from "@maple/ui/colors"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
-import { isDbNodeId, type ServiceEdgeData } from "./service-map-utils"
+import { getDbColor } from "./service-map-db"
+import { DB_NODE_PREFIX, isDbNodeId, type ServiceEdgeData } from "./service-map-utils"
 
-// Neutral color for synthetic database nodes — `getServiceLegendColor` cannot
-// produce a stable color from `db:<system>` ids that aren't in the services list.
-const DATABASE_NODE_COLOR = "oklch(0.55 0.05 240)"
+// `getServiceLegendColor` cannot produce a stable color from `db:<system>` ids
+// that aren't in the services list, so resolve db endpoints to their brand color.
+const dbEndpointColor = (nodeId: string): string =>
+	getDbColor(decodeURIComponent(nodeId.slice(DB_NODE_PREFIX.length)))
 
 function getStrokeWidth(callCount: number): number {
 	if (callCount <= 0) return 2
@@ -74,8 +76,12 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 		borderRadius: 12,
 	})
 
-	const sourceColor = isDbNodeId(source) ? DATABASE_NODE_COLOR : getServiceLegendColor(source, services)
-	const targetColor = isDbNodeId(target) ? DATABASE_NODE_COLOR : getServiceLegendColor(target, services)
+	const sourceColor = isDbNodeId(source)
+		? dbEndpointColor(source)
+		: getServiceLegendColor(source, services)
+	const targetColor = isDbNodeId(target)
+		? dbEndpointColor(target)
+		: getServiceLegendColor(target, services)
 	const sw = getStrokeWidth(callCount)
 	const i = getEdgeIntensity(callsPerSecond)
 

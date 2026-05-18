@@ -28,7 +28,7 @@ import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
-import { ArrowRightIcon, CubeIcon, DatabaseIcon, NetworkNodesIcon, XmarkIcon } from "@/components/icons"
+import { ArrowRightIcon, CubeIcon, NetworkNodesIcon, XmarkIcon } from "@/components/icons"
 import {
 	getServiceMapDbEdgesResultAtom,
 	getServiceMapResultAtom,
@@ -47,6 +47,7 @@ import type { ServiceWorkload } from "@/api/tinybird/service-infra"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { ServiceMapNode } from "./service-map-node"
 import { ServiceMapEdge } from "./service-map-edge"
+import { getDbDescriptor } from "./service-map-db"
 import {
 	buildFlowElements,
 	DB_NODE_PREFIX,
@@ -547,6 +548,8 @@ function DatabaseDetailPanel({
 		totalCalls > 0 ? callers.reduce((sum, e) => sum + e.avgDurationMs * e.callCount, 0) / totalCalls : 0
 	const p95LatencyMs = callers.reduce((max, e) => Math.max(max, e.p95DurationMs), 0)
 
+	const { category, Icon: DbIcon, color: dbColor, branded: dbBranded } = getDbDescriptor(dbSystem)
+
 	return (
 		<div className="flex flex-col h-full bg-background overflow-hidden">
 			{/* Header */}
@@ -554,12 +557,16 @@ function DatabaseDetailPanel({
 				<div className="flex items-center gap-2 min-w-0">
 					<div
 						className="w-[3px] h-[18px] rounded-sm shrink-0"
-						style={{ backgroundColor: "oklch(0.55 0.05 250)" }}
+						style={{ backgroundColor: dbColor }}
 					/>
-					<DatabaseIcon size={14} className="text-muted-foreground/80 shrink-0" />
+					<DbIcon
+						size={14}
+						className="shrink-0"
+						style={dbBranded ? undefined : { color: dbColor }}
+					/>
 					<span className="text-sm font-semibold text-foreground truncate">{dbSystem}</span>
 					<span className="text-[9px] font-medium tracking-wide text-muted-foreground/60 uppercase shrink-0">
-						database
+						{category}
 					</span>
 				</div>
 				<Button variant="ghost" size="icon-xs" onClick={onClose}>
