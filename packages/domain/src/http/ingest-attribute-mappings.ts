@@ -34,18 +34,18 @@ export class CreateIngestAttributeMappingRequest extends Schema.Class<CreateInge
 	sourceKey: Schema.String,
 	targetKey: Schema.String,
 	operation: IngestMappingOperation,
-	enabled: Schema.optional(Schema.Boolean),
+	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class UpdateIngestAttributeMappingRequest extends Schema.Class<UpdateIngestAttributeMappingRequest>(
 	"UpdateIngestAttributeMappingRequest",
 )({
-	name: Schema.optional(Schema.String),
-	sourceContext: Schema.optional(IngestMappingSourceContext),
-	sourceKey: Schema.optional(Schema.String),
-	targetKey: Schema.optional(Schema.String),
-	operation: Schema.optional(IngestMappingOperation),
-	enabled: Schema.optional(Schema.Boolean),
+	name: Schema.optionalKey(Schema.String),
+	sourceContext: Schema.optionalKey(IngestMappingSourceContext),
+	sourceKey: Schema.optionalKey(Schema.String),
+	targetKey: Schema.optionalKey(Schema.String),
+	operation: Schema.optionalKey(IngestMappingOperation),
+	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class IngestAttributeMappingDeleteResponse extends Schema.Class<IngestAttributeMappingDeleteResponse>(

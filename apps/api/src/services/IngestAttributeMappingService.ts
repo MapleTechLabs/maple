@@ -8,15 +8,15 @@ import {
 	IngestAttributeMappingPersistenceError,
 	IngestAttributeMappingsListResponse,
 	IngestAttributeMappingValidationError,
+	IngestMappingOperation,
+	IngestMappingSourceContext,
 	IsoDateTimeString,
-	type IngestMappingOperation,
-	type IngestMappingSourceContext,
 	type OrgId,
 	type UpdateIngestAttributeMappingRequest,
 } from "@maple/domain/http"
 import { orgIngestAttributeMappings } from "@maple/db"
 import { and, eq } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database } from "./DatabaseLive"
 
 type MappingRow = typeof orgIngestAttributeMappings.$inferSelect
@@ -56,17 +56,32 @@ const toPersistenceError = (error: unknown) =>
 		message: error instanceof Error ? error.message : "Attribute mapping persistence failed",
 	})
 
+// Logs the underlying Cause before collapsing any database failure into a
+// persistence error, so a failed query stays visible in traces and logs.
+const runDb = <A, E>(
+	operation: string,
+	effect: Effect.Effect<A, E>,
+): Effect.Effect<A, IngestAttributeMappingPersistenceError> =>
+	effect.pipe(
+		Effect.tapCause((cause) =>
+			Effect.logError(`IngestAttributeMappingService.${operation}: database operation failed`, cause),
+		),
+		Effect.mapError(toPersistenceError),
+	)
+
 const decodeMappingIdSync = Schema.decodeUnknownSync(IngestAttributeMappingId)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(IsoDateTimeString)
+const decodeSourceContextSync = Schema.decodeUnknownSync(IngestMappingSourceContext)
+const decodeOperationSync = Schema.decodeUnknownSync(IngestMappingOperation)
 
 const rowToResponse = (row: MappingRow): IngestAttributeMapping =>
 	new IngestAttributeMapping({
 		id: decodeMappingIdSync(row.id),
 		name: row.name,
-		sourceContext: row.sourceContext as IngestMappingSourceContext,
+		sourceContext: decodeSourceContextSync(row.sourceContext),
 		sourceKey: row.sourceKey,
 		targetKey: row.targetKey,
-		operation: row.operation as IngestMappingOperation,
+		operation: decodeOperationSync(row.operation),
 		enabled: row.enabled,
 		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
@@ -102,7 +117,7 @@ const validateRule = (rule: {
 export class IngestAttributeMappingService extends Context.Service<
 	IngestAttributeMappingService,
 	IngestAttributeMappingServiceShape
->()("IngestAttributeMappingService", {
+>()("@maple/api/services/IngestAttributeMappingService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 
@@ -110,8 +125,9 @@ export class IngestAttributeMappingService extends Context.Service<
 			orgId: OrgId,
 			mappingId: IngestAttributeMappingId,
 		) {
-			const rows = yield* database
-				.execute((db) =>
+			const rows = yield* runDb(
+				"selectById",
+				database.execute((db) =>
 					db
 						.select()
 						.from(orgIngestAttributeMappings)
@@ -122,8 +138,8 @@ export class IngestAttributeMappingService extends Context.Service<
 							),
 						)
 						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			return Option.fromNullishOr(rows[0])
 		})
@@ -135,6 +151,9 @@ export class IngestAttributeMappingService extends Context.Service<
 			const row = yield* selectById(orgId, mappingId)
 			if (Option.isSome(row)) return row.value
 
+			yield* Effect.logWarning(
+				`IngestAttributeMappingService: mapping ${mappingId} not found for org ${orgId}`,
+			)
 			return yield* Effect.fail(
 				new IngestAttributeMappingNotFoundError({
 					mappingId,
@@ -144,14 +163,15 @@ export class IngestAttributeMappingService extends Context.Service<
 		})
 
 		const list = Effect.fn("IngestAttributeMappingService.list")(function* (orgId: OrgId) {
-			const rows = yield* database
-				.execute((db) =>
+			const rows = yield* runDb(
+				"list",
+				database.execute((db) =>
 					db
 						.select()
 						.from(orgIngestAttributeMappings)
 						.where(eq(orgIngestAttributeMappings.orgId, orgId)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			return new IngestAttributeMappingsListResponse({
 				mappings: rows.map(rowToResponse),
@@ -164,11 +184,12 @@ export class IngestAttributeMappingService extends Context.Service<
 		) {
 			yield* validateRule(request)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const id = decodeMappingIdSync(randomUUID())
 
-			yield* database
-				.execute((db) =>
+			yield* runDb(
+				"create",
+				database.execute((db) =>
 					db.insert(orgIngestAttributeMappings).values({
 						id,
 						orgId,
@@ -181,11 +202,14 @@ export class IngestAttributeMappingService extends Context.Service<
 						createdAt: now,
 						updatedAt: now,
 					}),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const row = yield* selectById(orgId, id)
 			if (Option.isNone(row)) {
+				yield* Effect.logError(
+					`IngestAttributeMappingService.create: mapping ${id} missing after insert for org ${orgId}`,
+				)
 				return yield* Effect.fail(
 					new IngestAttributeMappingPersistenceError({
 						message: "Failed to create attribute mapping",
@@ -204,13 +228,13 @@ export class IngestAttributeMappingService extends Context.Service<
 			const existing = yield* requireMapping(orgId, mappingId)
 
 			const merged = {
-				sourceContext: request.sourceContext ?? (existing.sourceContext as IngestMappingSourceContext),
+				sourceContext: request.sourceContext ?? decodeSourceContextSync(existing.sourceContext),
 				sourceKey: request.sourceKey ?? existing.sourceKey,
 				targetKey: request.targetKey ?? existing.targetKey,
 			}
 			yield* validateRule(merged)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const updates: Record<string, unknown> = { updatedAt: now }
 			if (request.name !== undefined) updates.name = request.name.trim()
 			if (request.sourceContext !== undefined) updates.sourceContext = request.sourceContext
@@ -219,8 +243,9 @@ export class IngestAttributeMappingService extends Context.Service<
 			if (request.operation !== undefined) updates.operation = request.operation
 			if (request.enabled !== undefined) updates.enabled = request.enabled
 
-			yield* database
-				.execute((db) =>
+			yield* runDb(
+				"update",
+				database.execute((db) =>
 					db
 						.update(orgIngestAttributeMappings)
 						.set(updates)
@@ -230,11 +255,14 @@ export class IngestAttributeMappingService extends Context.Service<
 								eq(orgIngestAttributeMappings.id, mappingId),
 							),
 						),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const row = yield* selectById(orgId, mappingId)
 			if (Option.isNone(row)) {
+				yield* Effect.logError(
+					`IngestAttributeMappingService.update: mapping ${mappingId} missing after update for org ${orgId}`,
+				)
 				return yield* Effect.fail(
 					new IngestAttributeMappingPersistenceError({
 						message: "Failed to load updated attribute mapping",
@@ -249,8 +277,9 @@ export class IngestAttributeMappingService extends Context.Service<
 			orgId: OrgId,
 			mappingId: IngestAttributeMappingId,
 		) {
-			const rows = yield* database
-				.execute((db) =>
+			const rows = yield* runDb(
+				"delete",
+				database.execute((db) =>
 					db
 						.delete(orgIngestAttributeMappings)
 						.where(
@@ -260,11 +289,14 @@ export class IngestAttributeMappingService extends Context.Service<
 							),
 						)
 						.returning({ id: orgIngestAttributeMappings.id }),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				),
+			)
 
 			const deleted = Option.fromNullishOr(rows[0])
 			if (Option.isNone(deleted)) {
+				yield* Effect.logWarning(
+					`IngestAttributeMappingService: mapping ${mappingId} not found for org ${orgId}`,
+				)
 				return yield* Effect.fail(
 					new IngestAttributeMappingNotFoundError({
 						mappingId,
@@ -287,6 +319,4 @@ export class IngestAttributeMappingService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }
