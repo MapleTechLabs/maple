@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { defaultRuleForm, flattenAlertChartData, signalToQueryParams } from "./form-utils"
+import { buildRuleRequest, defaultRuleForm, flattenAlertChartData, signalToQueryParams } from "./form-utils"
 
 const makePoint = (bucket: string, series: Record<string, number>) => ({ bucket, series })
 
@@ -59,6 +59,27 @@ describe("flattenAlertChartData", () => {
 	it("handles empty points array", () => {
 		expect(flattenAlertChartData([], ["svc-a"])).toEqual([])
 		expect(flattenAlertChartData([], [])).toEqual([])
+	})
+})
+
+describe("rule notes", () => {
+	it("defaults to an empty note", () => {
+		expect(defaultRuleForm().notes).toBe("")
+	})
+
+	it("carries a trimmed note onto the upsert request", () => {
+		const request = buildRuleRequest({
+			...defaultRuleForm(),
+			name: "Error rate",
+			notes: "  See runbook: https://wiki/incidents  ",
+		})
+
+		expect(request.notes).toBe("See runbook: https://wiki/incidents")
+	})
+
+	it("sends null when the note is blank or whitespace-only", () => {
+		expect(buildRuleRequest({ ...defaultRuleForm(), name: "A", notes: "" }).notes).toBeNull()
+		expect(buildRuleRequest({ ...defaultRuleForm(), name: "A", notes: "   " }).notes).toBeNull()
 	})
 })
 

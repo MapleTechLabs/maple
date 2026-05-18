@@ -745,11 +745,22 @@ const serviceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
 const excludeServiceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
 	row.excludeServiceNamesJson ? safeParseStringArray(row.excludeServiceNamesJson) : []
 
-const rowToRuleDocument = (row: AlertRuleRow, destinationIds: ReadonlyArray<string>) => {
+/** Most recent evaluation error for a rule, aggregated across its group states. */
+interface RuleEvaluationState {
+	readonly error: string | null
+	readonly evaluatedAt: number | null
+}
+
+const rowToRuleDocument = (
+	row: AlertRuleRow,
+	destinationIds: ReadonlyArray<string>,
+	evaluationState?: RuleEvaluationState,
+) => {
 	const serviceNames = serviceNamesFromRow(row)
 	return new AlertRuleDocument({
 		id: decodeAlertRuleIdSync(row.id),
 		name: row.name,
+		notes: row.notes ?? null,
 		enabled: row.enabled === 1,
 		severity: decodeAlertSeveritySync(row.severity),
 		serviceNames: [...serviceNames],
@@ -774,6 +785,11 @@ const rowToRuleDocument = (row: AlertRuleRow, destinationIds: ReadonlyArray<stri
 		rawQueryReducer:
 			row.signalType === "raw_query" ? decodeQueryEngineAlertReducerSync(row.reducer) : null,
 		destinationIds: destinationIds.map((id) => decodeAlertDestinationIdSync(id)),
+		lastEvaluationError: evaluationState?.error ?? null,
+		lastEvaluatedAt:
+			evaluationState?.evaluatedAt != null
+				? decodeIsoDateTimeStringSync(new Date(evaluationState.evaluatedAt).toISOString())
+				: null,
 		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
 		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 		createdBy: row.createdBy,
@@ -2016,6 +2032,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			const ruleFields = {
 				name: normalized.name,
+				notes: normalizeOptionalString(request.notes),
 				enabled: normalized.enabled ? 1 : 0,
 				severity: normalized.severity,
 				serviceNamesJson:
@@ -2088,8 +2105,33 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					.orderBy(desc(alertRules.updatedAt)),
 			)
 
+			// Surface the most recent evaluation error per rule. `lastError` is
+			// cleared to null on a healthy evaluation, so a non-null value means
+			// that group is currently failing; pick the freshest one.
+			const stateRows = yield* dbExecute((db) =>
+				db
+					.select({
+						ruleId: alertRuleStates.ruleId,
+						lastError: alertRuleStates.lastError,
+						lastEvaluatedAt: alertRuleStates.lastEvaluatedAt,
+					})
+					.from(alertRuleStates)
+					.where(eq(alertRuleStates.orgId, orgId)),
+			)
+			const errorByRule = new Map<string, RuleEvaluationState>()
+			for (const state of stateRows) {
+				if (state.lastError == null) continue
+				const existing = errorByRule.get(state.ruleId)
+				if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
+					errorByRule.set(state.ruleId, {
+						error: state.lastError,
+						evaluatedAt: state.lastEvaluatedAt,
+					})
+				}
+			}
+
 			const rules = rows.map((row) =>
-				rowToRuleDocument(row, safeParseStringArray(row.destinationIdsJson)),
+				rowToRuleDocument(row, safeParseStringArray(row.destinationIdsJson), errorByRule.get(row.id)),
 			)
 
 			return new AlertRulesListResponse({ rules })

@@ -302,6 +302,7 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
 export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRuleDocument")({
 	id: AlertRuleId,
 	name: Schema.String,
+	notes: Schema.NullOr(Schema.String),
 	enabled: Schema.Boolean,
 	severity: AlertSeverity,
 	serviceNames: Schema.Array(Schema.String),
@@ -324,6 +325,9 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	rawQuerySql: Schema.NullOr(Schema.String),
 	rawQueryReducer: Schema.NullOr(QueryEngineAlertReducer),
 	destinationIds: Schema.Array(AlertDestinationId),
+	/** Most recent evaluation error for this rule, surfaced from `alertRuleStates.lastError`. */
+	lastEvaluationError: Schema.NullOr(Schema.String),
+	lastEvaluatedAt: Schema.NullOr(IsoDateTimeString),
 	createdAt: IsoDateTimeString,
 	updatedAt: IsoDateTimeString,
 	createdBy: Schema.String,
@@ -332,6 +336,7 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 
 export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>("AlertRuleUpsertRequest")({
 	name: ChannelLabel,
+	notes: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	enabled: Schema.optionalKey(Schema.Boolean),
 	severity: AlertSeverity,
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),

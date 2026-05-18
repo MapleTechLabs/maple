@@ -28,6 +28,8 @@ import { formatErrorRate, formatLatency, formatNumber } from "@/lib/format"
 
 export type RuleFormState = {
 	name: string
+	/** Optional free-text note — runbook links, ownership, why the rule exists. */
+	notes: string
 	enabled: boolean
 	severity: AlertSeverity
 	serviceNames: string[]
@@ -177,6 +179,7 @@ export function parseNonNegativeNumber(value: string, fallback: number): number 
 export function defaultRuleForm(serviceName?: string): RuleFormState {
 	return {
 		name: "",
+		notes: "",
 		enabled: true,
 		severity: "warning",
 		serviceNames: serviceName ? [serviceName] : [],
@@ -207,6 +210,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 	return {
 		name: rule.name,
+		notes: rule.notes ?? "",
 		enabled: rule.enabled,
 		severity: rule.severity,
 		serviceNames: rule.serviceNames?.length > 0 ? [...rule.serviceNames] : [],
@@ -276,6 +280,7 @@ export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 	const signalType = form.signalType
 	return new AlertRuleUpsertRequest({
 		name: form.name.trim(),
+		notes: form.notes.trim() || null,
 		enabled: form.enabled,
 		severity: form.severity,
 		serviceNames: form.serviceNames.filter((s) => s.trim().length > 0),

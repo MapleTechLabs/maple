@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { formatRelativeTime } from "@/lib/format"
 import { AlertPreviewChart } from "@/components/alerts/alert-preview-chart"
 import { CheckHistorySparkline } from "@/components/alerts/check-history-sparkline"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
@@ -280,6 +281,24 @@ function RuleDetailPage() {
 		>
 			{activeTab === "overview" && (
 				<div className="space-y-6">
+					{rule.lastEvaluationError && (
+						<div className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-4">
+							<CircleWarningIcon size={18} className="mt-0.5 shrink-0 text-destructive" />
+							<div className="min-w-0 space-y-1">
+								<p className="text-sm font-medium text-destructive">
+									Last evaluation failed
+								</p>
+								<p className="text-sm text-muted-foreground break-words">
+									{rule.lastEvaluationError}
+								</p>
+								{rule.lastEvaluatedAt && (
+									<p className="text-xs text-muted-foreground">
+										{formatRelativeTime(rule.lastEvaluatedAt)}
+									</p>
+								)}
+							</div>
+						</div>
+					)}
 					<div className="space-y-2">
 						<h2 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
 							{signalLabels[rule.signalType]}: Last 24h
@@ -298,6 +317,14 @@ function RuleDetailPage() {
 						<Card>
 							<CardContent className="p-5">
 								<dl className="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
+									{rule.notes && (
+										<div className="flex flex-col gap-1 sm:col-span-2">
+											<dt className="text-muted-foreground">Notes</dt>
+											<dd className="whitespace-pre-wrap text-foreground">
+												{rule.notes}
+											</dd>
+										</div>
+									)}
 									<ConfigRow label="Signal">
 										<span className="font-medium">{signalLabels[rule.signalType]}</span>
 									</ConfigRow>
