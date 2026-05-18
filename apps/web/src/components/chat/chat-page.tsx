@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { Suspense, useCallback, useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { SidebarInset, SidebarProvider } from "@maple/ui/components/ui/sidebar"
@@ -116,7 +116,7 @@ function ChatPageInner({
 		mode === "widget-fix" && widgetFixContext ? widgetFixTabId(widgetFixContext) : undefined
 
 	return (
-		<SidebarProvider open={false} onOpenChange={() => {}}>
+		<SidebarProvider open={false} onOpenChange={() => {}} className="h-svh overflow-hidden">
 			<AppSidebar />
 			<SidebarInset>
 				<div className="flex h-full min-h-0 flex-1">
@@ -139,15 +139,19 @@ function ChatPageInner({
 										key={tab.id}
 										className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}
 									>
-										<ChatConversation
-											tabId={tab.id}
-											isActive={tab.id === activeTabId}
-											onFirstMessage={(id, text) => renameTab(id, text)}
-											onLoadingChange={handleLoadingChange}
-											mode={isAlertTab ? "alert" : isWidgetFixTab ? "widget-fix" : undefined}
-											alertContext={isAlertTab ? alertContext : undefined}
-											widgetFixContext={isWidgetFixTab ? widgetFixContext : undefined}
-										/>
+										<Suspense fallback={<ChatConversationFallback />}>
+											<ChatConversation
+												tabId={tab.id}
+												isActive={tab.id === activeTabId}
+												onFirstMessage={(id, text) => renameTab(id, text)}
+												onLoadingChange={handleLoadingChange}
+												mode={
+													isAlertTab ? "alert" : isWidgetFixTab ? "widget-fix" : undefined
+												}
+												alertContext={isAlertTab ? alertContext : undefined}
+												widgetFixContext={isWidgetFixTab ? widgetFixContext : undefined}
+											/>
+										</Suspense>
 									</div>
 								)
 							})}
@@ -156,5 +160,25 @@ function ChatPageInner({
 				</div>
 			</SidebarInset>
 		</SidebarProvider>
+	)
+}
+
+/**
+ * Shown while <ChatConversation> suspends — the agent token query and the
+ * initial-messages fetch both call React's `use()`. Without this boundary the
+ * suspension bubbles to the route and the page renders blank.
+ */
+function ChatConversationFallback() {
+	return (
+		<div className="flex h-full flex-col">
+			<div className="mx-auto w-full max-w-3xl flex-1 space-y-3 px-4 py-6" aria-hidden>
+				<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+				<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+				<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+			</div>
+			<div className="mx-auto w-full max-w-3xl px-4 pb-4" aria-hidden>
+				<div className="h-[88px] animate-pulse rounded-lg border bg-muted/40" />
+			</div>
+		</div>
 	)
 }

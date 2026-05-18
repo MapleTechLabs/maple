@@ -44,6 +44,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
+import { Textarea } from "@maple/ui/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import {
 	Combobox,
@@ -604,6 +605,20 @@ function AlertCreatePage() {
 								</>
 							)}
 						</div>
+					</div>
+
+					{/* Notes */}
+					<div className="space-y-2">
+						<Label htmlFor="rule-notes">
+							Notes <span className="text-muted-foreground font-normal">(optional)</span>
+						</Label>
+						<Textarea
+							id="rule-notes"
+							value={ruleForm.notes}
+							onChange={(e) => setRuleForm((c) => ({ ...c, notes: e.target.value }))}
+							placeholder="Runbook links, ownership, or why this rule exists…"
+							rows={3}
+						/>
 					</div>
 
 					{/* Notify via */}

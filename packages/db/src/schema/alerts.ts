@@ -32,6 +32,7 @@ export const alertRules = sqliteTable(
 		id: text("id").notNull().primaryKey(),
 		orgId: text("org_id").notNull(),
 		name: text("name").notNull(),
+		notes: text("notes"),
 		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
 		severity: text("severity").notNull(),
 		serviceNamesJson: text("service_names_json"),
