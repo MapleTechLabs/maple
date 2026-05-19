@@ -1,12 +1,14 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { WorkerConfigProviderLive, WorkerEnvironmentLive } from "@maple/effect-cloudflare"
-import { Context, FileSystem, Layer, Path } from "effect"
+import { WorkerConfigProviderLive, WorkerEnvironmentLive, layerFromEnvRecord } from "@maple/effect-cloudflare"
+import { Context, Effect, FileSystem, Layer, ManagedRuntime, Path } from "effect"
 import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } from "./app"
 import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
+import { runScheduledReconcile } from "./queues/cron-scheduler"
+import { processGithubSyncBatch } from "./queues/github-sync-consumer"
 import { DatabaseD1Live } from "./services/DatabaseD1Live"
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
@@ -192,7 +194,65 @@ const handle = async (
 	}
 }
 
+const buildBackgroundLayer = (env: Record<string, unknown>) =>
+	MainLive.pipe(
+		Layer.provideMerge(DatabaseD1Live),
+		Layer.provideMerge(layerFromEnvRecord(env)),
+		Layer.provideMerge(telemetry.layer),
+		Layer.provideMerge(WorkerConfigProviderLive),
+	) as unknown as Layer.Layer<never, never, never>
+
+const runBackground = async (
+	env: Record<string, unknown>,
+	effect: Effect.Effect<unknown, unknown, never>,
+) => {
+	const runtime = ManagedRuntime.make(buildBackgroundLayer(env))
+	try {
+		return await runtime.runPromise(effect)
+	} finally {
+		await runtime.dispose()
+	}
+}
+
+type QueueMessage = {
+	readonly id?: string
+	readonly body: unknown
+	ack?: () => void
+	retry?: (options?: { delaySeconds?: number }) => void
+}
+
+type QueueBatch = { readonly messages: ReadonlyArray<QueueMessage> }
+type ScheduledEvent = { readonly cron?: string; readonly scheduledTime?: number }
+
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handle(request, env, ctx),
+	queue: async (batch: QueueBatch, env: Record<string, unknown>, ctx: ExecutionContext) => {
+		try {
+			const effect = processGithubSyncBatch(batch).pipe(
+				Effect.catchCause((cause: unknown) =>
+					Effect.logError("[queue] batch failed", cause as never),
+				),
+			) as unknown as Effect.Effect<unknown, unknown, never>
+			await runBackground(env, effect)
+		} finally {
+			ctx.waitUntil(telemetry.flush(env))
+		}
+	},
+	scheduled: async (
+		_event: ScheduledEvent,
+		env: Record<string, unknown>,
+		ctx: ExecutionContext,
+	) => {
+		try {
+			const effect = runScheduledReconcile.pipe(
+				Effect.catchCause((cause: unknown) =>
+					Effect.logError("[scheduled] failed", cause as never),
+				),
+			) as unknown as Effect.Effect<unknown, unknown, never>
+			await runBackground(env, effect)
+		} finally {
+			ctx.waitUntil(telemetry.flush(env))
+		}
+	},
 }

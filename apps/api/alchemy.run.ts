@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, KVNamespace, Worker } from "alchemy/cloudflare"
+import { D1Database, KVNamespace, Queue, Worker } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveD1Name, resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -40,6 +40,13 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		adopt: true,
 	})
 
+	// GitHub sync queue. Declared in IaC so `alchemy deploy` provisions it
+	// idempotently — no manual `wrangler queues create` needed.
+	const githubSyncQueue = await Queue("GITHUB_SYNC_QUEUE", {
+		name: resolveWorkerName("github-sync", stage),
+		adopt: true,
+	})
+
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -48,10 +55,25 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		compatibilityDate: "2026-04-08",
 		url: true,
 		adopt: true,
+		// Every 6h: reconcile every active GitHub installation (catches missed webhooks).
+		crons: ["0 */6 * * *"],
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,
+		eventSources: [
+			{
+				queue: githubSyncQueue,
+				settings: {
+					batchSize: 10,
+					maxConcurrency: 4,
+					maxRetries: 5,
+					maxWaitTimeMs: 5000,
+					retryDelay: 30,
+				},
+			},
+		],
 		bindings: {
 			MAPLE_DB: mapleDb,
 			MCP_SESSIONS: mcpSessions,
+			GITHUB_SYNC_QUEUE: githubSyncQueue,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			...optionalPlain("CLICKHOUSE_URL"),
@@ -88,8 +110,14 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 			...optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 			...optionalPlain("HAZEL_OAUTH_SCOPES"),
+			...optionalPlain("GITHUB_APP_ID"),
+			...optionalPlain("GITHUB_APP_SLUG"),
+			...optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+			...optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
+			...optionalPlain("GITHUB_API_BASE_URL"),
+			...optionalPlain("GITHUB_APP_BASE_URL"),
 		},
 	})
 
-	return { worker, db: mapleDb }
+	return { worker, db: mapleDb, githubSyncQueue }
 }

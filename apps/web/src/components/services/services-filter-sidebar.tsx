@@ -3,6 +3,8 @@ import { useNavigate } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { CommitChip } from "@/components/commits/commit-chip"
+import { CommitLookupProvider } from "@/components/commits/commit-lookup-context"
 import { FilterSection } from "@/components/traces/filter-section"
 import { Route } from "@/routes/services/index"
 import { Separator } from "@maple/ui/components/ui/separator"
@@ -65,6 +67,7 @@ export function ServicesFilterSidebar() {
 		.onError((error) => <FilterSidebarError message={formatBackendError(error).description} />)
 		.onSuccess((facetsResponse, result) => {
 			const facets = facetsResponse.data
+			const facetShas = facets.commitShas.map((f) => f.name)
 
 			return (
 				<FilterSidebarFrame waiting={result.waiting}>
@@ -83,12 +86,15 @@ export function ServicesFilterSidebar() {
 						)}
 
 						{(facets.commitShas.length ?? 0) > 0 && (
-							<FilterSection
-								title="Commit SHA"
-								options={facets.commitShas}
-								selected={search.commitShas ?? []}
-								onChange={(val) => updateFilter("commitShas", val)}
-							/>
+							<CommitLookupProvider shas={facetShas}>
+								<FilterSection
+									title="Commit SHA"
+									options={facets.commitShas}
+									selected={search.commitShas ?? []}
+									onChange={(val) => updateFilter("commitShas", val)}
+									renderLabel={(name) => <CommitChip sha={name} />}
+								/>
+							</CommitLookupProvider>
 						)}
 
 						{facets.environments.length === 0 && facets.commitShas.length === 0 && (

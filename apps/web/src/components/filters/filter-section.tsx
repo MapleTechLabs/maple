@@ -19,6 +19,7 @@ interface FilterSectionBaseProps {
 	defaultOpen?: boolean
 	maxVisible?: number
 	colorMap?: Record<string, string>
+	renderLabel?: (name: string) => React.ReactNode
 }
 
 interface FilterSectionProps extends FilterSectionBaseProps {}
@@ -34,6 +35,7 @@ function FilterSectionBase({
 	maxVisible = 5,
 	searchable,
 	colorMap,
+	renderLabel,
 }: FilterSectionBaseProps & { searchable: boolean }) {
 	const [isOpen, setIsOpen] = React.useState(defaultOpen)
 	const [showAll, setShowAll] = React.useState(false)
@@ -128,7 +130,11 @@ function FilterSectionBase({
 											style={{ backgroundColor: colorMap[option.name] }}
 										/>
 									)}
-									<span className="truncate">{option.name}</span>
+									{renderLabel ? (
+										<span className="min-w-0 flex-1 truncate">{renderLabel(option.name)}</span>
+									) : (
+										<span className="truncate">{option.name}</span>
+									)}
 								</Label>
 								<span className="text-xs text-muted-foreground tabular-nums">
 									{option.count.toLocaleString()}

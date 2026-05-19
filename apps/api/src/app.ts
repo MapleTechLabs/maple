@@ -9,9 +9,13 @@ import { HttpErrorsLive } from "./routes/errors.http"
 import { HttpApiKeysLive } from "./routes/api-keys.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "./routes/auth.http"
 import { HttpCloudflareLogpushLive } from "./routes/cloudflare-logpush.http"
+import { HttpCommitsLive } from "./routes/commits.http"
 import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
 import { HttpDigestLive } from "./routes/digest.http"
+import { GithubCallbackRouter } from "./routes/github-callback.http"
+import { GithubWebhookRouter } from "./routes/github-webhook.http"
+import { HttpGithubLive } from "./routes/github.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "./routes/integrations.http"
 import { HttpIngestAttributeMappingsLive } from "./routes/ingest-attribute-mappings.http"
 import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
@@ -27,6 +31,11 @@ import { HttpServiceDiscoveryLive } from "./routes/sd.http"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
 import { BucketCacheService } from "./services/BucketCacheService"
 import { ErrorsService } from "./services/ErrorsService"
+import { GithubAppJwtService } from "./services/GithubAppJwtService"
+import { GithubAppService } from "./services/GithubAppService"
+import { GithubInstallationClient } from "./services/GithubInstallationClient"
+import { GithubSyncQueue } from "./services/GithubSyncQueue"
+import { GithubSyncService } from "./services/GithubSyncService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
 import { ApiKeysService } from "./services/ApiKeysService"
@@ -69,6 +78,11 @@ export const CoreServicesLive = Layer.mergeAll(
 	ApiKeysService.layer,
 	CloudflareLogpushService.layer,
 	DashboardPersistenceService.layer,
+	GithubAppJwtService.layer,
+	GithubInstallationClient.layer,
+	GithubAppService.layer,
+	GithubSyncQueue.layer,
+	GithubSyncService.layer,
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OrgIngestKeysService.layer,
@@ -122,32 +136,39 @@ export const MainLive = Layer.mergeAll(
 	RawSqlChartService.Default,
 )
 
-export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
-	Layer.provide(HttpAuthPublicLive),
-	Layer.provide(HttpAuthLive),
-	Layer.provide(HttpApiKeysLive),
-	Layer.provide(HttpAlertsLive),
-	Layer.provide(HttpErrorsLive),
-	Layer.provide(HttpCloudflareLogpushLive),
-	Layer.provide(HttpDashboardsLive),
-	Layer.provide(HttpDemoLive),
-	Layer.provide(HttpDigestLive),
-	Layer.provide(HttpIngestAttributeMappingsLive),
-	Layer.provide(HttpIngestKeysLive),
-	Layer.provide(HttpIntegrationsLive),
-	Layer.provide(HttpObservabilityLive),
-	Layer.provide(HttpOnboardingLive),
-	Layer.provide(HttpOrgOpenRouterSettingsLive),
-	Layer.provide(HttpOrgClickHouseSettingsLive),
-	Layer.provide(HttpOrganizationsLive),
-	Layer.provide(HttpScrapeTargetsLive),
-	Layer.provide(HttpServiceDiscoveryLive),
-	Layer.provide(HttpQueryEngineLive),
-)
+export const ApiRoutes = HttpApiBuilder.layer(MapleApi)
+	.pipe(
+		Layer.provide(HttpAuthPublicLive),
+		Layer.provide(HttpAuthLive),
+		Layer.provide(HttpApiKeysLive),
+		Layer.provide(HttpAlertsLive),
+		Layer.provide(HttpErrorsLive),
+		Layer.provide(HttpCloudflareLogpushLive),
+		Layer.provide(HttpCommitsLive),
+		Layer.provide(HttpDashboardsLive),
+		Layer.provide(HttpDemoLive),
+		Layer.provide(HttpDigestLive),
+		Layer.provide(HttpGithubLive),
+		Layer.provide(HttpIngestAttributeMappingsLive),
+	)
+	.pipe(
+		Layer.provide(HttpIngestKeysLive),
+		Layer.provide(HttpIntegrationsLive),
+		Layer.provide(HttpObservabilityLive),
+		Layer.provide(HttpOnboardingLive),
+		Layer.provide(HttpOrgOpenRouterSettingsLive),
+		Layer.provide(HttpOrgClickHouseSettingsLive),
+		Layer.provide(HttpOrganizationsLive),
+		Layer.provide(HttpScrapeTargetsLive),
+		Layer.provide(HttpServiceDiscoveryLive),
+		Layer.provide(HttpQueryEngineLive),
+	)
 
 export const AllRoutes = Layer.mergeAll(
 	ApiRoutes,
 	AutumnRouter,
+	GithubCallbackRouter,
+	GithubWebhookRouter,
 	IntegrationsCallbackRouter,
 	OAuthDiscoveryRouter,
 	McpLive,

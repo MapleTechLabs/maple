@@ -6,6 +6,7 @@ import { TraceId } from "@maple/domain"
 import { toast } from "sonner"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { CommitChip } from "@/components/commits/commit-chip"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { TraceViewTabs } from "@/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
@@ -341,9 +342,7 @@ function TraceDetailPage() {
 							{commitSha && (
 								<>
 									<span className="ml-4 text-xs text-muted-foreground">Commit:</span>
-									<Badge variant="outline" className="font-mono text-xs">
-										{commitSha.slice(0, 7)}
-									</Badge>
+									<CommitChip sha={commitSha} />
 								</>
 							)}
 						</div>

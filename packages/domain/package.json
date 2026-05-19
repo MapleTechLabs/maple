@@ -6,6 +6,7 @@
 		".": "./src/index.ts",
 		"./http": "./src/http/index.ts",
 		"./primitives": "./src/primitives.ts",
+		"./queues/github-jobs": "./src/queues/github-jobs.ts",
 		"./query-engine": "./src/query-engine.ts",
 		"./tinybird-project-sync": "./src/tinybird/project-sync.ts",
 		"./tinybird-pipes": "./src/tinybird-pipes.ts",

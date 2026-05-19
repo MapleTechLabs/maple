@@ -23,4 +23,33 @@
 			"id": "00000000000000000000000000000000",
 		},
 	],
+	// GitHub sync queue. We intentionally do NOT configure a dead_letter_queue —
+	// all four job types (BackfillRepo, SyncWebhookPush, ResolveUnknownSha,
+	// ReconcileInstallation) have application-level recovery paths:
+	//   - the 6h cron ReconcileInstallation re-fetches missed commits
+	//   - the github_unresolved_shas tombstone tracks failed SHA lookups
+	//   - the UI Backfill button can re-trigger a repo sync on demand
+	// So a queue-level DLQ would only be an inspection aid, at the cost of
+	// requiring operators to provision a second queue. Skipped for v1.
+	"queues": {
+		"producers": [
+			{
+				"binding": "GITHUB_SYNC_QUEUE",
+				"queue": "maple-github-sync",
+			},
+		],
+		"consumers": [
+			{
+				"queue": "maple-github-sync",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 5,
+				"max_concurrency": 4,
+				"retry_delay": 30,
+			},
+		],
+	},
+	"triggers": {
+		"crons": ["0 */6 * * *"],
+	},
 }

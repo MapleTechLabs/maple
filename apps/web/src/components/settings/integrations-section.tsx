@@ -5,6 +5,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { toast } from "sonner"
 
 import { HazelIcon, LoaderIcon } from "@/components/icons"
+import { GitHubIntegrationCard } from "@/components/settings/github-integration-section"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 
@@ -21,6 +22,7 @@ export function IntegrationsSection() {
 				</p>
 			</header>
 			<HazelIntegrationCard />
+			<GitHubIntegrationCard />
 		</div>
 	)
 }

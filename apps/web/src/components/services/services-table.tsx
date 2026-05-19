@@ -9,6 +9,8 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
+import { CommitChip } from "@/components/commits/commit-chip"
+import { CommitLookupProvider } from "@/components/commits/commit-lookup-context"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { type ServiceOverview, type CommitBreakdown } from "@/api/tinybird/services"
 import {
@@ -75,53 +77,46 @@ function groupByEnvironment(services: ServiceOverview[]): [string, ServiceOvervi
 	})
 }
 
-function truncateCommitSha(sha: string, length = 7): string {
-	if (sha === "N/A" || sha === "unknown" || !sha) {
-		return "N/A"
-	}
-	if (sha.length <= length) return sha
-	return sha.slice(0, length)
-}
-
 function CommitsList({ commits }: { commits: CommitBreakdown[] }) {
 	if (commits.length === 0) {
 		return <span className="text-muted-foreground">N/A</span>
 	}
 
 	if (commits.length === 1) {
-		const sha = commits[0].commitSha
-		return <span>{truncateCommitSha(sha)}</span>
+		return <CommitChip sha={commits[0].commitSha} />
 	}
 
 	const top2 = commits.slice(0, 2)
 	const remaining = commits.length - 2
 
 	return (
-		<Tooltip>
-			<TooltipTrigger className="flex flex-wrap items-center gap-1">
-				{top2.map((c) => (
-					<span key={c.commitSha} className="inline-flex items-center gap-0.5">
-						<span>{truncateCommitSha(c.commitSha)}</span>
-						<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
-							{c.percentage}%
-						</Badge>
-					</span>
-				))}
-				{remaining > 0 && (
-					<span className="text-muted-foreground text-[10px]">+{remaining} more</span>
-				)}
-			</TooltipTrigger>
-			<TooltipContent side="bottom" align="start">
-				<div className="flex flex-col gap-1">
-					{commits.map((c) => (
-						<div key={c.commitSha} className="flex items-center justify-between gap-3">
-							<span className="font-mono">{truncateCommitSha(c.commitSha)}</span>
-							<span>{c.percentage}%</span>
+		<div className="flex flex-wrap items-center gap-1">
+			{top2.map((c) => (
+				<span key={c.commitSha} className="inline-flex items-center gap-0.5">
+					<CommitChip sha={c.commitSha} />
+					<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
+						{c.percentage}%
+					</Badge>
+				</span>
+			))}
+			{remaining > 0 ? (
+				<Tooltip>
+					<TooltipTrigger className="text-muted-foreground text-[10px]">
+						+{remaining} more
+					</TooltipTrigger>
+					<TooltipContent side="bottom" align="start">
+						<div className="flex flex-col gap-1">
+							{commits.slice(2).map((c) => (
+								<div key={c.commitSha} className="flex items-center justify-between gap-3">
+									<CommitChip sha={c.commitSha} />
+									<span>{c.percentage}%</span>
+								</div>
+							))}
 						</div>
-					))}
-				</div>
-			</TooltipContent>
-		</Tooltip>
+					</TooltipContent>
+				</Tooltip>
+			) : null}
+		</div>
 	)
 }
 
@@ -235,8 +230,14 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 		.onSuccess(([overviewResponse, timeSeriesResponse], combinedResult) => {
 			const services = overviewResponse.data
 			const timeSeriesMap = timeSeriesResponse.data
+			const allCommitShas = Array.from(
+				new Set(
+					services.flatMap((s) => s.commits.map((c) => c.commitSha)).filter(Boolean),
+				),
+			)
 
 			return (
+				<CommitLookupProvider shas={allCommitShas}>
 				<div className={`space-y-4 transition-opacity ${combinedResult.waiting ? "opacity-60" : ""}`}>
 					<div className="rounded-md border overflow-auto">
 						<Table aria-label="Services">
@@ -424,6 +425,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 
 					<div className="text-sm text-muted-foreground">Showing {services.length} services</div>
 				</div>
+				</CommitLookupProvider>
 			)
 		})
 		.render()

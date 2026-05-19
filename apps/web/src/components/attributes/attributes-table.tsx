@@ -4,7 +4,21 @@ import { cn } from "@maple/ui/utils"
 import { useClipboard } from "@maple/ui/hooks/use-clipboard"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@maple/ui/components/ui/collapsible"
 import { CollapsibleJsonValue } from "./json-value"
+import { CommitChip } from "@/components/commits/commit-chip"
 import { groupAttributesByNamespace } from "@/lib/log-attributes"
+
+// Attribute keys whose value is a git commit SHA. Rendered as <CommitChip>
+// with hover-card author/message lookup.
+const COMMIT_SHA_ATTRIBUTE_KEYS = new Set([
+	"deployment.commit_sha",
+	"vcs.repository.change.id",
+	"git.commit.sha",
+	"git.commit.id",
+	"commit",
+	"commit_sha",
+	"commit.sha",
+])
+const SHA_VALUE_REGEX = /^[0-9a-f]{7,40}$/i
 
 export function CopyableValue({
 	value,
@@ -46,13 +60,17 @@ export function tryParseJson(value: string): unknown | null {
 
 function AttributeRow({ attrKey, value }: { attrKey: string; value: string }) {
 	const parsed = tryParseJson(value)
+	const isCommitSha =
+		COMMIT_SHA_ATTRIBUTE_KEYS.has(attrKey.toLowerCase()) && SHA_VALUE_REGEX.test(value)
 	return (
 		<div className="px-2 py-1.5">
 			<div className="font-mono text-[11px] text-muted-foreground mb-0.5">
 				<CopyableValue value={attrKey}>{attrKey}</CopyableValue>
 			</div>
 			<div className="font-mono text-xs break-all">
-				{parsed !== null ? (
+				{isCommitSha ? (
+					<CommitChip sha={value} />
+				) : parsed !== null ? (
 					<CollapsibleJsonValue value={value} parsed={parsed} />
 				) : (
 					<CopyableValue value={value}>{value}</CopyableValue>

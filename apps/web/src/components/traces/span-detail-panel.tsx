@@ -9,7 +9,9 @@ import {
 	ChevronDownIcon,
 	ChevronUpIcon,
 	CopyIcon,
+	GitCommitIcon,
 } from "@/components/icons"
+import { CommitChip } from "@/components/commits/commit-chip"
 import { toast } from "sonner"
 import { useClipboard } from "@maple/ui/hooks/use-clipboard"
 
@@ -295,6 +297,19 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 					<XmarkIcon size={16} />
 				</Button>
 			</div>
+
+			{/* Deployment commit */}
+			{(() => {
+				const commitSha = span.resourceAttributes?.["deployment.commit_sha"]
+				if (!commitSha) return null
+				return (
+					<div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs shrink-0">
+						<GitCommitIcon size={12} className="text-muted-foreground" />
+						<span className="text-muted-foreground">Commit</span>
+						<CommitChip sha={commitSha} />
+					</div>
+				)
+			})()}
 
 			{/* Summary stats */}
 			<div className="flex items-center gap-4 border-b px-3 py-1.5 text-xs shrink-0">
