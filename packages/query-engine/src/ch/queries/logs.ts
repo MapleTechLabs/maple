@@ -4,6 +4,7 @@
 // DSL-based query definitions for logs timeseries and breakdown.
 // ---------------------------------------------------------------------------
 
+import { compileCH } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
 import { from, type ColumnAccessor } from "../query"
@@ -187,7 +188,50 @@ export interface LogsListOutput {
 	readonly resourceAttributes: string
 }
 
+/**
+ * Two-stage list query. The `logs` sort key is
+ * `(OrgId, ServiceName, TimestampTime, Timestamp)` — `ServiceName` sits between
+ * `OrgId` and the timestamps, so `ORDER BY Timestamp DESC` is not a sort-key
+ * prefix and ClickHouse cannot read-in-order. A single-stage query therefore
+ * scans the whole window and materializes the heavy `Body` / attribute-map
+ * columns for every matching row *before* `LIMIT` discards all but N, which
+ * OOMs on busy orgs.
+ *
+ * Stage 1 reads only `Timestamp` to find the cutoff (the Nth-newest matching
+ * timestamp). Stage 2 gates on `Timestamp >= cutoff`, so the heavy columns are
+ * materialized only for the small slice of rows at/after the cutoff. The outer
+ * `LIMIT` trims any ties at the cutoff timestamp.
+ */
 export function logsListQuery(opts: LogsListOpts) {
+	const limit = opts.limit ?? 50
+
+	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
+		$.OrgId.eq(param.string("orgId")),
+		$.TimestampTime.gte(param.dateTime("startTime")),
+		$.TimestampTime.lte(param.dateTime("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
+		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+		CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+		CH.when(opts.minSeverity, (v: number) => $.SeverityNumber.gte(v)),
+		CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+		CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
+		CH.when(opts.cursor, (v: string) => $.Timestamp.lt(v)),
+		CH.when(opts.search, (v: string) => $.Body.ilike(`%${v}%`)),
+		environmentCondition($, opts),
+	]
+
+	// Stage 1: cheap scan — only `Timestamp` is read. Compiled with placeholders
+	// intact ({} params) so the outer `CH.compile()` substitutes them once.
+	const cutoffInner = from(Logs)
+		.select(($) => ({ ts: $.Timestamp }))
+		.where(baseWhere)
+		.orderBy(["ts", "desc"])
+		.limit(limit)
+	const cutoffSql = compileCH(cutoffInner, {}, { skipFormat: true }).sql
+	const cutoff = CH.rawExpr<string>(`(SELECT min(ts) FROM (${cutoffSql}))`)
+
+	// Stage 2: heavy columns read only for rows at/after the cutoff timestamp.
 	return from(Logs)
 		.select(($) => ({
 			timestamp: $.Timestamp,
@@ -200,23 +244,9 @@ export function logsListQuery(opts: LogsListOpts) {
 			logAttributes: CH.toJSONString($.LogAttributes),
 			resourceAttributes: CH.toJSONString($.ResourceAttributes),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTime("startTime")),
-			$.TimestampTime.lte(param.dateTime("endTime")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
-			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
-			CH.when(opts.minSeverity, (v: number) => $.SeverityNumber.gte(v)),
-			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
-			CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
-			CH.when(opts.cursor, (v: string) => $.Timestamp.lt(v)),
-			CH.when(opts.search, (v: string) => $.Body.ilike(`%${v}%`)),
-			environmentCondition($, opts),
-		])
+		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])
 		.orderBy(["timestamp", "desc"])
-		.limit(opts.limit ?? 50)
+		.limit(limit)
 		.format("JSON")
 }
 

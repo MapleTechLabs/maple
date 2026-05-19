@@ -197,6 +197,37 @@ describe("logsListQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("SeverityNumber >= 9")
 	})
+
+	it("gates the heavy column scan on a cheap cutoff subquery", () => {
+		const q = logsListQuery({ limit: 100 })
+		const { sql } = compileCH(q, baseParams)
+
+		// Outer query keeps the heavy projection.
+		expect(sql).toContain("Body AS body")
+		expect(sql).toContain("toJSONString(LogAttributes) AS logAttributes")
+
+		// Cutoff subquery reads only Timestamp — no Body, no toJSONString.
+		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
+		expect(cutoffMatch).not.toBeNull()
+		const inner = cutoffMatch![1]!
+		expect(inner).toContain("Timestamp AS ts")
+		expect(inner).not.toContain("Body")
+		expect(inner).not.toContain("toJSONString")
+		expect(inner).toContain("ORDER BY ts DESC")
+		expect(inner).toContain("LIMIT 100")
+
+		// Outer query gates on the cutoff.
+		expect(sql).toContain("Timestamp >= (SELECT min(ts) FROM (")
+	})
+
+	it("applies the same filters to both the cutoff and outer stages", () => {
+		const q = logsListQuery({ serviceName: "api", severity: "ERROR" })
+		const { sql } = compileCH(q, baseParams)
+		// Each filter appears twice — once per stage.
+		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
+		expect(sql.match(/SeverityText = 'ERROR'/g)).toHaveLength(2)
+		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
+	})
 })
 
 // ---------------------------------------------------------------------------
