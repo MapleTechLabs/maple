@@ -18,6 +18,11 @@
 			"persistent": true,
 			"interactive": true
 		},
+		"dev:no-portless": {
+			"cache": false,
+			"persistent": true,
+			"interactive": true
+		},
 		"tinybird:dev": {
 			"cache": false
 		},

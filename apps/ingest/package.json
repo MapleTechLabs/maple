@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "set -a && source ../../.env.local && set +a && INGEST_PORT=${PORT:-3473} cargo run",
+		"dev:no-portless": "PORT=3473 bun run dev:app",
 		"start": "cargo run --release",
 		"build": "cargo build --release",
 		"test": "cargo test",

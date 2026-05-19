@@ -12,6 +12,7 @@
 		"db:generate": "bun run --cwd ../../packages/db db:generate",
 		"dev": "portless",
 		"dev:app": "bun run ../../scripts/portless-wrangler.ts --env-file ../../.env.local --port ${PORT:-3472} --inspector-port=$((${PORT:-3472} + 10000))",
+		"dev:no-portless": "PORT=3472 bun run dev:app",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit",
 		"typecheck:test": "tsc --noEmit -p tsconfig.test.json",

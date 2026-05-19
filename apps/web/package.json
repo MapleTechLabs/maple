@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "vite dev --port ${PORT:-3471} --host ${HOST:-127.0.0.1}",
+		"dev:no-portless": "PORT=3471 bun run dev:app",
 		"build": "vite build",
 		"preview": "vite preview",
 		"test": "vitest run --passWithNoTests",

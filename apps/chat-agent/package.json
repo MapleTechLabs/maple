@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "bun run ../../scripts/portless-wrangler.ts --env-file ../../.env.local --port ${PORT:-8787} --inspector-port=9230",
+		"dev:no-portless": "PORT=8787 bun run dev:app",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {

@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
+		"dev:no-portless": "PORT=3391 bun run dev:app",
 		"build": "astro build",
 		"preview": "astro preview",
 		"astro": "astro"
