@@ -117,7 +117,7 @@ function CommitChipBody({
 		<HoverCard onOpenChange={onOpenChange}>
 			<HoverCardTrigger
 				className={cn(
-					"inline-flex items-center gap-1 font-mono text-xs",
+					"inline-flex cursor-pointer items-center gap-1 font-mono text-xs",
 					commit
 						? "text-foreground hover:text-primary"
 						: "text-muted-foreground decoration-dotted underline underline-offset-4",
