@@ -1,4 +1,6 @@
 import { decodeGithubSyncJob, type GithubSyncJob } from "@maple/domain/queues/github-jobs"
+// `GithubSyncJob` is used implicitly as the type of `dispatch`'s parameter — the
+// Match.exhaustive check below enforces all cases are handled.
 import { Effect, Exit, Match } from "effect"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
 import { GithubSyncService } from "../services/GithubSyncService"
@@ -31,12 +33,12 @@ const dispatch = (job: GithubSyncJob) =>
 					})
 					if (!progress.done && progress.cursor) {
 						yield* queue.enqueue({
-							_tag: "BackfillRepo",
+							_tag: "BackfillRepo" as const,
 							orgId: j.orgId,
 							repoId: j.repoId,
 							sinceUnixMs: j.sinceUnixMs,
 							cursor: progress.cursor,
-						} as GithubSyncJob)
+						})
 					}
 				}),
 			),

@@ -4,6 +4,11 @@ import { GithubAppService } from "../services/GithubAppService"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
 import { GithubSyncService } from "../services/GithubSyncService"
 
+// Backfill window for first-time install: how far back to seed commit history.
+// Matches the 90d trace TTL — commits older than this can't match an active
+// span anyway. Older SHAs resolve on-demand via the unknown-sha job.
+const FIRST_BACKFILL_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
+
 const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
 
 const escapeHtml = (value: string) =>
@@ -138,8 +143,9 @@ export const GithubCallbackRouter = HttpRouter.use((router) =>
 				}
 				const ctx = consumeExit.value
 
-				// Run reconcile inline so the installation + repo rows exist immediately.
-				// (Queue.enqueue is unreliable in wrangler dev's local queue simulator.)
+				// Run reconcile inline so the installation + repo rows exist before
+				// the popup closes — the dashboard re-fetches as soon as it sees
+				// the postMessage and shouldn't show an empty card.
 				const reconcileExit = yield* Effect.exit(
 					sync.runReconcile({ orgId: ctx.orgId, installationId }),
 				)
@@ -154,12 +160,27 @@ export const GithubCallbackRouter = HttpRouter.use((router) =>
 					)
 				}
 
-				// Fire-and-forget: enqueue backfill jobs for each repo. Safe to fail.
-				yield* queue.enqueue({
-					_tag: "ReconcileInstallation",
-					orgId: ctx.orgId,
-					installationId,
-				})
+				// Kick off commit backfill for each repo discovered above. These
+				// run async in the queue consumer (paginated, durable) so the
+				// callback responds in under a second.
+				const installations = yield* app.listInstallations(ctx.orgId)
+				const newInstallation = installations.find(
+					(i) => i.row.installationId === installationId,
+				)
+				if (newInstallation) {
+					const repos = yield* app.listRepositories(ctx.orgId, newInstallation.row.id)
+					const sinceUnixMs = Date.now() - FIRST_BACKFILL_WINDOW_MS
+					for (const repo of repos) {
+						if (!repo.syncEnabled) continue
+						yield* queue.enqueue({
+							_tag: "BackfillRepo",
+							orgId: ctx.orgId,
+							repoId: repo.id,
+							sinceUnixMs,
+							cursor: null,
+						})
+					}
+				}
 
 				const message =
 					setupAction === "update"

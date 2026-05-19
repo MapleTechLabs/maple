@@ -1,18 +1,18 @@
 import { githubInstallations, type GithubInstallationRow } from "@maple/db"
 import { isNull } from "drizzle-orm"
 import { Effect } from "effect"
-import { Database, type DatabaseClient } from "../services/DatabaseLive"
+import { Database } from "../services/DatabaseLive"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
 
+// Fires every 6h via the `scheduled` worker handler. Enqueues a reconcile
+// job for every active installation — catches webhooks GitHub failed to
+// deliver, refreshes repo lists, and re-syncs installation metadata.
 export const runScheduledReconcile = Effect.gen(function* () {
 	const database = yield* Database
 	const queue = yield* GithubSyncQueue
 	const installations = (yield* database
 		.execute((db) =>
-			db
-				.select()
-				.from(githubInstallations)
-				.where(isNull(githubInstallations.suspendedAt)),
+			db.select().from(githubInstallations).where(isNull(githubInstallations.suspendedAt)),
 		)
 		.pipe(Effect.orDie)) as ReadonlyArray<GithubInstallationRow>
 
@@ -22,18 +22,11 @@ export const runScheduledReconcile = Effect.gen(function* () {
 	}
 
 	yield* queue.enqueueBatch(
-		installations.map(
-			(row) =>
-				({
-					_tag: "ReconcileInstallation" as const,
-					orgId: row.orgId,
-					installationId: row.installationId,
-				}) as const,
-		),
+		installations.map((row) => ({
+			_tag: "ReconcileInstallation" as const,
+			orgId: row.orgId,
+			installationId: row.installationId,
+		})),
 	)
-	yield* Effect.logInfo(
-		`[cron] enqueued ${installations.length} GitHub reconcile jobs`,
-	)
+	yield* Effect.logInfo(`[cron] enqueued ${installations.length} GitHub reconcile jobs`)
 })
-
-export type DatabaseClientLike = DatabaseClient

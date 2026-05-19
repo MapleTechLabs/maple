@@ -6,7 +6,6 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { Database, type DatabaseClient } from "../services/DatabaseLive"
 import { GithubAppJwtService } from "../services/GithubAppJwtService"
 import { GithubAppService } from "../services/GithubAppService"
-import { GithubSyncQueue } from "../services/GithubSyncQueue"
 import { GithubSyncService } from "../services/GithubSyncService"
 
 const WEBHOOK_PATH = "/api/webhooks/github"
@@ -45,7 +44,6 @@ const lookupOrgForInstallation = (db: DatabaseClient, installationId: number) =>
 export const GithubWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const jwtService = yield* GithubAppJwtService
-		const queue = yield* GithubSyncQueue
 		const sync = yield* GithubSyncService
 		const app = yield* GithubAppService
 		const database = yield* Database
@@ -92,6 +90,10 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 
 				const action = (body as { action?: string }).action
 
+				// Webhook delivery is bounded and time-sensitive (10s GitHub timeout).
+				// We run reconciliation inline rather than enqueueing because the
+				// payload is small, the user expects immediate UI updates after
+				// connect/push, and the 6h cron sweep catches anything we miss.
 				switch (event) {
 					case "installation": {
 						if (action === "deleted") {
@@ -113,11 +115,6 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 									installationId: installation.installationId,
 								}),
 							)
-							yield* queue.enqueue({
-								_tag: "ReconcileInstallation",
-								orgId: installation.orgId,
-								installationId: installation.installationId,
-							})
 						}
 						break
 					}
@@ -129,11 +126,6 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 									installationId: installation.installationId,
 								}),
 							)
-							yield* queue.enqueue({
-								_tag: "ReconcileInstallation",
-								orgId: installation.orgId,
-								installationId: installation.installationId,
-							})
 						}
 						break
 					}
@@ -146,9 +138,6 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 							.map((c) => c.id)
 							.filter((id): id is string => typeof id === "string")
 						for (const installation of installations) {
-							// Run inline so commits are written immediately even if the queue
-							// binding is unavailable. Push payloads are bounded and finish well
-							// within GitHub's 10s webhook timeout.
 							yield* Effect.exit(
 								sync.runWebhookPush({
 									orgId: installation.orgId,

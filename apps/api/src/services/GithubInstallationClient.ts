@@ -82,13 +82,41 @@ const toUpstreamError = (message: string, status?: number) =>
 
 const parseNextLink = (linkHeader: string | null): string | null => {
 	if (!linkHeader) return null
-	const parts = linkHeader.split(",")
-	for (const part of parts) {
+	for (const part of linkHeader.split(",")) {
 		const match = /<([^>]+)>;\s*rel="next"/.exec(part)
 		if (match) return match[1] ?? null
 	}
 	return null
 }
+
+/** Fail with a formatted upstream error including response body text. */
+const expectOk = (response: Response, label: string) =>
+	Effect.gen(function* () {
+		if (response.ok) return
+		const text = yield* Effect.tryPromise({
+			try: () => response.text(),
+			catch: () => toUpstreamError(`${label} failed`, response.status),
+		})
+		return yield* Effect.fail(
+			toUpstreamError(`${label} failed (${response.status}): ${text || response.statusText}`, response.status),
+		)
+	})
+
+/** Read the response as JSON and decode it with the given schema. */
+const parseJson = <A>(
+	response: Response,
+	decoder: (u: unknown) => Effect.Effect<A, unknown>,
+	label: string,
+) =>
+	Effect.gen(function* () {
+		const json = yield* Effect.tryPromise({
+			try: () => response.json(),
+			catch: () => toUpstreamError(`${label} returned non-JSON`),
+		})
+		return yield* decoder(json).pipe(
+			Effect.mapError(() => toUpstreamError(`${label} returned unexpected payload`)),
+		)
+	})
 
 export interface CommitPage {
 	readonly commits: ReadonlyArray<GithubCommit>
@@ -186,6 +214,9 @@ export class GithubInstallationClient extends Context.Service<
 				return response
 			})
 
+		const repoPath = (owner: string, name: string) =>
+			`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
+
 		const listInstallationRepositories = Effect.fn(
 			"GithubInstallationClient.listInstallationRepositories",
 		)(function* (installationId: number) {
@@ -193,28 +224,13 @@ export class GithubInstallationClient extends Context.Service<
 			let nextUrl: string | null = "/installation/repositories?per_page=100"
 			while (nextUrl) {
 				const response: Response = yield* authedFetch(installationId, nextUrl)
-				if (!response.ok) {
-					const text: string = yield* Effect.tryPromise({
-						try: () => response.text(),
-						catch: () => toUpstreamError("listInstallationRepositories failed", response.status),
-					})
-					return yield* Effect.fail(
-						toUpstreamError(
-							`listInstallationRepositories failed (${response.status}): ${text || response.statusText}`,
-							response.status,
-						),
-					)
-				}
-				const json: unknown = yield* Effect.tryPromise({
-					try: () => response.json(),
-					catch: () => toUpstreamError("listInstallationRepositories returned non-JSON"),
-				})
-				const decoded = yield* decodeInstallationRepos(json).pipe(
-					Effect.mapError(() =>
-						toUpstreamError("listInstallationRepositories returned unexpected payload"),
-					),
+				yield* expectOk(response, "listInstallationRepositories")
+				const page = yield* parseJson(
+					response,
+					decodeInstallationRepos,
+					"listInstallationRepositories",
 				)
-				repos.push(...decoded.repositories)
+				repos.push(...page.repositories)
 				nextUrl = parseNextLink(response.headers.get("link"))
 			}
 			return repos as ReadonlyArray<GithubRepo>
@@ -241,37 +257,17 @@ export class GithubInstallationClient extends Context.Service<
 				params.set("per_page", String(options.perPage ?? 100))
 				if (options.sha) params.set("sha", options.sha)
 				if (options.since) params.set("since", options.since)
-				url = `/repos/${encodeURIComponent(options.owner)}/${encodeURIComponent(
-					options.name,
-				)}/commits?${params.toString()}`
+				url = `${repoPath(options.owner, options.name)}/commits?${params.toString()}`
 			}
 			const response: Response = yield* authedFetch(installationId, url)
-			if (response.status === 409) {
-				return { commits: [], nextCursor: null } satisfies CommitPage
-			}
-			if (!response.ok) {
-				const text: string = yield* Effect.tryPromise({
-					try: () => response.text(),
-					catch: () => toUpstreamError("listCommitsPaginated failed", response.status),
-				})
-				return yield* Effect.fail(
-					toUpstreamError(
-						`listCommitsPaginated failed (${response.status}): ${text || response.statusText}`,
-						response.status,
-					),
-				)
-			}
-			const json: unknown = yield* Effect.tryPromise({
-				try: () => response.json(),
-				catch: () => toUpstreamError("listCommitsPaginated returned non-JSON"),
-			})
-			const commits = yield* decodeCommits(json).pipe(
-				Effect.mapError(() =>
-					toUpstreamError("listCommitsPaginated returned unexpected payload"),
-				),
-			)
-			const nextCursor = parseNextLink(response.headers.get("link"))
-			return { commits, nextCursor } satisfies CommitPage
+			// 409 = empty repository (no commits at all).
+			if (response.status === 409) return { commits: [], nextCursor: null } satisfies CommitPage
+			yield* expectOk(response, "listCommitsPaginated")
+			const commits = yield* parseJson(response, decodeCommits, "listCommitsPaginated")
+			return {
+				commits,
+				nextCursor: parseNextLink(response.headers.get("link")),
+			} satisfies CommitPage
 		})
 
 		const getCommit = Effect.fn("GithubInstallationClient.getCommit")(function* (
@@ -282,28 +278,12 @@ export class GithubInstallationClient extends Context.Service<
 		) {
 			const response: Response = yield* authedFetch(
 				installationId,
-				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/commits/${encodeURIComponent(sha)}`,
+				`${repoPath(owner, name)}/commits/${encodeURIComponent(sha)}`,
 			)
+			// 404 = sha not in this repo; 422 = malformed sha. Neither is an error.
 			if (response.status === 404 || response.status === 422) return null
-			if (!response.ok) {
-				const text: string = yield* Effect.tryPromise({
-					try: () => response.text(),
-					catch: () => toUpstreamError("getCommit failed", response.status),
-				})
-				return yield* Effect.fail(
-					toUpstreamError(
-						`getCommit failed (${response.status}): ${text || response.statusText}`,
-						response.status,
-					),
-				)
-			}
-			const json: unknown = yield* Effect.tryPromise({
-				try: () => response.json(),
-				catch: () => toUpstreamError("getCommit returned non-JSON"),
-			})
-			return yield* decodeCommit(json).pipe(
-				Effect.mapError(() => toUpstreamError("getCommit returned unexpected payload")),
-			)
+			yield* expectOk(response, "getCommit")
+			return yield* parseJson(response, decodeCommit, "getCommit")
 		})
 
 		const listBranchesForCommit = Effect.fn(
@@ -311,26 +291,12 @@ export class GithubInstallationClient extends Context.Service<
 		)(function* (installationId: number, owner: string, name: string, sha: string) {
 			const response: Response = yield* authedFetch(
 				installationId,
-				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(
-					name,
-				)}/commits/${encodeURIComponent(sha)}/branches-where-head`,
+				`${repoPath(owner, name)}/commits/${encodeURIComponent(sha)}/branches-where-head`,
 			)
-			if (response.status === 404 || response.status === 422) {
-				return [] as ReadonlyArray<string>
-			}
-			if (!response.ok) {
-				return [] as ReadonlyArray<string>
-			}
-			const json: unknown = yield* Effect.tryPromise({
-				try: () => response.json(),
-				catch: () => toUpstreamError("listBranchesForCommit returned non-JSON"),
-			})
-			const decoded = yield* decodeBranches(json).pipe(
-				Effect.mapError(() =>
-					toUpstreamError("listBranchesForCommit returned unexpected payload"),
-				),
-			)
-			return decoded.map((b) => b.name) as ReadonlyArray<string>
+			// Best-effort: missing data is fine, never fail the caller.
+			if (!response.ok) return [] as ReadonlyArray<string>
+			const branches = yield* parseJson(response, decodeBranches, "listBranchesForCommit")
+			return branches.map((b) => b.name) as ReadonlyArray<string>
 		})
 
 		const compareRefs = Effect.fn("GithubInstallationClient.compareRefs")(function* (
@@ -342,23 +308,23 @@ export class GithubInstallationClient extends Context.Service<
 		) {
 			const response: Response = yield* authedFetch(
 				installationId,
-				`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+				`${repoPath(owner, name)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
 			)
-			if (response.status === 404) return [] as ReadonlyArray<GithubCommit>
-			if (!response.ok) {
-				return [] as ReadonlyArray<GithubCommit>
-			}
-			const json: unknown = yield* Effect.tryPromise({
+			// Best-effort fallback used when push.commits is empty; never fail the caller.
+			if (!response.ok) return [] as ReadonlyArray<GithubCommit>
+			const json = yield* Effect.tryPromise({
 				try: () => response.json() as Promise<{ commits?: unknown }>,
 				catch: () => toUpstreamError("compareRefs returned non-JSON"),
 			})
-			const raw = (json as { commits?: unknown }).commits ?? []
-			const decoded = yield* decodeCommits(raw).pipe(
+			const decoded = yield* decodeCommits(json.commits ?? []).pipe(
 				Effect.mapError(() => toUpstreamError("compareRefs returned unexpected payload")),
 			)
 			return decoded as ReadonlyArray<GithubCommit>
 		})
 
+		// Uses the App-level JWT (not the installation token) so it works even
+		// before we've stored the installation row in our DB — see the install
+		// callback flow.
 		const getInstallationMetadata = Effect.fn(
 			"GithubInstallationClient.getInstallationMetadata",
 		)(function* (installationId: number) {
@@ -381,27 +347,8 @@ export class GithubInstallationClient extends Context.Service<
 							: "getInstallationMetadata failed",
 					),
 			})
-			if (!response.ok) {
-				const text = yield* Effect.tryPromise({
-					try: () => response.text(),
-					catch: () => toUpstreamError("getInstallationMetadata failed", response.status),
-				})
-				return yield* Effect.fail(
-					toUpstreamError(
-						`getInstallationMetadata failed (${response.status}): ${text || response.statusText}`,
-						response.status,
-					),
-				)
-			}
-			const json: unknown = yield* Effect.tryPromise({
-				try: () => response.json(),
-				catch: () => toUpstreamError("getInstallationMetadata returned non-JSON"),
-			})
-			return yield* decodeInstallation(json).pipe(
-				Effect.mapError(() =>
-					toUpstreamError("getInstallationMetadata returned unexpected payload"),
-				),
-			)
+			yield* expectOk(response, "getInstallationMetadata")
+			return yield* parseJson(response, decodeInstallation, "getInstallationMetadata")
 		})
 
 		return {

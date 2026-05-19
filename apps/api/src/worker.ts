@@ -194,6 +194,18 @@ const handle = async (
 	}
 }
 
+type QueueMessage = {
+	readonly id?: string
+	readonly body: unknown
+	ack?: () => void
+	retry?: (options?: { delaySeconds?: number }) => void
+}
+type QueueBatch = { readonly messages: ReadonlyArray<QueueMessage> }
+type ScheduledEvent = { readonly cron?: string; readonly scheduledTime?: number }
+
+// MainLive's R is inferred as `any` from the existing layer composition, so
+// ManagedRuntime.make would refuse it. The two casts below acknowledge that
+// — at runtime every dep is provided via the provideMerge chain.
 const buildBackgroundLayer = (env: Record<string, unknown>) =>
 	MainLive.pipe(
 		Layer.provideMerge(DatabaseD1Live),
@@ -205,54 +217,27 @@ const buildBackgroundLayer = (env: Record<string, unknown>) =>
 const runBackground = async (
 	env: Record<string, unknown>,
 	effect: Effect.Effect<unknown, unknown, never>,
+	ctx: ExecutionContext,
 ) => {
 	const runtime = ManagedRuntime.make(buildBackgroundLayer(env))
 	try {
-		return await runtime.runPromise(effect)
+		await runtime.runPromise(effect)
 	} finally {
 		await runtime.dispose()
+		ctx.waitUntil(telemetry.flush(env))
 	}
 }
 
-type QueueMessage = {
-	readonly id?: string
-	readonly body: unknown
-	ack?: () => void
-	retry?: (options?: { delaySeconds?: number }) => void
-}
-
-type QueueBatch = { readonly messages: ReadonlyArray<QueueMessage> }
-type ScheduledEvent = { readonly cron?: string; readonly scheduledTime?: number }
+const logged = (label: string, effect: Effect.Effect<unknown, unknown, unknown>) =>
+	effect.pipe(
+		Effect.catchCause((cause: unknown) => Effect.logError(`[${label}] failed`, cause as never)),
+	) as unknown as Effect.Effect<unknown, unknown, never>
 
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handle(request, env, ctx),
-	queue: async (batch: QueueBatch, env: Record<string, unknown>, ctx: ExecutionContext) => {
-		try {
-			const effect = processGithubSyncBatch(batch).pipe(
-				Effect.catchCause((cause: unknown) =>
-					Effect.logError("[queue] batch failed", cause as never),
-				),
-			) as unknown as Effect.Effect<unknown, unknown, never>
-			await runBackground(env, effect)
-		} finally {
-			ctx.waitUntil(telemetry.flush(env))
-		}
-	},
-	scheduled: async (
-		_event: ScheduledEvent,
-		env: Record<string, unknown>,
-		ctx: ExecutionContext,
-	) => {
-		try {
-			const effect = runScheduledReconcile.pipe(
-				Effect.catchCause((cause: unknown) =>
-					Effect.logError("[scheduled] failed", cause as never),
-				),
-			) as unknown as Effect.Effect<unknown, unknown, never>
-			await runBackground(env, effect)
-		} finally {
-			ctx.waitUntil(telemetry.flush(env))
-		}
-	},
+	queue: (batch: QueueBatch, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		runBackground(env, logged("queue", processGithubSyncBatch(batch)), ctx),
+	scheduled: (_event: ScheduledEvent, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		runBackground(env, logged("scheduled", runScheduledReconcile), ctx),
 }

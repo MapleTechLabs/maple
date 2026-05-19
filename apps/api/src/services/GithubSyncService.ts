@@ -151,38 +151,43 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 						.limit(1),
 				).pipe(Effect.map((rows) => (rows[0] ?? null) as GithubInstallationRow | null))
 
+			// Upserts a batch of commits and clears any tombstones for the SHAs
+			// we just wrote. Pass `branches` to record which branch the commits
+			// appear on (push webhook); omit for paths that don't know.
 			const insertCommits = (
 				orgId: string,
 				repoId: string,
 				commits: ReadonlyArray<GithubCommit>,
+				branches: ReadonlyArray<string> = [],
 			) =>
 				Effect.gen(function* () {
 					if (commits.length === 0) return 0
 					const syncedAt = Date.now()
-					const inserts = commits.map((c) => mapCommitToInsert(orgId, repoId, c, [], syncedAt))
-					for (const insert of inserts) {
+					for (const commit of commits) {
+						const insert = mapCommitToInsert(orgId, repoId, commit, branches, syncedAt)
+						const updateSet: Partial<GithubCommitInsert> = {
+							message: insert.message,
+							authorLogin: insert.authorLogin,
+							authorName: insert.authorName,
+							authorEmail: insert.authorEmail,
+							authorAvatarUrl: insert.authorAvatarUrl,
+							committerLogin: insert.committerLogin,
+							committerName: insert.committerName,
+							committerEmail: insert.committerEmail,
+							committerAvatarUrl: insert.committerAvatarUrl,
+							authoredAt: insert.authoredAt,
+							committedAt: insert.committedAt,
+							htmlUrl: insert.htmlUrl,
+							syncedAt,
+						}
+						// Only refresh branchesJson when the caller knew which branch
+						// these commits live on — otherwise preserve whatever's there.
+						if (branches.length > 0) updateSet.branchesJson = insert.branchesJson
 						yield* dbExecute((db) =>
-							db
-								.insert(githubCommits)
-								.values(insert)
-								.onConflictDoUpdate({
-									target: [githubCommits.orgId, githubCommits.sha],
-									set: {
-										message: insert.message,
-										authorLogin: insert.authorLogin,
-										authorName: insert.authorName,
-										authorEmail: insert.authorEmail,
-										authorAvatarUrl: insert.authorAvatarUrl,
-										committerLogin: insert.committerLogin,
-										committerName: insert.committerName,
-										committerEmail: insert.committerEmail,
-										committerAvatarUrl: insert.committerAvatarUrl,
-										authoredAt: insert.authoredAt,
-										committedAt: insert.committedAt,
-										htmlUrl: insert.htmlUrl,
-										syncedAt,
-									},
-								}),
+							db.insert(githubCommits).values(insert).onConflictDoUpdate({
+								target: [githubCommits.orgId, githubCommits.sha],
+								set: updateSet,
+							}),
 						)
 					}
 					yield* dbExecute((db) =>
@@ -191,15 +196,20 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 							.where(
 								and(
 									eq(githubUnresolvedShas.orgId, orgId),
-									inArray(
-										githubUnresolvedShas.sha,
-										commits.map((c) => c.sha),
-									),
+									inArray(githubUnresolvedShas.sha, commits.map((c) => c.sha)),
 								),
 							),
 					)
-					return inserts.length
+					return commits.length
 				})
+
+			const touchRepoSynced = (repoId: string, syncedAt: number) =>
+				dbExecute((db) =>
+					db
+						.update(githubRepositories)
+						.set({ lastSyncedAt: syncedAt, updatedAt: syncedAt })
+						.where(eq(githubRepositories.id, repoId)),
+				)
 
 			const runBackfill = Effect.fn("GithubSyncService.runBackfill")(function* (params: {
 				readonly orgId: string
@@ -307,55 +317,14 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					)
 					if (fetched) commits.push(fetched)
 				}
-				const syncedAt = Date.now()
-				const inserts = commits.map((c) =>
-					mapCommitToInsert(params.orgId, repo.id, c, branchName ? [branchName] : [], syncedAt),
+				const written = yield* insertCommits(
+					params.orgId,
+					repo.id,
+					commits,
+					branchName ? [branchName] : [],
 				)
-				for (const insert of inserts) {
-					yield* dbExecute((db) =>
-						db
-							.insert(githubCommits)
-							.values(insert)
-							.onConflictDoUpdate({
-								target: [githubCommits.orgId, githubCommits.sha],
-								set: {
-									message: insert.message,
-									authorLogin: insert.authorLogin,
-									authorName: insert.authorName,
-									authorEmail: insert.authorEmail,
-									authorAvatarUrl: insert.authorAvatarUrl,
-									committerLogin: insert.committerLogin,
-									committerName: insert.committerName,
-									committerEmail: insert.committerEmail,
-									committerAvatarUrl: insert.committerAvatarUrl,
-									authoredAt: insert.authoredAt,
-									committedAt: insert.committedAt,
-									htmlUrl: insert.htmlUrl,
-									branchesJson: insert.branchesJson,
-									syncedAt,
-								},
-							}),
-					)
-				}
-				if (shas.length > 0) {
-					yield* dbExecute((db) =>
-						db
-							.delete(githubUnresolvedShas)
-							.where(
-								and(
-									eq(githubUnresolvedShas.orgId, params.orgId),
-									inArray(githubUnresolvedShas.sha, shas as string[]),
-								),
-							),
-					)
-				}
-				yield* dbExecute((db) =>
-					db
-						.update(githubRepositories)
-						.set({ lastSyncedAt: syncedAt, updatedAt: syncedAt })
-						.where(eq(githubRepositories.id, repo.id)),
-				)
-				return { written: inserts.length }
+				yield* touchRepoSynced(repo.id, Date.now())
+				return { written }
 			})
 
 			const runResolveUnknownSha = Effect.fn("GithubSyncService.runResolveUnknownSha")(
