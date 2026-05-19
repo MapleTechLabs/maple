@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Exit } from "effect"
 import {
 	GithubSetRepoSyncRequest,
@@ -40,10 +40,34 @@ export function GitHubIntegrationCard() {
 
 	const [busy, setBusy] = useState<"connect" | "disconnect" | null>(null)
 	const [pendingConnect, setPendingConnect] = useState(false)
+	const popupRef = useRef<Window | null>(null)
+	const popupPollRef = useRef<number | null>(null)
+
+	const stopPopupWatch = () => {
+		if (popupPollRef.current !== null) {
+			window.clearInterval(popupPollRef.current)
+			popupPollRef.current = null
+		}
+		popupRef.current = null
+	}
+
+	const watchPopup = (popup: Window) => {
+		popupRef.current = popup
+		if (popupPollRef.current !== null) window.clearInterval(popupPollRef.current)
+		// Poll closed state — postMessage from the callback page can race with
+		// a user manually closing the window; whichever lands first wins.
+		popupPollRef.current = window.setInterval(() => {
+			if (popup.closed) {
+				stopPopupWatch()
+				setPendingConnect(false)
+			}
+		}, 500)
+	}
 
 	useEffect(() => {
 		function onMessage(event: MessageEvent) {
 			if (event.data?.type === "maple:integration:github") {
+				stopPopupWatch()
 				setPendingConnect(false)
 				if (event.data.status === "success") {
 					toast.success(event.data.message ?? "GitHub connected")
@@ -55,7 +79,10 @@ export function GitHubIntegrationCard() {
 			}
 		}
 		window.addEventListener("message", onMessage)
-		return () => window.removeEventListener("message", onMessage)
+		return () => {
+			window.removeEventListener("message", onMessage)
+			stopPopupWatch()
+		}
 	}, [refreshStatus, refreshInstallations])
 
 	const status = Result.builder(statusResult)
@@ -79,10 +106,19 @@ export function GitHubIntegrationCard() {
 		setBusy(null)
 		if (Exit.isSuccess(result)) {
 			const url = result.value.redirectUrl
-			if (popup) popup.location.href = url
-			else window.open(url, "maple-github-connect", "popup,width=720,height=720")
+			let active: Window | null = popup
+			if (active) active.location.href = url
+			else active = window.open(url, "maple-github-connect", "popup,width=720,height=720")
+			if (active) {
+				watchPopup(active)
+			} else {
+				// Browser blocked the popup entirely; can't track it. Clear the
+				// pending state so the UI doesn't get stuck.
+				setPendingConnect(false)
+			}
 		} else {
 			popup?.close()
+			stopPopupWatch()
 			setPendingConnect(false)
 			toast.error("Failed to start GitHub install flow")
 		}
