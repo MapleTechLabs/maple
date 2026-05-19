@@ -1,8 +1,8 @@
 import { Suspense, type ReactNode } from "react"
 
 import { cn } from "@maple/ui/utils"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { getChartById } from "@maple/ui/components/charts/registry"
+import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import type {
 	ChartLegendMode,
 	ChartReferenceLine,
@@ -64,9 +64,9 @@ export function MetricsGrid({ items, className, waiting, syncId }: MetricsGridPr
 							footer={item.footer}
 						>
 							{item.isLoading ? (
-								<Skeleton className="h-full w-full" />
+								<ChartSkeleton variant={entry.category} />
 							) : (
-								<Suspense fallback={<Skeleton className="h-full w-full" />}>
+								<Suspense fallback={<ChartSkeleton variant={entry.category} />}>
 									<ChartComponent
 										data={item.data}
 										className="h-full w-full aspect-auto"
