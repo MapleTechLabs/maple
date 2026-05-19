@@ -12,7 +12,7 @@ import {
 import { eq } from "drizzle-orm"
 import { Database } from "./DatabaseLive"
 import { GithubAppJwtService } from "./GithubAppJwtService"
-import { GithubInstallationClient, type GithubCommit, type GithubInstallation, type GithubRepo } from "./GithubInstallationClient"
+import { GithubInstallationClient, type GithubCommit, type GithubInstallation, type GithubRepo, type SearchCommitResult } from "./GithubInstallationClient"
 import { GithubSyncService } from "./GithubSyncService"
 import {
 	cleanupTempDirs,
@@ -31,6 +31,7 @@ interface ClientStub {
 	compareRefs?: (id: number, owner: string, name: string, base: string, head: string) => GithubCommit[]
 	getInstallationMetadata?: (id: number) => GithubInstallation
 	listBranchesForCommit?: (id: number, owner: string, name: string, sha: string) => string[]
+	searchCommitBySha?: (id: number, sha: string) => SearchCommitResult | null
 }
 
 const makeMockClient = (stub: ClientStub) =>
@@ -64,6 +65,10 @@ const makeMockClient = (stub: ClientStub) =>
 				stub.listBranchesForCommit
 					? Effect.succeed(stub.listBranchesForCommit(id, owner, name, sha))
 					: Effect.succeed([]),
+			searchCommitBySha: (id, sha) =>
+				stub.searchCommitBySha
+					? Effect.succeed(stub.searchCommitBySha(id, sha))
+					: Effect.succeed(null),
 		}),
 	)
 
@@ -337,10 +342,18 @@ describe("GithubSyncService", () => {
 	})
 
 	describe("runWebhookPush", () => {
-		it("writes commits for SHAs listed in the push payload", async () => {
-			const layer = makeLayer({
-				getCommit: (_id, _owner, _name, sha) => fakeCommit(sha),
-			})
+		const webhookCommit = (sha: string) => ({
+			sha,
+			message: "feat: thing",
+			url: `https://github.com/acme/repo-a/commit/${sha}`,
+			timestamp: "2026-05-01T12:00:00Z",
+			author: { name: "Jane", email: "j@x", login: "jane" },
+			committer: { name: "Jane", email: "j@x", login: "jane" },
+		})
+
+		it("writes commits from the embedded payload without any API calls", async () => {
+			// No stubs at all — runWebhookPush must not call the client.
+			const layer = makeLayer({})
 			const count = await Effect.runPromise(
 				Effect.gen(function* () {
 					const sync = yield* GithubSyncService
@@ -354,7 +367,7 @@ describe("GithubSyncService", () => {
 						before: "0".repeat(40),
 						after: "f".repeat(40),
 						forced: false,
-						commitShas: ["a".repeat(40), "b".repeat(40)],
+						commits: [webhookCommit("a".repeat(40)), webhookCommit("b".repeat(40))],
 					})
 					return yield* countCommits
 				}).pipe(Effect.provide(layer)),
@@ -363,9 +376,7 @@ describe("GithubSyncService", () => {
 		})
 
 		it("is a no-op for a repo where sync_enabled=false", async () => {
-			const layer = makeLayer({
-				getCommit: (_id, _owner, _name, sha) => fakeCommit(sha),
-			})
+			const layer = makeLayer({})
 			const count = await Effect.runPromise(
 				Effect.gen(function* () {
 					const sync = yield* GithubSyncService
@@ -397,10 +408,9 @@ describe("GithubSyncService", () => {
 			expect(count).toBe(0)
 		})
 
-		it("falls back to compareRefs when commits array is empty", async () => {
+		it("falls back to compareRefs when no inline commits are passed (queue path)", async () => {
 			const layer = makeLayer({
 				compareRefs: () => [fakeCommit("c".repeat(40))],
-				getCommit: (_id, _owner, _name, sha) => fakeCommit(sha),
 			})
 			const count = await Effect.runPromise(
 				Effect.gen(function* () {
@@ -427,10 +437,28 @@ describe("GithubSyncService", () => {
 	describe("runResolveUnknownSha", () => {
 		const sha = "a".repeat(40)
 
-		it("writes commit when first repo returns a match", async () => {
+		const fakeSearchHit = (githubRepoId: number) => ({
+			sha,
+			html_url: `https://github.com/acme/repo-a/commit/${sha}`,
+			commit: {
+				message: "feat: thing",
+				author: { name: "Jane", email: "jane@x", date: "2026-05-01T12:00:00Z" },
+				committer: { name: "Jane", email: "jane@x", date: "2026-05-01T12:00:00Z" },
+			},
+			author: { login: "jane", id: 1, avatar_url: "https://avatars/jane" },
+			committer: { login: "jane", id: 1, avatar_url: "https://avatars/jane" },
+			repository: {
+				id: githubRepoId,
+				name: "repo-a",
+				full_name: "acme/repo-a",
+				owner: { login: "acme" },
+			},
+		})
+
+		it("writes commit when the search API returns a match", async () => {
 			const layer = makeLayer({
-				getCommit: (_id, _owner, _name, requestSha) =>
-					requestSha === sha ? fakeCommit(sha) : null,
+				searchCommitBySha: (_id, requestSha) =>
+					requestSha === sha ? fakeSearchHit(1) : null,
 			})
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
@@ -447,8 +475,31 @@ describe("GithubSyncService", () => {
 			expect(result.tombstones).toBe(0)
 		})
 
+		it("treats search hit on a sync-disabled repo as unresolved", async () => {
+			const layer = makeLayer({
+				searchCommitBySha: () => fakeSearchHit(1),
+			})
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const sync = yield* GithubSyncService
+					const { repoRows } = yield* seedInstallationAndRepos("org_1", 12345, [
+						{ id: 1, name: "repo-a" },
+					])
+					const database = yield* Database
+					yield* database.execute((db) =>
+						db
+							.update(githubRepositories)
+							.set({ syncEnabled: false })
+							.where(eq(githubRepositories.id, repoRows[0]!.id)),
+					)
+					return yield* sync.runResolveUnknownSha({ orgId: "org_1", sha })
+				}).pipe(Effect.provide(layer)),
+			)
+			expect(result.resolved).toBe(false)
+		})
+
 		it("writes tombstone with attempt_count=1 on first miss", async () => {
-			const layer = makeLayer({ getCommit: () => null })
+			const layer = makeLayer({ searchCommitBySha: () => null })
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const sync = yield* GithubSyncService
@@ -464,7 +515,7 @@ describe("GithubSyncService", () => {
 		})
 
 		it("marks tombstone permanent after 3 failed attempts", async () => {
-			const layer = makeLayer({ getCommit: () => null })
+			const layer = makeLayer({ searchCommitBySha: () => null })
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const sync = yield* GithubSyncService
@@ -496,7 +547,7 @@ describe("GithubSyncService", () => {
 		})
 
 		it("no-ops on existing permanent tombstone (does not increment counter)", async () => {
-			const layer = makeLayer({ getCommit: () => null })
+			const layer = makeLayer({ searchCommitBySha: () => null })
 			const final = await Effect.runPromise(
 				Effect.gen(function* () {
 					const sync = yield* GithubSyncService

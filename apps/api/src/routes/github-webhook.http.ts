@@ -6,20 +6,57 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { Database, type DatabaseClient } from "../services/DatabaseLive"
 import { GithubAppJwtService } from "../services/GithubAppJwtService"
 import { GithubAppService } from "../services/GithubAppService"
-import { GithubSyncService } from "../services/GithubSyncService"
+import { GithubSyncQueue } from "../services/GithubSyncQueue"
+import { GithubSyncService, type WebhookPushCommit } from "../services/GithubSyncService"
 
 const WEBHOOK_PATH = "/api/webhooks/github"
 
-type PushCommit = { id?: string }
+// Below this threshold we process the push inline (snappy UI, no API calls
+// since the payload carries everything we need). Above it we enqueue so the
+// webhook handler stays well under GitHub's 10s timeout.
+const INLINE_PUSH_LIMIT = 5
+
+type PushCommitPayload = {
+	id?: string
+	message?: string
+	timestamp?: string
+	url?: string
+	author?: { name?: string; email?: string; username?: string }
+	committer?: { name?: string; email?: string; username?: string }
+}
 
 type PushPayload = {
 	ref?: string
 	before?: string
 	after?: string
 	forced?: boolean
-	commits?: ReadonlyArray<PushCommit>
+	commits?: ReadonlyArray<PushCommitPayload>
 	installation?: { id?: number }
 	repository?: { owner?: { login?: string }; name?: string }
+}
+
+const toWebhookPushCommit = (raw: PushCommitPayload): WebhookPushCommit | null => {
+	if (!raw.id) return null
+	return {
+		sha: raw.id,
+		message: raw.message ?? "",
+		url: raw.url ?? "",
+		timestamp: raw.timestamp ?? null,
+		author: raw.author
+			? {
+					name: raw.author.name ?? null,
+					email: raw.author.email ?? null,
+					login: raw.author.username ?? null,
+				}
+			: null,
+		committer: raw.committer
+			? {
+					name: raw.committer.name ?? null,
+					email: raw.committer.email ?? null,
+					login: raw.committer.username ?? null,
+				}
+			: null,
+	}
 }
 
 type InstallationPayload = {
@@ -45,6 +82,7 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const jwtService = yield* GithubAppJwtService
 		const sync = yield* GithubSyncService
+		const queue = yield* GithubSyncQueue
 		const app = yield* GithubAppService
 		const database = yield* Database
 
@@ -134,12 +172,34 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 						const owner = push.repository?.owner?.login
 						const name = push.repository?.name
 						if (!owner || !name || !push.ref || !push.after || !push.before) break
-						const commitShas = (push.commits ?? [])
-							.map((c) => c.id)
-							.filter((id): id is string => typeof id === "string")
+						const rawCommits = push.commits ?? []
+						const inlineCommits = rawCommits
+							.map(toWebhookPushCommit)
+							.filter((c): c is WebhookPushCommit => c !== null)
+						// Inline path: small pushes use the webhook payload's own commit
+						// data — zero GitHub API calls. Anything larger (or a forced /
+						// branch-create push, where commits[] is empty) goes to the queue
+						// so the webhook handler stays under GitHub's 10s budget.
+						const useInline =
+							!push.forced && inlineCommits.length > 0 && inlineCommits.length <= INLINE_PUSH_LIMIT
 						for (const installation of installations) {
-							yield* Effect.exit(
-								sync.runWebhookPush({
+							if (useInline) {
+								yield* Effect.exit(
+									sync.runWebhookPush({
+										orgId: installation.orgId,
+										installationId: installation.installationId,
+										owner,
+										name,
+										ref: push.ref,
+										before: push.before,
+										after: push.after,
+										forced: push.forced ?? false,
+										commits: inlineCommits,
+									}),
+								)
+							} else {
+								yield* queue.enqueue({
+									_tag: "SyncWebhookPush",
 									orgId: installation.orgId,
 									installationId: installation.installationId,
 									owner,
@@ -148,9 +208,9 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 									before: push.before,
 									after: push.after,
 									forced: push.forced ?? false,
-									commitShas,
-								}),
-							)
+									commitShas: inlineCommits.map((c) => c.sha),
+								})
+							}
 						}
 						break
 					}

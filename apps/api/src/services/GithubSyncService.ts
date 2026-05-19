@@ -70,11 +70,62 @@ const mapCommitToInsert = (
 	}
 }
 
+/**
+ * Map the lighter-weight webhook payload commit shape into the same internal
+ * shape returned by GitHub's REST API. We lose avatar URLs and numeric user
+ * IDs vs `getCommit`; the chip falls back to author initials in that case,
+ * which is fine because (a) the webhook fast path runs synchronously and
+ * we don't want to block on extra API calls, and (b) the cron sweep + manual
+ * backfill paths use the REST API and will fill in avatars eventually.
+ */
+const webhookCommitToGithubCommit = (c: WebhookPushCommit): GithubCommit => ({
+	sha: c.sha,
+	html_url: c.url,
+	commit: {
+		message: c.message,
+		author: c.author
+			? {
+					name: c.author.name ?? undefined,
+					email: c.author.email ?? undefined,
+					date: c.timestamp ?? undefined,
+				}
+			: undefined,
+		committer: c.committer
+			? {
+					name: c.committer.name ?? undefined,
+					email: c.committer.email ?? undefined,
+					date: c.timestamp ?? undefined,
+				}
+			: undefined,
+	},
+	author: c.author?.login
+		? { login: c.author.login, id: 0, avatar_url: undefined, type: undefined }
+		: null,
+	committer: c.committer?.login
+		? { login: c.committer.login, id: 0, avatar_url: undefined, type: undefined }
+		: null,
+})
+
 export interface SyncBackfillProgress {
 	readonly orgId: string
 	readonly repoId: string
 	readonly cursor: string | null
 	readonly done: boolean
+}
+
+/**
+ * Commit data carried inline in the GitHub `push` webhook payload. The
+ * payload doesn't include avatar URLs or numeric user IDs but otherwise
+ * has everything we persist — using it lets the inline webhook path
+ * avoid every GitHub API call.
+ */
+export interface WebhookPushCommit {
+	readonly sha: string
+	readonly message: string
+	readonly url: string
+	readonly timestamp: string | null
+	readonly author: { readonly name: string | null; readonly email: string | null; readonly login: string | null } | null
+	readonly committer: { readonly name: string | null; readonly email: string | null; readonly login: string | null } | null
 }
 
 export interface GithubSyncServiceShape {
@@ -96,7 +147,10 @@ export interface GithubSyncServiceShape {
 		readonly before: string
 		readonly after: string
 		readonly forced: boolean
-		readonly commitShas: ReadonlyArray<string>
+		/** Either the embedded webhook commits (inline path, no API call) or
+		 * just the SHAs (queue consumer path — falls back to compareRefs). */
+		readonly commits?: ReadonlyArray<WebhookPushCommit>
+		readonly commitShas?: ReadonlyArray<string>
 	}) => Effect.Effect<
 		{ readonly written: number },
 		IntegrationsPersistenceError | IntegrationsUpstreamError | IntegrationsValidationError
@@ -275,7 +329,8 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 				readonly before: string
 				readonly after: string
 				readonly forced: boolean
-				readonly commitShas: ReadonlyArray<string>
+				readonly commits?: ReadonlyArray<WebhookPushCommit>
+				readonly commitShas?: ReadonlyArray<string>
 			}) {
 				const rows = yield* dbExecute((db) =>
 					db
@@ -294,28 +349,23 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 				if (!repo || !repo.syncEnabled) return { written: 0 }
 
 				const branchName = params.ref.replace(/^refs\/heads\//, "")
-				const shas: ReadonlyArray<string> =
-					params.commitShas.length > 0
-						? params.commitShas
-						: yield* client
-								.compareRefs(
-									params.installationId,
-									params.owner,
-									params.name,
-									params.before,
-									params.after,
-								)
-								.pipe(Effect.map((cs) => cs.map((c) => c.sha)))
 
-				const commits: Array<GithubCommit> = []
-				for (const sha of shas) {
-					const fetched = yield* client.getCommit(
+				// 1. Inline path: the webhook handler passed the embedded commit
+				//    objects from the push payload. No API calls needed.
+				// 2. Queue / fallback path: only SHAs are known, OR the push was
+				//    forced / had an empty commits array. compareRefs returns up to
+				//    250 commits with full data in one call.
+				let commits: ReadonlyArray<GithubCommit>
+				if (params.commits && params.commits.length > 0) {
+					commits = params.commits.map(webhookCommitToGithubCommit)
+				} else {
+					commits = yield* client.compareRefs(
 						params.installationId,
 						params.owner,
 						params.name,
-						sha,
+						params.before,
+						params.after,
 					)
-					if (fetched) commits.push(fetched)
 				}
 				const written = yield* insertCommits(
 					params.orgId,
@@ -346,47 +396,58 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					)
 					const tombstone = tombstoneRows[0] ?? null
 					if (tombstone?.permanent) return { resolved: false }
-					const repos = (yield* dbExecute((db) =>
+
+					// Use GitHub's commit search API: one call per installation finds
+					// the SHA across every accessible repo, regardless of how many.
+					// (Beats iterating repos and calling getCommit per-repo.)
+					const installations = (yield* dbExecute((db) =>
 						db
 							.select()
-							.from(githubRepositories)
-							.where(
-								and(
-									eq(githubRepositories.orgId, params.orgId),
-									eq(githubRepositories.syncEnabled, true),
-								),
-							),
-					)) as ReadonlyArray<GithubRepositoryRow>
+							.from(githubInstallations)
+							.where(eq(githubInstallations.orgId, params.orgId)),
+					)) as ReadonlyArray<GithubInstallationRow>
 
-					if (repos.length === 0) {
+					if (installations.length === 0) {
 						yield* upsertTombstone(params.orgId, params.sha, false)
 						return { resolved: false }
 					}
 
-					for (const repo of repos) {
-						const installation = yield* loadInstallation(params.orgId, repo.installationId)
-						if (!installation || installation.suspendedAt) continue
-						const commit = yield* client.getCommit(
+					for (const installation of installations) {
+						if (installation.suspendedAt) continue
+						const hit = yield* client.searchCommitBySha(
 							installation.installationId,
-							repo.owner,
-							repo.name,
 							params.sha,
 						)
-						if (commit) {
-							yield* insertCommits(params.orgId, repo.id, [commit])
-							yield* dbExecute((db) =>
-								db
-									.delete(githubUnresolvedShas)
-									.where(
-										and(
-											eq(githubUnresolvedShas.orgId, params.orgId),
-											eq(githubUnresolvedShas.sha, params.sha),
-										),
+						if (!hit) continue
+						// Map the search result to a connected repo row in our DB. If
+						// the user has sync disabled for the repo, treat as unresolved.
+						const repoRows = (yield* dbExecute((db) =>
+							db
+								.select()
+								.from(githubRepositories)
+								.where(
+									and(
+										eq(githubRepositories.orgId, params.orgId),
+										eq(githubRepositories.githubRepoId, hit.repository.id),
 									),
-							)
-							return { resolved: true }
+								)
+								.limit(1),
+						)) as ReadonlyArray<GithubRepositoryRow>
+						const repo = repoRows[0]
+						if (!repo || !repo.syncEnabled) continue
+						// Search response includes everything getCommit would return,
+						// so we can upsert directly without a follow-up call.
+						const synthetic: GithubCommit = {
+							sha: hit.sha,
+							html_url: hit.html_url,
+							commit: hit.commit,
+							author: hit.author,
+							committer: hit.committer,
 						}
+						yield* insertCommits(params.orgId, repo.id, [synthetic])
+						return { resolved: true }
 					}
+
 					const attempt = (tombstone?.attemptCount ?? 0) + 1
 					yield* upsertTombstone(params.orgId, params.sha, attempt >= RESOLVE_MAX_ATTEMPTS, attempt)
 					return { resolved: false }

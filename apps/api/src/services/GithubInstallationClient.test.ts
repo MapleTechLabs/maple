@@ -279,4 +279,68 @@ describe("GithubInstallationClient", () => {
 			expect(Exit.isFailure(exit)).toBe(true)
 		})
 	})
+
+	describe("searchCommitBySha", () => {
+		const sha = "a".repeat(40)
+		const fakeHit = {
+			sha,
+			html_url: `https://github.com/acme/r/commit/${sha}`,
+			commit: {
+				message: "feat: thing",
+				author: { name: "Jane", email: "j@x", date: "2026-05-01T00:00:00Z" },
+				committer: { name: "Jane", email: "j@x", date: "2026-05-01T00:00:00Z" },
+			},
+			author: { login: "jane", id: 1 },
+			committer: { login: "jane", id: 1 },
+			repository: {
+				id: 42,
+				name: "r",
+				full_name: "acme/r",
+				owner: { login: "acme" },
+			},
+		}
+
+		it("returns the first matching commit", async () => {
+			globalThis.fetch = buildFetchMock({
+				"/search/commits": () => jsonResponse(200, { total_count: 1, items: [fakeHit] }),
+			}) as unknown as typeof fetch
+
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const c = yield* GithubInstallationClient
+					return yield* c.searchCommitBySha(12345, sha)
+				}).pipe(Effect.provide(makeLayer())),
+			)
+			expect(result?.sha).toBe(sha)
+			expect(result?.repository.full_name).toBe("acme/r")
+		})
+
+		it("returns null on empty results", async () => {
+			globalThis.fetch = buildFetchMock({
+				"/search/commits": () => jsonResponse(200, { total_count: 0, items: [] }),
+			}) as unknown as typeof fetch
+
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const c = yield* GithubInstallationClient
+					return yield* c.searchCommitBySha(12345, sha)
+				}).pipe(Effect.provide(makeLayer())),
+			)
+			expect(result).toBeNull()
+		})
+
+		it("returns null on 422 (rate-limit / scope) without failing", async () => {
+			globalThis.fetch = buildFetchMock({
+				"/search/commits": () => new Response("rate-limited", { status: 422 }),
+			}) as unknown as typeof fetch
+
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const c = yield* GithubInstallationClient
+					return yield* c.searchCommitBySha(12345, sha)
+				}).pipe(Effect.provide(makeLayer())),
+			)
+			expect(result).toBeNull()
+		})
+	})
 })

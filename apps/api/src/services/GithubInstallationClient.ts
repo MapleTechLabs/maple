@@ -71,11 +71,36 @@ const GithubInstallationSchema = Schema.Struct({
 })
 export type GithubInstallation = Schema.Schema.Type<typeof GithubInstallationSchema>
 
+// /search/commits response items include the source repository inline.
+const SearchCommitItemSchema = Schema.Struct({
+	sha: Schema.String,
+	html_url: Schema.String,
+	commit: Schema.Struct({
+		message: Schema.String,
+		author: Schema.optional(GithubCommitAuthorSchema),
+		committer: Schema.optional(GithubCommitAuthorSchema),
+	}),
+	author: Schema.NullOr(GithubUserSchema),
+	committer: Schema.NullOr(GithubUserSchema),
+	repository: Schema.Struct({
+		id: Schema.Number,
+		name: Schema.String,
+		full_name: Schema.String,
+		owner: Schema.Struct({ login: Schema.String }),
+	}),
+})
+const SearchCommitsResponseSchema = Schema.Struct({
+	total_count: Schema.Number,
+	items: Schema.Array(SearchCommitItemSchema),
+})
+export type SearchCommitResult = Schema.Schema.Type<typeof SearchCommitItemSchema>
+
 const decodeInstallationRepos = Schema.decodeUnknownEffect(InstallationRepoListSchema)
 const decodeCommit = Schema.decodeUnknownEffect(GithubCommitDetailSchema)
 const decodeCommits = Schema.decodeUnknownEffect(Schema.Array(GithubCommitDetailSchema))
 const decodeBranches = Schema.decodeUnknownEffect(Schema.Array(GithubBranchSchema))
 const decodeInstallation = Schema.decodeUnknownEffect(GithubInstallationSchema)
+const decodeSearchCommits = Schema.decodeUnknownEffect(SearchCommitsResponseSchema)
 
 const toUpstreamError = (message: string, status?: number) =>
 	new IntegrationsUpstreamError({ message, ...(status === undefined ? {} : { status }) })
@@ -173,6 +198,22 @@ export interface GithubInstallationClientShape {
 		installationId: number,
 	) => Effect.Effect<
 		GithubInstallation,
+		IntegrationsValidationError | IntegrationsUpstreamError
+	>
+	/**
+	 * Search the installation's accessible repos for a commit by SHA. Single
+	 * API call regardless of how many repos the installation grants — much
+	 * cheaper than iterating repos and calling getCommit on each. Returns the
+	 * first match (search results are ordered best-match first), or null.
+	 *
+	 * Note: GitHub's commit search indexer can lag by minutes for very fresh
+	 * commits. We accept that — the chip will re-query on the next hover.
+	 */
+	readonly searchCommitBySha: (
+		installationId: number,
+		sha: string,
+	) => Effect.Effect<
+		SearchCommitResult | null,
 		IntegrationsValidationError | IntegrationsUpstreamError
 	>
 }
@@ -351,6 +392,25 @@ export class GithubInstallationClient extends Context.Service<
 			return yield* parseJson(response, decodeInstallation, "getInstallationMetadata")
 		})
 
+		const searchCommitBySha = Effect.fn("GithubInstallationClient.searchCommitBySha")(
+			function* (installationId: number, sha: string) {
+				const params = new URLSearchParams()
+				params.set("q", `hash:${sha}`)
+				params.set("per_page", "1")
+				const response: Response = yield* authedFetch(
+					installationId,
+					`/search/commits?${params.toString()}`,
+				)
+				// Search API rate limit / token scope issues both surface as 4xx;
+				// treat them as "not found" rather than failing the caller.
+				if (response.status === 403 || response.status === 422) return null
+				// 304 Not Modified can also appear if we were to send ETags.
+				if (!response.ok) return null
+				const decoded = yield* parseJson(response, decodeSearchCommits, "searchCommitBySha")
+				return (decoded.items[0] ?? null) as SearchCommitResult | null
+			},
+		)
+
 		return {
 			listInstallationRepositories,
 			listCommitsPaginated,
@@ -358,6 +418,7 @@ export class GithubInstallationClient extends Context.Service<
 			listBranchesForCommit,
 			compareRefs,
 			getInstallationMetadata,
+			searchCommitBySha,
 		} satisfies GithubInstallationClientShape
 	}),
 }) {
