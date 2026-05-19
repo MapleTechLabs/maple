@@ -16,6 +16,11 @@ const REACTIVITY_KEYS = {
 	status: ["githubIntegrationStatus"],
 	installations: ["githubInstallations"],
 	repositories: (installationId: string) => ["githubRepositories", installationId],
+	// Shared with the commit-lookup atoms in components/commits. Invalidating
+	// this on disconnect forces every CommitChip to re-fetch — the cached
+	// commit data has been deleted server-side and the chip should flip to
+	// its unresolved state.
+	commitLookup: ["commitLookup"],
 }
 
 export function GitHubIntegrationCard() {
@@ -131,13 +136,14 @@ export function GitHubIntegrationCard() {
 			reactivityKeys: [
 				...REACTIVITY_KEYS.installations,
 				...REACTIVITY_KEYS.status,
+				...REACTIVITY_KEYS.commitLookup,
 			],
 		})
 		setBusy(null)
 		refreshStatus()
 		refreshInstallations()
 		if (Exit.isSuccess(result)) {
-			toast.success("GitHub installation suspended")
+			toast.success("GitHub integration removed")
 			if (result.value.uninstallUrl) {
 				toast.info("To fully remove the integration, uninstall on GitHub", {
 					action: {
