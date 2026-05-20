@@ -22,14 +22,19 @@ import { cn } from "@maple/ui/utils"
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
 import { SqlCodeEditor } from "@/components/alerts/sql-code-editor"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
-import { ChevronDownIcon } from "@/components/icons"
+import {
+	ChartLineIcon,
+	ChevronDownIcon,
+	CirclePercentageIcon,
+	FireIcon,
+	PulseIcon,
+} from "@/components/icons"
 import {
 	comparatorLabels,
 	isRangeComparator,
 	metricAggregationLabels,
 	metricTypeLabels,
 	RAW_QUERY_REDUCER_LABELS,
-	signalLabels,
 	type RuleFormState,
 } from "@/lib/alerts/form-utils"
 import { AGGREGATIONS_BY_SOURCE } from "@/lib/query-builder/model"
@@ -39,9 +44,46 @@ interface SignalAndThresholdSectionProps {
 	onChange: Dispatch<SetStateAction<RuleFormState>>
 }
 
-const SIGNAL_OPTIONS: ReadonlyArray<{ value: AlertSignalType; label: string }> = (
-	Object.keys(signalLabels) as AlertSignalType[]
-).map((value) => ({ value, label: signalLabels[value] }))
+/* Eight signal types is too many for a single segmented bar — they wrap and
+   every option looks equally weighted even though four of them are "I want a
+   common metric" and the other four are "I'll define my own". We split the
+   choice into two tiers:
+     - Tier 1 (always visible): the *kind* of signal — built-in, custom metric,
+       query builder, or raw SQL.
+     - Tier 2 (only when "built-in" is active): which of the five canned
+       metrics to watch.
+   The mapping back to `AlertSignalType` happens in `signalTypeToKind` and the
+   default-on-kind-switch logic in `setKind`. */
+type SignalKind = "builtin" | "metric" | "builder_query" | "raw_query"
+
+function signalTypeToKind(signalType: AlertSignalType): SignalKind {
+	if (signalType === "metric") return "metric"
+	if (signalType === "builder_query") return "builder_query"
+	if (signalType === "raw_query") return "raw_query"
+	return "builtin"
+}
+
+const SIGNAL_KIND_OPTIONS: ReadonlyArray<{ value: SignalKind; label: string }> = [
+	{ value: "builtin", label: "Built-in" },
+	{ value: "metric", label: "Metric" },
+	{ value: "builder_query", label: "Query" },
+	{ value: "raw_query", label: "Raw SQL" },
+]
+
+/* The "built-in" tier-2 row: 5 small chips with icons. Icons are deliberately
+   reused from the templates overlay so the picker visually rhymes with the
+   first-touch flow. */
+const BUILTIN_SIGNAL_OPTIONS: ReadonlyArray<{
+	value: AlertSignalType
+	label: string
+	icon: (props: { size?: number; className?: string }) => React.ReactNode
+}> = [
+	{ value: "error_rate", label: "Error rate", icon: FireIcon },
+	{ value: "p95_latency", label: "P95", icon: ChartLineIcon },
+	{ value: "p99_latency", label: "P99", icon: ChartLineIcon },
+	{ value: "apdex", label: "Apdex", icon: CirclePercentageIcon },
+	{ value: "throughput", label: "Throughput", icon: PulseIcon },
+]
 
 const COMPARATOR_OPTIONS: ReadonlyArray<{ value: AlertComparator; label: string }> = (
 	Object.keys(comparatorLabels) as AlertComparator[]
@@ -76,43 +118,44 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 	const rangeMode = isRangeComparator(form.comparator)
 	const [advancedOpen, setAdvancedOpen] = useState(false)
 
+	const kind = signalTypeToKind(form.signalType)
+
+	/* Switching tier-1 has to seed a valid signalType for the new kind.
+	   Built-in defaults to error_rate; the other three map 1:1 since
+	   AlertSignalType already has matching string values. */
+	function setKind(next: SignalKind) {
+		if (next === kind) return
+		onChange((c) => ({
+			...c,
+			signalType:
+				next === "builtin"
+					? "error_rate"
+					: (next as Exclude<SignalKind, "builtin"> &
+							AlertSignalType),
+		}))
+	}
+
 	return (
 		<Card className="p-4">
 			<SectionLabel>Signal &amp; threshold</SectionLabel>
 
 			<div className="mt-3 space-y-4">
-				{/* Signal type. Segmented for wide viewports; Select on narrow ones because
-				    eight options would otherwise wrap. */}
-				<div className="hidden md:block">
-					<AlertSegmentedSelect<AlertSignalType>
-						options={SIGNAL_OPTIONS}
+				{/* Tier 1: signal kind. Always visible. */}
+				<AlertSegmentedSelect<SignalKind>
+					options={SIGNAL_KIND_OPTIONS}
+					value={kind}
+					onChange={setKind}
+					aria-label="Signal kind"
+					size="sm"
+				/>
+
+				{/* Tier 2: only for built-ins. Icon chips, single short row. */}
+				{kind === "builtin" && (
+					<BuiltinSignalChips
 						value={form.signalType}
 						onChange={(value) => onChange((c) => ({ ...c, signalType: value }))}
-						aria-label="Signal type"
-						className="flex-wrap"
-						size="sm"
 					/>
-				</div>
-				<div className="md:hidden">
-					<Select
-						items={signalLabels}
-						value={form.signalType}
-						onValueChange={(value) =>
-							onChange((c) => ({ ...c, signalType: value as AlertSignalType }))
-						}
-					>
-						<SelectTrigger className="w-full">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{SIGNAL_OPTIONS.map((opt) => (
-								<SelectItem key={opt.value} value={opt.value}>
-									{opt.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
+				)}
 
 				<SignalSubConfig form={form} onChange={onChange} />
 
@@ -264,6 +307,58 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 				</div>
 			</div>
 		</Card>
+	)
+}
+
+/**
+ * Tier-2 picker for the five built-in signals. Renders as small icon chips
+ * inside a subtly tinted rail so the visual relationship to the tier-1 bar
+ * above reads as "drill-in", not "another peer choice".
+ */
+function BuiltinSignalChips({
+	value,
+	onChange,
+}: {
+	value: AlertSignalType
+	onChange: (next: AlertSignalType) => void
+}) {
+	return (
+		<div
+			role="radiogroup"
+			aria-label="Built-in signal"
+			className="-mt-1 flex flex-wrap items-center gap-1 rounded-md border border-dashed border-border/60 bg-muted/20 p-1"
+		>
+			{BUILTIN_SIGNAL_OPTIONS.map((opt) => {
+				const selected = value === opt.value
+				const Icon = opt.icon
+				return (
+					<button
+						key={opt.value}
+						type="button"
+						role="radio"
+						aria-checked={selected}
+						onClick={() => onChange(opt.value)}
+						className={cn(
+							"inline-flex h-7 items-center gap-1.5 rounded-sm border border-transparent px-2 text-xs font-medium",
+							"transition-[background-color,border-color,color] duration-150",
+							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+							selected
+								? "border-primary/40 bg-primary/10 text-foreground"
+								: "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+						)}
+					>
+						<Icon
+							size={12}
+							className={cn(
+								"transition-colors",
+								selected ? "text-primary" : "text-muted-foreground/70",
+							)}
+						/>
+						{opt.label}
+					</button>
+				)
+			})}
+		</div>
 	)
 }
 
