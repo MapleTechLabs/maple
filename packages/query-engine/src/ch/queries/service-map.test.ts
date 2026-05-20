@@ -242,7 +242,7 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("Timestamp >= toStartOfHour('2024-01-02 00:00:00')")
+		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
 
 	it("restricts the raw branch to Client/Producer spans with db.system.name set", () => {
