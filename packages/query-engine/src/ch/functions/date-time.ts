@@ -14,6 +14,27 @@ export function toStartOfInterval(col: Expr<string>, seconds: number | Expr<numb
 	return makeExpr<string>(raw(`toStartOfInterval(${compile(col.toFragment())}, INTERVAL ${secStr} SECOND)`))
 }
 
+/**
+ * `toStartOfHour(expr)` — floor a DateTime to its hour boundary. Equivalent to
+ * `toStartOfInterval(col, 3600)` but kept as a distinct function so queries
+ * that bucket on natural hours stay legible (the resolutions rollup, the
+ * service-map edge rollup, and the dependencies tab all read from
+ * `*_hourly` tables on this exact boundary).
+ */
+export function toStartOfHour(col: Expr<string>): Expr<string> {
+	return makeExpr<string>(raw(`toStartOfHour(${compile(col.toFragment())})`))
+}
+
+/**
+ * `toUnixTimestamp(expr)` — convert a DateTime/DateTime64 to a UInt32 of
+ * seconds since epoch. Useful for stable JSON-numeric keys (e.g. the rollup's
+ * "have we already sealed this hour" check) without forcing the consumer to
+ * parse RFC3339.
+ */
+export function toUnixTimestamp(col: Expr<string>): Expr<number> {
+	return makeExpr<number>(raw(`toUnixTimestamp(${compile(col.toFragment())})`))
+}
+
 export function intervalSub(col: Expr<string>, seconds: number | Expr<number>): Expr<string> {
 	const secStr =
 		typeof seconds === "number"

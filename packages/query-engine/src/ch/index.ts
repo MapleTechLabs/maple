@@ -269,15 +269,20 @@ export {
 	type ServiceDbEdgesOutput,
 	type ServicePlatformsOpts,
 	type ServicePlatformsOutput,
+	serviceExternalEdgesSQL,
+	type ServiceExternalEdgesOpts,
+	type ServiceExternalEdgesOutput,
 } from "./queries/service-map"
 
 // Queries — Service Map hourly edge rollup
 export {
 	serviceMapEdgesRollupSQL,
 	serviceMapEdgesExistingHoursSQL,
+	serviceMapResolutionsRollupSQL,
 	type ServiceMapEdgesRollupParams,
 	type ServiceMapEdgesHourlyOutput,
 	type ServiceMapEdgesExistingHour,
+	type ServiceAddressResolutionsHourlyOutput,
 } from "./queries/service-map-rollup"
 
 // Queries — Service Infrastructure (service.name ↔ k8s workload join)

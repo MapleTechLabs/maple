@@ -14,7 +14,12 @@
 // ---------------------------------------------------------------------------
 
 import type { CompiledQuery } from "../compile"
+import { compileCH } from "../compile"
+import * as CH from "../expr"
+import { param } from "../param"
+import { from, fromQuery } from "../query"
 import { escapeClickHouseString } from "../../sql/sql-fragment"
+import { ServiceMapEdgesHourly, Traces } from "../tables"
 import { serviceMapEdgeJoinSQL } from "./service-map"
 
 /** One pre-aggregated service-to-service edge bucket — mirrors the columns of
@@ -58,13 +63,24 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 	startTime: string
 	endTime: string
 }): CompiledQuery<ServiceMapEdgesExistingHour> {
-	const esc = escapeClickHouseString
-	const sql = `SELECT DISTINCT toUnixTimestamp(Hour) AS hourTs
-FROM service_map_edges_hourly
-WHERE OrgId = '${esc(params.orgId)}'
-  AND Hour >= toDateTime('${esc(params.startTime)}')
-  AND Hour < toDateTime('${esc(params.endTime)}')
-FORMAT JSON`
+	// `GROUP BY hourTs` collapses identical hour values across edge rows — the
+	// rollup only cares about which hour starts have been sealed, not which
+	// edges live in them. Same semantics as SELECT DISTINCT, with the DSL.
+	const query = from(ServiceMapEdgesHourly)
+		.select(($) => ({ hourTs: CH.toUnixTimestamp($.Hour) }))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(param.dateTime("startTime")),
+			$.Hour.lt(param.dateTime("endTime")),
+		])
+		.groupBy("hourTs")
+		.format("JSON")
+
+	const { sql } = compileCH(query, {
+		orgId: params.orgId,
+		startTime: params.startTime,
+		endTime: params.endTime,
+	})
 
 	return {
 		sql,
@@ -91,5 +107,104 @@ FORMAT JSON`
 	return {
 		sql,
 		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceMapEdgesHourlyOutput>,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Resolutions rollup (companion of the edges rollup)
+//
+// Emits one row per resolved `(SourceService, parent.server.address) →
+// child.ServiceName` triple per hour. Used by `serviceExternalEdgesSQL`'s
+// LEFT ANTI JOIN to suppress internal-service HTTP overlap from the
+// Dependencies tab's "external" view.
+//
+// Reads raw `traces` (not `service_map_spans`) because the projection MV
+// doesn't carry SpanAttributes; we need `server.address` on the parent. Runs
+// once per completed hour from `ServiceMapRollupService.processOrg`.
+// ---------------------------------------------------------------------------
+
+/** One resolved address-to-service mapping bucket — mirrors the columns of
+ * `service_address_resolutions_hourly`. */
+export interface ServiceAddressResolutionsHourlyOutput {
+	readonly OrgId: string
+	readonly Hour: string
+	readonly SourceService: string
+	readonly ParentServerAddress: string
+	readonly ResolvedTargetService: string
+	readonly DeploymentEnv: string
+}
+
+export function serviceMapResolutionsRollupSQL(
+	params: ServiceMapEdgesRollupParams,
+): CompiledQuery<ServiceAddressResolutionsHourlyOutput> {
+	// Parent side: Client/Producer spans, projecting just what the join + outer
+	// SELECT needs. The map lookups (`server.address`, `deployment.environment`)
+	// happen here so the outer query reads them as plain columns instead of
+	// re-evaluating the map per output row.
+	const parents = from(Traces)
+		.select(($) => ({
+			OrgId: $.OrgId,
+			Timestamp: $.Timestamp,
+			TraceId: $.TraceId,
+			SpanId: $.SpanId,
+			ServiceName: $.ServiceName,
+			ServerAddress: $.SpanAttributes.get("server.address"),
+			DeploymentEnv: $.ResourceAttributes.get("deployment.environment"),
+		}))
+		.where(($) => [
+			CH.inList($.SpanKind, ["Client", "Producer"]),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
+			$.OrgId.eq(param.string("orgId")),
+			$.SpanAttributes.get("server.address").neq(""),
+		])
+
+	// Child side: Server/Consumer spans. Only the columns needed to JOIN on
+	// (TraceId, ParentSpanId) and to project the resolved target ServiceName.
+	const children = from(Traces)
+		.select(($) => ({
+			TraceId: $.TraceId,
+			ParentSpanId: $.ParentSpanId,
+			ServiceName: $.ServiceName,
+		}))
+		.where(($) => [
+			CH.inList($.SpanKind, ["Server", "Consumer"]),
+			$.Timestamp.gte(param.dateTime("hourStart")),
+			$.Timestamp.lt(param.dateTime("hourEnd")),
+			$.OrgId.eq(param.string("orgId")),
+		])
+
+	const query = fromQuery(parents, "p")
+		.innerJoinQuery(children, "c", (p, c) =>
+			p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)),
+		)
+		.select(($) => ({
+			OrgId: $.OrgId,
+			Hour: CH.toStartOfHour($.Timestamp),
+			SourceService: $.ServiceName,
+			ParentServerAddress: $.ServerAddress,
+			ResolvedTargetService: $.c.ServiceName,
+			DeploymentEnv: $.DeploymentEnv,
+		}))
+		.where(($) => [$.ServiceName.neq($.c.ServiceName)])
+		.groupBy(
+			"OrgId",
+			"Hour",
+			"SourceService",
+			"ParentServerAddress",
+			"ResolvedTargetService",
+			"DeploymentEnv",
+		)
+		.format("JSON")
+
+	const { sql } = compileCH(query, {
+		orgId: params.orgId,
+		hourStart: params.hourStart,
+		hourEnd: params.hourEnd,
+	})
+
+	return {
+		sql,
+		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceAddressResolutionsHourlyOutput>,
 	}
 }

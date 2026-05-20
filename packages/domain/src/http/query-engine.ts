@@ -242,6 +242,21 @@ export class ServiceDbEdgesResponse extends Schema.Class<ServiceDbEdgesResponse>
 	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
 }) {}
 
+export class ServiceExternalEdgesRequest extends Schema.Class<ServiceExternalEdgesRequest>(
+	"ServiceExternalEdgesRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	serviceName: Schema.String,
+	deploymentEnv: Schema.optional(Schema.String),
+}) {}
+
+export class ServiceExternalEdgesResponse extends Schema.Class<ServiceExternalEdgesResponse>(
+	"ServiceExternalEdgesResponse",
+)({
+	data: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+}) {}
+
 const ServicePlatformLiteral = Schema.Literals(["kubernetes", "cloudflare", "lambda", "web", "unknown"])
 
 export class ServicePlatformsRequest extends Schema.Class<ServicePlatformsRequest>("ServicePlatformsRequest")({
@@ -1090,6 +1105,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceDbEdges", "/service-db-edges", {
 			payload: ServiceDbEdgesRequest,
 			success: ServiceDbEdgesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceExternalEdges", "/service-external-edges", {
+			payload: ServiceExternalEdgesRequest,
+			success: ServiceExternalEdgesResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

@@ -389,6 +389,108 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 export type ServiceMapDbEdgesHourlyRow = InferRow<typeof serviceMapDbEdgesHourly>
 
 /**
+ * Pre-aggregated hourly service-to-external-target edges for the service detail
+ * page's Dependencies tab (and, eventually, external nodes on the service map).
+ *
+ * One row per (OrgId, Hour, ServiceName, TargetType, TargetSystem, TargetName,
+ * DeploymentEnv) — captures Client/Producer spans WITHOUT `db.system.name`
+ * (those are in `service_map_db_edges_hourly`), keyed by what they're talking to:
+ *
+ *   - http       — `server.address` / `http.host` / `url.authority`
+ *   - messaging  — `messaging.system` + `messaging.destination`
+ *   - rpc        — `rpc.system` + `rpc.service`
+ *
+ * `TargetType` is LowCardinality(String) — not Enum8 — to match the
+ * `alert_checks` pattern (forward-compat with potential direct ingestion paths
+ * that don't support Enum8 JSONPath ingestion). Allowed values: 'http' |
+ * 'messaging' | 'rpc'. Populated by materialized view, not direct ingestion.
+ *
+ * Internal-service overlap (e.g. `auth-api` calling `users-api` shows up here
+ * as `http://users-api.svc.cluster.local`) is filtered at QUERY time via a
+ * LEFT ANTI JOIN against `service_address_resolutions_hourly`.
+ */
+export const serviceExternalEdgesHourly = defineDatasource("service_external_edges_hourly", {
+	description:
+		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans WITHOUT db.system.name. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		ServiceName: t.string().lowCardinality(),
+		TargetType: t.string().lowCardinality(),
+		TargetSystem: t.string().lowCardinality(),
+		TargetName: t.string(),
+		DeploymentEnv: t.string().lowCardinality(),
+		CallCount: t.simpleAggregateFunction("sum", t.uint64()),
+		ErrorCount: t.simpleAggregateFunction("sum", t.uint64()),
+		DurationSumMs: t.simpleAggregateFunction("sum", t.float64()),
+		MaxDurationMs: t.simpleAggregateFunction("max", t.float64()),
+		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"DeploymentEnv",
+			"ServiceName",
+			"TargetType",
+			"TargetSystem",
+			"TargetName",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type ServiceExternalEdgesHourlyRow = InferRow<typeof serviceExternalEdgesHourly>
+
+/**
+ * Resolved `(SourceService, parent-Client-span.server.address) → child-Server-
+ * span.ServiceName` facts emitted by `ServiceMapRollupService` from the same
+ * cross-span JOIN that fills `service_map_edges_hourly`. One row per resolved
+ * (sourceService, parentServerAddress, resolvedTargetService) triple per hour.
+ *
+ * Used by the Dependencies-tab external-edges query to anti-join out HTTP
+ * targets that actually resolve to a known internal service in the same window
+ * (so `auth-api → users-api.svc.cluster.local` doesn't show up under "External
+ * HTTP" when it's already represented as an internal service edge).
+ *
+ * Not populated by a materialized view — the parent→child JOIN is a cross-span
+ * operation that an incremental MV cannot express. Same caveat as
+ * `service_map_edges_hourly`.
+ */
+export const serviceAddressResolutionsHourly = defineDatasource(
+	"service_address_resolutions_hourly",
+	{
+		description:
+			"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
+		jsonPaths: false,
+		schema: {
+			OrgId: t.string().lowCardinality(),
+			Hour: t.dateTime(),
+			SourceService: t.string().lowCardinality(),
+			ParentServerAddress: t.string(),
+			ResolvedTargetService: t.string().lowCardinality(),
+			DeploymentEnv: t.string().lowCardinality(),
+		},
+		engine: engine.replacingMergeTree({
+			partitionKey: "toDate(Hour)",
+			sortingKey: [
+				"OrgId",
+				"Hour",
+				"DeploymentEnv",
+				"SourceService",
+				"ParentServerAddress",
+				"ResolvedTargetService",
+			],
+			ttl: "toDate(Hour) + INTERVAL 90 DAY",
+		}),
+	},
+)
+
+export type ServiceAddressResolutionsHourlyRow = InferRow<typeof serviceAddressResolutionsHourly>
+
+/**
  * Pre-aggregated hourly per-service platform attributes for the service map.
  * One row per (OrgId, Hour, ServiceName, DeploymentEnv) with the resource
  * attributes that identify where a service runs. Uses SimpleAggregateFunction

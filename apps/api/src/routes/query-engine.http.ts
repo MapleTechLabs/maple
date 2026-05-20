@@ -21,6 +21,7 @@ import {
 	ServiceReleasesResponse,
 	ServiceDependenciesResponse,
 	ServiceDbEdgesResponse,
+	ServiceExternalEdgesResponse,
 	ServicePlatformsResponse,
 	ServiceWorkloadsResponse,
 	ServiceUsageResponse,
@@ -434,6 +435,26 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						"serviceDbEdges query failed",
 					)
 					return new ServiceDbEdgesResponse({ data: compiled.castRows(rows) as any[] })
+				}),
+			)
+			.handle("serviceExternalEdges", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const compiled = CH.serviceExternalEdgesSQL(
+						{
+							deploymentEnv: payload.deploymentEnv,
+							serviceName: payload.serviceName,
+						},
+						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+					)
+					const rows = yield* mapExecError(
+						warehouse.sqlQuery(tenant, compiled.sql, {
+							profile: "aggregation",
+							context: "serviceExternalEdges",
+						}),
+						"serviceExternalEdges query failed",
+					)
+					return new ServiceExternalEdgesResponse({ data: compiled.castRows(rows) as any[] })
 				}),
 			)
 			.handle("servicePlatforms", ({ payload }) =>

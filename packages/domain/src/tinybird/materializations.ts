@@ -4,6 +4,7 @@ import {
 	serviceMapSpans,
 	serviceMapChildren,
 	serviceMapDbEdgesHourly,
+	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
 	serviceOverviewSpans,
 	errorSpans,
@@ -372,6 +373,83 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
 		}),
 	],
 })
+
+/**
+ * Materialized view pre-aggregating service-to-external-target edges per hour.
+ * Captures Client/Producer spans WITHOUT `db.system.name` set (DB calls go to
+ * `service_map_db_edges_hourly_mv`) — i.e. plain HTTP outbound, messaging
+ * producers, and RPC clients.
+ *
+ * `TargetType` precedence: messaging > rpc > http. A span carrying both
+ * `messaging.system` and `server.address` (rare, but happens when a queue
+ * client also tags the broker address) lands as messaging — its identity is
+ * the queue, not the host. RPC is preferred over http for the same reason.
+ *
+ * For HTTP the fallback chain for `TargetName` is
+ * `server.address` → `http.host` → `url.authority` — modern OTel SDKs emit
+ * `server.address`; legacy ones still emit `http.host`; some emit `url.authority`.
+ */
+export const serviceExternalEdgesHourlyMv = defineMaterializedView(
+	"service_external_edges_hourly_mv",
+	{
+		description:
+			"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
+		datasource: serviceExternalEdgesHourly,
+		nodes: [
+			node({
+				name: "service_external_edges_hourly_mv_node",
+				sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ServiceName,
+          multiIf(
+            SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '', 'messaging',
+            SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '', 'rpc',
+            'http'
+          ) AS TargetType,
+          multiIf(
+            SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '', SpanAttributes['messaging.system'],
+            SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '', SpanAttributes['rpc.system'],
+            ''
+          ) AS TargetSystem,
+          multiIf(
+            SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '',
+              if(SpanAttributes['messaging.destination'] != '', SpanAttributes['messaging.destination'], SpanAttributes['messaging.system']),
+            SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '',
+              if(SpanAttributes['rpc.service'] != '', SpanAttributes['rpc.service'], SpanAttributes['rpc.system']),
+            if(SpanAttributes['server.address'] != '',
+              SpanAttributes['server.address'],
+              if(SpanAttributes['http.host'] != '',
+                SpanAttributes['http.host'],
+                SpanAttributes['url.authority']))
+          ) AS TargetName,
+          ResourceAttributes['deployment.environment'] AS DeploymentEnv,
+          count() AS CallCount,
+          countIf(StatusCode = 'Error') AS ErrorCount,
+          sum(Duration / 1000000) AS DurationSumMs,
+          max(Duration / 1000000) AS MaxDurationMs,
+          sum(SampleRate) AS SampleRateSum
+        FROM traces
+        WHERE SpanKind IN ('Client', 'Producer')
+          AND SpanAttributes['db.system.name'] = ''
+          AND ServiceName != ''
+          AND (
+               SpanAttributes['server.address'] != ''
+            OR SpanAttributes['http.host'] != ''
+            OR SpanAttributes['url.authority'] != ''
+            OR SpanAttributes['messaging.destination'] != ''
+            OR SpanAttributes['messaging.system'] != ''
+            OR SpanAttributes['rpc.service'] != ''
+            OR SpanAttributes['rpc.system'] != ''
+          )
+        GROUP BY OrgId, Hour, ServiceName, TargetType, TargetSystem, TargetName, DeploymentEnv
+        HAVING TargetName != ''
+      `,
+			}),
+		],
+	},
+)
 
 /**
  * Materialized view pre-aggregating per-service hosting-platform attributes per hour.

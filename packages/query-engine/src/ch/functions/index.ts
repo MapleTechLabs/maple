@@ -41,7 +41,14 @@ export {
 	greatest_,
 } from "./numeric"
 
-export { toStartOfInterval, intervalSub, formatDateTime, toDateTime } from "./date-time"
+export {
+	toStartOfInterval,
+	toStartOfHour,
+	toUnixTimestamp,
+	intervalSub,
+	formatDateTime,
+	toDateTime,
+} from "./date-time"
 
 export { if_, multiIf, coalesce, nullIf } from "./conditional"
 

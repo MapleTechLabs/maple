@@ -5,7 +5,11 @@
 // ---------------------------------------------------------------------------
 
 import { escapeClickHouseString } from "../../sql/sql-fragment"
-import type { CompiledQuery } from "../compile"
+import { compileCH, type CompiledQuery } from "../compile"
+import * as CH from "../expr"
+import { param } from "../param"
+import { from } from "../query"
+import { ServicePlatformsHourly } from "../tables"
 
 // ---------------------------------------------------------------------------
 // Service dependencies
@@ -295,6 +299,167 @@ FORMAT JSON`
 }
 
 // ---------------------------------------------------------------------------
+// Service ↔ external target edges (http / messaging / rpc)
+//
+// Surfaces non-DB Client/Producer outbound calls — HTTP endpoints, message
+// queues, RPC targets — as a unified inventory for the service-detail page's
+// "Dependencies" tab. Mirrors the DB-edges pattern: hourly MV (sealed buckets)
+// UNION ALL with raw-traces fallback (in-progress hour), then de-duplicated
+// against `service_address_resolutions_hourly` so HTTP targets whose address
+// resolves to a known internal service (in the same window) drop out — those
+// already appear under "Services" via `serviceDependenciesSQL`.
+// ---------------------------------------------------------------------------
+
+export interface ServiceExternalEdgesOpts {
+	deploymentEnv?: string
+	serviceName: string
+}
+
+export interface ServiceExternalEdgesOutput {
+	readonly sourceService: string
+	readonly targetType: "http" | "messaging" | "rpc"
+	readonly targetSystem: string
+	readonly targetName: string
+	readonly callCount: number
+	readonly errorCount: number
+	readonly avgDurationMs: number
+	readonly p95DurationMs: number
+	readonly estimatedSpanCount: number
+}
+
+export function serviceExternalEdgesSQL(
+	opts: ServiceExternalEdgesOpts,
+	params: { orgId: string; startTime: string; endTime: string },
+): CompiledQuery<ServiceExternalEdgesOutput> {
+	const esc = escapeClickHouseString
+	const envFilterMv = opts.deploymentEnv
+		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
+		: ""
+	const envFilterRaw = opts.deploymentEnv
+		? `AND ResourceAttributes['deployment.environment'] = '${esc(opts.deploymentEnv)}'`
+		: ""
+	const envFilterRes = opts.deploymentEnv
+		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
+		: ""
+
+	// Hourly branch: sealed buckets from the MV-fed table. Carries
+	// `bucket*` aliases so the outer aggregate can't collide with inner ones
+	// (same nested-aggregate optimizer gotcha as `serviceDbEdgesSQL`).
+	const hourlyEdges = `SELECT
+      ServiceName AS sourceService,
+      TargetType AS targetType,
+      TargetSystem AS targetSystem,
+      TargetName AS targetName,
+      sum(CallCount) AS bucketCallCount,
+      sum(ErrorCount) AS bucketErrorCount,
+      sum(DurationSumMs) AS bucketDurationSumMs,
+      max(MaxDurationMs) AS bucketMaxDurationMs,
+      sum(if(SampleRateSum > 0, SampleRateSum, toFloat64(CallCount))) AS bucketEstimatedSpanCount
+    FROM service_external_edges_hourly
+    WHERE OrgId = '${esc(params.orgId)}'
+      AND ServiceName = '${esc(opts.serviceName)}'
+      AND Hour >= toStartOfHour(toDateTime('${esc(params.startTime)}'))
+      AND Hour < toStartOfHour(toDateTime('${esc(params.endTime)}'))
+      AND TargetName != ''
+      ${envFilterMv}
+    GROUP BY sourceService, targetType, targetSystem, targetName`
+
+	// Recent branch: raw `traces` for the in-progress hour only. Mirrors the
+	// `multiIf` precedence used by the MV (messaging > rpc > http) so the
+	// two branches produce identical row shapes for the same span.
+	const recentEdges = `SELECT
+      ServiceName AS sourceService,
+      multiIf(
+        SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '', 'messaging',
+        SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '', 'rpc',
+        'http'
+      ) AS targetType,
+      multiIf(
+        SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '', SpanAttributes['messaging.system'],
+        SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '', SpanAttributes['rpc.system'],
+        ''
+      ) AS targetSystem,
+      multiIf(
+        SpanAttributes['messaging.destination'] != '' OR SpanAttributes['messaging.system'] != '',
+          if(SpanAttributes['messaging.destination'] != '', SpanAttributes['messaging.destination'], SpanAttributes['messaging.system']),
+        SpanAttributes['rpc.service'] != '' OR SpanAttributes['rpc.system'] != '',
+          if(SpanAttributes['rpc.service'] != '', SpanAttributes['rpc.service'], SpanAttributes['rpc.system']),
+        if(SpanAttributes['server.address'] != '',
+          SpanAttributes['server.address'],
+          if(SpanAttributes['http.host'] != '',
+            SpanAttributes['http.host'],
+            SpanAttributes['url.authority']))
+      ) AS targetName,
+      count() AS bucketCallCount,
+      countIf(StatusCode = 'Error') AS bucketErrorCount,
+      sum(Duration / 1000000) AS bucketDurationSumMs,
+      max(Duration / 1000000) AS bucketMaxDurationMs,
+      sum(SampleRate) AS bucketEstimatedSpanCount
+    FROM traces
+    WHERE OrgId = '${esc(params.orgId)}'
+      AND ServiceName = '${esc(opts.serviceName)}'
+      AND Timestamp >= toStartOfHour(toDateTime('${esc(params.endTime)}'))
+      AND Timestamp <= '${esc(params.endTime)}'
+      AND SpanKind IN ('Client', 'Producer')
+      AND SpanAttributes['db.system.name'] = ''
+      AND (
+           SpanAttributes['server.address'] != ''
+        OR SpanAttributes['http.host'] != ''
+        OR SpanAttributes['url.authority'] != ''
+        OR SpanAttributes['messaging.destination'] != ''
+        OR SpanAttributes['messaging.system'] != ''
+        OR SpanAttributes['rpc.service'] != ''
+        OR SpanAttributes['rpc.system'] != ''
+      )
+      ${envFilterRaw}
+    GROUP BY sourceService, targetType, targetSystem, targetName
+    HAVING targetName != ''`
+
+	// Internal-service overlap suppression: drop HTTP rows whose `targetName`
+	// resolves to a known internal service in the same window. Messaging and
+	// RPC pass through unchanged (queues/RPC services are never the same
+	// identity as an internal service name). Scoped to `[startHour, endHour]`
+	// so we don't anti-join against ancient resolutions.
+	const sql = `SELECT
+  sourceService,
+  targetType,
+  targetSystem,
+  targetName,
+  sum(bucketCallCount) AS callCount,
+  sum(bucketErrorCount) AS errorCount,
+  sum(bucketDurationSumMs) / nullIf(sum(bucketCallCount), 0) AS avgDurationMs,
+  max(bucketMaxDurationMs) AS p95DurationMs,
+  sum(bucketEstimatedSpanCount) AS estimatedSpanCount
+FROM (
+  ${hourlyEdges}
+  UNION ALL
+  ${recentEdges}
+) AS edges
+WHERE NOT (
+  targetType = 'http'
+  AND targetName IN (
+    SELECT DISTINCT ParentServerAddress
+    FROM service_address_resolutions_hourly
+    WHERE OrgId = '${esc(params.orgId)}'
+      AND SourceService = '${esc(opts.serviceName)}'
+      AND Hour >= toStartOfHour(toDateTime('${esc(params.startTime)}'))
+      AND Hour <= toDateTime('${esc(params.endTime)}')
+      AND ParentServerAddress != ''
+      ${envFilterRes}
+  )
+)
+GROUP BY sourceService, targetType, targetSystem, targetName
+ORDER BY callCount DESC
+LIMIT 200
+FORMAT JSON`
+
+	return {
+		sql,
+		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceExternalEdgesOutput>,
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Service hosting platform
 //
 // Per-service rollup of the OTel resource attributes that identify where a
@@ -330,30 +495,38 @@ export function servicePlatformsSQL(
 	opts: ServicePlatformsOpts,
 	params: { orgId: string; startTime: string; endTime: string },
 ): CompiledQuery<ServicePlatformsOutput> {
-	const esc = escapeClickHouseString
-	const envFilter = opts.deploymentEnv
-		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
-		: ""
+	const query = from(ServicePlatformsHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			// `max()` on a SimpleAggregateFunction(max, String) column merges
+			// non-empty strings to win over empty ones — the "did any span in
+			// this window carry this attribute" semantics the platform
+			// classifier needs.
+			k8sCluster: CH.max_($.K8sCluster),
+			k8sPodName: CH.max_($.K8sPodName),
+			k8sDeploymentName: CH.max_($.K8sDeploymentName),
+			cloudPlatform: CH.max_($.CloudPlatform),
+			cloudProvider: CH.max_($.CloudProvider),
+			faasName: CH.max_($.FaasName),
+			mapleSdkType: CH.max_($.MapleSdkType),
+			processRuntimeName: CH.max_($.ProcessRuntimeName),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(CH.toStartOfHour(param.dateTime("startTime"))),
+			$.Hour.lte(param.dateTime("endTime")),
+			$.ServiceName.neq(""),
+			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
+		])
+		.groupBy("serviceName")
+		.limit(500)
+		.format("JSON")
 
-	const sql = `SELECT
-  ServiceName AS serviceName,
-  max(K8sCluster) AS k8sCluster,
-  max(K8sPodName) AS k8sPodName,
-  max(K8sDeploymentName) AS k8sDeploymentName,
-  max(CloudPlatform) AS cloudPlatform,
-  max(CloudProvider) AS cloudProvider,
-  max(FaasName) AS faasName,
-  max(MapleSdkType) AS mapleSdkType,
-  max(ProcessRuntimeName) AS processRuntimeName
-FROM service_platforms_hourly
-WHERE OrgId = '${esc(params.orgId)}'
-  AND Hour >= toStartOfHour(toDateTime('${esc(params.startTime)}'))
-  AND Hour <= '${esc(params.endTime)}'
-  AND ServiceName != ''
-  ${envFilter}
-GROUP BY serviceName
-LIMIT 500
-FORMAT JSON`
+	const { sql } = compileCH(query, {
+		orgId: params.orgId,
+		startTime: params.startTime,
+		endTime: params.endTime,
+	})
 
 	return {
 		sql,

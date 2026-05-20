@@ -271,6 +271,8 @@ export {
 	least_,
 	greatest_,
 	toStartOfInterval,
+	toStartOfHour,
+	toUnixTimestamp,
 	intervalSub,
 	formatDateTime,
 	toDateTime,
