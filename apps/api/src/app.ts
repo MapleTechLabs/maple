@@ -62,7 +62,7 @@ export const DocsRoute = HttpApiScalar.layer(MapleApi, {
 	path: "/docs",
 })
 
-export const InfraLive = Env.Default
+export const InfraLive = Env.layer
 
 export const CoreServicesLive = Layer.mergeAll(
 	AuthService.layer,
@@ -94,7 +94,7 @@ export const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 )
 
 export const AlertsServiceLive = AlertsService.layer.pipe(
-	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, QueryEngineServiceLive, AlertRuntime.Default)),
+	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, QueryEngineServiceLive, AlertRuntime.layer)),
 )
 
 export const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
@@ -105,9 +105,9 @@ export const ErrorsServiceLive = ErrorsService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, NotificationDispatcherLive)),
 )
 
-export const EmailServiceLive = EmailService.Default.pipe(Layer.provide(Env.Default))
+export const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
-export const DigestServiceLive = DigestService.Default.pipe(
+export const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
 
@@ -119,7 +119,7 @@ export const MainLive = Layer.mergeAll(
 	ErrorsServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
-	RawSqlChartService.Default,
+	RawSqlChartService.layer,
 )
 
 export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
@@ -167,7 +167,7 @@ export const AllRoutes = Layer.mergeAll(
 
 export const ApiAuthLive = AuthorizationLive.pipe(
 	Layer.provideMerge(ApiKeysService.layer),
-	Layer.provideMerge(Env.Default),
+	Layer.provideMerge(Env.layer),
 )
 
 // The OTLP tracer/logger is built per-request in worker.ts and injected via

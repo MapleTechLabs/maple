@@ -10,7 +10,7 @@ const baseInput = {
 }
 
 function run<A, E>(effect: Effect.Effect<A, E, RawSqlChartService>) {
-	return Effect.runPromiseExit(effect.pipe(Effect.provide(RawSqlChartService.Default)))
+	return Effect.runPromiseExit(effect.pipe(Effect.provide(RawSqlChartService.layer)))
 }
 
 async function expandOk(sql: string) {

@@ -99,7 +99,7 @@ const makeLayer = (
 	runtimeOverrides?: Partial<AlertRuntimeShape>,
 ) => {
 	const configLive = makeConfig(url)
-	const envLive = Env.Default.pipe(Layer.provide(configLive))
+	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheService.layer))
@@ -109,9 +109,9 @@ const makeLayer = (
 		Layer.provide(bucketCacheLive),
 	)
 	const runtimeLive = Layer.succeed(AlertRuntime, { ...defaultTestRuntime, ...runtimeOverrides })
-	const hazelOAuthLive = HazelOAuthService.Live.pipe(Layer.provide(Layer.mergeAll(envLive, databaseLive)))
+	const hazelOAuthLive = HazelOAuthService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, databaseLive)))
 
-	return AlertsService.Live.pipe(
+	return AlertsService.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, queryEngineLive, warehouseLive, runtimeLive, hazelOAuthLive),
 		),

@@ -40,9 +40,9 @@ const makeConfig = (url: string, ingestPublicUrl = "https://ingest.example.com")
 	)
 
 const makeLayer = (url: string, ingestPublicUrl?: string) =>
-	CloudflareLogpushService.Live.pipe(
+	CloudflareLogpushService.layer.pipe(
 		Layer.provide(DatabaseLibsqlLive),
-		Layer.provide(Env.Default),
+		Layer.provide(Env.layer),
 		Layer.provide(makeConfig(url, ingestPublicUrl)),
 	)
 

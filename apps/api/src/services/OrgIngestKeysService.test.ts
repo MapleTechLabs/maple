@@ -43,9 +43,9 @@ const makeConfig = (url: string, encryptionKey?: string) =>
 	)
 
 const makeLayer = (url: string, encryptionKey = Buffer.alloc(32, 7).toString("base64")) =>
-	OrgIngestKeysService.Live.pipe(
+	OrgIngestKeysService.layer.pipe(
 		Layer.provide(DatabaseLibsqlLive),
-		Layer.provide(Env.Default),
+		Layer.provide(Env.layer),
 		Layer.provide(makeConfig(url, encryptionKey)),
 	)
 
@@ -289,9 +289,9 @@ describe("OrgIngestKeysService", () => {
 
 	it("fails when encryption key config is missing", async () => {
 		const { url } = createTempDbUrl()
-		const layer = OrgIngestKeysService.Live.pipe(
+		const layer = OrgIngestKeysService.layer.pipe(
 			Layer.provide(DatabaseLibsqlLive),
-			Layer.provide(Env.Default),
+			Layer.provide(Env.layer),
 			Layer.provide(makeConfig(url)),
 		)
 

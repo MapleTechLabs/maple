@@ -51,9 +51,9 @@ const testConfig = (url: string) =>
 	)
 
 const makeLayer = (url: string) =>
-	DashboardPersistenceService.Live.pipe(
+	DashboardPersistenceService.layer.pipe(
 		Layer.provide(DatabaseLibsqlLive),
-		Layer.provide(Env.Default),
+		Layer.provide(Env.layer),
 		Layer.provide(testConfig(url)),
 	)
 

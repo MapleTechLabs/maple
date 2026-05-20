@@ -160,6 +160,16 @@ describe("serviceUsageQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
+
+	it("snaps both Hour bounds to hour boundaries so sub-hour ranges still match", () => {
+		// `service_usage` is hourly-keyed; without snapping, a "last 15 min" query
+		// like 22:23–22:38 returns no rows. The fix wraps both bounds with
+		// `toStartOfHour(toDateTime(...))` so the enclosing hour contributes.
+		const q = serviceUsageQuery({})
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
+		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
+	})
 })
 
 // ---------------------------------------------------------------------------

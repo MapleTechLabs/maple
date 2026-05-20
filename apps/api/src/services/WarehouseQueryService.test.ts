@@ -35,12 +35,12 @@ const makeConfig = (url: string) =>
 
 const buildLayer = (url: string) => {
 	const configLive = makeConfig(url)
-	const envLive = Env.Default.pipe(Layer.provide(configLive))
+	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
-	const orgSettingsLive = OrgClickHouseSettingsService.Default.pipe(
+	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive)),
 	)
-	return WarehouseQueryService.Default.pipe(
+	return WarehouseQueryService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive)),
 	)
 }
