@@ -90,7 +90,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceShap
 			yield* Effect.logInfo("Email sent successfully").pipe(Effect.annotateLogs({ to, subject }))
 		})
 
-		return EmailService.of({ isConfigured, send })
+		return { isConfigured, send } satisfies EmailServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

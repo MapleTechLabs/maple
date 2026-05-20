@@ -319,11 +319,11 @@ export interface AlertRuntimeShape {
 
 export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShape>()("@maple/api/services/AlertRuntime", {
 	make: Effect.succeed({
-		now: () => Date.now(),
-		makeUuid: () => randomUUID(),
-		fetch: globalThis.fetch as typeof fetch,
-		deliveryTimeoutMs: () => DELIVERY_TIMEOUT_MS_DEFAULT,
-	}),
+			now: () => Date.now(),
+			makeUuid: () => randomUUID(),
+			fetch: globalThis.fetch as typeof fetch,
+			deliveryTimeoutMs: () => DELIVERY_TIMEOUT_MS_DEFAULT,
+		} satisfies AlertRuntimeShape),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
 }
@@ -3573,7 +3573,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			}
 		})
 
-		return AlertsService.of({
+		return {
 			listDestinations,
 			createDestination,
 			updateDestination,
@@ -3588,7 +3588,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			listRuleChecks,
 			listDeliveryEvents,
 			runSchedulerTick,
-		})
+		} satisfies AlertsServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

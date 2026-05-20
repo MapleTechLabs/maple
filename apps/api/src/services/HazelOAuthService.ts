@@ -961,7 +961,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				return { disconnected: (result.rowsAffected ?? 0) > 0 }
 			})
 
-			return HazelOAuthService.of({
+			return {
 				startConnect,
 				completeConnect,
 				getStatus,
@@ -970,7 +970,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				listChannels,
 				createChannelWebhook,
 				disconnect,
-			})
+			} satisfies HazelOAuthServiceShape
 		}),
 	},
 ) {

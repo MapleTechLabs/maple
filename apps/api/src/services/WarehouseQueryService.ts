@@ -659,11 +659,11 @@ export class WarehouseQueryService extends Context.Service<
 				)
 			})
 
-			return WarehouseQueryService.of({
+			return {
 				query,
 				sqlQuery,
 				ingest,
-			})
+			} satisfies WarehouseQueryServiceShape
 		}),
 	},
 ) {

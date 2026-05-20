@@ -2234,7 +2234,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			}
 		})
 
-		return ErrorsService.of({
+		return {
 			listIssues,
 			getIssue,
 			transitionIssue,
@@ -2254,7 +2254,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			getNotificationPolicy,
 			upsertNotificationPolicy,
 			runTick,
-		})
+		} satisfies ErrorsServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

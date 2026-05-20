@@ -247,12 +247,12 @@ export class OrgOpenRouterSettingsService extends Context.Service<
 			return Option.some(apiKey)
 		})
 
-		return OrgOpenRouterSettingsService.of({
+		return {
 			get,
 			upsert,
 			delete: deleteSettings,
 			resolveApiKey,
-		})
+		} satisfies OrgOpenRouterSettingsServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

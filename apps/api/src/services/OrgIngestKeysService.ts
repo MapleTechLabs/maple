@@ -278,12 +278,12 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			} satisfies ResolvedIngestKey)
 		})
 
-		return OrgIngestKeysService.of({
+		return {
 			getOrCreate,
 			rerollPublic,
 			rerollPrivate,
 			resolveIngestKey,
-		})
+		}
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

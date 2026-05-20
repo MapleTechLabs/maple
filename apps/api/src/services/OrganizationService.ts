@@ -142,9 +142,9 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				return new DeleteOrganizationResponse({ deleted: true })
 			})
 
-			return OrganizationService.of({
+			return {
 				delete: deleteOrganization,
-			})
+			} satisfies OrganizationServiceShape
 		}),
 	},
 ) {

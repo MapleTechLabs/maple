@@ -194,7 +194,7 @@ export function makeExpandMacros(input: ExpandMacrosInput) {
 export class RawSqlChartService extends Context.Service<RawSqlChartService, RawSqlChartServiceShape>()(
 	"@maple/api/services/RawSqlChartService",
 	{
-		make: Effect.succeed(RawSqlChartService.of({ expandMacros: makeExpandMacros })),
+		make: Effect.succeed({ expandMacros: makeExpandMacros } satisfies RawSqlChartServiceShape),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)

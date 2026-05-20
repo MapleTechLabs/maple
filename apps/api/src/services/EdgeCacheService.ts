@@ -273,7 +273,7 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 				}),
 		})
 
-	return { getOrCompute, rawGet, rawPut }
+	return { getOrCompute, rawGet, rawPut } satisfies EdgeCacheServiceShape
 }
 
 export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceShape>()(

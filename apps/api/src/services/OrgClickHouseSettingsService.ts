@@ -870,7 +870,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			})
 		})
 
-		return OrgClickHouseSettingsService.of({
+		return {
 			get,
 			upsert,
 			delete: deleteSettings,
@@ -878,7 +878,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			applySchema,
 			resolveRuntimeConfig,
 			collectorConfig,
-		})
+		} satisfies OrgClickHouseSettingsServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

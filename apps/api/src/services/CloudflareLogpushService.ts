@@ -490,14 +490,14 @@ export class CloudflareLogpushService extends Context.Service<
 			return yield* buildSetup(yield* requireConnector(orgId, connectorId))
 		})
 
-		return CloudflareLogpushService.of({
+		return {
 			list,
 			create,
 			update,
 			delete: remove,
 			getSetup,
 			rotateSecret,
-		})
+		} satisfies CloudflareLogpushServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

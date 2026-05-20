@@ -305,7 +305,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 				},
 			)
 
-			return OnboardingEmailService.of({ runOnboardingTick })
+			return { runOnboardingTick }
 		}),
 	},
 ) {

@@ -467,12 +467,12 @@ export class AuthService extends Context.Service<AuthService, AuthServiceShape>(
 		const loginSelfHosted = makeLoginSelfHosted(env)
 		const getUserEmail = makeGetUserEmail(env)
 
-		return AuthService.of({
+		return {
 			resolveTenant,
 			resolveMcpTenant,
 			loginSelfHosted,
 			getUserEmail,
-		})
+		} satisfies AuthServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
