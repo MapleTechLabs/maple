@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { oauthAuthStates, oauthConnections, type OAuthAuthStateRow, type OAuthConnectionRow } from "@maple/db"
 import { and, eq, lt } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "./Crypto"
 import { Database, type DatabaseClient } from "./DatabaseLive"
 import { Env, type EnvShape } from "./Env"
@@ -354,7 +354,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 			) {
 				const config = yield* resolveConfig
 				const state = randomBytes(24).toString("base64url")
-				const currentTime = Date.now()
+				const currentTime = yield* Clock.currentTimeMillis
 				const callbackUrl = options.callbackUrl
 
 				yield* purgeExpiredStates(currentTime)
@@ -397,7 +397,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 							}),
 						)
 					}
-					if (row.expiresAt < Date.now()) {
+					if (row.expiresAt < (yield* Clock.currentTimeMillis)) {
 						yield* dbExecute((db) =>
 							db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)),
 						)
@@ -571,8 +571,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					? yield* encryptValue(tokenResponse.refresh_token)
 					: null
 				const expiresAt =
-					tokenResponse.expires_in != null ? Date.now() + tokenResponse.expires_in * 1000 : null
-				const currentTime = Date.now()
+					tokenResponse.expires_in != null ? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000 : null
+				const currentTime = yield* Clock.currentTimeMillis
 				const orgId = stateRow.orgId as OrgId
 
 				const existing = yield* dbExecute((db) =>
@@ -671,8 +671,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 						? yield* encryptValue(tokenResponse.refresh_token)
 						: null
 					const expiresAt =
-						tokenResponse.expires_in != null ? Date.now() + tokenResponse.expires_in * 1000 : null
-					const currentTime = Date.now()
+						tokenResponse.expires_in != null ? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000 : null
+					const currentTime = yield* Clock.currentTimeMillis
 					yield* dbExecute((db) =>
 						db
 							.update(oauthConnections)
@@ -696,7 +696,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 			) {
 				const config = yield* resolveConfig
 				const row = yield* requireConnection(orgId)
-				const isValid = row.expiresAt == null || row.expiresAt - Date.now() > REFRESH_LEEWAY_MS
+				const isValid = row.expiresAt == null || row.expiresAt - (yield* Clock.currentTimeMillis) > REFRESH_LEEWAY_MS
 
 				if (isValid) {
 					const accessToken = yield* decryptValue({

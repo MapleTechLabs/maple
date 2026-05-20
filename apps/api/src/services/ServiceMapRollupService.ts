@@ -1,7 +1,7 @@
 import { RoleName, UserId as UserIdSchema, type OrgId } from "@maple/domain/http"
 import { orgIngestKeys } from "@maple/db"
 import * as CH from "@maple/query-engine/ch"
-import { Cause, Context, Effect, Layer, Schema } from "effect"
+import { Clock, Cause, Context, Effect, Layer, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
 import { Database, type DatabaseError } from "./DatabaseLive"
 import { WarehouseQueryService } from "./WarehouseQueryService"
@@ -70,7 +70,7 @@ export class ServiceMapRollupService extends Context.Service<
 
 		const processOrg = Effect.fn("ServiceMapRollupService.processOrg")(function* (orgId: OrgId) {
 			const tenant = systemTenant(orgId)
-			const currentHourMs = Math.floor(Date.now() / HOUR_MS) * HOUR_MS
+			const currentHourMs = Math.floor((yield* Clock.currentTimeMillis) / HOUR_MS) * HOUR_MS
 			const oldestHourMs = currentHourMs - LOOKBACK_HOURS * HOUR_MS
 
 			// Completed hour starts in the lookback window, oldest → newest.

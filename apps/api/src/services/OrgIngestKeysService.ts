@@ -17,7 +17,7 @@ import {
 	type ResolvedIngestKey,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "./Crypto"
 import { Database } from "./DatabaseLive"
 import { Env } from "./Env"
@@ -120,7 +120,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 			const existing = yield* selectRow(orgId)
 			if (Option.isSome(existing)) return existing.value
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const publicKey = generatePublicKey()
 			const privateKey = generatePrivateKey()
 			const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
@@ -176,7 +176,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 		) {
 			yield* ensureRow(orgId, userId)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const publicKey = generatePublicKey()
 			const publicKeyHash = hashIngestKey(publicKey, lookupHmacKey)
 
@@ -213,7 +213,7 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 		) {
 			yield* ensureRow(orgId, userId)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const privateKey = generatePrivateKey()
 			const privateKeyHash = hashIngestKey(privateKey, lookupHmacKey)
 			const encryptedPrivate = yield* encryptPrivateKey(privateKey, encryptionKey)

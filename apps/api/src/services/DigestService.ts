@@ -15,7 +15,7 @@ import type { OrgId as OrgIdType, RoleName as RoleNameType } from "@maple/domain
 import { createClerkClient } from "@clerk/backend"
 import { render } from "@react-email/components"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { Array as Arr, Cause, Effect, Layer, Option, Redacted, Context } from "effect"
+import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Context } from "effect"
 import { WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
 import { Database } from "./DatabaseLive"
 import { EmailService } from "./EmailService"
@@ -119,7 +119,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 			yield* Effect.annotateCurrentSpan("userId", userId)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const id = crypto.randomUUID()
 
 			yield* database
@@ -174,7 +174,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		const generateDigestData = Effect.fn("DigestService.generateDigestData")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 
-			const now = new Date()
+			const now = new Date(yield* Clock.currentTimeMillis)
 			const toClickHouseDateTime = (d: Date) =>
 				d
 					.toISOString()
@@ -463,7 +463,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		const reconcileSubscriptions = Effect.fn("DigestService.reconcileSubscriptions")(function* (
 			clerkMemberships: Array<{ orgId: string; userId: string; email: string }>,
 		) {
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 
 			// Upsert all current Clerk members (re-enables returning members, updates email)
 			for (const m of clerkMemberships) {
@@ -547,7 +547,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			if (Option.isNone(env.CLERK_SECRET_KEY)) return
 
 			// Rate-limit: only sync from Clerk once per 24 hours
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			if (lastSyncAt != null && now - lastSyncAt < SYNC_INTERVAL_MS) return
 
 			const clerk = createClerkClient({
@@ -577,10 +577,10 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				),
 			)
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
 			const todayStartMs = now - (now % 86_400_000)
-			const currentDayOfWeek = new Date().getUTCDay()
+			const currentDayOfWeek = new Date(now).getUTCDay()
 
 			// Find subscriptions due for sending
 			const subs = yield* database
@@ -659,12 +659,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									)
 									.pipe(
 										Effect.tap(() =>
-											database.execute((db) =>
-												db
-													.update(digestSubscriptions)
-													.set({ lastSentAt: Date.now() })
-													.where(eq(digestSubscriptions.id, sub.id)),
-											),
+											Effect.gen(function* () {
+												const lastSentAt = yield* Clock.currentTimeMillis
+												yield* database.execute((db) =>
+													db
+														.update(digestSubscriptions)
+														.set({ lastSentAt })
+														.where(eq(digestSubscriptions.id, sub.id)),
+												)
+											}),
 										),
 										Effect.match({
 											onSuccess: () => ({ sent: true }),

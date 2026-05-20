@@ -8,7 +8,7 @@ import {
 	StalledEmail,
 	WelcomeEmail,
 } from "@maple/email/onboarding"
-import { Cause, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { EmailService } from "./EmailService"
 import { Env } from "./Env"
 import { OnboardingService } from "./OnboardingService"
@@ -61,7 +61,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 			 */
 			const orgHasRealTelemetry = Effect.fn("OnboardingEmailService.orgHasRealTelemetry")(
 				function* (orgId: OrgId) {
-					const now = new Date()
+					const now = new Date(yield* Clock.currentTimeMillis)
 					const currentEnd = toClickHouseDateTime(now)
 					const currentStart = toClickHouseDateTime(new Date(now.getTime() - 30 * DAY_MS))
 
@@ -148,7 +148,9 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 
 						const orgId = OrgId.make(org.id)
 						const orgCreatedAt =
-							typeof org.createdAt === "number" ? org.createdAt : Date.now()
+							typeof org.createdAt === "number"
+								? org.createdAt
+								: yield* Clock.currentTimeMillis
 
 						yield* onboarding.ensureRow(
 							orgId,
@@ -196,7 +198,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 					)
 
 					const rows = yield* onboarding.listAll()
-					const now = Date.now()
+					const now = yield* Clock.currentTimeMillis
 					const dashboardUrl = env.MAPLE_APP_BASE_URL
 
 					const results = yield* Effect.forEach(

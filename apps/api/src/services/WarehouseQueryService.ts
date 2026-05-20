@@ -7,7 +7,7 @@ import {
 import type { OrgId } from "@maple/domain"
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
-import { Effect, Layer, Option, Redacted, Schedule, Context } from "effect"
+import { Clock, Effect, Layer, Option, Redacted, Schedule, Context } from "effect"
 import { Env } from "./Env"
 import type { TenantContext } from "./AuthService"
 import { OrgClickHouseSettingsService } from "./OrgClickHouseSettingsService"
@@ -353,6 +353,9 @@ export class WarehouseQueryService extends Context.Service<
 					? `clickhouse:${config.url}:${config.username}:${config.password}:${config.database}`
 					: `tinybird:${config.host}:${config.token}`
 
+			// Sync helper called from outside the Effect.gen runtime — uses
+			// `Date.now()` directly because there's no fiber to yield from. The
+			// TTL is purely an in-process cache eviction signal; not test-critical.
 			const getCachedOrCreateClient = (orgId: OrgId | "__managed__", config: SqlClientConfig) => {
 				const now = Date.now()
 				const cacheKey = sqlClientCacheKey(config)
@@ -456,7 +459,7 @@ export class WarehouseQueryService extends Context.Service<
 				pipe: string,
 				options?: SqlQueryOptions,
 			) {
-				const startedAtMs = Date.now()
+				const startedAtMs = yield* Clock.currentTimeMillis
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 				yield* Effect.annotateCurrentSpan("tenant.userId", tenant.userId)
 				yield* Effect.annotateCurrentSpan("tenant.authMode", tenant.authMode)
@@ -508,7 +511,7 @@ export class WarehouseQueryService extends Context.Service<
 					}),
 					Effect.tapError((error) =>
 						Effect.gen(function* () {
-							const elapsedMs = Date.now() - startedAtMs
+							const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs
 							yield* Effect.annotateCurrentSpan("db.duration_ms", elapsedMs)
 							yield* Effect.annotateCurrentSpan("db.retry.attempts", retryAttempts)
 							yield* Effect.logError("WarehouseQueryService.executeSql failed", {
@@ -530,7 +533,10 @@ export class WarehouseQueryService extends Context.Service<
 				)
 
 				yield* Effect.annotateCurrentSpan("result.rowCount", result.data.length)
-				yield* Effect.annotateCurrentSpan("db.duration_ms", Date.now() - startedAtMs)
+				yield* Effect.annotateCurrentSpan(
+					"db.duration_ms",
+					(yield* Clock.currentTimeMillis) - startedAtMs,
+				)
 				yield* Effect.annotateCurrentSpan("db.retry.attempts", retryAttempts)
 				return result.data
 			})

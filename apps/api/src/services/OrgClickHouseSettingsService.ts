@@ -29,7 +29,7 @@ import {
 } from "@maple/domain/clickhouse"
 import { orgClickHouseSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Effect, Layer, Option, Redacted, Schema, Context } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -614,7 +614,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const encryptedPassword =
 				plainPassword.length > 0 ? yield* encryptToken(plainPassword, encryptionKey) : null
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
 					db
@@ -807,7 +807,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				// `up_to_date` entries are silently passed over.
 			}
 
-			const now = Date.now()
+			const now = yield* Clock.currentTimeMillis
 			const allSatisfied = entries.every(
 				(e) =>
 					e.status === "up_to_date" ||

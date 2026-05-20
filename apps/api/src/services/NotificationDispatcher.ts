@@ -9,7 +9,7 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { and, eq, inArray } from "drizzle-orm"
-import { Context, Effect, Layer, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Redacted } from "effect"
 import {
 	buildAlertChatUrl,
 	dispatchDelivery as dispatchDeliveryImpl,
@@ -135,7 +135,7 @@ export class NotificationDispatcher extends Context.Service<
 					},
 					linkUrl: request.linkUrl,
 					chatUrl,
-					sentAt: new Date().toISOString(),
+					sentAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
 				})
 				return yield* dispatchDeliveryImpl(
 					context,

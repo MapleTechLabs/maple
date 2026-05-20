@@ -8,7 +8,7 @@ import {
 	type AlertSignalType,
 } from "@maple/domain/http"
 import type { AlertDestinationRow } from "@maple/db"
-import { Duration, Effect, Match, Option } from "effect"
+import { Clock, Duration, Effect, Match, Option } from "effect"
 import type { EnrichedDestinationSecretConfig } from "./AlertDestinationHydration"
 import { safeFetch } from "../lib/url-validator"
 
@@ -449,7 +449,7 @@ export const dispatchDelivery = (
 							},
 							linkUrl,
 							chatUrl,
-							sentAt: new Date().toISOString(),
+							sentAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
 						})
 						const response = yield* runTimedFetch(
 							"hazel-oauth",
