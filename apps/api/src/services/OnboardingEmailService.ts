@@ -309,7 +309,11 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 		}),
 	},
 ) {
-	static readonly Default = Layer.effect(this, this.make)
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = Layer.effect(this, this.make)
+	// See OnboardingService.layer — `Default`/`Live` MUST alias `this.layer`
+	// rather than create new `Layer.effect` instances, otherwise the same
+	// runtime instantiates the service twice when two call sites import
+	// different aliases. Slated for removal in Phase 1.
+	static readonly Default = this.layer
+	static readonly Live = this.layer
 }

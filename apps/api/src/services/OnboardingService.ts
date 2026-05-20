@@ -228,7 +228,13 @@ export class OnboardingService extends Context.Service<OnboardingService>()("Onb
 		} as const
 	}),
 }) {
-	static readonly Default = Layer.effect(this, this.make)
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = Layer.effect(this, this.make)
+	// `Default`/`Live` are v3-style aliases retained for backward compatibility
+	// with existing callers (mostly tests). They MUST alias `this.layer` rather
+	// than each calling `Layer.effect(this, this.make)` independently — distinct
+	// Layer instances break Effect's per-runtime memoization and would
+	// instantiate the service twice for a single runtime if two call sites
+	// referenced different aliases. Slated for removal in Phase 1.
+	static readonly Default = this.layer
+	static readonly Live = this.layer
 }

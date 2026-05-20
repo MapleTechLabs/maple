@@ -78,7 +78,16 @@ describe("MapleCloudflareSDK.make", () => {
 		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
 		expect(attrMap["service.name"]).toBe("unit-test")
 		expect(attrMap["maple.sdk.type"]).toBe("cloudflare")
+		// Dual-emit: legacy key for Tinybird MVs + OTel-canonical key for new
+		// dashboards. Both MUST be present until MVs migrate to coalesce().
 		expect(attrMap["deployment.environment"]).toBe("test")
+		expect(attrMap["deployment.environment.name"]).toBe("test")
+		// Per-isolate UUID stamped at module load so dashboards can attribute
+		// telemetry to a specific replica. Not asserting a specific value
+		// (changes per test process); just that it's a valid UUID string.
+		expect(attrMap["service.instance.id"]).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+		)
 	})
 
 	it("ships Effect log records to /v1/logs with severity + body", async () => {

@@ -14,6 +14,15 @@ const stringOrUndefined = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined
 
 /**
+ * Per-process (per-isolate, on Cloudflare Workers) service instance ID. Stamped
+ * onto every resource so downstream dashboards can attribute traces/metrics to
+ * the specific replica that emitted them — required by maple-telemetry-
+ * conventions to match the Rust ingest gateway, which also emits a fresh UUID
+ * per process. `crypto.randomUUID` is available in Node ≥19 and on workerd.
+ */
+const SERVICE_INSTANCE_ID = crypto.randomUUID()
+
+/**
  * Subset of `MapleConfig` consumed by `resolveResource` — declared inline so
  * this module doesn't have to import the full server `MapleConfig`/
  * `CloudflareConfig` type and create a circular import.
@@ -81,7 +90,16 @@ export const resolveResource = (config: ResourceConfigInput): Effect.Effect<Reso
 		const attributes: Record<string, unknown> = {}
 		Object.assign(attributes, getAutoPlatformAttributes())
 		attributes["maple.sdk.type"] = config.sdkType ?? "server"
-		if (environment) attributes["deployment.environment"] = environment
+		attributes["service.instance.id"] = SERVICE_INSTANCE_ID
+		if (environment) {
+			// Dual-emit: every Tinybird MV (`service_overview_spans_mv` et al.)
+			// pre-extracts the legacy `deployment.environment` key, but query
+			// consumers in `packages/query-engine/src/ch/queries/infra.ts` already
+			// select on `deployment.environment.name` (the OTel-canonical key).
+			// Emit both until the MVs migrate to `coalesce()`.
+			attributes["deployment.environment"] = environment
+			attributes["deployment.environment.name"] = environment
+		}
 		if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 		Object.assign(attributes, envResourceAttributes)
 		if (config.attributes) Object.assign(attributes, config.attributes)
@@ -148,7 +166,12 @@ export const resolveResourceFromEnv = (
 	const attributes: Record<string, unknown> = {}
 	Object.assign(attributes, getAutoPlatformAttributes())
 	attributes["maple.sdk.type"] = config.sdkType ?? "server"
-	if (environment) attributes["deployment.environment"] = environment
+	attributes["service.instance.id"] = SERVICE_INSTANCE_ID
+	if (environment) {
+		// See resolveResource — dual-emit both keys until MVs coalesce.
+		attributes["deployment.environment"] = environment
+		attributes["deployment.environment.name"] = environment
+	}
 	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 	Object.assign(attributes, envResourceAttributes)
 	if (config.attributes) Object.assign(attributes, config.attributes)
