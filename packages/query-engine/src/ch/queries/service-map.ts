@@ -443,7 +443,7 @@ WHERE NOT (
     WHERE OrgId = '${esc(params.orgId)}'
       AND SourceService = '${esc(opts.serviceName)}'
       AND Hour >= toStartOfHour(toDateTime('${esc(params.startTime)}'))
-      AND Hour <= toDateTime('${esc(params.endTime)}')
+      AND Hour < toStartOfHour(toDateTime('${esc(params.endTime)}'))
       AND ParentServerAddress != ''
       ${envFilterRes}
   )

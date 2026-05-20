@@ -113,6 +113,14 @@ export class ServiceMapRollupService extends Context.Service<
 				// SQL pass (~same cost as the edges JOIN) so the existing rollup
 				// query keeps its tight shape; failure of one ingest doesn't
 				// invalidate the other (per-org Effect failure already isolated).
+				//
+				// NOTE: the hour is marked "done" purely by the presence of an edges
+				// row (see `serviceMapEdgesExistingHoursSQL`). If the edges write
+				// succeeds but the resolutions write fails (warehouse error, ingest
+				// throttling), the next tick will skip the hour and the resolutions
+				// gap is permanent — manifesting as internal-service HTTP calls
+				// leaking into the Dependencies "External" tab for that window.
+				// Backfill = re-running this rollup with the edges row deleted.
 				const resolutionsRollup = CH.serviceMapResolutionsRollupSQL({
 					orgId,
 					hourStart,
