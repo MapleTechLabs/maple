@@ -2,68 +2,43 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Exit, Schema } from "effect"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
-import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { AlertPreviewChart } from "@/components/alerts/alert-preview-chart"
-import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
-import { RuleSentenceBuilder } from "@/components/alerts/rule-sentence-builder"
-import { ProviderLogo } from "@/components/alerts/destination-provider"
-import {
-	AlertSegmentedSelect,
-	AlertMultiSegmentedSelect,
-	type AlertSegmentedOption,
-} from "@/components/alerts/alert-segmented-select"
-import {
-	type RuleFormState,
-	defaultRuleForm,
-	ruleToFormState,
-	buildRuleRequest,
-	buildRuleTestRequest,
-	isRulePreviewReady,
-	getExitErrorMessage,
-	comparatorLabels,
-	metricTypeLabels,
-	metricAggregationLabels,
-	destinationTypeLabels,
-	signalLabels,
-	formatSignalValue,
-	RAW_QUERY_REDUCER_LABELS,
-} from "@/lib/alerts/form-utils"
 import {
 	AlertDestinationDocument,
 	AlertRuleDocument,
-	type AlertMetricAggregation,
-	type AlertMetricType,
 } from "@maple/domain/http"
-import { EyeIcon, LoaderIcon } from "@/components/icons"
-import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { Card, CardContent } from "@maple/ui/components/ui/card"
-import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import { Textarea } from "@maple/ui/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import {
-	Combobox,
-	ComboboxChips,
-	ComboboxChip,
-	ComboboxChipsInput,
-	ComboboxContent,
-	ComboboxEmpty,
-	ComboboxItem,
-	ComboboxList,
-} from "@maple/ui/components/ui/combobox"
-import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DetailsSection } from "@/components/alerts/details-section"
+import { NotificationsSection } from "@/components/alerts/notifications-section"
+import { RuleActionBar } from "@/components/alerts/rule-action-bar"
+import { RuleLiveChartHero } from "@/components/alerts/rule-live-chart-hero"
+import { RuleTemplatesOverlay } from "@/components/alerts/rule-templates-overlay"
+import { ScopeSection } from "@/components/alerts/scope-section"
+import { SignalAndThresholdSection } from "@/components/alerts/signal-and-threshold-section"
 import { useAlertRuleChart } from "@/hooks/use-alert-rule-chart"
-import { highlightSql } from "@/lib/sql-highlight"
-import { AGGREGATIONS_BY_SOURCE } from "@/lib/query-builder/model"
-import { GroupByMultiSelect } from "@/components/query-builder/group-by-multi-select"
-import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
-import { AutocompleteValuesProvider, useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
+import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import {
+	AutocompleteValuesProvider,
+	useAutocompleteValuesContext,
+} from "@/hooks/use-autocomplete-values"
+import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import {
+	buildRuleRequest,
+	buildRuleTestRequest,
+	defaultRuleForm,
+	getExitErrorMessage,
+	isRangeComparator,
+	isRulePreviewReady,
+	ruleToFormState,
+	signalLabels,
+	type RuleFormState,
+} from "@/lib/alerts/form-utils"
+import { applyTemplate } from "@/lib/alerts/templates"
 
 const AlertCreateSearch = Schema.Struct({
 	serviceName: Schema.optional(Schema.String),
@@ -151,7 +126,9 @@ function AlertCreatePage() {
 	const destinationsQueryAtom = MapleApiAtomClient.query("alerts", "listDestinations", {
 		reactivityKeys: ["alertDestinations"],
 	})
-	const rulesQueryAtom = MapleApiAtomClient.query("alerts", "listRules", { reactivityKeys: ["alertRules"] })
+	const rulesQueryAtom = MapleApiAtomClient.query("alerts", "listRules", {
+		reactivityKeys: ["alertRules"],
+	})
 	const dashboardsQueryAtom = MapleApiAtomClient.query("dashboards", "list", {
 		reactivityKeys: ["dashboards"],
 	})
@@ -165,7 +142,9 @@ function AlertCreatePage() {
 	const updateRule = useAtomSet(MapleApiAtomClient.mutation("alerts", "updateRule"), {
 		mode: "promiseExit",
 	})
-	const testRule = useAtomSet(MapleApiAtomClient.mutation("alerts", "testRule"), { mode: "promiseExit" })
+	const testRule = useAtomSet(MapleApiAtomClient.mutation("alerts", "testRule"), {
+		mode: "promiseExit",
+	})
 
 	const autocompleteValues = useAutocompleteValuesContext()
 	const serviceNameOptions = autocompleteValues.traces.services ?? []
@@ -186,6 +165,7 @@ function AlertCreatePage() {
 	const [ruleForm, setRuleForm] = useState<RuleFormState>(() => defaultRuleForm(search.serviceName))
 	const [savingRule, setSavingRule] = useState(false)
 	const [previewingRule, setPreviewingRule] = useState(false)
+	const [sendingTestNotification, setSendingTestNotification] = useState(false)
 	const [previewResult, setPreviewResult] = useState<{
 		status: "breached" | "healthy" | "skipped"
 		value: number | null
@@ -193,6 +173,17 @@ function AlertCreatePage() {
 		reason: string
 	} | null>(null)
 	const [initialized, setInitialized] = useState(false)
+
+	// First-touch template picker: shown only when this is a fresh new-rule
+	// entry with no pre-fills. Driven by sync `search` so it never flickers
+	// open during async edit loads.
+	const [templatesOpen, setTemplatesOpen] = useState(
+		() =>
+			!search.ruleId &&
+			!search.serviceName &&
+			!search.dashboardId &&
+			!search.widgetId,
+	)
 
 	useEffect(() => {
 		if (initialized) return
@@ -203,7 +194,9 @@ function AlertCreatePage() {
 		}
 		if (search.dashboardId && search.widgetId) {
 			const dashboard = Result.builder(dashboardsResult)
-				.onSuccess((response) => response.dashboards.find((d) => d.id === search.dashboardId))
+				.onSuccess((response) =>
+					response.dashboards.find((d) => d.id === search.dashboardId),
+				)
 				.orElse(() => undefined)
 			const widget = dashboard?.widgets.find((w) => w.id === search.widgetId)
 			if (widget) {
@@ -214,7 +207,13 @@ function AlertCreatePage() {
 	}, [editingRule, initialized, search.dashboardId, search.widgetId, dashboardsResult])
 
 	const { chartData, chartLoading } = useAlertRuleChart(ruleForm)
-	const threshold = Number(ruleForm.threshold)
+
+	const validationIssues = useMemo(
+		() => deriveValidationIssues(ruleForm, destinations),
+		[ruleForm, destinations],
+	)
+
+	const suggestedName = useMemo(() => makeSuggestedName(ruleForm), [ruleForm])
 
 	async function handleSave() {
 		setSavingRule(true)
@@ -236,30 +235,31 @@ function AlertCreatePage() {
 		setSavingRule(false)
 	}
 
-	async function handleTestNotification() {
+	async function runTest(sendNotification: boolean) {
 		if (!isRulePreviewReady(ruleForm)) {
 			toast.error("Complete the rule name and threshold before testing")
 			return
 		}
-		setPreviewingRule(true)
+		const setLoading = sendNotification ? setSendingTestNotification : setPreviewingRule
+		setLoading(true)
 		const result = await testRule({
-			payload: buildRuleTestRequest(ruleForm, ruleForm.destinationIds.length > 0),
+			payload: buildRuleTestRequest(ruleForm, sendNotification),
 			reactivityKeys: ["alertDeliveryEvents"],
 		})
 		if (Exit.isSuccess(result)) {
 			setPreviewResult(result.value)
 			toast.success(
-				ruleForm.destinationIds.length > 0
+				sendNotification
 					? "Preview ran and sent a test notification"
 					: "Preview updated",
 			)
 		} else {
 			toast.error(getExitErrorMessage(result, "Failed to preview rule"))
 		}
-		setPreviewingRule(false)
+		setLoading(false)
 	}
 
-	const pageTitle = editingRule ? "Edit Alert Rule" : "Create Alert Rule"
+	const pageTitle = editingRule ? "Edit alert rule" : "Create alert rule"
 
 	return (
 		<DashboardLayout
@@ -269,619 +269,147 @@ function AlertCreatePage() {
 			]}
 			titleContent={
 				<div className="flex items-center gap-2">
-					<h1 className="text-2xl font-semibold tracking-tight truncate">{pageTitle}</h1>
+					<h1 className="font-display text-3xl font-semibold leading-[1.1] tracking-tight truncate">
+						{pageTitle}
+					</h1>
 					<Badge variant="secondary" className="text-xs font-medium">
 						Beta
 					</Badge>
 				</div>
 			}
-			headerActions={
-				<div className="flex items-center gap-2">
-					<Button variant="outline" render={<Link to="/alerts" search={{ tab: "rules" }} />}>
-						Cancel
-					</Button>
-					<Button onClick={handleSave} disabled={savingRule || destinations.length === 0}>
-						{savingRule && <LoaderIcon size={14} className="animate-spin" />}
-						Save Rule
-					</Button>
-				</div>
-			}
 		>
-			<div className="flex gap-6">
-				{/* ─── Left Column: Form ─── */}
-				<div className="flex-1 min-w-0 space-y-6">
-					{/* Sentence builder — hero rule statement */}
-					<RuleSentenceBuilder form={ruleForm} onChange={setRuleForm} />
-
-					{/* Metric-specific fields */}
-					{ruleForm.signalType === "metric" && (
-						<Card>
-							<CardContent className="grid gap-4 p-4 sm:grid-cols-3">
-								<div className="space-y-2 sm:col-span-3">
-									<Label htmlFor="metric-name">Metric name</Label>
-									<Input
-										id="metric-name"
-										value={ruleForm.metricName}
-										onChange={(e) =>
-											setRuleForm((c) => ({ ...c, metricName: e.target.value }))
-										}
-										placeholder="http.server.duration"
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label>Metric type</Label>
-									<Select
-										items={metricTypeLabels}
-										value={ruleForm.metricType}
-										onValueChange={(value) =>
-											setRuleForm((c) => ({
-												...c,
-												metricType: value as AlertMetricType,
-											}))
-										}
-									>
-										<SelectTrigger className="w-full">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{Object.entries(metricTypeLabels).map(([val, label]) => (
-												<SelectItem key={val} value={val}>
-													{label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-								<div className="space-y-2">
-									<Label>Aggregation</Label>
-									<Select
-										items={metricAggregationLabels}
-										value={ruleForm.metricAggregation}
-										onValueChange={(value) =>
-											setRuleForm((c) => ({
-												...c,
-												metricAggregation: value as AlertMetricAggregation,
-											}))
-										}
-									>
-										<SelectTrigger className="w-full">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{Object.entries(metricAggregationLabels).map(([val, label]) => (
-												<SelectItem key={val} value={val}>
-													{label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							</CardContent>
-						</Card>
-					)}
-
-					{/* Apdex threshold */}
-					{ruleForm.signalType === "apdex" && (
-						<div className="space-y-2">
-							<Label htmlFor="apdex-threshold">Apdex threshold (ms)</Label>
-							<Input
-								id="apdex-threshold"
-								type="number"
-								value={ruleForm.apdexThresholdMs}
-								onChange={(e) =>
-									setRuleForm((c) => ({ ...c, apdexThresholdMs: e.target.value }))
-								}
-								className="max-w-[200px]"
-							/>
-						</div>
-					)}
-
-					{/* Query builder */}
-					{ruleForm.signalType === "builder_query" && (
-						<Card>
-							<CardContent className="grid gap-4 p-4">
-								<div className="space-y-2">
-									<Label>Data source</Label>
-									<AlertSegmentedSelect<"traces" | "logs" | "metrics">
-										options={[
-											{ value: "traces", label: "Traces" },
-											{ value: "logs", label: "Logs" },
-											{ value: "metrics", label: "Metrics" },
-										]}
-										value={ruleForm.queryDataSource}
-										onChange={(ds) =>
-											setRuleForm((c) => ({
-												...c,
-												queryDataSource: ds,
-												queryAggregation: AGGREGATIONS_BY_SOURCE[ds][0].value,
-											}))
-										}
-										aria-label="Query data source"
-									/>
-								</div>
-
-								<div className="space-y-2">
-									<Label>Aggregation</Label>
-									<Select
-										items={AGGREGATIONS_BY_SOURCE[ruleForm.queryDataSource]}
-										value={ruleForm.queryAggregation}
-										onValueChange={(value) => {
-											if (value) setRuleForm((c) => ({ ...c, queryAggregation: value }))
-										}}
-									>
-										<SelectTrigger className="w-full">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{AGGREGATIONS_BY_SOURCE[ruleForm.queryDataSource].map((agg) => (
-												<SelectItem key={agg.value} value={agg.value}>
-													{agg.label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-
-								{ruleForm.queryDataSource === "metrics" && (
-									<div className="grid gap-4 sm:grid-cols-2">
-										<div className="space-y-2 sm:col-span-2">
-											<Label htmlFor="query-metric-name">Metric name</Label>
-											<Input
-												id="query-metric-name"
-												value={ruleForm.metricName}
-												onChange={(e) =>
-													setRuleForm((c) => ({ ...c, metricName: e.target.value }))
-												}
-												placeholder="http.server.duration"
-											/>
-										</div>
-										<div className="space-y-2">
-											<Label>Metric type</Label>
-											<Select
-												value={ruleForm.metricType}
-												onValueChange={(value) =>
-													setRuleForm((c) => ({
-														...c,
-														metricType: value as AlertMetricType,
-													}))
-												}
-											>
-												<SelectTrigger className="w-full">
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													{Object.entries(metricTypeLabels).map(([val, label]) => (
-														<SelectItem key={val} value={val}>
-															{label}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-									</div>
-								)}
-
-								<div className="space-y-2">
-									<Label>Where</Label>
-									<WhereClauseEditor
-										dataSource={ruleForm.queryDataSource}
-										value={ruleForm.queryWhereClause}
-										onChange={(value) =>
-											setRuleForm((c) => ({ ...c, queryWhereClause: value }))
-										}
-										rows={2}
-										placeholder='service.name = "payments" AND has_error = true'
-									/>
-								</div>
-							</CardContent>
-						</Card>
-					)}
-
-					{/* Raw SQL query */}
-					{ruleForm.signalType === "raw_query" && (
-						<Card>
-							<CardContent className="grid gap-4 p-4">
-								<div className="space-y-2">
-									<Label htmlFor="raw-query-sql">ClickHouse SQL</Label>
-									<SqlCodeEditor
-										id="raw-query-sql"
-										value={ruleForm.rawQuerySql}
-										onChange={(value) =>
-											setRuleForm((c) => ({ ...c, rawQuerySql: value }))
-										}
-									/>
-									<p className="text-muted-foreground text-xs">
-										Return a numeric <code>value</code> column (optional{" "}
-										<code>group</code> and <code>samples</code> columns). Must reference{" "}
-										<code>$__orgFilter</code>; supports <code>$__timeFilter(col)</code>,{" "}
-										<code>$__startTime</code>, <code>$__endTime</code>,{" "}
-										<code>$__interval_s</code>.
-									</p>
-								</div>
-								<div className="space-y-2">
-									<Label>Reduce buckets by</Label>
-									<Select
-										items={RAW_QUERY_REDUCER_LABELS}
-										value={ruleForm.rawQueryReducer}
-										onValueChange={(value) => {
-											if (value)
-												setRuleForm((c) => ({
-													...c,
-													rawQueryReducer:
-														value as RuleFormState["rawQueryReducer"],
-												}))
-										}}
-									>
-										<SelectTrigger className="w-full">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{Object.entries(RAW_QUERY_REDUCER_LABELS).map(([val, label]) => (
-												<SelectItem key={val} value={val}>
-													{label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-									<p className="text-muted-foreground text-xs">
-										How to collapse the query's rows into the single value compared to the
-										threshold.
-									</p>
-								</div>
-							</CardContent>
-						</Card>
-					)}
-
-					{/* Rule Name + Service */}
-					<div className="grid gap-4 sm:grid-cols-2">
-						<div className="space-y-2">
-							<Label htmlFor="rule-name">Rule Name</Label>
-							<Input
-								id="rule-name"
-								value={ruleForm.name}
-								onChange={(e) => setRuleForm((c) => ({ ...c, name: e.target.value }))}
-								placeholder="Error Rate — Payments"
-							/>
-						</div>
-						<div className="space-y-2">
-							<Label>Services</Label>
-							<ServiceCombobox
-								serviceNames={ruleForm.serviceNames}
-								options={serviceNameOptions}
-								onChange={(values) =>
-									setRuleForm((c) => ({
-										...c,
-										serviceNames: values,
-										groupBy: values.length > 0 ? [] : c.groupBy,
-										excludeServiceNames: values.length > 0 ? [] : c.excludeServiceNames,
-									}))
-								}
-							/>
-							{ruleForm.serviceNames.length === 0 && (
-								<>
-									<div className="mt-2 space-y-1">
-										<Label className="text-sm text-muted-foreground">Group by</Label>
-										{(() => {
-											const effectiveDataSource =
-												ruleForm.signalType === "builder_query"
-													? ruleForm.queryDataSource
-													: ruleForm.signalType === "metric"
-														? "metrics"
-														: "traces"
-											return (
-												<GroupByMultiSelect
-													dataSource={effectiveDataSource}
-													value={ruleForm.groupBy}
-													onChange={(values) =>
-														setRuleForm((c) => ({ ...c, groupBy: values }))
-													}
-													attributeKeys={
-														autocompleteValues[effectiveDataSource]?.attributeKeys
-													}
-													placeholder="service.name"
-													className="w-full"
-												/>
-											)
-										})()}
-										<p className="text-xs text-muted-foreground">
-											Evaluate the rule per group. Each value (or composite of values)
-											becomes its own incident.
-										</p>
-									</div>
-									<div className="mt-2 space-y-1">
-										<Label className="text-sm text-muted-foreground">
-											Exclude services
-										</Label>
-										<ServiceCombobox
-											serviceNames={ruleForm.excludeServiceNames}
-											options={serviceNameOptions}
-											onChange={(values) =>
-												setRuleForm((c) => ({
-													...c,
-													excludeServiceNames: values,
-												}))
-											}
-										/>
-									</div>
-								</>
-							)}
-						</div>
-					</div>
-
-					{/* Notes */}
-					<div className="space-y-2">
-						<Label htmlFor="rule-notes">
-							Notes <span className="text-muted-foreground font-normal">(optional)</span>
-						</Label>
-						<Textarea
-							id="rule-notes"
-							value={ruleForm.notes}
-							onChange={(e) => setRuleForm((c) => ({ ...c, notes: e.target.value }))}
-							placeholder="Runbook links, ownership, or why this rule exists…"
-							rows={3}
+			<div className="mx-auto w-full max-w-[1100px] space-y-4">
+				<RuleLiveChartHero
+					form={ruleForm}
+					chartData={chartData}
+					chartLoading={chartLoading}
+					onTestRule={() => runTest(false)}
+					testing={previewingRule}
+					previewResult={previewResult}
+				/>
+				{/* Two-column grid below the hero. The signal/threshold panel is the
+				    dense one and takes the wider column; scope + notifications +
+				    details stack in the narrower one. Single column on smaller
+				    screens where horizontal real estate runs out. */}
+				<div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+					<SignalAndThresholdSection form={ruleForm} onChange={setRuleForm} />
+					<div className="space-y-4">
+						<ScopeSection
+							form={ruleForm}
+							onChange={setRuleForm}
+							serviceNameOptions={serviceNameOptions}
+							autocompleteValues={autocompleteValues}
+						/>
+						<NotificationsSection
+							form={ruleForm}
+							onChange={setRuleForm}
+							destinations={destinations}
+							onSendTest={() => runTest(true)}
+							testing={sendingTestNotification}
+						/>
+						<DetailsSection
+							form={ruleForm}
+							onChange={setRuleForm}
+							suggestedName={suggestedName}
 						/>
 					</div>
-
-					{/* Notify via */}
-					<div>
-						<Label className="mb-2 block">Notify via</Label>
-						{destinations.length === 0 ? (
-							<div className="text-muted-foreground text-sm">
-								<Link to="/alerts" search={{ tab: "settings" }} className="underline">
-									Create a destination
-								</Link>{" "}
-								before saving this rule.
-							</div>
-						) : (
-							<AlertMultiSegmentedSelect<string>
-								options={
-									destinations.map((d) => ({
-										value: d.id as unknown as string,
-										icon: <ProviderLogo type={d.type} size={28} bare />,
-										label: (
-											<span className="flex items-center gap-2">
-												<span className="font-medium">{d.name}</span>
-												<span className="text-muted-foreground text-xs">
-													{destinationTypeLabels[d.type]}
-												</span>
-											</span>
-										),
-									})) satisfies AlertSegmentedOption<string>[]
-								}
-								value={ruleForm.destinationIds as unknown as string[]}
-								onChange={(values) =>
-									setRuleForm((current) => ({
-										...current,
-										destinationIds: values as typeof current.destinationIds,
-									}))
-								}
-								aria-label="Notification destinations"
-							/>
-						)}
-					</div>
-				</div>
-
-				{/* ─── Right Column: Live Preview ─── */}
-				<div className="w-[380px] shrink-0 hidden lg:block">
-					<Card className="sticky top-0">
-						<CardContent className="p-5 space-y-5">
-							{/* Header */}
-							<div className="flex items-center justify-between">
-								<h3 className="font-semibold">Live Preview</h3>
-								<Button
-									variant="outline"
-									size="sm"
-									onClick={handleTestNotification}
-									disabled={previewingRule}
-								>
-									{previewingRule ? (
-										<LoaderIcon size={14} className="animate-spin" />
-									) : (
-										<EyeIcon size={14} />
-									)}
-									Test Rule
-								</Button>
-							</div>
-
-							{/* Current Value */}
-							{previewResult && (
-								<div className="space-y-1">
-									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-										Current value
-									</span>
-									<div className="flex items-baseline gap-2">
-										<span
-											className={cn(
-												"text-2xl font-bold font-mono tabular-nums",
-												previewResult.status === "breached"
-													? "text-destructive"
-													: "text-emerald-500",
-											)}
-										>
-											{formatSignalValue(ruleForm.signalType, previewResult.value)}
-										</span>
-										<span className="text-muted-foreground text-sm">
-											threshold: {formatSignalValue(ruleForm.signalType, threshold)}
-										</span>
-									</div>
-									<AlertStatusBadge
-										state={previewResult.status === "breached" ? "firing" : "ok"}
-										label={
-											previewResult.status === "breached"
-												? "Would trigger alert"
-												: "Within threshold"
-										}
-									/>
-								</div>
-							)}
-
-							{/* Chart */}
-							<div className="space-y-2">
-								<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-									{signalLabels[ruleForm.signalType]}: Last 24h
-								</span>
-								<AlertPreviewChart
-									data={chartData}
-									threshold={Number.isFinite(threshold) ? threshold : 0}
-									signalType={ruleForm.signalType}
-									loading={chartLoading}
-									className="h-[180px] w-full"
-								/>
-							</div>
-
-							{/* Rule Summary — order matches detail page Config */}
-							<div className="space-y-2">
-								<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-									Rule summary
-								</span>
-								<dl className="space-y-2 text-sm">
-									<div className="flex items-center justify-between">
-										<dt className="text-muted-foreground">Signal</dt>
-										<dd className="font-medium">{signalLabels[ruleForm.signalType]}</dd>
-									</div>
-									<div className="flex items-center justify-between">
-										<dt className="text-muted-foreground">Condition</dt>
-										<dd className="font-mono font-medium">
-											{comparatorLabels[ruleForm.comparator]} {ruleForm.threshold} /{" "}
-											{ruleForm.windowMinutes}min
-										</dd>
-									</div>
-									<div className="flex items-center justify-between gap-4">
-										<dt className="text-muted-foreground">Scope</dt>
-										<dd className="flex flex-wrap gap-1 justify-end">
-											{ruleForm.serviceNames.length > 0 ? (
-												ruleForm.serviceNames.map((s) => (
-													<Badge key={s} variant="outline" className="text-xs">
-														{s}
-													</Badge>
-												))
-											) : (
-												<span className="font-mono font-medium">
-													{ruleForm.groupBy.length > 0
-														? `all (per ${ruleForm.groupBy.join(" \u00b7 ")})`
-														: "all"}
-												</span>
-											)}
-										</dd>
-									</div>
-									{ruleForm.excludeServiceNames.length > 0 && (
-										<div className="flex items-center justify-between gap-4">
-											<dt className="text-muted-foreground">Excluded</dt>
-											<dd className="flex flex-wrap gap-1 justify-end">
-												{ruleForm.excludeServiceNames.map((s) => (
-													<Badge
-														key={s}
-														variant="outline"
-														className="text-xs line-through"
-													>
-														{s}
-													</Badge>
-												))}
-											</dd>
-										</div>
-									)}
-									<div className="flex items-center justify-between">
-										<dt className="text-muted-foreground">Severity</dt>
-										<dd
-											className={cn(
-												"font-medium capitalize",
-												ruleForm.severity === "critical"
-													? "text-destructive"
-													: "text-severity-warn",
-											)}
-										>
-											{ruleForm.severity}
-										</dd>
-									</div>
-									<div className="flex items-center justify-between">
-										<dt className="text-muted-foreground">Destinations</dt>
-										<dd className="font-medium tabular-nums">
-											{ruleForm.destinationIds.length} selected
-										</dd>
-									</div>
-								</dl>
-							</div>
-						</CardContent>
-					</Card>
 				</div>
 			</div>
+
+			<RuleActionBar
+				editing={!!editingRule}
+				saving={savingRule}
+				validationIssues={validationIssues}
+				onCancel={() => navigate({ to: "/alerts", search: { tab: "rules" } })}
+				onSave={handleSave}
+				onShowTemplates={editingRule ? undefined : () => setTemplatesOpen(true)}
+				cancelSlot={
+					<Button
+						type="button"
+						variant="outline"
+						render={<Link to="/alerts" search={{ tab: "rules" }} />}
+					>
+						Cancel
+					</Button>
+				}
+			/>
+
+			<RuleTemplatesOverlay
+				open={templatesOpen}
+				onOpenChange={setTemplatesOpen}
+				onPick={(template) => {
+					setRuleForm((current) => applyTemplate(template, current))
+					setTemplatesOpen(false)
+				}}
+				onStartBlank={() => setTemplatesOpen(false)}
+			/>
 		</DashboardLayout>
 	)
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
 /**
- * SQL editor with syntax highlighting — a transparent textarea layered over a
- * highlighted `<pre>` (same overlay technique as the dashboard raw-SQL panel),
- * so the shared `highlightSql` tokenizer colors keywords, strings, and `$__`
- * macros while keeping native textarea editing.
+ * Surface every fillable-but-blocking gap so the sticky bar can tell the user
+ * what's missing in plain language. Superset of `isRulePreviewReady` — that
+ * helper still gates the Test Rule path; this one gates the Save path.
  */
-function SqlCodeEditor({
-	id,
-	value,
-	onChange,
-}: {
-	id: string
-	value: string
-	onChange: (value: string) => void
-}) {
-	const preRef = useRef<HTMLPreElement>(null)
-	return (
-		<div className="relative w-full text-xs font-mono leading-5">
-			<pre
-				ref={preRef}
-				aria-hidden
-				className="border-input pointer-events-none absolute inset-0 m-0 overflow-hidden whitespace-pre-wrap break-words rounded-md border border-transparent px-3 py-2 leading-5"
-			>
-				<code dangerouslySetInnerHTML={{ __html: `${highlightSql(value)}\n` }} />
-			</pre>
-			<textarea
-				id={id}
-				value={value}
-				onChange={(e) => onChange(e.target.value)}
-				onScroll={(e) => {
-					const pre = preRef.current
-					if (!pre) return
-					pre.scrollTop = e.currentTarget.scrollTop
-					pre.scrollLeft = e.currentTarget.scrollLeft
-				}}
-				spellCheck={false}
-				rows={10}
-				className="border-input caret-foreground focus-visible:ring-ring relative w-full resize-y rounded-md border bg-transparent px-3 py-2 font-mono text-xs leading-5 text-transparent outline-none focus-visible:ring-1"
-			/>
-		</div>
-	)
+function deriveValidationIssues(
+	form: RuleFormState,
+	destinations: AlertDestinationDocument[],
+): string[] {
+	const issues: string[] = []
+	if (form.name.trim().length === 0) issues.push("Rule name")
+	if (!Number.isFinite(Number(form.threshold))) issues.push("Threshold")
+	if (
+		isRangeComparator(form.comparator) &&
+		!Number.isFinite(Number(form.thresholdUpper))
+	) {
+		issues.push("Upper threshold")
+	}
+	if (form.signalType === "metric" && form.metricName.trim().length === 0) {
+		issues.push("Metric name")
+	}
+	if (
+		form.signalType === "builder_query" &&
+		form.queryDataSource === "metrics" &&
+		form.metricName.trim().length === 0
+	) {
+		issues.push("Metric name")
+	}
+	if (form.signalType === "raw_query") {
+		const sql = form.rawQuerySql.trim()
+		if (sql.length === 0) {
+			issues.push("SQL query")
+		} else if (!form.rawQuerySql.includes("$__orgFilter")) {
+			issues.push("$__orgFilter in SQL")
+		}
+	}
+	if (destinations.length === 0) {
+		issues.push("A notification destination")
+	} else if (form.destinationIds.length === 0) {
+		issues.push("At least one destination")
+	}
+	return issues
 }
 
-function ServiceCombobox({
-	serviceNames,
-	options,
-	onChange,
-}: {
-	serviceNames: string[]
-	options: string[]
-	onChange: (values: string[]) => void
-}) {
-	const anchor = useRef<HTMLDivElement | null>(null)
-	return (
-		<Combobox multiple value={serviceNames} onValueChange={onChange}>
-			<ComboboxChips ref={anchor}>
-				{serviceNames.map((name) => (
-					<ComboboxChip key={name}>{name}</ComboboxChip>
-				))}
-				<ComboboxChipsInput
-					placeholder={serviceNames.length === 0 ? "All services" : "Add service..."}
-				/>
-			</ComboboxChips>
-			<ComboboxContent anchor={anchor}>
-				<ComboboxEmpty>No services found.</ComboboxEmpty>
-				<ComboboxList>
-					{options.map((svc) => (
-						<ComboboxItem key={svc} value={svc}>
-							{svc}
-						</ComboboxItem>
-					))}
-				</ComboboxList>
-			</ComboboxContent>
-		</Combobox>
-	)
+/**
+ * Produce a sensible default name from the form's signal + scope so the user
+ * doesn't have to invent one from scratch. Returns null when the user has
+ * already typed a name (so the "Suggest" affordance hides).
+ */
+function makeSuggestedName(form: RuleFormState): string | null {
+	if (form.name.trim().length > 0) return null
+	const base = signalLabels[form.signalType]
+	const scope =
+		form.serviceNames.length === 1
+			? form.serviceNames[0]!
+			: form.serviceNames.length > 1
+				? `${form.serviceNames.length} services`
+				: form.groupBy.length > 0
+					? `per ${form.groupBy.join(" · ")}`
+					: null
+	return scope ? `${base} — ${scope}` : base
 }

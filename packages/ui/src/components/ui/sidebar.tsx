@@ -321,8 +321,17 @@ export function SidebarRail({ className, ...props }: React.ComponentProps<"butto
 export function SidebarInset({ className, ...props }: React.ComponentProps<"main">): React.ReactElement {
 	return (
 		<main
+			// `h-svh` + `min-h-0` is what makes the flex chain
+			// SidebarProvider (min-h-svh) → SidebarInset → PageLayout.Root →
+			// PageLayout.Body → PageLayout.Content → PageLayout.ScrollArea
+			// actually constrain height. Without an explicit height, the
+			// wrapper's `min-h-svh` is only a floor — SidebarInset's children
+			// stretch the whole layout past the viewport, breaking
+			// `position: sticky` and forcing the window (not
+			// PageLayout.ScrollArea) to scroll. `min-h-0` then lets descendant
+			// `flex-1` items shrink against this bounded parent.
 			className={cn(
-				"relative flex w-full min-w-0 flex-1 flex-col bg-background",
+				"relative flex h-svh w-full min-h-0 min-w-0 flex-1 flex-col bg-background",
 				"md:peer-data-[variant=inset]:peer-data-[state=collapsed]:ms-2 md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ms-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow-sm/5",
 				className,
 			)}
