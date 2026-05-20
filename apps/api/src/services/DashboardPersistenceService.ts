@@ -112,7 +112,7 @@ type VersionOptions = {
 }
 
 export class DashboardPersistenceService extends Context.Service<DashboardPersistenceService>()(
-	"DashboardPersistenceService",
+	"@maple/api/services/DashboardPersistenceService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -614,8 +614,6 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly list = (orgId: OrgId) => this.use((service) => service.list(orgId))
 

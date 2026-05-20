@@ -232,7 +232,7 @@ export interface HazelOAuthServiceShape {
 }
 
 export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelOAuthServiceShape>()(
-	"HazelOAuthService",
+	"@maple/api/services/HazelOAuthService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -961,7 +961,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				return { disconnected: (result.rowsAffected ?? 0) > 0 }
 			})
 
-			return {
+			return HazelOAuthService.of({
 				startConnect,
 				completeConnect,
 				getStatus,
@@ -970,11 +970,9 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				listChannels,
 				createChannelWebhook,
 				disconnect,
-			} satisfies HazelOAuthServiceShape
+			})
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

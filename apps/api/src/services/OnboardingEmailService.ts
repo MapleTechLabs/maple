@@ -46,7 +46,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export class OnboardingEmailService extends Context.Service<OnboardingEmailService>()(
-	"OnboardingEmailService",
+	"@maple/api/services/OnboardingEmailService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env
@@ -314,6 +314,4 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 	// rather than create new `Layer.effect` instances, otherwise the same
 	// runtime instantiates the service twice when two call sites import
 	// different aliases. Slated for removal in Phase 1.
-	static readonly Default = this.layer
-	static readonly Live = this.layer
 }

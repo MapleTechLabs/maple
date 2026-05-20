@@ -473,7 +473,7 @@ const parseJsonEachRow = <T>(text: string): ReadonlyArray<T> => {
 export class OrgClickHouseSettingsService extends Context.Service<
 	OrgClickHouseSettingsService,
 	OrgClickHouseSettingsServiceShape
->()("OrgClickHouseSettingsService", {
+>()("@maple/api/services/OrgClickHouseSettingsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -882,8 +882,6 @@ export class OrgClickHouseSettingsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly get = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
 		this.use((service) => service.get(orgId, roles))

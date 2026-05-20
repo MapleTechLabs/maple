@@ -52,5 +52,5 @@ export interface TinybirdExecutorShape {
 }
 
 export class TinybirdExecutor extends Context.Service<TinybirdExecutor, TinybirdExecutorShape>()(
-	"TinybirdExecutor",
+	"@maple/query-engine/observability/TinybirdExecutor",
 ) {}

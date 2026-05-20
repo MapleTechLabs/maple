@@ -24,7 +24,7 @@ export interface MapleClientShape {
 
 let nextId = 1
 
-export class MapleClient extends Context.Service<MapleClient, MapleClientShape>()("MapleClient", {
+export class MapleClient extends Context.Service<MapleClient, MapleClientShape>()("@maple/cli/services/MapleClient", {
 	make: Effect.gen(function* () {
 		const config = yield* CliConfig
 		const mcpUrl = config.mcpUrl

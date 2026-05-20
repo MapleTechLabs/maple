@@ -199,7 +199,7 @@ const cleanOptionalServiceName = (
 export class CloudflareLogpushService extends Context.Service<
 	CloudflareLogpushService,
 	CloudflareLogpushServiceShape
->()("CloudflareLogpushService", {
+>()("@maple/api/services/CloudflareLogpushService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -490,19 +490,17 @@ export class CloudflareLogpushService extends Context.Service<
 			return yield* buildSetup(yield* requireConnector(orgId, connectorId))
 		})
 
-		return {
+		return CloudflareLogpushService.of({
 			list,
 			create,
 			update,
 			delete: remove,
 			getSetup,
 			rotateSecret,
-		} satisfies CloudflareLogpushServiceShape
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly list = (orgId: OrgId) => this.use((service) => service.list(orgId))
 

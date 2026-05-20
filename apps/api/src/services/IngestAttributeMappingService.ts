@@ -288,12 +288,12 @@ export class IngestAttributeMappingService extends Context.Service<
 			})
 		})
 
-		return {
+		return IngestAttributeMappingService.of({
 			list,
 			create,
 			update,
 			delete: remove,
-		} satisfies IngestAttributeMappingServiceShape
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

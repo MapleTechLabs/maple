@@ -6,7 +6,7 @@ export interface CliConfigShape {
 	readonly apiToken: Redacted.Redacted<string>
 }
 
-export class CliConfig extends Context.Service<CliConfig, CliConfigShape>()("CliConfig", {
+export class CliConfig extends Context.Service<CliConfig, CliConfigShape>()("@maple/cli/services/CliConfig", {
 	make: Effect.gen(function* () {
 		const mcpUrl = yield* Config.string("MAPLE_MCP_URL").pipe(
 			Config.withDefault("http://localhost:3472/mcp"),

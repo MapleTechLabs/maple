@@ -69,7 +69,7 @@ const decryptPrivateKey = (
 const generatePublicKey = () => `maple_pk_${randomBytes(24).toString("base64url")}`
 const generatePrivateKey = () => `maple_sk_${randomBytes(24).toString("base64url")}`
 
-export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>()("OrgIngestKeysService", {
+export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>()("@maple/api/services/OrgIngestKeysService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -287,8 +287,6 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly getOrCreate = (orgId: OrgId, userId: UserId) =>
 		this.use((service) => service.getOrCreate(orgId, userId))

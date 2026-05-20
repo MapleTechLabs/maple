@@ -321,7 +321,7 @@ export interface TinybirdProjectSyncShape {
 }
 
 export class TinybirdProjectSync extends Context.Service<TinybirdProjectSync, TinybirdProjectSyncShape>()(
-	"TinybirdProjectSync",
+	"@maple/domain/tinybird/TinybirdProjectSync",
 	{
 		make: Effect.gen(function* () {
 			const fetchDeploymentStatusInternal = Effect.fn("TinybirdProjectSync.fetchDeploymentStatus")(
@@ -704,7 +704,6 @@ export class TinybirdProjectSync extends Context.Service<TinybirdProjectSync, Ti
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
 
 	static readonly cleanupStaleDeployments = (params: TinybirdProjectSyncParams) =>
 		this.use((service) => service.cleanupStaleDeployments(params))

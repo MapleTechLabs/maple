@@ -62,7 +62,7 @@ export interface NotificationDispatcherShape {
 export class NotificationDispatcher extends Context.Service<
 	NotificationDispatcher,
 	NotificationDispatcherShape
->()("NotificationDispatcher", {
+>()("@maple/api/services/NotificationDispatcher", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -204,6 +204,4 @@ export class NotificationDispatcher extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

@@ -9,7 +9,7 @@ const DEMO_RATE_PER_HOUR = 250
 
 const toSeedError = (message: string) => new DemoSeedError({ message })
 
-export class DemoService extends Context.Service<DemoService>()("DemoService", {
+export class DemoService extends Context.Service<DemoService>()("@maple/api/services/DemoService", {
 	make: Effect.gen(function* () {
 		const ingestKeys = yield* OrgIngestKeysService
 		const env = yield* Env
@@ -84,6 +84,4 @@ export class DemoService extends Context.Service<DemoService>()("DemoService", {
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

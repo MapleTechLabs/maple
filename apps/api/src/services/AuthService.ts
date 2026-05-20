@@ -459,7 +459,7 @@ export const makeGetUserEmail = (
 	})
 }
 
-export class AuthService extends Context.Service<AuthService, AuthServiceShape>()("AuthService", {
+export class AuthService extends Context.Service<AuthService, AuthServiceShape>()("@maple/api/services/AuthService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const resolveTenant = makeResolveTenant(env)
@@ -476,6 +476,4 @@ export class AuthService extends Context.Service<AuthService, AuthServiceShape>(
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

@@ -317,7 +317,7 @@ export interface AlertRuntimeShape {
 	readonly deliveryTimeoutMs: () => number
 }
 
-export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShape>()("AlertRuntime", {
+export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShape>()("@maple/api/services/AlertRuntime", {
 	make: Effect.succeed({
 		now: () => Date.now(),
 		makeUuid: () => randomUUID(),
@@ -326,8 +326,6 @@ export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShap
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }
 
 const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
@@ -947,7 +945,7 @@ export interface AlertsServiceShape {
 	>
 }
 
-export class AlertsService extends Context.Service<AlertsService, AlertsServiceShape>()("AlertsService", {
+export class AlertsService extends Context.Service<AlertsService, AlertsServiceShape>()("@maple/api/services/AlertsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -3594,6 +3592,4 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

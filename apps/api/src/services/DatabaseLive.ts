@@ -25,4 +25,4 @@ export const toDatabaseError = (cause: unknown): DatabaseError => {
 	})
 }
 
-export class Database extends Context.Service<Database, DatabaseShape>()("Database") {}
+export class Database extends Context.Service<Database, DatabaseShape>()("@maple/api/services/Database") {}

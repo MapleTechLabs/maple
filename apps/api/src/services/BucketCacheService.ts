@@ -278,7 +278,7 @@ const ttlSecondsConfig = Config.number("QE_BUCKET_CACHE_TTL_SECONDS").pipe(Confi
 const fluxSecondsConfig = Config.number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Config.withDefault(60))
 
 export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceShape>()(
-	"BucketCacheService",
+	"@maple/api/services/BucketCacheService",
 	{
 		make: Effect.gen(function* () {
 			const edgeCache = yield* EdgeCacheService
@@ -488,6 +488,4 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

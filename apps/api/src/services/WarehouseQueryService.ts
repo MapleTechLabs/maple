@@ -216,7 +216,7 @@ const isTransientUpstreamError = (error: WarehouseSqlError): boolean =>
 export class WarehouseQueryService extends Context.Service<
 	WarehouseQueryService,
 	WarehouseQueryServiceShape
->()("WarehouseQueryService", {
+>()("@maple/api/services/WarehouseQueryService", {
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
@@ -659,17 +659,15 @@ export class WarehouseQueryService extends Context.Service<
 				)
 			})
 
-			return {
+			return WarehouseQueryService.of({
 				query,
 				sqlQuery,
 				ingest,
-			} satisfies WarehouseQueryServiceShape
+			})
 		}),
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly query = (
 		tenant: TenantContext,

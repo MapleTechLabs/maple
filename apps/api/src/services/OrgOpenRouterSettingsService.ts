@@ -121,7 +121,7 @@ export interface OrgOpenRouterSettingsServiceShape {
 export class OrgOpenRouterSettingsService extends Context.Service<
 	OrgOpenRouterSettingsService,
 	OrgOpenRouterSettingsServiceShape
->()("OrgOpenRouterSettingsService", {
+>()("@maple/api/services/OrgOpenRouterSettingsService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -256,8 +256,6 @@ export class OrgOpenRouterSettingsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly get = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
 		this.use((service) => service.get(orgId, roles))

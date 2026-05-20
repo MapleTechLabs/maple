@@ -88,7 +88,7 @@ export interface OrganizationServiceShape {
 }
 
 export class OrganizationService extends Context.Service<OrganizationService, OrganizationServiceShape>()(
-	"OrganizationService",
+	"@maple/api/services/OrganizationService",
 	{
 		make: Effect.gen(function* () {
 			const database = yield* Database
@@ -149,8 +149,6 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 
 	static readonly delete = (orgId: OrgId, roles: ReadonlyArray<RoleName>) =>
 		this.use((service) => service.delete(orgId, roles))

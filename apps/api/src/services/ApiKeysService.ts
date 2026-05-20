@@ -48,7 +48,7 @@ const rowToResponse = (row: typeof apiKeys.$inferSelect): ApiKeyResponse =>
 		createdByEmail: row.createdByEmail ?? null,
 	})
 
-export class ApiKeysService extends Context.Service<ApiKeysService>()("ApiKeysService", {
+export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/api/services/ApiKeysService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const env = yield* Env
@@ -216,6 +216,4 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("ApiKeysSe
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

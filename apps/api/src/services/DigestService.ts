@@ -70,7 +70,7 @@ interface ErrorsByTypeRow {
 	count: number
 }
 
-export class DigestService extends Context.Service<DigestService>()("DigestService", {
+export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const email = yield* EmailService

@@ -53,7 +53,7 @@ export interface ServiceMapRollupServiceShape {
 export class ServiceMapRollupService extends Context.Service<
 	ServiceMapRollupService,
 	ServiceMapRollupServiceShape
->()("ServiceMapRollupService", {
+>()("@maple/api/services/ServiceMapRollupService", {
 	make: Effect.gen(function* () {
 		const database = yield* Database
 		const warehouse = yield* WarehouseQueryService
@@ -187,6 +187,4 @@ export class ServiceMapRollupService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }

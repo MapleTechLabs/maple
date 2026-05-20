@@ -1781,7 +1781,7 @@ export const makeQueryEngineEvaluateRawSql = (warehouse: QueryEngineWarehouse) =
 	})
 
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceShape>()(
-	"QueryEngineService",
+	"@maple/api/services/QueryEngineService",
 	{
 		make: Effect.gen(function* () {
 			const warehouse = yield* WarehouseQueryService
@@ -1977,6 +1977,4 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Live = this.layer
-	static readonly Default = this.layer
 }
