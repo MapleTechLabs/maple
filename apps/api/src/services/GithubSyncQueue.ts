@@ -1,124 +1,83 @@
-import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Schedule, Schema } from "effect"
 import {
 	encodeGithubSyncJob,
 	type GithubSyncJob,
 } from "@maple/domain/queues/github-jobs"
+import { GithubSyncQueueBinding } from "./GithubSyncQueueBinding"
 
-type QueueBindingShape = {
-	send: (body: unknown, options?: { delaySeconds?: number }) => Promise<void>
-	sendBatch: (
-		messages: Array<{ body: unknown; delaySeconds?: number }>,
-	) => Promise<void>
-}
-
-const QUEUE_BINDING_NAME = "GITHUB_SYNC_QUEUE"
 
 export interface GithubSyncQueueShape {
 	readonly enqueue: (
 		job: GithubSyncJob,
 		options?: { delaySeconds?: number },
-	) => Effect.Effect<void>
+	) => Effect.Effect<void, GithubSyncQueueEnqueueError | Schema.SchemaError>
 	readonly enqueueBatch: (
 		jobs: ReadonlyArray<GithubSyncJob>,
-	) => Effect.Effect<void>
-	readonly isConfigured: Effect.Effect<boolean>
+	) => Effect.Effect<void, GithubSyncQueueEnqueueBatchError | Schema.SchemaError>
 }
 
-const isQueueBinding = (value: unknown): value is QueueBindingShape => {
-	if (!value || typeof value !== "object") return false
-	const obj = value as { send?: unknown; sendBatch?: unknown }
-	return typeof obj.send === "function" && typeof obj.sendBatch === "function"
-}
+export class GithubSyncQueueEnqueueError extends Schema.TaggedErrorClass<GithubSyncQueueEnqueueError>()(
+	"GithubSyncQueueEnqueueError",
+	{ job: Schema.String, cause: Schema.Unknown }
+) {}
+export class GithubSyncQueueEnqueueBatchError extends Schema.TaggedErrorClass<GithubSyncQueueEnqueueBatchError>()(
+	"GithubSyncQueueEnqueueBatchError",
+	{ jobCount: Schema.Number, cause: Schema.Unknown }
+) {}
+
 
 export class GithubSyncQueue extends Context.Service<GithubSyncQueue, GithubSyncQueueShape>()(
 	"GithubSyncQueue",
 	{
 		make: Effect.gen(function* () {
-			const env = yield* WorkerEnvironment
-			const binding = env[QUEUE_BINDING_NAME]
-			const queue = isQueueBinding(binding) ? binding : null
+			const queueBinding = yield* GithubSyncQueueBinding
 
-			const enqueue = (
-				job: GithubSyncJob,
-				options?: { delaySeconds?: number },
-			): Effect.Effect<void> =>
-				Effect.gen(function* () {
-					if (!queue) {
-						yield* Effect.logWarning(
-							`[GithubSyncQueue] No queue binding present; dropping job ${job._tag}`,
-						)
-						return
-					}
-					const encodedExit = yield* Effect.exit(encodeGithubSyncJob(job))
-					if (encodedExit._tag === "Failure") {
-						yield* Effect.logError(`[GithubSyncQueue] failed to encode ${job._tag}`)
-						return
-					}
-					const sendExit = yield* Effect.exit(
-						Effect.tryPromise({
-							try: () =>
-								queue.send(
-									encodedExit.value,
-									options?.delaySeconds ? { delaySeconds: options.delaySeconds } : undefined,
-								),
-							catch: (cause) =>
-								new Error(
-									cause instanceof Error
-										? `Failed to enqueue ${job._tag}: ${cause.message}`
-										: `Failed to enqueue ${job._tag}`,
-								),
-						}),
+			const enqueue = Effect.fn("GithubSyncQueue.enqueue")(
+				function* (job: GithubSyncJob, options?: { delaySeconds?: number }){
+					// Let the error bubble up here - schema validation failures are real coding errors, 
+					// no external dependency should cause this.
+					const encoded = yield* encodeGithubSyncJob(job).pipe(
+						Effect.tapError((e) => Effect.logError(`[GithubSyncQueue] failed to encode ${job._tag}`, e))
 					)
-					if (sendExit._tag === "Failure") {
-						yield* Effect.logWarning(
-							`[GithubSyncQueue] queue.send failed (continuing): ${job._tag}`,
-						)
-					}
+
+					yield* Effect.tryPromise({
+						try: () => queueBinding.send(
+							encoded,
+							options?.delaySeconds ? { delaySeconds: options.delaySeconds } : undefined
+						),
+						catch: (error) => new GithubSyncQueueEnqueueError({ job: job._tag, cause: error })
+					}).pipe(
+						Effect.retry({
+							schedule: Schedule.exponential("100 millis"),
+							times: 3
+						})
+					)
 				})
 
-			const enqueueBatch = (jobs: ReadonlyArray<GithubSyncJob>): Effect.Effect<void> =>
-				Effect.gen(function* () {
+			const enqueueBatch = Effect.fn("GithubSyncQueue.enqueueBatch")(
+				function* (jobs: ReadonlyArray<GithubSyncJob>){
 					if (jobs.length === 0) return
-					if (!queue) {
-						yield* Effect.logWarning(
-							`[GithubSyncQueue] No queue binding present; dropping ${jobs.length} jobs`,
-						)
-						return
-					}
-					const encodedExit = yield* Effect.exit(
-						Effect.forEach(jobs, (j) => encodeGithubSyncJob(j)),
+
+					const encoded = yield* Effect.forEach(jobs, (j) => encodeGithubSyncJob(j)).pipe(
+						Effect.tapError((e) => Effect.logError("[GithubSyncQueue] failed to encode batch", e))
 					)
-					if (encodedExit._tag === "Failure") {
-						yield* Effect.logError("[GithubSyncQueue] failed to encode batch")
-						return
-					}
-					const sendExit = yield* Effect.exit(
-						Effect.tryPromise({
-							try: () => queue.sendBatch(encodedExit.value.map((body) => ({ body }))),
-							catch: (cause) =>
-								new Error(
-									cause instanceof Error
-										? `Failed to enqueue batch: ${cause.message}`
-										: "Failed to enqueue batch",
-								),
-						}),
+
+					yield* Effect.tryPromise({
+						try: () => queueBinding.sendBatch(encoded.map(body => ({ body }))),
+						catch: (error) => new GithubSyncQueueEnqueueBatchError({ jobCount: jobs.length, cause: error })
+					}).pipe(
+						Effect.retry({ schedule: Schedule.exponential("100 millis"), times: 3})
 					)
-					if (sendExit._tag === "Failure") {
-						yield* Effect.logWarning(
-							`[GithubSyncQueue] queue.sendBatch failed (continuing); ${jobs.length} jobs lost`,
-						)
-					}
 				})
 
 			return {
 				enqueue,
-				enqueueBatch,
-				isConfigured: Effect.succeed(queue !== null),
+				enqueueBatch
 			} satisfies GithubSyncQueueShape
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
-	static readonly Default = this.layer
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provideMerge(GithubSyncQueueBinding.layer)
+	)
 }
