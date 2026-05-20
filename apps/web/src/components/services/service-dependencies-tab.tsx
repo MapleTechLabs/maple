@@ -183,6 +183,57 @@ export function ServiceDependenciesTab({
 		return out
 	}, [servicesResult, dbsResult, externalResult, serviceName, durationSeconds])
 
+	// Fold HTTP rows that look like a known internal service into that service's
+	// row. The address-resolutions rollup eventually catches this server-side
+	// via exact `ParentServerAddress` match — but only after the hourly tick,
+	// and only when the Client span carries `server.address` (not `http.host`).
+	// In the meantime we'd render two rows for the same logical target
+	// (`SERVICE artifacts-api` AND `HTTP http://prd-artifacts-api`), which reads
+	// as a duplicate.
+	//
+	// Heuristic: an HTTP target whose hostname *contains* a known internal
+	// service name (>=5 chars, so generic names like `api` don't false-match)
+	// is treated as a hostname-variant of that service. The HTTP row drops out
+	// of the visible list; the SERVICE row gains a `via host1, host2` subtitle.
+	const dedupedRows = useMemo<DependencyRow[]>(() => {
+		const serviceNames = rows
+			.filter((r) => r.kind === "service" && r.name.length >= 5)
+			.map((r) => ({ canonical: r.name, lower: r.name.toLowerCase() }))
+
+		if (serviceNames.length === 0) return rows
+
+		// Map from canonical service name → list of HTTP hostnames that resolve here.
+		const matchedHosts = new Map<string, string[]>()
+		// IDs of HTTP rows to hide (those that matched at least one service).
+		const hiddenIds = new Set<string>()
+
+		for (const row of rows) {
+			if (row.kind !== "http") continue
+			const hostLower = row.name.toLowerCase()
+			for (const svc of serviceNames) {
+				if (hostLower.includes(svc.lower)) {
+					const list = matchedHosts.get(svc.canonical) ?? []
+					list.push(row.name)
+					matchedHosts.set(svc.canonical, list)
+					hiddenIds.add(row.id)
+					break
+				}
+			}
+		}
+
+		if (hiddenIds.size === 0) return rows
+
+		return rows.flatMap((row) => {
+			if (hiddenIds.has(row.id)) return []
+			if (row.kind !== "service") return [row]
+			const hosts = matchedHosts.get(row.name)
+			if (!hosts?.length) return [row]
+			const subtitle =
+				hosts.length === 1 ? `via ${hosts[0]}` : `via ${hosts[0]} +${hosts.length - 1} more`
+			return [{ ...row, subtitle }]
+		})
+	}, [rows])
+
 	const isWaiting =
 		(Result.isSuccess(servicesResult) && servicesResult.waiting) ||
 		(Result.isSuccess(dbsResult) && dbsResult.waiting) ||
@@ -192,9 +243,9 @@ export function ServiceDependenciesTab({
 	// label + sharp value so the eye lands on the numbers first, the labels
 	// second — same hierarchy the chart cards on Overview already use.
 	const summary = useMemo(() => {
-		if (rows.length === 0) return null
+		if (dedupedRows.length === 0) return null
 
-		const byKind = rows.reduce<Record<DependencyKind, number>>(
+		const byKind = dedupedRows.reduce<Record<DependencyKind, number>>(
 			(acc, row) => {
 				acc[row.kind] = (acc[row.kind] ?? 0) + 1
 				return acc
@@ -206,21 +257,21 @@ export function ServiceDependenciesTab({
 			.map((k) => `${byKind[k]} ${labelFor(k, byKind[k])}`)
 			.join(" · ")
 
-		const topByCalls = [...rows].sort((a, b) => b.callsPerSec - a.callsPerSec)[0]
-		const topByErrors = [...rows]
+		const topByCalls = [...dedupedRows].sort((a, b) => b.callsPerSec - a.callsPerSec)[0]
+		const topByErrors = [...dedupedRows]
 			.filter((r) => r.errorRate > 0)
 			.sort((a, b) => b.errorRate - a.errorRate)[0]
-		const topByLatency = [...rows].sort((a, b) => b.p95DurationMs - a.p95DurationMs)[0]
+		const topByLatency = [...dedupedRows].sort((a, b) => b.p95DurationMs - a.p95DurationMs)[0]
 
 		return { breakdown, topByCalls, topByErrors, topByLatency }
-	}, [rows])
+	}, [dedupedRows])
 
 	return (
 		<div className={cn("flex flex-col gap-3 transition-opacity", isWaiting && "opacity-60")}>
 			{summary ? (
 				<div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-muted-foreground">
 					<span className="text-foreground">
-						<span className="tabular-nums font-mono font-medium">{rows.length}</span>{" "}
+						<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}
 						<span className="text-muted-foreground">downstream</span>
 					</span>
 					<span className="text-muted-foreground/60">{summary.breakdown}</span>
@@ -250,7 +301,7 @@ export function ServiceDependenciesTab({
 
 			<DependencyTable
 				serviceName={serviceName}
-				rows={rows}
+				rows={dedupedRows}
 				startTime={startTime}
 				endTime={endTime}
 				timePreset={timePreset}
