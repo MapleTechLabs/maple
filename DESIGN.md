@@ -149,7 +149,7 @@ The shared visual posture is **Linear / Vercel / Axiom adjacent**: compact app s
 The palette is **theme-divergent on purpose**. Light mode anchors on a vivid blue primary (`oklch(0.59 0.14 242)`); dark mode rebases on a warm amber-gold primary (`oklch(0.714 0.154 59)`). Both are correct — neither is the "true" Maple color. The dark theme is canonical for the frontmatter (matches `<body class="dark">`); light tokens travel alongside in the `.dark` ↔ `:root` swap.
 
 ### Primary
-- **Amber Signal** (`oklch(0.714 0.154 59)`, dark canonical): the accent used on primary actions, the active sidebar item, `chart-1` / `chart-throughput` / `chart-p95`, and severity-warn. Warm enough to read at low ambient light without burning.
+- **Amber Signal** (`oklch(0.714 0.154 59)`, dark canonical): the accent used on primary actions, the active sidebar item, `chart-1` / `chart-p95`, and severity-warn. Warm enough to read at low ambient light without burning. (Note: `chart-throughput` used to share this hue, but was split to purple — `oklch(0.66 0.14 290)` — so the built-in alert signal chips can distinguish throughput from p95.)
 - **Blue Beacon** (`oklch(0.59 0.14 242)`, light counterpart): the same role under light theme. Vivid blue, full chroma at a mid-lightness — feels appropriate in daylight, would feel hostile in a dim room (hence the swap).
 
 ### Secondary: Severity Ramp (the system's loudest semantic color)

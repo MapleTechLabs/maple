@@ -95,8 +95,11 @@
 	--color-chart-p99: oklch(0.654 0.176 30);
 	--color-chart-p95: oklch(0.714 0.154 59);
 	--color-chart-p50: oklch(0.693 0.165 254);
-	--color-chart-error: oklch(0.654 0.176 30);
-	--color-chart-throughput: oklch(0.714 0.154 59);
+	/* See apps/web/src/styles.css — chart-error and chart-throughput diverge
+	   from their tier-1 neighbors (chart-p99 and chart-p95 respectively) in
+	   dark mode, mirroring the light-mode identity. */
+	--color-chart-error: oklch(0.62 0.225 22);
+	--color-chart-throughput: oklch(0.66 0.14 290);
 	--color-chart-apdex: oklch(0.658 0.134 151);
 
 	/* Severity colors */
