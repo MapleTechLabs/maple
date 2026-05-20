@@ -1,7 +1,12 @@
 // ---------------------------------------------------------------------------
 // Typed Service Map Queries
 //
-// Raw SQL builder for service dependency edges (multi-table JOIN + UNION ALL).
+// Mix of raw-SQL builders (org-wide variants — `*SQL`) and typesafe-DSL
+// builders (service-scoped variants — `*Query`). Both styles co-exist because
+// the cross-span rollup helper (`serviceMapEdgeJoinSQL`) needs to emit raw
+// SQL fragments callable from outside the DSL (the rollup service in
+// `apps/api/src/services/ServiceMapRollupService.ts`), while the
+// service-detail page builders go fully through `CH.compile()`.
 // ---------------------------------------------------------------------------
 
 import { escapeClickHouseString } from "../../sql/sql-fragment"
@@ -269,8 +274,8 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.SourceService.eq(opts.serviceName),
-			$.Hour.gte(CH.toStartOfHour(param.dateTime("startTime"))),
-			$.Hour.lt(CH.toStartOfHour(param.dateTime("endTime"))),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 			envFilterMv($.DeploymentEnv),
 		])
 		.groupBy("sourceService", "targetService")
@@ -288,7 +293,7 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 		}))
 		.where(($) => [
 			$.SpanKind.in_("Client", "Producer"),
-			$.Timestamp.gte(CH.toStartOfHour(param.dateTime("endTime"))),
+			$.Timestamp.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 			$.Timestamp.lt(param.dateTime("endTime")),
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(opts.serviceName),
@@ -305,7 +310,7 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 			TraceState: $.TraceState,
 		}))
 		.where(($) => [
-			$.Timestamp.gte(CH.toStartOfHour(param.dateTime("endTime"))),
+			$.Timestamp.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 			$.Timestamp.lt(param.dateTime("endTime")),
 			$.OrgId.eq(param.string("orgId")),
 			envFilterMv($.DeploymentEnv),
@@ -518,8 +523,8 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(opts.serviceName),
-			$.Hour.gte(CH.toStartOfHour(param.dateTime("startTime"))),
-			$.Hour.lt(CH.toStartOfHour(param.dateTime("endTime"))),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
+			$.Hour.lt(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 			$.DbSystem.neq(""),
 			envFilterMv($.DeploymentEnv),
 		])
@@ -542,7 +547,7 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(opts.serviceName),
-			$.Timestamp.gte(CH.toStartOfHour(param.dateTime("endTime"))),
+			$.Timestamp.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("endTime")))),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			$.SpanKind.in_("Client", "Producer"),
 			$.SpanAttributes.get("db.system.name").neq(""),
@@ -783,7 +788,7 @@ export function servicePlatformsSQL(
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.Hour.gte(CH.toStartOfHour(param.dateTime("startTime"))),
+			$.Hour.gte(CH.toStartOfHour(CH.toDateTime(param.dateTime("startTime")))),
 			$.Hour.lte(param.dateTime("endTime")),
 			$.ServiceName.neq(""),
 			opts.deploymentEnv ? $.DeploymentEnv.eq(opts.deploymentEnv) : undefined,
