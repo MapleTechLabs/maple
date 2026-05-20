@@ -203,20 +203,19 @@ type QueueMessage = {
 type QueueBatch = { readonly messages: ReadonlyArray<QueueMessage> }
 type ScheduledEvent = { readonly cron?: string; readonly scheduledTime?: number }
 
-// MainLive's R is inferred as `any` from the existing layer composition, so
-// ManagedRuntime.make would refuse it. The two casts below acknowledge that
-// — at runtime every dep is provided via the provideMerge chain.
 const buildBackgroundLayer = (env: Record<string, unknown>) =>
 	MainLive.pipe(
 		Layer.provideMerge(DatabaseD1Live),
 		Layer.provideMerge(layerFromEnvRecord(env)),
 		Layer.provideMerge(telemetry.layer),
 		Layer.provideMerge(WorkerConfigProviderLive),
-	) as unknown as Layer.Layer<never, never, never>
+	)
 
-const runBackground = async (
+type BackgroundContext = Layer.Success<ReturnType<typeof buildBackgroundLayer>>
+
+const runBackground = async <A, E>(
 	env: Record<string, unknown>,
-	effect: Effect.Effect<unknown, unknown, never>,
+	effect: Effect.Effect<A, E, BackgroundContext>,
 	ctx: ExecutionContext,
 ) => {
 	const runtime = ManagedRuntime.make(buildBackgroundLayer(env))
@@ -228,10 +227,10 @@ const runBackground = async (
 	}
 }
 
-const logged = (label: string, effect: Effect.Effect<unknown, unknown, unknown>) =>
+const logged = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
 	effect.pipe(
-		Effect.catchCause((cause: unknown) => Effect.logError(`[${label}] failed`, cause as never)),
-	) as unknown as Effect.Effect<unknown, unknown, never>
+		Effect.catchCause((cause) => Effect.logError(`[${label}] failed`, cause)),
+	)
 
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
