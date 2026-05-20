@@ -63,6 +63,13 @@ function signalTypeToKind(signalType: AlertSignalType): SignalKind {
 	return "builtin"
 }
 
+/* Strip the browser's native number-input spin buttons. Applied to every
+   numeric input on the page — we don't want the ▲▼ overlay competing with the
+   form's clean monospace numerals. Lives as a const so the Tailwind arbitrary
+   selectors stay readable and we can add it consistently everywhere. */
+const NUMERIC_INPUT_CLASS =
+	"font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-inner-spin-button]:m-0"
+
 const SIGNAL_KIND_OPTIONS: ReadonlyArray<{ value: SignalKind; label: string }> = [
 	{ value: "builtin", label: "Built-in" },
 	{ value: "metric", label: "Metric" },
@@ -72,17 +79,55 @@ const SIGNAL_KIND_OPTIONS: ReadonlyArray<{ value: SignalKind; label: string }> =
 
 /* The "built-in" tier-2 row: 5 small chips with icons. Icons are deliberately
    reused from the templates overlay so the picker visually rhymes with the
-   first-touch flow. */
+   first-touch flow. Each signal also carries its own brand color drawn from
+   the chart-* CSS variables, so the chip's tint matches the series color the
+   live chart paints when that signal is selected. */
 const BUILTIN_SIGNAL_OPTIONS: ReadonlyArray<{
 	value: AlertSignalType
 	label: string
 	icon: (props: { size?: number; className?: string }) => React.ReactNode
+	/** Applied to the chip's container when selected (border + bg). */
+	selectedClass: string
+	/** Applied to the icon at all times so the *unselected* chips still hint
+	    at their identity with a colored glyph (think: a muted version of the
+	    selected state). */
+	iconClass: string
 }> = [
-	{ value: "error_rate", label: "Error rate", icon: FireIcon },
-	{ value: "p95_latency", label: "P95", icon: ChartLineIcon },
-	{ value: "p99_latency", label: "P99", icon: ChartLineIcon },
-	{ value: "apdex", label: "Apdex", icon: CirclePercentageIcon },
-	{ value: "throughput", label: "Throughput", icon: PulseIcon },
+	{
+		value: "error_rate",
+		label: "Error rate",
+		icon: FireIcon,
+		selectedClass: "border-chart-error/50 bg-chart-error/10 text-foreground",
+		iconClass: "text-chart-error",
+	},
+	{
+		value: "p95_latency",
+		label: "P95",
+		icon: ChartLineIcon,
+		selectedClass: "border-chart-p95/50 bg-chart-p95/10 text-foreground",
+		iconClass: "text-chart-p95",
+	},
+	{
+		value: "p99_latency",
+		label: "P99",
+		icon: ChartLineIcon,
+		selectedClass: "border-chart-p99/50 bg-chart-p99/10 text-foreground",
+		iconClass: "text-chart-p99",
+	},
+	{
+		value: "apdex",
+		label: "Apdex",
+		icon: CirclePercentageIcon,
+		selectedClass: "border-chart-apdex/50 bg-chart-apdex/10 text-foreground",
+		iconClass: "text-chart-apdex",
+	},
+	{
+		value: "throughput",
+		label: "Throughput",
+		icon: PulseIcon,
+		selectedClass: "border-chart-throughput/50 bg-chart-throughput/10 text-foreground",
+		iconClass: "text-chart-throughput",
+	},
 ]
 
 const COMPARATOR_OPTIONS: ReadonlyArray<{ value: AlertComparator; label: string }> = (
@@ -160,9 +205,12 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 				<SignalSubConfig form={form} onChange={onChange} />
 
 				{/* Threshold row — comparator + value(s). Upper threshold stays mounted but
-				    disabled outside range mode so the grid never reflows. */}
-				<div className="grid gap-3 sm:grid-cols-[120px_1fr_1fr]">
-					<div className="space-y-1.5">
+				    disabled outside range mode so the grid never reflows. The
+				    `min-w-0` on every grid child overrides the Select's baked-in
+				    `min-w-36` so a narrow Condition column doesn't push its
+				    chevron into the next field. */}
+				<div className="grid gap-3 sm:grid-cols-[140px_1fr_1fr]">
+					<div className="min-w-0 space-y-1.5">
 						<Label htmlFor="rule-comparator" className="text-xs">
 							Condition
 						</Label>
@@ -173,7 +221,7 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 								onChange((c) => ({ ...c, comparator: value as AlertComparator }))
 							}
 						>
-							<SelectTrigger id="rule-comparator" className="w-full">
+							<SelectTrigger id="rule-comparator" className="w-full min-w-0">
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
@@ -185,7 +233,7 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 							</SelectContent>
 						</Select>
 					</div>
-					<div className="space-y-1.5">
+					<div className="min-w-0 space-y-1.5">
 						<Label htmlFor="rule-threshold" className="text-xs">
 							{rangeMode ? "Lower" : "Threshold"}
 						</Label>
@@ -195,11 +243,11 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 							inputMode="decimal"
 							value={form.threshold}
 							onChange={(e) => onChange((c) => ({ ...c, threshold: e.target.value }))}
-							className="font-mono"
+							className={NUMERIC_INPUT_CLASS}
 							placeholder="0"
 						/>
 					</div>
-					<div className="space-y-1.5">
+					<div className="min-w-0 space-y-1.5">
 						<Label
 							htmlFor="rule-threshold-upper"
 							className={cn(
@@ -218,7 +266,7 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 								onChange((c) => ({ ...c, thresholdUpper: e.target.value }))
 							}
 							disabled={!rangeMode}
-							className="font-mono"
+							className={NUMERIC_INPUT_CLASS}
 							placeholder={rangeMode ? "0" : "—"}
 						/>
 					</div>
@@ -343,15 +391,16 @@ function BuiltinSignalChips({
 							"transition-[background-color,border-color,color] duration-150",
 							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
 							selected
-								? "border-primary/40 bg-primary/10 text-foreground"
-								: "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+								? opt.selectedClass
+								: "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
 						)}
 					>
 						<Icon
 							size={12}
 							className={cn(
-								"transition-colors",
-								selected ? "text-primary" : "text-muted-foreground/70",
+								"transition-opacity",
+								opt.iconClass,
+								selected ? "opacity-100" : "opacity-70",
 							)}
 						/>
 						{opt.label}
@@ -447,7 +496,7 @@ function NumericField({
 				min={0}
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="font-mono"
+				className={NUMERIC_INPUT_CLASS}
 			/>
 			{hint && <p className="text-muted-foreground text-[10px] leading-tight">{hint}</p>}
 		</div>
@@ -539,7 +588,7 @@ function SignalSubConfig({ form, onChange }: SignalAndThresholdSectionProps) {
 							onChange={(e) =>
 								onChange((c) => ({ ...c, apdexThresholdMs: e.target.value }))
 							}
-							className="w-[180px] font-mono"
+							className={cn("w-[180px]", NUMERIC_INPUT_CLASS)}
 						/>
 					</div>
 					<p className="text-muted-foreground pb-2 text-xs">
