@@ -13,8 +13,7 @@ export const runScheduledReconcile = Effect.gen(function* () {
 	const installations = (yield* database
 		.execute((db) =>
 			db.select().from(githubInstallations).where(isNull(githubInstallations.suspendedAt)),
-		)
-		.pipe(Effect.orDie)) as ReadonlyArray<GithubInstallationRow>
+		))
 
 	if (installations.length === 0) {
 		yield* Effect.logInfo("[cron] no active GitHub installations to reconcile")
