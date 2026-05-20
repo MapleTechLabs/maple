@@ -205,14 +205,14 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 			return resolved
 		})
 
-		return {
+		return ApiKeysService.of({
 			list,
 			create,
 			revoke,
 			resolveByKey,
 			resolveByBearer,
 			touchLastUsed,
-		}
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

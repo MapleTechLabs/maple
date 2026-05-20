@@ -200,7 +200,7 @@ export class NotificationDispatcher extends Context.Service<
 				}
 			})
 
-		return { dispatch } satisfies NotificationDispatcherShape
+		return NotificationDispatcher.of({ dispatch })
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

@@ -80,7 +80,7 @@ export class DemoService extends Context.Service<DemoService>()("@maple/api/serv
 			})
 		})
 
-		return { seed } as const
+		return DemoService.of({ seed })
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

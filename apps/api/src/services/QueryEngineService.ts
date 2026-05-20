@@ -1967,12 +1967,12 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 					),
 				)
 
-			return {
+			return QueryEngineService.of({
 				execute,
 				evaluate: cachedEvaluate,
 				evaluateRawSql,
 				cachedDirect,
-			}
+			})
 		}),
 	},
 ) {

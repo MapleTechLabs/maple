@@ -581,14 +581,14 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				})
 			})
 
-			return {
+			return ScrapeTargetsService.of({
 				list,
 				create,
 				update,
 				delete: remove,
 				listAllEnabled,
 				probe,
-			} satisfies ScrapeTargetsServiceShape
+			})
 		}),
 	},
 ) {

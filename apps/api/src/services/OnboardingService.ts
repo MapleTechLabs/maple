@@ -217,7 +217,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 			},
 		)
 
-		return {
+		return OnboardingService.of({
 			getState,
 			updateState,
 			ensureRow,
@@ -225,7 +225,7 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 			markEmailSent,
 			suppressOnboardingEmails,
 			listAll,
-		} as const
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

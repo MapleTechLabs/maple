@@ -700,13 +700,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			return { sentCount, errorCount, skipped: false }
 		})
 
-		return {
+		return DigestService.of({
 			getSubscription,
 			upsertSubscription,
 			deleteSubscription,
 			preview,
 			runDigestTick,
-		}
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

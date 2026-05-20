@@ -3573,7 +3573,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			}
 		})
 
-		return {
+		return AlertsService.of({
 			listDestinations,
 			createDestination,
 			updateDestination,
@@ -3588,7 +3588,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			listRuleChecks,
 			listDeliveryEvents,
 			runSchedulerTick,
-		} satisfies AlertsServiceShape
+		})
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

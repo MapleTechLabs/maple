@@ -600,7 +600,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				})
 			})
 
-			return {
+			return DashboardPersistenceService.of({
 				create,
 				list,
 				upsert,
@@ -609,7 +609,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				listVersions,
 				getVersion,
 				restoreVersion,
-			}
+			})
 		}),
 	},
 ) {

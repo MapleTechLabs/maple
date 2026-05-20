@@ -480,10 +480,10 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 					}),
 				)
 
-			return {
+			return BucketCacheService.of({
 				enabled,
 				getOrComputeBuckets,
-			}
+			})
 		}),
 	},
 ) {
