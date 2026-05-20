@@ -18,4 +18,4 @@ export const WorkerConfigProvider = () =>
  * and anything downstream that uses Effect `Config` — resolves against the
  * runtime env without the worker having to pass env around manually.
  */
-export const WorkerConfigProviderLive: Layer.Layer<never> = ConfigProvider.layer(WorkerConfigProvider())
+export const WorkerConfigProviderLayer: Layer.Layer<never> = ConfigProvider.layer(WorkerConfigProvider())

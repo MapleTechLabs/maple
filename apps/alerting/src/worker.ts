@@ -20,8 +20,8 @@ import {
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	runScheduledEffect,
-	WorkerConfigProviderLive,
-	WorkerEnvironmentLive,
+	WorkerConfigProviderLayer,
+	WorkerEnvironment,
 } from "@maple/effect-cloudflare"
 import { Cause, Effect, Layer } from "effect"
 
@@ -31,10 +31,10 @@ import { Cause, Effect, Layer } from "effect"
 const telemetry = MapleCloudflareSDK.make({ serviceName: "alerting" })
 
 const buildLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLive
+	const ConfigLive = WorkerConfigProviderLayer
 	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 
-	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironmentLive))
+	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironment.layer))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 

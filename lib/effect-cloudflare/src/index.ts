@@ -19,8 +19,8 @@ export {
 // Worker env + config (from alchemy-effect)
 // ---------------------------------------------------------------------------
 export { default as cloudflareWorkers } from "./cloudflare-workers.ts"
-export { WorkerConfigProvider, WorkerConfigProviderLive } from "./config-provider.ts"
-export { WorkerEnvironment, WorkerEnvironmentLive, layerFromEnvRecord } from "./worker-environment.ts"
+export { WorkerConfigProvider, WorkerConfigProviderLayer } from "./config-provider.ts"
+export { WorkerEnvironment, layerFromEnvRecord } from "./worker-environment.ts"
 
 // ---------------------------------------------------------------------------
 // Durable Objects

@@ -16,7 +16,7 @@ const getBearerToken = (headers: Record<string, string | undefined>): string | u
 	return token
 }
 
-export const AuthorizationLive = Layer.effect(
+export const ApiAuthorizationLayer = Layer.effect(
 	CurrentTenant.Authorization,
 	Effect.gen(function* () {
 		const env = yield* Env

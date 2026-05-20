@@ -1,5 +1,5 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { WorkerConfigProviderLive, WorkerEnvironmentLive } from "@maple/effect-cloudflare"
+import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
 import { Context, FileSystem, Layer, Path } from "effect"
 import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
@@ -62,9 +62,9 @@ const buildHandler = () =>
 			Layer.provideMerge(ApiObservabilityLive),
 			Layer.provideMerge(WorkerPlatformLive),
 			Layer.provideMerge(DatabaseD1Live),
-			Layer.provideMerge(WorkerEnvironmentLive),
+			Layer.provideMerge(WorkerEnvironment.layer),
 			Layer.provideMerge(telemetry.layer),
-			Layer.provideMerge(WorkerConfigProviderLive),
+			Layer.provideMerge(WorkerConfigProviderLayer),
 		),
 		{ middleware: passThroughMiddleware, disableLogger: true },
 	)

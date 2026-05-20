@@ -31,7 +31,7 @@ import { HazelOAuthService } from "./services/HazelOAuthService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
 import { ApiKeysService } from "./services/ApiKeysService"
 import { AuthService } from "./services/AuthService"
-import { AuthorizationLive } from "./services/AuthorizationLive"
+import { ApiAuthorizationLayer } from "./services/ApiAuthorizationLayer"
 import { CloudflareLogpushService } from "./services/CloudflareLogpushService"
 import { DashboardPersistenceService } from "./services/DashboardPersistenceService"
 import { DemoService } from "./services/DemoService"
@@ -165,7 +165,7 @@ export const AllRoutes = Layer.mergeAll(
 	),
 )
 
-export const ApiAuthLive = AuthorizationLive.pipe(
+export const ApiAuthLive = ApiAuthorizationLayer.pipe(
 	Layer.provideMerge(ApiKeysService.layer),
 	Layer.provideMerge(Env.layer),
 )
