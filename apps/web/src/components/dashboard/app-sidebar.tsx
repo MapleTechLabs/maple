@@ -4,6 +4,7 @@ import {
 	HouseIcon,
 	FileIcon,
 	PulseIcon,
+	EyeIcon,
 	ChartLineIcon,
 	ServerIcon,
 	ComputerIcon,
@@ -102,6 +103,11 @@ const signalsNavItems: SignalsNavItem[] = [
 		title: "Metrics",
 		href: "/metrics",
 		icon: ChartLineIcon,
+	},
+	{
+		title: "Replays",
+		href: "/replays",
+		icon: EyeIcon,
 	},
 	{
 		title: "Infrastructure",
