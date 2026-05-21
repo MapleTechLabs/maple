@@ -358,6 +358,41 @@ export const AlertChecks = table("alert_checks", {
 	EvaluationDurationMs: T.uint32,
 })
 
+export const SessionReplays = table("session_replays", {
+	OrgId: T.string,
+	SessionId: T.string,
+	StartTime: T.dateTime64,
+	EndTime: T.nullable(T.dateTime64),
+	DurationMs: T.nullable(T.uint32),
+	Status: T.string,
+	UserId: T.string,
+	UrlInitial: T.string,
+	UserAgent: T.string,
+	BrowserName: T.string,
+	OsName: T.string,
+	DeviceType: T.string,
+	Country: T.string,
+	ServiceName: T.string,
+	PageViews: T.uint32,
+	ClickCount: T.uint32,
+	ErrorCount: T.uint32,
+	TraceIds: T.array(T.string),
+	ResourceAttributes: T.map(T.string, T.string),
+	Version: T.uint32,
+})
+
+export const SessionReplayChunks = table("session_replay_chunks", {
+	OrgId: T.string,
+	SessionId: T.string,
+	ChunkSeq: T.uint32,
+	Timestamp: T.dateTime64,
+	DurationMs: T.uint32,
+	EventCount: T.uint32,
+	ByteSize: T.uint32,
+	R2Key: T.string,
+	IsCheckpoint: T.uint8,
+})
+
 export const MetricsExpHistogram = table("metrics_exponential_histogram", {
 	OrgId: T.string,
 	ResourceAttributes: T.map(T.string, T.string),

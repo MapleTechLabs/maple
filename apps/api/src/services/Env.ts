@@ -31,6 +31,11 @@ export interface EnvShape {
 	readonly HAZEL_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly HAZEL_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly HAZEL_OAUTH_SCOPES: string
+	/** S3-compatible endpoint for the session-replay R2 bucket (e.g. https://<account>.r2.cloudflarestorage.com). */
+	readonly R2_ENDPOINT: Option.Option<string>
+	readonly R2_ACCESS_KEY_ID: Option.Option<string>
+	readonly R2_SECRET_ACCESS_KEY: Option.Option<Redacted.Redacted<string>>
+	readonly R2_BUCKET: string
 }
 
 const stringWithDefault = (key: string, fallback: string) =>
@@ -89,6 +94,10 @@ const envConfig = Config.all({
 		"HAZEL_OAUTH_SCOPES",
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
+	R2_ENDPOINT: optionalString("R2_ENDPOINT"),
+	R2_ACCESS_KEY_ID: optionalString("R2_ACCESS_KEY_ID"),
+	R2_SECRET_ACCESS_KEY: optionalRedacted("R2_SECRET_ACCESS_KEY"),
+	R2_BUCKET: stringWithDefault("R2_BUCKET", "maple-replays"),
 })
 
 const makeEnv = Effect.gen(function* () {

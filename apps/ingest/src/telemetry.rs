@@ -37,6 +37,9 @@ pub enum TelemetrySignal {
     Traces,
     Logs,
     Metrics,
+    /// Session-replay metadata + chunk-index rows (NDJSON written directly by
+    /// the ingest gateway, not derived from OTLP). Event blobs live in R2.
+    SessionReplays,
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +62,8 @@ pub struct TinybirdConfig {
     pub datasource_metrics_gauge: String,
     pub datasource_metrics_histogram: String,
     pub datasource_metrics_exponential_histogram: String,
+    pub datasource_session_replays: String,
+    pub datasource_session_replay_chunks: String,
 }
 
 impl TinybirdConfig {
@@ -312,6 +317,31 @@ impl TelemetryPipeline {
         request: &ExportMetricsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = encode_metrics(&self.inner.cfg, org_id, request)?;
+        self.commit_frames(frames).await?;
+        Ok(stats)
+    }
+
+    /// Accept pre-serialized NDJSON rows for an arbitrary datasource. Used by
+    /// the session-replay ingest path, whose rows are built directly by the
+    /// gateway (not derived from OTLP). Routes by org so a session's metadata
+    /// and chunk-index rows land on the same shard in order.
+    pub async fn accept_rows(
+        &self,
+        org_id: &str,
+        datasource: String,
+        rows: Vec<Vec<u8>>,
+    ) -> Result<AcceptStats, PipelineError> {
+        let stats = AcceptStats {
+            rows: rows.len(),
+            dropped: 0,
+        };
+        let frames = rows_to_frames(
+            org_id,
+            hash64(org_id),
+            TelemetrySignal::SessionReplays,
+            datasource,
+            rows,
+        );
         self.commit_frames(frames).await?;
         Ok(stats)
     }
@@ -730,6 +760,7 @@ fn signal_tag(signal: TelemetrySignal) -> u8 {
         TelemetrySignal::Traces => 1,
         TelemetrySignal::Logs => 2,
         TelemetrySignal::Metrics => 3,
+        TelemetrySignal::SessionReplays => 4,
     }
 }
 
@@ -738,6 +769,7 @@ fn signal_from_tag(tag: u8) -> Option<TelemetrySignal> {
         1 => Some(TelemetrySignal::Traces),
         2 => Some(TelemetrySignal::Logs),
         3 => Some(TelemetrySignal::Metrics),
+        4 => Some(TelemetrySignal::SessionReplays),
         _ => None,
     }
 }
@@ -1710,6 +1742,8 @@ mod tests {
             datasource_metrics_gauge: "metrics_gauge".to_string(),
             datasource_metrics_histogram: "metrics_histogram".to_string(),
             datasource_metrics_exponential_histogram: "metrics_exponential_histogram".to_string(),
+            datasource_session_replays: "session_replays".to_string(),
+            datasource_session_replay_chunks: "session_replay_chunks".to_string(),
         }
     }
 

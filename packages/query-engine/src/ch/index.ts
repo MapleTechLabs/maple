@@ -202,6 +202,22 @@ export {
 	type ErrorRateByServiceOutput,
 } from "./queries/logs"
 
+// Queries — Session Replays
+export {
+	sessionReplaysListQuery,
+	getSessionReplayQuery,
+	sessionReplayChunksQuery,
+	sessionsForTraceQuery,
+	sessionReplayFacetsQuery,
+	type SessionReplaysListOpts,
+	type SessionReplaysListOutput,
+	type SessionReplayDetailOutput,
+	type SessionReplayChunkOutput,
+	type SessionsForTraceOpts,
+	type SessionsForTraceOutput,
+	type SessionReplayFacetsOutput,
+} from "./queries/session-replays"
+
 // Queries — Services
 export {
 	serviceOverviewQuery,

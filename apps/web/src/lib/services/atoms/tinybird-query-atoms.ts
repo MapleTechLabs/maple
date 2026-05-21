@@ -72,6 +72,7 @@ import {
 	listTraces,
 } from "@/api/tinybird/traces"
 import { getQueryBuilderTimeseries } from "@/api/tinybird/query-builder-timeseries"
+import { getReplay, getReplayEvents, getReplaysForTrace, listReplays } from "@/api/tinybird/replays"
 
 type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, unknown, unknown>
 
@@ -159,6 +160,21 @@ export const getTracesFacetsResultAtom = makeQueryAtomFamily(getTracesFacets, {
 })
 
 export const getSpanHierarchyResultAtom = makeQueryAtomFamily(getSpanHierarchy)
+
+export const listReplaysResultAtom = makeQueryAtomFamily(listReplays, {
+	staleTime: 30_000,
+})
+
+export const getReplayResultAtom = makeQueryAtomFamily(getReplay, {
+	staleTime: 60_000,
+})
+
+// No staleTime: signed R2 URLs are short-lived (~5 min), so refetch each mount.
+export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents)
+
+export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTrace, {
+	staleTime: 60_000,
+})
 
 export const getSpanDetailResultAtom = makeQueryAtomFamily(getSpanDetail, {
 	staleTime: 60_000,

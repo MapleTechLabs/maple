@@ -40,6 +40,7 @@
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"alchemy": "^0.91.2",
 		"autumn-js": "^1.2.5",
+		"aws4fetch": "^1.0.20",
 		"date-fns": "^4.1.0",
 		"drizzle-orm": "^0.45.1",
 		"effect": "catalog:effect"

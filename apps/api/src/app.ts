@@ -24,6 +24,7 @@ import { HttpOrganizationsLive } from "./routes/organizations.http"
 import { HttpQueryEngineLive } from "./routes/query-engine.http"
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
 import { HttpServiceDiscoveryLive } from "./routes/sd.http"
+import { HttpSessionReplaysLive } from "./routes/session-replay.http"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
 import { BucketCacheService } from "./services/BucketCacheService"
 import { ErrorsService } from "./services/ErrorsService"
@@ -49,6 +50,7 @@ import { QueryEngineService } from "./services/QueryEngineService"
 import { RawSqlChartService } from "./services/RawSqlChartService"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./services/WarehouseQueryService"
+import { ReplayBlobStorage } from "./services/ReplayBlobStorage"
 
 export const HealthRouter = HttpRouter.use((router) =>
 	router.add("GET", "/health", HttpServerResponse.text("OK")),
@@ -82,6 +84,8 @@ export const CoreServicesLive = Layer.mergeAll(
 export const DemoServiceLive = DemoService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 export const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
+
+export const ReplayBlobStorageLive = ReplayBlobStorage.layer.pipe(Layer.provide(Env.layer))
 
 export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
 	Layer.provideMerge(EdgeCacheService.layer),
@@ -120,6 +124,7 @@ export const MainLive = Layer.mergeAll(
 	DigestServiceLive,
 	DemoServiceLive,
 	RawSqlChartService.layer,
+	ReplayBlobStorageLive,
 )
 
 export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
@@ -142,7 +147,7 @@ export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpScrapeTargetsLive),
 	Layer.provide(HttpServiceDiscoveryLive),
-	Layer.provide(HttpQueryEngineLive),
+	Layer.provide(Layer.mergeAll(HttpQueryEngineLive, HttpSessionReplaysLive)),
 )
 
 export const AllRoutes = Layer.mergeAll(

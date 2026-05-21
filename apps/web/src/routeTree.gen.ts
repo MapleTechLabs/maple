@@ -26,6 +26,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
+import { Route as ReplaysIndexRouteImport } from './routes/replays/index'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as InfraIndexRouteImport } from './routes/infra/index'
 import { Route as ErrorsIndexRouteImport } from './routes/errors/index'
@@ -33,6 +34,7 @@ import { Route as DashboardsIndexRouteImport } from './routes/dashboards/index'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
+import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
 import { Route as ErrorsErrorTypeRouteImport } from './routes/errors/$errorType'
@@ -135,6 +137,11 @@ const ServicesIndexRoute = ServicesIndexRouteImport.update({
   path: '/services/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReplaysIndexRoute = ReplaysIndexRouteImport.update({
+  id: '/replays/',
+  path: '/replays/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogsIndexRoute = LogsIndexRouteImport.update({
   id: '/logs/',
   path: '/logs/',
@@ -168,6 +175,11 @@ const TracesTraceIdRoute = TracesTraceIdRouteImport.update({
 const ServicesServiceNameRoute = ServicesServiceNameRouteImport.update({
   id: '/services/$serviceName',
   path: '/services/$serviceName',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReplaysSessionIdRoute = ReplaysSessionIdRouteImport.update({
+  id: '/replays/$sessionId',
+  path: '/replays/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsLogIdRoute = LogsLogIdRouteImport.update({
@@ -281,6 +293,7 @@ export interface FileRoutesByFullPath {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -288,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
   '/logs/': typeof LogsIndexRoute
+  '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
@@ -323,6 +337,7 @@ export interface FileRoutesByTo {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts': typeof AlertsIndexRoute
@@ -330,6 +345,7 @@ export interface FileRoutesByTo {
   '/errors': typeof ErrorsIndexRoute
   '/infra': typeof InfraIndexRoute
   '/logs': typeof LogsIndexRoute
+  '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
   '/traces': typeof TracesIndexRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
@@ -366,6 +382,7 @@ export interface FileRoutesById {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -373,6 +390,7 @@ export interface FileRoutesById {
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
   '/logs/': typeof LogsIndexRoute
+  '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
@@ -410,6 +428,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
@@ -417,6 +436,7 @@ export interface FileRouteTypes {
     | '/errors/'
     | '/infra/'
     | '/logs/'
+    | '/replays/'
     | '/services/'
     | '/traces/'
     | '/errors/issues/$issueId'
@@ -452,6 +472,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts'
@@ -459,6 +480,7 @@ export interface FileRouteTypes {
     | '/errors'
     | '/infra'
     | '/logs'
+    | '/replays'
     | '/services'
     | '/traces'
     | '/errors/issues/$issueId'
@@ -494,6 +516,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/replays/$sessionId'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
@@ -501,6 +524,7 @@ export interface FileRouteTypes {
     | '/errors/'
     | '/infra/'
     | '/logs/'
+    | '/replays/'
     | '/services/'
     | '/traces/'
     | '/errors/issues/$issueId'
@@ -537,6 +561,7 @@ export interface RootRouteChildren {
   ErrorsErrorTypeRoute: typeof ErrorsErrorTypeRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
+  ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   TracesTraceIdRoute: typeof TracesTraceIdRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
@@ -544,6 +569,7 @@ export interface RootRouteChildren {
   ErrorsIndexRoute: typeof ErrorsIndexRoute
   InfraIndexRoute: typeof InfraIndexRoute
   LogsIndexRoute: typeof LogsIndexRoute
+  ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
   ErrorsIssuesIssueIdRoute: typeof ErrorsIssuesIssueIdRoute
@@ -678,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/replays/': {
+      id: '/replays/'
+      path: '/replays'
+      fullPath: '/replays/'
+      preLoaderRoute: typeof ReplaysIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logs/': {
       id: '/logs/'
       path: '/logs'
@@ -725,6 +758,13 @@ declare module '@tanstack/react-router' {
       path: '/services/$serviceName'
       fullPath: '/services/$serviceName'
       preLoaderRoute: typeof ServicesServiceNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/replays/$sessionId': {
+      id: '/replays/$sessionId'
+      path: '/replays/$sessionId'
+      fullPath: '/replays/$sessionId'
+      preLoaderRoute: typeof ReplaysSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs/$logId': {
@@ -865,6 +905,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorsErrorTypeRoute: ErrorsErrorTypeRoute,
   InfraHostNameRoute: InfraHostNameRoute,
   LogsLogIdRoute: LogsLogIdRoute,
+  ReplaysSessionIdRoute: ReplaysSessionIdRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   TracesTraceIdRoute: TracesTraceIdRoute,
   AlertsIndexRoute: AlertsIndexRoute,
@@ -872,6 +913,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorsIndexRoute: ErrorsIndexRoute,
   InfraIndexRoute: InfraIndexRoute,
   LogsIndexRoute: LogsIndexRoute,
+  ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,
   ErrorsIssuesIssueIdRoute: ErrorsIssuesIssueIdRoute,

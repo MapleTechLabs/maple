@@ -101,6 +101,101 @@ struct AppConfig {
     autumn_secret_key: Option<String>,
     autumn_api_url: String,
     autumn_flush_interval_secs: u64,
+    /// R2 (S3-compatible) config for session-replay event blobs. None when the
+    /// R2_* env vars are unset — replay blob ingest then returns 503.
+    r2: Option<R2Config>,
+}
+
+#[derive(Clone)]
+struct R2Config {
+    endpoint: String,
+    bucket: String,
+    access_key_id: String,
+    secret_access_key: String,
+}
+
+impl R2Config {
+    /// Present only when all three credential vars are set. Bucket defaults to
+    /// `maple-replays` to match the alchemy resource + the API service.
+    fn from_env() -> Option<Self> {
+        let endpoint = std::env::var("R2_ENDPOINT")
+            .ok()
+            .map(|v| v.trim().trim_end_matches('/').to_string())
+            .filter(|v| !v.is_empty())?;
+        let access_key_id = std::env::var("R2_ACCESS_KEY_ID")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())?;
+        let secret_access_key = std::env::var("R2_SECRET_ACCESS_KEY")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())?;
+        let bucket = std::env::var("R2_BUCKET")
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "maple-replays".to_string());
+        Some(Self {
+            endpoint,
+            bucket,
+            access_key_id,
+            secret_access_key,
+        })
+    }
+}
+
+/// Uploads session-replay event blobs to R2 via the S3-compatible API. Signs
+/// each PUT with rusty-s3 (region "auto", path-style) and sends bytes with the
+/// shared reqwest client.
+#[derive(Clone)]
+struct R2Uploader {
+    bucket: Arc<rusty_s3::Bucket>,
+    credentials: Arc<rusty_s3::Credentials>,
+    http: Client,
+}
+
+impl R2Uploader {
+    fn new(cfg: &R2Config, http: Client) -> Result<Self, String> {
+        let endpoint = url::Url::parse(&cfg.endpoint)
+            .map_err(|e| format!("invalid R2_ENDPOINT: {e}"))?;
+        let bucket = rusty_s3::Bucket::new(
+            endpoint,
+            rusty_s3::UrlStyle::Path,
+            cfg.bucket.clone(),
+            "auto".to_string(),
+        )
+        .map_err(|e| format!("invalid R2 bucket config: {e}"))?;
+        Ok(Self {
+            bucket: Arc::new(bucket),
+            credentials: Arc::new(rusty_s3::Credentials::new(
+                cfg.access_key_id.clone(),
+                cfg.secret_access_key.clone(),
+            )),
+            http,
+        })
+    }
+
+    async fn put(&self, key: &str, body: Bytes) -> Result<(), String> {
+        use rusty_s3::S3Action;
+        let action = self
+            .bucket
+            .put_object(Some(&self.credentials), key);
+        let url = action.sign(Duration::from_secs(60));
+        let response = self
+            .http
+            .put(url)
+            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("R2 PUT request failed: {e}"))?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let text = response.text().await.unwrap_or_default();
+            return Err(format!("R2 PUT returned {status}: {text}"));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -263,6 +358,12 @@ impl AppConfig {
                 "INGEST_TINYBIRD_DATASOURCE_METRICS_EXPONENTIAL_HISTOGRAM",
             )
             .unwrap_or_else(|_| "metrics_exponential_histogram".to_string()),
+            datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
+                .unwrap_or_else(|_| "session_replays".to_string()),
+            datasource_session_replay_chunks: std::env::var(
+                "INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAY_CHUNKS",
+            )
+            .unwrap_or_else(|_| "session_replay_chunks".to_string()),
         };
         if write_mode.uses_tinybird() {
             tinybird.validate()?;
@@ -350,6 +451,7 @@ impl AppConfig {
             autumn_secret_key,
             autumn_api_url,
             autumn_flush_interval_secs,
+            r2: R2Config::from_env(),
         })
     }
 }
@@ -520,6 +622,7 @@ struct AppState {
     config: AppConfig,
     http_client: Client,
     telemetry_pipeline: Option<TelemetryPipeline>,
+    r2_uploader: Option<R2Uploader>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
@@ -948,6 +1051,17 @@ async fn main() {
         None
     };
 
+    let r2_uploader = match config.r2.as_ref() {
+        Some(r2_config) => match R2Uploader::new(r2_config, http_client.clone()) {
+            Ok(uploader) => Some(uploader),
+            Err(error) => {
+                eprintln!("R2 uploader init error: {error}");
+                std::process::exit(1);
+            }
+        },
+        None => None,
+    };
+
     // Cloudflare D1 REST backend — the API writes ingest-key rows to D1, so
     // ingest reads them from the same place. We run a probe query before
     // accepting traffic; if anything is wrong (auth, schema, network) the
@@ -1007,6 +1121,7 @@ async fn main() {
             cache: cloudflare_connector_cache,
         },
         telemetry_pipeline,
+        r2_uploader,
         http_client,
         config: config.clone(),
         autumn_tracker,
@@ -1028,6 +1143,8 @@ async fn main() {
         .route("/v1/traces", post(handle_traces))
         .route("/v1/logs", post(handle_logs))
         .route("/v1/metrics", post(handle_metrics))
+        .route("/v1/sessionReplays/meta", post(handle_replay_meta))
+        .route("/v1/sessionReplays/blob", post(handle_replay_blob))
         .route(
             "/v1/logpush/cloudflare/http_requests/{connector_id}",
             post(handle_cloudflare_logpush_http_requests),
@@ -1350,6 +1467,250 @@ async fn handle_metrics(
     body: Bytes,
 ) -> Response {
     handle_signal(state, headers, body, Signal::Metrics).await
+}
+
+// --- Session replay ingest -------------------------------------------------
+
+fn replay_header(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// Object-key-safe session id: bounded length, alphanumeric + `-`/`_` only, so
+/// a malicious value can't escape the `{org_id}/{session_id}/` R2 prefix.
+fn is_safe_replay_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
+/// Auth shared by both replay endpoints. `Ok(None)` is the sentinel token —
+/// silently dropped like the OTLP path.
+async fn resolve_replay_org(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<String>, ApiError> {
+    let ingest_key =
+        extract_ingest_key(headers).ok_or_else(|| ApiError::unauthorized("Missing ingest key"))?;
+    if is_sentinel_token(&ingest_key) {
+        return Ok(None);
+    }
+    let resolved = state
+        .resolver
+        .resolve_ingest_key(&ingest_key)
+        .await
+        .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
+        .ok_or_else(|| ApiError::unauthorized("Invalid ingest key"))?;
+    Ok(Some(resolved.org_id))
+}
+
+async fn handle_replay_meta(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    metrics::request_started();
+    let _guard = InFlightGuard;
+    let span = tracing::info_span!(
+        "ingest_replay_meta",
+        otel.name = "POST /v1/sessionReplays/meta",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/sessionReplays/meta",
+        "http.request.body.size" = body.len(),
+        "maple.signal" = "session_replays",
+        "maple.org_id" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+    match handle_replay_meta_inner(&state, &headers, body)
+        .instrument(span)
+        .await
+    {
+        Ok(count) => {
+            span_handle.record("otel.status_code", "Ok");
+            (StatusCode::OK, axum::Json(AcceptedBody { accepted: count })).into_response()
+        }
+        Err(error) => {
+            span_handle.record("otel.status_code", "Error");
+            error.into_response()
+        }
+    }
+}
+
+async fn handle_replay_meta_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<usize, ApiError> {
+    let org_id = match resolve_replay_org(state, headers).await? {
+        Some(org_id) => org_id,
+        None => return Ok(0),
+    };
+    Span::current().record("maple.org_id", org_id.as_str());
+
+    let pipeline = state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+
+    // NDJSON: one session-metadata object per line. The org_id is always taken
+    // from the authenticated key, never from the client-supplied body.
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+    for line in body.split(|&b| b == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let mut value: serde_json::Value = serde_json::from_slice(line)
+            .map_err(|e| ApiError::bad_request(format!("invalid session metadata JSON: {e}")))?;
+        let obj = value
+            .as_object_mut()
+            .ok_or_else(|| ApiError::bad_request("session metadata must be a JSON object"))?;
+        obj.insert(
+            "org_id".to_string(),
+            serde_json::Value::String(org_id.clone()),
+        );
+        rows.push(
+            serde_json::to_vec(&value)
+                .map_err(|e| ApiError::bad_request(format!("failed to re-serialize metadata: {e}")))?,
+        );
+    }
+
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let count = rows.len();
+    pipeline
+        .accept_rows(
+            &org_id,
+            state.config.tinybird.datasource_session_replays.clone(),
+            rows,
+        )
+        .await
+        .map_err(|e| {
+            ApiError::service_unavailable(format!("failed to enqueue session metadata: {e}"))
+        })?;
+    Ok(count)
+}
+
+async fn handle_replay_blob(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    metrics::request_started();
+    let _guard = InFlightGuard;
+    let span = tracing::info_span!(
+        "ingest_replay_blob",
+        otel.name = "POST /v1/sessionReplays/blob",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/sessionReplays/blob",
+        "http.request.body.size" = body.len(),
+        "maple.signal" = "session_replays",
+        "maple.org_id" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+    match handle_replay_blob_inner(&state, &headers, body)
+        .instrument(span)
+        .await
+    {
+        Ok(()) => {
+            span_handle.record("otel.status_code", "Ok");
+            StatusCode::OK.into_response()
+        }
+        Err(error) => {
+            span_handle.record("otel.status_code", "Error");
+            error.into_response()
+        }
+    }
+}
+
+async fn handle_replay_blob_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<(), ApiError> {
+    let org_id = match resolve_replay_org(state, headers).await? {
+        Some(org_id) => org_id,
+        None => return Ok(()),
+    };
+    Span::current().record("maple.org_id", org_id.as_str());
+
+    let uploader = state.r2_uploader.as_ref().ok_or_else(|| {
+        ApiError::service_unavailable("Session replay blob storage (R2) is not configured")
+    })?;
+    let pipeline = state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+
+    let session_id = replay_header(headers, "x-maple-session-id")
+        .ok_or_else(|| ApiError::bad_request("missing x-maple-session-id header"))?;
+    if !is_safe_replay_id(&session_id) {
+        return Err(ApiError::bad_request("invalid x-maple-session-id"));
+    }
+    let chunk_seq: u32 = replay_header(headers, "x-maple-chunk-seq")
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| ApiError::bad_request("missing or invalid x-maple-chunk-seq header"))?;
+    let is_checkpoint: u8 = replay_header(headers, "x-maple-is-checkpoint")
+        .map(|v| u8::from(v == "1" || v.eq_ignore_ascii_case("true")))
+        .unwrap_or(0);
+    let event_count: u32 = replay_header(headers, "x-maple-event-count")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let duration_ms: u32 = replay_header(headers, "x-maple-duration-ms")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+
+    let byte_size = body.len() as u64;
+    let key = format!("{org_id}/{session_id}/{chunk_seq:08}.json.gz");
+
+    uploader
+        .put(&key, body)
+        .await
+        .map_err(|e| ApiError::service_unavailable(format!("failed to upload replay chunk: {e}")))?;
+
+    // Index row → session_replay_chunks. Tinybird parses the space-separated
+    // datetime into DateTime64(9).
+    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.9f").to_string();
+    let row = serde_json::json!({
+        "org_id": org_id,
+        "session_id": session_id,
+        "chunk_seq": chunk_seq,
+        "timestamp": timestamp,
+        "duration_ms": duration_ms,
+        "event_count": event_count,
+        "byte_size": byte_size,
+        "r2_key": key,
+        "is_checkpoint": is_checkpoint,
+    });
+    let serialized = serde_json::to_vec(&row)
+        .map_err(|e| ApiError::service_unavailable(format!("failed to serialize chunk index: {e}")))?;
+    pipeline
+        .accept_rows(
+            &org_id,
+            state
+                .config
+                .tinybird
+                .datasource_session_replay_chunks
+                .clone(),
+            vec![serialized],
+        )
+        .await
+        .map_err(|e| ApiError::service_unavailable(format!("failed to enqueue chunk index: {e}")))?;
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct AcceptedBody {
+    accepted: usize,
 }
 
 #[derive(Deserialize)]
