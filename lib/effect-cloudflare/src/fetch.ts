@@ -36,23 +36,21 @@ export type ServiceBindingFetch = (
 	request: HttpClientRequest.HttpClientRequest,
 ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.RequestError, WorkerEnvironment>
 
-const makeFetch = (token: ServiceBindingToken): ServiceBindingFetch => {
-	return (request) =>
-		Effect.gen(function* () {
-			const env = yield* WorkerEnvironment
-			const fetcher = (env as Record<string, runtime.Fetcher>)[token.LogicalId]
-			if (!fetcher) {
-				return yield* Effect.fail(
-					new HttpClientError.TransportError({
-						request,
-						cause: new Error(`No service binding named '${token.LogicalId}' in worker env`),
-						description: "Service binding lookup failed",
-					}),
-				)
-			}
-			return yield* doFetch(fetcher, request)
-		})
-}
+const makeFetch = (token: ServiceBindingToken): ServiceBindingFetch =>
+	Effect.fn("ServiceBinding.fetch")(function* (request: HttpClientRequest.HttpClientRequest) {
+		const env = yield* WorkerEnvironment
+		const fetcher = (env as Record<string, runtime.Fetcher>)[token.LogicalId]
+		if (!fetcher) {
+			return yield* Effect.fail(
+				new HttpClientError.TransportError({
+					request,
+					cause: new Error(`No service binding named '${token.LogicalId}' in worker env`),
+					description: "Service binding lookup failed",
+				}),
+			)
+		}
+		return yield* doFetch(fetcher, request)
+	})
 
 const doFetch = (
 	fetcher: runtime.Fetcher,

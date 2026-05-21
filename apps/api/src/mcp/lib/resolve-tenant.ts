@@ -53,89 +53,39 @@ const getBearerToken = (headers: Headers): string | undefined => {
 	return token
 }
 
-export const resolveMcpTenantContext = (
-	request: Request,
-): Effect.Effect<
-	McpTenantContext,
-	McpTenantError | McpAuthMissingError | McpAuthInvalidError | McpInvalidTenantError,
-	Env | ApiKeysService | AuthService
-> =>
-	Effect.gen(function* () {
-		const token = getBearerToken(request.headers)
+export const resolveMcpTenantContext = Effect.fn("resolveMcpTenantContext")(function* (request: Request) {
+	const token = getBearerToken(request.headers)
 
-		// Internal service auth (e.g. chat agent)
-		if (token && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
-			const provided = token.slice(INTERNAL_SERVICE_PREFIX.length)
-			const env = yield* Env
-			const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
-				onNone: () => undefined,
-				onSome: (value) => Redacted.value(value),
-			})
+	// Internal service auth (e.g. chat agent)
+	if (token && token.startsWith(INTERNAL_SERVICE_PREFIX)) {
+		const provided = token.slice(INTERNAL_SERVICE_PREFIX.length)
+		const env = yield* Env
+		const expected = Option.match(env.INTERNAL_SERVICE_TOKEN, {
+			onNone: () => undefined,
+			onSome: (value) => Redacted.value(value),
+		})
 
-			if (!expected) {
-				return yield* new McpAuthMissingError({
-					message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
-				})
-			}
-
-			if (
-				provided.length === expected.length &&
-				timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
-			) {
-				const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
-					onNone: () => request.headers.get("x-org-id"),
-					onSome: (value) => value,
-				})
-				if (!orgId) {
-					return yield* new McpAuthMissingError({
-						message: "x-org-id header is required for internal service auth",
-					})
-				}
-
-				const validOrgId = yield* decodeOrgId(orgId).pipe(
-					Effect.mapError(
-						(e) =>
-							new McpInvalidTenantError({
-								message: e.message,
-								field: "orgId",
-							}),
-					),
-				)
-				const validUserId = yield* decodeUserId("internal-service").pipe(
-					Effect.mapError(
-						(e) =>
-							new McpInvalidTenantError({
-								message: e.message,
-								field: "userId",
-							}),
-					),
-				)
-				return {
-					orgId: validOrgId,
-					userId: validUserId,
-					roles: [],
-					authMode: "self_hosted",
-				} as McpTenantContext
-			}
-
-			return yield* new McpAuthInvalidError({
-				message: "Internal service token mismatch",
+		if (!expected) {
+			return yield* new McpAuthMissingError({
+				message: "INTERNAL_SERVICE_TOKEN is not configured on the server",
 			})
 		}
 
-		const apiKeys = yield* ApiKeysService
-		const apiKeyResolved = yield* apiKeys.resolveByBearer(token).pipe(
-			Effect.mapError(
-				(error) =>
-					new McpAuthInvalidError({
-						message: error.message || "API key validation failed",
-						reason: "api_key_lookup",
-					}),
-			),
-		)
+		if (
+			provided.length === expected.length &&
+			timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+		) {
+			const orgId = Option.match(env.MAPLE_ORG_ID_OVERRIDE, {
+				onNone: () => request.headers.get("x-org-id"),
+				onSome: (value) => value,
+			})
+			if (!orgId) {
+				return yield* new McpAuthMissingError({
+					message: "x-org-id header is required for internal service auth",
+				})
+			}
 
-		if (Option.isSome(apiKeyResolved)) {
-			const validOrgId = yield* decodeOrgId(apiKeyResolved.value.orgId).pipe(
+			const validOrgId = yield* decodeOrgId(orgId).pipe(
 				Effect.mapError(
 					(e) =>
 						new McpInvalidTenantError({
@@ -144,7 +94,7 @@ export const resolveMcpTenantContext = (
 						}),
 				),
 			)
-			const validUserId = yield* decodeUserId(apiKeyResolved.value.userId).pipe(
+			const validUserId = yield* decodeUserId("internal-service").pipe(
 				Effect.mapError(
 					(e) =>
 						new McpInvalidTenantError({
@@ -153,48 +103,89 @@ export const resolveMcpTenantContext = (
 						}),
 				),
 			)
-
-			// Actor resolution: prefer an explicit agent override header, else the
-			// key's pinned agentActorId metadata. Both must be a valid ActorId; we
-			// silently drop malformed values rather than failing the request.
-			const keyActorId = extractAgentActorIdFromMetadata(apiKeyResolved.value.metadataJson)
-			const headerActorId = request.headers.get(AGENT_ACTOR_HEADER)
-			const actorIdCandidate = headerActorId ?? keyActorId
-			const actorIdOpt =
-				actorIdCandidate == null
-					? Option.none<
-							ReturnType<typeof decodeActorIdOption> extends Option.Option<infer A>
-								? A
-								: never
-						>()
-					: decodeActorIdOption(actorIdCandidate)
-			const actorId = Option.getOrUndefined(actorIdOpt)
-
 			return {
 				orgId: validOrgId,
 				userId: validUserId,
-				roles: apiKeyDefaultRoles,
+				roles: [],
 				authMode: "self_hosted",
-				...(actorId ? { actorId } : {}),
 			} as McpTenantContext
 		}
 
-		// Fall back to existing Clerk / self-hosted session auth
-		const auth = yield* AuthService
-		const tenant = yield* auth.resolveMcpTenant(toHeaderRecord(request.headers)).pipe(
+		return yield* new McpAuthInvalidError({
+			message: "Internal service token mismatch",
+		})
+	}
+
+	const apiKeys = yield* ApiKeysService
+	const apiKeyResolved = yield* apiKeys.resolveByBearer(token).pipe(
+		Effect.mapError(
+			(error) =>
+				new McpAuthInvalidError({
+					message: error.message || "API key validation failed",
+					reason: "api_key_lookup",
+				}),
+		),
+	)
+
+	if (Option.isSome(apiKeyResolved)) {
+		const validOrgId = yield* decodeOrgId(apiKeyResolved.value.orgId).pipe(
 			Effect.mapError(
-				(error) =>
-					new McpAuthInvalidError({
-						message: error.message || "Authentication failed (no details available)",
-						reason: "session_auth_fallback",
+				(e) =>
+					new McpInvalidTenantError({
+						message: e.message,
+						field: "orgId",
+					}),
+			),
+		)
+		const validUserId = yield* decodeUserId(apiKeyResolved.value.userId).pipe(
+			Effect.mapError(
+				(e) =>
+					new McpInvalidTenantError({
+						message: e.message,
+						field: "userId",
 					}),
 			),
 		)
 
+		// Actor resolution: prefer an explicit agent override header, else the
+		// key's pinned agentActorId metadata. Both must be a valid ActorId; we
+		// silently drop malformed values rather than failing the request.
+		const keyActorId = extractAgentActorIdFromMetadata(apiKeyResolved.value.metadataJson)
+		const headerActorId = request.headers.get(AGENT_ACTOR_HEADER)
+		const actorIdCandidate = headerActorId ?? keyActorId
+		const actorIdOpt =
+			actorIdCandidate == null
+				? Option.none<
+						ReturnType<typeof decodeActorIdOption> extends Option.Option<infer A> ? A : never
+					>()
+				: decodeActorIdOption(actorIdCandidate)
+		const actorId = Option.getOrUndefined(actorIdOpt)
+
 		return {
-			orgId: tenant.orgId,
-			userId: tenant.userId,
-			roles: [...tenant.roles],
-			authMode: tenant.authMode,
-		}
-	})
+			orgId: validOrgId,
+			userId: validUserId,
+			roles: apiKeyDefaultRoles,
+			authMode: "self_hosted",
+			...(actorId ? { actorId } : {}),
+		} as McpTenantContext
+	}
+
+	// Fall back to existing Clerk / self-hosted session auth
+	const auth = yield* AuthService
+	const tenant = yield* auth.resolveMcpTenant(toHeaderRecord(request.headers)).pipe(
+		Effect.mapError(
+			(error) =>
+				new McpAuthInvalidError({
+					message: error.message || "Authentication failed (no details available)",
+					reason: "session_auth_fallback",
+				}),
+		),
+	)
+
+	return {
+		orgId: tenant.orgId,
+		userId: tenant.userId,
+		roles: [...tenant.roles],
+		authMode: tenant.authMode,
+	}
+})

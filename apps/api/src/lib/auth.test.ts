@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Option, Schema } from "effect"
+import { it as effectIt } from "@effect/vitest"
+import { Effect, Schema } from "effect"
 import { RoleName } from "@maple/domain/http"
 import { isAdmin, requireAdmin } from "./auth"
 
@@ -28,19 +29,16 @@ describe("isAdmin", () => {
 })
 
 describe("requireAdmin", () => {
-	it("succeeds when at least one role is admin", () => {
-		const exit = Effect.runSyncExit(
-			requireAdmin([role("root")], () => new TestForbiddenError("nope")),
-		)
-		expect(Exit.isSuccess(exit)).toBe(true)
-	})
+	effectIt.effect("succeeds when at least one role is admin", () =>
+		requireAdmin([role("root")], () => new TestForbiddenError("nope")),
+	)
 
-	it("fails with the supplied error for non-admin roles", () => {
-		const exit = Effect.runSyncExit(
-			requireAdmin([role("org:member")], () => new TestForbiddenError("nope")),
-		)
-		expect(Exit.isSuccess(exit)).toBe(false)
-		const err = Option.getOrUndefined(Exit.findErrorOption(exit))
-		expect(err).toBeInstanceOf(TestForbiddenError)
-	})
+	effectIt.effect("fails with the supplied error for non-admin roles", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(
+				requireAdmin([role("org:member")], () => new TestForbiddenError("nope")),
+			)
+			expect(error).toBeInstanceOf(TestForbiddenError)
+		}),
+	)
 })

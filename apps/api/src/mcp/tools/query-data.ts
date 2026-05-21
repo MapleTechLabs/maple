@@ -8,7 +8,7 @@ import {
 	type McpToolResult,
 } from "./types"
 import { resolveTimeRange } from "../lib/time"
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { resolveTenant } from "@/mcp/lib/query-tinybird"
 import { QueryEngineService } from "@/services/QueryEngineService"
 import {
@@ -295,29 +295,52 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 
 			const tenant = yield* resolveTenant
 			const queryEngine = yield* QueryEngineService
-			const exit = yield* queryEngine
+
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				source: params.source,
+				kind: params.kind,
+			})
+
+			const taggedErrorResult = (tag: string, message: string, details?: ReadonlyArray<string>) =>
+				({
+					ok: false as const,
+					result: {
+						isError: true,
+						content: [
+							{
+								type: "text" as const,
+								text: `${tag}: ${message}${details && details.length > 0 ? `\n${details.join("\n")}` : ""}`,
+							},
+						],
+					} satisfies McpToolResult,
+				}) as const
+
+			const outcome = yield* queryEngine
 				.execute(tenant, {
 					startTime: st,
 					endTime: et,
 					query: decodedQuery,
 				})
-				.pipe(Effect.exit)
+				.pipe(
+					Effect.map((value) => ({ ok: true as const, value })),
+					Effect.catchTag("@maple/http/errors/QueryEngineValidationError", (error) =>
+						Effect.succeed(taggedErrorResult(error._tag, error.message, error.details)),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/QueryEngineExecutionError": (error) =>
+							Effect.succeed(taggedErrorResult(error._tag, error.message)),
+						"@maple/http/errors/QueryEngineTimeoutError": (error) =>
+							Effect.succeed(taggedErrorResult(error._tag, error.message)),
+						"@maple/http/errors/TinybirdQueryError": (error) =>
+							Effect.succeed(taggedErrorResult(error._tag, error.message)),
+						"@maple/http/errors/TinybirdQuotaExceededError": (error) =>
+							Effect.succeed(taggedErrorResult(error._tag, error.message)),
+					}),
+				)
 
-			if (Exit.isFailure(exit)) {
-				const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-				if (failure && typeof failure === "object" && "_tag" in failure) {
-					const tagged = failure as { _tag: string; message: string; details?: string[] }
-					const details = tagged.details ? `\n${tagged.details.join("\n")}` : ""
-					return {
-						isError: true,
-						content: [{ type: "text", text: `${tagged._tag}: ${tagged.message}${details}` }],
-					}
-				}
-
-				return {
-					isError: true,
-					content: [{ type: "text", text: Cause.pretty(exit.cause) }],
-				}
+			if (!outcome.ok) {
+				return outcome.result
 			}
 
 			const queryContext: QueryDataQueryContext = {
@@ -347,7 +370,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 
 			return formatQueryResult(
 				"query_data",
-				exit.value,
+				outcome.value,
 				params.source,
 				params.kind,
 				params.metric,

@@ -116,9 +116,10 @@ const fail = (code: RawSqlValidationError["code"], message: string) =>
  * raw-SQL alert evaluation in QueryEngineService) can reuse it without wiring
  * the `RawSqlChartService` layer.
  */
-export function makeExpandMacros(input: ExpandMacrosInput) {
-	return Effect.gen(function* () {
-		let sql = input.sql
+export const makeExpandMacros = Effect.fn("RawSqlChartService.expandMacros")(function* (
+	input: ExpandMacrosInput,
+) {
+	let sql = input.sql
 
 		if (!sql.includes("$__orgFilter")) {
 			return yield* fail(
@@ -188,8 +189,7 @@ export function makeExpandMacros(input: ExpandMacrosInput) {
 			sql,
 			granularitySeconds: granularity,
 		} satisfies ExpandMacrosResult
-	})
-}
+})
 
 export class RawSqlChartService extends Context.Service<RawSqlChartService, RawSqlChartServiceShape>()(
 	"@maple/api/services/RawSqlChartService",

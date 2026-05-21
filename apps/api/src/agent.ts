@@ -57,7 +57,12 @@ export const resolveOrgOpenrouterKey = async (
 	const decodedOrgId = decodeOrgId(orgId)
 	const result = await runtime.runPromise(
 		OrgOpenRouterSettingsService.resolveApiKey(decodedOrgId).pipe(
-			Effect.catch(() => Effect.succeed(Option.none<string>())),
+			Effect.catchCause((cause) =>
+				Effect.as(
+					Effect.logError("Failed to resolve org OpenRouter API key", { cause, orgId }),
+					Option.none<string>(),
+				),
+			),
 		),
 	)
 	return Option.getOrUndefined(result)

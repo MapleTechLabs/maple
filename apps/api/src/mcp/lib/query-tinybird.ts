@@ -19,18 +19,20 @@ export const resolveTenant = Effect.gen(function* () {
 
 /** Infrastructure binding: resolves tenant and provides TinybirdExecutor layer. */
 export const withTenantExecutor = <A, E>(effect: Effect.Effect<A, E, TinybirdExecutor>) =>
-	Effect.gen(function* () {
+	Effect.fn("withTenantExecutor")(function* () {
 		const tenant = yield* resolveTenant
 		return yield* Effect.provide(effect, makeTinybirdExecutorFromTenant(tenant))
-	})
+	})()
 
-export const queryTinybird = <T = any>(pipe: TinybirdPipe, params?: Record<string, unknown>) =>
-	Effect.gen(function* () {
-		const tenant = yield* resolveTenant
-		const service = yield* WarehouseQueryService
-		const response = yield* service
-			.query(tenant, { pipe, params })
-			.pipe(Effect.mapError(toMcpQueryError(pipe)))
+export const queryTinybird = Effect.fn("queryTinybird")(function* <T = any>(
+	pipe: TinybirdPipe,
+	params?: Record<string, unknown>,
+) {
+	const tenant = yield* resolveTenant
+	const service = yield* WarehouseQueryService
+	const response = yield* service
+		.query(tenant, { pipe, params })
+		.pipe(Effect.mapError(toMcpQueryError(pipe)))
 
-		return { data: response.data as T[] }
-	})
+	return { data: response.data as T[] }
+})

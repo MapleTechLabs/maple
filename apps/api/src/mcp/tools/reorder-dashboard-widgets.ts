@@ -17,10 +17,10 @@ const LayoutEntrySchema = Schema.Struct({
 	y: Schema.Number,
 	w: Schema.Number,
 	h: Schema.Number,
-	minW: Schema.optional(Schema.Number),
-	minH: Schema.optional(Schema.Number),
-	maxW: Schema.optional(Schema.Number),
-	maxH: Schema.optional(Schema.Number),
+	minW: Schema.optionalKey(Schema.Number),
+	minH: Schema.optionalKey(Schema.Number),
+	maxW: Schema.optionalKey(Schema.Number),
+	maxH: Schema.optionalKey(Schema.Number),
 })
 
 const LayoutsFromJson = Schema.fromJsonString(Schema.Array(LayoutEntrySchema))

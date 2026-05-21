@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit } from "effect"
+import { Cause, Effect, Exit, Option } from "effect"
+import { RawSqlValidationError } from "@maple/domain/http"
 import { RawSqlChartService } from "./RawSqlChartService"
 
 const baseInput = {
@@ -26,7 +27,14 @@ async function expandOk(sql: string) {
 	return exit.value
 }
 
-async function expandFail(sql: string) {
+const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
+	if (!Exit.isFailure(exit)) return undefined
+	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
+	if (failure !== undefined) return failure
+	return Cause.squash(exit.cause)
+}
+
+async function expandFail(sql: string): Promise<RawSqlValidationError> {
 	const exit = await run(
 		Effect.gen(function* () {
 			const svc = yield* RawSqlChartService
@@ -36,7 +44,11 @@ async function expandFail(sql: string) {
 	if (Exit.isSuccess(exit)) {
 		throw new Error(`expected failure, got success: ${JSON.stringify(exit.value)}`)
 	}
-	return exit
+	const failure = getError(exit)
+	if (!(failure instanceof RawSqlValidationError)) {
+		throw new Error(`expected RawSqlValidationError, got: ${String(failure)}`)
+	}
+	return failure
 }
 
 describe("RawSqlChartService.expandMacros", () => {
@@ -51,8 +63,9 @@ describe("RawSqlChartService.expandMacros", () => {
 			}),
 		)
 		expect(Exit.isFailure(exit)).toBe(true)
-		const json = JSON.stringify(exit)
-		expect(json).toContain("MissingOrgFilter")
+		const failure = getError(exit)
+		expect(failure).toBeInstanceOf(RawSqlValidationError)
+		expect((failure as RawSqlValidationError).code).toBe("MissingOrgFilter")
 	})
 
 	it("rejects SQL with multiple statements", async () => {
@@ -66,7 +79,9 @@ describe("RawSqlChartService.expandMacros", () => {
 			}),
 		)
 		expect(Exit.isFailure(exit)).toBe(true)
-		expect(JSON.stringify(exit)).toContain("MultipleStatements")
+		const failure = getError(exit)
+		expect(failure).toBeInstanceOf(RawSqlValidationError)
+		expect((failure as RawSqlValidationError).code).toBe("MultipleStatements")
 	})
 
 	it("does not flag semicolons inside string literals", async () => {
@@ -99,12 +114,12 @@ describe("RawSqlChartService.expandMacros", () => {
 			)
 			// Either MultipleStatements (because of ';') or DisallowedStatement —
 			// both correctly block the dangerous query. Tighten by also testing without ';'.
-			expect(JSON.stringify(failure)).toMatch(/MultipleStatements|DisallowedStatement/)
+			expect(["MultipleStatements", "DisallowedStatement"]).toContain(failure.code)
 		})
 
 		it(`rejects standalone ${keyword} statement`, async () => {
 			const failure = await expandFail(`${keyword} TABLE Logs WHERE $__orgFilter`)
-			expect(JSON.stringify(failure)).toContain("DisallowedStatement")
+			expect(failure.code).toBe("DisallowedStatement")
 		})
 	}
 
@@ -112,14 +127,14 @@ describe("RawSqlChartService.expandMacros", () => {
 		const failure = await expandFail(
 			"SELECT $__bogus FROM Logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
 		)
-		expect(JSON.stringify(failure)).toContain("UnresolvedMacro")
+		expect(failure.code).toBe("UnresolvedMacro")
 	})
 
 	it("rejects malformed $__timeFilter column identifier", async () => {
 		const failure = await expandFail(
 			"SELECT 1 FROM Logs WHERE $__orgFilter AND $__timeFilter(1 OR 1=1)",
 		)
-		expect(JSON.stringify(failure)).toContain("InvalidMacro")
+		expect(failure.code).toBe("InvalidMacro")
 	})
 
 	it("expands the documented happy-path query", async () => {

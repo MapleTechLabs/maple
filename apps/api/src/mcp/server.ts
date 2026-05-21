@@ -29,8 +29,9 @@ const toDecodeErrorMessage = (definition: MapleToolDefinition, error: unknown): 
 }
 
 export const McpToolsLive = Layer.effectDiscard(
-	EffectMcpServer.McpServer.use((server) =>
-		Effect.forEach(mapleToolDefinitions, (definition) =>
+	Effect.gen(function* () {
+		const server = yield* EffectMcpServer.McpServer
+		yield* Effect.forEach(mapleToolDefinitions, (definition) =>
 			server.addTool({
 				tool: new McpSchema.Tool({
 					name: definition.name,
@@ -40,6 +41,7 @@ export const McpToolsLive = Layer.effectDiscard(
 				annotations: Context.empty(),
 				handle: (payload) =>
 					Effect.gen(function* () {
+						yield* Effect.annotateCurrentSpan({ tool: definition.name })
 						const decoded = yield* Effect.try({
 							try: () => Schema.decodeUnknownSync(definition.schema)(payload),
 							catch: (error) => error,
@@ -152,8 +154,9 @@ export const McpToolsLive = Layer.effectDiscard(
 							),
 						),
 						Effect.annotateLogs({ tool: definition.name }),
+						Effect.withSpan("McpTool.handle"),
 					),
 			}),
-		).pipe(Effect.asVoid),
-	),
+		)
+	}),
 )

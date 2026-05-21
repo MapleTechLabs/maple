@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { Effect, Exit, Option } from "effect"
+import { it as effectIt } from "@effect/vitest"
+import { Effect } from "effect"
 import { safeFetch, UrlValidationError, validateExternalUrl, validateExternalUrlSync } from "./url-validator"
-
-const runFailure = <A, E>(eff: Effect.Effect<A, E>): E | undefined => {
-	const exit = Effect.runSyncExit(eff)
-	return Option.getOrUndefined(Exit.findErrorOption(exit))
-}
 
 describe("validateExternalUrlSync", () => {
 	it("accepts public https URLs", () => {
@@ -65,15 +61,19 @@ describe("validateExternalUrlSync", () => {
 })
 
 describe("validateExternalUrl (Effect)", () => {
-	it("succeeds for a public URL", () => {
-		const exit = Effect.runSyncExit(validateExternalUrl("https://hooks.slack.com/services/abc"))
-		expect(Exit.isSuccess(exit)).toBe(true)
-	})
+	effectIt.effect("succeeds for a public URL", () =>
+		Effect.gen(function* () {
+			const url = yield* validateExternalUrl("https://hooks.slack.com/services/abc")
+			expect(url.hostname).toBe("hooks.slack.com")
+		}),
+	)
 
-	it("fails with UrlValidationError for a private URL", () => {
-		const error = runFailure(validateExternalUrl("http://169.254.169.254"))
-		expect(error).toBeInstanceOf(UrlValidationError)
-	})
+	effectIt.effect("fails with UrlValidationError for a private URL", () =>
+		Effect.gen(function* () {
+			const error = yield* Effect.flip(validateExternalUrl("http://169.254.169.254"))
+			expect(error).toBeInstanceOf(UrlValidationError)
+		}),
+	)
 })
 
 describe("safeFetch", () => {

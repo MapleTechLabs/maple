@@ -47,7 +47,7 @@ export class HazelChannelsListResponse extends Schema.Class<HazelChannelsListRes
 export class HazelStartConnectRequest extends Schema.Class<HazelStartConnectRequest>(
 	"HazelStartConnectRequest",
 )({
-	returnTo: Schema.optional(Schema.String),
+	returnTo: Schema.optionalKey(Schema.String),
 }) {}
 
 export class HazelStartConnectResponse extends Schema.Class<HazelStartConnectResponse>(
@@ -100,7 +100,7 @@ export class IntegrationsUpstreamError extends Schema.TaggedErrorClass<Integrati
 	{
 		message: Schema.String,
 		status: Schema.optional(Schema.Number),
-		cause: Schema.optional(Schema.Unknown),
+		cause: Schema.optionalKey(Schema.Defect),
 	},
 	{ httpApiStatus: 502 },
 ) {}

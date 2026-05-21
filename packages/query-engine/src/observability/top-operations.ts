@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe } from "effect"
-import { TinybirdExecutor, ObservabilityError } from "./TinybirdExecutor"
+import { TinybirdExecutor } from "./TinybirdExecutor"
 import type { TimeRange } from "./types"
 import type { TracesMetric } from "../query-engine"
 import { escapeForSQL } from "./sql-utils"
@@ -19,19 +19,23 @@ const METRIC_EXPRESSIONS: Record<string, string> = {
 	apdex: "if(count() > 0, round((countIf(Duration / 1000000 < 500) + countIf(Duration / 1000000 >= 500 AND Duration / 1000000 < 2000) * 0.5) / count(), 4), 0)",
 }
 
-export const topOperations = (input: {
+export const topOperations = Effect.fn("Observability.topOperations")(function* (input: {
 	readonly serviceName: string
 	readonly metric: TracesMetric
 	readonly timeRange: TimeRange
 	readonly limit?: number
-}): Effect.Effect<ReadonlyArray<TopOperation>, ObservabilityError, TinybirdExecutor> =>
-	Effect.gen(function* () {
-		const executor = yield* TinybirdExecutor
-		const limit = input.limit ?? 20
-		const esc = escapeForSQL
-		const metricExpr = METRIC_EXPRESSIONS[input.metric] ?? "count()"
+}) {
+	const executor = yield* TinybirdExecutor
+	const limit = input.limit ?? 20
+	const esc = escapeForSQL
+	const metricExpr = METRIC_EXPRESSIONS[input.metric] ?? "count()"
 
-		const sql = `
+	yield* Effect.annotateCurrentSpan({
+		service: input.serviceName,
+		metric: input.metric,
+	})
+
+	const sql = `
       SELECT
         SpanName as name,
         ${metricExpr} as value
@@ -46,13 +50,14 @@ export const topOperations = (input: {
       FORMAT JSON
     `
 
-		interface TopOpRow {
-			readonly name: string
-			readonly value: number
-		}
-		const rows = yield* executor.sqlQuery<TopOpRow>(sql, { profile: "aggregation" })
-		return pipe(
-			rows,
-			Arr.map((r): TopOperation => ({ name: r.name, value: Number(r.value) })),
-		)
-	})
+	interface TopOpRow {
+		readonly name: string
+		readonly value: number
+	}
+	const rows = yield* executor.sqlQuery<TopOpRow>(sql, { profile: "aggregation" })
+	yield* Effect.annotateCurrentSpan("operationCount", rows.length)
+	return pipe(
+		rows,
+		Arr.map((r): TopOperation => ({ name: r.name, value: Number(r.value) })),
+	)
+})

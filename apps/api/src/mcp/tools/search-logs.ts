@@ -44,6 +44,13 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 			const lim = clampLimit(limit, { defaultValue: 30, max: 200 })
 			const off = clampOffset(offset, { max: 10_000 })
 			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				service: service ?? "all",
+				severity: severity ?? "all",
+				limit: lim,
+				offset: off,
+			})
 
 			const result = yield* searchLogs({
 				timeRange: { startTime: st, endTime: et },
@@ -57,6 +64,8 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
 				Effect.mapError((e) => new McpQueryError({ message: e.message, pipe: "list_logs", cause: e })),
 			)
+
+			yield* Effect.annotateCurrentSpan("resultCount", result.logs.length)
 
 			if (result.logs.length === 0) {
 				return { content: [{ type: "text", text: `No logs found matching filters (${st} — ${et})` }] }

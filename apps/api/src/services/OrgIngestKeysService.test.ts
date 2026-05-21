@@ -2,10 +2,28 @@ import { afterEach, describe, expect, it } from "vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { hashIngestKey } from "@maple/db"
+import { Database, DatabaseError } from "./DatabaseLive"
 import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
 import { Env } from "./Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
 import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "./test-sqlite"
+
+// A Database layer that builds successfully (so migrations are never attempted)
+// but fails every query, exercising the service's `mapError(toPersistenceError)`
+// path. Pointing the real libsql client at an unreachable URL instead fails
+// during migration in layer construction, surfacing a raw DatabaseError that
+// never reaches the service's mapping — which is exactly the regression the
+// previous `String(failure).toContain("DatabaseError")` escape hatch hid.
+const failingDatabaseLayer = Layer.succeed(
+	Database,
+	Database.of({
+		client: undefined as unknown as Database["client"],
+		execute: () =>
+			Effect.fail(
+				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
+			),
+	}),
+)
 
 const createdTempDirs: string[] = []
 
@@ -305,7 +323,12 @@ describe("OrgIngestKeysService", () => {
 	})
 
 	it("maps database errors to IngestKeyPersistenceError", async () => {
-		const layer = makeLayer("http://127.0.0.1:9", Buffer.alloc(32, 3).toString("base64"))
+		const { url } = createTempDbUrl()
+		const layer = OrgIngestKeysService.layer.pipe(
+			Layer.provide(failingDatabaseLayer),
+			Layer.provide(Env.layer),
+			Layer.provide(makeConfig(url, Buffer.alloc(32, 3).toString("base64"))),
+		)
 
 		const exit = await Effect.runPromiseExit(
 			OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a")).pipe(
@@ -315,11 +338,6 @@ describe("OrgIngestKeysService", () => {
 		const failure = getError(exit)
 
 		expect(Exit.isFailure(exit)).toBe(true)
-		if (failure instanceof IngestKeyPersistenceError) {
-			expect(failure).toBeInstanceOf(IngestKeyPersistenceError)
-			return
-		}
-
-		expect(String(failure)).toContain("DatabaseError")
+		expect(failure).toBeInstanceOf(IngestKeyPersistenceError)
 	})
 })

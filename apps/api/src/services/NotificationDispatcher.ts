@@ -9,7 +9,7 @@ import {
 	type OrgId,
 } from "@maple/domain/http"
 import { and, eq, inArray } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Redacted } from "effect"
+import { Clock, Context, Data, Effect, Layer, Redacted } from "effect"
 import {
 	buildAlertChatUrl,
 	dispatchDelivery as dispatchDeliveryImpl,
@@ -30,6 +30,13 @@ import { Env } from "./Env"
  */
 
 const DELIVERY_TIMEOUT_MS = 15_000
+
+export class NotificationDispatchError extends Data.TaggedError(
+	"@maple/api/services/NotificationDispatchError",
+)<{
+	readonly message: string
+	readonly cause?: unknown
+}> {}
 
 export interface NotificationRequest {
 	readonly deliveryKey: string
@@ -75,7 +82,7 @@ export class NotificationDispatcher extends Context.Service<
 		const enrichSecretConfig = (
 			_row: AlertDestinationRow,
 			secretConfig: DestinationSecretConfig,
-		): Effect.Effect<EnrichedDestinationSecretConfig, Error> =>
+		): Effect.Effect<EnrichedDestinationSecretConfig, NotificationDispatchError> =>
 			// Hazel-OAuth webhooks now embed their delivery token in the URL path,
 			// so no enrichment is required at dispatch time.
 			Effect.succeed(secretConfig)

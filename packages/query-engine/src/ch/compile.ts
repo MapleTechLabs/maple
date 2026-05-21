@@ -19,13 +19,16 @@ import { Schema } from "effect"
 
 // ---------------------------------------------------------------------------
 // QueryBuilderError — tagged error for invariant violations in the DSL.
-// Catchable via `Effect.catchTag("QueryBuilderError")` at the service layer.
+// Catchable via `Effect.catchTag("@maple/query-engine/ch/QueryBuilderError")` at the service layer.
 // ---------------------------------------------------------------------------
 
-export class QueryBuilderError extends Schema.TaggedErrorClass<QueryBuilderError>()("QueryBuilderError", {
-	code: Schema.Literals(["SelectRequired", "UnresolvedParam"]),
-	message: Schema.String,
-}) {}
+export class QueryBuilderError extends Schema.TaggedErrorClass<QueryBuilderError>()(
+	"@maple/query-engine/ch/QueryBuilderError",
+	{
+		code: Schema.Literals(["SelectRequired", "UnresolvedParam"]),
+		message: Schema.String,
+	},
+) {}
 
 // ---------------------------------------------------------------------------
 // CompiledQuery — bundles the SQL string with its output type so consumers

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { TinybirdQueryError, OrgId, UserId } from "@maple/domain/http"
 import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "./OrgClickHouseSettingsService"
@@ -43,6 +43,15 @@ const buildLayer = (url: string) => {
 	return WarehouseQueryService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive)),
 	)
+}
+
+const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
+	if (!Exit.isFailure(exit)) return undefined
+
+	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
+	if (failure !== undefined) return failure
+
+	return Cause.squash(exit.cause)
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -128,11 +137,13 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 		// 1 initial + 2 retries
 		expect(attempts).toBe(3)
 		expect(Exit.isFailure(exit)).toBe(true)
-		if (Exit.isFailure(exit)) {
-			const error = exit.cause
-			// Stringified cause should mention upstream/503
-			expect(JSON.stringify(error)).toMatch(/503|upstream/i)
-		}
+
+		const failure = getError(exit)
+		expect(failure).toBeInstanceOf(TinybirdQueryError)
+		expect(failure).toMatchObject({
+			category: "upstream",
+			upstreamStatus: 503,
+		})
 	})
 })
 

@@ -461,7 +461,7 @@ export class AlertValidationError extends Schema.TaggedErrorClass<AlertValidatio
 	{
 		message: Schema.String,
 		details: Schema.Array(Schema.String),
-		cause: Schema.optional(Schema.Unknown),
+		cause: Schema.optionalKey(Schema.Defect),
 	},
 	{ httpApiStatus: 400 },
 ) {}

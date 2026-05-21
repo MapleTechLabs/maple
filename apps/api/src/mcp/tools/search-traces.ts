@@ -14,6 +14,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { searchTraces } from "@maple/query-engine/observability"
+import { resolveTenant } from "../lib/query-tinybird"
 
 export function registerSearchTracesTool(server: McpToolRegistrar) {
 	server.tool(
@@ -49,6 +50,15 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			const lim = clampLimit(params.limit, { defaultValue: 20, max: 200 })
 			const off = clampOffset(params.offset, { max: 10_000 })
 
+			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				service: params.service ?? "all",
+				hasError: params.has_error ?? false,
+				limit: lim,
+				offset: off,
+			})
+
 			if (params.attribute_value && !params.attribute_key) {
 				return validationError(
 					"`attribute_value` requires `attribute_key`. Use explore_attributes to discover available keys.",
@@ -83,6 +93,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			)
 
 			const spans = result.spans
+			yield* Effect.annotateCurrentSpan("resultCount", spans.length)
 			if (spans.length === 0) {
 				return {
 					content: [

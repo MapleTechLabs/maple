@@ -8,6 +8,7 @@ import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { formatNextSteps } from "../lib/next-steps"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
+import { ObservabilityError } from "@maple/query-engine/observability"
 import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
 
 export function registerExploreAttributesTool(server: McpToolRegistrar) {
@@ -40,8 +41,8 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			const scope = (params.scope ?? "span") as "span" | "resource"
 			const tenant = yield* resolveTenant
 			const executorLayer = makeTinybirdExecutorFromTenant(tenant)
-			const mapError = (e: any) =>
-				new McpQueryError({ message: e.message, pipe: "explore_attributes", cause: e })
+			const mapError = (e: ObservabilityError) =>
+				new McpQueryError({ message: e.message, pipe: e.pipe ?? "explore_attributes", cause: e })
 
 			const baseInput = {
 				source: params.source as "traces" | "metrics" | "services",
@@ -84,7 +85,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 
 				return {
 					content: createDualContent(lines.join("\n"), {
-						tool: "explore_attributes" as any,
+						tool: "explore_attributes",
 						data: {
 							source: params.source,
 							scope,
@@ -98,10 +99,14 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 
 			// Services source uses different pipe - delegate to queryTinybird directly
 			if (params.source === "services") {
-				const result = yield* queryTinybird("services_facets", { start_time: st, end_time: et })
+				const result = yield* queryTinybird<{
+					facetType: string
+					name: string
+					count?: number
+				}>("services_facets", { start_time: st, end_time: et })
 
-				const environments = Arr.filter(result.data, (r: any) => r.facetType === "environment")
-				const commitShas = Arr.filter(result.data, (r: any) => r.facetType === "commit_sha")
+				const environments = Arr.filter(result.data, (r) => r.facetType === "environment")
+				const commitShas = Arr.filter(result.data, (r) => r.facetType === "commit_sha")
 
 				const lines: string[] = [
 					`## Available Environments & Deployments`,
@@ -114,7 +119,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					lines.push(
 						formatTable(
 							["Environment", "Span Count"],
-							Arr.map(environments, (r: any) => [String(r.name), formatNumber(r.count ?? 0)]),
+							Arr.map(environments, (r) => [String(r.name), formatNumber(r.count ?? 0)]),
 						),
 					)
 				}
@@ -123,7 +128,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					lines.push(
 						formatTable(
 							["Commit SHA", "Span Count"],
-							Arr.map(commitShas, (r: any) => [String(r.name), formatNumber(r.count ?? 0)]),
+							Arr.map(commitShas, (r) => [String(r.name), formatNumber(r.count ?? 0)]),
 						),
 					)
 				}
@@ -139,16 +144,16 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 
 				return {
 					content: createDualContent(lines.join("\n"), {
-						tool: "explore_attributes" as any,
+						tool: "explore_attributes",
 						data: {
 							source: "services",
 							timeRange: { start: st, end: et },
 							keys: [
-								...Arr.map(environments, (r: any) => ({
+								...Arr.map(environments, (r) => ({
 									key: `environment:${String(r.name)}`,
 									count: Number(r.count ?? 0),
 								})),
-								...Arr.map(commitShas, (r: any) => ({
+								...Arr.map(commitShas, (r) => ({
 									key: `commit_sha:${String(r.name)}`,
 									count: Number(r.count ?? 0),
 								})),
@@ -191,7 +196,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 
 			return {
 				content: createDualContent(lines.join("\n"), {
-					tool: "explore_attributes" as any,
+					tool: "explore_attributes",
 					data: {
 						source: params.source,
 						scope,
