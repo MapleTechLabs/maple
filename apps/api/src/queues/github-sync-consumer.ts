@@ -1,7 +1,5 @@
 import { decodeGithubSyncJob, type GithubSyncJob } from "@maple/domain/queues/github-jobs"
-// `GithubSyncJob` is used implicitly as the type of `dispatch`'s parameter — the
-// Match.exhaustive check below enforces all cases are handled.
-import { Effect, Exit, Match } from "effect"
+import { Effect, Match } from "effect"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
 import { GithubSyncService } from "../services/GithubSyncService"
 
@@ -18,76 +16,85 @@ type BatchLike = {
 	readonly messages: ReadonlyArray<MessageLike>
 }
 
-const dispatch = (job: GithubSyncJob) =>
-	Effect.gen(function* () {
-		const sync = yield* GithubSyncService
-		const queue = yield* GithubSyncQueue
-		return yield* Match.value(job).pipe(
-			Match.tag("BackfillRepo", (j) =>
-				Effect.gen(function* () {
-					const progress = yield* sync.runBackfill({
-						orgId: j.orgId,
-						repoId: j.repoId,
-						sinceUnixMs: j.sinceUnixMs,
-						cursor: j.cursor,
+const dispatch = Effect.fn("dispatch")(function* (job: GithubSyncJob) {
+	yield* Effect.annotateCurrentSpan({ "job.orgId": job.orgId, "job.tag": job._tag })
+	const sync = yield* GithubSyncService
+	const queue = yield* GithubSyncQueue
+
+	yield* Match.value(job).pipe(
+		Match.tag("BackfillRepo", (job) =>
+			Effect.gen(function* () {
+				const progress = yield* sync.runBackfill({
+					orgId: job.orgId,
+					repoId: job.repoId,
+					sinceUnixMs: job.sinceUnixMs,
+					cursor: job.cursor,
+				})
+
+				if (!progress.done && progress.cursor) {
+					yield* queue.enqueue({
+						_tag: "BackfillRepo" as const,
+						orgId: job.orgId,
+						repoId: job.repoId,
+						sinceUnixMs: job.sinceUnixMs,
+						cursor: progress.cursor,
 					})
-					if (!progress.done && progress.cursor) {
-						yield* queue.enqueue({
-							_tag: "BackfillRepo" as const,
-							orgId: j.orgId,
-							repoId: j.repoId,
-							sinceUnixMs: j.sinceUnixMs,
-							cursor: progress.cursor,
-						})
-					}
-				}),
-			),
-			Match.tag("SyncWebhookPush", (j) =>
-				sync.runWebhookPush({
-					orgId: j.orgId,
-					installationId: j.installationId,
-					owner: j.owner,
-					name: j.name,
-					ref: j.ref,
-					before: j.before,
-					after: j.after,
-					forced: j.forced,
-					commitShas: j.commitShas,
-				}),
-			),
-			Match.tag("ResolveUnknownSha", (j) =>
-				sync.runResolveUnknownSha({ orgId: j.orgId, sha: j.sha }),
-			),
-			Match.tag("ReconcileInstallation", (j) =>
-				sync.runReconcile({ orgId: j.orgId, installationId: j.installationId }),
-			),
-			Match.exhaustive,
-		)
-	})
+				}
+			}),
+		),
+		Match.tag("SyncWebhookPush", (job) =>
+			sync.runWebhookPush({
+				orgId: job.orgId,
+				installationId: job.installationId,
+				owner: job.owner,
+				name: job.name,
+				ref: job.ref,
+				before: job.before,
+				after: job.after,
+				forced: job.forced,
+				commitShas: job.commitShas,
+			}),
+		),
+		Match.tag("ResolveUnknownSha", (job) =>
+			sync.runResolveUnknownSha({ orgId: job.orgId, sha: job.sha }),
+		),
+		Match.tag("ReconcileInstallation", (job) =>
+			sync.runReconcile({ orgId: job.orgId, installationId: job.installationId }),
+		),
+		Match.exhaustive,
+	)
+})
+
+const processMessage = Effect.fn("processMessage")(function* (message: MessageLike) {
+	yield* Effect.annotateCurrentSpan({ "message.id": message.id ?? "<unknown>" })
+
+	const decodedJob = yield* Effect.result(decodeGithubSyncJob(message.body))
+
+	if (decodedJob._tag === "Failure") {
+		yield* Effect.annotateCurrentSpan({ "message.outcome": "dropped" })
+
+		yield* Effect.logError("[github-sync] malformed message, dropping", decodedJob.failure)
+		yield* Effect.sync(() => message.ack?.())
+		return
+	}
+
+	const dispatchResult = yield* Effect.result(dispatch(decodedJob.success))
+
+	if (dispatchResult._tag === "Failure") {
+		yield* Effect.annotateCurrentSpan({ "message.outcome": "retried" })
+
+		yield* Effect.logError("[github-sync] job failed, will retry", dispatchResult.failure)
+		yield* Effect.sync(() => message.retry?.({ delaySeconds: RETRY_DELAY_SECONDS }))
+		return
+	}
+
+	yield* Effect.annotateCurrentSpan({ "message.outcome": "acked" })
+	yield* Effect.sync(() => message.ack?.())
+})
 
 export const processGithubSyncBatch = (batch: BatchLike) =>
-	Effect.gen(function* () {
-		for (const message of batch.messages) {
-			const decodedExit = yield* Effect.exit(decodeGithubSyncJob(message.body))
-			if (Exit.isFailure(decodedExit)) {
-				yield* Effect.logError("[github-sync] malformed message, dropping").pipe(
-					Effect.annotateLogs({ messageId: message.id ?? "<unknown>" }),
-				)
-				message.ack?.()
-				continue
-			}
-			const job = decodedExit.value
-			const dispatchExit = yield* Effect.exit(dispatch(job))
-			if (Exit.isFailure(dispatchExit)) {
-				yield* Effect.logError("[github-sync] job failed, will retry").pipe(
-					Effect.annotateLogs({
-						messageId: message.id ?? "<unknown>",
-						tag: job._tag,
-					}),
-				)
-				message.retry?.({ delaySeconds: RETRY_DELAY_SECONDS })
-				continue
-			}
-			message.ack?.()
-		}
-	})
+	Effect.forEach(batch.messages, processMessage, { discard: true }).pipe(
+		Effect.withSpan("processGithubSyncBatch", {
+			attributes: { "batch.size": batch.messages.length },
+		}),
+	)

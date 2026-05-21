@@ -7,7 +7,7 @@ import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } from "./app"
 import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
-import { runScheduledReconcile } from "./queues/cron-scheduler"
+import { runGithubScheduledReconcile } from "./queues/cron-scheduler"
 import { processGithubSyncBatch } from "./queues/github-sync-consumer"
 import { DatabaseD1Live } from "./services/DatabaseD1Live"
 
@@ -106,8 +106,7 @@ const peekMcpFrame = (body: string): McpFrame => {
 		const parsed = JSON.parse(body)
 		const first = Array.isArray(parsed) ? parsed[0] : parsed
 		const method = typeof first?.method === "string" ? first.method : "-"
-		const id =
-			first?.id === undefined || first?.id === null ? "-" : String(first.id)
+		const id = first?.id === undefined || first?.id === null ? "-" : String(first.id)
 		return { method, id }
 	} catch {
 		return { method: "-", id: "-" }
@@ -184,8 +183,7 @@ const handle = async (
 		console.error("[worker] handler failed:", err)
 		if (isMcp && mcpFrame) {
 			console.error(
-				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` dur=${Date.now() - startedAt}ms`,
+				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` + ` dur=${Date.now() - startedAt}ms`,
 			)
 		}
 		ctx.waitUntil(telemetry.flush(env))
@@ -228,9 +226,7 @@ const runBackground = async <A, E>(
 }
 
 const logged = <A, E, R>(label: string, effect: Effect.Effect<A, E, R>) =>
-	effect.pipe(
-		Effect.catchCause((cause) => Effect.logError(`[${label}] failed`, cause)),
-	)
+	effect.pipe(Effect.catchCause((cause) => Effect.logError(`[${label}] failed`, cause)))
 
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
@@ -238,5 +234,5 @@ export default {
 	queue: (batch: QueueBatch, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		runBackground(env, logged("queue", processGithubSyncBatch(batch)), ctx),
 	scheduled: (_event: ScheduledEvent, env: Record<string, unknown>, ctx: ExecutionContext) =>
-		runBackground(env, logged("scheduled", runScheduledReconcile), ctx),
+		runBackground(env, logged("scheduled", runGithubScheduledReconcile()), ctx),
 }
