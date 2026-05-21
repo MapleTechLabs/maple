@@ -7,6 +7,7 @@
 //     const fired = yield* processScheduledEvents
 //     for (const event of fired) { ... }
 //   })
+import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Stream from "effect/Stream"
@@ -97,7 +98,7 @@ export const processScheduledEvents: Effect.Effect<ScheduledEvent[], never, Dura
 	function* () {
 		yield* ensureTable
 		const ctx = yield* DurableObjectState
-		const now = Date.now()
+		const now = yield* Clock.currentTimeMillis
 
 		const cursor = yield* ctx.storage.sql.exec<EventRow>(
 			`SELECT id, run_at, repeat_ms, payload FROM alchemy_scheduled_events WHERE run_at <= ? ORDER BY run_at ASC`,

@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Option, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Result, Schema } from "effect"
 import { QueryEngineService } from "@/services/QueryEngineService"
 import {
 	QuerySpec,
@@ -41,8 +41,8 @@ const QueryBuilderParamsSchema = Schema.Struct({
 	formulas: Schema.optional(Schema.mutable(Schema.Array(Schema.Unknown))),
 })
 
-const decodeQueryBuilderParamsSync = Schema.decodeUnknownSync(QueryBuilderParamsSchema)
-const decodeQuerySpecSync = Schema.decodeUnknownSync(QuerySpec)
+const decodeQueryBuilderParams = Schema.decodeUnknownEffect(QueryBuilderParamsSchema)
+const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
 
 function applyReduceToValue(
 	result: QueryEngineResult,
@@ -145,8 +145,8 @@ export interface InspectWidgetInput {
  * problems are encoded in the returned `InspectionOutcome` so post-mutation
  * callers can always finish their response.
  */
-export const inspectWidget = (input: InspectWidgetInput) => {
-	const program = Effect.gen(function* () {
+export const inspectWidget = Effect.fn("inspectWidget")(
+	function* (input: InspectWidgetInput) {
 		const { tenant, widget, timeRange } = input
 
 		const endpoint = widget.dataSource.endpoint
@@ -166,16 +166,15 @@ export const inspectWidget = (input: InspectWidgetInput) => {
 			} satisfies InspectionOutcome
 		}
 
-		let decodedParams: Schema.Schema.Type<typeof QueryBuilderParamsSchema>
-		try {
-			decodedParams = decodeQueryBuilderParamsSync(rawParams)
-		} catch (error) {
+		const decodedParamsResult = yield* Effect.result(decodeQueryBuilderParams(rawParams))
+		if (Result.isFailure(decodedParamsResult)) {
 			return {
 				kind: "skipped",
 				reason: "decode_failed",
-				detail: `Failed to decode widget params: ${String(error)}. The widget's queries[] does not match the query-builder shape.`,
+				detail: `Failed to decode widget params: ${decodedParamsResult.failure.message}. The widget's queries[] does not match the query-builder shape.`,
 			} satisfies InspectionOutcome
 		}
+		const decodedParams = decodedParamsResult.success
 
 		const enabledRawDrafts = decodedParams.queries.filter((q) => q.enabled !== false)
 		if (enabledRawDrafts.length === 0) {
@@ -230,21 +229,20 @@ export const inspectWidget = (input: InspectWidgetInput) => {
 				continue
 			}
 
-			let decodedSpec
-			try {
-				decodedSpec = decodeQuerySpecSync(buildResult.query)
-			} catch (error) {
+			const decodedSpecResult = yield* Effect.result(decodeQuerySpec(buildResult.query))
+			if (Result.isFailure(decodedSpecResult)) {
 				queryResults.push({
 					queryId: draft.id,
 					queryName: draft.name,
 					status: "error",
-					error: `Invalid query specification: ${String(error)}`,
+					error: `Invalid query specification: ${decodedSpecResult.failure.message}`,
 					stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
 					flags: ["EMPTY", ...builderWarningFlags],
 					...(builderWarnings && { builderWarnings }),
 				})
 				continue
 			}
+			const decodedSpec = decodedSpecResult.success
 
 			const exit = yield* queryEngine
 				.execute(tenant, {
@@ -255,11 +253,11 @@ export const inspectWidget = (input: InspectWidgetInput) => {
 				.pipe(Effect.exit)
 
 			if (Exit.isFailure(exit)) {
+				// `execute` fails with a `QueryEngineRouteError` union — every member
+				// carries a `message`. A defect (no typed failure) falls back to the
+				// pretty-printed cause.
 				const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-				const errorMessage =
-					failure && typeof failure === "object" && "message" in failure
-						? String((failure as { message: unknown }).message)
-						: Cause.pretty(exit.cause)
+				const errorMessage = failure ? failure.message : Cause.pretty(exit.cause)
 				queryResults.push({
 					queryId: draft.id,
 					queryName: draft.name,
@@ -353,17 +351,14 @@ export const inspectWidget = (input: InspectWidgetInput) => {
 		}
 
 		return { kind: "supported", data } satisfies InspectionOutcome
-	})
-
-	return program.pipe(
-		Effect.catchCause((cause) =>
-			Effect.succeed<InspectionOutcome>({
-				kind: "inspection_error",
-				message: Cause.pretty(cause),
-			}),
-		),
-	)
-}
+	},
+	Effect.catchCause((cause) =>
+		Effect.succeed<InspectionOutcome>({
+			kind: "inspection_error",
+			message: Cause.pretty(cause),
+		}),
+	),
+)
 
 function summarizeOutcome(widget: DashboardWidget, outcome: InspectionOutcome): WidgetInspectionEntry {
 	if (outcome.kind === "supported") {
@@ -433,8 +428,8 @@ const SKIPPED_SUMMARY: WidgetInspectionSummary = {
  * widget with bounded concurrency. Returns a compact `WidgetInspectionSummary`
  * suitable for inclusion in tool responses.
  */
-export const inspectWidgetsAfterMutation = (input: InspectWidgetsAfterMutationInput) => {
-	const program = Effect.gen(function* () {
+export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutation")(
+	function* (input: InspectWidgetsAfterMutationInput) {
 		const {
 			tenant,
 			dashboard,
@@ -515,10 +510,9 @@ export const inspectWidgetsAfterMutation = (input: InspectWidgetsAfterMutationIn
 			timeRange,
 		}
 		return summary
-	})
-
-	return program.pipe(Effect.catchCause(() => Effect.succeed(SKIPPED_SUMMARY)))
-}
+	},
+	Effect.catchCause(() => Effect.succeed(SKIPPED_SUMMARY)),
+)
 
 /**
  * Format a `WidgetInspectionSummary` into a markdown block for inclusion in

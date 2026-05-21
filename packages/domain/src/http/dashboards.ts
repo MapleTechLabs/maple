@@ -212,8 +212,8 @@ export class PortableDashboardDocument extends Schema.Class<PortableDashboardDoc
 	"PortableDashboardDocument",
 )({
 	name: Schema.String,
-	description: Schema.optional(Schema.String),
-	tags: Schema.optional(Schema.Array(Schema.String)),
+	description: Schema.optionalKey(Schema.String),
+	tags: Schema.optionalKey(Schema.Array(Schema.String)),
 	timeRange: TimeRangeSchema,
 	widgets: Schema.Array(DashboardWidgetSchema),
 }) {}
@@ -221,8 +221,8 @@ export class PortableDashboardDocument extends Schema.Class<PortableDashboardDoc
 export class DashboardDocument extends Schema.Class<DashboardDocument>("DashboardDocument")({
 	id: DashboardId,
 	name: Schema.String,
-	description: Schema.optional(Schema.String),
-	tags: Schema.optional(Schema.Array(Schema.String)),
+	description: Schema.optionalKey(Schema.String),
+	tags: Schema.optionalKey(Schema.Array(Schema.String)),
 	timeRange: TimeRangeSchema,
 	widgets: Schema.Array(DashboardWidgetSchema),
 	createdAt: IsoDateTimeString,
@@ -364,7 +364,7 @@ export class DashboardTemplateParameter extends Schema.Class<DashboardTemplatePa
 	label: Schema.String,
 	description: Schema.String,
 	required: Schema.Boolean,
-	placeholder: Schema.optional(Schema.String),
+	placeholder: Schema.optionalKey(Schema.String),
 }) {}
 
 export class DashboardTemplateMetadata extends Schema.Class<DashboardTemplateMetadata>(
@@ -388,8 +388,8 @@ export class DashboardTemplatesListResponse extends Schema.Class<DashboardTempla
 export class DashboardTemplateInstantiateRequest extends Schema.Class<DashboardTemplateInstantiateRequest>(
 	"DashboardTemplateInstantiateRequest",
 )({
-	parameters: Schema.optional(Schema.Record(DashboardTemplateParameterKey, Schema.String)),
-	name: Schema.optional(Schema.String),
+	parameters: Schema.optionalKey(Schema.Record(DashboardTemplateParameterKey, Schema.String)),
+	name: Schema.optionalKey(Schema.String),
 }) {}
 
 export class DashboardTemplateNotFoundError extends Schema.TaggedErrorClass<DashboardTemplateNotFoundError>()(

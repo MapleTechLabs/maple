@@ -10,12 +10,28 @@ import {
 	PortableDashboardDocument,
 	UserId,
 } from "@maple/domain/http"
+import { Database, DatabaseError } from "./DatabaseLive"
 import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "./Env"
 import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "./test-sqlite"
 
 const createdTempDirs: string[] = []
+
+// A Database layer that builds successfully but fails every query, exercising
+// the service's `mapError(toPersistenceError)` path. The unreachable-URL
+// approach instead fails during migration in layer construction, surfacing a
+// raw DatabaseError that never reaches the service's mapping.
+const failingDatabaseLayer = Layer.succeed(
+	Database,
+	Database.of({
+		client: undefined as unknown as Database["client"],
+		execute: () =>
+			Effect.fail(
+				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
+			),
+	}),
+)
 
 afterEach(() => {
 	cleanupTempDirs(createdTempDirs)
@@ -189,7 +205,9 @@ describe("DashboardPersistenceService", () => {
 	})
 
 	it("maps database/driver errors to DashboardPersistenceError", async () => {
-		const failingLayer = makeLayer("http://127.0.0.1:9")
+		const failingLayer = DashboardPersistenceService.layer.pipe(
+			Layer.provide(failingDatabaseLayer),
+		)
 
 		const exit = await Effect.runPromiseExit(
 			DashboardPersistenceService.list(asOrgId("org_a")).pipe(Effect.provide(failingLayer)),
@@ -198,11 +216,6 @@ describe("DashboardPersistenceService", () => {
 		const failure = getError(exit)
 
 		expect(Exit.isFailure(exit)).toBe(true)
-		if (failure instanceof DashboardPersistenceError) {
-			expect(failure).toBeInstanceOf(DashboardPersistenceError)
-			return
-		}
-
-		expect(String(failure)).toContain("DatabaseError")
+		expect(failure).toBeInstanceOf(DashboardPersistenceError)
 	})
 })

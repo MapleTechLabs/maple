@@ -42,16 +42,16 @@ type JwtPayload = {
 }
 
 const JwtHeaderSchema = Schema.Struct({
-	alg: Schema.optional(Schema.String),
+	alg: Schema.optionalKey(Schema.String),
 })
 const JwtPayloadSchema = Schema.Struct({
-	sub: Schema.optional(Schema.String),
-	exp: Schema.optional(Schema.Number),
-	nbf: Schema.optional(Schema.Number),
-	iat: Schema.optional(Schema.Number),
-	org_id: Schema.optional(Schema.String),
-	authMode: Schema.optional(AuthMode),
-	roles: Schema.optional(Schema.Union([Schema.Array(Schema.String), Schema.String])),
+	sub: Schema.optionalKey(Schema.String),
+	exp: Schema.optionalKey(Schema.Number),
+	nbf: Schema.optionalKey(Schema.Number),
+	iat: Schema.optionalKey(Schema.Number),
+	org_id: Schema.optionalKey(Schema.String),
+	authMode: Schema.optionalKey(AuthMode),
+	roles: Schema.optionalKey(Schema.Union([Schema.Array(Schema.String), Schema.String])),
 })
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserId)

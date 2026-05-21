@@ -82,6 +82,7 @@ import {
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import {
 	Array as Arr,
+	Clock,
 	Effect,
 	HashSet,
 	Layer,
@@ -182,6 +183,7 @@ interface DispatchContext {
 	readonly value: number | null
 	readonly sampleCount: number | null
 	readonly linkUrl: string
+	readonly sentAtMs: number
 }
 
 interface DispatchResult {
@@ -207,6 +209,7 @@ interface DeliveryPayloadContext {
 	readonly value: number | null
 	readonly sampleCount: number | null
 	readonly linkUrl: string
+	readonly sentAtMs: number
 }
 
 interface DeliveryAttemptFailure {
@@ -227,27 +230,27 @@ type DatabaseExecutor = DatabaseClient | DatabaseTransaction
 /* -------------------------------------------------------------------------- */
 
 const StoredDeliveryPayloadSchema = Schema.Struct({
-	eventType: Schema.optional(Schema.String),
-	incidentId: Schema.optional(Schema.NullOr(Schema.String)),
-	incidentStatus: Schema.optional(Schema.String),
-	dedupeKey: Schema.optional(Schema.String),
-	rule: Schema.optional(
+	eventType: Schema.optionalKey(Schema.String),
+	incidentId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	incidentStatus: Schema.optionalKey(Schema.String),
+	dedupeKey: Schema.optionalKey(Schema.String),
+	rule: Schema.optionalKey(
 		Schema.Struct({
-			id: Schema.optional(Schema.String),
-			name: Schema.optional(Schema.String),
-			signalType: Schema.optional(Schema.String),
-			severity: Schema.optional(Schema.String),
-			groupKey: Schema.optional(Schema.NullOr(Schema.String)),
-			comparator: Schema.optional(Schema.String),
-			threshold: Schema.optional(Schema.Number),
-			thresholdUpper: Schema.optional(Schema.NullOr(Schema.Number)),
-			windowMinutes: Schema.optional(Schema.Number),
+			id: Schema.optionalKey(Schema.String),
+			name: Schema.optionalKey(Schema.String),
+			signalType: Schema.optionalKey(Schema.String),
+			severity: Schema.optionalKey(Schema.String),
+			groupKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+			comparator: Schema.optionalKey(Schema.String),
+			threshold: Schema.optionalKey(Schema.Number),
+			thresholdUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+			windowMinutes: Schema.optionalKey(Schema.Number),
 		}),
 	),
-	observed: Schema.optional(
+	observed: Schema.optionalKey(
 		Schema.Struct({
-			value: Schema.optional(Schema.NullOr(Schema.Number)),
-			sampleCount: Schema.optional(Schema.NullOr(Schema.Number)),
+			value: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+			sampleCount: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 		}),
 	),
 })
@@ -312,7 +315,8 @@ type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.field
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 
 export interface AlertRuntimeShape {
-	readonly now: () => number
+	/** Current wall-clock time in epoch ms, sourced from Effect's `Clock` so tests drive it via `TestClock`. */
+	readonly now: Effect.Effect<number>
 	readonly makeUuid: () => string
 	readonly fetch: typeof fetch
 	readonly deliveryTimeoutMs: () => number
@@ -320,7 +324,7 @@ export interface AlertRuntimeShape {
 
 export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShape>()("@maple/api/services/AlertRuntime", {
 	make: Effect.succeed({
-			now: () => Date.now(),
+			now: Clock.currentTimeMillis,
 			makeUuid: () => randomUUID(),
 			fetch: globalThis.fetch as typeof fetch,
 			deliveryTimeoutMs: () => DELIVERY_TIMEOUT_MS_DEFAULT,
@@ -955,7 +959,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		const runtime = yield* AlertRuntime
 		const hazelOAuth = yield* HazelOAuthService
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
-		const now = () => runtime.now()
+		const now = runtime.now
 		const makeUuid = () => runtime.makeUuid()
 		const deliveryTimeoutMs = () => runtime.deliveryTimeoutMs()
 		const workerId = makeUuid()
@@ -1166,6 +1170,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				return yield* Effect.fail(makeValidationError("Invalid alert rule", details))
 			}
 
+			const nowMs = yield* now
 			const normalizedBase = {
 				id: decodeAlertRuleIdSync(makeUuid()),
 				name,
@@ -1192,8 +1197,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				rawQuerySql: normalizeOptionalString(request.rawQuerySql),
 				rawQueryReducer: request.rawQueryReducer ?? null,
 				destinationIds,
-				createdAt: now(),
-				updatedAt: now(),
+				createdAt: nowMs,
+				updatedAt: nowMs,
 			}
 			const compiledPlan = yield* compileRulePlan(normalizedBase)
 
@@ -1280,7 +1285,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			| TinybirdQueryError
 			| TinybirdQuotaExceededError
 		> {
-			const endMs = now()
+			const endMs = yield* now
 			const startMs = endMs - rule.windowMinutes * 60_000
 			const plan = rule.compiledPlan
 			let observations: ReadonlyArray<GroupedAlertObservation>
@@ -1458,7 +1463,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			destinationId: AlertDestinationId,
 			errorMessage: string | null,
 		) {
-			const timestamp = now()
+			const timestamp = yield* now
 			yield* dbExecute((db) =>
 				db
 					.update(alertDestinations)
@@ -1519,7 +1524,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			},
 			linkUrl: context.linkUrl,
 			chatUrl: buildAlertChatUrl(env.MAPLE_APP_BASE_URL, context),
-			sentAt: new Date(now()).toISOString(),
+			sentAt: new Date(context.sentAtMs).toISOString(),
 		})
 
 		const toDeliveryAttemptFailure = (error: unknown): DeliveryAttemptFailure => {
@@ -1614,6 +1619,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
 						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
+						sentAtMs: scheduledAt,
 					})
 
 					for (const destinationId of rule.destinationIds) {
@@ -1704,7 +1710,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							)
 					: buildSecretConfig(request)
 			const encryptedSecret = yield* encryptSecret(JSON.stringify(secretConfig), encryptionKey)
-			const timestamp = now()
+			const timestamp = yield* now
 
 			const row = {
 				id: destinationId,
@@ -1743,8 +1749,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			}
 
 			const hydrated = yield* hydrateDestination(existing)
-			let nextPublicConfig = hydrated.publicConfig
-			let nextSecretConfig = hydrated.secretConfig
 
 			// Validate any URL the request supplies before we persist it. Each
 			// branch only validates when the field is non-empty so the existing
@@ -1757,149 +1761,161 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			}
 
-			switch (request.type) {
-				case "slack":
-					nextPublicConfig = {
-						summary:
-							normalizeOptionalString(request.channelLabel) ?? hydrated.publicConfig.summary,
-						channelLabel:
-							normalizeOptionalString(request.channelLabel) ??
-							hydrated.publicConfig.channelLabel,
-					}
-					nextSecretConfig = {
-						type: "slack",
-						webhookUrl:
-							normalizeOptionalString(request.webhookUrl) ??
-							(hydrated.secretConfig.type === "slack" ? hydrated.secretConfig.webhookUrl : ""),
-					}
-					break
-				case "pagerduty":
-					nextPublicConfig = hydrated.publicConfig
-					nextSecretConfig = {
-						type: "pagerduty",
-						integrationKey:
-							normalizeOptionalString(request.integrationKey) ??
-							(hydrated.secretConfig.type === "pagerduty"
-								? hydrated.secretConfig.integrationKey
-								: ""),
-					}
-					break
-				case "webhook":
-					nextPublicConfig = {
-						summary:
-							request.url != null && request.url.trim().length > 0
-								? summarizeWebhookUrl(request.url)
-								: hydrated.publicConfig.summary,
-						channelLabel: null,
-					}
-					nextSecretConfig = {
-						type: "webhook",
-						url:
-							normalizeOptionalString(request.url) ??
-							(hydrated.secretConfig.type === "webhook" ? hydrated.secretConfig.url : ""),
-						signingSecret:
-							request.signingSecret === undefined
-								? hydrated.secretConfig.type === "webhook"
-									? hydrated.secretConfig.signingSecret
-									: null
-								: normalizeOptionalString(request.signingSecret),
-					}
-					break
-				case "hazel":
-					nextPublicConfig = {
-						summary:
-							request.webhookUrl != null && request.webhookUrl.trim().length > 0
-								? summarizeWebhookUrl(request.webhookUrl)
-								: hydrated.publicConfig.summary,
-						channelLabel: null,
-					}
-					nextSecretConfig = {
-						type: "hazel",
-						webhookUrl:
-							normalizeOptionalString(request.webhookUrl) ??
-							(hydrated.secretConfig.type === "hazel" ? hydrated.secretConfig.webhookUrl : ""),
-						signingSecret:
-							request.signingSecret === undefined
-								? hydrated.secretConfig.type === "hazel"
-									? hydrated.secretConfig.signingSecret
-									: null
-								: normalizeOptionalString(request.signingSecret),
-					}
-					break
-				case "hazel-oauth": {
-					const previousSecret =
-						hydrated.secretConfig.type === "hazel-oauth" ? hydrated.secretConfig : null
-					const nextOrganizationId =
-						normalizeOptionalString(request.hazelOrganizationId) ??
-						previousSecret?.hazelOrganizationId ??
-						""
-					const nextOrganizationName =
-						normalizeOptionalString(request.hazelOrganizationName) ??
-						previousSecret?.hazelOrganizationName ??
-						""
-					const requestLogoUrl = request.hazelOrganizationLogoUrl
-					const nextOrganizationLogoUrl =
-						requestLogoUrl === undefined
-							? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
-							: requestLogoUrl
-					const nextChannelId =
-						normalizeOptionalString(request.hazelChannelId) ??
-						previousSecret?.hazelChannelId ??
-						""
-					const nextChannelName =
-						normalizeOptionalString(request.hazelChannelName) ??
-						previousSecret?.hazelChannelName ??
-						""
-					const nextName = normalizeOptionalString(request.name) ?? existing.name
-					const channelChanged =
-						previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
+			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
+				Match.discriminatorsExhaustive("type")({
+					slack: (r) =>
+						Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									normalizeOptionalString(r.channelLabel) ?? hydrated.publicConfig.summary,
+								channelLabel:
+									normalizeOptionalString(r.channelLabel) ??
+									hydrated.publicConfig.channelLabel,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "slack" as const,
+								webhookUrl:
+									normalizeOptionalString(r.webhookUrl) ??
+									(hydrated.secretConfig.type === "slack"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+							} satisfies DestinationSecretConfig,
+						}),
+					pagerduty: (r) =>
+						Effect.succeed({
+							nextPublicConfig: hydrated.publicConfig,
+							nextSecretConfig: {
+								type: "pagerduty" as const,
+								integrationKey:
+									normalizeOptionalString(r.integrationKey) ??
+									(hydrated.secretConfig.type === "pagerduty"
+										? hydrated.secretConfig.integrationKey
+										: ""),
+							} satisfies DestinationSecretConfig,
+						}),
+					webhook: (r) =>
+						Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									r.url != null && r.url.trim().length > 0
+										? summarizeWebhookUrl(r.url)
+										: hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "webhook" as const,
+								url:
+									normalizeOptionalString(r.url) ??
+									(hydrated.secretConfig.type === "webhook" ? hydrated.secretConfig.url : ""),
+								signingSecret:
+									r.signingSecret === undefined
+										? hydrated.secretConfig.type === "webhook"
+											? hydrated.secretConfig.signingSecret
+											: null
+										: normalizeOptionalString(r.signingSecret),
+							} satisfies DestinationSecretConfig,
+						}),
+					hazel: (r) =>
+						Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									r.webhookUrl != null && r.webhookUrl.trim().length > 0
+										? summarizeWebhookUrl(r.webhookUrl)
+										: hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "hazel" as const,
+								webhookUrl:
+									normalizeOptionalString(r.webhookUrl) ??
+									(hydrated.secretConfig.type === "hazel"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+								signingSecret:
+									r.signingSecret === undefined
+										? hydrated.secretConfig.type === "hazel"
+											? hydrated.secretConfig.signingSecret
+											: null
+										: normalizeOptionalString(r.signingSecret),
+							} satisfies DestinationSecretConfig,
+						}),
+					"hazel-oauth": (r) =>
+						Effect.gen(function* () {
+							const previousSecret =
+								hydrated.secretConfig.type === "hazel-oauth" ? hydrated.secretConfig : null
+							const nextOrganizationId =
+								normalizeOptionalString(r.hazelOrganizationId) ??
+								previousSecret?.hazelOrganizationId ??
+								""
+							const nextOrganizationName =
+								normalizeOptionalString(r.hazelOrganizationName) ??
+								previousSecret?.hazelOrganizationName ??
+								""
+							const requestLogoUrl = r.hazelOrganizationLogoUrl
+							const nextOrganizationLogoUrl =
+								requestLogoUrl === undefined
+									? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
+									: requestLogoUrl
+							const nextChannelId =
+								normalizeOptionalString(r.hazelChannelId) ??
+								previousSecret?.hazelChannelId ??
+								""
+							const nextChannelName =
+								normalizeOptionalString(r.hazelChannelName) ??
+								previousSecret?.hazelChannelName ??
+								""
+							const nextName = normalizeOptionalString(r.name) ?? existing.name
+							const channelChanged =
+								previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
 
-					// TODO: when Hazel exposes DELETE /api/v1/channel-webhooks/:id,
-					// revoke the old webhook here on channel change.
-					const provisioned = channelChanged
-						? yield* hazelOAuth
-								.createChannelWebhook(orgId, {
-									channelId: nextChannelId,
-									name: nextName,
-								})
-								.pipe(
-									Effect.mapError((error) =>
-										makeValidationError(
-											`Could not provision Hazel channel webhook: ${error.message}`,
-										),
-									),
-								)
-						: null
+							// TODO: when Hazel exposes DELETE /api/v1/channel-webhooks/:id,
+							// revoke the old webhook here on channel change.
+							const provisioned = channelChanged
+								? yield* hazelOAuth
+										.createChannelWebhook(orgId, {
+											channelId: nextChannelId,
+											name: nextName,
+										})
+										.pipe(
+											Effect.mapError((error) =>
+												makeValidationError(
+													`Could not provision Hazel channel webhook: ${error.message}`,
+												),
+											),
+										)
+								: null
 
-					const webhookId = provisioned?.id ?? previousSecret!.webhookId
-					const webhookUrl = provisioned?.webhookUrl ?? previousSecret!.webhookUrl
-					const webhookToken = provisioned?.token ?? previousSecret!.webhookToken
+							const webhookId = provisioned?.id ?? previousSecret!.webhookId
+							const webhookUrl = provisioned?.webhookUrl ?? previousSecret!.webhookUrl
+							const webhookToken = provisioned?.token ?? previousSecret!.webhookToken
 
-					nextPublicConfig = {
-						summary: `${nextOrganizationName} · #${nextChannelName}`,
-						channelLabel: `#${nextChannelName}`,
-						hazelOrganizationId: nextOrganizationId,
-						hazelOrganizationName: nextOrganizationName,
-						hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
-						hazelChannelId: nextChannelId,
-						hazelChannelName: nextChannelName,
-					}
-					nextSecretConfig = {
-						type: "hazel-oauth",
-						hazelOrganizationId: nextOrganizationId,
-						hazelOrganizationName: nextOrganizationName,
-						hazelChannelId: nextChannelId,
-						hazelChannelName: nextChannelName,
-						webhookId,
-						webhookUrl,
-						webhookToken,
-					}
-					break
-				}
-			}
+							return {
+								nextPublicConfig: {
+									summary: `${nextOrganizationName} · #${nextChannelName}`,
+									channelLabel: `#${nextChannelName}`,
+									hazelOrganizationId: nextOrganizationId,
+									hazelOrganizationName: nextOrganizationName,
+									hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
+									hazelChannelId: nextChannelId,
+									hazelChannelName: nextChannelName,
+								} satisfies DestinationPublicConfig,
+								nextSecretConfig: {
+									type: "hazel-oauth" as const,
+									hazelOrganizationId: nextOrganizationId,
+									hazelOrganizationName: nextOrganizationName,
+									hazelChannelId: nextChannelId,
+									hazelChannelName: nextChannelName,
+									webhookId,
+									webhookUrl,
+									webhookToken,
+								} satisfies DestinationSecretConfig,
+							}
+						}),
+				}),
+			)
 
 			const encryptedSecret = yield* encryptSecret(JSON.stringify(nextSecretConfig), encryptionKey)
-			const timestamp = now()
+			const timestamp = yield* now
 			const nextName = normalizeOptionalString(request.name) ?? existing.name
 			const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0
 
@@ -2006,6 +2022,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				value: 0,
 				sampleCount: 0,
 				linkUrl: composeLinkUrl(null),
+				sentAtMs: yield* now,
 			}).pipe(
 				Effect.tapError((error) => {
 					const message =
@@ -2042,7 +2059,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			const normalized = yield* normalizeRule(request)
 			yield* requireDestinationIds(orgId, normalized.destinationIds)
 			const ruleId = existingId ?? normalized.id
-			const timestamp = now()
+			const timestamp = yield* now
 
 			const ruleFields = {
 				name: normalized.name,
@@ -2317,6 +2334,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							d.row != null && d.row.enabled === 1,
 					)
 
+				const sentAtMs = yield* now
 				yield* Effect.forEach(
 					enabledDestinations,
 					({ id: destinationId, row: destination }) =>
@@ -2338,6 +2356,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							value: evaluation.value,
 							sampleCount: evaluation.sampleCount,
 							linkUrl: resolveNotificationLinkUrl(normalized, null),
+							sentAtMs,
 						}),
 					{ concurrency: "unbounded" },
 				)
@@ -2603,7 +2622,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			})
 
 		const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
-			const currentTime = now()
+			const currentTime = yield* now
 			const rows = yield* dbExecute((db) =>
 				db
 					.select()
@@ -2698,7 +2717,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				const groupKey = incidentRow?.groupKey ?? payloadRule?.groupKey ?? null
 
 				const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
-				const deliveryStart = now()
+				const deliveryStart = yield* now
 				const result = yield* dispatchDelivery(
 					{
 						deliveryKey: row.deliveryKey,
@@ -2731,10 +2750,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							{ serviceNames: ruleServiceNames, groupBy: ruleGroupBy },
 							groupKey,
 						),
+						sentAtMs: deliveryStart,
 					},
 					row.payloadJson,
 				)
-				yield* Metric.update(AlertingMetrics.deliveryAttemptDurationMs, now() - deliveryStart)
+				yield* Metric.update(AlertingMetrics.deliveryAttemptDurationMs, (yield* now) - deliveryStart)
 				yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, 1)
 
 				yield* finalizeClaimedDelivery(row.id, currentTime, {
@@ -2770,8 +2790,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				)
 			})
 
-			for (const row of rows) {
-				yield* processOneDelivery(row).pipe(
+			yield* Effect.forEach(rows, (row) =>
+				processOneDelivery(row).pipe(
 					Effect.catch((error) => {
 						const failure = toDeliveryAttemptFailure(error)
 						failureCount += 1
@@ -2817,8 +2837,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							)
 						})
 					}),
-				)
-			}
+				),
+			)
 
 			return {
 				processedCount,
@@ -3085,6 +3105,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
 				return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
 			}
+			const evaluationEndMs = yield* now
 			const checkRow: AlertChecksRow = {
 				OrgId: row.orgId,
 				RuleId: row.id,
@@ -3103,7 +3124,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				ConsecutiveHealthy: capturedConsecutiveHealthy,
 				IncidentId: capturedIncidentId,
 				IncidentTransition: capturedTransition,
-				EvaluationDurationMs: Math.max(0, now() - timestamp),
+				EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
 			}
 			// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
 			// all rows once at the end (one POST per orgId). Awaited flush keeps
@@ -3196,7 +3217,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			if (toResolve.length === 0) return
 
-			const timestamp = now()
+			const timestamp = yield* now
 			const syntheticEvaluation = makeSyntheticResolveEvaluation(
 				normalized,
 				"Auto-resolved: rule configuration changed",
@@ -3343,19 +3364,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					),
 			)
 
-		const recordEvaluationStatus = (evaluation: EvaluatedRule) => {
-			switch (evaluation.status) {
-				case "breached":
-					return Metric.update(AlertingMetrics.rulesBreachedTotal, 1)
-				case "healthy":
-					return Metric.update(AlertingMetrics.rulesHealthyTotal, 1)
-				case "skipped":
-					return Metric.update(AlertingMetrics.rulesSkippedTotal, 1)
-			}
-		}
+		const recordEvaluationStatus = (evaluation: EvaluatedRule) =>
+			Match.value(evaluation.status).pipe(
+				Match.when("breached", () => Metric.update(AlertingMetrics.rulesBreachedTotal, 1)),
+				Match.when("healthy", () => Metric.update(AlertingMetrics.rulesHealthyTotal, 1)),
+				Match.when("skipped", () => Metric.update(AlertingMetrics.rulesSkippedTotal, 1)),
+				Match.exhaustive,
+			)
 
 		const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* () {
-			const tickStart = now()
+			const tickStart = yield* now
 			const rows = yield* dbExecute((db) =>
 				db
 					.select()
@@ -3372,13 +3390,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				rows,
 				(row) =>
 					Effect.gen(function* () {
-						const timestamp = now()
+						const timestamp = yield* now
 						const brandedRuleId = decodeAlertRuleIdSync(row.id)
 						const claimed = yield* claimRule(brandedRuleId, timestamp)
 						if (claimed.rowsAffected === 0) return
 
 						yield* Effect.gen(function* () {
-							const ruleStart = now()
+							const ruleStart = yield* now
 							const normalized = yield* normalizeRuleRow(row)
 
 							if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
@@ -3415,7 +3433,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								)
 								yield* Metric.update(
 									AlertingMetrics.ruleEvaluationDurationMs,
-									now() - ruleStart,
+									(yield* now) - ruleStart,
 								)
 								return
 							}
@@ -3459,7 +3477,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								)
 								yield* Metric.update(
 									AlertingMetrics.ruleEvaluationDurationMs,
-									now() - ruleStart,
+									(yield* now) - ruleStart,
 								)
 								return
 							}
@@ -3477,7 +3495,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									pendingChecks,
 								)
 							}
-							yield* Metric.update(AlertingMetrics.ruleEvaluationDurationMs, now() - ruleStart)
+							yield* Metric.update(AlertingMetrics.ruleEvaluationDurationMs, (yield* now) - ruleStart)
 						}).pipe(
 							Effect.catch((error) => {
 								evaluationFailureCount += 1
@@ -3569,7 +3587,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			const deliveryResult = yield* processQueuedDeliveries()
 			yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, rows.length)
-			yield* Metric.update(AlertingMetrics.tickDurationMs, now() - tickStart)
+			yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
 			return {
 				evaluatedCount: rows.length,
 				processedCount: deliveryResult.processedCount,

@@ -27,7 +27,7 @@ export const safeHttpEffect = <Req = never>(handler: HttpEffect<Req>) =>
 			onSome: (error) => error.message ?? "Internal Server Error",
 		})
 
-		return Effect.map(Effect.all([Effect.logInfo(message), Effect.logInfo(cause)]), () =>
+		return Effect.map(Effect.logError(message, { cause }), () =>
 			HttpServerResponse.text(message, {
 				status: 500,
 				statusText: message,

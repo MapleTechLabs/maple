@@ -75,21 +75,22 @@ export const fromCloudflareFetcher = (fetcher: cf.Fetcher): Fetcher => {
 						Effect.map((response) =>
 							HttpClientResponse.fromWeb(request, response as any as Response),
 						),
-						Effect.catch((error) =>
-							Effect.succeed(
-								HttpClientResponse.fromWeb(
-									request,
-									new Response(error.message, {
-										status:
-											error._tag === "InternalError"
-												? 500
-												: error._tag === "RequestParseError"
-													? 400
-													: 404,
-									}),
+						Effect.catchTags({
+							InternalError: (error) =>
+								Effect.succeed(
+									HttpClientResponse.fromWeb(
+										request,
+										new Response(error.message, { status: 500 }),
+									),
 								),
-							),
-						),
+							RequestParseError: (error) =>
+								Effect.succeed(
+									HttpClientResponse.fromWeb(
+										request,
+										new Response(error.message, { status: 400 }),
+									),
+								),
+						}),
 					)
 				: pipe(
 						HttpServerRequest.toWeb(request),

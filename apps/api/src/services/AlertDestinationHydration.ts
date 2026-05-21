@@ -5,11 +5,11 @@ import { decryptAes256Gcm } from "./Crypto"
 export const DestinationPublicConfigSchema = Schema.Struct({
 	summary: Schema.String,
 	channelLabel: Schema.NullOr(Schema.String),
-	hazelOrganizationId: Schema.optional(Schema.String),
-	hazelOrganizationName: Schema.optional(Schema.String),
-	hazelOrganizationLogoUrl: Schema.optional(Schema.NullOr(Schema.String)),
-	hazelChannelId: Schema.optional(Schema.String),
-	hazelChannelName: Schema.optional(Schema.String),
+	hazelOrganizationId: Schema.optionalKey(Schema.String),
+	hazelOrganizationName: Schema.optionalKey(Schema.String),
+	hazelOrganizationLogoUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	hazelChannelId: Schema.optionalKey(Schema.String),
+	hazelChannelName: Schema.optionalKey(Schema.String),
 })
 
 export const DestinationSecretConfigSchema = Schema.Union([

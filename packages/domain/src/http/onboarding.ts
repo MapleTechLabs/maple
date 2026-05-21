@@ -17,10 +17,10 @@ export class OnboardingStateResponse extends Schema.Class<OnboardingStateRespons
 export class UpdateOnboardingStateRequest extends Schema.Class<UpdateOnboardingStateRequest>(
 	"UpdateOnboardingStateRequest",
 )({
-	role: Schema.optional(Schema.String),
-	demoDataRequested: Schema.optional(Schema.Boolean),
-	markOnboardingComplete: Schema.optional(Schema.Boolean),
-	markChecklistDismissed: Schema.optional(Schema.Boolean),
+	role: Schema.optionalKey(Schema.String),
+	demoDataRequested: Schema.optionalKey(Schema.Boolean),
+	markOnboardingComplete: Schema.optionalKey(Schema.Boolean),
+	markChecklistDismissed: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 export class OnboardingPersistenceError extends Schema.TaggedErrorClass<OnboardingPersistenceError>()(

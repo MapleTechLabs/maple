@@ -167,25 +167,24 @@ export const DurableObjectNamespace = <_Self = unknown>() => {
  * The class reference is used purely to look up the registered name — the
  * actual binding comes from the worker env at runtime.
  */
-export const namespaceOf = <Shape = unknown>(
+export const namespaceOf = Effect.fn("namespaceOf")(function* <Shape = unknown>(
 	classOrName: { name: string } | string,
-): Effect.Effect<DurableObjectNamespaceHandle<Shape>, never, WorkerEnvironment> =>
-	Effect.gen(function* () {
-		const env = yield* WorkerEnvironment
-		const name = typeof classOrName === "string" ? classOrName : classOrName.name
-		const binding = env[name] as cf.DurableObjectNamespace | undefined
-		if (!binding || typeof binding.getByName !== "function") {
-			return yield* Effect.die(
-				new Error(
-					`Worker env has no DurableObjectNamespace binding named '${name}'. Check wrangler.jsonc.`,
-				),
-			)
-		}
-		return {
-			name,
-			getByName: (id: string) => makeRpcStub<DurableObjectStub<Shape>>(binding.getByName(id)),
-			idFromName: (id: string) => binding.idFromName(id),
-			idFromString: (id: string) => binding.idFromString(id),
-			newUniqueId: () => binding.newUniqueId(),
-		}
-	})
+) {
+	const env = yield* WorkerEnvironment
+	const name = typeof classOrName === "string" ? classOrName : classOrName.name
+	const binding = env[name] as cf.DurableObjectNamespace | undefined
+	if (!binding || typeof binding.getByName !== "function") {
+		return yield* Effect.die(
+			new Error(
+				`Worker env has no DurableObjectNamespace binding named '${name}'. Check wrangler.jsonc.`,
+			),
+		)
+	}
+	return {
+		name,
+		getByName: (id: string) => makeRpcStub<DurableObjectStub<Shape>>(binding.getByName(id)),
+		idFromName: (id: string) => binding.idFromName(id),
+		idFromString: (id: string) => binding.idFromString(id),
+		newUniqueId: () => binding.newUniqueId(),
+	} satisfies DurableObjectNamespaceHandle<Shape>
+})

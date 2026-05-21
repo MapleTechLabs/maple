@@ -177,29 +177,28 @@ export const Workflow = <_Self = unknown>() => {
  * Resolve a workflow handle from the worker env for creating / inspecting
  * workflow instances.
  */
-export const workflowHandle = (
+export const workflowHandle = Effect.fn("workflowHandle")(function* (
 	classOrName: { name: string } | string,
-): Effect.Effect<WorkflowHandle, never, WorkerEnvironment> =>
-	Effect.gen(function* () {
-		const env = yield* WorkerEnvironment
-		const name = typeof classOrName === "string" ? classOrName : classOrName.name
-		const binding = env[name] as any
-		if (!binding || typeof binding.create !== "function") {
-			return yield* Effect.die(
-				new Error(`Worker env has no Workflow binding named '${name}'. Check wrangler.jsonc.`),
-			)
-		}
-		return {
-			name,
-			create: (params?: unknown) =>
-				Effect.tryPromise(() => binding.create({ params })).pipe(
-					Effect.map(wrapInstance),
-					Effect.orDie,
-				),
-			get: (instanceId: string) =>
-				Effect.tryPromise(() => binding.get(instanceId)).pipe(Effect.map(wrapInstance), Effect.orDie),
-		}
-	})
+) {
+	const env = yield* WorkerEnvironment
+	const name = typeof classOrName === "string" ? classOrName : classOrName.name
+	const binding = env[name] as any
+	if (!binding || typeof binding.create !== "function") {
+		return yield* Effect.die(
+			new Error(`Worker env has no Workflow binding named '${name}'. Check wrangler.jsonc.`),
+		)
+	}
+	return {
+		name,
+		create: (params?: unknown) =>
+			Effect.tryPromise(() => binding.create({ params })).pipe(
+				Effect.map(wrapInstance),
+				Effect.orDie,
+			),
+		get: (instanceId: string) =>
+			Effect.tryPromise(() => binding.get(instanceId)).pipe(Effect.map(wrapInstance), Effect.orDie),
+	} satisfies WorkflowHandle
+})
 
 const wrapInstance = (raw: any): WorkflowInstance => ({
 	id: raw.id,

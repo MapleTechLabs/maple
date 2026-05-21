@@ -1,4 +1,10 @@
-import { McpQueryError, optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
+import {
+	McpQueryError,
+	optionalNumberParam,
+	optionalStringParam,
+	requiredStringParam,
+	type McpToolRegistrar,
+} from "./types"
 import { formatTable, truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
@@ -14,9 +20,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 		"list_alert_checks",
 		"List recent alert rule checks (one per evaluation) with observed value, threshold, sample count, and incident linkage. Use to tune thresholds, investigate flappy rules, or correlate a breach with prior near-misses.",
 		Schema.Struct({
-			rule_id: Schema.String.annotate({
-				description: "ID of the alert rule to inspect",
-			}),
+			rule_id: requiredStringParam("ID of the alert rule to inspect"),
 			group_key: optionalStringParam("Filter by a specific group key"),
 			status: optionalStringParam("Filter by check status: breached, healthy, skipped"),
 			since: optionalStringParam("ISO8601 timestamp — only return checks at or after this time"),

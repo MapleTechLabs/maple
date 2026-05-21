@@ -1797,8 +1797,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 					1,
 				)
 
-			const legacyBlobCachedExecute = (tenant: TenantContext, request: QueryEngineExecuteRequest) =>
-				Effect.gen(function* () {
+			const legacyBlobCachedExecute = Effect.fn("QueryEngineService.legacyBlobCachedExecute")(
+				function* (tenant: TenantContext, request: QueryEngineExecuteRequest) {
 					const startMs = yield* Clock.currentTimeMillis
 					const key = buildCacheKey(tenant.orgId, request)
 					const ttlSeconds = cacheTtlForQueryKind(request.query.kind)
@@ -1819,15 +1819,16 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 						(yield* Clock.currentTimeMillis) - startMs,
 					)
 					return value
-				})
+				},
+			)
 
-			const bucketCachedExecute = (
-				tenant: TenantContext,
-				request: QueryEngineExecuteRequest,
-				bucketSeconds: number,
-				range: TimeRangeBounds,
-			) =>
-				Effect.gen(function* () {
+			const bucketCachedExecute = Effect.fn("QueryEngineService.bucketCachedExecute")(
+				function* (
+					tenant: TenantContext,
+					request: QueryEngineExecuteRequest,
+					bucketSeconds: number,
+					range: TimeRangeBounds,
+				) {
 					if (request.query.kind !== "timeseries") {
 						return yield* legacyBlobCachedExecute(tenant, request)
 					}
@@ -1881,12 +1882,14 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 							data: outcome.points,
 						},
 					})
-				})
+				},
+			)
 
-			const execute = (tenant: TenantContext, request: QueryEngineExecuteRequest) =>
-				withTimeout(
-					Effect.gen(function* () {
-						if (!bucketCache.enabled || request.query.kind !== "timeseries") {
+			const execute = Effect.fn("QueryEngineService.execute")(
+				function* (tenant: TenantContext, request: QueryEngineExecuteRequest) {
+					return yield* withTimeout(
+						Effect.gen(function* () {
+							if (!bucketCache.enabled || request.query.kind !== "timeseries") {
 							return yield* legacyBlobCachedExecute(tenant, request)
 						}
 
@@ -1919,50 +1922,58 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 							attributes: { orgId: tenant.orgId },
 						}),
 					),
-				)
+					)
+				},
+			)
 
-			const cachedEvaluate = (tenant: TenantContext, request: QueryEngineEvaluateRequest) =>
-				withTimeout(
-					Effect.gen(function* () {
-						const key = buildEvaluateCacheKey(tenant.orgId, request)
-						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-evaluate", key, ttlSeconds: 30 },
-							evaluateImpl(tenant, request),
-						)
-						yield* recordCacheOutcome(hit)
-						yield* Effect.annotateCurrentSpan("cache.hit", hit)
-						return value
-					}).pipe(
-						Effect.withSpan("QueryEngineService.cachedEvaluate", {
-							attributes: { orgId: tenant.orgId },
-						}),
-					),
-				)
+			const cachedEvaluate = Effect.fn("QueryEngineService.cachedEvaluate")(
+				function* (tenant: TenantContext, request: QueryEngineEvaluateRequest) {
+					return yield* withTimeout(
+						Effect.gen(function* () {
+							const key = buildEvaluateCacheKey(tenant.orgId, request)
+							const { value, hit } = yield* edgeCache.getOrCompute(
+								{ bucket: "qe-evaluate", key, ttlSeconds: 30 },
+								evaluateImpl(tenant, request),
+							)
+							yield* recordCacheOutcome(hit)
+							yield* Effect.annotateCurrentSpan("cache.hit", hit)
+							return value
+						}).pipe(
+							Effect.withSpan("QueryEngineService.cachedEvaluate", {
+								attributes: { orgId: tenant.orgId },
+							}),
+						),
+					)
+				},
+			)
 
-			const cachedDirect = <A>(
-				tenant: TenantContext,
-				routeName: string,
-				payload: unknown,
-				effect: Effect.Effect<A, QueryEngineDirectError>,
-			): Effect.Effect<A, QueryEngineDirectError> =>
-				withTimeout(
-					Effect.gen(function* () {
-						const startMs = yield* Clock.currentTimeMillis
-						const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload)
-						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-direct", key, ttlSeconds: 15 },
-							effect,
-						)
-						yield* recordCacheOutcome(hit)
-						yield* Effect.annotateCurrentSpan("cache.hit", hit)
-						yield* Metric.update(QueryEngineMetrics.executeDurationMs, (yield* Clock.currentTimeMillis) - startMs)
-						return value
-					}).pipe(
-						Effect.withSpan("QueryEngineService.cachedDirect", {
-							attributes: { orgId: tenant.orgId, routeName },
-						}),
-					),
-				)
+			const cachedDirect = Effect.fn("QueryEngineService.cachedDirect")(
+				function* <A>(
+					tenant: TenantContext,
+					routeName: string,
+					payload: unknown,
+					effect: Effect.Effect<A, QueryEngineDirectError>,
+				) {
+					return yield* withTimeout(
+						Effect.gen(function* () {
+							const startMs = yield* Clock.currentTimeMillis
+							const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload)
+							const { value, hit } = yield* edgeCache.getOrCompute(
+								{ bucket: "qe-direct", key, ttlSeconds: 15 },
+								effect,
+							)
+							yield* recordCacheOutcome(hit)
+							yield* Effect.annotateCurrentSpan("cache.hit", hit)
+							yield* Metric.update(QueryEngineMetrics.executeDurationMs, (yield* Clock.currentTimeMillis) - startMs)
+							return value
+						}).pipe(
+							Effect.withSpan("QueryEngineService.cachedDirect", {
+								attributes: { orgId: tenant.orgId, routeName },
+							}),
+						),
+					)
+				},
+			)
 
 			const evaluateRawSql = (tenant: TenantContext, request: QueryEngineRawSqlEvaluateRequest) =>
 				withTimeout(

@@ -1,5 +1,5 @@
 import { McpQueryError, optionalStringParam, requiredStringParam, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "@/mcp/lib/query-tinybird"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
@@ -57,11 +57,12 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 
 			const dashboardIdBranded = decodeDashboardId(dashboard_id)
 
+			const nowMillis = yield* Clock.currentTimeMillis
+			const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
+
 			const result = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
 					Effect.sync(() => {
-						const now = decodeIsoDateTimeString(new Date().toISOString())
-
 						if (portable) {
 							return new DashboardDocument({
 								id: existing.id,

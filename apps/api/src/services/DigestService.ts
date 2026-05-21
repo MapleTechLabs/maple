@@ -466,33 +466,36 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 
 			// Upsert all current Clerk members (re-enables returning members, updates email)
-			for (const m of clerkMemberships) {
-				yield* database
-					.execute((db) =>
-						db
-							.insert(digestSubscriptions)
-							.values({
-								id: crypto.randomUUID(),
-								orgId: m.orgId,
-								userId: m.userId,
-								email: m.email,
-								enabled: 1,
-								dayOfWeek: 1,
-								timezone: "UTC",
-								createdAt: now,
-								updatedAt: now,
-							})
-							.onConflictDoUpdate({
-								target: [digestSubscriptions.orgId, digestSubscriptions.userId],
-								set: {
+			yield* Effect.forEach(
+				clerkMemberships,
+				(m) =>
+					database
+						.execute((db) =>
+							db
+								.insert(digestSubscriptions)
+								.values({
+									id: crypto.randomUUID(),
+									orgId: m.orgId,
+									userId: m.userId,
 									email: m.email,
 									enabled: 1,
+									dayOfWeek: 1,
+									timezone: "UTC",
+									createdAt: now,
 									updatedAt: now,
-								},
-							}),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
-			}
+								})
+								.onConflictDoUpdate({
+									target: [digestSubscriptions.orgId, digestSubscriptions.userId],
+									set: {
+										email: m.email,
+										enabled: 1,
+										updatedAt: now,
+									},
+								}),
+						)
+						.pipe(Effect.mapError(toPersistenceError)),
+				{ discard: true },
+			)
 
 			// Disable subscriptions for members no longer in any Clerk org
 			const activeOrgIds = [...new Set(clerkMemberships.map((m) => m.orgId))]

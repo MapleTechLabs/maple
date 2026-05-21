@@ -54,6 +54,9 @@ export const makeTinybirdExecutorFromTenant = (tenant: TenantContext) =>
 											: {}),
 									}),
 							),
+							Effect.withSpan("TinybirdExecutor.sqlQuery", {
+								attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+							}),
 						),
 			})
 		}),

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Exit, Option, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain"
-import type { QueryEngineEvaluateRequest, QueryEngineExecuteRequest } from "@maple/query-engine"
+import type {
+	QueryEngineEvaluateRequest,
+	QueryEngineExecuteRequest,
+	QueryEngineResult,
+	TimeseriesPoint,
+} from "@maple/query-engine"
 import {
 	makeQueryEngineEvaluate,
 	makeQueryEngineEvaluateRawSql,
@@ -60,6 +65,13 @@ function makeTinybirdStub(overrides: Partial<Parameters<typeof makeQueryEngineEx
 	} satisfies Parameters<typeof makeQueryEngineExecute>[0]
 }
 
+const timeseriesData = (result: QueryEngineResult): ReadonlyArray<TimeseriesPoint> => {
+	if (result.kind !== "timeseries") {
+		throw new Error(`expected timeseries result, got ${result.kind}`)
+	}
+	return result.data
+}
+
 describe("makeQueryEngineExecute", () => {
 	const getFailure = <A, E>(exit: Exit.Exit<A, E>): E | undefined =>
 		Option.getOrUndefined(Exit.findErrorOption(exit))
@@ -94,7 +106,7 @@ describe("makeQueryEngineExecute", () => {
 
 		expect(response.result.kind).toBe("timeseries")
 		expect(response.result.source).toBe("traces")
-		const data = response.result.data as ReadonlyArray<unknown>
+		const data = timeseriesData(response.result)
 		expect(data).toHaveLength(4)
 		expect(data[0]).toEqual({
 			bucket: "2026-01-01T00:00:00.000Z",
@@ -144,7 +156,7 @@ describe("makeQueryEngineExecute", () => {
 
 		expect(response.result.kind).toBe("timeseries")
 		expect(response.result.source).toBe("traces")
-		const data = response.result.data as ReadonlyArray<unknown>
+		const data = timeseriesData(response.result)
 		expect(data).toHaveLength(4)
 		expect(data[0]).toEqual({
 			bucket: "2026-01-01T00:00:00.000Z",
