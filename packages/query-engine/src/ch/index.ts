@@ -209,6 +209,7 @@ export {
 	sessionReplayChunksQuery,
 	sessionsForTraceQuery,
 	sessionReplayFacetsQuery,
+	sessionTraceSummariesQuery,
 	type SessionReplaysListOpts,
 	type SessionReplaysListOutput,
 	type SessionReplayDetailOutput,
@@ -216,6 +217,8 @@ export {
 	type SessionsForTraceOpts,
 	type SessionsForTraceOutput,
 	type SessionReplayFacetsOutput,
+	type SessionTraceSummariesOpts,
+	type SessionTraceSummaryOutput,
 } from "./queries/session-replays"
 
 // Queries — Services

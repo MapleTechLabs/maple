@@ -4,7 +4,7 @@ import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { ReplayPlayer, type ReplayChunkUrl } from "@/components/replays/replay-player"
+import { ReplayPlayer } from "@/components/replays/replay-player"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getReplayEventsResultAtom,
@@ -64,7 +64,6 @@ function gradientFor(seed: string): string {
 function ReplayDetailPage() {
 	const { sessionId } = Route.useParams()
 	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId } }))
-	const eventsResult = useAtomValue(getReplayEventsResultAtom({ data: { sessionId } }))
 
 	const breadcrumbs = [
 		{ label: "Session Replays", href: "/replays" },
@@ -98,10 +97,6 @@ function ReplayDetailPage() {
 				)
 			}
 
-			const chunks = Result.builder(eventsResult)
-				.onSuccess((e) => e.chunks as ReadonlyArray<ReplayChunkUrl>)
-				.orElse(() => [] as ReadonlyArray<ReplayChunkUrl>)
-
 			const isActive = session.status === "active"
 			const label = session.userId || "Anonymous session"
 
@@ -133,7 +128,7 @@ function ReplayDetailPage() {
 
 					<ResizablePanelGroup orientation="horizontal" className="min-h-[70vh] gap-4">
 						<ResizablePanel defaultSize={66} minSize={45}>
-							<ReplayPlayer chunks={chunks} url={session.urlInitial} />
+							<ReplayPlayer sessionId={sessionId} url={session.urlInitial} />
 						</ResizablePanel>
 						<ResizableHandle withHandle />
 						<ResizablePanel defaultSize={34} minSize={26}>

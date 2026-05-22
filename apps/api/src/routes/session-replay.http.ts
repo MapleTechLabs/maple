@@ -7,32 +7,12 @@ import {
 	MapleApi,
 	QueryEngineExecutionError,
 	ReplaysForTraceResponse,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	SessionTraceSummariesResponse,
 } from "@maple/domain/http"
 import { Effect } from "effect"
 import { CH } from "@maple/query-engine"
 import { WarehouseQueryService } from "../services/WarehouseQueryService"
 import { ReplayBlobStorage } from "../services/ReplayBlobStorage"
-
-const isTaggedHttpError = (value: unknown): value is TinybirdQueryError | TinybirdQuotaExceededError =>
-	value instanceof TinybirdQueryError || value instanceof TinybirdQuotaExceededError
-
-const mapExecError = <A, E, R>(
-	effect: Effect.Effect<A, E, R>,
-	context: string,
-): Effect.Effect<A, QueryEngineExecutionError | TinybirdQueryError | TinybirdQuotaExceededError, R> =>
-	effect.pipe(
-		Effect.mapError((cause) => {
-			if (isTaggedHttpError(cause)) {
-				return cause
-			}
-			return new QueryEngineExecutionError({
-				message: context,
-				causeMessage: cause instanceof Error ? cause.message : String(cause),
-			})
-		}),
-	)
 
 export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {
@@ -58,13 +38,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						}),
 						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
 					)
-					const rows = yield* mapExecError(
-						warehouse.sqlQuery(tenant, compiled.sql, {
-							profile: "list",
-							context: "listReplays",
-						}),
-						"listReplays query failed",
-					)
+					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+						profile: "list",
+						context: "listReplays",
+					})
 					return new ListReplaysResponse({ data: compiled.castRows(rows) })
 				}),
 			)
@@ -79,13 +56,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
 					})
-					const rows = yield* mapExecError(
-						warehouse.sqlQuery(tenant, compiled.sql, {
-							profile: "discovery",
-							context: "getReplay",
-						}),
-						"getReplay query failed",
-					)
+					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+						profile: "discovery",
+						context: "getReplay",
+					})
 					return new GetReplayResponse({ data: compiled.castRows(rows)[0] ?? null })
 				}),
 			)
@@ -101,24 +75,29 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						sessionId: payload.sessionId,
 					})
 					const chunks = compiled.castRows(
-						yield* mapExecError(
-							warehouse.sqlQuery(tenant, compiled.sql, {
-								profile: "list",
-								context: "getReplayEvents",
-							}),
-							"getReplayEvents query failed",
-						),
+						yield* warehouse.sqlQuery(tenant, compiled.sql, {
+							profile: "list",
+							context: "getReplayEvents",
+						}),
 					)
-					const signed = yield* mapExecError(
-						Effect.forEach(
-							chunks,
-							(chunk) =>
-								replayBlobs
-									.presignChunkUrl(tenant.orgId, payload.sessionId, chunk.chunkSeq)
-									.pipe(Effect.map((url) => ({ ...chunk, url }))),
-							{ concurrency: 8 },
+					const signed = yield* Effect.forEach(
+						chunks,
+						(chunk) =>
+							replayBlobs
+								.presignChunkUrl(tenant.orgId, payload.sessionId, chunk.chunkSeq)
+								.pipe(Effect.map((url) => ({ ...chunk, url }))),
+						{ concurrency: 8 },
+					).pipe(
+						// Surface presign failures as the endpoint's 502 while keeping the
+						// real cause; ReplayBlobStorageError isn't an HTTP-serializable error.
+						Effect.catchTag("ReplayBlobStorageError", (error) =>
+							Effect.fail(
+								new QueryEngineExecutionError({
+									message: "failed to presign replay chunks",
+									causeMessage: error.message,
+								}),
+							),
 						),
-						"failed to presign replay chunks",
 					)
 					return new GetReplayEventsResponse({ chunks: signed })
 				}),
@@ -135,14 +114,34 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						startTime: payload.startTime,
 						endTime: payload.endTime,
 					})
-					const rows = yield* mapExecError(
-						warehouse.sqlQuery(tenant, compiled.sql, {
-							profile: "list",
-							context: "replaysForTrace",
-						}),
-						"replaysForTrace query failed",
-					)
+					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+						profile: "list",
+						context: "replaysForTrace",
+					})
 					return new ReplaysForTraceResponse({ data: compiled.castRows(rows) })
+				}),
+			)
+			.handle("traceSummaries", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.trace.count": payload.traceIds.length,
+					})
+					// `TraceId IN ()` is invalid SQL; a session with no correlated traces
+					// short-circuits to an empty result without touching the warehouse.
+					if (payload.traceIds.length === 0) {
+						return new SessionTraceSummariesResponse({ data: [] })
+					}
+					const compiled = CH.compile(
+						CH.sessionTraceSummariesQuery({ traceIds: payload.traceIds }),
+						{ orgId: tenant.orgId },
+					)
+					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+						profile: "list",
+						context: "sessionTraceSummaries",
+					})
+					return new SessionTraceSummariesResponse({ data: compiled.castRows(rows) })
 				}),
 			)
 	}),

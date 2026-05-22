@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest"
-import { buildTimeline, COLLAPSED_GAP_MS, type InactiveInterval } from "./replay-timeline"
+import {
+	buildTimeline,
+	COLLAPSED_GAP_MS,
+	parseChTimestampMs,
+	spanDisplayRange,
+	type InactiveInterval,
+} from "./replay-timeline"
 
 describe("buildTimeline", () => {
 	it("is an identity mapping with no idle gaps", () => {
@@ -74,6 +80,23 @@ describe("buildTimeline", () => {
 		expect(t.toReal(999_999)).toBeCloseTo(10_000, 5)
 	})
 
+	it("ignores an interval entirely out of range", () => {
+		// A gap past realTotalMs clamps to a zero-width span and is dropped, so the
+		// mapping stays identity (no spurious collapse).
+		const t = buildTimeline([{ start: 50_000, end: 60_000 }], 40_000)
+		expect(t.activeTotalMs).toBe(40_000)
+		expect(t.toDisplay(20_000)).toBe(20_000)
+		expect(t.toReal(t.toDisplay(20_000))).toBeCloseTo(20_000, 5)
+	})
+
+	it("ignores a zero-width interval", () => {
+		// start === end carries no idle time; it must not collapse anything.
+		const t = buildTimeline([{ start: 10_000, end: 10_000 }], 40_000)
+		expect(t.activeTotalMs).toBe(40_000)
+		expect(t.toDisplay(10_000)).toBe(10_000)
+		expect(t.toDisplay(25_000)).toBe(25_000)
+	})
+
 	it("merges overlapping intervals", () => {
 		// Two overlapping gaps should collapse as one combined gap.
 		const t = buildTimeline(
@@ -85,5 +108,107 @@ describe("buildTimeline", () => {
 		)
 		// Combined gap = 5_000..30_000 (25_000ms) → collapsed to COLLAPSED_GAP_MS.
 		expect(t.activeTotalMs).toBe(40_000 - (25_000 - COLLAPSED_GAP_MS))
+	})
+})
+
+describe("parseChTimestampMs", () => {
+	const expected = Date.UTC(2026, 4, 22, 10, 30, 45, 123)
+
+	it("parses a space-separated ClickHouse DateTime64 as UTC", () => {
+		expect(parseChTimestampMs("2026-05-22 10:30:45.123")).toBe(expected)
+	})
+
+	it("parses without fractional seconds", () => {
+		expect(parseChTimestampMs("2026-05-22 10:30:45")).toBe(Date.UTC(2026, 4, 22, 10, 30, 45))
+	})
+
+	it("accepts an explicit zone or T separator without double-appending Z", () => {
+		expect(parseChTimestampMs("2026-05-22T10:30:45.123Z")).toBe(expected)
+		expect(parseChTimestampMs("2026-05-22 10:30:45.123Z")).toBe(expected)
+	})
+
+	it("returns NaN for empty/garbage input", () => {
+		expect(Number.isNaN(parseChTimestampMs(""))).toBe(true)
+		expect(Number.isNaN(parseChTimestampMs("not-a-date"))).toBe(true)
+	})
+})
+
+describe("spanDisplayRange", () => {
+	// Recording starts at this epoch ms; the playhead's time-zero.
+	const recordingStartEpochMs = Date.UTC(2026, 4, 22, 10, 30, 45, 0)
+	const isoAt = (offsetMs: number) =>
+		new Date(recordingStartEpochMs + offsetMs).toISOString().replace("T", " ").replace("Z", "")
+
+	it("maps a span's absolute start to a rrweb-relative offset (identity timeline)", () => {
+		const timeline = buildTimeline([], 60_000)
+		const r = spanDisplayRange({
+			spanStartIso: isoAt(10_000),
+			durationMs: 2_000,
+			recordingStartEpochMs,
+			realTotalMs: 60_000,
+			timeline,
+		})
+		expect(r.realOffsetMs).toBe(10_000)
+		expect(r.displayStartMs).toBe(10_000)
+		expect(r.displayEndMs).toBe(12_000)
+		expect(r.outOfRange).toBe(false)
+	})
+
+	it("flags and pins a span starting before the recording", () => {
+		const timeline = buildTimeline([], 60_000)
+		const r = spanDisplayRange({
+			spanStartIso: isoAt(-5_000),
+			durationMs: 1_000,
+			recordingStartEpochMs,
+			realTotalMs: 60_000,
+			timeline,
+		})
+		expect(r.realOffsetMs).toBe(-5_000)
+		expect(r.outOfRange).toBe(true)
+		// toDisplay clamps to 0 — pinned to the left edge.
+		expect(r.displayStartMs).toBe(0)
+	})
+
+	it("flags a span starting after the recording ends", () => {
+		const timeline = buildTimeline([], 60_000)
+		const r = spanDisplayRange({
+			spanStartIso: isoAt(75_000),
+			durationMs: 1_000,
+			recordingStartEpochMs,
+			realTotalMs: 60_000,
+			timeline,
+		})
+		expect(r.outOfRange).toBe(true)
+		expect(r.displayStartMs).toBe(timeline.activeTotalMs)
+	})
+
+	it("maps a span through a collapsed idle gap", () => {
+		// 5s active, 600s idle, 5s active.
+		const gap = 600_000
+		const realTotal = 5_000 + gap + 5_000
+		const timeline = buildTimeline([{ start: 5_000, end: 5_000 + gap }], realTotal)
+		// A span firing just after the gap should land just past the collapsed gap.
+		const r = spanDisplayRange({
+			spanStartIso: isoAt(5_000 + gap + 2_000),
+			durationMs: 500,
+			recordingStartEpochMs,
+			realTotalMs: realTotal,
+			timeline,
+		})
+		expect(r.displayStartMs).toBe(5_000 + COLLAPSED_GAP_MS + 2_000)
+		expect(r.outOfRange).toBe(false)
+	})
+
+	it("treats an unparseable timestamp as out of range", () => {
+		const timeline = buildTimeline([], 60_000)
+		const r = spanDisplayRange({
+			spanStartIso: "garbage",
+			durationMs: 1_000,
+			recordingStartEpochMs,
+			realTotalMs: 60_000,
+			timeline,
+		})
+		expect(r.outOfRange).toBe(true)
+		expect(r.displayStartMs).toBe(0)
 	})
 })

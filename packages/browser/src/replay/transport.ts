@@ -1,5 +1,16 @@
 import type { ResolvedConfig } from "../config"
 
+// Replay POSTs are best-effort and must never throw into the host app, but a
+// fully broken ingest endpoint should not be *silent*. Warn at most once every
+// 30s so a misconfigured endpoint is visible in the console without spamming it.
+let lastWarnAt = 0
+function warnDropped(what: string, error: unknown): void {
+	const now = Date.now()
+	if (now - lastWarnAt < 30_000) return
+	lastWarnAt = now
+	console.warn(`[maple] session replay ${what} failed (dropping; will retry on next chunk):`, error)
+}
+
 /** gzip a byte buffer using the native CompressionStream (no library). */
 export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
 	const stream = new CompressionStream("gzip")
@@ -25,8 +36,9 @@ export async function postSessionMeta(
 		},
 		body,
 		keepalive,
-	}).catch(() => {
+	}).catch((error) => {
 		// Replay is best-effort; never throw into the host app.
+		warnDropped("metadata POST", error)
 	})
 }
 
@@ -58,7 +70,8 @@ export async function postSessionBlob(
 		},
 		body: gzipped as unknown as BodyInit,
 		keepalive,
-	}).catch(() => {
+	}).catch((error) => {
 		// Best-effort.
+		warnDropped("blob PUT", error)
 	})
 }

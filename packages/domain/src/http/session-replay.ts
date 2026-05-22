@@ -135,6 +135,31 @@ export class ReplaysForTraceResponse extends Schema.Class<ReplaysForTraceRespons
 	),
 }) {}
 
+// --- Trace summaries (one bar per correlated trace) ---
+
+export class SessionTraceSummariesRequest extends Schema.Class<SessionTraceSummariesRequest>(
+	"SessionTraceSummariesRequest",
+)({
+	/** The session's correlated trace ids (from the detail response's `traceIds`). */
+	traceIds: Schema.Array(TraceId),
+}) {}
+
+export const SessionTraceSummary = Schema.Struct({
+	traceId: Schema.String,
+	startTime: Schema.String,
+	durationMs: Schema.Number,
+	rootSpanName: Schema.String,
+	rootServiceName: Schema.String,
+	spanCount: Schema.Number,
+	hasError: Schema.Number,
+})
+
+export class SessionTraceSummariesResponse extends Schema.Class<SessionTraceSummariesResponse>(
+	"SessionTraceSummariesResponse",
+)({
+	data: Schema.Array(SessionTraceSummary),
+}) {}
+
 // ---------------------------------------------------------------------------
 // API group
 // ---------------------------------------------------------------------------
@@ -172,6 +197,13 @@ export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")
 		HttpApiEndpoint.post("replaysForTrace", "/for-trace", {
 			payload: ReplaysForTraceRequest,
 			success: ReplaysForTraceResponse,
+			error: sessionReplayEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("traceSummaries", "/trace-summaries", {
+			payload: SessionTraceSummariesRequest,
+			success: SessionTraceSummariesResponse,
 			error: sessionReplayEndpointErrors,
 		}),
 	)

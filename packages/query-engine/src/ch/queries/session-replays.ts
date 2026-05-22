@@ -23,7 +23,7 @@ import { compileFnCall, compileFnCallCond } from "../define-fn"
 import { param } from "../param"
 import { from, type ColumnAccessor } from "../query"
 import { unionAll, type CHUnionQuery } from "../union"
-import { SessionReplays, SessionReplayChunks } from "../tables"
+import { SessionReplays, SessionReplayChunks, TraceDetailSpans } from "../tables"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
 // version. Generic per call site, so declared here rather than via defineFn.
@@ -303,5 +303,66 @@ export function sessionReplayFacetsQuery(
 	return unionAll(browserQuery, countryQuery, deviceQuery)
 		.orderBy(["count", "desc"])
 		.limit(300)
+		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
+// Per-trace summaries for a session's correlated traces
+//
+// One row per TraceId, used to draw a single bar per trace on the session
+// replay timeline (the expandable span lanes fetch full spans on demand via
+// spanHierarchyQuery). Reads `trace_detail_spans`, whose sort key
+// (OrgId, TraceId, SpanId) makes `TraceId IN (...)` a cheap prefix lookup —
+// no time-window scan needed. The root span (ParentSpanId = '') supplies the
+// trace's name/service/duration, with a fallback for traces whose root span
+// wasn't ingested.
+// ---------------------------------------------------------------------------
+
+export interface SessionTraceSummariesOpts {
+	/** The correlated trace ids to summarize (from session_replays.TraceIds). */
+	traceIds: ReadonlyArray<string>
+	limit?: number
+}
+
+export interface SessionTraceSummaryOutput {
+	readonly traceId: string
+	readonly startTime: string
+	readonly durationMs: number
+	readonly rootSpanName: string
+	readonly rootServiceName: string
+	readonly spanCount: number
+	readonly hasError: number
+}
+
+export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
+	const limit = opts.limit ?? 200
+
+	return from(TraceDetailSpans)
+		.select(($) => {
+			const isRoot = $.ParentSpanId.eq("")
+			// Root span duration is the canonical "trace duration" elsewhere in the
+			// codebase; fall back to the widest span when no root span is present.
+			const entryDurationMs = CH.maxIf($.Duration, isRoot).div(1000000)
+			const fallbackDurationMs = CH.max_($.Duration).div(1000000)
+			return {
+				traceId: $.TraceId,
+				startTime: CH.min_($.Timestamp),
+				durationMs: CH.if_(entryDurationMs.gt(0), entryDurationMs, fallbackDurationMs),
+				rootSpanName: CH.coalesce(
+					CH.nullIf(CH.anyIf($.SpanName, isRoot), ""),
+					CH.any_($.SpanName),
+				),
+				rootServiceName: CH.coalesce(
+					CH.nullIf(CH.anyIf($.ServiceName, isRoot), ""),
+					CH.any_($.ServiceName),
+				),
+				spanCount: CH.count(),
+				hasError: CH.if_(CH.countIf($.StatusCode.eq("Error")).gt(0), CH.lit(1), CH.lit(0)),
+			}
+		})
+		.where(($) => [$.OrgId.eq(param.string("orgId")), $.TraceId.in_(...opts.traceIds)])
+		.groupBy("traceId")
+		.orderBy(["startTime", "asc"])
+		.limit(limit)
 		.format("JSON")
 }

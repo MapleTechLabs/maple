@@ -13,7 +13,8 @@
 		"README.md"
 	],
 	"scripts": {
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.0",
@@ -27,7 +28,8 @@
 		"rrweb": "^2.0.0-alpha.18"
 	},
 	"devDependencies": {
-		"typescript": "catalog:tooling"
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
 	},
 	"keywords": [
 		"maple",

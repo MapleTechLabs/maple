@@ -337,6 +337,7 @@
       },
       "devDependencies": {
         "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "packages/clickhouse-cli": {

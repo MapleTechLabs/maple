@@ -80,7 +80,7 @@ const make = Effect.gen(function* () {
 		)
 	})
 
-	return { chunkKey, presignChunkUrl } satisfies ReplayBlobStorageShape
+	return ReplayBlobStorage.of({ chunkKey, presignChunkUrl })
 })
 
 export class ReplayBlobStorage extends Context.Service<ReplayBlobStorage, ReplayBlobStorageShape>()(

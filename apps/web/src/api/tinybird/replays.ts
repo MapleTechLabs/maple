@@ -5,6 +5,7 @@ import {
 	ListReplaysRequest,
 	ReplaysForTraceRequest,
 	SessionId,
+	SessionTraceSummariesRequest,
 	TraceId,
 } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -140,6 +141,34 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 					startTime: input.startTime ?? fallback.startTime,
 					endTime: input.endTime ?? fallback.endTime,
 				}),
+			})
+		}),
+	)
+	return { data: result.data }
+})
+
+// ---------------------------------------------------------------------------
+// Per-trace summaries for a session's correlated traces (timeline bars)
+// ---------------------------------------------------------------------------
+
+const SessionTraceSummariesInput = Schema.Struct({ traceIds: Schema.Array(TraceId) })
+export type SessionTraceSummariesInput = (typeof SessionTraceSummariesInput)["Encoded"]
+
+export const getSessionTraceSummaries = Effect.fn("SessionReplays.traceSummaries")(function* ({
+	data,
+}: {
+	data: SessionTraceSummariesInput
+}) {
+	const input = yield* decodeInput(
+		SessionTraceSummariesInput,
+		data ?? { traceIds: [] },
+		"traceSummaries",
+	)
+	const result = yield* runTinybirdQuery("traceSummaries", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.sessionReplays.traceSummaries({
+				payload: new SessionTraceSummariesRequest({ traceIds: input.traceIds }),
 			})
 		}),
 	)

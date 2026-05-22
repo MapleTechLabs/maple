@@ -25,5 +25,8 @@ export function TraceReplayLink({ traceId }: { traceId: string }) {
 				</Link>
 			)
 		})
+		// Stay silent on both loading and failure: a missing correlated replay and a
+		// failed lookup should both render nothing rather than intrude on the header.
+		.onError(() => null)
 		.orElse(() => null)
 }

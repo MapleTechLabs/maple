@@ -85,7 +85,7 @@ export const DemoServiceLive = DemoService.layer.pipe(Layer.provideMerge(CoreSer
 
 export const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const ReplayBlobStorageLive = ReplayBlobStorage.layer.pipe(Layer.provide(Env.layer))
+export const ReplayBlobStorageLive = ReplayBlobStorage.layer.pipe(Layer.provideMerge(Env.layer))
 
 export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
 	Layer.provideMerge(EdgeCacheService.layer),

@@ -1,5 +1,5 @@
 import { type MapleBrowserConfig, type ResolvedConfig, formatCHDateTime, resolveConfig } from "./config"
-import { getOrCreateSessionId, parseUserAgent } from "./session"
+import { getSession, parseUserAgent } from "./session"
 import { setupTracing } from "./tracing"
 import { getObservedTraceIds, publishSessionSink } from "./session-sink"
 import { startRecording, type Recorder } from "./replay/record"
@@ -26,8 +26,12 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	}
 
 	const config = resolveConfig(rawConfig)
-	const sessionId = getOrCreateSessionId()
-	const startedAt = new Date()
+	// One bounded session per activity window: reused across reloads (so traces
+	// and replay chunks correlate), rotated once idle. `startedAt` comes from the
+	// record so `duration_ms` reflects the whole session, not just this page load.
+	const session = getSession()
+	const sessionId = session.id
+	const startedAt = new Date(session.startedAt)
 
 	// Publish first so external tracers (Effect client SDK) can feed trace ids
 	// into this session regardless of init ordering.
@@ -105,7 +109,11 @@ function sessionMetaRow(
 		device_type: ua.deviceType,
 		service_name: config.serviceName,
 		resource_attributes: config.environment
-			? { "deployment.environment": config.environment }
+			? {
+					// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + canonical.
+					"deployment.environment": config.environment,
+					"deployment.environment.name": config.environment,
+				}
 			: {},
 	}
 	if (status === "ended") {

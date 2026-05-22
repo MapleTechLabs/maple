@@ -1,5 +1,6 @@
 import { record } from "rrweb"
 import type { ResolvedConfig } from "../config"
+import { markActivity, nextChunkSeq } from "../session"
 import { gzip, postSessionBlob, type ChunkMeta } from "./transport"
 
 // rrweb event shape — typed loosely to avoid coupling to @rrweb/types across
@@ -30,14 +31,18 @@ export function startRecording(config: ResolvedConfig, sessionId: string): Recor
 	let buffer: RrwebEvent[] = []
 	let bufferBytes = 0
 	let bufferHasCheckpoint = false
-	let chunkSeq = 0
 	let clickCount = 0
 
 	const flush = async (keepalive = false): Promise<void> => {
 		if (buffer.length === 0) return
+		// A recording that's still emitting is activity — keep the session alive so
+		// it isn't rotated out from under us mid-stream.
+		markActivity()
 		const events = buffer
 		const isCheckpoint = bufferHasCheckpoint
-		const seq = chunkSeq++
+		// Monotonic across reloads (persisted on the session record), so a refresh
+		// continues the sequence instead of overwriting the previous load's blobs.
+		const seq = nextChunkSeq()
 		const first = events[0]!.timestamp
 		const last = events[events.length - 1]!.timestamp
 		buffer = []

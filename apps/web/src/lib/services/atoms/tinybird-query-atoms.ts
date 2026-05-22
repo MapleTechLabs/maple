@@ -72,7 +72,14 @@ import {
 	listTraces,
 } from "@/api/tinybird/traces"
 import { getQueryBuilderTimeseries } from "@/api/tinybird/query-builder-timeseries"
-import { getReplay, getReplayEvents, getReplaysForTrace, listReplays } from "@/api/tinybird/replays"
+import {
+	getReplay,
+	getReplayEvents,
+	getReplaysForTrace,
+	getSessionTraceSummaries,
+	listReplays,
+} from "@/api/tinybird/replays"
+import { normalizeEvents } from "@/components/replays/replay-events"
 
 type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, unknown, unknown>
 
@@ -172,8 +179,57 @@ export const getReplayResultAtom = makeQueryAtomFamily(getReplay, {
 	staleTime: 60_000,
 })
 
+export const getSessionTraceSummariesResultAtom = makeQueryAtomFamily(getSessionTraceSummaries, {
+	staleTime: 60_000,
+})
+
 // No staleTime: signed R2 URLs are short-lived (~5 min), so refetch each mount.
 export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents)
+
+interface ReplayChunkRef {
+	readonly chunkSeq: number
+	readonly url: string
+}
+
+/** Fetch a gzipped rrweb chunk from its signed R2 URL and decode it to events. */
+const fetchReplayChunk = (url: string) =>
+	Effect.tryPromise({
+		try: async (): Promise<ReadonlyArray<unknown>> => {
+			const response = await fetch(url)
+			if (!response.ok) throw new Error(`chunk fetch failed: ${response.status}`)
+			const stream = response.body?.pipeThrough(new DecompressionStream("gzip"))
+			const text = stream
+				? await new Response(stream).text()
+				: // Fallback: already decompressed by the CDN/transport.
+					await response.text()
+			const parsed: unknown = JSON.parse(text)
+			return Array.isArray(parsed) ? parsed : []
+		},
+		catch: (cause) => new QueryAtomError({ message: "Failed to load session replay chunk", cause }),
+	})
+
+/** Build the stable family key for a set of chunk refs (order-independent). */
+export const replayChunkEventsKey = (chunks: ReadonlyArray<ReplayChunkRef>): string =>
+	JSON.stringify([...chunks].map((c) => ({ chunkSeq: c.chunkSeq, url: c.url })).sort((a, b) => a.chunkSeq - b.chunkSeq))
+
+/**
+ * The decoded rrweb event stream for a session, gunzipped from the signed R2
+ * chunk URLs produced by `getReplayEventsResultAtom`. No idle TTL: the signed
+ * URLs are short-lived (~5 min), so a fresh mount re-signs upstream and the new
+ * key re-fetches here.
+ */
+export const replayChunkEventsAtom = Atom.family((key: string) => {
+	const refs = JSON.parse(key) as ReadonlyArray<ReplayChunkRef>
+	return Atom.make(
+		Effect.gen(function* () {
+			const ordered = [...refs].sort((a, b) => a.chunkSeq - b.chunkSeq)
+			const decoded = yield* Effect.forEach(ordered, (ref) => fetchReplayChunk(ref.url), {
+				concurrency: "unbounded",
+			})
+			return normalizeEvents(decoded.flat())
+		}),
+	)
+})
 
 export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTrace, {
 	staleTime: 60_000,

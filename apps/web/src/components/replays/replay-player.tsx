@@ -3,6 +3,12 @@ import { Replayer } from "@rrweb/replay"
 import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from "@rrweb/types"
 import "@rrweb/replay/dist/style.css"
 import { cn } from "@maple/ui/utils"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import {
+	getReplayEventsResultAtom,
+	replayChunkEventsAtom,
+	replayChunkEventsKey,
+} from "@/lib/services/atoms/tinybird-query-atoms"
 import { buildTimeline, type InactiveInterval } from "./replay-timeline"
 import {
 	GlobeIcon,
@@ -14,34 +20,10 @@ import {
 	MinimizeIcon,
 } from "@/components/icons"
 
-export interface ReplayChunkUrl {
+interface ReplayChunkUrl {
 	readonly chunkSeq: number
-	readonly timestamp: string
-	readonly durationMs: number
-	readonly eventCount: number
-	readonly byteSize: number
-	readonly isCheckpoint: number
 	readonly url: string
 }
-
-/** Fetch a gzipped chunk and decode it back to an array of rrweb events. */
-async function fetchChunk(url: string): Promise<unknown[]> {
-	const response = await fetch(url)
-	if (!response.ok) throw new Error(`chunk fetch failed: ${response.status}`)
-	const stream = response.body?.pipeThrough(new DecompressionStream("gzip"))
-	const text = stream
-		? await new Response(stream).text()
-		: // Fallback: object already decompressed by the CDN/transport.
-			await response.text()
-	const parsed = JSON.parse(text)
-	return Array.isArray(parsed) ? parsed : []
-}
-
-type PlayerState =
-	| { kind: "loading" }
-	| { kind: "error"; message: string }
-	| { kind: "empty" }
-	| { kind: "ready"; events: unknown[] }
 
 /** Pretty host + path for the faux browser address bar. */
 function prettyUrl(url: string | undefined): string {
@@ -61,44 +43,33 @@ function prettyUrl(url: string | undefined): string {
  * rrweb's core `Replayer` engine — the transport bar below the surface is our
  * own (see `ReplayControls`), not rrweb-player's Svelte widget.
  */
+/** Best-effort message extraction from an atom error (tagged or otherwise). */
+function errorMessage(error: unknown): string {
+	if (typeof error === "object" && error !== null && "message" in error) {
+		const message = (error as { message: unknown }).message
+		if (typeof message === "string") return message
+	}
+	return String(error)
+}
+
 export function ReplayPlayer({
-	chunks,
+	sessionId,
 	url,
 }: {
-	chunks: ReadonlyArray<ReplayChunkUrl>
+	sessionId: string
 	url?: string
 }) {
-	const [state, setState] = React.useState<PlayerState>({ kind: "loading" })
 	const figureRef = React.useRef<HTMLElement | null>(null)
 	const [isFullscreen, setIsFullscreen] = React.useState(false)
 
-	React.useEffect(() => {
-		let cancelled = false
-		setState({ kind: "loading" })
-		;(async () => {
-			try {
-				if (chunks.length === 0) {
-					if (!cancelled) setState({ kind: "empty" })
-					return
-				}
-				const ordered = [...chunks].sort((a, b) => a.chunkSeq - b.chunkSeq)
-				const decoded = await Promise.all(ordered.map((c) => fetchChunk(c.url)))
-				const events = decoded.flat()
-				if (cancelled) return
-				setState(events.length >= 2 ? { kind: "ready", events } : { kind: "empty" })
-			} catch (error) {
-				if (!cancelled) {
-					setState({
-						kind: "error",
-						message: error instanceof Error ? error.message : String(error),
-					})
-				}
-			}
-		})()
-		return () => {
-			cancelled = true
-		}
-	}, [chunks])
+	// Two stages: the signed chunk URLs (eventsResult), then the gunzipped blobs
+	// (blobResult). Both reads are unconditional; the chunk key is empty until the
+	// URLs resolve, so blobResult only does real work once eventsResult succeeds.
+	const eventsResult = useAtomValue(getReplayEventsResultAtom({ data: { sessionId } }))
+	const chunks = Result.builder(eventsResult)
+		.onSuccess((events) => events.chunks as ReadonlyArray<ReplayChunkUrl>)
+		.orElse(() => [] as ReadonlyArray<ReplayChunkUrl>)
+	const blobResult = useAtomValue(replayChunkEventsAtom(replayChunkEventsKey(chunks)))
 
 	// Mirror the document fullscreen state so the surface can rescale + the
 	// button can swap its icon. The <figure> is the fullscreen target.
@@ -112,6 +83,49 @@ export function ReplayPlayer({
 		if (document.fullscreenElement) void document.exitFullscreen()
 		else void figureRef.current?.requestFullscreen()
 	}, [])
+
+	const loading = (
+		<div className="relative bg-muted/30">
+			<PlayerMessage spinner>Loading replay…</PlayerMessage>
+		</div>
+	)
+	const errored = (error: unknown) => (
+		<div className="relative bg-muted/30">
+			<PlayerMessage tone="error">Couldn’t load this replay — {errorMessage(error)}</PlayerMessage>
+		</div>
+	)
+	const empty = (
+		<div className="relative bg-muted/30">
+			<PlayerMessage>
+				No playable frames yet. The session may still be recording, or its event blobs have
+				expired.
+			</PlayerMessage>
+		</div>
+	)
+
+	// Resolve the playable surface across both stages, distinguishing a real fetch
+	// failure (either stage) from an empty/expired session.
+	const surface = Result.builder(eventsResult)
+		.onInitial(() => loading)
+		.onError(errored)
+		.onSuccess(() =>
+			Result.builder(blobResult)
+				.onInitial(() => loading)
+				.onError(errored)
+				.onSuccess((events) =>
+					events.length >= 2 ? (
+						<RrwebSurface
+							events={events}
+							isFullscreen={isFullscreen}
+							onToggleFullscreen={toggleFullscreen}
+						/>
+					) : (
+						empty
+					),
+				)
+				.orElse(() => loading),
+		)
+		.orElse(() => loading)
 
 	return (
 		<figure
@@ -135,28 +149,7 @@ export function ReplayPlayer({
 			</div>
 
 			{/* Surface + controls */}
-			{state.kind === "ready" ? (
-				<RrwebSurface
-					events={state.events}
-					isFullscreen={isFullscreen}
-					onToggleFullscreen={toggleFullscreen}
-				/>
-			) : (
-				<div className="relative bg-muted/30">
-					{state.kind === "loading" && <PlayerMessage spinner>Loading replay…</PlayerMessage>}
-					{state.kind === "error" && (
-						<PlayerMessage tone="error">
-							Couldn’t load this replay — {state.message}
-						</PlayerMessage>
-					)}
-					{state.kind === "empty" && (
-						<PlayerMessage>
-							No playable frames yet. The session may still be recording, or its event
-							blobs have expired.
-						</PlayerMessage>
-					)}
-				</div>
-			)}
+			{surface}
 		</figure>
 	)
 }

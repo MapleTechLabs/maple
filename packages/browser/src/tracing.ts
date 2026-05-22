@@ -44,7 +44,12 @@ export function setupTracing(config: ResolvedConfig, sessionId: string): () => P
 		attributes[ATTR_SERVICE_VERSION] = config.serviceVersion
 		attributes["deployment.commit_sha"] = config.serviceVersion
 	}
-	if (config.environment) attributes["deployment.environment"] = config.environment
+	if (config.environment) {
+		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
+		// resource attribute. Keep both until the MVs coalesce them.
+		attributes["deployment.environment"] = config.environment
+		attributes["deployment.environment.name"] = config.environment
+	}
 
 	const exporter = new OTLPTraceExporter({
 		url: `${config.endpoint}/v1/traces`,
