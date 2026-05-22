@@ -9,9 +9,9 @@ import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
 // ---------------------------------------------------------------------------
 // Session replay endpoint schemas
 //
-// Backed by the session_replays (metadata) + session_replay_chunks (R2 index)
-// datasources. Event blobs themselves never transit this API — `getReplayEvents`
-// returns short-lived signed R2 URLs the player fetches directly.
+// Backed by the session_replays (metadata) + session_replay_events (rrweb event
+// payloads) datasources, both in ClickHouse. `getReplayEvents` returns the rrweb
+// event arrays inline (read straight from the warehouse — no R2, no signed URLs).
 // ---------------------------------------------------------------------------
 
 // --- List ---
@@ -89,7 +89,7 @@ export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetRepla
 	),
 }) {}
 
-// --- Events (signed chunk URLs) ---
+// --- Events (rrweb chunks, payload inline) ---
 
 export class GetReplayEventsRequest extends Schema.Class<GetReplayEventsRequest>(
 	"GetReplayEventsRequest",
@@ -97,20 +97,21 @@ export class GetReplayEventsRequest extends Schema.Class<GetReplayEventsRequest>
 	sessionId: SessionId,
 }) {}
 
-export const SessionReplayChunkUrl = Schema.Struct({
+export const SessionReplayChunk = Schema.Struct({
 	chunkSeq: Schema.Number,
 	timestamp: Schema.String,
 	durationMs: Schema.Number,
 	eventCount: Schema.Number,
 	byteSize: Schema.Number,
 	isCheckpoint: Schema.Number,
-	url: Schema.String,
+	/** The rrweb event array for this chunk, serialized as a JSON string. */
+	events: Schema.String,
 })
 
 export class GetReplayEventsResponse extends Schema.Class<GetReplayEventsResponse>(
 	"GetReplayEventsResponse",
 )({
-	chunks: Schema.Array(SessionReplayChunkUrl),
+	chunks: Schema.Array(SessionReplayChunk),
 }) {}
 
 // --- Reverse correlation (trace → sessions) ---

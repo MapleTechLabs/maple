@@ -5,19 +5,16 @@ import {
 	GetReplayResponse,
 	ListReplaysResponse,
 	MapleApi,
-	QueryEngineExecutionError,
 	ReplaysForTraceResponse,
 	SessionTraceSummariesResponse,
 } from "@maple/domain/http"
 import { Effect } from "effect"
 import { CH } from "@maple/query-engine"
 import { WarehouseQueryService } from "../services/WarehouseQueryService"
-import { ReplayBlobStorage } from "../services/ReplayBlobStorage"
 
 export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {
 		const warehouse = yield* WarehouseQueryService
-		const replayBlobs = yield* ReplayBlobStorage
 
 		return handlers
 			.handle("listReplays", ({ payload }) =>
@@ -70,7 +67,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						"maple.org_id": tenant.orgId,
 						"maple.session.id": payload.sessionId,
 					})
-					const compiled = CH.compile(CH.sessionReplayChunksQuery(), {
+					const compiled = CH.compile(CH.sessionReplayEventsQuery(), {
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
 					})
@@ -80,26 +77,9 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							context: "getReplayEvents",
 						}),
 					)
-					const signed = yield* Effect.forEach(
-						chunks,
-						(chunk) =>
-							replayBlobs
-								.presignChunkUrl(tenant.orgId, payload.sessionId, chunk.chunkSeq)
-								.pipe(Effect.map((url) => ({ ...chunk, url }))),
-						{ concurrency: 8 },
-					).pipe(
-						// Surface presign failures as the endpoint's 502 while keeping the
-						// real cause; ReplayBlobStorageError isn't an HTTP-serializable error.
-						Effect.catchTag("ReplayBlobStorageError", (error) =>
-							Effect.fail(
-								new QueryEngineExecutionError({
-									message: "failed to presign replay chunks",
-									causeMessage: error.message,
-								}),
-							),
-						),
-					)
-					return new GetReplayEventsResponse({ chunks: signed })
+					// rrweb payloads come straight from ClickHouse (no R2 / presigning);
+					// each chunk's `events` is the rrweb array JSON the player parses.
+					return new GetReplayEventsResponse({ chunks })
 				}),
 			)
 			.handle("replaysForTrace", ({ payload }) =>

@@ -2,7 +2,7 @@
 // Typed Session Replay Queries
 //
 // DSL-based queries over the session_replays (metadata) and
-// session_replay_chunks (R2 blob index) datasources.
+// session_replay_events (rrweb event payloads) datasources.
 //
 // `session_replays` is a ReplacingMergeTree(Version): the @maple/browser SDK
 // writes a partial row at session start (Version=1) and a complete row at
@@ -23,7 +23,7 @@ import { compileFnCall, compileFnCallCond } from "../define-fn"
 import { param } from "../param"
 import { from, type ColumnAccessor } from "../query"
 import { unionAll, type CHUnionQuery } from "../union"
-import { SessionReplays, SessionReplayChunks, TraceDetailSpans } from "../tables"
+import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
 // version. Generic per call site, so declared here rather than via defineFn.
@@ -187,29 +187,30 @@ export function getSessionReplayQuery() {
 // receives blobs in replay order.
 // ---------------------------------------------------------------------------
 
-export interface SessionReplayChunkOutput {
+export interface SessionReplayEventsOutput {
 	readonly chunkSeq: number
 	readonly timestamp: string
 	readonly durationMs: number
 	readonly eventCount: number
 	readonly byteSize: number
-	readonly r2Key: string
+	/** The rrweb event array for this chunk, serialized as a JSON string. */
+	readonly events: string
 	readonly isCheckpoint: number
 }
 
-export function sessionReplayChunksQuery() {
-	return from(SessionReplayChunks)
+export function sessionReplayEventsQuery() {
+	return from(SessionReplayEvents)
 		.select(($) => ({
 			chunkSeq: $.ChunkSeq,
 			timestamp: $.Timestamp,
 			durationMs: $.DurationMs,
 			eventCount: $.EventCount,
 			byteSize: $.ByteSize,
-			r2Key: $.R2Key,
+			events: $.Events,
 			isCheckpoint: $.IsCheckpoint,
 		}))
 		.where(($) => [$.OrgId.eq(param.string("orgId")), $.SessionId.eq(param.string("sessionId"))])
-		.orderBy(["timestamp", "asc"], ["chunkSeq", "asc"])
+		.orderBy(["chunkSeq", "asc"])
 		.format("JSON")
 }
 

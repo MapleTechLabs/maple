@@ -1369,24 +1369,24 @@ export const sessionReplays = defineDatasource("session_replays", {
 export type SessionReplaysRow = InferRow<typeof sessionReplays>
 
 /**
- * Session replay chunk index — one row per uploaded rrweb event blob.
+ * Session replay events — one row per uploaded rrweb chunk, payload included.
  *
- * Written by the ingest gateway after it streams a chunk body to R2 (key
- * `{org_id}/{session_id}/{chunk_seq}.json.gz`). The blob bytes never enter
- * ClickHouse; this row only points at them (`R2Key`) plus enough metadata to
- * order, size, and lazy-load chunks during playback.
+ * The ingest gateway gunzips the chunk body and writes the rrweb event array
+ * JSON into `Events` (a String column ClickHouse ZSTD-compresses). Playback
+ * reads chunks back directly from here — there is no R2 blob store on the
+ * replay path.
  *
  * `IsCheckpoint=1` marks chunks that contain a full rrweb DOM snapshot, so the
  * player can seek to a timestamp by loading the nearest preceding checkpoint
  * rather than replaying from t=0.
  *
- * Sorted by (OrgId, SessionId, Timestamp, ChunkSeq) so fetching a whole
- * session's chunks is a single contiguous range scan. 30-day TTL matches
- * `sessionReplays` and the R2 lifecycle rule.
+ * Sorted by (OrgId, SessionId, ChunkSeq) so fetching a whole session's chunks
+ * in playback order is a single contiguous range scan. 30-day TTL matches
+ * `sessionReplays`.
  */
-export const sessionReplayChunks = defineDatasource("session_replay_chunks", {
+export const sessionReplayEvents = defineDatasource("session_replay_events", {
 	description:
-		"Index of session replay event blobs stored in R2 (one row per chunk). Written by the ingest gateway after uploading the blob. Holds the R2 key + ordering/size metadata; never the blob bytes themselves.",
+		"Session replay rrweb events (one row per chunk, payload included). The ingest gateway gunzips the chunk and stores the event-array JSON in `Events`. Playback reads directly from ClickHouse — no R2.",
 	schema: {
 		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
@@ -1394,15 +1394,17 @@ export const sessionReplayChunks = defineDatasource("session_replay_chunks", {
 		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
 		DurationMs: column(t.uint32().default(0), { jsonPath: "$.duration_ms" }),
 		EventCount: column(t.uint32().default(0), { jsonPath: "$.event_count" }),
+		// Uncompressed byte length of the events JSON (telemetry / debugging).
 		ByteSize: column(t.uint32().default(0), { jsonPath: "$.byte_size" }),
-		R2Key: column(t.string(), { jsonPath: "$.r2_key" }),
+		// The rrweb event array, serialized as a JSON string.
+		Events: column(t.string(), { jsonPath: "$.events" }),
 		IsCheckpoint: column(t.uint8().default(0), { jsonPath: "$.is_checkpoint" }),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
-		sortingKey: ["OrgId", "SessionId", "Timestamp", "ChunkSeq"],
+		sortingKey: ["OrgId", "SessionId", "ChunkSeq"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
-export type SessionReplayChunksRow = InferRow<typeof sessionReplayChunks>
+export type SessionReplayEventsRow = InferRow<typeof sessionReplayEvents>

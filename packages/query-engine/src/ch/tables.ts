@@ -381,7 +381,7 @@ export const SessionReplays = table("session_replays", {
 	Version: T.uint32,
 })
 
-export const SessionReplayChunks = table("session_replay_chunks", {
+export const SessionReplayEvents = table("session_replay_events", {
 	OrgId: T.string,
 	SessionId: T.string,
 	ChunkSeq: T.uint32,
@@ -389,7 +389,9 @@ export const SessionReplayChunks = table("session_replay_chunks", {
 	DurationMs: T.uint32,
 	EventCount: T.uint32,
 	ByteSize: T.uint32,
-	R2Key: T.string,
+	// The rrweb event array for this chunk, stored as a JSON string. ClickHouse
+	// ZSTD-compresses this column; playback reads it back directly (no R2).
+	Events: T.string,
 	IsCheckpoint: T.uint8,
 })
 
