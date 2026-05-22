@@ -497,3 +497,96 @@
 		animation: none;
 	}
 }
+
+/* rrweb-player ships light-only chrome; retheme its internal Svelte classes to
+   the app's tokens so the controller reads as part of the dashboard (esp. dark
+   mode). Scoped to .maple-replay-surface — same pattern as the Recharts
+   overrides above (third-party widget we don't render the internals of).
+
+   !important is required, not optional: rrweb's styles are Svelte-scoped
+   (e.g. `.rr-controller.svelte-189zk2r.svelte-189zk2r`, specificity 0,3,0) and
+   its sheet is dynamically imported *after* this one, so a plain
+   `.maple-replay-surface .rr-controller` (0,2,0) loses every battle. The
+   svelte-* hashes are build-generated and churn across versions, so we win on
+   weight rather than chaining them. */
+
+/* Player frame — let the surface inherit the faux-browser chrome. */
+.maple-replay-surface .rr-player,
+.maple-replay-surface .rr-player__frame,
+.maple-replay-surface .replayer-wrapper {
+	background: transparent !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+}
+
+/* Controller bar */
+.maple-replay-surface .rr-controller {
+	height: 64px !important;
+	background: var(--card) !important;
+	color: var(--card-foreground) !important;
+	border-top: var(--border-hairline) solid var(--border) !important;
+	border-radius: 0 !important;
+}
+
+/* Transport buttons */
+.maple-replay-surface .rr-controller__btns button {
+	color: var(--muted-foreground) !important;
+	transition:
+		color 0.12s ease,
+		background 0.12s ease;
+}
+.maple-replay-surface .rr-controller__btns button:hover {
+	color: var(--foreground) !important;
+	background: var(--accent) !important;
+}
+.maple-replay-surface .rr-controller__btns button:active {
+	background: var(--accent) !important;
+}
+.maple-replay-surface .rr-controller__btns button.active {
+	background: var(--primary) !important;
+	color: var(--primary-foreground) !important;
+}
+
+/* Speed toggle ("skip inactive") — recolor rrweb's hardcoded blue. */
+.maple-replay-surface .switch label:before {
+	background: color-mix(in oklab, var(--muted-foreground) 35%, transparent) !important;
+}
+.maple-replay-surface .switch input[type="checkbox"]:checked + label:before {
+	background: var(--primary) !important;
+}
+.maple-replay-surface .switch label:after {
+	background: var(--background) !important;
+	box-shadow: 0 1px 3px color-mix(in oklab, var(--foreground) 30%, transparent) !important;
+}
+.maple-replay-surface .switch .label {
+	color: var(--muted-foreground) !important;
+}
+
+/* Progress bar — track, played step, and handle.
+   rrweb hardcodes `border-top/bottom: solid 4px #fff` on .rr-progress, which
+   paints white slivers around the track in dark mode; neutralize them. */
+.maple-replay-surface .rr-progress {
+	background: color-mix(in oklab, var(--muted-foreground) 25%, transparent) !important;
+	border-top-color: transparent !important;
+	border-bottom-color: transparent !important;
+}
+.maple-replay-surface .rr-progress__step {
+	background: color-mix(in oklab, var(--primary) 35%, transparent) !important;
+}
+.maple-replay-surface .rr-progress__handler {
+	background: var(--primary) !important;
+	box-shadow: 0 0 0 2px var(--card) !important;
+}
+
+/* Timeline timestamps — match the dashboard's monospace, tabular numerals. */
+.maple-replay-surface .rr-timeline__time {
+	color: var(--muted-foreground) !important;
+	font-family: var(--font-mono) !important;
+	font-variant-numeric: tabular-nums !important;
+}
+
+/* Click ripple — rrweb's cursor accent is also hardcoded blue. */
+.maple-replay-surface .replayer-mouse::after,
+.maple-replay-surface .replayer-mouse.touch-device.touch-active {
+	background: var(--primary) !important;
+}

@@ -18,8 +18,8 @@ import { ReplayBlobStorage } from "../services/ReplayBlobStorage"
 const isTaggedHttpError = (value: unknown): value is TinybirdQueryError | TinybirdQuotaExceededError =>
 	value instanceof TinybirdQueryError || value instanceof TinybirdQuotaExceededError
 
-const mapExecError = <A, R>(
-	effect: Effect.Effect<A, unknown, R>,
+const mapExecError = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
 	context: string,
 ): Effect.Effect<A, QueryEngineExecutionError | TinybirdQueryError | TinybirdQuotaExceededError, R> =>
 	effect.pipe(
@@ -43,6 +43,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 			.handle("listReplays", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ "maple.org_id": tenant.orgId })
 					const compiled = CH.compile(
 						CH.sessionReplaysListQuery({
 							serviceName: payload.serviceName,
@@ -70,6 +71,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 			.handle("getReplay", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.session.id": payload.sessionId,
+					})
 					const compiled = CH.compile(CH.getSessionReplayQuery(), {
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
@@ -87,6 +92,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 			.handle("getReplayEvents", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.session.id": payload.sessionId,
+					})
 					const compiled = CH.compile(CH.sessionReplayChunksQuery(), {
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
@@ -117,6 +126,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 			.handle("replaysForTrace", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.trace.id": payload.traceId,
+					})
 					const compiled = CH.compile(CH.sessionsForTraceQuery({ traceId: payload.traceId }), {
 						orgId: tenant.orgId,
 						startTime: payload.startTime,

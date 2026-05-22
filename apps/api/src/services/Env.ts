@@ -1,4 +1,9 @@
-import { Config, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Config, Context, Data, Effect, Layer, Option, Redacted } from "effect"
+
+/** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
+class EnvValidationError extends Data.TaggedError("EnvValidationError")<{
+	readonly message: string
+}> {}
 
 export interface EnvShape {
 	readonly PORT: number
@@ -104,26 +109,30 @@ const makeEnv = Effect.gen(function* () {
 	const env = (yield* envConfig) as EnvShape
 
 	if (env.MAPLE_DEFAULT_ORG_ID.trim().length === 0) {
-		return yield* Effect.die(new Error("MAPLE_DEFAULT_ORG_ID cannot be empty"))
+		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_DEFAULT_ORG_ID cannot be empty" }))
 	}
 
 	const authMode = env.MAPLE_AUTH_MODE.toLowerCase()
 
 	if (authMode !== "clerk" && Option.isNone(env.MAPLE_ROOT_PASSWORD)) {
 		return yield* Effect.die(
-			new Error("MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted"),
+			new EnvValidationError({
+				message: "MAPLE_ROOT_PASSWORD is required when MAPLE_AUTH_MODE=self_hosted",
+			}),
 		)
 	}
 
 	if (authMode === "clerk" && Option.isNone(env.CLERK_SECRET_KEY)) {
-		return yield* Effect.die(new Error("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk"))
+		return yield* Effect.die(
+			new EnvValidationError({ message: "CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk" }),
+		)
 	}
 
 	if (
 		Option.isSome(env.MAPLE_ROOT_PASSWORD) &&
 		Redacted.value(env.MAPLE_ROOT_PASSWORD.value).trim().length === 0
 	) {
-		return yield* Effect.die(new Error("MAPLE_ROOT_PASSWORD cannot be empty"))
+		return yield* Effect.die(new EnvValidationError({ message: "MAPLE_ROOT_PASSWORD cannot be empty" }))
 	}
 
 	return env

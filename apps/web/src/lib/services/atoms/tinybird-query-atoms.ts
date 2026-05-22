@@ -80,10 +80,13 @@ interface QueryAtomOptions {
 	staleTime?: number
 }
 
-export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("QueryAtomError", {
-	message: Schema.String,
-	cause: Schema.optional(Schema.Unknown),
-}) {}
+export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
+	"@maple/web/services/QueryAtomError",
+	{
+		message: Schema.String,
+		cause: Schema.optional(Schema.Unknown),
+	},
+) {}
 
 const isTaggedBackendError = (error: unknown): boolean =>
 	typeof error === "object" &&

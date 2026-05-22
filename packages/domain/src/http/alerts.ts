@@ -13,6 +13,9 @@ import { Authorization } from "./current-tenant"
 import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
 
+
+
+
 export const AlertDestinationType = Schema.Literals([
 	"slack",
 	"pagerduty",
@@ -58,7 +61,7 @@ export const AlertGroupBy = Schema.Array(AlertGroupByDimension)
 	.pipe(Schema.check(Schema.isMinLength(1)))
 	.annotate({
 		identifier: "@maple/AlertGroupBy",
-		title: "Alert Group By",
+    title: "Alert Group By",
 	})
 export type AlertGroupBy = Schema.Schema.Type<typeof AlertGroupBy>
 
@@ -432,7 +435,8 @@ export class AlertDeliveryEventDocument extends Schema.Class<AlertDeliveryEventD
 	providerReference: Schema.NullOr(Schema.String),
 	responseCode: Schema.NullOr(Schema.Number),
 	errorMessage: Schema.NullOr(Schema.String),
-}) {}
+}) { }
+
 
 export class AlertDeliveryEventsListResponse extends Schema.Class<AlertDeliveryEventsListResponse>(
 	"AlertDeliveryEventsListResponse",

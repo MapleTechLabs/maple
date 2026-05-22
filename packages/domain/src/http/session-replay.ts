@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
+import { SessionId, TraceId } from "../primitives"
 import { TinybirdDateTime } from "../query-engine"
 import { Authorization } from "./current-tenant"
 import { QueryEngineExecutionError, QueryEngineTimeoutError } from "./query-engine"
@@ -18,15 +19,15 @@ import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
 export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListReplaysRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	serviceName: Schema.optional(Schema.String),
-	browser: Schema.optional(Schema.String),
-	country: Schema.optional(Schema.String),
-	deviceType: Schema.optional(Schema.String),
-	hasErrors: Schema.optional(Schema.Boolean),
-	search: Schema.optional(Schema.String),
-	cursor: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
-	offset: Schema.optional(Schema.Number),
+	serviceName: Schema.optionalKey(Schema.String),
+	browser: Schema.optionalKey(Schema.String),
+	country: Schema.optionalKey(Schema.String),
+	deviceType: Schema.optionalKey(Schema.String),
+	hasErrors: Schema.optionalKey(Schema.Boolean),
+	search: Schema.optionalKey(Schema.String),
+	cursor: Schema.optionalKey(Schema.String),
+	limit: Schema.optionalKey(Schema.Number),
+	offset: Schema.optionalKey(Schema.Number),
 }) {}
 
 export const SessionReplayListItem = Schema.Struct({
@@ -55,7 +56,7 @@ export class ListReplaysResponse extends Schema.Class<ListReplaysResponse>("List
 // --- Detail ---
 
 export class GetReplayRequest extends Schema.Class<GetReplayRequest>("GetReplayRequest")({
-	sessionId: Schema.String,
+	sessionId: SessionId,
 }) {}
 
 export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetReplayResponse")({
@@ -88,7 +89,7 @@ export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetRepla
 export class GetReplayEventsRequest extends Schema.Class<GetReplayEventsRequest>(
 	"GetReplayEventsRequest",
 )({
-	sessionId: Schema.String,
+	sessionId: SessionId,
 }) {}
 
 export const SessionReplayChunkUrl = Schema.Struct({
@@ -112,7 +113,7 @@ export class GetReplayEventsResponse extends Schema.Class<GetReplayEventsRespons
 export class ReplaysForTraceRequest extends Schema.Class<ReplaysForTraceRequest>(
 	"ReplaysForTraceRequest",
 )({
-	traceId: Schema.String,
+	traceId: TraceId,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 }) {}

@@ -56,7 +56,6 @@ export function ReplayPlayer({
 }) {
 	const [state, setState] = React.useState<PlayerState>({ kind: "loading" })
 
-	const chunkUrls = React.useMemo(() => chunks.map((c) => c.url).join("|"), [chunks])
 	React.useEffect(() => {
 		let cancelled = false
 		setState({ kind: "loading" })
@@ -83,8 +82,7 @@ export function ReplayPlayer({
 		return () => {
 			cancelled = true
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [chunkUrls])
+	}, [chunks])
 
 	return (
 		<figure className="m-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -199,5 +197,5 @@ function RrwebSurface({ events }: { events: unknown[] }) {
 		[events],
 	)
 
-	return <div ref={mount} className="w-full" />
+	return <div ref={mount} className="maple-replay-surface w-full" />
 }

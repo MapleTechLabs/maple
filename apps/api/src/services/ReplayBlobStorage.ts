@@ -1,5 +1,5 @@
 import { AwsClient } from "aws4fetch"
-import { Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Data, Effect, Layer, Option, Redacted } from "effect"
 import { Env } from "./Env"
 
 // ---------------------------------------------------------------------------
@@ -17,9 +17,10 @@ import { Env } from "./Env"
 
 const URL_TTL_SECONDS = 300
 
-export class ReplayBlobStorageError extends Error {
-	readonly _tag = "ReplayBlobStorageError"
-}
+export class ReplayBlobStorageError extends Data.TaggedError("ReplayBlobStorageError")<{
+	readonly message: string
+	readonly cause?: unknown
+}> {}
 
 export interface ReplayBlobStorageShape {
 	/** Object key for a session's chunk. Stable contract shared with the ingest gateway. */
@@ -54,31 +55,30 @@ const make = Effect.gen(function* () {
 
 	const endpoint = Option.getOrElse(env.R2_ENDPOINT, () => "")
 
-	const presignChunkUrl = (
+	const presignChunkUrl = Effect.fn("ReplayBlobStorage.presignChunkUrl")(function* (
 		orgId: string,
 		sessionId: string,
 		chunkSeq: number,
-	): Effect.Effect<string, ReplayBlobStorageError> => {
+	) {
 		if (!signer) {
-			return Effect.fail(
-				new ReplayBlobStorageError(
-					"R2 is not configured (set R2_ENDPOINT / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY)",
-				),
-			)
+			return yield* new ReplayBlobStorageError({
+				message: "R2 is not configured (set R2_ENDPOINT / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY)",
+			})
 		}
 		const key = chunkKey(orgId, sessionId, chunkSeq)
 		const url = `${endpoint.replace(/\/$/, "")}/${env.R2_BUCKET}/${key}?X-Amz-Expires=${URL_TTL_SECONDS}`
-		return Effect.tryPromise({
+		return yield* Effect.tryPromise({
 			try: async () => {
 				const signed = await signer.sign(url, { method: "GET", aws: { signQuery: true } })
 				return signed.url
 			},
-			catch: (cause) =>
-				new ReplayBlobStorageError(
-					`failed to presign replay chunk URL: ${cause instanceof Error ? cause.message : String(cause)}`,
-				),
-		})
-	}
+			catch: (cause) => new ReplayBlobStorageError({ message: "failed to presign replay chunk URL", cause }),
+		}).pipe(
+			Effect.tapError((error) =>
+				Effect.logError("failed to presign replay chunk URL", { error, orgId, sessionId, chunkSeq }),
+			),
+		)
+	})
 
 	return { chunkKey, presignChunkUrl } satisfies ReplayBlobStorageShape
 })

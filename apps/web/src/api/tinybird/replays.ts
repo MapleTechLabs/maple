@@ -1,9 +1,11 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import {
 	GetReplayEventsRequest,
 	GetReplayRequest,
 	ListReplaysRequest,
 	ReplaysForTraceRequest,
+	SessionId,
+	TraceId,
 } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { TinybirdDateTimeString, decodeInput, runTinybirdQuery } from "@/api/tinybird/effect-utils"
@@ -27,11 +29,9 @@ const ListReplaysInput = Schema.Struct({
 })
 export type ListReplaysInput = Schema.Schema.Type<typeof ListReplaysInput>
 
-const defaultTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultTimeRange = (nowMs: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMs - 24 * 60 * 60 * 1000), endTime: fmt(nowMs) }
 }
 
 export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
@@ -40,7 +40,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 	data: ListReplaysInput
 }) {
 	const input = yield* decodeInput(ListReplaysInput, data ?? {}, "listReplays")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runTinybirdQuery("listReplays", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
@@ -68,8 +68,9 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 // Session detail
 // ---------------------------------------------------------------------------
 
-const GetReplayInput = Schema.Struct({ sessionId: Schema.String })
-export type GetReplayInput = Schema.Schema.Type<typeof GetReplayInput>
+const GetReplayInput = Schema.Struct({ sessionId: SessionId })
+// Encoded shape (plain strings) — callers pass raw route params; decodeInput brands them.
+export type GetReplayInput = (typeof GetReplayInput)["Encoded"]
 
 export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 	data,
@@ -92,8 +93,8 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 // Session event chunks (signed R2 URLs, ordered)
 // ---------------------------------------------------------------------------
 
-const GetReplayEventsInput = Schema.Struct({ sessionId: Schema.String })
-export type GetReplayEventsInput = Schema.Schema.Type<typeof GetReplayEventsInput>
+const GetReplayEventsInput = Schema.Struct({ sessionId: SessionId })
+export type GetReplayEventsInput = (typeof GetReplayEventsInput)["Encoded"]
 
 export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(function* ({
 	data,
@@ -117,11 +118,11 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 // ---------------------------------------------------------------------------
 
 const ReplaysForTraceInput = Schema.Struct({
-	traceId: Schema.String,
+	traceId: TraceId,
 	startTime: Schema.optional(TinybirdDateTimeString),
 	endTime: Schema.optional(TinybirdDateTimeString),
 })
-export type ReplaysForTraceInput = Schema.Schema.Type<typeof ReplaysForTraceInput>
+export type ReplaysForTraceInput = (typeof ReplaysForTraceInput)["Encoded"]
 
 export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(function* ({
 	data,
@@ -129,7 +130,7 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 	data: ReplaysForTraceInput
 }) {
 	const input = yield* decodeInput(ReplaysForTraceInput, data ?? {}, "replaysForTrace")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runTinybirdQuery("replaysForTrace", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
