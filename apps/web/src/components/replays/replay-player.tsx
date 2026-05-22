@@ -193,26 +193,49 @@ function PlayerMessage({
 
 const SPEEDS = [0.5, 1, 2, 4, 8] as const
 
-/** Recorded viewport + click timeline derived from the raw rrweb event stream. */
+/**
+ * A stretch of the recording with no events. rrweb's own `skipInactive`
+ * fast-forwards these at `gap / 5s` (so every skip costs ~5s of wall-clock —
+ * the slow part), so we skip them ourselves by jumping straight to the end.
+ * Offsets are ms from the session start, matching `getCurrentTime()`.
+ */
+interface InactiveInterval {
+	start: number
+	end: number
+}
+
+/** Gaps longer than this between consecutive events count as idle. */
+const IDLE_THRESHOLD_MS = 2000
+
+/** Recorded viewport + click timeline + idle gaps from the raw rrweb stream. */
 interface DerivedMeta {
 	recordedWidth: number
 	recordedHeight: number
 	startTime: number
 	clickTimestamps: number[]
+	inactiveIntervals: InactiveInterval[]
 }
 
 function deriveMeta(events: unknown[]): DerivedMeta {
 	let recordedWidth = 1280
 	let recordedHeight = 720
 	const clickTimestamps: number[] = []
+	const inactiveIntervals: InactiveInterval[] = []
 	const startTime =
 		(events[0] as { timestamp?: number } | undefined)?.timestamp ?? 0
+	let prevTs = startTime
 
 	for (const raw of events) {
 		const ev = raw as {
 			type?: number
 			timestamp?: number
 			data?: { source?: number; type?: number; width?: number; height?: number }
+		}
+		if (typeof ev.timestamp === "number") {
+			if (ev.timestamp - prevTs > IDLE_THRESHOLD_MS) {
+				inactiveIntervals.push({ start: prevTs - startTime, end: ev.timestamp - startTime })
+			}
+			prevTs = ev.timestamp
 		}
 		if (ev.type === EventType.Meta && ev.data) {
 			if (typeof ev.data.width === "number") recordedWidth = ev.data.width
@@ -226,7 +249,7 @@ function deriveMeta(events: unknown[]): DerivedMeta {
 			clickTimestamps.push(ev.timestamp)
 		}
 	}
-	return { recordedWidth, recordedHeight, startTime, clickTimestamps }
+	return { recordedWidth, recordedHeight, startTime, clickTimestamps, inactiveIntervals }
 }
 
 /**
@@ -251,18 +274,17 @@ function RrwebSurface({
 	const isFullscreenRef = React.useRef(isFullscreen)
 	isFullscreenRef.current = isFullscreen
 
-	const { recordedWidth, recordedHeight, startTime, clickTimestamps } = React.useMemo(
-		() => deriveMeta(events),
-		[events],
-	)
+	const { recordedWidth, recordedHeight, startTime, clickTimestamps, inactiveIntervals } =
+		React.useMemo(() => deriveMeta(events), [events])
 
 	const [isPlaying, setIsPlaying] = React.useState(false)
 	const [finished, setFinished] = React.useState(false)
 	const [currentMs, setCurrentMs] = React.useState(0)
 	const [totalMs, setTotalMs] = React.useState(0)
 	const [speed, setSpeed] = React.useState(1)
-	const [skipInactive, setSkipInactive] = React.useState(false)
-	const [skipping, setSkipping] = React.useState(false)
+	const [skipInactive, setSkipInactive] = React.useState(true)
+	const skipInactiveRef = React.useRef(skipInactive)
+	skipInactiveRef.current = skipInactive
 
 	// Fit the recorded viewport into the available width (or both dims when
 	// fullscreen), centering the scaled wrapper.
@@ -297,11 +319,19 @@ function RrwebSurface({
 		if (!mount) return
 		mount.innerHTML = ""
 
+		// rrweb's `--primary` for the mouse-tail stroke; canvas takes the resolved
+		// CSS color. Fall back to a sane accent if the var can't be read.
+		const accent =
+			getComputedStyle(document.documentElement).getPropertyValue("--primary").trim() ||
+			"#6366f1"
+
 		const replayer = new Replayer(events as never, {
 			root: mount,
 			speed: 1,
+			// We skip idle ourselves by jumping (see the rAF loop) — rrweb's own
+			// skipInactive only fast-forwards, which is slow. Keep it off.
 			skipInactive: false,
-			mouseTail: false,
+			mouseTail: { duration: 600, lineCap: "round", lineWidth: 3, strokeStyle: accent },
 			showWarning: false,
 			showDebug: false,
 			liveMode: false,
@@ -322,8 +352,6 @@ function RrwebSurface({
 			setIsPlaying(false)
 			setFinished(true)
 		})
-		replayer.on(ReplayerEvents.SkipStart, () => setSkipping(true))
-		replayer.on(ReplayerEvents.SkipEnd, () => setSkipping(false))
 
 		const observer = new ResizeObserver(() => applyScale())
 		if (surfaceRef.current) observer.observe(surfaceRef.current)
@@ -343,17 +371,30 @@ function RrwebSurface({
 	}, [isFullscreen, applyScale])
 
 	// Poll the engine clock while playing (rrweb has no per-frame time event).
+	// While skip-idle is on, jump straight over any inactive gap we land in
+	// instead of letting it play out.
 	React.useEffect(() => {
 		if (!isPlaying) return
 		let raf = 0
 		const tick = () => {
 			const replayer = replayerRef.current
-			if (replayer) setCurrentMs(Math.min(replayer.getCurrentTime(), totalMs))
+			if (replayer) {
+				const cur = replayer.getCurrentTime()
+				const gap =
+					skipInactiveRef.current &&
+					inactiveIntervals.find((iv) => cur >= iv.start && cur < iv.end - 30)
+				if (gap) {
+					replayer.play(gap.end)
+					setCurrentMs(gap.end)
+				} else {
+					setCurrentMs(Math.min(cur, totalMs))
+				}
+			}
 			raf = requestAnimationFrame(tick)
 		}
 		raf = requestAnimationFrame(tick)
 		return () => cancelAnimationFrame(raf)
-	}, [isPlaying, totalMs])
+	}, [isPlaying, totalMs, inactiveIntervals])
 
 	const togglePlay = React.useCallback(() => {
 		const replayer = replayerRef.current
@@ -388,11 +429,7 @@ function RrwebSurface({
 	}, [])
 
 	const toggleSkipInactive = React.useCallback(() => {
-		setSkipInactive((prev) => {
-			const next = !prev
-			replayerRef.current?.setConfig({ skipInactive: next })
-			return next
-		})
+		setSkipInactive((prev) => !prev)
 	}, [])
 
 	return (
@@ -415,7 +452,6 @@ function RrwebSurface({
 				clickTimestamps={clickTimestamps}
 				speed={speed}
 				skipInactive={skipInactive}
-				skipping={skipping}
 				isFullscreen={isFullscreen}
 				onTogglePlay={togglePlay}
 				onSeek={seek}
@@ -444,7 +480,6 @@ function ReplayControls({
 	clickTimestamps,
 	speed,
 	skipInactive,
-	skipping,
 	isFullscreen,
 	onTogglePlay,
 	onSeek,
@@ -460,7 +495,6 @@ function ReplayControls({
 	clickTimestamps: number[]
 	speed: number
 	skipInactive: boolean
-	skipping: boolean
 	isFullscreen: boolean
 	onTogglePlay: () => void
 	onSeek: (ms: number) => void
@@ -498,12 +532,6 @@ function ReplayControls({
 				<span className="opacity-50">/</span>
 				<span>{formatClock(totalMs)}</span>
 			</div>
-
-			{skipping && (
-				<span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
-					Skipping
-				</span>
-			)}
 
 			<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
 				{SPEEDS.map((s) => (
