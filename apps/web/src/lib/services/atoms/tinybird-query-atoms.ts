@@ -183,8 +183,14 @@ export const getSessionTraceSummariesResultAtom = makeQueryAtomFamily(getSession
 	staleTime: 60_000,
 })
 
-// No staleTime: signed R2 URLs are short-lived (~5 min), so refetch each mount.
-export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents)
+// Idle TTL kept just under the signed-URL lifetime (X-Amz-Expires=300s). This
+// keeps the atom — and therefore the signed chunk URLs it returns — stable
+// across the player's frequent re-renders so the chunk decoder below isn't
+// re-keyed (which would re-download every chunk). A fresh mount after the TTL
+// re-signs upstream, so URLs never go stale before they're used.
+export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents, {
+	staleTime: 240_000,
+})
 
 interface ReplayChunkRef {
 	readonly chunkSeq: number
@@ -214,20 +220,26 @@ export const replayChunkEventsKey = (chunks: ReadonlyArray<ReplayChunkRef>): str
 
 /**
  * The decoded rrweb event stream for a session, gunzipped from the signed R2
- * chunk URLs produced by `getReplayEventsResultAtom`. No idle TTL: the signed
- * URLs are short-lived (~5 min), so a fresh mount re-signs upstream and the new
- * key re-fetches here.
+ * chunk URLs produced by `getReplayEventsResultAtom`. Decoding every chunk is
+ * expensive (one fetch + gunzip + JSON.parse per chunk), so the result is kept
+ * alive across the player's re-render churn with an idle TTL matching the
+ * upstream URL atom — otherwise a momentary unsubscribe would discard the
+ * decoded stream and re-download all chunks. The key stays stable for the same
+ * reason (the upstream URLs don't change within the TTL).
  */
 export const replayChunkEventsAtom = Atom.family((key: string) => {
 	const refs = JSON.parse(key) as ReadonlyArray<ReplayChunkRef>
-	return Atom.make(
-		Effect.gen(function* () {
-			const ordered = [...refs].sort((a, b) => a.chunkSeq - b.chunkSeq)
-			const decoded = yield* Effect.forEach(ordered, (ref) => fetchReplayChunk(ref.url), {
-				concurrency: "unbounded",
-			})
-			return normalizeEvents(decoded.flat())
-		}),
+	return Atom.setIdleTTL(
+		Atom.make(
+			Effect.gen(function* () {
+				const ordered = [...refs].sort((a, b) => a.chunkSeq - b.chunkSeq)
+				const decoded = yield* Effect.forEach(ordered, (ref) => fetchReplayChunk(ref.url), {
+					concurrency: "unbounded",
+				})
+				return normalizeEvents(decoded.flat())
+			}),
+		),
+		240_000,
 	)
 })
 
