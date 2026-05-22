@@ -21,7 +21,6 @@ import {
 	MediaPauseIcon,
 	ArrowPathIcon,
 	PulseIcon,
-	CircleWarningIcon,
 } from "@/components/icons"
 
 // ---------------------------------------------------------------------------
