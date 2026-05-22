@@ -1343,12 +1343,16 @@ export const sessionReplays = defineDatasource("session_replays", {
 		BrowserName: column(t.string().lowCardinality(), { jsonPath: "$.browser_name" }),
 		OsName: column(t.string().lowCardinality(), { jsonPath: "$.os_name" }),
 		DeviceType: column(t.string().lowCardinality(), { jsonPath: "$.device_type" }),
-		Country: column(t.string().lowCardinality(), { jsonPath: "$.country" }),
+		// Server-derived (Cf-IPCountry); the SDK never sends it, so default to ''
+		// rather than quarantine the row under strict type checking.
+		Country: column(t.string().lowCardinality().default(""), { jsonPath: "$.country" }),
 		ServiceName: column(t.string().lowCardinality(), { jsonPath: "$.service_name" }),
 		PageViews: column(t.uint32().default(0), { jsonPath: "$.page_views" }),
 		ClickCount: column(t.uint32().default(0), { jsonPath: "$.click_count" }),
 		ErrorCount: column(t.uint32().default(0), { jsonPath: "$.error_count" }),
-		TraceIds: column(t.array(t.string()), { jsonPath: "$.trace_ids[:]" }),
+		// Only present on the ended (v2) row — the active (v1) row omits it, so
+		// default to [] to keep the in-progress row out of quarantine.
+		TraceIds: column(t.array(t.string()).default([]), { jsonPath: "$.trace_ids[:]" }),
 		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
 			jsonPath: "$.resource_attributes",
 		}),

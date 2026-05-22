@@ -1135,6 +1135,13 @@ async fn main() {
             CONTENT_TYPE,
             CONTENT_ENCODING,
             HeaderName::from_static("x-maple-ingest-key"),
+            // Session-replay chunk metadata headers (POST /v1/sessionReplays/blob).
+            // Without these the browser preflight blocks the cross-origin blob upload.
+            HeaderName::from_static("x-maple-session-id"),
+            HeaderName::from_static("x-maple-chunk-seq"),
+            HeaderName::from_static("x-maple-is-checkpoint"),
+            HeaderName::from_static("x-maple-event-count"),
+            HeaderName::from_static("x-maple-duration-ms"),
         ]);
 
     let grpc_state = Arc::clone(&state);

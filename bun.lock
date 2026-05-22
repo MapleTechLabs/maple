@@ -206,6 +206,7 @@
         "@json-render/core": "^0.16.0",
         "@json-render/react": "^0.16.0",
         "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/browser": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "@maple/query-engine": "workspace:*",

@@ -14,7 +14,24 @@ import {
 import { router, type RouterAuthContext } from "./router"
 import { appRegistry } from "./lib/registry"
 import { clearChunkReloadGuard, shouldAttemptChunkReload } from "./lib/chunk-reload"
+import { MapleBrowser } from "@maple/browser"
+import { ingestUrl } from "./lib/services/common/ingest-url"
 import "./styles.css"
+
+// Dev-only browser session replay for the dashboard itself. Tracing stays with
+// the existing `mapleOtelLayer`, so this is replay-only to avoid a second tracer.
+// Gated on DEV + key so the deployed dashboard never self-records.
+const replayIngestKey = import.meta.env.VITE_MAPLE_INGEST_KEY?.trim()
+if (import.meta.env.DEV && replayIngestKey) {
+	MapleBrowser.init({
+		ingestKey: replayIngestKey,
+		serviceName: "maple-web",
+		endpoint: ingestUrl,
+		environment: import.meta.env.MODE,
+		tracing: { enabled: false },
+		replay: { enabled: true, sampleRate: 1 },
+	})
+}
 
 window.addEventListener("vite:preloadError", (event) => {
 	if (shouldAttemptChunkReload()) {
