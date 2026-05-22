@@ -40,8 +40,6 @@ import {
 /** Fixed left gutter (label column) shared by every row. Matches `left-36`. */
 const LANE_GUTTER = "w-36"
 
-const SPEEDS = [0.5, 1, 2, 4, 8] as const
-
 /** Marker dot colour by action kind (mirrors the old scrubber). */
 const MARKER_STYLES: Record<ActionKind, string> = {
 	click: "bg-amber-400",
@@ -94,61 +92,36 @@ export function ReplayEditorTimeline({ traceIds }: { traceIds: ReadonlyArray<str
 // --- Transport ------------------------------------------------------------
 
 function TransportRow({ player }: { player: ReplayPlayerContextValue }) {
-	const { isPlaying, finished, displayCurrentMs, displayTotalMs, speed, skipInactive } = player
+	const { isPlaying, finished, displayCurrentMs, displayTotalMs } = player
+	// Slim header: the speed / skip-idle / fullscreen controls live in the player
+	// above. This strip just labels the timeline and mirrors play + clock so the
+	// view is usable on its own while you're scanning traces.
 	return (
-		<div className="flex items-center gap-3 border-b border-border bg-muted/30 px-3 py-2.5">
+		<div className="flex items-center gap-3 border-b border-border bg-muted/30 px-3 py-2">
 			<button
 				type="button"
 				onClick={player.togglePlay}
 				aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
-				className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
+				className="grid size-7 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
 			>
 				{finished ? (
-					<ArrowPathIcon className="size-4" />
+					<ArrowPathIcon className="size-3.5" />
 				) : isPlaying ? (
-					<MediaPauseIcon className="size-4" />
+					<MediaPauseIcon className="size-3.5" />
 				) : (
-					<MediaPlayIcon className="size-4 translate-x-px" />
+					<MediaPlayIcon className="size-3.5 translate-x-px" />
 				)}
 			</button>
 
-			<div className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+			<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+				Timeline
+			</span>
+
+			<div className="ml-auto flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
 				<span className="text-foreground">{formatClock(displayCurrentMs)}</span>
 				<span className="opacity-50">/</span>
 				<span>{formatClock(displayTotalMs)}</span>
 			</div>
-
-			<div className="ml-auto flex shrink-0 items-center rounded-md bg-muted p-0.5">
-				{SPEEDS.map((s) => (
-					<button
-						key={s}
-						type="button"
-						onClick={() => player.changeSpeed(s)}
-						className={cn(
-							"rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors",
-							speed === s
-								? "bg-background text-foreground shadow-sm"
-								: "text-muted-foreground hover:text-foreground",
-						)}
-					>
-						{s}×
-					</button>
-				))}
-			</div>
-
-			<button
-				type="button"
-				onClick={player.toggleSkipInactive}
-				aria-pressed={skipInactive}
-				className={cn(
-					"shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-					skipInactive
-						? "bg-primary/10 text-primary"
-						: "text-muted-foreground hover:bg-muted hover:text-foreground",
-				)}
-			>
-				Skip idle
-			</button>
 		</div>
 	)
 }

@@ -1,14 +1,32 @@
 import * as React from "react"
 import "@rrweb/replay/dist/style.css"
 import { cn } from "@maple/ui/utils"
-import { errorMessage, useReplayPlayer } from "./replay-player-context"
+import {
+	type ActionKind,
+	type DisplayMarker,
+	type IdleBand,
+	errorMessage,
+	useReplayPlayer,
+} from "./replay-player-context"
 import {
 	GlobeIcon,
 	ArrowPathIcon,
 	EyeIcon,
+	MediaPlayIcon,
+	MediaPauseIcon,
 	MaximizeIcon,
 	MinimizeIcon,
 } from "@/components/icons"
+
+const SPEEDS = [0.5, 1, 2, 4, 8] as const
+
+/** Marker dot colour by action kind. */
+const MARKER_STYLES: Record<ActionKind, string> = {
+	click: "bg-amber-400",
+	input: "bg-sky-400",
+	scroll: "bg-violet-400",
+	nav: "bg-emerald-400",
+}
 
 /** Pretty host + path for the faux browser address bar. */
 function prettyUrl(url: string | undefined): string {
@@ -21,16 +39,23 @@ function prettyUrl(url: string | undefined): string {
 	}
 }
 
+function formatClock(ms: number): string {
+	if (!Number.isFinite(ms) || ms < 0) ms = 0
+	const totalSeconds = Math.floor(ms / 1000)
+	const minutes = Math.floor(totalSeconds / 60)
+	const seconds = totalSeconds % 60
+	return `${minutes}:${seconds.toString().padStart(2, "0")}`
+}
+
 /**
- * The replay video surface: an rrweb-rebuilt page inside faux-browser chrome
- * (traffic lights + address bar + fullscreen). The engine and all transport
- * state live in `ReplayPlayerProvider`; this component only renders the mount
- * point (the engine attaches to `mountRef`) and the per-status messaging. The
- * transport controls + scrubber live in `<ReplayEditorTimeline>` below.
+ * The replay video surface + its own transport — a self-contained "normal"
+ * player: rrweb-rebuilt page inside faux-browser chrome, with play/scrub/speed
+ * controls below. The engine and all transport state live in
+ * `ReplayPlayerProvider`, so this player and the `<ReplayEditorTimeline>` strip
+ * below it read and drive the same playhead.
  */
 export function ReplaySurface({ url }: { url?: string }) {
-	const { status, error, figureRef, surfaceRef, mountRef, isFullscreen, toggleFullscreen } =
-		useReplayPlayer()
+	const { status, error, figureRef, surfaceRef, mountRef, isFullscreen } = useReplayPlayer()
 
 	return (
 		<figure
@@ -51,18 +76,6 @@ export function ReplaySurface({ url }: { url?: string }) {
 					<GlobeIcon className="size-3.5 shrink-0 opacity-70" />
 					<span className="truncate font-mono">{prettyUrl(url)}</span>
 				</div>
-				<button
-					type="button"
-					onClick={toggleFullscreen}
-					aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-					className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-				>
-					{isFullscreen ? (
-						<MinimizeIcon className="size-4" />
-					) : (
-						<MaximizeIcon className="size-4" />
-					)}
-				</button>
 			</div>
 
 			{/* Surface — the engine mounts into the inner div. Messages overlay when
@@ -93,7 +106,210 @@ export function ReplaySurface({ url }: { url?: string }) {
 					</div>
 				)}
 			</div>
+
+			<ReplayControls />
 		</figure>
+	)
+}
+
+function ReplayControls() {
+	const {
+		isPlaying,
+		finished,
+		displayCurrentMs,
+		displayTotalMs,
+		markers,
+		idleBands,
+		speed,
+		skipInactive,
+		isFullscreen,
+		togglePlay,
+		seekDisplay,
+		changeSpeed,
+		toggleSkipInactive,
+		toggleFullscreen,
+	} = useReplayPlayer()
+
+	return (
+		<div className="flex items-center gap-3 border-t border-border bg-card px-3 py-2.5">
+			<button
+				type="button"
+				onClick={togglePlay}
+				aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+				className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
+			>
+				{finished ? (
+					<ArrowPathIcon className="size-4" />
+				) : isPlaying ? (
+					<MediaPauseIcon className="size-4" />
+				) : (
+					<MediaPlayIcon className="size-4 translate-x-px" />
+				)}
+			</button>
+
+			<Scrubber
+				currentMs={displayCurrentMs}
+				totalMs={displayTotalMs}
+				markers={markers}
+				idleBands={idleBands}
+				onSeek={seekDisplay}
+			/>
+
+			<div className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+				<span className="text-foreground">{formatClock(displayCurrentMs)}</span>
+				<span className="opacity-50">/</span>
+				<span>{formatClock(displayTotalMs)}</span>
+			</div>
+
+			<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
+				{SPEEDS.map((s) => (
+					<button
+						key={s}
+						type="button"
+						onClick={() => changeSpeed(s)}
+						className={cn(
+							"rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors",
+							speed === s
+								? "bg-background text-foreground shadow-sm"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{s}×
+					</button>
+				))}
+			</div>
+
+			<button
+				type="button"
+				onClick={toggleSkipInactive}
+				aria-pressed={skipInactive}
+				className={cn(
+					"shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+					skipInactive
+						? "bg-primary/10 text-primary"
+						: "text-muted-foreground hover:bg-muted hover:text-foreground",
+				)}
+			>
+				Skip idle
+			</button>
+
+			<button
+				type="button"
+				onClick={toggleFullscreen}
+				aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+				className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			>
+				{isFullscreen ? (
+					<MinimizeIcon className="size-4" />
+				) : (
+					<MaximizeIcon className="size-4" />
+				)}
+			</button>
+		</div>
+	)
+}
+
+function Scrubber({
+	currentMs,
+	totalMs,
+	markers,
+	idleBands,
+	onSeek,
+}: {
+	currentMs: number
+	totalMs: number
+	/** Action markers + idle bands, already in the same (display) ms space as totalMs. */
+	markers: DisplayMarker[]
+	idleBands: IdleBand[]
+	onSeek: (ms: number) => void
+}) {
+	const trackRef = React.useRef<HTMLDivElement | null>(null)
+	const [dragging, setDragging] = React.useState(false)
+	const pct = totalMs > 0 ? Math.min(100, (currentMs / totalMs) * 100) : 0
+
+	const msFromClientX = React.useCallback(
+		(clientX: number) => {
+			const el = trackRef.current
+			if (!el) return 0
+			const rect = el.getBoundingClientRect()
+			const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0
+			return Math.max(0, Math.min(1, ratio)) * totalMs
+		},
+		[totalMs],
+	)
+
+	return (
+		<div
+			ref={trackRef}
+			role="slider"
+			aria-label="Seek"
+			aria-valuemin={0}
+			aria-valuemax={Math.round(totalMs)}
+			aria-valuenow={Math.round(currentMs)}
+			tabIndex={0}
+			onPointerDown={(e) => {
+				e.currentTarget.setPointerCapture(e.pointerId)
+				setDragging(true)
+				onSeek(msFromClientX(e.clientX))
+			}}
+			onPointerMove={(e) => {
+				if (dragging) onSeek(msFromClientX(e.clientX))
+			}}
+			onPointerUp={(e) => {
+				e.currentTarget.releasePointerCapture(e.pointerId)
+				setDragging(false)
+			}}
+			className="group relative h-6 flex-1 cursor-pointer touch-none select-none"
+		>
+			{/* Track */}
+			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
+				{/* Idle bands — greyed/hatched, under the progress fill */}
+				{totalMs > 0 &&
+					idleBands.map((band, i) => {
+						const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
+						const widthPct = Math.max(
+							0,
+							Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
+						)
+						return (
+							<span
+								key={`idle-${band.start}-${i}`}
+								className="absolute inset-y-0 bg-foreground/25"
+								style={{
+									left: `${leftPct}%`,
+									width: `${widthPct}%`,
+									minWidth: 3,
+									backgroundImage:
+										"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
+								}}
+								title="Idle"
+							/>
+						)
+					})}
+				<div className="relative h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+			</div>
+			{/* Action markers */}
+			{totalMs > 0 &&
+				markers.map((m, i) => {
+					const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
+					return (
+						<span
+							key={`${m.kind}-${m.ms}-${i}`}
+							className={cn(
+								"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+								MARKER_STYLES[m.kind],
+							)}
+							style={{ left: `${markerPct}%` }}
+							title={m.kind}
+						/>
+					)
+				})}
+			{/* Thumb */}
+			<div
+				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+				style={{ left: `${pct}%`, opacity: dragging ? 1 : undefined }}
+			/>
+		</div>
 	)
 }
 

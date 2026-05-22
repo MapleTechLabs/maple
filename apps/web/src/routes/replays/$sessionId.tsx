@@ -15,11 +15,6 @@ import {
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
-	ResizablePanelGroup,
-	ResizablePanel,
-	ResizableHandle,
-} from "@maple/ui/components/ui/resizable"
-import {
 	GlobeIcon,
 	ComputerIcon,
 	ClockIcon,
@@ -128,13 +123,11 @@ function ReplayDetailPage() {
 					</div>
 
 					<ReplayPlayerProvider sessionId={sessionId}>
-						<ResizablePanelGroup orientation="horizontal" className="min-h-[60vh] gap-4">
-						<ResizablePanel defaultSize={66} minSize={45}>
+						{/* Content-sized split: player + details flow with the page (one outer
+						    scroll), so neither panel gets its own scrollbar. */}
+						<div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.9fr_1fr]">
 							<ReplaySurface url={session.urlInitial} />
-						</ResizablePanel>
-						<ResizableHandle withHandle />
-						<ResizablePanel defaultSize={34} minSize={26}>
-							<div className="space-y-5 pl-1">
+							<div className="space-y-5">
 								{/* Activity stat tiles */}
 								<div className="grid grid-cols-2 gap-2.5">
 									<StatTile
@@ -186,10 +179,8 @@ function ReplayDetailPage() {
 										</DetailRow>
 									</dl>
 								</section>
-
 							</div>
-						</ResizablePanel>
-					</ResizablePanelGroup>
+						</div>
 
 						{/* Synced trace timeline — recording activity + correlated traces on a
 						    shared playhead. Replaces the old flat correlated-traces list. */}
