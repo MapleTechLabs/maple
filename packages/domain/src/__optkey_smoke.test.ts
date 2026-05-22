@@ -5,7 +5,7 @@ import { UpdateOnboardingStateRequest } from "./http/onboarding.ts"
 import { UpdateScrapeTargetRequest } from "./http/scrape-targets.ts"
 import { CreateApiKeyRequest } from "./http/api-keys.ts"
 
-const dec = <A, I>(s: Schema.Schema<A, I>, v: unknown) => {
+const dec = <A>(s: Schema.Schema<A>, v: unknown) => {
   try { return { ok: true as const, val: Schema.decodeUnknownSync(s as any)(v) } }
   catch (e) { return { ok: false as const, err: String(e).split("\n")[0] } }
 }
