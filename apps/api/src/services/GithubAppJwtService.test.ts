@@ -42,7 +42,7 @@ describe("GithubAppJwtService", () => {
 			["appSlug", { appSlug: undefined }],
 			["privateKeyPem", { privateKeyPem: undefined }],
 			["webhookSecret", { webhookSecret: undefined }],
-		])("fails with IntegrationsValidationError when %s is missing", async (_label, override) => {
+		])("fails with GithubValidationError when %s is missing", async (_label, override) => {
 			const exit = await Effect.runPromiseExit(
 				Effect.gen(function* () {
 					const svc = yield* GithubAppJwtService

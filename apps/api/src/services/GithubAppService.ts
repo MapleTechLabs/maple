@@ -10,10 +10,10 @@ import {
 	type GithubRepositoryRow,
 } from "@maple/db"
 import {
-	IntegrationsNotConnectedError,
-	IntegrationsPersistenceError,
-	IntegrationsUpstreamError,
-	IntegrationsValidationError,
+	GithubNotConnectedError,
+	GithubPersistenceError,
+	GithubUpstreamError,
+	GithubValidationError,
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
@@ -29,9 +29,9 @@ import {
 const GITHUB_PROVIDER = "github"
 const STATE_TTL_MS = 10 * 60_000
 
-const toPersistenceError = (cause: unknown) =>
-	new IntegrationsPersistenceError({
-		message: cause instanceof Error ? cause.message : "GitHub integration database error",
+const toPersistenceError = (error: unknown) =>
+	new GithubPersistenceError({
+		message: error instanceof Error ? error.message : "GitHub integration database error",
 	})
 
 export interface GithubInstallationListItem {
@@ -49,7 +49,7 @@ export interface GithubAppServiceShape {
 			readonly missingEnv: ReadonlyArray<string>
 			readonly installations: number
 		},
-		IntegrationsPersistenceError
+		GithubPersistenceError
 	>
 	readonly startInstall: (params: {
 		readonly orgId: OrgId
@@ -58,23 +58,23 @@ export interface GithubAppServiceShape {
 		readonly returnTo?: string
 	}) => Effect.Effect<
 		{ readonly redirectUrl: string; readonly state: string },
-		IntegrationsValidationError | IntegrationsPersistenceError
+		GithubValidationError | GithubPersistenceError
 	>
 	readonly consumeState: (
 		state: string,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly userId: UserId; readonly returnTo: string | null },
-		IntegrationsValidationError | IntegrationsPersistenceError
+		GithubValidationError | GithubPersistenceError
 	>
 	readonly listInstallations: (
 		orgId: OrgId,
-	) => Effect.Effect<ReadonlyArray<GithubInstallationListItem>, IntegrationsPersistenceError>
+	) => Effect.Effect<ReadonlyArray<GithubInstallationListItem>, GithubPersistenceError>
 	readonly listRepositories: (
 		orgId: OrgId,
 		installationDbId: string,
 	) => Effect.Effect<
 		ReadonlyArray<GithubRepositoryRow & { readonly commitCount: number }>,
-		IntegrationsNotConnectedError | IntegrationsPersistenceError
+		GithubNotConnectedError | GithubPersistenceError
 	>
 	readonly setRepoSyncEnabled: (params: {
 		readonly orgId: OrgId
@@ -82,21 +82,21 @@ export interface GithubAppServiceShape {
 		readonly enabled: boolean
 	}) => Effect.Effect<
 		{ readonly repositoryId: string; readonly syncEnabled: boolean },
-		IntegrationsNotConnectedError | IntegrationsPersistenceError
+		GithubNotConnectedError | GithubPersistenceError
 	>
 	readonly disconnectInstallation: (params: {
 		readonly orgId: OrgId
 		readonly installationId: string
 	}) => Effect.Effect<
 		{ readonly disconnected: boolean; readonly uninstallUrl: string | null },
-		IntegrationsNotConnectedError | IntegrationsPersistenceError | IntegrationsUpstreamError
+		GithubNotConnectedError | GithubPersistenceError | GithubUpstreamError
 	>
 	readonly findRepoForBackfill: (
 		orgId: OrgId,
 		repositoryId: string,
 	) => Effect.Effect<
 		GithubRepositoryRow,
-		IntegrationsNotConnectedError | IntegrationsPersistenceError
+		GithubNotConnectedError | GithubPersistenceError
 	>
 }
 
@@ -166,7 +166,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				const row = rows[0]
 				if (!row || row.provider !== GITHUB_PROVIDER) {
 					return yield* Effect.fail(
-						new IntegrationsValidationError({
+						new GithubValidationError({
 							message: "GitHub install state not recognized — restart the connect flow",
 						}),
 					)
@@ -176,7 +176,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 						db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)),
 					)
 					return yield* Effect.fail(
-						new IntegrationsValidationError({
+						new GithubValidationError({
 							message: "GitHub install state expired — restart the connect flow",
 						}),
 					)
@@ -235,7 +235,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				)
 				if (!installationRows[0]) {
 					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
+						new GithubNotConnectedError({
 							message: "Installation not found for this org",
 						}),
 					)
@@ -282,7 +282,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				)
 				if (!rows[0]) {
 					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
+						new GithubNotConnectedError({
 							message: "Repository not found for this org",
 						}),
 					)
@@ -313,7 +313,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 					const installation = rows[0]
 					if (!installation) {
 						return yield* Effect.fail(
-							new IntegrationsNotConnectedError({
+							new GithubNotConnectedError({
 								message: "Installation not found for this org",
 							}),
 						)
@@ -417,7 +417,7 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				const repo = rows[0]
 				if (!repo) {
 					return yield* Effect.fail(
-						new IntegrationsNotConnectedError({
+						new GithubNotConnectedError({
 							message: "Repository not found for this org",
 						}),
 					)

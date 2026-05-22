@@ -1,6 +1,6 @@
 import {
-	IntegrationsUpstreamError,
-	IntegrationsValidationError,
+	GithubUpstreamError,
+	GithubValidationError,
 } from "@maple/domain/http"
 import { Context, Effect, Layer, Schema } from "effect"
 import { GithubAppJwtService } from "./GithubAppJwtService"
@@ -103,7 +103,7 @@ const decodeInstallation = Schema.decodeUnknownEffect(GithubInstallationSchema)
 const decodeSearchCommits = Schema.decodeUnknownEffect(SearchCommitsResponseSchema)
 
 const toUpstreamError = (message: string, status?: number) =>
-	new IntegrationsUpstreamError({ message, ...(status === undefined ? {} : { status }) })
+	new GithubUpstreamError({ message, ...(status === undefined ? {} : { status }) })
 
 const parseNextLink = (linkHeader: string | null): string | null => {
 	if (!linkHeader) return null
@@ -153,7 +153,7 @@ export interface GithubInstallationClientShape {
 		installationId: number,
 	) => Effect.Effect<
 		ReadonlyArray<GithubRepo>,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	readonly listCommitsPaginated: (
 		installationId: number,
@@ -165,7 +165,7 @@ export interface GithubInstallationClientShape {
 			readonly cursor?: string | null
 			readonly perPage?: number
 		},
-	) => Effect.Effect<CommitPage, IntegrationsValidationError | IntegrationsUpstreamError>
+	) => Effect.Effect<CommitPage, GithubValidationError | GithubUpstreamError>
 	readonly getCommit: (
 		installationId: number,
 		owner: string,
@@ -173,7 +173,7 @@ export interface GithubInstallationClientShape {
 		sha: string,
 	) => Effect.Effect<
 		GithubCommit | null,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	readonly listBranchesForCommit: (
 		installationId: number,
@@ -182,7 +182,7 @@ export interface GithubInstallationClientShape {
 		sha: string,
 	) => Effect.Effect<
 		ReadonlyArray<string>,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	readonly compareRefs: (
 		installationId: number,
@@ -192,13 +192,13 @@ export interface GithubInstallationClientShape {
 		head: string,
 	) => Effect.Effect<
 		ReadonlyArray<GithubCommit>,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	readonly getInstallationMetadata: (
 		installationId: number,
 	) => Effect.Effect<
 		GithubInstallation,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	/**
 	 * Search the installation's accessible repos for a commit by SHA. Single
@@ -214,7 +214,7 @@ export interface GithubInstallationClientShape {
 		sha: string,
 	) => Effect.Effect<
 		SearchCommitResult | null,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 }
 

@@ -9,7 +9,7 @@ import {
 	GithubRepositorySummary,
 	GithubSetRepoSyncResponse,
 	GithubStartConnectResponse,
-	IntegrationsForbiddenError,
+	GithubForbiddenError,
 	MapleApi,
 } from "@maple/domain/http"
 import { Effect } from "effect"
@@ -26,7 +26,7 @@ const requireAdmin = (roles: ReadonlyArray<string>) =>
 	Effect.gen(function* () {
 		if (roles.some((role) => ADMIN_ROLES.has(role))) return
 		yield* Effect.fail(
-			new IntegrationsForbiddenError({
+			new GithubForbiddenError({
 				message: "Only org admins can manage integrations",
 			}),
 		)

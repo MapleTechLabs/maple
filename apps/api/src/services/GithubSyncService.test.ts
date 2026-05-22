@@ -58,7 +58,7 @@ const makeMockClient = (stub: ClientStub) =>
 				stub.getInstallationMetadata
 					? Effect.succeed(stub.getInstallationMetadata(id))
 					: Effect.fail({
-							_tag: "@maple/http/errors/IntegrationsUpstreamError",
+							_tag: "@maple/http/errors/GithubUpstreamError",
 							message: "not mocked",
 						} as never),
 			listBranchesForCommit: (id, owner, name, sha) =>

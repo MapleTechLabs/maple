@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Schedule, Schema } from "effect"
+import { Context, Effect, Layer, Schedule } from "effect"
 import { encodeGithubSyncJob, type GithubSyncJob } from "@maple/domain/queues/github-jobs"
 import { GithubSyncQueueBinding } from "./GithubSyncQueueBinding"
 import { GithubSyncQueueEnqueueError } from "@maple/domain/http"
@@ -7,10 +7,10 @@ export interface GithubSyncQueueShape {
 	readonly enqueue: (
 		job: GithubSyncJob,
 		options?: { delaySeconds?: number },
-	) => Effect.Effect<void, GithubSyncQueueEnqueueError | Schema.SchemaError>
+	) => Effect.Effect<void, GithubSyncQueueEnqueueError>
 	readonly enqueueBatch: (
 		jobs: ReadonlyArray<GithubSyncJob>,
-	) => Effect.Effect<void, GithubSyncQueueEnqueueError | Schema.SchemaError>
+	) => Effect.Effect<void, GithubSyncQueueEnqueueError>
 }
 
 export class GithubSyncQueue extends Context.Service<GithubSyncQueue, GithubSyncQueueShape>()(
@@ -23,12 +23,14 @@ export class GithubSyncQueue extends Context.Service<GithubSyncQueue, GithubSync
 				job: GithubSyncJob,
 				options?: { delaySeconds?: number },
 			) {
-				// Let the error bubble up here - schema validation failures are real coding errors,
-				// no external dependency should cause this.
+				// Schema-encode failures are coding bugs (job shape drifted from the
+				// codec), not runtime conditions a caller can recover from. Log and
+				// promote to defect so they don't pollute the typed error channel.
 				const encoded = yield* encodeGithubSyncJob(job).pipe(
 					Effect.tapError((e) =>
 						Effect.logError(`[GithubSyncQueue] failed to encode ${job._tag}`, e),
 					),
+					Effect.orDie,
 				)
 
 				yield* Effect.tryPromise({
@@ -58,6 +60,7 @@ export class GithubSyncQueue extends Context.Service<GithubSyncQueue, GithubSync
 
 				const encoded = yield* Effect.forEach(jobs, (j) => encodeGithubSyncJob(j)).pipe(
 					Effect.tapError((e) => Effect.logError("[GithubSyncQueue] failed to encode batch", e)),
+					Effect.orDie,
 				)
 
 				yield* Effect.tryPromise({

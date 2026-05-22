@@ -1,7 +1,7 @@
 import { createPrivateKey, createSign } from "node:crypto"
 import {
-	IntegrationsUpstreamError,
-	IntegrationsValidationError,
+	GithubUpstreamError,
+	GithubValidationError,
 } from "@maple/domain/http"
 import { Context, Effect, Layer, Option, Redacted } from "effect"
 import { Env, type EnvShape } from "./Env"
@@ -32,15 +32,15 @@ interface ResolvedGithubAppConfig {
 const requireSome = <A>(
 	opt: Option.Option<A>,
 	message: string,
-): Effect.Effect<A, IntegrationsValidationError> =>
+): Effect.Effect<A, GithubValidationError> =>
 	Option.match(opt, {
-		onNone: () => Effect.fail(new IntegrationsValidationError({ message })),
+		onNone: () => Effect.fail(new GithubValidationError({ message })),
 		onSome: (value) => Effect.succeed(value),
 	})
 
 export const resolveGithubAppConfig = (
 	env: EnvShape,
-): Effect.Effect<ResolvedGithubAppConfig, IntegrationsValidationError> =>
+): Effect.Effect<ResolvedGithubAppConfig, GithubValidationError> =>
 	Effect.gen(function* () {
 		const appId = yield* requireSome(
 			env.GITHUB_APP_ID,
@@ -83,23 +83,23 @@ export interface GithubInstallationToken {
 }
 
 export interface GithubAppJwtServiceShape {
-	readonly resolveConfig: Effect.Effect<ResolvedGithubAppConfig, IntegrationsValidationError>
-	readonly mintAppJwt: Effect.Effect<string, IntegrationsValidationError | IntegrationsUpstreamError>
+	readonly resolveConfig: Effect.Effect<ResolvedGithubAppConfig, GithubValidationError>
+	readonly mintAppJwt: Effect.Effect<string, GithubValidationError | GithubUpstreamError>
 	readonly getInstallationToken: (
 		installationId: number,
 	) => Effect.Effect<
 		GithubInstallationToken,
-		IntegrationsValidationError | IntegrationsUpstreamError
+		GithubValidationError | GithubUpstreamError
 	>
 	readonly invalidateInstallationToken: (installationId: number) => Effect.Effect<void>
 	readonly verifyWebhookSignature: (
 		signatureHeader: string | null | undefined,
 		body: ArrayBuffer,
-	) => Effect.Effect<boolean, IntegrationsValidationError>
+	) => Effect.Effect<boolean, GithubValidationError>
 }
 
 const toUpstreamError = (message: string, status?: number) =>
-	new IntegrationsUpstreamError({ message, ...(status === undefined ? {} : { status }) })
+	new GithubUpstreamError({ message, ...(status === undefined ? {} : { status }) })
 
 export class GithubAppJwtService extends Context.Service<
 	GithubAppJwtService,
@@ -225,7 +225,7 @@ export class GithubAppJwtService extends Context.Service<
 						return out
 					},
 					catch: () =>
-						new IntegrationsValidationError({ message: "Malformed GitHub webhook signature" }),
+						new GithubValidationError({ message: "Malformed GitHub webhook signature" }),
 				})
 
 				const key = yield* Effect.tryPromise({
@@ -238,7 +238,7 @@ export class GithubAppJwtService extends Context.Service<
 							["verify", "sign"],
 						),
 					catch: () =>
-						new IntegrationsValidationError({
+						new GithubValidationError({
 							message: "Failed to import webhook secret",
 						}),
 				})
@@ -246,7 +246,7 @@ export class GithubAppJwtService extends Context.Service<
 				return yield* Effect.tryPromise({
 					try: () => crypto.subtle.verify("HMAC", key, providedBytes, body),
 					catch: () =>
-						new IntegrationsValidationError({
+						new GithubValidationError({
 							message: "Failed to verify webhook signature",
 						}),
 				})

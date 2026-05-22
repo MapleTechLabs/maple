@@ -11,9 +11,9 @@ import {
 	type GithubRepositoryRow,
 } from "@maple/db"
 import {
-	IntegrationsPersistenceError,
-	IntegrationsUpstreamError,
-	IntegrationsValidationError,
+	GithubPersistenceError,
+	GithubUpstreamError,
+	GithubValidationError,
 	type OrgId,
 } from "@maple/domain/http"
 import { and, eq, inArray, sql } from "drizzle-orm"
@@ -25,9 +25,9 @@ import { GithubInstallationClient, type GithubCommit } from "./GithubInstallatio
 const RESOLVE_MAX_ATTEMPTS = 3
 const SHA_REGEX = /^[0-9a-f]{7,40}$/i
 
-const toPersistenceError = (cause: unknown) =>
-	new IntegrationsPersistenceError({
-		message: cause instanceof Error ? cause.message : "GitHub sync database error",
+const toPersistenceError = (error: unknown) =>
+	new GithubPersistenceError({
+		message: error instanceof Error ? error.message : "GitHub sync database error",
 	})
 
 const shortSha = (sha: string) => sha.slice(0, 7)
@@ -136,7 +136,7 @@ export interface GithubSyncServiceShape {
 		readonly cursor: string | null
 	}) => Effect.Effect<
 		SyncBackfillProgress,
-		IntegrationsPersistenceError | IntegrationsUpstreamError | IntegrationsValidationError
+		GithubPersistenceError | GithubUpstreamError | GithubValidationError
 	>
 	readonly runWebhookPush: (params: {
 		readonly orgId: string
@@ -153,21 +153,21 @@ export interface GithubSyncServiceShape {
 		readonly commitShas?: ReadonlyArray<string>
 	}) => Effect.Effect<
 		{ readonly written: number },
-		IntegrationsPersistenceError | IntegrationsUpstreamError | IntegrationsValidationError
+		GithubPersistenceError | GithubUpstreamError | GithubValidationError
 	>
 	readonly runResolveUnknownSha: (params: {
 		readonly orgId: string
 		readonly sha: string
 	}) => Effect.Effect<
 		{ readonly resolved: boolean },
-		IntegrationsPersistenceError | IntegrationsUpstreamError | IntegrationsValidationError
+		GithubPersistenceError | GithubUpstreamError | GithubValidationError
 	>
 	readonly runReconcile: (params: {
 		readonly orgId: string
 		readonly installationId: number
 	}) => Effect.Effect<
 		{ readonly repositoryCount: number },
-		IntegrationsPersistenceError | IntegrationsUpstreamError | IntegrationsValidationError
+		GithubPersistenceError | GithubUpstreamError | GithubValidationError
 	>
 }
 

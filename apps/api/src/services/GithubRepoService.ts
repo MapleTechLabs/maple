@@ -2,7 +2,7 @@ import { Array, Context, Effect, Layer, pipe } from "effect"
 import { Database, type DatabaseClient } from "./DatabaseLive"
 import { githubCommits, githubRepositories } from "@maple/db"
 import { and, eq, inArray } from "drizzle-orm"
-import { IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
+import { GithubPersistenceError, OrgId } from "@maple/domain/http"
 
 type FindCommitsByShasProps = {
 	orgId: OrgId
@@ -27,7 +27,7 @@ export class GithubRepoService extends Context.Service<GithubRepoService>()("Git
 			database.execute(fn).pipe(
 				Effect.mapError(
 					(error) =>
-						new IntegrationsPersistenceError({
+						new GithubPersistenceError({
 							message: error instanceof Error ? error.message : defaultErrorMessage,
 						}),
 				),

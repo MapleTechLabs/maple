@@ -34,6 +34,7 @@ import { ErrorsService } from "./services/ErrorsService"
 import { GithubAppJwtService } from "./services/GithubAppJwtService"
 import { GithubAppService } from "./services/GithubAppService"
 import { GithubInstallationClient } from "./services/GithubInstallationClient"
+import { GithubRepoService } from "./services/GithubRepoService"
 import { GithubSyncQueue } from "./services/GithubSyncQueue"
 import { GithubSyncService } from "./services/GithubSyncService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
@@ -81,6 +82,7 @@ export const CoreServicesLive = Layer.mergeAll(
 	GithubAppJwtService.layer,
 	GithubInstallationClient.layer,
 	GithubAppService.layer,
+	GithubRepoService.layer,
 	GithubSyncQueue.layer,
 	GithubSyncService.layer,
 	HazelOAuthService.layer,

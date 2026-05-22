@@ -1,13 +1,69 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { Authorization } from "./current-tenant"
-import {
-	IntegrationsForbiddenError,
-	IntegrationsNotConnectedError,
-	IntegrationsPersistenceError,
-	IntegrationsUpstreamError,
-	IntegrationsValidationError,
-} from "./integrations"
+
+// --- Errors ---
+
+export class GithubForbiddenError extends Schema.TaggedErrorClass<GithubForbiddenError>()(
+	"@maple/http/errors/GithubForbiddenError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 403 },
+) {}
+
+export class GithubValidationError extends Schema.TaggedErrorClass<GithubValidationError>()(
+	"@maple/http/errors/GithubValidationError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 400 },
+) {}
+
+export class GithubNotConnectedError extends Schema.TaggedErrorClass<GithubNotConnectedError>()(
+	"@maple/http/errors/GithubNotConnectedError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 409 },
+) {}
+
+export class GithubUpstreamError extends Schema.TaggedErrorClass<GithubUpstreamError>()(
+	"@maple/http/errors/GithubUpstreamError",
+	{
+		message: Schema.String,
+		status: Schema.optional(Schema.Number),
+	},
+	{ httpApiStatus: 502 },
+) {}
+
+export class GithubPersistenceError extends Schema.TaggedErrorClass<GithubPersistenceError>()(
+	"@maple/http/errors/GithubPersistenceError",
+	{
+		message: Schema.String,
+	},
+	{ httpApiStatus: 503 },
+) {}
+
+// Raised when publishing to the GitHub sync queue fails. The underlying
+// Cloudflare Queues error rides in `cause` via Schema.Defect so the original
+// failure propagates end-to-end (service → handler → wire → client) without
+// stringifying through an `unknown`.
+export class GithubSyncQueueEnqueueError extends Schema.TaggedErrorClass<GithubSyncQueueEnqueueError>()(
+	"@maple/http/errors/GithubSyncQueueEnqueueError",
+	{
+		message: Schema.String,
+		jobs: Schema.Array(Schema.String),
+		cause: Schema.optionalKey(Schema.Defect),
+	},
+	{ httpApiStatus: 502 },
+) {}
+
+// --- Shared primitives ---
+
+export const Sha = Schema.String.pipe(Schema.check(Schema.isPattern(/^[0-9a-f]{7,40}$/i)))
+
+// --- GitHub integration types ---
 
 export const GithubAccountType = Schema.Literals(["User", "Organization"]).annotate({
 	identifier: "@maple/GithubAccountType",
@@ -118,28 +174,71 @@ export class GithubDisconnectResponse extends Schema.Class<GithubDisconnectRespo
 	uninstallUrl: Schema.NullOr(Schema.String),
 }) {}
 
+// --- Commits feature types ---
+
+export class CommitAuthor extends Schema.Class<CommitAuthor>("CommitAuthor")({
+	login: Schema.NullOr(Schema.String),
+	name: Schema.NullOr(Schema.String),
+	email: Schema.NullOr(Schema.String),
+	avatarUrl: Schema.NullOr(Schema.String),
+}) {}
+
+export class CommitInfo extends Schema.Class<CommitInfo>("CommitInfo")({
+	sha: Sha,
+	shortSha: Sha,
+	message: Schema.String,
+	htmlUrl: Schema.String,
+	repoOwner: Schema.String,
+	repoName: Schema.String,
+	author: CommitAuthor,
+	committer: CommitAuthor,
+	authoredAt: Schema.Number,
+	committedAt: Schema.Number,
+	branches: Schema.Array(Schema.String),
+	prNumber: Schema.NullOr(Schema.Number),
+}) {}
+
+export class CommitsLookupRequest extends Schema.Class<CommitsLookupRequest>("CommitsLookupRequest")({
+	shas: Schema.Array(Sha),
+}) {}
+
+export class CommitsLookupEntry extends Schema.Class<CommitsLookupEntry>("CommitsLookupEntry")({
+	sha: Sha,
+	commit: Schema.NullOr(CommitInfo),
+}) {}
+
+export class CommitsLookupResponse extends Schema.Class<CommitsLookupResponse>("CommitsLookupResponse")({
+	entries: Schema.Array(CommitsLookupEntry),
+}) {}
+
+export class CommitsResyncRequest extends Schema.Class<CommitsResyncRequest>("CommitsResyncRequest")({
+	sha: Sha,
+}) {}
+
+export class CommitsResyncResponse extends Schema.Class<CommitsResyncResponse>("CommitsResyncResponse")({
+	enqueued: Schema.Boolean,
+}) {}
+
+// --- API groups ---
+
 export class GithubApiGroup extends HttpApiGroup.make("github")
 	.add(
 		HttpApiEndpoint.get("githubStatus", "/status", {
 			success: GithubIntegrationStatus,
-			error: IntegrationsPersistenceError,
+			error: GithubPersistenceError,
 		}),
 	)
 	.add(
 		HttpApiEndpoint.post("githubStart", "/start", {
 			payload: GithubStartConnectRequest,
 			success: GithubStartConnectResponse,
-			error: [
-				IntegrationsForbiddenError,
-				IntegrationsValidationError,
-				IntegrationsPersistenceError,
-			],
+			error: [GithubForbiddenError, GithubValidationError, GithubPersistenceError],
 		}),
 	)
 	.add(
 		HttpApiEndpoint.get("githubListInstallations", "/installations", {
 			success: GithubInstallationsListResponse,
-			error: IntegrationsPersistenceError,
+			error: GithubPersistenceError,
 		}),
 	)
 	.add(
@@ -152,10 +251,10 @@ export class GithubApiGroup extends HttpApiGroup.make("github")
 				},
 				success: GithubRepositoriesListResponse,
 				error: [
-					IntegrationsNotConnectedError,
-					IntegrationsValidationError,
-					IntegrationsUpstreamError,
-					IntegrationsPersistenceError,
+					GithubNotConnectedError,
+					GithubValidationError,
+					GithubUpstreamError,
+					GithubPersistenceError,
 				],
 			},
 		),
@@ -168,10 +267,11 @@ export class GithubApiGroup extends HttpApiGroup.make("github")
 			},
 			success: GithubSetRepoSyncResponse,
 			error: [
-				IntegrationsForbiddenError,
-				IntegrationsValidationError,
-				IntegrationsNotConnectedError,
-				IntegrationsPersistenceError,
+				GithubForbiddenError,
+				GithubValidationError,
+				GithubNotConnectedError,
+				GithubPersistenceError,
+				GithubSyncQueueEnqueueError,
 			],
 		}),
 	)
@@ -182,9 +282,10 @@ export class GithubApiGroup extends HttpApiGroup.make("github")
 			},
 			success: GithubBackfillRepoResponse,
 			error: [
-				IntegrationsForbiddenError,
-				IntegrationsNotConnectedError,
-				IntegrationsPersistenceError,
+				GithubForbiddenError,
+				GithubNotConnectedError,
+				GithubPersistenceError,
+				GithubSyncQueueEnqueueError,
 			],
 		}),
 	)
@@ -195,12 +296,30 @@ export class GithubApiGroup extends HttpApiGroup.make("github")
 			},
 			success: GithubDisconnectResponse,
 			error: [
-				IntegrationsForbiddenError,
-				IntegrationsNotConnectedError,
-				IntegrationsPersistenceError,
-				IntegrationsUpstreamError,
+				GithubForbiddenError,
+				GithubNotConnectedError,
+				GithubPersistenceError,
+				GithubUpstreamError,
 			],
 		}),
 	)
 	.prefix("/api/integrations/github")
+	.middleware(Authorization) {}
+
+export class CommitsApiGroup extends HttpApiGroup.make("commits")
+	.add(
+		HttpApiEndpoint.post("commitsLookupBySha", "/lookup", {
+			payload: CommitsLookupRequest,
+			success: CommitsLookupResponse,
+			error: [GithubValidationError, GithubPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("commitsResync", "/resync", {
+			payload: CommitsResyncRequest,
+			success: CommitsResyncResponse,
+			error: [GithubValidationError, GithubPersistenceError, GithubSyncQueueEnqueueError],
+		}),
+	)
+	.prefix("/api/commits")
 	.middleware(Authorization) {}
