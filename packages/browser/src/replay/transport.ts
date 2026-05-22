@@ -42,6 +42,27 @@ export async function postSessionMeta(
 	})
 }
 
+/** POST distilled session events (NDJSON, one row per event). Best-effort. */
+export async function postSessionEvents(
+	config: ResolvedConfig,
+	rows: ReadonlyArray<Record<string, unknown>>,
+	keepalive = false,
+): Promise<void> {
+	if (rows.length === 0) return
+	const body = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`
+	await fetch(`${config.endpoint}/v1/sessionEvents`, {
+		method: "POST",
+		headers: {
+			Authorization: `Bearer ${config.ingestKey}`,
+			"content-type": "application/x-ndjson",
+		},
+		body,
+		keepalive,
+	}).catch((error) => {
+		warnDropped("events POST", error)
+	})
+}
+
 export interface ChunkMeta {
 	readonly sessionId: string
 	readonly chunkSeq: number

@@ -161,6 +161,67 @@ export class SessionTraceSummariesResponse extends Schema.Class<SessionTraceSumm
 	data: Schema.Array(SessionTraceSummary),
 }) {}
 
+// --- Session transcript (distilled events) ---
+
+export class SessionTranscriptRequest extends Schema.Class<SessionTranscriptRequest>(
+	"SessionTranscriptRequest",
+)({
+	sessionId: SessionId,
+}) {}
+
+export const SessionEventItem = Schema.Struct({
+	timestamp: Schema.String,
+	seq: Schema.Number,
+	type: Schema.String,
+	url: Schema.String,
+	traceId: Schema.String,
+	level: Schema.String,
+	message: Schema.String,
+	targetSelector: Schema.String,
+	targetText: Schema.String,
+	netMethod: Schema.String,
+	netUrl: Schema.String,
+	netStatus: Schema.Number,
+	netDurationMs: Schema.Number,
+	errorStack: Schema.String,
+})
+
+export class SessionTranscriptResponse extends Schema.Class<SessionTranscriptResponse>(
+	"SessionTranscriptResponse",
+)({
+	data: Schema.Array(SessionEventItem),
+}) {}
+
+// --- Search sessions by distilled event ---
+
+export class SearchSessionsRequest extends Schema.Class<SearchSessionsRequest>(
+	"SearchSessionsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	type: Schema.optional(Schema.String),
+	level: Schema.optional(Schema.String),
+	minStatus: Schema.optional(Schema.Number),
+	urlSearch: Schema.optional(Schema.String),
+	messageSearch: Schema.optional(Schema.String),
+	traceId: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
+}) {}
+
+export class SearchSessionsResponse extends Schema.Class<SearchSessionsResponse>(
+	"SearchSessionsResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			sessionId: Schema.String,
+			matchCount: Schema.Number,
+			firstTimestamp: Schema.String,
+			lastTimestamp: Schema.String,
+		}),
+	),
+}) {}
+
 // ---------------------------------------------------------------------------
 // API group
 // ---------------------------------------------------------------------------
@@ -205,6 +266,20 @@ export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")
 		HttpApiEndpoint.post("traceSummaries", "/trace-summaries", {
 			payload: SessionTraceSummariesRequest,
 			success: SessionTraceSummariesResponse,
+			error: sessionReplayEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("sessionTranscript", "/transcript", {
+			payload: SessionTranscriptRequest,
+			success: SessionTranscriptResponse,
+			error: sessionReplayEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("searchSessions", "/search", {
+			payload: SearchSessionsRequest,
+			success: SearchSessionsResponse,
 			error: sessionReplayEndpointErrors,
 		}),
 	)

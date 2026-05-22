@@ -7,10 +7,12 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ReplaySurface } from "@/components/replays/replay-player"
 import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
 import { ReplayEditorTimeline } from "@/components/replays/replay-editor-timeline"
+import { SessionEventsPanel } from "@/components/replays/session-events-panel"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getReplayEventsResultAtom,
 	getReplayResultAtom,
+	getSessionTranscriptResultAtom,
 } from "@/lib/services/atoms/tinybird-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -31,6 +33,7 @@ const detailSearchSchema = Schema.Struct({
 export const Route = effectRoute(createFileRoute("/replays/$sessionId"), ({ params }) => [
 	getReplayResultAtom({ data: { sessionId: params.sessionId } }),
 	getReplayEventsResultAtom({ data: { sessionId: params.sessionId } }),
+	getSessionTranscriptResultAtom({ data: { sessionId: params.sessionId } }),
 ])({
 	component: ReplayDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(detailSearchSchema),
@@ -186,6 +189,11 @@ function ReplayDetailPage() {
 						    shared playhead. Replaces the old flat correlated-traces list. */}
 						<div className="mt-4">
 							<ReplayEditorTimeline traceIds={session.traceIds} />
+						</div>
+
+						{/* Distilled console / network / error stream, clickable to seek. */}
+						<div className="mt-4">
+							<SessionEventsPanel sessionId={sessionId} />
 						</div>
 					</ReplayPlayerProvider>
 				</DashboardLayout>

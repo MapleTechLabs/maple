@@ -2,11 +2,8 @@ import * as React from "react"
 import { Replayer } from "@rrweb/replay"
 import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from "@rrweb/types"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import {
-	getReplayEventsResultAtom,
-	replayChunkEventsAtom,
-	replayChunkEventsKey,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+import { getReplayEventsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { normalizeEvents } from "./replay-events"
 import { buildTimeline, type InactiveInterval, type Timeline } from "./replay-timeline"
 
 // ---------------------------------------------------------------------------
@@ -19,9 +16,24 @@ import { buildTimeline, type InactiveInterval, type Timeline } from "./replay-ti
 // `<ReplaySurface>` and `<ReplayEditorTimeline>` are both consumers.
 // ---------------------------------------------------------------------------
 
-interface ReplayChunkUrl {
+interface ReplayChunk {
 	readonly chunkSeq: number
-	readonly url: string
+	readonly events: string
+}
+
+/** Sort chunks by sequence, parse each chunk's inline rrweb event JSON, and normalize. */
+function decodeChunks(chunks: ReadonlyArray<ReplayChunk>): unknown[] {
+	const ordered = [...chunks].sort((a, b) => a.chunkSeq - b.chunkSeq)
+	const all: unknown[] = []
+	for (const chunk of ordered) {
+		try {
+			const parsed: unknown = JSON.parse(chunk.events)
+			if (Array.isArray(parsed)) all.push(...parsed)
+		} catch {
+			// Skip a malformed chunk rather than failing the whole replay.
+		}
+	}
+	return normalizeEvents(all)
 }
 
 /** A user interaction worth flagging on the scrubber. */
@@ -218,15 +230,11 @@ export function ReplayPlayerProvider({
 	sessionId: string
 	children: React.ReactNode
 }) {
-	// Two stages: signed chunk URLs, then the gunzipped blobs concatenated in order.
+	// Chunks carry their rrweb events inline (read straight from ClickHouse); parse
+	// + concatenate them in order. Memoized on the (referentially stable) result so
+	// deriveMeta/engine memos hold across the player's frequent re-renders.
 	const eventsResult = useAtomValue(getReplayEventsResultAtom({ data: { sessionId } }))
-	const chunks = Result.builder(eventsResult)
-		.onSuccess((events) => events.chunks as ReadonlyArray<ReplayChunkUrl>)
-		.orElse(() => [] as ReadonlyArray<ReplayChunkUrl>)
-	const blobResult = useAtomValue(replayChunkEventsAtom(replayChunkEventsKey(chunks)))
 
-	// Resolve load status + a stable `events` reference (the atom's success value
-	// is referentially stable while unchanged, so deriveMeta/engine memos hold).
 	const { status, error, events } = React.useMemo<{
 		status: ReplayLoadStatus
 		error: unknown
@@ -235,19 +243,14 @@ export function ReplayPlayerProvider({
 		return Result.builder(eventsResult)
 			.onInitial(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS }))
 			.onError((e) => ({ status: "error" as const, error: e, events: EMPTY_EVENTS }))
-			.onSuccess(() =>
-				Result.builder(blobResult)
-					.onInitial(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS }))
-					.onError((e) => ({ status: "error" as const, error: e, events: EMPTY_EVENTS }))
-					.onSuccess((decoded) =>
-						decoded.length >= 2
-							? { status: "ready" as const, error: null, events: decoded as unknown[] }
-							: { status: "empty" as const, error: null, events: EMPTY_EVENTS },
-					)
-					.orElse(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS })),
-			)
+			.onSuccess((result) => {
+				const decoded = decodeChunks(result.chunks as ReadonlyArray<ReplayChunk>)
+				return decoded.length >= 2
+					? { status: "ready" as const, error: null, events: decoded }
+					: { status: "empty" as const, error: null, events: EMPTY_EVENTS }
+			})
 			.orElse(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS }))
-	}, [eventsResult, blobResult])
+	}, [eventsResult])
 
 	const figureRef = React.useRef<HTMLElement | null>(null)
 	const surfaceRef = React.useRef<HTMLDivElement | null>(null)

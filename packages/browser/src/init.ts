@@ -3,6 +3,7 @@ import { getSession, parseUserAgent } from "./session"
 import { setupTracing } from "./tracing"
 import { getObservedTraceIds, publishSessionSink } from "./session-sink"
 import { startRecording, type Recorder } from "./replay/record"
+import { startEventCapture, type EventCapture } from "./replay/events"
 import { postSessionMeta } from "./replay/transport"
 
 export interface MapleBrowserHandle {
@@ -41,16 +42,22 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 
 	const recordReplay = config.replayEnabled && Math.random() < config.replaySampleRate
 	let recorder: Recorder | undefined
+	let events: EventCapture | undefined
 	if (recordReplay) {
 		recorder = startRecording(config, sessionId)
+		// Distilled events (console/network/error/nav/clicks) ride the same
+		// sampling decision as the rrweb recording.
+		events = startEventCapture(config, sessionId)
 		void postSessionMeta(config, sessionMetaRow(config, sessionId, startedAt, 1, "active", null))
-		installLifecycleHandlers(config, sessionId, startedAt, recorder)
+		installLifecycleHandlers(config, sessionId, startedAt, recorder, events)
 	}
 
 	const handle: MapleBrowserHandle = {
 		sessionId,
 		shutdown: async () => {
 			if (recorder) await recorder.flush(true)
+			if (events) await events.flush(true)
+			events?.stop()
 			await shutdownTracing?.()
 			active = undefined
 		},
@@ -64,6 +71,7 @@ function installLifecycleHandlers(
 	sessionId: string,
 	startedAt: Date,
 	recorder: Recorder,
+	events: EventCapture,
 ): void {
 	let finalized = false
 	const finalize = () => {
@@ -72,6 +80,7 @@ function installLifecycleHandlers(
 		// keepalive flush survives unload; the ended-metadata row carries the
 		// observed trace ids for trace↔replay correlation.
 		void recorder.flush(true)
+		void events.flush(true)
 		void postSessionMeta(
 			config,
 			sessionMetaRow(config, sessionId, startedAt, 2, "ended", recorder.getClickCount()),

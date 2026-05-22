@@ -736,7 +736,36 @@ export interface UpdateErrorNotificationPolicyData {
 	severity: string
 }
 
+export interface SearchSessionsData {
+	timeRange: { start: string; end: string }
+	sessions: ReadonlyArray<{
+		sessionId: string
+		matchCount: number
+		firstTimestamp: string
+		lastTimestamp: string
+	}>
+}
+
+export interface GetSessionTranscriptData {
+	sessionId: string
+	events: ReadonlyArray<{
+		timestamp: string
+		type: string
+		url: string
+		traceId: string
+		level: string
+		message: string
+		targetSelector: string
+		netMethod: string
+		netUrl: string
+		netStatus: number
+		netDurationMs: number
+	}>
+}
+
 export type StructuredToolOutput =
+	| { tool: "search_sessions"; data: SearchSessionsData }
+	| { tool: "get_session_transcript"; data: GetSessionTranscriptData }
 	| { tool: "search_traces"; data: SearchTracesData }
 	| { tool: "find_slow_traces"; data: FindSlowTracesData }
 	| { tool: "find_errors"; data: FindErrorsData }

@@ -1408,3 +1408,50 @@ export const sessionReplayEvents = defineDatasource("session_replay_events", {
 })
 
 export type SessionReplayEventsRow = InferRow<typeof sessionReplayEvents>
+
+/**
+ * Distilled session events — structured semantic events (navigation, clicks,
+ * console logs, network requests, errors) captured client-side by the
+ * `@maple/browser` SDK and ingested via `POST /v1/sessionEvents` (NDJSON).
+ *
+ * This is the small, queryable layer that powers in-session search, the
+ * console/network/error panels, and the agent transcript — distinct from the
+ * raw rrweb payloads in `sessionReplayEvents`. Sparse: only the columns
+ * relevant to a row's `Type` are populated; the rest default empty.
+ *
+ * Plain MergeTree (immutable append, no dedup) sorted by
+ * (OrgId, SessionId, Timestamp, Seq) so a whole session's transcript is a
+ * single contiguous range scan. 30-day TTL matches `sessionReplays`.
+ */
+export const sessionEvents = defineDatasource("session_events", {
+	description:
+		"Distilled structured session events (navigation, click, input, console, network, error) captured client-side and ingested via POST /v1/sessionEvents. Powers in-session search, replay panels, and agent transcripts.",
+	schema: {
+		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
+		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
+		Type: column(t.string().lowCardinality(), { jsonPath: "$.type" }),
+		Url: column(t.string().default(""), { jsonPath: "$.url" }),
+		TraceId: column(t.string().default(""), { jsonPath: "$.trace_id" }),
+		Level: column(t.string().lowCardinality().default(""), { jsonPath: "$.level" }),
+		Message: column(t.string().default(""), { jsonPath: "$.message" }),
+		TargetSelector: column(t.string().default(""), { jsonPath: "$.target_selector" }),
+		TargetText: column(t.string().default(""), { jsonPath: "$.target_text" }),
+		NetMethod: column(t.string().lowCardinality().default(""), { jsonPath: "$.net_method" }),
+		NetUrl: column(t.string().default(""), { jsonPath: "$.net_url" }),
+		NetStatus: column(t.uint16().default(0), { jsonPath: "$.net_status" }),
+		NetDurationMs: column(t.uint32().default(0), { jsonPath: "$.net_duration_ms" }),
+		ErrorStack: column(t.string().default(""), { jsonPath: "$.error_stack" }),
+		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
+			jsonPath: "$.attributes",
+		}),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "SessionId", "Timestamp", "Seq"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type SessionEventsRow = InferRow<typeof sessionEvents>

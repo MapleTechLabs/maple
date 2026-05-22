@@ -5,6 +5,7 @@ import {
 	ListReplaysRequest,
 	ReplaysForTraceRequest,
 	SessionId,
+	SessionTranscriptRequest,
 	SessionTraceSummariesRequest,
 	TraceId,
 } from "@maple/domain/http"
@@ -91,7 +92,7 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 })
 
 // ---------------------------------------------------------------------------
-// Session event chunks (signed R2 URLs, ordered)
+// Session event chunks (rrweb payloads inline, from ClickHouse, ordered)
 // ---------------------------------------------------------------------------
 
 const GetReplayEventsInput = Schema.Struct({ sessionId: SessionId })
@@ -112,6 +113,30 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 		}),
 	)
 	return { chunks: result.chunks }
+})
+
+// ---------------------------------------------------------------------------
+// Distilled session transcript (console / network / errors / nav / clicks)
+// ---------------------------------------------------------------------------
+
+const SessionTranscriptInput = Schema.Struct({ sessionId: SessionId })
+export type SessionTranscriptInput = (typeof SessionTranscriptInput)["Encoded"]
+
+export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript")(function* ({
+	data,
+}: {
+	data: SessionTranscriptInput
+}) {
+	const input = yield* decodeInput(SessionTranscriptInput, data ?? {}, "sessionTranscript")
+	const result = yield* runTinybirdQuery("sessionTranscript", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.sessionReplays.sessionTranscript({
+				payload: new SessionTranscriptRequest({ sessionId: input.sessionId }),
+			})
+		}),
+	)
+	return { data: result.data }
 })
 
 // ---------------------------------------------------------------------------

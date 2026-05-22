@@ -114,7 +114,8 @@ impl BenchFixture {
                 datasource_metrics_exponential_histogram: "metrics_exponential_histogram"
                     .to_string(),
                 datasource_session_replays: "session_replays".to_string(),
-                datasource_session_replay_chunks: "session_replay_chunks".to_string(),
+                datasource_session_replay_events: "session_replay_events".to_string(),
+                datasource_session_events: "session_events".to_string(),
             },
             Client::builder()
                 .timeout(Duration::from_secs(5))

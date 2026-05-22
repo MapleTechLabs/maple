@@ -360,10 +360,12 @@ impl AppConfig {
             .unwrap_or_else(|_| "metrics_exponential_histogram".to_string()),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_string()),
-            datasource_session_replay_chunks: std::env::var(
-                "INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAY_CHUNKS",
+            datasource_session_replay_events: std::env::var(
+                "INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAY_EVENTS",
             )
-            .unwrap_or_else(|_| "session_replay_chunks".to_string()),
+            .unwrap_or_else(|_| "session_replay_events".to_string()),
+            datasource_session_events: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_EVENTS")
+                .unwrap_or_else(|_| "session_events".to_string()),
         };
         if write_mode.uses_tinybird() {
             tinybird.validate()?;
@@ -1152,6 +1154,7 @@ async fn main() {
         .route("/v1/metrics", post(handle_metrics))
         .route("/v1/sessionReplays/meta", post(handle_replay_meta))
         .route("/v1/sessionReplays/blob", post(handle_replay_blob))
+        .route("/v1/sessionEvents", post(handle_session_events))
         .route(
             "/v1/logpush/cloudflare/http_requests/{connector_id}",
             post(handle_cloudflare_logpush_http_requests),
@@ -1605,6 +1608,95 @@ async fn handle_replay_meta_inner(
     Ok(count)
 }
 
+async fn handle_session_events(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    metrics::request_started();
+    let _guard = InFlightGuard;
+    let span = tracing::info_span!(
+        "ingest_session_events",
+        otel.name = "POST /v1/sessionEvents",
+        otel.kind = "server",
+        otel.status_code = tracing::field::Empty,
+        "http.request.method" = "POST",
+        "http.route" = "/v1/sessionEvents",
+        "http.request.body.size" = body.len(),
+        "maple.signal" = "session_events",
+        "maple.org_id" = tracing::field::Empty,
+    );
+    let span_handle = span.clone();
+    match handle_session_events_inner(&state, &headers, body)
+        .instrument(span)
+        .await
+    {
+        Ok(count) => {
+            span_handle.record("otel.status_code", "Ok");
+            (StatusCode::OK, axum::Json(AcceptedBody { accepted: count })).into_response()
+        }
+        Err(error) => {
+            span_handle.record("otel.status_code", "Error");
+            error.into_response()
+        }
+    }
+}
+
+async fn handle_session_events_inner(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: Bytes,
+) -> Result<usize, ApiError> {
+    let org_id = match resolve_replay_org(state, headers).await? {
+        Some(org_id) => org_id,
+        None => return Ok(0),
+    };
+    Span::current().record("maple.org_id", org_id.as_str());
+
+    let pipeline = state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Session event storage is not configured"))?;
+
+    // NDJSON: one distilled session-event object per line. As with replay
+    // metadata, org_id is taken from the authenticated key, never the body.
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+    for line in body.split(|&b| b == b'\n') {
+        if line.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        let mut value: serde_json::Value = serde_json::from_slice(line)
+            .map_err(|e| ApiError::bad_request(format!("invalid session event JSON: {e}")))?;
+        let obj = value
+            .as_object_mut()
+            .ok_or_else(|| ApiError::bad_request("session event must be a JSON object"))?;
+        obj.insert(
+            "org_id".to_string(),
+            serde_json::Value::String(org_id.clone()),
+        );
+        rows.push(
+            serde_json::to_vec(&value)
+                .map_err(|e| ApiError::bad_request(format!("failed to re-serialize event: {e}")))?,
+        );
+    }
+
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let count = rows.len();
+    pipeline
+        .accept_rows(
+            &org_id,
+            state.config.tinybird.datasource_session_events.clone(),
+            rows,
+        )
+        .await
+        .map_err(|e| {
+            ApiError::service_unavailable(format!("failed to enqueue session events: {e}"))
+        })?;
+    Ok(count)
+}
+
 async fn handle_replay_blob(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -1650,9 +1742,6 @@ async fn handle_replay_blob_inner(
     };
     Span::current().record("maple.org_id", org_id.as_str());
 
-    let uploader = state.r2_uploader.as_ref().ok_or_else(|| {
-        ApiError::service_unavailable("Session replay blob storage (R2) is not configured")
-    })?;
     let pipeline = state
         .telemetry_pipeline
         .as_ref()
@@ -1676,16 +1765,19 @@ async fn handle_replay_blob_inner(
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
 
-    let byte_size = body.len() as u64;
-    let key = format!("{org_id}/{session_id}/{chunk_seq:08}.json.gz");
+    // The SDK gzips the rrweb event array (native CompressionStream). Decompress
+    // here so the events land in ClickHouse as queryable JSON text (the column is
+    // ZSTD-compressed by the warehouse) — no R2 blob store on the replay path.
+    use std::io::Read as _;
+    let mut decoder = flate2::read::GzDecoder::new(&body[..]);
+    let mut events_json = String::new();
+    decoder
+        .read_to_string(&mut events_json)
+        .map_err(|e| ApiError::bad_request(format!("failed to gunzip replay chunk: {e}")))?;
+    let byte_size = events_json.len() as u64;
 
-    uploader
-        .put(&key, body)
-        .await
-        .map_err(|e| ApiError::service_unavailable(format!("failed to upload replay chunk: {e}")))?;
-
-    // Index row → session_replay_chunks. Tinybird parses the space-separated
-    // datetime into DateTime64(9).
+    // Row → session_replay_events. Tinybird parses the space-separated datetime
+    // into DateTime64(9); `events` is stored verbatim as a String column.
     let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.9f").to_string();
     let row = serde_json::json!({
         "org_id": org_id,
@@ -1695,23 +1787,23 @@ async fn handle_replay_blob_inner(
         "duration_ms": duration_ms,
         "event_count": event_count,
         "byte_size": byte_size,
-        "r2_key": key,
+        "events": events_json,
         "is_checkpoint": is_checkpoint,
     });
     let serialized = serde_json::to_vec(&row)
-        .map_err(|e| ApiError::service_unavailable(format!("failed to serialize chunk index: {e}")))?;
+        .map_err(|e| ApiError::service_unavailable(format!("failed to serialize replay events: {e}")))?;
     pipeline
         .accept_rows(
             &org_id,
             state
                 .config
                 .tinybird
-                .datasource_session_replay_chunks
+                .datasource_session_replay_events
                 .clone(),
             vec![serialized],
         )
         .await
-        .map_err(|e| ApiError::service_unavailable(format!("failed to enqueue chunk index: {e}")))?;
+        .map_err(|e| ApiError::service_unavailable(format!("failed to enqueue replay events: {e}")))?;
     Ok(())
 }
 

@@ -395,6 +395,39 @@ export const SessionReplayEvents = table("session_replay_events", {
 	IsCheckpoint: T.uint8,
 })
 
+// Distilled, structured semantic events for a session (navigation, clicks,
+// console logs, network requests, errors), captured client-side by the SDK.
+// Small and queryable — powers in-session search, the console/network/error
+// panels, and the agent transcript. Sparse: only the fields relevant to a row's
+// Type are populated; the rest default empty.
+export const SessionEvents = table("session_events", {
+	OrgId: T.string,
+	SessionId: T.string,
+	Timestamp: T.dateTime64,
+	// Monotonic per-session ordering tiebreaker (events can share a ms timestamp).
+	Seq: T.uint32,
+	// "navigation" | "click" | "input" | "console" | "network" | "error"
+	Type: T.string,
+	Url: T.string,
+	// OTel trace id active when the event fired (links network/error → traces).
+	TraceId: T.string,
+	// console / error: level + message.
+	Level: T.string,
+	Message: T.string,
+	// click / input: the interaction target.
+	TargetSelector: T.string,
+	TargetText: T.string,
+	// network: request summary.
+	NetMethod: T.string,
+	NetUrl: T.string,
+	NetStatus: T.uint16,
+	NetDurationMs: T.uint32,
+	// error: stack trace.
+	ErrorStack: T.string,
+	// Overflow / extensibility.
+	Attributes: T.map(T.string, T.string),
+})
+
 export const MetricsExpHistogram = table("metrics_exponential_histogram", {
 	OrgId: T.string,
 	ResourceAttributes: T.map(T.string, T.string),

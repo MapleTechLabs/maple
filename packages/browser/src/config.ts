@@ -32,6 +32,11 @@ export interface MapleBrowserConfig {
 	readonly privacy?: {
 		/** Mask all `<input>` values. Default true. */
 		readonly maskAllInputs?: boolean
+		/**
+		 * Mask all text in the rrweb recording and omit captured click target
+		 * text from session events. Default false.
+		 */
+		readonly maskAllText?: boolean
 	}
 }
 
@@ -47,6 +52,7 @@ export interface ResolvedConfig {
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
+	readonly maskAllText: boolean
 }
 
 const DEFAULT_ENDPOINT = "https://ingest.maple.dev"
@@ -64,6 +70,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: config.replay?.sampleRate ?? 1,
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
+		maskAllText: config.privacy?.maskAllText ?? false,
 	}
 }
 

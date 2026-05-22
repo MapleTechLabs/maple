@@ -77,6 +77,8 @@ export function startRecording(config: ResolvedConfig, sessionId: string): Recor
 			if (bufferBytes >= FLUSH_BYTES) void flush()
 		},
 		maskAllInputs: config.maskAllInputs,
+		// rrweb has no `maskAllText` flag; selecting all elements masks every text node.
+		...(config.maskAllText ? { maskTextSelector: "*" } : {}),
 		checkoutEveryNms: CHECKOUT_EVERY_MS,
 	})
 

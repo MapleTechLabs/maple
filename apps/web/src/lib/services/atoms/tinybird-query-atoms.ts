@@ -76,10 +76,10 @@ import {
 	getReplay,
 	getReplayEvents,
 	getReplaysForTrace,
+	getSessionTranscript,
 	getSessionTraceSummaries,
 	listReplays,
 } from "@/api/tinybird/replays"
-import { normalizeEvents } from "@/components/replays/replay-events"
 
 type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, unknown, unknown>
 
@@ -183,67 +183,17 @@ export const getSessionTraceSummariesResultAtom = makeQueryAtomFamily(getSession
 	staleTime: 60_000,
 })
 
-// Idle TTL kept just under the signed-URL lifetime (X-Amz-Expires=300s). This
-// keeps the atom — and therefore the signed chunk URLs it returns — stable
-// across the player's frequent re-renders so the chunk decoder below isn't
-// re-keyed (which would re-download every chunk). A fresh mount after the TTL
-// re-signs upstream, so URLs never go stale before they're used.
+// Idle TTL keeps the chunks (and their inline rrweb events) stable across the
+// player's frequent re-renders so the decode memo in the player context isn't
+// thrown away and re-run. Events come straight from ClickHouse — no R2, no
+// signed URLs, no client-side fetch/gunzip.
 export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents, {
 	staleTime: 240_000,
 })
 
-interface ReplayChunkRef {
-	readonly chunkSeq: number
-	readonly url: string
-}
-
-/** Fetch a gzipped rrweb chunk from its signed R2 URL and decode it to events. */
-const fetchReplayChunk = (url: string) =>
-	Effect.tryPromise({
-		try: async (): Promise<ReadonlyArray<unknown>> => {
-			const response = await fetch(url)
-			if (!response.ok) throw new Error(`chunk fetch failed: ${response.status}`)
-			const stream = response.body?.pipeThrough(new DecompressionStream("gzip"))
-			const text = stream
-				? await new Response(stream).text()
-				: // Fallback: already decompressed by the CDN/transport.
-					await response.text()
-			const parsed: unknown = JSON.parse(text)
-			return Array.isArray(parsed) ? parsed : []
-		},
-		catch: (cause) => new QueryAtomError({ message: "Failed to load session replay chunk", cause }),
-	})
-
-/** Build the stable family key for a set of chunk refs (order-independent). */
-export const replayChunkEventsKey = (chunks: ReadonlyArray<ReplayChunkRef>): string =>
-	JSON.stringify([...chunks].map((c) => ({ chunkSeq: c.chunkSeq, url: c.url })).sort((a, b) => a.chunkSeq - b.chunkSeq))
-
-/**
- * The decoded rrweb event stream for a session, gunzipped from the signed R2
- * chunk URLs produced by `getReplayEventsResultAtom`. Decoding every chunk is
- * expensive (one fetch + gunzip + JSON.parse per chunk), so the result is kept
- * alive across the player's re-render churn with an idle TTL matching the
- * upstream URL atom — otherwise a momentary unsubscribe would discard the
- * decoded stream and re-download all chunks. The key stays stable for the same
- * reason (the upstream URLs don't change within the TTL).
- */
-export const replayChunkEventsAtom = Atom.family((key: string) => {
-	const refs = JSON.parse(key) as ReadonlyArray<ReplayChunkRef>
-	return Atom.setIdleTTL(
-		Atom.make(
-			Effect.gen(function* () {
-				const ordered = [...refs].sort((a, b) => a.chunkSeq - b.chunkSeq)
-				// Bounded concurrency: long sessions can have thousands of chunks, and
-				// firing every fetch at once exhausts the browser's connection pool
-				// (net::ERR_INSUFFICIENT_RESOURCES) so the replay never loads at all.
-				const decoded = yield* Effect.forEach(ordered, (ref) => fetchReplayChunk(ref.url), {
-					concurrency: 8,
-				})
-				return normalizeEvents(decoded.flat())
-			}),
-		),
-		240_000,
-	)
+// Distilled session transcript (console/network/error/nav/click) for the panels.
+export const getSessionTranscriptResultAtom = makeQueryAtomFamily(getSessionTranscript, {
+	staleTime: 60_000,
 })
 
 export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTrace, {

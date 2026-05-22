@@ -50,7 +50,6 @@ import { QueryEngineService } from "./services/QueryEngineService"
 import { RawSqlChartService } from "./services/RawSqlChartService"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./services/WarehouseQueryService"
-import { ReplayBlobStorage } from "./services/ReplayBlobStorage"
 
 export const HealthRouter = HttpRouter.use((router) =>
 	router.add("GET", "/health", HttpServerResponse.text("OK")),
@@ -84,8 +83,6 @@ export const CoreServicesLive = Layer.mergeAll(
 export const DemoServiceLive = DemoService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 export const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
-
-export const ReplayBlobStorageLive = ReplayBlobStorage.layer.pipe(Layer.provideMerge(Env.layer))
 
 export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
 	Layer.provideMerge(EdgeCacheService.layer),
@@ -124,7 +121,6 @@ export const MainLive = Layer.mergeAll(
 	DigestServiceLive,
 	DemoServiceLive,
 	RawSqlChartService.layer,
-	ReplayBlobStorageLive,
 )
 
 export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
