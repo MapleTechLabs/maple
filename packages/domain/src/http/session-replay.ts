@@ -19,15 +19,20 @@ import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
 export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListReplaysRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	serviceName: Schema.optionalKey(Schema.String),
-	browser: Schema.optionalKey(Schema.String),
-	country: Schema.optionalKey(Schema.String),
-	deviceType: Schema.optionalKey(Schema.String),
-	hasErrors: Schema.optionalKey(Schema.Boolean),
-	search: Schema.optionalKey(Schema.String),
-	cursor: Schema.optionalKey(Schema.String),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	// Optional filters are constructed JS-side by the web/MCP clients, which pass
+	// `undefined` for any unset filter. `Schema.optional` accepts an explicit
+	// `undefined` (key present, value undefined); `Schema.optionalKey` would
+	// reject it and throw "Expected string, got undefined" at construction time,
+	// before the request is ever sent. See CLAUDE.md (optional vs optionalKey).
+	serviceName: Schema.optional(Schema.String),
+	browser: Schema.optional(Schema.String),
+	country: Schema.optional(Schema.String),
+	deviceType: Schema.optional(Schema.String),
+	hasErrors: Schema.optional(Schema.Boolean),
+	search: Schema.optional(Schema.String),
+	cursor: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 export const SessionReplayListItem = Schema.Struct({

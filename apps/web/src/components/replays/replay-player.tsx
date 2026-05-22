@@ -1,5 +1,17 @@
 import * as React from "react"
-import { GlobeIcon, ArrowPathIcon, EyeIcon } from "@/components/icons"
+import { Replayer } from "@rrweb/replay"
+import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from "@rrweb/types"
+import "@rrweb/replay/dist/style.css"
+import { cn } from "@maple/ui/utils"
+import {
+	GlobeIcon,
+	ArrowPathIcon,
+	EyeIcon,
+	MediaPlayIcon,
+	MediaPauseIcon,
+	MaximizeIcon,
+	MinimizeIcon,
+} from "@/components/icons"
 
 export interface ReplayChunkUrl {
 	readonly chunkSeq: number
@@ -44,8 +56,9 @@ function prettyUrl(url: string | undefined): string {
 /**
  * Renders an rrweb session replay inside a faux-browser chrome (traffic lights
  * + address bar) so the playback reads as "what the user saw". Chunk blobs are
- * fetched from signed R2 URLs, gunzipped, concatenated in order, and handed to
- * rrweb-player.
+ * fetched from signed R2 URLs, gunzipped, concatenated in order, and driven by
+ * rrweb's core `Replayer` engine — the transport bar below the surface is our
+ * own (see `ReplayControls`), not rrweb-player's Svelte widget.
  */
 export function ReplayPlayer({
 	chunks,
@@ -55,6 +68,8 @@ export function ReplayPlayer({
 	url?: string
 }) {
 	const [state, setState] = React.useState<PlayerState>({ kind: "loading" })
+	const figureRef = React.useRef<HTMLElement | null>(null)
+	const [isFullscreen, setIsFullscreen] = React.useState(false)
 
 	React.useEffect(() => {
 		let cancelled = false
@@ -84,8 +99,27 @@ export function ReplayPlayer({
 		}
 	}, [chunks])
 
+	// Mirror the document fullscreen state so the surface can rescale + the
+	// button can swap its icon. The <figure> is the fullscreen target.
+	React.useEffect(() => {
+		const onChange = () => setIsFullscreen(document.fullscreenElement === figureRef.current)
+		document.addEventListener("fullscreenchange", onChange)
+		return () => document.removeEventListener("fullscreenchange", onChange)
+	}, [])
+
+	const toggleFullscreen = React.useCallback(() => {
+		if (document.fullscreenElement) void document.exitFullscreen()
+		else void figureRef.current?.requestFullscreen()
+	}, [])
+
 	return (
-		<figure className="m-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+		<figure
+			ref={figureRef}
+			className={cn(
+				"m-0 overflow-hidden rounded-xl border border-border bg-card shadow-sm",
+				isFullscreen && "flex h-screen w-screen flex-col rounded-none border-0 bg-black",
+			)}
+		>
 			{/* Browser chrome */}
 			<div className="flex items-center gap-3 border-b border-border bg-muted/40 px-3.5 py-2.5">
 				<div className="flex items-center gap-1.5" aria-hidden>
@@ -99,20 +133,29 @@ export function ReplayPlayer({
 				</div>
 			</div>
 
-			{/* Surface */}
-			<div className="relative bg-muted/30">
-				{state.kind === "loading" && <PlayerMessage spinner>Loading replay…</PlayerMessage>}
-				{state.kind === "error" && (
-					<PlayerMessage tone="error">Couldn’t load this replay — {state.message}</PlayerMessage>
-				)}
-				{state.kind === "empty" && (
-					<PlayerMessage>
-						No playable frames yet. The session may still be recording, or its event blobs
-						have expired.
-					</PlayerMessage>
-				)}
-				{state.kind === "ready" && <RrwebSurface events={state.events} />}
-			</div>
+			{/* Surface + controls */}
+			{state.kind === "ready" ? (
+				<RrwebSurface
+					events={state.events}
+					isFullscreen={isFullscreen}
+					onToggleFullscreen={toggleFullscreen}
+				/>
+			) : (
+				<div className="relative bg-muted/30">
+					{state.kind === "loading" && <PlayerMessage spinner>Loading replay…</PlayerMessage>}
+					{state.kind === "error" && (
+						<PlayerMessage tone="error">
+							Couldn’t load this replay — {state.message}
+						</PlayerMessage>
+					)}
+					{state.kind === "empty" && (
+						<PlayerMessage>
+							No playable frames yet. The session may still be recording, or its event
+							blobs have expired.
+						</PlayerMessage>
+					)}
+				</div>
+			)}
 		</figure>
 	)
 }
@@ -148,54 +191,448 @@ function PlayerMessage({
 	)
 }
 
+const SPEEDS = [0.5, 1, 2, 4, 8] as const
+
+/** Recorded viewport + click timeline derived from the raw rrweb event stream. */
+interface DerivedMeta {
+	recordedWidth: number
+	recordedHeight: number
+	startTime: number
+	clickTimestamps: number[]
+}
+
+function deriveMeta(events: unknown[]): DerivedMeta {
+	let recordedWidth = 1280
+	let recordedHeight = 720
+	const clickTimestamps: number[] = []
+	const startTime =
+		(events[0] as { timestamp?: number } | undefined)?.timestamp ?? 0
+
+	for (const raw of events) {
+		const ev = raw as {
+			type?: number
+			timestamp?: number
+			data?: { source?: number; type?: number; width?: number; height?: number }
+		}
+		if (ev.type === EventType.Meta && ev.data) {
+			if (typeof ev.data.width === "number") recordedWidth = ev.data.width
+			if (typeof ev.data.height === "number") recordedHeight = ev.data.height
+		} else if (
+			ev.type === EventType.IncrementalSnapshot &&
+			ev.data?.source === IncrementalSource.MouseInteraction &&
+			ev.data?.type === MouseInteractions.Click &&
+			typeof ev.timestamp === "number"
+		) {
+			clickTimestamps.push(ev.timestamp)
+		}
+	}
+	return { recordedWidth, recordedHeight, startTime, clickTimestamps }
+}
+
 /**
- * Mounts rrweb-player into a div via ref callback (no useEffect — the callback
- * runs on attach and cleanup on detach), the sanctioned way to wrap an
- * imperative third-party widget.
+ * Mounts rrweb's `Replayer` into a div and renders our own transport controls.
+ * The Replayer rebuilds the recorded page into an <iframe> at its captured
+ * viewport size; we scale that wrapper to fit the container with a CSS
+ * transform (the trick rrweb-player used internally) and recompute on resize
+ * and fullscreen.
  */
-function RrwebSurface({ events }: { events: unknown[] }) {
-	const playerRef = React.useRef<{ $destroy?: () => void } | null>(null)
-	// Bumped on every attach/detach. Player creation is async (dynamic import),
-	// so a stale in-flight creation checks this token before appending —
-	// otherwise React StrictMode's attach→detach→attach would mount two players
-	// into the same node.
-	const tokenRef = React.useRef(0)
+function RrwebSurface({
+	events,
+	isFullscreen,
+	onToggleFullscreen,
+}: {
+	events: unknown[]
+	isFullscreen: boolean
+	onToggleFullscreen: () => void
+}) {
+	const mountRef = React.useRef<HTMLDivElement | null>(null)
+	const surfaceRef = React.useRef<HTMLDivElement | null>(null)
+	const replayerRef = React.useRef<Replayer | null>(null)
+	const isFullscreenRef = React.useRef(isFullscreen)
+	isFullscreenRef.current = isFullscreen
 
-	const mount = React.useCallback(
-		(node: HTMLDivElement | null) => {
-			tokenRef.current += 1
-			const token = tokenRef.current
-
-			if (playerRef.current?.$destroy) {
-				playerRef.current.$destroy()
-				playerRef.current = null
-			}
-			if (!node) return
-			node.innerHTML = ""
-
-			void (async () => {
-				const [{ default: RrwebPlayer }] = await Promise.all([
-					import("rrweb-player"),
-					import("rrweb-player/dist/style.css"),
-				])
-				// A newer attach/detach happened while importing — abort this one.
-				if (token !== tokenRef.current) return
-				node.innerHTML = ""
-				const width = node.clientWidth || 900
-				playerRef.current = new RrwebPlayer({
-					target: node,
-					props: {
-						events: events as never,
-						width,
-						height: Math.round((width * 9) / 16),
-						autoPlay: false,
-						showController: true,
-					},
-				}) as unknown as { $destroy?: () => void }
-			})()
-		},
+	const { recordedWidth, recordedHeight, startTime, clickTimestamps } = React.useMemo(
+		() => deriveMeta(events),
 		[events],
 	)
 
-	return <div ref={mount} className="maple-replay-surface w-full" />
+	const [isPlaying, setIsPlaying] = React.useState(false)
+	const [finished, setFinished] = React.useState(false)
+	const [currentMs, setCurrentMs] = React.useState(0)
+	const [totalMs, setTotalMs] = React.useState(0)
+	const [speed, setSpeed] = React.useState(1)
+	const [skipInactive, setSkipInactive] = React.useState(false)
+	const [skipping, setSkipping] = React.useState(false)
+
+	// Fit the recorded viewport into the available width (or both dims when
+	// fullscreen), centering the scaled wrapper.
+	const applyScale = React.useCallback(() => {
+		const replayer = replayerRef.current
+		const container = surfaceRef.current
+		if (!replayer || !container || !recordedWidth || !recordedHeight) return
+		const availW = container.clientWidth
+		if (!availW) return
+		const fs = isFullscreenRef.current
+		let scale: number
+		let availH: number
+		if (fs) {
+			// Let the flex column own the height; drop any windowed inline height.
+			container.style.height = ""
+			availH = container.clientHeight
+			scale = Math.min(availW / recordedWidth, availH / recordedHeight)
+		} else {
+			scale = availW / recordedWidth
+			availH = recordedHeight * scale
+			container.style.height = `${Math.round(availH)}px`
+		}
+		const offsetX = Math.max(0, (availW - recordedWidth * scale) / 2)
+		const offsetY = Math.max(0, (availH - recordedHeight * scale) / 2)
+		replayer.wrapper.style.transformOrigin = "top left"
+		replayer.wrapper.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`
+	}, [recordedWidth, recordedHeight])
+
+	// Mount the engine. Keyed on `events` — a fresh session rebuilds.
+	React.useEffect(() => {
+		const mount = mountRef.current
+		if (!mount) return
+		mount.innerHTML = ""
+
+		const replayer = new Replayer(events as never, {
+			root: mount,
+			speed: 1,
+			skipInactive: false,
+			mouseTail: false,
+			showWarning: false,
+			showDebug: false,
+			liveMode: false,
+		})
+		replayerRef.current = replayer
+		setTotalMs(replayer.getMetaData().totalTime)
+
+		replayer.on(ReplayerEvents.Start, () => {
+			setIsPlaying(true)
+			setFinished(false)
+		})
+		replayer.on(ReplayerEvents.Resume, () => {
+			setIsPlaying(true)
+			setFinished(false)
+		})
+		replayer.on(ReplayerEvents.Pause, () => setIsPlaying(false))
+		replayer.on(ReplayerEvents.Finish, () => {
+			setIsPlaying(false)
+			setFinished(true)
+		})
+		replayer.on(ReplayerEvents.SkipStart, () => setSkipping(true))
+		replayer.on(ReplayerEvents.SkipEnd, () => setSkipping(false))
+
+		const observer = new ResizeObserver(() => applyScale())
+		if (surfaceRef.current) observer.observe(surfaceRef.current)
+		applyScale()
+
+		return () => {
+			observer.disconnect()
+			replayer.destroy()
+			replayerRef.current = null
+			mount.innerHTML = ""
+		}
+	}, [events, applyScale])
+
+	// Recompute scale when entering/leaving fullscreen.
+	React.useEffect(() => {
+		applyScale()
+	}, [isFullscreen, applyScale])
+
+	// Poll the engine clock while playing (rrweb has no per-frame time event).
+	React.useEffect(() => {
+		if (!isPlaying) return
+		let raf = 0
+		const tick = () => {
+			const replayer = replayerRef.current
+			if (replayer) setCurrentMs(Math.min(replayer.getCurrentTime(), totalMs))
+			raf = requestAnimationFrame(tick)
+		}
+		raf = requestAnimationFrame(tick)
+		return () => cancelAnimationFrame(raf)
+	}, [isPlaying, totalMs])
+
+	const togglePlay = React.useCallback(() => {
+		const replayer = replayerRef.current
+		if (!replayer) return
+		if (finished) {
+			replayer.play(0)
+			setCurrentMs(0)
+		} else if (isPlaying) {
+			replayer.pause()
+		} else {
+			const from = currentMs >= totalMs ? 0 : currentMs
+			replayer.play(from)
+		}
+	}, [finished, isPlaying, currentMs, totalMs])
+
+	const seek = React.useCallback(
+		(ms: number) => {
+			const replayer = replayerRef.current
+			if (!replayer) return
+			const clamped = Math.max(0, Math.min(ms, totalMs))
+			setCurrentMs(clamped)
+			if (clamped < totalMs) setFinished(false)
+			if (isPlaying && clamped < totalMs) replayer.play(clamped)
+			else replayer.pause(clamped)
+		},
+		[isPlaying, totalMs],
+	)
+
+	const changeSpeed = React.useCallback((next: number) => {
+		setSpeed(next)
+		replayerRef.current?.setConfig({ speed: next })
+	}, [])
+
+	const toggleSkipInactive = React.useCallback(() => {
+		setSkipInactive((prev) => {
+			const next = !prev
+			replayerRef.current?.setConfig({ skipInactive: next })
+			return next
+		})
+	}, [])
+
+	return (
+		<>
+			<div
+				ref={surfaceRef}
+				className={cn(
+					"relative w-full overflow-hidden bg-white",
+					isFullscreen && "min-h-0 flex-1",
+				)}
+			>
+				<div ref={mountRef} className="absolute inset-0" />
+			</div>
+			<ReplayControls
+				isPlaying={isPlaying}
+				finished={finished}
+				currentMs={currentMs}
+				totalMs={totalMs}
+				startTime={startTime}
+				clickTimestamps={clickTimestamps}
+				speed={speed}
+				skipInactive={skipInactive}
+				skipping={skipping}
+				isFullscreen={isFullscreen}
+				onTogglePlay={togglePlay}
+				onSeek={seek}
+				onChangeSpeed={changeSpeed}
+				onToggleSkipInactive={toggleSkipInactive}
+				onToggleFullscreen={onToggleFullscreen}
+			/>
+		</>
+	)
+}
+
+function formatClock(ms: number): string {
+	if (!Number.isFinite(ms) || ms < 0) ms = 0
+	const totalSeconds = Math.floor(ms / 1000)
+	const minutes = Math.floor(totalSeconds / 60)
+	const seconds = totalSeconds % 60
+	return `${minutes}:${seconds.toString().padStart(2, "0")}`
+}
+
+function ReplayControls({
+	isPlaying,
+	finished,
+	currentMs,
+	totalMs,
+	startTime,
+	clickTimestamps,
+	speed,
+	skipInactive,
+	skipping,
+	isFullscreen,
+	onTogglePlay,
+	onSeek,
+	onChangeSpeed,
+	onToggleSkipInactive,
+	onToggleFullscreen,
+}: {
+	isPlaying: boolean
+	finished: boolean
+	currentMs: number
+	totalMs: number
+	startTime: number
+	clickTimestamps: number[]
+	speed: number
+	skipInactive: boolean
+	skipping: boolean
+	isFullscreen: boolean
+	onTogglePlay: () => void
+	onSeek: (ms: number) => void
+	onChangeSpeed: (s: number) => void
+	onToggleSkipInactive: () => void
+	onToggleFullscreen: () => void
+}) {
+	return (
+		<div className="flex items-center gap-3 border-t border-border bg-card px-3 py-2.5">
+			<button
+				type="button"
+				onClick={onTogglePlay}
+				aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+				className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
+			>
+				{finished ? (
+					<ArrowPathIcon className="size-4" />
+				) : isPlaying ? (
+					<MediaPauseIcon className="size-4" />
+				) : (
+					<MediaPlayIcon className="size-4 translate-x-px" />
+				)}
+			</button>
+
+			<Scrubber
+				currentMs={currentMs}
+				totalMs={totalMs}
+				startTime={startTime}
+				clickTimestamps={clickTimestamps}
+				onSeek={onSeek}
+			/>
+
+			<div className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+				<span className="text-foreground">{formatClock(currentMs)}</span>
+				<span className="opacity-50">/</span>
+				<span>{formatClock(totalMs)}</span>
+			</div>
+
+			{skipping && (
+				<span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+					Skipping
+				</span>
+			)}
+
+			<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
+				{SPEEDS.map((s) => (
+					<button
+						key={s}
+						type="button"
+						onClick={() => onChangeSpeed(s)}
+						className={cn(
+							"rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors",
+							speed === s
+								? "bg-background text-foreground shadow-sm"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						{s}×
+					</button>
+				))}
+			</div>
+
+			<button
+				type="button"
+				onClick={onToggleSkipInactive}
+				aria-pressed={skipInactive}
+				className={cn(
+					"shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
+					skipInactive
+						? "bg-primary/10 text-primary"
+						: "text-muted-foreground hover:bg-muted hover:text-foreground",
+				)}
+			>
+				Skip idle
+			</button>
+
+			<button
+				type="button"
+				onClick={onToggleFullscreen}
+				aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+				className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			>
+				{isFullscreen ? (
+					<MinimizeIcon className="size-4" />
+				) : (
+					<MaximizeIcon className="size-4" />
+				)}
+			</button>
+		</div>
+	)
+}
+
+function Scrubber({
+	currentMs,
+	totalMs,
+	startTime,
+	clickTimestamps,
+	onSeek,
+}: {
+	currentMs: number
+	totalMs: number
+	startTime: number
+	clickTimestamps: number[]
+	onSeek: (ms: number) => void
+}) {
+	const trackRef = React.useRef<HTMLDivElement | null>(null)
+	const [dragging, setDragging] = React.useState(false)
+	const pct = totalMs > 0 ? Math.min(100, (currentMs / totalMs) * 100) : 0
+
+	const msFromClientX = React.useCallback(
+		(clientX: number) => {
+			const el = trackRef.current
+			if (!el) return 0
+			const rect = el.getBoundingClientRect()
+			const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0
+			return Math.max(0, Math.min(1, ratio)) * totalMs
+		},
+		[totalMs],
+	)
+
+	const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+		e.currentTarget.setPointerCapture(e.pointerId)
+		setDragging(true)
+		onSeek(msFromClientX(e.clientX))
+	}
+	const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+		if (dragging) onSeek(msFromClientX(e.clientX))
+	}
+	const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+		e.currentTarget.releasePointerCapture(e.pointerId)
+		setDragging(false)
+	}
+
+	return (
+		<div
+			ref={trackRef}
+			role="slider"
+			aria-label="Seek"
+			aria-valuemin={0}
+			aria-valuemax={Math.round(totalMs)}
+			aria-valuenow={Math.round(currentMs)}
+			tabIndex={0}
+			onPointerDown={handlePointerDown}
+			onPointerMove={handlePointerMove}
+			onPointerUp={handlePointerUp}
+			className="group relative h-6 flex-1 cursor-pointer touch-none select-none"
+		>
+			{/* Track */}
+			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
+				<div
+					className="h-full rounded-full bg-primary"
+					style={{ width: `${pct}%` }}
+				/>
+			</div>
+			{/* Click markers */}
+			{totalMs > 0 &&
+				clickTimestamps.map((ts, i) => {
+					const markerPct = Math.min(100, Math.max(0, ((ts - startTime) / totalMs) * 100))
+					return (
+						<span
+							key={`${ts}-${i}`}
+							className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 ring-1 ring-card"
+							style={{ left: `${markerPct}%` }}
+							title="Click"
+						/>
+					)
+				})}
+			{/* Thumb */}
+			<div
+				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+				style={{ left: `${pct}%`, opacity: dragging ? 1 : undefined }}
+			/>
+		</div>
+	)
 }
