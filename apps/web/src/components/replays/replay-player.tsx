@@ -84,8 +84,10 @@ export function ReplaySurface({ url }: { url?: string }) {
 			<div
 				ref={surfaceRef}
 				className={cn(
-					"relative w-full overflow-hidden bg-white",
-					isFullscreen && "min-h-0 flex-1",
+					// Fixed box so the player height stays constant across recordings; the
+					// rebuilt page is scaled to fit inside (letterboxed on the dark ground).
+					"relative w-full overflow-hidden bg-neutral-900",
+					isFullscreen ? "min-h-0 flex-1" : "aspect-video",
 				)}
 			>
 				<div ref={mountRef} className="absolute inset-0" />

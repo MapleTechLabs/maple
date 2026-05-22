@@ -290,28 +290,27 @@ export function ReplayPlayerProvider({
 		[inactiveIntervals, timeline],
 	)
 
-	// Fit the recorded viewport into the available width (or both dims when
-	// fullscreen), centering the scaled wrapper.
+	// Fit the recorded page *inside* the fixed-size surface (contain + letterbox),
+	// centered on both axes. The surface keeps a constant box (CSS aspect-ratio /
+	// fullscreen flex), so the player height never jumps between recordings.
+	//
+	// Scale against the iframe rrweb actually built, not the statically-derived
+	// `recordedWidth` — a session can carry several Meta events (viewport resizes),
+	// and deriveMeta keeps the last one, which may not match the current frame.
+	// The iframe's width/height attributes always reflect the current viewport,
+	// and the `Resize` listener re-runs this when they change mid-playback.
 	const applyScale = React.useCallback(() => {
 		const replayer = replayerRef.current
 		const container = surfaceRef.current
-		if (!replayer || !container || !recordedWidth || !recordedHeight) return
+		if (!replayer || !container) return
+		const vw = Number(replayer.iframe?.getAttribute("width")) || recordedWidth || 1280
+		const vh = Number(replayer.iframe?.getAttribute("height")) || recordedHeight || 720
 		const availW = container.clientWidth
-		if (!availW) return
-		const fs = isFullscreenRef.current
-		let scale: number
-		let availH: number
-		if (fs) {
-			container.style.height = ""
-			availH = container.clientHeight
-			scale = Math.min(availW / recordedWidth, availH / recordedHeight)
-		} else {
-			scale = availW / recordedWidth
-			availH = recordedHeight * scale
-			container.style.height = `${Math.round(availH)}px`
-		}
-		const offsetX = Math.max(0, (availW - recordedWidth * scale) / 2)
-		const offsetY = Math.max(0, (availH - recordedHeight * scale) / 2)
+		const availH = container.clientHeight
+		if (!availW || !availH || !vw || !vh) return
+		const scale = Math.min(availW / vw, availH / vh)
+		const offsetX = Math.max(0, (availW - vw * scale) / 2)
+		const offsetY = Math.max(0, (availH - vh * scale) / 2)
 		replayer.wrapper.style.transformOrigin = "top left"
 		replayer.wrapper.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${scale})`
 	}, [recordedWidth, recordedHeight])
@@ -363,6 +362,11 @@ export function ReplayPlayerProvider({
 			setIsPlaying(false)
 			setFinished(true)
 		})
+
+		// The recorded viewport can change mid-session (responsive / window resize);
+		// rrweb resizes its iframe and emits Resize. Re-fit so the recording stays
+		// centered in the fixed surface. Also fires for the initial snapshot.
+		replayer.on(ReplayerEvents.Resize, () => applyScale())
 
 		const observer = new ResizeObserver(() => applyScale())
 		if (surfaceRef.current) observer.observe(surfaceRef.current)
