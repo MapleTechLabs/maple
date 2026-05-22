@@ -233,8 +233,11 @@ export const replayChunkEventsAtom = Atom.family((key: string) => {
 		Atom.make(
 			Effect.gen(function* () {
 				const ordered = [...refs].sort((a, b) => a.chunkSeq - b.chunkSeq)
+				// Bounded concurrency: long sessions can have thousands of chunks, and
+				// firing every fetch at once exhausts the browser's connection pool
+				// (net::ERR_INSUFFICIENT_RESOURCES) so the replay never loads at all.
 				const decoded = yield* Effect.forEach(ordered, (ref) => fetchReplayChunk(ref.url), {
-					concurrency: "unbounded",
+					concurrency: 8,
 				})
 				return normalizeEvents(decoded.flat())
 			}),
