@@ -7,22 +7,15 @@ import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions"
 import type { ResolvedConfig } from "./config"
-
-// Trace ids observed during this session, captured at span start. Read when the
-// replay session metadata is finalized so the session row links to its traces.
-const observedTraceIds = new Set<string>()
-
-export function getObservedTraceIds(): string[] {
-	return Array.from(observedTraceIds)
-}
+import { recordTraceId } from "./session-sink"
 
 /**
- * Captures every span's trace id into the session-wide set. Lightweight — runs
+ * Captures every span's trace id into the session sink. Lightweight — runs
  * alongside the BatchSpanProcessor, does no export of its own.
  */
 class TraceIdCollector implements SpanProcessor {
 	onStart(span: Span): void {
-		observedTraceIds.add(span.spanContext().traceId)
+		recordTraceId(span.spanContext().traceId)
 	}
 	onEnd(_span: ReadableSpan): void {}
 	forceFlush(): Promise<void> {
@@ -35,8 +28,11 @@ class TraceIdCollector implements SpanProcessor {
 
 /**
  * Set up browser OTel tracing exporting to Maple's ingest, tagging the resource
- * with the shared `session.id`. fetch() calls are auto-instrumented so backend
- * traces stitch to the browser session. Returns a shutdown function.
+ * with the shared `session.id`. When `tracingInstrumentFetch` is true, fetch()
+ * calls are auto-instrumented and their trace ids feed the session. Disable it
+ * when an external tracer (e.g. the Effect client SDK) already instruments
+ * requests — that tracer feeds the session via the published sink instead, and
+ * this avoids redundant duplicate network spans. Returns a shutdown function.
  */
 export function setupTracing(config: ResolvedConfig, sessionId: string): () => Promise<void> {
 	const attributes: Record<string, string> = {
@@ -61,15 +57,17 @@ export function setupTracing(config: ResolvedConfig, sessionId: string): () => P
 	})
 	provider.register()
 
-	registerInstrumentations({
-		instrumentations: [
-			new FetchInstrumentation({
-				// Propagate trace context to same-origin + Maple ingest only by
-				// default; customers widen via their own config if needed.
-				ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
-			}),
-		],
-	})
+	if (config.tracingInstrumentFetch) {
+		registerInstrumentations({
+			instrumentations: [
+				new FetchInstrumentation({
+					// Propagate trace context to same-origin + Maple ingest only by
+					// default; customers widen via their own config if needed.
+					ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
+				}),
+			],
+		})
+	}
 
 	return () => provider.shutdown()
 }

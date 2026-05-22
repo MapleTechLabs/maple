@@ -15,6 +15,13 @@ export interface MapleBrowserConfig {
 	readonly tracing?: {
 		/** Default true. */
 		readonly enabled?: boolean
+		/**
+		 * Auto-instrument `fetch()` to create network spans. Default true. Set
+		 * false when another tracer (e.g. the Effect client SDK) already
+		 * instruments requests — those spans feed the session via the published
+		 * sink, and disabling this avoids redundant duplicate network spans.
+		 */
+		readonly instrumentFetch?: boolean
 	}
 	readonly replay?: {
 		/** Default true. */
@@ -36,6 +43,7 @@ export interface ResolvedConfig {
 	readonly environment: string | undefined
 	readonly userId: string | undefined
 	readonly tracingEnabled: boolean
+	readonly tracingInstrumentFetch: boolean
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -52,6 +60,7 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		environment: config.environment,
 		userId: config.userId,
 		tracingEnabled: config.tracing?.enabled ?? true,
+		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
 		replayEnabled: config.replay?.enabled ?? true,
 		replaySampleRate: config.replay?.sampleRate ?? 1,
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,

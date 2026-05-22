@@ -1,6 +1,7 @@
 import { type MapleBrowserConfig, type ResolvedConfig, formatCHDateTime, resolveConfig } from "./config"
 import { getOrCreateSessionId, parseUserAgent } from "./session"
-import { setupTracing, getObservedTraceIds } from "./tracing"
+import { setupTracing } from "./tracing"
+import { getObservedTraceIds, publishSessionSink } from "./session-sink"
 import { startRecording, type Recorder } from "./replay/record"
 import { postSessionMeta } from "./replay/transport"
 
@@ -27,6 +28,10 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	const config = resolveConfig(rawConfig)
 	const sessionId = getOrCreateSessionId()
 	const startedAt = new Date()
+
+	// Publish first so external tracers (Effect client SDK) can feed trace ids
+	// into this session regardless of init ordering.
+	publishSessionSink(sessionId)
 
 	const shutdownTracing = config.tracingEnabled ? setupTracing(config, sessionId) : undefined
 

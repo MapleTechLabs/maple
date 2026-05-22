@@ -3,6 +3,7 @@ import { Replayer } from "@rrweb/replay"
 import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from "@rrweb/types"
 import "@rrweb/replay/dist/style.css"
 import { cn } from "@maple/ui/utils"
+import { buildTimeline, type InactiveInterval } from "./replay-timeline"
 import {
 	GlobeIcon,
 	ArrowPathIcon,
@@ -199,57 +200,132 @@ const SPEEDS = [0.5, 1, 2, 4, 8] as const
  * the slow part), so we skip them ourselves by jumping straight to the end.
  * Offsets are ms from the session start, matching `getCurrentTime()`.
  */
-interface InactiveInterval {
+
+/** Gaps longer than this between meaningful events count as idle. */
+const IDLE_THRESHOLD_MS = 2000
+
+/** A user interaction worth flagging on the scrubber. */
+type ActionKind = "click" | "input" | "scroll" | "nav"
+
+/**
+ * Per-kind coalescing window: a marker is dropped if one of the same kind landed
+ * within this many ms before it. Keystrokes (`input`) and scroll bursts collapse
+ * into a single waypoint; clicks only dedupe double-clicks. `nav` is deduped by
+ * URL instead (see below), so its window is unused.
+ */
+const MARKER_COALESCE_MS: Record<ActionKind, number> = {
+	click: 150,
+	input: 800,
+	scroll: 400,
+	nav: 0,
+}
+/** `ms` is the real offset from session start (matching `getCurrentTime()`). */
+interface ActionMarker {
+	ms: number
+	kind: ActionKind
+}
+
+/** An action marker / idle band positioned on the displayed (trimmed) timeline. */
+interface DisplayMarker {
+	ms: number
+	kind: ActionKind
+}
+interface IdleBand {
 	start: number
 	end: number
 }
 
-/** Gaps longer than this between consecutive events count as idle. */
-const IDLE_THRESHOLD_MS = 2000
-
-/** Recorded viewport + click timeline + idle gaps from the raw rrweb stream. */
+/** Recorded viewport + action markers + idle gaps from the raw rrweb stream. */
 interface DerivedMeta {
 	recordedWidth: number
 	recordedHeight: number
 	startTime: number
-	clickTimestamps: number[]
+	actionMarkers: ActionMarker[]
 	inactiveIntervals: InactiveInterval[]
+}
+
+/**
+ * Pointer drift and viewport jitter aren't "activity" for idle purposes — a user
+ * reading a page while nudging the mouse is idle. Excluding these sources is what
+ * makes a real idle stretch register as a gap (raw event cadence never goes quiet).
+ */
+function isMovementNoise(source: number | undefined): boolean {
+	return (
+		source === IncrementalSource.MouseMove ||
+		source === IncrementalSource.TouchMove ||
+		source === IncrementalSource.Drag ||
+		source === IncrementalSource.ViewportResize
+	)
 }
 
 function deriveMeta(events: unknown[]): DerivedMeta {
 	let recordedWidth = 1280
 	let recordedHeight = 720
-	const clickTimestamps: number[] = []
+	const actionMarkers: ActionMarker[] = []
 	const inactiveIntervals: InactiveInterval[] = []
 	const startTime =
 		(events[0] as { timestamp?: number } | undefined)?.timestamp ?? 0
-	let prevTs = startTime
+	// Last *meaningful* (non-movement) event time — idle is measured against this.
+	let prevMeaningfulTs = startTime
+	const lastMsByKind: Partial<Record<ActionKind, number>> = {}
+	let lastHref: string | undefined
+
+	// Add a marker unless one of the same kind landed within its coalesce window.
+	const pushMarker = (kind: ActionKind, ms: number) => {
+		const last = lastMsByKind[kind]
+		if (last !== undefined && ms - last < MARKER_COALESCE_MS[kind]) return
+		lastMsByKind[kind] = ms
+		actionMarkers.push({ ms, kind })
+	}
 
 	for (const raw of events) {
 		const ev = raw as {
 			type?: number
 			timestamp?: number
-			data?: { source?: number; type?: number; width?: number; height?: number }
-		}
-		if (typeof ev.timestamp === "number") {
-			if (ev.timestamp - prevTs > IDLE_THRESHOLD_MS) {
-				inactiveIntervals.push({ start: prevTs - startTime, end: ev.timestamp - startTime })
+			data?: {
+				source?: number
+				type?: number
+				width?: number
+				height?: number
+				href?: string
 			}
-			prevTs = ev.timestamp
 		}
+		const isIncremental = ev.type === EventType.IncrementalSnapshot
+		const source = isIncremental ? ev.data?.source : undefined
+
+		if (typeof ev.timestamp === "number" && !(isIncremental && isMovementNoise(source))) {
+			if (ev.timestamp - prevMeaningfulTs > IDLE_THRESHOLD_MS) {
+				inactiveIntervals.push({
+					start: prevMeaningfulTs - startTime,
+					end: ev.timestamp - startTime,
+				})
+			}
+			prevMeaningfulTs = ev.timestamp
+		}
+
 		if (ev.type === EventType.Meta && ev.data) {
 			if (typeof ev.data.width === "number") recordedWidth = ev.data.width
 			if (typeof ev.data.height === "number") recordedHeight = ev.data.height
-		} else if (
-			ev.type === EventType.IncrementalSnapshot &&
-			ev.data?.source === IncrementalSource.MouseInteraction &&
-			ev.data?.type === MouseInteractions.Click &&
-			typeof ev.timestamp === "number"
-		) {
-			clickTimestamps.push(ev.timestamp)
+			// Periodic checkouts re-emit Meta with the same href — only a genuine URL
+			// change is a navigation worth marking.
+			if (typeof ev.data.href === "string" && typeof ev.timestamp === "number") {
+				if (lastHref !== undefined && ev.data.href !== lastHref) {
+					pushMarker("nav", ev.timestamp - startTime)
+				}
+				lastHref = ev.data.href
+			}
+		} else if (isIncremental && typeof ev.timestamp === "number") {
+			const ms = ev.timestamp - startTime
+			if (source === IncrementalSource.MouseInteraction && ev.data?.type === MouseInteractions.Click) {
+				pushMarker("click", ms)
+			} else if (source === IncrementalSource.Input) {
+				pushMarker("input", ms)
+			} else if (source === IncrementalSource.Scroll) {
+				pushMarker("scroll", ms)
+			}
 		}
 	}
-	return { recordedWidth, recordedHeight, startTime, clickTimestamps, inactiveIntervals }
+	return { recordedWidth, recordedHeight, startTime, actionMarkers, inactiveIntervals }
 }
 
 /**
@@ -274,7 +350,7 @@ function RrwebSurface({
 	const isFullscreenRef = React.useRef(isFullscreen)
 	isFullscreenRef.current = isFullscreen
 
-	const { recordedWidth, recordedHeight, startTime, clickTimestamps, inactiveIntervals } =
+	const { recordedWidth, recordedHeight, actionMarkers, inactiveIntervals } =
 		React.useMemo(() => deriveMeta(events), [events])
 
 	const [isPlaying, setIsPlaying] = React.useState(false)
@@ -285,6 +361,31 @@ function RrwebSurface({
 	const [skipInactive, setSkipInactive] = React.useState(true)
 	const skipInactiveRef = React.useRef(skipInactive)
 	skipInactiveRef.current = skipInactive
+
+	// While skip-idle is on, present the timeline in active time: idle gaps
+	// collapse so the clock/scrubber match the (already idle-skipping) playback.
+	// Off → identity mapping, full wall-clock. `currentMs`/`totalMs` stay in
+	// rrweb's real clock; only displayed values are mapped.
+	const timeline = React.useMemo(
+		() => buildTimeline(skipInactive ? inactiveIntervals : [], totalMs),
+		[inactiveIntervals, totalMs, skipInactive],
+	)
+	const displayCurrentMs = timeline.toDisplay(currentMs)
+	const displayTotalMs = timeline.activeTotalMs
+	// Markers + idle bands, mapped into display space so they line up whether
+	// idle is collapsed (skip on) or shown at full wall-clock width (skip off).
+	const markers = React.useMemo<DisplayMarker[]>(
+		() => actionMarkers.map((m) => ({ ms: timeline.toDisplay(m.ms), kind: m.kind })),
+		[actionMarkers, timeline],
+	)
+	const idleBands = React.useMemo<IdleBand[]>(
+		() =>
+			inactiveIntervals.map((iv) => ({
+				start: timeline.toDisplay(iv.start),
+				end: timeline.toDisplay(iv.end),
+			})),
+		[inactiveIntervals, timeline],
+	)
 
 	// Fit the recorded viewport into the available width (or both dims when
 	// fullscreen), centering the scaled wrapper.
@@ -339,15 +440,9 @@ function RrwebSurface({
 		replayerRef.current = replayer
 		setTotalMs(replayer.getMetaData().totalTime)
 
-		replayer.on(ReplayerEvents.Start, () => {
-			setIsPlaying(true)
-			setFinished(false)
-		})
-		replayer.on(ReplayerEvents.Resume, () => {
-			setIsPlaying(true)
-			setFinished(false)
-		})
-		replayer.on(ReplayerEvents.Pause, () => setIsPlaying(false))
+		// rrweb's own transport events are unreliable in @rrweb/replay (Start/Resume
+		// often don't fire), so play/pause state is driven from our handlers. We
+		// still honour Finish to flip back to the replay affordance at the end.
 		replayer.on(ReplayerEvents.Finish, () => {
 			setIsPlaying(false)
 			setFinished(true)
@@ -376,17 +471,27 @@ function RrwebSurface({
 	React.useEffect(() => {
 		if (!isPlaying) return
 		let raf = 0
+		// Remember the gap we last jumped out of so we don't re-issue play() every
+		// frame before the engine clock catches up (which would thrash pause/play).
+		let lastJumpedEnd = -1
 		const tick = () => {
 			const replayer = replayerRef.current
 			if (replayer) {
 				const cur = replayer.getCurrentTime()
 				const gap =
 					skipInactiveRef.current &&
-					inactiveIntervals.find((iv) => cur >= iv.start && cur < iv.end - 30)
-				if (gap) {
+					inactiveIntervals.find((iv) => cur >= iv.start && cur < iv.end)
+				if (gap && gap.end !== lastJumpedEnd) {
+					// Remember the gap we jumped out of so we don't re-issue the seek
+					// every frame before the engine clock catches up (pause/play thrash).
+					lastJumpedEnd = gap.end
+					// Explicit pause→play forces the engine to seek; play(offset) alone
+					// can no-op while already playing in @rrweb/replay.
+					replayer.pause(gap.end)
 					replayer.play(gap.end)
 					setCurrentMs(gap.end)
-				} else {
+				} else if (!gap) {
+					lastJumpedEnd = -1
 					setCurrentMs(Math.min(cur, totalMs))
 				}
 			}
@@ -396,31 +501,41 @@ function RrwebSurface({
 		return () => cancelAnimationFrame(raf)
 	}, [isPlaying, totalMs, inactiveIntervals])
 
+	// Drive `isPlaying` from our own actions rather than waiting on rrweb's
+	// Start/Resume events — those don't reliably fire in @rrweb/replay, and the
+	// idle-skip rAF loop is gated on `isPlaying`, so without this the loop never
+	// runs and idle plays through in real time.
 	const togglePlay = React.useCallback(() => {
 		const replayer = replayerRef.current
 		if (!replayer) return
 		if (finished) {
 			replayer.play(0)
 			setCurrentMs(0)
+			setFinished(false)
+			setIsPlaying(true)
 		} else if (isPlaying) {
 			replayer.pause()
+			setIsPlaying(false)
 		} else {
 			const from = currentMs >= totalMs ? 0 : currentMs
 			replayer.play(from)
+			setIsPlaying(true)
 		}
 	}, [finished, isPlaying, currentMs, totalMs])
 
 	const seek = React.useCallback(
-		(ms: number) => {
+		// `displayMs` arrives in trimmed-timeline space; map back to rrweb's real
+		// clock before driving the engine.
+		(displayMs: number) => {
 			const replayer = replayerRef.current
 			if (!replayer) return
-			const clamped = Math.max(0, Math.min(ms, totalMs))
+			const clamped = Math.max(0, Math.min(timeline.toReal(displayMs), totalMs))
 			setCurrentMs(clamped)
 			if (clamped < totalMs) setFinished(false)
 			if (isPlaying && clamped < totalMs) replayer.play(clamped)
 			else replayer.pause(clamped)
 		},
-		[isPlaying, totalMs],
+		[isPlaying, totalMs, timeline],
 	)
 
 	const changeSpeed = React.useCallback((next: number) => {
@@ -446,10 +561,10 @@ function RrwebSurface({
 			<ReplayControls
 				isPlaying={isPlaying}
 				finished={finished}
-				currentMs={currentMs}
-				totalMs={totalMs}
-				startTime={startTime}
-				clickTimestamps={clickTimestamps}
+				currentMs={displayCurrentMs}
+				totalMs={displayTotalMs}
+				markers={markers}
+				idleBands={idleBands}
 				speed={speed}
 				skipInactive={skipInactive}
 				isFullscreen={isFullscreen}
@@ -476,8 +591,8 @@ function ReplayControls({
 	finished,
 	currentMs,
 	totalMs,
-	startTime,
-	clickTimestamps,
+	markers,
+	idleBands,
 	speed,
 	skipInactive,
 	isFullscreen,
@@ -491,8 +606,8 @@ function ReplayControls({
 	finished: boolean
 	currentMs: number
 	totalMs: number
-	startTime: number
-	clickTimestamps: number[]
+	markers: DisplayMarker[]
+	idleBands: IdleBand[]
 	speed: number
 	skipInactive: boolean
 	isFullscreen: boolean
@@ -522,8 +637,8 @@ function ReplayControls({
 			<Scrubber
 				currentMs={currentMs}
 				totalMs={totalMs}
-				startTime={startTime}
-				clickTimestamps={clickTimestamps}
+				markers={markers}
+				idleBands={idleBands}
 				onSeek={onSeek}
 			/>
 
@@ -581,17 +696,26 @@ function ReplayControls({
 	)
 }
 
+/** Marker dot colour by action kind. */
+const MARKER_STYLES: Record<ActionKind, string> = {
+	click: "bg-amber-400",
+	input: "bg-sky-400",
+	scroll: "bg-violet-400",
+	nav: "bg-emerald-400",
+}
+
 function Scrubber({
 	currentMs,
 	totalMs,
-	startTime,
-	clickTimestamps,
+	markers,
+	idleBands,
 	onSeek,
 }: {
 	currentMs: number
 	totalMs: number
-	startTime: number
-	clickTimestamps: number[]
+	/** Action markers + idle bands, already in the same (display) ms space as totalMs. */
+	markers: DisplayMarker[]
+	idleBands: IdleBand[]
 	onSeek: (ms: number) => void
 }) {
 	const trackRef = React.useRef<HTMLDivElement | null>(null)
@@ -638,21 +762,47 @@ function Scrubber({
 		>
 			{/* Track */}
 			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
+				{/* Idle bands — greyed/hatched, under the progress fill */}
+				{totalMs > 0 &&
+					idleBands.map((band, i) => {
+						const leftPct = Math.max(0, Math.min(100, (band.start / totalMs) * 100))
+						const widthPct = Math.max(
+							0,
+							Math.min(100 - leftPct, ((band.end - band.start) / totalMs) * 100),
+						)
+						return (
+							<span
+								key={`idle-${band.start}-${i}`}
+								className="absolute inset-y-0 bg-foreground/25"
+								style={{
+									left: `${leftPct}%`,
+									width: `${widthPct}%`,
+									minWidth: 3,
+									backgroundImage:
+										"repeating-linear-gradient(45deg, transparent 0 2px, rgba(0,0,0,0.18) 2px 4px)",
+								}}
+								title="Idle"
+							/>
+						)
+					})}
 				<div
-					className="h-full rounded-full bg-primary"
+					className="relative h-full rounded-full bg-primary"
 					style={{ width: `${pct}%` }}
 				/>
 			</div>
-			{/* Click markers */}
+			{/* Action markers */}
 			{totalMs > 0 &&
-				clickTimestamps.map((ts, i) => {
-					const markerPct = Math.min(100, Math.max(0, ((ts - startTime) / totalMs) * 100))
+				markers.map((m, i) => {
+					const markerPct = Math.min(100, Math.max(0, (m.ms / totalMs) * 100))
 					return (
 						<span
-							key={`${ts}-${i}`}
-							className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 ring-1 ring-card"
+							key={`${m.kind}-${m.ms}-${i}`}
+							className={cn(
+								"absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-1 ring-card",
+								MARKER_STYLES[m.kind],
+							)}
 							style={{ left: `${markerPct}%` }}
-							title="Click"
+							title={m.kind}
 						/>
 					)
 				})}
