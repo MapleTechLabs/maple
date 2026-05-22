@@ -1,10 +1,12 @@
 import * as React from "react"
-import { createFileRoute, Link } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { ReplayPlayer } from "@/components/replays/replay-player"
+import { ReplaySurface } from "@/components/replays/replay-player"
+import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
+import { ReplayEditorTimeline } from "@/components/replays/replay-editor-timeline"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getReplayEventsResultAtom,
@@ -25,7 +27,6 @@ import {
 	EyeIcon,
 	CircleWarningIcon,
 	UserIcon,
-	ArrowRightIcon,
 } from "@/components/icons"
 
 const detailSearchSchema = Schema.Struct({
@@ -126,9 +127,10 @@ function ReplayDetailPage() {
 						</div>
 					</div>
 
-					<ResizablePanelGroup orientation="horizontal" className="min-h-[70vh] gap-4">
+					<ReplayPlayerProvider sessionId={sessionId}>
+						<ResizablePanelGroup orientation="horizontal" className="min-h-[60vh] gap-4">
 						<ResizablePanel defaultSize={66} minSize={45}>
-							<ReplayPlayer sessionId={sessionId} url={session.urlInitial} />
+							<ReplaySurface url={session.urlInitial} />
 						</ResizablePanel>
 						<ResizableHandle withHandle />
 						<ResizablePanel defaultSize={34} minSize={26}>
@@ -185,11 +187,16 @@ function ReplayDetailPage() {
 									</dl>
 								</section>
 
-								{/* Correlated traces */}
-								<CorrelatedTraces traceIds={session.traceIds} />
 							</div>
 						</ResizablePanel>
 					</ResizablePanelGroup>
+
+						{/* Synced trace timeline — recording activity + correlated traces on a
+						    shared playhead. Replaces the old flat correlated-traces list. */}
+						<div className="mt-4">
+							<ReplayEditorTimeline traceIds={session.traceIds} />
+						</div>
+					</ReplayPlayerProvider>
 				</DashboardLayout>
 			)
 		})
@@ -268,44 +275,3 @@ function DetailRow({
 	)
 }
 
-function CorrelatedTraces({ traceIds }: { traceIds: ReadonlyArray<string> }) {
-	return (
-		<section className="rounded-xl border border-border">
-			<h3 className="flex items-center justify-between border-b border-border px-4 py-2.5">
-				<span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-					<PulseIcon className="size-3.5" />
-					Correlated traces
-				</span>
-				{traceIds.length > 0 && (
-					<span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary">
-						{traceIds.length}
-					</span>
-				)}
-			</h3>
-			{traceIds.length === 0 ? (
-				<p className="px-4 py-4 text-xs leading-relaxed text-muted-foreground">
-					No backend traces were linked to this session. Correlation populates automatically
-					when the page is instrumented with <span className="font-mono">@maple/browser</span>{" "}
-					tracing — every request made during the session is stitched to its trace here.
-				</p>
-			) : (
-				<ul className="divide-y divide-border">
-					{traceIds.map((traceId) => (
-						<li key={traceId}>
-							<Link
-								to="/traces/$traceId"
-								params={{ traceId }}
-								className="group flex items-center justify-between gap-2 px-4 py-2.5 transition-colors hover:bg-muted/50"
-							>
-								<span className="truncate font-mono text-xs text-foreground">
-									{traceId.slice(0, 18)}…
-								</span>
-								<ArrowRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-							</Link>
-						</li>
-					))}
-				</ul>
-			)}
-		</section>
-	)
-}
