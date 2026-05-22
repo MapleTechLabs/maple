@@ -371,9 +371,9 @@ function TraceRow({
 				<button
 					type="button"
 					onClick={() => player.seekDisplay(range.displayStartMs)}
-					title={`${summary.rootSpanName} — ${Math.round(summary.durationMs)}ms${
-						range.outOfRange ? " (outside recording)" : ""
-					}`}
+					title={`${summary.rootSpanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
+						summary.durationMs,
+					)}ms${range.outOfRange ? " · outside recording" : ""}`}
 					className="relative h-11 flex-1 cursor-pointer"
 				>
 					<TraceBar
@@ -514,9 +514,9 @@ function SpanRowItem({ span, player }: { span: SpanRow; player: ReplayPlayerCont
 			<button
 				type="button"
 				onClick={() => player.seekDisplay(range.displayStartMs)}
-				title={`${span.spanName} — ${Math.round(span.durationMs)}ms${
-					range.outOfRange ? " (outside recording)" : ""
-				}`}
+				title={`${span.spanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
+					span.durationMs,
+				)}ms${range.outOfRange ? " · outside recording" : ""}`}
 				className="relative h-5 flex-1 cursor-pointer"
 			>
 				<span
