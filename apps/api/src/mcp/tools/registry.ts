@@ -38,6 +38,8 @@ import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
+import { registerSearchSessionsTool } from "./search-sessions"
+import { registerGetSessionTranscriptTool } from "./get-session-transcript"
 import { registerServiceMapTool } from "./service-map"
 import type { McpToolError, McpToolRegistrar, McpToolResult } from "./types"
 import { registerUpdateDashboardTool } from "./update-dashboard"
@@ -81,6 +83,8 @@ export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition
 	registerSearchLogsTool(registrar)
 	registerMineLogPatternsTool(registrar)
 	registerSearchTracesTool(registrar)
+	registerSearchSessionsTool(registrar)
+	registerGetSessionTranscriptTool(registrar)
 	registerDiagnoseServiceTool(registrar)
 	registerFindSlowTracesTool(registrar)
 	registerErrorDetailTool(registrar)

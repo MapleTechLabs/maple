@@ -14,7 +14,27 @@ import {
 import { router, type RouterAuthContext } from "./router"
 import { appRegistry } from "./lib/registry"
 import { clearChunkReloadGuard, shouldAttemptChunkReload } from "./lib/chunk-reload"
+import { MapleBrowser } from "@maple/browser"
+import { ingestUrl } from "./lib/services/common/ingest-url"
 import "./styles.css"
+
+// Dev-only browser session replay + tracing for the dashboard itself. The
+// effect-sdk client tracer already instruments every Effect HTTP request and
+// feeds its trace ids into the replay session sink, so auto fetch instrumentation
+// is OFF (`instrumentFetch: false`) — otherwise it would attach redundant raw
+// network spans to "Correlated traces" instead of the real Effect/backend traces.
+// Gated on DEV + key so the deployed dashboard never self-records.
+const replayIngestKey = import.meta.env.VITE_MAPLE_INGEST_KEY?.trim()
+if (import.meta.env.DEV && replayIngestKey) {
+	MapleBrowser.init({
+		ingestKey: replayIngestKey,
+		serviceName: "maple-web",
+		endpoint: ingestUrl,
+		environment: import.meta.env.MODE,
+		tracing: { enabled: true, instrumentFetch: false },
+		replay: { enabled: true, sampleRate: 1 },
+	})
+}
 
 window.addEventListener("vite:preloadError", (event) => {
 	if (shouldAttemptChunkReload()) {

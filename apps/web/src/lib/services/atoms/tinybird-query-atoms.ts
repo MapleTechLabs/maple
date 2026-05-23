@@ -72,6 +72,14 @@ import {
 	listTraces,
 } from "@/api/tinybird/traces"
 import { getQueryBuilderTimeseries } from "@/api/tinybird/query-builder-timeseries"
+import {
+	getReplay,
+	getReplayEvents,
+	getReplaysForTrace,
+	getSessionTranscript,
+	getSessionTraceSummaries,
+	listReplays,
+} from "@/api/tinybird/replays"
 
 type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, unknown, unknown>
 
@@ -79,10 +87,13 @@ interface QueryAtomOptions {
 	staleTime?: number
 }
 
-export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("QueryAtomError", {
-	message: Schema.String,
-	cause: Schema.optional(Schema.Unknown),
-}) {}
+export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
+	"@maple/web/services/QueryAtomError",
+	{
+		message: Schema.String,
+		cause: Schema.optional(Schema.Unknown),
+	},
+) {}
 
 const isTaggedBackendError = (error: unknown): boolean =>
 	typeof error === "object" &&
@@ -159,6 +170,35 @@ export const getTracesFacetsResultAtom = makeQueryAtomFamily(getTracesFacets, {
 })
 
 export const getSpanHierarchyResultAtom = makeQueryAtomFamily(getSpanHierarchy)
+
+export const listReplaysResultAtom = makeQueryAtomFamily(listReplays, {
+	staleTime: 30_000,
+})
+
+export const getReplayResultAtom = makeQueryAtomFamily(getReplay, {
+	staleTime: 60_000,
+})
+
+export const getSessionTraceSummariesResultAtom = makeQueryAtomFamily(getSessionTraceSummaries, {
+	staleTime: 60_000,
+})
+
+// Idle TTL keeps the chunks (and their inline rrweb events) stable across the
+// player's frequent re-renders so the decode memo in the player context isn't
+// thrown away and re-run. Events come straight from ClickHouse — no R2, no
+// signed URLs, no client-side fetch/gunzip.
+export const getReplayEventsResultAtom = makeQueryAtomFamily(getReplayEvents, {
+	staleTime: 240_000,
+})
+
+// Distilled session transcript (console/network/error/nav/click) for the panels.
+export const getSessionTranscriptResultAtom = makeQueryAtomFamily(getSessionTranscript, {
+	staleTime: 60_000,
+})
+
+export const getReplaysForTraceResultAtom = makeQueryAtomFamily(getReplaysForTrace, {
+	staleTime: 60_000,
+})
 
 export const getSpanDetailResultAtom = makeQueryAtomFamily(getSpanDetail, {
 	staleTime: 60_000,

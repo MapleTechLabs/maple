@@ -32,7 +32,7 @@ describe("ClickHouse DDL emitter", () => {
 		expect(ddl).toContain("OrgId LowCardinality(String)")
 		expect(ddl).toContain("ORDER BY (OrgId, ServiceName, SpanName, toDateTime(Timestamp))")
 		expect(ddl).toContain("PARTITION BY toDate(Timestamp)")
-		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 90 DAY")
+		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})
 
 	it("preserves DEFAULT expressions on computed columns", async () => {

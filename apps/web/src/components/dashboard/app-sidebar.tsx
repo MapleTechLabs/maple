@@ -4,6 +4,7 @@ import {
 	HouseIcon,
 	FileIcon,
 	PulseIcon,
+	EyeIcon,
 	ChartLineIcon,
 	ServerIcon,
 	ComputerIcon,
@@ -52,6 +53,7 @@ import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-a
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
+import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { Badge } from "@maple/ui/components/ui/badge"
 
 const mainNavItems = [
@@ -102,6 +104,11 @@ const signalsNavItems: SignalsNavItem[] = [
 		title: "Metrics",
 		href: "/metrics",
 		icon: ChartLineIcon,
+	},
+	{
+		title: "Replays",
+		href: "/replays",
+		icon: EyeIcon,
 	},
 	{
 		title: "Infrastructure",
@@ -258,9 +265,12 @@ export function AppSidebar() {
 	const otherDashboards = dashboards.filter((d) => !favorites.has(d.id))
 
 	const infraEnabled = useInfraEnabled()
-	const visibleSignalsNavItems = infraEnabled
-		? signalsNavItems
-		: signalsNavItems.filter((item) => item.href !== "/infra")
+	const sessionReplaysEnabled = useSessionReplaysEnabled()
+	const visibleSignalsNavItems = signalsNavItems.filter(
+		(item) =>
+			(infraEnabled || item.href !== "/infra") &&
+			(sessionReplaysEnabled || item.href !== "/replays"),
+	)
 
 	return (
 		<Sidebar collapsible="icon">

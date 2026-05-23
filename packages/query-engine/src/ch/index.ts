@@ -202,6 +202,32 @@ export {
 	type ErrorRateByServiceOutput,
 } from "./queries/logs"
 
+// Queries — Session Replays
+export {
+	sessionReplaysListQuery,
+	getSessionReplayQuery,
+	sessionReplayEventsQuery,
+	sessionsForTraceQuery,
+	sessionTraceSummariesQuery,
+	type SessionReplaysListOpts,
+	type SessionReplaysListOutput,
+	type SessionReplayDetailOutput,
+	type SessionReplayEventsOutput,
+	type SessionsForTraceOpts,
+	type SessionsForTraceOutput,
+	type SessionTraceSummariesOpts,
+	type SessionTraceSummaryOutput,
+} from "./queries/session-replays"
+
+// Queries — Session Events (distilled stream)
+export {
+	sessionTranscriptQuery,
+	searchSessionsByEventQuery,
+	type SessionTranscriptOutput,
+	type SearchSessionsByEventOpts,
+	type SearchSessionsByEventOutput,
+} from "./queries/session-events"
+
 // Queries — Services
 export {
 	serviceOverviewQuery,

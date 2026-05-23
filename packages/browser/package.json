@@ -1,0 +1,42 @@
+{
+	"name": "@maple/browser",
+	"version": "0.1.0",
+	"description": "Maple browser SDK — OpenTelemetry tracing and rrweb session replay in one package. Every span and replay event shares a session id for trace↔replay correlation.",
+	"type": "module",
+	"main": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"files": [
+		"src/**/*.ts",
+		"!src/**/*.test.ts",
+		"README.md"
+	],
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@opentelemetry/api": "^1.9.0",
+		"@opentelemetry/exporter-trace-otlp-http": "^0.205.0",
+		"@opentelemetry/instrumentation": "^0.205.0",
+		"@opentelemetry/instrumentation-fetch": "^0.205.0",
+		"@opentelemetry/resources": "^2.0.0",
+		"@opentelemetry/sdk-trace-base": "^2.0.0",
+		"@opentelemetry/sdk-trace-web": "^2.0.0",
+		"@opentelemetry/semantic-conventions": "^1.36.0",
+		"rrweb": "^2.0.0-alpha.18"
+	},
+	"devDependencies": {
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	},
+	"keywords": [
+		"maple",
+		"opentelemetry",
+		"session-replay",
+		"rrweb",
+		"observability",
+		"rum"
+	]
+}

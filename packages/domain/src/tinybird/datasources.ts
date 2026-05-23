@@ -1086,7 +1086,7 @@ export type AlertChecksRow = InferRow<typeof alertChecks>
  *
  * Populated by materialized view, not direct ingestion.
  *
- * SOURCE TTL: 90d (matches `traces.ttl`). Update in lockstep if raw TTL
+ * SOURCE TTL: 30d (matches `traces.ttl`). Update in lockstep if raw TTL
  * changes — see docs/persistence.md.
  */
 export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly", {
@@ -1149,7 +1149,7 @@ export type TracesAggregatesHourlyRow = InferRow<typeof tracesAggregatesHourly>
  * "errors per service per hour" / "log volume by severity" queries no
  * longer scan raw logs.
  *
- * SOURCE TTL: 90d (matches `logs.ttl`).
+ * SOURCE TTL: 30d (matches `logs.ttl`).
  */
 export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
 	description:
@@ -1172,3 +1172,153 @@ export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
 })
 
 export type LogsAggregatesHourlyRow = InferRow<typeof logsAggregatesHourly>
+
+/**
+ * Session replay session metadata — one row per browser session.
+ *
+ * Ingested directly via `POST /v1/sessionReplays/meta` (NDJSON) from the
+ * `@maple/browser` SDK, not via a materialized view. The SDK writes a partial
+ * row at session start (`Version=1`, `Status='active'`) and a complete row on
+ * page hide / unload (`Version=2`, `Status='ended'`, final `EndTime`/`DurationMs`).
+ * ReplacingMergeTree keyed by Version keeps the latest, so consumers should
+ * read with `FINAL` (or dedupe `LIMIT 1 BY (OrgId, SessionId) ORDER BY Version DESC`).
+ *
+ * The rrweb event payloads live in `sessionReplayEvents` (one row per chunk,
+ * payload inline in ClickHouse — there is no R2 blob store); this table only
+ * holds small, queryable metadata so the sessions list/filter views never
+ * touch the multi-MB rrweb blobs.
+ *
+ * `TraceIds` carries the OTel trace ids observed during the session — the
+ * correlation key that lets the trace detail view link to a replay and back.
+ *
+ * TTL is 30 days (matches traces/logs) — replays are large and lose value
+ * fast; keep in lockstep with `sessionReplayEvents`' TTL.
+ */
+export const sessionReplays = defineDatasource("session_replays", {
+	description:
+		"Per-session browser replay metadata (one row per session). Ingested directly from the @maple/browser SDK via POST /v1/sessionReplays/meta. Event payloads live inline in session_replay_events; this holds only queryable metadata. ReplacingMergeTree(Version) for start/end upsert.",
+	schema: {
+		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
+		StartTime: column(t.dateTime64(9), { jsonPath: "$.start_time" }),
+		EndTime: column(t.dateTime64(9).nullable(), { jsonPath: "$.end_time" }),
+		DurationMs: column(t.uint32().nullable(), { jsonPath: "$.duration_ms" }),
+		Status: column(t.string().lowCardinality(), { jsonPath: "$.status" }),
+		UserId: column(t.string(), { jsonPath: "$.user_id" }),
+		UrlInitial: column(t.string(), { jsonPath: "$.url_initial" }),
+		UserAgent: column(t.string(), { jsonPath: "$.user_agent" }),
+		BrowserName: column(t.string().lowCardinality(), { jsonPath: "$.browser_name" }),
+		OsName: column(t.string().lowCardinality(), { jsonPath: "$.os_name" }),
+		DeviceType: column(t.string().lowCardinality(), { jsonPath: "$.device_type" }),
+		// Server-derived (Cf-IPCountry); the SDK never sends it, so default to ''
+		// rather than quarantine the row under strict type checking.
+		Country: column(t.string().lowCardinality().default(""), { jsonPath: "$.country" }),
+		ServiceName: column(t.string().lowCardinality(), { jsonPath: "$.service_name" }),
+		PageViews: column(t.uint32().default(0), { jsonPath: "$.page_views" }),
+		ClickCount: column(t.uint32().default(0), { jsonPath: "$.click_count" }),
+		ErrorCount: column(t.uint32().default(0), { jsonPath: "$.error_count" }),
+		// Only present on the ended (v2) row — the active (v1) row omits it, so
+		// default to [] to keep the in-progress row out of quarantine.
+		TraceIds: column(t.array(t.string()).default([]), { jsonPath: "$.trace_ids[:]" }),
+		ResourceAttributes: column(t.map(t.string().lowCardinality(), t.string()), {
+			jsonPath: "$.resource_attributes",
+		}),
+		Version: column(t.uint32(), { jsonPath: "$.version" }),
+	},
+	engine: engine.replacingMergeTree({
+		partitionKey: "toDate(StartTime)",
+		sortingKey: ["OrgId", "SessionId"],
+		ver: "Version",
+		ttl: "toDate(StartTime) + INTERVAL 30 DAY",
+	}),
+})
+
+export type SessionReplaysRow = InferRow<typeof sessionReplays>
+
+/**
+ * Session replay events — one row per uploaded rrweb chunk, payload included.
+ *
+ * The ingest gateway gunzips the chunk body and writes the rrweb event array
+ * JSON into `Events` (a String column ClickHouse ZSTD-compresses). Playback
+ * reads chunks back directly from here — there is no R2 blob store on the
+ * replay path.
+ *
+ * `IsCheckpoint=1` marks chunks that contain a full rrweb DOM snapshot, so the
+ * player can seek to a timestamp by loading the nearest preceding checkpoint
+ * rather than replaying from t=0.
+ *
+ * Sorted by (OrgId, SessionId, ChunkSeq) so fetching a whole session's chunks
+ * in playback order is a single contiguous range scan. 30-day TTL matches
+ * `sessionReplays`.
+ */
+export const sessionReplayEvents = defineDatasource("session_replay_events", {
+	description:
+		"Session replay rrweb events (one row per chunk, payload included). The ingest gateway gunzips the chunk and stores the event-array JSON in `Events`. Playback reads directly from ClickHouse — no R2.",
+	schema: {
+		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
+		ChunkSeq: column(t.uint32(), { jsonPath: "$.chunk_seq" }),
+		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		DurationMs: column(t.uint32().default(0), { jsonPath: "$.duration_ms" }),
+		EventCount: column(t.uint32().default(0), { jsonPath: "$.event_count" }),
+		// Uncompressed byte length of the events JSON (telemetry / debugging).
+		ByteSize: column(t.uint32().default(0), { jsonPath: "$.byte_size" }),
+		// The rrweb event array, serialized as a JSON string.
+		Events: column(t.string(), { jsonPath: "$.events" }),
+		IsCheckpoint: column(t.uint8().default(0), { jsonPath: "$.is_checkpoint" }),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "SessionId", "ChunkSeq"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type SessionReplayEventsRow = InferRow<typeof sessionReplayEvents>
+
+/**
+ * Distilled session events — structured semantic events (navigation, clicks,
+ * console logs, network requests, errors) captured client-side by the
+ * `@maple/browser` SDK and ingested via `POST /v1/sessionEvents` (NDJSON).
+ *
+ * This is the small, queryable layer that powers in-session search, the
+ * console/network/error panels, and the agent transcript — distinct from the
+ * raw rrweb payloads in `sessionReplayEvents`. Sparse: only the columns
+ * relevant to a row's `Type` are populated; the rest default empty.
+ *
+ * Plain MergeTree (immutable append, no dedup) sorted by
+ * (OrgId, SessionId, Timestamp, Seq) so a whole session's transcript is a
+ * single contiguous range scan. 30-day TTL matches `sessionReplays`.
+ */
+export const sessionEvents = defineDatasource("session_events", {
+	description:
+		"Distilled structured session events (navigation, click, input, console, network, error) captured client-side and ingested via POST /v1/sessionEvents. Powers in-session search, replay panels, and agent transcripts.",
+	schema: {
+		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
+		SessionId: column(t.string(), { jsonPath: "$.session_id" }),
+		Timestamp: column(t.dateTime64(9), { jsonPath: "$.timestamp" }),
+		Seq: column(t.uint32().default(0), { jsonPath: "$.seq" }),
+		Type: column(t.string().lowCardinality(), { jsonPath: "$.type" }),
+		Url: column(t.string().default(""), { jsonPath: "$.url" }),
+		TraceId: column(t.string().default(""), { jsonPath: "$.trace_id" }),
+		Level: column(t.string().lowCardinality().default(""), { jsonPath: "$.level" }),
+		Message: column(t.string().default(""), { jsonPath: "$.message" }),
+		TargetSelector: column(t.string().default(""), { jsonPath: "$.target_selector" }),
+		TargetText: column(t.string().default(""), { jsonPath: "$.target_text" }),
+		NetMethod: column(t.string().lowCardinality().default(""), { jsonPath: "$.net_method" }),
+		NetUrl: column(t.string().default(""), { jsonPath: "$.net_url" }),
+		NetStatus: column(t.uint16().default(0), { jsonPath: "$.net_status" }),
+		NetDurationMs: column(t.uint32().default(0), { jsonPath: "$.net_duration_ms" }),
+		ErrorStack: column(t.string().default(""), { jsonPath: "$.error_stack" }),
+		Attributes: column(t.map(t.string().lowCardinality(), t.string()), {
+			jsonPath: "$.attributes",
+		}),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "SessionId", "Timestamp", "Seq"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type SessionEventsRow = InferRow<typeof sessionEvents>

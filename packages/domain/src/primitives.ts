@@ -18,6 +18,9 @@ export type TraceId = Schema.Schema.Type<typeof TraceId>
 export const SpanId = MapleId("@maple/SpanId", "Span ID")
 export type SpanId = Schema.Schema.Type<typeof SpanId>
 
+export const SessionId = MapleId("@maple/SessionId", "Session ID")
+export type SessionId = Schema.Schema.Type<typeof SessionId>
+
 export const OrgId = MapleId("@maple/OrgId", "Org ID")
 export type OrgId = Schema.Schema.Type<typeof OrgId>
 
