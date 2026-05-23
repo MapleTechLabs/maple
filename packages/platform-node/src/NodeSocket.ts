@@ -1,0 +1,81 @@
+/**
+ * Node platform socket entry point for Effect sockets backed by Node streams
+ * and WebSocket implementations.
+ *
+ * This module re-exports the shared Node socket constructors for TCP clients,
+ * Unix domain socket clients, and adapters from existing Node `Duplex` streams,
+ * then adds Node-specific WebSocket constructor layers. Use it when connecting
+ * to raw socket protocols, wiring RPC transports over TCP or Unix sockets, or
+ * opening WebSocket clients in Node.
+ *
+ * TCP and Unix socket behavior comes from the shared Node layer: Unix sockets
+ * are selected with `NetConnectOpts.path`, scoped sockets close or destroy the
+ * underlying stream on finalization, and Node open, read, write, and close
+ * events are translated into `SocketError` values. For WebSockets,
+ * `layerWebSocketConstructor` prefers `globalThis.WebSocket` when available
+ * and falls back to `ws`; use `layerWebSocketConstructorWS` when you need the
+ * `ws` implementation consistently across Node versions.
+ *
+ * @since 4.0.0
+ */
+import { NodeWS as WS } from "@effect/platform-node-shared/NodeSocket"
+import type * as Duration from "effect/Duration"
+import type * as Effect from "effect/Effect"
+import { flow } from "effect/Function"
+import * as Layer from "effect/Layer"
+import * as Socket from "effect/unstable/socket/Socket"
+
+/**
+ * @since 4.0.0
+ */
+export * from "@effect/platform-node-shared/NodeSocket"
+
+/**
+ * Provides a `Socket.WebSocketConstructor`, using `globalThis.WebSocket` when
+ * available and falling back to the `ws` package otherwise.
+ *
+ * @category layers
+ * @since 4.0.0
+ */
+export const layerWebSocketConstructor: Layer.Layer<
+  Socket.WebSocketConstructor
+> = Layer.sync(Socket.WebSocketConstructor)(() => {
+  if ("WebSocket" in globalThis) {
+    return (url, protocols) => new globalThis.WebSocket(url, protocols)
+  }
+  return (url, protocols) => new WS.WebSocket(url, protocols) as unknown as globalThis.WebSocket
+})
+
+/**
+ * Provides a `Socket.WebSocketConstructor` backed explicitly by the `ws`
+ * package.
+ *
+ * @category layers
+ * @since 4.0.0
+ */
+export const layerWebSocketConstructorWS: Layer.Layer<
+  Socket.WebSocketConstructor
+> = Layer.succeed(Socket.WebSocketConstructor)(
+  (url, protocols) => new WS.WebSocket(url, protocols) as unknown as globalThis.WebSocket
+)
+
+/**
+ * Creates a `Socket.Socket` layer for a WebSocket URL using the Node WebSocket
+ * constructor layer, honoring protocol, open-timeout, and close-code error
+ * options.
+ *
+ * @category layers
+ * @since 4.0.0
+ */
+export const layerWebSocket: (
+  url: string | Effect.Effect<string>,
+  options?: {
+    readonly closeCodeIsError?: ((code: number) => boolean) | undefined
+    readonly openTimeout?: Duration.Input | undefined
+    readonly protocols?: string | Array<string> | undefined
+  } | undefined
+) => Layer.Layer<Socket.Socket, never, never> = flow(
+  Socket.makeWebSocket,
+  Layer.effect(Socket.Socket),
+  Layer.provide(layerWebSocketConstructor)
+)
