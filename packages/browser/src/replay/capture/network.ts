@@ -1,6 +1,5 @@
-import { activeTraceId, type SessionEvent } from "../events"
-
-type Emit = (ev: SessionEvent) => void
+import { activeTraceId } from "../events"
+import { type Emit, safeEmit } from "./shared"
 
 /**
  * Capture fetch + XHR requests as session events, tagged with the active trace
@@ -36,16 +35,12 @@ export function installNetworkCapture(emit: Emit, ignoreUrl: (url: string) => bo
 		error?: string,
 	): void => {
 		if (ignoreUrl(url)) return
-		try {
-			emit({
-				type: "network",
-				net: { method, url, status, durationMs: Math.round(performance.now() - start) },
-				traceId,
-				...(error ? { attrs: { error } } : {}),
-			})
-		} catch {
-			// best-effort
-		}
+		safeEmit(emit, {
+			type: "network",
+			net: { method, url, status, durationMs: Math.round(performance.now() - start) },
+			traceId,
+			...(error ? { attrs: { error } } : {}),
+		})
 	}
 
 	// XMLHttpRequest — patch open (to capture method/url) + send (to time + observe).

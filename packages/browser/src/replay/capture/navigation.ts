@@ -1,6 +1,4 @@
-import type { SessionEvent } from "../events"
-
-type Emit = (ev: SessionEvent) => void
+import { type Emit, safeEmit } from "./shared"
 
 /**
  * Capture page views as session events: the initial load plus every SPA
@@ -13,11 +11,7 @@ export function installNavigationCapture(emit: Emit): () => void {
 		// SPA frameworks often replaceState repeatedly with the same URL; dedupe.
 		if (url === lastUrl) return
 		lastUrl = url
-		try {
-			emit({ type: "navigation", url })
-		} catch {
-			// best-effort
-		}
+		safeEmit(emit, { type: "navigation", url })
 	}
 
 	emitNav() // initial page view

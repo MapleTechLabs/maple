@@ -8,12 +8,12 @@ import {
 	getSpanHierarchyResultAtom,
 } from "@/lib/services/atoms/tinybird-query-atoms"
 import {
-	type ActionKind,
 	type DisplayMarker,
 	useReplayPlayer,
 	type ReplayPlayerContextValue,
 } from "./replay-player-context"
 import { spanDisplayRange } from "./replay-timeline"
+import { formatClock, MARKER_STYLES } from "./replay-format"
 import {
 	ChevronRightIcon,
 	ChevronDownIcon,
@@ -39,22 +39,6 @@ import {
 
 /** Fixed left gutter (label column) shared by every row. Matches `left-36`. */
 const LANE_GUTTER = "w-36"
-
-/** Marker dot colour by action kind (mirrors the old scrubber). */
-const MARKER_STYLES: Record<ActionKind, string> = {
-	click: "bg-amber-400",
-	input: "bg-sky-400",
-	scroll: "bg-violet-400",
-	nav: "bg-emerald-400",
-}
-
-function formatClock(ms: number): string {
-	if (!Number.isFinite(ms) || ms < 0) ms = 0
-	const totalSeconds = Math.floor(ms / 1000)
-	const minutes = Math.floor(totalSeconds / 60)
-	const seconds = totalSeconds % 60
-	return `${minutes}:${seconds.toString().padStart(2, "0")}`
-}
 
 function pct(ms: number, totalMs: number): number {
 	if (totalMs <= 0) return 0

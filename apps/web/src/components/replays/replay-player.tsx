@@ -2,7 +2,6 @@ import * as React from "react"
 import "@rrweb/replay/dist/style.css"
 import { cn } from "@maple/ui/utils"
 import {
-	type ActionKind,
 	type DisplayMarker,
 	type IdleBand,
 	errorMessage,
@@ -17,34 +16,13 @@ import {
 	MaximizeIcon,
 	MinimizeIcon,
 } from "@/components/icons"
+import { formatClock, hostFromUrl, MARKER_STYLES } from "./replay-format"
 
 const SPEEDS = [0.5, 1, 2, 4, 8] as const
 
-/** Marker dot colour by action kind. */
-const MARKER_STYLES: Record<ActionKind, string> = {
-	click: "bg-amber-400",
-	input: "bg-sky-400",
-	scroll: "bg-violet-400",
-	nav: "bg-emerald-400",
-}
-
-/** Pretty host + path for the faux browser address bar. */
+/** Host + path for the faux browser address bar; blank URL reads as about:blank. */
 function prettyUrl(url: string | undefined): string {
-	if (!url) return "about:blank"
-	try {
-		const u = new URL(url)
-		return `${u.host}${u.pathname === "/" ? "" : u.pathname}`
-	} catch {
-		return url
-	}
-}
-
-function formatClock(ms: number): string {
-	if (!Number.isFinite(ms) || ms < 0) ms = 0
-	const totalSeconds = Math.floor(ms / 1000)
-	const minutes = Math.floor(totalSeconds / 60)
-	const seconds = totalSeconds % 60
-	return `${minutes}:${seconds.toString().padStart(2, "0")}`
+	return url ? hostFromUrl(url) : "about:blank"
 }
 
 /**

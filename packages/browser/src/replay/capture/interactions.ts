@@ -1,6 +1,4 @@
-import type { SessionEvent } from "../events"
-
-type Emit = (ev: SessionEvent) => void
+import { type Emit, safeEmit } from "./shared"
 
 const MAX_TEXT = 120
 
@@ -34,14 +32,6 @@ export function installInteractionCapture(emit: Emit, maskAllText: boolean): () 
 	return () => {
 		document.removeEventListener("click", onClick, true)
 		document.removeEventListener("input", onInput, true)
-	}
-}
-
-function safeEmit(emit: Emit, ev: SessionEvent): void {
-	try {
-		emit(ev)
-	} catch {
-		// best-effort
 	}
 }
 

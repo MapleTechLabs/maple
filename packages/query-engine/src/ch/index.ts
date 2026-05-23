@@ -208,7 +208,6 @@ export {
 	getSessionReplayQuery,
 	sessionReplayEventsQuery,
 	sessionsForTraceQuery,
-	sessionReplayFacetsQuery,
 	sessionTraceSummariesQuery,
 	type SessionReplaysListOpts,
 	type SessionReplaysListOutput,
@@ -216,7 +215,6 @@ export {
 	type SessionReplayEventsOutput,
 	type SessionsForTraceOpts,
 	type SessionsForTraceOutput,
-	type SessionReplayFacetsOutput,
 	type SessionTraceSummariesOpts,
 	type SessionTraceSummaryOutput,
 } from "./queries/session-replays"

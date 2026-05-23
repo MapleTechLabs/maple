@@ -7,6 +7,7 @@ import { installNetworkCapture } from "./capture/network"
 import { installErrorCapture } from "./capture/errors"
 import { installNavigationCapture } from "./capture/navigation"
 import { installInteractionCapture } from "./capture/interactions"
+import { approximateSize } from "./util"
 
 /**
  * A distilled, structured session event. Sparse: only the fields relevant to
@@ -114,13 +115,5 @@ function toRow(sessionId: string, ev: SessionEvent, seq: number): Record<string,
 		net_duration_ms: ev.net?.durationMs ?? 0,
 		error_stack: ev.errorStack ?? "",
 		attributes: ev.attrs ?? {},
-	}
-}
-
-function approximateSize(ev: SessionEvent): number {
-	try {
-		return JSON.stringify(ev).length
-	} catch {
-		return 256
 	}
 }

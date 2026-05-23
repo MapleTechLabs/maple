@@ -25,6 +25,7 @@ import {
 	CircleWarningIcon,
 	UserIcon,
 } from "@/components/icons"
+import { formatDuration, gradientFor } from "@/components/replays/replay-format"
 
 const detailSearchSchema = Schema.Struct({
 	t: Schema.optional(Schema.String),
@@ -38,27 +39,6 @@ export const Route = effectRoute(createFileRoute("/replays/$sessionId"), ({ para
 	component: ReplayDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(detailSearchSchema),
 })
-
-function formatDuration(ms: number | null): string {
-	if (ms == null || ms <= 0) return "—"
-	const seconds = Math.round(ms / 1000)
-	const minutes = Math.floor(seconds / 60)
-	return minutes > 0 ? `${minutes}m ${seconds % 60}s` : `${seconds}s`
-}
-
-const AVATAR_GRADIENTS = [
-	"from-rose-500/80 to-orange-400/80",
-	"from-violet-500/80 to-fuchsia-400/80",
-	"from-sky-500/80 to-cyan-400/80",
-	"from-emerald-500/80 to-teal-400/80",
-	"from-amber-500/80 to-yellow-400/80",
-	"from-indigo-500/80 to-blue-400/80",
-]
-function gradientFor(seed: string): string {
-	let hash = 0
-	for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) >>> 0
-	return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length]!
-}
 
 function ReplayDetailPage() {
 	const { sessionId } = Route.useParams()

@@ -1,6 +1,5 @@
-import { activeTraceId, type SessionEvent } from "../events"
-
-type Emit = (ev: SessionEvent) => void
+import { activeTraceId } from "../events"
+import { type Emit, safeEmit } from "./shared"
 
 const MAX_STACK = 4_000
 
@@ -35,14 +34,6 @@ export function installErrorCapture(emit: Emit): () => void {
 	return () => {
 		window.removeEventListener("error", onError)
 		window.removeEventListener("unhandledrejection", onRejection)
-	}
-}
-
-function safeEmit(emit: Emit, ev: SessionEvent): void {
-	try {
-		emit(ev)
-	} catch {
-		// best-effort
 	}
 }
 

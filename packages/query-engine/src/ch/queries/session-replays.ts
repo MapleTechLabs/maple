@@ -21,8 +21,7 @@
 import * as CH from "../expr"
 import { compileFnCall, compileFnCallCond } from "../define-fn"
 import { param } from "../param"
-import { from, type ColumnAccessor } from "../query"
-import { unionAll, type CHUnionQuery } from "../union"
+import { from } from "../query"
 import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
@@ -245,65 +244,6 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 		.groupBy("sessionId")
 		.orderBy(["startTime", "desc"])
 		.limit(opts.limit ?? 10)
-		.format("JSON")
-}
-
-// ---------------------------------------------------------------------------
-// Facets for the filter sidebar (browser / country / device)
-//
-// Counts DISTINCT sessions (uniq(SessionId)) rather than rows, so the
-// duplicate Version rows of a ReplacingMergeTree don't double-count.
-// ---------------------------------------------------------------------------
-
-export interface SessionReplayFacetsOutput {
-	readonly name: string
-	readonly facetType: string
-	readonly count: number
-}
-
-export function sessionReplayFacetsQuery(
-	opts: SessionReplaysListOpts,
-): CHUnionQuery<SessionReplayFacetsOutput> {
-	const baseWhere = (
-		$: ColumnAccessor<typeof SessionReplays.columns>,
-	): Array<CH.Condition | undefined> => [
-		$.OrgId.eq(param.string("orgId")),
-		$.StartTime.gte(param.dateTime("startTime")),
-		$.StartTime.lte(param.dateTime("endTime")),
-		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
-		CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
-	]
-
-	const browserQuery = from(SessionReplays)
-		.select(($) => ({
-			name: $.BrowserName,
-			facetType: CH.lit("browser"),
-			count: CH.uniq($.SessionId),
-		}))
-		.where(($) => [...baseWhere($), $.BrowserName.neq("")])
-		.groupBy("name")
-
-	const countryQuery = from(SessionReplays)
-		.select(($) => ({
-			name: $.Country,
-			facetType: CH.lit("country"),
-			count: CH.uniq($.SessionId),
-		}))
-		.where(($) => [...baseWhere($), $.Country.neq("")])
-		.groupBy("name")
-
-	const deviceQuery = from(SessionReplays)
-		.select(($) => ({
-			name: $.DeviceType,
-			facetType: CH.lit("device"),
-			count: CH.uniq($.SessionId),
-		}))
-		.where(($) => [...baseWhere($), $.DeviceType.neq("")])
-		.groupBy("name")
-
-	return unionAll(browserQuery, countryQuery, deviceQuery)
-		.orderBy(["count", "desc"])
-		.limit(300)
 		.format("JSON")
 }
 

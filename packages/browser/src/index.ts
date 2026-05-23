@@ -20,5 +20,3 @@ export type { MapleBrowserHandle } from "./init"
 export const MapleBrowser: {
 	init: (config: import("./config").MapleBrowserConfig) => MapleBrowserHandle
 } = { init }
-
-export { init }

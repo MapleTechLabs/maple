@@ -2,6 +2,7 @@ import { record } from "rrweb"
 import type { ResolvedConfig } from "../config"
 import { markActivity, nextChunkSeq } from "../session"
 import { gzip, postSessionBlob, type ChunkMeta } from "./transport"
+import { approximateSize } from "./util"
 
 // rrweb event shape — typed loosely to avoid coupling to @rrweb/types across
 // alpha releases. We only read `type`, `timestamp`, and incremental `data`.
@@ -91,13 +92,5 @@ export function startRecording(config: ResolvedConfig, sessionId: string): Recor
 		},
 		flush,
 		getClickCount: () => clickCount,
-	}
-}
-
-function approximateSize(event: RrwebEvent): number {
-	try {
-		return JSON.stringify(event).length
-	} catch {
-		return 256
 	}
 }

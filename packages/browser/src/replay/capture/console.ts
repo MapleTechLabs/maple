@@ -1,6 +1,4 @@
-import type { SessionEvent } from "../events"
-
-type Emit = (ev: SessionEvent) => void
+import { type Emit, safeEmit } from "./shared"
 
 const LEVELS = ["log", "info", "warn", "error", "debug"] as const
 type Level = (typeof LEVELS)[number]
@@ -19,11 +17,8 @@ export function installConsoleCapture(emit: Emit): () => void {
 		const orig = console[level] as (...args: unknown[]) => void
 		original[level] = orig
 		console[level] = (...args: unknown[]) => {
-			try {
-				emit({ type: "console", level, message: formatArgs(args) })
-			} catch {
-				// Capture must never break the host app's logging.
-			}
+			// Capture must never break the host app's logging.
+			safeEmit(emit, { type: "console", level, message: formatArgs(args) })
 			orig.apply(console, args)
 		}
 	}
