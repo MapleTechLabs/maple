@@ -21,4 +21,9 @@ export { exploreAttributeKeys, exploreAttributeValues } from "./explore-attribut
 export { serviceMap } from "./service-map"
 export { findSlowTraces } from "./find-slow-traces"
 export { topOperations, type TopOperation } from "./top-operations"
-export { searchSessions, getSessionTranscript, type SearchSessionsInput } from "./session-events"
+export {
+	searchSessions,
+	getSessionTranscript,
+	type SearchSessionsInput,
+	type SessionTranscriptOutput,
+} from "./session-events"

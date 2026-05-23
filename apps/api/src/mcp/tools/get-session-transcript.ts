@@ -8,23 +8,10 @@ import { truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import { getSessionTranscript } from "@maple/query-engine/observability"
-
-interface TranscriptRow {
-	readonly timestamp: string
-	readonly type: string
-	readonly url: string
-	readonly traceId: string
-	readonly level: string
-	readonly message: string
-	readonly targetSelector: string
-	readonly targetText: string
-	readonly netMethod: string
-	readonly netUrl: string
-	readonly netStatus: number
-	readonly netDurationMs: number
-	readonly errorStack: string
-}
+import {
+	getSessionTranscript,
+	type SessionTranscriptOutput,
+} from "@maple/query-engine/observability"
 
 export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 	server.tool(
@@ -49,7 +36,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 						}),
 					),
 				),
-			)) as ReadonlyArray<TranscriptRow>
+			))
 
 			yield* Effect.annotateCurrentSpan("eventCount", events.length)
 			if (events.length === 0) {
@@ -104,7 +91,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 }
 
 /** Render one transcript row as `time · TYPE detail (trace)`. */
-function formatLine(ev: TranscriptRow): string {
+function formatLine(ev: SessionTranscriptOutput): string {
 	const time = ev.timestamp.split(" ")[1] ?? ev.timestamp
 	const trace = ev.traceId ? ` ⟶ ${ev.traceId.slice(0, 12)}…` : ""
 	let detail: string

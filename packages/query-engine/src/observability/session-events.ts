@@ -2,6 +2,8 @@ import { Effect } from "effect"
 import * as CH from "../ch"
 import { TinybirdExecutor } from "./TinybirdExecutor"
 
+export type { SessionTranscriptOutput } from "../ch/queries/session-events"
+
 /**
  * Search for sessions whose distilled events match the given predicates
  * (errors, network status, console/url text, trace id). Returns one row per
