@@ -251,27 +251,27 @@ function TraceDetailPage() {
 					description={`${data.spans.length} spans across ${services.length} service${services.length !== 1 ? "s" : ""}`}
 					headerActions={
 						<div className="flex items-center gap-2">
-						<TraceReplayLink traceId={traceId} />
-						<Badge
-							variant="outline"
-							className="font-mono text-xs cursor-pointer hover:bg-muted"
-							role="button"
-							tabIndex={0}
-							aria-label="Copy trace ID"
-							onClick={() => {
-								navigator.clipboard.writeText(traceId)
-								toast.success("Trace ID copied to clipboard")
-							}}
-							onKeyDown={(e) => {
-								if (e.key === "Enter" || e.key === " ") {
-									e.preventDefault()
+							<TraceReplayLink traceId={traceId} />
+							<Badge
+								variant="outline"
+								className="font-mono text-xs cursor-pointer hover:bg-muted"
+								role="button"
+								tabIndex={0}
+								aria-label="Copy trace ID"
+								onClick={() => {
 									navigator.clipboard.writeText(traceId)
 									toast.success("Trace ID copied to clipboard")
-								}
-							}}
-						>
-							{traceId.slice(0, 8)}...
-						</Badge>
+								}}
+								onKeyDown={(e) => {
+									if (e.key === "Enter" || e.key === " ") {
+										e.preventDefault()
+										navigator.clipboard.writeText(traceId)
+										toast.success("Trace ID copied to clipboard")
+									}
+								}}
+							>
+								{traceId.slice(0, 8)}...
+							</Badge>
 						</div>
 					}
 				>

@@ -181,9 +181,9 @@ export function getSessionReplayQuery() {
 // ---------------------------------------------------------------------------
 // Chunk index for one session (ordered for playback)
 //
-// session_replay_chunks is a plain MergeTree — each chunk is written exactly
+// session_replay_events is a plain MergeTree — each chunk is written exactly
 // once, so no dedup is needed. Sorted by (Timestamp, ChunkSeq) so the player
-// receives blobs in replay order.
+// receives chunks in replay order.
 // ---------------------------------------------------------------------------
 
 export interface SessionReplayEventsOutput {
