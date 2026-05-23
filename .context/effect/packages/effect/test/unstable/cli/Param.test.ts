@@ -268,7 +268,7 @@ describe("Param", () => {
   })
 
   describe("withFallbackConfig", () => {
-    it.effect("uses config when a flag is missing", () => {
+    it.effect("uses ConfigProvider when a flag is missing", () => {
       const provider = ConfigProvider.fromEnv({
         env: {
           NAME: "Ava"
@@ -292,7 +292,7 @@ describe("Param", () => {
       )
     })
 
-    it.effect("uses flag values over config", () => {
+    it.effect("uses flag values before reading config fallbacks", () => {
       const provider = ConfigProvider.fromEnv({
         env: {
           NAME: "Ava"
@@ -316,7 +316,7 @@ describe("Param", () => {
       )
     })
 
-    it.effect("uses config when an argument is missing", () => {
+    it.effect("uses ConfigProvider when an argument is missing", () => {
       const provider = ConfigProvider.fromEnv({
         env: {
           REPOSITORY: "repo"

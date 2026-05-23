@@ -1,3 +1,4 @@
+// @effect-diagnostics floatingEffect:skip-file
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, FileSystem, Layer, Path, Stdio } from "effect"
 import { CliError, CliOutput, Command, Flag } from "effect/unstable/cli"
@@ -93,7 +94,7 @@ describe("Command errors", () => {
         assert.instanceOf(parsedInput.errors![1], CliError.UnrecognizedOption)
       }).pipe(Effect.provide(TestLayer)))
 
-    it.effect("accumulates UnknownSubcommand error", () =>
+    it.effect("accumulates UnknownSubcommand error with suggestions", () =>
       Effect.gen(function*() {
         const sub = Command.make("deploy")
         const command = Command.make("app").pipe(

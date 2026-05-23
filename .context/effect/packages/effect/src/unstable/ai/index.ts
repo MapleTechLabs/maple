@@ -41,7 +41,8 @@
  * Each reason type has an `isRetryable` getter indicating whether the error is
  * transient. Some errors also provide a `retryAfter` duration hint.
  *
- * @example
+ * **Example** (Handling AI errors by reason)
+ *
  * ```ts
  * import { Effect, Match } from "effect"
  * import type { AiError } from "effect/unstable/ai"
@@ -64,7 +65,8 @@
  * )
  * ```
  *
- * @example
+ * **Example** (Creating an AI error with a reason)
+ *
  * ```ts
  * import { Duration, Effect } from "effect"
  * import { AiError } from "effect/unstable/ai"
@@ -82,7 +84,7 @@
  * console.log(error.message) // "OpenAI.completion: Rate limit exceeded. Retry after 1 minute"
  * ```
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as AiError from "./AiError.ts"
 
@@ -101,7 +103,7 @@ export * as AiError from "./AiError.ts"
  * - Stripping unsupported annotations and preserving only Anthropic-compatible
  *   formats and descriptions
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as AnthropicStructuredOutput from "./AnthropicStructuredOutput.ts"
 
@@ -114,7 +116,8 @@ export * as AnthropicStructuredOutput from "./AnthropicStructuredOutput.ts"
  * text generation. It integrates seamlessly with the Effect AI ecosystem,
  * providing type-safe conversational AI capabilities.
  *
- * @example
+ * **Example** (Creating a chat session)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -134,7 +137,8 @@ export * as AnthropicStructuredOutput from "./AnthropicStructuredOutput.ts"
  * })
  * ```
  *
- * @example
+ * **Example** (Streaming chat responses)
+ *
  * ```ts
  * import { Effect, Stream } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -156,7 +160,8 @@ export * as Chat from "./Chat.ts"
 /**
  * The `EmbeddingModel` module provides provider-agnostic text embedding capabilities.
  *
- * @example
+ * **Example** (Embedding text with a model)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { EmbeddingModel } from "effect/unstable/ai"
@@ -178,7 +183,8 @@ export * as EmbeddingModel from "./EmbeddingModel.ts"
  * This module offers a flexible and configurable approach to ID generation, supporting
  * custom alphabets, prefixes, separators, and sizes.
  *
- * @example
+ * **Example** (Generating IDs with the default service)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { IdGenerator } from "effect/unstable/ai"
@@ -195,7 +201,8 @@ export * as EmbeddingModel from "./EmbeddingModel.ts"
  * ))
  * ```
  *
- * @example
+ * **Example** (Providing a custom ID generator)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { IdGenerator } from "effect/unstable/ai"
@@ -230,7 +237,8 @@ export * as IdGenerator from "./IdGenerator.ts"
  * unified API that can be implemented by different AI providers while
  * maintaining type safety and effect management.
  *
- * @example
+ * **Example** (Generating text)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { LanguageModel } from "effect/unstable/ai"
@@ -247,7 +255,8 @@ export * as IdGenerator from "./IdGenerator.ts"
  * })
  * ```
  *
- * @example
+ * **Example** (Generating structured output)
+ *
  * ```ts
  * import { Effect, Schema } from "effect"
  * import { LanguageModel } from "effect/unstable/ai"
@@ -273,11 +282,62 @@ export * as IdGenerator from "./IdGenerator.ts"
 export * as LanguageModel from "./LanguageModel.ts"
 
 /**
+ * The `McpSchema` module defines Effect Schema and RPC models for the Model
+ * Context Protocol (MCP). It provides the shared protocol vocabulary used by
+ * MCP clients and servers, including JSON-RPC request identifiers, metadata,
+ * capabilities, errors, resources, prompts, tools, logging, sampling,
+ * completions, roots, and elicitation.
+ *
+ * **Common tasks**
+ *
+ * - Describe MCP payloads with schemas such as {@link Resource}, {@link Tool},
+ *   {@link Prompt}, and {@link ContentBlock}
+ * - Build typed protocol handlers with request RPCs such as {@link Initialize},
+ *   {@link ListResources}, {@link ReadResource}, {@link ListTools}, and
+ *   {@link CallTool}
+ * - Work with protocol notifications such as
+ *   {@link ProgressNotification}, {@link ResourceUpdatedNotification}, and
+ *   {@link LoggingMessageNotification}
+ * - Use {@link ClientRpcs} and server RPC groups to derive encoded request,
+ *   notification, success, and failure message types
+ *
+ * **Gotchas**
+ *
+ * - MCP distinguishes absent fields from present fields whose value is
+ *   `undefined`; use {@link optional} and {@link optionalWithDefault} for
+ *   protocol fields so encoding omits undefined values consistently.
+ * - Capability objects are extensible. Known fields are modeled here, but
+ *   `experimental` and `extensions` allow implementations to advertise
+ *   additional protocol features.
+ *
  * @since 4.0.0
  */
 export * as McpSchema from "./McpSchema.ts"
 
 /**
+ * The `McpServer` module provides Effect services and layers for building
+ * Model Context Protocol servers. It keeps track of registered tools,
+ * resources, resource templates, prompts, completions, and server
+ * notifications, then exposes them through the MCP request handlers.
+ *
+ * **Common tasks**
+ *
+ * - Start a server over stdio with {@link layerStdio}
+ * - Register HTTP routes for an existing `HttpRouter` with {@link layerHttp}
+ * - Expose Effect AI toolkits as MCP tools with {@link registerToolkit}
+ * - Register resources, resource templates, and prompts with {@link resource}
+ *   and {@link prompt}
+ * - Ask the connected MCP client for structured input with {@link elicit}
+ *
+ * **Gotchas**
+ *
+ * - Registration helpers require an `McpServer` service, usually provided by
+ *   one of this module's layers.
+ * - HTTP clients must complete MCP initialization before other requests; the
+ *   server tracks initialized sessions with the `Mcp-Session-Id` header.
+ * - Resource template parameters are decoded with the schemas embedded in the
+ *   template literal.
+ *
  * @since 4.0.0
  */
 export * as McpServer from "./McpServer.ts"
@@ -290,10 +350,11 @@ export * as McpServer from "./McpServer.ts"
  * functionality with provider identification, allowing for seamless switching
  * between different AI service providers while maintaining type safety.
  *
- * @example
+ * **Example** (Creating a provider-specific model)
+ *
  * ```ts
- * import type { Layer } from "effect"
  * import { Effect } from "effect"
+ * import type { Layer } from "effect"
  * import { LanguageModel, Model } from "effect/unstable/ai"
  *
  * declare const myAnthropicLayer: Layer.Layer<LanguageModel.LanguageModel>
@@ -317,7 +378,7 @@ export * as Model from "./Model.ts"
 /**
  * Provides codec transformations for OpenAI structured output.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as OpenAiStructuredOutput from "./OpenAiStructuredOutput.ts"
 
@@ -330,7 +391,8 @@ export * as OpenAiStructuredOutput from "./OpenAiStructuredOutput.ts"
  * options. It supports rich content types like text, files, tool calls, and
  * reasoning.
  *
- * @example
+ * **Example** (Creating a structured conversation)
+ *
  * ```ts
  * import { Prompt } from "effect/unstable/ai"
  *
@@ -357,7 +419,8 @@ export * as OpenAiStructuredOutput from "./OpenAiStructuredOutput.ts"
  * ])
  * ```
  *
- * @example
+ * **Example** (Combining prompts)
+ *
  * ```ts
  * import { Prompt } from "effect/unstable/ai"
  *
@@ -384,7 +447,8 @@ export * as Prompt from "./Prompt.ts"
  * various content parts for text, reasoning, tool calls, files, and metadata,
  * supporting both streaming and non-streaming responses.
  *
- * @example
+ * **Example** (Creating response parts)
+ *
  * ```ts
  * import { Response } from "effect/unstable/ai"
  *
@@ -402,11 +466,23 @@ export * as Prompt from "./Prompt.ts"
  * })
  * ```
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as Response from "./Response.ts"
 
 /**
+ * The `ResponseIdTracker` module provides a small service for reusing provider
+ * response IDs across incremental language model calls. It records which prompt
+ * message objects were sent for a provider response, then prepares a later
+ * prompt by returning the recognized `previousResponseId` together with only
+ * the new messages that should be sent.
+ *
+ * Use this when integrating providers that support continuing a conversation
+ * from a prior response ID instead of resending the entire prompt. The tracker
+ * is intentionally identity-based and mutable: it only recognizes the same
+ * message objects that were previously marked, and it clears its state when a
+ * prompt can no longer be matched safely.
+ *
  * @since 4.0.0
  */
 export * as ResponseIdTracker from "./ResponseIdTracker.ts"
@@ -417,7 +493,8 @@ export * as ResponseIdTracker from "./ResponseIdTracker.ts"
  * attributes and utilities that follow the OpenTelemetry GenAI semantic
  * conventions.
  *
- * @example
+ * **Example** (Annotating AI spans)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Telemetry } from "effect/unstable/ai"
@@ -454,7 +531,8 @@ export * as Telemetry from "./Telemetry.ts"
  * prompts based on token limits, essential for managing context length
  * constraints in large language models.
  *
- * @example
+ * **Example** (Tokenizing text)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Tokenizer } from "effect/unstable/ai"
@@ -467,7 +545,8 @@ export * as Telemetry from "./Telemetry.ts"
  * })
  * ```
  *
- * @example
+ * **Example** (Truncating a prompt)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Tokenizer } from "effect/unstable/ai"
@@ -494,7 +573,8 @@ export * as Tokenizer from "./Tokenizer.ts"
  * AI models to perform actions like searching databases, calling APIs, or
  * executing code within your application context.
  *
- * @example
+ * **Example** (Defining a calculator tool)
+ *
  * ```ts
  * import { Schema } from "effect"
  * import { Tool } from "effect/unstable/ai"
@@ -511,7 +591,7 @@ export * as Tokenizer from "./Tokenizer.ts"
  * })
  * ```
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as Tool from "./Tool.ts"
 
@@ -520,12 +600,12 @@ export * as Tool from "./Tool.ts"
  * `Tool`s which can be used to enhance the capabilities of a large language
  * model beyond simple text generation.
  *
- * @example
+ * **Example** (Creating and implementing toolkits)
+ *
  * ```ts
- * import { Effect, Schema } from "effect"
+ * import { Effect, Schema, Stream } from "effect"
  * import { Tool, Toolkit } from "effect/unstable/ai"
  *
- * // Create individual tools
  * const GetCurrentTime = Tool.make("GetCurrentTime", {
  *   description: "Get the current timestamp",
  *   success: Schema.Number
@@ -540,19 +620,31 @@ export * as Tool from "./Tool.ts"
  *   })
  * })
  *
- * // Create a toolkit with multiple tools
  * const MyToolkit = Toolkit.make(GetCurrentTime, GetWeather)
  *
  * const MyToolkitLayer = MyToolkit.toLayer({
- *   GetCurrentTime: () => Effect.succeed(Date.now()),
+ *   GetCurrentTime: () => Effect.succeed(1_704_067_200_000),
  *   GetWeather: ({ location }) =>
  *     Effect.succeed({
  *       temperature: 72,
- *       condition: "sunny"
+ *       condition: `sunny in ${location}`
  *     })
  * })
+ *
+ * const program = Effect.gen(function*() {
+ *   const toolkit = yield* MyToolkit
+ *   const stream = yield* toolkit.handle("GetWeather", {
+ *     location: "San Francisco"
+ *   })
+ *   const results = yield* Stream.runCollect(stream)
+ *
+ *   return Array.from(results, ({ result }) => result)
+ * }).pipe(Effect.provide(MyToolkitLayer))
+ *
+ * console.log(Effect.runSync(program))
+ * // [{ temperature: 72, condition: "sunny in San Francisco" }]
  * ```
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * as Toolkit from "./Toolkit.ts"

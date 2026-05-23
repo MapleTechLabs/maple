@@ -73,13 +73,14 @@ export const suite = (storeId: string, layer: Layer.Layer<Persistence.Persistenc
 
     it.effect("requireServicesAt: 'lookup' requires lookup services at get-time", () =>
       Effect.gen(function*() {
-        const cache = yield* PersistedCache.make((req: TTLRequest) =>
-          Effect.map(LookupService.asEffect(), (service) => new User({ id: req.id, name: service.value })), {
-          storeId: `${storeId}-require-services-at`,
-          timeToLive: () =>
-            5000,
-          requireServicesAt: "lookup"
-        })
+        const cache = yield* PersistedCache.make(
+          (req: TTLRequest) => Effect.map(LookupService, (service) => new User({ id: req.id, name: service.value })),
+          {
+            storeId: `${storeId}-require-services-at`,
+            timeToLive: () => 5000,
+            requireServicesAt: "lookup"
+          }
+        )
 
         const result1 = yield* cache.get(new TTLRequest({ id: 1 })).pipe(
           Effect.provideService(LookupService, LookupService.of({ value: "first" }))
@@ -96,8 +97,7 @@ export const suite = (storeId: string, layer: Layer.Layer<Persistence.Persistenc
         assert.deepStrictEqual(result3, new User({ id: 1, name: "first" }))
       }).pipe(
         Effect.provide(layer),
-        Effect.catchFilter((e) =>
-          e instanceof TransientError ? Result.succeed(e) : Result.fail(e), () => Effect.void),
+        Effect.catchFilter((e) => e instanceof TransientError ? Result.succeed(e) : Result.fail(e), () => Effect.void),
         flakyTest
       ))
   })

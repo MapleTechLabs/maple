@@ -1,5 +1,22 @@
 /**
- * @since 1.0.0
+ * Sink adapters for writing Effect stream chunks into Node writable streams.
+ *
+ * This module is used at the boundary where Effect `Stream`s or `Channel`s need
+ * to push data into Node's writable side: file streams, HTTP request or
+ * response bodies, process stdio, sockets, and transform inputs such as
+ * compression or encryption streams. It exposes both a `Sink` constructor for
+ * ordinary stream pipelines and lower-level `Channel` and pull helpers used by
+ * other Node stream adapters.
+ *
+ * The implementation follows Node writable semantics. Chunks are written in
+ * order; when `write` returns `false`, pulling pauses until `drain` so upstream
+ * producers do not overrun the writable buffer. Writable `error` events are
+ * mapped through `onError`, and the writable is ended and awaited via `finish`
+ * when upstream completes unless `endOnDone` is `false`. Use `endOnDone: false`
+ * for externally owned or long-lived writables, and make sure `onError` keeps
+ * Node's untyped errors meaningful for the calling Effect workflow.
+ *
+ * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "effect/Array"
 import * as Cause from "effect/Cause"
@@ -11,8 +28,12 @@ import * as Sink from "effect/Sink"
 import type { Writable } from "node:stream"
 
 /**
+ * Creates a `Sink` that writes chunks to a Node writable stream, respecting
+ * backpressure, mapping writable errors with `onError`, and ending the stream
+ * on completion unless `endOnDone` is `false`.
+ *
  * @category constructors
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const fromWritable = <E, A = Uint8Array | string>(
   options: {
@@ -25,8 +46,12 @@ export const fromWritable = <E, A = Uint8Array | string>(
   Sink.fromChannel(Channel.mapDone(fromWritableChannel<never, E, A>(options), (_) => [_]))
 
 /**
+ * Creates a `Channel` that pulls chunks from upstream and writes them to a
+ * Node writable stream, respecting backpressure and optionally ending the
+ * writable when upstream is done.
+ *
  * @category constructors
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const fromWritableChannel = <IE, E, A = Uint8Array | string>(
   options: {
@@ -42,7 +67,12 @@ export const fromWritableChannel = <IE, E, A = Uint8Array | string>(
   })
 
 /**
- * @since 1.0.0
+ * Repeatedly pulls non-empty chunks and writes them to a Node writable stream,
+ * waiting for `drain` when needed, failing on writable errors, and ending the
+ * writable on upstream completion unless disabled.
+ *
+ * @category converting
+ * @since 4.0.0
  */
 export const pullIntoWritable = <A, IE, E>(options: {
   readonly pull: Pull.Pull<NonEmptyReadonlyArray<A>, IE, unknown>

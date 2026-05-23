@@ -19,14 +19,15 @@ const TypeId = "~effect/transactions/TxRef"
 /**
  * TxRef is a transactional value, it can be read and modified within the body of a transaction.
  *
+ * **Details**
+ *
  * Accessed values are tracked by the transaction in order to detect conflicts and in order to
  * track changes, a transaction will retry whenever a conflict is detected or whenever the
  * transaction explicitely calls to `Effect.txRetry` and any of the accessed TxRef values
  * change.
  *
- * @since 4.0.0
- * @category Models
- * @example
+ * **Example** (Using a transactional reference)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -44,6 +45,9 @@ const TypeId = "~effect/transactions/TxRef"
  *   console.log(final) // 1
  * })
  * ```
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface TxRef<in out A> extends Pipeable {
   readonly [TypeId]: typeof TypeId
@@ -56,9 +60,8 @@ export interface TxRef<in out A> extends Pipeable {
 /**
  * Creates a new `TxRef` with the specified initial value.
  *
- * @since 4.0.0
- * @category Constructors
- * @example
+ * **Example** (Creating transactional references)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -77,15 +80,22 @@ export interface TxRef<in out A> extends Pipeable {
  *   console.log(yield* TxRef.get(name)) // "Bob"
  * })
  * ```
+ *
+ * @category constructors
+ * @since 2.0.0
  */
 export const make = <A>(initial: A) => Effect.sync(() => makeUnsafe(initial))
 
 /**
- * Creates a new `TxRef` with the specified initial value.
+ * Synchronously creates a new `TxRef` with the specified initial value.
  *
- * @since 4.0.0
- * @category Constructors
- * @example
+ * **When to use**
+ *
+ * Prefer `make` in Effect code so allocation stays inside the Effect workflow.
+ * Use `makeUnsafe` only when a `TxRef` must be constructed outside an effect.
+ *
+ * **Example** (Creating transactional references unsafely)
+ *
  * ```ts
  * import { TxRef } from "effect"
  *
@@ -97,6 +107,9 @@ export const make = <A>(initial: A) => Effect.sync(() => makeUnsafe(initial))
  * console.log(counter.value) // 0
  * console.log(config.value) // { timeout: 5000, retries: 3 }
  * ```
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const makeUnsafe = <A>(initial: A): TxRef<A> => ({
   [TypeId]: TypeId,
@@ -111,9 +124,8 @@ export const makeUnsafe = <A>(initial: A): TxRef<A> => ({
 /**
  * Modifies the value of the `TxRef` using the provided function.
  *
- * @since 4.0.0
- * @category Combinators
- * @example
+ * **Example** (Modifying transactional references)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -127,6 +139,9 @@ export const makeUnsafe = <A>(initial: A): TxRef<A> => ({
  *   console.log(yield* TxRef.get(counter)) // 1 (the new value: current + 1)
  * })
  * ```
+ *
+ * @category combinators
+ * @since 2.0.0
  */
 export const modify: {
   <A, R>(f: (current: NoInfer<A>) => [returnValue: R, newValue: A]): (self: TxRef<A>) => Effect.Effect<R>
@@ -135,7 +150,7 @@ export const modify: {
   self: TxRef<A>,
   f: (current: A) => [returnValue: R, newValue: A]
 ): Effect.Effect<R> =>
-  Effect.Transaction.asEffect().pipe(
+  Effect.Transaction.pipe(
     Effect.flatMap((state) =>
       Effect.sync(() => {
         if (!state.journal.has(self)) {
@@ -153,9 +168,8 @@ export const modify: {
 /**
  * Updates the value of the `TxRef` using the provided function.
  *
- * @since 4.0.0
- * @category Combinators
- * @example
+ * **Example** (Updating transactional references)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -170,6 +184,9 @@ export const modify: {
  *   console.log(yield* TxRef.get(counter)) // 20
  * })
  * ```
+ *
+ * @category combinators
+ * @since 2.0.0
  */
 export const update: {
   <A>(f: (current: NoInfer<A>) => A): (self: TxRef<A>) => Effect.Effect<void>
@@ -182,9 +199,8 @@ export const update: {
 /**
  * Reads the current value of the `TxRef`.
  *
- * @since 4.0.0
- * @category Combinators
- * @example
+ * **Example** (Reading transactional references)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -199,15 +215,17 @@ export const update: {
  *   console.log(value) // 42
  * })
  * ```
+ *
+ * @category combinators
+ * @since 2.0.0
  */
 export const get = <A>(self: TxRef<A>): Effect.Effect<A> => modify(self, (current) => [current, current])
 
 /**
  * Sets the value of the `TxRef`.
  *
- * @since 4.0.0
- * @category Combinators
- * @example
+ * **Example** (Setting transactional references)
+ *
  * ```ts
  * import { Effect, TxRef } from "effect"
  *
@@ -222,6 +240,9 @@ export const get = <A>(self: TxRef<A>): Effect.Effect<A> => modify(self, (curren
  *   console.log(yield* TxRef.get(counter)) // 100
  * })
  * ```
+ *
+ * @category combinators
+ * @since 2.0.0
  */
 export const set: {
   <A>(value: A): (self: TxRef<A>) => Effect.Effect<void>

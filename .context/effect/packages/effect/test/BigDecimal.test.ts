@@ -353,7 +353,7 @@ describe("BigDecimal", () => {
     assertNone(BigDecimal.fromNumber(Infinity))
   })
 
-  it("unsafeToNumber", () => {
+  it("toNumberUnsafe", () => {
     strictEqual(BigDecimal.toNumberUnsafe($("123.456")), 123.456)
   })
 
@@ -402,7 +402,7 @@ describe("BigDecimal", () => {
     assertEquals(BigDecimal.round($("-0.12345678987654321"), { mode: "ceil", scale: 13 }), $("-0.1234567898765"))
   })
 
-  it("round: floor)", () => {
+  it("round: floor", () => {
     assertEquals(BigDecimal.floor($("145"), -1), $("140"))
     assertEquals(BigDecimal.floor(-1)($("145")), $("140"))
     assertEquals(BigDecimal.floor($("-14.5")), $("-15"))

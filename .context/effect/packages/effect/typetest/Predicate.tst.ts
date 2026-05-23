@@ -65,7 +65,7 @@ describe("Predicate", () => {
     expect(numberOrNullOrUndefined.filter(Predicate.isNullish)).type.toBe<Array<null | undefined>>()
 
     if (Predicate.isNullish(u)) {
-      expect.skip(u).type.toBe<null | undefined>()
+      expect(u).type.toBe<null | undefined>()
     }
   })
 

@@ -4,12 +4,12 @@ import * as Random from "effect/Random"
 
 describe("Random", () => {
   describe("next", () => {
-    it.effect("generates a number between 0 and 1", () =>
+    it.effect("generates a number between 0 inclusive and 1 exclusive", () =>
       Effect.gen(function*() {
         const value = yield* Random.next
 
         assert.isAtLeast(value, 0)
-        assert.isAtMost(value, 1)
+        assert.isBelow(value, 1)
       }))
   })
 
@@ -59,13 +59,25 @@ describe("Random", () => {
   })
 
   describe("nextBetween", () => {
-    it.effect("generates number in closed range", () =>
+    it.effect("generates number in half-open range", () =>
       Effect.gen(function*() {
         for (let i = 0; i < 100; i++) {
           const value = yield* Random.nextBetween(10, 20)
           assert.isAtLeast(value, 10)
-          assert.isAtMost(value, 20)
+          assert.isBelow(value, 20)
         }
+      }))
+
+    it.effect("does not round the bounds", () =>
+      Effect.gen(function*() {
+        const value = yield* Random.nextBetween(10.5, 20.5).pipe(
+          Effect.provideService(Random.Random, {
+            nextIntUnsafe: () => 0,
+            nextDoubleUnsafe: () => 0.75
+          })
+        )
+
+        assert.strictEqual(value, 18)
       }))
 
     it.effect("handles negative ranges", () =>
@@ -73,7 +85,7 @@ describe("Random", () => {
         const value = yield* Random.nextBetween(-10, 10)
 
         assert.isAtLeast(value, -10)
-        assert.isAtMost(value, 10)
+        assert.isBelow(value, 10)
       }))
   })
 
@@ -99,6 +111,18 @@ describe("Random", () => {
           assert.isBelow(value, 6)
         }
       }))
+
+    it.effect("excludes the upper bound in half-open ranges", () =>
+      Effect.gen(function*() {
+        const value = yield* Random.nextIntBetween(1, 6, { halfOpen: true }).pipe(
+          Effect.provideService(Random.Random, {
+            nextIntUnsafe: () => 0,
+            nextDoubleUnsafe: () => 1 - Number.EPSILON
+          })
+        )
+
+        assert.strictEqual(value, 5)
+      }))
   })
 
   describe("shuffle", () => {
@@ -123,49 +147,13 @@ describe("Random", () => {
       }))
   })
 
-  describe("nextUUIDv4", () => {
-    it.effect("generates valid UUID v4 format", () =>
-      Effect.gen(function*() {
-        const uuid = yield* Random.nextUUIDv4
-
-        assert.isString(uuid)
-        assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-      }))
-
-    it.effect("generates unique UUIDs", () =>
-      Effect.gen(function*() {
-        const uuid1 = yield* Random.nextUUIDv4
-        const uuid2 = yield* Random.nextUUIDv4
-
-        assert.notStrictEqual(uuid1, uuid2)
-      }))
-
-    it.effect("generates deterministic UUIDs with same seed", () =>
-      Effect.gen(function*() {
-        const program = Effect.gen(function*() {
-          const uuid1 = yield* Random.nextUUIDv4
-          const uuid2 = yield* Random.nextUUIDv4
-          return [uuid1, uuid2]
-        })
-
-        const result1 = yield* program.pipe(Random.withSeed("uuid-seed"))
-        const result2 = yield* program.pipe(Random.withSeed("uuid-seed"))
-
-        assert.deepStrictEqual(result1, result2)
-
-        assert.match(result1[0], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-        assert.match(result1[1], /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-      }))
-  })
-
   describe("withSeed", () => {
     it.effect("produces deterministic sequence with same seed", () =>
       Effect.gen(function*() {
         const program = Effect.gen(function*() {
           const v1 = yield* Random.next
           const v2 = yield* Random.nextInt
-          const v3 = yield* Random.nextUUIDv4
-          return [v1, v2, v3]
+          return [v1, v2]
         })
 
         const result1 = yield* program.pipe(Random.withSeed("test-seed"))

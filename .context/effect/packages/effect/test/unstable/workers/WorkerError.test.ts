@@ -23,7 +23,7 @@ describe("WorkerError", () => {
       assert.strictEqual(error.reason._tag, "WorkerSendError")
     })
 
-    it("preserves reason message and cause", () => {
+    it("WorkerError delegates message and cause from reason", () => {
       const cause = new Error("boom")
       const reason = new WorkerSpawnError({
         message: "Failed to spawn worker",

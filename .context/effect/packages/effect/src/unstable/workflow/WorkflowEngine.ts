@@ -1,4 +1,24 @@
 /**
+ * Workflow engine service definitions and the default in-memory engine used to
+ * run durable workflows.
+ *
+ * This module is the runtime boundary for `Workflow` values. It registers
+ * workflow handlers, starts or polls executions by stable execution ID, links
+ * child workflow interruption to parents, and coordinates activities, durable
+ * deferred values, and durable clocks. Library users usually depend on the
+ * typed `WorkflowEngine` service, while persistence backends implement the
+ * lower-level `Encoded` contract and pass it to `makeUnsafe`.
+ *
+ * Durable execution requires engine implementations to make retries and resumes
+ * idempotent. Reusing an execution ID should observe the existing execution
+ * instead of starting duplicate work, suspended executions are retried according
+ * to `suspendedRetrySchedule`, and concurrent deferred completions or clock
+ * wake-ups must be serialized by the backend. Use `interrupt` when
+ * compensation and child workflow cleanup matter; `interruptUnsafe` can stop
+ * work more directly but may bypass those guarantees. The provided
+ * `layerMemory` is useful for tests and local development, but it keeps state
+ * in process memory and does not provide production durability.
+ *
  * @since 4.0.0
  */
 import type * as Cause from "../../Cause.ts"
@@ -19,8 +39,12 @@ import type * as DurableDeferred from "./DurableDeferred.ts"
 import * as Workflow from "./Workflow.ts"
 
 /**
+ * Service interface for workflow runtimes, responsible for registering and
+ * executing workflows and coordinating activities, durable deferreds,
+ * interrupts, resumes, and clocks.
+ *
+ * @category services
  * @since 4.0.0
- * @category Services
  */
 export class WorkflowEngine extends Context.Service<
   WorkflowEngine,
@@ -196,8 +220,12 @@ export class WorkflowEngine extends Context.Service<
 >()("effect/workflow/WorkflowEngine") {}
 
 /**
+ * Per-execution workflow service containing the execution ID, workflow
+ * definition, long-lived scope, suspension state, interruption state, and
+ * activity coordination state.
+ *
+ * @category services
  * @since 4.0.0
- * @category Services
  */
 export class WorkflowInstance extends Context.Service<
   WorkflowInstance,
@@ -261,8 +289,11 @@ export class WorkflowInstance extends Context.Service<
 }
 
 /**
- * @since 4.0.0
+ * Low-level workflow engine contract that works with encoded payloads and
+ * results before `makeUnsafe` adds typed schema decoding and encoding.
+ *
  * @category Encoded
+ * @since 4.0.0
  */
 export interface Encoded {
   readonly register: (
@@ -330,8 +361,12 @@ export interface Encoded {
 }
 
 /**
+ * Builds a typed `WorkflowEngine` service from a low-level encoded
+ * implementation. This is unsafe because the implementation must correctly
+ * persist, resume, and encode workflow state.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const makeUnsafe = (options: Encoded): WorkflowEngine["Service"] =>
   WorkflowEngine.of({
@@ -380,22 +415,18 @@ export const makeUnsafe = (options: Encoded): WorkflowEngine["Service"] =>
           return options.interrupt(self, executionId)
         })
       }
-
-      if (opts.discard) {
-        yield* options.execute(self, {
-          executionId,
-          payload: payload as object,
-          discard: true
-        })
-        return executionId
-      }
-
       const run = options.execute(self, {
         executionId,
         payload: payload as object,
-        discard: false,
+        discard: opts.discard ?? false,
         parent: Option.getOrUndefined(parentInstance)
-      })
+      }) as Effect.Effect<Workflow.Result<Success["Type"], Error["Type"]>>
+
+      if (opts.discard) {
+        yield* run
+        return executionId
+      }
+
       if (Option.isSome(parentInstance)) {
         const wrapped = yield* Workflow.wrapActivityResult(
           run,
@@ -524,8 +555,8 @@ const defaultRetrySchedule = Schedule.exponential(200, 1.5).pipe(
  * and local development, but is not suitable for production use as it does not
  * provide durability guarantees.
  *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerMemory: Layer.Layer<WorkflowEngine> = Layer.effect(WorkflowEngine)(
   Effect.gen(function*() {

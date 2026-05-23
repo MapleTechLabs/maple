@@ -22,7 +22,7 @@ describe("DateTime", () => {
         deepStrictEqual(diff, Duration.fromInputUnsafe("1 day"))
       }))
 
-    it.effect("correctly preserves the time zone", () =>
+    it.effect("preserves the named zone when mutating across DST", () =>
       Effect.gen(function*() {
         yield* setTo2024NZ
         const now = yield* DateTime.nowInCurrentZone.pipe(
@@ -42,7 +42,7 @@ describe("DateTime", () => {
   })
 
   describe("add", () => {
-    it.effect("utc", () =>
+    it.effect("adds calendar days to a UTC DateTime", () =>
       Effect.gen(function*() {
         const now = yield* DateTime.now
         const tomorrow = DateTime.add(now, { days: 1 })
@@ -50,7 +50,7 @@ describe("DateTime", () => {
         deepStrictEqual(diff, Duration.fromInputUnsafe("1 day"))
       }))
 
-    it("to month with less days", () => {
+    it("clamps to the last valid day when changing months", () => {
       const jan = DateTime.makeUnsafe({ year: 2023, month: 1, day: 31 })
       let feb = DateTime.add(jan, { months: 1 })
       strictEqual(feb.toJSON(), "2023-02-28T00:00:00.000Z")
@@ -60,7 +60,7 @@ describe("DateTime", () => {
       strictEqual(feb.toJSON(), "2023-02-28T00:00:00.000Z")
     })
 
-    it.effect("correctly preserves the time zone", () =>
+    it.effect("preserves the named zone when adding calendar units across DST", () =>
       Effect.gen(function*() {
         yield* setTo2024NZ
         const now = yield* DateTime.nowInCurrentZone.pipe(
@@ -121,7 +121,7 @@ describe("DateTime", () => {
       strictEqual(end.toJSON(), "2024-03-17T23:59:59.999Z")
     })
 
-    it.effect("correctly preserves the time zone", () =>
+    it.effect("returns the zoned end of the month", () =>
       Effect.gen(function*() {
         yield* setTo2024NZ
         const now = yield* DateTime.nowInCurrentZone.pipe(
@@ -382,27 +382,27 @@ describe("DateTime", () => {
   })
 
   describe("makeZonedFromString", () => {
-    it.effect("parses time + zone", () =>
+    it.effect("parses an instant with an offset and IANA zone", () =>
       Effect.gen(function*() {
         const dt = DateTime.makeZonedFromString("2024-07-21T20:12:34.112546348+12:00[Pacific/Auckland]")
         assertSome(Option.map(dt, (value) => value.toJSON()), "2024-07-21T08:12:34.112Z")
       }))
 
-    it.effect("only offset", () =>
+    it.effect("parses an offset-only string as an Offset zone", () =>
       Effect.gen(function*() {
         const dt = DateTime.makeZonedFromString("2024-07-21T20:12:34.112546348+12:00")
         assertSome(Option.map(dt, (value) => value.zone._tag), "Offset")
         assertSome(Option.map(dt, (value) => value.toJSON()), "2024-07-21T08:12:34.112Z")
       }))
 
-    it.effect("only offset with 00:00", () =>
+    it.effect("parses a UTC offset-only string as an Offset zone", () =>
       Effect.gen(function*() {
         const dt = DateTime.makeZonedFromString("2024-07-21T20:12:34.112546348+00:00")
         assertSome(Option.map(dt, (value) => value.zone._tag), "Offset")
         assertSome(Option.map(dt, (value) => value.toJSON()), "2024-07-21T20:12:34.112Z")
       }))
 
-    it.effect("roundtrip", () =>
+    it.effect("roundtrips a bracketed IANA zone string", () =>
       Effect.gen(function*() {
         const dt = Option.flatMap(
           DateTime.makeZonedFromString("2024-07-21T20:12:34.112546348+12:00[Pacific/Auckland]"),

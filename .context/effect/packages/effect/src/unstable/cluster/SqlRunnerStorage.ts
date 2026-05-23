@@ -1,4 +1,33 @@
 /**
+ * SQL-backed storage for Effect Cluster runner metadata and shard ownership.
+ *
+ * The `SqlRunnerStorage` module builds a `RunnerStorage` implementation from a
+ * `SqlClient`, creating the runner and lock tables it needs using the configured
+ * table prefix. It is used by clustered applications that need runner
+ * registration, health tracking, shard acquisition, refresh, and release to be
+ * coordinated through an external database instead of in-memory state.
+ *
+ * **Common tasks**
+ *
+ * - Provide the default storage layer with {@link layer}
+ * - Use {@link layerWith} when multiple clusters share the same database and
+ *   need distinct table prefixes
+ * - Create a storage implementation directly with {@link make} for custom layer
+ *   composition
+ *
+ * **Gotchas**
+ *
+ * - Runner heartbeats and persisted shard locks expire according to
+ *   `ShardingConfig.shardLockExpiration`; stale rows may be reused or cleaned up
+ *   by later storage operations.
+ * - PostgreSQL and MySQL use advisory locks by default, keeping shard ownership
+ *   tied to a reserved database connection. Set
+ *   `ShardingConfig.shardLockDisableAdvisory` when persisted lock rows should be
+ *   used instead.
+ * - The selected table prefix controls the generated `runners` and `locks`
+ *   table names, so changing it points the cluster at a different storage
+ *   namespace.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -18,13 +47,19 @@ import * as ShardingConfig from "./ShardingConfig.ts"
 const withTracerDisabled = Effect.withTracerEnabled(false)
 
 /**
+ * Creates a SQL-backed `RunnerStorage` implementation for registered runners and
+ * shard locks, using the configured table prefix and advisory locks where
+ * supported and enabled.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make = Effect.fnUntraced(function*(options: {
   readonly prefix?: string | undefined
 }) {
   const config = yield* ShardingConfig.ShardingConfig
+  const shardGroups = ShardingConfig.shardGroupConfig(config)
+  const availableShardGroups = Array.from(shardGroups.available)
   const disableAdvisoryLocks = config.shardLockDisableAdvisory
   const sql = (yield* SqlClient.SqlClient).withoutTransforms()
   const prefix = options?.prefix ?? "cluster"
@@ -391,8 +426,8 @@ export const make = Effect.fnUntraced(function*(options: {
 
   const lockNumbers = new Map<string, number>()
   const lockNumbersReverse = new Map<number, string>()
-  for (let i = 0; i < config.shardGroups.length; i++) {
-    const group = config.shardGroups[i]
+  for (let i = 0; i < availableShardGroups.length; i++) {
+    const group = availableShardGroups[i]
     const base = (i + 1) * 1000000
     for (let shard = 1; shard <= config.shardsPerGroup; shard++) {
       const shardId = ShardId.make(group, shard).toString()
@@ -407,8 +442,8 @@ export const make = Effect.fnUntraced(function*(options: {
   const lockNamesReverse = new Map<string, string>()
   {
     let index = 0
-    for (let i = 0; i < config.shardGroups.length; i++) {
-      const group = config.shardGroups[i]
+    for (let i = 0; i < availableShardGroups.length; i++) {
+      const group = availableShardGroups[i]
       for (let shard = 1; shard <= config.shardsPerGroup; shard++) {
         const shardId = ShardId.make(group, shard).toString()
         const lockName = `${prefix}.${shardId}`
@@ -643,8 +678,10 @@ export const make = Effect.fnUntraced(function*(options: {
 }, withTracerDisabled)
 
 /**
+ * Layer that provides SQL-backed `RunnerStorage` using the default table prefix.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer: Layer.Layer<
   RunnerStorage.RunnerStorage,
@@ -653,8 +690,10 @@ export const layer: Layer.Layer<
 > = Layer.effect(RunnerStorage.RunnerStorage)(make({}))
 
 /**
+ * Layer that provides SQL-backed `RunnerStorage` using a custom table prefix.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerWith = (options: {
   readonly prefix?: string | undefined

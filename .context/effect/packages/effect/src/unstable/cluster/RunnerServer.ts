@@ -1,4 +1,28 @@
 /**
+ * The `RunnerServer` module provides the transport-agnostic server side of the
+ * cluster runner protocol. It turns the runner RPC group into handlers that
+ * receive ping, notification, request, stream, and envelope messages from other
+ * runners, then forwards them into `Sharding` and coordinates persisted replies
+ * through `MessageStorage`.
+ *
+ * **Common tasks**
+ *
+ * - Build a runner server once an `RpcServer.Protocol` has been supplied by a
+ *   transport such as HTTP, WebSocket, or sockets
+ * - Provide the complete runner runtime with `Sharding` and `Runners` clients
+ *   using {@link layerWithClients}
+ * - Embed a cluster client without serving runner RPCs or accepting shard
+ *   assignments using {@link layerClientOnly}
+ *
+ * **Gotchas**
+ *
+ * - This module does not choose a wire transport; transport-specific modules
+ *   provide the `RpcServer.Protocol`
+ * - Persisted requests register reply handlers in `MessageStorage` before the
+ *   message is delivered to `Sharding`
+ * - Client-only layers clear the configured runner address, so they can send
+ *   cluster messages but do not register as shard-owning runners
+ *
  * @since 4.0.0
  */
 import * as Effect from "../../Effect.ts"
@@ -22,8 +46,11 @@ import { ShardingConfig } from "./ShardingConfig.ts"
 const constVoid = constant(Effect.void)
 
 /**
+ * Layer of RPC handlers for the runner protocol, forwarding ping, notify, effect,
+ * stream, and envelope requests to `Sharding` and `MessageStorage`.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerHandlers = Runners.Rpcs.toLayer(Effect.gen(function*() {
   const sharding = yield* Sharding.Sharding
@@ -129,13 +156,12 @@ export const layerHandlers = Runners.Rpcs.toLayer(Effect.gen(function*() {
 const constWaitUntilRead = { waitUntilRead: true } as const
 
 /**
- * The `RunnerServer` recieves messages from other Runners and forwards them to the
- * `Sharding` layer.
+ * Creates the runner RPC server layer, which receives messages from other
+ * runners, forwards them to the `Sharding` layer, and responds to `Ping`
+ * requests.
  *
- * It also responds to `Ping` requests.
- *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer: Layer.Layer<
   never,
@@ -149,8 +175,8 @@ export const layer: Layer.Layer<
 /**
  * A `RunnerServer` layer that includes the `Runners` & `Sharding` clients.
  *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerWithClients: Layer.Layer<
   Sharding.Sharding | Runners.Runners,
@@ -167,14 +193,15 @@ export const layerWithClients: Layer.Layer<
 )
 
 /**
- * A `Runners` layer that is client only.
+ * Creates a client-only `Runners` layer.
  *
- * It will not register with the ShardManager and recieve shard assignments,
- * so this layer can be used to embed a cluster client inside another effect
- * application.
+ * **When to use**
  *
+ * Use this layer to embed a cluster client inside another Effect application
+ * without registering with the ShardManager or receiving shard assignments.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerClientOnly: Layer.Layer<
   Sharding.Sharding | Runners.Runners,

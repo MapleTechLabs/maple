@@ -1,5 +1,25 @@
 /**
- * @since 1.0.0
+ * Utilities for applying Effect SQL migrations to PostgreSQL databases.
+ *
+ * This module re-exports the shared `Migrator` loaders and error types, then
+ * provides `run` and `layer` helpers for applying ordered migrations through
+ * the current PostgreSQL `SqlClient` and `PgClient`. It is typically used at
+ * application startup, during deployment, in integration tests that provision a
+ * temporary PostgreSQL database, or in layer graphs that must prepare the
+ * schema before dependent services are acquired.
+ *
+ * Migrations are recorded in `effect_sql_migrations` by default and are loaded
+ * using the shared `<id>_<name>` file or record-key convention. Only migrations
+ * with an id greater than the latest recorded id are applied, so concurrent
+ * application instances should coordinate startup against the same database and
+ * avoid racing to install the same changes. When `schemaDirectory` is enabled,
+ * this adapter shells out to `pg_dump` using the active `PgClient`
+ * configuration, so `pg_dump` must be available on `PATH` and the layer must
+ * provide child process, filesystem, and path services. The generated dumps
+ * intentionally strip comments, session settings, ownership, and privilege
+ * statements to keep schema snapshots portable across PostgreSQL environments.
+ *
+ * @since 4.0.0
  */
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -14,13 +34,15 @@ import type { SqlError } from "effect/unstable/sql/SqlError"
 import { PgClient } from "./PgClient.ts"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * from "effect/unstable/sql/Migrator"
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Runs PostgreSQL SQL migrations using the configured clients. Schema dumps use `pg_dump` and require child process, filesystem, and path services.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const run: <R2 = never>(
   options: Migrator.MigratorOptions<R2>
@@ -91,8 +113,10 @@ export const run: <R2 = never>(
 })
 
 /**
+ * Creates a layer that runs PostgreSQL migrations during layer construction, including `pg_dump`-based schema dump support when requested.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layer = <R>(
   options: Migrator.MigratorOptions<R>

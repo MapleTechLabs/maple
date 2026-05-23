@@ -1,8 +1,9 @@
 import { NodeHttpServer, NodeSocket, NodeSocketServer } from "@effect/platform-node"
 import { assert, describe, it } from "@effect/vitest"
-import { Cause, Effect, Layer } from "effect"
+import { Cause, Deferred, Effect, Layer } from "effect"
+import { Entity, EntityProxy, EntityProxyServer, Sharding } from "effect/unstable/cluster"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/unstable/http"
-import { RpcClient, RpcSerialization, RpcServer } from "effect/unstable/rpc"
+import { Rpc, RpcClient, RpcSerialization, RpcServer, RpcTest } from "effect/unstable/rpc"
 import { SocketServer } from "effect/unstable/socket"
 import { e2eSuite, UsersClient } from "./fixtures/rpc-e2e.ts"
 import { RpcLive, User } from "./fixtures/rpc-schemas.ts"
@@ -173,5 +174,40 @@ describe("RpcServer", () => {
         assert.strictEqual(defect.message, "detailed error")
         assert.strictEqual(defect.stack, "Error: detailed error\n  at handler.ts:1")
       }).pipe(Effect.provide(CustomDefectLayer)))
+  })
+
+  describe("entity proxy", () => {
+    it.effect("provides handler context for generated rpc handlers", () =>
+      Effect.gen(function*() {
+        const TestEntity = Entity.make("TestEntity", [Rpc.make("NoPayload")])
+        const TestEntityRpcs = EntityProxy.toRpcGroup(TestEntity)
+        const called = yield* Deferred.make<void>()
+        const testClient = (entityId: string) => ({
+          NoPayload: (payload: void, options?: { readonly discard?: boolean }) =>
+            Effect.gen(function*() {
+              assert.strictEqual(entityId, "id")
+              assert.strictEqual(payload, undefined)
+              assert.strictEqual(options?.discard, true)
+              yield* Deferred.succeed(called, undefined)
+            })
+        })
+        const sharding = Sharding.Sharding.of({
+          ...({} as Sharding.Sharding["Service"]),
+          isShutdown: Effect.succeed(false),
+          makeClient: () => Effect.succeed(testClient) as never,
+          pollStorage: Effect.void
+        })
+
+        const client = yield* RpcTest.makeClient(TestEntityRpcs).pipe(
+          Effect.provide(EntityProxyServer.layerRpcHandlers(TestEntity)),
+          Effect.provideService(Sharding.Sharding, sharding)
+        )
+
+        yield* client["TestEntity.NoPayloadDiscard"]({
+          entityId: "id",
+          payload: undefined
+        })
+        yield* Deferred.await(called)
+      }))
   })
 })

@@ -1,4 +1,21 @@
 /**
+ * Layer-based server-side HTTP routing for Effect applications.
+ *
+ * This module provides the `HttpRouter` service and helpers for registering
+ * method/path handlers, grouping routes under prefixes, decoding request
+ * schemas from route and search parameters, and turning an application layer
+ * into an `HttpServer` or Fetch-compatible handler. It is intended for HTTP
+ * APIs, webhooks, and other server endpoints that want request-scoped services
+ * and typed middleware to be composed through `Layer`.
+ *
+ * Route paths must be absolute paths beginning with `/`, or the wildcard `*`.
+ * Prefixed routes remove the matched prefix from the request URL seen by the
+ * handler, `HEAD` requests fall back to matching `GET` routes, and wildcard
+ * paths ending in `/*` also match the prefix path itself. Use router middleware
+ * when you need to provide request dependencies, handle configured route errors,
+ * or modify route responses; server middleware wraps the wider server chain and
+ * is not the right hook for changing the final response body or headers.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -25,8 +42,16 @@ import * as HttpServerResponse from "./HttpServerResponse.ts"
 const TypeId = "~effect/http/HttpRouter"
 
 /**
- * @since 4.0.0
+ * Service interface for registering HTTP routes and middleware.
+ *
+ * **Details**
+ *
+ * An `HttpRouter` can add routes, apply path prefixes, install global middleware,
+ * and expose the registered routes as an Effect that handles the current server
+ * request.
+ *
  * @category HttpRouter
+ * @since 4.0.0
  */
 export interface HttpRouter {
   readonly [TypeId]: typeof TypeId
@@ -77,16 +102,27 @@ export interface HttpRouter {
 }
 
 /**
- * @since 4.0.0
+ * Service tag for the HTTP router used while constructing an HTTP application.
+ * Route and middleware layers require this service to register themselves with
+ * the router.
+ *
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const HttpRouter: Context.Service<HttpRouter, HttpRouter> = Context.Service<HttpRouter>(
   "effect/http/HttpRouter"
 )
 
 /**
- * @since 4.0.0
+ * Constructs an empty `HttpRouter` service.
+ *
+ * **Details**
+ *
+ * The returned router accepts route and middleware registrations and later routes
+ * the current `HttpServerRequest` to the matching `HttpServerResponse`.
+ *
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const make = Effect.gen(function*() {
   const router = FindMyWay.make<Route<any, never>>(yield* RouterConfig)
@@ -148,7 +184,7 @@ export const make = Effect.gen(function*() {
                 Effect.succeed(handler) :
                 Effect.isEffect(handler)
                 ? handler
-                : Effect.flatMap(HttpServerRequest.HttpServerRequest.asEffect(), handler),
+                : Effect.flatMap(HttpServerRequest.HttpServerRequest, handler),
               uninterruptible: options?.uninterruptible ?? false,
               prefix
             })
@@ -215,8 +251,15 @@ function sliceRequestUrl(request: HttpServerRequest.HttpServerRequest, prefix: s
 }
 
 /**
+ * Context reference for low-level router configuration.
+ *
+ * **Details**
+ *
+ * The value is passed to the route matcher when an `HttpRouter` is created and
+ * defaults to an empty configuration.
+ *
+ * @category configuration
  * @since 4.0.0
- * @category Configuration
  */
 export const RouterConfig = Context.Reference<Partial<FindMyWay.RouterConfig>>(
   "effect/http/HttpRouter/RouterConfig",
@@ -224,8 +267,15 @@ export const RouterConfig = Context.Reference<Partial<FindMyWay.RouterConfig>>(
 )
 
 /**
- * @since 4.0.0
+ * Request-scoped service containing information about the matched route.
+ *
+ * **Details**
+ *
+ * It provides the route definition and the path parameters captured by the route
+ * matcher.
+ *
  * @category RouteContext
+ * @since 4.0.0
  */
 export class RouteContext extends Context.Service<RouteContext, {
   readonly params: Readonly<Record<string, string | undefined>>
@@ -233,18 +283,28 @@ export class RouteContext extends Context.Service<RouteContext, {
 }>()("effect/http/HttpRouter/RouteContext") {}
 
 /**
- * @since 4.0.0
+ * Effect that returns the path parameters captured for the current matched route.
+ *
  * @category RouteContext
+ * @since 4.0.0
  */
 export const params: Effect.Effect<
   ReadonlyRecord<string, string | undefined>,
   never,
   RouteContext
-> = Effect.map(RouteContext.asEffect(), (_) => _.params)
+> = Effect.map(RouteContext, (_) => _.params)
 
 /**
+ * Decodes a schema from the current request and its JSON body.
+ *
+ * **Details**
+ *
+ * The input passed to the schema includes the request method, URL, headers,
+ * cookies, path parameters, search parameters, and parsed JSON body. The effect
+ * fails if the body cannot be parsed or the schema decode fails.
+ *
+ * @category schemas
  * @since 4.0.0
- * @category Schema
  */
 export const schemaJson = <
   A,
@@ -292,8 +352,15 @@ export const schemaJson = <
 }
 
 /**
+ * Decodes a schema from the current request without reading the request body.
+ *
+ * **Details**
+ *
+ * The input passed to the schema includes the request method, URL, headers,
+ * cookies, path parameters, and search parameters.
+ *
+ * @category schemas
  * @since 4.0.0
- * @category Schema
  */
 export const schemaNoBody = <
   A,
@@ -338,8 +405,14 @@ export const schemaNoBody = <
 }
 
 /**
+ * Decodes a schema from the current route path parameters and search parameters.
+ *
+ * **Details**
+ *
+ * When the same key appears in both sources, the path parameter value is used.
+ *
+ * @category schemas
  * @since 4.0.0
- * @category Schema
  */
 export const schemaParams = <A, I extends Readonly<Record<string, string | ReadonlyArray<string> | undefined>>, RD, RE>(
   schema: Schema.Codec<A, I, RD, RE>,
@@ -354,8 +427,11 @@ export const schemaParams = <A, I extends Readonly<Record<string, string | Reado
 }
 
 /**
+ * Decodes a schema from the path parameters captured for the current matched
+ * route.
+ *
+ * @category schemas
  * @since 4.0.0
- * @category Schema
  */
 export const schemaPathParams = <A, I extends Readonly<Record<string, string | undefined>>, RD, RE>(
   schema: Schema.Codec<A, I, RD, RE>,
@@ -366,12 +442,19 @@ export const schemaPathParams = <A, I extends Readonly<Record<string, string | u
 }
 
 /**
- * A helper function that is the equivalent of:
+ * Creates a layer that accesses the current `HttpRouter` service and runs the
+ * supplied effect.
+ *
+ * **When to use**
+ *
+ * Use it to register routes or middleware with the router during layer
+ * construction.
+ *
+ * **Example** (Registering routes during layer construction)
  *
  * ```ts
- * import { Effect } from "effect"
- * import * as Layer from "effect/Layer"
- * import * as HttpRouter from "effect/unstable/http/HttpRouter"
+ * import { Effect, Layer } from "effect"
+ * import { HttpRouter } from "effect/unstable/http"
  *
  * const MyRoute = Layer.effectDiscard(Effect.gen(function*() {
  *   const router = yield* HttpRouter.HttpRouter
@@ -380,21 +463,21 @@ export const schemaPathParams = <A, I extends Readonly<Record<string, string | u
  * }))
  * ```
  *
- * @since 4.0.0
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const use = <A, E, R>(
   f: (router: HttpRouter) => Effect.Effect<A, E, R>
-): Layer.Layer<never, E, HttpRouter | Exclude<R, Scope.Scope>> =>
-  Layer.effectDiscard(Effect.flatMap(HttpRouter.asEffect(), f))
+): Layer.Layer<never, E, HttpRouter | Exclude<R, Scope.Scope>> => Layer.effectDiscard(Effect.flatMap(HttpRouter, f))
 
 /**
  * Create a layer that adds a single route to the HTTP router.
  *
+ * **Example** (Adding a GET route)
+ *
  * ```ts
  * import { Effect } from "effect"
- * import * as HttpRouter from "effect/unstable/http/HttpRouter"
- * import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+ * import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
  *
  * const Route = HttpRouter.add(
  *   "GET",
@@ -403,8 +486,8 @@ export const use = <A, E, R>(
  * )
  * ```
  *
- * @since 4.0.0
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const add = <E = never, R = never>(
   method: "*" | "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS",
@@ -422,10 +505,11 @@ export const add = <E = never, R = never>(
 /**
  * Create a layer that adds multiple routes to the HTTP router.
  *
+ * **Example** (Adding multiple routes)
+ *
  * ```ts
  * import { Effect } from "effect"
- * import * as HttpRouter from "effect/unstable/http/HttpRouter"
- * import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+ * import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
  *
  * const Routes = HttpRouter.addAll([
  *   HttpRouter.route(
@@ -436,8 +520,8 @@ export const add = <E = never, R = never>(
  * ])
  * ```
  *
- * @since 4.0.0
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const addAll = <Routes extends ReadonlyArray<Route<any, any>>, EX = never, RX = never>(
   routes: Routes | Effect.Effect<Routes, EX, RX>,
@@ -462,14 +546,25 @@ export const addAll = <Routes extends ReadonlyArray<Route<any, any>>, EX = never
   }))
 
 /**
- * @since 4.0.0
+ * Layer that provides a newly constructed `HttpRouter`.
+ *
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<HttpRouter> = Layer.effect(HttpRouter)(make)
 
 /**
- * @since 4.0.0
+ * Builds an application layer with a router and returns the router as an HTTP
+ * handler effect.
+ *
+ * **Details**
+ *
+ * The returned effect handles the current `HttpServerRequest` in the current
+ * `Scope`; route request markers are converted into the ordinary requirements of
+ * the returned handler.
+ *
  * @category HttpRouter
+ * @since 4.0.0
  */
 export const toHttpEffect = <A, E, R>(
   appLayer: Layer.Layer<A, E, R>
@@ -492,8 +587,15 @@ export const toHttpEffect = <A, E, R>(
 const RouteTypeId = "~effect/http/HttpRouter/Route"
 
 /**
- * @since 4.0.0
+ * Description of a registered HTTP route.
+ *
+ * **Details**
+ *
+ * A route pairs an HTTP method and path pattern with a response handler, plus
+ * metadata used for prefix handling and interruptibility.
+ *
  * @category Route
+ * @since 4.0.0
  */
 export interface Route<E = never, R = never> {
   readonly [RouteTypeId]: typeof RouteTypeId
@@ -505,19 +607,25 @@ export interface Route<E = never, R = never> {
 }
 
 /**
+ * Helper types for extracting the error and context types carried by `Route`
+ * values.
+ *
  * @since 4.0.0
- * @category Route
  */
 export declare namespace Route {
   /**
-   * @since 4.0.0
+   * Extracts the error type produced by a `Route` handler.
+   *
    * @category Route
+   * @since 4.0.0
    */
   export type Error<R extends Route<any, any>> = R extends Route<infer E, infer _R> ? E : never
 
   /**
-   * @since 4.0.0
+   * Extracts the context requirements of a `Route` handler.
+   *
    * @category Route
+   * @since 4.0.0
    */
   export type Context<T extends Route<any, any>> = T extends Route<infer _E, infer R> ? R : never
 }
@@ -528,17 +636,24 @@ const makeRoute = <E, R>(options: {
   readonly handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>
   readonly uninterruptible?: boolean | undefined
   readonly prefix?: Option.Option<string> | string | undefined
-}): Route<E, Exclude<R, Provided>> =>
-  ({
-    ...options,
-    uninterruptible: options.uninterruptible ?? false,
-    prefix: typeof options.prefix === "string" ? Option.some(options.prefix) : options.prefix ?? Option.none(),
-    [RouteTypeId]: RouteTypeId
-  }) as Route<E, Exclude<R, Provided>>
+}): Route<E, Exclude<R, Provided>> => (({
+  ...options,
+  uninterruptible: options.uninterruptible ?? false,
+  prefix: typeof options.prefix === "string" ? Option.some(options.prefix) : options.prefix ?? Option.none(),
+  [RouteTypeId]: RouteTypeId
+}) as Route<E, Exclude<R, Provided>>)
 
 /**
- * @since 4.0.0
+ * Constructs a `Route` from an HTTP method, path, and handler.
+ *
+ * **Details**
+ *
+ * The handler may be a static response, an effect that produces a response, or a
+ * function from the current request to a response effect. Set `uninterruptible` to
+ * prevent the route handler from being made interruptible while it runs.
+ *
  * @category Route
+ * @since 4.0.0
  */
 export const route = <E = never, R = never>(
   method: "*" | HttpMethod.HttpMethod,
@@ -559,13 +674,16 @@ export const route = <E = never, R = never>(
       Effect.succeed(handler) :
       Effect.isEffect(handler)
       ? handler
-      : Effect.flatMap(HttpServerRequest.HttpServerRequest.asEffect(), handler),
+      : Effect.flatMap(HttpServerRequest.HttpServerRequest, handler),
     uninterruptible: options?.uninterruptible ?? false
   })
 
 /**
- * @since 4.0.0
+ * Path pattern accepted by the router. Routes must use an absolute path
+ * beginning with `/` or the wildcard `*`.
+ *
  * @category PathInput
+ * @since 4.0.0
  */
 export type PathInput = `/${string}` | "*"
 
@@ -574,8 +692,15 @@ const removeTrailingSlash = (
 ): PathInput => (path.endsWith("/") ? path.slice(0, -1) : path) as any
 
 /**
- * @since 4.0.0
+ * Adds a path prefix to a route path.
+ *
+ * **Details**
+ *
+ * Trailing slashes are removed from the prefix; `/` becomes the prefix itself and
+ * `*` becomes a wildcard route under the prefix.
+ *
  * @category PathInput
+ * @since 4.0.0
  */
 export const prefixPath: {
   (prefix: string): (self: string) => string
@@ -588,8 +713,16 @@ export const prefixPath: {
 })
 
 /**
- * @since 4.0.0
+ * Returns a copy of a route with its path prefixed.
+ *
+ * **Details**
+ *
+ * The prefix is also tracked on the route so that, when the route handles a
+ * request, the matched prefix can be removed from the request URL seen by the
+ * handler.
+ *
  * @category Route
+ * @since 4.0.0
  */
 export const prefixRoute: {
   (prefix: string): <E, R>(self: Route<E, R>) => Route<E, R>
@@ -608,8 +741,8 @@ export const prefixRoute: {
  * Represents a request-level dependency, that needs to be provided by
  * middleware.
  *
- * @since 4.0.0
  * @category Request types
+ * @since 4.0.0
  */
 export interface Request<Kind extends string, T> {
   readonly _: unique symbol
@@ -618,25 +751,35 @@ export interface Request<Kind extends string, T> {
 }
 
 /**
+ * Helper types for request-level dependency markers used by router layers and
+ * middleware.
+ *
  * @since 4.0.0
- * @category Request types
  */
 export declare namespace Request {
   /**
-   * @since 4.0.0
+   * Wraps a type in a request-level marker of the supplied kind.
+   *
    * @category Request types
+   * @since 4.0.0
    */
   export type From<Kind extends string, R> = R extends infer T ? Request<Kind, T> : never
 
   /**
-   * @since 4.0.0
+   * Extracts the payload types from request-level markers that have the supplied
+   * kind.
+   *
    * @category Request types
+   * @since 4.0.0
    */
   export type Only<Kind extends string, A> = A extends Request<Kind, infer T> ? T : never
 
   /**
-   * @since 4.0.0
+   * Removes request-level markers from a union, leaving only ordinary requirement
+   * or error types.
+   *
    * @category Request types
+   * @since 4.0.0
    */
   export type Without<A> = A extends Request<infer _Kind, infer _> ? never : A
 }
@@ -645,8 +788,8 @@ export declare namespace Request {
  * Services provided by the HTTP router, which are available in the
  * request context.
  *
- * @since 4.0.0
  * @category Request types
+ * @since 4.0.0
  */
 export type Provided =
   | HttpServerRequest.HttpServerRequest
@@ -657,8 +800,8 @@ export type Provided =
 /**
  * Services provided to global middleware.
  *
- * @since 4.0.0
  * @category Request types
+ * @since 4.0.0
  */
 export type GlobalProvided =
   | HttpServerRequest.HttpServerRequest
@@ -667,8 +810,16 @@ export type GlobalProvided =
 const MiddlewareTypeId = "~effect/http/HttpRouter/Middleware"
 
 /**
- * @since 4.0.0
+ * Composable descriptor for route-scoped HTTP router middleware.
+ *
+ * **Details**
+ *
+ * Its `layer` can be provided to route layers, and `combine` composes middleware
+ * while tracking provided services, handled errors, and remaining requirements at
+ * the type level.
+ *
  * @category Middleware
+ * @since 4.0.0
  */
 export interface Middleware<
   Config extends {
@@ -713,18 +864,18 @@ export interface Middleware<
 /**
  * Create a middleware layer that can be used to modify requests and responses.
  *
+ * **Details**
+ *
  * By default, the middleware only affects the routes that it is provided to.
  *
  * If you want to create a middleware that applies globally to all routes, pass
  * the `global` option as `true`.
  *
+ * **Example** (Applying route and global middleware)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as Layer from "effect/Layer"
- * import * as Context from "effect/Context"
- * import * as HttpMiddleware from "effect/unstable/http/HttpMiddleware"
- * import * as HttpRouter from "effect/unstable/http/HttpRouter"
- * import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+ * import { Context, Effect, Layer } from "effect"
+ * import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/http"
  *
  * // Here we are defining a CORS middleware
  * const CorsMiddleware = HttpRouter.middleware(HttpMiddleware.cors()).layer
@@ -768,8 +919,8 @@ export interface Middleware<
  * )
  * ```
  *
- * @since 4.0.0
  * @category Middleware
+ * @since 4.0.0
  */
 export const middleware:
   & middleware.Make<never, never>
@@ -892,13 +1043,22 @@ const getMiddleware = (context: Context.Context<never>): Array<middleware.Fn> =>
 }
 
 /**
+ * Types used by the `middleware` constructor.
+ *
  * @since 4.0.0
- * @category Middleware
  */
 export declare namespace middleware {
   /**
-   * @since 4.0.0
+   * Overloaded constructor type for router middleware.
+   *
+   * **Details**
+   *
+   * It builds either a route-scoped `Middleware` or, when `global` is `true`, a
+   * layer that installs middleware for all routes. The type tracks provided
+   * services, handled errors, middleware failures, and remaining requirements.
+   *
    * @category Middleware
+   * @since 4.0.0
    */
   export type Make<Provides = never, Handles = never> = {
     <E, R, EX, RX, const Global extends boolean = false>(
@@ -979,8 +1139,11 @@ export declare namespace middleware {
   }
 
   /**
-   * @since 4.0.0
+   * Function that transforms an HTTP response effect into another HTTP response
+   * effect.
+   *
    * @category Middleware
+   * @since 4.0.0
    */
   export type Fn = (
     effect: Effect.Effect<HttpServerResponse.HttpServerResponse>
@@ -990,8 +1153,8 @@ export declare namespace middleware {
 /**
  * A middleware that applies CORS headers to the HTTP response.
  *
- * @since 4.0.0
  * @category Middleware
+ * @since 4.0.0
  */
 export const cors = (
   options?: {
@@ -1007,11 +1170,11 @@ export const cors = (
 /**
  * A middleware that disables the logger for some routes.
  *
+ * **Example** (Disabling route logging)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as Layer from "effect/Layer"
- * import * as HttpRouter from "effect/unstable/http/HttpRouter"
- * import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
+ * import { Effect, Layer } from "effect"
+ * import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
  *
  * const Route = HttpRouter.add(
  *   "GET",
@@ -1023,16 +1186,16 @@ export const cors = (
  * )
  * ```
  *
- * @since 4.0.0
  * @category Middleware
+ * @since 4.0.0
  */
 export const disableLogger: Layer.Layer<never> = middleware(HttpMiddleware.withLoggerDisabled).layer
 
 /**
  * Provides request-level dependencies to some routes.
  *
- * @since 4.0.0
  * @category Middleware
+ * @since 4.0.0
  */
 export const provideRequest =
   <A2, E2, R2>(layer: Layer.Layer<A2, E2, R2>) =>
@@ -1056,8 +1219,8 @@ export const provideRequest =
 /**
  * Serves the provided application layer as an HTTP server.
  *
- * @since 4.0.0
  * @category Server
+ * @since 4.0.0
  */
 export const serve = <A, E, R, HE, HR = Request.Only<"Requires", R> | Request.Only<"GlobalRequires", R>>(
   appLayer: Layer.Layer<A, E, R>,
@@ -1068,13 +1231,12 @@ export const serve = <A, E, R, HE, HR = Request.Only<"Requires", R> | Request.On
     /**
      * Middleware to apply to the HTTP server.
      *
-     * NOTE: This middleware is applied to the entire HTTP server chain,
-     * including the sending of the response. This means that modifications
-     * to the response **WILL NOT** be reflected in the final response sent to the
-     * client.
+     * **Gotchas**
      *
-     * Use HttpRouter.middleware to create middleware that can modify the
-     * response.
+     * This middleware is applied to the entire HTTP server chain, including the
+     * sending of the response. Changes to the response are not reflected in the
+     * final response sent to the client. Use `HttpRouter.middleware` when
+     * middleware must modify the response.
      */
     readonly middleware?: (
       effect: Effect.Effect<
@@ -1112,8 +1274,17 @@ export const serve = <A, E, R, HE, HR = Request.Only<"Requires", R> | Request.On
 }
 
 /**
- * @since 4.0.0
+ * Builds a Fetch-compatible request handler from an HTTP router application
+ * layer.
+ *
+ * **Details**
+ *
+ * The result contains a `handler` function that converts Web `Request` values to
+ * Web `Response` values and a `dispose` function for releasing the layer
+ * resources.
+ *
  * @category Server
+ * @since 4.0.0
  */
 export const toWebHandler = <
   A,
@@ -1135,13 +1306,12 @@ export const toWebHandler = <
     /**
      * Middleware to apply to the HTTP server.
      *
-     * NOTE: This middleware is applied to the entire HTTP server chain,
-     * including the sending of the response. This means that modifications
-     * to the response **WILL NOT** be reflected in the final response sent to the
-     * client.
+     * **Gotchas**
      *
-     * Use HttpRouter.middleware to create middleware that can modify the
-     * response.
+     * This middleware is applied to the entire HTTP server chain, including the
+     * sending of the response. Changes to the response are not reflected in the
+     * final response sent to the client. Use `HttpRouter.middleware` when
+     * middleware must modify the response.
      */
     readonly middleware?: (
       effect: Effect.Effect<

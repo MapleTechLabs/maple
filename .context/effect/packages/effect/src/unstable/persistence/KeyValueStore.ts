@@ -1,4 +1,25 @@
 /**
+ * Effectful key/value storage for persistence backends.
+ *
+ * This module defines the `KeyValueStore` service used by the persistence
+ * package when a simple string or binary store is enough. It is useful for
+ * lightweight durable state, browser storage, local file-backed data, SQL
+ * tables, test stores, and as the storage primitive underneath higher-level
+ * persistence APIs.
+ *
+ * Values are stored as strings or `Uint8Array`s, and `toSchemaStore` adds a
+ * schema-aware JSON layer for typed values. Schema changes can make existing
+ * JSON fail to decode, and `prefix` should be used to separate namespaces when
+ * several logical stores share the same backend. This service does not provide
+ * native TTL support; higher-level persistence layers encode expiration
+ * metadata in stored values when they need TTLs.
+ *
+ * Backend behavior is intentionally small but not identical: Web Storage is
+ * string-only, `makeStringOnly` stores binary values as base64, filesystem
+ * keys become encoded file names, SQL stores value type metadata in a table,
+ * and the memory layer is process-local. Choose keys, prefixes, table names,
+ * and value formats with those backend constraints in mind.
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -21,8 +42,10 @@ import type { SqlError } from "../sql/SqlError.ts"
 const TypeId = "~effect/persistence/KeyValueStore" as const
 
 /**
+ * Effectful key/value store service for string and binary values.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface KeyValueStore {
   readonly [TypeId]: typeof TypeId
@@ -84,8 +107,15 @@ export interface KeyValueStore {
 }
 
 /**
+ * Implementation callbacks used by `make` to construct a `KeyValueStore`.
+ *
+ * **Details**
+ *
+ * Primitive operations are required, while helpers such as `has`, `isEmpty`,
+ * and `modify` can be supplied to override the defaults.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type MakeOptions = Partial<KeyValueStore> & {
   /**
@@ -120,8 +150,11 @@ export type MakeOptions = Partial<KeyValueStore> & {
 }
 
 /**
+ * Implementation callbacks for adapting a string-only backing store into a
+ * `KeyValueStore`.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type MakeStringOptions = Partial<Omit<KeyValueStore, "set">> & {
   /**
@@ -153,8 +186,11 @@ export type MakeStringOptions = Partial<Omit<KeyValueStore, "set">> & {
 const ErrorTypeId = "~effect/persistence/KeyValueStore/KeyValueStoreError" as const
 
 /**
+ * Error raised by key/value store operations, including the failed method,
+ * optional key, message, and cause.
+ *
+ * @category errors
  * @since 4.0.0
- * @category Errors
  */
 export class KeyValueStoreError extends Data.TaggedError("KeyValueStoreError")<{
   message: string
@@ -163,14 +199,18 @@ export class KeyValueStoreError extends Data.TaggedError("KeyValueStoreError")<{
   cause?: unknown
 }> {
   /**
+   * Marks this value as a key-value store error for runtime guards.
+   *
    * @since 4.0.0
    */
   readonly [ErrorTypeId]: typeof ErrorTypeId = ErrorTypeId
 }
 
 /**
- * @since 4.0.0
+ * Context service tag for the `KeyValueStore` service.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const KeyValueStore: Context.Service<
   KeyValueStore,
@@ -178,8 +218,15 @@ export const KeyValueStore: Context.Service<
 > = Context.Service("effect/persistence/KeyValueStore")
 
 /**
- * @since 4.0.0
+ * Constructs a `KeyValueStore` from primitive store operations.
+ *
+ * **Details**
+ *
+ * Default implementations are derived for `has`, `isEmpty`, `modify`, and
+ * `modifyUint8Array` unless they are provided in the options.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = (options: MakeOptions): KeyValueStore =>
   KeyValueStore.of({
@@ -215,8 +262,15 @@ export const make = (options: MakeOptions): KeyValueStore =>
   })
 
 /**
- * @since 4.0.0
+ * Adapts a string-only backing store into a `KeyValueStore`.
+ *
+ * **Details**
+ *
+ * `Uint8Array` values are stored as base64 strings. `getUint8Array` decodes
+ * base64 values and falls back to UTF-8 encoding for non-base64 strings.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeStringOnly = (
   options: MakeStringOptions
@@ -241,8 +295,11 @@ export const makeStringOnly = (
 }
 
 /**
- * @since 4.0.0
+ * Returns a view of a `KeyValueStore` that prepends the given prefix to every
+ * key.
+ *
  * @category combinators
+ * @since 4.0.0
  */
 export const prefix: {
   (prefix: string): (self: KeyValueStore) => KeyValueStore
@@ -259,8 +316,10 @@ export const prefix: {
 }))
 
 /**
- * @since 4.0.0
+ * Provides a process-local in-memory `KeyValueStore` backed by a `Map`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerMemory: Layer.Layer<KeyValueStore> = Layer.sync(KeyValueStore)(() => {
   const store = new Map<string, string | Uint8Array>()
@@ -285,8 +344,14 @@ export const layerMemory: Layer.Layer<KeyValueStore> = Layer.sync(KeyValueStore)
 })
 
 /**
- * @since 4.0.0
+ * Provides a `KeyValueStore` backed by files in the specified directory.
+ *
+ * **Details**
+ *
+ * The directory is created if needed, and each key is encoded as a file name.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerFileSystem = (
   directory: string
@@ -386,8 +451,10 @@ export const layerFileSystem = (
   }))
 
 /**
- * @since 4.0.0
+ * Options for configuring the SQL-backed `KeyValueStore` layer.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export interface LayerSqlOptions {
   /**
@@ -399,8 +466,15 @@ export interface LayerSqlOptions {
 }
 
 /**
- * @since 4.0.0
+ * Provides a SQL-backed `KeyValueStore`.
+ *
+ * **Details**
+ *
+ * The layer creates the configured table if it does not exist and stores both
+ * string and binary values through the current `SqlClient`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerSql = (
   options: LayerSqlOptions = {}
@@ -609,8 +683,10 @@ export const layerSql = (
 const SchemaStoreTypeId = "~effect/persistence/KeyValueStore/SchemaStore" as const
 
 /**
- * @since 4.0.0
+ * Schema-aware view of a `KeyValueStore` that stores values as encoded JSON.
+ *
  * @category SchemaStore
+ * @since 4.0.0
  */
 export interface SchemaStore<S extends Schema.Top> {
   readonly [SchemaStoreTypeId]: typeof SchemaStoreTypeId
@@ -668,8 +744,10 @@ export interface SchemaStore<S extends Schema.Top> {
 }
 
 /**
- * @since 4.0.0
+ * Adapts a `KeyValueStore` into a `SchemaStore` using the schema's JSON codec.
+ *
  * @category SchemaStore
+ * @since 4.0.0
  */
 export const toSchemaStore = <S extends Schema.Top>(self: KeyValueStore, schema: S): SchemaStore<S> => {
   const serializer = Schema.toCodecJson(schema)
@@ -717,12 +795,13 @@ export const toSchemaStore = <S extends Schema.Top>(self: KeyValueStore, schema:
 }
 
 /**
- * Creates an KeyValueStorage from an instance of the `Storage` api.
+ * Provides a `KeyValueStore` backed by a Web `Storage` instance such as
+ * `localStorage` or `sessionStorage`.
  *
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API
  *
- * @since 4.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layerStorage = (
   evaluate: LazyArg<Storage>
@@ -733,51 +812,56 @@ export const layerStorage = (
       get: (key: string) =>
         Effect.try({
           try: () => storage.getItem(key) ?? undefined,
-          catch: () =>
+          catch: (cause) =>
             new KeyValueStoreError({
               key,
               method: "get",
-              message: `Unable to get item with key ${key}`
+              message: `Unable to get item with key ${key}`,
+              cause
             })
         }),
 
       set: (key: string, value: string) =>
         Effect.try({
           try: () => storage.setItem(key, value),
-          catch: () =>
+          catch: (cause) =>
             new KeyValueStoreError({
               key,
               method: "set",
-              message: `Unable to set item with key ${key}`
+              message: `Unable to set item with key ${key}`,
+              cause
             })
         }),
 
       remove: (key: string) =>
         Effect.try({
           try: () => storage.removeItem(key),
-          catch: () =>
+          catch: (cause) =>
             new KeyValueStoreError({
               key,
               method: "remove",
-              message: `Unable to remove item with key ${key}`
+              message: `Unable to remove item with key ${key}`,
+              cause
             })
         }),
 
       clear: Effect.try({
         try: () => storage.clear(),
-        catch: () =>
+        catch: (cause) =>
           new KeyValueStoreError({
             method: "clear",
-            message: `Unable to clear storage`
+            message: `Unable to clear storage`,
+            cause
           })
       }),
 
       size: Effect.try({
         try: () => storage.length,
-        catch: () =>
+        catch: (cause) =>
           new KeyValueStoreError({
             method: "size",
-            message: `Unable to get size`
+            message: `Unable to get size`,
+            cause
           })
       })
     })

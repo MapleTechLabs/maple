@@ -133,7 +133,7 @@ describe("RpcSerialization", () => {
     )
   })
 
-  it("msgPack encodes and decodes a payload", () => {
+  it("msgPack roundtrips an encoded RPC request envelope", () => {
     const parser = RpcSerialization.msgPack.makeUnsafe()
     const payload = { _tag: "Request", id: 1, method: "echo" }
     const encoded = parser.encode(payload)
@@ -142,7 +142,7 @@ describe("RpcSerialization", () => {
     assert.deepStrictEqual(decoded[0], payload)
   })
 
-  it("makeMsgPack with useRecords false encodes and decodes a payload", () => {
+  it("makeMsgPack with useRecords false roundtrips an encoded RPC request envelope", () => {
     const parser = RpcSerialization.makeMsgPack({ useRecords: false }).makeUnsafe()
     const payload = { _tag: "Request", id: 1, method: "echo" }
     const encoded = parser.encode(payload)

@@ -32,15 +32,15 @@
  * **Example** (Building and parsing a JSON Pointer)
  *
  * ```ts
- * import { escapeToken, unescapeToken } from "effect/JsonPointer"
+ * import { JsonPointer } from "effect"
  *
  * // Build a JSON Pointer from path segments
  * const segments = ["users", "name/alias", "value"]
- * const pointer = "/" + segments.map(escapeToken).join("/")
+ * const pointer = "/" + segments.map(JsonPointer.escapeToken).join("/")
  * // "/users/name~1alias/value"
  *
  * // Parse a JSON Pointer back to segments
- * const tokens = pointer.split("/").slice(1).map(unescapeToken)
+ * const tokens = pointer.split("/").slice(1).map(JsonPointer.unescapeToken)
  * // ["users", "name/alias", "value"]
  * ```
  *
@@ -53,38 +53,37 @@
  */
 
 /**
- * Escapes a JSON Pointer reference token according to RFC 6901.
+ * Escapes a JSON Pointer reference token according to RFC 6901 by encoding special characters so the token can be safely used as a segment in a JSON Pointer.
  *
- * Encodes special characters in a reference token so it can be safely used as a segment in a JSON Pointer.
- *
- * ## When to use this
+ * **When to use**
  *
  * - Building JSON Pointers from object keys or path segments that may contain special characters
  * - Escaping tokens before joining them with `/` to form a complete JSON Pointer
  * - Preparing reference tokens for use in JSON Patch operations or schema references
  *
- * ## Behavior
+ * **Details**
  *
  * - Does not mutate the input string; returns a new escaped string
  * - Replaces `~` (tilde) with `~0` and `/` (forward slash) with `~1`
- * - Replacement order matters: `~` is replaced before `/` to prevent double-escaping
  * - Returns the input unchanged if it contains no special characters
  * - Empty strings are valid and returned unchanged
+ *
+ * **Gotchas**
+ *
+ * The replacement order matters: `~` is replaced before `/` to prevent double-escaping.
  *
  * **Example** (Escaping special characters)
  *
  * ```ts
- * import { escapeToken } from "effect/JsonPointer"
+ * import { JsonPointer } from "effect"
  *
- * escapeToken("a/b") // "a~1b"
- * escapeToken("c~d") // "c~0d"
- * escapeToken("path/to~key") // "path~1to~0key"
+ * JsonPointer.escapeToken("a/b") // "a~1b"
+ * JsonPointer.escapeToken("c~d") // "c~0d"
+ * JsonPointer.escapeToken("path/to~key") // "path~1to~0key"
  * ```
  *
- * ## See also
- *
- * - {@link unescapeToken} - The inverse operation for decoding escaped tokens
- *
+ * @see {@link unescapeToken} The inverse operation for decoding escaped tokens
+ * @category encoding
  * @since 4.0.0
  */
 export function escapeToken(token: string): string {
@@ -92,38 +91,37 @@ export function escapeToken(token: string): string {
 }
 
 /**
- * Unescapes a JSON Pointer reference token according to RFC 6901.
+ * Unescapes a JSON Pointer reference token according to RFC 6901 by decoding escaped characters to recover the original token value.
  *
- * Decodes escaped characters in a reference token to recover the original token value.
- *
- * ## When to use this
+ * **When to use**
  *
  * - Parsing JSON Pointers to extract the original token values from escaped segments
  * - Converting escaped tokens back to their original form for use as object keys or identifiers
  * - Resolving schema references or JSON Patch paths that use escaped tokens
  *
- * ## Behavior
+ * **Details**
  *
  * - Does not mutate the input string; returns a new unescaped string
  * - Replaces `~1` with `/` (forward slash) and `~0` with `~` (tilde)
- * - Replacement order matters: `~1` is replaced before `~0` to prevent incorrect decoding
  * - Returns the input unchanged if it contains no escaped sequences
  * - Empty strings are valid and returned unchanged
+ *
+ * **Gotchas**
+ *
+ * The replacement order matters: `~1` is replaced before `~0` to prevent incorrect decoding.
  *
  * **Example** (Unescaping special characters)
  *
  * ```ts
- * import { unescapeToken } from "effect/JsonPointer"
+ * import { JsonPointer } from "effect"
  *
- * unescapeToken("a~1b") // "a/b"
- * unescapeToken("c~0d") // "c~d"
- * unescapeToken("path~1to~0key") // "path/to~key"
+ * JsonPointer.unescapeToken("a~1b") // "a/b"
+ * JsonPointer.unescapeToken("c~0d") // "c~d"
+ * JsonPointer.unescapeToken("path~1to~0key") // "path/to~key"
  * ```
  *
- * ## See also
- *
- * - {@link escapeToken} - The inverse operation for encoding tokens
- *
+ * @see {@link escapeToken} The inverse operation for encoding tokens
+ * @category decoding
  * @since 4.0.0
  */
 export function unescapeToken(token: string): string {

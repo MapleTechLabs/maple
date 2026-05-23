@@ -17,26 +17,35 @@ import * as Stream from "../../Stream.ts"
 import type { Command, KillOptions } from "./ChildProcess.ts"
 
 /**
+ * Branded number representing the exit code reported by a child process.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type ExitCode = Brand.Branded<number, "ExitCode">
 
 /**
+ * Brand constructor for child process `ExitCode` values.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const ExitCode: Brand.Constructor<ExitCode> = Brand.nominal<ExitCode>()
 
 /**
+ * Branded number representing the operating system process identifier of a
+ * child process.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type ProcessId = Brand.Branded<number, "ProcessId">
 
 /**
+ * Brand constructor for child process `ProcessId` values.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const ProcessId: Brand.Constructor<ProcessId> = Brand.nominal<ProcessId>()
 
@@ -44,12 +53,14 @@ export const ProcessId: Brand.Constructor<ProcessId> = Brand.nominal<ProcessId>(
  * An `Effect` that adds an unrefed child process back into the parent
  * process's reference count.
  *
+ * **Details**
+ *
  * This value is returned by `ChildProcessHandle.unref` and can be run later to
  * restore the default behavior where the child process keeps the parent
  * process alive.
  *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type Reref = Effect.Effect<void, PlatformError.PlatformError>
 
@@ -58,8 +69,8 @@ const HandleTypeId = "~effect/ChildProcessSpawner/ChildProcessHandle"
 /**
  * A handle to a running child process.
  *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface ChildProcessHandle {
   readonly [HandleTypeId]: typeof HandleTypeId
@@ -80,6 +91,8 @@ export interface ChildProcessHandle {
   /**
    * Kills the child process with the provided signal.
    *
+   * **Details**
+   *
    * If no signal option is provided, the signal defaults to `SIGTERM`.
    */
   readonly kill: (options?: KillOptions | undefined) => Effect.Effect<void, PlatformError.PlatformError>
@@ -90,15 +103,19 @@ export interface ChildProcessHandle {
   /**
    * The standard output stream for the child process.
    *
-   * Note: Using alongside `all` may cause interleaving of output and unexpected
-   * results.
+   * **Gotchas**
+   *
+   * Using this stream alongside `all` may cause interleaving of output and
+   * unexpected results.
    */
   readonly stdout: Stream.Stream<Uint8Array, PlatformError.PlatformError>
   /**
    * The standard error stream for the child process.
    *
-   * Note: Using alongside `all` may cause interleaving of output and unexpected
-   * results.
+   * **Gotchas**
+   *
+   * Using this stream alongside `all` may cause interleaving of output and
+   * unexpected results.
    */
   readonly stderr: Stream.Stream<Uint8Array, PlatformError.PlatformError>
   /**
@@ -110,6 +127,8 @@ export interface ChildProcessHandle {
    * Get an input `Sink` for writing to a file descriptor configured via
    * `ChildProcessOptions.additionalFds`.
    *
+   * **Details**
+   *
    * If a file descriptor is accessed that was not configured, returns a drain
    * `Sink`.
    */
@@ -118,12 +137,16 @@ export interface ChildProcessHandle {
    * Get an output `Stream` for reading from a file descriptor configured via
    * `ChildProcessOptions.additionalFds`.
    *
+   * **Details**
+   *
    * If a file descriptor is accessed that was not configured, returns an empty
    * `Stream`.
    */
   readonly getOutputFd: (fd: number) => Stream.Stream<Uint8Array, PlatformError.PlatformError>
   /**
    * Allows the parent process to exit independently of this child process.
+   *
+   * **Details**
    *
    * Running this `Effect` removes this child process from the parent process's
    * reference count, so the parent process is allowed to exit without waiting
@@ -132,13 +155,16 @@ export interface ChildProcessHandle {
    * The returned `Reref` effect adds the child process back into the parent
    * process's reference count when run, restoring the default behavior.
    *
+   * **Gotchas**
+   *
    * This is the only supported way to re-reference a child process after it
    * has been unrefed.
    *
-   * @example
+   * **Example** (Temporarily unreferencing a child process)
+   *
    * ```ts
-   * import { NodeServices } from "@effect/platform-node"
    * import { Effect } from "effect"
+   * import { NodeServices } from "@effect/platform-node"
    * import { ChildProcess } from "effect/unstable/process"
    *
    * const program = Effect.gen(function*() {
@@ -166,17 +192,18 @@ const HandleProto = {
 /**
  * Constructs a new `ChildProcessHandle`.
  *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const makeHandle = (params: Omit<ChildProcessHandle, typeof HandleTypeId>): ChildProcessHandle =>
   Object.assign(Object.create(HandleProto), params)
 
 /**
- * Create a new `ChildProcessSpawner` service from a `spawn` funciton
+ * Creates a `ChildProcessSpawner` service from a `spawn` function, deriving
+ * helpers for exit codes and output collection from that implementation.
  *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export const make = (spawn: ChildProcessSpawner["Service"]["spawn"]): ChildProcessSpawner["Service"] => {
   const streamString: ChildProcessSpawner["Service"]["streamLines"] = (command, options) =>
@@ -204,8 +231,8 @@ export const make = (spawn: ChildProcessSpawner["Service"]["spawn"]): ChildProce
 /**
  * Service tag for child process spawning.
  *
+ * @category services
  * @since 4.0.0
- * @category Service
  */
 export class ChildProcessSpawner extends Context.Service<ChildProcessSpawner, {
   /**

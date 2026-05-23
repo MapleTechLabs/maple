@@ -17,7 +17,8 @@
  * - **Testable**: Mock time control for deterministic testing
  * - **Resource-safe**: Automatic cleanup of time-based resources
  *
- * @example
+ * **Example** (Measuring elapsed time)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -36,7 +37,8 @@
  * })
  * ```
  *
- * @example
+ * **Example** (Using the Clock service)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -65,7 +67,8 @@ import * as effect from "./internal/effect.ts"
  * Represents a time-based clock which provides functionality related to time
  * and scheduling.
  *
- * @example
+ * **Example** (Reading current time)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -78,8 +81,8 @@ import * as effect from "./internal/effect.ts"
  * })
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface Clock {
   /**
@@ -107,7 +110,8 @@ export interface Clock {
 /**
  * A reference to the current Clock service in the environment.
  *
- * @example
+ * **Example** (Accessing the Clock service)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -118,14 +122,15 @@ export interface Clock {
  * ```
  *
  * @category references
- * @since 4.0.0
+ * @since 2.0.0
  */
 export const Clock: Context.Reference<Clock> = effect.ClockRef
 
 /**
  * Accesses the current Clock service and uses it to run the provided function.
  *
- * @example
+ * **Example** (Using the current Clock service)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -146,7 +151,8 @@ export const clockWith: <A, E, R>(f: (clock: Clock) => Effect<A, E, R>) => Effec
 /**
  * Returns an Effect that succeeds with the current time in milliseconds.
  *
- * @example
+ * **Example** (Reading milliseconds)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -165,7 +171,8 @@ export const currentTimeMillis: Effect<number> = effect.currentTimeMillis
 /**
  * Returns an Effect that succeeds with the current time in nanoseconds.
  *
- * @example
+ * **Example** (Reading nanoseconds)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *

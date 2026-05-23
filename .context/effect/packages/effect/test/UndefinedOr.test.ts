@@ -21,7 +21,7 @@ describe("UndefinedOr", () => {
     throws(() => UndefinedOr.getOrThrowWith(undefined, () => new Error("test")), new Error("test"))
   })
 
-  it("getOrThrow", () => {
+  it("getOrThrow returns defined values and throws the default missing error", () => {
     strictEqual(UndefinedOr.getOrThrow(1), 1)
     throws(() => UndefinedOr.getOrThrow(undefined), new Error("getOrThrow called on a undefined"))
   })

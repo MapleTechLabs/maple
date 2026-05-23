@@ -1,5 +1,20 @@
 /**
- * @since 1.0.0
+ * Rollup-backed bundling and size measurement for the Effect bundle-size tools.
+ *
+ * This module provides the service used by the bundle CLI and reporter to turn
+ * fixture or selected TypeScript entrypoints into ESM Rollup output, optionally
+ * write a minified artifact, and return the gzipped byte count used in
+ * bundle-size comparisons.
+ *
+ * Bundles are generated in memory so the emitted code can be streamed to both
+ * gzip measurement and optional file output. Only Rollup `chunk` outputs are
+ * included; assets are ignored, and when Rollup creates multiple chunks (for
+ * example because of dynamic imports or shared chunks) their code is streamed
+ * together for measurement. The optional output file is named from the
+ * entrypoint stem, so it is best treated as an inspection artifact rather than
+ * a complete Rollup output directory.
+ *
+ * @since 4.0.0
  */
 import * as NodeStream from "@effect/platform-node/NodeStream"
 import * as Context from "effect/Context"
@@ -16,16 +31,20 @@ import { rollup } from "rollup"
 import { createPlugins } from "./Plugins.ts"
 
 /**
- * @since 1.0.0
+ * Error raised when Rollup bundling, output generation, or bundle size measurement fails.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class RollupError extends Data.TaggedError("RollupError")<{
   readonly cause: unknown
 }> {}
 
 /**
- * @since 1.0.0
+ * Bundle size statistics for an entry file, including its path and gzipped size in bytes.
+ *
  * @category models
+ * @since 4.0.0
  */
 export class BundleStats extends Data.TaggedClass("BundleStats")<{
   readonly path: string
@@ -33,8 +52,10 @@ export class BundleStats extends Data.TaggedClass("BundleStats")<{
 }> {}
 
 /**
- * @since 1.0.0
+ * Options for bundling one entry file, optionally writing a minified output and generating a visualization.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface BundleOptions {
   readonly path: string
@@ -43,8 +64,10 @@ export interface BundleOptions {
 }
 
 /**
- * @since 1.0.0
+ * Options for bundling multiple entry files with shared visualization and output-directory settings.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface BundleAllOptions {
   readonly paths: ReadonlyArray<string>
@@ -53,8 +76,10 @@ export interface BundleAllOptions {
 }
 
 /**
- * @since 1.0.0
+ * Context service for bundling entry files with Rollup and measuring their gzipped output size.
+ *
  * @category services
+ * @since 4.0.0
  */
 export class Rollup extends Context.Service<Rollup>()(
   "@effect/bundle/Rollup",

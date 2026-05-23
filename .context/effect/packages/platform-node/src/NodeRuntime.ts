@@ -1,5 +1,19 @@
 /**
- * @since 1.0.0
+ * Node.js entry-point helpers for running Effect programs.
+ *
+ * This module exposes `runMain`, the Node runtime launcher used at the edge of
+ * CLI tools, scripts, servers, and worker processes. It runs an already
+ * self-contained Effect as the process main program, with built-in error
+ * reporting and Node signal handling.
+ *
+ * `NodeRuntime` does not provide application services by itself. Provide any
+ * required layers, such as `NodeServices.layer` or narrower service-specific
+ * layers, before passing the effect to `runMain`. On `SIGINT` or `SIGTERM`,
+ * the main fiber is interrupted so scoped resources and finalizers can shut
+ * down; keep long-running work attached to that scope and avoid finalizers that
+ * never complete, otherwise process shutdown can be delayed.
+ *
+ * @since 4.0.0
  */
 import * as NodeRuntime from "@effect/platform-node-shared/NodeRuntime"
 import type { Effect } from "effect/Effect"
@@ -7,6 +21,12 @@ import type * as Runtime from "effect/Runtime"
 
 /**
  * Helps you run a main effect with built-in error handling, logging, and signal management.
+ *
+ * **When to use**
+ *
+ * Use this function to run an Effect as your application's main program, especially
+ * when you need structured error handling, log management, interrupt support,
+ * or advanced teardown capabilities.
  *
  * **Details**
  *
@@ -16,20 +36,12 @@ import type * as Runtime from "effect/Runtime"
  * behaviors can be turned off. You can also provide custom teardown logic to
  * finalize resources or produce different exit codes.
  *
- * **Options**
- *
- * An optional object that can include:
+ * The optional configuration object can include:
  * - `disableErrorReporting`: Turn off automatic error logging.
  * - `teardown`: Provide custom finalization logic.
  *
- * **When to Use**
- *
- * Use this function to run an Effect as your application’s main program, especially
- * when you need structured error handling, log management, interrupt support,
- * or advanced teardown capabilities.
- *
- * @since 1.0.0
- * @category Run main
+ * @category running
+ * @since 4.0.0
  */
 export const runMain: {
   (

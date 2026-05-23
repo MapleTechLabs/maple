@@ -92,10 +92,12 @@ import * as Rec from "./Record.ts"
 /**
  * A plain object representing a single JSON Schema node.
  *
- * This is an open record type (`[x: string]: unknown`) so it can hold any
- * JSON Schema keyword. Most functions in this module accept or return this
- * type.
+ * **Details**
  *
+ * This is an open record type (`[x: string]: unknown`) so it can hold any JSON
+ * Schema keyword. Most functions in this module accept or return this type.
+ *
+ * @category models
  * @since 4.0.0
  */
 export interface JsonSchema {
@@ -105,11 +107,13 @@ export interface JsonSchema {
 /**
  * The set of JSON Schema dialects supported by this module.
  *
- * - `"draft-07"` — JSON Schema Draft-07
- * - `"draft-2020-12"` — JSON Schema Draft 2020-12 (canonical internal form)
- * - `"openapi-3.1"` — OpenAPI 3.1 (uses Draft 2020-12 as its schema dialect)
- * - `"openapi-3.0"` — OpenAPI 3.0 (uses a Draft-04/07 subset with extensions)
+ * **Details**
  *
+ * Supported values are `"draft-07"` for JSON Schema Draft-07,
+ * `"draft-2020-12"` for JSON Schema Draft 2020-12 and the canonical internal
+ * form, `"openapi-3.1"` for OpenAPI 3.1, and `"openapi-3.0"` for OpenAPI 3.0.
+ *
+ * @category models
  * @since 4.0.0
  */
 export type Dialect = "draft-07" | "draft-2020-12" | "openapi-3.1" | "openapi-3.0"
@@ -117,6 +121,7 @@ export type Dialect = "draft-07" | "draft-2020-12" | "openapi-3.1" | "openapi-3.
 /**
  * The JSON Schema primitive type names.
  *
+ * @category models
  * @since 4.0.0
  */
 export type Type = "string" | "number" | "boolean" | "array" | "object" | "null" | "integer"
@@ -124,6 +129,7 @@ export type Type = "string" | "number" | "boolean" | "array" | "object" | "null"
 /**
  * A record of named JSON Schema definitions, keyed by definition name.
  *
+ * @category models
  * @since 4.0.0
  */
 export interface Definitions extends Record<string, JsonSchema> {}
@@ -132,16 +138,19 @@ export interface Definitions extends Record<string, JsonSchema> {}
  * A structured container for a single JSON Schema and its associated
  * definitions.
  *
- * - Use when you need to carry a root schema together with its
- *   shared definitions.
- * - Use when converting between dialects via the `from*` / `to*` functions.
+ * **When to use**
+ *
+ * Use `Document` when you need to carry a root schema together with its shared
+ * definitions, or when converting between dialects with the `from*` and `to*`
+ * functions.
+ *
+ * **Details**
  *
  * The `schema` field holds the root schema *without* the definitions
  * collection. Root definitions are stored separately in `definitions` and
- * referenced via:
- * - `#/$defs/<name>` for Draft-2020-12
- * - `#/definitions/<name>` for Draft-07
- * - `#/components/schemas/<name>` for OpenAPI 3.1 and OpenAPI 3.0
+ * referenced via `#/$defs/<name>` for Draft-2020-12, `#/definitions/<name>`
+ * for Draft-07, and `#/components/schemas/<name>` for OpenAPI 3.1 and
+ * OpenAPI 3.0.
  *
  * **Example** (Inspecting a parsed document)
  *
@@ -162,7 +171,7 @@ export interface Definitions extends Record<string, JsonSchema> {}
  *
  * @see {@link MultiDocument}
  * @see {@link fromSchemaDraft2020_12}
- *
+ * @category models
  * @since 4.0.0
  */
 export interface Document<D extends Dialect> {
@@ -173,15 +182,20 @@ export interface Document<D extends Dialect> {
 
 /**
  * Like {@link Document}, but carries multiple root schemas that share a
- * single definitions pool. The `schemas` tuple is non-empty (at least one
- * element).
+ * single definitions pool.
  *
- * - Use when generating several schemas (e.g. request body + response body)
- *   that reference the same set of definitions.
+ * **When to use**
+ *
+ * Use `MultiDocument` when generating several schemas, such as a request body
+ * and a response body, that reference the same set of definitions.
+ *
+ * **Details**
+ *
+ * The `schemas` tuple is non-empty and contains at least one element.
  *
  * @see {@link Document}
  * @see {@link toMultiDocumentOpenApi3_1}
- *
+ * @category models
  * @since 4.0.0
  */
 export interface MultiDocument<D extends Dialect> {
@@ -193,6 +207,7 @@ export interface MultiDocument<D extends Dialect> {
 /**
  * The `$schema` meta-schema URI for JSON Schema Draft-07.
  *
+ * @category constants
  * @since 4.0.0
  */
 export const META_SCHEMA_URI_DRAFT_07 = "http://json-schema.org/draft-07/schema"
@@ -200,6 +215,7 @@ export const META_SCHEMA_URI_DRAFT_07 = "http://json-schema.org/draft-07/schema"
 /**
  * The `$schema` meta-schema URI for JSON Schema Draft 2020-12.
  *
+ * @category constants
  * @since 4.0.0
  */
 export const META_SCHEMA_URI_DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"
@@ -211,13 +227,22 @@ const RE_COMPONENTS_SCHEMAS = /^#\/components\/schemas(?=\/|$)/
 /**
  * Parses a raw Draft-07 JSON Schema into a `Document<"draft-2020-12">`.
  *
- * - Use when you have a JSON Schema that follows Draft-07 conventions.
- * - Converts Draft-07 tuple syntax (`items` as array + `additionalItems`)
- *   to Draft-2020-12 form (`prefixItems` + `items`).
- * - Rewrites `#/definitions/...` refs to `#/$defs/...`.
- * - Extracts root-level `definitions` into the `definitions` field.
- * - Does not mutate the input. Allocates a new `Document`.
- * - Unsupported keywords (e.g. `if`/`then`/`else`, `$id`) are dropped.
+ * **When to use**
+ *
+ * Use this when you have a JSON Schema that follows Draft-07 conventions and
+ * need the canonical Draft-2020-12 document representation.
+ *
+ * **Details**
+ *
+ * This converts Draft-07 tuple syntax (`items` as array plus
+ * `additionalItems`) to Draft-2020-12 form (`prefixItems` plus `items`),
+ * rewrites `#/definitions/...` refs to `#/$defs/...`, and extracts root-level
+ * `definitions` into the `definitions` field. It does not mutate the input and
+ * allocates a new `Document`.
+ *
+ * **Gotchas**
+ *
+ * Unsupported keywords, such as `if`/`then`/`else` and `$id`, are dropped.
  *
  * **Example** (Parsing a Draft-07 schema)
  *
@@ -242,7 +267,7 @@ const RE_COMPONENTS_SCHEMAS = /^#\/components\/schemas(?=\/|$)/
  * @see {@link fromSchemaDraft2020_12}
  * @see {@link fromSchemaOpenApi3_0}
  * @see {@link toDocumentDraft07}
- *
+ * @category decoding
  * @since 4.0.0
  */
 export function fromSchemaDraft07(js: JsonSchema): Document<"draft-2020-12"> {
@@ -356,10 +381,15 @@ export function fromSchemaDraft07(js: JsonSchema): Document<"draft-2020-12"> {
 /**
  * Parses a raw Draft-2020-12 JSON Schema into a `Document<"draft-2020-12">`.
  *
- * - Use when you already have a schema in Draft-2020-12 format.
- * - Separates `$defs` from the root schema into the `definitions` field.
- * - Does not mutate the input. Allocates a new `Document`.
- * - Unlike {@link fromSchemaDraft07}, this performs no keyword rewriting.
+ * **When to use**
+ *
+ * Use this when you already have a schema in Draft-2020-12 format.
+ *
+ * **Details**
+ *
+ * This separates `$defs` from the root schema into the `definitions` field. It
+ * does not mutate the input and allocates a new `Document`. Unlike
+ * {@link fromSchemaDraft07}, this performs no keyword rewriting.
  *
  * **Example** (Parsing a Draft-2020-12 schema)
  *
@@ -379,7 +409,7 @@ export function fromSchemaDraft07(js: JsonSchema): Document<"draft-2020-12"> {
  *
  * @see {@link fromSchemaDraft07}
  * @see {@link fromSchemaOpenApi3_1}
- *
+ * @category decoding
  * @since 4.0.0
  */
 export function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-2020-12"> {
@@ -394,10 +424,15 @@ export function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-2020-12"
 /**
  * Parses a raw OpenAPI 3.1 JSON Schema into a `Document<"draft-2020-12">`.
  *
- * - Use when consuming schemas from an OpenAPI 3.1 specification.
- * - Rewrites `#/components/schemas/...` refs to `#/$defs/...`.
- * - Delegates to {@link fromSchemaDraft2020_12} after rewriting refs.
- * - Does not mutate the input. Allocates a new `Document`.
+ * **When to use**
+ *
+ * Use this when consuming schemas from an OpenAPI 3.1 specification.
+ *
+ * **Details**
+ *
+ * This rewrites `#/components/schemas/...` refs to `#/$defs/...`, then delegates
+ * to {@link fromSchemaDraft2020_12}. It does not mutate the input and allocates
+ * a new `Document`.
  *
  * **Example** (Parsing an OpenAPI 3.1 schema)
  *
@@ -418,7 +453,7 @@ export function fromSchemaDraft2020_12(js: JsonSchema): Document<"draft-2020-12"
  *
  * @see {@link fromSchemaOpenApi3_0}
  * @see {@link toMultiDocumentOpenApi3_1}
- *
+ * @category decoding
  * @since 4.0.0
  */
 export function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-2020-12"> {
@@ -429,12 +464,17 @@ export function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-2020-12"> 
 /**
  * Parses a raw OpenAPI 3.0 JSON Schema into a `Document<"draft-2020-12">`.
  *
- * - Use when consuming schemas from an OpenAPI 3.0 specification.
- * - Handles OpenAPI 3.0 extensions: `nullable`, singular `example`,
- *   boolean `exclusiveMinimum`/`exclusiveMaximum`.
- * - Normalizes the schema to Draft-07 first, then converts to
- *   Draft-2020-12 via {@link fromSchemaDraft07}.
- * - Does not mutate the input. Allocates a new `Document`.
+ * **When to use**
+ *
+ * Use this when consuming schemas from an OpenAPI 3.0 specification.
+ *
+ * **Details**
+ *
+ * This handles OpenAPI 3.0 extensions, including `nullable`, singular
+ * `example`, and boolean `exclusiveMinimum` or `exclusiveMaximum`. It
+ * normalizes the schema to Draft-07 first, then converts to Draft-2020-12 via
+ * {@link fromSchemaDraft07}. It does not mutate the input and allocates a new
+ * `Document`.
  *
  * **Example** (Parsing an OpenAPI 3.0 nullable schema)
  *
@@ -453,7 +493,7 @@ export function fromSchemaOpenApi3_1(js: JsonSchema): Document<"draft-2020-12"> 
  *
  * @see {@link fromSchemaOpenApi3_1}
  * @see {@link fromSchemaDraft07}
- *
+ * @category decoding
  * @since 4.0.0
  */
 export function fromSchemaOpenApi3_0(schema: JsonSchema): Document<"draft-2020-12"> {
@@ -464,13 +504,21 @@ export function fromSchemaOpenApi3_0(schema: JsonSchema): Document<"draft-2020-1
 /**
  * Converts a `Document<"draft-2020-12">` to a `Document<"draft-07">`.
  *
- * - Use when you need to output a schema in Draft-07 format.
- * - Rewrites `#/$defs/...` refs to `#/definitions/...`.
- * - Converts Draft-2020-12 tuple syntax (`prefixItems` + `items`) to
- *   Draft-07 form (`items` as array + `additionalItems`).
- * - Converts both the root schema and all definitions.
- * - Does not mutate the input. Allocates a new `Document`.
- * - Unsupported Draft-2020-12 keywords are dropped.
+ * **When to use**
+ *
+ * Use this when you need to output a schema in Draft-07 format.
+ *
+ * **Details**
+ *
+ * This rewrites `#/$defs/...` refs to `#/definitions/...`, converts
+ * Draft-2020-12 tuple syntax (`prefixItems` plus `items`) to Draft-07 form
+ * (`items` as array plus `additionalItems`), and converts both the root schema
+ * and all definitions. It does not mutate the input and allocates a new
+ * `Document`.
+ *
+ * **Gotchas**
+ *
+ * Unsupported Draft-2020-12 keywords are dropped.
  *
  * **Example** (Converting to Draft-07)
  *
@@ -491,7 +539,7 @@ export function fromSchemaOpenApi3_0(schema: JsonSchema): Document<"draft-2020-1
  *
  * @see {@link fromSchemaDraft07}
  * @see {@link toMultiDocumentOpenApi3_1}
- *
+ * @category encoding
  * @since 4.0.0
  */
 export function toDocumentDraft07(document: Document<"draft-2020-12">): Document<"draft-07"> {
@@ -607,13 +655,18 @@ function toSchemaDraft07(schema: JsonSchema): JsonSchema {
  * Converts a `MultiDocument<"draft-2020-12">` to a
  * `MultiDocument<"openapi-3.1">`.
  *
- * - Use when generating an OpenAPI 3.1 specification from internal schemas.
- * - Rewrites `#/$defs/...` refs to `#/components/schemas/...`.
- * - Sanitizes definition keys to match the OpenAPI component key pattern
- *   (`^[a-zA-Z0-9.\-_]+$`), replacing invalid characters with `_`.
- * - Updates all `$ref` pointers to use the sanitized keys.
- * - Converts all schemas and definitions in the multi-document.
- * - Does not mutate the input. Allocates a new `MultiDocument`.
+ * **When to use**
+ *
+ * Use this when generating an OpenAPI 3.1 specification from internal schemas.
+ *
+ * **Details**
+ *
+ * This rewrites `#/$defs/...` refs to `#/components/schemas/...`, sanitizes
+ * definition keys to match the OpenAPI component key pattern
+ * (`^[a-zA-Z0-9.\-_]+$`) by replacing invalid characters with `_`, updates all
+ * `$ref` pointers to use the sanitized keys, and converts all schemas and
+ * definitions in the multi-document. It does not mutate the input and allocates
+ * a new `MultiDocument`.
  *
  * **Example** (Converting to OpenAPI 3.1)
  *
@@ -635,7 +688,7 @@ function toSchemaDraft07(schema: JsonSchema): JsonSchema {
  *
  * @see {@link toDocumentDraft07}
  * @see {@link MultiDocument}
- *
+ * @category encoding
  * @since 4.0.0
  */
 export function toMultiDocumentOpenApi3_1(multiDocument: MultiDocument<"draft-2020-12">): MultiDocument<"openapi-3.1"> {
@@ -827,12 +880,20 @@ function widen_type(node: Record<string, unknown>): Record<string, unknown> {
  * Resolves a `$ref` string by looking up the last path segment in a
  * definitions map.
  *
- * - Use when you need to dereference a `$ref` pointer to get the
- *   actual schema it points to.
- * - Only resolves the final segment of the ref path (e.g. `"User"` from
- *   `"#/$defs/User"`); does not follow arbitrary JSON Pointer paths.
- * - Returns `undefined` if the definition is not found.
- * - Does not mutate anything. Pure function.
+ * **When to use**
+ *
+ * Use this when you need to dereference a `$ref` pointer to get the actual
+ * schema it points to.
+ *
+ * **Details**
+ *
+ * This only resolves the final segment of the ref path, such as `"User"` from
+ * `"#/$defs/User"`. It returns `undefined` if the definition is not found and
+ * does not mutate anything.
+ *
+ * **Gotchas**
+ *
+ * This function does not follow arbitrary JSON Pointer paths.
  *
  * **Example** (Resolving a $ref)
  *
@@ -852,7 +913,7 @@ function widen_type(node: Record<string, unknown>): Record<string, unknown> {
  *
  * @see {@link resolveTopLevel$ref}
  * @see {@link Definitions}
- *
+ * @category getters
  * @since 4.0.0
  */
 export function resolve$ref($ref: string, definitions: Definitions): JsonSchema | undefined {
@@ -872,10 +933,15 @@ export function resolve$ref($ref: string, definitions: Definitions): JsonSchema 
  * schema. Returns the original document unchanged if the root schema is
  * not a `$ref` or if the referenced definition is not found.
  *
- * - Use to dereference a top-level `$ref` before inspecting the root
- *   schema's properties directly.
- * - Does not mutate the input. Returns the same object if no change is
- *   needed, or a shallow copy with the resolved schema.
+ * **When to use**
+ *
+ * Use this to dereference a top-level `$ref` before inspecting the root
+ * schema's properties directly.
+ *
+ * **Details**
+ *
+ * This does not mutate the input. It returns the same object if no change is
+ * needed, or a shallow copy with the resolved schema.
  *
  * **Example** (Resolving a top-level $ref)
  *
@@ -896,7 +962,7 @@ export function resolve$ref($ref: string, definitions: Definitions): JsonSchema 
  *
  * @see {@link resolve$ref}
  * @see {@link Document}
- *
+ * @category transforming
  * @since 4.0.0
  */
 export function resolveTopLevel$ref(document: Document<"draft-2020-12">): Document<"draft-2020-12"> {

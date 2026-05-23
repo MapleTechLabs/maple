@@ -3,7 +3,7 @@ import { Match, pipe } from "effect"
 import { strictEqual } from "./utils/assert.ts"
 
 describe("Match", () => {
-  it("tag skips null inputs", () => {
+  it("tag matches an exact _tag and falls through for null", () => {
     const match = pipe(
       Match.type<{ _tag: "A" } | null>(),
       Match.tag("A", () => "hit"),
@@ -14,7 +14,7 @@ describe("Match", () => {
     strictEqual(match(null), "miss")
   })
 
-  it("tagStartsWith skips null inputs", () => {
+  it("tagStartsWith matches a _tag prefix and falls through otherwise", () => {
     const match = pipe(
       Match.type<{ _tag: "A.one" } | null>(),
       Match.tagStartsWith("A", () => "hit"),

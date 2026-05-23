@@ -14,9 +14,10 @@ import * as Reducer from "./Reducer.ts"
 /**
  * Reference to the global Boolean constructor.
  *
- * @example
+ * **Example** (Coercing values to booleans)
+ *
  * ```ts
- * import * as Boolean from "effect/Boolean"
+ * import { Boolean } from "effect"
  *
  * const bool = Boolean.Boolean(1)
  * console.log(bool) // true
@@ -36,13 +37,14 @@ export const Boolean = globalThis.Boolean
 /**
  * Tests if a value is a `boolean`.
  *
- * @example
+ * **Example** (Checking for booleans)
+ *
  * ```ts
- * import { isBoolean } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(isBoolean(true), true)
- * assert.deepStrictEqual(isBoolean("true"), false)
+ * assert.deepStrictEqual(Boolean.isBoolean(true), true)
+ * assert.deepStrictEqual(Boolean.isBoolean("true"), false)
  * ```
  *
  * @category guards
@@ -54,9 +56,10 @@ export const isBoolean: (input: unknown) => input is boolean = predicate.isBoole
  * This function returns the result of either of the given functions depending on the value of the boolean parameter.
  * It is useful when you have to run one of two functions depending on the boolean value.
  *
- * @example
+ * **Example** (Pattern matching on booleans)
+ *
  * ```ts
- * import * as Boolean from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
  * assert.deepStrictEqual(
@@ -89,9 +92,10 @@ export const match: {
  * Provides an `Order` instance for `boolean` that allows comparing and sorting boolean values.
  * In this ordering, `false` is considered less than `true`.
  *
- * @example
+ * **Example** (Comparing booleans)
+ *
  * ```ts
- * import * as Boolean from "effect/Boolean"
+ * import { Boolean } from "effect"
  *
  * console.log(Boolean.Order(false, true)) // -1 (false < true)
  * console.log(Boolean.Order(true, false)) // 1 (true > false)
@@ -106,7 +110,8 @@ export const Order: order.Order<boolean> = order.Boolean
 /**
  * An `Equivalence` instance for booleans using strict equality (`===`).
  *
- * @example
+ * **Example** (Comparing booleans for equivalence)
+ *
  * ```ts
  * import { Boolean } from "effect"
  *
@@ -115,20 +120,21 @@ export const Order: order.Order<boolean> = order.Boolean
  * ```
  *
  * @category instances
- * @since 4.0.0
+ * @since 2.0.0
  */
 export const Equivalence: Equ.Equivalence<boolean> = Equ.Boolean
 
 /**
  * Negates the given boolean: `!self`
  *
- * @example
+ * **Example** (Negating booleans)
+ *
  * ```ts
- * import { not } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(not(true), false)
- * assert.deepStrictEqual(not(false), true)
+ * assert.deepStrictEqual(Boolean.not(true), false)
+ * assert.deepStrictEqual(Boolean.not(false), true)
  * ```
  *
  * @category combinators
@@ -139,15 +145,16 @@ export const not = (self: boolean): boolean => !self
 /**
  * Combines two boolean using AND: `self && that`.
  *
- * @example
+ * **Example** (Combining booleans with AND)
+ *
  * ```ts
- * import { and } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(and(true, true), true)
- * assert.deepStrictEqual(and(true, false), false)
- * assert.deepStrictEqual(and(false, true), false)
- * assert.deepStrictEqual(and(false, false), false)
+ * assert.deepStrictEqual(Boolean.and(true, true), true)
+ * assert.deepStrictEqual(Boolean.and(true, false), false)
+ * assert.deepStrictEqual(Boolean.and(false, true), false)
+ * assert.deepStrictEqual(Boolean.and(false, false), false)
  * ```
  *
  * @category combinators
@@ -161,15 +168,16 @@ export const and: {
 /**
  * Combines two boolean using NAND: `!(self && that)`.
  *
- * @example
+ * **Example** (Combining booleans with NAND)
+ *
  * ```ts
- * import { nand } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(nand(true, true), false)
- * assert.deepStrictEqual(nand(true, false), true)
- * assert.deepStrictEqual(nand(false, true), true)
- * assert.deepStrictEqual(nand(false, false), true)
+ * assert.deepStrictEqual(Boolean.nand(true, true), false)
+ * assert.deepStrictEqual(Boolean.nand(true, false), true)
+ * assert.deepStrictEqual(Boolean.nand(false, true), true)
+ * assert.deepStrictEqual(Boolean.nand(false, false), true)
  * ```
  *
  * @category combinators
@@ -183,15 +191,16 @@ export const nand: {
 /**
  * Combines two boolean using OR: `self || that`.
  *
- * @example
+ * **Example** (Combining booleans with OR)
+ *
  * ```ts
- * import { or } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(or(true, true), true)
- * assert.deepStrictEqual(or(true, false), true)
- * assert.deepStrictEqual(or(false, true), true)
- * assert.deepStrictEqual(or(false, false), false)
+ * assert.deepStrictEqual(Boolean.or(true, true), true)
+ * assert.deepStrictEqual(Boolean.or(true, false), true)
+ * assert.deepStrictEqual(Boolean.or(false, true), true)
+ * assert.deepStrictEqual(Boolean.or(false, false), false)
  * ```
  *
  * @category combinators
@@ -205,15 +214,16 @@ export const or: {
 /**
  * Combines two booleans using NOR: `!(self || that)`.
  *
- * @example
+ * **Example** (Combining booleans with NOR)
+ *
  * ```ts
- * import { nor } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(nor(true, true), false)
- * assert.deepStrictEqual(nor(true, false), false)
- * assert.deepStrictEqual(nor(false, true), false)
- * assert.deepStrictEqual(nor(false, false), true)
+ * assert.deepStrictEqual(Boolean.nor(true, true), false)
+ * assert.deepStrictEqual(Boolean.nor(true, false), false)
+ * assert.deepStrictEqual(Boolean.nor(false, true), false)
+ * assert.deepStrictEqual(Boolean.nor(false, false), true)
  * ```
  *
  * @category combinators
@@ -227,15 +237,16 @@ export const nor: {
 /**
  * Combines two booleans using XOR: `(!self && that) || (self && !that)`.
  *
- * @example
+ * **Example** (Combining booleans with XOR)
+ *
  * ```ts
- * import { xor } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(xor(true, true), false)
- * assert.deepStrictEqual(xor(true, false), true)
- * assert.deepStrictEqual(xor(false, true), true)
- * assert.deepStrictEqual(xor(false, false), false)
+ * assert.deepStrictEqual(Boolean.xor(true, true), false)
+ * assert.deepStrictEqual(Boolean.xor(true, false), true)
+ * assert.deepStrictEqual(Boolean.xor(false, true), true)
+ * assert.deepStrictEqual(Boolean.xor(false, false), false)
  * ```
  *
  * @category combinators
@@ -249,15 +260,16 @@ export const xor: {
 /**
  * Combines two booleans using EQV (aka XNOR): `!xor(self, that)`.
  *
- * @example
+ * **Example** (Checking boolean equivalence)
+ *
  * ```ts
- * import { eqv } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(eqv(true, true), true)
- * assert.deepStrictEqual(eqv(true, false), false)
- * assert.deepStrictEqual(eqv(false, true), false)
- * assert.deepStrictEqual(eqv(false, false), true)
+ * assert.deepStrictEqual(Boolean.eqv(true, true), true)
+ * assert.deepStrictEqual(Boolean.eqv(true, false), false)
+ * assert.deepStrictEqual(Boolean.eqv(false, true), false)
+ * assert.deepStrictEqual(Boolean.eqv(false, false), true)
  * ```
  *
  * @category combinators
@@ -271,15 +283,16 @@ export const eqv: {
 /**
  * Combines two booleans using an implication: `(!self || that)`.
  *
- * @example
+ * **Example** (Checking boolean implication)
+ *
  * ```ts
- * import { implies } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(implies(true, true), true)
- * assert.deepStrictEqual(implies(true, false), false)
- * assert.deepStrictEqual(implies(false, true), true)
- * assert.deepStrictEqual(implies(false, false), true)
+ * assert.deepStrictEqual(Boolean.implies(true, true), true)
+ * assert.deepStrictEqual(Boolean.implies(true, false), false)
+ * assert.deepStrictEqual(Boolean.implies(false, true), true)
+ * assert.deepStrictEqual(Boolean.implies(false, false), true)
  * ```
  *
  * @category combinators
@@ -293,16 +306,17 @@ export const implies: {
 /**
  * This utility function is used to check if all the elements in a collection of boolean values are `true`.
  *
- * @example
+ * **Example** (Checking every boolean)
+ *
  * ```ts
- * import { every } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(every([true, true, true]), true)
- * assert.deepStrictEqual(every([true, false, true]), false)
+ * assert.deepStrictEqual(Boolean.every([true, true, true]), true)
+ * assert.deepStrictEqual(Boolean.every([true, false, true]), false)
  * ```
  *
- * @category utilities
+ * @category utils
  * @since 2.0.0
  */
 export const every = (collection: Iterable<boolean>): boolean => {
@@ -317,16 +331,17 @@ export const every = (collection: Iterable<boolean>): boolean => {
 /**
  * This utility function is used to check if at least one of the elements in a collection of boolean values is `true`.
  *
- * @example
+ * **Example** (Checking some booleans)
+ *
  * ```ts
- * import { some } from "effect/Boolean"
+ * import { Boolean } from "effect"
  * import * as assert from "node:assert"
  *
- * assert.deepStrictEqual(some([true, false, true]), true)
- * assert.deepStrictEqual(some([false, false, false]), false)
+ * assert.deepStrictEqual(Boolean.some([true, false, true]), true)
+ * assert.deepStrictEqual(Boolean.some([false, false, false]), false)
  * ```
  *
- * @category utilities
+ * @category utils
  * @since 2.0.0
  */
 export const some = (collection: Iterable<boolean>): boolean => {
@@ -341,8 +356,11 @@ export const some = (collection: Iterable<boolean>): boolean => {
 /**
  * A `Reducer` for combining `boolean`s using AND.
  *
+ * **Details**
+ *
  * The `initialValue` is `true`.
  *
+ * @category math
  * @since 4.0.0
  */
 export const ReducerAnd: Reducer.Reducer<boolean> = Reducer.make((a, b) => a && b, true)
@@ -350,8 +368,11 @@ export const ReducerAnd: Reducer.Reducer<boolean> = Reducer.make((a, b) => a && 
 /**
  * A `Reducer` for combining `boolean`s using OR.
  *
+ * **Details**
+ *
  * The `initialValue` is `false`.
  *
+ * @category math
  * @since 4.0.0
  */
 export const ReducerOr: Reducer.Reducer<boolean> = Reducer.make((a, b) => a || b, false)

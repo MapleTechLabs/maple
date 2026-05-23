@@ -5,7 +5,7 @@ import { RateLimiter } from "effect/unstable/persistence"
 
 describe(`RateLimiter`, () => {
   describe("fixed-window", () => {
-    it.effect("onExceeded delay", () =>
+    it.effect("returns accumulated delays after the fixed window is exceeded", () =>
       Effect.gen(function*() {
         const limiter = yield* RateLimiter.make
         const consume = limiter.consume({
@@ -41,7 +41,7 @@ describe(`RateLimiter`, () => {
         Effect.provide(RateLimiter.layerStoreMemory)
       ))
 
-    it.effect("onExceeded fail", () =>
+    it.effect("fails with retryAfter until the fixed window resets", () =>
       Effect.gen(function*() {
         const limiter = yield* RateLimiter.make
         const consume = limiter.consume({
@@ -82,7 +82,7 @@ describe(`RateLimiter`, () => {
   })
 
   describe("token-bucket", () => {
-    it.effect("onExceeded delay", () =>
+    it.effect("returns delay based on the token refill rate", () =>
       Effect.gen(function*() {
         const limiter = yield* RateLimiter.make
         const consume = limiter.consume({
@@ -111,7 +111,7 @@ describe(`RateLimiter`, () => {
         Effect.provide(RateLimiter.layerStoreMemory)
       ))
 
-    it.effect("onExceeded fail", () =>
+    it.effect("fails until enough tokens are refilled", () =>
       Effect.gen(function*() {
         const limiter = yield* RateLimiter.make
         const consume = limiter.consume({

@@ -1,4 +1,21 @@
 /**
+ * Exports Effect log records to an OpenTelemetry Protocol (OTLP) logs endpoint.
+ *
+ * Use this module to send Effect log messages, annotations, fiber identifiers,
+ * causes, and active span identifiers to an OpenTelemetry Collector or OTLP
+ * compatible observability backend. `make` is useful for custom logger wiring,
+ * while `layer` installs the logger for an application and can merge it with
+ * any existing loggers.
+ *
+ * Records are buffered by the shared OTLP exporter. `exportInterval`,
+ * `maxBatchSize`, and `shutdownTimeout` control periodic exports, early batch
+ * flushes, and how long scope finalization waits for the final flush. Resource
+ * options are attached to every export and override OpenTelemetry resource
+ * environment variables, so ensure a `service.name` is available through the
+ * options, `OTEL_RESOURCE_ATTRIBUTES`, or `OTEL_SERVICE_NAME`; use `headers`
+ * for collector authentication and `excludeLogSpans` when log span duration
+ * attributes would be too noisy.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -19,8 +36,16 @@ import * as OtlpResource from "./OtlpResource.ts"
 import { OtlpSerialization } from "./OtlpSerialization.ts"
 
 /**
+ * Creates an Effect `Logger` that exports log records through OTLP.
+ *
+ * **Details**
+ *
+ * The logger serializes records with the configured resource, sends them
+ * through the OTLP exporter, and requires `Scope` so pending records can be
+ * flushed on shutdown.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make: (
   options: {
@@ -76,8 +101,14 @@ export const make: (
 })
 
 /**
+ * Installs the OTLP logger created by `make` as an Effect logging layer.
+ *
+ * **Details**
+ *
+ * By default the OTLP logger is merged with any existing loggers.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer = (options: {
   readonly url: string
@@ -98,6 +129,9 @@ export const layer = (options: {
   })
 
 /**
+ * OTLP logs payload serialized by `OtlpLogger`.
+ *
+ * @category models
  * @since 4.0.0
  */
 export interface LogsData {

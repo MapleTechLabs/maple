@@ -1,5 +1,34 @@
 /**
- * @since 1.0.0
+ * Node.js implementation of the Effect `HttpServer`.
+ *
+ * This module adapts a supplied Node `http.Server` into Effect's
+ * platform-independent HTTP server service. It starts the server with Node
+ * `listen` options, converts `request` events into `HttpServerRequest` values,
+ * writes `HttpServerResponse` bodies through Node's `ServerResponse`, and
+ * handles `upgrade` events by exposing the upgraded socket through
+ * `HttpServerRequest.upgrade`.
+ *
+ * Common use cases include serving an Effect HTTP application with {@link layer}
+ * or {@link layerConfig}, embedding request or upgrade handlers into an
+ * existing Node server with {@link makeHandler} and {@link makeUpgradeHandler},
+ * and using {@link layerTest} for integration tests that need an ephemeral
+ * listening port and a client pointed at it.
+ *
+ * Listen options are passed directly to Node, so host, port, backlog, and Unix
+ * socket path behavior follow `node:http`. The server begins listening when the
+ * `HttpServer` is acquired, and handlers are installed when `serve` is run.
+ * Request fibers are interrupted with `ClientAbort` when the client disconnects
+ * before a response finishes. WebSocket support only applies to Node `upgrade`
+ * requests, and ordinary HTTP requests fail if their application attempts to use
+ * `HttpServerRequest.upgrade`.
+ *
+ * Scope ownership is important: the server is closed when the acquiring scope
+ * finalizes, while each `serve` call installs its own request and upgrade
+ * listeners and removes them on finalization. Unless preemptive shutdown is
+ * disabled, finalizing a serve scope also starts a graceful server close, using
+ * the configured timeout or the default timeout.
+ *
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Config from "effect/Config"
@@ -52,8 +81,12 @@ import * as NodeServices from "./NodeServices.ts"
 import { NodeWS } from "./NodeSocket.ts"
 
 /**
- * @since 1.0.0
+ * Creates a scoped `HttpServer` from a Node `http.Server`, starts listening
+ * with the supplied options, registers request and upgrade handling, and closes
+ * the server during scope finalization with optional graceful-shutdown control.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(function*(
   evaluate: LazyArg<Http.Server>,
@@ -145,8 +178,12 @@ export const make = Effect.fnUntraced(function*(
 })
 
 /**
- * @since 1.0.0
+ * Creates a Node `request` event handler for an Effect HTTP application,
+ * injecting a `HttpServerRequest` and interrupting the request fiber if the
+ * client closes the response before it finishes.
+ *
  * @category Handlers
+ * @since 4.0.0
  */
 export const makeHandler = <
   R,
@@ -183,8 +220,12 @@ export const makeHandler = <
 }
 
 /**
- * @since 1.0.0
+ * Creates a Node `upgrade` event handler for an Effect HTTP application,
+ * exposing the upgraded WebSocket as the request's `upgrade` effect and
+ * interrupting the request fiber when the socket closes early.
+ *
  * @category Handlers
+ * @since 4.0.0
  */
 export const makeUpgradeHandler = <
   R,
@@ -366,8 +407,11 @@ class ServerRequestImpl extends NodeHttpIncomingMessage<HttpServerError> impleme
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides an `HttpServer` by creating and managing a scoped Node
+ * `http.Server` with the supplied listen and shutdown options.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerServer: (
   evaluate: LazyArg<Http.Server<typeof Http.IncomingMessage, typeof Http.ServerResponse>>,
@@ -378,8 +422,11 @@ export const layerServer: (
 ) => Layer.Layer<HttpServer.HttpServer, ServeError> = flow(make, Layer.effect(HttpServer.HttpServer))
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides the Node HTTP support services used by `NodeHttpServer`, including
+ * the HTTP platform, ETag generator, and core Node platform services.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerHttpServices: Layer.Layer<
   NodeServices.NodeServices | HttpPlatform.HttpPlatform | Etag.Generator
@@ -390,8 +437,11 @@ export const layerHttpServices: Layer.Layer<
 )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides a Node `HttpServer` together with the Node HTTP platform, ETag, and
+ * core platform services required to serve requests.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer = (
   evaluate: LazyArg<Http.Server>,
@@ -409,8 +459,11 @@ export const layer = (
   )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides a Node `HttpServer` and HTTP support services, reading the listen
+ * and shutdown options from a `Config` value.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerConfig = (
   evaluate: LazyArg<Http.Server>,
@@ -426,14 +479,17 @@ export const layerConfig = (
 > =>
   Layer.mergeAll(
     Layer.effect(HttpServer.HttpServer)(
-      Effect.flatMap(Config.unwrap(options).asEffect(), (options) => make(evaluate, options))
+      Effect.flatMap(Config.unwrap(options), (options) => make(evaluate, options))
     ),
     layerHttpServices
   )
 
 /**
- * @since 1.0.0
+ * Provides a test HTTP server listening on an ephemeral port together with a
+ * Fetch-backed `HttpClient` configured for server integration tests.
+ *
  * @category Testing
+ * @since 4.0.0
  */
 export const layerTest: Layer.Layer<
   | HttpServer.HttpServer

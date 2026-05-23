@@ -1,4 +1,32 @@
 /**
+ * The `ClusterCron` module provides a small integration between cron schedules
+ * and cluster sharding. It turns a `Cron.Cron` schedule into a `Layer` that
+ * coordinates one recurring job across a cluster by registering a singleton for
+ * the initial scheduling step and a persisted entity message for each run.
+ *
+ * This is useful for distributed maintenance work such as periodic cleanup,
+ * reconciliation, report generation, cache refreshes, or polling external
+ * systems where the job should be owned by the cluster rather than by every
+ * runner independently.
+ *
+ * **Mental model**
+ *
+ * - {@link make} registers a named cluster cron job as a layer
+ * - a singleton schedules the first run for the selected shard group
+ * - each run is delivered as a persisted entity message at its scheduled time
+ * - after a run exits, the handler schedules the next occurrence
+ * - stale runs can be skipped with `skipIfOlderThan`
+ *
+ * **Gotchas**
+ *
+ * - Job effects should be idempotent because persisted messages, retries, and
+ *   runner failover are part of normal distributed execution.
+ * - By default, the next run is calculated from the current time after the
+ *   handler exits; use `calculateNextRunFromPrevious` when preserving the
+ *   schedule cadence is more important than catching up from delays.
+ * - Long outages can produce old scheduled messages; keep `skipIfOlderThan`
+ *   aligned with the job's business semantics.
+ *
  * @since 4.0.0
  */
 import * as Cron from "../../Cron.ts"
@@ -21,8 +49,16 @@ import type { Sharding } from "./Sharding.ts"
 import * as Singleton from "./Singleton.ts"
 
 /**
+ * Creates a layer that runs a cron job through the cluster sharding system.
+ *
+ * **Details**
+ *
+ * The job is scheduled as persisted entity messages, with an initial singleton
+ * scheduling step and optional controls for shard group, next-run calculation,
+ * and skipping stale scheduled runs.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make = <E, R>(options: {
   readonly name: string
@@ -35,7 +71,10 @@ export const make = <E, R>(options: {
   readonly shardGroup?: string | undefined
 
   /**
-   * Whether to run the next cron job based from the time of the previous run.
+   * Controls whether the next cron job is based on the time of the previous
+   * run.
+   *
+   * **Details**
    *
    * Defaults to `false`, meaning the next run will be calculated from the
    * current time.
@@ -46,8 +85,12 @@ export const make = <E, R>(options: {
    * If set, the cron job will skip execution if the scheduled time is older
    * than this duration.
    *
+   * **When to use**
+   *
    * This is useful to prevent running jobs that were scheduled too far in the
    * past.
+   *
+   * **Details**
    *
    * Defaults to "1 day".
    */

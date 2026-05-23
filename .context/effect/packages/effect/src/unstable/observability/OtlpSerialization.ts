@@ -1,4 +1,21 @@
 /**
+ * Defines the serialization boundary used by the OTLP observability layers.
+ *
+ * `OtlpSerialization` converts Effect's in-memory OTLP trace, metric, and log
+ * data into `HttpBody` values so exporters can send them to collectors over
+ * OTLP/HTTP. Use this module to choose between the JSON encoding that is useful
+ * for debugging and collector endpoints that explicitly accept OTLP/HTTP JSON,
+ * and the protobuf encoding commonly expected by production OpenTelemetry
+ * collectors.
+ *
+ * The JSON layer writes the telemetry structures directly with
+ * `HttpBody.jsonUnsafe`; the protobuf layer encodes the same structures with
+ * the internal OTLP protobuf encoder and sets the `application/x-protobuf`
+ * content type. Endpoint paths, authentication headers, batching, retries, and
+ * shutdown flushing are handled by the OTLP exporter layers that consume this
+ * service, while this module focuses only on preserving the wire format chosen
+ * for traces, metrics, and logs.
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -10,8 +27,11 @@ import type { MetricsData } from "./OtlpMetrics.ts"
 import type { TraceData } from "./OtlpTracer.ts"
 
 /**
+ * Service for serializing OTLP traces, metrics, and logs into HTTP request
+ * bodies.
+ *
+ * @category services
  * @since 4.0.0
- * @category Services
  */
 export class OtlpSerialization extends Context.Service<OtlpSerialization, {
   readonly traces: (data: TraceData) => HttpBody.HttpBody
@@ -20,8 +40,10 @@ export class OtlpSerialization extends Context.Service<OtlpSerialization, {
 }>()("effect/observability/OtlpSerialization") {}
 
 /**
+ * Provides `OtlpSerialization` using OTLP/HTTP JSON bodies.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerJson = Layer.succeed(OtlpSerialization, {
   traces: (spans) => HttpBody.jsonUnsafe(spans),
@@ -30,8 +52,11 @@ export const layerJson = Layer.succeed(OtlpSerialization, {
 })
 
 /**
+ * Provides `OtlpSerialization` using protobuf-encoded OTLP bodies with the
+ * `application/x-protobuf` content type.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerProtobuf = Layer.succeed(OtlpSerialization, {
   traces: (spans) =>

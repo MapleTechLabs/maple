@@ -21,10 +21,6 @@ class RequestContext extends Context.Service<RequestContext, {
   readonly requestId: string
 }>()("RequestContext") {}
 
-class ToolkitContext extends Context.Service<ToolkitContext, {
-  readonly tenantId: string
-}>()("ToolkitContext") {}
-
 const ToolWithRequestContext = Tool.make("ToolWithRequestContext", {
   parameters: Schema.Struct({
     input: Schema.String
@@ -92,23 +88,6 @@ describe("LanguageModel", () => {
       type ProgramRequirements = typeof program extends Effect.Effect<any, any, infer R> ? R : never
 
       expect<ProgramRequirements>().type.toBe<LanguageModel.LanguageModel | RequestContext>()
-    })
-
-    it("includes yieldable toolkit requirements and tool request dependencies", () => {
-      type ToolWithRequestContextTools = {
-        readonly ToolWithRequestContext: typeof ToolWithRequestContext
-      }
-
-      type YieldableToolkit = Effect.Yieldable<
-        Toolkit.Toolkit<ToolWithRequestContextTools>,
-        Toolkit.WithHandler<ToolWithRequestContextTools>,
-        never,
-        ToolkitContext
-      >
-
-      expect<LanguageModel.ExtractServices<{ readonly toolkit: YieldableToolkit }>>().type.toBe<
-        RequestContext | ToolkitContext
-      >()
     })
 
     it("supports toolkit unions in options", () => {

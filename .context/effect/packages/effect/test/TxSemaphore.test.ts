@@ -235,7 +235,7 @@ describe("TxSemaphore", () => {
   })
 
   describe("concurrency", () => {
-    it.effect("multiple fibers can acquire permits concurrently", () =>
+    it.effect("withPermit bounds concurrent work and releases for the next waiter", () =>
       Effect.gen(function*() {
         const semaphore = yield* Effect.tx(TxSemaphore.make(3))
 

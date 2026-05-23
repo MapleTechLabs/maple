@@ -39,6 +39,7 @@ import {
   HttpApiMiddleware,
   HttpApiSchema,
   HttpApiSecurity,
+  HttpApiTest,
   OpenApi
 } from "effect/unstable/httpapi"
 
@@ -458,7 +459,7 @@ describe("HttpApi", () => {
       const GroupLive = HttpApiBuilder.group(
         Api,
         "group",
-        (handlers) => handlers.handle("a", () => CurrentToken.asEffect())
+        (handlers) => handlers.handle("a", () => CurrentToken)
       )
       const MLive = Layer.succeed(M)({
         apiKey: (effect, options) => Effect.provideService(effect, CurrentToken, Redacted.value(options.credential))
@@ -511,7 +512,7 @@ describe("HttpApi", () => {
         const GroupLive = HttpApiBuilder.group(
           Api,
           "group",
-          (handlers) => handlers.handle("a", () => Effect.map(CurrentMarker.asEffect(), (marker) => ({ marker })))
+          (handlers) => handlers.handle("a", () => Effect.map(CurrentMarker, (marker) => ({ marker })))
         )
         const MLive = Layer.succeed(M)({
           apiKey: (effect) => Effect.provideService(effect, CurrentMarker, marker)
@@ -1449,8 +1450,7 @@ describe("HttpApi", () => {
           HttpApiBuilder.group(
             Api,
             "group",
-            (handlers) =>
-              handlers.handle("error", () => new RateLimitError({ message: "Rate limit exceeded" }).asEffect())
+            (handlers) => handlers.handle("error", () => new RateLimitError({ message: "Rate limit exceeded" }))
           )
         ),
         HttpRouter.serve,
@@ -1462,6 +1462,29 @@ describe("HttpApi", () => {
         assert.deepStrictEqual(response, new RateLimitError({ message: "Rate limit exceeded" }))
       }).pipe(Effect.provide(ApiLive))
     })
+  })
+
+  describe("HttpApiTest", () => {
+    it.effect("works", () =>
+      Effect.gen(function*() {
+        const client = yield* HttpApiTest.groups(Api, ["groups"])
+        const result = yield* client.groups.findById({ params: { id: 0 } })
+        assert.deepStrictEqual(result, new Group({ id: 1, name: "foo" }))
+      }).pipe(
+        Effect.provide([
+          NodeHttpServer.layerHttpServices,
+          AuthorizationLive,
+          HttpApiBuilder.group(Api, "groups", (handlers) =>
+            handlers
+              .handle("findById", () => Effect.succeed(new Group({ id: 1, name: "foo" })))
+              .handle(
+                "handle",
+                () => Effect.die("unimplemented")
+              )
+              .handle("create", () => Effect.die("unimplemented"))
+              .handle("handleRaw", () => Effect.die("unimplemented")))
+        ])
+      ))
   })
 })
 
@@ -1695,7 +1718,7 @@ const HttpUsersLive = HttpApiBuilder.group(
     const fs = yield* FileSystem.FileSystem
     const repo = yield* UserRepo
     return handlers
-      .handle("findById", (_) => _.params.id === -1 ? CurrentUser.asEffect() : repo.findById(_.params.id))
+      .handle("findById", (_) => _.params.id === -1 ? CurrentUser : repo.findById(_.params.id))
       .handle("create", (_) =>
         _.payload.name === "boom"
           ? Effect.fail(new UserError({}))
@@ -1734,7 +1757,7 @@ const HttpUsersLive = HttpApiBuilder.group(
               )
             ),
             Stream.runCollect,
-            Effect.flatMap((_) => Array.head(_).asEffect()),
+            Effect.flatMap((_) => Effect.fromOption(Array.head(_))),
             Effect.orDie
           )
           return {

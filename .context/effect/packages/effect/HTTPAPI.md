@@ -197,7 +197,7 @@ Effect.runFork(program.pipe(Effect.provide(FetchHttpClient.layer)))
 /*
 Output:
 [18:55:26.051] INFO (#2): Listening on http://0.0.0.0:3000
-[18:55:26.057] INFO (#12) http.span.1=2ms: Sent HTTP response { 'http.method': 'GET', 'http.url': '/', 'http.status': 200 }
+[18:55:26.057] INFO (#12) http.span=2ms: Sent HTTP response { 'http.method': 'GET', 'http.url': '/', 'http.status': 200 }
 Hello, World!
 */
 ```
@@ -3094,7 +3094,7 @@ Effect.runFork(program.pipe(Effect.provide(FetchHttpClient.layer)))
 /*
 Output:
 [18:55:26.051] INFO (#2): Listening on http://0.0.0.0:3000
-[18:55:26.057] INFO (#12) http.span.1=2ms: Sent HTTP response { 'http.method': 'GET', 'http.url': '/', 'http.status': 200 }
+[18:55:26.057] INFO (#12) http.span=2ms: Sent HTTP response { 'http.method': 'GET', 'http.url': '/', 'http.status': 200 }
 Hello, World!
 */
 ```

@@ -68,7 +68,7 @@ class Foo extends Context.Service<Foo, "foo">()("Foo") {
 }
 
 class Bar extends Context.Service<Bar, "bar">()("Bar") {
-  static Live = Layer.effect(Bar)(Effect.map(Foo.asEffect(), () => "bar" as const))
+  static Live = Layer.effect(Bar)(Effect.map(Foo, () => "bar" as const))
 }
 
 class Sleeper extends Context.Service<Sleeper, {

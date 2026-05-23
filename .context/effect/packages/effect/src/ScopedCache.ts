@@ -1,4 +1,28 @@
 /**
+ * The `ScopedCache` module provides a cache for values that acquire scoped
+ * resources during lookup. Each cached entry owns a `Scope`, so resources
+ * created while computing a value stay alive for as long as that entry remains
+ * cached and are released when the entry is removed.
+ *
+ * A `ScopedCache` is itself created inside a scope. Calls to {@link get} run the
+ * lookup effect on cache misses, share the same in-flight lookup among
+ * concurrent callers for the same key, and store the resulting exit according
+ * to a time-to-live policy. Entries can be inserted manually with {@link set},
+ * refreshed with {@link refresh}, inspected without triggering lookup with
+ * {@link getOption}, and removed with {@link invalidate} or
+ * {@link invalidateAll}. Capacity limits evict the oldest entries.
+ *
+ * **Lifecycle notes**
+ *
+ * - Entry scopes are closed when entries expire, are invalidated, are evicted,
+ *   are replaced, or when the cache's owning scope closes
+ * - Successful and failed lookup exits are both cached according to the
+ *   configured TTL
+ * - Expired entries may remain counted by {@link size} until a cache operation
+ *   observes and removes them
+ * - Once the owning scope closes, the cache is closed and lookup-style
+ *   operations interrupt instead of acquiring new values
+ *
  * @since 4.0.0
  */
 import * as Arr from "./Array.ts"
@@ -21,8 +45,18 @@ import * as Scope from "./Scope.ts"
 const TypeId = "~effect/ScopedCache"
 
 /**
- * @since 4.0.0
- * @category Models
+ * A scoped cache whose values are acquired by a lookup effect and stored in
+ * per-entry scopes.
+ *
+ * **Details**
+ *
+ * Concurrent requests for the same key share the same in-flight lookup.
+ * Entries can expire based on the lookup exit, are evicted when capacity is
+ * exceeded, and release their entry scopes when invalidated, evicted, expired,
+ * or when the cache's owning scope closes.
+ *
+ * @category models
+ * @since 2.0.0
  */
 export interface ScopedCache<in out Key, in out A, in out E = never, out R = never> extends Pipeable {
   readonly [TypeId]: typeof TypeId
@@ -33,8 +67,16 @@ export interface ScopedCache<in out Key, in out A, in out E = never, out R = nev
 }
 
 /**
+ * Represents whether a `ScopedCache` is open or closed.
+ *
+ * **Details**
+ *
+ * `Open` stores cached entries in access order for reuse and eviction.
+ * `Closed` means the owning scope has closed and the cache can no longer
+ * perform lookup operations.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type State<K, A, E> = {
   readonly _tag: "Open"
@@ -44,11 +86,16 @@ export type State<K, A, E> = {
 }
 
 /**
- * Represents a cache entry containing a deferred value and optional expiration time.
- * This is used internally by the cache implementation to track cached values and their lifetimes.
+ * A single scoped cache entry.
  *
+ * **Details**
+ *
+ * The entry contains the deferred lookup result shared by readers, the scope
+ * that owns resources acquired while computing the value, and an optional
+ * expiration time in milliseconds. Removing the entry closes its scope.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface Entry<A, E> {
   expiresAt: number | undefined
@@ -57,8 +104,19 @@ export interface Entry<A, E> {
 }
 
 /**
- * @since 4.0.0
- * @category Constructors
+ * Creates a `ScopedCache` from a lookup function, maximum capacity, and a
+ * time-to-live function computed from each lookup exit and key.
+ *
+ * **Details**
+ *
+ * The cache must be constructed in a `Scope`. Each lookup runs in its own entry
+ * scope, and that scope is closed when the entry expires, is invalidated, is
+ * evicted by capacity, or when the cache's owning scope closes.
+ * `requireServicesAt` controls whether lookup services are captured at
+ * construction time or required when lookup operations run.
+ *
+ * @category constructors
+ * @since 2.0.0
  */
 export const makeWith = <
   Key,
@@ -103,8 +161,17 @@ export const makeWith = <
   })
 
 /**
- * @since 4.0.0
- * @category Constructors
+ * Creates a `ScopedCache` with a fixed time-to-live for every lookup result.
+ *
+ * **Details**
+ *
+ * This is the constant-TTL variant of `makeWith`: values are acquired by the
+ * lookup effect in per-entry scopes, capacity can evict older entries, and
+ * entry scopes are closed when entries expire, are invalidated, are evicted, or
+ * when the cache's owning scope closes.
+ *
+ * @category constructors
+ * @since 2.0.0
  */
 export const make = <
   Key,
@@ -144,8 +211,17 @@ const Proto = {
 const defaultTimeToLive = <A, E>(_: Exit.Exit<A, E>, _key: unknown): Duration.Duration => Duration.infinity
 
 /**
+ * Gets the value for a key, running the cache lookup when no unexpired entry is
+ * present.
+ *
+ * **Details**
+ *
+ * Concurrent `get` calls for the same key share the same in-flight lookup.
+ * Successful and failed lookup exits are cached according to the configured
+ * TTL. If the cache is closed, the effect is interrupted.
+ *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const get: {
   <Key, A>(key: Key): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<A, E, R>
@@ -217,8 +293,16 @@ const checkCapacity = <K, A, E>(
 }
 
 /**
+ * Reads an existing unexpired cache entry without running the lookup function.
+ *
+ * **Details**
+ *
+ * Returns `Option.none` when the key is absent or expired. If an entry exists,
+ * the effect waits for its cached result and returns `Option.some(value)` on
+ * success, or fails with the cached lookup error.
+ *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const getOption: {
   <Key, A>(key: Key): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<Option.Option<A>, E>
@@ -266,8 +350,8 @@ const getImpl = <Key, A, E, R>(
  * Retrieves the value associated with the specified key from the cache, only if
  * it contains a resolved successful value.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const getSuccess: {
   <Key, A, R>(key: Key): <E>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<Option.Option<A>>
@@ -292,11 +376,16 @@ export const getSuccess: {
 )
 
 /**
- * Sets the value associated with the specified key in the cache. This will
- * overwrite any existing value for that key, skipping the lookup function.
+ * Stores a successful value for a key without running the lookup function.
  *
+ * **Details**
+ *
+ * This replaces and closes any existing entry scope for the key, applies the
+ * cache's TTL using a successful exit for the value, and may evict older
+ * entries if the cache capacity is exceeded.
+ *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const set: {
   <Key, A>(key: Key, value: A): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<void>
@@ -333,8 +422,8 @@ export const set: {
 /**
  * Checks if the cache contains an entry for the specified key.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const has: {
   <Key, A>(key: Key): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<boolean>
@@ -348,10 +437,15 @@ export const has: {
 )
 
 /**
- * Invalidates the entry associated with the specified key in the cache.
+ * Removes the entry associated with a key and closes its entry scope.
  *
+ * **Details**
+ *
+ * If the key is absent, this is a no-op. If the cache is closed, the effect is
+ * interrupted.
+ *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const invalidate: {
   <Key, A>(key: Key): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<void>
@@ -375,8 +469,8 @@ export const invalidate: {
  * Conditionally invalidates the entry associated with the specified key in the cache
  * if the predicate returns true for the cached value.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const invalidateWhen: {
   <Key, A>(key: Key, f: Predicate.Predicate<A>): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<boolean>
@@ -410,11 +504,13 @@ export const invalidateWhen: {
 /**
  * Forces a refresh of the value associated with the specified key in the cache.
  *
+ * **Details**
+ *
  * It will always invoke the lookup function to construct a new value,
  * overwriting any existing value for that key.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const refresh: {
   <Key, A>(key: Key): <E, R>(self: ScopedCache<Key, A, E, R>) => Effect.Effect<A, E, R>
@@ -462,10 +558,14 @@ export const refresh: {
 )
 
 /**
- * Invalidates all entries in the cache.
+ * Removes every entry from the cache and closes each entry scope.
  *
+ * **Details**
+ *
+ * If the cache is closed, the effect is interrupted.
+ *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const invalidateAll = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effect<void> =>
   core.withFiber((parent) => {
@@ -490,12 +590,14 @@ const invalidateAllImpl = <Key, A, E>(
 /**
  * Retrieves the approximate number of entries in the cache.
  *
+ * **Gotchas**
+ *
  * Note that expired entries are counted until they are accessed and removed.
  * The size reflects the current number of entries stored, not the number
  * of valid entries.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const size = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effect<number> =>
   effect.sync(() => self.state._tag === "Closed" ? 0 : MutableHashMap.size(self.state.map))
@@ -503,8 +605,8 @@ export const size = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effe
 /**
  * Retrieves all active keys from the cache, automatically filtering out expired entries.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const keys = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effect<Array<Key>> =>
   core.withFiber((fiber) => {
@@ -528,8 +630,8 @@ export const keys = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effe
  * Retrieves all successfully cached values from the cache, excluding failed
  * lookups and expired entries.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const values = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effect<Array<A>> =>
   effect.map(entries(self), Arr.map(([, value]) => value))
@@ -539,8 +641,8 @@ export const values = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Ef
  * only returns entries with successfully resolved values, filtering out any
  * failed lookups or expired entries.
  *
+ * @category combinators
  * @since 4.0.0
- * @category Combinators
  */
 export const entries = <Key, A, E, R>(self: ScopedCache<Key, A, E, R>): Effect.Effect<Array<[Key, A]>> =>
   core.withFiber((fiber) => {

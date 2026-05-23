@@ -4,15 +4,15 @@ import { describe, it } from "vitest"
 
 describe("Symbol", () => {
   describe("isSymbol", () => {
-    it("returns true for Symbol()", () => {
+    it("returns true for primitive symbols created with Symbol()", () => {
       assert.strictEqual(Symbol_.isSymbol(Symbol()), true)
     })
 
-    it("returns true for Symbol.for()", () => {
+    it("returns true for global registry symbols created with Symbol.for()", () => {
       assert.strictEqual(Symbol_.isSymbol(Symbol.for("test")), true)
     })
 
-    it("returns true for well-known symbols", () => {
+    it("returns true for well-known primitive symbols", () => {
       assert.strictEqual(Symbol_.isSymbol(Symbol.iterator), true)
       assert.strictEqual(Symbol_.isSymbol(Symbol.hasInstance), true)
       assert.strictEqual(Symbol_.isSymbol(Symbol.toPrimitive), true)

@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest"
 
 describe("HashSet", () => {
   describe("constructors", () => {
-    it("empty", () => {
+    it("empty creates an empty set", () => {
       const set = HashSet.empty<string>()
       expect(HashSet.size(set)).toBe(0)
       expect(HashSet.isEmpty(set)).toBe(true)
     })
 
-    it("make", () => {
+    it("make creates a set from distinct values", () => {
       const set = HashSet.make("a", "b", "c")
       expect(HashSet.size(set)).toBe(3)
       expect(HashSet.has(set, "a")).toBe(true)
@@ -18,7 +18,7 @@ describe("HashSet", () => {
       expect(HashSet.has(set, "d")).toBe(false)
     })
 
-    it("make with duplicates", () => {
+    it("make removes duplicate values", () => {
       const set = HashSet.make("a", "b", "a", "c", "b")
       expect(HashSet.size(set)).toBe(3)
       expect(HashSet.has(set, "a")).toBe(true)
@@ -26,7 +26,7 @@ describe("HashSet", () => {
       expect(HashSet.has(set, "c")).toBe(true)
     })
 
-    it("fromIterable", () => {
+    it("fromIterable removes duplicate values from an iterable", () => {
       const set = HashSet.fromIterable(["a", "b", "c", "b", "a"])
       expect(HashSet.size(set)).toBe(3)
       expect(HashSet.has(set, "a")).toBe(true)
@@ -36,7 +36,7 @@ describe("HashSet", () => {
   })
 
   describe("basic operations", () => {
-    it("add", () => {
+    it("add returns a new set without mutating the original", () => {
       const original = HashSet.make("a", "b")
       const updated = HashSet.add(original, "c")
 
@@ -51,7 +51,7 @@ describe("HashSet", () => {
       expect(HashSet.has(updated, "b")).toBe(true)
     })
 
-    it("add existing element", () => {
+    it("add returns the same set when the value already exists", () => {
       const original = HashSet.make("a", "b")
       const same = HashSet.add(original, "a")
 
@@ -59,7 +59,7 @@ describe("HashSet", () => {
       expect(same).toBe(original) // Should return same reference
     })
 
-    it("remove", () => {
+    it("remove returns a new set without mutating the original", () => {
       const original = HashSet.make("a", "b", "c")
       const updated = HashSet.remove(original, "b")
 
@@ -74,7 +74,7 @@ describe("HashSet", () => {
       expect(HashSet.has(updated, "c")).toBe(true)
     })
 
-    it("remove non-existent element", () => {
+    it("remove returns the same set when the value is absent", () => {
       const original = HashSet.make("a", "b")
       const same = HashSet.remove(original, "c")
 
@@ -82,7 +82,7 @@ describe("HashSet", () => {
       expect(same).toBe(original) // Should return same reference
     })
 
-    it("has", () => {
+    it("has checks membership for present and absent values", () => {
       const set = HashSet.make("a", "b", "c")
 
       expect(HashSet.has(set, "a")).toBe(true)
@@ -91,7 +91,7 @@ describe("HashSet", () => {
       expect(HashSet.has(set, "d")).toBe(false)
     })
 
-    it("size and isEmpty", () => {
+    it("size and isEmpty reflect set cardinality", () => {
       const empty = HashSet.empty<string>()
       expect(HashSet.size(empty)).toBe(0)
       expect(HashSet.isEmpty(empty)).toBe(true)
@@ -107,7 +107,7 @@ describe("HashSet", () => {
   })
 
   describe("set operations", () => {
-    it("union", () => {
+    it("union keeps values from both sets", () => {
       const set1 = HashSet.make("a", "b")
       const set2 = HashSet.make("b", "c")
       const result = HashSet.union(set1, set2)
@@ -118,7 +118,7 @@ describe("HashSet", () => {
       expect(HashSet.has(result, "c")).toBe(true)
     })
 
-    it("intersection", () => {
+    it("intersection keeps only values present in both sets", () => {
       const set1 = HashSet.make("a", "b", "c")
       const set2 = HashSet.make("b", "c", "d")
       const result = HashSet.intersection(set1, set2)
@@ -130,7 +130,7 @@ describe("HashSet", () => {
       expect(HashSet.has(result, "d")).toBe(false)
     })
 
-    it("difference", () => {
+    it("difference removes values found in the second set", () => {
       const set1 = HashSet.make("a", "b", "c")
       const set2 = HashSet.make("b", "d")
       const result = HashSet.difference(set1, set2)
@@ -141,7 +141,7 @@ describe("HashSet", () => {
       expect(HashSet.has(result, "b")).toBe(false)
     })
 
-    it("isSubset", () => {
+    it("isSubset checks whether all values exist in another set", () => {
       const small = HashSet.make("a", "b")
       const large = HashSet.make("a", "b", "c", "d")
       const other = HashSet.make("x", "y")
@@ -154,7 +154,7 @@ describe("HashSet", () => {
   })
 
   describe("functional operations", () => {
-    it("map", () => {
+    it("map transforms every value", () => {
       const numbers = HashSet.make(1, 2, 3)
       const doubled = HashSet.map(numbers, (n) => n * 2)
 
@@ -164,7 +164,7 @@ describe("HashSet", () => {
       expect(HashSet.has(doubled, 6)).toBe(true)
     })
 
-    it("map with duplicates", () => {
+    it("map removes duplicate transformed values", () => {
       const strings = HashSet.make("apple", "banana", "cherry")
       const lengths = HashSet.map(strings, (s) => s.length)
 
@@ -173,7 +173,7 @@ describe("HashSet", () => {
       expect(HashSet.has(lengths, 6)).toBe(true)
     })
 
-    it("filter", () => {
+    it("filter keeps values that satisfy the predicate", () => {
       const numbers = HashSet.make(1, 2, 3, 4, 5, 6)
       const evens = HashSet.filter(numbers, (n) => n % 2 === 0)
 
@@ -184,7 +184,7 @@ describe("HashSet", () => {
       expect(HashSet.has(evens, 1)).toBe(false)
     })
 
-    it("some", () => {
+    it("some returns true when any value satisfies the predicate", () => {
       const numbers = HashSet.make(1, 2, 3, 4, 5)
 
       expect(HashSet.some(numbers, (n) => n > 3)).toBe(true)
@@ -194,7 +194,7 @@ describe("HashSet", () => {
       expect(HashSet.some(empty, (n) => n > 0)).toBe(false)
     })
 
-    it("every", () => {
+    it("every returns true when all values satisfy the predicate", () => {
       const evens = HashSet.make(2, 4, 6, 8)
 
       expect(HashSet.every(evens, (n) => n % 2 === 0)).toBe(true)
@@ -204,7 +204,7 @@ describe("HashSet", () => {
       expect(HashSet.every(empty, (n) => n > 0)).toBe(true) // vacuously true
     })
 
-    it("reduce", () => {
+    it("reduce folds every value into an accumulator", () => {
       const numbers = HashSet.make(1, 2, 3, 4, 5)
       const sum = HashSet.reduce(numbers, 0, (acc, n) => acc + n)
 
@@ -217,14 +217,14 @@ describe("HashSet", () => {
   })
 
   describe("iteration", () => {
-    it("Symbol.iterator", () => {
+    it("Symbol.iterator iterates over the set values", () => {
       const set = HashSet.make("a", "b", "c")
       const values = Array.from(set).sort()
 
       expect(values).toEqual(["a", "b", "c"])
     })
 
-    it("for...of loop", () => {
+    it("supports for...of iteration", () => {
       const set = HashSet.make("x", "y", "z")
       const collected = []
 
@@ -237,7 +237,7 @@ describe("HashSet", () => {
   })
 
   describe("equality and hashing", () => {
-    it("structural equality", () => {
+    it("structural equality ignores insertion order", () => {
       const set1 = HashSet.make("a", "b", "c")
       const set2 = HashSet.make("c", "b", "a") // Different order
       const set3 = HashSet.make("a", "b", "d") // Different content
@@ -246,7 +246,7 @@ describe("HashSet", () => {
       expect(Equal.equals(set1, set3)).toBe(false)
     })
 
-    it("hash consistency", () => {
+    it("hash is consistent for sets with the same values", () => {
       const set1 = HashSet.make("a", "b", "c")
       const set2 = HashSet.make("c", "b", "a") // Same content, different order
 
@@ -267,7 +267,7 @@ describe("HashSet", () => {
       }
     }
 
-    it("works with custom Equal implementation", () => {
+    it("uses Equal and Hash implementations for membership and uniqueness", () => {
       const alice1 = new Person("1", "Alice")
       const alice2 = new Person("1", "Alice") // Same ID
       const bob = new Person("2", "Bob")
@@ -283,7 +283,7 @@ describe("HashSet", () => {
   })
 
   describe("type guards", () => {
-    it("isHashSet", () => {
+    it("isHashSet identifies HashSet values", () => {
       const set = HashSet.make("a", "b", "c")
       const array = ["a", "b", "c"]
       const object = { a: 1, b: 2 }

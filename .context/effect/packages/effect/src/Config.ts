@@ -73,18 +73,15 @@
  */
 import type { Path, SourceError } from "./ConfigProvider.ts"
 import * as ConfigProvider from "./ConfigProvider.ts"
-import * as Duration_ from "./Duration.ts"
 import * as Effect from "./Effect.ts"
+import * as Effectable from "./Effectable.ts"
 import { dual } from "./Function.ts"
-import { PipeInspectableProto, YieldableProto } from "./internal/core.ts"
 import * as LogLevel_ from "./LogLevel.ts"
 import * as Option from "./Option.ts"
-import type { Pipeable } from "./Pipeable.ts"
 import * as Predicate from "./Predicate.ts"
 import * as Rec from "./Record.ts"
 import * as Schema from "./Schema.ts"
 import * as AST from "./SchemaAST.ts"
-import * as Getter from "./SchemaGetter.ts"
 import * as Issue from "./SchemaIssue.ts"
 import * as Parser from "./SchemaParser.ts"
 import * as Transformation from "./SchemaTransformation.ts"
@@ -94,7 +91,8 @@ const TypeId = "~effect/Config"
 /**
  * Returns `true` if `u` is a `Config` instance.
  *
- * When to use:
+ * **When to use**
+ *
  * - Runtime type-checking before calling `.parse()` on an unknown value.
  * - Distinguishing a `Config` from a plain value inside {@link unwrap}.
  *
@@ -107,29 +105,32 @@ const TypeId = "~effect/Config"
  * console.log(Config.isConfig("not a config"))        // false
  * ```
  *
- * @since 4.0.0
- * @category Guards
+ * @category guards
+ * @since 2.0.0
  */
 export const isConfig = (u: unknown): u is Config<unknown> => Predicate.hasProperty(u, TypeId)
 
 /**
  * The error type produced when config loading or validation fails.
  *
+ * **When to use**
+ *
+ * - Match on `error.cause._tag` to distinguish source failures from
+ *   validation failures.
+ * - Pass to {@link fail} to create a Config that always errors.
+ *
+ * **Details**
+ *
  * Wraps either:
  * - A `SourceError` — the provider could not read data (I/O failure).
  * - A `SchemaError` — the data was found but did not match the schema
  *   (wrong type, out of range, missing key, etc.).
  *
- * When to use:
- * - Match on `error.cause._tag` to distinguish source failures from
- *   validation failures.
- * - Pass to {@link fail} to create a Config that always errors.
- *
  * @see {@link orElse} – recover from a ConfigError
  * @see {@link withDefault} – provide a fallback for missing-data errors
  *
+ * @category errors
  * @since 4.0.0
- * @category Models
  */
 export class ConfigError {
   readonly _tag = "ConfigError"
@@ -149,6 +150,8 @@ export class ConfigError {
 /**
  * A recipe for extracting a typed value `T` from a `ConfigProvider`.
  *
+ * **Details**
+ *
  * Key members:
  * - `parse(provider)` – runs the config against a specific provider,
  *   returning `Effect<T, ConfigError>`.
@@ -159,20 +162,22 @@ export class ConfigError {
  * @see {@link schema} – the main way to create a Config
  * @see {@link make} – low-level constructor
  *
- * @since 4.0.0
+ * @category models
+ * @since 2.0.0
  */
-export interface Config<out T> extends Pipeable, Effect.Yieldable<Config<T>, T, ConfigError> {
+export interface Config<out T> extends Effect.Effect<T, ConfigError> {
   readonly [TypeId]: typeof TypeId
   readonly parse: (provider: ConfigProvider.ConfigProvider) => Effect.Effect<T, ConfigError>
 }
 
 const Proto = {
-  ...PipeInspectableProto,
-  ...YieldableProto,
+  ...Effectable.Prototype<Config<any>>({
+    label: "Config",
+    evaluate(fiber) {
+      return this.parse(fiber.getRef(ConfigProvider.ConfigProvider))
+    }
+  }),
   [TypeId]: TypeId,
-  asEffect(this: Config<unknown>) {
-    return Effect.flatMap(ConfigProvider.ConfigProvider.asEffect(), (provider) => this.parse(provider))
-  },
   toJSON(this: Config<unknown>) {
     return {
       _id: "Config"
@@ -183,10 +188,13 @@ const Proto = {
 /**
  * Creates a `Config` from a raw parsing function.
  *
- * When to use:
+ * **When to use**
+ *
  * - Building a custom config that cannot be expressed with {@link schema} or
  *   the convenience constructors.
  * - Composing configs programmatically.
+ *
+ * **Details**
  *
  * The `parse` callback receives a `ConfigProvider` and must return
  * `Effect<T, ConfigError>`.
@@ -210,7 +218,7 @@ const Proto = {
  *
  * @see {@link schema} – higher-level constructor using Schema codecs
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function make<T>(
@@ -224,9 +232,12 @@ export function make<T>(
 /**
  * Transforms the parsed value of a config with a pure function.
  *
- * When to use:
+ * **When to use**
+ *
  * - Post-processing a config value (e.g. trimming, uppercasing, wrapping).
  * - The transformation cannot fail. Use {@link mapOrFail} if it can.
+ *
+ * **Details**
  *
  * Supports both data-last and data-first calling conventions.
  *
@@ -245,8 +256,8 @@ export function make<T>(
  *
  * @see {@link mapOrFail} – when the transformation can fail
  *
- * @category Mapping
- * @since 4.0.0
+ * @category mapping
+ * @since 2.0.0
  */
 export const map: {
   <A, B>(f: (a: A) => B): (self: Config<A>) => Config<B>
@@ -258,9 +269,12 @@ export const map: {
 /**
  * Transforms the parsed value with a function that may fail.
  *
- * When to use:
+ * **When to use**
+ *
  * - Validating or converting a config value where the transformation can
  *   produce a `ConfigError` (e.g. parsing a URL, checking a range).
+ *
+ * **Details**
  *
  * Supports both data-last and data-first calling conventions.
  *
@@ -276,8 +290,8 @@ export const map: {
  *
  * @see {@link map} – when the transformation cannot fail
  *
- * @category Mapping
- * @since 4.0.0
+ * @category mapping
+ * @since 2.0.0
  */
 export const mapOrFail: {
   <A, B>(f: (a: A) => Effect.Effect<B, ConfigError>): (self: Config<A>) => Config<B>
@@ -289,9 +303,12 @@ export const mapOrFail: {
 /**
  * Falls back to another config when parsing fails with a `ConfigError`.
  *
- * When to use:
+ * **When to use**
+ *
  * - Trying an alternative config source when the primary one errors.
  * - Providing environment-specific overrides.
+ *
+ * **Details**
  *
  * Unlike {@link withDefault}, this catches **all** `ConfigError`s (not just
  * missing data). The fallback function receives the error and returns a new
@@ -311,7 +328,8 @@ export const mapOrFail: {
  *
  * @see {@link withDefault} – fallback only on missing data
  *
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const orElse: {
   <A2>(that: (error: ConfigError) => Config<A2>): <A>(self: Config<A>) => Config<A2 | A>
@@ -323,8 +341,11 @@ export const orElse: {
 /**
  * Combines multiple configs into a single config that parses all of them.
  *
- * When to use:
+ * **When to use**
+ *
  * - Grouping related configs into a tuple or named struct.
+ *
+ * **Details**
  *
  * Accepts a tuple (preserves positions), an iterable, or a record of configs.
  * Returns a config whose parsed value mirrors the input shape.
@@ -344,7 +365,8 @@ export const orElse: {
  * // { host: "localhost", port: 5432 }
  * ```
  *
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export function all<const Arg extends Iterable<Config<any>> | Record<string, Config<any>>>(
   arg: Arg
@@ -399,14 +421,20 @@ function isMissingDataOnly(issue: Issue.Issue): boolean {
 /**
  * Provides a fallback value when the config fails due to missing data.
  *
- * When to use:
+ * **When to use**
+ *
  * - Making a config key optional with a sensible default.
+ *
+ * **Details**
+ *
+ * The default is lazily evaluated. Supports both data-last and data-first
+ * calling conventions.
+ *
+ * **Gotchas**
  *
  * Only applies when the error is a `SchemaError` caused exclusively by
  * missing data (missing keys, undefined values). Validation errors (wrong
- * type, out of range) still propagate. The default is lazily evaluated.
- *
- * Supports both data-last and data-first calling conventions.
+ * type, out of range) still propagate.
  *
  * **Example** (Defaulting a missing port)
  *
@@ -422,7 +450,8 @@ function isMissingDataOnly(issue: Issue.Issue): boolean {
  * @see {@link option} – returns `Option` instead of a default value
  * @see {@link orElse} – catches all errors, not just missing data
  *
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const withDefault: {
   <const A2>(defaultValue: A2): <A>(self: Config<A>) => Config<A2 | A>
@@ -443,9 +472,12 @@ export const withDefault: {
  * Makes a config optional: returns `Some(value)` on success and `None` when
  * data is missing.
  *
- * When to use:
+ * **When to use**
+ *
  * - A config key may or may not be present and you want to handle both
  *   cases explicitly.
+ *
+ * **Gotchas**
  *
  * Like {@link withDefault}, only missing-data errors produce `None`.
  * Validation errors still propagate.
@@ -463,13 +495,17 @@ export const withDefault: {
  *
  * @see {@link withDefault} – provide a concrete fallback value instead
  *
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const option = <A>(self: Config<A>): Config<Option.Option<A>> =>
   self.pipe(map(Option.some), withDefault(Option.none()))
 
 /**
- * @since 3.0.0
+ * Extracts the successfully parsed value type from a `Config`.
+ *
+ * @category utility types
+ * @since 2.5.0
  */
 export type Success<T> = [T] extends [Config<infer A>] ? A : never
 
@@ -477,16 +513,19 @@ export type Success<T> = [T] extends [Config<infer A>] ? A : never
  * Utility type that recursively replaces primitives with `Config` in a nested
  * structure.
  *
- * `Config.Wrap<{ key: string }>` becomes `{ key: Config<string> } | Config<{ key: string }>`
+ * **When to use**
  *
- * When to use:
  * - Typing the input of {@link unwrap} so callers can pass either a `Config`
  *   or a record of `Config`s.
+ *
+ * **Details**
+ *
+ * `Config.Wrap<{ key: string }>` becomes `{ key: Config<string> } | Config<{ key: string }>`
  *
  * @see {@link unwrap} – construct a `Config` from a `Wrap<T>`
  *
  * @category Wrap
- * @since 4.0.0
+ * @since 2.0.0
  */
 export type Wrap<A> = [NonNullable<A>] extends [infer T] ? [IsPlainObject<T>] extends [true] ?
       | { readonly [K in keyof A]: Wrap<A[K]> }
@@ -501,9 +540,12 @@ type IsPlainObject<A> = [A] extends [Record<string, any>]
 /**
  * Constructs a `Config<T>` from a value matching `Wrap<T>`.
  *
- * When to use:
+ * **When to use**
+ *
  * - Accepting config from callers who may pass either a single `Config` or a
  *   record of individual `Config`s.
+ *
+ * **Details**
  *
  * If the input is already a `Config`, it is returned as-is. Otherwise, each
  * key is recursively unwrapped and combined.
@@ -524,7 +566,7 @@ type IsPlainObject<A> = [A] extends [Record<string, any>]
  * @see {@link Wrap} – the utility type accepted by this function
  *
  * @category Wrap
- * @since 4.0.0
+ * @since 2.0.0
  */
 export const unwrap = <T>(wrapped: Wrap<T>): Config<T> => {
   if (isConfig(wrapped)) return wrapped
@@ -636,10 +678,13 @@ const recur: (
 /**
  * Creates a `Config<T>` from a `Schema.Codec`.
  *
- * When to use:
+ * **When to use**
+ *
  * - Reading structured or validated config (structs, arrays, unions, branded
  *   types, etc.).
  * - All convenience constructors (`string`, `number`, …) delegate to this.
+ *
+ * **Details**
  *
  * The optional `path` sets the root path segment(s) for the config lookup.
  * Pass a single string for a flat key or an array for nested paths.
@@ -671,7 +716,7 @@ const recur: (
  * @see {@link string} / {@link number} / {@link boolean} – shortcuts for
  *   single-value configs
  *
- * @category Schema
+ * @category schemas
  * @since 4.0.0
  */
 export function schema<T, E>(codec: Schema.Codec<T, E>, path?: string | ConfigProvider.Path): Config<T> {
@@ -703,16 +748,19 @@ export const FalseValues = Schema.Literals(["false", "no", "off", "0", "n"])
 /**
  * A `Schema.Codec` for boolean values encoded as strings.
  *
- * When to use:
+ * **When to use**
+ *
  * - Pass to {@link schema} for custom paths, or use the {@link boolean}
  *   convenience constructor.
+ *
+ * **Details**
  *
  * Accepted string values: `true`, `false`, `yes`, `no`, `on`, `off`, `1`,
  * `0`, `y`, `n` (case-sensitive).
  *
  * @see {@link boolean} – convenience constructor
  *
- * @category Schema
+ * @category schemas
  * @since 4.0.0
  */
 export const Boolean = Schema.Literals([...TrueValues.literals, ...FalseValues.literals]).pipe(
@@ -726,41 +774,16 @@ export const Boolean = Schema.Literals([...TrueValues.literals, ...FalseValues.l
 )
 
 /**
- * A `Schema.Codec` for `Duration` values encoded as strings.
- *
- * When to use:
- * - Pass to {@link schema} for custom paths, or use the {@link duration}
- *   convenience constructor.
- *
- * Accepts any string that `Duration.fromInput` can parse (e.g.
- * `"10 seconds"`, `"500 millis"`).
- *
- * @see {@link duration} – convenience constructor
- *
- * @category Schema
- * @since 4.0.0
- */
-export const Duration = Schema.String.pipe(Schema.decodeTo(Schema.Duration, {
-  decode: Getter.transformOrFail((s) => {
-    const d = Duration_.fromInput(s as any)
-    return Option.match(d, {
-      onNone: () => Effect.fail(new Issue.InvalidValue(Option.some(s))),
-      onSome: Effect.succeed
-    })
-  }),
-  encode: Getter.forbidden(() => "Encoding Duration is not supported")
-}))
-
-/**
  * A `Schema.Codec` for port numbers (integers in 1–65535).
  *
- * When to use:
+ * **When to use**
+ *
  * - Pass to {@link schema} for custom paths, or use the {@link port}
  *   convenience constructor.
  *
  * @see {@link port} – convenience constructor
  *
- * @category Schema
+ * @category schemas
  * @since 4.0.0
  */
 export const Port = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))
@@ -768,16 +791,19 @@ export const Port = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 655
 /**
  * A `Schema.Codec` for `LogLevel` string literals.
  *
- * When to use:
+ * **When to use**
+ *
  * - Pass to {@link schema} for custom paths, or use the {@link logLevel}
  *   convenience constructor.
+ *
+ * **Details**
  *
  * Accepted values: `"All"`, `"Fatal"`, `"Error"`, `"Warn"`, `"Info"`,
  * `"Debug"`, `"Trace"`, `"None"`.
  *
  * @see {@link logLevel} – convenience constructor
  *
- * @category Schema
+ * @category schemas
  * @since 4.0.0
  */
 export const LogLevel = Schema.Literals(LogLevel_.values)
@@ -786,9 +812,12 @@ export const LogLevel = Schema.Literals(LogLevel_.values)
  * A `Schema.Codec` for key-value record types that can also be parsed from
  * a flat comma-separated string.
  *
- * When to use:
+ * **When to use**
+ *
  * - Reading key-value maps from a single env var (e.g. OpenTelemetry
  *   resource attributes).
+ *
+ * **Details**
  *
  * Accepts either a JSON-like record from the provider or a flat string like
  * `"key1=val1,key2=val2"`. The `separator` (default `","`) and
@@ -817,7 +846,7 @@ export const LogLevel = Schema.Literals(LogLevel_.values)
  * // }
  * ```
  *
- * @category Schemas
+ * @category schemas
  * @since 4.0.0
  */
 export const Record = <K extends Schema.Record.Key, V extends Schema.Top>(key: K, value: V, options?: {
@@ -843,12 +872,13 @@ export const Record = <K extends Schema.Record.Key, V extends Schema.Top>(key: K
 /**
  * Creates a config that always fails with the given error.
  *
- * When to use:
+ * **When to use**
+ *
  * - Inside {@link orElse} to re-raise a specific error.
  * - Testing error handling paths.
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function fail(err: SourceError | Schema.SchemaError) {
   return make(() => Effect.fail(new ConfigError(err)))
@@ -858,7 +888,8 @@ export function fail(err: SourceError | Schema.SchemaError) {
  * Creates a config that always succeeds with the given value, ignoring the
  * provider entirely.
  *
- * When to use:
+ * **When to use**
+ *
  * - Providing a hardcoded constant inside {@link orElse}.
  * - Testing.
  *
@@ -872,8 +903,8 @@ export function fail(err: SourceError | Schema.SchemaError) {
  * )
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function succeed<T>(value: T) {
   return make(() => Effect.succeed(value))
@@ -882,10 +913,13 @@ export function succeed<T>(value: T) {
 /**
  * Creates a config for a single string value.
  *
- * Shortcut for `Config.schema(Schema.String, name)`.
+ * **When to use**
  *
- * When to use:
  * - Reading a single string env var or config key.
+ *
+ * **Details**
+ *
+ * Shortcut for `Config.schema(Schema.String, name)`.
  *
  * **Example** (Reading a string config)
  *
@@ -901,8 +935,8 @@ export function succeed<T>(value: T) {
  * @see {@link nonEmptyString} – rejects empty strings
  * @see {@link schema} – for more complex types
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function string(name?: string) {
   return schema(Schema.String, name)
@@ -912,12 +946,14 @@ export function string(name?: string) {
  * Creates a config for a non-empty string value. Fails if the value is an
  * empty string.
  *
+ * **Details**
+ *
  * Shortcut for `Config.schema(Schema.NonEmptyString, name)`.
  *
  * @see {@link string} – allows empty strings
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 3.7.0
  */
 export function nonEmptyString(name?: string) {
   return schema(Schema.NonEmptyString, name)
@@ -926,13 +962,15 @@ export function nonEmptyString(name?: string) {
 /**
  * Creates a config for a numeric value (including `NaN`, `Infinity`).
  *
+ * **Details**
+ *
  * Shortcut for `Config.schema(Schema.Number, name)`.
  *
  * @see {@link finite} – rejects `NaN` and `Infinity`
  * @see {@link int} – only integers
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function number(name?: string) {
   return schema(Schema.Number, name)
@@ -941,12 +979,14 @@ export function number(name?: string) {
 /**
  * Creates a config for a finite number (rejects `NaN` and `Infinity`).
  *
+ * **Details**
+ *
  * Shortcut for `Config.schema(Schema.Finite, name)`.
  *
  * @see {@link number} – allows `NaN` and `Infinity`
  * @see {@link int} – only integers
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function finite(name?: string) {
@@ -956,12 +996,14 @@ export function finite(name?: string) {
 /**
  * Creates a config for an integer value. Rejects floats.
  *
+ * **Details**
+ *
  * Shortcut for `Config.schema(Schema.Int, name)`.
  *
  * @see {@link number} – allows any number
  * @see {@link port} – integers in 1–65535
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function int(name?: string) {
@@ -970,6 +1012,8 @@ export function int(name?: string) {
 
 /**
  * Creates a config that only accepts a specific literal value.
+ *
+ * **Details**
  *
  * Shortcut for `Config.schema(Schema.Literal(literal), name)`.
  *
@@ -981,16 +1025,40 @@ export function int(name?: string) {
  * const env = Config.literal("production", "ENV")
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function literal<L extends AST.LiteralValue>(literal: L, name?: string) {
   return schema(Schema.Literal(literal), name)
 }
 
 /**
+ * Creates a config that only accepts one of the specified literal values.
+ *
+ * **Details**
+ *
+ * Shortcut for `Config.schema(Schema.Literals(literals), name)`.
+ *
+ * **Example** (Restricting to a set of literals)
+ *
+ * ```ts
+ * import { Config } from "effect"
+ *
+ * const env = Config.literals(["development", "production"], "ENV")
+ * ```
+ *
+ * @category constructors
+ * @since 4.0.0
+ */
+export function literals<const L extends ReadonlyArray<AST.LiteralValue>>(literals: L, name?: string) {
+  return schema(Schema.Literals(literals), name)
+}
+
+/**
  * Creates a config for a boolean value parsed from common string
  * representations.
+ *
+ * **Details**
  *
  * Shortcut for `Config.schema(Config.Boolean, name)`.
  *
@@ -1019,8 +1087,8 @@ export function literal<L extends AST.LiteralValue>(literal: L, name?: string) {
  * // Output: true
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function boolean(name?: string) {
   return schema(Boolean, name)
@@ -1030,10 +1098,12 @@ export function boolean(name?: string) {
  * Creates a config for a `Duration` value parsed from a human-readable
  * string.
  *
- * Shortcut for `Config.schema(Config.Duration, name)`.
+ * **Details**
+ *
+ * Shortcut for `Config.schema(Schema.DurationFromString, name)`.
  *
  * Accepts any string that `Duration.fromInput` can parse (e.g.
- * `"10 seconds"`, `"500 millis"`, `"2 minutes"`).
+ * `"10 seconds"`, `"500 millis"`, `"Infinity"`, `"-Infinity"`).
  *
  * **Example** (Reading a duration)
  *
@@ -1057,15 +1127,17 @@ export function boolean(name?: string) {
  * // Output: Duration { _tag: "millis", value: 10000 }
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.5.0
  */
 export function duration(name?: string) {
-  return schema(Duration, name)
+  return schema(Schema.DurationFromString, name)
 }
 
 /**
  * Creates a config for a port number (integer in 1–65535).
+ *
+ * **Details**
  *
  * Shortcut for `Config.schema(Config.Port, name)`.
  *
@@ -1091,8 +1163,8 @@ export function duration(name?: string) {
  * // Output: 8080
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 3.16.0
  */
 export function port(name?: string) {
   return schema(Port, name)
@@ -1100,6 +1172,8 @@ export function port(name?: string) {
 
 /**
  * Creates a config for a log level string.
+ *
+ * **Details**
  *
  * Shortcut for `Config.schema(Config.LogLevel, name)`.
  *
@@ -1128,8 +1202,8 @@ export function port(name?: string) {
  * // Output: "Info"
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function logLevel(name?: string) {
   return schema(LogLevel, name)
@@ -1138,6 +1212,8 @@ export function logLevel(name?: string) {
 /**
  * Creates a config for a redacted string value. The parsed result is wrapped
  * in a `Redacted` container that hides the value from logs and `toString`.
+ *
+ * **Details**
  *
  * Shortcut for `Config.schema(Schema.Redacted(Schema.String), name)`.
  *
@@ -1163,8 +1239,8 @@ export function logLevel(name?: string) {
  * // Output: <redacted>
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function redacted(name?: string) {
   return schema(Schema.Redacted(Schema.String), name)
@@ -1172,6 +1248,8 @@ export function redacted(name?: string) {
 
 /**
  * Creates a config for a `URL` value parsed from a string.
+ *
+ * **Gotchas**
  *
  * Fails if the string cannot be parsed by the `URL` constructor.
  *
@@ -1211,8 +1289,8 @@ export function redacted(name?: string) {
  * // }
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 3.11.0
  */
 export function url(name?: string) {
   return schema(Schema.URL, name)
@@ -1221,9 +1299,13 @@ export function url(name?: string) {
 /**
  * Creates a config for a `Date` value parsed from a string.
  *
- * Fails with a `SchemaError` if the string produces an invalid `Date`.
+ * **Details**
  *
  * Shortcut for `Config.schema(Schema.DateValid, name)`.
+ *
+ * **Gotchas**
+ *
+ * Fails with a `SchemaError` if the string produces an invalid `Date`.
  *
  * **Example** (Reading a date)
  *
@@ -1237,8 +1319,8 @@ export function url(name?: string) {
  * // Date("2024-01-15T00:00:00.000Z")
  * ```
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function date(name?: string) {
   return schema(Schema.DateValid, name)
@@ -1247,10 +1329,13 @@ export function date(name?: string) {
 /**
  * Scopes a config under a named prefix.
  *
- * When to use:
+ * **When to use**
+ *
  * - Grouping related config keys under a common namespace (e.g.
  *   `"database"`, `"redis"`).
  * - Building reusable config fragments that callers nest at different paths.
+ *
+ * **Details**
  *
  * The prefix is prepended to every key the inner config reads. With
  * `fromUnknown` this means an extra object level; with `fromEnv` it means
@@ -1292,8 +1377,8 @@ export function date(name?: string) {
  * @see {@link all} – combine multiple configs into a struct
  * @see {@link schema} – read structured config from a schema
  *
- * @category Combinators
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const nested: {
   (name: string): <A>(self: Config<A>) => Config<A>

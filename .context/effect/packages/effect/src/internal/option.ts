@@ -7,7 +7,8 @@ import * as Hash from "../Hash.ts"
 import { toJson } from "../Inspectable.ts"
 import type * as Option from "../Option.ts"
 import { hasProperty } from "../Predicate.ts"
-import { exitFail, exitSucceed, NoSuchElementError, PipeInspectableProto, YieldableProto } from "./core.ts"
+import { SingleShotGen } from "../Utils.ts"
+import { PipeInspectableProto } from "./core.ts"
 
 const TypeId = "~effect/data/Option"
 
@@ -16,7 +17,9 @@ const CommonProto = {
     _A: (_: never) => _
   },
   ...PipeInspectableProto,
-  ...YieldableProto
+  [Symbol.iterator]() {
+    return new SingleShotGen(this)
+  }
 }
 
 const SomeProto = Object.assign(Object.create(CommonProto), {
@@ -39,9 +42,6 @@ const SomeProto = Object.assign(Object.create(CommonProto), {
       _tag: this._tag,
       value: toJson(this.value)
     }
-  },
-  asEffect(this: Option.Some<unknown>) {
-    return exitSucceed(this.value)
   }
 })
 
@@ -70,9 +70,6 @@ const NoneProto = Object.assign(Object.create(CommonProto), {
       _id: "Option",
       _tag: this._tag
     }
-  },
-  asEffect<A>(this: Option.None<A>) {
-    return exitFail(new NoSuchElementError())
   }
 })
 

@@ -217,7 +217,7 @@ describe.sequential("Atom", () => {
   })
 
   it("runtime direct tag", async () => {
-    const counter = counterRuntime.atom(Counter.asEffect())
+    const counter = counterRuntime.atom(Counter)
     const r = AtomRegistry.make()
     const result = r.get(counter)
     assert(AsyncResult.isSuccess(result))
@@ -483,7 +483,7 @@ describe.sequential("Atom", () => {
       const services = yield* Effect.context<never>()
       const count = Atom.make(
         Stream.range(0, 2).pipe(
-          Stream.tap(() => AtomRegistry.AtomRegistry.asEffect()),
+          Stream.tap(() => AtomRegistry.AtomRegistry),
           Stream.tap((_) => Effect.sleep(50)),
           Stream.provideContext(services)
         )

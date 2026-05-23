@@ -1,4 +1,20 @@
 /**
+ * Server implementation for event logs whose entries are persisted and streamed
+ * in plaintext.
+ *
+ * This module is useful for trusted deployments, local development, tests, and
+ * server-side event sources that need typed event handlers, conflict detection,
+ * compaction, and RPC change streams without an encryption layer. It includes
+ * services for mapping client store ids to server stores, authorizing reads and
+ * writes, storing remote entries, and binding session authentication keys.
+ *
+ * Because payloads and journals are unencrypted, storage must be protected by
+ * the surrounding infrastructure. Session authentication bindings are part of
+ * the storage contract and must be persisted by durable implementations so a
+ * public key cannot silently bind to a different signing key after a restart.
+ * The provided memory storage is process-local and intended for ephemeral
+ * servers, tests, or examples rather than durable multi-process use.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -33,8 +49,11 @@ import {
 import * as EventLogServer from "./EventLogServer.ts"
 
 /**
- * @since 4.0.0
+ * Server-side service for writing plaintext event-log entries directly to
+ * unencrypted storage through registered event handlers.
+ *
  * @category EventLogServerUnencrypted
+ * @since 4.0.0
  */
 export class EventLogServerUnencrypted extends Context.Service<EventLogServerUnencrypted, {
   readonly makeWrite: <Groups extends EventGroup.Any>(
@@ -53,8 +72,11 @@ export class EventLogServerUnencrypted extends Context.Service<EventLogServerUne
 }>()("effect/eventlog/EventLogServerUnencrypted") {}
 
 /**
- * @since 4.0.0
+ * Creates a typed server-side write function for events in the supplied
+ * `EventLogSchema`.
+ *
  * @category EventLogServerUnencrypted
+ * @since 4.0.0
  */
 export const makeWrite = <Groups extends EventGroup.Any>(
   schema: EventLog.EventLogSchema<Groups>
@@ -75,8 +97,16 @@ export const makeWrite = <Groups extends EventGroup.Any>(
 > => EventLogServerUnencrypted.useSync((_) => _.makeWrite(schema))
 
 /**
+ * Provides RPC handlers for the unencrypted event-log server.
+ *
+ * **Details**
+ *
+ * Incoming plaintext entries are authorized, mapped to a server store, checked
+ * for conflicts, run through registered handlers, and persisted; change streams
+ * include compacted backlog entries when compactors are registered.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerRpcHandlers: Layer.Layer<
   Rpc.ToHandler<RpcGroup.Rpcs<typeof EventLogRemoteRpcs>> | EventLogAuthentication,
@@ -198,8 +228,10 @@ export const layerRpcHandlers: Layer.Layer<
 }))
 
 /**
- * @since 4.0.0
+ * Error raised by unencrypted server storage and store mapping operations.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class EventLogServerStoreError extends Data.TaggedError("EventLogServerStoreError")<{
   readonly reason: "NotFound" | "PersistenceFailure"
@@ -209,8 +241,11 @@ export class EventLogServerStoreError extends Data.TaggedError("EventLogServerSt
 }> {}
 
 /**
- * @since 4.0.0
+ * Error raised when unencrypted server authorization rejects an identity or store
+ * operation.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class EventLogServerAuthError extends Data.TaggedError("EventLogServerAuthError")<{
   readonly reason: "Unauthorized" | "Forbidden"
@@ -220,8 +255,11 @@ export class EventLogServerAuthError extends Data.TaggedError("EventLogServerAut
 }> {}
 
 /**
- * @since 4.0.0
+ * Authorization service used by the unencrypted event-log server to validate
+ * write access, read access, and identities.
+ *
  * @category context
+ * @since 4.0.0
  */
 export class EventLogServerAuthorization extends Context.Service<EventLogServerAuthorization, {
   readonly authorizeWrite: (options: {
@@ -239,8 +277,11 @@ export class EventLogServerAuthorization extends Context.Service<EventLogServerA
 }>()("effect/eventlog/EventLogServerUnencrypted/EventLogServerAuthorization") {}
 
 /**
- * @since 4.0.0
+ * Service that resolves client-requested store ids to server store ids and checks
+ * whether a store exists.
+ *
  * @category context
+ * @since 4.0.0
  */
 export class StoreMapping extends Context.Service<StoreMapping, {
   readonly resolve: (
@@ -269,8 +310,11 @@ const toStoreNotFoundError = (options: {
   })
 
 /**
- * @since 4.0.0
+ * Provides a `StoreMapping` that accepts only one configured store id and fails
+ * all other store ids as not found.
+ *
  * @category store
+ * @since 4.0.0
  */
 export const layerStoreMappingStatic = (options: {
   readonly storeId: StoreId
@@ -286,8 +330,16 @@ export const layerStoreMappingStatic = (options: {
   })
 
 /**
- * @since 4.0.0
+ * Storage service used by the unencrypted event-log server.
+ *
+ * **Details**
+ *
+ * It provides the server remote id, stores session authentication bindings,
+ * allocates remote sequence numbers, persists entries, streams changes, and
+ * exposes a transaction boundary.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export class Storage extends Context.Service<Storage, {
   readonly getId: Effect.Effect<RemoteId>
@@ -405,8 +457,16 @@ const toCompactedRemoteEntries = (options: {
 }
 
 /**
- * @since 4.0.0
+ * Compacts a backlog of remote entries using the registered compactors.
+ *
+ * **Details**
+ *
+ * Contiguous entries handled by the same compactor may be replaced with compacted
+ * entries when the replacement count can be mapped back to increasing remote
+ * sequence numbers; otherwise the original entries are kept.
+ *
  * @category compaction
+ * @since 4.0.0
  */
 export const compactBacklog = Effect.fnUntraced(function*(options: {
   readonly remoteEntries: ReadonlyArray<RemoteEntry>
@@ -469,8 +529,16 @@ export const compactBacklog = Effect.fnUntraced(function*(options: {
 })
 
 /**
- * @since 4.0.0
+ * Creates an in-memory unencrypted server `Storage`.
+ *
+ * **Details**
+ *
+ * The implementation keeps per-store journals and session authentication bindings
+ * in memory, publishes live changes, and serializes transactions with a
+ * semaphore.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export const makeStorageMemory: Effect.Effect<Storage["Service"], never, Scope.Scope> = Effect.gen(function*() {
   const knownIds = new Map<string, Map<string, number>>()
@@ -574,14 +642,19 @@ export const makeStorageMemory: Effect.Effect<Storage["Service"], never, Scope.S
 })
 
 /**
- * @since 4.0.0
+ * Provides unencrypted server `Storage` using the in-memory implementation.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export const layerStorageMemory: Layer.Layer<Storage> = Layer.effect(Storage)(makeStorageMemory)
 
 /**
- * @since 4.0.0
+ * Creates the `EventLogServerUnencrypted` service from the configured storage and
+ * registered event handlers.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.gen(function*() {
   const storage = yield* Storage
@@ -640,8 +713,11 @@ export const make = Effect.gen(function*() {
 })
 
 /**
- * @since 4.0.0
+ * Provides `EventLogServerUnencrypted` and an event-log `Registry` using the
+ * configured unencrypted server `Storage`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerServer: Layer.Layer<
   EventLogServerUnencrypted | EventLog.Registry,
@@ -652,8 +728,11 @@ export const layerServer: Layer.Layer<
 )
 
 /**
- * @since 4.0.0
+ * Builds a full unencrypted event-log RPC server for the supplied schema and
+ * event-group handler layer.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layer = <Groups extends EventGroup.Any, E, R>(
   _schema: EventLog.EventLogSchema<Groups>,
@@ -674,8 +753,11 @@ export const layer = <Groups extends EventGroup.Any, E, R>(
   )
 
 /**
- * @since 4.0.0
+ * Builds the unencrypted event-log server handlers without installing an
+ * `RpcServer.Protocol` implementation.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerNoRpcServer = <Groups extends EventGroup.Any, E, R>(
   _schema: EventLog.EventLogSchema<Groups>,

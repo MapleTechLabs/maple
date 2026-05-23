@@ -61,7 +61,7 @@ export class AiAssistant extends Context.Service<AiAssistant, {
     AiAssistant,
     Effect.gen(function*() {
       // Choose the model you want to use for the chat sessions.
-      const modelLayer = yield* OpenAiLanguageModel.model("gpt-5.2")
+      const modelLayer = yield* OpenAiLanguageModel.model("gpt-5.2").captureRequirements
 
       // ---------------------------------------------------------------------------
       // 1. Chat.empty — basic multi-turn conversation

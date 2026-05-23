@@ -1,17 +1,40 @@
 /**
+ * Builds and opens typed IndexedDB databases from versioned schema migrations.
+ *
+ * This module turns an `IndexedDbVersion` migration chain into an
+ * `IndexedDbDatabase` layer. The layer opens the browser database, runs any
+ * pending upgrade migrations, provides a query builder for the current schema,
+ * and exposes a `rebuild` effect that deletes and reopens the database. It is
+ * the database-level companion to the table, version, and query builder
+ * modules.
+ *
+ * Use it for browser-local persistence such as offline-first application
+ * state, cached server data, background queues, drafts, and other client-side
+ * stores that need typed reads and writes backed by IndexedDB transactions.
+ *
+ * IndexedDB schema changes can only happen inside upgrade transactions, so
+ * every call to `make` or `.add` represents the next browser database version
+ * and only migrations after the existing browser version are run. Table and
+ * index definitions type the migration and query APIs, but object stores and
+ * indexes still need to be created or removed explicitly with the migration
+ * transaction helpers. Include the complete target table set in each version,
+ * create indexes before querying them, and treat key path or auto-increment
+ * changes as store migrations that copy data into a replacement object store.
+ * Upgrades can be blocked by other open connections, and all migration reads,
+ * writes, store changes, and index changes share the single upgrade
+ * transaction supplied by the browser.
+ *
  * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
+import * as Effectable from "effect/Effectable"
 import * as Fiber from "effect/Fiber"
-import * as Inspectable from "effect/Inspectable"
 import * as Layer from "effect/Layer"
 import * as MutableRef from "effect/MutableRef"
-import * as Pipeable from "effect/Pipeable"
 import * as Semaphore from "effect/Semaphore"
 import * as Reactivity from "effect/unstable/reactivity/Reactivity"
-import * as Utils from "effect/Utils"
 import * as IndexedDb from "./IndexedDb.ts"
 import * as IndexedDbQueryBuilder from "./IndexedDbQueryBuilder.ts"
 import type * as IndexedDbTable from "./IndexedDbTable.ts"
@@ -20,31 +43,52 @@ import type * as IndexedDbVersion from "./IndexedDbVersion.ts"
 const TypeId = "~@effect/platform-browser/IndexedDbDatabase"
 const ErrorTypeId = "~@effect/platform-browser/IndexedDbDatabase/IndexedDbDatabaseError"
 
-const YieldableProto = {
-  [Symbol.iterator]() {
-    return new Utils.SingleShotGen(this) as any
-  }
-}
-
-const PipeInspectableProto = {
-  ...Pipeable.Prototype,
-  ...Inspectable.BaseProto,
-  toJSON(this: any) {
-    return { _id: "IndexedDbDatabase" }
-  }
-}
-
-const CommonProto = {
+const SchemaProto = {
   [TypeId]: {
     _A: (_: never) => _
   },
-  ...PipeInspectableProto,
-  ...YieldableProto
+  ...Effectable.Prototype<IndexedDbSchema<any, any, any>>({
+    label: "IndexedDbSchema",
+    evaluate() {
+      return this.getQueryBuilder
+    }
+  }),
+  get getQueryBuilder() {
+    const self = this as unknown as IndexedDbSchema<any, any, any>
+    return IndexedDbDatabase.useSync(({ database, IDBKeyRange, reactivity }) =>
+      IndexedDbQueryBuilder.make({
+        database,
+        IDBKeyRange,
+        tables: self.version.tables,
+        reactivity
+      })
+    )
+  },
+  add<Version extends IndexedDbVersion.AnyWithProps>(
+    this: IndexedDbSchema<any, any, any>,
+    version: Version,
+    migrate: (
+      fromQuery: Transaction<any>,
+      toQuery: Transaction<Version>
+    ) => Effect.Effect<void, Error>
+  ) {
+    return makeMigration({
+      fromVersion: this.version,
+      version,
+      migrate,
+      previous: this
+    })
+  },
+  layer(this: IndexedDbSchema<any, any, any>, databaseName: string) {
+    return layer(databaseName, this)
+  }
 }
 
 /**
- * @since 4.0.0
+ * String union describing the failure categories for IndexedDB database opening, migration, and schema operations.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export type ErrorReason =
   | "TransactionError"
@@ -56,8 +100,10 @@ export type ErrorReason =
   | "MissingIndex"
 
 /**
- * @since 4.0.0
+ * Tagged error for IndexedDB database operations, carrying a database error reason and the original cause.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class IndexedDbDatabaseError extends Data.TaggedError(
   "IndexedDbDatabaseError"
@@ -66,6 +112,8 @@ export class IndexedDbDatabaseError extends Data.TaggedError(
   cause: unknown
 }> {
   /**
+   * Marks this value as an IndexedDB database error for runtime guards.
+   *
    * @since 4.0.0
    */
   readonly [ErrorTypeId]: typeof ErrorTypeId = ErrorTypeId
@@ -73,8 +121,10 @@ export class IndexedDbDatabaseError extends Data.TaggedError(
 }
 
 /**
- * @since 4.0.0
+ * Service tag for an open IndexedDB database, its `IDBKeyRange` constructor, reactivity service, and rebuild effect.
+ *
  * @category models
+ * @since 4.0.0
  */
 export class IndexedDbDatabase extends Context.Service<
   IndexedDbDatabase,
@@ -87,17 +137,17 @@ export class IndexedDbDatabase extends Context.Service<
 >()(TypeId) {}
 
 /**
- * @since 4.0.0
+ * Describes an IndexedDB schema version and its migrations, and acts as an effect that yields a query builder for the target version.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface IndexedDbSchema<
   in out FromVersion extends IndexedDbVersion.AnyWithProps,
   in out ToVersion extends IndexedDbVersion.AnyWithProps,
   out Error = never
 > extends
-  Pipeable.Pipeable,
-  Inspectable.Inspectable,
-  Effect.YieldableClass<
+  Effect.Effect<
     IndexedDbQueryBuilder.IndexedDbQueryBuilder<ToVersion>,
     never,
     IndexedDbDatabase
@@ -140,12 +190,14 @@ export interface IndexedDbSchema<
 }
 
 /**
- * @since 4.0.0
+ * Query builder available during a database migration, extended with object-store and index management helpers for the active `IDBTransaction`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Transaction<
   Source extends IndexedDbVersion.AnyWithProps = never
-> extends Pipeable.Pipeable, Omit<IndexedDbQueryBuilder.IndexedDbQueryBuilder<Source>, "transaction"> {
+> extends Omit<IndexedDbQueryBuilder.IndexedDbQueryBuilder<Source>, "transaction"> {
   readonly transaction: globalThis.IDBTransaction
 
   readonly createObjectStore: <
@@ -177,8 +229,10 @@ export interface Transaction<
 }
 
 /**
- * @since 4.0.0
+ * Extracts the string-literal index names defined by an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type IndexFromTable<Table extends IndexedDbTable.AnyWithProps> = IsStringLiteral<
   Extract<keyof IndexedDbTable.Indexes<Table>, string>
@@ -186,8 +240,10 @@ export type IndexFromTable<Table extends IndexedDbTable.AnyWithProps> = IsString
   : never
 
 /**
- * @since 4.0.0
+ * Extracts the valid index names for a table name within an IndexedDB version.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type IndexFromTableName<
   Version extends IndexedDbVersion.AnyWithProps,
@@ -197,8 +253,10 @@ export type IndexFromTableName<
 >
 
 /**
- * @since 4.0.0
+ * Type-erased IndexedDB schema shape used when traversing schema migration chains.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Any {
   readonly previous?: Any | undefined
@@ -212,8 +270,10 @@ export interface Any {
 }
 
 /**
- * @since 4.0.0
+ * Type-erased `IndexedDbSchema` covering any source version, target version, and migration error type.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AnySchema = IndexedDbSchema<
   IndexedDbVersion.AnyWithProps,
@@ -222,8 +282,10 @@ export type AnySchema = IndexedDbSchema<
 >
 
 /**
- * @since 4.0.0
+ * Creates the initial `IndexedDbSchema` from a version and an initialization migration run during database upgrade.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = <
   InitialVersion extends IndexedDbVersion.AnyWithProps,
@@ -231,47 +293,16 @@ export const make = <
 >(
   initialVersion: InitialVersion,
   init: (toQuery: Transaction<InitialVersion>) => Effect.Effect<void, Error>
-): IndexedDbSchema<never, InitialVersion, Error> =>
-  (function() {
-    // oxlint-disable-next-line typescript/no-extraneous-class
-    class Initial {}
-    Object.assign(Initial, CommonProto)
-    ;(Initial as any).version = initialVersion
-    ;(Initial as any).migrate = init
-    ;(Initial as any)._tag = "Initial"
-    ;(Initial as any).add = <Version extends IndexedDbVersion.AnyWithProps>(
-      version: Version,
-      migrate: (
-        fromQuery: Transaction<InitialVersion>,
-        toQuery: Transaction<Version>
-      ) => Effect.Effect<void, Error>
-    ) =>
-      makeProto({
-        fromVersion: initialVersion,
-        version,
-        migrate,
-        previous: Initial as any
-      })
-    ;(Initial as any).getQueryBuilder = Effect.gen(function*() {
-      const { IDBKeyRange, database, reactivity } = yield* IndexedDbDatabase
-      return IndexedDbQueryBuilder.make({
-        database,
-        IDBKeyRange,
-        tables: initialVersion.tables,
-        reactivity
-      })
-    })
-    ;(Initial as any).asEffect = function() {
-      return this.getQueryBuilder
-    }
-    ;(Initial as any).layer = <DatabaseName extends string>(
-      databaseName: DatabaseName
-    ) => layer(databaseName, Initial as any)
+): IndexedDbSchema<never, InitialVersion, Error> => {
+  // oxlint-disable-next-line typescript/no-extraneous-class
+  function Initial() {}
+  Object.setPrototypeOf(Initial, SchemaProto)
+  ;(Initial as any).version = initialVersion
+  ;(Initial as any).migrate = init
+  return Initial as any
+}
 
-    return Initial as any
-  })()
-
-const makeProto = <
+const makeMigration = <
   FromVersion extends IndexedDbVersion.AnyWithProps,
   ToVersion extends IndexedDbVersion.AnyWithProps,
   Error
@@ -285,34 +316,17 @@ const makeProto = <
     fromQuery: Transaction<FromVersion>,
     toQuery: Transaction<ToVersion>
   ) => Effect.Effect<void, Error>
-}): IndexedDbSchema<FromVersion, ToVersion, Error> =>
-  (function() {
-    // oxlint-disable-next-line typescript/no-extraneous-class
-    class Migration {}
-    Object.assign(Migration, CommonProto)
-    ;(Migration as any).previous = options.previous
-    ;(Migration as any).fromVersion = options.fromVersion
-    ;(Migration as any).version = options.version
-    ;(Migration as any).migrate = options.migrate
-    ;(Migration as any)._tag = "Migration"
-    ;(Migration as any).getQueryBuilder = Effect.gen(function*() {
-      const { IDBKeyRange, database, reactivity } = yield* IndexedDbDatabase
-      return IndexedDbQueryBuilder.make({
-        database,
-        IDBKeyRange,
-        tables: options.version.tables,
-        reactivity
-      })
-    })
-    ;(Migration as any).asEffect = function() {
-      return this.getQueryBuilder
-    }
-    ;(Migration as any).layer = <DatabaseName extends string>(
-      databaseName: DatabaseName
-    ) => layer(databaseName, Migration as any)
+}): IndexedDbSchema<FromVersion, ToVersion, Error> => {
+  // oxlint-disable-next-line typescript/no-extraneous-class
+  function Migration() {}
+  Object.setPrototypeOf(Migration, SchemaProto)
+  ;(Migration as any).previous = options.previous
+  ;(Migration as any).fromVersion = options.fromVersion
+  ;(Migration as any).version = options.version
+  ;(Migration as any).migrate = options.migrate
 
-    return Migration as any
-  })()
+  return Migration as any
+}
 
 const layer = <DatabaseName extends string>(
   databaseName: DatabaseName,

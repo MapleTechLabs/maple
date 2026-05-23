@@ -21,33 +21,45 @@ import { CurrentTraceLevel, DisablePropagation, MinimumTraceLevel, type SpanLink
 
 export {
   /**
-   * @since 4.0.0
+   * Reference for the current trace level used for dynamic trace filtering.
+   *
    * @category references
+   * @since 4.0.0
    */
   CurrentTraceLevel,
   /**
-   * @since 4.0.0
+   * Reference used to disable trace propagation in the current context.
+   *
    * @category references
+   * @since 4.0.0
    */
   DisablePropagation,
   /**
-   * @since 4.0.0
+   * Reference controlling the maximum operation budget before a fiber yields to the scheduler.
+   *
    * @category references
+   * @since 4.0.0
    */
   MaxOpsBeforeYield,
   /**
-   * @since 4.0.0
+   * Reference setting the minimum trace level threshold for span sampling.
+   *
    * @category references
+   * @since 4.0.0
    */
   MinimumTraceLevel,
   /**
-   * @since 4.0.0
+   * Reference controlling whether the runtime bypasses scheduler yield checks.
+   *
    * @category references
+   * @since 4.0.0
    */
   PreventSchedulerYield,
   /**
-   * @since 4.0.0
+   * Reference for the active tracer service used to create spans.
+   *
    * @category references
+   * @since 4.0.0
    */
   Tracer
 }
@@ -56,7 +68,8 @@ export {
  * Reference for controlling the current concurrency limit. Can be set to "unbounded"
  * for unlimited concurrency or a specific number to limit concurrent operations.
  *
- * @example
+ * **Example** (Setting current concurrency)
+ *
  * ```ts
  * import { Effect, References } from "effect"
  *
@@ -96,7 +109,8 @@ export const CurrentConcurrency: Context.Reference<number | "unbounded"> = refer
  * Reference for managing log annotations that are automatically added to all log entries.
  * These annotations provide contextual metadata that appears in every log message.
  *
- * @example
+ * **Example** (Managing log annotations)
+ *
  * ```ts
  * import { Console, Effect, References } from "effect"
  *
@@ -143,16 +157,22 @@ export const CurrentConcurrency: Context.Reference<number | "unbounded"> = refer
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const CurrentLogAnnotations: Context.Reference<ReadonlyRecord<string, unknown>> =
   references.CurrentLogAnnotations
 
 /**
- * Reference for controlling the current log level for dynamic filtering.
+ * Reference for the current log severity used by `Effect.log` when no explicit
+ * level is provided.
  *
- * @example
+ * **Details**
+ *
+ * Use `MinimumLogLevel` to control which log entries are filtered out.
+ *
+ * **Example** (Changing the current log level)
+ *
  * ```ts
  * import { Console, Effect, References } from "effect"
  *
@@ -195,7 +215,8 @@ export const CurrentLogLevel: Context.Reference<Severity> = references.CurrentLo
  * Reference for managing log spans that track the duration and hierarchy of operations.
  * Each span represents a labeled time period for performance analysis and debugging.
  *
- * @example
+ * **Example** (Tracking log spans)
+ *
  * ```ts
  * import { Console, Effect, References } from "effect"
  *
@@ -205,7 +226,7 @@ export const CurrentLogLevel: Context.Reference<Severity> = references.CurrentLo
  *   console.log(current.length) // 0
  *
  *   // Add a log span manually
- *   const startTime = Date.now()
+ *   const databaseConnectionStartedAt = 0
  *   yield* Effect.provideService(
  *     Effect.gen(function*() {
  *       // Simulate some work
@@ -216,10 +237,11 @@ export const CurrentLogLevel: Context.Reference<Severity> = references.CurrentLo
  *       console.log("Active spans:", spans.map(([label]) => label)) // ["database-connection"]
  *     }),
  *     References.CurrentLogSpans,
- *     [["database-connection", startTime]]
+ *     [["database-connection", databaseConnectionStartedAt]]
  *   )
  *
  *   // Add another span
+ *   const dataProcessingStartedAt = 100
  *   yield* Effect.provideService(
  *     Effect.gen(function*() {
  *       const spans = yield* References.CurrentLogSpans
@@ -229,8 +251,8 @@ export const CurrentLogLevel: Context.Reference<Severity> = references.CurrentLo
  *     }),
  *     References.CurrentLogSpans,
  *     [
- *       ["database-connection", startTime],
- *       ["data-processing", Date.now()]
+ *       ["database-connection", databaseConnectionStartedAt],
+ *       ["data-processing", dataProcessingStartedAt]
  *     ]
  *   )
  *
@@ -246,15 +268,24 @@ export const CurrentLogLevel: Context.Reference<Severity> = references.CurrentLo
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const CurrentLogSpans: Context.Reference<ReadonlyArray<[label: string, timestamp: number]>> =
   references.CurrentLogSpans
 
 /**
- * @since 4.0.0
+ * Reference containing the current captured stack-frame chain for the running
+ * fiber.
+ *
+ * **Details**
+ *
+ * Effect and Layer tracing use this reference to attach stack-frame information
+ * to failures and interruption causes. It is normally managed by tracing APIs
+ * rather than provided directly by application code.
+ *
  * @category references
+ * @since 4.0.0
  */
 export const CurrentStackFrame: Context.Reference<StackFrame | undefined> = references.CurrentStackFrame
 
@@ -262,7 +293,8 @@ export const CurrentStackFrame: Context.Reference<StackFrame | undefined> = refe
  * Reference for setting the minimum log level threshold. Log entries below this
  * level will be filtered out completely.
  *
- * @example
+ * **Example** (Setting the minimum log level)
+ *
  * ```ts
  * import { Console, Effect, References } from "effect"
  *
@@ -313,7 +345,8 @@ export const MinimumLogLevel: Context.Reference<LogLevel> = references.MinimumLo
  * Reference for controlling whether tracing is enabled globally. When set to false,
  * spans will not be registered with the tracer and tracing overhead is minimized.
  *
- * @example
+ * **Example** (Toggling tracing)
+ *
  * ```ts
  * import { Effect, References } from "effect"
  *
@@ -350,8 +383,8 @@ export const MinimumLogLevel: Context.Reference<LogLevel> = references.MinimumLo
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const TracerEnabled: Context.Reference<boolean> = references.TracerEnabled
 
@@ -359,7 +392,8 @@ export const TracerEnabled: Context.Reference<boolean> = references.TracerEnable
  * Reference for managing span annotations that are automatically added to all new spans.
  * These annotations provide context and metadata that applies across multiple spans.
  *
- * @example
+ * **Example** (Managing span annotations)
+ *
  * ```ts
  * import { Effect, References } from "effect"
  *
@@ -402,8 +436,8 @@ export const TracerEnabled: Context.Reference<boolean> = references.TracerEnable
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const TracerSpanAnnotations: Context.Reference<ReadonlyRecord<string, unknown>> =
   references.TracerSpanAnnotations
@@ -412,7 +446,8 @@ export const TracerSpanAnnotations: Context.Reference<ReadonlyRecord<string, unk
  * Reference for managing span links that are automatically added to all new spans.
  * Span links connect related spans that are not in a parent-child relationship.
  *
- * @example
+ * **Example** (Managing span links)
+ *
  * ```ts
  * import { Effect, References, Tracer } from "effect"
  *
@@ -465,8 +500,8 @@ export const TracerSpanAnnotations: Context.Reference<ReadonlyRecord<string, unk
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const TracerSpanLinks: Context.Reference<ReadonlyArray<SpanLink>> = references.TracerSpanLinks
 
@@ -475,7 +510,8 @@ export const TracerSpanLinks: Context.Reference<ReadonlyArray<SpanLink>> = refer
  * to false, spans will not contain timing information (trace time will always
  * be set to zero).
  *
- * @example
+ * **Example** (Toggling trace timing)
+ *
  * ```ts
  * import { Effect, References } from "effect"
  *
@@ -508,8 +544,8 @@ export const TracerSpanLinks: Context.Reference<ReadonlyArray<SpanLink>> = refer
  * })
  * ```
  *
- * @since 4.0.0
  * @category references
+ * @since 4.0.0
  */
 export const TracerTimingEnabled: Context.Reference<boolean> = references.TracerTimingEnabled
 
@@ -523,8 +559,15 @@ export const TracerTimingEnabled: Context.Reference<boolean> = references.Tracer
 export const UnhandledLogLevel: Context.Reference<Severity | undefined> = references.UnhandledLogLevel
 
 /**
- * @since 4.0.0
+ * A captured stack-frame node used to describe the traced execution path.
+ *
+ * **Details**
+ *
+ * Each frame has a span or operation `name`, a lazy `stack` supplier, and an
+ * optional `parent` frame that links it to the previous captured frame.
+ *
  * @category references
+ * @since 4.0.0
  */
 export interface StackFrame {
   readonly name: string
@@ -533,14 +576,29 @@ export interface StackFrame {
 }
 
 /**
- * @since 4.0.0
+ * Reference containing the set of loggers currently used by Effect logging
+ * operations.
+ *
+ * **Details**
+ *
+ * Providing this reference changes which `Logger` instances receive log entries
+ * in the current context.
+ *
  * @category references
+ * @since 4.0.0
  */
 export const CurrentLoggers: Context.Reference<ReadonlySet<Logger<unknown, any>>> = internalEffect.CurrentLoggers
 
 /**
- * @since 4.0.0
+ * Reference controlling whether the default console logger writes to stderr.
+ *
+ * **Details**
+ *
+ * When set to `true`, the pretty console logger uses `console.error`; otherwise
+ * it uses `console.log`.
+ *
  * @category references
+ * @since 4.0.0
  */
 export const LogToStderr: Context.Reference<boolean> = internalEffect.LogToStderr
 
@@ -549,7 +607,8 @@ export {
    * Reference for the current scheduler implementation used by the Effect runtime.
    * Controls how Effects are scheduled and executed.
    *
-   * @example
+   * **Example** (Providing a custom scheduler)
+   *
    * ```ts
    * import { Effect, References, Scheduler } from "effect"
    *

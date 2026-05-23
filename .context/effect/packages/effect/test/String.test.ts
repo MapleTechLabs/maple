@@ -258,7 +258,7 @@ describe("String", () => {
       assertFalse(pipe("hello world", S.includes("foo")))
     })
 
-    it("respects position parameter", () => {
+    it("starts searching at the given position", () => {
       assertFalse(pipe("hello", S.includes("hel", 1)))
       assertTrue(pipe("hello", S.includes("ell", 1)))
     })
@@ -273,7 +273,7 @@ describe("String", () => {
       assertFalse(pipe("hello world", S.startsWith("world")))
     })
 
-    it("respects position parameter", () => {
+    it("checks the prefix at the given position", () => {
       assertTrue(pipe("hello world", S.startsWith("world", 6)))
     })
   })
@@ -287,7 +287,7 @@ describe("String", () => {
       assertFalse(pipe("hello world", S.endsWith("hello")))
     })
 
-    it("respects position parameter", () => {
+    it("checks the suffix at the given end position", () => {
       assertTrue(pipe("hello world", S.endsWith("hello", 5)))
     })
   })
@@ -383,13 +383,13 @@ describe("String", () => {
   })
 
   describe("match", () => {
-    it("returns some on match", () => {
+    it("returns matched text and native match metadata", () => {
       const result = pipe("hello", S.match(/l+/))
       assert(Option.isSome(result))
       strictEqual(result.value[0], "ll")
     })
 
-    it("returns none on no match", () => {
+    it("returns none when the pattern does not match", () => {
       assertNone(pipe("hello", S.match(/x/)))
     })
   })

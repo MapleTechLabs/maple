@@ -1,4 +1,22 @@
 /**
+ * Defines typed table descriptors for the browser IndexedDB integration.
+ *
+ * An `IndexedDbTable` records the object store name, row schema, primary key
+ * path, indexes, auto-increment behavior, and transaction durability used by
+ * database versions, migrations, and typed queries. These descriptors are
+ * useful for local caches, offline-first application state, background queues,
+ * drafts, and other browser-persisted data that should be validated through
+ * `Schema`.
+ *
+ * Key paths and index paths must reference encoded schema fields whose values
+ * are valid IndexedDB keys, and compound paths are represented as readonly
+ * arrays. Tables without a key path use an out-of-line `key` that is added to
+ * reads and required for writes, so the row schema itself cannot define a
+ * `key` field. Auto-increment tables require a numeric key path; when that key
+ * is omitted on write, the module uses a derived schema without the generated
+ * key. Declaring indexes here types query builder index selection, but the
+ * indexes still need to be created during database migrations.
+ *
  * @since 4.0.0
  */
 import { type Pipeable, pipeArguments } from "effect/Pipeable"
@@ -11,8 +29,10 @@ import type * as IndexedDbQueryBuilder from "./IndexedDbQueryBuilder.ts"
 const TypeId = "~@effect/platform-browser/IndexedDbTable"
 
 /**
- * @since 4.0.0
+ * Typed IndexedDB table definition containing its name, schema, key path, indexes, auto-increment setting, and transaction durability.
+ *
  * @category interface
+ * @since 4.0.0
  */
 export interface IndexedDbTable<
   out Name extends string,
@@ -38,16 +58,20 @@ export interface IndexedDbTable<
 }
 
 /**
- * @since 4.0.0
+ * Schema constraint for table schemas that expose struct fields.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AnySchemaStruct = Schema.Top & {
   readonly fields: Schema.Struct.Fields
 }
 
 /**
- * @since 4.0.0
+ * Type-erased shape of an `IndexedDbTable` used when table type parameters are not needed.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Any {
   readonly [TypeId]: typeof TypeId
@@ -62,8 +86,10 @@ export interface Any {
 }
 
 /**
- * @since 4.0.0
+ * Type-erased `IndexedDbTable` retaining the table interface properties with broad type parameters.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AnyWithProps = IndexedDbTable<
   string,
@@ -74,50 +100,66 @@ export type AnyWithProps = IndexedDbTable<
 >
 
 /**
- * @since 4.0.0
+ * Extracts the table name type from an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type TableName<Table extends Any> = Table["tableName"]
 /**
- * @since 4.0.0
+ * Extracts the key-path type from an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type KeyPath<Table extends Any> = Table["keyPath"]
 
 /**
- * @since 4.0.0
+ * Extracts the auto-increment flag type from an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AutoIncrement<Table extends Any> = Table["autoIncrement"]
 
 /**
- * @since 4.0.0
+ * Extracts the schema type from an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type TableSchema<Table extends Any> = Table["tableSchema"]
 /**
- * @since 4.0.0
+ * Extracts the decoding or encoding service requirements needed by an `IndexedDbTable` schema.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Context<Table extends Any> =
   | Table["tableSchema"]["DecodingServices"]
   | Table["tableSchema"]["EncodingServices"]
 
 /**
- * @since 4.0.0
+ * Extracts the encoded row type from an `IndexedDbTable` schema.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Encoded<Table extends Any> = Table["tableSchema"]["Encoded"]
 
 /**
- * @since 4.0.0
+ * Extracts the index definition map from an `IndexedDbTable`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Indexes<Table extends Any> = Table["indexes"]
 
 /**
- * @since 4.0.0
+ * Selects the table with the given name from a union of `IndexedDbTable` types.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type WithName<Table extends Any, TableName extends string> = Extract<
   Table,
@@ -132,8 +174,10 @@ const Proto = {
 }
 
 /**
- * @since 4.0.0
+ * Creates a typed IndexedDB table definition from its name, schema, optional key path, indexes, auto-increment flag, and durability.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = <
   const Name extends string,

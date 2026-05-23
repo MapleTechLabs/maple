@@ -1,5 +1,22 @@
 /**
- * @since 1.0.0
+ * Node-specific helpers for parsing HTTP `multipart/form-data` request bodies.
+ *
+ * This module adapts a Node `Readable` request body plus its incoming headers
+ * into the shared `Multipart` model. Use `stream` when an HTTP server route
+ * wants to handle form fields and uploaded files incrementally, for example API
+ * endpoints that validate text fields while piping file parts to storage. Use
+ * `persisted` when the whole form should be collected into a record and uploaded
+ * files should be written into scoped temporary files through the current
+ * `FileSystem` and `Path` services.
+ *
+ * Node request bodies are one-shot streams, so consume either `stream` or
+ * `persisted`, and make sure file parts are drained, piped, or otherwise
+ * deliberately handled. `contentEffect` loads a file into memory and should be
+ * reserved for small uploads. Persisted paths live only for the surrounding
+ * `Scope`, and filenames supplied by clients should be treated as metadata, not
+ * trusted filesystem paths.
+ *
+ * @since 4.0.0
  */
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -16,8 +33,12 @@ import * as NodeStreamP from "node:stream/promises"
 import * as NodeStream from "./NodeStream.ts"
 
 /**
- * @since 1.0.0
+ * Parses multipart data from a Node readable request body and headers into a
+ * stream of `Multipart.Part` values, converting parser failures to
+ * `MultipartError`.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const stream = (
   source: Readable,
@@ -39,8 +60,11 @@ export const stream = (
   )
 
 /**
- * @since 1.0.0
+ * Parses multipart data from a Node readable request body and persists file
+ * parts using the current `FileSystem`, `Path`, and `Scope` services.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const persisted = (
   source: Readable,
@@ -57,7 +81,11 @@ export const persisted = (
     }))
 
 /**
- * @since 1.0.0
+ * Returns the underlying Node readable stream for a multipart file produced by
+ * the Node multipart parser.
+ *
+ * @category converting
+ * @since 4.0.0
  */
 export const fileToReadable = (file: Multipart.File): Readable => (file as FileImpl).file
 

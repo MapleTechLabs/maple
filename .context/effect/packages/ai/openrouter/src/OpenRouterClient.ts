@@ -1,5 +1,27 @@
 /**
- * @since 1.0.0
+ * The `OpenRouterClient` module provides an Effect service for calling
+ * OpenRouter's chat completions API. It wraps the generated OpenRouter HTTP
+ * client with Effect-native constructors, layers, typed errors, and streaming
+ * support.
+ *
+ * **Common tasks**
+ *
+ * - Build a client from explicit options with {@link make}
+ * - Provide the client to an application with {@link layer} or {@link layerConfig}
+ * - Create non-streaming chat completions with {@link Service.createChatCompletion}
+ * - Create server-sent event chat completion streams with
+ *   {@link Service.createChatCompletionStream}
+ * - Customize authentication, base URL, OpenRouter ranking headers, or the
+ *   underlying HTTP client through {@link Options}
+ *
+ * **Gotchas**
+ *
+ * - Streaming requests are sent directly to `/chat/completions` with `stream`
+ *   and `stream_options.include_usage` enabled by this module.
+ * - OpenRouter API failures, HTTP client failures, and schema decoding failures
+ *   are mapped into `AiError` values for the exported service methods.
+ *
+ * @since 4.0.0
  */
 import type * as Config from "effect/Config"
 import * as Context from "effect/Context"
@@ -27,11 +49,13 @@ import { OpenRouterConfig } from "./OpenRouterConfig.ts"
 /**
  * The OpenRouter client service interface.
  *
+ * **Details**
+ *
  * Provides methods for interacting with OpenRouter's Chat Completions API,
  * including both synchronous and streaming message creation.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Service {
   readonly client: Generated.OpenRouterClient
@@ -55,8 +79,15 @@ export interface Service {
 }
 
 /**
- * @since 1.0.0
- * @category Models
+ * Decoded `data` payload from an OpenRouter chat completion streaming chunk.
+ *
+ * **Details**
+ *
+ * The payload contains streamed choices, model metadata, optional usage, and may
+ * include an OpenRouter error object for a streamed response.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export type ChatStreamingResponseChunkData = typeof Generated.ChatStreamingResponseChunk.fields.data.Type
 
@@ -67,8 +98,8 @@ export type ChatStreamingResponseChunkData = typeof Generated.ChatStreamingRespo
 /**
  * Service identifier for the OpenRouter client.
  *
- * @since 1.0.0
- * @category service
+ * @category services
+ * @since 4.0.0
  */
 export class OpenRouterClient extends Context.Service<
   OpenRouterClient,
@@ -82,8 +113,8 @@ export class OpenRouterClient extends Context.Service<
 /**
  * Configuration options for creating an OpenRouter client.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export type Options = {
   readonly apiKey?: Redacted.Redacted<string> | undefined
@@ -103,6 +134,8 @@ export type Options = {
   /**
    * Optional transformer for the underlying HTTP client.
    *
+   * **When to use**
+   *
    * Use this to add middleware, logging, or custom request/response handling.
    */
   readonly transformClient?: ((client: HttpClient.HttpClient) => HttpClient.HttpClient) | undefined
@@ -115,8 +148,8 @@ export type Options = {
 /**
  * Creates an OpenRouter client service with the given options.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(
   function*(options: Options): Effect.fn.Return<Service, never, HttpClient.HttpClient> {
@@ -212,8 +245,8 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer for the OpenRouter client with the given options.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer = (options: Options): Layer.Layer<OpenRouterClient, never, HttpClient.HttpClient> =>
   Layer.effect(OpenRouterClient, make(options))
@@ -222,8 +255,8 @@ export const layer = (options: Options): Layer.Layer<OpenRouterClient, never, Ht
  * Creates a layer for the OpenRouter client, loading the requisite
  * configuration via Effect's `Config` module.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layerConfig = (options?: {
   /**

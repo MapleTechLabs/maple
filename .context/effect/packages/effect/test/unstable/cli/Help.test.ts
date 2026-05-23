@@ -38,7 +38,7 @@ const runCommand = Effect.fnUntraced(
 )
 
 describe("Command help output", () => {
-  it.effect("root command help", () =>
+  it.effect("renders root command help", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["--help"])
 
@@ -96,7 +96,133 @@ describe("Command help output", () => {
       expect(shortLine!.indexOf("Short flag description")).toBe(longLine!.indexOf("Long flag description"))
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("command help renders examples", () =>
+  it.effect("hides flags marked with withHidden from help output", () =>
+    Effect.gen(function*() {
+      const command = Command.make("tool", {
+        visible: Flag.string("visible").pipe(Flag.withDescription("Visible flag")),
+        secret: Flag.string("experimental-foo").pipe(
+          Flag.withDescription("Should not appear"),
+          Flag.withHidden
+        )
+      })
+      const run = Command.runWith(command, { version: "1.0.0" })
+
+      yield* run(["--help"])
+
+      const helpText = (yield* TestConsole.logLines).join("\n")
+      expect(helpText).toContain("--visible")
+      expect(helpText).not.toContain("--experimental-foo")
+      expect(helpText).not.toContain("Should not appear")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("hidden flag still parses on the command line", () =>
+    Effect.gen(function*() {
+      let captured: string | undefined
+      const command = Command.make("tool", {
+        secret: Flag.string("experimental-foo").pipe(Flag.withHidden)
+      }, (config) =>
+        Effect.sync(() => {
+          captured = config.secret
+        }))
+      const run = Command.runWith(command, { version: "1.0.0" })
+
+      yield* run(["--experimental-foo", "value"])
+
+      expect(captured).toBe("value")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("hidden flag name does not leak through unrecognized-flag suggestions", () =>
+    Effect.gen(function*() {
+      const command = Command.make("tool", {
+        secret: Flag.string("experimental-foo").pipe(Flag.withHidden)
+      }, () => Effect.void)
+      const run = Command.runWith(command, { version: "1.0.0" })
+
+      yield* run(["--experimental-fo", "value"]).pipe(
+        Effect.catchTag("ShowHelp", () => Effect.void)
+      )
+
+      const errorText = (yield* TestConsole.errorLines).join("\n")
+      const helpText = (yield* TestConsole.logLines).join("\n")
+      expect(errorText + helpText).not.toContain("experimental-foo")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("hides subcommands marked with withHidden from help output", () =>
+    Effect.gen(function*() {
+      const visible = Command.make("visible").pipe(
+        Command.withDescription("A visible subcommand")
+      )
+      const secret = Command.make("experimental-foo").pipe(
+        Command.withDescription("Should not appear"),
+        Command.withHidden
+      )
+      const root = Command.make("tool").pipe(
+        Command.withSubcommands([visible, secret])
+      )
+      const run = Command.runWith(root, { version: "1.0.0" })
+
+      yield* run(["--help"])
+
+      const helpText = (yield* TestConsole.logLines).join("\n")
+      expect(helpText).toContain("visible")
+      expect(helpText).not.toContain("experimental-foo")
+      expect(helpText).not.toContain("Should not appear")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("hidden subcommand still parses on the command line", () =>
+    Effect.gen(function*() {
+      let invoked = false
+      const secret = Command.make("experimental-foo").pipe(
+        Command.withHidden,
+        Command.withHandler(() =>
+          Effect.sync(() => {
+            invoked = true
+          })
+        )
+      )
+      const root = Command.make("tool").pipe(
+        Command.withSubcommands([secret])
+      )
+      const run = Command.runWith(root, { version: "1.0.0" })
+
+      yield* run(["experimental-foo"])
+
+      expect(invoked).toBe(true)
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("hidden subcommand name does not leak through unknown-subcommand suggestions", () =>
+    Effect.gen(function*() {
+      const secret = Command.make("experimental-foo").pipe(Command.withHidden)
+      const root = Command.make("tool").pipe(
+        Command.withSubcommands([secret])
+      )
+      const run = Command.runWith(root, { version: "1.0.0" })
+
+      yield* run(["experimental-fo"]).pipe(
+        Effect.catchTag("ShowHelp", () => Effect.void)
+      )
+
+      const errorText = (yield* TestConsole.errorLines).join("\n")
+      const helpText = (yield* TestConsole.logLines).join("\n")
+      expect(errorText + helpText).not.toContain("experimental-foo")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("subcommand group with only hidden commands disappears entirely", () =>
+    Effect.gen(function*() {
+      const secret = Command.make("experimental-foo").pipe(Command.withHidden)
+      const root = Command.make("tool").pipe(
+        Command.withSubcommands([secret])
+      )
+      const run = Command.runWith(root, { version: "1.0.0" })
+
+      yield* run(["--help"])
+
+      const helpText = (yield* TestConsole.logLines).join("\n")
+      expect(helpText).not.toContain("SUBCOMMANDS")
+      expect(helpText).not.toContain("<subcommand>")
+    }).pipe(Effect.provide(TestLayer)))
+
+  it.effect("renders command examples", () =>
     Effect.gen(function*() {
       const command = Command.make("login").pipe(
         Command.withDescription("Authenticate with Supabase"),
@@ -141,7 +267,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("file operation command with positional args", () =>
+  it.effect("renders file command positional arguments", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["copy", "--help"])
 
@@ -172,7 +298,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("variadic arguments command", () =>
+  it.effect("renders variadic arguments", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["remove", "--help"])
 
@@ -202,7 +328,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("deeply nested subcommand", () =>
+  it.effect("renders deeply nested subcommand help", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["admin", "users", "list", "--help"])
 
@@ -230,7 +356,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("command with mixed positional args", () =>
+  it.effect("renders mixed required and optional positional arguments", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["admin", "users", "create", "--help"])
 
@@ -261,7 +387,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("intermediate subcommand with options", () =>
+  it.effect("renders intermediate subcommand shared flags and children", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["admin", "config", "--help"])
 
@@ -291,7 +417,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("variadic with minimum count", () =>
+  it.effect("renders variadic arguments with a minimum count", () =>
     Effect.gen(function*() {
       const helpText = yield* runCommand(["admin", "config", "set", "--help"])
 
@@ -351,7 +477,7 @@ describe("Command help output", () => {
       expect(chatHelp.some((line) => String(line).includes("--topic"))).toBe(true)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("grouped subcommands", () =>
+  it.effect("renders grouped subcommands", () =>
     Effect.gen(function*() {
       const ungrouped = Command.make("ungrouped").pipe(
         Command.withDescription("This command is not in a group")
@@ -415,7 +541,7 @@ describe("Command help output", () => {
       `)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("subcommand aliases in listings", () =>
+  it.effect("renders subcommand aliases in listings", () =>
     Effect.gen(function*() {
       const plan = Command.make("plan").pipe(
         Command.withAlias("p"),

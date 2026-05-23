@@ -1,4 +1,47 @@
 /**
+ * The `RequestResolver` module provides the data-loading side of
+ * `Effect.request`. A `Request` describes what a fiber needs, while a
+ * `RequestResolver` describes how to collect, batch, execute, cache, trace,
+ * and complete those requests.
+ *
+ * **Mental model**
+ *
+ * - A resolver receives one or more `Request.Entry` values and must complete
+ *   each entry with either a success or failure
+ * - Concurrent requests made with the same resolver can be gathered into a
+ *   batch before the resolver is run
+ * - Batch keys split pending requests into independent groups, which is useful
+ *   when different backends, tenants, or query shapes must be resolved
+ *   separately
+ * - Delays and `batchN` tune how long requests are collected and how large
+ *   each batch may become
+ * - Resolvers can be wrapped with tracing, in-memory caching, cache services,
+ *   and persistence without changing the request type
+ *
+ * **Common tasks**
+ *
+ * - Create a resolver from batch logic: {@link make}
+ * - Create grouped batch logic: {@link makeGrouped} or {@link grouped}
+ * - Create a resolver from pure logic: {@link fromFunction} or
+ *   {@link fromFunctionBatched}
+ * - Create a resolver from effectful logic: {@link fromEffect} or
+ *   {@link fromEffectTagged}
+ * - Control batching: {@link setDelay}, {@link setDelayEffect},
+ *   {@link batchN}
+ * - Add operational behavior: {@link around}, {@link race}, {@link withSpan}
+ * - Reuse results: {@link withCache}, {@link asCache}, {@link persisted}
+ *
+ * **Gotchas**
+ *
+ * - Every entry passed to a resolver must be completed; leaving an entry
+ *   incomplete causes the waiting request to fail
+ * - Batched result collections must line up with the input entries in order
+ *   and length when using the batched helper constructors
+ * - Grouping controls which requests share a resolver run; choose stable keys
+ *   for requests that can safely be handled together
+ * - Caching and persistence depend on request identity and the request's
+ *   equality semantics, so model request values deliberately when cached
+ *
  * @since 2.0.0
  */
 import type { NonEmptyArray } from "./Array.ts"
@@ -27,29 +70,26 @@ import * as Persistence from "./unstable/persistence/Persistence.ts"
 const TypeId = "~effect/RequestResolver"
 
 /**
- * The `RequestResolver<A, R>` interface requires an environment `R` and handles
- * the execution of requests of type `A`.
+ * A resolver that executes and completes batched `Request` entries.
  *
- * Implementations must provide a `runAll` method, which processes a collection
- * of requests and produces an effect that fulfills these requests. Requests are
- * organized into a `Array<Array<A>>`, where the outer `Array` groups requests
- * into batches that are executed sequentially, and each inner `Array` contains
- * requests that can be executed in parallel. This structure allows
- * implementations to analyze all incoming requests collectively and optimize
- * query execution accordingly.
+ * **Details**
  *
- * Implementations are typically specialized for a subtype of `Request<A, E>`.
- * However, they are not strictly limited to these subtypes as long as they can
- * map any given request type to `Request<A, E>`. Implementations should inspect
- * the collection of requests to identify the needed information and execute the
- * corresponding queries. It is imperative that implementations resolve all the
- * requests they receive. Failing to do so will lead to a `QueryFailure` error
- * during query execution.
+ * A resolver controls how requests are grouped, delayed, optionally
+ * pre-checked, and finally run. Its `runAll` method receives a non-empty batch
+ * of `Request.Entry` values for a single batch key and must complete every
+ * received entry, usually by calling `completeUnsafe` or one of the `Request`
+ * completion helpers.
  *
- * @example
+ * **Gotchas**
+ *
+ * If a resolver finishes without completing an entry, the waiting request fails
+ * because the resolver did not supply a result.
+ *
+ * **Example** (Defining a request resolver)
+ *
  * ```ts
- * import type { Request } from "effect"
  * import { Effect, Exit, RequestResolver } from "effect"
+ * import type { Request } from "effect"
  *
  * interface GetUserRequest extends Request.Request<string, Error> {
  *   readonly _tag: "GetUserRequest"
@@ -66,8 +106,8 @@ const TypeId = "~effect/RequestResolver"
  * )
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface RequestResolver<in A extends Request.Any> extends RequestResolver.Variance<A>, Pipeable {
   readonly delay: Effect.Effect<void>
@@ -97,13 +137,21 @@ export interface RequestResolver<in A extends Request.Any> extends RequestResolv
 }
 
 /**
+ * Namespace containing type-level helpers associated with `RequestResolver`.
+ *
  * @since 2.0.0
- * @category models
  */
 export declare namespace RequestResolver {
   /**
-   * @since 2.0.0
+   * Variance marker carried by every `RequestResolver`.
+   *
+   * **Details**
+   *
+   * This marker preserves the request type accepted by the resolver for
+   * Effect's type-level machinery. Users normally do not implement it directly.
+   *
    * @category models
+   * @since 2.0.0
    */
   export interface Variance<in A> {
     readonly [TypeId]: {
@@ -125,8 +173,8 @@ const RequestResolverProto = {
 /**
  * Returns `true` if the specified value is a `RequestResolver`, `false` otherwise.
  *
- * @since 2.0.0
  * @category guards
+ * @since 2.0.0
  */
 export const isRequestResolver = (u: unknown): u is RequestResolver<any> => hasProperty(u, TypeId)
 
@@ -134,8 +182,8 @@ export const isRequestResolver = (u: unknown): u is RequestResolver<any> => hasP
  * Low-level constructor for creating a request resolver with fine-grained
  * control over its behavior.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const makeWith = <A extends Request.Any>(options: {
   readonly batchKey: (request: Request.Entry<A>) => unknown
@@ -159,7 +207,8 @@ const defaultKey = (_request: unknown): unknown => defaultKeyObject
 /**
  * Constructs a request resolver with the specified method to run requests.
  *
- * @example
+ * **Example** (Creating a request resolver)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -184,8 +233,8 @@ const defaultKey = (_request: unknown): unknown => defaultKeyObject
  * const getUserEffect = Effect.request(GetUserRequest({ id: 123 }), UserResolver)
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const make = <A extends Request.Any>(
   runAll: (entries: NonEmptyArray<Request.Entry<A>>, key: unknown) => Effect.Effect<void, Request.Error<A>>
@@ -200,9 +249,12 @@ export const make = <A extends Request.Any>(
 /**
  * Constructs a request resolver with the requests grouped by a calculated key.
  *
+ * **Details**
+ *
  * The key can use the Equal trait to determine if two keys are equal.
  *
- * @example
+ * **Example** (Grouping requests by key)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -228,8 +280,8 @@ export const make = <A extends Request.Any>(
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const makeGrouped = <A extends Request.Any, K>(options: {
   readonly key: (entry: Request.Entry<A>) => K
@@ -258,7 +310,8 @@ const hashGroupKey = <A, K>(get: (entry: Request.Entry<A>) => K) => {
 /**
  * Constructs a request resolver from a pure function.
  *
- * @example
+ * **Example** (Creating a resolver from a pure function)
+ *
  * ```ts
  * import { Effect, Request, RequestResolver } from "effect"
  *
@@ -281,8 +334,8 @@ const hashGroupKey = <A, K>(get: (entry: Request.Entry<A>) => K) => {
  * // Will resolve to 25
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const fromFunction = <A extends Request.Any>(
   f: (entry: Request.Entry<A>) => Request.Success<A>
@@ -302,7 +355,8 @@ export const fromFunction = <A extends Request.Any>(
  * and returns a list of results of the same size. Each item in the result
  * list must correspond to the item at the same index in the request list.
  *
- * @example
+ * **Example** (Batching pure request handling)
+ *
  * ```ts
  * import { Effect, Request, RequestResolver } from "effect"
  *
@@ -324,8 +378,8 @@ export const fromFunction = <A extends Request.Any>(
  * const batchedEffect = Effect.all(effects) // [2, 4, 6]
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const fromFunctionBatched = <A extends Request.Any>(
   f: (entries: NonEmptyArray<Request.Entry<A>>) => Iterable<Request.Success<A>>
@@ -344,7 +398,8 @@ export const fromFunctionBatched = <A extends Request.Any>(
 /**
  * Constructs a request resolver from an effectual function.
  *
- * @example
+ * **Example** (Creating a resolver from an effectful function)
+ *
  * ```ts
  * import { Effect, Request, RequestResolver } from "effect"
  *
@@ -374,8 +429,8 @@ export const fromFunctionBatched = <A extends Request.Any>(
  * )
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const fromEffect = <A extends Request.Any>(
   f: (entry: Request.Entry<A>) => Effect.Effect<Request.Success<A>, Request.Error<A>>
@@ -406,10 +461,11 @@ export const fromEffect = <A extends Request.Any>(
  * in the result list must correspond to the item at the same index in the
  * request list.
  *
- * @example
+ * **Example** (Handling tagged request batches)
+ *
  * ```ts
- * import type { Request } from "effect"
  * import { Effect, RequestResolver } from "effect"
+ * import type { Request } from "effect"
  *
  * interface GetUser extends Request.Request<string, Error> {
  *   readonly _tag: "GetUser"
@@ -432,8 +488,8 @@ export const fromEffect = <A extends Request.Any>(
  * })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const fromEffectTagged = <A extends Request.Any & { readonly _tag: string }>() =>
 <
@@ -483,7 +539,8 @@ export const fromEffectTagged = <A extends Request.Any & { readonly _tag: string
 /**
  * Sets the batch delay effect for this request resolver.
  *
- * @example
+ * **Example** (Setting an effectful batch delay)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -510,8 +567,8 @@ export const fromEffectTagged = <A extends Request.Any & { readonly _tag: string
  * )
  * ```
  *
- * @since 4.0.0
  * @category delay
+ * @since 4.0.0
  */
 export const setDelayEffect: {
   (delay: Effect.Effect<void>): <A extends Request.Any>(self: RequestResolver<A>) => RequestResolver<A>
@@ -528,7 +585,8 @@ export const setDelayEffect: {
 /**
  * Sets the batch delay window for this request resolver to the specified duration.
  *
- * @example
+ * **Example** (Setting a batch delay)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -552,8 +610,8 @@ export const setDelayEffect: {
  * const delayedResolver2 = RequestResolver.setDelay(resolver, 100)
  * ```
  *
- * @since 4.0.0
  * @category delay
+ * @since 4.0.0
  */
 export const setDelay: {
   (duration: Duration.Input): <A extends Request.Any>(self: RequestResolver<A>) => RequestResolver<A>
@@ -571,7 +629,8 @@ export const setDelay: {
  * A request resolver aspect that executes requests between two effects, `before`
  * and `after`, where the result of `before` can be used by `after`.
  *
- * @example
+ * **Example** (Running effects around request resolution)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -594,18 +653,19 @@ export const setDelay: {
  *   (entries) =>
  *     Effect.gen(function*() {
  *       yield* Effect.log(`Starting batch of ${entries.length} requests`)
- *       return Date.now()
+ *       return entries.length
  *     }),
- *   (entries, startTime) =>
+ *   (entries, initialSize) =>
  *     Effect.gen(function*() {
- *       const duration = Date.now() - startTime
- *       yield* Effect.log(`Batch completed in ${duration}ms`)
+ *       yield* Effect.log(
+ *         `Batch completed with ${entries.length} requests (started with ${initialSize})`
+ *       )
  *     })
  * )
  * ```
  *
- * @since 2.0.0
  * @category combinators
+ * @since 2.0.0
  */
 export const around: {
   <A extends Request.Any, A2, X>(
@@ -635,15 +695,23 @@ export const around: {
 /**
  * A request resolver that never executes requests.
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const never: RequestResolver<never> = make(() => Effect.never)
 
 /**
- * Returns a request resolver that executes at most `n` requests in parallel.
+ * Returns a request resolver that collects at most `n` requests into each
+ * batch.
  *
- * @example
+ * **Details**
+ *
+ * When more than `n` requests are waiting for the same resolver and batch key,
+ * the current batch is run and additional requests are collected into later
+ * batches.
+ *
+ * **Example** (Limiting parallel request batches)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -672,8 +740,8 @@ export const never: RequestResolver<never> = make(() => Effect.never)
  * )
  * ```
  *
- * @since 2.0.0
  * @category combinators
+ * @since 2.0.0
  */
 export const batchN: {
   (n: number): <A extends Request.Any>(self: RequestResolver<A>) => RequestResolver<A>
@@ -688,7 +756,8 @@ export const batchN: {
  * Transform a request resolver by grouping requests using the specified key
  * function.
  *
- * @example
+ * **Example** (Grouping resolver requests)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -731,8 +800,8 @@ export const batchN: {
  * ]
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const grouped: {
   <A extends Request.Any, K>(f: (entry: Request.Entry<A>) => K): (self: RequestResolver<A>) => RequestResolver<A>
@@ -747,13 +816,16 @@ export const grouped: {
 )
 
 /**
- * Returns a new request resolver that executes requests by sending them to this
- * request resolver and that request resolver, returning the results from the first data
- * source to complete and safely interrupting the loser.
+ * Returns a request resolver that sends each batch to both resolvers and
+ * completes with the first resolver to finish.
  *
- * The batch delay is determined by the first request resolver.
+ * **Details**
  *
- * @example
+ * The losing resolver run is interrupted after the winning resolver completes
+ * the batch.
+ *
+ * **Example** (Racing request resolvers)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -787,8 +859,8 @@ export const grouped: {
  * const racingResolver = RequestResolver.race(fastResolver, slowResolver)
  * ```
  *
- * @since 2.0.0
  * @category combinators
+ * @since 2.0.0
  */
 export const race: {
   <A2 extends Request.Any>(
@@ -810,7 +882,8 @@ export const race: {
  * Add a tracing span to the request resolver, which will also add any span
  * links from the request's.
  *
- * @example
+ * **Example** (Adding a tracing span)
+ *
  * ```ts
  * import { Effect, Exit, Request, RequestResolver } from "effect"
  *
@@ -844,8 +917,8 @@ export const race: {
  * const effect = Effect.request(GetDataRequest({ id: 123 }), tracedResolver)
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withSpan: {
   <A extends Request.Any>(
@@ -890,8 +963,8 @@ export const withSpan: {
  * Wraps a request resolver in a cache, allowing it to cache results up to a
  * specified capacity and optional time-to-live.
  *
- * @since 4.0.0
  * @category Caching
+ * @since 4.0.0
  */
 export const asCache: {
   <
@@ -955,8 +1028,8 @@ export const asCache: {
  * Adds caching capabilities to a request resolver, allowing it to cache
  * results up to a specified capacity.
  *
- * @since 4.0.0
  * @category Caching
+ * @since 4.0.0
  */
 export const withCache: {
   <A extends Request.Any>(options: {
@@ -1024,8 +1097,17 @@ export const withCache: {
   }))
 
 /**
- * @since 4.0.0
+ * Wraps a request resolver with persistent storage for persistable requests.
+ *
+ * **Details**
+ *
+ * Cached results are loaded from the configured persistence store before
+ * running the underlying resolver. Missing entries, and entries marked stale by
+ * `staleWhileRevalidate`, are resolved normally and written back to the store.
+ * Creating the persisted resolver requires `Persistence.Persistence` and `Scope`.
+ *
  * @category Persistence
+ * @since 4.0.0
  */
 export const persisted: {
   <A extends Request.Request<any, Persistence.PersistenceError | Schema.SchemaError, any> & Persistable.Any>(

@@ -1,4 +1,20 @@
 /**
+ * The `RcRef` module provides reference-counted access to a shared resource
+ * whose lifecycle is managed by `Scope`. An `RcRef<A, E>` lazily acquires its
+ * resource the first time it is requested, shares that resource across active
+ * users, and releases it when the final scope holding a reference closes.
+ *
+ * Use `RcRef` when several scoped operations should reuse the same expensive
+ * or stateful resource, such as a connection, client, cache, or worker, without
+ * making each operation acquire and release its own copy. `make` defines how
+ * the resource is acquired, `get` borrows the current resource for the active
+ * scope, and `invalidate` forces a future `get` to acquire a fresh resource.
+ *
+ * The resource is tied to scopes rather than ordinary object reachability:
+ * every `get` must run with a `Scope`, and the reference count is decremented
+ * when that scope closes. If `idleTimeToLive` is configured, a resource whose
+ * reference count reaches zero can remain cached briefly before release.
+ *
  * @since 3.5.0
  */
 import type * as Duration from "./Duration.ts"
@@ -13,13 +29,14 @@ const TypeId = "~effect/RcRef"
 /**
  * A reference counted reference that manages resource lifecycle.
  *
+ * **Details**
+ *
  * An RcRef wraps a resource that can be acquired and released multiple times.
  * The resource is lazily acquired on the first call to `get` and automatically
  * released when the last reference is released.
  *
- * @since 3.5.0
- * @category models
- * @example
+ * **Example** (Sharing a lazily acquired resource)
+ *
  * ```ts
  * import { Effect, RcRef } from "effect"
  *
@@ -43,15 +60,19 @@ const TypeId = "~effect/RcRef"
  *   return [connection1, connection2]
  * })
  * ```
+ *
+ * @category models
+ * @since 3.5.0
  */
 export interface RcRef<out A, out E = never> extends Pipeable {
   readonly [TypeId]: RcRef.Variance<A, E>
 }
 
 /**
- * @since 3.5.0
- * @category models
- * @example
+ * Namespace containing type-level members associated with `RcRef`.
+ *
+ * **Example** (Referencing namespace types)
+ *
  * ```ts
  * import type { RcRef } from "effect"
  *
@@ -59,21 +80,21 @@ export interface RcRef<out A, out E = never> extends Pipeable {
  * type MyRcRef = RcRef.RcRef<string, Error>
  * type MyVariance = RcRef.RcRef.Variance<string, Error>
  * ```
+ *
+ * @since 3.5.0
  */
 export declare namespace RcRef {
   /**
-   * @since 3.5.0
+   * Type-level variance marker for `RcRef`.
+   *
+   * **Details**
+   *
+   * This interface records the covariant value and error types carried by an
+   * `RcRef`. It is used by Effect's type machinery and is not normally
+   * referenced directly by users.
+   *
    * @category models
-   * @example
-   * ```ts
-   * import type { RcRef } from "effect"
-   *
-   * // Variance interface defines covariance for type parameters
-   * type StringRcRefVariance = RcRef.RcRef.Variance<string, Error>
-   *
-   * // Shows that both A and E are covariant
-   * declare const variance: StringRcRefVariance
-   * ```
+   * @since 3.5.0
    */
   export interface Variance<A, E> {
     readonly _A: Types.Covariant<A>
@@ -82,17 +103,18 @@ export declare namespace RcRef {
 }
 
 /**
- * Create an `RcRef` from an acquire `Effect`.
+ * Creates an `RcRef` from an acquire effect.
  *
- * An RcRef wraps a reference counted resource that can be acquired and released
- * multiple times.
+ * **Details**
  *
- * The resource is lazily acquired on the first call to `get` and released when
- * the last reference is released.
+ * The resource is acquired lazily on the first `get` and shared by subsequent
+ * gets while it remains cached. Each `get` adds a reference to the current
+ * `Scope`. When the last reference is released, the resource is closed
+ * immediately by default, or after `idleTimeToLive` when that option is
+ * provided.
  *
- * @since 3.5.0
- * @category constructors
- * @example
+ * **Example** (Creating a reference-counted resource)
+ *
  * ```ts
  * import { Effect, RcRef } from "effect"
  *
@@ -112,6 +134,9 @@ export declare namespace RcRef {
  *   )
  * })
  * ```
+ *
+ * @category constructors
+ * @since 3.5.0
  */
 export const make: <A, E, R>(
   options: {
@@ -125,15 +150,17 @@ export const make: <A, E, R>(
 ) => Effect.Effect<RcRef<A, E>, never, R | Scope> = internal.make
 
 /**
- * Get the value from an RcRef.
+ * Gets the value from an `RcRef`, acquiring it first if needed.
  *
- * This will acquire the resource if it hasn't been acquired yet, or increment
- * the reference count if it has. The resource will be automatically released
- * when the returned scope is closed.
+ * **Details**
  *
- * @since 3.5.0
- * @category combinators
- * @example
+ * The reference count is incremented for the current `Scope`, and a release
+ * finalizer is added to that scope. When the current scope closes, the
+ * reference is released; the resource is closed when the final reference is
+ * released, subject to any configured idle time-to-live.
+ *
+ * **Example** (Sharing one acquired value)
+ *
  * ```ts
  * import { Effect, RcRef } from "effect"
  *
@@ -156,11 +183,22 @@ export const make: <A, E, R>(
  *   return value1
  * })
  * ```
+ *
+ * @category combinators
+ * @since 3.5.0
  */
 export const get: <A, E>(self: RcRef<A, E>) => Effect.Effect<A, E, Scope> = internal.get
 
 /**
- * @since 3.19.6
+ * Invalidates the currently cached resource, if one has been acquired.
+ *
+ * **Details**
+ *
+ * After invalidation, the next `get` acquires a fresh resource. If the current
+ * resource is still referenced by active scopes, it remains usable until those
+ * scopes close; otherwise it is closed immediately.
+ *
  * @category combinators
+ * @since 3.19.6
  */
 export const invalidate: <A, E>(self: RcRef<A, E>) => Effect.Effect<void> = internal.invalidate

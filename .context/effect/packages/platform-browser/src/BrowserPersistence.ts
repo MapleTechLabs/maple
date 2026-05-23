@@ -1,5 +1,17 @@
 /**
- * @since 1.0.0
+ * Browser-backed persistence layers for Effect's persistence service.
+ *
+ * This module provides IndexedDB implementations of the Effect persistence services for applications that need a
+ * durable client-side cache, such as remembered query results, offline-capable workflows, or values that should survive
+ * page reloads. Entries are stored by persistence store id and key in a shared IndexedDB object store, with optional
+ * expiration timestamps for TTL-based invalidation.
+ *
+ * Because this storage depends on browser IndexedDB, operations can fail when storage is unavailable, quota is exceeded,
+ * data is cleared by the user or browser, or the payload cannot be structured-cloned by IndexedDB. Expired entries are
+ * removed lazily when they are read, so this module is best suited for application-managed cached objects rather than
+ * security-sensitive or authoritative data.
+ *
+ * @since 4.0.0
  */
 import type * as Arr from "effect/Array"
 import * as Clock from "effect/Clock"
@@ -9,8 +21,10 @@ import * as Layer from "effect/Layer"
 import * as Persistence from "effect/unstable/persistence/Persistence"
 
 /**
- * @since 1.0.0
+ * Creates a `BackingPersistence` layer backed by IndexedDB, optionally using the provided database name.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerBackingIndexedDb = (options?: {
   readonly database?: string | undefined
@@ -42,8 +56,10 @@ const entriesStoreName = "entries"
 const storeIdIndexName = "storeId"
 
 /**
- * @since 1.0.0
+ * Creates a `Persistence` layer backed by IndexedDB, optionally using the provided database name.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerIndexedDb = (options?: {
   readonly database?: string | undefined
@@ -256,10 +272,7 @@ const withEntriesTransaction = <A>(
     let done = false
 
     const fail = (cause: unknown) => {
-      if (!done) {
-        done = true
-        tx.abort()
-      }
+      done = true
       resume(Effect.fail(new Persistence.PersistenceError({ message, cause })))
     }
 

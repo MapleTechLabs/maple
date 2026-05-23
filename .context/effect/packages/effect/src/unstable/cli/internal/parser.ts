@@ -227,7 +227,6 @@ const makeCursor = (tokens: ReadonlyArray<Token>): TokenCursor => {
 
 /**
  * Creates a registry for O(1) flag lookup by name or alias.
- * @throws Error if duplicate names or aliases are detected (developer error)
  * @internal
  */
 export const createFlagRegistry = (params: ReadonlyArray<FlagParam>): FlagRegistry => {
@@ -518,6 +517,9 @@ const createUnrecognizedFlagError = (
   const validNames: Array<string> = []
 
   for (const p of params) {
+    // Exclude hidden flags so a near-miss typo cannot reveal a flag name
+    // that was intentionally kept out of --help.
+    if (p.hidden) continue
     validNames.push(p.name)
     if (Primitive.isBoolean(p.primitiveType)) {
       validNames.push(`no-${p.name}`)
@@ -618,7 +620,14 @@ const resolveFirstValue = (
   // Not a subcommand. Check if this looks like a typo.
   const expectsArgs = toImpl(command).config.arguments.length > 0
   if (!expectsArgs && subIndex.size > 0) {
-    const suggestions = suggest(value, Array.from(subIndex.keys()))
+    // Exclude hidden subcommands so a typo cannot reveal a subcommand name
+    // that was intentionally kept out of --help. Hidden commands still
+    // resolve via subIndex when invoked by exact name.
+    const visibleKeys: Array<string> = []
+    for (const [key, sub] of subIndex) {
+      if (!sub.hidden) visibleKeys.push(key)
+    }
+    const suggestions = suggest(value, visibleKeys)
     state.errors.push(
       new CliError.UnknownSubcommand({
         subcommand: value,

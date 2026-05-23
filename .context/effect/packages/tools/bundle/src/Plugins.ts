@@ -1,5 +1,22 @@
 /**
- * @since 1.0.0
+ * Utilities for assembling the Rollup plugin pipeline used by the Effect
+ * bundle-size tooling.
+ *
+ * This module is responsible for the bundler-specific work that turns local
+ * fixture entrypoints into comparable ESM output: resolving Effect package
+ * imports against each package's built `dist` files, replacing production
+ * environment checks, lowering TypeScript with esbuild, minifying with terser,
+ * and optionally adding a bundle visualizer. It is primarily used by the
+ * Rollup service when measuring gzipped fixture sizes or opening a
+ * visualization for bundle inspection.
+ *
+ * Keep plugin ordering intentional when changing this module. Local package
+ * resolution must run before normal node resolution so workspace imports are
+ * measured from built artifacts, esbuild must emit ESM for Rollup to continue
+ * tree-shaking, and terser mangling is disabled while visualizing so reported
+ * module names stay readable.
+ *
+ * @since 4.0.0
  */
 import { nodeResolve } from "@rollup/plugin-node-resolve"
 import replace from "@rollup/plugin-replace"
@@ -15,8 +32,8 @@ const EFFECT_PACKAGE_REGEX = /^(@effect\/[\w-]+|effect)(\/.*)?$/
 /**
  * Options for configuring Rollup plugins.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface PluginOptions {
   readonly nodeTarget?: string | undefined
@@ -53,8 +70,8 @@ const resolvePluginOptions = (options: PluginOptions): ResolvedPluginOptions => 
  * Creates a custom Rollup plugin that resolves Effect package imports to their
  * local dist directories.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const createResolveLocalPackageImports = (pathService: Path.Path): Plugin => ({
   name: "rollup-plugin-resolve-imports",
@@ -77,8 +94,8 @@ export const createResolveLocalPackageImports = (pathService: Path.Path): Plugin
 /**
  * Creates the full Rollup plugin pipeline for bundling.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const createPlugins = (pathService: Path.Path, options: PluginOptions = {}): Array<Plugin> => {
   const resolved = resolvePluginOptions(options)

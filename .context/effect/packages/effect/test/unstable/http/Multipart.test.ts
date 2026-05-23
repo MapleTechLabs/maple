@@ -4,7 +4,7 @@ import { Multipart } from "effect/unstable/http"
 import { deepStrictEqual } from "node:assert"
 
 describe("Multipart", () => {
-  it.effect("it parses", () =>
+  it.effect("parses fields and streams file content", () =>
     Effect.gen(function*() {
       const data = new globalThis.FormData()
       data.append("foo", "bar")

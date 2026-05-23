@@ -1,4 +1,24 @@
 /**
+ * The `Activity` module defines named, schema-backed effects that run at the
+ * side-effect boundary of a durable workflow. Activities are executed through a
+ * `WorkflowEngine`, encode their success and failure values with the provided
+ * schemas, and can be replayed from persisted results instead of rerunning the
+ * underlying effect.
+ *
+ * Use activities for work that should not be embedded directly in workflow
+ * control flow, such as calling external services, writing to databases,
+ * enqueueing durable jobs, short sleeps delegated by `DurableClock`, or racing
+ * multiple external operations with `raceAll`. Keep activity names and schemas
+ * stable because engines use them, together with the workflow execution and
+ * retry attempt, to identify stored results.
+ *
+ * Activities can be interrupted and retried, and workflow resumes may observe a
+ * completed encoded result or run the activity again depending on what the
+ * engine has persisted. Make external side effects idempotent, use
+ * `idempotencyKey` for stable request keys derived from the workflow execution,
+ * and include the current attempt only when each retry must address a distinct
+ * external operation.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "../../Array.ts"
@@ -19,8 +39,12 @@ import type { WorkflowEngine, WorkflowInstance } from "./WorkflowEngine.ts"
 const TypeId = "~effect/workflow/Activity"
 
 /**
+ * Durable workflow activity that behaves as an `Effect` and records its name,
+ * result schemas, annotations, and encoded execution form for the workflow
+ * engine.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface Activity<
   Success extends Schema.Top = Schema.Void,
@@ -73,8 +97,11 @@ export interface Activity<
 }
 
 /**
+ * Type-erased activity shape for APIs that only need the activity identity,
+ * name, annotations, and encoded execution.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface Any {
   readonly [TypeId]: typeof TypeId
@@ -84,8 +111,11 @@ export interface Any {
 }
 
 /**
+ * Type-erased activity shape that also exposes success and error schemas for
+ * derived workflow APIs.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface AnyWithProps {
   readonly [TypeId]: typeof TypeId
@@ -96,8 +126,11 @@ export interface AnyWithProps {
 }
 
 /**
+ * Creates a workflow activity from an effect, using the provided schemas to
+ * encode successes and failures for durable execution.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make = <
   R,
@@ -178,8 +211,11 @@ const retryOnInterrupt = (
   )
 
 /**
+ * Retries an effect with `Effect.retry` while updating `CurrentAttempt` for
+ * each attempt.
+ *
+ * @category error handling
  * @since 4.0.0
- * @category Error handling
  */
 export const retry: {
   <E, O extends Types.NoExcessProperties<Omit<Effect.Retry.Options<E>, "schedule">, O>>(
@@ -199,8 +235,11 @@ export const retry: {
 )
 
 /**
- * @since 4.0.0
+ * Context reference containing the current activity retry attempt, defaulting
+ * to `1`.
+ *
  * @category Attempts
+ * @since 4.0.0
  */
 export const CurrentAttempt = Context.Reference<number>(
   "effect/workflow/Activity/CurrentAttempt",
@@ -208,8 +247,11 @@ export const CurrentAttempt = Context.Reference<number>(
 )
 
 /**
- * @since 4.0.0
+ * Computes a deterministic activity idempotency key from the current workflow
+ * execution ID, the supplied name, and optionally the current attempt.
+ *
  * @category Idempotency
+ * @since 4.0.0
  */
 export const idempotencyKey: (
   name: string,
@@ -230,8 +272,11 @@ export const idempotencyKey: (
 })
 
 /**
- * @since 4.0.0
+ * Runs a non-empty collection of activities as a durable race and returns the
+ * first completed success or failure using unioned success and error schemas.
+ *
  * @category Racing
+ * @since 4.0.0
  */
 export const raceAll = <const Activities extends NonEmptyReadonlyArray<Any>>(
   name: string,
@@ -253,7 +298,7 @@ export const raceAll = <const Activities extends NonEmptyReadonlyArray<Any>>(
     error: Schema.Union(
       activities.map((activity) => (activity as any).errorSchema)
     ),
-    effects: activities.map((activity) => (activity as any).asEffect()) as any
+    effects: activities.map((activity) => (activity as any)) as any
   }) as any
 
 // -----------------------------------------------------------------------------

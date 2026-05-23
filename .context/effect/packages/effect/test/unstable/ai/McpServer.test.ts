@@ -41,7 +41,7 @@ const makeTestClient = Effect.gen(function*() {
     Effect.provide(clientLayer)
   )
 
-  const httpClient = yield* HttpClient.HttpClient.asEffect().pipe(
+  const httpClient = yield* HttpClient.HttpClient.pipe(
     Effect.provide(clientLayer)
   )
 
@@ -68,7 +68,7 @@ describe("McpServer", () => {
       strictEqual(responses[0].headers.get("Mcp-Protocol-Version"), "2025-06-18")
     }))
 
-  it.effect("no session id is 404", () =>
+  it.effect("returns 404 when a non-initialize request omits the MCP session id", () =>
     Effect.gen(function*() {
       const { httpClient } = yield* makeTestClient
 

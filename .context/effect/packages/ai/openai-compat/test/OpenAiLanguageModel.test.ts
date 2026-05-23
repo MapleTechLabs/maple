@@ -1027,6 +1027,40 @@ describe("OpenAiLanguageModel", () => {
         assert.isTrue(capturedRequest.url.endsWith("/chat/completions"))
       }))
   })
+
+  describe("config", () => {
+    it.effect("does not leak library-only fields into request body", () =>
+      Effect.gen(function*() {
+        let capturedRequest: HttpClientRequest.HttpClientRequest | undefined
+
+        const layer = OpenAiClient.layer({ apiKey: Redacted.make("sk-test-key") }).pipe(
+          Layer.provide(Layer.succeed(
+            HttpClient.HttpClient,
+            makeHttpClient((request) => {
+              capturedRequest = request
+              return Effect.succeed(jsonResponse(request, makeChatCompletion()))
+            })
+          ))
+        )
+
+        yield* LanguageModel.generateText({ prompt: "test" }).pipe(
+          Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini", {
+            fileIdPrefixes: ["file-"],
+            strictJsonSchema: false,
+            temperature: 0.5
+          })),
+          Effect.provide(layer)
+        )
+
+        assert.isDefined(capturedRequest)
+        if (capturedRequest === undefined) return
+
+        const requestBody = yield* getRequestBody(capturedRequest)
+        assert.strictEqual(requestBody.fileIdPrefixes, undefined)
+        assert.strictEqual(requestBody.strictJsonSchema, undefined)
+        assert.strictEqual(requestBody.temperature, 0.5)
+      }))
+  })
 })
 
 const TestTool = Tool.make("TestTool", {

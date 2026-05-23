@@ -4,7 +4,7 @@ import * as HashMap from "effect/HashMap"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
 
-describe("Equal - Structural Equality Behavior", () => {
+describe("Equal.equals", () => {
   describe("plain objects", () => {
     it("should return true for structurally identical objects (structural equality)", () => {
       const obj1 = { a: 1, b: 2 }

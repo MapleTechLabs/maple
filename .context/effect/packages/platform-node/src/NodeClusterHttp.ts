@@ -1,5 +1,38 @@
 /**
- * @since 1.0.0
+ * The `NodeClusterHttp` module provides the Node.js HTTP and WebSocket
+ * transports for Effect Cluster runners. It wires `HttpRunner` to the Node HTTP
+ * server, supplies Undici and WebSocket client protocols, and builds a complete
+ * sharding layer with serialization, runner health, runner storage, and message
+ * storage.
+ *
+ * **Common tasks**
+ *
+ * - Run a Node process as a cluster runner over HTTP or WebSocket with
+ *   {@link layer}
+ * - Connect a client-only process to an existing HTTP cluster without starting
+ *   a runner server
+ * - Use SQL-backed storage for durable multi-process clusters, `local` storage
+ *   for short-lived development, or `byo` storage when the deployment owns the
+ *   persistence boundary
+ * - Check runner health with protocol pings or Kubernetes pod readiness through
+ *   {@link layerK8sHttpClient}
+ *
+ * **Gotchas**
+ *
+ * - `runnerAddress` is the host and port advertised to other runners; set
+ *   `runnerListenAddress` when the local bind address differs from the
+ *   externally reachable address
+ * - The HTTP and WebSocket transports serve runner RPCs at the default
+ *   `HttpRunner` route, so proxies and load balancers must preserve the path
+ *   and allow WebSocket upgrades when `transport` is `"websocket"`
+ * - `clientOnly` does not start an HTTP server or receive shard assignments
+ * - SQL storage is the default; `local` storage is in-memory/noop and `byo`
+ *   requires the surrounding application to provide both runner and message
+ *   storage services
+ * - Ping health checks use the selected transport and serialization, so route,
+ *   port, proxy, or codec mismatches can make a runner appear unhealthy
+ *
+ * @since 4.0.0
  */
 import type * as Config from "effect/Config"
 import * as Effect from "effect/Effect"
@@ -29,15 +62,21 @@ import * as NodeSocket from "./NodeSocket.ts"
 
 export {
   /**
-   * @since 1.0.0
-   * @category Re-exports
+   * Provides the Kubernetes HTTP client layer used by Kubernetes runner health checks.
+   *
+   * @category re-exports
+   * @since 4.0.0
    */
   layerK8sHttpClient
 } from "./NodeClusterSocket.ts"
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Builds the Node cluster HTTP/WebSocket sharding layer, configuring runner
+ * transport, RPC serialization, message storage, runner health checks, and
+ * optional client-only mode.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer = <
   const ClientOnly extends boolean = false,
@@ -117,8 +156,11 @@ export const layer = <
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides the HTTP server and Node HTTP services used by cluster runners,
+ * listening on `ShardingConfig.runnerListenAddress` or `runnerAddress`.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerHttpServer: Layer.Layer<
   | HttpPlatform

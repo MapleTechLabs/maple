@@ -413,7 +413,7 @@ describe("Option", () => {
     assertSome(Option.tap(Option.some(1), (n) => Option.some(n * 2)), 1)
   })
 
-  it("guard", () => {
+  it("filter keeps Do notation records only when the predicate passes", () => {
     assertSome(
       pipe(
         Option.Do,

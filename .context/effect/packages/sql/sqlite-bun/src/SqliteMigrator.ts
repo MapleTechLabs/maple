@@ -1,5 +1,25 @@
 /**
- * @since 1.0.0
+ * Utilities for applying Effect SQL migrations to Bun SQLite databases.
+ *
+ * This module re-exports the shared `Migrator` loaders and error types, then
+ * provides `run` and `layer` helpers for applying ordered migrations through
+ * the current Bun-backed SQLite `SqlClient`. It is typically used at
+ * application startup, in deployment or setup scripts that prepare a local
+ * SQLite file, in integration tests with temporary database files, or in layer
+ * graphs that must install the schema before dependent services are acquired.
+ *
+ * Migrations are recorded in `effect_sql_migrations` by default and are loaded
+ * using the shared `<id>_<name>` file or record-key convention. Only migrations
+ * with an id greater than the latest recorded id are applied, so every client
+ * involved in startup should point at the same SQLite filename and use a
+ * writable Bun SQLite configuration. The Bun client enables WAL by default and
+ * serializes access through a single `bun:sqlite` database handle, but separate
+ * handles or processes can still contend for SQLite write locks. Bun's SQLite
+ * driver runs statements synchronously, so large migration sets can block the
+ * invoking runtime thread, and this adapter does not currently write SQLite
+ * schema dumps for `schemaDirectory`.
+ *
+ * @since 4.0.0
  */
 import type * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -8,13 +28,15 @@ import type * as Client from "effect/unstable/sql/SqlClient"
 import type { SqlError } from "effect/unstable/sql/SqlError"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * from "effect/unstable/sql/Migrator"
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Runs SQL migrations using the configured `SqlClient`, returning the migrations that were applied.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const run: <R2 = never>(
   options: Migrator.MigratorOptions<R2>
@@ -67,8 +89,10 @@ export const run: <R2 = never>(
 })
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Creates a layer that runs the configured SQL migrations during layer construction.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const layer = <R>(
   options: Migrator.MigratorOptions<R>

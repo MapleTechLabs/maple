@@ -3,7 +3,7 @@ import { Effect, Layer } from "effect"
 import { Model } from "effect/unstable/ai"
 
 describe("Model", () => {
-  it.effect("provides provider and model names", () =>
+  it.effect("provides metadata alongside the wrapped layer for the duration of the scope", () =>
     Effect.gen(function*() {
       const providerName = yield* Model.ProviderName
       const modelName = yield* Model.ModelName

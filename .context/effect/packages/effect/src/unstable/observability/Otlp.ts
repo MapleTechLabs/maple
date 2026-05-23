@@ -1,4 +1,23 @@
 /**
+ * Convenience layers for exporting Effect logs, metrics, and traces over
+ * OTLP/HTTP.
+ *
+ * This module wires the signal-specific OTLP logger, metrics, and tracer
+ * exporters together so an application can install full observability with a
+ * single layer. It is useful for services that report to an OpenTelemetry
+ * Collector, vendor OTLP endpoint, or local collector during development
+ * without configuring each signal independently.
+ *
+ * Pass `baseUrl` as the OTLP/HTTP root URL, such as `http://localhost:4318`;
+ * this module appends `/v1/logs`, `/v1/metrics`, and `/v1/traces` itself.
+ * Use `layerJson` or `layerProtobuf` when you want the serialization layer
+ * provided for you, or use `layer` with a custom `OtlpSerialization`
+ * implementation. Configure authentication with `headers`, provide resource
+ * metadata explicitly or through the standard OTEL resource environment
+ * variables, and tune batch size, export intervals, metric temporality, and
+ * shutdown timeout for the target backend so buffered telemetry is accepted
+ * and flushed before shutdown.
+ *
  * @since 4.0.0
  */
 import type * as Duration from "../../Duration.ts"
@@ -15,8 +34,15 @@ import * as OtlpSerialization from "./OtlpSerialization.ts"
 import * as OtlpTracer from "./OtlpTracer.ts"
 
 /**
+ * Creates a combined OTLP layer for logs, metrics, and traces.
+ *
+ * **Details**
+ *
+ * The layer sends data to `/v1/logs`, `/v1/metrics`, and `/v1/traces` below
+ * `baseUrl` and requires an `OtlpSerialization` implementation.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer = (options: {
   readonly baseUrl: string
@@ -70,8 +96,11 @@ export const layer = (options: {
 }
 
 /**
+ * Creates the combined OTLP logs, metrics, and traces layer using JSON
+ * serialization.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerJson: (options: {
   readonly baseUrl: string
@@ -93,8 +122,11 @@ export const layerJson: (options: {
 }) => Layer.Layer<never, never, HttpClient.HttpClient> = flow(layer, Layer.provide(OtlpSerialization.layerJson))
 
 /**
+ * Creates the combined OTLP logs, metrics, and traces layer using protobuf
+ * serialization.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerProtobuf: (options: {
   readonly baseUrl: string

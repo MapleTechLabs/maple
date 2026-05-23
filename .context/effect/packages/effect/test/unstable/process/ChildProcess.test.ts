@@ -99,7 +99,7 @@ describe("ChildProcess", () => {
         assert.strictEqual(handle.pid, ChildProcessSpawner.ProcessId(12345))
       }).pipe(Effect.scoped, Effect.provide(MockExecutorLayer)))
 
-    it.effect("should allow streaming stdout", () =>
+    it.effect("collects stdout through Stream APIs", () =>
       Effect.gen(function*() {
         const cmd = ChildProcess.make("cat", ["file.txt"])
         const handle = yield* cmd
@@ -127,6 +127,7 @@ describe("ChildProcess", () => {
     it.effect("should allow restoring the reference within acquireRelease", () =>
       Effect.gen(function*() {
         const handle = yield* ChildProcess.make`echo test`
+        // @effect-diagnostics-next-line floatingEffect:off
         yield* Effect.acquireRelease(handle.unref, (reref) => Effect.ignore(reref))
       }).pipe(Effect.provide(MockExecutorLayer)))
   })

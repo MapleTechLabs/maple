@@ -12,7 +12,7 @@ import type * as RpcGroup from "effect/unstable/rpc/RpcGroup"
 import * as RpcTest from "effect/unstable/rpc/RpcTest"
 
 describe("EventLogRemote", () => {
-  it.effect("fromSocketUnencrypted authenticates before first write", () =>
+  it.effect("makeUnencrypted authenticates before writing plaintext entries", () =>
     Effect.gen(function*() {
       const harness = yield* makeHarness(EventLogRemote.makeUnencrypted)
       const identity = yield* EventLog.makeIdentity
@@ -39,7 +39,7 @@ describe("EventLogRemote", () => {
       yield* Fiber.join(writeFiber)
     }).pipe(Effect.provide(EventLogEncryption.layerSubtle)))
 
-  it.effect("fromSocket authenticates before encrypted write", () =>
+  it.effect("makeEncrypted authenticates before writing encrypted entries", () =>
     Effect.gen(function*() {
       const harness = yield* makeHarness(EventLogRemote.makeEncrypted)
       const identity = yield* EventLog.makeIdentity

@@ -22,7 +22,7 @@ function standardConvertToJSONSchemaOutput(
 }
 
 describe("toStandardJSONSchemaV1", () => {
-  it("should return a schema", () => {
+  it("should return a schema with Standard JSON Schema metadata", () => {
     const schema = Schema.FiniteFromString
     const standardSchema = Schema.toStandardJSONSchemaV1(schema)
     assertTrue(Schema.isSchema(standardSchema))

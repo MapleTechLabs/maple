@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import * as EventJournal from "effect/unstable/eventlog/EventJournal"
 
 describe("EventJournal", () => {
-  it.effect("records entries in memory", () =>
+  it.effect("records entries in memory and publishes local changes", () =>
     Effect.gen(function*() {
       const journal = yield* EventJournal.EventJournal
       let created = 0

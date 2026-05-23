@@ -24,6 +24,8 @@ jobs:
       - name: Download Artifact
         uses: actions/download-artifact@v8
         with:
+          name: bundle-stats
+          path: bundle-stats
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Get stats
@@ -31,7 +33,7 @@ jobs:
         run: |
           {
             echo 'stats<<EOF'
-            cat artifact/stats.txt
+            cat bundle-stats/stats.txt
             echo EOF
           } >> $GITHUB_OUTPUT
       # https://github.com/orgs/community/discussions/25220#discussioncomment-11300118

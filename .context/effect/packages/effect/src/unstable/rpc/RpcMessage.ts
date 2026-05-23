@@ -1,4 +1,21 @@
 /**
+ * Defines the protocol message envelopes shared by unstable RPC clients,
+ * servers, and transports.
+ *
+ * This module is used when implementing or testing RPC transports, codecs, and
+ * protocol handlers. It separates decoded messages, which carry typed RPC tags,
+ * payloads, headers, exits, and branded request identifiers, from encoded
+ * messages, which are suitable for transport boundaries where request ids and
+ * payloads have already been serialized.
+ *
+ * Request identifiers are the correlation point for requests, response chunks,
+ * terminal exits, acknowledgements, and interrupts, so transports must preserve
+ * them across the encoded string form and the decoded branded form. Streaming
+ * responses can send one or more `Chunk` batches before a terminal `Exit`; use
+ * `Ack` messages only for transports that require backpressure, treat `Eof` as
+ * the end of client input, and reserve `Ping`/`Pong` for connection liveness
+ * rather than RPC completion.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "../../Array.ts"
@@ -9,33 +26,45 @@ import type * as Rpc from "./Rpc.ts"
 import type { RpcClientError } from "./RpcClientError.ts"
 
 /**
- * @since 4.0.0
+ * Decoded messages that can be sent from an RPC client to a server.
+ *
  * @category request
+ * @since 4.0.0
  */
 export type FromClient<A extends Rpc.Any> = Request<A> | Ack | Interrupt | Eof
 
 /**
- * @since 4.0.0
+ * Transport-encoded messages that can be sent from an RPC client to a server.
+ *
  * @category request
+ * @since 4.0.0
  */
 export type FromClientEncoded = RequestEncoded | AckEncoded | InterruptEncoded | Ping | Eof
 
 /**
- * @since 4.0.0
+ * A branded request identifier used to correlate RPC requests, responses,
+ * chunks, acknowledgements, and interrupts.
+ *
  * @category request
+ * @since 4.0.0
  */
 export type RequestId = Branded<bigint, "~effect/rpc/RpcMessage/RequestId">
 
 /**
- * @since 4.0.0
+ * Converts a bigint or string request id into the branded `RequestId` type.
+ *
  * @category request
+ * @since 4.0.0
  */
 export const RequestId = (id: bigint | string): RequestId =>
   typeof id === "bigint" ? id as RequestId : BigInt(id) as RequestId
 
 /**
- * @since 4.0.0
+ * The transport-encoded RPC request envelope, including the string request id,
+ * RPC tag, encoded payload, headers, and optional trace context.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface RequestEncoded {
   readonly _tag: "Request"
@@ -49,8 +78,11 @@ export interface RequestEncoded {
 }
 
 /**
- * @since 4.0.0
+ * The decoded RPC request envelope for an RPC union, carrying a branded request
+ * id, typed RPC tag, decoded payload, headers, and optional trace context.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface Request<A extends Rpc.Any> {
   readonly _tag: "Request"
@@ -64,8 +96,10 @@ export interface Request<A extends Rpc.Any> {
 }
 
 /**
- * @since 4.0.0
+ * A decoded acknowledgement for a streamed RPC response chunk.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface Ack {
   readonly _tag: "Ack"
@@ -73,8 +107,11 @@ export interface Ack {
 }
 
 /**
- * @since 4.0.0
+ * A decoded request to interrupt an in-flight RPC, carrying the request id and
+ * interrupting fiber ids.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface Interrupt {
   readonly _tag: "Interrupt"
@@ -83,8 +120,10 @@ export interface Interrupt {
 }
 
 /**
- * @since 4.0.0
+ * The transport-encoded acknowledgement for a streamed RPC response chunk.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface AckEncoded {
   readonly _tag: "Ack"
@@ -92,8 +131,10 @@ export interface AckEncoded {
 }
 
 /**
- * @since 4.0.0
+ * The transport-encoded request to interrupt an in-flight RPC.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface InterruptEncoded {
   readonly _tag: "Interrupt"
@@ -101,36 +142,48 @@ export interface InterruptEncoded {
 }
 
 /**
- * @since 4.0.0
+ * A client-to-server message indicating that the client has finished sending
+ * input for the current connection or request batch.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface Eof {
   readonly _tag: "Eof"
 }
 
 /**
- * @since 4.0.0
+ * A client-to-server keepalive message used by protocols that monitor
+ * connection liveness.
+ *
  * @category request
+ * @since 4.0.0
  */
 export interface Ping {
   readonly _tag: "Ping"
 }
 
 /**
- * @since 4.0.0
+ * The reusable `Eof` message value.
+ *
  * @category request
+ * @since 4.0.0
  */
 export const constEof: Eof = { _tag: "Eof" }
 
 /**
- * @since 4.0.0
+ * The reusable `Ping` message value.
+ *
  * @category request
+ * @since 4.0.0
  */
 export const constPing: Ping = { _tag: "Ping" }
 
 /**
- * @since 4.0.0
+ * Decoded messages that can be sent from an RPC server to a client.
+ *
  * @category response
+ * @since 4.0.0
  */
 export type FromServer<A extends Rpc.Any> =
   | ResponseChunk<A>
@@ -139,8 +192,10 @@ export type FromServer<A extends Rpc.Any> =
   | ClientEnd
 
 /**
- * @since 4.0.0
+ * Transport-encoded messages that can be sent from an RPC server to a client.
+ *
  * @category response
+ * @since 4.0.0
  */
 export type FromServerEncoded =
   | ResponseChunkEncoded
@@ -150,26 +205,35 @@ export type FromServerEncoded =
   | ClientProtocolError
 
 /**
- * @since 4.0.0
+ * The brand identifier used by the `ResponseId` type.
+ *
  * @category response
+ * @since 4.0.0
  */
 export const ResponseIdTypeId = "~effect//rpc/RpcServer/ResponseId"
 
 /**
- * @since 4.0.0
+ * The literal type of the `ResponseId` brand identifier.
+ *
  * @category response
+ * @since 4.0.0
  */
 export type ResponseIdTypeId = typeof ResponseIdTypeId
 
 /**
- * @since 4.0.0
+ * A branded numeric identifier for server responses.
+ *
  * @category response
+ * @since 4.0.0
  */
 export type ResponseId = Branded<number, ResponseIdTypeId>
 
 /**
- * @since 4.0.0
+ * The transport-encoded response message containing a non-empty batch of stream
+ * chunk values for a request.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseChunkEncoded {
   readonly _tag: "Chunk"
@@ -178,8 +242,11 @@ export interface ResponseChunkEncoded {
 }
 
 /**
- * @since 4.0.0
+ * The decoded response message containing a non-empty batch of stream chunk
+ * values for a specific client and request.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseChunk<A extends Rpc.Any> {
   readonly _tag: "Chunk"
@@ -189,8 +256,11 @@ export interface ResponseChunk<A extends Rpc.Any> {
 }
 
 /**
- * @since 4.0.0
+ * The transport representation of an RPC `Exit`, encoding success values or a
+ * failure cause made of failures, defects, and interrupts.
+ *
  * @category response
+ * @since 4.0.0
  */
 export type ExitEncoded<A, E> = {
   readonly _tag: "Success"
@@ -212,8 +282,11 @@ export type ExitEncoded<A, E> = {
 }
 
 /**
- * @since 4.0.0
+ * The transport-encoded terminal response for a request, carrying the encoded
+ * `Exit`.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseExitEncoded {
   readonly _tag: "Exit"
@@ -222,8 +295,11 @@ export interface ResponseExitEncoded {
 }
 
 /**
- * @since 4.0.0
+ * A server-to-client protocol message reporting a client protocol error to all
+ * affected in-flight requests.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ClientProtocolError {
   readonly _tag: "ClientProtocolError"
@@ -231,8 +307,11 @@ export interface ClientProtocolError {
 }
 
 /**
- * @since 4.0.0
+ * The decoded terminal response for a request, carrying the typed `Rpc.Exit`
+ * for the RPC.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseExit<A extends Rpc.Any> {
   readonly _tag: "Exit"
@@ -242,8 +321,11 @@ export interface ResponseExit<A extends Rpc.Any> {
 }
 
 /**
- * @since 4.0.0
+ * The transport-encoded server defect message used for protocol-level defects
+ * that affect the client connection.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseDefectEncoded {
   readonly _tag: "Defect"
@@ -253,8 +335,11 @@ export interface ResponseDefectEncoded {
 const encodeDefect = Schema.encodeSync(Schema.Defect)
 
 /**
- * @since 4.0.0
+ * Creates an encoded terminal response for a request whose exit is a defect
+ * encoded with `Schema.Defect`.
+ *
  * @category response
+ * @since 4.0.0
  */
 export const ResponseExitDieEncoded = (options: {
   readonly requestId: RequestId
@@ -272,8 +357,11 @@ export const ResponseExitDieEncoded = (options: {
 })
 
 /**
- * @since 4.0.0
+ * Creates a transport-encoded defect response by encoding the input with
+ * `Schema.Defect`.
+ *
  * @category response
+ * @since 4.0.0
  */
 export const ResponseDefectEncoded = (input: unknown): ResponseDefectEncoded => ({
   _tag: "Defect",
@@ -281,8 +369,10 @@ export const ResponseDefectEncoded = (input: unknown): ResponseDefectEncoded => 
 })
 
 /**
- * @since 4.0.0
+ * The decoded server defect message for a client connection.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ResponseDefect {
   readonly _tag: "Defect"
@@ -291,8 +381,10 @@ export interface ResponseDefect {
 }
 
 /**
- * @since 4.0.0
+ * A server message indicating that the client connection has ended.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface ClientEnd {
   readonly _tag: "ClientEnd"
@@ -300,15 +392,19 @@ export interface ClientEnd {
 }
 
 /**
- * @since 4.0.0
+ * A server-to-client keepalive response to a `Ping` message.
+ *
  * @category response
+ * @since 4.0.0
  */
 export interface Pong {
   readonly _tag: "Pong"
 }
 
 /**
- * @since 4.0.0
+ * The reusable `Pong` message value.
+ *
  * @category response
+ * @since 4.0.0
  */
 export const constPong: Pong = { _tag: "Pong" }

@@ -1,4 +1,25 @@
 /**
+ * The cluster workflow engine runs durable workflows on top of cluster sharding
+ * and message storage. It adapts `WorkflowEngine.WorkflowEngine` so workflow
+ * executions, activities, deferred completions, resumes, interrupts, and durable
+ * clock wakeups are represented as persisted cluster entity messages.
+ *
+ * **Common tasks**
+ *
+ * - Provide a workflow engine for services that already use cluster sharding
+ * - Execute workflows by stable execution id and poll their persisted result
+ * - Resume suspended workflows after activities, deferreds, or durable clock wakeups
+ * - Interrupt workflow executions and propagate resume signals to parent workflows
+ *
+ * **Gotchas**
+ *
+ * - Workflow names and execution ids determine the cluster entity address used
+ *   for persistence, so they must remain stable across deploys
+ * - Activities are persisted by activity name and attempt; retries and suspended
+ *   activity resumes depend on those primary keys
+ * - Durable clock wakeups are scheduled through a separate clock entity and are
+ *   cleared when an interrupted workflow stops waiting
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -38,8 +59,16 @@ import * as Sharding from "./Sharding.ts"
 import * as Snowflake from "./Snowflake.ts"
 
 /**
+ * Creates a `WorkflowEngine` implementation backed by cluster sharding and
+ * message storage.
+ *
+ * **Details**
+ *
+ * Workflow executions, activities, deferred completions, resumes, interrupts,
+ * and durable clock wakeups are coordinated through persisted cluster entities.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make = Effect.gen(function*() {
   const sharding = yield* Sharding.Sharding
@@ -472,7 +501,7 @@ export const make = Effect.gen(function*() {
             activities.set(activityId, { activity, context: services })
             const latch = activityLatches.get(activityId)
             if (latch) {
-              yield* latch.release
+              yield* latch.open
               activityLatches.delete(activityId)
             }
           }
@@ -502,7 +531,7 @@ export const make = Effect.gen(function*() {
     ),
 
     deferredResult: (deferred) =>
-      WorkflowEngine.WorkflowInstance.asEffect().pipe(
+      WorkflowEngine.WorkflowInstance.pipe(
         Effect.flatMap((instance) =>
           requestReply({
             workflow: instance.workflow,
@@ -693,8 +722,16 @@ const ClockEntityLayer = ClockEntity.toLayer(Effect.gen(function*() {
 const InterruptSignal = DurableDeferred.make("Workflow/InterruptSignal")
 
 /**
+ * Layer that provides `WorkflowEngine.WorkflowEngine` using the cluster workflow
+ * engine implementation.
+ *
+ * **Details**
+ *
+ * It requires cluster sharding and message storage, and also registers the
+ * durable clock entity used for workflow wakeups.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer: Layer.Layer<
   WorkflowEngine.WorkflowEngine,

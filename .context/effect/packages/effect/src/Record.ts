@@ -19,7 +19,8 @@ import type { NoInfer } from "./Types.ts"
  * Represents a readonly record with keys of type `K` and values of type `A`.
  * This is the foundational type for immutable key-value mappings in Effect.
  *
- * @example
+ * **Example** (Defining a readonly record type)
+ *
  * ```ts
  * import type { Record } from "effect"
  *
@@ -43,7 +44,8 @@ export type ReadonlyRecord<in out K extends string | symbol, out A> = {
  * Namespace containing utility types for working with readonly records.
  * These types help with type-level operations on record keys and values.
  *
- * @example
+ * **Example** (Using readonly record helper types)
+ *
  * ```ts
  * import type { Record } from "effect"
  *
@@ -54,7 +56,6 @@ export type ReadonlyRecord<in out K extends string | symbol, out A> = {
  * type CommonKeys = Record.ReadonlyRecord.IntersectKeys<"a" | "b", "b" | "c"> // "b"
  * ```
  *
- * @category models
  * @since 2.0.0
  */
 export declare namespace ReadonlyRecord {
@@ -67,7 +68,8 @@ export declare namespace ReadonlyRecord {
    * Represents a type that converts literal string keys to generic string type and symbol keys to generic symbol type.
    * This is useful for maintaining type safety while allowing flexible key types in record operations.
    *
-   * @example
+   * **Example** (Converting literal keys to non-literal keys)
+   *
    * ```ts
    * import type { Record } from "effect"
    *
@@ -88,7 +90,8 @@ export declare namespace ReadonlyRecord {
    * Represents the intersection of two key types, handling both literal and non-literal string keys.
    * This type is used in record operations that need to compute overlapping keys.
    *
-   * @example
+   * **Example** (Intersecting record keys)
+   *
    * ```ts
    * import type { Record } from "effect"
    *
@@ -111,15 +114,23 @@ export declare namespace ReadonlyRecord {
  * Type lambda for readonly records, used in higher-kinded type operations.
  * This enables records to work with generic type constructors and functors.
  *
- * @example
+ * **Example** (Applying a readonly record type lambda)
+ *
  * ```ts
- * import type { Record } from "effect"
+ * import type { HKT, Record } from "effect"
  *
- * // The type lambda allows records to be used as higher-kinded types
- * type RecordTypeLambda = Record.ReadonlyRecordTypeLambda<"key1" | "key2">
+ * type Settings = HKT.Kind<
+ *   Record.ReadonlyRecordTypeLambda<"port" | "retries">,
+ *   never,
+ *   never,
+ *   never,
+ *   number
+ * >
  *
- * // This enables mapping over the type parameter
- * type StringRecord = RecordTypeLambda["type"] // ReadonlyRecord<"key1" | "key2", Target>
+ * const defaults: Settings = {
+ *   port: 3000,
+ *   retries: 3
+ * }
  * ```
  *
  * @category type lambdas
@@ -132,7 +143,8 @@ export interface ReadonlyRecordTypeLambda<K extends string = string> extends Typ
 /**
  * Creates a new, empty record.
  *
- * @example
+ * **Example** (Creating an empty record)
+ *
  * ```ts
  * import { Record } from "effect"
  *
@@ -156,7 +168,8 @@ export const empty = <K extends string | symbol = never, V = never>(): Record<
 /**
  * Determine if a record is empty.
  *
- * @example
+ * **Example** (Checking for an empty record)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -174,7 +187,8 @@ export const isEmptyRecord = <K extends string, A>(self: Record<K, A>): self is 
 /**
  * Determine if a record is empty.
  *
- * @example
+ * **Example** (Checking for an empty readonly record)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -194,7 +208,8 @@ export const isEmptyReadonlyRecord: <K extends string, A>(
  * Takes an iterable and a projection function and returns a record.
  * The projection function maps each value of the iterable to a tuple of a key and a value, which is then added to the resulting record.
  *
- * @example
+ * **Example** (Building a record from mapped iterable values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -236,7 +251,8 @@ export const fromIterableWith: {
 /**
  * Creates a new record from an iterable, utilizing the provided function to determine the key for each element.
  *
- * @example
+ * **Example** (Building a record keyed by iterable values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -266,10 +282,13 @@ export const fromIterableBy = <A, K extends string | symbol>(
 /**
  * Builds a record from an iterable of key-value pairs.
  *
+ * **Details**
+ *
  * If there are conflicting keys when using `fromEntries`, the last occurrence of the key/value pair will overwrite the
  * previous ones. So the resulting record will only have the value of the last occurrence of each key.
  *
- * @example
+ * **Example** (Building a record from entries)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -279,8 +298,8 @@ export const fromIterableBy = <A, K extends string | symbol>(
  * assert.deepStrictEqual(Record.fromEntries(input), { a: 1, b: 2 })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const fromEntries: <Entry extends readonly [string | symbol, any]>(
   entries: Iterable<Entry>
@@ -289,7 +308,8 @@ export const fromEntries: <Entry extends readonly [string | symbol, any]>(
 /**
  * Transforms the values of a record into an `Array` with a custom mapping function.
  *
- * @example
+ * **Example** (Collecting mapped record values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -301,7 +321,7 @@ export const fromEntries: <Entry extends readonly [string | symbol, any]>(
  * ], ["c", 3]])
  * ```
  *
- * @category conversions
+ * @category converting
  * @since 2.0.0
  */
 export const collect: {
@@ -321,7 +341,8 @@ export const collect: {
 /**
  * Takes a record and returns an array of tuples containing its keys and values.
  *
- * @example
+ * **Example** (Converting a record to entries)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -330,7 +351,7 @@ export const collect: {
  * assert.deepStrictEqual(Record.toEntries(x), [["a", 1], ["b", 2], ["c", 3]])
  * ```
  *
- * @category conversions
+ * @category converting
  * @since 2.0.0
  */
 export const toEntries: <K extends string, A>(self: ReadonlyRecord<K, A>) => Array<[K, A]> = collect((
@@ -341,7 +362,8 @@ export const toEntries: <K extends string, A>(self: ReadonlyRecord<K, A>) => Arr
 /**
  * Returns the number of key/value pairs in a record.
  *
- * @example
+ * **Example** (Getting the record size)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -357,7 +379,8 @@ export const size = <K extends string, A>(self: ReadonlyRecord<K, A>): number =>
 /**
  * Check if a given `key` exists in a record.
  *
- * @example
+ * **Example** (Checking key membership)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -388,7 +411,8 @@ export const has: {
 /**
  * Retrieve a value at a particular key from a record, returning it wrapped in an `Option`.
  *
- * @example
+ * **Example** (Getting a value as an Option)
+ *
  * ```ts
  * import { Option, Record as R } from "effect"
  * import * as assert from "node:assert"
@@ -415,7 +439,8 @@ export const get: {
  * Apply a function to the element at the specified key, creating a new record,
  * or return `Option.none()` if the key doesn't exist.
  *
- * @example
+ * **Example** (Modifying a value at a key)
+ *
  * ```ts
  * import { Record } from "effect"
  *
@@ -453,9 +478,16 @@ export const modify: {
 )
 
 /**
- * Replaces a value in the record with the new value passed as parameter.
+ * Replaces the value at an existing key and returns the updated record in
+ * `Option.some`.
  *
- * @example
+ * **Details**
+ *
+ * If the key is not present, returns `Option.none()` and leaves the record
+ * unchanged.
+ *
+ * **Example** (Replacing a value at a key)
+ *
  * ```ts
  * import { Record } from "effect"
  *
@@ -489,7 +521,8 @@ export const replace: {
  * If the given key exists in the record, returns a new record with the key removed.
  * If the key does not exist, returns a shallow copy of the original record.
  *
- * @example
+ * **Example** (Removing a key)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -520,7 +553,8 @@ export const remove: {
  * of a tuple with the value and the record with the removed property.
  * If the key is not present, returns `Option.none()`.
  *
- * @example
+ * **Example** (Popping a value and removing its key)
+ *
  * ```ts
  * import { Record } from "effect"
  *
@@ -550,7 +584,8 @@ export const pop: {
 /**
  * Maps a record into another record by applying a transformation function to each of its values.
  *
- * @example
+ * **Example** (Mapping record values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -584,7 +619,8 @@ export const map: {
 /**
  * Maps the keys of a `ReadonlyRecord` while preserving the corresponding values.
  *
- * @example
+ * **Example** (Mapping record keys)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -624,7 +660,8 @@ export const mapKeys: {
 /**
  * Maps entries of a `ReadonlyRecord` using the provided function, allowing modification of both keys and corresponding values.
  *
- * @example
+ * **Example** (Mapping record entries)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -665,7 +702,8 @@ export const mapEntries: {
  * Transforms a record by applying the function `f` to each key and value in the original record.
  * If the function succeeds, the key-value pair is included in the output record.
  *
- * @example
+ * **Example** (Filtering and mapping with Result)
+ *
  * ```ts
  * import { Record, Result } from "effect"
  * import * as assert from "node:assert"
@@ -706,7 +744,8 @@ export const filterMap: {
 /**
  * Selects properties from a record whose values match the given predicate.
  *
- * @example
+ * **Example** (Filtering record values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -752,7 +791,8 @@ export const filter: {
 /**
  * Given a record with `Option` values, returns a new record containing only the `Some` values, preserving the original keys.
  *
- * @example
+ * **Example** (Extracting Some values)
+ *
  * ```ts
  * import { Option, Record } from "effect"
  * import * as assert from "node:assert"
@@ -784,7 +824,8 @@ export const getSomes: <K extends string, A>(
 /**
  * Given a record with `Result` values, returns a new record containing only the `Err` values, preserving the original keys.
  *
- * @example
+ * **Example** (Extracting Result failures)
+ *
  * ```ts
  * import { Record, Result } from "effect"
  * import * as assert from "node:assert"
@@ -800,7 +841,7 @@ export const getSomes: <K extends string, A>(
  * ```
  *
  * @category filtering
- * @since 2.0.0
+ * @since 4.0.0
  */
 export const getFailures = <K extends string, A, E>(
   self: ReadonlyRecord<K, Result<A, E>>
@@ -819,7 +860,8 @@ export const getFailures = <K extends string, A, E>(
 /**
  * Given a record with `Result` values, returns a new record containing only the `Ok` values, preserving the original keys.
  *
- * @example
+ * **Example** (Extracting Result successes)
+ *
  * ```ts
  * import { Record, Result } from "effect"
  * import * as assert from "node:assert"
@@ -835,7 +877,7 @@ export const getFailures = <K extends string, A, E>(
  * ```
  *
  * @category filtering
- * @since 2.0.0
+ * @since 4.0.0
  */
 export const getSuccesses = <K extends string, A, E>(
   self: ReadonlyRecord<K, Result<A, E>>
@@ -852,9 +894,16 @@ export const getSuccesses = <K extends string, A, E>(
 }
 
 /**
- * Partitions the elements of a record into two groups: those that match a filter, and those that don't.
+ * Applies a function to each record entry and partitions the returned `Result`
+ * values into two records.
  *
- * @example
+ * **Details**
+ *
+ * Failure values are collected in the left record, and success values are
+ * collected in the right record, preserving the original keys.
+ *
+ * **Example** (Partitioning with Result)
+ *
  * ```ts
  * import { Record, Result } from "effect"
  * import * as assert from "node:assert"
@@ -901,7 +950,8 @@ export const partition: {
  * Partitions a record of `Result` values into two separate records,
  * one with the `Err` values and one with the `Ok` values.
  *
- * @example
+ * **Example** (Separating Result values)
+ *
  * ```ts
  * import { Record, Result } from "effect"
  * import * as assert from "node:assert"
@@ -922,7 +972,8 @@ export const separate: <K extends string, A, B>(
 /**
  * Retrieve the keys of a given record as an array.
  *
- * @example
+ * **Example** (Getting record keys)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -939,7 +990,8 @@ export const keys = <K extends string | symbol, A>(self: ReadonlyRecord<K, A>): 
 /**
  * Retrieve the values of a given record as an array.
  *
- * @example
+ * **Example** (Getting record values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -955,7 +1007,8 @@ export const values = <K extends string, A>(self: ReadonlyRecord<K, A>): Array<A
 /**
  * Add a new key-value pair or update an existing key's value in a record.
  *
- * @example
+ * **Example** (Setting a record value)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -992,21 +1045,30 @@ export const set: {
  * Check if all the keys and values in one record are also found in another record.
  * Uses the provided equivalence function to compare values.
  *
- * @example
+ * **Example** (Checking subrecords with a custom equivalence)
+ *
  * ```ts
- * import { Equal, Record } from "effect"
- * import * as assert from "node:assert"
+ * import { Equivalence, Record } from "effect"
  *
- * const isSubrecord = Record.isSubrecordBy(Equal.asEquivalence<number>())
+ * const isSubrecord = Record.isSubrecordBy(
+ *   Equivalence.make<string>((self, that) => self.toLowerCase() === that.toLowerCase())
+ * )
  *
- * assert.deepStrictEqual(
- *   Record.isSubrecord({ a: 1 } as Record<string, number>, { a: 1, b: 2 }),
- *   true
- * )
- * assert.deepStrictEqual(
- *   Record.isSubrecord({ a: 1, b: 2 }, { a: 1 } as Record<string, number>),
- *   false
- * )
+ * const required: Record.ReadonlyRecord<string, string> = { role: "Admin" }
+ * const available: Record.ReadonlyRecord<string, string> = {
+ *   role: "admin",
+ *   status: "active"
+ * }
+ *
+ * console.log(
+ *   isSubrecord(required, available)
+ * ) // true
+ * console.log(
+ *   isSubrecord({ role: "Admin", status: "inactive" }, available)
+ * ) // false
+ * console.log(
+ *   isSubrecord(required, { role: "editor", status: "active" })
+ * ) // false
  * ```
  *
  * @category predicates
@@ -1026,10 +1088,15 @@ export const isSubrecordBy = <A>(equivalence: Equivalence<A>): {
   })
 
 /**
- * Check if one record is a subrecord of another, meaning it contains all the keys and values found in the second record.
- * This comparison uses default equality checks (`Equal.equivalence()`).
+ * Checks whether the first record is a subrecord of the second record.
  *
- * @example
+ * **Details**
+ *
+ * Returns `true` when every key and value in `self` is also present in `that`.
+ * Values are compared with Effect equality via `Equal.asEquivalence()`.
+ *
+ * **Example** (Checking subrecords)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1055,7 +1122,8 @@ export const isSubrecord: {
 /**
  * Reduce a record to a single value by combining its entries with a specified function.
  *
- * @example
+ * **Example** (Reducing record values)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1093,7 +1161,8 @@ export const reduce: {
 /**
  * Check if all entries in a record meet a specific condition.
  *
- * @example
+ * **Example** (Checking every record value)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1133,7 +1202,8 @@ export const every: {
 /**
  * Check if any entry in a record meets a specific condition.
  *
- * @example
+ * **Example** (Checking for any matching value)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1164,7 +1234,8 @@ export const some: {
  * Merge two records, preserving entries that exist in either of the records.
  * For keys that exist in both records, the provided combine function is used to merge the values.
  *
- * @example
+ * **Example** (Merging records with union)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1222,7 +1293,8 @@ export const union: {
  * Merge two records, retaining only the entries that exist in both records.
  * For intersecting keys, the provided combine function is used to merge the values.
  *
- * @example
+ * **Example** (Merging intersecting keys)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1270,7 +1342,8 @@ export const intersection: {
  * Merge two records, preserving only the entries that are unique to each record.
  * Keys that exist in both records are excluded from the result.
  *
- * @example
+ * **Example** (Keeping keys unique to each record)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1320,7 +1393,8 @@ export const difference: {
  * Create an `Equivalence` for records using the provided `Equivalence` for values.
  * Two records are considered equivalent if they have the same keys and their corresponding values are equivalent.
  *
- * @example
+ * **Example** (Comparing records with a value equivalence)
+ *
  * ```ts
  * import { Equal, Record } from "effect"
  * import * as assert from "node:assert"
@@ -1332,7 +1406,7 @@ export const difference: {
  * ```
  *
  * @category instances
- * @since 2.0.0
+ * @since 4.0.0
  */
 export const makeEquivalence = <K extends string, A>(
   equivalence: Equivalence<A>
@@ -1344,7 +1418,8 @@ export const makeEquivalence = <K extends string, A>(
 /**
  * Create a non-empty record from a single element.
  *
- * @example
+ * **Example** (Creating a singleton record)
+ *
  * ```ts
  * import { Record } from "effect"
  * import * as assert from "node:assert"
@@ -1360,10 +1435,10 @@ export const singleton = <K extends string | symbol, A>(key: K, value: A): Recor
 } as any)
 
 /**
- * A `Reducer` for combining `Record`s using union.
+ * Creates a `Reducer` for combining `Record`s using union, with values for keys that exist in both records combined
+ * using the provided `Combiner`.
  *
- * Values for keys that exist in both records are combined using the provided `Combiner`.
- *
+ * @category combining
  * @since 4.0.0
  */
 export function makeReducerUnion<K extends string, A>(combiner: Combiner.Combiner<A>): Reducer.Reducer<Record<K, A>> {
@@ -1374,10 +1449,16 @@ export function makeReducerUnion<K extends string, A>(combiner: Combiner.Combine
 }
 
 /**
- * A `Reducer` for combining `Record`s using intersection.
+ * Creates a `Reducer` whose `combine` operation intersects two records and
+ * combines values for keys present in both records.
  *
- * Values are combined using the provided `Combiner`.
+ * **Gotchas**
  *
+ * The reducer's `initialValue` is an empty record. Because intersection with
+ * an empty record is empty, the default `combineAll` folds from `{}` and
+ * therefore produces `{}` for ordinary non-empty inputs.
+ *
+ * @category combining
  * @since 4.0.0
  */
 export function makeReducerIntersection<K extends string, A>(
@@ -1393,7 +1474,8 @@ export function makeReducerIntersection<K extends string, A>(
  * Returns the first entry that satisfies the specified
  * predicate, or `None` if no such entry exists.
  *
- * @example
+ * **Example** (Finding the first matching entry)
+ *
  * ```ts
  * import { Record } from "effect"
  *

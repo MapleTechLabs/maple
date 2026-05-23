@@ -331,7 +331,7 @@ describe("TxHashMap", () => {
         assert.deepStrictEqual(result, Option.some(2))
       })))
 
-    it.effect("multi-step operations", () =>
+    it.effect("multi-step operations commit together", () =>
       Effect.tx(Effect.gen(function*() {
         const txMap = yield* TxHashMap.make(["a", 1], ["b", 2])
 

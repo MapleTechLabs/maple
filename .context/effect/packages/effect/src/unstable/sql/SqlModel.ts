@@ -1,6 +1,22 @@
 /**
+ * Builds SQL repositories and request resolvers from Effect schema models.
+ *
+ * Use this module when a `Model` describes rows in a concrete SQL table and
+ * you want the common insert, update, find-by-id, and delete operations without
+ * hand-writing the schema encoding, row decoding, and resolver batching each
+ * time. The helpers are intended for model-backed tables where the model field
+ * names line up with the encoded table columns and the chosen `idColumn` is
+ * present in both the model fields and update schema.
+ *
+ * Returned rows are decoded with the full model schema, while insert and update
+ * requests are encoded with the model's dedicated input schemas. Soft deletes
+ * are opt-in via `softDeleteColumn`: reads and updates only see rows where that
+ * column is `null`, and deletes set it to `CURRENT_TIMESTAMP` instead of
+ * removing the row. Dialects with `returning` support return changed rows
+ * directly; MySQL performs a follow-up `select`, so generated ids, defaults,
+ * and trigger-updated values must be observable from that query.
+ *
  * @since 4.0.0
- * @category models
  */
 import type * as Cause from "../../Cause.ts"
 import * as Effect from "../../Effect.ts"
@@ -14,18 +30,23 @@ import * as SqlResolver from "./SqlResolver.ts"
 import * as SqlSchema from "./SqlSchema.ts"
 
 /**
- * Create a simple CRUD repository from a model.
+ * Creates a CRUD repository for a schema model backed by a SQL table, with
+ * insert, update, find-by-id, and delete operations. When `softDeleteColumn` is
+ * supplied, reads ignore soft-deleted rows and delete updates that column
+ * instead of removing the row.
  *
- * @since 4.0.0
  * @category repository
+ * @since 4.0.0
  */
 export const makeRepository = <
   S extends Model.Any,
-  Id extends (keyof S["Type"]) & (keyof S["update"]["Type"]) & (keyof S["fields"])
+  Id extends (keyof S["Type"]) & (keyof S["update"]["Type"]) & (keyof S["fields"]),
+  SoftDelete extends keyof S["fields"] = never
 >(Model: S, options: {
   readonly tableName: string
   readonly spanPrefix: string
   readonly idColumn: Id
+  readonly softDeleteColumn?: SoftDelete | undefined
 }): Effect.Effect<
   {
     readonly insert: (
@@ -66,6 +87,12 @@ export const makeRepository = <
     const sql = yield* SqlClient
     const idSchema = Model.fields[options.idColumn] as Schema.Top
     const idColumn = options.idColumn as string
+    const softDeleteColumn = options.softDeleteColumn as string | undefined
+    const withSoftDeleteFilter = (where: any) =>
+      softDeleteColumn === undefined ? where : sql.and([where, sql`${sql(softDeleteColumn)} is null`])
+    const setSoftDeleted = softDeleteColumn === undefined
+      ? undefined
+      : sql`${sql(softDeleteColumn)} = CURRENT_TIMESTAMP`
 
     const insertSchema = SqlSchema.findOne({
       Request: Model.insert,
@@ -74,9 +101,10 @@ export const makeRepository = <
         sql.onDialectOrElse({
           mysql: () =>
             sql`insert into ${sql(options.tableName)} ${sql.insert(request as any)};
-select * from ${sql(options.tableName)} where ${sql(idColumn)} = LAST_INSERT_ID();`.unprepared.pipe(
-              Effect.map(([, results]) => results as any)
-            ),
+select * from ${sql(options.tableName)} where ${withSoftDeleteFilter(sql`${sql(idColumn)} = LAST_INSERT_ID()`)};`
+              .unprepared.pipe(
+                Effect.map(([, results]) => results as any)
+              ),
           orElse: () => sql`insert into ${sql(options.tableName)} ${sql.insert(request as any).returning("*")}`
         })
     })
@@ -111,15 +139,16 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = LAST_INSERT_ID(
       execute: (request: any) =>
         sql.onDialectOrElse({
           mysql: () =>
-            sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${sql(idColumn)} = ${
-              request[idColumn]
+            sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${
+              withSoftDeleteFilter(sql`${sql(idColumn)} = ${request[idColumn]}`)
             };
-select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${request[idColumn]};`.unprepared.pipe(
-              Effect.map(([, results]) => results as any)
-            ),
+select * from ${sql(options.tableName)} where ${withSoftDeleteFilter(sql`${sql(idColumn)} = ${request[idColumn]}`)};`
+              .unprepared.pipe(
+                Effect.map(([, results]) => results as any)
+              ),
           orElse: () =>
-            sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${sql(idColumn)} = ${
-              request[idColumn]
+            sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${
+              withSoftDeleteFilter(sql`${sql(idColumn)} = ${request[idColumn]}`)
             } returning *`
         })
     })
@@ -142,8 +171,8 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${request[idCol
     const updateVoidSchema = SqlSchema.void({
       Request: Model.update,
       execute: (request: any) =>
-        sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${sql(idColumn)} = ${
-          request[idColumn]
+        sql`update ${sql(options.tableName)} set ${sql.update(request, [idColumn])} where ${
+          withSoftDeleteFilter(sql`${sql(idColumn)} = ${request[idColumn]}`)
         }`
     })
     const updateVoid = (
@@ -160,7 +189,8 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${request[idCol
     const findByIdSchema = SqlSchema.findOne({
       Request: idSchema,
       Result: Model,
-      execute: (id: any) => sql`select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${id}`
+      execute: (id: any) =>
+        sql`select * from ${sql(options.tableName)} where ${withSoftDeleteFilter(sql`${sql(idColumn)} = ${id}`)}`
     })
     const findById = (
       id: S["fields"][Id]["Type"]
@@ -177,7 +207,12 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${request[idCol
 
     const deleteSchema = SqlSchema.void({
       Request: idSchema,
-      execute: (id: any) => sql`delete from ${sql(options.tableName)} where ${sql(idColumn)} = ${id}`
+      execute: (id: any) =>
+        softDeleteColumn === undefined
+          ? sql`delete from ${sql(options.tableName)} where ${sql(idColumn)} = ${id}`
+          : sql`update ${sql(options.tableName)} set ${setSoftDeleted} where ${
+            withSoftDeleteFilter(sql`${sql(idColumn)} = ${id}`)
+          }`
     })
     const delete_ = (
       id: S["fields"][Id]["Type"]
@@ -194,20 +229,23 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = ${request[idCol
   })
 
 /**
- * Create some simple data loaders from a model.
+ * Creates batched request resolvers for a schema model's insert, insert-void,
+ * find-by-id, and delete operations, honoring the optional soft-delete column.
  *
- * @since 4.0.0
  * @category repository
+ * @since 4.0.0
  */
 export const makeResolvers = <
   S extends Model.Any,
-  Id extends (keyof S["Type"]) & (keyof S["update"]["Type"]) & (keyof S["fields"])
+  Id extends (keyof S["Type"]) & (keyof S["update"]["Type"]) & (keyof S["fields"]),
+  SoftDelete extends keyof S["fields"] = never
 >(
   Model: S,
   options: {
     readonly tableName: string
     readonly spanPrefix: string
     readonly idColumn: Id
+    readonly softDeleteColumn?: SoftDelete | undefined
   }
 ): Effect.Effect<
   {
@@ -246,6 +284,12 @@ export const makeResolvers = <
     const sql = yield* SqlClient
     const idSchema = Model.fields[options.idColumn] as Schema.Top
     const idColumn = options.idColumn as string
+    const softDeleteColumn = options.softDeleteColumn as string | undefined
+    const withSoftDeleteFilter = (where: any) =>
+      softDeleteColumn === undefined ? where : sql.and([where, sql`${sql(softDeleteColumn)} is null`])
+    const setSoftDeleted = softDeleteColumn === undefined
+      ? undefined
+      : sql`${sql(softDeleteColumn)} = CURRENT_TIMESTAMP`
 
     const insert: RequestResolver.RequestResolver<
       SqlResolver.SqlRequest<
@@ -262,9 +306,10 @@ export const makeResolvers = <
           mysql: () =>
             Effect.forEach(request, (request: any) =>
               sql`insert into ${sql(options.tableName)} ${sql.insert(request)};
-select * from ${sql(options.tableName)} where ${sql(idColumn)} = LAST_INSERT_ID();`.unprepared.pipe(
-                Effect.map(([, results]) => results[0] as any)
-              ), { concurrency: 10 }),
+select * from ${sql(options.tableName)} where ${withSoftDeleteFilter(sql`${sql(idColumn)} = LAST_INSERT_ID()`)};`
+                .unprepared.pipe(
+                  Effect.map(([, results]) => results[0] as any)
+                ), { concurrency: 10 }),
           orElse: () => sql`insert into ${sql(options.tableName)} ${sql.insert(request).returning("*")}`
         })
     }).pipe(
@@ -293,7 +338,8 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = LAST_INSERT_ID(
       ResultId(request: any) {
         return request[idColumn]
       },
-      execute: (ids: any) => sql`select * from ${sql(options.tableName)} where ${sql.in(idColumn, ids)}`
+      execute: (ids: any) =>
+        sql`select * from ${sql(options.tableName)} where ${withSoftDeleteFilter(sql.in(idColumn, ids))}`
     }).pipe(
       RequestResolver.withSpan(`${options.spanPrefix}.findByIdResolver`)
     )
@@ -307,7 +353,12 @@ select * from ${sql(options.tableName)} where ${sql(idColumn)} = LAST_INSERT_ID(
       >
     > = SqlResolver.void({
       Request: idSchema,
-      execute: (ids: any) => sql`delete from ${sql(options.tableName)} where ${sql.in(idColumn, ids)}`
+      execute: (ids: any) =>
+        softDeleteColumn === undefined
+          ? sql`delete from ${sql(options.tableName)} where ${sql.in(idColumn, ids)}`
+          : sql`update ${sql(options.tableName)} set ${setSoftDeleted} where ${
+            withSoftDeleteFilter(sql.in(idColumn, ids))
+          }`
     }).pipe(
       RequestResolver.withSpan(`${options.spanPrefix}.deleteResolver`)
     )

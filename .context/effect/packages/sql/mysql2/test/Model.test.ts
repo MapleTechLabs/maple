@@ -1,13 +1,25 @@
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Cause, Effect, Schema } from "effect"
 import { Model } from "effect/unstable/schema"
 import { SqlClient, SqlModel, SqlResolver } from "effect/unstable/sql"
 import { MysqlContainer } from "./utils.ts"
 
 class User extends Model.Class<User>("User")({
-  id: Model.Generated(Schema.Int),
+  id: Schema.Int.pipe(
+    Model.FieldExcept(["insert"])
+  ),
   name: Schema.String,
   age: Schema.Int
+}) {}
+
+class SoftDeleteUser extends Model.Class<SoftDeleteUser>("SoftDeleteUser")({
+  id: Schema.Int.pipe(
+    Model.FieldExcept(["insert"])
+  ),
+  name: Schema.String,
+  deletedAt: Schema.NullOr(Schema.String).pipe(
+    Model.FieldOnly(["select", "update"])
+  )
 }) {}
 
 describe("SqlModel", () => {
@@ -102,6 +114,76 @@ describe("SqlModel", () => {
 
       assert.deepStrictEqual(alice2.name, "Alice")
       assert.deepStrictEqual(john2.name, "John")
+    }).pipe(
+      Effect.provide(MysqlContainer.layerClient),
+      Effect.catchTag("ContainerError", () => Effect.void)
+    ), { timeout: 60_000 })
+
+  it.effect("findById ignores soft deleted rows", () =>
+    Effect.gen(function*() {
+      const repo = yield* SqlModel.makeRepository(SoftDeleteUser, {
+        tableName: "soft_delete_users",
+        idColumn: "id",
+        spanPrefix: "SoftDeleteUserRepository",
+        softDeleteColumn: "deletedAt"
+      })
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE soft_delete_users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), deletedAt VARCHAR(255) NULL)`
+
+      const alice = yield* repo.insert(SoftDeleteUser.insert.make({ name: "Alice" }))
+      const bob = yield* repo.insert(SoftDeleteUser.insert.make({ name: "Bob" }))
+      yield* sql`UPDATE soft_delete_users SET deletedAt = CURRENT_TIMESTAMP WHERE id = ${bob.id}`
+
+      const aliceResult = yield* repo.findById(alice.id)
+      assert.deepStrictEqual(aliceResult, new SoftDeleteUser({ id: alice.id, name: "Alice", deletedAt: null }))
+
+      const error = yield* Effect.flip(repo.findById(bob.id))
+      assert.isTrue(Cause.isNoSuchElementError(error))
+
+      yield* repo.delete(alice.id)
+      const rows = yield* sql<
+        { deletedAt: string | null }
+      >`SELECT deletedAt FROM soft_delete_users WHERE id = ${alice.id}`
+      assert.strictEqual(rows.length, 1)
+      assert.isNotNull(rows[0]!.deletedAt)
+
+      const deletedError = yield* Effect.flip(repo.findById(alice.id))
+      assert.isTrue(Cause.isNoSuchElementError(deletedError))
+    }).pipe(
+      Effect.provide(MysqlContainer.layerClient),
+      Effect.catchTag("ContainerError", () => Effect.void)
+    ), { timeout: 60_000 })
+
+  it.live("findById data loader ignores soft deleted rows", () =>
+    Effect.gen(function*() {
+      const repo = yield* SqlModel.makeResolvers(SoftDeleteUser, {
+        tableName: "soft_delete_user_resolvers",
+        idColumn: "id",
+        spanPrefix: "SoftDeleteUserRepository",
+        softDeleteColumn: "deletedAt"
+      })
+      const sql = yield* SqlClient.SqlClient
+      yield* sql`CREATE TABLE soft_delete_user_resolvers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(255), deletedAt VARCHAR(255) NULL)`
+
+      const alice = yield* SqlResolver.request(SoftDeleteUser.insert.make({ name: "Alice" }), repo.insert)
+      const bob = yield* SqlResolver.request(SoftDeleteUser.insert.make({ name: "Bob" }), repo.insert)
+      yield* sql`UPDATE soft_delete_user_resolvers SET deletedAt = CURRENT_TIMESTAMP WHERE id = ${bob.id}`
+
+      const aliceResult = yield* SqlResolver.request(alice.id, repo.findById)
+      assert.deepStrictEqual(aliceResult, new SoftDeleteUser({ id: alice.id, name: "Alice", deletedAt: null }))
+
+      const error = yield* Effect.flip(SqlResolver.request(bob.id, repo.findById))
+      assert.isTrue(Cause.isNoSuchElementError(error))
+
+      yield* SqlResolver.request(alice.id, repo.delete)
+      const rows = yield* sql<
+        { deletedAt: string | null }
+      >`SELECT deletedAt FROM soft_delete_user_resolvers WHERE id = ${alice.id}`
+      assert.strictEqual(rows.length, 1)
+      assert.isNotNull(rows[0]!.deletedAt)
+
+      const deletedError = yield* Effect.flip(SqlResolver.request(alice.id, repo.findById))
+      assert.isTrue(Cause.isNoSuchElementError(deletedError))
     }).pipe(
       Effect.provide(MysqlContainer.layerClient),
       Effect.catchTag("ContainerError", () => Effect.void)

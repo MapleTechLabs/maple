@@ -18,8 +18,8 @@ const TypeId = "~effect/Brand"
 /**
  * A generic interface that defines a branded type.
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface Brand<in out Keys extends string> {
   readonly [TypeId]: {
@@ -77,24 +77,34 @@ export class BrandError {
     this.issue = issue
   }
   /**
+   * Discriminant used to identify brand construction failures.
+   *
    * @since 4.0.0
    */
   readonly _tag = "BrandError"
   /**
+   * Error name used by tools that inspect JavaScript error-like objects.
+   *
    * @since 4.0.0
    */
   readonly name: string = "BrandError"
   /**
+   * Schema issue describing why brand validation failed.
+   *
    * @since 4.0.0
    */
   readonly issue: Issue.Issue
   /**
+   * Human-readable rendering of the validation issue.
+   *
    * @since 4.0.0
    */
   get message() {
     return this.issue.toString()
   }
   /**
+   * Formats the brand error together with its validation message.
+   *
    * @since 4.0.0
    */
   toString() {
@@ -103,12 +113,16 @@ export class BrandError {
 }
 
 /**
+ * Namespace containing type-level helpers for working with branded types and
+ * brand constructors.
+ *
  * @since 2.0.0
  */
 export declare namespace Brand {
   /**
    * A utility type to extract a branded type from a `Constructor`.
    *
+   * @category utility types
    * @since 2.0.0
    */
   export type FromConstructor<C> = C extends Constructor<infer B> ? B : never
@@ -116,6 +130,7 @@ export declare namespace Brand {
   /**
    * A utility type to extract the unbranded value type from a brand.
    *
+   * @category utility types
    * @since 2.0.0
    */
   export type Unbranded<B extends Brand<any>> = B extends infer U & Brands<B> ? U : B
@@ -123,13 +138,15 @@ export declare namespace Brand {
   /**
    * A utility type to extract the keys of a branded type.
    *
-   * @since 2.0.0
+   * @category utility types
+   * @since 4.0.0
    */
   export type Keys<B extends Brand<any>> = keyof B[typeof TypeId]
 
   /**
    * A utility type to extract the brands from a branded type.
    *
+   * @category utility types
    * @since 2.0.0
    */
   export type Brands<B extends Brand<any>> = Types.UnionToIntersection<
@@ -139,6 +156,7 @@ export declare namespace Brand {
   /**
    * A utility type that checks that all brands have the same base type.
    *
+   * @category utility types
    * @since 2.0.0
    */
   export type EnsureCommonBase<
@@ -156,19 +174,20 @@ export declare namespace Brand {
 /**
  * A type alias for creating branded types more concisely.
  *
- * @category alias
+ * @category utility types
  * @since 2.0.0
  */
 export type Branded<A, Key extends string> = A & Brand<Key>
 
 /**
- * This function returns a `Constructor` that **does not apply any runtime
- * checks**, it just returns the provided value. It can be used to create
- * nominal types that allow distinguishing between two values of the same type
- * but with different meanings.
+ * Returns a `Constructor` that **does not apply any runtime checks** and just
+ * returns the provided value.
  *
- * If you also want to perform some validation, see {@link make} or
- * {@link check} or {@link refine}.
+ * **When to use**
+ *
+ * Use this to create nominal types that allow distinguishing between two values
+ * of the same type but with different meanings. If you also want to perform
+ * some validation, see {@link make} or {@link check}.
  *
  * @category constructors
  * @since 2.0.0
@@ -182,15 +201,17 @@ export function nominal<A extends Brand<any>>(): Constructor<A> {
 }
 
 /**
- * Returns a `Constructor` that can construct a branded type from an
- * unbranded value using the provided `filter` predicate as validation of
- * the input data.
+ * Returns a `Constructor` that can construct a branded type from an unbranded
+ * value using the provided `filter` predicate as validation of the input data.
  *
- * If you don't want to perform any validation but only distinguish between two
- * values of the same type but with different meanings, see {@link nominal}.
+ * **When to use**
+ *
+ * Use this when you want validation while constructing the branded type. If you
+ * don't want to perform any validation but only distinguish between two values
+ * of the same type but with different meanings, see {@link nominal}.
  *
  * @category constructors
- * @since 2.0.0
+ * @since 4.0.0
  */
 export function make<A extends Brand<any>>(
   filter: (unbranded: Brand.Unbranded<A>) => Schema.FilterOutput
@@ -199,6 +220,15 @@ export function make<A extends Brand<any>>(
 }
 
 /**
+ * Creates a branded type `Constructor` from one or more schema checks.
+ *
+ * **Details**
+ *
+ * Calling the returned constructor validates the unbranded value and throws on
+ * failure. Use the returned `option`, `result`, or `is` methods for
+ * non-throwing validation.
+ *
+ * @category constructors
  * @since 4.0.0
  */
 export function check<A extends Brand<any>>(

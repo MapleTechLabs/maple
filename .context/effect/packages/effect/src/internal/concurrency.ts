@@ -16,7 +16,7 @@ export const match = <A, E, R>(
     case "unbounded":
       return unbounded()
     case "inherit":
-      return effect.flatMap(CurrentConcurrency.asEffect(), (concurrency) =>
+      return effect.flatMap(CurrentConcurrency, (concurrency) =>
         concurrency === "unbounded"
           ? unbounded()
           : concurrency > 1
@@ -40,7 +40,7 @@ export const matchSimple = <A, E, R>(
       return concurrent()
     case "inherit":
       return effect.flatMap(
-        CurrentConcurrency.asEffect(),
+        CurrentConcurrency,
         (concurrency) =>
           concurrency === "unbounded" || concurrency > 1
             ? concurrent()

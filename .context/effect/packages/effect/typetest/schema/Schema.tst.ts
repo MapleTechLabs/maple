@@ -13,7 +13,7 @@ import {
   Tuple
 } from "effect"
 import { immerable, produce } from "immer"
-import { describe, expect, it, when } from "tstyche"
+import { describe, expect, it } from "tstyche"
 
 type Make<In, Out> = (input: In, options?: Schema.MakeOptions | undefined) => Out
 type MakeEffect<In, Out> = (
@@ -970,12 +970,11 @@ describe("Schema", () => {
     })
 
     it("E != T", () => {
-      when(Schema.String.pipe).isCalledWith(
-        expect(Schema.decodeTo).type.not.toBeCallableWith(
-          Schema.Number,
-          SchemaTransformation.passthrough()
-        )
-      )
+      Schema.String.pipe(Schema.decodeTo(
+        Schema.Number,
+        // @ts-expect-error Argument of type 'Transformation<never, never, never, never>' is not assignable
+        SchemaTransformation.passthrough()
+      ))
 
       Schema.String.pipe(
         Schema.decodeTo(
@@ -1276,12 +1275,12 @@ describe("Schema", () => {
         const fABranded = (a: ABranded) => a
 
         fABranded(ABranded.make({ a: "a" }))
-        when(fABranded).isCalledWith(expect(BBranded.make).type.not.toBeCallableWith({ a: "a" }))
+        expect(fABranded).type.not.toBeCallableWith(BBranded.make({ a: "a" }))
 
         const fBBranded = (a: BBranded) => a
 
         fBBranded(BBranded.make({ a: "a" }))
-        when(fBBranded).isCalledWith(expect(ABranded.make).type.not.toBeCallableWith({ a: "a" }))
+        expect(fBBranded).type.not.toBeCallableWith(ABranded.make({ a: "a" }))
       })
 
       it("branded (Brand module)", () => {
@@ -1295,12 +1294,12 @@ describe("Schema", () => {
         const fABranded = (a: ABranded) => a
 
         fABranded(ABranded.make({ a: "a" }))
-        when(fABranded).isCalledWith(expect(BBranded.make).type.not.toBeCallableWith({ a: "a" }))
+        expect(fABranded).type.not.toBeCallableWith(BBranded.make({ a: "a" }))
 
         const fBBranded = (a: BBranded) => a
 
         fBBranded(BBranded.make({ a: "a" }))
-        when(fBBranded).isCalledWith(expect(ABranded.make).type.not.toBeCallableWith({ a: "a" }))
+        expect(fBBranded).type.not.toBeCallableWith(ABranded.make({ a: "a" }))
       })
 
       it("extend & static members", () => {
@@ -1329,12 +1328,12 @@ describe("Schema", () => {
         const f1 = (e1: E1) => e1
 
         f1(E1.make({ a: "a", b: "b" }))
-        when(f1).isCalledWith(expect(E2.make).type.not.toBeCallableWith({ a: "a", b: "b" }))
+        expect(f1).type.not.toBeCallableWith(E2.make({ a: "a", b: "b" }))
 
         const f2 = (e2: E2) => e2
 
         f2(E2.make({ a: "a", b: "b" }))
-        when(f2).isCalledWith(expect(E1.make).type.not.toBeCallableWith({ a: "a", b: "b" }))
+        expect(f2).type.not.toBeCallableWith(E1.make({ a: "a", b: "b" }))
       })
     })
 
@@ -1681,7 +1680,7 @@ describe("Schema", () => {
     it("should not be callable with a schema with wrong type", () => {
       type Int = number & Brand.Brand<"Int">
       const Int = Brand.check<Int>(Schema.isInt())
-      when(Schema.String.pipe).isCalledWith(expect(Schema.fromBrand).type.not.toBeCallableWith("Int", Int))
+      expect(Schema.String.pipe).type.not.toBeCallableWith(Schema.fromBrand("Int", Int))
     })
 
     it("single brand", () => {

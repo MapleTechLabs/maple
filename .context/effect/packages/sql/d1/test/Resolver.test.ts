@@ -25,7 +25,7 @@ describe("Resolver", () => {
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           execute: (names) => {
             batches.push(names)
-            return sql`INSERT INTO test ${sql.insert(names.map((name) => ({ name })))} RETURNING *`.asEffect()
+            return sql`INSERT INTO test ${sql.insert(names.map((name) => ({ name })))} RETURNING *`
           }
         })
         const execute = SqlResolver.request(Insert)
@@ -51,7 +51,7 @@ describe("Resolver", () => {
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           execute: (ids) => {
             batches.push(ids)
-            return sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`.asEffect()
+            return sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`
           }
         })
         const execute = SqlResolver.request(Select)
@@ -79,7 +79,7 @@ describe("Resolver", () => {
           RequestGroupKey: (name) => name,
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           ResultGroupKey: (result) => result.name,
-          execute: (names) => sql`SELECT * FROM test WHERE name IN ${sql.in(names)}`.asEffect()
+          execute: (names) => sql`SELECT * FROM test WHERE name IN ${sql.in(names)}`
         })
         const execute = SqlResolver.request(FindByName)
         yield* sql`INSERT INTO test ${sql.insert({ name: "name1" })}`
@@ -105,7 +105,7 @@ describe("Resolver", () => {
           RequestGroupKey: (name) => name,
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           ResultGroupKey: (_, result: any) => result.name,
-          execute: (names) => sql`SELECT * FROM test WHERE name IN ${sql.in(names)}`.asEffect()
+          execute: (names) => sql`SELECT * FROM test WHERE name IN ${sql.in(names)}`
         })
         const execute = SqlResolver.request(FindByName)
         yield* sql`INSERT INTO test ${sql.insert({ name: "name1" })}`
@@ -132,7 +132,7 @@ describe("Resolver", () => {
           Id: Schema.Number,
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           ResultId: (result) => result.id,
-          execute: (ids) => sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`.asEffect()
+          execute: (ids) => sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`
         })
         const execute = SqlResolver.request(FindById)
         assert.deepStrictEqual(
@@ -156,7 +156,7 @@ describe("Resolver", () => {
           Id: Schema.Number,
           Result: Schema.Struct({ id: Schema.Number, name: Schema.String }),
           ResultId: (_, result: any) => result.id,
-          execute: (ids) => sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`.asEffect()
+          execute: (ids) => sql`SELECT * FROM test WHERE id IN ${sql.in(ids)}`
         })
         const execute = SqlResolver.request(FindById)
         assert.deepStrictEqual(

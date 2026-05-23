@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { Argument, Command, Flag, GlobalFlag } from "effect/unstable/cli"
-import { describe, expect, it, when } from "tstyche"
+import { describe, expect, it } from "tstyche"
 
 describe("Command", () => {
   describe("withSharedFlags", () => {
@@ -74,8 +74,9 @@ describe("Command", () => {
     })
 
     it("accepts only flags", () => {
-      when(Command.make("root").pipe).isCalledWith(
-        expect(Command.withSharedFlags).type.not.toBeCallableWith({ file: Argument.string("file") })
+      Command.make("root").pipe(
+        // @ts-expect-error Type 'Argument<string>' is not assignable
+        Command.withSharedFlags({ file: Argument.string("file") })
       )
     })
   })

@@ -4,7 +4,7 @@
  * Provides a type-safe, Effect-based client for Anthropic operations including
  * messages and streaming responses.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Array from "effect/Array"
 import type * as Config from "effect/Config"
@@ -33,26 +33,20 @@ import * as Errors from "./internal/errors.ts"
 // =============================================================================
 
 /**
- * The Anthropic client service interface.
+ * Represents the Anthropic client service with methods for the Messages API, including regular and streaming message
+ * creation.
  *
- * Provides methods for interacting with Anthropic's Messages API, including
- * both synchronous and streaming message creation.
- *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Service {
   /**
-   * The underlying generated Anthropic client providing access to all API
-   * endpoints.
+   * The underlying generated Anthropic client that exposes all API endpoints.
    */
   readonly client: Generated.AnthropicClient
 
   /**
-   * Low-level streaming request helper for custom SSE endpoints.
-   *
-   * Executes an HTTP request and decodes the Server-Sent Events response
-   * using the provided schema.
+   * Executes a low-level streaming HTTP request and decodes the Server-Sent Events response using the provided schema.
    */
   readonly streamRequest: <
     Type extends {
@@ -70,10 +64,7 @@ export interface Service {
   >
 
   /**
-   * Creates a message using the Anthropic Messages API.
-   *
-   * Sends a structured list of input messages and returns the model's
-   * generated response. All errors are mapped to the unified `AiError` type.
+   * Creates a message using the Anthropic Messages API and maps all errors to the unified `AiError` type.
    */
   readonly createMessage: (options: {
     readonly payload: typeof Generated.BetaCreateMessageParams.Encoded
@@ -84,12 +75,12 @@ export interface Service {
   >
 
   /**
-   * Creates a streaming message using the Anthropic Messages API.
+   * Creates a streaming message using the Anthropic Messages API and maps all errors to the unified `AiError` type.
    *
-   * Returns an Effect that yields the HTTP response and a stream of events
-   * as the model generates its response. The stream automatically terminates
-   * when a `message_stop` event is received. All errors are mapped to the
-   * unified `AiError` type.
+   * **Details**
+   *
+   * The returned Effect yields the HTTP response and a stream of events as the model generates its response. The stream
+   * automatically terminates when a `message_stop` event is received.
    */
   readonly createMessageStream: (options: {
     readonly payload: Omit<typeof Generated.BetaCreateMessageParams.Encoded, "stream">
@@ -101,8 +92,9 @@ export interface Service {
 }
 
 /**
- * Represents an event received from the Anthropic Messages API during a
- * streaming request.
+ * Represents an event received from the Anthropic Messages API during a streaming request.
+ *
+ * **Details**
  *
  * Events include:
  * - `message_start`: Initial event containing message metadata
@@ -113,8 +105,8 @@ export interface Service {
  * - `content_block_stop`: End of a content block
  * - `error`: Error events with type and message
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export type MessageStreamEvent =
   | typeof Generated.BetaMessageStartEvent.Type
@@ -132,8 +124,8 @@ export type MessageStreamEvent =
 /**
  * Service identifier for the Anthropic client.
  *
- * @since 1.0.0
- * @category service
+ * @category services
+ * @since 4.0.0
  */
 export class AnthropicClient extends Context.Service<AnthropicClient, Service>()(
   "@effect/ai-anthropic/AnthropicClient"
@@ -146,41 +138,33 @@ export class AnthropicClient extends Context.Service<AnthropicClient, Service>()
 /**
  * Configuration options for creating an Anthropic client.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export type Options = {
   /**
-   * The Anthropic API key for authentication.
-   *
-   * If not provided, requests will be made without authentication (useful for
-   * proxied setups or testing).
+   * The Anthropic API key for authentication. Requests are made without authentication when this is omitted, which is
+   * useful for proxied setups or testing.
    */
   readonly apiKey?: Redacted.Redacted<string> | undefined
 
   /**
-   * The base URL for the Anthropic API.
-   *
-   * Override this to use a proxy or a different API-compatible endpoint.
+   * The base URL for the Anthropic API. Override this to use a proxy or a different API-compatible endpoint.
    *
    * @default "https://api.anthropic.com"
    */
   readonly apiUrl?: string | undefined
 
   /**
-   * The Anthropic API version header value.
-   *
-   * Controls which version of the API to use. See Anthropic's versioning
-   * documentation for available versions and their features.
+   * The Anthropic API version header value. This controls which version of the API to use.
    *
    * @default "2023-06-01"
    */
   readonly apiVersion?: string | undefined
 
   /**
-   * Optional transformer for the underlying HTTP client.
-   *
-   * Use this to add middleware, logging, or custom request/response handling.
+   * Optional transformer for the underlying HTTP client, such as middleware, logging, or custom request/response
+   * handling.
    */
   readonly transformClient?: ((client: HttpClient.HttpClient) => HttpClient.HttpClient) | undefined
 }
@@ -196,16 +180,14 @@ const RedactedAnthropicHeaders = {
 /**
  * Creates an Anthropic client service with the given options.
  *
- * The client automatically handles:
- * - API key authentication via the `x-api-key` header
- * - API versioning via the `anthropic-version` header
- * - Error mapping to the unified `AiError` type
- * - Request/response transformations via `AnthropicConfig`
+ * **Details**
  *
- * Requires an `HttpClient` in the context.
+ * The client handles API key authentication via the `x-api-key` header, API versioning via the `anthropic-version`
+ * header, error mapping to the unified `AiError` type, and request/response transformations via `AnthropicConfig`. It
+ * requires an `HttpClient` in the context.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(
   function*(options: Options): Effect.fn.Return<Service, never, HttpClient.HttpClient> {
@@ -352,8 +334,8 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer for the Anthropic client with the given options.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer = (options: Options): Layer.Layer<AnthropicClient, never, HttpClient.HttpClient> =>
   Layer.effect(AnthropicClient, make(options))
@@ -362,41 +344,33 @@ export const layer = (options: Options): Layer.Layer<AnthropicClient, never, Htt
  * Creates a layer for the Anthropic client, loading the requisite configuration
  * via Effect's `Config` module.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layerConfig = (options?: {
   /**
-   * The Anthropic API key for authentication.
-   *
-   * If not provided, requests will be made without authentication (useful for
-   * proxied setups or testing).
+   * The Anthropic API key for authentication. Requests are made without authentication when this is omitted, which is
+   * useful for proxied setups or testing.
    */
   readonly apiKey?: Config.Config<Redacted.Redacted<string> | undefined> | undefined
 
   /**
-   * The base URL for the Anthropic API.
-   *
-   * Override this to use a proxy or a different API-compatible endpoint.
+   * The base URL for the Anthropic API. Override this to use a proxy or a different API-compatible endpoint.
    *
    * @default "https://api.anthropic.com"
    */
   readonly apiUrl?: Config.Config<string> | undefined
 
   /**
-   * The Anthropic API version header value.
-   *
-   * Controls which version of the API to use. See Anthropic's versioning
-   * documentation for available versions and their features.
+   * The Anthropic API version header value. This controls which version of the API to use.
    *
    * @default "2023-06-01"
    */
   readonly apiVersion?: Config.Config<string> | undefined
 
   /**
-   * Optional transformer for the underlying HTTP client.
-   *
-   * Use this to add middleware, logging, or custom request/response handling.
+   * Optional transformer for the underlying HTTP client, such as middleware, logging, or custom request/response
+   * handling.
    */
   readonly transformClient?: ((client: HttpClient.HttpClient) => HttpClient.HttpClient) | undefined
 }): Layer.Layer<AnthropicClient, Config.ConfigError, HttpClient.HttpClient> =>

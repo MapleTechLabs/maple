@@ -120,7 +120,7 @@ describe("Sink", () => {
         )
       }))
 
-    it.effect("produces empty trailing chunks", () =>
+    it.effect("produces an empty chunk for empty input", () =>
       Effect.gen(function*() {
         const stream = Stream.empty.pipe(
           Stream.transduce(Sink.take<number>(3))

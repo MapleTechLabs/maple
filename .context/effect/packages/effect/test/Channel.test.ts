@@ -142,7 +142,7 @@ describe("Channel", () => {
         assert.deepStrictEqual(result, [2, 3, 4])
       }))
 
-    it.effect("mapEffect - propagates interruption", () =>
+    it.effect("mapEffect interrupts the running effect when the channel is interrupted", () =>
       Effect.gen(function*() {
         let interrupted = false
         const latch = yield* Latch.make(false)
@@ -225,6 +225,22 @@ describe("Channel", () => {
       }))
   })
 
+  describe("encoding", () => {
+    it.effect("decodeText handles multi-byte characters split across Uint8Array boundaries", () =>
+      Effect.gen(function*() {
+        const bytes = new TextEncoder().encode("a🌍b")
+        const chunks: ReadonlyArray<readonly [Uint8Array, ...ReadonlyArray<Uint8Array>]> = [
+          [bytes.slice(0, 2)],
+          [bytes.slice(2, 4), bytes.slice(4)]
+        ]
+        const result = yield* Channel.fromArray(chunks).pipe(
+          Channel.pipeTo(Channel.decodeText()),
+          Channel.runCollect
+        )
+        assert.strictEqual(result.flat().join(""), "a🌍b")
+      }))
+  })
+
   describe("merging", () => {
     it.effect("merge - interrupts left side if halt strategy is set to 'right'", () =>
       Effect.gen(function*() {
@@ -299,7 +315,7 @@ describe("Channel", () => {
   })
 
   describe("switchMap", () => {
-    it.effect("interrupts the previous channel", () =>
+    it.effect("interrupts previous channels and runs their finalizers", () =>
       Effect.gen(function*() {
         const result = yield* Channel.fromIterable([1, 2, 3]).pipe(
           Channel.switchMap((n) => n === 3 ? Channel.empty : Channel.never),

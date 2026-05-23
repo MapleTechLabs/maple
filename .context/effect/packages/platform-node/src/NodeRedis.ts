@@ -1,5 +1,24 @@
 /**
- * @since 1.0.0
+ * Node.js Redis integration backed by `ioredis`.
+ *
+ * This module provides scoped layers that create an `ioredis` client and expose
+ * both the low-level `Redis` service used by Effect persistence modules and the
+ * `NodeRedis` service for direct access to the underlying client. It is useful
+ * for Node applications that want Redis-backed persistence, persisted queues,
+ * distributed rate limiting, or custom Redis commands alongside the Effect
+ * services that build on Redis.
+ *
+ * The client is acquired when the layer is built and closed with `quit` when
+ * the layer scope ends, so install the layer at the lifetime you want for the
+ * connection and pass `ioredis` options, or `layerConfig`, for connection,
+ * TLS, database, retry, and reconnect settings. Persistence and rate limiter
+ * stores build their own keys and Lua scripts on top of this service; choose
+ * stable prefixes and store ids to avoid collisions, account for persisted
+ * values that may fail to decode after schema changes, and avoid unbounded
+ * high-cardinality rate-limit keys unless you have a cleanup or bounding
+ * strategy.
+ *
+ * @since 4.0.0
  */
 import * as Config from "effect/Config"
 import * as Context from "effect/Context"
@@ -11,8 +30,12 @@ import * as Redis from "effect/unstable/persistence/Redis"
 import * as IoRedis from "ioredis"
 
 /**
- * @since 1.0.0
- * @category Service
+ * Service tag for the Node Redis integration, exposing the underlying
+ * `ioredis` client and a `use` helper that maps client failures to
+ * `RedisError`.
+ *
+ * @category services
+ * @since 4.0.0
  */
 export class NodeRedis extends Context.Service<NodeRedis, {
   readonly client: IoRedis.Redis
@@ -51,16 +74,22 @@ const make = Effect.fnUntraced(function*(
 })
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides `Redis` and `NodeRedis` services backed by an `ioredis` client
+ * created with the supplied options and closed when the layer scope ends.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer = (
   options?: IoRedis.RedisOptions | undefined
 ): Layer.Layer<Redis.Redis | NodeRedis> => Layer.effectContext(make(options))
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides `Redis` and `NodeRedis` services from `Config`-backed ioredis
+ * options, closing the client when the layer scope ends.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerConfig: (
   options: Config.Wrap<IoRedis.RedisOptions>
@@ -68,7 +97,7 @@ export const layerConfig: (
   options: Config.Wrap<IoRedis.RedisOptions>
 ): Layer.Layer<Redis.Redis | NodeRedis, Config.ConfigError> =>
   Layer.effectContext(
-    Config.unwrap(options).asEffect().pipe(
+    Config.unwrap(options).pipe(
       Effect.flatMap(make)
     )
   )

@@ -29,22 +29,20 @@ describe("decoding / encoding API", () => {
 
   it("asserts", () => {
     const schema = Schema.String
-    const asserts: Schema.Codec.ToAsserts<typeof schema> = Schema.asserts(schema)
     const u = hole<unknown>()
     {
-      asserts(u)
+      Schema.asserts(schema, u)
       expect(u).type.toBe<string>()
     }
     const sn = hole<string | number>()
     {
-      asserts(sn)
+      Schema.asserts(schema, sn)
       expect(sn).type.toBe<string>()
     }
     const struct = Schema.Struct({ a: Schema.String })
-    const assertsStruct: Schema.Codec.ToAsserts<typeof struct> = Schema.asserts(struct)
     const s = hole<{ b: string }>()
     {
-      assertsStruct(s)
+      Schema.asserts(struct, s)
       expect(s).type.toBe<{ readonly a: string; b: string }>()
     }
   })

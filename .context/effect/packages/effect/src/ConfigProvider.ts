@@ -97,22 +97,24 @@ import * as Str from "./String.ts"
  * A discriminated union describing the shape of a configuration value at a
  * given path.
  *
- * - `Value` – a terminal string leaf.
- * - `Record` – an object-like container whose immediate child keys are known.
- *   May carry an optional co-located `value`.
- * - `Array` – an indexed container with a known `length`. May carry an
- *   optional co-located `value`.
+ * **When to use**
  *
- * When to use:
- * - Implement a custom `ConfigProvider` by returning `Node` values from the
- *   `get` callback passed to {@link make}.
- * - Inspect raw provider output before schema parsing.
+ * Use `Node` when implementing a custom `ConfigProvider` by returning raw
+ * nodes from the `get` callback passed to {@link make}, or when inspecting raw
+ * provider output before schema parsing.
+ *
+ * **Details**
+ *
+ * `Value` is a terminal string leaf. `Record` is an object-like container
+ * whose immediate child keys are known and may carry an optional co-located
+ * `value`. `Array` is an indexed container with a known `length` and may also
+ * carry an optional co-located `value`.
  *
  * @see {@link makeValue} – construct a `Value` node
  * @see {@link makeRecord} – construct a `Record` node
  * @see {@link makeArray} – construct an `Array` node
  *
- * @category Models
+ * @category models
  * @since 4.0.0
  */
 export type Node =
@@ -137,10 +139,14 @@ export type Node =
 /**
  * Creates a `Value` node representing a terminal string leaf.
  *
- * When to use:
- * - Building nodes inside a custom `ConfigProvider`'s `get` callback.
+ * **When to use**
  *
- * Does not mutate input. Returns a new plain object.
+ * Use this when building nodes inside a custom `ConfigProvider`'s `get`
+ * callback.
+ *
+ * **Details**
+ *
+ * The function does not mutate input and returns a new plain object.
  *
  * **Example** (Creating a value node)
  *
@@ -154,7 +160,7 @@ export type Node =
  * @see {@link makeRecord} – for object-like containers
  * @see {@link makeArray} – for array-like containers
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function makeValue(value: string): Node {
@@ -165,11 +171,16 @@ export function makeValue(value: string): Node {
  * Creates a `Record` node representing an object-like container with known
  * child keys.
  *
- * When to use:
- * - Describing a directory or JSON object inside a custom provider.
+ * **When to use**
+ *
+ * Use this when describing a directory or JSON object inside a custom
+ * provider.
+ *
+ * **Details**
  *
  * The optional `value` allows a node to be both a container and a leaf at the
- * same time (e.g. an env var `A=x` that also has children `A_FOO`, `A_BAR`).
+ * same time (for example, an env var `A=x` that also has children `A_FOO` and
+ * `A_BAR`).
  *
  * **Example** (Creating a record node)
  *
@@ -183,7 +194,7 @@ export function makeValue(value: string): Node {
  * @see {@link makeValue} – for terminal leaves
  * @see {@link makeArray} – for array-like containers
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function makeRecord(keys: ReadonlySet<string>, value?: string): Node {
@@ -194,9 +205,12 @@ export function makeRecord(keys: ReadonlySet<string>, value?: string): Node {
  * Creates an `Array` node representing an indexed container with a known
  * length.
  *
- * When to use:
- * - Describing a JSON array or a set of numerically-indexed env vars inside a
- *   custom provider.
+ * **When to use**
+ *
+ * Use this when describing a JSON array or a set of numerically-indexed env
+ * vars inside a custom provider.
+ *
+ * **Details**
  *
  * The optional `value` allows a node to be both a container and a leaf at the
  * same time.
@@ -213,7 +227,7 @@ export function makeRecord(keys: ReadonlySet<string>, value?: string): Node {
  * @see {@link makeValue} – for terminal leaves
  * @see {@link makeRecord} – for object-like containers
  *
- * @category Constructors
+ * @category constructors
  * @since 4.0.0
  */
 export function makeArray(length: number, value?: string): Node {
@@ -223,13 +237,16 @@ export function makeArray(length: number, value?: string): Node {
 /**
  * Typed error indicating that a configuration source could not be read.
  *
- * When to use:
- * - Return from a custom provider's `get` callback when the underlying store
- *   is unreachable or produces an I/O error.
- * - Match on in error channels when consuming provider output directly.
+ * **When to use**
  *
- * Not used for "key not found" — that case is represented by returning
- * `undefined` from `load` / `get`.
+ * Use this from a custom provider's `get` callback when the underlying store
+ * is unreachable or produces an I/O error, or match on it in error channels
+ * when consuming provider output directly.
+ *
+ * **Gotchas**
+ *
+ * Do not use `SourceError` for "key not found". That case is represented by
+ * returning `undefined` from `load` or `get`.
  *
  * **Example** (Failing with a SourceError)
  *
@@ -246,7 +263,7 @@ export function makeArray(length: number, value?: string): Node {
  * @see {@link ConfigProvider} – the interface whose `load`/`get` may fail
  *   with this error
  *
- * @category Models
+ * @category models
  * @since 4.0.0
  */
 export class SourceError extends Data.TaggedError("SourceError")<{
@@ -256,9 +273,8 @@ export class SourceError extends Data.TaggedError("SourceError")<{
 
 /**
  * An ordered sequence of string or numeric segments that addresses a node in
- * the configuration tree.
- *
- * String segments name object keys; numeric segments index into arrays.
+ * the configuration tree. String segments name object keys; numeric segments
+ * index into arrays.
  *
  * **Example** (A typical config path)
  *
@@ -268,7 +284,7 @@ export class SourceError extends Data.TaggedError("SourceError")<{
  * const path: ConfigProvider.Path = ["database", "replicas", 0, "host"]
  * ```
  *
- * @category Models
+ * @category models
  * @since 4.0.0
  */
 export type Path = ReadonlyArray<string | number>
@@ -276,27 +292,26 @@ export type Path = ReadonlyArray<string | number>
 /**
  * The core interface for loading raw configuration data.
  *
- * When to use:
- * - Type-annotate variables that hold a provider.
- * - Implement a custom provider via {@link make}.
+ * **When to use**
  *
- * Key members:
- * - `load(path)` – resolves `mapInput` and `prefix` transformations, then
- *   delegates to `get`. This is what the `Config` module calls.
- * - `get(path)` – raw access to the underlying store, without path
- *   transformations.
- * - `mapInput` / `prefix` – optional path transformations set by
- *   {@link mapInput} and {@link nested}.
+ * Use this to type-annotate variables that hold a provider or to implement a
+ * custom provider via {@link make}.
  *
- * All methods return `Effect<Node | undefined, SourceError>`:
- * - `undefined` means "not found" (not an error).
- * - `SourceError` means the source itself failed.
+ * **Details**
+ *
+ * `load(path)` resolves `mapInput` and `prefix` transformations, then
+ * delegates to `get`. This is what the `Config` module calls. `get(path)` is
+ * raw access to the underlying store without path transformations.
+ * `mapInput` and `prefix` are optional path transformations set by
+ * {@link mapInput} and {@link nested}. All methods return
+ * `Effect<Node | undefined, SourceError>`: `undefined` means "not found" and
+ * `SourceError` means the source itself failed.
  *
  * @see {@link make} – construct a provider from a lookup function
  * @see {@link orElse} – compose providers with fallback
  *
- * @category Models
- * @since 4.0.0
+ * @category models
+ * @since 2.0.0
  */
 export interface ConfigProvider extends Pipeable {
   /**
@@ -323,16 +338,16 @@ export interface ConfigProvider extends Pipeable {
 
 /**
  * The `ConfigProvider` service reference, registered in the context with a
- * default value of `fromEnv()`.
+ * default value of `fromEnv()`. Because it is a `Context.Reference`, it is
+ * available without explicit provision; `Config` schemas automatically resolve
+ * it.
  *
- * Because it is a `Context.Reference`, it is available without explicit
- * provision — `Config` schemas automatically resolve it.
+ * **When to use**
  *
- * When to use:
- * - Override the provider for an entire program via
- *   `Effect.provideService(ConfigProvider.ConfigProvider, myProvider)`.
- * - Retrieve the current provider inside an Effect with
- *   `yield* ConfigProvider.ConfigProvider`.
+ * Use this to override the provider for an entire program via
+ * `Effect.provideService(ConfigProvider.ConfigProvider, myProvider)`, or to
+ * retrieve the current provider inside an Effect with
+ * `yield* ConfigProvider.ConfigProvider`.
  *
  * **Example** (Providing a custom provider)
  *
@@ -352,8 +367,8 @@ export interface ConfigProvider extends Pipeable {
  * @see {@link layer} – install a provider as a Layer
  * @see {@link layerAdd} – add a fallback provider as a Layer
  *
- * @category Services
- * @since 4.0.0
+ * @category services
+ * @since 2.0.0
  */
 export const ConfigProvider: Context.Reference<ConfigProvider> = Context.Reference<ConfigProvider>(
   "effect/ConfigProvider",
@@ -372,9 +387,12 @@ const Proto = {
 /**
  * Creates a `ConfigProvider` from a raw lookup function.
  *
- * When to use:
- * - Implementing a provider backed by a custom store (database, remote API,
- *   in-memory map, etc.).
+ * **When to use**
+ *
+ * Use this when implementing a provider backed by a custom store, such as a
+ * database, remote API, or in-memory map.
+ *
+ * **Details**
  *
  * The `get` callback receives a `Path` and must return
  * `Effect<Node | undefined, SourceError>`. Return `undefined` when the path
@@ -406,8 +424,8 @@ const Proto = {
  * @see {@link fromEnv} – pre-built provider for environment variables
  * @see {@link fromUnknown} – pre-built provider for JSON objects
  *
- * @category Constructors
- * @since 4.0.0
+ * @category constructors
+ * @since 2.0.0
  */
 export function make(
   get: (path: Path) => Effect.Effect<Node | undefined, SourceError>,
@@ -430,14 +448,19 @@ export function make(
  * Returns a provider that falls back to `that` when `self` returns `undefined`
  * for a path.
  *
- * When to use:
- * - Layering multiple config sources (e.g. env vars + defaults file).
- * - Providing partial overrides on top of a base config.
+ * **When to use**
  *
- * Only triggers the fallback when the path is not found (`undefined`). A
- * `SourceError` from `self` is **not** caught — it propagates immediately.
+ * Use this to layer multiple config sources, such as env vars plus a defaults
+ * file, or to provide partial overrides on top of a base config.
+ *
+ * **Details**
  *
  * Supports both data-last and data-first calling conventions.
+ *
+ * **Gotchas**
+ *
+ * The fallback only runs when the path is not found (`undefined`). A
+ * `SourceError` from `self` is not caught; it propagates immediately.
  *
  * **Example** (Falling back to a default provider)
  *
@@ -454,8 +477,8 @@ export function make(
  *
  * @see {@link layerAdd} – install a fallback provider via a Layer
  *
- * @category Combinators
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const orElse: {
   (that: ConfigProvider): (self: ConfigProvider) => ConfigProvider
@@ -469,16 +492,18 @@ export const orElse: {
 /**
  * Transforms the path segments before they reach the underlying store.
  *
- * When to use:
- * - Renaming or re-casing path segments (see {@link constantCase} for a
- *   common specialization).
- * - Adding suffixes or other per-segment transformations.
+ * **When to use**
+ *
+ * Use this for renaming or re-casing path segments, or for adding suffixes and
+ * other per-segment transformations. See {@link constantCase} for a common
+ * specialization.
+ *
+ * **Details**
  *
  * The function `f` receives the full path and must return a new path. If the
- * provider already has a `mapInput`, the functions compose (existing first,
- * then `f`).
- *
- * Supports both data-last and data-first calling conventions.
+ * provider already has a `mapInput`, the functions compose: the existing
+ * mapping runs first, then `f`. Supports both data-last and data-first calling
+ * conventions.
  *
  * **Example** (Uppercasing path segments)
  *
@@ -499,7 +524,7 @@ export const orElse: {
  * @see {@link constantCase} – a preset that converts to `CONSTANT_CASE`
  * @see {@link nested} – for prepending a prefix instead of transforming
  *
- * @category Combinators
+ * @category combinators
  * @since 4.0.0
  */
 export const mapInput: {
@@ -515,9 +540,12 @@ export const mapInput: {
 /**
  * Converts all string path segments to `CONSTANT_CASE` before lookup.
  *
- * When to use:
- * - Bridging camelCase schema keys to `SCREAMING_SNAKE_CASE` environment
- *   variables (the most common pattern).
+ * **When to use**
+ *
+ * Use this to bridge camelCase schema keys to `SCREAMING_SNAKE_CASE`
+ * environment variables.
+ *
+ * **Details**
  *
  * Numeric segments are left unchanged. This is a specialization of
  * {@link mapInput}.
@@ -536,8 +564,8 @@ export const mapInput: {
  *
  * @see {@link mapInput} – for arbitrary path transformations
  *
- * @since 4.0.0
- * @category Combinators
+ * @category combinators
+ * @since 2.0.0
  */
 export const constantCase: (self: ConfigProvider) => ConfigProvider = mapInput((path) =>
   path.map((seg) => typeof seg === "number" ? seg : Str.constantCase(seg))
@@ -547,15 +575,21 @@ export const constantCase: (self: ConfigProvider) => ConfigProvider = mapInput((
  * Scopes a provider so that all lookups are prefixed with the given path
  * segments.
  *
- * When to use:
- * - Namespacing config under a prefix like `"app"` or `"database"`.
- * - Reusing the same provider shape for multiple sub-configs.
+ * **When to use**
  *
- * Accepts a single string or a full `Path` array. The prefix is prepended
- * *after* any `mapInput` transformation runs, so ordering matters when
- * composing with {@link mapInput} or {@link constantCase}.
+ * Use this to namespace config under a prefix like `"app"` or `"database"`, or
+ * to reuse the same provider shape for multiple sub-configs.
  *
- * Supports both data-last and data-first calling conventions.
+ * **Details**
+ *
+ * Accepts a single string or a full `Path` array. Supports both data-last and
+ * data-first calling conventions.
+ *
+ * **Gotchas**
+ *
+ * The prefix is prepended after any `mapInput` transformation runs, so
+ * ordering matters when composing with {@link mapInput} or
+ * {@link constantCase}.
  *
  * **Example** (Nesting under a prefix)
  *
@@ -572,8 +606,8 @@ export const constantCase: (self: ConfigProvider) => ConfigProvider = mapInput((
  *
  * @see {@link mapInput} – for arbitrary path transformations
  *
- * @category Combinators
- * @since 4.0.0
+ * @category combinators
+ * @since 2.0.0
  */
 export const nested: {
   (prefix: string | Path): (self: ConfigProvider) => ConfigProvider
@@ -590,8 +624,11 @@ export const nested: {
  * Installs a `ConfigProvider` as the active provider for all downstream
  * effects, replacing any previously installed provider.
  *
- * When to use:
- * - Setting the config source for an entire application or test suite.
+ * **When to use**
+ *
+ * Use this to set the config source for an entire application or test suite.
+ *
+ * **Details**
  *
  * Accepts either a plain `ConfigProvider` or an `Effect` that produces one.
  * When given an Effect, it is evaluated once when the layer is built.
@@ -615,7 +652,7 @@ export const nested: {
  *
  * @see {@link layerAdd} – add a provider without replacing the existing one
  *
- * @category Layers
+ * @category layers
  * @since 4.0.0
  */
 export const layer = <E = never, R = never>(
@@ -627,15 +664,17 @@ export const layer = <E = never, R = never>(
  * Creates a Layer that composes a new `ConfigProvider` with the currently
  * active one, rather than replacing it.
  *
- * When to use:
- * - Adding defaults that should only apply when the primary provider has no
- *   value for a path.
- * - Overriding specific keys while keeping the rest from the existing provider
- *   (use `asPrimary: true`).
+ * **When to use**
  *
- * By default, the new provider acts as a **fallback** (consulted only when
- * the current provider returns `undefined`). Set `asPrimary: true` to make
- * the new provider the **primary** source, with the existing one as fallback.
+ * Use this to add defaults that should only apply when the primary provider
+ * has no value for a path, or to override specific keys while keeping the rest
+ * from the existing provider by setting `asPrimary: true`.
+ *
+ * **Details**
+ *
+ * By default, the new provider acts as a fallback and is consulted only when
+ * the current provider returns `undefined`. Set `asPrimary: true` to make the
+ * new provider the primary source, with the existing one as fallback.
  *
  * **Example** (Adding default values)
  *
@@ -654,7 +693,7 @@ export const layer = <E = never, R = never>(
  * @see {@link layer} – replace the provider entirely
  * @see {@link orElse} – compose providers without layers
  *
- * @category Layers
+ * @category layers
  * @since 4.0.0
  */
 export const layerAdd = <E = never, R = never>(
@@ -675,14 +714,17 @@ export const layerAdd = <E = never, R = never>(
  * Creates a `ConfigProvider` backed by an in-memory JavaScript value
  * (typically a parsed JSON object).
  *
- * When to use:
- * - Unit / integration tests where you want deterministic config without
- *   touching the environment.
- * - Embedding config directly in code or reading a JSON file.
+ * **When to use**
  *
- * Path traversal follows standard JS rules: string segments index into
- * object keys, numeric segments index into arrays. Returns `undefined`
- * for any path that cannot be resolved. Never fails with `SourceError`.
+ * Use this in unit or integration tests where you want deterministic config
+ * without touching the environment, or when embedding config directly in code
+ * or reading a JSON file.
+ *
+ * **Details**
+ *
+ * Path traversal follows standard JS rules: string segments index into object
+ * keys, numeric segments index into arrays. Returns `undefined` for any path
+ * that cannot be resolved. Never fails with `SourceError`.
  *
  * Primitive values (`number`, `boolean`, `bigint`) are stringified via
  * `String(...)`.
@@ -759,10 +801,13 @@ function describeUnknown(u: unknown): Node | undefined {
 /**
  * Creates a `ConfigProvider` backed by environment variables.
  *
- * When to use:
- * - Reading configuration from `process.env` (the default when no provider
- *   is explicitly set).
- * - Passing a custom env record for testing or non-Node runtimes.
+ * **When to use**
+ *
+ * Use this to read configuration from `process.env`, which is the default when
+ * no provider is explicitly set, or to pass a custom env record for testing or
+ * non-Node runtimes.
+ *
+ * **Details**
  *
  * Path segments are joined with `_` for direct lookup, and env var names are
  * also split on `_` to build a trie for child key discovery. This means
@@ -799,7 +844,7 @@ function describeUnknown(u: unknown): Node | undefined {
  * @see {@link constantCase} – bridge camelCase keys to SCREAMING_SNAKE_CASE
  *
  * @category ConfigProviders
- * @since 4.0.0
+ * @since 2.0.0
  */
 export function fromEnv(options?: { readonly env?: Record<string, string> | undefined }): ConfigProvider {
   const env = options?.env ?? {
@@ -876,15 +921,17 @@ function trieNodeAt(root: EnvTrieNode, path: Path): EnvTrieNode | undefined {
 /**
  * Creates a `ConfigProvider` by parsing the string contents of a `.env` file.
  *
- * When to use:
- * - You already have the `.env` contents as a string (e.g. fetched from a
- *   remote store or embedded in a test).
- * - Use {@link fromDotEnv} instead if you want to read a `.env` file from
- *   disk.
+ * **When to use**
  *
- * Supports `export` prefixes, single/double/backtick quoting, inline
- * comments, and escaped newlines. Variable expansion (e.g. `${VAR}`) is
- * disabled by default; enable with `{ expandVariables: true }`.
+ * Use this when you already have the `.env` contents as a string, such as
+ * contents fetched from a remote store or embedded in a test. Use
+ * {@link fromDotEnv} instead if you want to read a `.env` file from disk.
+ *
+ * **Details**
+ *
+ * Supports `export` prefixes, single/double/backtick quoting, inline comments,
+ * and escaped newlines. Variable expansion (for example, `${VAR}`) is disabled
+ * by default; enable with `{ expandVariables: true }`.
  *
  * Parsing is based on the `dotenv` / `dotenv-expand` algorithm.
  *
@@ -1016,13 +1063,16 @@ function searchLast(str: string, rgx: RegExp): number {
  * Creates a `ConfigProvider` by reading and parsing a `.env` file from the
  * file system.
  *
- * When to use:
- * - Loading environment config from a `.env` file at application startup.
- * - Use {@link fromDotEnvContents} if you already have the file contents as
- *   a string.
+ * **When to use**
  *
- * Requires `FileSystem` in the Effect context. Defaults to reading `".env"`
- * in the current directory; override with `{ path: "/custom/.env" }`.
+ * Use this to load environment config from a `.env` file at application
+ * startup. Use {@link fromDotEnvContents} if you already have the file
+ * contents as a string.
+ *
+ * **Details**
+ *
+ * Requires `FileSystem` in the Effect context. Defaults to reading `".env"` in
+ * the current directory; override with `{ path: "/custom/.env" }`.
  *
  * Returns an `Effect` that resolves to a `ConfigProvider`. Fails with a
  * `PlatformError` if the file cannot be read.
@@ -1041,6 +1091,7 @@ function searchLast(str: string, rgx: RegExp): number {
  * @see {@link fromDotEnvContents} – parse a `.env` string directly
  * @see {@link fromEnv} – read from the runtime environment
  *
+ * @category constructors
  * @since 4.0.0
  */
 export const fromDotEnv: (options?: {
@@ -1058,16 +1109,17 @@ export const fromDotEnv: (options?: {
  * Creates a `ConfigProvider` that reads configuration from a directory tree
  * on disk, where each file is a leaf value and each directory is a container.
  *
- * When to use:
- * - Kubernetes ConfigMap / Secret volume mounts, where each key is a file
- *   under a mount path.
- * - Any file-per-key configuration layout.
+ * **When to use**
  *
- * Resolution rules:
- * - Regular file → `Value` node (file contents trimmed).
- * - Directory → `Record` node with immediate child names as keys.
- * - Not found → tries as file first, then as directory; returns
- *   `SourceError` if both fail.
+ * Use this for Kubernetes ConfigMap or Secret volume mounts, where each key is
+ * a file under a mount path, or for any file-per-key configuration layout.
+ *
+ * **Details**
+ *
+ * Resolution tries a regular file first and returns a `Value` node with
+ * trimmed file contents. If the file read fails, it tries a directory and
+ * returns a `Record` node with immediate child names as keys. If both fail, it
+ * returns `SourceError`.
  *
  * Requires `Path` and `FileSystem` in the Effect context. Defaults to root
  * path `/`; override with `{ rootPath: "/etc/config" }`.

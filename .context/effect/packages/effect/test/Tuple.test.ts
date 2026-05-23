@@ -6,7 +6,7 @@ import { describe, it } from "vitest"
 const tuple = ["a", 2, true] as [string, number, boolean]
 
 describe("Tuple", () => {
-  it("make", () => {
+  it("make creates a tuple from ordered values", () => {
     deepStrictEqual(Tuple.make("a", 2, true), ["a", 2, true])
   })
 
@@ -65,7 +65,7 @@ describe("Tuple", () => {
     })
   })
 
-  it("map", () => {
+  it("map transforms every schema element with a lambda", () => {
     const tuple = [Schema.String, Schema.Number, Schema.Boolean] as const
     TestSchema.Asserts.ast.elements.equals(pipe(tuple, Tuple.map(Schema.NullOr)), [
       Schema.NullOr(Schema.String),
@@ -79,7 +79,7 @@ describe("Tuple", () => {
     ])
   })
 
-  it("mapPick", () => {
+  it("mapPick transforms only the selected schema elements", () => {
     const tuple = [Schema.String, Schema.Number, Schema.Boolean] as const
     TestSchema.Asserts.ast.elements.equals(pipe(tuple, Tuple.mapPick([0, 2], Schema.NullOr)), [
       Schema.NullOr(Schema.String),
@@ -93,7 +93,7 @@ describe("Tuple", () => {
     ])
   })
 
-  it("mapOmit", () => {
+  it("mapOmit transforms every schema element except the omitted indices", () => {
     const tuple = [Schema.String, Schema.Number, Schema.Boolean] as const
     TestSchema.Asserts.ast.elements.equals(pipe(tuple, Tuple.mapOmit([1], Schema.NullOr)), [
       Schema.NullOr(Schema.String),
@@ -107,7 +107,7 @@ describe("Tuple", () => {
     ])
   })
 
-  it("makeCombiner", () => {
+  it("makeCombiner combines tuple positions independently", () => {
     const C = Tuple.makeCombiner([
       Number.ReducerSum,
       String.ReducerConcat
@@ -116,7 +116,7 @@ describe("Tuple", () => {
     deepStrictEqual(C.combine([1, "a"], [2, "b"]), [3, "ab"])
   })
 
-  it("makeReducer", () => {
+  it("makeReducer derives a tuple-shaped initial value and combines position-wise", () => {
     const R = Tuple.makeReducer([
       Number.ReducerSum,
       String.ReducerConcat

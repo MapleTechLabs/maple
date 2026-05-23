@@ -14,6 +14,10 @@ patches:
   - '[{"op":"add","path":"/components/schemas/Response/allOf/2/properties/usage/nullable","value":true}]'
   - '[{"op":"remove","path":"/components/schemas/ResponseFunctionCallArgumentsDoneEvent/required/2"}]'
   - '[{"op":"remove","path":"/components/schemas/WebSearchActionSearch/required/1"}]'
+  - '[{"op":"add","path":"/components/schemas/ModelResponseProperties/properties/prompt_cache_retention/anyOf/0/enum/1","value":"in_memory"}]'
+  - '[{"op":"add","path":"/components/schemas/PromptCacheRetentionEnum/enum/1","value":"in-memory"}]'
+  - '[{"op":"replace","path":"/components/schemas/OpenAIFile/properties/expires_at","value":{"anyOf":[{"type":"integer","format":"unixtime","description":"The Unix timestamp (in seconds) for when the file will expire."},{"type":"null"}]}}]'
+  - '[{"op":"add","path":"/components/schemas/OpenAIFile/properties/status_details/nullable","value":true}]'
   # Add missing keepalive stream event support
   - '[{"op":"add","path":"/components/schemas/ResponseKeepAliveEvent","value":{"type":"object","title":"Keep alive","description":"A keepalive event emitted during long-running response streams.","properties":{"type":{"type":"string","enum":["keepalive"],"description":"The type of the keepalive event. Always `keepalive`.","default":"keepalive","x-stainless-const":true},"sequence_number":{"type":"integer","description":"The sequence number of this keepalive event."}},"required":["type","sequence_number"]}}]'
   - '[{"op":"add","path":"/components/schemas/ResponseStreamEvent/anyOf/-","value":{"$ref":"#/components/schemas/ResponseKeepAliveEvent"}}]'

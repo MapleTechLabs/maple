@@ -25,6 +25,7 @@ export const createTestContext = (options: TestContextOptions = {}) => {
     id: "test/rule",
     filename,
     physicalFilename: filename,
+    cwd,
     options: ruleOptions,
     getFilename: () => filename,
     getCwd: () => cwd,
@@ -32,7 +33,11 @@ export const createTestContext = (options: TestContextOptions = {}) => {
       errors.push(reportOptions)
     },
     sourceCode: {
-      getText(_node?: unknown) {
+      text: sourceCode,
+      getText(node?: { range?: [number, number] } | null) {
+        if (node?.range) {
+          return sourceCode.slice(node.range[0], node.range[1])
+        }
         return sourceCode
       }
     }

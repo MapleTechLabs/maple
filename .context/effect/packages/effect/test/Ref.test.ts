@@ -27,27 +27,27 @@ const isChanged = (self: State): boolean => self._tag === "Changed"
 const isClosed = (self: State): boolean => self._tag === "Closed"
 
 describe("Ref", () => {
-  it.effect("get", () =>
+  it.effect("get returns the current value", () =>
     Effect.gen(function*() {
       const result = yield* Ref.get(Ref.makeUnsafe(current))
       assert.strictEqual(result, current)
     }))
 
-  it.effect("getAndSet", () =>
+  it.effect("getAndSet returns the previous value and stores the replacement", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       const result1 = yield* Ref.getAndSet(ref, update)
       assert.strictEqual(result1, current)
     }))
 
-  it.effect("getAndUpdate", () =>
+  it.effect("getAndUpdate returns the previous value and stores the computed value", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       const result1 = yield* Ref.getAndUpdate(ref, () => update)
       assert.strictEqual(result1, current)
     }))
 
-  it.effect("getAndUpdateSome - once", () =>
+  it.effect("getAndUpdateSome leaves state unchanged when no transition matches", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       const result1 = yield* Ref.getAndUpdateSome(
@@ -59,7 +59,7 @@ describe("Ref", () => {
       assert.strictEqual(result2, Active)
     }))
 
-  it.effect("getAndUpdateSome - twice", () =>
+  it.effect("getAndUpdateSome returns each previous state while applying matching transitions", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       const result1 = yield* Ref.getAndUpdateSome(
@@ -78,7 +78,7 @@ describe("Ref", () => {
       assert.strictEqual(result3, Closed)
     }))
 
-  it.effect("set", () =>
+  it.effect("set stores the provided value", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       yield* Ref.set(ref, update)
@@ -86,7 +86,7 @@ describe("Ref", () => {
       assert.strictEqual(result, update)
     }))
 
-  it.effect("update", () =>
+  it.effect("update stores the computed value", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       yield* Ref.update(ref, () => update)
@@ -94,14 +94,14 @@ describe("Ref", () => {
       assert.strictEqual(result, update)
     }))
 
-  it.effect("updateAndGet", () =>
+  it.effect("updateAndGet stores and returns the computed value", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       const result = yield* Ref.updateAndGet(ref, () => update)
       assert.strictEqual(result, update)
     }))
 
-  it.effect("updateSome - once", () =>
+  it.effect("updateSome leaves state unchanged when no transition matches", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       yield* Ref.updateSome(ref, (state) => isClosed(state) ? Option.some(Changed) : Option.none())
@@ -109,7 +109,7 @@ describe("Ref", () => {
       assert.deepEqual(result, Active)
     }))
 
-  it.effect("updateSome - twice", () =>
+  it.effect("updateSome applies matching transitions to the stored state", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       yield* Ref.updateSome(ref, (state) => isActive(state) ? Option.some(Changed) : Option.none())
@@ -125,7 +125,7 @@ describe("Ref", () => {
       assert.deepEqual(result2, Closed)
     }))
 
-  it.effect("updateSomeAndGet - once", () =>
+  it.effect("updateSomeAndGet returns the current state when no transition matches", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       const result = yield* Ref.updateSomeAndGet(ref, (state) => isClosed(state) ? Option.some(Changed) : Option.none())
@@ -149,7 +149,7 @@ describe("Ref", () => {
       assert.deepEqual(result2, Closed)
     }))
 
-  it.effect("modify", () =>
+  it.effect("modify returns a result while storing the new value", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(current)
       const result1 = yield* Ref.modify(ref, () => ["hello", update])
@@ -167,7 +167,7 @@ describe("Ref", () => {
       assert.strictEqual(result, "state does not change")
     }))
 
-  it.effect("modifySome - twice", () =>
+  it.effect("modifySome returns a result while applying matching transitions", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make<State>(Active)
       const result1 = yield* Ref.modifySome(ref, (state) =>

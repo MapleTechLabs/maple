@@ -1,5 +1,36 @@
 /**
- * @since 1.0.0
+ * Bun implementation of the Effect `HttpServer`.
+ *
+ * This module builds an Effect HTTP server from `Bun.serve`, translating Bun's
+ * Web `Request` objects into `HttpServerRequest` values and Effect
+ * `HttpServerResponse` values back into Web `Response` objects. It is the Bun
+ * runtime entry point for serving `HttpApp`s, streaming responses, file
+ * responses through `BunHttpPlatform`, multipart requests, and websocket
+ * endpoints through `HttpServerRequest.upgrade`.
+ *
+ * Common use cases include using {@link layer} or {@link layerConfig} to serve
+ * an application from Bun configuration, {@link layerServer} when only the
+ * `HttpServer` service is needed, and {@link layerTest} for tests that need an
+ * ephemeral Bun listener and fetch-compatible client.
+ *
+ * Bun supplies absolute request URLs and Web-standard request bodies. This
+ * adapter stores the normalized path-and-query URL on `HttpServerRequest.url`,
+ * while the underlying `Request` still follows Web body rules: pick the
+ * streamed, text, JSON, URL-encoded, or multipart view that matches the route
+ * instead of consuming the same body in incompatible ways. Because `Bun.serve`
+ * has a single active `fetch` handler, each `serve` call reloads that handler
+ * and restores the previous one when the serve scope finalizes.
+ *
+ * WebSocket upgrades must happen from the Bun request handler. The
+ * `HttpServerRequest.upgrade` effect calls `server.upgrade`, fails when Bun says
+ * the request is not upgradeable, buffers messages that arrive before the
+ * Effect socket handler is installed, and maps non-normal close codes into
+ * `Socket` errors. The server is stopped with `server.stop()` when its
+ * acquisition scope closes; unless preemptive shutdown is disabled, finalizing
+ * a serve scope also starts that stop with the configured graceful shutdown
+ * timeout or the default timeout.
+ *
+ * @since 4.0.0
  */
 import type { Server as BunServer, ServerWebSocket } from "bun"
 import * as Config from "effect/Config"
@@ -44,8 +75,10 @@ import * as BunServices from "./BunServices.ts"
 import * as BunStream from "./BunStream.ts"
 
 /**
- * @since 1.0.0
+ * Bun serve options accepted by the HTTP server, extended with typed route definitions.
+ *
  * @category Options
+ * @since 4.0.0
  */
 export type ServeOptions<R extends string> =
   & (
@@ -55,8 +88,10 @@ export type ServeOptions<R extends string> =
   & { readonly routes?: Bun.Serve.Routes<WebSocketContext, R> }
 
 /**
- * @since 1.0.0
- * @category Constructors
+ * Creates a scoped Bun `HttpServer` from `Bun.serve` options, stopping the server on scope finalization with optional graceful shutdown settings.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(
   function*<R extends string>(
@@ -210,8 +245,10 @@ const makeResponse = (
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides only `HttpServer` by constructing a scoped Bun server from the supplied serve options.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerServer: <R extends string>(
   options: ServeOptions<R> & {
@@ -221,8 +258,10 @@ export const layerServer: <R extends string>(
 ) => Layer.Layer<Server.HttpServer> = flow(make, Layer.effect(Server.HttpServer)) as any
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides Bun HTTP support services: `HttpPlatform`, weak ETag generation, and `BunServices`.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerHttpServices: Layer.Layer<
   | HttpPlatform
@@ -235,8 +274,10 @@ export const layerHttpServices: Layer.Layer<
 )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides a Bun `HttpServer` together with the Bun HTTP platform, ETag generator, and Bun services.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer = <R extends string>(
   options: ServeOptions<R> & {
@@ -251,8 +292,10 @@ export const layer = <R extends string>(
 > => Layer.mergeAll(layerServer(options), layerHttpServices)
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Test layer that starts a Bun HTTP server on an ephemeral port and provides the HTTP test client dependencies.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerTest: Layer.Layer<
   Server.HttpServer | HttpPlatform | FileSystem.FileSystem | Etag.Generator | Path.Path | HttpClient
@@ -264,8 +307,10 @@ export const layerTest: Layer.Layer<
 )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Creates the Bun HTTP server and support-services layer from configurable serve options.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerConfig = <R extends string>(
   options: Config.Wrap<
@@ -279,7 +324,7 @@ export const layerConfig = <R extends string>(
   ConfigError
 > =>
   Layer.mergeAll(
-    Layer.effect(Server.HttpServer)(Effect.flatMap(Config.unwrap(options).asEffect(), make)),
+    Layer.effect(Server.HttpServer)(Effect.flatMap(Config.unwrap(options), make)),
     layerHttpServices
   )
 
@@ -483,6 +528,7 @@ class BunServerRequest extends Inspectable.Class implements ServerRequest.HttpSe
           })
       })
     ))
+    this.textEffect = Effect.map(this.arrayBufferEffect, (_) => new TextDecoder().decode(_))
     return this.arrayBufferEffect
   }
 
@@ -550,14 +596,7 @@ class BunServerRequest extends Inspectable.Class implements ServerRequest.HttpSe
           semaphore.withPermits(1)
         )
 
-        const encoder = new TextEncoder()
-        const run = <R, E, _>(handler: (_: Uint8Array) => Effect.Effect<_, E, R> | void, opts?: {
-          readonly onOpen?: Effect.Effect<void> | undefined
-        }) => runRaw((data) => typeof data === "string" ? handler(encoder.encode(data)) : handler(data), opts)
-
-        return Socket.Socket.of({
-          [Socket.TypeId]: Socket.TypeId as typeof Socket.TypeId,
-          run,
+        return Socket.make({
           runRaw,
           writer
         })

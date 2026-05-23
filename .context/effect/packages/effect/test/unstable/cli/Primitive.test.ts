@@ -227,7 +227,7 @@ describe("Primitive", () => {
 
   describe("path", () => {
     it.layer(TestLayer)((it) => {
-      it.effect("should parse paths without validation", () =>
+      it.effect("should resolve paths without requiring existence", () =>
         Effect.gen(function*() {
           const pathPrimitive = Primitive.path("either")
           const result1 = yield* pathPrimitive.parse("./test.txt")
@@ -244,7 +244,7 @@ describe("Primitive", () => {
         assert.strictEqual(Primitive.path("either")._tag, "Path")
       })
 
-      it.effect("should validate file existence when required", () =>
+      it.effect("should fail when a required file path does not exist", () =>
         Effect.gen(function*() {
           const filePath = Primitive.path("file", true)
 
@@ -269,7 +269,7 @@ describe("Primitive", () => {
           )
         ))
 
-      it.effect("should validate directory type when required", () =>
+      it.effect("should fail when a required directory path does not exist", () =>
         Effect.gen(function*() {
           const dirPath = Primitive.path("directory", true)
 

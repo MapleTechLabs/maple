@@ -1,5 +1,20 @@
 /**
- * @since 1.0.0
+ * Provides a React Native SQLite `SqlClient` backed by `@op-engineering/op-sqlite`.
+ *
+ * Use this module to open an on-device SQLite database, expose it as both the
+ * React Native-specific `SqliteClient` and the generic Effect `SqlClient`, and
+ * run application queries, migrations, and transactional reads or writes from
+ * Effect services and layers.
+ *
+ * The client uses one serialized connection. Regular queries and transactions
+ * share that handle, and a transaction holds it for the lifetime of its scope,
+ * so keep mobile transactions short and wrap multi-statement writes in a
+ * transaction to avoid partial updates. By default statements use the driver's
+ * synchronous API, which can block the JavaScript thread; `withAsyncQuery`
+ * switches a fiber to the asynchronous driver API when UI responsiveness is more
+ * important than sync execution.
+ *
+ * @since 4.0.0
  */
 import * as Sqlite from "@op-engineering/op-sqlite"
 import * as Config from "effect/Config"
@@ -23,20 +38,26 @@ const classifyError = (cause: unknown, message: string, operation: string) =>
   classifySqliteError(cause, { message, operation })
 
 /**
- * @category type ids
- * @since 1.0.0
+ * Runtime identifier attached to SQLite React Native client values.
+ *
+ * @category type IDs
+ * @since 4.0.0
  */
 export const TypeId: TypeId = "~@effect/sql-sqlite-react-native/SqliteClient"
 
 /**
- * @category type ids
- * @since 1.0.0
+ * Type-level identifier for SQLite React Native client values.
+ *
+ * @category type IDs
+ * @since 4.0.0
  */
 export type TypeId = "~@effect/sql-sqlite-react-native/SqliteClient"
 
 /**
+ * React Native SQLite client service interface, extending `SqlClient` with its configuration and marking `updateValues` as unsupported for SQLite.
+ *
  * @category models
- * @since 1.0.0
+ * @since 4.0.0
  */
 export interface SqliteClient extends Client.SqlClient {
   readonly [TypeId]: TypeId
@@ -47,14 +68,18 @@ export interface SqliteClient extends Client.SqlClient {
 }
 
 /**
+ * Context service tag for the React Native SQLite client.
+ *
  * @category tags
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const SqliteClient = Context.Service<SqliteClient>("@effect/sql-sqlite-react-native/SqliteClient")
 
 /**
+ * Configuration for a React Native SQLite client, including the database filename, optional location and encryption key, span attributes, and query/result name transforms.
+ *
  * @category models
- * @since 1.0.0
+ * @since 4.0.0
  */
 export interface SqliteClientConfig {
   readonly filename: string
@@ -66,8 +91,10 @@ export interface SqliteClientConfig {
 }
 
 /**
+ * Fiber-local flag that makes the React Native SQLite client run queries through the asynchronous `execute` API instead of `executeSync`.
+ *
  * @category fiber refs
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const AsyncQuery = Context.Reference<boolean>(
   "@effect/sql-sqlite-react-native/Client/asyncQuery",
@@ -75,8 +102,10 @@ export const AsyncQuery = Context.Reference<boolean>(
 )
 
 /**
+ * Runs an effect with `AsyncQuery` enabled, causing React Native SQLite queries in that effect to use the asynchronous driver API.
+ *
  * @category fiber refs
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const withAsyncQuery = <R, E, A>(effect: Effect.Effect<A, E, R>) =>
   Effect.provideService(effect, AsyncQuery, true)
@@ -84,8 +113,10 @@ export const withAsyncQuery = <R, E, A>(effect: Effect.Effect<A, E, R>) =>
 interface SqliteConnection extends Connection {}
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Creates a scoped React Native SQLite client from the supplied configuration, using a single serialized connection and honoring `AsyncQuery` for query execution.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = (
   options: SqliteClientConfig
@@ -191,14 +222,16 @@ export const make = (
   })
 
 /**
+ * Builds a layer from an Effect `Config` value, providing both the React Native `SqliteClient` service and the generic `SqlClient` service.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layerConfig = (
   config: Config.Wrap<SqliteClientConfig>
 ): Layer.Layer<SqliteClient | Client.SqlClient, Config.ConfigError> =>
   Layer.effectContext(
-    Config.unwrap(config).asEffect().pipe(
+    Config.unwrap(config).pipe(
       Effect.flatMap(make),
       Effect.map((client) =>
         Context.make(SqliteClient, client).pipe(
@@ -209,8 +242,10 @@ export const layerConfig = (
   ).pipe(Layer.provide(Reactivity.layer))
 
 /**
+ * Builds a layer from a React Native SQLite client configuration, providing both `SqliteClient` and the generic `SqlClient` service.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layer = (
   config: SqliteClientConfig
@@ -245,10 +280,6 @@ interface DB {
    *
    * If you are writing to the database YOU SHOULD BE USING TRANSACTIONS!
    * Transactions protect you from partial writes and ensure that your data is always in a consistent state
-   *
-   * @param query
-   * @param params
-   * @returns QueryResult
    */
   executeSync: (query: string, params?: Array<any>) => QueryResult
   /**
@@ -266,10 +297,6 @@ interface DB {
    * Transactions protect you from partial writes and ensure that your data is always in a consistent state
    *
    * If you need a large amount of queries ran as fast as possible you should be using `executeBatch`, `executeRaw`, `loadFile` or `executeWithHostObjects`
-   *
-   * @param query string of your SQL query
-   * @param params a list of parameters to bind to the query, if any
-   * @returns Promise<QueryResult> with the result of the query
    */
   execute: (query: string, params?: Array<any>) => Promise<QueryResult>
   /**

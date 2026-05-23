@@ -1,4 +1,24 @@
 /**
+ * Defines the request-side contract used by the persistence layer.
+ *
+ * A `Persistable` request is a `PrimaryKey` value that carries the success and
+ * error schemas needed to encode and decode the stored `Exit` for that request.
+ * Persisted request resolvers and `PersistedCache` use this metadata to restore
+ * previous lookup results from a backing store before running the lookup again.
+ *
+ * Use `Class` for cacheable or durable requests whose results can safely be
+ * reused across fibers, processes, or restarts. The request primary key is the
+ * entry id inside a persistence store, so it should be stable, collision-free,
+ * and usually include a request-specific prefix. The `storeId` is configured on
+ * `Persistence` or `PersistedCache`; it selects the backing store namespace and
+ * is separate from the request primary key.
+ *
+ * Success and error schemas are encoded with the JSON codec, so persisted
+ * values must be representable by those schemas and any required schema services
+ * must be available where the store reads or writes entries. Changing a schema,
+ * primary-key format, or store id can make existing persisted values fail to
+ * decode or stop being found, so treat those changes as persistence migrations.
+ *
  * @since 4.0.0
  */
 import type * as Duration from "../../Duration.ts"
@@ -11,14 +31,20 @@ import type * as Types from "../../Types.ts"
 import type { PersistenceError } from "./Persistence.ts"
 
 /**
- * @since 4.0.0
+ * Property key used to attach success and error schemas to persistable
+ * requests.
+ *
  * @category Symbols
+ * @since 4.0.0
  */
 export const symbol = "~effect/persistence/Persistable" as const
 
 /**
+ * A primary-keyed request value whose success and error results can be
+ * serialized for persistence.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface Persistable<A extends Schema.Top, E extends Schema.Top> extends PrimaryKey.PrimaryKey {
   readonly [symbol]: {
@@ -28,54 +54,72 @@ export interface Persistable<A extends Schema.Top, E extends Schema.Top> extends
 }
 
 /**
+ * Any persistable request regardless of its success and error schemas.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type Any = Persistable<Schema.Top, Schema.Top>
 
 /**
+ * Extracts the success schema from a persistable request.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type SuccessSchema<A extends Any> = A["~effect/persistence/Persistable"]["success"]
 
 /**
+ * Extracts the success value type from a persistable request.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type Success<A extends Any> = A["~effect/persistence/Persistable"]["success"]["Type"]
 
 /**
+ * Extracts the error schema from a persistable request.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type ErrorSchema<A extends Any> = A["~effect/persistence/Persistable"]["error"]
 
 /**
+ * Extracts the error value type from a persistable request.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type Error<A extends Any> = A["~effect/persistence/Persistable"]["error"]["Type"]
 
 /**
+ * Services required to decode a persisted success or error value for the
+ * request.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type DecodingServices<A extends Any> =
   | A["~effect/persistence/Persistable"]["success"]["DecodingServices"]
   | A["~effect/persistence/Persistable"]["error"]["DecodingServices"]
 
 /**
+ * Services required to encode a success or error value for persistence.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type EncodingServices<A extends Any> =
   | A["~effect/persistence/Persistable"]["success"]["EncodingServices"]
   | A["~effect/persistence/Persistable"]["error"]["EncodingServices"]
 
 /**
+ * All schema services required to encode and decode a persistable request
+ * result.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type Services<A extends Any> =
   | A["~effect/persistence/Persistable"]["success"]["DecodingServices"]
@@ -84,14 +128,24 @@ export type Services<A extends Any> =
   | A["~effect/persistence/Persistable"]["error"]["EncodingServices"]
 
 /**
+ * Computes the time to live for a persisted result from the result `Exit` and
+ * request value.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type TimeToLiveFn<K extends Any> = (exit: Exit.Exit<Success<K>, Error<K>>, request: K) => Duration.Input
 
 /**
+ * Creates request classes that implement `Persistable` and `Request.Request`.
+ *
+ * **Details**
+ *
+ * The generated class stores the supplied tag, derives its primary key from
+ * the payload, and carries schemas for persisted success and error exits.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const Class = <
   Config extends {
@@ -154,8 +208,11 @@ export const Class = <
 }
 
 /**
- * @since 4.0.0
+ * Returns the cached `Exit` schema for a persistable request's success and
+ * error schemas.
+ *
  * @category Accessors
+ * @since 4.0.0
  */
 export const exitSchema = <A extends Schema.Top, E extends Schema.Top>(
   self: Persistable<A, E>
@@ -170,8 +227,11 @@ export const exitSchema = <A extends Schema.Top, E extends Schema.Top>(
 const exitSchemaCache = new WeakMap<Persistable<any, any>, Schema.Exit<any, any, Schema.Defect>>()
 
 /**
- * @since 4.0.0
+ * Encodes an `Exit` for a persistable request using its success and error
+ * schemas.
+ *
  * @category Serialization
+ * @since 4.0.0
  */
 export const serializeExit = <A extends Schema.Top, E extends Schema.Top>(
   self: Persistable<A, E>,
@@ -182,8 +242,11 @@ export const serializeExit = <A extends Schema.Top, E extends Schema.Top>(
 }
 
 /**
- * @since 4.0.0
+ * Decodes a persisted value into an `Exit` for a persistable request using its
+ * success and error schemas.
+ *
  * @category Serialization
+ * @since 4.0.0
  */
 export const deserializeExit = <A extends Schema.Top, E extends Schema.Top>(
   self: Persistable<A, E>,

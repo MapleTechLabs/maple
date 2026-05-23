@@ -30,6 +30,9 @@
       "@effect/rpc/*": ["../../../rpc/src/*.js"],
       "effect/unstable/sql": ["../../../sql/src/index.js"],
       "effect/unstable/sql/*": ["../../../sql/src/*.js"]
-    }
+    },
+    "plugins": [
+      { "name": "@effect/language-service", "includeSuggestionsInTsc": false }
+    ]
   }
 }

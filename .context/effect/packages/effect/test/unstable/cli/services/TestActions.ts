@@ -25,7 +25,7 @@ export const logAction = (
   details: Record<string, unknown> = {}
 ): Effect.Effect<void, never, TestActions> =>
   Effect.flatMap(
-    TestActions.asEffect(),
+    TestActions,
     (actions) => actions.log({ command, details })
   )
 
@@ -33,4 +33,4 @@ export const getActions: Effect.Effect<
   ReadonlyArray<TestAction>,
   never,
   TestActions
-> = Effect.flatMap(TestActions.asEffect(), (actions) => actions.getActions)
+> = Effect.flatMap(TestActions, (actions) => actions.getActions)

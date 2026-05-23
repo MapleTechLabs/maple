@@ -7,7 +7,8 @@
  * text generation. It integrates seamlessly with the Effect AI ecosystem,
  * providing type-safe conversational AI capabilities.
  *
- * @example
+ * **Example** (Creating a chat session)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -27,7 +28,8 @@
  * })
  * ```
  *
- * @example
+ * **Example** (Streaming chat responses)
+ *
  * ```ts
  * import { Effect, Stream } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -69,11 +71,14 @@ import type * as Tool from "./Tool.ts"
 /**
  * The `Chat` service tag for dependency injection.
  *
+ * **Details**
+ *
  * This tag provides access to chat functionality throughout your application,
  * enabling persistent conversational AI interactions with full context
  * management.
  *
- * @example
+ * **Example** (Using the Chat service)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -87,8 +92,8 @@ import type * as Tool from "./Tool.ts"
  * })
  * ```
  *
- * @since 4.0.0
  * @category services
+ * @since 4.0.0
  */
 export class Chat extends Context.Service<Chat, Service>()(
   "effect/ai/Chat"
@@ -97,17 +102,20 @@ export class Chat extends Context.Service<Chat, Service>()(
 /**
  * Represents the interface that the `Chat` service provides.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Service {
   /**
    * Reference to the chat history.
    *
+   * **Details**
+   *
    * Provides direct access to the conversation history for advanced use cases
    * like custom history manipulation or inspection.
    *
-   * @example
+   * **Example** (Inspecting chat history)
+   *
    * ```ts
    * import { Effect, Ref } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -125,10 +133,13 @@ export interface Service {
   /**
    * Exports the chat history into a structured format.
    *
+   * **Details**
+   *
    * Returns the complete conversation history as a structured object
    * that can be stored, transmitted, or processed by other systems.
    *
-   * @example
+   * **Example** (Exporting chat history)
+   *
    * ```ts
    * import { Effect } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -149,10 +160,13 @@ export interface Service {
   /**
    * Exports the chat history as a JSON string.
    *
+   * **Details**
+   *
    * Provides a convenient way to serialize the entire conversation
    * for storage or transmission in JSON format.
    *
-   * @example
+   * **Example** (Exporting chat history as JSON)
+   *
    * ```ts
    * import { Effect } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -175,11 +189,14 @@ export interface Service {
   /**
    * Generate text using a language model for the specified prompt.
    *
+   * **Details**
+   *
    * If a toolkit is specified, the language model will have access to tools
    * for function calling and enhanced capabilities. Both input and output
    * messages are automatically added to the chat history.
    *
-   * @example
+   * **Example** (Generating chat responses)
+   *
    * ```ts
    * import { Effect } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -240,10 +257,13 @@ export interface Service {
   /**
    * Generate text using a language model with streaming output.
    *
+   * **Details**
+   *
    * Returns a stream of response parts that are emitted as soon as they're
    * available from the model. Supports tool calling and maintains chat history.
    *
-   * @example
+   * **Example** (Streaming chat responses)
+   *
    * ```ts
    * import { Effect, Stream } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -303,11 +323,14 @@ export interface Service {
   /**
    * Generate a structured object using a language model and schema.
    *
+   * **Details**
+   *
    * Forces the model to return data that conforms to the specified schema,
    * enabling structured data extraction and type-safe responses. The
    * conversation history is maintained across calls.
    *
-   * @example
+   * **Example** (Generating structured objects)
+   *
    * ```ts
    * import { Effect, Schema } from "effect"
    * import { Chat } from "effect/unstable/ai"
@@ -456,10 +479,13 @@ const makeUnsafe = (history: Ref.Ref<Prompt.Prompt>) => {
 /**
  * Creates a new Chat service with empty conversation history.
  *
+ * **When to use**
+ *
  * This is the most common way to start a fresh chat session without
  * any initial context or system prompts.
  *
- * @example
+ * **Example** (Creating an empty chat)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -477,18 +503,21 @@ const makeUnsafe = (history: Ref.Ref<Prompt.Prompt>) => {
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const empty: Effect.Effect<Service> = Effect.sync(() => makeUnsafe(Ref.makeUnsafe(Prompt.empty)))
 
 /**
  * Creates a new Chat service from an initial prompt.
  *
+ * **Details**
+ *
  * This is the primary constructor for creating chat instances. It initializes
  * a new conversation with the provided prompt as the starting context.
  *
- * @example
+ * **Example** (Creating a chat from a system prompt)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -507,7 +536,8 @@ export const empty: Effect.Effect<Service> = Effect.sync(() => makeUnsafe(Ref.ma
  * })
  * ```
  *
- * @example
+ * **Example** (Restoring chat history from a prompt)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -537,8 +567,8 @@ export const empty: Effect.Effect<Service> = Effect.sync(() => makeUnsafe(Ref.ma
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fromPrompt = (prompt: Prompt.RawInput) =>
   Effect.sync(() => makeUnsafe(Ref.makeUnsafe(Prompt.make(prompt))))
@@ -546,37 +576,50 @@ export const fromPrompt = (prompt: Prompt.RawInput) =>
 /**
  * Creates a Chat service from previously exported chat data.
  *
+ * **Details**
+ *
  * Restores a chat session from structured data that was previously exported
  * using the `export` method. Useful for persisting and restoring conversation
  * state.
  *
- * @example
+ * **Example** (Restoring chat data)
+ *
  * ```ts
- * import { Effect } from "effect"
+ * import { Effect, Ref } from "effect"
  * import { Chat } from "effect/unstable/ai"
  *
- * declare const loadFromDatabase: (sessionId: string) => Effect.Effect<unknown>
- *
  * const restoreChat = Effect.gen(function*() {
- *   // Assume we have previously exported data
- *   const savedData = yield* loadFromDatabase("chat-session-123")
+ *   const originalChat = yield* Chat.fromPrompt([
+ *     {
+ *       role: "user",
+ *       content: "Which library are we using?"
+ *     },
+ *     {
+ *       role: "assistant",
+ *       content: "The project uses Effect."
+ *     }
+ *   ])
  *
- *   const restoredChat = yield* Chat.fromExport(savedData)
+ *   const exported = yield* originalChat.export
+ *   const restoredChat = yield* Chat.fromExport(exported)
+ *   const restoredHistory = yield* Ref.get(restoredChat.history)
  *
- *   // Continue the conversation from where it left off
- *   const response = yield* restoredChat.generateText({
- *     prompt: "Let's continue our discussion"
- *   })
- * }).pipe(
- *   Effect.catchTag("SchemaError", (error) => {
- *     console.log("Failed to restore chat:", error.message)
- *     return Effect.void
- *   })
- * )
+ *   console.log(restoredHistory.content.map((message) => message.role))
+ *   // ["user", "assistant"]
+ *
+ *   const restoredResponse = restoredHistory.content[1]
+ *   if (restoredResponse?.role === "assistant") {
+ *     const restoredText = restoredResponse.content[0]
+ *     if (restoredText?.type === "text") {
+ *       console.log(restoredText.text)
+ *       // "The project uses Effect."
+ *     }
+ *   }
+ * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fromExport = (data: unknown): Effect.Effect<
   Service,
@@ -586,11 +629,14 @@ export const fromExport = (data: unknown): Effect.Effect<
 /**
  * Creates a Chat service from previously exported JSON chat data.
  *
+ * **Details**
+ *
  * Restores a chat session from JSON string that was previously exported
  * using the `exportJson` method. This is the most convenient way to
  * persist and restore chat sessions to/from storage systems.
  *
- * @example
+ * **Example** (Restoring chat history from JSON)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { Chat } from "effect/unstable/ai"
@@ -616,8 +662,8 @@ export const fromExport = (data: unknown): Effect.Effect<
  * )
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fromJson = (data: string): Effect.Effect<
   Service,
@@ -632,8 +678,8 @@ export const fromJson = (data: string): Effect.Effect<
  * An error that occurs when attempting to retrieve a persisted `Chat` that
  * does not exist in the backing persistence store.
  *
- * @since 4.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class ChatNotFoundError extends Schema.ErrorClass<ChatNotFoundError>(
   "effect/ai/Chat/ChatNotFoundError"
@@ -645,8 +691,8 @@ export class ChatNotFoundError extends Schema.ErrorClass<ChatNotFoundError>(
 /**
  * The context tag for chat persistence.
  *
- * @since 4.0.0
  * @category services
+ * @since 4.0.0
  */
 // @effect-diagnostics effect/leakingRequirements:off
 export class Persistence extends Context.Service<Persistence, Persistence.Service>()(
@@ -654,16 +700,17 @@ export class Persistence extends Context.Service<Persistence, Persistence.Servic
 ) {}
 
 /**
+ * Namespace containing the service contract for chat persistence.
+ *
  * @since 4.0.0
- * @category models
  */
 export declare namespace Persistence {
   /**
    * Represents the backing persistence for a persisted `Chat`. Allows for
    * creating and retrieving chats that have been saved to a persistence store.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface Service {
     /**
@@ -690,12 +737,14 @@ export declare namespace Persistence {
 /**
  * Represents a `Chat` that is backed by persistence.
  *
+ * **Details**
+ *
  * When calling a text generation method (e.g. `generateText`), the previous
  * chat history as well as the relevent response parts will be saved to the
  * backing persistence store.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Persisted extends Service {
   /**
@@ -712,11 +761,13 @@ export interface Persisted extends Service {
 /**
  * Creates a new chat persistence service.
  *
+ * **Details**
+ *
  * The provided store identifier will be used to indicate which "store" the
  * backing persistence should load chats from.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const makePersisted = Effect.fnUntraced(function*(options: {
   readonly storeId: string
@@ -863,13 +914,15 @@ export const makePersisted = Effect.fnUntraced(function*(options: {
 })
 
 /**
- * Creates a `Layer` new chat persistence service.
+ * Creates a `Layer` for a new chat persistence service.
+ *
+ * **Details**
  *
  * The provided store identifier will be used to indicate which "store" the
  * backing persistence should load chats from.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const layerPersisted = (options: {
   readonly storeId: string

@@ -13,7 +13,7 @@ const StreamEntity = Entity.make("StreamEntity", [
 
 describe.concurrent("Entity", () => {
   describe("makeTestClient", () => {
-    it.effect("round trip", () =>
+    it.effect("creates an in-memory client for an entity layer", () =>
       Effect.gen(function*() {
         const makeClient = yield* Entity.makeTestClient(TestEntity, TestEntityLayer)
         const client = yield* makeClient("123")
@@ -23,7 +23,7 @@ describe.concurrent("Entity", () => {
   })
 
   describe("toLayerQueue", () => {
-    it.effect("streaming RPC with Stream via replier.succeed", () =>
+    it.effect("replies to a streaming RPC with a Stream", () =>
       Effect.gen(function*() {
         const layer = StreamEntity.toLayerQueue((mailbox, replier) =>
           Effect.gen(function*() {
@@ -44,7 +44,7 @@ describe.concurrent("Entity", () => {
         assert.deepEqual(results, [1, 2, 3])
       }).pipe(Effect.provide(TestShardingConfig)))
 
-    it.effect("streaming RPC with Dequeue via replier.succeed", () =>
+    it.effect("replies to a streaming RPC with a Dequeue", () =>
       Effect.gen(function*() {
         const layer = StreamEntity.toLayerQueue((mailbox, replier) =>
           Effect.gen(function*() {

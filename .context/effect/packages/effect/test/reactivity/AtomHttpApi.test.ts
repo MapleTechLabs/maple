@@ -19,7 +19,7 @@ const Api = HttpApi.make("api").add(
 )
 
 describe("AtomHttpApi", () => {
-  it.effect("query forwards params and query to HttpApiClient", () =>
+  it.effect("query creates a serializable atom that encodes the request and decodes the response", () =>
     Effect.gen(function*() {
       const requestRef = yield* Ref.make<
         {

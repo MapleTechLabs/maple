@@ -4,7 +4,7 @@ import { Deferred, Effect, Exit, Fiber, FiberHandle, Option, pipe, Ref } from "e
 import { TestClock } from "effect/testing"
 
 describe("FiberHandle", () => {
-  it.effect("interrupts fibers", () =>
+  it.effect("interrupts the current fiber when the scope closes", () =>
     Effect.gen(function*() {
       const ref = yield* (Ref.make(0))
       yield* pipe(
@@ -66,7 +66,7 @@ describe("FiberHandle", () => {
       strictEqual(safeFiber.value, fiber)
     }))
 
-  it.effect("join", () =>
+  it.effect("join ignores managed replacement interruptions and fails with child errors", () =>
     Effect.gen(function*() {
       const handle = yield* FiberHandle.make()
       FiberHandle.setUnsafe(handle, Effect.runFork(Effect.void))
@@ -75,7 +75,7 @@ describe("FiberHandle", () => {
       strictEqual(result, "fail")
     }))
 
-  it.effect("onlyIfMissing", () =>
+  it.effect("onlyIfMissing keeps the current fiber and interrupts rejected starts", () =>
     Effect.gen(function*() {
       const handle = yield* FiberHandle.make()
       const fiberA = yield* FiberHandle.run(handle, Effect.never)

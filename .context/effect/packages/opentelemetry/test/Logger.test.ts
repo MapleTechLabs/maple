@@ -1,9 +1,12 @@
 import * as NodeSdk from "@effect/opentelemetry/NodeSdk"
 import { assert, describe, it } from "@effect/vitest"
+import { SeverityNumber } from "@opentelemetry/api-logs"
 import { InMemoryLogRecordExporter, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as References from "effect/References"
 
 describe("Logger", () => {
   describe("provided", () => {
@@ -23,6 +26,35 @@ describe("Logger", () => {
         )
         assert.lengthOf(exporter.getFinishedLogRecords(), 10)
       }).pipe(Effect.provide(TracingLive)))
+
+    it.effect("maps Effect LogLevel to OTel SeverityNumber spec values", () => {
+      const severityExporter = new InMemoryLogRecordExporter()
+      const SeverityLayer = NodeSdk.layer(Effect.sync(() => ({
+        resource: { serviceName: "test" },
+        logRecordProcessor: [new SimpleLogRecordProcessor(severityExporter)]
+      })))
+
+      return Effect.gen(function*() {
+        yield* Effect.logTrace("trace")
+        yield* Effect.logDebug("debug")
+        yield* Effect.logInfo("info")
+        yield* Effect.logWarning("warn")
+        yield* Effect.logError("error")
+        yield* Effect.logFatal("fatal")
+
+        const records = severityExporter.getFinishedLogRecords()
+        const byText = Object.fromEntries(records.map((r) => [r.severityText, r.severityNumber]))
+
+        assert.strictEqual(byText.Trace, SeverityNumber.TRACE)
+        assert.strictEqual(byText.Debug, SeverityNumber.DEBUG)
+        assert.strictEqual(byText.Info, SeverityNumber.INFO)
+        assert.strictEqual(byText.Warn, SeverityNumber.WARN)
+        assert.strictEqual(byText.Error, SeverityNumber.ERROR)
+        assert.strictEqual(byText.Fatal, SeverityNumber.FATAL)
+      }).pipe(
+        Effect.provide(SeverityLayer.pipe(Layer.provideMerge(Layer.succeed(References.MinimumLogLevel, "Trace"))))
+      )
+    })
 
     it.effect("uses monotonic clock timestamps and keeps them aligned with spans", () => {
       const logExporter = new InMemoryLogRecordExporter()

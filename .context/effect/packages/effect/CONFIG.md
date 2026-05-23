@@ -90,7 +90,7 @@ Each constructor reads a single value and decodes it into the appropriate type.
 | `Config.port(name?)`           | `number`           | Integer in 1–65535                                                       |
 | `Config.url(name?)`            | `URL`              | Parsed via the `URL` constructor                                         |
 | `Config.date(name?)`           | `Date`             | Rejects invalid dates                                                    |
-| `Config.duration(name?)`       | `Duration`         | Parses `"10 seconds"`, `"500 millis"`, etc.                              |
+| `Config.duration(name?)`       | `Duration`         | Parses `"10 seconds"`, `"500 millis"`, `"Infinity"`, `"-Infinity"`, etc. |
 | `Config.logLevel(name?)`       | `string`           | One of `All`, `Fatal`, `Error`, `Warn`, `Info`, `Debug`, `Trace`, `None` |
 | `Config.redacted(name?)`       | `Redacted<string>` | Hidden from logs and `toString`                                          |
 | `Config.literal(value, name?)` | literal type       | Accepts only the given literal                                           |
@@ -206,7 +206,7 @@ For reusable codecs you can pass directly to `Config.schema`:
 | Schema                      | Type           | Notes                                      |
 | --------------------------- | -------------- | ------------------------------------------ |
 | `Config.Boolean`            | `boolean`      | Decodes `true/false/yes/no/on/off/1/0/y/n` |
-| `Config.Duration`           | `Duration`     | Decodes human-readable duration strings    |
+| `Schema.DurationFromString` | `Duration`     | Decodes human-readable duration strings    |
 | `Config.Port`               | `number`       | Integer in 1–65535                         |
 | `Config.LogLevel`           | `string`       | One of the standard log level literals     |
 | `Config.Record(key, value)` | `Record<K, V>` | Also parses flat `"k1=v1,k2=v2"` strings   |

@@ -38,6 +38,7 @@ This document maps v3 Schema APIs to their v4 equivalents. Simple renames and ar
 | `encode`                                        | `encodeEffect`                                                                | rename            |
 | `encodeUnknownEither`                           | `encodeUnknownExit`                                                           | rename            |
 | `encodeEither`                                  | `encodeExit`                                                                  | rename            |
+| `asserts(schema)(input)`                        | `asserts(schema, input)`                                                      | semi-auto         |
 | `Literal(null)`                                 | `Null`                                                                        | restructure       |
 | `Literal("a", "b")`                             | `Literals(["a", "b"])`                                                        | variadic-to-array |
 | `pickLiteral("a", "b")`                         | `Literals(...).pick(["a", "b"])`                                              | restructure       |
@@ -98,6 +99,29 @@ Note: `positive`, `negative`, `nonNegative`, `nonPositive` have been removed in 
 `equivalence` → `toEquivalence`, `arbitrary` → `toArbitrary`, `pretty` → `toFormatter`, `standardSchemaV1` → `toStandardSchemaV1`
 
 ## Detailed migrations
+
+### asserts signature
+
+**Migration: semi-auto**
+
+`Schema.asserts` now asserts an input directly instead of returning an assertion function.
+
+v3
+
+```ts
+import { Schema } from "effect"
+
+const assertString = Schema.asserts(Schema.String)
+assertString(input)
+```
+
+v4
+
+```ts
+import { Schema } from "effect"
+
+Schema.asserts(Schema.String, input)
+```
 
 ### validate* removal
 

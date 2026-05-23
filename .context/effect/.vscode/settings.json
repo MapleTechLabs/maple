@@ -1,8 +1,5 @@
 {
   "dprint.path": "node_modules/.bin/dprint",
-  "typescript.tsdk": "node_modules/typescript/lib",
-  "typescript.preferences.importModuleSpecifier": "relative",
-  "typescript.enablePromptUseWorkspaceTsdk": true,
   "editor.formatOnSave": true,
   "editor.defaultFormatter": "dprint.dprint",
   "editor.formatOnSaveMode": "file",
@@ -42,5 +39,6 @@
   "[markdown]": {
     "editor.defaultFormatter": "dprint.dprint"
   },
-  "deno.enable": false
+  "deno.enable": false,
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
 }

@@ -1,4 +1,26 @@
 /**
+ * OTLP/HTTP metrics exporter for Effect's Metric system.
+ *
+ * This module periodically snapshots the metrics registered in the current
+ * Effect context, serializes them as OTLP resource metrics, and posts them to a
+ * metrics endpoint such as an OpenTelemetry Collector or vendor OTLP intake.
+ * It is typically installed with `layer` in long-running services that already
+ * update `Metric` counters, gauges, histograms, frequencies, or summaries and
+ * need those values exported without adding instrumentation-specific plumbing
+ * to the application code.
+ *
+ * Pass the concrete `/v1/metrics` endpoint to `make` or `layer`, or use the
+ * higher-level `Otlp` module when you want `baseUrl` path construction for all
+ * signals. The exporter requires an `HttpClient` and an `OtlpSerialization`
+ * implementation, takes resource metadata from explicit options or standard
+ * OTEL resource environment variables, and uses the resource `service.name` as
+ * the instrumentation scope name. Choose `temporality` for the target backend:
+ * cumulative is the default, while delta derives per-export changes from the
+ * previous snapshot. Gauges always report their current value, and delta
+ * histograms and summaries keep interval counts and sums from previous
+ * snapshots, so tune export intervals and shutdown timeouts with backend
+ * expectations and process shutdown behavior in mind.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -17,18 +39,18 @@ import * as OtlpResource from "./OtlpResource.ts"
 import { OtlpSerialization } from "./OtlpSerialization.ts"
 
 /**
- * Determines how metric values relate to the time interval over which they
- * are aggregated.
+ * Determines how metric values relate to the time interval over which they are aggregated.
  *
- * - `"cumulative"`: Reports total since a fixed start time. Each data point
- *   depends on all previous measurements. This is the default behavior.
+ * **Details**
  *
- * - `"delta"`: Reports changes since the last export. Each interval is
- *   independent with no dependency on previous measurements.
+ * `"cumulative"` reports total since a fixed start time. Each data point depends on all previous measurements. This is the default behavior.
  *
- * @example
+ * `"delta"` reports changes since the last export. Each interval is independent with no dependency on previous measurements.
+ *
+ * **Example** (Configuring aggregation temporality)
+ *
  * ```ts
- * import * as OtlpMetrics from "effect/unstable/observability/OtlpMetrics"
+ * import { OtlpMetrics } from "effect/unstable/observability"
  *
  * // Use delta temporality for backends that prefer it (e.g., Datadog, Dynatrace)
  * const metricsLayer = OtlpMetrics.layer({
@@ -43,14 +65,20 @@ import { OtlpSerialization } from "./OtlpSerialization.ts"
  * })
  * ```
  *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export type AggregationTemporality = "cumulative" | "delta"
 
 /**
+ * Starts a scoped OTLP metrics exporter.
+ *
+ * **Details**
+ *
+ * The exporter snapshots registered Effect metrics on the configured interval, serializes them with the selected aggregation temporality, and flushes during scope finalization up to `shutdownTimeout`.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make: (options: {
   readonly url: string
@@ -429,8 +457,10 @@ export const make: (options: {
 })
 
 /**
+ * Layer that starts the OTLP metrics exporter created by `make`.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer = (options: {
   readonly url: string
@@ -446,6 +476,9 @@ export const layer = (options: {
 }): Layer.Layer<never, never, HttpClient.HttpClient | OtlpSerialization> => Layer.effectDiscard(make(options))
 
 /**
+ * OTLP metrics payload serialized by `OtlpMetrics`.
+ *
+ * @category models
  * @since 4.0.0
  */
 export interface MetricsData {

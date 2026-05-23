@@ -21,12 +21,12 @@ import * as TxRef from "./TxRef.ts"
 const TypeId = "~effect/transactions/TxDeferred"
 
 /**
- * A transactional deferred — a write-once cell readable within transactions.
+ * A transactional deferred is a write-once cell readable within transactions.
+ * Readers block (retry the transaction) until a value is committed, and writers
+ * succeed only on the first call; subsequent writes return `false`.
  *
- * Readers block (retry the transaction) until a value is committed.
- * Writers succeed only on the first call; subsequent writes return `false`.
+ * **Example** (Completing a transactional deferred)
  *
- * @example
  * ```ts
  * import { Effect, TxDeferred } from "effect"
  *
@@ -47,8 +47,8 @@ const TypeId = "~effect/transactions/TxDeferred"
  * })
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface TxDeferred<in out A, in out E = never> extends Inspectable, Pipeable {
   readonly [TypeId]: typeof TypeId
@@ -79,7 +79,8 @@ const makeTxDeferred = <A, E>(ref: TxRef.TxRef<Option<Result<A, E>>>): TxDeferre
 /**
  * Creates a new empty `TxDeferred`.
  *
- * @example
+ * **Example** (Creating a transactional deferred)
+ *
  * ```ts
  * import { Effect, Option, TxDeferred } from "effect"
  *
@@ -90,8 +91,8 @@ const makeTxDeferred = <A, E>(ref: TxRef.TxRef<Option<Result<A, E>>>): TxDeferre
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const make = <A, E = never>(): Effect.Effect<TxDeferred<A, E>> =>
   Effect.map(TxRef.make<Option<Result<A, E>>>(O.none()), makeTxDeferred)
@@ -100,7 +101,8 @@ export const make = <A, E = never>(): Effect.Effect<TxDeferred<A, E>> =>
  * Reads the deferred value. Retries the transaction if the deferred has not
  * been completed yet.
  *
- * @example
+ * **Example** (Awaiting a deferred value)
+ *
  * ```ts
  * import { Effect, TxDeferred } from "effect"
  *
@@ -112,8 +114,8 @@ export const make = <A, E = never>(): Effect.Effect<TxDeferred<A, E>> =>
  * })
  * ```
  *
- * @since 4.0.0
  * @category getters
+ * @since 4.0.0
  */
 const await_ = <A, E>(self: TxDeferred<A, E>): Effect.Effect<A, E> =>
   Effect.gen(function*() {
@@ -131,8 +133,8 @@ export {
    * Reads the deferred value. Retries the transaction if the deferred has not
    * been completed yet.
    *
-   * @since 4.0.0
    * @category getters
+   * @since 4.0.0
    */
   await_ as await
 }
@@ -141,7 +143,8 @@ export {
  * Reads the current state of the deferred without retrying. Returns `None` if
  * not yet completed.
  *
- * @example
+ * **Example** (Polling a deferred)
+ *
  * ```ts
  * import { Effect, Option, Result, TxDeferred } from "effect"
  *
@@ -156,8 +159,8 @@ export {
  * })
  * ```
  *
- * @since 4.0.0
  * @category getters
+ * @since 2.0.0
  */
 export const poll = <A, E>(self: TxDeferred<A, E>): Effect.Effect<Option<Result<A, E>>> => TxRef.get(self.ref)
 
@@ -165,7 +168,8 @@ export const poll = <A, E>(self: TxDeferred<A, E>): Effect.Effect<Option<Result<
  * Completes the deferred with a `Result`. Returns `true` if this was the first
  * completion, `false` if already completed.
  *
- * @example
+ * **Example** (Completing with a result)
+ *
  * ```ts
  * import { Effect, Result, TxDeferred } from "effect"
  *
@@ -178,8 +182,8 @@ export const poll = <A, E>(self: TxDeferred<A, E>): Effect.Effect<Option<Result<
  * })
  * ```
  *
- * @since 4.0.0
  * @category mutations
+ * @since 2.0.0
  */
 export const done: {
   <A, E>(result: Result<A, E>): (self: TxDeferred<A, E>) => Effect.Effect<boolean>
@@ -199,7 +203,8 @@ export const done: {
  * Completes the deferred with a success value. Returns `true` if this was the
  * first completion, `false` if already completed.
  *
- * @example
+ * **Example** (Completing with a success value)
+ *
  * ```ts
  * import { Effect, TxDeferred } from "effect"
  *
@@ -212,8 +217,8 @@ export const done: {
  * })
  * ```
  *
- * @since 4.0.0
  * @category mutations
+ * @since 2.0.0
  */
 export const succeed: {
   <A>(value: A): <E>(self: TxDeferred<A, E>) => Effect.Effect<boolean>
@@ -227,7 +232,8 @@ export const succeed: {
  * Completes the deferred with a failure. Returns `true` if this was the first
  * completion, `false` if already completed.
  *
- * @example
+ * **Example** (Completing with a failure)
+ *
  * ```ts
  * import { Effect, TxDeferred } from "effect"
  *
@@ -240,8 +246,8 @@ export const succeed: {
  * })
  * ```
  *
- * @since 4.0.0
  * @category mutations
+ * @since 2.0.0
  */
 export const fail: {
   <E>(error: E): <A>(self: TxDeferred<A, E>) => Effect.Effect<boolean>
@@ -254,7 +260,8 @@ export const fail: {
 /**
  * Determines if the provided value is a `TxDeferred`.
  *
- * @example
+ * **Example** (Checking transactional deferreds)
+ *
  * ```ts
  * import { Effect, TxDeferred } from "effect"
  *
@@ -265,7 +272,7 @@ export const fail: {
  * })
  * ```
  *
- * @since 4.0.0
  * @category guards
+ * @since 4.0.0
  */
 export const isTxDeferred = (u: unknown): u is TxDeferred<unknown, unknown> => hasProperty(u, TypeId)

@@ -47,7 +47,7 @@ describe("Queue", () => {
       assert.isTrue(Queue.isDequeue(dequeue))
     }))
 
-  it.effect("offerAll with capacity", () =>
+  it.effect("bounded offerAll waits until capacity is released", () =>
     Effect.gen(function*() {
       const queue = yield* Queue.bounded<number>(2)
       const fiber = yield* Queue.offerAll(queue, [1, 2, 3, 4]).pipe(
@@ -240,7 +240,7 @@ describe("Queue", () => {
       assert.strictEqual(newSize, 0)
     }))
 
-  it.effect("fail", () =>
+  it.effect("fail drains buffered values before failing takers", () =>
     Effect.gen(function*() {
       const queue = yield* Queue.bounded<number, string>(2)
       yield* Effect.forkChild(Queue.offerAll(queue, [1, 2, 3, 4]))

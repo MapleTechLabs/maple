@@ -1,4 +1,25 @@
 /**
+ * Defines the `SqlClient` service, the central runtime entry point for Effect's
+ * unstable SQL support.
+ *
+ * A `SqlClient` combines the tagged-template statement constructor with a
+ * scoped connection acquirer, dialect compiler, tracing attributes, optional row
+ * transforms, reactive query helpers, and transaction management. Applications
+ * typically consume it from `Context` to build parameterized queries, stream
+ * rows, run raw driver operations, reserve a connection for lower-level work, or
+ * wrap several query effects in `withTransaction`.
+ *
+ * Transactions are tracked through a per-client context service. Top-level
+ * transactions acquire the configured transaction connection and issue the
+ * dialect's begin/commit/rollback SQL; nested transactions reuse that
+ * connection and rely on dialect-provided savepoint SQL. A query only joins a
+ * transaction when it is run with the same client service, so avoid mixing
+ * clients or manually reserved connections when atomicity matters. Dialect
+ * integrations are also responsible for the compiler and transaction
+ * statements, which means placeholder syntax, identifier escaping, row
+ * transforms, savepoint support, and unprepared/raw statement behavior can
+ * differ by database.
+ *
  * @since 4.0.0
  */
 import { Clock } from "../../Clock.ts"
@@ -21,6 +42,9 @@ import * as Statement from "./Statement.ts"
 const TypeId = "~effect/sql/SqlClient"
 
 /**
+ * SQL client service interface, combining the statement constructor API with
+ * connection reservation, transaction handling, and reactive query helpers.
+ *
  * @category models
  * @since 4.0.0
  */
@@ -47,6 +71,11 @@ export interface SqlClient extends Constructor {
   ) => Effect.Effect<A, E | SqlError, R>
 
   /**
+   * The transaction service for this client.
+   */
+  readonly transactionService: Context.Service<TransactionConnection, TransactionConnection.Service>
+
+  /**
    * Use the Reactivity service from @effect/experimental to create a reactive
    * query.
    */
@@ -66,17 +95,24 @@ export interface SqlClient extends Constructor {
 }
 
 /**
+ * Context service tag for the `SqlClient` service.
+ *
  * @category models
  * @since 4.0.0
  */
 export const SqlClient = Context.Service<SqlClient>("effect/sql/SqlClient")
 
 /**
- * @category models
+ * Namespace containing types associated with the `SqlClient` service.
+ *
  * @since 4.0.0
  */
-export namespace SqlClient {
+export declare namespace SqlClient {
   /**
+   * Options used to construct a `SqlClient`, including connection acquirers,
+   * the SQL compiler, transaction SQL, row transformation, tracing attributes,
+   * and optional reactive query integration.
+   *
    * @category models
    * @since 4.0.0
    */
@@ -85,6 +121,7 @@ export namespace SqlClient {
     readonly compiler: Compiler
     readonly transactionAcquirer?: Connection.Acquirer
     readonly spanAttributes: ReadonlyArray<readonly [string, unknown]>
+    readonly transactionService?: Context.Service<TransactionConnection, TransactionConnection.Service>
     readonly beginTransaction?: string | undefined
     readonly rollback?: string | undefined
     readonly commit?: string | undefined
@@ -98,13 +135,20 @@ export namespace SqlClient {
   }
 }
 
+let clientIdCounter = 0
+
 /**
+ * Constructs a `SqlClient` from connection acquirers, a compiler, transaction
+ * commands, tracing attributes, optional row transforms, and reactive query
+ * integration.
+ *
  * @category constructors
  * @since 4.0.0
  */
 export const make = Effect.fnUntraced(function*(options: SqlClient.MakeOptions) {
+  const transactionService = options.transactionService ?? TransactionConnection(clientIdCounter++)
   const getConnection = Effect.flatMap(
-    Effect.serviceOption(TransactionConnection),
+    Effect.serviceOption(transactionService),
     Option.match({
       onNone: () => options.acquirer,
       onSome: ([conn]) => Effect.succeed(conn)
@@ -118,7 +162,7 @@ export const make = Effect.fnUntraced(function*(options: SqlClient.MakeOptions) 
   const rollbackSavepoint = options.rollbackSavepoint ?? ((name: string) => `ROLLBACK TO SAVEPOINT ${name}`)
   const transactionAcquirer = options.transactionAcquirer ?? options.acquirer
   const withTransaction = makeWithTransaction({
-    transactionService: TransactionConnection,
+    transactionService,
     spanAttributes: options.spanAttributes,
     acquireConnection: Effect.flatMap(
       Scope.make(),
@@ -138,6 +182,7 @@ export const make = Effect.fnUntraced(function*(options: SqlClient.MakeOptions) 
       [TypeId]: TypeId as typeof TypeId,
       safe: undefined as any,
       withTransaction,
+      transactionService,
       reserve: transactionAcquirer,
       withoutTransforms(): any {
         if (options.transformRows === undefined) {
@@ -176,8 +221,12 @@ export const make = Effect.fnUntraced(function*(options: SqlClient.MakeOptions) 
 })
 
 /**
- * @since 4.0.0
+ * Builds a transaction wrapper that begins top-level transactions, uses
+ * savepoints for nested transactions, commits on success, and rolls back on
+ * failure or interruption.
+ *
  * @category transactions
+ * @since 4.0.0
  */
 export const makeWithTransaction = <I, S>(options: {
   readonly transactionService: Context.Key<I, readonly [conn: S, counter: number]>
@@ -189,8 +238,8 @@ export const makeWithTransaction = <I, S>(options: {
   readonly rollback: (conn: NoInfer<S>) => Effect.Effect<void, SqlError>
   readonly rollbackSavepoint: (conn: NoInfer<S>, id: number) => Effect.Effect<void, SqlError>
 }) =>
-<R, E, A>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError, R> =>
-  Effect.uninterruptibleMask((restore) =>
+<R, E, A>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError, R> => {
+  return Effect.uninterruptibleMask((restore) =>
     Effect.useSpan(
       "sql.transaction",
       { kind: "client" },
@@ -249,17 +298,52 @@ export const makeWithTransaction = <I, S>(options: {
         })
     )
   )
+}
 
 /**
+ * Phantom identifier for the scoped transaction connection service associated
+ * with a SQL client.
+ *
+ * @category models
  * @since 4.0.0
  */
-export class TransactionConnection
-  extends Context.Service<TransactionConnection, readonly [conn: Connection.Connection, depth: number]>()(
-    "effect/sql/SqlClient/TransactionConnection"
-  )
-{}
+export interface TransactionConnection {
+  readonly _: unique symbol
+}
 
 /**
+ * Namespace containing types associated with transaction connection services.
+ *
+ * @since 4.0.0
+ */
+export declare namespace TransactionConnection {
+  /**
+   * Service payload stored during a transaction, containing the active
+   * connection and nested transaction depth.
+   *
+   * @category services
+   * @since 4.0.0
+   */
+  export type Service = readonly [conn: Connection.Connection, depth: number]
+}
+
+/**
+ * Creates a unique context service tag for the active transaction connection of
+ * a specific SQL client.
+ *
+ * @category tags
+ * @since 4.0.0
+ */
+export const TransactionConnection = (
+  clientId: number
+): Context.Service<TransactionConnection, TransactionConnection.Service> =>
+  Context.Service(`effect/sql/SqlClient/TransactionConnection/${clientId}`)
+
+/**
+ * Context reference used by SQL integrations to opt in to safe integer
+ * handling; defaults to `false`.
+ *
+ * @category references
  * @since 4.0.0
  */
 export const SafeIntegers = Context.Reference<boolean>("effect/sql/SqlClient/SafeIntegers", {

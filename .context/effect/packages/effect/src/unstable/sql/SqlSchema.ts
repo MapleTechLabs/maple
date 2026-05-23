@@ -1,4 +1,22 @@
 /**
+ * Schema-driven helpers for wrapping SQL executions in typed query functions.
+ *
+ * This module connects `Schema` request and result definitions to an `execute`
+ * callback that runs the actual SQL statement. The returned functions accept
+ * the request schema's decoded `Type`, encode it to the SQL-facing `Encoded`
+ * shape, run the callback, and then decode unknown driver rows through the
+ * result schema. This is useful for repository methods, CRUD helpers, request
+ * resolvers, and write operations where callers should work with domain values
+ * instead of raw SQL parameters or rows.
+ *
+ * The `execute` callback always receives `Req["Encoded"]`, so schema
+ * transformations, required encoding services, and database representations
+ * such as nullable columns, JSON values, dates, and bigints must line up with
+ * the statement builder and dialect in use. Result schemas decode the rows
+ * returned by the driver after any SQL client row transforms; `findOne` and
+ * `findOneOption` only inspect the first row, `findNonEmpty` requires at least
+ * one row, and `void` discards any driver result after request encoding.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -8,10 +26,11 @@ import type * as Option from "../../Option.ts"
 import * as Schema from "../../Schema.ts"
 
 /**
- * Run a sql query with a request schema and a result schema.
+ * Builds a query function that encodes the request, decodes all result rows,
+ * and fails with `NoSuchElementError` when the result set is empty.
  *
+ * @category constructors
  * @since 4.0.0
- * @category constructor
  */
 export const findAll = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
   options: {
@@ -34,8 +53,8 @@ export const findAll = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
 /**
  * Run a sql query with a request schema and a result schema.
  *
+ * @category constructors
  * @since 4.0.0
- * @category constructor
  */
 export const findNonEmpty = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
   options: {
@@ -74,17 +93,18 @@ export {
   /**
    * Run a sql query with a request schema and discard the result.
    *
+   * @category constructors
    * @since 4.0.0
-   * @category constructor
    */
   void_ as void
 }
 
 /**
- * Run a sql query with a request schema and a result schema and return the first result.
+ * Builds a query function that encodes the request, decodes the first result
+ * row, and fails with `NoSuchElementError` when no rows are returned.
  *
+ * @category constructors
  * @since 4.0.0
- * @category constructor
  */
 export const findOne = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
   options: {
@@ -113,10 +133,11 @@ export const findOne = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
 }
 
 /**
- * Run a sql query with a request schema and a result schema and return the first result.
+ * Builds a query function that encodes the request, decodes the first result row
+ * as `Option.some`, and returns `Option.none` when no rows are returned.
  *
+ * @category constructors
  * @since 4.0.0
- * @category constructor
  */
 export const findOneOption = <Req extends Schema.Top, Res extends Schema.Top, E, R>(
   options: {

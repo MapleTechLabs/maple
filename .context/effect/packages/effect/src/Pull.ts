@@ -1,4 +1,30 @@
 /**
+ * The `Pull` module provides the low-level pull-step abstraction used by
+ * stream-like consumers. A `Pull<A, E, Done, R>` is an `Effect` that can
+ * produce one value of type `A`, fail with an ordinary error `E`, or signal
+ * end-of-input with a `Cause.Done<Done>` value.
+ *
+ * **Mental model**
+ *
+ * - `Pull` is an `Effect` with a distinguished completion signal in the error channel
+ * - ordinary failures and completion are both represented by `Cause`, but can be separated with the helpers in this module
+ * - the `Done` value can carry leftover state or a final value needed by a downstream consumer
+ * - `Pull` is useful when repeatedly evaluating an effect until it either produces values, fails, or reports that no more input is available
+ *
+ * **Common tasks**
+ *
+ * - Extract type parameters from a pull: {@link Success}, {@link Error}, {@link Leftover}, {@link Services}
+ * - Detect and filter completion: {@link isDoneCause}, {@link filterDone}, {@link filterNoDone}
+ * - Recover from completion while preserving ordinary failures: {@link catchDone}
+ * - Convert done causes to successful exits: {@link doneExitFromCause}
+ * - Handle all outcomes explicitly: {@link matchEffect}
+ *
+ * **Gotchas**
+ *
+ * - `Cause.Done` is not an ordinary failure; use this module's helpers before treating a pull failure as an error
+ * - `Done` lives in the error channel, so generic `Effect` error handling can catch it unless you filter it deliberately
+ * - `Pull` is a low-level primitive; most user-facing stream workflows should prefer higher-level stream APIs when available
+ *
  * @since 4.0.0
  */
 import * as Cause from "./Cause.ts"
@@ -10,8 +36,17 @@ import * as internalEffect from "./internal/effect.ts"
 import * as Result from "./Result.ts"
 
 /**
- * @since 4.0.0
+ * An effectful pull step that either produces a value, fails with `E`, or
+ * signals completion with `Cause.Done<Done>`.
+ *
+ * **Details**
+ *
+ * `Pull` represents completion in the error channel so low-level stream
+ * consumers can distinguish ordinary failures from end-of-input and carry a
+ * leftover value when needed.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Pull<out A, out E = never, out Done = void, out R = never>
   extends Effect<A, E | Cause.Done<Done>, R>
@@ -20,16 +55,16 @@ export interface Pull<out A, out E = never, out Done = void, out R = never>
 /**
  * Extracts the success type from a Pull type.
  *
- * @since 4.0.0
  * @category type extractors
+ * @since 4.0.0
  */
 export type Success<P> = P extends Effect<infer _A, infer _E, infer _R> ? _A : never
 
 /**
  * Extracts the error type from a Pull type, excluding Done errors.
  *
- * @since 4.0.0
  * @category type extractors
+ * @since 4.0.0
  */
 export type Error<P> = P extends Effect<infer _A, infer _E, infer _R> ? _E extends Cause.Done<infer _L> ? never : _E
   : never
@@ -37,8 +72,8 @@ export type Error<P> = P extends Effect<infer _A, infer _E, infer _R> ? _E exten
 /**
  * Extracts the leftover type from a Pull type.
  *
- * @since 4.0.0
  * @category type extractors
+ * @since 4.0.0
  */
 export type Leftover<P> = P extends Effect<infer _A, infer _E, infer _R> ? _E extends Cause.Done<infer _L> ? _L : never
   : never
@@ -46,16 +81,16 @@ export type Leftover<P> = P extends Effect<infer _A, infer _E, infer _R> ? _E ex
 /**
  * Extracts the service requirements (context) type from a Pull type.
  *
- * @since 4.0.0
  * @category type extractors
+ * @since 4.0.0
  */
 export type Services<P> = P extends Effect<infer _A, infer _E, infer _R> ? _R : never
 
 /**
  * Excludes done errors from an error type union.
  *
- * @since 4.0.0
  * @category type extractors
+ * @since 4.0.0
  */
 export type ExcludeDone<E> = Exclude<E, Cause.Done<any>>
 
@@ -64,8 +99,16 @@ export type ExcludeDone<E> = Exclude<E, Cause.Done<any>>
 // -----------------------------------------------------------------------------
 
 /**
- * @since 4.0.0
+ * Handles `Cause.Done` failures in an effect while leaving ordinary failures
+ * in the error channel.
+ *
+ * **Details**
+ *
+ * The handler receives the done leftover value and may recover with a new
+ * effect. Non-done errors are preserved.
+ *
  * @category Done
+ * @since 4.0.0
  */
 export const catchDone: {
   <E, A2, E2, R2>(f: (leftover: Cause.Done.Extract<E>) => Effect<A2, E2, R2>): <A, R>(
@@ -84,26 +127,31 @@ export const catchDone: {
 /**
  * Checks if a Cause contains any done errors.
  *
- * @since 4.0.0
  * @category Done
+ * @since 4.0.0
  */
 export const isDoneCause = <E>(cause: Cause.Cause<E>): boolean => cause.reasons.some(isDoneFailure)
 
 /**
  * Checks if a Cause failure is a done error.
  *
- * @since 4.0.0
  * @category Done
+ * @since 4.0.0
  */
 export const isDoneFailure = <E>(
   failure: Cause.Reason<E>
 ): failure is Cause.Fail<E & Cause.Done<any>> => failure._tag === "Fail" && Cause.isDone(failure.error)
 
 /**
- * Filters a Cause to extract only halt errors.
+ * Finds a `Cause.Done` failure in a `Cause`.
  *
- * @since 4.0.0
+ * **Details**
+ *
+ * Returns a successful `Result` with the `Cause.Done` value when one is
+ * present, otherwise returns a failed `Result` containing the non-done cause.
+ *
  * @category Done
+ * @since 4.0.0
  */
 export const filterDone: <E>(
   input: Cause.Cause<E>
@@ -114,10 +162,15 @@ export const filterDone: <E>(
   ) as any
 
 /**
- * Filters a Cause to extract only halt errors.
+ * Finds a `Cause.Done` failure in a cause whose done value is not used.
  *
- * @since 4.0.0
+ * **Details**
+ *
+ * Returns a successful `Result` with the done marker when present, otherwise
+ * returns a failed `Result` with the non-done cause.
+ *
  * @category Done
+ * @since 4.0.0
  */
 export const filterDoneVoid: <E extends Cause.Done>(
   input: Cause.Cause<E>
@@ -127,8 +180,15 @@ export const filterDoneVoid: <E extends Cause.Done>(
 ) as any
 
 /**
- * @since 4.0.0
+ * Keeps a `Cause` only when it contains no `Cause.Done` failures.
+ *
+ * **Details**
+ *
+ * Returns a successful `Result` with the cause when every failure is non-done;
+ * otherwise returns a failed `Result` with the original cause.
+ *
  * @category Done
+ * @since 4.0.0
  */
 export const filterNoDone: <E>(
   input: Cause.Cause<E>
@@ -142,8 +202,8 @@ export const filterNoDone: <E>(
 /**
  * Filters a Cause to extract the leftover value from done errors.
  *
- * @since 4.0.0
  * @category Done
+ * @since 4.0.0
  */
 export const filterDoneLeftover: <E>(
   cause: Cause.Cause<E>
@@ -153,10 +213,16 @@ export const filterDoneLeftover: <E>(
 ) as any
 
 /**
- * Converts a Cause into an Exit, extracting halt leftovers as success values.
+ * Converts a `Cause` into an `Exit`, treating `Cause.Done` as successful
+ * completion.
  *
- * @since 4.0.0
+ * **Details**
+ *
+ * If the cause contains a done value, that leftover becomes the successful
+ * value. Otherwise the non-done cause becomes the failure cause.
+ *
  * @category Done
+ * @since 4.0.0
  */
 export const doneExitFromCause = <E>(cause: Cause.Cause<E>): Exit.Exit<Cause.Done.Extract<E>, ExcludeDone<E>> => {
   const halt = filterDone(cause)
@@ -166,7 +232,8 @@ export const doneExitFromCause = <E>(cause: Cause.Cause<E>): Exit.Exit<Cause.Don
 /**
  * Pattern matches on a Pull, handling success, failure, and done cases.
  *
- * @example
+ * **Example** (Matching Pull outcomes)
+ *
  * ```ts
  * import { Cause, Effect, Pull } from "effect"
  *
@@ -179,8 +246,8 @@ export const doneExitFromCause = <E>(cause: Cause.Cause<E>): Exit.Exit<Cause.Don
  * })
  * ```
  *
- * @since 4.0.0
  * @category pattern matching
+ * @since 4.0.0
  */
 export const matchEffect: {
   <A, E, L, AS, ES, RS, AF, EF, RF, AH, EH, RH>(options: {

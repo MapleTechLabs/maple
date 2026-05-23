@@ -1,4 +1,18 @@
 /**
+ * Durable workflow clocks provide workflow-safe timers and sleep operations.
+ *
+ * Use this module when a workflow needs to pause until a timeout, reminder,
+ * deadline, retry delay, or other scheduled wake-up. Short sleeps can run as
+ * in-memory activities, while longer sleeps are scheduled with the workflow
+ * engine and resumed through a durable deferred signal when the timer fires.
+ *
+ * Because workflows may be replayed, timer names and durations should be
+ * deterministic and stable for a given workflow path. Avoid deriving them from
+ * ambient wall-clock state, and give distinct sleeps distinct names so replayed
+ * executions can be matched with the correct scheduled wake-up. Lower the
+ * in-memory threshold when a delay must be handled by the workflow engine
+ * rather than the current process.
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -12,8 +26,11 @@ import type { WorkflowEngine, WorkflowInstance } from "./WorkflowEngine.ts"
 const TypeId = "~effect/workflow/DurableClock"
 
 /**
+ * Represents a durable workflow timer with a name, duration, and deferred
+ * completed when the timer wakes.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface DurableClock {
   readonly [TypeId]: typeof TypeId
@@ -23,8 +40,11 @@ export interface DurableClock {
 }
 
 /**
+ * Creates a durable clock definition and its associated deferred wake-up
+ * signal.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make = (options: {
   readonly name: string
@@ -48,8 +68,11 @@ const InstanceTag = Context.Service<
 )
 
 /**
- * @since 1.0.0
+ * Sleeps inside a workflow, using an in-memory activity for durations at or
+ * below the threshold and scheduling a durable clock for longer durations.
+ *
  * @category Sleeping
+ * @since 4.0.0
  */
 export const sleep: (
   options: {
@@ -59,7 +82,7 @@ export const sleep: (
      * If the duration is less than or equal to this threshold, the clock will
      * be executed in memory.
      *
-     * Defaults to 60 seconds.
+     * @default 60 seconds
      */
     readonly inMemoryThreshold?: Duration.Input | undefined
   }

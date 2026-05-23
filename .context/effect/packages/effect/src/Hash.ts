@@ -14,6 +14,7 @@ import { hasProperty } from "./Predicate.ts"
 /**
  * The unique identifier used to identify objects that implement the Hash interface.
  *
+ * @category symbols
  * @since 2.0.0
  */
 export const symbol = "~effect/interfaces/Hash"
@@ -21,10 +22,13 @@ export const symbol = "~effect/interfaces/Hash"
 /**
  * A type that represents an object that can be hashed.
  *
+ * **Details**
+ *
  * Objects implementing this interface provide a method to compute their hash value,
  * which is used for efficient comparison and storage operations.
  *
- * @example
+ * **Example** (Implementing Hash)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -50,21 +54,22 @@ export interface Hash {
 /**
  * Computes a hash value for any given value.
  *
+ * **Details**
+ *
  * This function can hash primitives (numbers, strings, booleans, etc.) as well as
  * objects, arrays, and other complex data structures. It automatically handles
  * different types and provides a consistent hash value for equivalent inputs.
  *
- * **⚠️ CRITICAL IMMUTABILITY REQUIREMENT**: Objects being hashed must be treated as
- * immutable after their first hash computation. Hash results are cached, so mutating
- * an object after hashing will lead to stale cached values and broken hash-based
- * operations. For mutable objects, use referential equality by implementing custom
- * `Hash` interface that hashes the object reference, not its content.
+ * **Gotchas**
  *
- * **FORBIDDEN**: Modifying objects after `Hash.hash()` has been called on them
- * **ALLOWED**: Using immutable objects, or mutable objects with custom `Hash` interface
- * that uses referential equality (hashes the object reference, not content)
+ * Objects being hashed must be treated as immutable after their first hash
+ * computation. Hash results are cached, so mutating an object after hashing will
+ * lead to stale cached values and broken hash-based operations. For mutable
+ * objects, implement a custom `Hash` interface that hashes the object reference
+ * rather than its content.
  *
- * @example
+ * **Example** (Hashing different values)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -76,7 +81,7 @@ export interface Hash {
  * // Hash objects and arrays
  * console.log(Hash.hash({ name: "John", age: 30 }))
  * console.log(Hash.hash([1, 2, 3]))
- * console.log(Hash.hash(new Date("2023-01-01")))
+ * console.log(Hash.hash({ id: "user-1", roles: ["admin", "editor"] }))
  * ```
  *
  * @category hashing
@@ -139,11 +144,14 @@ export const hash: <A>(self: A) => number = <A>(self: A) => {
 /**
  * Generates a random hash value for an object and caches it.
  *
+ * **Details**
+ *
  * This function creates a random hash value for objects that don't have their own
  * hash implementation. The hash value is cached using a WeakMap, so the same object
  * will always return the same hash value during its lifetime.
  *
- * @example
+ * **Example** (Hashing objects by reference)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -170,16 +178,18 @@ export const random: <A extends object>(self: A) => number = (self) => {
 /**
  * Combines two hash values into a single hash value.
  *
+ * **Details**
+ *
  * This function takes two hash values and combines them using a mathematical
  * operation to produce a new hash value. It's useful for creating hash values
  * of composite structures.
  *
- * @example
+ * **Example** (Combining hash values)
+ *
  * ```ts
- * import { Hash } from "effect" // combined hash value
+ * import { Hash, pipe } from "effect"
  *
  * // Can also be used with pipe
- * import { pipe } from "effect"
  *
  * const hash1 = Hash.hash("hello")
  * const hash2 = Hash.hash("world")
@@ -201,10 +211,13 @@ export const combine: {
 /**
  * Optimizes a hash value by applying bit manipulation techniques.
  *
+ * **Details**
+ *
  * This function takes a hash value and applies bitwise operations to improve
  * the distribution of hash values, reducing the likelihood of collisions.
  *
- * @example
+ * **Example** (Optimizing a hash value)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -224,10 +237,13 @@ export const optimize = (n: number): number => (n & 0xbfffffff) | ((n >>> 1) & 0
 /**
  * Checks if a value implements the Hash interface.
  *
+ * **Details**
+ *
  * This function determines whether a given value has the Hash symbol property,
  * indicating that it can provide its own hash value implementation.
  *
- * @example
+ * **Example** (Checking for Hash support)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -251,11 +267,14 @@ export const isHash = (u: unknown): u is Hash => hasProperty(u, symbol)
 /**
  * Computes a hash value for a number.
  *
+ * **Details**
+ *
  * This function creates a hash value for numeric inputs, handling special cases
  * like NaN, Infinity, and -Infinity with distinct hash values. It uses bitwise operations to ensure good distribution
  * of hash values across different numeric inputs.
  *
- * @example
+ * **Example** (Hashing numbers)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -294,11 +313,14 @@ export const number = (n: number) => {
 /**
  * Computes a hash value for a string using the djb2 algorithm.
  *
+ * **Details**
+ *
  * This function implements a variation of the djb2 hash algorithm, which is
  * known for its good distribution properties and speed. It processes each
  * character of the string to produce a consistent hash value.
  *
- * @example
+ * **Example** (Hashing strings)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -324,11 +346,14 @@ export const string = (str: string) => {
 /**
  * Computes a hash value for an object using only the specified keys.
  *
+ * **Details**
+ *
  * This function allows you to hash an object by considering only specific keys,
  * which is useful when you want to create a hash based on a subset of an object's
  * properties.
  *
- * @example
+ * **Example** (Hashing selected object keys)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -359,13 +384,15 @@ export const structureKeys = (o: object, keys: Iterable<PropertyKey>) => {
 }
 
 /**
- * Computes a hash value for an object using all of its enumerable keys.
+ * Computes a structural hash for an object using Effect's object key collection.
  *
- * This function creates a hash value based on all enumerable properties of an object.
- * It's a convenient way to hash an entire object structure when you want to consider
- * all its properties.
+ * **Details**
  *
- * @example
+ * The hash is based on the object's structural keys and their values, including
+ * symbol keys and relevant prototype keys for non-plain objects.
+ *
+ * **Example** (Hashing object structures)
+ *
  * ```ts
  * import { Hash } from "effect"
  *
@@ -397,11 +424,14 @@ const iterableWith = (seed: number, f: (el: any) => number) => (iter: Iterable<a
 /**
  * Computes a hash value for an array by hashing all of its elements.
  *
+ * **Details**
+ *
  * This function creates a hash value based on all elements in the array.
  * The order of elements matters, so arrays with the same elements in different
  * orders will produce different hash values.
  *
- * @example
+ * **Example** (Hashing arrays)
+ *
  * ```ts
  * import { Hash } from "effect"
  *

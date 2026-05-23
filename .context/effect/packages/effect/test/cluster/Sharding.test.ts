@@ -14,7 +14,7 @@ import {
 import { TestEntity, TestEntityNoState, TestEntityState, User } from "./TestEntity.ts"
 
 describe.concurrent("Sharding", () => {
-  it.effect("delivers a message", () =>
+  it.effect("delivers volatile requests directly to the entity", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust(1)
       const makeClient = yield* TestEntity.client
@@ -23,7 +23,7 @@ describe.concurrent("Sharding", () => {
       expect(user).toEqual(new User({ id: 1, name: "User 1" }))
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("delivers a message via storage", () =>
+  it.effect("persists durable requests until the entity replies", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust(1)
       const driver = yield* MessageStorage.MemoryDriver
@@ -35,7 +35,7 @@ describe.concurrent("Sharding", () => {
       expect(driver.unprocessed.size).toEqual(0)
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("interrupts", () =>
+  it.effect("routes durable interrupts through storage", () =>
     Effect.gen(function*() {
       const driver = yield* MessageStorage.MemoryDriver
       const state = yield* TestEntityState
@@ -159,7 +159,7 @@ describe.concurrent("Sharding", () => {
       assert(reply._tag === "WithExit" && reply.exit._tag === "Failure" && reply.exit.cause[0]._tag === "Die")
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("MailboxFull for volatile messages", () =>
+  it.effect("fails volatile requests immediately when the mailbox is full", () =>
     Effect.gen(function*() {
       const makeClient = yield* TestEntity.client
       yield* TestClock.adjust(1)
@@ -248,7 +248,7 @@ describe.concurrent("Sharding", () => {
       assert.deepStrictEqual(Queue.sizeUnsafe(state.interrupts), 2)
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("delivers a durable stream", () =>
+  it.effect("delivers durable streams and acknowledges each chunk", () =>
     Effect.gen(function*() {
       const driver = yield* MessageStorage.MemoryDriver
       yield* TestClock.adjust(1)
@@ -316,7 +316,7 @@ describe.concurrent("Sharding", () => {
         assert.strictEqual(driver.journal.length, 13 + 3 + 1)
         assert.strictEqual(driver.replyIds.size, 1 + 4)
       }).pipe(Effect.provide(TestShardingWithoutStorage.pipe(
-        Layer.provideMerge(Layer.effect(MessageStorage.MemoryDriver)(MessageStorage.MemoryDriver.asEffect())),
+        Layer.provideMerge(Layer.effect(MessageStorage.MemoryDriver)(MessageStorage.MemoryDriver)),
         Layer.updateService(MessageStorage.MessageStorage, (storage) => ({
           ...storage,
           unprocessedMessagesById(messageIds) {
@@ -448,7 +448,7 @@ describe.concurrent("Sharding", () => {
       Layer.merge(TestEntityState.layer)
     ))))
 
-  it.effect("client discard option", () =>
+  it.effect("client discard stores durable requests without waiting for replies", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust(1)
       const driver = yield* MessageStorage.MemoryDriver
@@ -461,7 +461,7 @@ describe.concurrent("Sharding", () => {
       expect(driver.unprocessed.size).toEqual(0)
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("client discard with Never", () =>
+  it.effect("client discard returns while the durable request keeps processing", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust(1)
       const driver = yield* MessageStorage.MemoryDriver
@@ -475,7 +475,7 @@ describe.concurrent("Sharding", () => {
       expect(driver.unprocessed.size).toEqual(1)
     }).pipe(Effect.provide(TestSharding)))
 
-  it.effect("defect when no MessageStorage", () =>
+  it.effect("defects when a durable request has no MessageStorage", () =>
     Effect.gen(function*() {
       const makeClient = yield* TestEntity.client
       const client = makeClient("1")
@@ -488,7 +488,7 @@ describe.concurrent("Sharding", () => {
       Layer.provide(MessageStorage.layerNoop)
     ))))
 
-  it.effect("restart on defect", () =>
+  it.effect("restarts the entity layer after a handler defect", () =>
     Effect.gen(function*() {
       yield* TestClock.adjust(1)
       const state = yield* TestEntityState

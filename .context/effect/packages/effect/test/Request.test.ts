@@ -69,7 +69,7 @@ const makeUserResolver = Effect.gen(function*() {
   const getNames = getIds.pipe(
     Effect.flatMap(Effect.forEach(getNameById, { concurrency: "unbounded" })),
     Effect.onInterrupt(() =>
-      Effect.tap(Interrupts.asEffect(), (i) => {
+      Effect.tap(Interrupts, (i) => {
         i.interrupts++
         return Effect.void
       })

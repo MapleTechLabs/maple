@@ -24,7 +24,7 @@ function assertFailure<T extends Brand.Brand<any>>(
 }
 
 describe("Brand", () => {
-  it("toString", () => {
+  it("formats validation failures as BrandError", () => {
     type Int = number & Brand.Brand<"Int">
     const Int = Brand.check<Int>(Schema.isInt())
     const result = Int.result(1.1)
@@ -32,7 +32,7 @@ describe("Brand", () => {
     strictEqual(String(result.failure), "BrandError(Expected an integer, got 1.1)")
   })
 
-  it("nominal", () => {
+  it("creates nominal brands without runtime validation", () => {
     type MyNumber = number & Brand.Brand<"MyNumber">
     const MyNumber = Brand.nominal<MyNumber>()
 
@@ -53,7 +53,7 @@ describe("Brand", () => {
     assertSuccess(MyNumber, -1)
   })
 
-  it("make", () => {
+  it("validates custom predicates created with make", () => {
     type Int = number & Brand.Brand<"Int">
     const Int = Brand.make<Int>(
       (n) => Number.isInteger(n) || `Expected ${n} to be an integer`
@@ -77,7 +77,7 @@ describe("Brand", () => {
   })
 
   describe("check", () => {
-    it("single check", () => {
+    it("validates a single schema check", () => {
       type Int = number & Brand.Brand<"Int">
       const Int = Brand.check<Int>(Schema.isInt())
 
@@ -98,7 +98,7 @@ describe("Brand", () => {
       assertSuccess(Int, -1)
     })
 
-    it("multiple checks", () => {
+    it("accumulates failures from multiple schema checks", () => {
       type PositiveInt = number & Brand.Brand<"PositiveInt">
       const PositiveInt = Brand.check<PositiveInt>(Schema.isInt(), Schema.isGreaterThan(0))
 
@@ -113,7 +113,7 @@ Expected a value greater than 0, got -1.1`
       )
     })
 
-    it("multiple checks + abort", () => {
+    it("stops after an aborted failed schema check", () => {
       type PositiveInt = number & Brand.Brand<"PositiveInt">
       const PositiveInt = Brand.check<PositiveInt>(
         Schema.isInt().abort(), // abort the first check
@@ -127,7 +127,7 @@ Expected a value greater than 0, got -1.1`
     })
   })
 
-  it("all", () => {
+  it("combines existing brand constructors with all", () => {
     type Int = number & Brand.Brand<"Int">
     const Int = Brand.check<Int>(Schema.isInt())
 

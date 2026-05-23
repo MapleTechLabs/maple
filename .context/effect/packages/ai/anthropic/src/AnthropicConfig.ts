@@ -1,5 +1,23 @@
 /**
- * @since 1.0.0
+ * The `AnthropicConfig` module provides contextual configuration for the
+ * Anthropic AI provider integration. It is used to customize the generated
+ * Anthropic HTTP client without changing individual request code.
+ *
+ * **Common tasks**
+ *
+ * - Provide a shared `HttpClient` transformation for Anthropic requests
+ * - Add provider-specific concerns such as request instrumentation, proxying,
+ *   retries, or header manipulation
+ * - Scope a client transformation to a single effect with {@link withClientTransform}
+ *
+ * **Gotchas**
+ *
+ * - Configuration is read from the Effect context, so overrides only apply to
+ *   effects run inside the configured scope
+ * - `withClientTransform` replaces the current `transformClient` value while
+ *   preserving any other Anthropic configuration fields
+ *
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -7,15 +25,19 @@ import { dual } from "effect/Function"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
 
 /**
- * @since 1.0.0
+ * Service tag for Anthropic client configuration overrides, such as transformations applied to the generated HTTP client.
+ *
  * @category services
+ * @since 4.0.0
  */
 export class AnthropicConfig extends Context.Service<
   AnthropicConfig,
   AnthropicConfig.Service
 >()("@effect/ai-anthropic/AnthropicConfig") {
   /**
-   * @since 1.0.0
+   * Gets the configured Anthropic service from the current context when present.
+   *
+   * @since 4.0.0
    */
   static readonly getOrUndefined: Effect.Effect<typeof AnthropicConfig.Service | undefined> = Effect.map(
     Effect.context<never>(),
@@ -24,12 +46,20 @@ export class AnthropicConfig extends Context.Service<
 }
 
 /**
- * @since 1.0.0
+ * Namespace containing types associated with the `AnthropicConfig` service.
+ *
+ * @since 4.0.0
  */
 export declare namespace AnthropicConfig {
   /**
-   * @since 1.0.0
+   * Configuration provided through `AnthropicConfig`.
+   *
+   * **Details**
+   *
+   * Use `transformClient` to wrap or replace the `HttpClient` used by generated Anthropic API requests.
+   *
    * @category models
+   * @since 4.0.0
    */
   export interface Service {
     readonly transformClient?: ((client: HttpClient) => HttpClient) | undefined
@@ -37,8 +67,10 @@ export declare namespace AnthropicConfig {
 }
 
 /**
- * @since 1.0.0
+ * Runs an effect with an `AnthropicConfig` override that transforms the underlying `HttpClient` used by generated Anthropic requests.
+ *
  * @category configuration
+ * @since 4.0.0
  */
 export const withClientTransform: {
   (transform: (client: HttpClient) => HttpClient): <A, E, R>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>

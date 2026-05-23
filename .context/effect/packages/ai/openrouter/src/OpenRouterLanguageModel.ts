@@ -1,5 +1,25 @@
 /**
- * @since 1.0.0
+ * The `OpenRouterLanguageModel` module provides constructors for using
+ * OpenRouter chat completion models through the Effect AI `LanguageModel`
+ * interface. It adapts Effect prompts, tools, structured output schemas, file
+ * parts, reasoning details, cache-control hints, and telemetry annotations into
+ * the OpenRouter request and response formats.
+ *
+ * Use this module when an application wants to select an OpenRouter model by
+ * name while keeping the rest of its AI workflow provider-agnostic. The
+ * exported layer and model constructors install a `LanguageModel` service backed
+ * by `OpenRouterClient`, and `withConfigOverride` can scope per-request
+ * OpenRouter options such as sampling, routing, tool use, or JSON schema
+ * behavior.
+ *
+ * OpenRouter routes requests to many underlying providers, so model support for
+ * images, files, tools, structured outputs, caching, and reasoning metadata can
+ * vary. Provider-specific prompt and response metadata is preserved under the
+ * `openrouter` option namespace so multi-turn conversations can round-trip
+ * details such as reasoning blocks and file annotations when the selected model
+ * supports them.
+ *
+ * @since 4.0.0
  */
 /** @effect-diagnostics preferSchemaOverJson:skip-file */
 import * as Arr from "effect/Array"
@@ -40,8 +60,8 @@ import { type ChatStreamingResponseChunkData, OpenRouterClient } from "./OpenRou
 /**
  * Service definition for OpenRouter language model configuration.
  *
- * @since 1.0.0
  * @category services
+ * @since 4.0.0
  */
 export class Config extends Context.Service<
   Config,
@@ -69,14 +89,20 @@ export class Config extends Context.Service<
 // =============================================================================
 
 /**
- * @since 1.0.0
+ * OpenRouter assistant reasoning detail blocks preserved for multi-turn
+ * conversations.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ReasoningDetails = Exclude<typeof Generated.AssistantMessage.Encoded["reasoning_details"], undefined>
 
 /**
- * @since 1.0.0
+ * File annotations emitted on OpenRouter assistant messages and exposed in
+ * finish metadata.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type FileAnnotation = Extract<
   NonNullable<typeof Generated.AssistantMessage.fields.annotations.Type>[number],
@@ -84,7 +110,21 @@ export type FileAnnotation = Extract<
 >
 
 declare module "effect/unstable/ai/Prompt" {
+  /**
+   * OpenRouter-specific options for system messages.
+   *
+   * **Details**
+   *
+   * These options are used when translating system instructions into
+   * OpenRouter chat messages.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface SystemMessageOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the system message.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -93,7 +133,21 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for user messages.
+   *
+   * **Details**
+   *
+   * These options are used when translating user content into OpenRouter chat
+   * messages.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface UserMessageOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the user message.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -102,7 +156,21 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for assistant messages.
+   *
+   * **Details**
+   *
+   * Preserves reasoning metadata when assistant messages are replayed in later
+   * OpenRouter requests.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface AssistantMessageOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the assistant message.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -115,7 +183,21 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for tool messages.
+   *
+   * **Details**
+   *
+   * These options are used when converting tool results into OpenRouter chat
+   * messages.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ToolMessageOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the tool message.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -124,7 +206,20 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for text prompt parts.
+   *
+   * **When to use**
+   *
+   * Use these options to control how text content is sent to OpenRouter.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface TextPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the text part.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -133,7 +228,21 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for reasoning prompt parts.
+   *
+   * **Details**
+   *
+   * Preserves provider reasoning blocks so reasoning-aware conversations can
+   * continue across OpenRouter requests.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ReasoningPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the reasoning part.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -146,7 +255,20 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for file prompt parts.
+   *
+   * **Details**
+   *
+   * Controls file naming and prompt caching for files sent to OpenRouter.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface FilePartOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the file part.
+     */
     readonly openrouter?: {
       /**
        * The name to give to the file. Will be prioritized over the file name
@@ -160,7 +282,21 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for tool call prompt parts.
+   *
+   * **Details**
+   *
+   * Preserves reasoning details associated with tool calls when a conversation
+   * is sent back to OpenRouter.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ToolCallPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the tool call part.
+     */
     readonly openrouter?: {
       /**
        * Reasoning details associated with the tool call part.
@@ -169,7 +305,20 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenRouter-specific options for tool result prompt parts.
+   *
+   * **Details**
+   *
+   * Controls prompt caching for tool results sent to OpenRouter.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ToolResultPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific options sent to OpenRouter for the tool result part.
+     */
     readonly openrouter?: {
       /**
        * A breakpoint which marks the end of reusable content eligible for caching.
@@ -180,43 +329,157 @@ declare module "effect/unstable/ai/Prompt" {
 }
 
 declare module "effect/unstable/ai/Response" {
+  /**
+   * OpenRouter metadata attached to completed reasoning response parts.
+   *
+   * **Details**
+   *
+   * Preserves provider reasoning details that can be sent back in later turns.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the reasoning part.
+     */
     readonly openrouter?: {
+      /**
+       * Reasoning details emitted by the underlying provider for this part.
+       */
       readonly reasoningDetails?: ReasoningDetails | null
     } | null
   }
 
+  /**
+   * OpenRouter metadata emitted when a streamed reasoning part starts.
+   *
+   * **Details**
+   *
+   * Carries the first reasoning detail chunk when OpenRouter exposes one.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningStartPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed reasoning start.
+     */
     readonly openrouter?: {
+      /**
+       * Reasoning details emitted by the underlying provider for this part.
+       */
       readonly reasoningDetails?: ReasoningDetails | null
     } | null
   }
 
+  /**
+   * OpenRouter metadata emitted for streamed reasoning deltas.
+   *
+   * **Details**
+   *
+   * Carries provider reasoning detail chunks as they arrive from OpenRouter.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningDeltaPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed reasoning delta.
+     */
     readonly openrouter?: {
+      /**
+       * Reasoning details emitted by the underlying provider for this delta.
+       */
       readonly reasoningDetails?: ReasoningDetails | null
     } | null
   }
 
+  /**
+   * OpenRouter metadata attached to tool-call response parts.
+   *
+   * **Details**
+   *
+   * Associates tool calls with provider reasoning details when the model emits
+   * reasoning and tool calls together.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ToolCallPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the tool call.
+     */
     readonly openrouter?: {
+      /**
+       * Reasoning details associated with this tool call.
+       */
       readonly reasoningDetails?: ReasoningDetails | null
     } | null
   }
 
+  /**
+   * OpenRouter metadata attached to URL source citations.
+   *
+   * **Details**
+   *
+   * Includes citation text and offsets returned by providers that support URL
+   * annotations.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface UrlSourcePartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific citation metadata returned for the URL source.
+     */
     readonly openrouter?: {
+      /**
+       * The cited source content returned by the provider.
+       */
       readonly content?: string | null
+      /**
+       * The zero-based start index of the citation in the generated text.
+       */
       readonly startIndex?: number | null
+      /**
+       * The zero-based end index of the citation in the generated text.
+       */
       readonly endIndex?: number | null
     } | null
   }
 
+  /**
+   * OpenRouter metadata attached to finish response parts.
+   *
+   * **Details**
+   *
+   * Exposes provider response details that are not represented by the common
+   * Effect AI finish part fields.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface FinishPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned when the OpenRouter response finishes.
+     */
     readonly openrouter?: {
+      /**
+       * Provider fingerprint for the backend configuration that served the request.
+       */
       readonly systemFingerprint?: string | null
+      /**
+       * Raw token usage reported by OpenRouter.
+       */
       readonly usage?: typeof Generated.ChatGenerationTokenUsage.Encoded | null
+      /**
+       * File annotations returned by the provider.
+       */
       readonly annotations?: ReadonlyArray<FileAnnotation> | null
+      /**
+       * The OpenRouter provider that served the request, when reported.
+       */
       readonly provider?: string | null
     } | null
   }
@@ -227,8 +490,10 @@ declare module "effect/unstable/ai/Response" {
 // =============================================================================
 
 /**
- * @since 1.0.0
+ * Creates an AI model descriptor for an OpenRouter language model.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const model = (
   model: string,
@@ -239,8 +504,8 @@ export const model = (
 /**
  * Creates an OpenRouter language model service.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(function*({ model, config: providerConfig }: {
   readonly model: string
@@ -308,8 +573,8 @@ export const make = Effect.fnUntraced(function*({ model, config: providerConfig 
 /**
  * Creates a layer for the OpenRouter language model.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer = (options: {
   readonly model: string
@@ -320,8 +585,8 @@ export const layer = (options: {
 /**
  * Provides config overrides for OpenRouter language model operations.
  *
- * @since 1.0.0
  * @category configuration
+ * @since 4.0.0
  */
 export const withConfigOverride: {
   (overrides: typeof Config.Service): <A, E, R>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, Exclude<R, Config>>

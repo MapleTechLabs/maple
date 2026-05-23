@@ -66,13 +66,13 @@ export class AiWriter extends Context.Service<AiWriter, {
   static readonly layer = Layer.effect(
     AiWriter,
     Effect.gen(function*() {
-      // Calling `withRequirements` on an `ExecutionPlan` will move the
+      // Calling `captureRequirements` on an `ExecutionPlan` will move the
       // requirements of the plan (in this case the ai clients) into the Layer
       // requirements.
-      const draftsModel = yield* DraftPlan.withRequirements
+      const draftsModel = yield* DraftPlan.captureRequirements
 
       // Use a different model for the launch plan extraction
-      const launchPlanModel = yield* OpenAiLanguageModel.model("gpt-4.1")
+      const launchPlanModel = yield* OpenAiLanguageModel.model("gpt-4.1").captureRequirements
 
       const draftAnnouncement = Effect.fn("AiWriter.draftAnnouncement")(
         function*(product: string) {

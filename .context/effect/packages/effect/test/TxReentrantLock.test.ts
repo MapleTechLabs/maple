@@ -116,7 +116,7 @@ describe("TxReentrantLock", () => {
         assert.strictEqual(yield* Effect.tx(TxReentrantLock.writeLocked(lock)), false)
       }))
 
-    it.effect("lock is alias for writeLock", () =>
+    it.effect("writeLock can be acquired reentrantly in the same scope", () =>
       Effect.gen(function*() {
         const lock = yield* Effect.tx(TxReentrantLock.make())
 

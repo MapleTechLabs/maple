@@ -1,3 +1,16 @@
+/**
+ * Internal ANSI escape sequence helpers used by the unstable CLI rendering
+ * implementation. This module centralizes the control codes for text styling,
+ * cursor movement, line erasing, and terminal notifications so renderers can
+ * compose terminal output without scattering raw escape sequences throughout
+ * the CLI internals.
+ *
+ * The helpers deliberately work with plain strings because terminal rendering
+ * is sensitive to ordering: style codes must be reset after annotated text,
+ * cursor operations must account for one-based terminal coordinates, and line
+ * clearing usually needs to preserve the cursor position expected by the next
+ * frame.
+ */
 const ESC = "\x1B["
 const BEL = "\x07"
 const SEP = ";"

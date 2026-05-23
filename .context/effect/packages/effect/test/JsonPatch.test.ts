@@ -281,7 +281,7 @@ describe("JsonPatch", () => {
         deepStrictEqual(JsonPatch.get(value1, value2), [])
       })
 
-      it("returns replace operation for structurally different objects", () => {
+      it("emits the property replace for structurally different objects", () => {
         const value1 = { a: 1 }
         const value2 = { a: 2 }
         const patch = JsonPatch.get(value1, value2)

@@ -1,6 +1,6 @@
 import { Number, pipe, Schema, String as Str, Tuple } from "effect"
 import type { Reducer } from "effect"
-import { describe, expect, it, when } from "tstyche"
+import { describe, expect, it } from "tstyche"
 
 const tuple = ["a", 2, true] as [string, number, boolean]
 
@@ -9,10 +9,18 @@ const optionalTuple = ["a", 2, true] as [string?, number?, boolean?]
 describe("Tuple", () => {
   describe("get", () => {
     it("errors", () => {
-      when(pipe).isCalledWith(tuple, expect(Tuple.get).type.not.toBeCallableWith(4))
+      pipe(
+        tuple,
+        // @ts-expect-error Argument of type '4' is not assignable
+        Tuple.get(4)
+      )
       expect(Tuple.get).type.not.toBeCallableWith(tuple, 4)
 
-      when(pipe).isCalledWith(optionalTuple, expect(Tuple.get).type.not.toBeCallableWith(0))
+      pipe(
+        optionalTuple,
+        // @ts-expect-error Argument of type '0' is not assignable
+        Tuple.get(0)
+      )
       expect(Tuple.get).type.not.toBeCallableWith(optionalTuple, 0)
     })
 
@@ -31,7 +39,11 @@ describe("Tuple", () => {
 
   describe("pick", () => {
     it("errors", () => {
-      when(pipe).isCalledWith(tuple, expect(Tuple.pick).type.not.toBeCallableWith([4]))
+      pipe(
+        tuple,
+        // @ts-expect-error Type '4' is not assignable
+        Tuple.pick([4])
+      )
       expect(Tuple.pick).type.not.toBeCallableWith(tuple, [4])
     })
 
@@ -46,7 +58,11 @@ describe("Tuple", () => {
 
   describe("omit", () => {
     it("errors", () => {
-      when(pipe).isCalledWith(tuple, expect(Tuple.omit).type.not.toBeCallableWith([4]))
+      pipe(
+        tuple,
+        // @ts-expect-error Type '4' is not assignable
+        Tuple.omit([4])
+      )
       expect(Tuple.omit).type.not.toBeCallableWith(tuple, [4])
     })
 
@@ -93,7 +109,11 @@ describe("Tuple", () => {
 
   describe("renameIndices", () => {
     it("errors", () => {
-      when(pipe).isCalledWith(tuple, expect(Tuple.renameIndices).type.not.toBeCallableWith(["4", "0"]))
+      pipe(
+        tuple,
+        // @ts-expect-error Type '"4"' is not assignable
+        Tuple.renameIndices(["4", "0"])
+      )
       expect(Tuple.renameIndices).type.not.toBeCallableWith(tuple, ["4", "0"])
     })
 

@@ -63,7 +63,7 @@ export const UsersApiHandlers = HttpApiBuilder.group(
       .handle("me", () =>
         // The Authorization middleware provides the CurrentUser service, so we
         // can access it here.
-        CurrentUser.asEffect())
+        CurrentUser)
   })
 ).pipe(
   // Provide the dependencies for the handlers.

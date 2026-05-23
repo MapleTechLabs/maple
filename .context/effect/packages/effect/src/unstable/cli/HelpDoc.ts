@@ -1,4 +1,25 @@
 /**
+ * The `HelpDoc` module defines the structured documentation model used by the
+ * unstable CLI package to describe command help. A `HelpDoc` value captures the
+ * user-facing parts of a command, including its description, usage string,
+ * positional arguments, flags, global flags, subcommands, and examples.
+ *
+ * **Common tasks**
+ *
+ * - Build help data from command definitions before rendering it
+ * - Pass command documentation to `CliOutput.Formatter` implementations
+ * - Represent custom help output formats without changing command parsing
+ * - Group subcommands and distinguish local flags from global flags
+ *
+ * **Gotchas**
+ *
+ * - `HelpDoc` is format-agnostic; layout, ANSI styling, and table alignment are
+ *   handled by the output formatter
+ * - Optional argument and flag descriptions use `Option.Option<string>`, while
+ *   optional sections are omitted when they have no entries
+ * - Long names, aliases, and descriptions may require formatter-specific width
+ *   handling when rendering terminal help
+ *
  * @since 4.0.0
  */
 
@@ -11,10 +32,11 @@ import type * as Option from "../../Option.ts"
  * This data structure is independent of formatting, allowing for
  * different output formats (text, markdown, JSON, etc.).
  *
- * @example
+ * **Example** (Defining command help documentation)
+ *
  * ```ts
- * import { Option as O, Context } from "effect"
- * import type * as HelpDoc from "effect/unstable/cli/HelpDoc"
+ * import { Context, Option as O } from "effect"
+ * import type { HelpDoc } from "effect/unstable/cli"
  *
  * const deployCommandHelp: HelpDoc.HelpDoc = {
  *   description: "Deploy your application to the cloud",
@@ -48,8 +70,8 @@ import type * as Option from "../../Option.ts"
  * }
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface HelpDoc {
   /**
@@ -97,8 +119,8 @@ export interface HelpDoc {
 /**
  * Documentation for a command usage example
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ExampleDoc {
   /**
@@ -115,7 +137,8 @@ export interface ExampleDoc {
 /**
  * Documentation for a single command-line flag/option
  *
- * @example
+ * **Example** (Documenting command flags)
+ *
  * ```ts
  * import { Option as O } from "effect"
  * import type { HelpDoc } from "effect/unstable/cli"
@@ -137,8 +160,8 @@ export interface ExampleDoc {
  * }
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface FlagDoc {
   /**
@@ -170,9 +193,10 @@ export interface FlagDoc {
 /**
  * Documentation for a subcommand
  *
- * @example
+ * **Example** (Documenting subcommands)
+ *
  * ```ts
- * import { Option as O, Context } from "effect"
+ * import { Context, Option as O } from "effect"
  * import type { HelpDoc } from "effect/unstable/cli"
  *
  * const deploySubcommand: HelpDoc.SubcommandDoc = {
@@ -202,8 +226,8 @@ export interface FlagDoc {
  * }
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface SubcommandDoc {
   /**
@@ -230,8 +254,8 @@ export interface SubcommandDoc {
 /**
  * Documentation for a grouped subcommand listing
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface SubcommandGroupDoc {
   /**
@@ -249,9 +273,10 @@ export interface SubcommandGroupDoc {
 /**
  * Documentation for a positional argument
  *
- * @example
+ * **Example** (Documenting positional arguments)
+ *
  * ```ts
- * import { Option as O, Context } from "effect"
+ * import { Context, Option as O } from "effect"
  * import type { HelpDoc } from "effect/unstable/cli"
  *
  * const sourceArg: HelpDoc.ArgDoc = {
@@ -280,8 +305,8 @@ export interface SubcommandGroupDoc {
  * }
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ArgDoc {
   /**

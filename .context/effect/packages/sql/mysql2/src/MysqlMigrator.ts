@@ -1,5 +1,23 @@
 /**
- * @since 1.0.0
+ * Utilities for applying Effect SQL migrations to MySQL databases through the
+ * mysql2-backed `SqlClient`.
+ *
+ * This module re-exports the shared `Migrator` loaders and error types, then
+ * provides `run` and `layer` helpers for applying ordered migrations using the
+ * currently configured MySQL `SqlClient`. It is commonly used during application
+ * startup, in integration tests that provision a temporary schema, or in layer
+ * graphs where dependent services should not start until the database schema is
+ * current.
+ *
+ * Applied migrations are stored in `effect_sql_migrations` by default and use
+ * the shared `<id>_<name>` loader convention. Only migrations with ids greater
+ * than the latest recorded id are run. MySQL DDL can cause implicit commits, and
+ * this adapter relies on migration table constraints to detect concurrent
+ * runners, so coordinate startup runners and write migrations to tolerate
+ * MySQL's transactional semantics. Schema dump support is not enabled in this
+ * adapter, so `schemaDirectory` does not emit a MySQL dump.
+ *
+ * @since 4.0.0
  */
 import type * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -8,13 +26,15 @@ import type * as Client from "effect/unstable/sql/SqlClient"
 import type { SqlError } from "effect/unstable/sql/SqlError"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * from "effect/unstable/sql/Migrator"
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Runs SQL migrations using the configured `SqlClient`, returning the migrations that were applied.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const run: <R2 = never>(
   { loader, schemaDirectory, table }: Migrator.MigratorOptions<R2>
@@ -78,8 +98,10 @@ export const run: <R2 = never>(
 })
 
 /**
+ * Creates a layer that runs the configured SQL migrations during layer construction.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layer = <R>(
   options: Migrator.MigratorOptions<R>

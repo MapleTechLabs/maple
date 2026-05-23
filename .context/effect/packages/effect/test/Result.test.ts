@@ -1,9 +1,7 @@
-import { Cause, Chunk, Effect, Equal, Equivalence, flow, identity, Option, pipe, Result, String as Str } from "effect"
+import { Chunk, Equal, Equivalence, flow, identity, Option, pipe, Result, String as Str } from "effect"
 import { inspect } from "node:util"
 import { describe, it } from "vitest"
 import {
-  assertExitFailure,
-  assertExitSuccess,
   assertFailure,
   assertFalse,
   assertNone,
@@ -17,13 +15,13 @@ import {
 
 describe("Result", () => {
   describe("Constructors", () => {
-    it("succeed", () => {
+    it("succeed creates a Success value", () => {
       const result = Result.succeed(42)
       assertTrue(Result.isSuccess(result))
       strictEqual(result.success, 42)
     })
 
-    it("fail", () => {
+    it("fail creates a Failure value", () => {
       const result = Result.fail("err")
       assertTrue(Result.isFailure(result))
       strictEqual(result.failure, "err")
@@ -117,19 +115,14 @@ describe("Result", () => {
       deepStrictEqual(inspect(Result.fail("e")), inspect({ _id: "Result", _tag: "Failure", failure: "e" }))
     })
 
-    it("Equal trait", () => {
+    it("Equal trait compares matching tags and values", () => {
       assertTrue(Equal.equals(Result.succeed(1), Result.succeed(1)))
       assertTrue(Equal.equals(Result.fail("e"), Result.fail("e")))
       assertFalse(Equal.equals(Result.succeed(1), Result.fail("e")))
       assertFalse(Equal.equals(Result.fail("e"), Result.succeed(1)))
     })
 
-    it("asEffect", () => {
-      assertExitSuccess(Effect.runSyncExit(Result.succeed(1).asEffect()), 1)
-      assertExitFailure(Effect.runSyncExit(Result.fail("e").asEffect()), Cause.fail("e"))
-    })
-
-    it("pipe()", () => {
+    it("pipe composes Result operations", () => {
       assertSuccess(Result.succeed(1).pipe(Result.map((n) => n + 1)), 2)
     })
   })
@@ -276,7 +269,7 @@ describe("Result", () => {
   })
 
   describe("Pattern Matching", () => {
-    it("match", () => {
+    it("match handles failure and success cases", () => {
       const onFailure = (s: string) => `failure${s.length}`
       const onSuccess = (s: string) => `success${s.length}`
       const match = Result.match({ onFailure, onSuccess })
@@ -349,7 +342,7 @@ describe("Result", () => {
   })
 
   describe("Equivalence", () => {
-    it("makeEquivalence", () => {
+    it("makeEquivalence compares successes and failures by channel", () => {
       const isEquivalent = Result.makeEquivalence(
         Equivalence.strictEqual<number>(),
         Equivalence.strictEqual<string>()
@@ -373,7 +366,7 @@ describe("Result", () => {
       assertFailure(Result.flatMap(Result.fail("maError"), flow(Str.length, Result.succeed)), "maError")
     })
 
-    it("andThen", () => {
+    it("andThen replaces successes with Result or plain values", () => {
       assertSuccess(pipe(Result.succeed(1), Result.andThen(() => Result.succeed(2))), 2)
       assertSuccess(pipe(Result.succeed(1), Result.andThen(Result.succeed(2))), 2)
       assertSuccess(pipe(Result.succeed(1), Result.andThen(2)), 2)
@@ -415,7 +408,7 @@ describe("Result", () => {
   })
 
   describe("Error Handling", () => {
-    it("orElse", () => {
+    it("orElse recovers failures and preserves successes", () => {
       assertSuccess(pipe(Result.succeed(1), Result.orElse(() => Result.succeed(2))), 1)
       assertSuccess(pipe(Result.succeed(1), Result.orElse(() => Result.fail("b"))), 1)
       assertSuccess(pipe(Result.fail("a"), Result.orElse(() => Result.succeed(2))), 2)

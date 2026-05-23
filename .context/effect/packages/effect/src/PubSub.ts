@@ -5,20 +5,22 @@
  * can subscribe to receive those messages. PubSub supports various backpressure strategies,
  * message replay, and concurrent access from multiple producers and consumers.
  *
- * @example
+ * **Example** (Creating and using a PubSub)
+ *
  * ```ts
  * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publisher
- *   yield* PubSub.publish(pubsub, "Hello")
- *   yield* PubSub.publish(pubsub, "World")
- *
- *   // Subscriber
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publisher
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *     yield* PubSub.publish(pubsub, "World")
+ *
+ *     // Subscriber
  *     const message1 = yield* PubSub.take(subscription)
  *     const message2 = yield* PubSub.take(subscription)
  *     console.log(message1, message2) // "Hello", "World"
@@ -51,22 +53,23 @@ const TypeId = "~effect/PubSub"
  * messages of type `A` and subscribers can subscribe to take messages of type
  * `A`.
  *
- * @example
+ * **Example** (Publishing and subscribing to messages)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create a bounded PubSub with capacity 10
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publish messages
- *   yield* PubSub.publish(pubsub, "Hello")
- *   yield* PubSub.publish(pubsub, "World")
- *
  *   // Subscribe and consume messages
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish messages
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *     yield* PubSub.publish(pubsub, "World")
+ *
  *     const message1 = yield* PubSub.take(subscription)
  *     const message2 = yield* PubSub.take(subscription)
  *     console.log(message1, message2) // "Hello", "World"
@@ -74,8 +77,8 @@ const TypeId = "~effect/PubSub"
  * })
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface PubSub<in out A> extends Pipeable {
   readonly [TypeId]: {
@@ -90,15 +93,18 @@ export interface PubSub<in out A> extends Pipeable {
 }
 
 /**
+ * Companion namespace containing the low-level building blocks used by
+ * `PubSub`, including atomic implementations, backing subscriptions, replay
+ * windows, and delivery strategies.
+ *
  * @since 2.0.0
- * @category models
  */
-export namespace PubSub {
+export declare namespace PubSub {
   /**
    * Low-level atomic PubSub interface that handles the core message storage and retrieval.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface Atomic<in out A> {
     readonly capacity: number
@@ -115,8 +121,8 @@ export namespace PubSub {
   /**
    * Low-level subscription interface that handles message polling for individual subscribers.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface BackingSubscription<out A> {
     isEmpty(): boolean
@@ -127,10 +133,16 @@ export namespace PubSub {
   }
 
   /**
-   * Internal type representing the mapping from subscriptions to their pollers.
+   * Tracks the pollers currently waiting on each backing subscription.
    *
-   * @since 4.0.0
+   * **Details**
+   *
+   * This type is part of the low-level `PubSub.Strategy` contract. Most
+   * application code should use `subscribe`, `take`, and the other `PubSub`
+   * operations instead of manipulating subscriber maps directly.
+   *
    * @category models
+   * @since 4.0.0
    */
   export type Subscribers<A> = Map<
     BackingSubscription<A>,
@@ -140,8 +152,8 @@ export namespace PubSub {
   /**
    * Interface for accessing replay buffer contents for late subscribers.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface ReplayWindow<A> {
     take(): A | undefined
@@ -153,8 +165,8 @@ export namespace PubSub {
   /**
    * Strategy interface defining how PubSub handles backpressure and message distribution.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface Strategy<in out A> {
     /**
@@ -210,10 +222,10 @@ const SubscriptionTypeId = "~effect/PubSub/Subscription"
 /**
  * A subscription represents a consumer's connection to a PubSub, allowing them to take messages.
  *
- * @example
+ * **Example** (Taking messages from a subscription)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -224,18 +236,23 @@ const SubscriptionTypeId = "~effect/PubSub/Subscription"
  *       pubsub
  *     )
  *
+ *     yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3"])
+ *
  *     // Take individual messages
  *     const message = yield* PubSub.take(subscription)
+ *     console.log(message) // "msg1"
  *
  *     // Take multiple messages
- *     const messages = yield* PubSub.takeUpTo(subscription, 5)
+ *     const messages = yield* PubSub.takeUpTo(subscription, 1)
+ *     console.log(messages) // ["msg2"]
  *     const allMessages = yield* PubSub.takeAll(subscription)
+ *     console.log(allMessages) // ["msg3"]
  *   }))
  * })
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Subscription<out A> extends Pipeable {
   readonly [SubscriptionTypeId]: {
@@ -254,10 +271,10 @@ export interface Subscription<out A> extends Pipeable {
 /**
  * Creates a PubSub with a custom atomic implementation and strategy.
  *
- * @example
+ * **Example** (Creating a PubSub with a custom strategy)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create custom PubSub with specific atomic implementation and strategy
@@ -271,8 +288,8 @@ export interface Subscription<out A> extends Pipeable {
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make = <A>(
   options: {
@@ -292,20 +309,20 @@ export const make = <A>(
   )
 
 /**
- * Creates a bounded PubSub with backpressure strategy.
+ * Creates a bounded `PubSub` that applies backpressure when it reaches
+ * capacity.
  *
- * The PubSub will retain messages until they have been taken by all subscribers.
- * When the PubSub reaches capacity, publishers will be suspended until space becomes available.
- * This ensures message delivery guarantees but may slow down fast publishers.
+ * **Details**
  *
- * @param capacity - The maximum number of messages the PubSub can hold, or an options object
- *                   with capacity and optional replay buffer size
- * @returns An Effect that creates a bounded PubSub
+ * Published messages are retained until all current subscribers have taken
+ * them. When the capacity is full, publishers suspend until space is available.
+ * Pass an options object to configure both `capacity` and an optional replay
+ * buffer for late subscribers.
  *
- * @example
+ * **Example** (Creating a bounded PubSub)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create bounded PubSub with capacity 100
@@ -319,8 +336,8 @@ export const make = <A>(
  * })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const bounded = <A>(
   capacity: number | {
@@ -337,12 +354,14 @@ export const bounded = <A>(
  * Creates a bounded `PubSub` with the dropping strategy. The `PubSub` will drop new
  * messages if the `PubSub` is at capacity.
  *
+ * **Details**
+ *
  * For best performance use capacities that are powers of two.
  *
- * @example
+ * **Example** (Dropping messages when full)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create dropping PubSub that drops new messages when full
@@ -354,17 +373,24 @@ export const bounded = <A>(
  *     replay: 5
  *   })
  *
- *   // Fill the PubSub and see dropping behavior
- *   yield* PubSub.publish(pubsub, "msg1") // succeeds
- *   yield* PubSub.publish(pubsub, "msg2") // succeeds
- *   yield* PubSub.publish(pubsub, "msg3") // succeeds
- *   const dropped = yield* PubSub.publish(pubsub, "msg4") // returns false (dropped)
- *   console.log("Message dropped:", !dropped)
+ *   yield* Effect.scoped(Effect.gen(function*() {
+ *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Fill the PubSub and see dropping behavior
+ *     yield* PubSub.publish(pubsub, "msg1") // succeeds
+ *     yield* PubSub.publish(pubsub, "msg2") // succeeds
+ *     yield* PubSub.publish(pubsub, "msg3") // succeeds
+ *     const dropped = yield* PubSub.publish(pubsub, "msg4") // returns false (dropped)
+ *     console.log("Message dropped:", !dropped) // true
+ *
+ *     const messages = yield* PubSub.takeAll(subscription)
+ *     console.log(messages) // ["msg1", "msg2", "msg3"]
+ *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const dropping = <A>(
   capacity: number | {
@@ -381,12 +407,14 @@ export const dropping = <A>(
  * Creates a bounded `PubSub` with the sliding strategy. The `PubSub` will add new
  * messages and drop old messages if the `PubSub` is at capacity.
  *
+ * **Details**
+ *
  * For best performance use capacities that are powers of two.
  *
- * @example
+ * **Example** (Sliding old messages when full)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create sliding PubSub that evicts old messages when full
@@ -398,22 +426,23 @@ export const dropping = <A>(
  *     replay: 2
  *   })
  *
- *   // Fill and overflow the PubSub
- *   yield* PubSub.publish(pubsub, "msg1")
- *   yield* PubSub.publish(pubsub, "msg2")
- *   yield* PubSub.publish(pubsub, "msg3")
- *   yield* PubSub.publish(pubsub, "msg4") // "msg1" is evicted
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Fill and overflow the PubSub
+ *     yield* PubSub.publish(pubsub, "msg1")
+ *     yield* PubSub.publish(pubsub, "msg2")
+ *     yield* PubSub.publish(pubsub, "msg3")
+ *     yield* PubSub.publish(pubsub, "msg4") // "msg1" is evicted
+ *
  *     const messages = yield* PubSub.takeAll(subscription)
  *     console.log(messages) // ["msg2", "msg3", "msg4"]
  *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const sliding = <A>(
   capacity: number | {
@@ -429,10 +458,10 @@ export const sliding = <A>(
 /**
  * Creates an unbounded `PubSub`.
  *
- * @example
+ * **Example** (Creating an unbounded PubSub)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create unbounded PubSub
@@ -443,21 +472,22 @@ export const sliding = <A>(
  *     replay: 10
  *   })
  *
- *   // Can publish unlimited messages
- *   for (let i = 0; i < 1000; i++) {
- *     yield* PubSub.publish(pubsub, `message-${i}`)
- *   }
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Can publish unlimited messages
+ *     for (let i = 0; i < 3; i++) {
+ *       yield* PubSub.publish(pubsub, `message-${i}`)
+ *     }
+ *
  *     const message = yield* PubSub.take(subscription)
- *     console.log("First message:", message)
+ *     console.log("First message:", message) // "message-0"
  *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category constructors
+ * @since 2.0.0
  */
 export const unbounded = <A>(options?: {
   readonly replay?: number | undefined
@@ -470,8 +500,8 @@ export const unbounded = <A>(options?: {
 /**
  * Creates a bounded atomic PubSub implementation with optional replay buffer.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const makeAtomicBounded = <A>(
   capacity: number | {
@@ -494,8 +524,8 @@ export const makeAtomicBounded = <A>(
 /**
  * Creates an unbounded atomic PubSub implementation with optional replay buffer.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const makeAtomicUnbounded = <A>(options?: {
   readonly replay?: number | undefined
@@ -504,10 +534,10 @@ export const makeAtomicUnbounded = <A>(options?: {
 /**
  *  Returns the number of elements the queue can hold.
  *
- * @example
+ * **Example** (Getting PubSub capacity)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(100)
@@ -520,20 +550,24 @@ export const makeAtomicUnbounded = <A>(options?: {
  * })
  * ```
  *
- * @since 2.0.0
  * @category getters
+ * @since 2.0.0
  */
 export const capacity = <A>(self: PubSub<A>): number => self.pubsub.capacity
 
 /**
- * Retrieves the size of the queue, which is equal to the number of elements
- * in the queue. This may be negative if fibers are suspended waiting for
- * elements to be added to the queue.
+ * Returns the current number of messages retained by the `PubSub` for active
+ * subscribers.
  *
- * @example
+ * **Details**
+ *
+ * If the `PubSub` has been shut down, the returned effect succeeds with `0`.
+ * The size is not a count of waiting subscribers or suspended publishers.
+ *
+ * **Example** (Getting PubSub size)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -542,25 +576,36 @@ export const capacity = <A>(self: PubSub<A>): number => self.pubsub.capacity
  *   const initialSize = yield* PubSub.size(pubsub)
  *   console.log("Initial size:", initialSize) // 0
  *
- *   // Publish some messages
- *   yield* PubSub.publish(pubsub, "msg1")
- *   yield* PubSub.publish(pubsub, "msg2")
+ *   yield* Effect.scoped(Effect.gen(function*() {
+ *     const subscription = yield* PubSub.subscribe(pubsub)
  *
- *   const afterPublish = yield* PubSub.size(pubsub)
- *   console.log("After publishing:", afterPublish) // 2
+ *     // Publish some messages for the active subscription
+ *     yield* PubSub.publish(pubsub, "msg1")
+ *     yield* PubSub.publish(pubsub, "msg2")
+ *
+ *     const afterPublish = yield* PubSub.size(pubsub)
+ *     console.log("After publishing:", afterPublish) // 2
+ *
+ *     yield* PubSub.takeAll(subscription)
+ *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category getters
+ * @since 2.0.0
  */
 export const size = <A>(self: PubSub<A>): Effect.Effect<number> => Effect.sync(() => sizeUnsafe(self))
 /**
- * Retrieves the size of the queue, which is equal to the number of elements
- * in the queue. This may be negative if fibers are suspended waiting for
- * elements to be added to the queue.
+ * Synchronously returns the current number of messages retained by the `PubSub`
+ * for active subscribers.
  *
- * @example
+ * **Details**
+ *
+ * Returns `0` after shutdown. Because this is an unsafe synchronous snapshot,
+ * prefer `size` in effectful code.
+ *
+ * **Example** (Reading size synchronously)
+ *
  * ```ts
  * import { PubSub } from "effect"
  *
@@ -571,8 +616,8 @@ export const size = <A>(self: PubSub<A>): Effect.Effect<number> => Effect.sync((
  * console.log("Current size:", size)
  * ```
  *
- * @since 2.0.0
  * @category getters
+ * @since 4.0.0
  */
 export const sizeUnsafe = <A>(self: PubSub<A>): number => {
   if (MutableRef.get(self.shutdownFlag)) {
@@ -582,13 +627,16 @@ export const sizeUnsafe = <A>(self: PubSub<A>): number => {
 }
 
 /**
- * Returns `true` if the `PubSub` contains at least one element, `false`
- * otherwise.
+ * Returns `true` when the `PubSub` has reached its configured capacity.
  *
- * @example
+ * **Details**
+ *
+ * For unbounded PubSubs this is normally `false`.
+ *
+ * **Example** (Checking whether a PubSub is full)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(2)
@@ -597,17 +645,23 @@ export const sizeUnsafe = <A>(self: PubSub<A>): number => {
  *   const initiallyFull = yield* PubSub.isFull(pubsub)
  *   console.log("Initially full:", initiallyFull) // false
  *
- *   // Fill the PubSub
- *   yield* PubSub.publish(pubsub, "msg1")
- *   yield* PubSub.publish(pubsub, "msg2")
+ *   yield* Effect.scoped(Effect.gen(function*() {
+ *     const subscription = yield* PubSub.subscribe(pubsub)
  *
- *   const nowFull = yield* PubSub.isFull(pubsub)
- *   console.log("Now full:", nowFull) // true
+ *     // Fill the PubSub for the active subscription
+ *     yield* PubSub.publish(pubsub, "msg1")
+ *     yield* PubSub.publish(pubsub, "msg2")
+ *
+ *     const nowFull = yield* PubSub.isFull(pubsub)
+ *     console.log("Now full:", nowFull) // true
+ *
+ *     yield* PubSub.takeAll(subscription)
+ *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category predicates
+ * @since 2.0.0
  */
 export const isFull = <A>(self: PubSub<A>): Effect.Effect<boolean> =>
   Effect.map(size(self), (size) => size === self.pubsub.capacity)
@@ -615,10 +669,10 @@ export const isFull = <A>(self: PubSub<A>): Effect.Effect<boolean> =>
 /**
  * Returns `true` if the `Pubsub` contains zero elements, `false` otherwise.
  *
- * @example
+ * **Example** (Checking whether a PubSub is empty)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -627,49 +681,57 @@ export const isFull = <A>(self: PubSub<A>): Effect.Effect<boolean> =>
  *   const initiallyEmpty = yield* PubSub.isEmpty(pubsub)
  *   console.log("Initially empty:", initiallyEmpty) // true
  *
- *   // Publish a message
- *   yield* PubSub.publish(pubsub, "Hello")
+ *   yield* Effect.scoped(Effect.gen(function*() {
+ *     const subscription = yield* PubSub.subscribe(pubsub)
  *
- *   const nowEmpty = yield* PubSub.isEmpty(pubsub)
- *   console.log("Now empty:", nowEmpty) // false
+ *     // Publish a message for the active subscription
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *
+ *     const nowEmpty = yield* PubSub.isEmpty(pubsub)
+ *     console.log("Now empty:", nowEmpty) // false
+ *
+ *     yield* PubSub.take(subscription)
+ *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category predicates
+ * @since 2.0.0
  */
 export const isEmpty = <A>(self: PubSub<A>): Effect.Effect<boolean> => Effect.map(size(self), (size) => size === 0)
 
 /**
- * Interrupts any fibers that are suspended on `offer` or `take`. Future calls
- * to `offer*` and `take*` will be interrupted immediately.
+ * Shuts down the `PubSub`, interrupting suspended publishers and subscribers
+ * and finalizing active subscriptions.
  *
- * @example
+ * **Details**
+ *
+ * After shutdown, `publish` and `publishAll` succeed with `false`,
+ * `publishUnsafe` returns `false`, and subscription operations such as `take`
+ * interrupt.
+ *
+ * **Example** (Shutting down a PubSub)
+ *
  * ```ts
- * import { Effect, Fiber, PubSub } from "effect"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(1)
  *
- *   // Start a fiber that will be suspended waiting to publish
- *   const publisherFiber = yield* Effect.forkChild(
- *     Effect.gen(function*() {
- *       yield* PubSub.publish(pubsub, "msg1") // fills the buffer
- *       yield* PubSub.publish(pubsub, "msg2") // will suspend here
- *     })
- *   )
- *
  *   // Shutdown the PubSub
  *   yield* PubSub.shutdown(pubsub)
  *
- *   // The suspended publisher will be interrupted
- *   const result = yield* Fiber.await(publisherFiber)
- *   console.log("Publisher interrupted:", result._tag === "Failure")
+ *   const isShutdown = yield* PubSub.isShutdown(pubsub)
+ *   console.log("Is shutdown:", isShutdown) // true
+ *
+ *   // Publishing after shutdown returns false
+ *   const published = yield* PubSub.publish(pubsub, "msg1")
+ *   console.log("Published after shutdown:", published) // false
  * })
  * ```
  *
- * @since 2.0.0
  * @category lifecycle
+ * @since 2.0.0
  */
 export const shutdown = <A>(self: PubSub<A>): Effect.Effect<void> =>
   Effect.uninterruptible(Effect.withFiber((fiber) => {
@@ -684,10 +746,10 @@ export const shutdown = <A>(self: PubSub<A>): Effect.Effect<void> =>
 /**
  * Returns `true` if `shutdown` has been called, otherwise returns `false`.
  *
- * @example
+ * **Example** (Checking whether a PubSub is shutdown)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -704,15 +766,16 @@ export const shutdown = <A>(self: PubSub<A>): Effect.Effect<void> =>
  * })
  * ```
  *
- * @since 2.0.0
  * @category predicates
+ * @since 2.0.0
  */
 export const isShutdown = <A>(self: PubSub<A>): Effect.Effect<boolean> => Effect.sync(() => isShutdownUnsafe(self))
 
 /**
  * Returns `true` if `shutdown` has been called, otherwise returns `false`.
  *
- * @example
+ * **Example** (Checking shutdown synchronously)
+ *
  * ```ts
  * import { PubSub } from "effect"
  *
@@ -727,8 +790,8 @@ export const isShutdown = <A>(self: PubSub<A>): Effect.Effect<boolean> => Effect
  * }
  * ```
  *
- * @since 4.0.0
  * @category predicates
+ * @since 4.0.0
  */
 export const isShutdownUnsafe = <A>(self: PubSub<A>): boolean => self.shutdownFlag.current
 
@@ -737,7 +800,8 @@ export const isShutdownUnsafe = <A>(self: PubSub<A>): boolean => self.shutdownFl
  * not resume until the queue has been shutdown. If the queue is already
  * shutdown, the `Effect` will resume right away.
  *
- * @example
+ * **Example** (Waiting for shutdown)
+ *
  * ```ts
  * import { Effect, Fiber, PubSub } from "effect"
  *
@@ -763,19 +827,25 @@ export const isShutdownUnsafe = <A>(self: PubSub<A>): boolean => self.shutdownFl
  * })
  * ```
  *
- * @since 2.0.0
  * @category lifecycle
+ * @since 2.0.0
  */
 export const awaitShutdown = <A>(self: PubSub<A>): Effect.Effect<void> => self.shutdownHook.await
 
 /**
- * Publishes a message to the `PubSub`, returning whether the message was published
- * to the `PubSub`.
+ * Attempts to publish a message synchronously without applying the PubSub
+ * strategy's effectful surplus handling.
  *
- * @example
+ * **Details**
+ *
+ * Returns `false` if the `PubSub` is shut down or the message cannot be
+ * accepted immediately, for example when a bounded PubSub is full. Prefer
+ * `publish` when backpressure or sliding behavior should be honored.
+ *
+ * **Example** (Publishing a message)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -784,25 +854,18 @@ export const awaitShutdown = <A>(self: PubSub<A>): Effect.Effect<void> => self.s
  *   const published = yield* PubSub.publish(pubsub, "Hello World")
  *   console.log("Message published:", published) // true
  *
- *   // With a full bounded PubSub using backpressure strategy
- *   const smallPubsub = yield* PubSub.bounded<string>(1)
- *   yield* PubSub.publish(smallPubsub, "msg1") // succeeds
- *
- *   // This will suspend until space becomes available
- *   const publishEffect = PubSub.publish(smallPubsub, "msg2")
- *
- *   // Create a subscriber to free up space
  *   yield* Effect.scoped(Effect.gen(function*() {
- *     const subscription = yield* PubSub.subscribe(smallPubsub)
- *     yield* PubSub.take(subscription) // frees space
- *     const result = yield* publishEffect
- *     console.log("Second message published:", result) // true
+ *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *     const message = yield* PubSub.take(subscription)
+ *     console.log("Received:", message) // "Hello"
  *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category publishing
+ * @since 2.0.0
  */
 export const publish: {
   <A>(value: A): (self: PubSub<A>) => Effect.Effect<boolean>
@@ -830,7 +893,8 @@ export const publish: {
  * Publishes a message to the `PubSub`, returning whether the message was published
  * to the `PubSub`.
  *
- * @example
+ * **Example** (Publishing without suspending)
+ *
  * ```ts
  * import { PubSub } from "effect"
  *
@@ -851,8 +915,8 @@ export const publish: {
  * console.log(`Published ${publishedCount} out of ${messages.length} messages`)
  * ```
  *
- * @since 4.0.0
  * @category publishing
+ * @since 4.0.0
  */
 export const publishUnsafe: {
   <A>(value: A): (self: PubSub<A>) => boolean
@@ -870,10 +934,10 @@ export const publishUnsafe: {
  * Publishes all of the specified messages to the `PubSub`, returning whether they
  * were published to the `PubSub`.
  *
- * @example
+ * **Example** (Publishing multiple messages)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, Fiber, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
@@ -883,25 +947,30 @@ export const publishUnsafe: {
  *   const allPublished = yield* PubSub.publishAll(pubsub, messages)
  *   console.log("All messages published:", allPublished) // true
  *
- *   // With a smaller capacity
+ *   // With a smaller capacity and an active subscription
  *   const smallPubsub = yield* PubSub.bounded<string>(2)
  *   const manyMessages = ["msg1", "msg2", "msg3", "msg4"]
  *
- *   // Will suspend until space becomes available for all messages
- *   const publishAllEffect = PubSub.publishAll(smallPubsub, manyMessages)
- *
- *   // Subscribe to consume messages and free space
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(smallPubsub)
- *     yield* PubSub.takeAll(subscription) // consume all messages
- *     const result = yield* publishAllEffect
- *     console.log("All messages eventually published:", result)
+ *
+ *     // Will suspend until space becomes available for all messages
+ *     const fiber = yield* Effect.forkChild(PubSub.publishAll(smallPubsub, manyMessages))
+ *
+ *     const firstBatch = yield* PubSub.takeBetween(subscription, 2, 2)
+ *     console.log("First batch:", firstBatch) // ["msg1", "msg2"]
+ *
+ *     const result = yield* Fiber.join(fiber)
+ *     console.log("All messages eventually published:", result) // true
+ *
+ *     const secondBatch = yield* PubSub.takeAll(subscription)
+ *     console.log("Second batch:", secondBatch) // ["msg3", "msg4"]
  *   }))
  * })
  * ```
  *
- * @since 2.0.0
  * @category publishing
+ * @since 2.0.0
  */
 export const publishAll: {
   <A>(elements: Iterable<A>): (self: PubSub<A>) => Effect.Effect<boolean>
@@ -929,20 +998,21 @@ export const publishAll: {
  * be evaluated multiple times within the scope to take a message from the `PubSub`
  * each time.
  *
- * @example
+ * **Example** (Subscribing to messages)
+ *
  * ```ts
  * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publish some messages
- *   yield* PubSub.publish(pubsub, "Hello")
- *   yield* PubSub.publish(pubsub, "World")
- *
  *   // Subscribe within a scope for automatic cleanup
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish some messages
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *     yield* PubSub.publish(pubsub, "World")
  *
  *     // Take messages one by one
  *     const msg1 = yield* PubSub.take(subscription)
@@ -952,12 +1022,12 @@ export const publishAll: {
  *     // Subscription is automatically cleaned up when scope exits
  *   }))
  *
- *   // Multiple subscribers can receive the same messages
- *   yield* PubSub.publish(pubsub, "Broadcast")
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const sub1 = yield* PubSub.subscribe(pubsub)
  *     const sub2 = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Multiple subscribers can receive the same messages
+ *     yield* PubSub.publish(pubsub, "Broadcast")
  *
  *     const [msg1, msg2] = yield* Effect.all([
  *       PubSub.take(sub1),
@@ -968,8 +1038,8 @@ export const publishAll: {
  * })
  * ```
  *
- * @since 2.0.0
  * @category subscription
+ * @since 2.0.0
  */
 export const subscribe = <A>(self: PubSub<A>): Effect.Effect<Subscription<A>, never, Scope.Scope> =>
   Effect.uninterruptible(
@@ -1010,7 +1080,8 @@ const unsubscribe = <A>(self: Subscription<A>): Effect.Effect<void> =>
  * Takes a single message from the subscription. If no messages are available,
  * this will suspend until a message becomes available.
  *
- * @example
+ * **Example** (Taking a message)
+ *
  * ```ts
  * import { Effect, Fiber, PubSub } from "effect"
  *
@@ -1035,8 +1106,8 @@ const unsubscribe = <A>(self: Subscription<A>): Effect.Effect<void> =>
  * })
  * ```
  *
- * @since 4.0.0
  * @category subscription
+ * @since 4.0.0
  */
 export const take = <A>(self: Subscription<A>): Effect.Effect<A> =>
   Effect.suspend(() => {
@@ -1062,18 +1133,19 @@ export const take = <A>(self: Subscription<A>): Effect.Effect<A> =>
  * Takes all available messages from the subscription, suspending if no items
  * are available.
  *
- * @example
+ * **Example** (Taking all available messages)
+ *
  * ```ts
  * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publish multiple messages
- *   yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3"])
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish multiple messages
+ *     yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3"])
  *
  *     // Take all available messages at once
  *     const allMessages = yield* PubSub.takeAll(subscription)
@@ -1082,8 +1154,8 @@ export const take = <A>(self: Subscription<A>): Effect.Effect<A> =>
  * })
  * ```
  *
- * @since 4.0.0
  * @category subscription
+ * @since 4.0.0
  */
 export const takeAll = <A>(self: Subscription<A>): Effect.Effect<Arr.NonEmptyArray<A>> =>
   Effect.suspend(function loop(value?: [A]): Effect.Effect<Arr.NonEmptyArray<A>> {
@@ -1132,19 +1204,19 @@ const pollForItem = <A>(self: Subscription<A>) => {
 /**
  * Takes up to the specified number of messages from the subscription without suspending.
  *
- * @example
+ * **Example** (Taking up to a maximum number of messages)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publish multiple messages
- *   yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3", "msg4", "msg5"])
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish multiple messages
+ *     yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3", "msg4", "msg5"])
  *
  *     // Take up to 3 messages
  *     const upTo3 = yield* PubSub.takeUpTo(subscription, 3)
@@ -1161,8 +1233,8 @@ const pollForItem = <A>(self: Subscription<A>) => {
  * })
  * ```
  *
- * @since 4.0.0
  * @category subscription
+ * @since 4.0.0
  */
 export const takeUpTo: {
   (max: number): <A>(self: Subscription<A>) => Effect.Effect<Array<A>>
@@ -1188,7 +1260,8 @@ export const takeUpTo: {
  * Takes between the specified minimum and maximum number of messages from the subscription.
  * Will suspend if the minimum number is not immediately available.
  *
- * @example
+ * **Example** (Taking between a minimum and maximum)
+ *
  * ```ts
  * import { Effect, Fiber, PubSub } from "effect"
  *
@@ -1213,8 +1286,8 @@ export const takeUpTo: {
  * })
  * ```
  *
- * @since 4.0.0
  * @category subscription
+ * @since 4.0.0
  */
 export const takeBetween: {
   (min: number, max: number): <A>(self: Subscription<A>) => Effect.Effect<Array<A>>
@@ -1259,21 +1332,27 @@ const takeRemainderLoop = <A>(
 }
 
 /**
- * Returns the number of messages currently available in the subscription.
+ * Synchronously checks how many messages can be taken from a subscription.
  *
- * @example
+ * **Details**
+ *
+ * Returns `Option.some(count)` while the subscription is active, including
+ * replay-buffered messages, and `Option.none()` after the subscription has
+ * been shut down. Prefer `remaining` in effectful code.
+ *
+ * **Example** (Checking remaining messages)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publish some messages
- *   yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3"])
- *
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish some messages
+ *     yield* PubSub.publishAll(pubsub, ["msg1", "msg2", "msg3"])
  *
  *     // Check how many messages are available
  *     const count = yield* PubSub.remaining(subscription)
@@ -1288,8 +1367,8 @@ const takeRemainderLoop = <A>(
  * })
  * ```
  *
- * @since 4.0.0
  * @category getters
+ * @since 4.0.0
  */
 export const remaining = <A>(self: Subscription<A>): Effect.Effect<number> =>
   Effect.suspend(() =>
@@ -1301,7 +1380,8 @@ export const remaining = <A>(self: Subscription<A>): Effect.Effect<number> =>
 /**
  * Returns the number of messages currently available in the subscription.
  *
- * @example
+ * **Example** (Checking remaining messages synchronously)
+ *
  * ```ts
  * import { PubSub } from "effect"
  *
@@ -1321,8 +1401,8 @@ export const remaining = <A>(self: Subscription<A>): Effect.Effect<number> =>
  * }
  * ```
  *
- * @since 4.0.0
  * @category getters
+ * @since 4.0.0
  */
 export const remainingUnsafe = <A>(self: Subscription<A>): Option.Option<number> => {
   if (self.shutdownFlag.current) {
@@ -2209,8 +2289,8 @@ const ensureCapacity = (capacity: number): void => {
  * risk that a slow subscriber will slow down the rate at which messages
  * are published and received by other subscribers.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class BackPressureStrategy<in out A> implements PubSub.Strategy<A> {
   publishers: MutableList.MutableList<
@@ -2312,10 +2392,10 @@ export class BackPressureStrategy<in out A> implements PubSub.Strategy<A> {
  * other subscribers and that subscribers may not receive all messages
  * published to the `PubSub` while they are subscribed.
  *
- * @example
+ * **Example** (Using a dropping strategy)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create PubSub with dropping strategy
@@ -2327,24 +2407,25 @@ export class BackPressureStrategy<in out A> implements PubSub.Strategy<A> {
  *     strategy: () => new PubSub.DroppingStrategy()
  *   })
  *
- *   // Fill the PubSub
- *   const pub1 = yield* PubSub.publish(pubsub, "msg1") // true
- *   const pub2 = yield* PubSub.publish(pubsub, "msg2") // true
- *   const pub3 = yield* PubSub.publish(pubsub, "msg3") // false (dropped)
- *
- *   console.log("Publication results:", [pub1, pub2, pub3]) // [true, true, false]
- *
- *   // Subscribers will only see the first two messages
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Fill the PubSub
+ *     const pub1 = yield* PubSub.publish(pubsub, "msg1") // true
+ *     const pub2 = yield* PubSub.publish(pubsub, "msg2") // true
+ *     const pub3 = yield* PubSub.publish(pubsub, "msg3") // false (dropped)
+ *
+ *     console.log("Publication results:", [pub1, pub2, pub3]) // [true, true, false]
+ *
+ *     // Subscribers will only see the first two messages
  *     const messages = yield* PubSub.takeAll(subscription)
  *     console.log("Received messages:", messages) // ["msg1", "msg2"]
  *   }))
  * })
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class DroppingStrategy<in out A> implements PubSub.Strategy<A> {
   get shutdown(): Effect.Effect<void> {
@@ -2388,10 +2469,10 @@ export class DroppingStrategy<in out A> implements PubSub.Strategy<A> {
  * subscribers. However, it creates the risk that a slow subscriber will
  * not receive some messages published to the `PubSub` while it is subscribed.
  *
- * @example
+ * **Example** (Using a sliding strategy)
+ *
  * ```ts
- * import { Effect } from "effect"
- * import * as PubSub from "effect/PubSub"
+ * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   // Create PubSub with sliding strategy
@@ -2403,23 +2484,24 @@ export class DroppingStrategy<in out A> implements PubSub.Strategy<A> {
  *     strategy: () => new PubSub.SlidingStrategy()
  *   })
  *
- *   // Publish messages that exceed capacity
- *   yield* PubSub.publish(pubsub, "msg1") // stored
- *   yield* PubSub.publish(pubsub, "msg2") // stored
- *   yield* PubSub.publish(pubsub, "msg3") // "msg1" evicted, "msg3" stored
- *   yield* PubSub.publish(pubsub, "msg4") // "msg2" evicted, "msg4" stored
- *
- *   // Subscribers will see the most recent messages
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publish messages that exceed capacity
+ *     yield* PubSub.publish(pubsub, "msg1") // stored
+ *     yield* PubSub.publish(pubsub, "msg2") // stored
+ *     yield* PubSub.publish(pubsub, "msg3") // "msg1" evicted, "msg3" stored
+ *     yield* PubSub.publish(pubsub, "msg4") // "msg2" evicted, "msg4" stored
+ *
+ *     // Subscribers will see the most recent messages
  *     const messages = yield* PubSub.takeAll(subscription)
  *     console.log("Recent messages:", messages) // ["msg3", "msg4"]
  *   }))
  * })
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class SlidingStrategy<in out A> implements PubSub.Strategy<A> {
   get shutdown(): Effect.Effect<void> {

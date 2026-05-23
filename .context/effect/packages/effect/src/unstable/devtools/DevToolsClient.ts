@@ -1,4 +1,16 @@
 /**
+ * Provides the low-level client used by the unstable devtools integration to
+ * exchange telemetry with an Effect devtools server over the current `Socket`.
+ *
+ * The client speaks the devtools NDJSON protocol, publishes span starts, span
+ * events, span completions, and metric snapshots, and exposes layers for
+ * installing a tracer that mirrors the current tracer while forwarding data to
+ * devtools. Most applications should use the higher-level devtools layers
+ * instead of constructing this service directly. When using this module
+ * directly, provide a live `Socket`, keep the layer scoped so the background
+ * ping and stream fibers are finalized, and prefer `layerTracer` when the goal
+ * is to observe an application's Effect traces.
+ *
  * @since 4.0.0
  */
 import * as Cause from "../../Cause.ts"
@@ -21,8 +33,11 @@ const RequestSchema = Schema.toCodecJson(DevToolsSchema.Request)
 const ResponseSchema = Schema.toCodecJson(DevToolsSchema.Response)
 
 /**
- * @since 4.0.0
+ * Service for sending span and span-event telemetry to the Effect devtools
+ * connection.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export class DevToolsClient extends Context.Service<
   DevToolsClient,
@@ -103,8 +118,12 @@ const toMetricsSnapshot = (
 })
 
 /**
- * @since 4.0.0
+ * Creates a devtools client over the current `Socket`, speaking the devtools
+ * NDJSON protocol, sending periodic pings, and responding to metrics snapshot
+ * requests.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make: Effect.Effect<
   DevToolsClient["Service"],
@@ -118,8 +137,10 @@ export const make: Effect.Effect<
 )
 
 /**
- * @since 4.0.0
+ * Layer that provides `DevToolsClient` using the current `Socket`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<DevToolsClient, never, Socket.Socket> = Layer.effect(DevToolsClient, make)
 
@@ -157,8 +178,11 @@ const makeTracerEffect = Effect.gen(function*() {
 })
 
 /**
- * @since 4.0.0
+ * Creates a tracer that delegates to the current tracer while sending span
+ * starts, span events, and span ends to `DevToolsClient`.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeTracer: Effect.Effect<Tracer.Tracer, never, DevToolsClient> = makeTracerEffect.pipe(
   Effect.annotateLogs({
@@ -168,8 +192,11 @@ export const makeTracer: Effect.Effect<Tracer.Tracer, never, DevToolsClient> = m
 )
 
 /**
- * @since 4.0.0
+ * Layer that creates a `DevToolsClient` from the current `Socket` and installs
+ * the devtools tracer.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerTracer: Layer.Layer<never, never, Socket.Socket> = Layer.effect(Tracer.Tracer, makeTracer).pipe(
   Layer.provide(layer)

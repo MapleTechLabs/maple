@@ -77,7 +77,7 @@ describe("toCodeDocument", () => {
   const makeCode = SchemaRepresentation.makeCode
 
   describe("options", () => {
-    it("sanitizeReference", () => {
+    it("reviver can override declaration code and recur into type parameters", () => {
     })
   })
 

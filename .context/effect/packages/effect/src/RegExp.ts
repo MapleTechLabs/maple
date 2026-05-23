@@ -6,9 +6,10 @@
 import * as predicate from "./Predicate.ts"
 
 /**
- * @since 4.0.0
- * @category constructors
- * @example
+ * Re-exports the JavaScript `RegExp` constructor from `globalThis`.
+ *
+ * **Example** (Creating a regular expression)
+ *
  * ```ts
  * import { RegExp } from "effect"
  *
@@ -19,13 +20,17 @@ import * as predicate from "./Predicate.ts"
  * console.log(pattern.test("Hello World")) // true
  * console.log(pattern.test("goodbye")) // false
  * ```
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const RegExp = globalThis.RegExp
 
 /**
  * Tests if a value is a `RegExp`.
  *
- * @example
+ * **Example** (Checking for regular expressions)
+ *
  * ```ts
  * import { RegExp } from "effect"
  * import * as assert from "node:assert"
@@ -42,7 +47,8 @@ export const isRegExp: (input: unknown) => input is RegExp = predicate.isRegExp
 /**
  * Escapes special characters in a regular expression pattern.
  *
- * @example
+ * **Example** (Escaping a pattern string)
+ *
  * ```ts
  * import { RegExp } from "effect"
  * import * as assert from "node:assert"
@@ -50,7 +56,7 @@ export const isRegExp: (input: unknown) => input is RegExp = predicate.isRegExp
  * assert.deepStrictEqual(RegExp.escape("a*b"), "a\\*b")
  * ```
  *
- * @category utilities
+ * @category utils
  * @since 2.0.0
  */
 export const escape = (string: string): string => string.replace(/[/\\^$*+?.()|[\]{}]/g, "\\$&")

@@ -63,6 +63,7 @@ export const make = Effect.gen(function*() {
 
   const terminal = Terminal.make({
     columns: Effect.succeed(80),
+    rows: Effect.succeed(24),
     display,
     readInput,
     readLine: Effect.succeed("")
@@ -85,7 +86,7 @@ export const layer: Layer.Layer<Terminal.Terminal> = Layer.effect(MockTerminal, 
 // =============================================================================
 
 export const columns: Effect.Effect<number, never, Terminal.Terminal> = Effect.flatMap(
-  MockTerminal.asEffect(),
+  MockTerminal,
   (terminal) => terminal.columns
 )
 
@@ -93,10 +94,10 @@ export const readInput: Effect.Effect<
   Queue.Dequeue<Terminal.UserInput, Cause.Done>,
   never,
   Terminal.Terminal | Scope.Scope
-> = Effect.flatMap(MockTerminal.asEffect(), (terminal) => terminal.readInput)
+> = Effect.flatMap(MockTerminal, (terminal) => terminal.readInput)
 
 export const readLine: Effect.Effect<string, Terminal.QuitError, Terminal.Terminal> = Effect.flatMap(
-  MockTerminal.asEffect(),
+  MockTerminal,
   (terminal) => terminal.readLine
 )
 
@@ -105,13 +106,13 @@ export const inputKey = (
   modifiers?: Partial<MockTerminal.Modifiers>
 ): Effect.Effect<void, never, Terminal.Terminal> =>
   Effect.flatMap(
-    MockTerminal.asEffect(),
+    MockTerminal,
     (terminal) => terminal.inputKey(key, modifiers)
   )
 
 export const inputText = (text: string): Effect.Effect<void, never, Terminal.Terminal> =>
   Effect.flatMap(
-    MockTerminal.asEffect(),
+    MockTerminal,
     (terminal) => terminal.inputText(text)
   )
 

@@ -40,7 +40,7 @@ describe("Headers", () => {
     deepStrictEqual({ ...result }, { foo: "bar", hello: "world" })
   })
 
-  it("removeMany", () => {
+  it("removeMany deletes multiple headers", () => {
     const headers = Headers.fromInput({ foo: "bar", baz: "qux", hello: "world" })
     const result = Headers.removeMany(headers, ["baz", "hello"])
     deepStrictEqual({ ...result }, { foo: "bar" })

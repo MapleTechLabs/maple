@@ -5,14 +5,14 @@ import * as References from "effect/References"
 
 describe("LogLevel", () => {
   describe("isEnabled", () => {
-    it.effect("checks against default minimum level", () =>
+    it.effect("uses Info as the default minimum log level", () =>
       Effect.gen(function*() {
         assert.isFalse(yield* LogLevel.isEnabled("Debug"))
         assert.isTrue(yield* LogLevel.isEnabled("Info"))
         assert.isTrue(yield* LogLevel.isEnabled("Error"))
       }))
 
-    it.effect("checks against configured minimum level", () =>
+    it.effect("supports All and None sentinel thresholds", () =>
       Effect.gen(function*() {
         const [debugEnabled, warnEnabled, errorEnabled] = yield* Effect.all([
           LogLevel.isEnabled("Debug"),

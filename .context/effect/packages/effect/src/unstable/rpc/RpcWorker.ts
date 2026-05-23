@@ -1,4 +1,21 @@
 /**
+ * Helpers for passing a schema-encoded bootstrap message to worker-backed RPC
+ * protocols.
+ *
+ * Worker RPC protocols can send one initial message when each worker starts,
+ * before ordinary RPC requests begin flowing. Use this module to build and
+ * provide that message from the client side, and to decode it inside the
+ * worker-side server. Common payloads include per-worker configuration,
+ * credentials or session metadata, feature flags, preloaded data, or
+ * transferable resources such as `ArrayBuffer` and `MessagePort` values.
+ *
+ * The initial message uses the supplied schema's JSON codec and is posted as a
+ * worker message, so it is separate from the normal `RpcSerialization` used for
+ * RPC request and response traffic. Values still need to be valid for the
+ * worker transport's structured clone boundary. Transferable annotations can
+ * collect objects for the `postMessage` transfer list, but transferring moves
+ * ownership to the worker and may detach buffers from the sender.
+ *
  * @since 4.0.0
  */
 import type { NoSuchElementError } from "../../Cause.ts"
@@ -10,8 +27,11 @@ import * as Transferable from "../workers/Transferable.ts"
 import type { Protocol } from "./RpcServer.ts"
 
 /**
- * @since 4.0.0
+ * Context service that supplies the initial RPC worker message as encoded data
+ * paired with any transferables that should be posted with it.
+ *
  * @category initial message
+ * @since 4.0.0
  */
 export class InitialMessage extends Context.Service<
   InitialMessage,
@@ -24,13 +44,17 @@ export class InitialMessage extends Context.Service<
 >()("effect/rpc/RpcWorker/InitialMessage") {}
 
 /**
+ * Types related to the encoded initial message exchanged with an RPC worker.
+ *
  * @since 4.0.0
- * @category initial message
  */
 export declare namespace InitialMessage {
   /**
-   * @since 4.0.0
+   * Tagged wire representation of an RPC worker initial message after schema
+   * encoding.
+   *
    * @category initial message
+   * @since 4.0.0
    */
   export interface Encoded {
     readonly _tag: "InitialMessage"
@@ -38,11 +62,16 @@ export declare namespace InitialMessage {
   }
 }
 
-const ProtocolTag: typeof Protocol = Context.Service("@effect/rpc/RpcServer/Protocol") as any
+const ProtocolTag = Context.Service<Protocol, Protocol["Service"]>(
+  "effect/rpc/RpcServer/Protocol" satisfies Protocol["key"]
+)
 
 /**
- * @since 4.0.0
+ * Runs an effect, encodes its result with the schema's JSON codec, and returns
+ * the encoded value together with collected transferables.
+ *
  * @category initial message
+ * @since 4.0.0
  */
 export const makeInitialMessage = <S extends Schema.Top, E, R2>(
   schema: S,
@@ -63,8 +92,11 @@ export const makeInitialMessage = <S extends Schema.Top, E, R2>(
 }
 
 /**
- * @since 4.0.0
+ * Provides the `InitialMessage` service from a schema and build effect,
+ * capturing the layer context and dying if schema encoding fails.
+ *
  * @category initial message
+ * @since 4.0.0
  */
 export const layerInitialMessage = <S extends Schema.Top, R2>(
   schema: S,
@@ -79,14 +111,17 @@ export const layerInitialMessage = <S extends Schema.Top, R2>(
   )
 
 /**
- * @since 4.0.0
+ * Reads the protocol initial message and decodes it with the supplied schema,
+ * failing if no initial message is available or decoding fails.
+ *
  * @category initial message
+ * @since 4.0.0
  */
 export const initialMessage = <S extends Schema.Top>(
   schema: S
 ): Effect.Effect<S["Type"], NoSuchElementError | Schema.SchemaError, Protocol | S["DecodingServices"]> =>
-  ProtocolTag.asEffect().pipe(
+  ProtocolTag.pipe(
     Effect.flatMap((protocol) => protocol.initialMessage),
-    Effect.flatMap((o) => o.asEffect()),
+    Effect.flatMap(Effect.fromOption),
     Effect.flatMap(Schema.decodeUnknownEffect(Schema.toCodecJson(schema)))
   )

@@ -10,7 +10,8 @@
  * can represent complex type relationships with multiple type parameters, including
  * contravariant, covariant, and invariant positions.
  *
- * @example
+ * **Example** (Encoding type lambdas)
+ *
  * ```ts
  * import type { HKT } from "effect"
  *
@@ -37,37 +38,53 @@
 import type * as Types from "./Types.ts"
 
 /**
- * A unique symbol used to identify TypeClass implementations.
+ * A unique symbol used to associate `TypeClass` implementations with their `TypeLambda`.
  *
- * This symbol is used internally by the HKT system to associate type classes
- * with their corresponding TypeLambda. It provides a way to link runtime
- * type class instances with their compile-time type information.
+ * **Details**
  *
- * @example
+ * This symbol is used internally by the HKT system to link runtime type class
+ * instances with their compile-time type information.
+ *
+ * **Example** (Linking a type class to a type lambda)
+ *
  * ```ts
  * import type { HKT } from "effect"
  *
- * interface MyTypeClass<F extends HKT.TypeLambda> extends HKT.TypeClass<F> {
- *   // TypeClass methods here
+ * interface IdentityTypeLambda extends HKT.TypeLambda {
+ *   readonly type: this["Target"]
  * }
  *
- * // The URI symbol helps TypeScript understand the relationship
- * // between the type class and its type lambda
+ * interface IdentityTypeClass extends HKT.TypeClass<IdentityTypeLambda> {
+ *   readonly [HKT.URI]?: IdentityTypeLambda
+ *   readonly of: <A>(value: A) => HKT.Kind<IdentityTypeLambda, never, never, never, A>
+ * }
+ *
+ * const identity: IdentityTypeClass = {
+ *   of: (value) => value
+ * }
+ *
+ * type LinkedTypeLambda = typeof identity[typeof HKT.URI]
+ *
+ * const value: HKT.Kind<NonNullable<LinkedTypeLambda>, never, never, never, string> = identity.of("ok")
+ * console.log(value) // "ok"
  * ```
  *
- * @since 2.0.0
  * @category symbols
+ * @since 2.0.0
  */
 export declare const URI: unique symbol
 
 /**
  * Base interface for type classes that work with Higher-Kinded Types.
  *
- * A TypeClass defines operations that can be performed on any type constructor
- * that matches the given TypeLambda. This enables writing generic code that
+ * **Details**
+ *
+ * A `TypeClass` defines operations that can be performed on any type constructor
+ * that matches the given `TypeLambda`. This enables writing generic code that
  * works across different container types like Array, Option, Effect, etc.
  *
- * @example
+ * **Example** (Defining higher-kinded type classes)
+ *
  * ```ts
  * import type { HKT } from "effect"
  *
@@ -88,8 +105,8 @@ export declare const URI: unique symbol
  * }
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface TypeClass<F extends TypeLambda> {
   readonly [URI]?: F
@@ -98,17 +115,16 @@ export interface TypeClass<F extends TypeLambda> {
 /**
  * Base interface for defining Higher-Kinded Type parameters.
  *
- * A TypeLambda encodes the "shape" of a type constructor, specifying how many
- * type parameters it takes and their variance (contravariant, covariant, or invariant).
- * This allows representing complex types like `Effect<A, E, R>` in a uniform way.
+ * **Details**
  *
- * The four parameters represent:
- * - `In`: Contravariant input parameter
- * - `Out2`: Covariant output parameter (often used for errors)
- * - `Out1`: Covariant output parameter (often used for context/environment)
- * - `Target`: Invariant target parameter (the main type)
+ * A `TypeLambda` encodes the "shape" of a type constructor, specifying how many
+ * type parameters it takes and their variance (contravariant, covariant, or
+ * invariant). The four parameters are `In` for contravariant input, `Out2` for
+ * covariant output often used for errors, `Out1` for covariant output often used
+ * for context or environment, and `Target` for the invariant main type.
  *
- * @example
+ * **Example** (Defining type lambdas)
+ *
  * ```ts
  * import type { Effect, HKT } from "effect"
  *
@@ -128,8 +144,8 @@ export interface TypeClass<F extends TypeLambda> {
  * }
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface TypeLambda {
   readonly In: unknown
@@ -139,17 +155,18 @@ export interface TypeLambda {
 }
 
 /**
- * Applies type parameters to a TypeLambda to get the concrete type.
+ * Applies type parameters to a `TypeLambda` to get the concrete type.
  *
- * This type-level function takes a TypeLambda and four type parameters,
- * then "applies" them to get the actual type. It handles the variance
- * correctly, ensuring contravariant parameters are used as inputs and
- * covariant parameters as outputs.
+ * **Details**
  *
- * This is the core mechanism that allows HKT to work - it transforms
- * abstract type constructors into concrete types by applying arguments.
+ * This type-level function takes a `TypeLambda` and four type parameters, then
+ * "applies" them to get the actual type. It handles variance correctly, ensuring
+ * contravariant parameters are used as inputs and covariant parameters as
+ * outputs. This is the core mechanism that allows HKT to transform abstract type
+ * constructors into concrete types by applying arguments.
  *
- * @example
+ * **Example** (Applying type lambdas)
+ *
  * ```ts
  * import type { Effect, HKT, Option } from "effect"
  *
@@ -185,8 +202,8 @@ export interface TypeLambda {
  * >
  * ```
  *
- * @since 2.0.0
  * @category type utils
+ * @since 2.0.0
  */
 export type Kind<F extends TypeLambda, In, Out2, Out1, Target> = F extends {
   readonly type: unknown

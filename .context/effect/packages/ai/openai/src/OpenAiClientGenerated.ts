@@ -1,5 +1,5 @@
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Array from "effect/Array"
 import type * as Config from "effect/Config"
@@ -23,7 +23,7 @@ import { OpenAiConfig } from "./OpenAiConfig.ts"
 /**
  * Service identifier for the generated OpenAI client.
  *
- * @since 1.0.0
+ * @since 4.0.0
  * @category service
  */
 export class OpenAiClientGenerated extends Context.Service<OpenAiClientGenerated, Generated.OpenAiClient>()(
@@ -37,7 +37,7 @@ export class OpenAiClientGenerated extends Context.Service<OpenAiClientGenerated
 /**
  * Options for configuring the generated OpenAI client.
  *
- * @since 1.0.0
+ * @since 4.0.0
  * @category models
  */
 export type Options = {
@@ -81,7 +81,7 @@ const RedactedOpenAiHeaders = {
 /**
  * Creates a generated OpenAI client service with the given options.
  *
- * @since 1.0.0
+ * @since 4.0.0
  * @category constructors
  */
 export const make = Effect.fnUntraced(
@@ -137,7 +137,7 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer for the generated OpenAI client with the given options.
  *
- * @since 1.0.0
+ * @since 4.0.0
  * @category layers
  */
 export const layer = (options: Options): Layer.Layer<OpenAiClientGenerated, never, HttpClient.HttpClient> =>
@@ -147,7 +147,7 @@ export const layer = (options: Options): Layer.Layer<OpenAiClientGenerated, neve
  * Creates a layer for the generated OpenAI client, loading the requisite
  * configuration via Effect's `Config` module.
  *
- * @since 1.0.0
+ * @since 4.0.0
  * @category layers
  */
 export const layerConfig = (options?: {

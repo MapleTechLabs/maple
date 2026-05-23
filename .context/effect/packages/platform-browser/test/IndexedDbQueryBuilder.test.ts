@@ -1205,6 +1205,41 @@ describe.sequential("IndexedDbQueryBuilder", () => {
       }).pipe(provideDb(Db))
     })
 
+    it.effect("upsertAll withTransaction", () => {
+      class Db extends IndexedDbDatabase.make(
+        V1,
+        Effect.fn(function*(api) {
+          yield* api.createObjectStore("todo")
+          yield* api.createIndex("todo", "titleIndex")
+          yield* api.createIndex("todo", "countIndex")
+          yield* api.from("todo").insertAll([
+            { id: 10, title: "insert1", count: 10, completed: true },
+            { id: 11, title: "insert2", count: 11, completed: true }
+          ])
+        })
+      ) {}
+
+      return Effect.gen(function*() {
+        const api = yield* Db.getQueryBuilder
+        const addedKeys = yield* api.withTransaction({ tables: ["todo"], mode: "readwrite" })(
+          Effect.gen(function*() {
+            return yield* api.from("todo").upsertAll([
+              { id: 10, title: "update1", count: -10, completed: false },
+              { id: 11, title: "update2", count: -11, completed: false }
+            ]).invalidate()
+          })
+        )
+        const data = yield* api.from("todo").select()
+
+        assert.deepStrictEqual(addedKeys, [10, 11])
+        assert.equal(data.length, 2)
+        assert.deepStrictEqual(data, [
+          { id: 10, title: "update1", count: -10, completed: false },
+          { id: 11, title: "update2", count: -11, completed: false }
+        ])
+      }).pipe(provideDb(Db))
+    })
+
     it.effect("upsertAll same key", () => {
       class Db extends IndexedDbDatabase.make(
         V1,

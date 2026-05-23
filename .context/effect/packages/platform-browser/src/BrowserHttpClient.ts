@@ -1,5 +1,34 @@
 /**
- * @since 1.0.0
+ * Browser implementations of the Effect `HttpClient`.
+ *
+ * This module exposes HTTP client layers for code that runs in a browser. It
+ * re-exports the fetch-based client for the common case, where requests should
+ * use the platform `fetch` implementation and optional `RequestInit` defaults,
+ * and it provides an `XMLHttpRequest`-backed layer for integrations that need
+ * XHR semantics such as response type control or environments where XHR is the
+ * required transport.
+ *
+ * Use these layers for single-page applications, browser tests, generated
+ * `HttpApiClient`s, and other client-side Effect programs that need HTTP
+ * requests to participate in interruption, typed transport / decode errors, and
+ * Effect's response body readers.
+ *
+ * Browser networking rules still apply. Cross-origin requests are subject to
+ * CORS preflights and server allowlists, especially when using custom headers,
+ * non-simple methods, or non-simple content types. Only CORS-exposed response
+ * headers are readable, and cookies / authentication are controlled by the
+ * browser and the configured fetch `RequestInit.credentials` policy. The XHR
+ * layer uses the browser's `XMLHttpRequest` defaults for credentials.
+ *
+ * Body handling differs between the transports. Fetch delegates body framing to
+ * the Web Fetch implementation. The XHR client sends empty, raw, `Uint8Array`,
+ * and `FormData` bodies directly, buffers `Stream` request bodies before
+ * sending, defaults responses to text, and can be switched to `ArrayBuffer`
+ * responses with `withXHRArrayBuffer`. When sending `FormData`, avoid setting
+ * an incompatible `Content-Type` header so the browser can generate the
+ * multipart boundary.
+ *
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
@@ -28,18 +57,24 @@ import * as HeaderParser from "multipasta/HeadersParser"
 
 export {
   /**
-   * @since 1.0.0
+   * Context reference for the `fetch` implementation used by the fetch-based HTTP client.
+   *
    * @category Fetch
+   * @since 4.0.0
    */
   Fetch,
   /**
-   * @since 1.0.0
+   * Layer that provides an `HttpClient` implementation backed by the configured `Fetch` function.
+   *
    * @category Fetch
+   * @since 4.0.0
    */
   layer as layerFetch,
   /**
-   * @since 1.0.0
+   * Service containing default `RequestInit` options for the fetch-based HTTP client.
+   *
    * @category Fetch
+   * @since 4.0.0
    */
   RequestInit
 } from "effect/unstable/http/FetchHttpClient"
@@ -49,14 +84,18 @@ export {
 // =============================================================================
 
 /**
- * @since 1.0.0
- * @category Models
+ * Allowed response body modes for the browser XHR HTTP client.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export type XHRResponseType = "arraybuffer" | "text"
 
 /**
- * @since 1.0.0
- * @category References
+ * Reference that controls the `XMLHttpRequest.responseType` used by the browser XHR HTTP client, defaulting to `"text"`.
+ *
+ * @category references
+ * @since 4.0.0
  */
 export const CurrentXHRResponseType: Context.Reference<XHRResponseType> = Context.Reference(
   "@effect/platform-browser/BrowserHttpClient/CurrentXHRResponseType",
@@ -64,8 +103,10 @@ export const CurrentXHRResponseType: Context.Reference<XHRResponseType> = Contex
 )
 
 /**
- * @since 1.0.0
- * @category References
+ * Runs an effect with `CurrentXHRResponseType` set to `"arraybuffer"` so the XHR HTTP client receives response bodies as `ArrayBuffer` values.
+ *
+ * @category references
+ * @since 4.0.0
  */
 export const withXHRArrayBuffer = <A, E, R>(
   self: Effect.Effect<A, E, R>
@@ -77,8 +118,10 @@ export const withXHRArrayBuffer = <A, E, R>(
   )
 
 /**
- * @since 1.0.0
- * @category Services
+ * Service tag for the `XMLHttpRequest` constructor used by the browser XHR HTTP client.
+ *
+ * @category services
+ * @since 4.0.0
  */
 export class XMLHttpRequest extends Context.Service<
   XMLHttpRequest,
@@ -384,8 +427,10 @@ class ClientResponseImpl extends IncomingMessageImpl<HttpClientError.HttpClientE
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides an `HttpClient` implementation backed by the browser `XMLHttpRequest` API.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerXMLHttpRequest: Layer.Layer<HttpClient.HttpClient> = HttpClient.layerMergedContext(
   Effect.succeed(makeXmlHttpRequest)

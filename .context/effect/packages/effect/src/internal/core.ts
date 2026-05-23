@@ -96,29 +96,11 @@ export const StructuralProto = {
 }
 
 /** @internal */
-export const YieldableProto = {
-  [Symbol.iterator]() {
-    return new SingleShotGen(this) as any
-  }
-}
-
-/** @internal */
-export const YieldableErrorProto = {
-  ...YieldableProto,
-  pipe() {
-    return pipeArguments(this, arguments)
-  }
-}
-
-/** @internal */
 export const EffectProto = {
   [EffectTypeId]: effectVariance,
   ...PipeInspectableProto,
   [Symbol.iterator]() {
     return new SingleShotGen(this) as any
-  },
-  asEffect(): any {
-    return this
   },
   toJSON(this: Primitive) {
     return {
@@ -584,12 +566,18 @@ export const YieldableError: new(
   message?: string,
   options?: ErrorOptions
 ) => Cause.YieldableError = (function() {
-  class YieldableError extends globalThis.Error {
-    asEffect() {
+  class YieldableError extends globalThis.Error {}
+  const proto = makePrimitiveProto({
+    op: "YieldableError",
+    [evaluate]() {
       return exitFail(this)
     }
-  }
-  Object.assign(YieldableError.prototype, YieldableErrorProto)
+  })
+  delete (proto as any).toString
+  Object.assign(
+    YieldableError.prototype,
+    proto
+  )
   return YieldableError as any
 })()
 
@@ -603,13 +591,14 @@ export const Error: new<A extends Record<string, any> = {}>(
       super(args?.message, args?.cause ? { cause: args.cause } : undefined)
       if (args) {
         Object.assign(this, args)
+        // @effect-diagnostics-next-line floatingEffect:off
         Object.defineProperty(this, plainArgsSymbol, {
           value: args,
           enumerable: false
         })
       }
     }
-    toJSON() {
+    override toJSON() {
       return { ...(this as any)[plainArgsSymbol], ...this }
     }
   } as any

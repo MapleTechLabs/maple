@@ -14,12 +14,12 @@ describe("Url", () => {
   }
 
   describe("fromString", () => {
-    it("success", () => {
+    it("parses absolute URLs", () => {
       const url = Url.fromString(testURL.toString())
       assertSuccess(url, testURL)
     })
 
-    it("failure", () => {
+    it("resolves relative URLs against a base URL", () => {
       const error = Url.fromString("??")
       assertFailure(error, new Cause.IllegalArgumentError("Invalid URL: \"??\""))
     })

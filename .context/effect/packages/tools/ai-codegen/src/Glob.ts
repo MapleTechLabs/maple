@@ -1,7 +1,7 @@
 /**
  * Glob pattern matching service.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
@@ -12,8 +12,8 @@ import * as GlobLib from "glob"
 /**
  * Error during glob pattern matching.
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class GlobError extends Data.TaggedError("GlobError")<{
   readonly pattern: string | ReadonlyArray<string>
@@ -23,8 +23,8 @@ export class GlobError extends Data.TaggedError("GlobError")<{
 /**
  * Service for glob pattern matching.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Glob {
   readonly glob: (
@@ -34,16 +34,18 @@ export interface Glob {
 }
 
 /**
- * @since 1.0.0
+ * Context service tag for glob pattern matching used by AI codegen tooling.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const Glob: Context.Service<Glob, Glob> = Context.Service("@effect/ai-codegen/Glob")
 
 /**
  * Layer providing the Glob service.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<Glob> = Layer.succeed(Glob, {
   glob: (pattern, options) =>

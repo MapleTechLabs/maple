@@ -12,6 +12,9 @@
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "rewriteRelativeImportExtensions": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "plugins": [
+      { "name": "@effect/language-service", "includeSuggestionsInTsc": false }
+    ]
   }
 }

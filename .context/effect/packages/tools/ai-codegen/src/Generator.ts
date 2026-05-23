@@ -1,7 +1,7 @@
 /**
  * Code generator service wrapping @effect/openapi-generator.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as OpenApiGenerator from "@effect/openapi-generator/OpenApiGenerator"
 import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
@@ -18,7 +18,8 @@ import type { DiscoveredProvider } from "./Discovery.ts"
 /**
  * Error during code generation.
  *
- * @example
+ * **Example** (Creating a generation error)
+ *
  * ```ts
  * import * as Generator from "@effect/ai-codegen/Generator"
  *
@@ -28,8 +29,8 @@ import type { DiscoveredProvider } from "./Discovery.ts"
  * })
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class GenerationError extends Data.TaggedError("GenerationError")<{
   readonly provider: string
@@ -39,7 +40,8 @@ export class GenerationError extends Data.TaggedError("GenerationError")<{
 /**
  * Error during patch application.
  *
- * @example
+ * **Example** (Creating a patch error)
+ *
  * ```ts
  * import * as Generator from "@effect/ai-codegen/Generator"
  *
@@ -49,8 +51,8 @@ export class GenerationError extends Data.TaggedError("GenerationError")<{
  * })
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class PatchError extends Data.TaggedError("PatchError")<{
   readonly provider: string
@@ -60,8 +62,8 @@ export class PatchError extends Data.TaggedError("PatchError")<{
 /**
  * Service for generating Effect code from OpenAPI specs.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface CodeGenerator {
   readonly generate: (
@@ -71,8 +73,10 @@ export interface CodeGenerator {
 }
 
 /**
- * @since 1.0.0
+ * Context service tag for generating Effect client code from OpenAPI specifications.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const CodeGenerator: Context.Service<CodeGenerator, CodeGenerator> = Context.Service(
   "@effect/ai-codegen/CodeGenerator"
@@ -81,8 +85,8 @@ export const CodeGenerator: Context.Service<CodeGenerator, CodeGenerator> = Cont
 /**
  * Layer providing the CodeGenerator service.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<
   CodeGenerator,
@@ -161,8 +165,8 @@ export const layer: Layer.Layer<
 /**
  * Layer providing the CodeGenerator with schema transformer (default).
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layerSchema: Layer.Layer<CodeGenerator, never, FileSystem.FileSystem | Path_.Path> = layer.pipe(
   Layer.provide(OpenApiGenerator.layerTransformerSchema)
@@ -171,8 +175,8 @@ export const layerSchema: Layer.Layer<CodeGenerator, never, FileSystem.FileSyste
 /**
  * Layer providing the CodeGenerator with TypeScript-only transformer.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layerTypeScript: Layer.Layer<CodeGenerator, never, FileSystem.FileSystem | Path_.Path> = layer.pipe(
   Layer.provide(OpenApiGenerator.layerTransformerTs)

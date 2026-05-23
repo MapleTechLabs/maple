@@ -8,10 +8,10 @@
  * The module also includes redaction capabilities for sensitive data, allowing objects
  * to provide different representations based on the current execution context.
  *
- * @example
+ * **Example** (Creating inspectable values)
+ *
  * ```ts
- * import { Inspectable } from "effect"
- * import { format } from "effect/Formatter"
+ * import { Formatter, Inspectable } from "effect"
  *
  * class User extends Inspectable.Class {
  *   constructor(
@@ -32,24 +32,26 @@
  *
  * const user = new User("Alice", "alice@example.com")
  * console.log(user.toString()) // Pretty printed JSON
- * console.log(format(user)) // Same as toString()
+ * console.log(Formatter.format(user)) // Same as toString()
  * ```
  *
  * @since 2.0.0
  */
-import { format } from "./Formatter.ts"
+import { format, formatJson } from "./Formatter.ts"
 import * as Predicate from "./Predicate.ts"
-import * as Redactable from "./Redactable.ts"
 import { redact } from "./Redactable.ts"
 
 /**
  * Symbol used by Node.js for custom object inspection.
  *
+ * **Details**
+ *
  * This symbol is recognized by Node.js's `util.inspect()` function and the REPL
  * for custom object representation. When an object has a method with this symbol,
  * it will be called to determine how the object should be displayed.
  *
- * @example
+ * **Example** (Defining custom Node inspection)
+ *
  * ```ts
  * import { Inspectable } from "effect"
  *
@@ -65,8 +67,8 @@ import { redact } from "./Redactable.ts"
  * console.log(obj) // Displays: CustomObject(hello)
  * ```
  *
- * @since 2.0.0
  * @category symbols
+ * @since 2.0.0
  */
 export const NodeInspectSymbol = Symbol.for("nodejs.util.inspect.custom")
 
@@ -75,7 +77,8 @@ export const NodeInspectSymbol = Symbol.for("nodejs.util.inspect.custom")
  * This symbol type is used to implement custom inspection behavior in Node.js
  * environments.
  *
- * @example
+ * **Example** (Typing custom Node inspection)
+ *
  * ```ts
  * import { Inspectable } from "effect"
  *
@@ -91,22 +94,24 @@ export const NodeInspectSymbol = Symbol.for("nodejs.util.inspect.custom")
  * console.log(obj) // CustomObject(test)
  * ```
  *
- * @since 2.0.0
  * @category symbols
+ * @since 2.0.0
  */
 export type NodeInspectSymbol = typeof NodeInspectSymbol
 
 /**
  * Interface for objects that can be inspected and provide custom string representations.
  *
+ * **Details**
+ *
  * Objects implementing this interface can control how they appear in debugging contexts,
  * JSON serialization, and Node.js inspection. This is particularly useful for creating
  * custom data types that display meaningful information during development.
  *
- * @example
+ * **Example** (Implementing inspectable objects)
+ *
  * ```ts
- * import { Inspectable } from "effect"
- * import { format } from "effect/Formatter"
+ * import { Formatter, Inspectable } from "effect"
  *
  * class Result implements Inspectable.Inspectable {
  *   constructor(
@@ -115,7 +120,7 @@ export type NodeInspectSymbol = typeof NodeInspectSymbol
  *   ) {}
  *
  *   toString(): string {
- *     return format(this.toJSON())
+ *     return Formatter.format(this.toJSON())
  *   }
  *
  *   toJSON() {
@@ -131,8 +136,8 @@ export type NodeInspectSymbol = typeof NodeInspectSymbol
  * console.log(success.toString()) // Pretty formatted JSON
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface Inspectable {
   toString(): string
@@ -141,15 +146,17 @@ export interface Inspectable {
 }
 
 /**
- * Safely converts a value to a JSON-serializable representation, useful for
- * implementing the `toJSON` method of the {@link Inspectable} interface.
+ * Safely converts a value to a JSON-serializable representation.
+ *
+ * **Details**
  *
  * This function attempts to extract JSON data from objects that implement the
  * `toJSON` method, recursively processes arrays, and handles errors gracefully.
  * For objects that don't have a `toJSON` method, it applies redaction to
  * protect sensitive information.
  *
- * @since 2.0.0
+ * @category converting
+ * @since 4.0.0
  */
 export const toJson = (input: unknown): unknown => {
   try {
@@ -169,6 +176,15 @@ export const toJson = (input: unknown): unknown => {
 }
 
 /**
+ * Converts an unknown value to a string for diagnostics.
+ *
+ * **Details**
+ *
+ * Strings are returned unchanged. Objects are formatted as JSON using the
+ * provided whitespace setting when possible, and values that cannot be
+ * formatted are converted with `String`.
+ *
+ * @category converting
  * @since 2.0.0
  */
 export const toStringUnknown = (u: unknown, whitespace: number | string | undefined = 2): string => {
@@ -176,39 +192,23 @@ export const toStringUnknown = (u: unknown, whitespace: number | string | undefi
     return u
   }
   try {
-    return typeof u === "object" ? stringifyCircular(u, whitespace) : String(u)
+    return typeof u === "object" ? formatJson(u, { space: whitespace }) : String(u)
   } catch {
     return String(u)
   }
 }
 
 /**
- * @since 2.0.0
- */
-export const stringifyCircular = (obj: unknown, whitespace?: number | string | undefined): string => {
-  let cache: Array<unknown> = []
-  const retVal = JSON.stringify(
-    obj,
-    (_key, value) =>
-      typeof value === "object" && value !== null
-        ? cache.includes(value)
-          ? undefined // circular reference
-          : cache.push(value) && Redactable.redact(value)
-        : value,
-    whitespace
-  )
-  ;(cache as any) = undefined
-  return retVal
-}
-
-/**
  * A base prototype object that implements the {@link Inspectable} interface.
+ *
+ * **Details**
  *
  * This object provides default implementations for the {@link Inspectable} methods.
  * It can be used as a prototype for objects that want to be inspectable,
  * or as a mixin to add inspection capabilities to existing objects.
  *
- * @example
+ * **Example** (Using the base inspectable prototype)
+ *
  * ```ts
  * import { Inspectable } from "effect"
  *
@@ -227,6 +227,7 @@ export const stringifyCircular = (obj: unknown, whitespace?: number | string | u
  * MyClass.prototype.constructor = MyClass
  * ```
  *
+ * @category models
  * @since 2.0.0
  */
 export const BaseProto: Inspectable = {
@@ -244,11 +245,14 @@ export const BaseProto: Inspectable = {
 /**
  * Abstract base class that implements the Inspectable interface.
  *
+ * **Details**
+ *
  * This class provides a convenient way to create inspectable objects by extending it.
  * Subclasses only need to implement the `toJSON()` method, and they automatically
  * get proper `toString()` and Node.js inspection support.
  *
- * @example
+ * **Example** (Extending the inspectable base class)
+ *
  * ```ts
  * import { Inspectable } from "effect"
  *
@@ -276,12 +280,14 @@ export const BaseProto: Inspectable = {
  * console.log(user) // In Node.js, shows the same formatted output
  * ```
  *
- * @since 2.0.0
  * @category classes
+ * @since 2.0.0
  */
 export abstract class Class {
   /**
    * Returns a JSON representation of this object.
+   *
+   * **Details**
    *
    * Subclasses must implement this method to define how the object
    * should be serialized for debugging and inspection purposes.

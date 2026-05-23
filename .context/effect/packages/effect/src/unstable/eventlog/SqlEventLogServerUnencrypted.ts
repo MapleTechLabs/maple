@@ -1,4 +1,22 @@
 /**
+ * SQL-backed storage for an unencrypted event-log server.
+ *
+ * This module provides the persistence layer used by
+ * `EventLogServerUnencrypted` when remote entries should be stored in a SQL
+ * database and streamed back to clients by store sequence. It creates and uses
+ * dialect-specific tables for the server remote id, per-store sequence state,
+ * plaintext entries, and session authentication bindings, which makes it useful
+ * for durable local or service-side event-log deployments where database
+ * backup, replication, and transactional ordering are desired.
+ *
+ * Entry payloads are intentionally written as plaintext bytes. Use this storage
+ * only when the database, transport, backups, logs, and operators are trusted,
+ * or when encryption is handled outside this module. Table names are derived
+ * from the provided prefixes, and writes rely on SQL transactions plus
+ * store-level sequence rows, so deployments should provision compatible
+ * isolation/locking behavior and account for dialect-specific binary and text
+ * column limits.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -15,8 +33,16 @@ import { Entry, EntryId, makeRemoteIdUnsafe, RemoteEntry, type RemoteId } from "
 import * as EventLogServerUnencrypted from "./EventLogServerUnencrypted.ts"
 
 /**
- * @since 4.0.0
+ * Creates unencrypted event-log server `Storage` backed by SQL.
+ *
+ * **Details**
+ *
+ * The implementation creates tables for the server remote id, store sequences,
+ * entries, and session authentication bindings, then persists and streams
+ * plaintext remote entries.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeStorage = (options?: {
   readonly entryTablePrefix?: string
@@ -192,7 +218,7 @@ export const makeStorage = (options?: {
           VALUES (1, ${created})
         `.pipe(
           Effect.catchIf(
-            (error: SqlError.SqlError) => error.reason._tag === "ConstraintError",
+            isConstraintConflict,
             () => Effect.void
           ),
           Effect.andThen(selectRemoteId),
@@ -424,8 +450,10 @@ export const makeStorage = (options?: {
   }).pipe(withTracerDisabled)
 
 /**
- * @since 4.0.0
+ * Provides unencrypted server `Storage` using the SQL-backed implementation.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerStorage = (options?: {
   readonly entryTablePrefix?: string
@@ -504,3 +532,6 @@ const decodeSessionAuthBindings = (
 ): Effect.Effect<ReadonlyArray<SessionAuthBindingSql>, Schema.SchemaError> => decodeSessionAuthBindingRows(rows)
 
 const withTracerDisabled = Effect.withTracerEnabled(false)
+
+const isConstraintConflict = (error: SqlError.SqlError): boolean =>
+  error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation"

@@ -123,7 +123,7 @@ export class ProductAssistant extends Context.Service<ProductAssistant, {
       const toolkit = yield* ProductToolkit
 
       // Choose a model to use
-      const model = yield* OpenAiLanguageModel.model("gpt-5.2")
+      const model = yield* OpenAiLanguageModel.model("gpt-5.2").captureRequirements
 
       const answer = Effect.fn("ProductAssistant.answer")(
         function*(question: string) {

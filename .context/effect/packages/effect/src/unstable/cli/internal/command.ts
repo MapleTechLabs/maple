@@ -8,9 +8,8 @@
 import * as Arr from "../../../Array.ts"
 import * as Context from "../../../Context.ts"
 import * as Effect from "../../../Effect.ts"
-import { YieldableProto } from "../../../internal/core.ts"
+import * as Effectable from "../../../Effectable.ts"
 import * as Option from "../../../Option.ts"
-import { pipeArguments } from "../../../Pipeable.ts"
 import * as Predicate from "../../../Predicate.ts"
 import * as CliError from "../CliError.ts"
 import type * as GlobalFlag from "../GlobalFlag.ts"
@@ -73,14 +72,13 @@ export const toImpl = <Name extends string, Input, E, R, ContextInput = {}>(
 /* Proto                                                                      */
 /* ========================================================================== */
 
-export const Proto = {
-  ...YieldableProto,
-  pipe() {
-    return pipeArguments(this, arguments)
-  },
-  asEffect(this: Command<any, any, any, any, any>) {
-    return toImpl(this).service.asEffect()
-  }
+export const Proto: Effect.Effect<any, never, any> = {
+  ...Effectable.Prototype<Command.Any>({
+    label: "Command",
+    evaluate() {
+      return toImpl(this).service
+    }
+  })
 }
 
 /* ========================================================================== */
@@ -100,6 +98,7 @@ export const makeCommand = <const Name extends string, Input, E, R, ContextInput
   readonly description?: string | undefined
   readonly shortDescription?: string | undefined
   readonly alias?: string | undefined
+  readonly hidden?: boolean | undefined
   readonly examples?: ReadonlyArray<Command.Example> | undefined
   readonly subcommands?: ReadonlyArray<SubcommandGroup> | undefined
   readonly parse?: ((input: ParsedTokens) => Effect.Effect<Input, CliError.CliError, Environment>) | undefined
@@ -147,7 +146,9 @@ export const makeCommand = <const Name extends string, Input, E, R, ContextInput
     }
 
     let usage = commandPath.length > 0 ? commandPath.join(" ") : options.name
-    if (subcommands.some((group) => group.commands.length > 0)) {
+    // Only render `<subcommand>` in usage when at least one visible subcommand
+    // exists; an all-hidden subcommand tree should look like a leaf command.
+    if (subcommands.some((group) => group.commands.some((c) => !c.hidden))) {
       usage += " <subcommand>"
     }
     usage += " [flags]"
@@ -159,6 +160,9 @@ export const makeCommand = <const Name extends string, Input, E, R, ContextInput
     for (const option of config.flags) {
       const singles = Param.extractSingleParams(option)
       for (const single of singles) {
+        // Hidden flags still parse on the command line but are omitted from
+        // generated --help output.
+        if (single.hidden) continue
         flags.push(toFlagDoc(single))
       }
     }
@@ -166,9 +170,14 @@ export const makeCommand = <const Name extends string, Input, E, R, ContextInput
     const subcommandDocs: Array<SubcommandGroupDoc> = []
 
     for (const group of subcommands) {
+      // Hidden subcommands still parse on the command line but are omitted
+      // from --help. Drop the whole group when nothing visible remains so we
+      // don't render an empty heading.
+      const visible = group.commands.filter((c) => !c.hidden)
+      if (visible.length === 0) continue
       subcommandDocs.push({
         group: group.group,
-        commands: Arr.map(group.commands, (subcommand) => ({
+        commands: Arr.map(visible as unknown as Arr.NonEmptyReadonlyArray<Command.Any>, (subcommand) => ({
           name: subcommand.name,
           alias: subcommand.alias,
           shortDescription: subcommand.shortDescription,
@@ -197,6 +206,7 @@ export const makeCommand = <const Name extends string, Input, E, R, ContextInput
     annotations,
     globalFlags,
     subcommands,
+    hidden: options.hidden ?? false,
     config,
     contextConfig,
     service,
@@ -285,11 +295,15 @@ const parseParams: (parsedArgs: Param.ParsedArgs, params: ReadonlyArray<Param.An
 })
 
 /**
- * Checks for duplicate flag names between parent and child commands.
+ * Checks that inherited parent context flags do not reuse names declared by
+ * child command flags.
+ *
+ * When `contextConfig` is supplied, it is used as the inherited flag set;
+ * otherwise the parent's current context config is checked.
  */
-export const checkForDuplicateFlags = <Name extends string, Input, ContextInput>(
-  parent: Command<Name, Input, ContextInput, unknown, unknown>,
-  subcommands: ReadonlyArray<Command<any, unknown, any, unknown, unknown>>,
+export const checkForDuplicateFlags = <Name extends string, Input, ContextInput, E, R>(
+  parent: Command<Name, Input, ContextInput, E, R>,
+  subcommands: ReadonlyArray<Command.Any>,
   options?: {
     readonly contextConfig?: ConfigInternal | undefined
   } | undefined
@@ -309,7 +323,7 @@ export const checkForDuplicateFlags = <Name extends string, Input, ContextInput>
   extractNames((options?.contextConfig ?? parentImpl.contextConfig).flags)
 
   for (const subcommand of subcommands) {
-    const subImpl = toImpl(subcommand)
+    const subImpl = toImpl(subcommand as any)
     for (const option of subImpl.config.flags) {
       const singles = Param.extractSingleParams(option)
       for (const single of singles) {

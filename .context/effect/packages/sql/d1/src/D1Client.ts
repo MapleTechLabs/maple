@@ -1,5 +1,26 @@
 /**
- * @since 1.0.0
+ * Cloudflare D1 client implementation for Effect SQL, backed by a Workers `D1Database` binding.
+ *
+ * This module adapts a Cloudflare D1 database binding into both the
+ * D1-specific `D1Client` service and the generic Effect `SqlClient` service.
+ * Use it in Workers, Pages Functions, and tests that provide a D1 binding to
+ * run SQLite-compatible queries through Effect services and layers, including
+ * repositories, migrations, request handlers, and local development against
+ * Wrangler or Miniflare-backed D1 databases.
+ *
+ * The client prepares statements with D1, caches them by SQL string, and uses
+ * the SQLite statement compiler for query and result name transforms. D1
+ * commits individual statements automatically, and native `D1Database.batch`
+ * is the D1 API for sequential, transactional multi-statement work; this
+ * adapter does not expose Effect SQL transactions because it cannot map
+ * `withTransaction` onto a connection-scoped D1 transaction. D1 databases are
+ * serverless SQLite storage with platform limits and single-database serialized
+ * execution, so keep queries small and indexed, batch large maintenance work
+ * at the D1 API level, and use D1 sessions outside this client when an
+ * application needs bookmark-based sequential consistency or read replicas.
+ * Streaming queries and `updateValues` are not supported.
+ *
+ * @since 4.0.0
  */
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import * as Cache from "effect/Cache"
@@ -23,20 +44,26 @@ const classifyError = (cause: unknown, message: string, operation: string) =>
   new UnknownError({ cause, message, operation })
 
 /**
- * @category type ids
- * @since 1.0.0
+ * Unique runtime identifier used to tag `D1Client` values.
+ *
+ * @category type IDs
+ * @since 4.0.0
  */
 export const TypeId: TypeId = "~@effect/sql-d1/D1Client"
 
 /**
- * @category type ids
- * @since 1.0.0
+ * Type-level literal for the `D1Client` runtime identifier.
+ *
+ * @category type IDs
+ * @since 4.0.0
  */
 export type TypeId = "~@effect/sql-d1/D1Client"
 
 /**
+ * Cloudflare D1 SQL client service, extending `SqlClient` with its D1 configuration and no `updateValues` support.
+ *
  * @category models
- * @since 1.0.0
+ * @since 4.0.0
  */
 export interface D1Client extends Client.SqlClient {
   readonly [TypeId]: TypeId
@@ -47,14 +74,18 @@ export interface D1Client extends Client.SqlClient {
 }
 
 /**
+ * Context tag used to access the `D1Client` service.
+ *
  * @category tags
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const D1Client = Context.Service<D1Client>("@effect/sql-d1/D1Client")
 
 /**
+ * Configuration for a Cloudflare D1 client, including the `D1Database`, prepared statement cache settings, span attributes, and query/result name transforms.
+ *
  * @category models
- * @since 1.0.0
+ * @since 4.0.0
  */
 export interface D1ClientConfig {
   readonly db: D1Database
@@ -67,8 +98,10 @@ export interface D1ClientConfig {
 }
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Creates a scoped Cloudflare D1 SQL client. Prepared statements are cached, while transactions and streaming queries are not supported by this driver.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = (
   options: D1ClientConfig
@@ -187,14 +220,16 @@ export const make = (
   })
 
 /**
+ * Creates a layer from a `Config`-wrapped D1 client configuration, providing both `D1Client` and `SqlClient`.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layerConfig = (
   config: Config.Wrap<D1ClientConfig>
 ): Layer.Layer<D1Client | Client.SqlClient, Config.ConfigError> =>
   Layer.effectContext(
-    Config.unwrap(config).asEffect().pipe(
+    Config.unwrap(config).pipe(
       Effect.flatMap(make),
       Effect.map((client) =>
         Context.make(D1Client, client).pipe(
@@ -205,8 +240,10 @@ export const layerConfig = (
   ).pipe(Layer.provide(Reactivity.layer))
 
 /**
+ * Creates a layer from a concrete D1 client configuration, providing both `D1Client` and `SqlClient`.
+ *
  * @category layers
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const layer = (
   config: D1ClientConfig

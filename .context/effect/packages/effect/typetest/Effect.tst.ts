@@ -153,6 +153,17 @@ describe("Effect.catchReason", () => {
   })
 })
 
+describe("Effect.firstSuccessOf", () => {
+  it("infers success, error, and requirements from the effect collection", () => {
+    const result = Effect.firstSuccessOf([
+      string,
+      number
+    ])
+
+    expect(result).type.toBe<Effect.Effect<string | number, "err-1" | "err-2", "dep-1" | "dep-2">>()
+  })
+})
+
 describe("Effect.catchReasons", () => {
   it("handlers receive respective reason types", () => {
     pipe(

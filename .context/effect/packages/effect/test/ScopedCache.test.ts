@@ -51,7 +51,7 @@ describe("ScopedCache", () => {
           const program = Effect.gen(function*() {
             const cache = yield* ScopedCache.make({
               capacity: 10,
-              lookup: (_key: string) => Effect.map(TestService.asEffect(), (service) => service.value)
+              lookup: (_key: string) => Effect.map(TestService, (service) => service.value)
             })
             return yield* ScopedCache.get(cache, "test")
           })
@@ -65,7 +65,7 @@ describe("ScopedCache", () => {
           assert.strictEqual(result, 42)
         }))
 
-      it.effect("cache is created within a scope and cleaned up when scope closes", () =>
+      it.effect("cache resources are released and future gets interrupt when scope closes", () =>
         Effect.gen(function*() {
           const cache = yield* Effect.scoped(
             Effect.gen(function*() {
@@ -2005,7 +2005,7 @@ describe("ScopedCache", () => {
 
           const cache = yield* ScopedCache.make({
             capacity: 10,
-            lookup: (_key: string) => Effect.map(CounterService.asEffect(), (service) => service.value),
+            lookup: (_key: string) => Effect.map(CounterService, (service) => service.value),
             requireServicesAt: "lookup"
           })
 

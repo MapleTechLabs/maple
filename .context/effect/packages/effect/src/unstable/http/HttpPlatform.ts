@@ -1,4 +1,25 @@
 /**
+ * Platform-specific support for serving files as HTTP server responses.
+ *
+ * `HttpPlatform` is the boundary between the portable HTTP response model and
+ * the runtime that knows how to stream bytes from the host platform. Server
+ * code uses this service when it needs to return local files, static assets,
+ * downloads, byte ranges, or Web `File`-like values without constructing the
+ * response body by hand.
+ *
+ * The helpers in this module enrich those responses with file metadata such as
+ * `etag`, `last-modified`, and content length where available. Path-based
+ * responses require `FileSystem` and can fail with `PlatformError` while
+ * inspecting or streaming the file; `File`-like responses use the Web
+ * `ReadableStream` and `lastModified` metadata exposed by the value.
+ *
+ * Provide `layer` when the default streaming implementation is suitable, or
+ * use `make` to plug in a runtime-specific response constructor. The default
+ * layer supplies weak ETag generation itself, but the surrounding runtime still
+ * needs to provide the `FileSystem` service and run the resulting
+ * `HttpServerResponse` on an HTTP server adapter that understands Effect
+ * streams.
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -15,8 +36,10 @@ import type * as Body from "./HttpBody.ts"
 import * as Response from "./HttpServerResponse.ts"
 
 /**
- * @since 4.0.0
+ * Service for platform-specific HTTP response helpers, including file-backed server responses.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export class HttpPlatform extends Context.Service<HttpPlatform, {
   readonly fileResponse: (
@@ -38,8 +61,10 @@ export class HttpPlatform extends Context.Service<HttpPlatform, {
 }>()("effect/http/HttpPlatform") {}
 
 /**
- * @since 4.0.0
+ * Creates an `HttpPlatform` service from platform-specific file response constructors, using `FileSystem` and `Etag.Generator`.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make: (impl: {
   readonly fileResponse: (
@@ -117,11 +142,19 @@ export const make: (impl: {
 })
 
 /**
- * @since 4.0.0
+ * Provides the default `HttpPlatform` implementation for serving file paths and
+ * `File`-like values as streamed HTTP responses.
+ *
+ * **Details**
+ *
+ * The layer uses the `FileSystem` and weak ETag services to add file metadata
+ * headers such as `etag` and `last-modified`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layer = Layer.effect(HttpPlatform)(
-  Effect.flatMap(FileSystem.FileSystem.asEffect(), (fs) =>
+  Effect.flatMap(FileSystem.FileSystem, (fs) =>
     make({
       fileResponse(path, status, statusText, headers, start, end, contentLength) {
         return Response.stream(

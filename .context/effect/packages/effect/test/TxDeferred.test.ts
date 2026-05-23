@@ -136,7 +136,7 @@ describe("TxDeferred", () => {
   })
 
   describe("transactional behavior", () => {
-    it.effect("succeed + await composed in Effect.tx works", () =>
+    it.effect("await observes completion made earlier in the same transaction", () =>
       Effect.gen(function*() {
         const deferred = yield* TxDeferred.make<number>()
         const value = yield* Effect.tx(

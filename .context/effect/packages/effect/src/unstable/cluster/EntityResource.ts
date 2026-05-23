@@ -1,4 +1,27 @@
 /**
+ * The `EntityResource` module provides helpers for acquiring resources inside a
+ * cluster entity and keeping them available across entity restarts. It is useful
+ * for long-lived resources tied to an entity address, such as external
+ * processes, network clients, Kubernetes Pods, or other handles that should not
+ * be torn down during routine shard movement.
+ *
+ * **Common tasks**
+ *
+ * - Create a reusable entity-scoped resource with {@link make}
+ * - Keep an entity alive while the resource is acquired
+ * - Explicitly release the resource with `EntityResource.close`
+ * - Attach cleanup work to the resource close scope with {@link CloseScope}
+ * - Create and manage a Kubernetes Pod resource with {@link makeK8sPod}
+ *
+ * **Lifecycle gotchas**
+ *
+ * - Resources are retained by an `RcRef` and are only fully released after
+ *   `idleTimeToLive` expires or `close` is called
+ * - The default idle time to live is infinite, so resources remain alive until
+ *   explicitly closed
+ * - `CloseScope` is separate from the caller scope and is not closed by entity
+ *   restarts, shard movement, or node shutdown finalization
+ *
  * @since 4.0.0
  */
 import type * as v1 from "kubernetes-types/core/v1.d.ts"
@@ -13,20 +36,31 @@ import * as K8sHttpClient from "./K8sHttpClient.ts"
 import type { Sharding } from "./Sharding.ts"
 
 /**
- * @since 4.0.0
+ * Type identifier used to brand `EntityResource` values.
+ *
  * @category Type ids
+ * @since 4.0.0
  */
 export const TypeId: TypeId = "~effect/cluster/EntityResource"
 
 /**
- * @since 4.0.0
+ * Literal type of the `EntityResource` type identifier.
+ *
  * @category Type ids
+ * @since 4.0.0
  */
 export type TypeId = "~effect/cluster/EntityResource"
 
 /**
+ * A resource acquired inside a cluster entity and kept alive across restarts.
+ *
+ * **Details**
+ *
+ * `get` acquires or reuses the resource in the caller's scope, while `close`
+ * invalidates it so its close scope can be released.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface EntityResource<out A, out E = never> {
   readonly [TypeId]: TypeId
@@ -37,10 +71,12 @@ export interface EntityResource<out A, out E = never> {
 /**
  * A `Scope` that is only closed when the resource is explicitly closed.
  *
+ * **Gotchas**
+ *
  * It is not closed during restarts, due to shard movement or node shutdowns.
  *
- * @since 4.0.0
  * @category Scope
+ * @since 4.0.0
  */
 export class CloseScope extends Context.Service<
   CloseScope,
@@ -51,14 +87,18 @@ export class CloseScope extends Context.Service<
  * A `EntityResource` is a resource that can be acquired inside a cluster
  * entity, which will keep the entity alive even across restarts.
  *
+ * **Details**
+ *
  * The resource will only be fully released when the idle time to live is
  * reached, or when the `close` effect is called.
+ *
+ * **Gotchas**
  *
  * By default, the `idleTimeToLive` is infinite, meaning the resource will only
  * be released when `close` is called.
  *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make: <A, E, R>(options: {
   readonly acquire: Effect.Effect<A, E, R>
@@ -110,8 +150,15 @@ export const make: <A, E, R>(options: {
 })
 
 /**
- * @since 4.0.0
+ * Creates an `EntityResource` backed by a Kubernetes Pod.
+ *
+ * **Details**
+ *
+ * The pod is created and waited on through `K8sHttpClient`, and is kept alive
+ * until the resource is closed or its idle time to live expires.
+ *
  * @category Kubernetes
+ * @since 4.0.0
  */
 export const makeK8sPod: (
   spec: v1.Pod,

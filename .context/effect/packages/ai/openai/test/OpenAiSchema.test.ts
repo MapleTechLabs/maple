@@ -92,7 +92,11 @@ describe("OpenAiSchema", () => {
 
     const events = [
       { type: "response.created", sequence_number: 1, response },
-      { type: "response.completed", sequence_number: 2, response: makeResponse() },
+      {
+        type: "response.completed",
+        sequence_number: 2,
+        response: makeResponse()
+      },
       { type: "response.incomplete", sequence_number: 3, response: makeResponse({ status: "incomplete" }) },
       { type: "response.failed", sequence_number: 4, response: makeResponse({ status: "failed" }) },
       { type: "response.output_item.added", sequence_number: 5, output_index: 0, item: applyPatchItem },

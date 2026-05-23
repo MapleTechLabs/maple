@@ -37,7 +37,10 @@
       "namespaceImportPackages": ["effect", "@effect/*"],
       "diagnosticSeverity": {
         "globalErrorInEffectFailure": "off" // TODO: Check if we should fix the warnings this reports
-      }
+      },
+      "includeSuggestionsInTsc": false,
+      "ignoreEffectWarningsInTscExitCode": true,
+      "ignoreEffectErrorsInTscExitCode": true
     }]
   }
 }

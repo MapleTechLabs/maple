@@ -1,7 +1,7 @@
 {
   "name": "@effect/opentelemetry",
   "type": "module",
-  "version": "4.0.0-beta.52",
+  "version": "4.0.0-beta.70",
   "license": "MIT",
   "description": "OpenTelemetry integration for Effect",
   "homepage": "https://effect.website",
@@ -71,6 +71,7 @@
   },
   "peerDependencies": {
     "@opentelemetry/api": "^1.9",
+    "@opentelemetry/api-logs": ">=0.203.0 <0.300.0",
     "@opentelemetry/resources": "^2.0.0",
     "@opentelemetry/sdk-logs": ">=0.203.0 <0.300.0",
     "@opentelemetry/sdk-metrics": "^2.0.0",
@@ -101,21 +102,25 @@
     },
     "@opentelemetry/sdk-logs": {
       "optional": true
+    },
+    "@opentelemetry/api-logs": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@opentelemetry/api": "^1.9.1",
-    "@opentelemetry/context-async-hooks": "^2.6.1",
-    "@opentelemetry/exporter-metrics-otlp-http": "0.214.0",
-    "@opentelemetry/exporter-prometheus": "^0.214.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.214.0",
-    "@opentelemetry/otlp-exporter-base": "^0.214.0",
-    "@opentelemetry/resources": "^2.6.1",
-    "@opentelemetry/sdk-logs": "^0.214.0",
-    "@opentelemetry/sdk-metrics": "^2.6.1",
-    "@opentelemetry/sdk-trace-base": "^2.6.1",
-    "@opentelemetry/sdk-trace-node": "^2.6.1",
-    "@opentelemetry/sdk-trace-web": "^2.6.1",
+    "@opentelemetry/api-logs": "^0.217.0",
+    "@opentelemetry/context-async-hooks": "^2.7.1",
+    "@opentelemetry/exporter-metrics-otlp-http": "0.217.0",
+    "@opentelemetry/exporter-prometheus": "^0.217.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.217.0",
+    "@opentelemetry/otlp-exporter-base": "^0.217.0",
+    "@opentelemetry/resources": "^2.7.1",
+    "@opentelemetry/sdk-logs": "^0.217.0",
+    "@opentelemetry/sdk-metrics": "^2.7.1",
+    "@opentelemetry/sdk-trace-base": "^2.7.1",
+    "@opentelemetry/sdk-trace-node": "^2.7.1",
+    "@opentelemetry/sdk-trace-web": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.40.0"
   }
 }

@@ -1,7 +1,8 @@
 /**
  * The `EmbeddingModel` module provides provider-agnostic text embedding capabilities.
  *
- * @example
+ * **Example** (Embedding text with a model)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import { EmbeddingModel } from "effect/unstable/ai"
@@ -25,8 +26,8 @@ import * as AiError from "./AiError.ts"
 /**
  * Service tag for embedding model operations.
  *
- * @since 4.0.0
  * @category services
+ * @since 4.0.0
  */
 export class EmbeddingModel extends Context.Service<EmbeddingModel, Service>()(
   "effect/unstable/ai/EmbeddingModel"
@@ -35,8 +36,8 @@ export class EmbeddingModel extends Context.Service<EmbeddingModel, Service>()(
 /**
  * Service tag that provides the current embedding dimensions.
  *
- * @since 4.0.0
  * @category services
+ * @since 4.0.0
  */
 export class Dimensions extends Context.Service<Dimensions, number>()(
   "effect/unstable/ai/EmbeddingModel/Dimensions"
@@ -45,8 +46,8 @@ export class Dimensions extends Context.Service<Dimensions, number>()(
 /**
  * Token usage metadata for embedding operations.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class EmbeddingUsage extends Schema.Class<EmbeddingUsage>(
   "effect/ai/EmbeddingModel/EmbeddingUsage"
@@ -57,8 +58,8 @@ export class EmbeddingUsage extends Schema.Class<EmbeddingUsage>(
 /**
  * Response for a single embedding request.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class EmbedResponse extends Schema.Class<EmbedResponse>(
   "effect/ai/EmbeddingModel/EmbedResponse"
@@ -69,8 +70,8 @@ export class EmbedResponse extends Schema.Class<EmbedResponse>(
 /**
  * Response for multiple embeddings.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class EmbedManyResponse extends Schema.Class<EmbedManyResponse>(
   "effect/ai/EmbeddingModel/EmbedManyResponse"
@@ -82,8 +83,8 @@ export class EmbedManyResponse extends Schema.Class<EmbedManyResponse>(
 /**
  * Provider input options for embedding requests.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ProviderOptions {
   readonly inputs: ReadonlyArray<string>
@@ -92,8 +93,8 @@ export interface ProviderOptions {
 /**
  * Provider response for batch embedding requests.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ProviderResponse {
   readonly results: Array<Array<number>>
@@ -105,8 +106,8 @@ export interface ProviderResponse {
 /**
  * Tagged request used by request resolvers for embedding operations.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export class EmbeddingRequest extends Request.TaggedClass("EmbeddingRequest")<
   { readonly input: string },
@@ -117,8 +118,8 @@ export class EmbeddingRequest extends Request.TaggedClass("EmbeddingRequest")<
 /**
  * Service interface for embedding operations.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface Service {
   readonly resolver: RequestResolver.RequestResolver<EmbeddingRequest>
@@ -136,8 +137,8 @@ const invalidProviderResponse = (description: string): AiError.AiError =>
 /**
  * Creates an EmbeddingModel service from a provider embedMany implementation.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make: (params: {
   readonly embedMany: (options: ProviderOptions) => Effect.Effect<ProviderResponse, AiError.AiError>

@@ -29,7 +29,7 @@ describe("HttpServerResponse", () => {
     Effect.gen(function*() {
       const clientResponse = HttpServerResponse.toClientResponse(
         HttpServerResponse.stream(
-          Stream.fromEffect(References.CurrentConcurrency.asEffect()).pipe(
+          Stream.fromEffect(References.CurrentConcurrency).pipe(
             Stream.map(String),
             Stream.encodeText
           )

@@ -1,5 +1,21 @@
 /**
- * @since 1.0.0
+ * Browser clipboard service for Effect programs.
+ *
+ * This module wraps the browser `navigator.clipboard` API in a `Clipboard`
+ * service so client-side applications can read, write, and clear clipboard
+ * contents as typed Effects. It is useful for common UI workflows such as copy
+ * buttons, paste/import actions, sharing generated text, and moving rich
+ * clipboard payloads like `Blob`-backed `ClipboardItem`s through an Effect
+ * environment.
+ *
+ * Browser clipboard rules still apply. Clipboard access generally requires a
+ * secure context, and browsers may require a user gesture, permission prompt, or
+ * active focused document before reads or writes are allowed. Support also
+ * varies by operation and payload type: text helpers are the most portable,
+ * while `ClipboardItem` and non-text MIME types may be unavailable or restricted
+ * in some browsers. Failed browser operations are surfaced as `ClipboardError`.
+ *
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
@@ -10,8 +26,10 @@ const TypeId = "~@effect/platform-browser/Clipboard"
 const ErrorTypeId = "~@effect/platform-browser/Clipboard/ClipboardError"
 
 /**
- * @since 1.0.0
- * @category Models
+ * Service interface for reading from, writing to, and clearing the browser clipboard.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface Clipboard {
   readonly [TypeId]: typeof TypeId
@@ -24,8 +42,10 @@ export interface Clipboard {
 }
 
 /**
- * @since 1.0.0
- * @category Errors
+ * Tagged error raised when a browser clipboard operation fails.
+ *
+ * @category errors
+ * @since 4.0.0
  */
 export class ClipboardError extends Data.TaggedError("ClipboardError")<{
   readonly message: string
@@ -35,14 +55,18 @@ export class ClipboardError extends Data.TaggedError("ClipboardError")<{
 }
 
 /**
- * @since 1.0.0
- * @category Service
+ * Service tag for the browser `Clipboard` service.
+ *
+ * @category services
+ * @since 4.0.0
  */
 export const Clipboard: Context.Service<Clipboard, Clipboard> = Context.Service<Clipboard>(TypeId)
 
 /**
- * @since 1.0.0
- * @category Constructors
+ * Builds a `Clipboard` service from primitive read and write operations, deriving `clear` and `writeBlob` helpers.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = (
   impl: Omit<Clipboard, "clear" | "writeBlob" | typeof TypeId>
@@ -57,8 +81,8 @@ export const make = (
 /**
  * A layer that directly interfaces with the navigator.clipboard api
  *
- * @since 1.0.0
- * @category Layers
+ * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<Clipboard> = Layer.succeed(
   Clipboard,

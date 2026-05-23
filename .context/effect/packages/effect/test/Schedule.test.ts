@@ -98,7 +98,7 @@ describe("Schedule", () => {
         ])
       }))
 
-    it.effect("should recur on interval matching cron expression (second granularity))", () =>
+    it.effect("should recur on interval matching cron expression (second granularity)", () =>
       Effect.gen(function*() {
         const now = new Date(2024, 0, 1, 0, 0, 0).getTime()
         // At every third minute

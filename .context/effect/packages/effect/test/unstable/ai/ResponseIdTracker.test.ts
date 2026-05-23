@@ -55,7 +55,7 @@ describe("ResponseIdTracker", () => {
       assert.isTrue(Option.isNone(prepared))
     }))
 
-  it.effect("returns Some after marking parts", () =>
+  it.effect("prepares only the new user message after a tracked first turn", () =>
     Effect.gen(function*() {
       const tracker = yield* ResponseIdTracker.make
       const msg1 = userMessage("msg1")
@@ -68,7 +68,7 @@ describe("ResponseIdTracker", () => {
       assertPreparedSome(prepared, "resp_123", Prompt.fromMessages([msg2]))
     }))
 
-  it.effect("supports clear followed by new marks", () =>
+  it.effect("shares tracker state through its Context service layer", () =>
     Effect.gen(function*() {
       const tracker = yield* ResponseIdTracker.make
       const msg1 = userMessage("msg1")
@@ -313,7 +313,7 @@ describe("ResponseIdTracker", () => {
       assert.isTrue(Option.isNone(prepared))
     }))
 
-  it.effect("recovers after divergence once new prefix is re-marked", () =>
+  it.effect("clears stale state after divergence and recovers when the new prefix is re-marked", () =>
     Effect.gen(function*() {
       const tracker = yield* ResponseIdTracker.make
       const sys = systemMessage("sys")

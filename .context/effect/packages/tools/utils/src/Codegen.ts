@@ -1,3 +1,15 @@
+/**
+ * Barrel file discovery and export generation for Effect development tools.
+ *
+ * This module provides the `BarrelGenerator` service used by the codegen CLI to
+ * find files annotated with `@barrel` comments and rewrite the generated export
+ * section beneath each annotation. The generator resolves matching modules
+ * relative to each annotated barrel file, preserves the discovered modules'
+ * leading JSDoc blocks in the generated output, and normalizes export paths so
+ * the produced TypeScript is stable across platforms.
+ *
+ * @since 4.0.0
+ */
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
@@ -42,8 +54,10 @@ const parseAnnotation = (line: string): string | undefined => {
 }
 
 /**
- * @since 1.0.0
+ * Metadata for a barrel file discovered from a `@barrel` annotation, including the file path, glob pattern, and insertion offset for generated exports.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface BarrelFile {
   readonly path: string
@@ -52,8 +66,10 @@ export interface BarrelFile {
 }
 
 /**
- * @since 1.0.0
+ * Service interface for discovering annotated barrel files and regenerating their export contents.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface BarrelGenerator {
   readonly discoverFiles: (
@@ -64,16 +80,20 @@ export interface BarrelGenerator {
 }
 
 /**
- * @since 1.0.0
+ * Context service tag for barrel file generation.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const BarrelGenerator: Context.Service<BarrelGenerator, BarrelGenerator> = Context.Service(
   "@effect/utils/BarrelGenerator"
 )
 
 /**
- * @since 1.0.0
+ * Builds the `BarrelGenerator` service, discovering files with `@barrel` annotations and rewriting their generated export sections from matching modules.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<BarrelGenerator, never, FileSystem.FileSystem | Path.Path | Glob.Glob> = Effect.gen(
   function*() {

@@ -1,6 +1,6 @@
 {
   "name": "@effect/sql-clickhouse",
-  "version": "4.0.0-beta.52",
+  "version": "4.0.0-beta.70",
   "type": "module",
   "license": "MIT",
   "description": "A Clickhouse toolkit for Effect",
@@ -67,6 +67,6 @@
     "effect": "workspace:^"
   },
   "dependencies": {
-    "@clickhouse/client": "^1.18.2"
+    "@clickhouse/client": "^1.18.4"
   }
 }

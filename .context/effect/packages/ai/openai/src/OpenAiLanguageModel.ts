@@ -4,7 +4,7 @@
  * Provides a LanguageModel implementation for OpenAI's responses API,
  * supporting text generation, structured output, tool calling, and streaming.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as DateTime from "effect/DateTime"
@@ -41,8 +41,10 @@ const ResponseModelIds = Generated.ModelIdsResponses.members[1]
 const SharedModelIds = Generated.ModelIdsShared.members[1]
 
 /**
- * @since 1.0.0
+ * OpenAI model identifiers supported by the Responses API language model.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Model = typeof ResponseModelIds.Encoded | typeof SharedModelIds.Encoded
 
@@ -58,8 +60,8 @@ type ImageDetail = "auto" | "low" | "high"
 /**
  * Service definition for OpenAI language model configuration.
  *
- * @since 1.0.0
  * @category services
+ * @since 4.0.0
  */
 export class Config extends Context.Service<
   Config,
@@ -67,7 +69,7 @@ export class Config extends Context.Service<
     & Partial<
       Omit<
         typeof OpenAiSchema.CreateResponse.Encoded,
-        "input" | "tools" | "tool_choice" | "stream" | "text" | "reasoning"
+        "input" | "tools" | "tool_choice" | "stream" | "text"
       >
     >
     & {
@@ -108,7 +110,16 @@ export class Config extends Context.Service<
 // =============================================================================
 
 declare module "effect/unstable/ai/Prompt" {
+  /**
+   * OpenAI-specific options for file prompt parts.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface FilePartOptions extends ProviderOptions {
+    /**
+     * Provider-specific file options for the OpenAI Responses API.
+     */
     readonly openai?: {
       /**
        * The detail level of the image to be sent to the model. One of `high`, `low`, or `auto`. Defaults to `auto`.
@@ -117,7 +128,16 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenAI-specific options for reasoning prompt parts.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ReasoningPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific reasoning options for the OpenAI Responses API.
+     */
     readonly openai?: {
       /**
        * The ID of the item to reference.
@@ -132,7 +152,16 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenAI-specific options for assistant tool-call prompt parts.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ToolCallPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific tool-call options for the OpenAI Responses API.
+     */
     readonly openai?: {
       /**
        * The ID of the item to reference.
@@ -149,7 +178,16 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenAI-specific options for tool-result prompt parts.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface ToolResultPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific tool-result options for the OpenAI Responses API.
+     */
     readonly openai?: {
       /**
        * The ID of the item to reference.
@@ -166,7 +204,16 @@ declare module "effect/unstable/ai/Prompt" {
     } | null
   }
 
+  /**
+   * OpenAI-specific options for text prompt parts.
+   *
+   * @category request
+   * @since 4.0.0
+   */
   export interface TextPartOptions extends ProviderOptions {
+    /**
+     * Provider-specific text options for the OpenAI Responses API.
+     */
     readonly openai?: {
       /**
        * The ID of the item to reference.
@@ -185,8 +232,20 @@ declare module "effect/unstable/ai/Prompt" {
 }
 
 declare module "effect/unstable/ai/Response" {
+  /**
+   * OpenAI metadata attached to a complete text response part.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface TextPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the text part.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the text part.
+       */
       readonly itemId?: string | null
       /**
        * If the model emits a refusal content part, the refusal explanation
@@ -205,55 +264,163 @@ declare module "effect/unstable/ai/Response" {
     }
   }
 
+  /**
+   * OpenAI metadata emitted when a streamed text part starts.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface TextStartPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed text start.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the streamed text part.
+       */
       readonly itemId?: string | null
     } | null
   }
 
+  /**
+   * OpenAI metadata emitted when a streamed text part ends.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface TextEndPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed text end.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the streamed text part.
+       */
       readonly itemId?: string | null
+      /**
+       * The annotations collected for the completed streamed text part.
+       */
       readonly annotations?: ReadonlyArray<typeof OpenAiSchema.Annotation.Encoded> | null
     } | null
   }
 
+  /**
+   * OpenAI metadata attached to a complete reasoning response part.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the reasoning part.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the reasoning part.
+       */
       readonly itemId?: string | null
+      /**
+       * Encrypted reasoning content that can be sent back in later requests.
+       */
       readonly encryptedContent?: string | null
     } | null
   }
 
+  /**
+   * OpenAI metadata emitted when a streamed reasoning part starts.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningStartPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed reasoning start.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the reasoning part.
+       */
       readonly itemId?: string | null
+      /**
+       * Encrypted reasoning content that can be sent back in later requests.
+       */
       readonly encryptedContent?: string | null
     } | null
   }
 
+  /**
+   * OpenAI metadata emitted for a streamed reasoning delta.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningDeltaPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed reasoning delta.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the reasoning part.
+       */
       readonly itemId?: string | null
     } | null
   }
 
+  /**
+   * OpenAI metadata emitted when a streamed reasoning part ends.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ReasoningEndPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the streamed reasoning end.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the reasoning part.
+       */
       readonly itemId?: string | null
+      /**
+       * Encrypted reasoning content that can be sent back in later requests.
+       */
       readonly encryptedContent?: string
     } | null
   }
 
+  /**
+   * OpenAI metadata attached to tool-call response parts.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface ToolCallPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned for the tool call.
+     */
     readonly openai?: {
+      /**
+       * The OpenAI item ID associated with the tool call.
+       */
       readonly itemId?: string | null
     } | null
   }
 
+  /**
+   * OpenAI metadata attached to document source citations.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface DocumentSourcePartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific citation metadata for the OpenAI Responses API.
+     */
     readonly openai?:
       | {
+        /**
+         * Identifies a citation to an uploaded file.
+         */
         readonly type: "file_citation"
         /**
          * The index of the file in the list of files.
@@ -265,6 +432,9 @@ declare module "effect/unstable/ai/Response" {
         readonly fileId: string
       }
       | {
+        /**
+         * Identifies a citation to a generated file path.
+         */
         readonly type: "file_path"
         /**
          * The index of the file in the list of files.
@@ -276,6 +446,9 @@ declare module "effect/unstable/ai/Response" {
         readonly fileId: string
       }
       | {
+        /**
+         * Identifies a citation to a file inside a container.
+         */
         readonly type: "container_file_citation"
         /**
          * The ID of the file.
@@ -289,8 +462,20 @@ declare module "effect/unstable/ai/Response" {
       | null
   }
 
+  /**
+   * OpenAI metadata attached to URL source citations.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface UrlSourcePartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific URL citation metadata for the OpenAI Responses API.
+     */
     readonly openai?: {
+      /**
+       * Identifies a citation to a URL.
+       */
       readonly type: "url_citation"
       /**
        * The index of the first character of the URL citation in the message.
@@ -303,8 +488,20 @@ declare module "effect/unstable/ai/Response" {
     } | null
   }
 
+  /**
+   * OpenAI metadata attached to finish response parts.
+   *
+   * @category response
+   * @since 4.0.0
+   */
   export interface FinishPartMetadata extends ProviderMetadata {
+    /**
+     * Provider-specific metadata returned when generation finishes.
+     */
     readonly openai?: {
+      /**
+       * The service tier reported by OpenAI for the response.
+       */
       readonly serviceTier?: "default" | "auto" | "flex" | "scale" | "priority" | null
     } | null
   }
@@ -315,8 +512,10 @@ declare module "effect/unstable/ai/Response" {
 // =============================================================================
 
 /**
- * @since 1.0.0
+ * Creates an OpenAI language model that can be used with `AiModel.provide`.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const model = (
   model: (string & {}) | Model,
@@ -326,7 +525,7 @@ export const model = (
 
 // TODO
 // /**
-//  * @since 1.0.0
+//  * @since 4.0.0
 //  * @category constructors
 //  */
 // export const modelWithTokenizer = (
@@ -338,8 +537,8 @@ export const model = (
 /**
  * Creates an OpenAI language model service.
  *
- * @since 1.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make = Effect.fnUntraced(function*({ model, config: providerConfig }: {
   readonly model: (string & {}) | Model
@@ -376,8 +575,9 @@ export const make = Effect.fnUntraced(function*({ model, config: providerConfig 
         config,
         options
       })
+      const { fileIdPrefixes: _fip, strictJsonSchema: _sjs, ...apiConfig } = config
       const request: Mutable<typeof OpenAiSchema.CreateResponse.Encoded> = {
-        ...config,
+        ...apiConfig,
         input: messages,
         include: include.size > 0 ? Array.from(include) : undefined,
         text: {
@@ -440,8 +640,8 @@ export const make = Effect.fnUntraced(function*({ model, config: providerConfig 
 /**
  * Creates a layer for the OpenAI language model.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer = (options: {
   readonly model: (string & {}) | Model
@@ -452,8 +652,8 @@ export const layer = (options: {
 /**
  * Provides config overrides for OpenAI language model operations.
  *
- * @since 1.0.0
  * @category configuration
+ * @since 4.0.0
  */
 export const withConfigOverride: {
   (overrides: typeof Config.Service): <A, E, R>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, Exclude<R, Config>>
@@ -1136,13 +1336,17 @@ const makeResponse = Effect.fnUntraced(
             ? (approvalRequests.get(part.approval_request_id) ?? part.id)
             : part.id
 
-          const toolName = `mcp.${part.name}`
+          const { toolName, params } = yield* normalizeMcpToolCall({
+            toolNameMapper,
+            toolParams: part.arguments,
+            method: "makeResponse"
+          })
 
           parts.push({
             type: "tool-call",
             id: toolId,
             name: toolName,
-            params: part.arguments,
+            params,
             providerExecuted: true
           })
 
@@ -1153,7 +1357,7 @@ const makeResponse = Effect.fnUntraced(
             isFailure: false,
             providerExecuted: true,
             result: {
-              type: "call",
+              type: "mcp_call",
               name: part.name,
               arguments: part.arguments,
               server_label: part.server_label,
@@ -1174,25 +1378,11 @@ const makeResponse = Effect.fnUntraced(
         case "mcp_approval_request": {
           const approvalRequestId = (part as any).approval_request_id ?? part.id
           const toolId = yield* idGenerator.generateId()
-          const toolName = `mcp.${part.name}`
 
-          const params = yield* Effect.try({
-            try: () =>
-              Tool.unsafeSecureJsonParse(
-                typeof part.arguments === "string"
-                  ? part.arguments
-                  : JSON.stringify(part.arguments)
-              ),
-            catch: (cause) =>
-              AiError.make({
-                module: "OpenAiLanguageModel",
-                method: "makeResponse",
-                reason: new AiError.ToolParameterValidationError({
-                  toolName,
-                  toolParams: {},
-                  description: `Failed securely JSON parse tool parameters: ${cause}`
-                })
-              })
+          const { toolName, params } = yield* normalizeMcpToolCall({
+            toolNameMapper,
+            toolParams: part.arguments,
+            method: "makeResponse"
           })
 
           parts.push({
@@ -1881,13 +2071,17 @@ const makeStreamResponse = Effect.fnUntraced(
                     event.item.id)
                   : event.item.id
 
-                const toolName = `mcp.${event.item.name}`
+                const { toolName, params } = yield* normalizeMcpToolCall({
+                  toolNameMapper,
+                  toolParams: event.item.arguments,
+                  method: "makeStreamResponse"
+                })
 
                 parts.push({
                   type: "tool-call",
                   id: toolId,
                   name: toolName,
-                  params: event.item.arguments,
+                  params,
                   providerExecuted: true
                 })
 
@@ -1898,7 +2092,7 @@ const makeStreamResponse = Effect.fnUntraced(
                   isFailure: false,
                   providerExecuted: true,
                   result: {
-                    type: "call",
+                    type: "mcp_call",
                     name: event.item.name,
                     arguments: event.item.arguments,
                     server_label: event.item.server_label,
@@ -1920,12 +2114,16 @@ const makeStreamResponse = Effect.fnUntraced(
                 const toolId = yield* idGenerator.generateId()
                 const approvalRequestId = (event.item as any).approval_request_id ?? event.item.id
                 streamApprovalRequests.set(approvalRequestId, toolId)
-                const toolName = `mcp.${event.item.name}`
+                const { toolName, params } = yield* normalizeMcpToolCall({
+                  toolNameMapper,
+                  toolParams: event.item.arguments,
+                  method: "makeStreamResponse"
+                })
                 parts.push({
                   type: "tool-call",
                   id: toolId,
                   name: toolName,
-                  params: event.item.arguments,
+                  params,
                   providerExecuted: true
                 })
                 parts.push({
@@ -2729,6 +2927,41 @@ const getApprovalRequestIdMapping = (prompt: Prompt.Prompt): ReadonlyMap<string,
 
   return mapping
 }
+
+const normalizeMcpToolCall = Effect.fnUntraced(function*<Tools extends ReadonlyArray<Tool.Any>>({
+  toolNameMapper,
+  toolParams,
+  method
+}: {
+  readonly toolNameMapper: Tool.NameMapper<Tools>
+  readonly toolParams: unknown
+  readonly method: string
+}): Effect.fn.Return<{
+  readonly toolName: string
+  readonly params: unknown
+}, AiError.AiError> {
+  const toolName = toolNameMapper.getCustomName("mcp")
+
+  if (typeof toolParams !== "string") {
+    return { toolName, params: toolParams }
+  }
+
+  const params = yield* Effect.try({
+    try: () => Tool.unsafeSecureJsonParse(toolParams),
+    catch: (cause) =>
+      AiError.make({
+        module: "OpenAiLanguageModel",
+        method,
+        reason: new AiError.ToolParameterValidationError({
+          toolName,
+          toolParams,
+          description: `Failed to securely JSON parse tool parameters: ${cause}`
+        })
+      })
+  })
+
+  return { toolName, params }
+})
 
 const getUsage = (usage: OpenAiSchema.ResponseUsage | null | undefined): Response.Usage => {
   if (Predicate.isNullish(usage)) {

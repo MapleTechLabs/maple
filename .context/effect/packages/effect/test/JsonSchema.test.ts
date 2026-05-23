@@ -71,7 +71,7 @@ describe("JsonSchema", () => {
   })
 
   describe("fromSchemaDraft07", () => {
-    it("should convert a simple schema without definitions", () => {
+    it("normalizes a schema without definitions to the canonical document shape", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string"
       }
@@ -85,7 +85,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should extract root definitions and rewrite references", () => {
+    it("extracts root definitions and rewrites Draft-07 refs to $defs refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -124,7 +124,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should convert items array to prefixItems", () => {
+    it("converts Draft-07 tuple items to prefixItems", () => {
       const input: JsonSchema.JsonSchema = {
         type: "array",
         items: [
@@ -148,7 +148,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should convert single items to items", () => {
+    it("preserves a single items schema as items", () => {
       const input: JsonSchema.JsonSchema = {
         type: "array",
         items: { type: "string" }
@@ -336,7 +336,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should not rewrite nested definitions", () => {
+    it("preserves nested definitions and local JSON Pointer refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -370,7 +370,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should remove non-standard properties", () => {
+    it("drops non-standard properties in Draft-07 input", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string",
         "x-custom": "value"
@@ -387,7 +387,7 @@ describe("JsonSchema", () => {
   })
 
   describe("fromSchemaDraft2020_12", () => {
-    it("should convert a simple schema without definitions", () => {
+    it("normalizes a schema without $defs to the canonical document shape", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string"
       }
@@ -401,7 +401,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should extract root definitions", () => {
+    it("extracts root $defs without rewriting Draft-2020-12 refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -440,7 +440,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should not rewrite nested definitions", () => {
+    it("preserves nested definitions and local JSON Pointer refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -474,7 +474,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should keep non-standard properties", () => {
+    it("keeps non-standard properties for Draft-2020-12 input", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string",
         "x-custom": "value"
@@ -492,7 +492,7 @@ describe("JsonSchema", () => {
   })
 
   describe("fromSchemaOpenApi3_1", () => {
-    it("should rewrite all component schema references", () => {
+    it("rewrites OpenAPI component schema refs to $defs refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -514,7 +514,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should extract $defs", () => {
+    it("extracts root $defs after rewriting OpenAPI component refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -547,7 +547,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should not rewrite nested definitions", () => {
+    it("preserves nested definitions and local JSON Pointer refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -581,7 +581,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should keep non-standard properties", () => {
+    it("keeps non-standard properties for OpenAPI 3.1 input", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string",
         "x-custom": "value"
@@ -611,7 +611,7 @@ describe("JsonSchema", () => {
       })
     }
 
-    it("should rewrite all component schema references", () => {
+    it("rewrites OpenAPI 3.0 component schema refs to $defs refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -633,7 +633,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should extract definitions", () => {
+    it("extracts root definitions after rewriting OpenAPI component refs", () => {
       const input: JsonSchema.JsonSchema = {
         type: "object",
         properties: {
@@ -666,7 +666,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should normalize OpenAPI 3.0 schema example to draft examples array", () => {
+    it("normalizes singular OpenAPI 3.0 example to a draft examples array", () => {
       const input: JsonSchema.JsonSchema = {
         type: "string",
         example: "a"
@@ -683,7 +683,7 @@ describe("JsonSchema", () => {
     })
 
     describe("nullable", () => {
-      it("nullable: true", () => {
+      it("expands nullable schema without other keywords to anyOf", () => {
         assertFromSchemaOpenApi3_0(
           { nullable: true },
           {
@@ -697,7 +697,7 @@ describe("JsonSchema", () => {
         )
       })
 
-      it("should handle nullable with type: string", () => {
+      it("adds null to a string type", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           nullable: true
@@ -712,7 +712,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with type: array", () => {
+      it("adds null to a type array", () => {
         const input: JsonSchema.JsonSchema = {
           type: ["string", "number"],
           nullable: true
@@ -727,7 +727,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with type and const !== null", () => {
+      it("keeps a non-null const while adding null to the type", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           const: "a",
@@ -744,7 +744,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable without type and const !== null", () => {
+      it("wraps a non-null const in anyOf when type is absent", () => {
         const input: JsonSchema.JsonSchema = {
           const: "a",
           nullable: true
@@ -762,7 +762,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with const === null", () => {
+      it("keeps a null const without adding anyOf", () => {
         const input: JsonSchema.JsonSchema = {
           const: null,
           nullable: true
@@ -777,7 +777,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with enum", () => {
+      it("adds null to enum values and type", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           enum: ["a", "b"],
@@ -794,7 +794,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with enum that already includes null", () => {
+      it("does not duplicate null in enum values", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           enum: ["a", "b", null],
@@ -811,7 +811,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with enum that only includes null", () => {
+      it("preserves enum when null is the only enum value", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           enum: [null],
@@ -828,7 +828,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable without type using anyOf", () => {
+      it("uses anyOf for nullable schemas without type", () => {
         const input: JsonSchema.JsonSchema = {
           nullable: true,
           minimum: 0
@@ -850,7 +850,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should remove nullable: false", () => {
+      it("drops nullable: false", () => {
         const input: JsonSchema.JsonSchema = {
           type: "string",
           nullable: false
@@ -865,7 +865,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle nullable with allOf", () => {
+      it("normalizes nullable inside allOf independently from the parent", () => {
         assertFromSchemaOpenApi3_0(
           {
             type: "string",
@@ -905,7 +905,7 @@ describe("JsonSchema", () => {
     })
 
     describe("exclusivity", () => {
-      it("should convert boolean exclusiveMinimum to number", () => {
+      it("turns exclusiveMinimum: true into exclusiveMinimum: minimum", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           minimum: 10,
@@ -922,7 +922,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should convert boolean exclusiveMaximum to number", () => {
+      it("turns exclusiveMaximum: true into exclusiveMaximum: maximum", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           maximum: 100,
@@ -939,7 +939,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should remove exclusiveMinimum: false", () => {
+      it("drops exclusiveMinimum: false", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           minimum: 10,
@@ -956,7 +956,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should remove exclusiveMaximum: false", () => {
+      it("drops exclusiveMaximum: false", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           maximum: 100,
@@ -973,7 +973,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle exclusiveMinimum without minimum", () => {
+      it("drops exclusiveMinimum: true when minimum is absent", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           exclusiveMinimum: true
@@ -988,7 +988,7 @@ describe("JsonSchema", () => {
         })
       })
 
-      it("should handle exclusiveMaximum without maximum", () => {
+      it("drops exclusiveMaximum: true when maximum is absent", () => {
         const input: JsonSchema.JsonSchema = {
           type: "number",
           exclusiveMaximum: true
@@ -1006,7 +1006,7 @@ describe("JsonSchema", () => {
   })
 
   describe("toDocumentDraft07", () => {
-    it("should rewrite $defs references to definitions", () => {
+    it("rewrites $defs refs to Draft-07 definitions refs", () => {
       const input: JsonSchema.Document<"draft-2020-12"> = {
         dialect: "draft-2020-12",
         schema: {
@@ -1048,7 +1048,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should convert prefixItems to items array", () => {
+    it("converts prefixItems to a Draft-07 items tuple", () => {
       const input: JsonSchema.Document<"draft-2020-12"> = {
         dialect: "draft-2020-12",
         schema: {
@@ -1076,7 +1076,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should convert single items to items", () => {
+    it("preserves a single items schema as items", () => {
       const input: JsonSchema.Document<"draft-2020-12"> = {
         dialect: "draft-2020-12",
         schema: {
@@ -1096,7 +1096,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should remove non-standard properties", () => {
+    it("drops non-standard properties in Draft-07 output", () => {
       const input: JsonSchema.Document<"draft-2020-12"> = {
         dialect: "draft-2020-12",
         schema: {
@@ -1163,7 +1163,7 @@ describe("JsonSchema", () => {
       })
     })
 
-    it("should sanitize component schema keys", () => {
+    it("sanitizes component schema keys and rewritten refs together", () => {
       const input: JsonSchema.MultiDocument<"draft-2020-12"> = {
         dialect: "draft-2020-12",
         schemas: [
@@ -1199,7 +1199,7 @@ describe("JsonSchema", () => {
   })
 
   describe("roundtrip conversions", () => {
-    it("should roundtrip draft-07 -> draft-2020-12 -> draft-07", () => {
+    it("preserves a Draft-07 schema and definitions through canonical form", () => {
       const original: JsonSchema.JsonSchema = {
         type: "object",
         properties: {

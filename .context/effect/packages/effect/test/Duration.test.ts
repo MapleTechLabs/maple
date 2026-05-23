@@ -38,6 +38,8 @@ describe("Duration", () => {
 
     deepStrictEqual(Duration.fromInputUnsafe("1.5 seconds"), Duration.seconds(1.5))
     deepStrictEqual(Duration.fromInputUnsafe("-1.5 seconds"), Duration.seconds(-1.5))
+    deepStrictEqual(Duration.fromInputUnsafe("Infinity"), Duration.infinity)
+    deepStrictEqual(Duration.fromInputUnsafe("-Infinity"), Duration.negativeInfinity)
 
     deepStrictEqual(Duration.fromInputUnsafe([500, 123456789]), Duration.nanos(500123456789n))
     deepStrictEqual(Duration.fromInputUnsafe([-500, 123456789]), Duration.nanos(-500000000000n + 123456789n))
@@ -105,6 +107,8 @@ describe("Duration", () => {
 
     assertSome(Duration.fromInput("1.5 seconds"), Duration.seconds(1.5))
     assertSome(Duration.fromInput("-1.5 seconds"), Duration.seconds(-1.5))
+    assertSome(Duration.fromInput("Infinity"), Duration.infinity)
+    assertSome(Duration.fromInput("-Infinity"), Duration.negativeInfinity)
 
     assertSome(Duration.fromInput([500, 123456789]), Duration.nanos(500123456789n))
     assertSome(Duration.fromInput([-500, 123456789]), Duration.nanos(-500000000000n + 123456789n))

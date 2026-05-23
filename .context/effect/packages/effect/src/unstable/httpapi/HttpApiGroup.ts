@@ -1,4 +1,28 @@
 /**
+ * The `HttpApiGroup` module defines named collections of `HttpApiEndpoint`s
+ * within an `HttpApi`.
+ *
+ * Groups are the main way to organize endpoints by a domain boundary, resource,
+ * or feature area before those endpoints are added to an API and implemented
+ * with `HttpApiBuilder.group`. A group carries its identifier, endpoint set,
+ * annotations, and `topLevel` flag, which are later used by builders, clients,
+ * URL builders, and OpenAPI generation. Non-top-level groups expose nested
+ * client methods under the group name, while top-level groups expose their
+ * endpoint methods directly.
+ *
+ * Composition is order-sensitive. Adding an endpoint with the same name as an
+ * existing endpoint replaces it, and `prefix`, `middleware`,
+ * `annotateEndpoints`, and `annotateEndpointsMerge` only affect endpoints that
+ * are already present when those APIs are called. Group annotations apply to the
+ * group itself; use the endpoint annotation helpers when metadata should be
+ * attached to each endpoint.
+ *
+ * The type helpers in this module reflect the endpoint union for a group and
+ * aggregate the services required by endpoint schemas, middleware, and declared
+ * errors. Error schemas are still declared on endpoints, while middleware can
+ * contribute additional error schemas and client/server service requirements
+ * through the endpoint middleware set.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "../../Array.ts"
@@ -13,19 +37,24 @@ import type * as HttpApiMiddleware from "./HttpApiMiddleware.ts"
 const TypeId = "~effect/httpapi/HttpApiGroup"
 
 /**
- * @since 4.0.0
+ * Returns `true` when a value is an `HttpApiGroup`, narrowing the value to the
+ * group interface.
+ *
  * @category guards
+ * @since 4.0.0
  */
 export const isHttpApiGroup = (u: unknown): u is Any => Predicate.hasProperty(u, TypeId)
 
 /**
- * An `HttpApiGroup` is a collection of `HttpApiEndpoint`s. You can use an `HttpApiGroup` to
- * represent a portion of your domain.
+ * An `HttpApiGroup` is a named collection of `HttpApiEndpoint`s that represents
+ * a portion of your domain.
  *
- * The endpoints can be implemented later using the `HttpApiBuilder.group` api.
+ * **Details**
  *
- * @since 4.0.0
+ * Endpoint implementations can be provided later with `HttpApiBuilder.group`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface HttpApiGroup<
   out Id extends string,
@@ -56,9 +85,11 @@ export interface HttpApiGroup<
   ): HttpApiGroup<Id, HttpApiEndpoint.AddPrefix<Endpoints, Prefix>, TopLevel>
 
   /**
-   * Add an `HttpApiMiddleware` to the `HttpApiGroup`.
+   * Adds an `HttpApiMiddleware` to every endpoint currently in the group.
    *
-   * Endpoints added after this api is called **will not** have the middleware
+   * **Gotchas**
+   *
+   * Endpoints added after this method is called do not have the middleware
    * applied.
    */
   middleware<I extends HttpApiMiddleware.AnyId, S>(middleware: Context.Key<I, S>): HttpApiGroup<
@@ -78,25 +109,30 @@ export interface HttpApiGroup<
   annotate<I, S>(key: Context.Key<I, S>, value: S): HttpApiGroup<Id, Endpoints, TopLevel>
 
   /**
-   * For each endpoint in an `HttpApiGroup`, update the annotations with a new
-   * Context.
+   * Merges the provided context into every endpoint currently in the group.
    *
-   * Note that this will only update the annotations before this api is called.
+   * **Gotchas**
+   *
+   * Endpoints added after this method is called do not have these annotations.
    */
   annotateEndpointsMerge<I>(annotations: Context.Context<I>): HttpApiGroup<Id, Endpoints, TopLevel>
 
   /**
-   * For each endpoint in an `HttpApiGroup`, add an annotation.
+   * Adds an annotation to every endpoint currently in the group.
    *
-   * Note that this will only add the annotation to the endpoints before this api
-   * is called.
+   * **Gotchas**
+   *
+   * Endpoints added after this method is called do not have this annotation.
    */
   annotateEndpoints<I, S>(key: Context.Key<I, S>, value: S): HttpApiGroup<Id, Endpoints, TopLevel>
 }
 
 /**
- * @since 4.0.0
+ * Type-level identity for a group within an HTTP API, pairing the API id with the
+ * group name for service derivation.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface ApiGroup<ApiId extends string, Name extends string> {
   readonly _: unique symbol
@@ -105,8 +141,11 @@ export interface ApiGroup<ApiId extends string, Name extends string> {
 }
 
 /**
- * @since 4.0.0
+ * A widened `HttpApiGroup` type used when the concrete group name, endpoints, and
+ * top-level flag are not needed.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Any {
   readonly [TypeId]: typeof TypeId
@@ -116,92 +155,124 @@ export interface Any {
 }
 
 /**
- * @since 4.0.0
+ * A widened group type that preserves concrete runtime properties such as
+ * identifier, key, top-level status, endpoints, and annotations.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AnyWithProps = HttpApiGroup<string, HttpApiEndpoint.AnyWithProps, boolean>
 
 /**
- * @since 4.0.0
+ * Derives the API-specific `ApiGroup` service identity for an HTTP API group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ToService<ApiId extends string, A> = A extends HttpApiGroup<infer Name, infer _Endpoints, infer _TopLevel> ?
   ApiGroup<ApiId, Name>
   : never
 
 /**
- * @since 4.0.0
+ * Selects the group with the specified identifier from a union of groups.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type WithName<Group, Name extends string> = Extract<Group, { readonly identifier: Name }>
 
 /**
- * @since 4.0.0
+ * Extracts the identifier literal from an `HttpApiGroup`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Name<Group> = Group extends HttpApiGroup<infer _Name, infer _Endpoints, infer _TopLevel> ? _Name
   : never
 
 /**
- * @since 4.0.0
+ * Extracts the endpoint union contained in an `HttpApiGroup`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Endpoints<Group> = Group extends HttpApiGroup<infer _Name, infer _Endpoints, infer _TopLevel> ? _Endpoints
   : never
 
 /**
- * @since 4.0.0
+ * Computes the services required to encode error responses for every endpoint in a
+ * group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ErrorServicesEncode<Group> = HttpApiEndpoint.ErrorServicesEncode<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Computes the services required to decode error responses for every endpoint in a
+ * group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ErrorServicesDecode<Group> = HttpApiEndpoint.ErrorServicesDecode<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Computes the middleware error union for every endpoint in a group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type MiddlewareError<Group> = HttpApiEndpoint.MiddlewareError<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Computes the services provided by middleware attached to any endpoint in a
+ * group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type MiddlewareProvides<Group> = HttpApiEndpoint.MiddlewareProvides<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Computes the client-side middleware services required by endpoints in a group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type MiddlewareClient<Group> = HttpApiEndpoint.MiddlewareClient<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Extracts the runtime services required by middleware attached to the endpoints in an `HttpApiGroup`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type MiddlewareServices<Group> = HttpApiEndpoint.MiddlewareServices<Endpoints<Group>>
 
 /**
- * @since 4.0.0
+ * Selects the endpoints in a group whose `name` matches the provided endpoint name.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type EndpointsWithName<Group extends Any, Name extends string> = Endpoints<WithName<Group, Name>>
 
 /**
- * @since 4.0.0
+ * Computes the schema encoding and decoding services required by clients for all endpoints in a group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ClientServices<Group> = Group extends HttpApiGroup<infer _Name, infer _Endpoints, infer _TopLevel> ?
   HttpApiEndpoint.ClientServices<_Endpoints>
   : never
 
 /**
- * @since 4.0.0
+ * Returns the type of a group after adding the supplied path prefix to each endpoint in the group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AddPrefix<Group, Prefix extends PathInput> = Group extends
   HttpApiGroup<infer _Name, infer _Endpoints, infer _TopLevel> ?
@@ -209,8 +280,10 @@ export type AddPrefix<Group, Prefix extends PathInput> = Group extends
   : never
 
 /**
- * @since 4.0.0
+ * Returns the type of a group after applying a middleware identifier to every endpoint in the group.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type AddMiddleware<Group, Id extends HttpApiMiddleware.AnyId> = Group extends
   HttpApiGroup<infer _Name, infer _Endpoints, infer _TopLevel> ?
@@ -301,13 +374,16 @@ const makeProto = <
 }
 
 /**
- * An `HttpApiGroup` is a collection of `HttpApiEndpoint`s. You can use an `HttpApiGroup` to
- * represent a portion of your domain.
+ * Creates an empty `HttpApiGroup` with the supplied identifier.
  *
- * The endpoints can be implemented later using the `HttpApiBuilder.group` api.
+ * **Details**
  *
- * @since 4.0.0
+ * Add endpoints with `add`, provide implementations with `HttpApiBuilder.group`,
+ * and set `topLevel` when the generated client should expose endpoint methods
+ * directly instead of nesting them under the group name.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = <const Id extends string, const TopLevel extends boolean = false>(identifier: Id, options?: {
   readonly topLevel?: TopLevel | undefined

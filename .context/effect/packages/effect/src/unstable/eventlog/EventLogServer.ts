@@ -1,4 +1,20 @@
 /**
+ * Server-side RPC handlers for accepting remote event-log writes and streaming
+ * changes back to authenticated clients.
+ *
+ * This module is the protocol glue used by concrete event-log servers: it
+ * performs the hello / authenticate challenge flow, attaches the authenticated
+ * `EventLog.Identity` to subsequent RPC requests, reassembles chunked writes,
+ * and chunks large change payloads before they are sent to clients. It is useful
+ * when exposing an event-log replica over HTTP-backed RPC, for example to sync
+ * browser, edge, or service replicas with a central journal.
+ *
+ * The authentication state is tied to the RPC client session annotations, so the
+ * transport must preserve a stable client session between `Hello`,
+ * `Authenticate`, writes, and change streams. Deployments should run the endpoint
+ * over TLS, avoid exposing unauthenticated write or changes routes, and persist
+ * session-auth key bindings with the same trust boundary as the event-log data.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "../../Array.ts"
@@ -29,8 +45,15 @@ import {
 import * as EventLogSessionAuth from "./EventLogSessionAuth.ts"
 
 /**
+ * Provides RPC authentication middleware that reads the authenticated
+ * `EventLog.Identity` from client annotations.
+ *
+ * **Details**
+ *
+ * Requests without an identity fail with a forbidden `EventLogProtocolError`.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerAuthMiddleware: Layer.Layer<
   EventLogAuthentication
@@ -48,8 +71,16 @@ export const layerAuthMiddleware: Layer.Layer<
 })
 
 /**
+ * Creates the shared RPC handlers for the event-log remote protocol.
+ *
+ * **Details**
+ *
+ * The layer manages hello challenges, verifies session authentication, reassembles
+ * chunked writes, delegates write and change handling to the supplied callbacks,
+ * and frames large change payloads into chunks.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerRpcHandlers = (options: {
   readonly remoteId: RemoteId
@@ -184,8 +215,11 @@ export const layerRpcHandlers = (options: {
   )
 
 /**
- * @since 4.0.0
+ * Client annotation storing partial `ChunkedMessage` data while chunked writes are
+ * being reassembled.
+ *
  * @category ChunkedMessage state
+ * @since 4.0.0
  */
 export class ChunkedMessageState extends Context.Reference<
   Map<number, {

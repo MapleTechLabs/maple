@@ -1,5 +1,23 @@
 /**
- * @since 1.0.0
+ * Shared Node-compatible implementation of Effect's `FileSystem` service.
+ *
+ * This module adapts Node's `node:fs`, `node:os`, and `node:path` APIs into a
+ * layer that can be provided to Effect programs running on Node-compatible
+ * runtimes. It is used by platform packages to provide file and directory I/O,
+ * permissions, links, metadata, temporary files and directories, and file
+ * watching through the `FileSystem` service.
+ *
+ * Paths are passed to Node filesystem APIs, so relative paths are resolved by
+ * the current working directory and platform path rules still apply. Node
+ * filesystem failures are translated into `PlatformError` values, while invalid
+ * arguments become `BadArgument` failures. Open files are scoped resources with
+ * tracked read and write positions; append mode lets the operating system choose
+ * the write offset. File watching is exposed as a stream and follows
+ * `node:fs.watch` semantics unless a `WatchBackend` is provided, so recursive
+ * support, event coalescing, and reported paths can vary by runtime and
+ * platform.
+ *
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -635,7 +653,10 @@ const makeFileSystem = Effect.map(Effect.serviceOption(FileSystem.WatchBackend),
   }))
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Provides the `FileSystem` service backed by Node filesystem APIs, including
+ * file operations, directory operations, links, metadata, and file watching.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<FileSystem.FileSystem> = Layer.effect(FileSystem.FileSystem)(makeFileSystem)

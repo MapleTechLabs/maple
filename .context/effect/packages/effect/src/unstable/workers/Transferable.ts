@@ -1,5 +1,21 @@
 /**
- * @since 1.0.0
+ * Utilities for marking the parts of worker messages that should be transferred
+ * through `postMessage` instead of copied by the structured clone algorithm.
+ *
+ * This module is used with worker message schemas to collect
+ * `globalThis.Transferable` values while encoding a message, so the worker
+ * platform can pass the collected list as the `postMessage` transfer list.
+ * Common cases include sending large `Uint8Array` payloads, `ImageData` pixel
+ * buffers, or `MessagePort` channels without paying for an extra copy.
+ *
+ * Transferable annotations do not make an otherwise unsupported value
+ * structured-cloneable; the encoded message still has to be valid for
+ * `postMessage`. Transferring also moves ownership to the receiver, so buffers
+ * are detached from the sender after the send completes. Be careful when a
+ * typed array view shares a backing buffer with other data, since collecting
+ * that buffer transfers ownership of the whole buffer.
+ *
+ * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
 import * as Effect from "../../Effect.ts"
@@ -8,8 +24,11 @@ import * as Schema from "../../Schema.ts"
 import * as Getter from "../../SchemaGetter.ts"
 
 /**
- * @since 1.0.0
+ * Service for collecting `Transferable` objects while encoding worker messages
+ * so they can be passed to `postMessage` transfer lists.
+ *
  * @category models
+ * @since 4.0.0
  */
 export class Collector extends Context.Service<Collector, {
   readonly addAll: (
@@ -23,8 +42,11 @@ export class Collector extends Context.Service<Collector, {
 }>()("effect/workers/Transferable/Collector") {}
 
 /**
- * @since 1.0.0
+ * Creates a mutable `Collector` service directly, exposing unsafe synchronous
+ * methods for reading, adding, and clearing collected transferables.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeCollectorUnsafe = (): Collector["Service"] => {
   let tranferables: Array<globalThis.Transferable> = []
@@ -48,14 +70,20 @@ export const makeCollectorUnsafe = (): Collector["Service"] => {
 }
 
 /**
- * @since 1.0.0
+ * Effect that creates a fresh `Collector` service for accumulating
+ * transferables.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeCollector: Effect.Effect<Collector["Service"]> = Effect.sync(makeCollectorUnsafe)
 
 /**
- * @since 1.0.0
+ * Adds transferables to the current `Collector` when one is present in the
+ * context, and does nothing otherwise.
+ *
  * @category accessors
+ * @since 4.0.0
  */
 export const addAll = (
   tranferables: Iterable<globalThis.Transferable>
@@ -68,8 +96,11 @@ export const addAll = (
   })
 
 /**
- * @since 1.0.0
+ * Creates a schema getter that records transferables derived from a value in
+ * the current `Collector` while passing the value through unchanged.
+ *
  * @category Getter
+ * @since 4.0.0
  */
 export const getterAddAll = <A>(
   f: (_: A) => Iterable<globalThis.Transferable>
@@ -84,8 +115,11 @@ export const getterAddAll = <A>(
   )
 
 /**
- * @since 1.0.0
- * @category schema
+ * Schema wrapper whose encode path can record transferables with a `Collector`
+ * while preserving the wrapped schema's decoded type.
+ *
+ * @category schemas
+ * @since 4.0.0
  */
 export interface Transferable<S extends Schema.Top> extends
   Schema.decodeTo<
@@ -95,8 +129,11 @@ export interface Transferable<S extends Schema.Top> extends
 {}
 
 /**
- * @since 1.0.0
- * @category schema
+ * Wraps a schema so encoding records transferables selected from the encoded
+ * value, enabling worker messages to populate a `postMessage` transfer list.
+ *
+ * @category schemas
+ * @since 4.0.0
  */
 export const schema: {
   <S extends Schema.Top>(
@@ -128,8 +165,11 @@ const passthroughLink = Schema.link()(Schema.Any, {
 })
 
 /**
- * @since 1.0.0
- * @category schema
+ * Transferable schema for `ImageData` values that records the underlying pixel
+ * data buffer.
+ *
+ * @category schemas
+ * @since 4.0.0
  */
 export const ImageData: Transferable<Schema.declare<ImageData>> = schema(
   Schema.Any as any as Schema.declare<globalThis.ImageData>,
@@ -137,8 +177,11 @@ export const ImageData: Transferable<Schema.declare<ImageData>> = schema(
 )
 
 /**
- * @since 1.0.0
- * @category schema
+ * Transferable schema for `MessagePort` values that records the port itself as
+ * transferable.
+ *
+ * @category schemas
+ * @since 4.0.0
  */
 export const MessagePort: Transferable<Schema.declare<MessagePort>> = schema(
   Schema.Any as any as Schema.declare<MessagePort>,
@@ -146,8 +189,11 @@ export const MessagePort: Transferable<Schema.declare<MessagePort>> = schema(
 )
 
 /**
- * @since 1.0.0
- * @category schema
+ * Transferable schema for `Uint8Array` values that records the array's backing
+ * buffer.
+ *
+ * @category schemas
+ * @since 4.0.0
  */
 export const Uint8Array: Transferable<Schema.instanceOf<globalThis.Uint8Array<ArrayBuffer>>> = schema(
   Schema.Uint8Array as any,

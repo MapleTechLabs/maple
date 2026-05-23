@@ -1,7 +1,7 @@
 /**
  * Provider discovery service for AI codegen.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
@@ -17,7 +17,8 @@ import * as Glob from "./Glob.ts"
 /**
  * A discovered AI provider with resolved paths.
  *
- * @example
+ * **Example** (Inspecting a discovered provider)
+ *
  * ```ts
  * import type * as Discovery from "@effect/ai-codegen/Discovery"
  *
@@ -27,8 +28,8 @@ import * as Glob from "./Glob.ts"
  * console.log(provider.specSource._tag) // "Url" | "File"
  * ```
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface DiscoveredProvider {
   readonly name: string
@@ -41,8 +42,8 @@ export interface DiscoveredProvider {
 /**
  * Service for discovering AI provider configurations.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ProviderDiscovery {
   readonly discover: () => Effect.Effect<
@@ -58,8 +59,10 @@ export interface ProviderDiscovery {
 }
 
 /**
- * @since 1.0.0
+ * Context service tag for discovering AI provider codegen configurations.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const ProviderDiscovery: Context.Service<ProviderDiscovery, ProviderDiscovery> = Context.Service(
   "@effect/ai-codegen/ProviderDiscovery"
@@ -68,7 +71,8 @@ export const ProviderDiscovery: Context.Service<ProviderDiscovery, ProviderDisco
 /**
  * Error during provider discovery.
  *
- * @example
+ * **Example** (Creating a discovery error)
+ *
  * ```ts
  * import * as Discovery from "@effect/ai-codegen/Discovery"
  *
@@ -78,8 +82,8 @@ export const ProviderDiscovery: Context.Service<ProviderDiscovery, ProviderDisco
  * })
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class DiscoveryError extends Data.TaggedError("DiscoveryError")<{
   readonly message: string
@@ -89,7 +93,8 @@ export class DiscoveryError extends Data.TaggedError("DiscoveryError")<{
 /**
  * Error when a specific provider is not found.
  *
- * @example
+ * **Example** (Creating a provider not found error)
+ *
  * ```ts
  * import * as Discovery from "@effect/ai-codegen/Discovery"
  *
@@ -99,8 +104,8 @@ export class DiscoveryError extends Data.TaggedError("DiscoveryError")<{
  * })
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class ProviderNotFoundError extends Data.TaggedError("ProviderNotFoundError")<{
   readonly provider: string
@@ -110,8 +115,8 @@ export class ProviderNotFoundError extends Data.TaggedError("ProviderNotFoundErr
 /**
  * Layer providing the ProviderDiscovery service.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<
   ProviderDiscovery,

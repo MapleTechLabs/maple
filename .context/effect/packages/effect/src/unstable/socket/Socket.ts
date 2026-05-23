@@ -1,4 +1,26 @@
 /**
+ * Effect-based socket abstractions for bidirectional connections that exchange
+ * text frames, binary frames, and close events.
+ *
+ * This module defines the `Socket` service, constructors for WebSocket-backed
+ * and transform-stream-backed sockets, typed socket errors, and adapters that
+ * expose a socket as a bidirectional `Channel`. It is intended for WebSocket
+ * clients, HTTP server upgrades, protocol clients and servers, and tests or
+ * adapters that need a scoped duplex transport inside Effect programs.
+ *
+ * Incoming data can be consumed as raw frames, binary bytes, or strings.
+ * `runRaw` preserves whether the transport delivered a string or `Uint8Array`,
+ * while `run` encodes string frames as UTF-8 bytes and `runString` decodes
+ * binary frames with `TextDecoder`. Use the raw or mapping APIs when preserving
+ * frame boundaries, binary payloads, or text encodings matters.
+ *
+ * Writers are scoped to an active run and are gated until the underlying
+ * connection is open; use `onOpen` when startup writes must wait for that
+ * point. Outgoing strings and bytes are sent as data frames, while `CloseEvent`
+ * values request a close. Close events are modeled as `SocketCloseError` by
+ * default, and `closeCodeIsError` controls which close codes should fail a run
+ * versus complete cleanly.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyReadonlyArray } from "../../Array.ts"
@@ -21,31 +43,46 @@ import * as Schema from "../../Schema.ts"
 import * as Scope from "../../Scope.ts"
 
 /**
+ * Runtime type identifier attached to `Socket` services.
+ *
+ * @category type IDs
  * @since 4.0.0
- * @category Type IDs
  */
 export const TypeId = "~effect/socket/Socket"
 
 /**
- * @since 4.0.0
+ * Returns `true` when a value is a `Socket`.
+ *
  * @category guards
+ * @since 4.0.0
  */
 export const isSocket = (u: unknown): u is Socket => Predicate.hasProperty(u, TypeId)
 
 /**
- * @since 4.0.0
+ * Context service tag for the current `Socket` implementation.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const Socket: Context.Service<Socket, Socket> = Context.Service<Socket>("effect/socket/Socket")
 
 /**
- * @since 4.0.0
+ * Effect-based socket abstraction for running string or binary read handlers
+ * and obtaining a scoped writer for outgoing frames and close events.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Socket {
   readonly [TypeId]: typeof TypeId
   readonly run: <_, E = never, R = never>(
     handler: (_: Uint8Array) => Effect.Effect<_, E, R> | void,
+    options?: {
+      readonly onOpen?: Effect.Effect<void> | undefined
+    }
+  ) => Effect.Effect<void, SocketError | E, R>
+  readonly runString: <_, E = never, R = never>(
+    handler: (_: string) => Effect.Effect<_, E, R> | void,
     options?: {
       readonly onOpen?: Effect.Effect<void> | undefined
     }
@@ -63,14 +100,76 @@ export interface Socket {
   >
 }
 
+/**
+ * Constructs a `Socket` from a raw read loop and scoped writer, deriving binary
+ * and string read loops when they are not provided.
+ *
+ * @category constructors
+ * @since 4.0.0
+ */
+export const make = (options: {
+  readonly runRaw: <_, E, R>(
+    handler: (_: string | Uint8Array) => Effect.Effect<_, E, R> | void,
+    options?: {
+      readonly onOpen?: Effect.Effect<void> | undefined
+    }
+  ) => Effect.Effect<void, SocketError | E, R>
+  readonly run?: <_, E, R>(
+    handler: (_: Uint8Array) => Effect.Effect<_, E, R> | void,
+    options?: {
+      readonly onOpen?: Effect.Effect<void> | undefined
+    }
+  ) => Effect.Effect<void, SocketError | E, R>
+  readonly runString?: <_, E, R>(
+    handler: (_: string) => Effect.Effect<_, E, R> | void,
+    options?: {
+      readonly onOpen?: Effect.Effect<void> | undefined
+    }
+  ) => Effect.Effect<void, SocketError | E, R>
+  readonly writer: Effect.Effect<
+    (chunk: Uint8Array | string | CloseEvent) => Effect.Effect<void, SocketError>,
+    never,
+    Scope.Scope
+  >
+}): Socket =>
+  Socket.of({
+    [TypeId]: TypeId,
+    runRaw: options.runRaw,
+    run: options.run ?? ((handler, opts) =>
+      options.runRaw((data) =>
+        typeof data === "string"
+          ? handler(encoder.encode(data))
+          : data instanceof Uint8Array
+          ? handler(data)
+          : handler(new Uint8Array(data)), opts)),
+    runString: options.runString ??
+      (options.run ?
+        (handler, opts) => options.run!((data) => handler(decoder.decode(data)), opts) :
+        (handler, opts) =>
+          options.runRaw((data) =>
+            typeof data === "string"
+              ? handler(data)
+              : data instanceof Uint8Array
+              ? handler(decoder.decode(data))
+              : handler(decoder.decode(new Uint8Array(data))), opts)),
+    writer: options.writer
+  })
+
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
+
 const CloseEventTypeId = "~effect/socket/Socket/CloseEvent"
 
 /**
- * @since 4.0.0
+ * Socket close event value carrying a close code and optional reason.
+ *
  * @category models
+ * @since 4.0.0
  */
 export class CloseEvent {
   /**
+   * Marks this value as a socket close event for runtime guards.
+   *
    * @since 4.0.0
    */
   readonly [CloseEventTypeId]: typeof CloseEventTypeId
@@ -83,6 +182,8 @@ export class CloseEvent {
     this.reason = reason
   }
   /**
+   * Formats the close code and optional reason for display.
+   *
    * @since 4.0.0
    */
   toString() {
@@ -91,60 +192,79 @@ export class CloseEvent {
 }
 
 /**
- * @since 4.0.0
+ * Returns `true` when a value is a `CloseEvent`.
+ *
  * @category refinements
+ * @since 4.0.0
  */
 export const isCloseEvent = (u: unknown): u is CloseEvent => Predicate.hasProperty(u, CloseEventTypeId)
 
 /**
+ * Type-level identifier used to mark `SocketError` values.
+ *
+ * @category type IDs
  * @since 4.0.0
- * @category type ids
  */
 export type SocketErrorTypeId = "~effect/socket/Socket/SocketError"
 
 /**
+ * Runtime type identifier attached to `SocketError` values.
+ *
+ * @category type IDs
  * @since 4.0.0
- * @category type ids
  */
 export const SocketErrorTypeId: SocketErrorTypeId = "~effect/socket/Socket/SocketError"
 
 /**
- * @since 4.0.0
+ * Returns `true` when a value is a `SocketError`.
+ *
  * @category refinements
+ * @since 4.0.0
  */
 export const isSocketError = (u: unknown): u is SocketError => Predicate.hasProperty(u, SocketErrorTypeId)
 
 /**
- * @since 4.0.0
+ * Typed error for failures that occur while reading from a socket.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class SocketReadError extends Schema.ErrorClass<SocketReadError>("effect/socket/Socket/SocketReadError")({
   _tag: Schema.tag("SocketReadError"),
   cause: Schema.Defect
 }) {
   /**
+   * Default message used for socket read failures.
+   *
    * @since 4.0.0
    */
   override readonly message = `An error occurred during Read`
 }
 
 /**
- * @since 4.0.0
+ * Typed error for failures that occur while writing to a socket.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class SocketWriteError extends Schema.ErrorClass<SocketWriteError>("effect/socket/Socket/SocketWriteError")({
   _tag: Schema.tag("SocketWriteError"),
   cause: Schema.Defect
 }) {
   /**
+   * Default message used for socket write failures.
+   *
    * @since 4.0.0
    */
   override readonly message = `An error occurred during Write`
 }
 
 /**
- * @since 4.0.0
+ * Typed error for failures that occur while opening a socket, including
+ * unknown open failures and open timeouts.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class SocketOpenError extends Schema.ErrorClass<SocketOpenError>("effect/socket/Socket/SocketOpenError")({
   _tag: Schema.tag("SocketOpenError"),
@@ -152,6 +272,8 @@ export class SocketOpenError extends Schema.ErrorClass<SocketOpenError>("effect/
   cause: Schema.Defect
 }) {
   /**
+   * Formats timeout and unknown open failures for display.
+   *
    * @since 4.0.0
    */
   override get message() {
@@ -162,8 +284,11 @@ export class SocketOpenError extends Schema.ErrorClass<SocketOpenError>("effect/
 }
 
 /**
- * @since 4.0.0
+ * Typed error for a socket close event, carrying the close code and optional
+ * close reason.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class SocketCloseError extends Schema.ErrorClass<SocketCloseError>("effect/socket/Socket/SocketCloseError")({
   _tag: Schema.tag("SocketCloseError"),
@@ -171,6 +296,8 @@ export class SocketCloseError extends Schema.ErrorClass<SocketCloseError>("effec
   closeReason: Schema.optional(Schema.String)
 }) {
   /**
+   * Separates clean socket close errors from errors that should remain failures.
+   *
    * @since 4.0.0
    */
   static filterClean(isClean: (code: number) => boolean): <E>(u: E) => Result.Result<SocketCloseError, E> {
@@ -190,8 +317,10 @@ export class SocketCloseError extends Schema.ErrorClass<SocketCloseError>("effec
 }
 
 /**
- * @since 4.0.0
+ * Schema for all socket-specific error reasons.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export const SocketErrorReason = Schema.Union([
   SocketReadError,
@@ -201,8 +330,10 @@ export const SocketErrorReason = Schema.Union([
 ])
 
 /**
- * @since 4.0.0
+ * Union of socket-specific read, write, open, and close error reasons.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export type SocketErrorReason =
   | SocketReadError
@@ -211,8 +342,11 @@ export type SocketErrorReason =
   | SocketCloseError
 
 /**
- * @since 4.0.0
+ * Tagged error that wraps socket read, write, open, and close failures while
+ * preserving the underlying reason.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class SocketError extends Schema.TaggedErrorClass<SocketError>(SocketErrorTypeId)("SocketError", {
   _tag: Schema.tag("SocketError"),
@@ -233,11 +367,15 @@ export class SocketError extends Schema.TaggedErrorClass<SocketError>(SocketErro
   }
 
   /**
+   * Marks this value as a socket error wrapper for runtime guards.
+   *
    * @since 4.0.0
    */
   readonly [SocketErrorTypeId]: SocketErrorTypeId = SocketErrorTypeId
 
   /**
+   * Returns `true` when the value is a `SocketError`.
+   *
    * @since 4.0.0
    */
   static is(u: unknown): u is SocketError {
@@ -248,8 +386,11 @@ export class SocketError extends Schema.TaggedErrorClass<SocketError>(SocketErro
 }
 
 /**
- * @since 4.0.0
+ * Converts a `Socket` into a bidirectional `Channel`, mapping incoming string
+ * or binary frames and writing outgoing frame batches to the socket.
+ *
  * @category combinators
+ * @since 4.0.0
  */
 export const toChannelMap = <IE, A>(
   self: Socket,
@@ -303,8 +444,11 @@ export const toChannelMap = <IE, A>(
   }))
 
 /**
- * @since 4.0.0
+ * Converts a `Socket` into a binary `Channel`, encoding incoming string frames
+ * as UTF-8 bytes.
+ *
  * @category combinators
+ * @since 4.0.0
  */
 export const toChannel = <IE>(
   self: Socket
@@ -320,8 +464,11 @@ export const toChannel = <IE>(
 }
 
 /**
- * @since 4.0.0
+ * Converts a `Socket` into a string `Channel`, decoding binary frames with the
+ * optional text encoding.
+ *
  * @category combinators
+ * @since 4.0.0
  */
 export const toChannelString: {
   (encoding?: string | undefined): <IE>(self: Socket) => Channel.Channel<
@@ -356,8 +503,11 @@ export const toChannelString: {
 })
 
 /**
- * @since 4.0.0
+ * Creates a `Socket` to binary `Channel` adapter with a fixed upstream error
+ * type.
+ *
  * @category combinators
+ * @since 4.0.0
  */
 export const toChannelWith = <IE = never>() =>
 (
@@ -371,8 +521,11 @@ export const toChannelWith = <IE = never>() =>
 > => toChannel(self)
 
 /**
- * @since 4.0.0
+ * Creates a binary socket `Channel` from the `Socket` service in the
+ * environment.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeChannel = <IE = never>(): Channel.Channel<
   NonEmptyReadonlyArray<Uint8Array>,
@@ -382,24 +535,34 @@ export const makeChannel = <IE = never>(): Channel.Channel<
   IE,
   unknown,
   Socket
-> => Channel.unwrap(Effect.map(Socket.asEffect(), toChannelWith<IE>()))
+> => Channel.unwrap(Effect.map(Socket, toChannelWith<IE>()))
 
 /**
+ * Default close-code classifier that treats every socket close code as an
+ * error.
+ *
+ * @category predicates
  * @since 4.0.0
  */
 export const defaultCloseCodeIsError = (_code: number) => true
 
 /**
- * @since 4.0.0
+ * Context service for the active `WebSocket` instance available while a
+ * WebSocket-backed socket run is handling events.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export class WebSocket extends Context.Service<WebSocket, globalThis.WebSocket>()(
   "~effect/socket/Socket/WebSocket"
 ) {}
 
 /**
- * @since 4.0.0
+ * Context service for constructing `WebSocket` instances from a URL and
+ * optional protocols.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export class WebSocketConstructor extends Context.Service<
   WebSocketConstructor,
@@ -407,16 +570,22 @@ export class WebSocketConstructor extends Context.Service<
 >()("@effect/platform/Socket/WebSocketConstructor") {}
 
 /**
- * @since 4.0.0
+ * Layer that provides `WebSocketConstructor` using `globalThis.WebSocket`.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerWebSocketConstructorGlobal: Layer.Layer<WebSocketConstructor> = Layer.succeed(WebSocketConstructor)(
   (url, protocols) => new globalThis.WebSocket(url, protocols)
 )
 
 /**
- * @since 4.0.0
+ * Creates a `Socket` backed by a `WebSocketConstructor`, acquiring the
+ * WebSocket for each run and using the close-code classifier to decide which
+ * closes fail the run.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeWebSocket = (url: string | Effect.Effect<string>, options?: {
   readonly closeCodeIsError?: ((code: number) => boolean) | undefined
@@ -436,8 +605,12 @@ export const makeWebSocket = (url: string | Effect.Effect<string>, options?: {
   )
 
 /**
- * @since 4.0.0
+ * Builds a `Socket` from a scoped WebSocket acquisition effect, waiting for the
+ * socket to open, dispatching message handlers in fibers, and translating
+ * open, read, and close events into `SocketError` values.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const fromWebSocket = <RO>(
   acquire: Effect.Effect<globalThis.WebSocket, SocketError, RO>,
@@ -558,17 +731,6 @@ export const fromWebSocket = <RO>(
         }))
       )
 
-    const encoder = new TextEncoder()
-    const run = <_, E, R>(handler: (_: Uint8Array) => Effect.Effect<_, E, R> | void, opts?: {
-      readonly onOpen?: Effect.Effect<void> | undefined
-    }) =>
-      runRaw((data) =>
-        typeof data === "string"
-          ? handler(encoder.encode(data))
-          : data instanceof Uint8Array
-          ? handler(data)
-          : handler(new Uint8Array(data)), opts)
-
     const write = (chunk: Uint8Array | string | CloseEvent) =>
       latch.whenOpen(Effect.sync(() => {
         const ws = currentWS!
@@ -580,17 +742,18 @@ export const fromWebSocket = <RO>(
       }))
     const writer = Effect.succeed(write)
 
-    return Effect.succeed(Socket.of({
-      [TypeId]: TypeId,
-      run,
+    return Effect.succeed(make({
       runRaw,
       writer
     }))
   })
 
 /**
- * @since 4.0.0
+ * Creates a binary `Channel` backed by a WebSocket URL, requiring a
+ * `WebSocketConstructor` service.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeWebSocketChannel = <IE = never>(
   url: string,
@@ -611,8 +774,11 @@ export const makeWebSocketChannel = <IE = never>(
   )
 
 /**
- * @since 4.0.0
+ * Layer that provides a `Socket` service backed by a WebSocket URL or URL
+ * effect.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layerWebSocket: (
   url: string | Effect.Effect<string>,
@@ -624,16 +790,21 @@ export const layerWebSocket: (
 ) => Layer.Layer<Socket, never, WebSocketConstructor> = flow(makeWebSocket, Layer.effect(Socket))
 
 /**
- * @since 4.0.0
+ * Context reference for socket send queue capacity, defaulting to `16`.
+ *
  * @category fiber refs
+ * @since 4.0.0
  */
 export const SendQueueCapacity = Context.Reference<number>("~effect/socket/Socket/SendQueueCapacity", {
   defaultValue: () => 16
 })
 
 /**
- * @since 4.0.0
+ * Readable and writable stream pair used to adapt transform-style streams into
+ * a `Socket`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface InputTransformStream {
   readonly readable: ReadableStream<Uint8Array> | ReadableStream<string> | ReadableStream<Uint8Array | string>
@@ -641,8 +812,13 @@ export interface InputTransformStream {
 }
 
 /**
- * @since 4.0.0
+ * Builds a `Socket` from a scoped `InputTransformStream`, reading incoming
+ * chunks through socket handlers and writing outgoing chunks to the writable
+ * stream, encoding strings as UTF-8 and using close-code classification for
+ * `CloseEvent` values.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const fromTransformStream = <R>(acquire: Effect.Effect<InputTransformStream, SocketError, R>, options?: {
   readonly closeCodeIsError?: (code: number) => boolean
@@ -706,15 +882,6 @@ export const fromTransformStream = <R>(acquire: Effect.Effect<InputTransformStre
         }))
       )
 
-    const encoder = new TextEncoder()
-    const run = <_, E, R>(handler: (_: Uint8Array) => Effect.Effect<_, E, R> | void, opts?: {
-      readonly onOpen?: Effect.Effect<void> | undefined
-    }) =>
-      runRaw((data) =>
-        typeof data === "string"
-          ? handler(encoder.encode(data))
-          : handler(data), opts)
-
     const writers = new WeakMap<InputTransformStream, WritableStreamDefaultWriter<Uint8Array>>()
     const getWriter = (stream: InputTransformStream) => {
       let writer = writers.get(stream)
@@ -746,9 +913,7 @@ export const fromTransformStream = <R>(acquire: Effect.Effect<InputTransformStre
         })
     )
 
-    return Effect.succeed(Socket.of({
-      [TypeId]: TypeId,
-      run,
+    return Effect.succeed(make({
       runRaw,
       writer
     }))

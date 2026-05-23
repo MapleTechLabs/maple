@@ -115,6 +115,12 @@ const getSharedFlagsForCommandPath = (
         if (seen.has(single.name)) {
           continue
         }
+        // Hidden ancestor flags are excluded from the shared-flags section
+        // of subcommand help, the same way they're excluded from the owning
+        // command's own help output.
+        if (single.hidden) {
+          continue
+        }
         seen.add(single.name)
         sharedFlags.push(toFlagDoc(single))
       }
@@ -160,6 +166,10 @@ export const getHelpForCommandPath = <Name extends string, Input, E, R, ContextI
     for (const flag of flags) {
       const singles = Param.extractSingleParams(flag.flag)
       for (const single of singles) {
+        // Same rule as command-local flags: hidden globals are still parsed
+        // and still trigger their handlers, they just don't appear under
+        // "GLOBAL FLAGS" in --help.
+        if (single.hidden) continue
         globalFlagDocs.push({
           ...toFlagDoc(single),
           required: false

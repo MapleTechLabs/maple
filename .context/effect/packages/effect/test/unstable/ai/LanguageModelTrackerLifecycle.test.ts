@@ -115,7 +115,7 @@ describe("LanguageModel tracker lifecycle integration", () => {
       assert.deepStrictEqual(providerOptions[3]!.incrementalPrompt, Prompt.fromMessages([user4]))
     }))
 
-  it.effect("tracks generateObject across turns via generateContent", () =>
+  it.effect("falls back to full prompt after stale previous response id and keeps tracking", () =>
     Effect.gen(function*() {
       const tracker = yield* ResponseIdTracker.make
       const providerOptions: Array<LanguageModel.ProviderOptions> = []

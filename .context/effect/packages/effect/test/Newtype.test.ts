@@ -48,15 +48,15 @@ describe("makeEquivalence", () => {
 describe("makeOrder", () => {
   const ord = Newtype.makeOrder<UserId>(Order.Number)
 
-  it("returns -1 for less than", () => {
+  it("orders a lower carrier number before a higher one", () => {
     strictEqual(ord(userIdIso.set(1), userIdIso.set(2)), -1)
   })
 
-  it("returns 1 for greater than", () => {
+  it("orders a higher carrier number after a lower one", () => {
     strictEqual(ord(userIdIso.set(2), userIdIso.set(1)), 1)
   })
 
-  it("returns 0 for equal values", () => {
+  it("treats equal carrier numbers as equivalent", () => {
     strictEqual(ord(userIdIso.set(5), userIdIso.set(5)), 0)
   })
 })
@@ -78,12 +78,12 @@ describe("makeReducer", () => {
     strictEqual(Newtype.value(result), 6)
   })
 
-  it("returns initialValue for empty collection", () => {
+  it("uses the lifted initial value for an empty collection", () => {
     const result = reducer.combineAll([])
     strictEqual(Newtype.value(result), 0)
   })
 
-  it("combine works on two values", () => {
+  it("combines two newtype values using the carrier reducer", () => {
     const result = reducer.combine(userIdIso.set(10), userIdIso.set(5))
     strictEqual(Newtype.value(result), 15)
   })

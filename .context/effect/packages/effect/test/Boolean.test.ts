@@ -100,7 +100,7 @@ describe("and", () => {
     assert.strictEqual(Boolean.and(false, false), false)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.and(true)), true)
     assert.strictEqual(pipe(true, Boolean.and(false)), false)
   })
@@ -114,7 +114,7 @@ describe("nand", () => {
     assert.strictEqual(Boolean.nand(false, false), true)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.nand(true)), false)
     assert.strictEqual(pipe(false, Boolean.nand(false)), true)
   })
@@ -128,7 +128,7 @@ describe("or", () => {
     assert.strictEqual(Boolean.or(false, false), false)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(false, Boolean.or(true)), true)
     assert.strictEqual(pipe(false, Boolean.or(false)), false)
   })
@@ -142,7 +142,7 @@ describe("nor", () => {
     assert.strictEqual(Boolean.nor(false, false), true)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.nor(true)), false)
     assert.strictEqual(pipe(false, Boolean.nor(false)), true)
   })
@@ -156,7 +156,7 @@ describe("xor", () => {
     assert.strictEqual(Boolean.xor(false, false), false)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.xor(false)), true)
     assert.strictEqual(pipe(false, Boolean.xor(false)), false)
   })
@@ -170,7 +170,7 @@ describe("eqv", () => {
     assert.strictEqual(Boolean.eqv(false, false), true)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.eqv(true)), true)
     assert.strictEqual(pipe(true, Boolean.eqv(false)), false)
   })
@@ -192,7 +192,7 @@ describe("implies", () => {
     assert.strictEqual(Boolean.implies(false, false), true)
   })
 
-  it("works in data-last form", () => {
+  it("supports data-last form with the pipe value as the left operand", () => {
     assert.strictEqual(pipe(true, Boolean.implies(false)), false)
     assert.strictEqual(pipe(false, Boolean.implies(false)), true)
   })

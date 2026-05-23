@@ -24,6 +24,7 @@ describe("Effect Eager Operations", () => {
       it("computes failures immediately", () => {
         const fn = Effect.fnUntracedEager(function*() {
           yield* Effect.succeed(1)
+          // @effect-diagnostics-next-line missingReturnYieldStar:off
           yield* Effect.fail("error")
           return "unreachable"
         })
@@ -93,6 +94,7 @@ describe("Effect Eager Operations", () => {
     it.effect("handles failures", () =>
       Effect.gen(function*() {
         const fn = Effect.fnUntracedEager(function*() {
+          // @effect-diagnostics-next-line missingReturnYieldStar:off
           yield* Effect.fail("error")
           return "unreachable"
         })

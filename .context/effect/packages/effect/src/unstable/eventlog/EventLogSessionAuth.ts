@@ -1,4 +1,22 @@
 /**
+ * Utilities for authenticating event log sessions with short-lived challenges
+ * and Ed25519 signatures.
+ *
+ * This module builds and verifies the canonical payload that a remote peer signs
+ * when proving control of a session signing key. It is used by event log
+ * transports that need to bind a connection attempt to a remote identifier,
+ * session challenge, advertised event log public key, and signing public key
+ * before accepting session traffic.
+ *
+ * Callers are responsible for issuing fresh challenges, enforcing the challenge
+ * time-to-live, and tracking whether a challenge has already been consumed. The
+ * helpers here provide deterministic payload encoding, algorithm checks,
+ * signature validation, and Web Crypto integration; they do not establish peer
+ * trust by themselves. Trust decisions still need to compare the supplied keys
+ * and remote identity against the application's authorization policy, and
+ * signed payloads should be treated as bearer authentication material until the
+ * challenge expires.
+ *
  * @since 4.0.0
  */
 import * as Data from "../../Data.ts"
@@ -10,38 +28,52 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true })
 const constLengthPrefixBytes = 4
 
 /**
- * @since 4.0.0
+ * Domain-separation string embedded in canonical session authentication payloads.
+ *
  * @category constants
+ * @since 4.0.0
  */
 export const AuthPayloadContext = "eventlog-auth-v1"
 
 /**
- * @since 4.0.0
+ * Required byte length for raw Ed25519 public keys used in session
+ * authentication.
+ *
  * @category constants
+ * @since 4.0.0
  */
 export const Ed25519PublicKeyLength = 32
 
 /**
- * @since 4.0.0
+ * Required byte length for Ed25519 signatures used in session authentication.
+ *
  * @category constants
+ * @since 4.0.0
  */
 export const Ed25519SignatureLength = 64
 
 /**
- * @since 4.0.0
+ * Number of random bytes generated for a session authentication challenge.
+ *
  * @category constants
+ * @since 4.0.0
  */
 export const SessionAuthChallengeLength = 32
 
 /**
- * @since 4.0.0
+ * Time-to-live, in milliseconds, for a pending session authentication challenge.
+ *
  * @category constants
+ * @since 4.0.0
  */
 export const SessionAuthChallengeTimeToLiveMillis = 30_000
 
 /**
+ * Payload fields that are canonicalized and signed during session
+ * authentication.
+ *
+ * @category models
  * @since 4.0.0
- * @category model
  */
 export interface SessionAuthPayload {
   readonly remoteId: string | Uint8Array
@@ -51,8 +83,11 @@ export interface SessionAuthPayload {
 }
 
 /**
- * @since 4.0.0
+ * Error raised while encoding, decoding, signing, verifying, or generating
+ * session authentication challenges.
+ *
  * @category errors
+ * @since 4.0.0
  */
 export class EventLogSessionAuthError extends Data.TaggedError("EventLogSessionAuthError")<{
   readonly reason:
@@ -206,7 +241,11 @@ const encodeRemoteIdField = (remoteId: string | Uint8Array): Uint8Array =>
     : textEncoder.encode(bytesToHex(remoteId))
 
 /**
- * Canonical payload format uses ordered big-endian length-prefixed fields:
+ * Encodes a session authentication payload into the canonical byte format.
+ *
+ * **Details**
+ *
+ * The canonical payload format uses ordered big-endian length-prefixed fields:
  *
  * 1. context (fixed: eventlog-auth-v1)
  * 2. remoteId
@@ -214,8 +253,8 @@ const encodeRemoteIdField = (remoteId: string | Uint8Array): Uint8Array =>
  * 4. publicKey
  * 5. signingPublicKey bytes
  *
- * @since 4.0.0
  * @category encoding
+ * @since 4.0.0
  */
 export const encodeSessionAuthPayload = Effect.fnUntraced(function*(payload: SessionAuthPayload) {
   yield* assertSigningPublicKeyLength(payload.signingPublicKey)
@@ -245,8 +284,15 @@ export const encodeSessionAuthPayload = Effect.fnUntraced(function*(payload: Ses
 })
 
 /**
- * @since 4.0.0
+ * Decodes a canonical session authentication payload.
+ *
+ * **Details**
+ *
+ * The decoder validates the context field, UTF-8 fields, signing public key
+ * length, and rejects truncated or trailing bytes.
+ *
  * @category encoding
+ * @since 4.0.0
  */
 export const decodeSessionAuthPayload = Effect.fnUntraced(
   function*(payload: Uint8Array): Effect.fn.Return<SessionAuthPayload, EventLogSessionAuthError> {
@@ -283,8 +329,15 @@ export const decodeSessionAuthPayload = Effect.fnUntraced(
 )
 
 /**
- * @since 4.0.0
+ * Signs canonical session authentication payload bytes with an Ed25519 private
+ * key.
+ *
+ * **Details**
+ *
+ * The private key must be PKCS#8-encoded bytes importable by `SubtleCrypto`.
+ *
  * @category signing
+ * @since 4.0.0
  */
 export const signSessionAuthPayloadBytes = Effect.fnUntraced(function*(options: {
   readonly payload: Uint8Array
@@ -323,8 +376,16 @@ export const signSessionAuthPayloadBytes = Effect.fnUntraced(function*(options: 
 })
 
 /**
- * @since 4.0.0
+ * Verifies an Ed25519 signature for canonical session authentication payload
+ * bytes.
+ *
+ * **Details**
+ *
+ * The payload, signing public key, and signature lengths are validated before
+ * calling `SubtleCrypto.verify`.
+ *
  * @category verification
+ * @since 4.0.0
  */
 export const verifySessionAuthPayloadBytes = Effect.fnUntraced(function*(options: {
   readonly payload: Uint8Array
@@ -358,8 +419,11 @@ export const verifySessionAuthPayloadBytes = Effect.fnUntraced(function*(options
 })
 
 /**
- * @since 4.0.0
+ * Encodes a session authentication payload in canonical form and signs it with an
+ * Ed25519 private key.
+ *
  * @category signing
+ * @since 4.0.0
  */
 export const signSessionAuthPayload = (
   options: SessionAuthPayload & {
@@ -376,8 +440,11 @@ export const signSessionAuthPayload = (
   )
 
 /**
- * @since 4.0.0
+ * Encodes a session authentication payload in canonical form and verifies its
+ * Ed25519 signature.
+ *
  * @category verification
+ * @since 4.0.0
  */
 export const verifySessionAuthPayload = (
   options: SessionAuthPayload & {
@@ -395,8 +462,10 @@ export const verifySessionAuthPayload = (
   )
 
 /**
- * @since 4.0.0
+ * Generates a random session authentication challenge using `globalThis.crypto`.
+ *
  * @category challenge
+ * @since 4.0.0
  */
 export const makeSessionAuthChallenge: Effect.Effect<
   Uint8Array<ArrayBuffer>,
@@ -409,8 +478,11 @@ export const makeSessionAuthChallenge: Effect.Effect<
 })
 
 /**
- * @since 4.0.0
+ * Verifies an authentication request by requiring the `Ed25519` algorithm and
+ * checking the signature over the canonical session authentication payload.
+ *
  * @category verification
+ * @since 4.0.0
  */
 export const verifySessionAuthenticateRequest = Effect.fnUntraced(function*(options: {
   readonly remoteId: string | Uint8Array

@@ -41,7 +41,6 @@ export class ReasoningDetailsDuplicateTracker {
   /**
    * Attempts to track a detail.
    *
-   * @returns `true` if this is a NEW detail (not seen before and has valid key),
    * or `false` if it was skipped (no valid key) or already seen (duplicate).
    */
   upsert(detail: ReasoningDetails[number]): boolean {

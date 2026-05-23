@@ -2,6 +2,13 @@ import { Config, Schema } from "effect"
 import { describe, expect, it } from "tstyche"
 
 describe("Config", () => {
+  it("literals", () => {
+    const c = Config.literals(["a", "b"])
+
+    expect(c).type.toBe<Config.Config<"a" | "b">>()
+    expect<Config.Success<typeof c>>().type.toBe<"a" | "b">()
+  })
+
   it("withDefault", () => {
     const c = Config.schema(Schema.Literals(["a", "b"]))
 

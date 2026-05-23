@@ -1,5 +1,23 @@
 /**
- * @since 1.0.0
+ * Browser runtime support for Effect worker runners.
+ *
+ * This module is intended for code that is already executing in a browser
+ * worker context, or for tests and adapters that supply a `MessagePort` or
+ * `Window` endpoint directly. It provides the `WorkerRunnerPlatform` used by
+ * `WorkerRunner` and `RpcServer.layerProtocolWorkerRunner` to receive parent
+ * or client requests, run Effect handlers, and send responses through the
+ * browser `postMessage` channel.
+ *
+ * Use it with `BrowserWorker` when a browser application needs to move RPC
+ * handlers, CPU-bound computations, or browser-only services into a dedicated
+ * worker or shared worker. Dedicated workers communicate through the current
+ * `self` endpoint; shared workers accept multiple `onconnect` ports and cache
+ * ports that connect before the runner layer starts. Messages still use the
+ * browser structured-clone algorithm, so payload schemas, transfer lists,
+ * `messageerror` events, and the lifetime of each `MessagePort` must be
+ * considered when crossing worker boundaries.
+ *
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
@@ -22,8 +40,10 @@ if (typeof self !== "undefined" && "onconnect" in self) {
 }
 
 /**
- * @since 1.0.0
- * @category Constructors
+ * Creates a `WorkerRunnerPlatform` service that runs worker handlers over a `MessagePort` or `Window`.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = (self: MessagePort | Window): WorkerRunner.WorkerRunnerPlatform["Service"] => ({
   start: Effect.fnUntraced(function*<O = unknown, I = unknown>() {
@@ -83,7 +103,7 @@ export const make = (self: MessagePort | Window): WorkerRunner.WorkerRunnerPlatf
                 message: "An messageerror event was emitted",
                 cause: error.data
               })
-            }).asEffect()
+            })
           )
         }
         function onError(error: any) {
@@ -94,7 +114,7 @@ export const make = (self: MessagePort | Window): WorkerRunner.WorkerRunnerPlatf
                 message: "An error event was emitted",
                 cause: error.data
               })
-            }).asEffect()
+            })
           )
         }
         function handlePort(port: MessagePort) {
@@ -151,16 +171,20 @@ export const make = (self: MessagePort | Window): WorkerRunner.WorkerRunnerPlatf
 })
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides a browser `WorkerRunnerPlatform` using the global `self` worker context.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<WorkerRunner.WorkerRunnerPlatform> = Layer.sync(WorkerRunner.WorkerRunnerPlatform)(() =>
   make(self)
 )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Layer that provides a `WorkerRunnerPlatform` using the supplied `MessagePort` or `Window`.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerMessagePort = (port: MessagePort | Window): Layer.Layer<WorkerRunner.WorkerRunnerPlatform> =>
   Layer.succeed(WorkerRunner.WorkerRunnerPlatform)(make(port))

@@ -10,16 +10,16 @@ import * as Zsh from "./internal/completions/zsh.ts"
 /**
  * Shell type used to generate completion scripts.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type Shell = "bash" | "zsh" | "fish"
 
 /**
  * Describes a command for completion script generation.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface CommandDescriptor {
   readonly name: string
@@ -32,8 +32,8 @@ export interface CommandDescriptor {
 /**
  * Describes a command flag for completions.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface FlagDescriptor {
   readonly name: string
@@ -45,8 +45,8 @@ export interface FlagDescriptor {
 /**
  * Describes the supported flag value shapes.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type FlagType =
   | { readonly _tag: "Boolean" }
@@ -60,8 +60,8 @@ export type FlagType =
 /**
  * Describes a positional argument for completions.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ArgumentDescriptor {
   readonly name: string
@@ -74,8 +74,8 @@ export interface ArgumentDescriptor {
 /**
  * Describes the supported argument value shapes.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type ArgumentType =
   | { readonly _tag: "String" }
@@ -88,8 +88,8 @@ export type ArgumentType =
 /**
  * Generates a shell completion script for a command descriptor.
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const generate = (
   executableName: string,

@@ -72,7 +72,7 @@ describe("Struct", () => {
     deepStrictEqual(Struct.renameKeys({ a: "a", b: 1, c: true }, { a: "A", b: "B" }), { A: "a", B: 1, c: true })
   })
 
-  it("evolveEntries", () => {
+  it("evolveEntries transforms a selected key and value together", () => {
     deepStrictEqual(
       pipe({ a: "a", b: 2 }, Struct.evolveEntries({ a: (k, v) => [Str.toUpperCase(k), v.length] })),
       { A: 1, b: 2 }
@@ -128,7 +128,7 @@ describe("Struct", () => {
     )
   })
 
-  it("makeEquivalence", () => {
+  it("makeEquivalence compares structs by configured fields", () => {
     const PersonEquivalence = Struct.makeEquivalence({
       a: Equivalence.strictEqual<string>(),
       b: Equivalence.strictEqual<number>()

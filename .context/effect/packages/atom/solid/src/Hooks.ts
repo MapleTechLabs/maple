@@ -1,5 +1,26 @@
 /**
- * @since 1.0.0
+ * The `Hooks` module provides SolidJS hooks for reading, writing, mounting, and
+ * subscribing to Effect atoms through the current Solid atom registry.
+ *
+ * **Common tasks**
+ *
+ * - Read an atom as a Solid accessor with {@link useAtomValue}
+ * - Read and write a writable atom with {@link useAtom}
+ * - Write without subscribing to the value with {@link useAtomSet}
+ * - Refresh or mount atoms from components with {@link useAtomRefresh} and {@link useAtomMount}
+ * - Convert `AsyncResult` atoms into Solid resources with {@link useAtomResource}
+ * - Work with atom refs and nested ref properties with {@link useAtomRef}, {@link useAtomRefProp},
+ *   and {@link useAtomRefPropValue}
+ *
+ * **Solid integration notes**
+ *
+ * Hooks in this module read the registry from {@link RegistryContext}, so they
+ * should be used under the matching provider for the atom graph you want to
+ * observe. Atom arguments are thunks so Solid can track dynamic atom selection;
+ * subscriptions are registered in Solid computations and disposed with
+ * `onCleanup` when the computation changes or the component unmounts.
+ *
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -15,8 +36,15 @@ import { RegistryContext } from "./RegistryContext.ts"
 const initialValuesSet = new WeakMap<AtomRegistry.AtomRegistry, WeakSet<Atom.Atom<any>>>()
 
 /**
- * @since 1.0.0
+ * Seeds initial atom values in the current Solid atom registry.
+ *
+ * **Details**
+ *
+ * Each atom is initialized at most once for a given registry, so subsequent
+ * computations do not overwrite values that have already been established.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomInitialValues = (initialValues: Iterable<readonly [Atom.Atom<any>, any]>): void => {
   const registry = useContext(RegistryContext)
@@ -34,8 +62,11 @@ export const useAtomInitialValues = (initialValues: Iterable<readonly [Atom.Atom
 }
 
 /**
- * @since 1.0.0
+ * Subscribes to an atom in the current Solid registry and returns its value as
+ * a Solid accessor.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomValue: {
   <A>(atom: () => Atom.Atom<A>): Accessor<A>
@@ -98,8 +129,11 @@ const flattenExit = <A, E>(exit: Exit.Exit<A, E>): A => {
 }
 
 /**
- * @since 1.0.0
+ * Mounts an atom in the current Solid registry for the lifetime of the current
+ * Solid computation.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomMount = <A>(atom: () => Atom.Atom<A>): void => {
   const registry = useContext(RegistryContext)
@@ -107,8 +141,10 @@ export const useAtomMount = <A>(atom: () => Atom.Atom<A>): void => {
 }
 
 /**
- * @since 1.0.0
+ * Returns a setter for a writable atom without subscribing to its value.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomSet = <
   R,
@@ -133,8 +169,10 @@ export const useAtomSet = <
 }
 
 /**
- * @since 1.0.0
+ * Mounts an atom and returns a callback that refreshes the current atom.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomRefresh = <A>(atom: () => Atom.Atom<A>): () => void => {
   const registry = useContext(RegistryContext)
@@ -144,8 +182,11 @@ export const useAtomRefresh = <A>(atom: () => Atom.Atom<A>): () => void => {
 }
 
 /**
- * @since 1.0.0
+ * Returns a Solid accessor for a writable atom together with a setter for
+ * updating it.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtom = <R, W, const Mode extends "value" | "promise" | "promiseExit" = never>(
   atom: () => Atom.Writable<R, W>,
@@ -170,8 +211,10 @@ export const useAtom = <R, W, const Mode extends "value" | "promise" | "promiseE
 }
 
 /**
- * @since 1.0.0
+ * Subscribes a callback to an atom in the current Solid registry.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomSubscribe = <A>(
   atom: () => Atom.Atom<A>,
@@ -185,8 +228,10 @@ export const useAtomSubscribe = <A>(
 }
 
 /**
- * @since 1.0.0
+ * Converts an `AsyncResult` atom into a Solid resource.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomResource = <A, E>(
   atom: () => Atom.Atom<AsyncResult.AsyncResult<A, E>>,
@@ -208,8 +253,10 @@ export const useAtomResource = <A, E>(
 const constUnresolvedPromise = new Promise<never>(() => {})
 
 /**
- * @since 1.0.0
+ * Subscribes to an atom ref and returns its value as a Solid accessor.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomRef = <A>(ref: () => AtomRef.ReadonlyRef<A>): Accessor<A> => {
   const [value, setValue] = createSignal(null as A)
@@ -222,8 +269,10 @@ export const useAtomRef = <A>(ref: () => AtomRef.ReadonlyRef<A>): Accessor<A> =>
 }
 
 /**
- * @since 1.0.0
+ * Returns a Solid accessor for a property ref derived from an atom ref.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomRefProp = <A, K extends keyof A>(
   ref: () => AtomRef.AtomRef<A>,
@@ -231,8 +280,11 @@ export const useAtomRefProp = <A, K extends keyof A>(
 ): Accessor<AtomRef.AtomRef<A[K]>> => createMemo(() => ref().prop(prop))
 
 /**
- * @since 1.0.0
+ * Returns a Solid accessor for the value of a property ref derived from an atom
+ * ref.
+ *
  * @category hooks
+ * @since 4.0.0
  */
 export const useAtomRefPropValue = <A, K extends keyof A>(ref: () => AtomRef.AtomRef<A>, prop: K): Accessor<A[K]> =>
   useAtomRef(useAtomRefProp(ref, prop))

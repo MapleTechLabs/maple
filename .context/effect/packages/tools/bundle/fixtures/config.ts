@@ -10,4 +10,4 @@ const schema = Schema.Struct({
 
 const config = Config.schema(schema)
 
-Effect.runFork(config.asEffect())
+Effect.runFork(config)

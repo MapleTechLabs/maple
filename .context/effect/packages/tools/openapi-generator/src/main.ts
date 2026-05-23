@@ -1,3 +1,13 @@
+/**
+ * Command-line entry point for generating Effect HTTP clients or HttpApi
+ * definitions from an OpenAPI specification.
+ *
+ * The CLI reads a spec file, optionally applies JSON patches in order, selects
+ * the generator layer for the requested output format, reports generation
+ * warnings to stderr, and writes the generated source to stdout.
+ *
+ * @since 4.0.0
+ */
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
@@ -78,6 +88,18 @@ const root = Command.make("openapigen", { spec, format, name, patch }).pipe(
   )
 )
 
+/**
+ * Runs the OpenAPI generator command-line program.
+ *
+ * **Details**
+ *
+ * The command reads an OpenAPI specification, optionally applies JSON patches,
+ * generates source code in the selected format, writes any generation warnings
+ * to stderr, and prints the generated source to stdout.
+ *
+ * @category running
+ * @since 4.0.0
+ */
 export const run: Effect.Effect<void, CliError.CliError, Command.Environment> = Command.run(root, {
   version: "0.0.0"
 })

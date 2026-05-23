@@ -1,4 +1,20 @@
 /**
+ * SQL-backed message storage for the unstable cluster runtime.
+ *
+ * This module persists encoded cluster envelopes and replies in SQL tables so
+ * shards can resume work after process restarts, redeliver unprocessed messages,
+ * deduplicate requests by primary key, and replay outstanding reply chunks until
+ * they are acknowledged. It is the storage implementation to use when a cluster
+ * needs durable request / reply state backed by `SqlClient` rather than an
+ * in-memory store.
+ *
+ * The storage layer runs its own migrations and creates messages, replies, and
+ * migration tables using the configured prefix (`cluster` by default). Choose a
+ * stable prefix before deploying, because changing it points the runtime at a
+ * different set of tables. Existing deployments should also keep the generated
+ * migration history table with the message tables so future schema changes can
+ * be applied consistently across supported SQL dialects.
+ *
  * @since 4.0.0
  */
 // eslint-disable effect/no-bigint-literals
@@ -23,8 +39,11 @@ import * as Snowflake from "./Snowflake.ts"
 const withTracerDisabled = Effect.withTracerEnabled(false)
 
 /**
+ * Creates a SQL-backed `MessageStorage` implementation, running its migrations
+ * and using the optional table prefix.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const make: (options?: {
   readonly prefix?: string | undefined
@@ -603,8 +622,11 @@ export const make: (options?: {
 }, withTracerDisabled)
 
 /**
+ * Layer that provides SQL-backed `MessageStorage` using the default table prefix
+ * and the default snowflake generator.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer: Layer.Layer<
   MessageStorage.MessageStorage,
@@ -615,8 +637,10 @@ export const layer: Layer.Layer<
 )
 
 /**
+ * Layer that provides SQL-backed `MessageStorage` using a custom table prefix.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerWith = (options: {
   readonly prefix?: string | undefined

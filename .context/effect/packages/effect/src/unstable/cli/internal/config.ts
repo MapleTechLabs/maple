@@ -78,6 +78,9 @@ export interface ConfigInternal {
 }
 
 /**
+ * Namespace containing the tree and node types used to reconstruct parsed
+ * command configuration values.
+ *
  * @since 4.0.0
  */
 export declare namespace ConfigInternal {

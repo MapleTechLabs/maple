@@ -1,5 +1,31 @@
 /**
- * @since 1.0.0
+ * Provides an Effect layer for configuring OpenTelemetry in browser
+ * applications. The module builds a shared resource from explicit service
+ * metadata and wires Effect tracing, metrics, and logging into OpenTelemetry
+ * SDK providers when span processors, metric readers, or log record processors
+ * are supplied.
+ *
+ * Use this module in client-side applications that need Effect spans, metrics,
+ * and logs exported from browser runtimes, such as single-page apps,
+ * multi-page apps with hydrated Effect code, frontend workers, or UI flows
+ * that should be correlated with backend traces. Telemetry is enabled only for
+ * the configured signal types, so tracing, metrics, and logging can be
+ * installed independently from the same layer.
+ *
+ * Browser SDKs cannot rely on process environment resource configuration, so
+ * provide stable service metadata explicitly and use resource attributes for
+ * application, release, deployment, or page-shell identity rather than
+ * per-event data. This module does not create exporters; supply
+ * browser-compatible processors, readers, and exporters yourself, and make sure
+ * their endpoints are reachable from the browser with the required CORS and
+ * authentication behavior. The layer is scoped: tracer providers are
+ * force-flushed and shut down when the scope is released, while metric readers
+ * and logger providers follow their respective layer lifecycles. Keep the
+ * scope alive for the lifetime of the browser application and release it during
+ * application teardown when possible so batched exporters and periodic metric
+ * readers can deliver buffered telemetry before the page is unloaded.
+ *
+ * @since 4.0.0
  */
 import type * as Otel from "@opentelemetry/api"
 import type { LoggerProviderConfig, LogRecordProcessor } from "@opentelemetry/sdk-logs"
@@ -17,8 +43,10 @@ import * as Resource from "./Resource.ts"
 import * as Tracer from "./Tracer.ts"
 
 /**
- * @since 1.0.0
- * @category Models
+ * Configuration for the Web OpenTelemetry layer, including resource metadata and optional tracing, metrics, and logging settings.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface Configuration {
   readonly spanProcessor?: SpanProcessor | ReadonlyArray<SpanProcessor> | undefined
@@ -36,8 +64,10 @@ export interface Configuration {
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Creates a scoped Web OpenTelemetry tracer provider from one or more span processors and shuts it down when the layer is released.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerTracerProvider = (
   processor: SpanProcessor | NonEmptyReadonlyArray<SpanProcessor>,
@@ -65,8 +95,10 @@ export const layerTracerProvider = (
   )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Creates a Web OpenTelemetry layer from configuration, providing the resource and enabling tracing, metrics, and logging when configured.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer: {
   (evaluate: LazyArg<Configuration>): Layer.Layer<Resource.Resource>

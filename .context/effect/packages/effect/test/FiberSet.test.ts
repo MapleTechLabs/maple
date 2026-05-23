@@ -4,7 +4,7 @@ import { Array, Deferred, Effect, Exit, Fiber, FiberSet, pipe, Ref, Scope } from
 import { TestClock } from "effect/testing"
 
 describe("FiberSet", () => {
-  it.effect("interrupts fibers", () =>
+  it.effect("interrupts running fibers when the scope closes", () =>
     Effect.gen(function*() {
       const ref = yield* Ref.make(0)
       yield* Effect.scoped(
@@ -48,7 +48,7 @@ describe("FiberSet", () => {
       strictEqual(yield* Ref.get(ref), 10)
     }))
 
-  it.effect("join", () =>
+  it.effect("runs fibers concurrently and awaitEmpty waits for completion", () =>
     Effect.gen(function*() {
       const set = yield* FiberSet.make()
       FiberSet.addUnsafe(set, Effect.runFork(Effect.void))
@@ -69,7 +69,7 @@ describe("FiberSet", () => {
       strictEqual(yield* FiberSet.size(set), 0)
     }))
 
-  it.effect("propagateInterruption false", () =>
+  it.effect("propagateInterruption false ignores external interruption", () =>
     Effect.gen(function*() {
       const set = yield* FiberSet.make()
       const fiber = yield* FiberSet.run(set, Effect.never, {
@@ -80,7 +80,7 @@ describe("FiberSet", () => {
       assertFalse(yield* Deferred.isDone(set.deferred))
     }))
 
-  it.effect("propagateInterruption true", () =>
+  it.effect("propagateInterruption true fails join on external interruption", () =>
     Effect.gen(function*() {
       const set = yield* FiberSet.make()
       const fiber = yield* FiberSet.run(set, Effect.never, {

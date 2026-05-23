@@ -20,6 +20,20 @@
     }],
     "effect/no-js-extension-imports": "error",
     "effect/no-opaque-instance-fields": "error",
+    "effect/standard-jsdoc": ["error", {
+      "tsconfig": "tsconfig.packages.json",
+      "include": [
+        "packages/**/src/*.ts",
+        "packages/**/src/**/*.ts"
+      ],
+      "exclude": [
+        "packages/tools/**",
+        "packages/**/src/index.ts",
+        "packages/**/src/*Generated.ts",
+        "packages/**/src/internal/**",
+        "packages/**/src/**/internal/**"
+      ]
+    }],
     // Tune native rules
     // Import rules
     "typescript/consistent-type-imports": ["error", {
@@ -58,6 +72,7 @@
     "unicorn/require-post-message-target-origin": "off",
     "unicorn/prefer-add-event-listener": "off",
     "unicorn/prefer-set-has": "off",
+    "no-dangling-underscore": "off",
     "typescript/no-explicit-any": "off",
     "typescript/no-empty-interface": "off",
     "typescript/ban-ts-comment": "off",

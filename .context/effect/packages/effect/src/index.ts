@@ -161,6 +161,41 @@ export * as Boolean from "./Boolean.ts"
 export * as Brand from "./Brand.ts"
 
 /**
+ * The `Cache` module provides an effectful, mutable key-value cache for values
+ * that are computed by a lookup function. A `Cache<Key, A, E, R>` stores lookup
+ * results for keys, shares concurrent lookups for the same key, and manages
+ * entry lifetime with capacity limits and optional time-to-live policies.
+ *
+ * **Mental model**
+ *
+ * - A cache is created from a lookup function and a maximum capacity
+ * - {@link get} returns a cached value when present, or runs the lookup on a miss
+ * - Concurrent misses for the same key share one pending lookup
+ * - Lookup failures are cached as failures until the entry expires, is invalidated, or is refreshed
+ * - Entries can live forever, expire after a fixed duration, or use a dynamic TTL based on the lookup `Exit`
+ * - Capacity is enforced by removing the oldest stored entries when new entries are added
+ *
+ * **Common tasks**
+ *
+ * - Create a cache: {@link make}, {@link makeWith}
+ * - Read values: {@link get}, {@link getOption}, {@link getSuccess}
+ * - Seed or overwrite values: {@link set}
+ * - Refresh values: {@link refresh}
+ * - Remove entries: {@link invalidate}, {@link invalidateWhen}, {@link invalidateAll}
+ * - Inspect contents: {@link has}, {@link size}, {@link keys}, {@link values}, {@link entries}
+ *
+ * **Gotchas**
+ *
+ * - {@link getOption} does not run the lookup; it only reads an existing non-expired entry
+ * - {@link size} may include expired entries until they are observed and removed
+ * - {@link values} and {@link entries} include only successfully resolved entries
+ * - Use `Data` or another `Equal`-compatible key type when keys need structural equality
+ *
+ * **See also**
+ *
+ * - {@link Duration} for configuring fixed or dynamic time-to-live values
+ * - {@link Effect} for the lookup effects used to compute cached values
+ *
  * @since 4.0.0
  */
 export * as Cache from "./Cache.ts"
@@ -276,7 +311,8 @@ export * as Cause from "./Cause.ts"
  * 2. **Sequencing**: Use the result of one channel to create another
  * 3. **Concatenating**: Combine multiple channels into a single channel
  *
- * @example
+ * **Example** (Creating a simple channel)
+ *
  * ```ts
  * import { Channel } from "effect"
  *
@@ -289,7 +325,8 @@ export * as Cause from "./Cause.ts"
  * // Running the channel would output: 84
  * ```
  *
- * @example
+ * **Example** (Transforming array-backed channels)
+ *
  * ```ts
  * import { Channel } from "effect"
  *
@@ -307,6 +344,48 @@ export * as Cause from "./Cause.ts"
 export * as Channel from "./Channel.ts"
 
 /**
+ * The `ChannelSchema` module provides helpers for applying `Schema` encoding
+ * and decoding at `Channel` boundaries. It is useful when a channel should
+ * expose typed values to application code while communicating with an upstream
+ * or downstream component through an encoded representation such as JSON-ready
+ * data, wire protocol values, or any other schema-defined format.
+ *
+ * **Mental model**
+ *
+ * - A channel schema adapter is a streaming boundary: chunks flow through a
+ *   `Channel`, and each non-empty chunk is validated and transformed with a
+ *   `Schema`
+ * - `encode` turns typed schema values into their encoded representation before
+ *   they leave a typed part of a pipeline
+ * - `decode` turns encoded input into typed schema values before application
+ *   code consumes them
+ * - `duplex` wraps a bidirectional channel so callers work with typed input and
+ *   output while the wrapped channel continues to operate on encoded chunks
+ * - Schema failures are surfaced through the channel error type as
+ *   `SchemaError`, and schema services are reflected in the channel
+ *   requirements
+ *
+ * **Common tasks**
+ *
+ * - Encode typed channel input before sending it to an encoded transport:
+ *   {@link encode}
+ * - Decode encoded channel output before handling it as domain data:
+ *   {@link decode}
+ * - Use unknown encoded boundaries when static encoded types are intentionally
+ *   erased: {@link encodeUnknown} and {@link decodeUnknown}
+ * - Wrap a bidirectional encoded channel with typed input and output schemas:
+ *   {@link duplex} or {@link duplexUnknown}
+ *
+ * **Gotchas**
+ *
+ * - These helpers operate on `NonEmptyReadonlyArray` chunks, so schemas are
+ *   applied to non-empty batches rather than individual scalar values
+ * - Encoding and decoding can require services from the schema; those
+ *   requirements become part of the resulting channel type
+ * - `duplex` encodes values flowing into the wrapped channel and decodes values
+ *   emitted by it, so choose `inputSchema` and `outputSchema` from the
+ *   perspective of the typed caller
+ *
  * @since 4.0.0
  */
 export * as ChannelSchema from "./ChannelSchema.ts"
@@ -341,7 +420,8 @@ export * as ChannelSchema from "./ChannelSchema.ts"
  * - **Iteration**: O(n)
  * - **Memory**: Structural sharing minimizes allocation
  *
- * @example
+ * **Example** (Creating and combining chunks)
+ *
  * ```ts
  * import { Chunk } from "effect"
  *
@@ -355,7 +435,8 @@ export * as ChannelSchema from "./ChannelSchema.ts"
  * console.log(Chunk.toReadonlyArray(combined)) // [1, 2, 3, 4, 5, 6]
  * ```
  *
- * @example
+ * **Example** (Transforming chunks)
+ *
  * ```ts
  * import { Chunk } from "effect"
  *
@@ -366,17 +447,17 @@ export * as ChannelSchema from "./ChannelSchema.ts"
  * const sum = Chunk.reduce(evens, 0, (acc, n) => acc + n) // 12
  * ```
  *
- * @example
+ * **Example** (Processing chunks with Effect)
+ *
  * ```ts
  * import { Chunk, Effect } from "effect"
  *
  * // Working with Effects
- * const processChunk = (chunk: Chunk.Chunk<number>) =>
- *   Effect.gen(function*() {
- *     const mapped = Chunk.map(chunk, (n) => n * 2)
- *     const filtered = Chunk.filter(mapped, (n) => n > 5)
- *     return Chunk.toReadonlyArray(filtered)
- *   })
+ * const processChunk = Effect.fnUntraced(function*(chunk: Chunk.Chunk<number>) {
+ *   const mapped = Chunk.map(chunk, (n) => n * 2)
+ *   const filtered = Chunk.filter(mapped, (n) => n > 5)
+ *   return Chunk.toReadonlyArray(filtered)
+ * })
  * ```
  *
  * @since 2.0.0
@@ -402,7 +483,8 @@ export * as Chunk from "./Chunk.ts"
  * - **Testable**: Mock time control for deterministic testing
  * - **Resource-safe**: Automatic cleanup of time-based resources
  *
- * @example
+ * **Example** (Measuring elapsed time)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -421,7 +503,8 @@ export * as Chunk from "./Chunk.ts"
  * })
  * ```
  *
- * @example
+ * **Example** (Using the Clock service)
+ *
  * ```ts
  * import { Clock, Effect } from "effect"
  *
@@ -686,7 +769,8 @@ export * as ConfigProvider from "./ConfigProvider.ts"
  * - **Data display**: `table`, `dir`, `dirxml` for structured data visualization
  * - **Utilities**: `clear`, `count`, `countReset`, `trace`
  *
- * @example
+ * **Example** (Logging basic messages)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  *
@@ -699,7 +783,8 @@ export * as ConfigProvider from "./ConfigProvider.ts"
  * })
  * ```
  *
- * @example
+ * **Example** (Grouping timed logs)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  *
@@ -716,7 +801,8 @@ export * as ConfigProvider from "./ConfigProvider.ts"
  * )
  * ```
  *
- * @example
+ * **Example** (Displaying structured data)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  *
@@ -752,9 +838,108 @@ export * as Console from "./Console.ts"
 export * as Context from "./Context.ts"
 
 /**
+ * The `Cron` module provides utilities for representing recurring calendar
+ * schedules with cron expressions. A `Cron` value stores allowed seconds,
+ * minutes, hours, days of month, months, weekdays, and an optional time zone,
+ * then uses those constraints to test dates and find scheduled occurrences.
+ *
+ * **Mental model**
+ *
+ * - A cron schedule is a set of allowed values for each time field
+ * - Expressions may use five fields (`minute hour day month weekday`) or six
+ *   fields (`second minute hour day month weekday`); five-field expressions
+ *   default seconds to `0`
+ * - Each field supports `*`, comma-separated values, ranges, and step syntax
+ * - Month and weekday fields support aliases such as `JAN`, `DEC`, `SUN`, and
+ *   `MON`
+ * - Empty internal field sets represent an unconstrained field, the same idea
+ *   as `*`
+ * - When both day-of-month and weekday are constrained, matching uses cron's
+ *   inclusive behavior: either field may match
+ *
+ * **Common tasks**
+ *
+ * - Build directly from field constraints: {@link make}
+ * - Parse expressions safely: {@link parse}
+ * - Parse expressions and throw on invalid input: {@link parseUnsafe}
+ * - Check whether a date satisfies a schedule: {@link match}
+ * - Find adjacent scheduled dates: {@link next}, {@link prev}
+ * - Iterate future scheduled dates: {@link sequence}
+ * - Compare schedule constraints: {@link equals}, {@link Equivalence}
+ * - Detect parse failures: {@link CronParseError}, {@link isCronParseError}
+ *
+ * **Gotchas**
+ *
+ * - Weekdays are numbered `0` through `6`, with `0` representing Sunday
+ * - Months are numbered `1` through `12`, while JavaScript `Date` months are
+ *   zero-based
+ * - `*` normalizes to an empty set internally, so inspect schedules with the
+ *   public helpers instead of assuming every allowed value is stored
+ * - `next` and `prev` search strictly after or before the provided instant
+ * - Time-zone-aware schedules account for daylight saving transitions; during
+ *   a fall-back transition, repeated local times are emitted once when moving
+ *   forward
+ *
  * @since 2.0.0
  */
 export * as Cron from "./Cron.ts"
+
+/**
+ * The `Crypto` module provides a platform-agnostic service for cryptographic
+ * operations. Runtime packages such as `@effect/platform-node`,
+ * `@effect/platform-bun`, and `@effect/platform-browser` provide concrete
+ * implementations backed by the host platform's cryptography APIs.
+ *
+ * Use `Crypto` for cryptographic randomness, UUID generation, random values,
+ * and message digests. The base `Random` service is not cryptographically
+ * secure unless you replace it with a cryptographically secure implementation.
+ *
+ * **Example** (Providing a test Crypto service)
+ *
+ * ```ts
+ * import { Console, Crypto, Effect, Layer } from "effect"
+ *
+ * const TestCrypto = Layer.succeed(
+ *   Crypto.Crypto,
+ *   Crypto.make({
+ *     randomBytes: (size) => new Uint8Array(size),
+ *     digest: (_algorithm, data) => Effect.succeed(data)
+ *   })
+ * )
+ *
+ * const program = Effect.gen(function*() {
+ *   const crypto = yield* Crypto.Crypto
+ *   const id = yield* crypto.randomUUIDv4
+ *   yield* Console.log(`Created id: ${id}`)
+ * })
+ *
+ * Effect.runPromise(Effect.provide(program, TestCrypto))
+ * ```
+ *
+ * **Example** (Generating random bytes)
+ *
+ * ```ts
+ * import { Crypto, Effect, Layer } from "effect"
+ *
+ * const TestCrypto = Layer.succeed(
+ *   Crypto.Crypto,
+ *   Crypto.make({
+ *     randomBytes: (size) => new Uint8Array(size),
+ *     digest: (_algorithm, data) => Effect.succeed(data)
+ *   })
+ * )
+ *
+ * const program = Effect.gen(function*() {
+ *   const crypto = yield* Crypto.Crypto
+ *   return yield* crypto.randomBytes(32)
+ * })
+ *
+ * Effect.runPromise(Effect.provide(program, TestCrypto))
+ * ```
+ *
+ * @since 4.0.0
+ */
+export * as Crypto from "./Crypto.ts"
 
 /**
  * Immutable data constructors with discriminated-union support.
@@ -832,6 +1017,55 @@ export * as Cron from "./Cron.ts"
 export * as Data from "./Data.ts"
 
 /**
+ * The `DateTime` module provides immutable data types and utilities for working
+ * with instants, UTC date-times, zoned date-times, and time zones. A
+ * `DateTime` is always an absolute point in time, represented internally by
+ * epoch milliseconds, and may also carry a `TimeZone` for zone-aware calendar
+ * parts and formatting.
+ *
+ * **Mental model**
+ *
+ * - `DateTime` is a discriminated union: `Utc | Zoned`
+ * - `Utc` stores an absolute instant without an associated time zone
+ * - `Zoned` stores the same kind of absolute instant plus a `TimeZone`
+ * - Time zones can be fixed offsets or named IANA zones such as `"Europe/Rome"`
+ * - Comparison and ordering use the instant, so two values in different zones
+ *   can still be equivalent
+ * - Calendar parts and formatted output depend on whether you ask for UTC parts
+ *   or zone-adjusted parts
+ *
+ * **Common tasks**
+ *
+ * - Construct values: {@link make}, {@link makeUnsafe}, {@link makeZoned}, {@link makeZonedUnsafe}
+ * - Get the current instant: {@link now}, {@link nowInCurrentZone}
+ * - Create time zones: {@link zoneMakeOffset}, {@link zoneMakeNamed}, {@link zoneFromString}
+ * - Attach or change zones: {@link setZone}, {@link setZoneNamed}, {@link setZoneCurrent}, {@link toUtc}
+ * - Convert to platform values or parts: {@link toDate}, {@link toDateUtc}, {@link toEpochMillis}, {@link toParts}, {@link toPartsUtc}
+ * - Compare and bound values: {@link Equivalence}, {@link Order}, {@link distance}, {@link min}, {@link max}, {@link clamp}, {@link between}
+ * - Transform values: {@link add}, {@link subtract}, {@link startOf}, {@link endOf}, {@link nearest}, {@link setParts}, {@link mutate}
+ * - Format values: {@link format}, {@link formatUtc}, {@link formatLocal}, {@link formatIntl}, {@link formatIso}, {@link formatIsoZoned}
+ * - Provide an application time zone: {@link CurrentTimeZone}, {@link withCurrentZone}, {@link layerCurrentZone}
+ *
+ * **Gotchas**
+ *
+ * - `make` and `makeZoned` return `Option`; unsafe constructors throw on invalid
+ *   input
+ * - `DateTime` equality is instant-based, not display-time-based
+ * - `setZone` changes the zone used for local parts and formatting without
+ *   changing the represented instant
+ * - Use `adjustForTimeZone` with {@link makeZoned} when input parts should be
+ *   interpreted as wall-clock time in the target zone
+ * - Daylight-saving gaps and repeated local times are resolved with
+ *   `Disambiguation`
+ * - Prefer the Clock-backed {@link now} and `CurrentTimeZone` services in
+ *   Effect workflows; unsafe helpers read from the host environment directly
+ *
+ * **See also**
+ *
+ * - {@link DateTime} for the UTC/zoned data model
+ * - {@link TimeZone} for offset and named time-zone values
+ * - {@link Disambiguation} for daylight-saving ambiguity handling
+ *
  * @since 3.6.0
  */
 export * as DateTime from "./DateTime.ts"
@@ -853,7 +1087,8 @@ export * as DateTime from "./DateTime.ts"
  * - **Fiber-safe**: Thread-safe operations across concurrent fibers
  * - **Composable**: Works seamlessly with other Effect operations
  *
- * @example
+ * **Example** (Coordinating fibers with a Deferred)
+ *
  * ```ts
  * import { Deferred, Effect, Fiber } from "effect"
  *
@@ -907,6 +1142,42 @@ export * as DateTime from "./DateTime.ts"
 export * as Deferred from "./Deferred.ts"
 
 /**
+ * The `Differ` module defines the core abstraction for describing changes to a
+ * value. A `Differ<T, Patch>` knows how to compare two `T` values, produce a
+ * patch that represents the difference, combine multiple patches, and apply a
+ * patch to an old value to obtain the updated value.
+ *
+ * **Mental model**
+ *
+ * - A differ separates "what changed" from "the value after the change"
+ * - `diff(oldValue, newValue)` produces a `Patch` that can later be applied
+ * - `patch(oldValue, patch)` replays a patch against a value of the same domain
+ * - `empty` is the identity patch: applying it should leave the value unchanged
+ * - `combine(first, second)` composes patches in sequence, where `second`
+ *   represents changes that happen after `first`
+ * - Patch types are chosen by the differ implementation and may be compact,
+ *   domain-specific, or compatible with a serialization format such as JSON
+ *   Patch
+ *
+ * **Common tasks**
+ *
+ * - Construct a differ by providing the four operations of the {@link Differ}
+ *   interface
+ * - Compute a patch with `diff` when you have an old value and a new value
+ * - Store, transmit, or aggregate patches instead of storing full replacement
+ *   values
+ * - Combine incremental updates with `combine` before applying them
+ * - Apply updates with `patch` to reconstruct the next value from a previous
+ *   value and a patch
+ *
+ * **Gotchas**
+ *
+ * - `combine` is order-sensitive for most patch formats
+ * - A patch is generally meaningful only for values that belong to the same
+ *   domain and assumptions used by the differ that created it
+ * - Differs should make `empty` a true identity and should make combined
+ *   patches behave the same as applying the original patches in order
+ *
  * @since 4.0.0
  */
 export * as Differ from "./Differ.ts"
@@ -950,7 +1221,8 @@ export * as Duration from "./Duration.ts"
  * - **Testable**: Built-in support for testing with controlled environments
  * - **Interruptible**: Effects can be safely interrupted and cancelled
  *
- * @example
+ * **Example** (Creating and running effects)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  *
@@ -968,7 +1240,8 @@ export * as Duration from "./Duration.ts"
  * Effect.runPromise(program).then(console.log) // 13
  * ```
  *
- * @example
+ * **Example** (Handling typed failures)
+ *
  * ```ts
  * import { Data, Effect } from "effect"
  *
@@ -1001,6 +1274,41 @@ export * as Duration from "./Duration.ts"
 export * as Effect from "./Effect.ts"
 
 /**
+ * The `Effectable` module provides low-level building blocks for defining
+ * custom values that behave like `Effect`s. It is primarily used by library
+ * authors who need domain-specific effect-like data types, such as service
+ * keys, configuration descriptions, prompts, or other declarative programs
+ * that can be yielded inside `Effect.gen`.
+ *
+ * **Mental model**
+ *
+ * - `Effectable` does not run effects by itself; it provides prototypes that
+ *   implement the internal Effect protocol.
+ * - {@link Prototype} creates a primitive Effect prototype with a custom
+ *   evaluation function that receives the current `Fiber`.
+ * - {@link Class} is an abstract base class for defining custom classes whose
+ *   instances are also `Effect` values.
+ * - The success, error, and service requirements of the custom type are
+ *   preserved through the `Effect.Effect<A, E, R>` type parameters.
+ *
+ * **Common tasks**
+ *
+ * - Build an effect-like interface around a declarative data structure.
+ * - Implement a custom `evaluate` hook that interprets the value in terms of
+ *   the current fiber and returns the underlying `Effect`.
+ * - Extend {@link Class} when a nominal class-based API is more convenient
+ *   than manually wiring a prototype.
+ *
+ * **Gotchas**
+ *
+ * - This module is intentionally low-level; most application code should use
+ *   `Effect` constructors and combinators instead.
+ * - `evaluate` must return an `Effect` with the same success, error, and
+ *   service types as the custom value.
+ * - Because these APIs participate in the internal Effect protocol, keep
+ *   implementations small and follow existing modules such as `Config` and
+ *   `Context` when adding new effect-like types.
+ *
  * @since 4.0.0
  */
 export * as Effectable from "./Effectable.ts"
@@ -1155,7 +1463,8 @@ export * as Equivalence from "./Equivalence.ts"
  * Use the annotation symbols (`ignore`, `severity`, `attributes`) on your
  * error classes to control reporting behavior per-error.
  *
- * @example
+ * **Example** (Reporting errors with annotations)
+ *
  * ```ts
  * import { Data, Effect, ErrorReporter } from "effect"
  *
@@ -1193,6 +1502,43 @@ export * as Equivalence from "./Equivalence.ts"
 export * as ErrorReporter from "./ErrorReporter.ts"
 
 /**
+ * The `ExecutionPlan` module provides a way to describe ordered fallback
+ * strategies for effects and streams that need different resources across
+ * repeated attempts. An `ExecutionPlan` is a non-empty list of steps, where
+ * each step supplies a `Context` or `Layer` and may control retries with an
+ * attempt limit, a `Schedule`, or a `while` predicate.
+ *
+ * **Mental model**
+ *
+ * - A plan is evaluated step by step until the wrapped effect or stream
+ *   succeeds, or until every step has been exhausted
+ * - Each step provides the services used while that step is active
+ * - `attempts` limits how many times a step may be tried
+ * - `schedule` controls retry timing and receives the failure input
+ * - `while` can stop retrying a step based on the failure input
+ * - `CurrentMetadata` exposes the current 1-based attempt and 0-based step
+ *   index to code running under a plan
+ *
+ * **Common tasks**
+ *
+ * - Build a plan with {@link make}
+ * - Run an effect with a plan using `Effect.withExecutionPlan`
+ * - Run a stream with a plan using `Stream.withExecutionPlan`
+ * - Combine plans in order with {@link merge}
+ * - Capture required services up front with `captureRequirements`
+ * - Inspect the current attempt and step with {@link CurrentMetadata}
+ *
+ * **Gotchas**
+ *
+ * - Plans must contain at least one step
+ * - `attempts` must be greater than zero when provided
+ * - If `attempts` is omitted, a step is attempted once unless a `schedule` is
+ *   provided
+ * - A `while` predicate returning `false` skips the remaining retries for that
+ *   step and moves the plan forward
+ * - Layer, schedule, and predicate requirements are tracked in the plan type
+ *   until they are provided or captured
+ *
  * @since 3.16.0
  */
 export * as ExecutionPlan from "./ExecutionPlan.ts"
@@ -1275,7 +1621,8 @@ export * as Exit from "./Exit.ts"
  * - **Supervision**: Monitor and restart failed fibers
  * - **Resource management**: Ensure proper cleanup on interruption
  *
- * @example
+ * **Example** (Running effects in fibers)
+ *
  * ```ts
  * import { Console, Effect, Fiber } from "effect"
  *
@@ -1334,16 +1681,127 @@ export * as Exit from "./Exit.ts"
 export * as Fiber from "./Fiber.ts"
 
 /**
+ * The `FiberHandle` module provides a scoped handle for managing the lifecycle
+ * of at most one fiber at a time. A `FiberHandle<A, E>` can hold one
+ * `Fiber<A, E>`; when a new fiber is installed, the previous fiber is
+ * interrupted unless the operation is configured with `onlyIfMissing`.
+ *
+ * **Mental model**
+ *
+ * - A handle is either open with zero or one current fiber, or closed by its
+ *   surrounding `Scope`
+ * - Closing the scope interrupts the current fiber and prevents new work from
+ *   being accepted
+ * - Completed fibers remove themselves from the handle, so the handle can be
+ *   reused for later work
+ * - Replacing a fiber uses the handle's internal interruption id, allowing
+ *   expected replacement interruptions to be distinguished from real failures
+ *
+ * **Common tasks**
+ *
+ * - Create a scoped handle: {@link make}
+ * - Fork an effect into the handle: {@link run}
+ * - Store an existing fiber: {@link set}
+ * - Read or clear the current fiber: {@link get}, {@link clear}
+ * - Capture runtime-specific runners: {@link makeRuntime}, {@link runtime}
+ * - Run handled effects as Promises: {@link makeRuntimePromise},
+ *   {@link runtimePromise}
+ * - Wait for failure or closure: {@link join}
+ * - Wait until the current fiber is gone: {@link awaitEmpty}
+ *
+ * **Gotchas**
+ *
+ * - The handle never contains more than one live fiber; starting or setting
+ *   another fiber interrupts the previous one by default
+ * - Use `onlyIfMissing` when a call should leave an already running fiber in
+ *   place instead of replacing it
+ * - `join` observes the handle's failure/close signal; successful fiber
+ *   completion only empties the handle
+ * - `awaitEmpty` waits for the fiber that is current when it starts; later
+ *   calls to {@link run} or {@link set} can install new work
+ *
  * @since 2.0.0
  */
 export * as FiberHandle from "./FiberHandle.ts"
 
 /**
+ * The `FiberMap` module provides a scoped, mutable collection for managing
+ * fibers by key. A `FiberMap<K, A, E>` owns a set of running fibers, interrupts
+ * them when its scope closes, and automatically removes each entry when the
+ * corresponding fiber completes.
+ *
+ * **Mental model**
+ *
+ * - A `FiberMap` is a keyed registry of fibers with lifecycle management
+ * - Keys identify the currently active fiber for a logical task or resource
+ * - Adding a fiber under an existing key interrupts the previous fiber by default
+ * - Completed fibers remove themselves from the map if they are still current
+ * - Closing the map's scope interrupts every fiber that remains in the map
+ * - The map can surface the first non-ignored managed fiber failure via {@link join}
+ *
+ * **Common tasks**
+ *
+ * - Create a scoped map: {@link make}
+ * - Fork effects into the map: {@link run}
+ * - Add existing fibers: {@link set}
+ * - Create captured runners: {@link makeRuntime}, {@link runtime}
+ * - Bridge to Promise-based callers: {@link makeRuntimePromise}, {@link runtimePromise}
+ * - Inspect entries: {@link get}, {@link has}, {@link size}
+ * - Stop work: {@link remove}, {@link clear}
+ * - Coordinate completion or failure: {@link awaitEmpty}, {@link join}
+ *
+ * **Gotchas**
+ *
+ * - `FiberMap` is scoped; use it with `Effect.scoped` or another scope owner so
+ *   managed fibers are interrupted when the scope closes
+ * - Reusing a key is a replacement operation unless `onlyIfMissing` is enabled
+ * - `join` waits for the map to fail or close; use {@link awaitEmpty} to wait
+ *   until all currently managed fibers have completed
+ * - The `Unsafe` variants mutate synchronously and should only be used when the
+ *   caller already controls the surrounding execution context
+ *
  * @since 2.0.0
  */
 export * as FiberMap from "./FiberMap.ts"
 
 /**
+ * The `FiberSet` module provides a scoped container for managing many fibers as
+ * one lifecycle. A `FiberSet<A, E>` tracks fibers whose successful values are
+ * compatible with `A` and whose failures are compatible with `E`, removes each
+ * fiber when it completes, and interrupts all still-running fibers when the
+ * owning `Scope` closes.
+ *
+ * **Mental model**
+ *
+ * - A `FiberSet` is an owned, scoped collection of fibers
+ * - Fibers can be added directly with {@link add} / {@link addUnsafe}
+ * - Effects can be forked into the set with {@link run}, {@link runtime}, or
+ *   {@link runtimePromise}
+ * - Completed fibers are automatically removed from the set
+ * - Closing the scope or calling {@link clear} interrupts the currently tracked
+ *   fibers
+ * - {@link join} waits for the set's first non-ignored failure, while
+ *   {@link awaitEmpty} waits until all tracked fibers have completed
+ *
+ * **Common tasks**
+ *
+ * - Create a scoped set: {@link make}
+ * - Create scoped runners: {@link makeRuntime}, {@link makeRuntimePromise}
+ * - Add an existing fiber: {@link add}
+ * - Fork an effect into the set: {@link run}
+ * - Interrupt tracked fibers: {@link clear}
+ * - Observe the set: {@link size}, {@link awaitEmpty}, {@link join}
+ * - Check a value: {@link isFiberSet}
+ *
+ * **Gotchas**
+ *
+ * - `FiberSet` values are scoped; use them inside `Effect.scoped` or another
+ *   scope owner so their fibers are interrupted reliably
+ * - Adding or running into a closed set interrupts the fiber immediately
+ * - By default, interruptions are not treated as failures for {@link join};
+ *   use the `propagateInterruption` option when interruption should be
+ *   propagated
+ *
  * @since 2.0.0
  */
 export * as FiberSet from "./FiberSet.ts"
@@ -1357,7 +1815,8 @@ export * as FiberSet from "./FiberSet.ts"
  * allowing you to work with files and directories in a functional, composable way. All operations
  * return `Effect` values that can be composed, transformed, and executed safely.
  *
- * @example
+ * **Example** (Working with files and directories)
+ *
  * ```ts
  * import { Console, Effect, FileSystem } from "effect"
  *
@@ -1388,6 +1847,40 @@ export * as FiberSet from "./FiberSet.ts"
 export * as FileSystem from "./FileSystem.ts"
 
 /**
+ * The `Filter` module provides composable functions for accepting, rejecting,
+ * narrowing, and transforming values. A `Filter<Input, Pass, Fail>` receives an
+ * input and returns a `Result`: success means the value passed the filter, while
+ * failure means the value was filtered out.
+ *
+ * **Mental model**
+ *
+ * - A filter is a typed predicate that can also transform the successful value
+ * - Predicate-based filters pass the original input when the predicate returns `true`
+ * - Refinement-based filters narrow the successful type, for example from `unknown` to `string`
+ * - Custom filters return `Result.succeed(pass)` or `Result.fail(fail)` directly
+ * - Filters compose with logical and sequential combinators instead of throwing exceptions
+ * - `FilterEffect` is the effectful form for filters that need asynchronous work, errors, or services
+ *
+ * **Common tasks**
+ *
+ * - Build filters: {@link make}, {@link makeEffect}, {@link fromPredicate}, {@link fromPredicateOption}
+ * - Narrow unknown values: {@link string}, {@link number}, {@link boolean}, {@link bigint}, {@link symbol}, {@link date}
+ * - Match shapes and variants: {@link instanceOf}, {@link tagged}, {@link reason}, {@link has}
+ * - Match exact values: {@link equals}, {@link equalsStrict}
+ * - Combine alternatives: {@link or}
+ * - Require multiple filters: {@link zip}, {@link zipWith}, {@link andLeft}, {@link andRight}
+ * - Run filters in sequence: {@link compose}, {@link composePassthrough}
+ * - Convert results: {@link toPredicate}, {@link toOption}, {@link toResult}
+ * - Adjust failure values: {@link mapFail}
+ *
+ * **Gotchas**
+ *
+ * - A failed filter is data in the `Result` failure channel; it is not an exception
+ * - `compose` preserves intermediate failure values, while {@link composePassthrough} fails with the original input
+ * - `equalsStrict` uses JavaScript `===`; use {@link equals} for structural equality
+ * - `fromPredicateOption` fails with the original input when the returned `Option` is `None`
+ * - Prefer refinement predicates when you want TypeScript to narrow the successful value type
+ *
  * @since 4.0.0
  */
 export * as Filter from "./Filter.ts"
@@ -1449,11 +1942,106 @@ export * as Filter from "./Filter.ts"
 export * as Formatter from "./Formatter.ts"
 
 /**
+ * The `Function` module provides small, pure helpers for defining, composing,
+ * adapting, and reusing TypeScript functions. It is the foundation for the
+ * data-first and data-last APIs used throughout Effect, and it includes the
+ * core pipeline utilities that make those APIs ergonomic.
+ *
+ * **Mental model**
+ *
+ * - {@link pipe} starts with a value and passes it through one unary function at
+ *   a time
+ * - {@link flow} composes unary functions into a reusable function
+ * - {@link dual} builds APIs that support both direct calls and `pipe`-friendly
+ *   data-last calls
+ * - {@link identity}, {@link constant}, and the `const*` helpers model common
+ *   identity and thunk patterns without allocating ad hoc callbacks
+ * - {@link tupled}, {@link untupled}, {@link flip}, and {@link apply} adapt
+ *   call shapes without changing the underlying behavior
+ * - Type helpers such as {@link LazyArg}, {@link FunctionN}, {@link satisfies},
+ *   and {@link cast} describe or constrain functions at the type level
+ *
+ * **Common tasks**
+ *
+ * - Build readable transformation pipelines: {@link pipe}
+ * - Create reusable composed functions: {@link flow}, {@link compose}
+ * - Define functions callable in both data-first and data-last style: {@link dual}
+ * - Return a value unchanged: {@link identity}
+ * - Create thunks and common constant functions: {@link constant},
+ *   {@link constTrue}, {@link constFalse}, {@link constNull},
+ *   {@link constUndefined}, {@link constVoid}
+ * - Convert between rest-argument and tuple-argument functions: {@link tupled},
+ *   {@link untupled}
+ * - Express impossible branches: {@link absurd}
+ * - Cache results for object keys: {@link memoize}
+ *
+ * **Gotchas**
+ *
+ * - Functions passed to {@link pipe} and {@link flow} are applied left-to-right
+ *   and should be unary at each step
+ * - {@link dual} uses either an arity or a predicate to decide whether a call is
+ *   data-first or data-last; use a predicate when optional arguments make arity
+ *   ambiguous
+ * - {@link cast} changes only the static TypeScript type and performs no runtime
+ *   validation
+ * - {@link memoize} is intended for object keys and stores cached values in a
+ *   `WeakMap`
+ *
  * @since 2.0.0
  */
 export * as Function from "./Function.ts"
 
 /**
+ * The `Graph` module provides immutable and scoped-mutable graph data
+ * structures for modeling relationships between indexed nodes and edges. A
+ * graph can be directed or undirected, stores user-defined data on both nodes
+ * and edges, and exposes traversal, analysis, path finding, transformation, and
+ * diagram export utilities.
+ *
+ * **Mental model**
+ *
+ * - Nodes and edges are addressed by stable numeric indices: {@link NodeIndex}
+ *   and {@link EdgeIndex}
+ * - Node data has type `N`; edge data has type `E`
+ * - {@link Graph} values are immutable snapshots; use {@link MutableGraph}
+ *   through {@link mutate}, {@link beginMutation}, or constructor callbacks to
+ *   add, remove, or update nodes and edges
+ * - Directed graphs follow edge direction for neighbors and traversals, while
+ *   undirected graphs treat each edge as connecting both endpoints
+ * - Missing lookups return `Option`, while structurally invalid operations such
+ *   as adding an edge to a missing node throw {@link GraphError}
+ *
+ * **Common tasks**
+ *
+ * - Create graphs: {@link directed}, {@link undirected}
+ * - Mutate safely: {@link mutate}, {@link addNode}, {@link addEdge},
+ *   {@link removeNode}, {@link removeEdge}
+ * - Query contents: {@link getNode}, {@link getEdge}, {@link hasNode},
+ *   {@link hasEdge}, {@link nodeCount}, {@link edgeCount}, {@link neighbors}
+ * - Transform data: {@link updateNode}, {@link updateEdge}, {@link mapNodes},
+ *   {@link mapEdges}, {@link filterNodes}, {@link filterEdges},
+ *   {@link filterMapNodes}, {@link filterMapEdges}
+ * - Traverse lazily: {@link dfs}, {@link bfs}, {@link topo},
+ *   {@link dfsPostOrder}, {@link nodes}, {@link edges}, {@link Walker}
+ * - Analyze structure: {@link isAcyclic}, {@link isBipartite},
+ *   {@link connectedComponents}, {@link stronglyConnectedComponents},
+ *   {@link externals}
+ * - Find paths: {@link dijkstra}, {@link astar}, {@link bellmanFord},
+ *   {@link floydWarshall}
+ * - Export diagrams: {@link toGraphViz}, {@link toMermaid}
+ *
+ * **Gotchas**
+ *
+ * - Only mutable graphs can be changed. Create one with {@link mutate} or by
+ *   passing a callback to {@link directed} / {@link undirected}.
+ * - Traversal APIs return lazy {@link Walker} values. Use {@link indices},
+ *   {@link values}, or {@link entries} to choose what each iteration yields.
+ * - `NodeIndex` and `EdgeIndex` values are identifiers, not array offsets. They
+ *   are not reused after removals.
+ * - Shortest-path algorithms require a cost function. {@link dijkstra} and
+ *   {@link astar} reject negative weights; use {@link bellmanFord} or
+ *   {@link floydWarshall} when negative weights are part of the model.
+ *
  * @since 4.0.0
  */
 export * as Graph from "./Graph.ts"
@@ -1470,16 +2058,184 @@ export * as Graph from "./Graph.ts"
 export * as Hash from "./Hash.ts"
 
 /**
+ * The `HashMap` module provides an immutable key-value data structure with
+ * efficient lookup, insertion, removal, and transformation operations. A
+ * `HashMap<Key, Value>` stores entries by hashing keys and resolving matches
+ * with Effect's structural equality semantics.
+ *
+ * **Mental model**
+ *
+ * - A `HashMap<Key, Value>` is an immutable collection of key-value pairs
+ * - Operations such as {@link set}, {@link remove}, and {@link modifyAt} return
+ *   new maps; existing maps are not mutated
+ * - Keys are compared using the `Equal` protocol and are grouped by hashes from
+ *   the `Hash` protocol
+ * - Plain JavaScript primitives work as keys, and custom objects can define
+ *   `Equal` / `Hash` behavior for structural lookup
+ * - Lookups with {@link get} return an `Option`, making missing keys explicit
+ * - Iteration order is based on the map's internal hash structure and should
+ *   not be treated as insertion order
+ *
+ * **Common tasks**
+ *
+ * - Create maps: {@link empty}, {@link make}, {@link fromIterable}
+ * - Read values: {@link get}, {@link getUnsafe}, {@link has}, {@link hasBy}
+ * - Add or update entries: {@link set}, {@link modify}, {@link modifyAt}, {@link setMany}
+ * - Remove entries: {@link remove}, {@link removeMany}
+ * - Combine maps: {@link union}
+ * - Iterate or convert: {@link keys}, {@link values}, {@link entries}, {@link toValues}, {@link toEntries}
+ * - Transform values: {@link map}, {@link flatMap}, {@link filter}, {@link filterMap}, {@link compact}
+ * - Fold and search: {@link reduce}, {@link findFirst}, {@link some}, {@link every}
+ * - Batch updates efficiently: {@link mutate}, {@link beginMutation}, {@link endMutation}
+ *
+ * **Gotchas**
+ *
+ * - {@link getUnsafe} throws when the key is absent; prefer {@link get} unless
+ *   absence is impossible by construction
+ * - Mutating a key object after insertion can make future lookups fail if its
+ *   equality or hash changes
+ * - Hash collisions are handled by equality checks, so matching hashes alone do
+ *   not make two keys equal
+ * - Use {@link getHash} and {@link hasHash} only when you already have the
+ *   correct hash for the same key
+ * - Convert entries to an array and sort them when deterministic presentation is
+ *   required
+ *
+ * **Quickstart**
+ *
+ * **Example** (Working with immutable maps)
+ *
+ * ```ts
+ * import { HashMap, Option } from "effect"
+ *
+ * const scores = HashMap.make(["alice", 10], ["bob", 15])
+ *
+ * const updated = scores.pipe(
+ *   HashMap.set("carol", 20),
+ *   HashMap.modify("alice", (score) => score + 1)
+ * )
+ *
+ * console.log(HashMap.get(updated, "alice"))
+ * // Output: Option.some(11)
+ *
+ * console.log(HashMap.get(scores, "carol"))
+ * // Output: Option.none()
+ *
+ * console.log(Option.getOrElse(HashMap.get(updated, "dave"), () => 0))
+ * // Output: 0
+ * ```
+ *
+ * **See also**
+ *
+ * - {@link HashSet} for immutable sets backed by hash semantics
+ * - {@link Equal} for structural equality
+ * - {@link Hash} for hash implementations used by hashed collections
+ *
  * @since 2.0.0
  */
 export * as HashMap from "./HashMap.ts"
 
 /**
+ * The `HashRing` module provides a weighted consistent-hashing data structure
+ * for assigning arbitrary string inputs to a changing set of nodes. A hash ring
+ * minimizes remapping when nodes are added, removed, or reweighted, which makes
+ * it useful for routing requests, partitioning keys, and distributing shards
+ * across service instances or storage backends.
+ *
+ * **Mental model**
+ *
+ * - Each node is identified by its {@link PrimaryKey.PrimaryKey} value
+ * - {@link add} and {@link addMany} place weighted virtual points on the ring
+ * - {@link get} hashes an input string and returns the nearest node on the ring
+ * - {@link getShards} assigns a fixed number of shard indexes across the nodes
+ * - Higher weights receive proportionally more virtual points and shard
+ *   allocations
+ * - Operations mutate and return the same ring instance
+ *
+ * **Common tasks**
+ *
+ * - Create an empty ring: {@link make}
+ * - Add or update nodes: {@link add}, {@link addMany}
+ * - Remove nodes: {@link remove}
+ * - Check membership by primary key: {@link has}
+ * - Route an input key to a node: {@link get}
+ * - Precompute shard ownership: {@link getShards}
+ * - Guard unknown values: {@link isHashRing}
+ *
+ * **Gotchas**
+ *
+ * - Empty rings return `undefined` from {@link get} and {@link getShards}
+ * - Nodes with the same primary key represent the same ring member
+ * - Weights are clamped to a positive minimum so a node remains represented
+ * - Mutating a ring in place is intentional; create a new ring when independent
+ *   snapshots are required
+ *
+ * **Quickstart**
+ *
+ * **Example** (Routing keys across nodes)
+ *
+ * ```ts
+ * import { HashRing, PrimaryKey } from "effect"
+ *
+ * class Node implements PrimaryKey.PrimaryKey {
+ *   constructor(readonly id: string) {}
+ *
+ *   [PrimaryKey.symbol](): string {
+ *     return this.id
+ *   }
+ * }
+ *
+ * const ring = HashRing.make<Node>().pipe(
+ *   HashRing.add(new Node("node-a")),
+ *   HashRing.add(new Node("node-b"), { weight: 2 })
+ * )
+ *
+ * const owner = HashRing.get(ring, "user:123")
+ * console.log(owner ? PrimaryKey.value(owner) : undefined)
+ * ```
+ *
  * @since 4.0.0
  */
 export * as HashRing from "./HashRing.ts"
 
 /**
+ * The `HashSet` module provides an immutable set data structure for storing
+ * unique values with efficient membership checks, additions, removals, and set
+ * operations. A `HashSet<A>` contains at most one value for each equality class
+ * as determined by Effect's `Equal` / `Hash` semantics.
+ *
+ * **Mental model**
+ *
+ * - `HashSet<A>` is an immutable collection of unique values of type `A`
+ * - Operations such as {@link add}, {@link remove}, {@link union}, and
+ *   {@link difference} return new sets; the input set is never mutated
+ * - Membership is checked with {@link has}, using Effect equality and hashing
+ *   rather than array-style linear scanning
+ * - Duplicate values are collapsed when using {@link make}, {@link fromIterable},
+ *   {@link add}, or {@link map}
+ * - `HashSet` is iterable, but iteration order is not a sorting guarantee
+ *
+ * **Common tasks**
+ *
+ * - Create sets: {@link empty}, {@link make}, {@link fromIterable}
+ * - Check membership and size: {@link has}, {@link size}, {@link isEmpty}
+ * - Add or remove values: {@link add}, {@link remove}
+ * - Combine sets: {@link union}, {@link intersection}, {@link difference}
+ * - Compare sets: {@link isSubset}
+ * - Transform or select values: {@link map}, {@link filter}
+ * - Test values: {@link some}, {@link every}
+ * - Fold values: {@link reduce}
+ *
+ * **Gotchas**
+ *
+ * - Values that should compare structurally should implement compatible
+ *   `Equal` and `Hash` behavior; otherwise object identity may affect whether
+ *   values are considered distinct
+ * - {@link map} may reduce the set size when multiple input values map to the
+ *   same output value
+ * - Do not rely on iteration order for deterministic presentation; sort the
+ *   values after converting to an array when order matters
+ *
  * @since 2.0.0
  */
 export * as HashSet from "./HashSet.ts"
@@ -1496,7 +2252,8 @@ export * as HashSet from "./HashSet.ts"
  * can represent complex type relationships with multiple type parameters, including
  * contravariant, covariant, and invariant positions.
  *
- * @example
+ * **Example** (Encoding type lambdas)
+ *
  * ```ts
  * import type { HKT } from "effect"
  *
@@ -1532,10 +2289,10 @@ export * as HKT from "./HKT.ts"
  * The module also includes redaction capabilities for sensitive data, allowing objects
  * to provide different representations based on the current execution context.
  *
- * @example
+ * **Example** (Creating inspectable values)
+ *
  * ```ts
- * import { Inspectable } from "effect"
- * import { format } from "effect/Formatter"
+ * import { Formatter, Inspectable } from "effect"
  *
  * class User extends Inspectable.Class {
  *   constructor(
@@ -1556,7 +2313,7 @@ export * as HKT from "./HKT.ts"
  *
  * const user = new User("Alice", "alice@example.com")
  * console.log(user.toString()) // Pretty printed JSON
- * console.log(format(user)) // Same as toString()
+ * console.log(Formatter.format(user)) // Same as toString()
  * ```
  *
  * @since 2.0.0
@@ -1575,7 +2332,8 @@ export * as Inspectable from "./Inspectable.ts"
  * for stream processing and memory-efficient data manipulation. All functions in this
  * module preserve the lazy nature of iterables where possible.
  *
- * @example
+ * **Example** (Working with iterables)
+ *
  * ```ts
  * import { Iterable, Option } from "effect"
  *
@@ -1631,7 +2389,7 @@ export * as Iterable from "./Iterable.ts"
  * **Example** (Computing and applying a patch)
  *
  * ```ts
- * import * as JsonPatch from "effect/JsonPatch"
+ * import { JsonPatch } from "effect"
  *
  * const oldValue = { name: "Alice", age: 30 }
  * const newValue = { name: "Alice", age: 31, city: "NYC" }
@@ -1686,15 +2444,15 @@ export * as JsonPatch from "./JsonPatch.ts"
  * **Example** (Building and parsing a JSON Pointer)
  *
  * ```ts
- * import { escapeToken, unescapeToken } from "effect/JsonPointer"
+ * import { JsonPointer } from "effect"
  *
  * // Build a JSON Pointer from path segments
  * const segments = ["users", "name/alias", "value"]
- * const pointer = "/" + segments.map(escapeToken).join("/")
+ * const pointer = "/" + segments.map(JsonPointer.escapeToken).join("/")
  * // "/users/name~1alias/value"
  *
  * // Parse a JSON Pointer back to segments
- * const tokens = pointer.split("/").slice(1).map(unescapeToken)
+ * const tokens = pointer.split("/").slice(1).map(JsonPointer.unescapeToken)
  * // ["users", "name/alias", "value"]
  * ```
  *
@@ -1796,7 +2554,39 @@ export * as JsonPointer from "./JsonPointer.ts"
 export * as JsonSchema from "./JsonSchema.ts"
 
 /**
- * @since 3.8.0
+ * The `Latch` module provides a reusable synchronization primitive for
+ * coordinating fibers. A `Latch` is either open or closed: when it is closed,
+ * fibers that use {@link await} or {@link whenOpen} suspend until the latch is
+ * opened or the current waiters are released.
+ *
+ * **Mental model**
+ *
+ * - An open latch lets current and future waiters continue immediately
+ * - A closed latch causes `await` and `whenOpen` to suspend
+ * - {@link open} permanently opens the latch until it is closed again
+ * - {@link release} wakes only the fibers currently waiting and leaves the
+ *   latch closed for future waiters
+ * - {@link close} resets the latch so later waiters suspend again
+ *
+ * **Common tasks**
+ *
+ * - Create a latch inside `Effect`: {@link make}
+ * - Create a latch synchronously: {@link makeUnsafe}
+ * - Wait for a signal before continuing: {@link await}
+ * - Guard an effect so it runs only after the latch is open: {@link whenOpen}
+ * - Let all current and future waiters proceed: {@link open}
+ * - Let only the current waiters proceed: {@link release}
+ * - Re-enable waiting after opening: {@link close}
+ *
+ * **Gotchas**
+ *
+ * - `release` is not the same as `open`; new waiters still suspend after the
+ *   current waiters are released
+ * - `open` and `close` report whether they changed the latch state
+ * - Prefer the effectful APIs unless synchronous allocation or mutation is
+ *   required
+ *
+ * @since 4.0.0
  */
 export * as Latch from "./Latch.ts"
 
@@ -1805,232 +2595,238 @@ export * as Latch from "./Latch.ts"
  * application. Services can be injected into effects via
  * `Effect.provideService`. Effects can require services via `Effect.service`.
  *
- * Layer can be thought of as recipes for producing bundles of services, given
- * their dependencies (other services).
+ * A layer is a recipe for producing services from their dependencies:
  *
- * Construction of services can be effectful and utilize resources that must be
- * acquired and safely released when the services are done being utilized.
+ * - `ROut` is what the layer provides.
+ * - `E` is what can fail while building the layer.
+ * - `RIn` is what the layer needs in order to build.
  *
- * By default layers are shared, meaning that if the same layer is used twice
- * the layer will only be allocated a single time.
+ * Normal application code should ask for services. Layer code should create
+ * services. The application entry point should provide the final layer once.
+ * Keeping this boundary clear makes programs easier to reuse with production,
+ * test, or mock implementations.
+ *
+ * Construction of services can be effectful and can acquire resources that must
+ * be safely released when the services are no longer used. For example, a layer
+ * can open a database pool during acquisition and close it in a finalizer.
+ *
+ * Layers are lazy: they do not build anything until they are provided to a
+ * program or explicitly built. By default layers are shared, meaning that if the
+ * same layer value is used twice, it is allocated only once and both users share
+ * the same service instance.
  *
  * Because of their excellent composition properties, layers are the idiomatic
- * way in Effect-TS to create services that depend on other services.
+ * way in Effect to create services that depend on other services.
  *
  * @since 2.0.0
  */
 export * as Layer from "./Layer.ts"
 
 /**
+ * The `LayerMap` module provides utilities for managing scoped resources that
+ * are selected by key and built from `Layer` values. A `LayerMap<K, I, E>` turns
+ * a key into a cached service `Context<I>`, so applications can lazily acquire
+ * and reuse different resource instances such as tenant clients, regional
+ * connections, environment-specific services, or other keyed infrastructure.
+ *
+ * **Mental model**
+ *
+ * - A `LayerMap` is a scoped, reference-counted cache of contexts produced by layers
+ * - Keys identify which layer-backed resource set should be acquired
+ * - Resources are acquired on demand when a key is requested
+ * - The same key reuses the cached context while it remains live
+ * - Cached resources are finalized when invalidated, when their scope closes, or after idle expiration
+ * - The layers built by a `LayerMap` share the current layer memoization map
+ *
+ * **Common tasks**
+ *
+ * - Create from a lookup function: {@link make}
+ * - Create from a fixed record of layers: {@link fromRecord}
+ * - Define a service wrapper with accessor helpers: {@link Service}
+ * - Retrieve a layer for a key: {@link LayerMap.get}
+ * - Retrieve a scoped context directly: {@link LayerMap.contextEffect}
+ * - Force a cached entry to be rebuilt later: {@link LayerMap.invalidate}
+ * - Remove idle entries automatically with the `idleTimeToLive` option
+ * - Eagerly build known entries with `preloadKeys` or `preload`
+ *
+ * **Gotchas**
+ *
+ * - `contextEffect` requires a `Scope.Scope` because it exposes the acquired context directly
+ * - `get` returns a `Layer` that can be provided to programs expecting the keyed services
+ * - Invalidating a key finalizes the current cached resources for that key; the next access rebuilds them
+ * - Preloading moves layer construction errors to `LayerMap` creation instead of first use
+ *
  * @since 3.14.0
  */
 export * as LayerMap from "./LayerMap.ts"
 
 /**
+ * The `Logger` module defines the logging model used by the Effect runtime and
+ * provides constructors for formatting, routing, batching, and installing
+ * loggers. A `Logger<Message, Output>` receives each runtime log event as an
+ * {@link Options} value and transforms it into an output such as a string,
+ * structured object, JSON line, console write, file write, or trace span event.
+ *
+ * **Mental model**
+ *
+ * - Effect programs emit log events with APIs such as `Effect.log`,
+ *   `Effect.logInfo`, `Effect.logWarning`, and `Effect.logError`
+ * - Each event contains a message, log level, cause, fiber, and timestamp
+ * - Loggers are ordinary values created with {@link make} and installed with
+ *   {@link layer}
+ * - Multiple loggers can be active at once by providing a layer with several
+ *   logger values
+ * - Formatter loggers such as {@link formatLogFmt}, {@link formatStructured},
+ *   and {@link formatJson} return formatted data without writing it anywhere
+ * - Console loggers such as {@link consolePretty}, {@link consoleLogFmt},
+ *   {@link consoleStructured}, and {@link consoleJson} write formatted output
+ *   to the active Effect console
+ *
+ * **Log output structure**
+ *
+ * Built-in formatters include the log level, timestamp, fiber identifier, and
+ * logged message. When present, they also include the pretty-printed cause,
+ * active log annotations, and active log spans. Structured and JSON loggers keep
+ * these fields as machine-readable data, while logfmt and pretty loggers render
+ * them as human-readable text.
+ *
+ * **Common tasks**
+ *
+ * - Create a custom logger: {@link make}
+ * - Transform logger output: {@link map}
+ * - Write formatter output to the console: {@link withConsoleLog},
+ *   {@link withConsoleError}, {@link withLeveledConsole}
+ * - Use built-in console loggers: {@link consolePretty}, {@link consoleLogFmt},
+ *   {@link consoleStructured}, {@link consoleJson}
+ * - Use built-in formatter loggers: {@link formatSimple}, {@link formatLogFmt},
+ *   {@link formatStructured}, {@link formatJson}
+ * - Batch logger output before flushing to a sink: {@link batched}
+ * - Write string logger output to a file: {@link toFile}
+ * - Preserve trace correlation by including {@link tracerLogger}
+ * - Install or replace loggers for an effect: {@link layer}
+ *
+ * **Gotchas**
+ *
+ * - {@link layer} replaces the current logger set by default; pass
+ *   `mergeWithExisting: true` when adding loggers to the existing runtime
+ *   loggers
+ * - Formatter loggers only produce values; wrap them with console, file, batch,
+ *   or custom sink loggers when output should be written somewhere
+ * - {@link batched} and {@link toFile} are scoped; keep their scope open while
+ *   logs are being emitted so buffered entries can flush reliably
+ * - {@link toFile} accepts only loggers that output strings, so pair it with
+ *   string formatters such as {@link formatJson} or {@link formatLogFmt}
+ * - The default runtime logger set includes {@link tracerLogger}; replacing
+ *   loggers without merging may remove automatic log-to-trace-span recording
+ *
+ * **Quickstart**
+ *
+ * **Example** (Installing a JSON console logger)
+ *
+ * ```ts
+ * import { Effect, Logger } from "effect"
+ *
+ * const program = Effect.gen(function*() {
+ *   yield* Effect.logInfo("request started", { method: "GET", path: "/users" })
+ *   yield* Effect.logError("request failed", { status: 500 })
+ * }).pipe(
+ *   Effect.annotateLogs("service", "users-api"),
+ *   Effect.withLogSpan("http.request"),
+ *   Effect.provide(Logger.layer([Logger.consoleJson]))
+ * )
+ * ```
+ *
+ * **See also**
+ *
+ * - {@link make} for defining custom loggers
+ * - {@link layer} for installing loggers
+ * - {@link formatJson} and {@link consoleJson} for structured production logs
+ * - {@link consolePretty} for readable local logs
+ *
  * @since 2.0.0
- *
- * The `Logger` module provides a robust and flexible logging system for Effect applications.
- * It offers structured logging, multiple output formats, and seamless integration with the
- * Effect runtime's tracing and context management.
- *
- * ## Key Features
- *
- * - **Structured Logging**: Built-in support for structured log messages with metadata
- * - **Multiple Formats**: JSON, LogFmt, Pretty, and custom formatting options
- * - **Context Integration**: Automatic capture of fiber context, spans, and annotations
- * - **Batching**: Efficient log aggregation and batch processing
- * - **File Output**: Direct file writing with configurable batch windows
- * - **Composable**: Transform and compose loggers using functional patterns
- *
- * ## Basic Usage
- *
- * ```ts
- * import { Effect } from "effect"
- *
- * // Basic logging
- * const program = Effect.gen(function*() {
- *   yield* Effect.log("Application started")
- *   yield* Effect.logInfo("Processing user request")
- *   yield* Effect.logWarning("Resource limit approaching")
- *   yield* Effect.logError("Database connection failed")
- * })
- *
- * // With structured data
- * const structuredLog = Effect.gen(function*() {
- *   yield* Effect.log("User action", { userId: 123, action: "login" })
- *   yield* Effect.logInfo("Request processed", { duration: 150, statusCode: 200 })
- * })
- * ```
- *
- * ## Custom Loggers
- *
- * ```ts
- * import { Effect, Logger } from "effect"
- *
- * // Create a custom logger
- * const customLogger = Logger.make((options) => {
- *   console.log(`[${options.logLevel}] ${options.message}`)
- * })
- *
- * // Use JSON format for production
- * const jsonLogger = Logger.consoleJson
- *
- * // Pretty format for development
- * const prettyLogger = Logger.consolePretty()
- *
- * const program = Effect.log("Hello World").pipe(
- *   Effect.provide(Logger.layer([jsonLogger]))
- * )
- * ```
- *
- * ## Multiple Loggers
- *
- * ```ts
- * import { Effect, Logger } from "effect"
- *
- * // Combine multiple loggers
- * const CombinedLoggerLive = Logger.layer([
- *   Logger.consoleJson,
- *   Logger.consolePretty()
- * ])
- *
- * const program = Effect.log("Application event").pipe(
- *   Effect.provide(CombinedLoggerLive)
- * )
- * ```
- *
- * ## Batched Logging
- *
- * ```ts
- * import { Duration, Effect, Logger } from "effect"
- *
- * const batchedLogger = Logger.batched(Logger.formatJson, {
- *   window: Duration.seconds(5),
- *   flush: (messages) =>
- *     Effect.sync(() => {
- *       // Process batch of log messages
- *       console.log("Flushing", messages.length, "log entries")
- *     })
- * })
- *
- * const program = Effect.gen(function*() {
- *   const logger = yield* batchedLogger
- *   yield* Effect.provide(
- *     Effect.all([
- *       Effect.log("Event 1"),
- *       Effect.log("Event 2"),
- *       Effect.log("Event 3")
- *     ]),
- *     Logger.layer([logger])
- *   )
- * })
- * ```
  */
 export * as Logger from "./Logger.ts"
 
 /**
+ * The `LogLevel` module defines the levels used by Effect logging and the
+ * ordering operations used to compare, filter, and enable log output.
+ *
+ * **Mental model**
+ *
+ * - A `LogLevel` is one of `All`, `Fatal`, `Error`, `Warn`, `Info`, `Debug`,
+ *   `Trace`, or `None`
+ * - `Fatal` is the most severe concrete level and `Trace` is the least severe
+ * - `All` and `None` are sentinel levels: `All` enables every message and
+ *   `None` disables every message
+ * - Ordering follows logging severity, so higher levels are more important and
+ *   lower levels are more verbose
+ * - Filtering is usually expressed as "log this message when its level is
+ *   greater than or equal to the configured minimum"
+ *
+ * **Common tasks**
+ *
+ * - Enumerate levels with {@link values}
+ * - Compare exact levels with {@link Equivalence}
+ * - Sort or compare by severity with {@link Order} and {@link getOrdinal}
+ * - Check thresholds with {@link isGreaterThanOrEqualTo} and
+ *   {@link isLessThanOrEqualTo}
+ * - Test whether a level is enabled for the current fiber with
+ *   {@link isEnabled}
+ *
+ * **Gotchas**
+ *
+ * - `All` and `None` are useful for configuration boundaries, but they are not
+ *   concrete message severities; use {@link Severity} when only emitted message
+ *   levels are valid
+ * - The comparison helpers compare severity, not declaration position in source
+ *   code or alphabetical order
+ * - `isEnabled` reads the current fiber's `MinimumLogLevel` reference, so it is
+ *   context-sensitive; use the pure comparison helpers when checking an
+ *   explicit threshold
+ *
  * @since 2.0.0
- *
- * The `LogLevel` module provides utilities for managing log levels in Effect applications.
- * It defines a hierarchy of log levels and provides functions for comparing and filtering logs
- * based on their severity.
- *
- * ## Log Level Hierarchy
- *
- * The log levels are ordered from most severe to least severe:
- *
- * 1. **All** - Special level that allows all messages
- * 2. **Fatal** - System is unusable, immediate attention required
- * 3. **Error** - Error conditions that should be investigated
- * 4. **Warn** - Warning conditions that may indicate problems
- * 5. **Info** - Informational messages about normal operation
- * 6. **Debug** - Debug information useful during development
- * 7. **Trace** - Very detailed trace information
- * 8. **None** - Special level that suppresses all messages
- *
- * ## Basic Usage
- *
- * ```ts
- * import { Effect } from "effect"
- *
- * // Basic log level usage
- * const program = Effect.gen(function*() {
- *   yield* Effect.logFatal("System is shutting down")
- *   yield* Effect.logError("Database connection failed")
- *   yield* Effect.logWarning("Memory usage is high")
- *   yield* Effect.logInfo("User logged in")
- *   yield* Effect.logDebug("Processing request")
- *   yield* Effect.logTrace("Variable value: xyz")
- * })
- * ```
- *
- * ## Level Comparison
- *
- * ```ts
- * import { LogLevel } from "effect"
- *
- * // Check if one level is more severe than another
- * console.log(LogLevel.isGreaterThan("Error", "Info")) // true
- * console.log(LogLevel.isGreaterThan("Debug", "Error")) // false
- *
- * // Check if level meets minimum threshold
- * console.log(LogLevel.isGreaterThanOrEqualTo("Info", "Debug")) // true
- * console.log(LogLevel.isLessThan("Trace", "Info")) // true
- * ```
- *
- * ## Filtering by Level
- *
- * ```ts
- * import { Logger, LogLevel } from "effect"
- *
- * // Create a logger that only logs Error and above
- * const errorLogger = Logger.make((options) => {
- *   if (LogLevel.isGreaterThanOrEqualTo(options.logLevel, "Error")) {
- *     console.log(`[${options.logLevel}] ${options.message}`)
- *   }
- * })
- *
- * // Production logger - Info and above
- * const productionLogger = Logger.make((options) => {
- *   if (LogLevel.isGreaterThanOrEqualTo(options.logLevel, "Info")) {
- *     console.log(
- *       `${options.date.toISOString()} [${options.logLevel}] ${options.message}`
- *     )
- *   }
- * })
- *
- * // Development logger - Debug and above
- * const devLogger = Logger.make((options) => {
- *   if (LogLevel.isGreaterThanOrEqualTo(options.logLevel, "Debug")) {
- *     console.log(`[${options.logLevel}] ${options.message}`)
- *   }
- * })
- * ```
- *
- * ## Runtime Configuration
- *
- * ```ts
- * import { Config, Effect, Logger, LogLevel } from "effect"
- *
- * // Configure log level from environment
- * const logLevelConfig = Config.string("LOG_LEVEL").pipe(
- *   Config.withDefault("Info")
- * )
- *
- * const configurableLogger = Effect.gen(function*() {
- *   const minLevel = yield* logLevelConfig
- *
- *   return Logger.make((options) => {
- *     if (LogLevel.isGreaterThanOrEqualTo(options.logLevel, minLevel)) {
- *       console.log(`[${options.logLevel}] ${options.message}`)
- *     }
- *   })
- * })
- * ```
  */
 export * as LogLevel from "./LogLevel.ts"
 
 /**
+ * The `ManagedRuntime` module provides a way to build a reusable runtime from
+ * a `Layer` and use it to run effects that require the services produced by
+ * that layer. A `ManagedRuntime<R, ER>` owns the lifecycle of the layer-built
+ * resources, caches the resulting `Context<R>`, and exposes runners for
+ * integrating Effect programs with JavaScript entry points.
+ *
+ * **Mental model**
+ *
+ * - A managed runtime is created from a `Layer` with {@link make}
+ * - The layer is built lazily the first time the runtime is used
+ * - The built context is cached and reused for subsequent effect executions
+ * - Resources acquired by the layer are owned by the runtime's internal scope
+ * - Disposing the runtime closes that scope and releases all managed resources
+ * - Effects run through the runtime receive the layer's services automatically
+ *
+ * **Common tasks**
+ *
+ * - Create a runtime from application services: {@link make}
+ * - Run an effect as a `Promise`: {@link ManagedRuntime.runPromise}
+ * - Run an effect and keep its `Exit`: {@link ManagedRuntime.runPromiseExit}
+ * - Fork an effect into a `Fiber`: {@link ManagedRuntime.runFork}
+ * - Bridge callback-style APIs: {@link ManagedRuntime.runCallback}
+ * - Run synchronous effects at program boundaries: {@link ManagedRuntime.runSync},
+ *   {@link ManagedRuntime.runSyncExit}
+ * - Access the cached service context: {@link ManagedRuntime.context}
+ * - Release layer resources: {@link ManagedRuntime.dispose},
+ *   {@link ManagedRuntime.disposeEffect}
+ *
+ * **Gotchas**
+ *
+ * - Always dispose a managed runtime when it is no longer needed, especially
+ *   when the layer acquires resources such as connections, servers, or files
+ * - Layer construction errors are included in the error channel of runtime
+ *   runners, so `ER` is combined with the effect's own error type
+ * - `runSync` can only execute effects without asynchronous boundaries; use
+ *   `runPromise` for asynchronous programs
+ * - After disposal, the runtime cannot be reused
+ *
  * @since 2.0.0
  */
 export * as ManagedRuntime from "./ManagedRuntime.ts"
@@ -2066,49 +2862,56 @@ export * as ManagedRuntime from "./ManagedRuntime.ts"
 export * as Match from "./Match.ts"
 
 /**
- * @since 2.0.0
+ * The `Metric` module provides tools for defining, updating, tagging, and
+ * reading application metrics from Effect programs. A `Metric<Input, State>`
+ * accepts typed input values and aggregates them into a typed state that can be
+ * read directly or exported from a snapshot.
  *
- * The `Metric` module provides a comprehensive system for collecting, aggregating, and observing
- * application metrics in Effect applications. It offers type-safe, concurrent metrics that can
- * be used to monitor performance, track business metrics, and gain insights into application behavior.
+ * **Mental model**
  *
- * ## Key Features
+ * - A metric has an identifier, a type, an optional description, optional attributes, and mutable aggregate state
+ * - Use counters for cumulative values such as requests, errors, retries, or bytes processed
+ * - Use gauges for point-in-time values that can rise or fall, such as active connections or queue size
+ * - Use frequencies to count occurrences of discrete string values, such as status codes or action names
+ * - Use histograms to bucket numeric observations and inspect count, min, max, and sum
+ * - Use summaries to calculate quantiles over a bounded, time-based observation window
+ * - Metrics are updated from effects with {@link update} and {@link modify}, and read with {@link value}
+ * - Attributes tag metrics with key-value dimensions so the same logical metric can be grouped by service, endpoint, method, or other labels
+ * - Snapshots capture the currently registered metrics and their aggregate states for reporting or export
  *
- * - **Five Metric Types**: Counters, Gauges, Frequencies, Histograms, and Summaries
- * - **Type Safety**: Fully typed metrics with compile-time guarantees
- * - **Concurrency Safe**: Thread-safe metrics that work with Effect's concurrency model
- * - **Attributes**: Tag metrics with key-value attributes for filtering and grouping
- * - **Snapshots**: Take point-in-time snapshots of all metrics for reporting
- * - **Runtime Integration**: Automatic fiber runtime metrics collection
+ * **Common tasks**
  *
- * ## Metric Types
+ * - Create counters: {@link counter}
+ * - Create gauges: {@link gauge}
+ * - Create frequencies: {@link frequency}
+ * - Create histograms: {@link histogram}, {@link linearBoundaries}, {@link exponentialBoundaries}
+ * - Create summaries: {@link summary}, {@link summaryWithTimestamp}
+ * - Measure effect duration: {@link timer}
+ * - Update a metric: {@link update}
+ * - Apply relative updates where supported: {@link modify}
+ * - Read one metric: {@link value}
+ * - Tag a metric: {@link withAttributes}
+ * - Transform accepted input values: {@link mapInput}
+ * - Record a constant input for repeated events: {@link withConstantInput}
+ * - Inspect all registered metrics: {@link snapshot}, {@link dump}
+ * - Enable fiber runtime metrics: {@link enableRuntimeMetrics}
  *
- * ### Counter
- * Tracks cumulative values that only increase or can be reset to zero.
- * Perfect for counting events, requests, errors, etc.
+ * **Gotchas**
  *
- * ### Gauge
- * Represents a single numerical value that can go up or down.
- * Ideal for current resource usage, temperature, queue sizes, etc.
+ * - Counter and gauge metrics can use `number` inputs by default or `bigint` inputs with the `bigint` option
+ * - Incremental counters ignore negative updates; use non-incremental counters only when decreases are meaningful
+ * - {@link update} sets a gauge to an absolute value, while {@link modify} changes it relative to its current value
+ * - Histogram buckets are cumulative and depend on the boundaries supplied when the metric is created
+ * - Summary quantiles are calculated from the configured sliding window, so old observations expire
+ * - Prefer low-cardinality attributes; using unbounded values such as request IDs can create too many metric series
  *
- * ### Frequency
- * Counts occurrences of discrete string values.
- * Useful for tracking categorical data like HTTP status codes, user actions, etc.
+ * **Quickstart**
  *
- * ### Histogram
- * Records observations in configurable buckets to analyze distribution.
- * Great for response times, request sizes, and other measured values.
- *
- * ### Summary
- * Calculates quantiles over a sliding time window.
- * Provides statistical insights into value distributions over time.
- *
- * ## Basic Usage
+ * **Example** (Creating and updating metrics)
  *
  * ```ts
  * import { Effect, Metric } from "effect"
  *
- * // Create metrics
  * const requestCount = Metric.counter("http_requests_total", {
  *   description: "Total number of HTTP requests"
  * })
@@ -2118,31 +2921,7 @@ export * as Match from "./Match.ts"
  *   boundaries: Metric.linearBoundaries({ start: 0, width: 50, count: 20 })
  * })
  *
- * // Use metrics in your application
  * const handleRequest = Effect.gen(function*() {
- *   yield* Metric.update(requestCount, 1)
- *
- *   const startTime = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
- *
- *   // Process request...
- *   yield* Effect.sleep("100 millis")
- *
- *   const endTime = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
- *   yield* Metric.update(responseTime, endTime - startTime)
- * })
- * ```
- *
- * ## Attributes and Tagging
- *
- * ```ts
- * import { Effect, Metric } from "effect"
- *
- * const requestCount = Metric.counter("requests", {
- *   description: "Number of requests by endpoint and method"
- * })
- *
- * const program = Effect.gen(function*() {
- *   // Add attributes to metrics
  *   yield* Metric.update(
  *     Metric.withAttributes(requestCount, {
  *       endpoint: "/api/users",
@@ -2151,57 +2930,21 @@ export * as Match from "./Match.ts"
  *     1
  *   )
  *
- *   // Or use withAttributes for compile-time attributes
- *   const taggedCounter = Metric.withAttributes(requestCount, {
- *     endpoint: "/api/posts",
- *     method: "POST"
- *   })
- *   yield* Metric.update(taggedCounter, 1)
+ *   yield* Metric.update(responseTime, 125)
+ *
+ *   return yield* Metric.value(requestCount)
  * })
  * ```
  *
- * ## Advanced Examples
+ * **See also**
  *
- * ```ts
- * import { Effect, Metric } from "effect"
+ * - {@link counter} / {@link gauge} / {@link frequency} for common metric types
+ * - {@link histogram} / {@link summary} for distribution metrics
+ * - {@link update} / {@link modify} / {@link value} for working with metric state
+ * - {@link withAttributes} for adding dimensions
+ * - {@link snapshot} for exporting all registered metric values
  *
- * // Business metrics
- * const userSignups = Metric.counter("user_signups_total")
- * const activeUsers = Metric.gauge("active_users_current")
- * const featureUsage = Metric.frequency("feature_usage")
- *
- * // Performance metrics
- * const dbQueryTime = Metric.summary("db_query_duration", {
- *   maxAge: "5 minutes",
- *   maxSize: 1000,
- *   quantiles: [0.5, 0.9, 0.95, 0.99]
- * })
- *
- * const program = Effect.gen(function*() {
- *   // Track user signup
- *   yield* Metric.update(userSignups, 1)
- *
- *   // Update active user count
- *   yield* Metric.update(activeUsers, 1250)
- *
- *   // Record feature usage
- *   yield* Metric.update(featureUsage, "dashboard_view")
- *
- *   // Measure database query time
- *   yield* Effect.timed(performDatabaseQuery).pipe(
- *     Effect.tap(([duration]) => Metric.update(dbQueryTime, duration))
- *   )
- * })
- *
- * // Get metric snapshots
- * const getMetrics = Effect.gen(function*() {
- *   const snapshots = yield* Metric.snapshot
- *
- *   for (const metric of snapshots) {
- *     console.log(`${metric.id}: ${JSON.stringify(metric.state)}`)
- *   }
- * })
- * ```
+ * @since 2.0.0
  */
 export * as Metric from "./Metric.ts"
 
@@ -2229,107 +2972,168 @@ export * as Metric from "./Metric.ts"
  * - Iteration: O(n)
  *
  * @since 2.0.0
- * @category data-structures
  */
 export * as MutableHashMap from "./MutableHashMap.ts"
 
 /**
- * @fileoverview
- * MutableHashSet is a high-performance, mutable set implementation that provides efficient storage
- * and retrieval of unique values. Built on top of MutableHashMap, it inherits the same performance
- * characteristics and support for both structural and referential equality.
+ * The `MutableHashSet` module provides a mutable hash set for storing unique
+ * values with efficient membership checks, insertion, removal, and iteration.
+ * It is built on {@link MutableHashMap}: each set value is stored as a map key,
+ * so uniqueness follows the same hashing and equality rules as the underlying
+ * mutable hash map.
  *
- * The implementation uses a MutableHashMap internally where each value is stored as a key with a
- * boolean flag, providing O(1) average-case performance for all operations.
+ * **Mental model**
  *
- * Key Features:
- * - Mutable operations for performance-critical scenarios
- * - Supports both structural and referential equality
- * - Efficient duplicate detection and removal
- * - Iterable interface for easy traversal
- * - Memory-efficient storage with automatic deduplication
- * - Seamless integration with Effect's Equal and Hash interfaces
+ * - `MutableHashSet<V>` is a mutable collection of unique values of type `V`
+ * - Operations such as {@link add}, {@link remove}, and {@link clear} mutate
+ *   the set in place
+ * - Duplicate values are ignored according to Effect equality and hashing semantics
+ * - Values that implement `Equal` / `Hash` are compared structurally
+ * - Primitive values and references that do not implement Effect equality use
+ *   the normal hash map behavior
+ * - The set is iterable, so `Array.from(set)` or `for...of` can be used to
+ *   inspect its values
  *
- * Performance Characteristics:
- * - Add/Has/Remove: O(1) average, O(n) worst case (hash collisions)
- * - Clear: O(1)
- * - Size: O(1)
- * - Iteration: O(n)
+ * **Common tasks**
+ *
+ * - Create an empty set: {@link empty}
+ * - Create from values: {@link make}
+ * - Create from any iterable: {@link fromIterable}
+ * - Add a value: {@link add}
+ * - Check membership: {@link has}
+ * - Remove a value: {@link remove}
+ * - Remove all values: {@link clear}
+ * - Count unique values: {@link size}
+ * - Narrow unknown values: {@link isMutableHashSet}
+ *
+ * **Gotchas**
+ *
+ * - This data structure is intentionally mutable; keep ownership clear when
+ *   sharing it between callers
+ * - Mutating operations return the same set instance for convenient piping, not
+ *   a copy
+ * - Iteration order should not be used as a stable sorting mechanism
+ * - For immutable set operations, use Effect's immutable collection modules
+ *   instead
+ *
+ * **Performance**
+ *
+ * - Add, membership checks, and removal are O(1) on average and O(n) in the
+ *   presence of hash collisions
+ * - Clearing and reading the size are O(1)
+ * - Iteration is O(n)
+ *
+ * **Quickstart**
+ *
+ * **Example** (Tracking unique values)
+ *
+ * ```ts
+ * import { MutableHashSet } from "effect"
+ *
+ * const set = MutableHashSet.make("apple", "banana", "apple")
+ *
+ * MutableHashSet.add(set, "cherry")
+ * MutableHashSet.remove(set, "banana")
+ *
+ * console.log(MutableHashSet.has(set, "apple"))
+ * // Output: true
+ *
+ * console.log(MutableHashSet.size(set))
+ * // Output: 2
+ *
+ * console.log(Array.from(set))
+ * // Output: ["apple", "cherry"]
+ * ```
  *
  * @since 2.0.0
- * @category data-structures
  */
 export * as MutableHashSet from "./MutableHashSet.ts"
 
 /**
- * @fileoverview
- * MutableList is an efficient, mutable linked list implementation optimized for high-throughput
- * scenarios like logging, queuing, and streaming. It uses a bucket-based architecture where
- * elements are stored in arrays (buckets) linked together, providing optimal performance for
- * both append and prepend operations.
+ * The `MutableList` module provides a mutable linked list for accumulating,
+ * ordering, inspecting, and draining values with efficient operations at both
+ * ends of the list.
  *
- * The implementation uses a sophisticated bucket system:
- * - Each bucket contains an array of elements with an offset pointer
- * - Buckets can be marked as mutable or immutable for optimization
- * - Elements are taken from the head and added to the tail
- * - Memory is efficiently managed through bucket reuse and cleanup
+ * A `MutableList<A>` stores values in linked buckets of arrays. Appending adds
+ * values to the tail, prepending adds values to the head, and taking removes
+ * values from the head. Unlike persistent collections, every mutation updates
+ * the list object in place: operations such as {@link append}, {@link prepend},
+ * {@link take}, {@link takeN}, {@link clear}, {@link filter}, and {@link remove}
+ * change the same `MutableList` instance and update its `length`.
  *
- * Key Features:
- * - Highly optimized for high-frequency append/prepend operations
- * - Memory efficient with automatic cleanup of consumed elements
- * - Support for bulk operations (appendAll, prependAll, takeN)
- * - Filtering and removal operations
- * - Zero-copy optimizations for certain scenarios
+ * **Mental model**
  *
- * Performance Characteristics:
- * - Append/Prepend: O(1) amortized
- * - Take/TakeN: O(1) per element taken
- * - Length: O(1)
- * - Clear: O(1)
- * - Filter: O(n)
+ * - `MutableList<A>` is a stateful container with `head`, `tail`, and `length`
+ * - Values are consumed from the head with {@link take}, {@link takeN}, or
+ *   {@link takeAll}
+ * - {@link append} and {@link appendAll} preserve FIFO queue order for normal
+ *   producer-consumer use cases
+ * - {@link prepend} and {@link prependAll} place values before the current
+ *   contents, which is useful for priority work or restoring items to the front
+ * - {@link toArray} and {@link toArrayN} copy values without modifying the list
+ * - The `head` and `tail` bucket fields are exposed for advanced use, but most
+ *   code should treat them as implementation details
  *
- * Ideal Use Cases:
- * - High-throughput logging systems
- * - Producer-consumer queues
- * - Streaming data buffers
- * - Real-time data processing pipelines
+ * **Common tasks**
+ *
+ * - Create an empty list: {@link make}
+ * - Add one value: {@link append}, {@link prepend}
+ * - Add many values: {@link appendAll}, {@link prependAll}
+ * - Drain one value: {@link take}
+ * - Drain many values: {@link takeN}, {@link takeAll}
+ * - Inspect without draining: {@link toArrayN}, {@link toArray}
+ * - Reset the list: {@link clear}
+ * - Mutate contents in place: {@link filter}, {@link remove}
+ *
+ * **Gotchas**
+ *
+ * - `MutableList` is intentionally mutable; sharing a list means sharing its
+ *   changing state
+ * - {@link take} returns the {@link Empty} symbol when the list has no value, so
+ *   compare with `MutableList.Empty` instead of relying on falsy checks
+ * - {@link appendAllUnsafe} and {@link prependAllUnsafe} may reuse the provided
+ *   array when `mutable` is `true`; only enable that optimization when callers
+ *   will not keep using the array independently
+ * - {@link remove} uses JavaScript strict equality semantics, not structural
+ *   equality
  *
  * @since 4.0.0
- * @category data-structures
  */
 export * as MutableList from "./MutableList.ts"
 
 /**
- * @fileoverview
- * MutableRef provides a mutable reference container that allows safe mutation of values
- * in functional programming contexts. It serves as a bridge between functional and imperative
- * programming paradigms, offering atomic operations for state management.
+ * The `MutableRef` module provides a small synchronous container for mutable
+ * state. A `MutableRef<A>` stores one current value of type `A`, exposes that
+ * value through `.current`, and offers pipeable helpers for reading, replacing,
+ * and transforming the value in place.
  *
- * Unlike regular variables, MutableRef encapsulates mutable state and provides controlled
- * access through a standardized API. It supports atomic compare-and-set operations for
- * thread-safe updates and integrates seamlessly with Effect's ecosystem.
+ * **Mental model**
  *
- * Key Features:
- * - Mutable reference semantics with functional API
- * - Atomic compare-and-set operations for safe concurrent updates
- * - Specialized operations for numeric and boolean values
- * - Chainable operations that return the reference or the value
- * - Integration with Effect's Equal interface for value comparison
+ * - `MutableRef<A>` is a stable reference whose `.current` field may change over time
+ * - Reads and writes are synchronous and return immediately
+ * - `set`, `update`, `increment`, `decrement`, and `toggle` mutate the same reference in place
+ * - `getAnd*` helpers return the previous value, while `*AndGet` helpers return the new value
+ * - `compareAndSet` updates only when the current value is equal to the expected value using `Equal.equals`
+ * - A `MutableRef` is useful for local mutable state, but it does not make updates transactional or effectful
  *
- * Common Use Cases:
- * - State containers in functional applications
- * - Counters and accumulators
- * - Configuration that needs to be updated at runtime
- * - Caching and memoization scenarios
- * - Inter-module communication via shared references
+ * **Common tasks**
  *
- * Performance Characteristics:
- * - Get/Set: O(1)
- * - Compare-and-set: O(1)
- * - All operations: O(1)
+ * - Create a reference: {@link make}
+ * - Read the current value: {@link get} or `.current`
+ * - Replace the current value: {@link set}, {@link setAndGet}, {@link getAndSet}
+ * - Transform the current value: {@link update}, {@link updateAndGet}, {@link getAndUpdate}
+ * - Coordinate conditional replacement: {@link compareAndSet}
+ * - Work with counters: {@link increment}, {@link decrement}, {@link incrementAndGet}, {@link decrementAndGet}
+ * - Work with boolean flags: {@link toggle}
+ *
+ * **Gotchas**
+ *
+ * - All updates are imperative mutations; aliases to the same `MutableRef` observe the same changing value
+ * - Updating object or array values does not clone them unless the update function creates a new value
+ * - `compareAndSet` compares with Effect equality semantics, not only JavaScript reference equality
+ * - For state that must participate in `Effect` workflows, interruption, or fiber coordination, prefer higher-level Effect data types
  *
  * @since 2.0.0
- * @category data-structures
  */
 export * as MutableRef from "./MutableRef.ts"
 
@@ -2401,31 +3205,39 @@ export * as MutableRef from "./MutableRef.ts"
 export * as Newtype from "./Newtype.ts"
 
 /**
- * @since 2.0.0
+ * The `NonEmptyIterable` module provides a type-level representation of any
+ * JavaScript `Iterable` that is known to contain at least one element. A
+ * `NonEmptyIterable<A>` can be consumed anywhere an `Iterable<A>` is expected,
+ * while also carrying the guarantee that reading the first element is safe.
  *
- * The `NonEmptyIterable` module provides types and utilities for working with iterables
- * that are guaranteed to contain at least one element. This provides compile-time
- * safety when working with collections that must not be empty.
+ * **Mental model**
  *
- * ## Key Features
+ * - `NonEmptyIterable<A>` is an `Iterable<A>` branded with a non-empty guarantee
+ * - The guarantee is static: values should only be typed this way when construction or validation proves at least one element exists
+ * - The iterable can be an array, string, set, map, generator, or any custom iterable
+ * - `unprepend` safely separates the first element from an iterator for the remaining elements
+ * - Operations that may remove elements, such as filtering, usually return ordinary collections because they can become empty
  *
- * - **Type Safety**: Compile-time guarantee that the iterable contains at least one element
- * - **Iterator Protocol**: Fully compatible with JavaScript's built-in iteration protocol
- * - **Functional Operations**: Safe operations that preserve the non-empty property
- * - **Lightweight**: Minimal overhead with maximum type safety
+ * **Common tasks**
  *
- * ## Why NonEmptyIterable?
+ * - Accept inputs that must contain at least one value
+ * - Extract a head element and process the remaining iterator with {@link unprepend}
+ * - Model APIs such as reductions, comparisons, or aggregation that are undefined for empty inputs
+ * - Preserve compatibility with the JavaScript iteration protocol while documenting the stronger invariant
  *
- * Many operations require non-empty collections to be meaningful:
- * - Finding the maximum or minimum value
- * - Getting the first or last element
- * - Reducing without an initial value
- * - Operations that would otherwise need runtime checks
+ * **Gotchas**
  *
- * ## Basic Usage
+ * - A type assertion does not make an empty iterable non-empty; only assert after a trusted check or constructor
+ * - Iterators are stateful, so calling {@link unprepend} consumes the first yielded value from that iterator
+ * - The order of the first element follows the source iterable's iteration order, for example insertion order for `Map` and `Set`
+ * - Some transformations preserve non-emptiness, but transformations that can discard elements must account for the empty case
+ *
+ * **Quickstart**
+ *
+ * **Example** (Requiring a non-empty iterable)
  *
  * ```ts
- * import * as NonEmptyIterable from "effect/NonEmptyIterable"
+ * import { NonEmptyIterable } from "effect"
  *
  * // NonEmptyIterable is a type that represents any iterable with at least one element
  * function processNonEmpty<A>(data: NonEmptyIterable.NonEmptyIterable<A>): A {
@@ -2459,6 +3271,8 @@ export * as Newtype from "./Newtype.ts"
  * ```
  *
  * ## Working with Different Iterable Types
+ *
+ * **Example** (Adapting iterable inputs)
  *
  * ```ts
  * import { Array } from "effect"
@@ -2505,10 +3319,11 @@ export * as Newtype from "./Newtype.ts"
  *
  * ## Integration with Effect Arrays
  *
+ * **Example** (Processing non-empty iterables with Array)
+ *
  * ```ts
  * import { Array, pipe } from "effect"
- * import type * as NonEmptyIterable from "effect/NonEmptyIterable"
- * import type * as NonEmptyIterable from "effect/NonEmptyIterable"
+ * import type { NonEmptyIterable } from "effect"
  *
  * // Many Array functions work with NonEmptyIterable
  * declare const nonEmptyData: NonEmptyIterable.NonEmptyIterable<number>
@@ -2529,6 +3344,8 @@ export * as Newtype from "./Newtype.ts"
  *   // This would still be non-empty if the source was non-empty
  * )
  * ```
+ *
+ * @since 2.0.0
  */
 export * as NonEmptyIterable from "./NonEmptyIterable.ts"
 
@@ -2634,7 +3451,6 @@ export * as Number from "./Number.ts"
  * - {@link some} / {@link success} / {@link failure} — built-in prisms
  *
  * @since 4.0.0
- * @module
  */
 export * as Optic from "./Optic.ts"
 
@@ -2710,7 +3526,6 @@ export * as Optic from "./Optic.ts"
  * - {@link gen} for generator-based syntax
  *
  * @since 2.0.0
- * @module
  */
 export * as Option from "./Option.ts"
 
@@ -2768,55 +3583,205 @@ export * as Option from "./Option.ts"
 export * as Order from "./Order.ts"
 
 /**
- * @fileoverview
- * The Ordering module provides utilities for working with comparison results and ordering operations.
- * An Ordering represents the result of comparing two values, expressing whether the first value is
- * less than (-1), equal to (0), or greater than (1) the second value.
+ * The `Ordering` module provides the standard representation for the result of
+ * comparing two values. An `Ordering` is one of three numeric literals: `-1`
+ * when the first value is less than the second, `0` when both values compare as
+ * equal, and `1` when the first value is greater than the second.
  *
- * This module is fundamental for building comparison functions, sorting algorithms, and implementing
- * ordered data structures. It provides composable operations for combining multiple comparison results
- * and pattern matching on ordering outcomes.
+ * **Mental model**
  *
- * Key Features:
- * - Type-safe representation of comparison results (-1, 0, 1)
- * - Composable operations for combining multiple orderings
- * - Pattern matching utilities for handling different ordering cases
- * - Ordering reversal and combination functions
- * - Integration with Effect's functional programming patterns
+ * - `Ordering` describes the relationship between two compared values, not the
+ *   values themselves
+ * - Negative means "less than", zero means "equal", and positive means "greater
+ *   than"
+ * - Unlike JavaScript comparators, this type is normalized to exactly `-1`, `0`,
+ *   or `1`
+ * - `0` is neutral when combining comparisons; the first non-zero ordering
+ *   determines the result
  *
- * Common Use Cases:
- * - Implementing custom comparison functions
- * - Building complex sorting criteria
- * - Combining multiple comparison results
- * - Creating ordered data structures
- * - Pattern matching on comparison outcomes
+ * **Common tasks**
+ *
+ * - Interpret a comparison result with {@link match}
+ * - Reverse ascending and descending order with {@link reverse}
+ * - Combine multiple comparison criteria with {@link Reducer}
+ * - Build custom comparison functions for sorting, ordered collections, and
+ *   domain-specific ordering rules
+ *
+ * **Gotchas**
+ *
+ * - Do not cast arbitrary comparator results such as `a.localeCompare(b)`
+ *   directly unless they have been normalized to `-1`, `0`, or `1`
+ * - In comparator-style APIs, `-1` means the left value should come before the
+ *   right value, while `1` means it should come after
+ * - Reversing an `Ordering` swaps `-1` and `1`, but leaves `0` unchanged
  *
  * @since 2.0.0
- * @category utilities
  */
 export * as Ordering from "./Ordering.ts"
 
 /**
+ * The `PartitionedSemaphore` module provides a semaphore for limiting
+ * concurrency across a shared permit pool while keeping waiters grouped by
+ * partition key. A `PartitionedSemaphore<K>` is useful when many independent
+ * groups of work compete for the same bounded resource and each group should
+ * make progress without one busy group monopolizing released permits.
+ *
+ * **Mental model**
+ *
+ * - The semaphore has a fixed shared capacity measured in permits
+ * - Work acquires permits with a partition key of type `K`
+ * - Waiting acquisitions are tracked per partition
+ * - Released permits are assigned to waiting partitions in round-robin order
+ * - `withPermit` and `withPermits` acquire permits around an effect and
+ *   release them when the effect exits, fails, or is interrupted
+ *
+ * **Common tasks**
+ *
+ * - Create a semaphore: {@link make}, {@link makeUnsafe}
+ * - Inspect capacity and availability: {@link capacity}, {@link available}
+ * - Acquire and release manually: {@link take}, {@link release}
+ * - Limit a single operation per partition: {@link withPermit}
+ * - Limit weighted work per partition: {@link withPermits}
+ * - Run only when permits are immediately available:
+ *   {@link withPermitsIfAvailable}
+ *
+ * **Gotchas**
+ *
+ * - `withPermitsIfAvailable` does not use a partition key; it only succeeds
+ *   when the shared pool has enough permits immediately
+ * - Acquiring more permits than the semaphore capacity never completes
+ * - Requests for zero or negative permits complete without acquiring anything
+ * - Non-finite capacities create an unbounded semaphore whose acquire and
+ *   release operations complete immediately
+ *
  * @since 4.0.0
  */
 export * as PartitionedSemaphore from "./PartitionedSemaphore.ts"
 
 /**
+ * The `Path` module provides a platform path service for manipulating file
+ * system paths through Effect's environment. It models path operations as a
+ * replaceable service so programs can depend on path behavior without directly
+ * coupling to a particular runtime implementation.
+ *
+ * **Mental model**
+ *
+ * - `Path.Path` is a `Context.Service` tag used to access the current path implementation
+ * - The service offers familiar path operations such as joining, resolving, parsing, and formatting
+ * - Most operations are pure string transformations and follow POSIX-style path semantics
+ * - File URL conversions return `Effect`s because invalid paths or URLs can fail with `BadArgument`
+ * - Custom implementations can be provided with `Layer.succeed` for alternate platforms or tests
+ *
+ * **Common tasks**
+ *
+ * - Combine path segments with `join` or turn segments into an absolute path with `resolve`
+ * - Normalize `.` and `..` segments with `normalize`
+ * - Inspect paths with `basename`, `dirname`, `extname`, and `isAbsolute`
+ * - Convert between structured path parts and strings with `parse` and `format`
+ * - Compute relative paths with `relative`
+ * - Convert between file paths and `file:` URLs with `toFileUrl` and `fromFileUrl`
+ *
+ * **Gotchas**
+ *
+ * - Path strings are not checked against the file system; these operations only manipulate syntax
+ * - `resolve` may consult the host current working directory when no absolute segment is supplied
+ * - `fromFileUrl` only accepts valid `file:` URLs and rejects encoded path separators
+ * - Use the service from the environment when writing portable Effect code instead of importing
+ *   host-specific path APIs directly
+ *
  * @since 4.0.0
  */
 export * as Path from "./Path.ts"
 
 /**
+ * The `Pipeable` module defines the shared interface and implementation helpers
+ * for values that support Effect-style method chaining with `.pipe(...)`.
+ *
+ * A `Pipeable` value can pass itself through a sequence of unary functions from
+ * left to right, so code can be written as `value.pipe(f, g, h)` instead of
+ * deeply nesting calls. This is the method form used by many Effect data types
+ * to compose transformations, validations, and effectful operations while
+ * keeping the original value as the starting point of the pipeline.
+ *
+ * **Common tasks**
+ *
+ * - Type values that expose a `.pipe(...)` method with the {@link Pipeable} interface
+ * - Implement a custom `.pipe(...)` method with {@link pipeArguments}
+ * - Reuse the standard implementation through {@link Prototype}, {@link Class}, or {@link Mixin}
+ *
+ * **Gotchas**
+ *
+ * - Each function receives the result of the previous function, not the original value
+ * - The overloads preserve precise types for long pipelines, but very long chains may be easier to read when split
+ *
  * @since 2.0.0
  */
 export * as Pipeable from "./Pipeable.ts"
 
 /**
+ * The `PlatformError` module defines the normalized error model used by
+ * platform APIs when adapting host operations into Effect programs. It gives
+ * callers a stable `PlatformError` wrapper whose `reason` is either a
+ * `BadArgument`, for invalid inputs rejected before an operation runs, or a
+ * `SystemError`, for failures reported by the host platform or operating
+ * system.
+ *
+ * Use this module when implementing or consuming platform services such as
+ * file systems, terminal access, sockets, or other environment-specific APIs.
+ * `SystemError` intentionally groups many low-level failures into a small set
+ * of portable tags like `NotFound`, `PermissionDenied`, and `TimedOut`, while
+ * still preserving operation details such as the module, method, syscall, path
+ * or descriptor, description, and original cause when available.
+ *
+ * **Common tasks**
+ *
+ * - Create platform failures from system operations with {@link systemError}
+ * - Report rejected caller input with {@link badArgument}
+ * - Inspect the underlying reason via {@link PlatformError.reason}
+ * - Match normalized system failures with {@link SystemErrorTag}
+ *
+ * **Gotchas**
+ *
+ * - `PlatformError` is a wrapper; inspect `reason` to distinguish
+ *   `BadArgument` from `SystemError`
+ * - `SystemErrorTag` values are normalized categories, not necessarily raw
+ *   platform error codes
+ * - The original cause is preserved when provided, but portable handling
+ *   should rely on the normalized fields
+ *
  * @since 4.0.0
  */
 export * as PlatformError from "./PlatformError.ts"
 
 /**
+ * The `Pool` module provides scoped resource pools for sharing expensive or
+ * limited resources across fibers. A `Pool<A, E>` manages values of type `A`
+ * acquired by an effect that may fail with `E`, automatically releasing all
+ * allocated resources when the surrounding `Scope` closes.
+ *
+ * **Mental model**
+ *
+ * - A pool owns a bounded set of acquired items and hands them out with {@link get}
+ * - Each checkout is scoped; leaving the scope returns the item to the pool
+ * - `concurrency` controls how many fibers may use the same item at once
+ * - `targetUtilization` controls when the pool grows between its minimum and maximum sizes
+ * - {@link invalidate} removes a specific item so it can be replaced lazily
+ *
+ * **Common tasks**
+ *
+ * - Create a fixed-size pool with {@link make}
+ * - Create an elastic pool with time-to-live reclamation using {@link makeWithTTL}
+ * - Implement custom resizing and reclamation behavior with {@link makeWithStrategy}
+ * - Borrow resources safely in scoped effects with {@link get}
+ *
+ * **Gotchas**
+ *
+ * - Pool construction and item checkout require `Scope`; closing the scope shuts
+ *   down the pool or returns the borrowed item
+ * - Failed acquisitions are represented by the `get` effect failing with the
+ *   acquisition error, and retrying `get` can retry acquisition
+ * - Resource finalization order during shutdown is unspecified
+ *
  * @since 2.0.0
  */
 export * as Pool from "./Pool.ts"
@@ -2850,7 +3815,7 @@ export * as Pool from "./Pool.ts"
  * **Example** (Filter by a predicate)
  *
  * ```ts
- * import * as Predicate from "effect/Predicate"
+ * import { Predicate } from "effect"
  *
  * const isPositive = (n: number) => n > 0
  * const data = [2, -1, 3]
@@ -2884,20 +3849,22 @@ export * as PrimaryKey from "./PrimaryKey.ts"
  * can subscribe to receive those messages. PubSub supports various backpressure strategies,
  * message replay, and concurrent access from multiple producers and consumers.
  *
- * @example
+ * **Example** (Creating and using a PubSub)
+ *
  * ```ts
  * import { Effect, PubSub } from "effect"
  *
  * const program = Effect.gen(function*() {
  *   const pubsub = yield* PubSub.bounded<string>(10)
  *
- *   // Publisher
- *   yield* PubSub.publish(pubsub, "Hello")
- *   yield* PubSub.publish(pubsub, "World")
- *
- *   // Subscriber
  *   yield* Effect.scoped(Effect.gen(function*() {
  *     const subscription = yield* PubSub.subscribe(pubsub)
+ *
+ *     // Publisher
+ *     yield* PubSub.publish(pubsub, "Hello")
+ *     yield* PubSub.publish(pubsub, "World")
+ *
+ *     // Subscriber
  *     const message1 = yield* PubSub.take(subscription)
  *     const message2 = yield* PubSub.take(subscription)
  *     console.log(message1, message2) // "Hello", "World"
@@ -2910,21 +3877,108 @@ export * as PrimaryKey from "./PrimaryKey.ts"
 export * as PubSub from "./PubSub.ts"
 
 /**
+ * The `Pull` module provides the low-level pull-step abstraction used by
+ * stream-like consumers. A `Pull<A, E, Done, R>` is an `Effect` that can
+ * produce one value of type `A`, fail with an ordinary error `E`, or signal
+ * end-of-input with a `Cause.Done<Done>` value.
+ *
+ * **Mental model**
+ *
+ * - `Pull` is an `Effect` with a distinguished completion signal in the error channel
+ * - ordinary failures and completion are both represented by `Cause`, but can be separated with the helpers in this module
+ * - the `Done` value can carry leftover state or a final value needed by a downstream consumer
+ * - `Pull` is useful when repeatedly evaluating an effect until it either produces values, fails, or reports that no more input is available
+ *
+ * **Common tasks**
+ *
+ * - Extract type parameters from a pull: {@link Success}, {@link Error}, {@link Leftover}, {@link Services}
+ * - Detect and filter completion: {@link isDoneCause}, {@link filterDone}, {@link filterNoDone}
+ * - Recover from completion while preserving ordinary failures: {@link catchDone}
+ * - Convert done causes to successful exits: {@link doneExitFromCause}
+ * - Handle all outcomes explicitly: {@link matchEffect}
+ *
+ * **Gotchas**
+ *
+ * - `Cause.Done` is not an ordinary failure; use this module's helpers before treating a pull failure as an error
+ * - `Done` lives in the error channel, so generic `Effect` error handling can catch it unless you filter it deliberately
+ * - `Pull` is a low-level primitive; most user-facing stream workflows should prefer higher-level stream APIs when available
+ *
  * @since 4.0.0
  */
 export * as Pull from "./Pull.ts"
 
 /**
+ * The `Queue` module provides asynchronous queues for communicating between
+ * fibers. A `Queue<A, E>` can receive values of type `A`, deliver them to
+ * consumers in order, and eventually complete or fail with an error of type
+ * `E`.
+ *
+ * **Mental model**
+ *
+ * - A queue is a fiber-aware channel with one write side ({@link Enqueue}) and
+ *   one read side ({@link Dequeue})
+ * - Producers add values with {@link offer} or {@link offerAll}; consumers
+ *   remove values with {@link take}, {@link takeN}, {@link takeBetween}, or
+ *   {@link takeAll}
+ * - Bounded queues use an overflow strategy: {@link bounded} suspends
+ *   producers, {@link dropping} rejects new values, and {@link sliding} drops
+ *   old values
+ * - Queues can be completed with {@link end}, failed with {@link fail} or
+ *   {@link failCause}, interrupted with {@link interrupt}, and shut down with
+ *   {@link shutdown}
+ * - Operations are expressed as `Effect` values so waiting producers and
+ *   consumers compose with interruption, scheduling, and structured
+ *   concurrency
+ *
+ * **Common tasks**
+ *
+ * - Create queues: {@link make}, {@link bounded}, {@link dropping},
+ *   {@link sliding}, {@link unbounded}
+ * - Restrict capabilities: {@link asEnqueue}, {@link asDequeue}
+ * - Produce values: {@link offer}, {@link offerAll}
+ * - Consume values: {@link take}, {@link takeN}, {@link takeBetween},
+ *   {@link takeAll}, {@link poll}, {@link peek}
+ * - Drain or reset buffered values: {@link collect}, {@link clear}
+ * - Signal lifecycle: {@link end}, {@link fail}, {@link failCause},
+ *   {@link interrupt}, {@link shutdown}
+ * - Inspect state: {@link size}, {@link isFull}
+ *
+ * **Gotchas**
+ *
+ * - `take` waits when the queue is empty; use {@link poll} when absence should
+ *   be represented as `Option.None`
+ * - `dropping` and `sliding` queues can lose values by design; use
+ *   {@link bounded} when every offered value must be preserved
+ * - Completion and failure are observed by consumers through the queue's error
+ *   channel, so include `Cause.Done` in the error type when using {@link end}
+ * - The `Unsafe` variants are synchronous, low-level operations; prefer the
+ *   effectful APIs in application code
+ *
+ * **See also**
+ *
+ * - {@link Enqueue} for write-only queue handles
+ * - {@link Dequeue} for read-only queue handles
+ * - {@link Pull} for stream-style completion errors
+ *
  * @since 3.8.0
  */
 export * as Queue from "./Queue.ts"
 
 /**
- * The Random module provides a service for generating random numbers in Effect
- * programs. It offers a testable and composable way to work with randomness,
- * supporting integers, floating-point numbers, and range-based generation.
+ * The `Random` module provides a service for generating pseudo-random numbers
+ * in Effect programs. It offers a testable and composable way to work with
+ * randomness, supporting integers, floating-point numbers, and range-based
+ * generation.
  *
- * @example
+ * The default `Random` service is not cryptographically secure. Do not use it
+ * for secrets, tokens, UUIDs, session identifiers, or other security-sensitive
+ * values. For cryptographically secure random generation, replace the service
+ * with a cryptographically secure implementation such as the platform `Crypto`
+ * service. `Random.withSeed` also replaces the service, but predictable seeds
+ * remain deterministic and must not be treated as cryptographically secure.
+ *
+ * **Example** (Generating random values)
+ *
  * ```ts
  * import { Effect, Random } from "effect"
  *
@@ -2945,11 +3999,45 @@ export * as Queue from "./Queue.ts"
 export * as Random from "./Random.ts"
 
 /**
+ * The `RcMap` module provides a scoped, reference-counted map for sharing
+ * resources by key. It is useful when many fibers may request the same
+ * resource, such as a connection, client, session, or cached handle, and the
+ * resource should be acquired once, reused while it has active references, and
+ * released automatically when it is no longer needed.
+ *
+ * Each key is resolved with a user-provided lookup effect on first access via
+ * {@link get}. Further accesses to the same key share the in-flight or acquired
+ * resource and increment its reference count for the caller's current
+ * `Scope`. When those scopes close, references are released; resources can be
+ * closed immediately, kept alive for an idle time-to-live, invalidated
+ * explicitly, or bounded by a maximum capacity.
+ *
+ * `RcMap` is designed for Effect resource lifecycles rather than general
+ * mutable caching. The map itself is scoped, lookups require a `Scope`, and
+ * complex keys should provide `Equal` / `Hash` behavior when they need
+ * value-based lookup semantics.
+ *
  * @since 3.5.0
  */
 export * as RcMap from "./RcMap.ts"
 
 /**
+ * The `RcRef` module provides reference-counted access to a shared resource
+ * whose lifecycle is managed by `Scope`. An `RcRef<A, E>` lazily acquires its
+ * resource the first time it is requested, shares that resource across active
+ * users, and releases it when the final scope holding a reference closes.
+ *
+ * Use `RcRef` when several scoped operations should reuse the same expensive
+ * or stateful resource, such as a connection, client, cache, or worker, without
+ * making each operation acquire and release its own copy. `make` defines how
+ * the resource is acquired, `get` borrows the current resource for the active
+ * scope, and `invalidate` forces a future `get` to acquire a fresh resource.
+ *
+ * The resource is tied to scopes rather than ordinary object reachability:
+ * every `get` must run with a `Scope`, and the reference count is decremented
+ * when that scope closes. If `idleTimeToLive` is configured, a resource whose
+ * reference count reaches zero can remain cached briefly before release.
+ *
  * @since 3.5.0
  */
 export * as RcRef from "./RcRef.ts"
@@ -3118,7 +4206,8 @@ export * as Reducer from "./Reducer.ts"
  * mutable variables, Refs are thread-safe and work seamlessly with Effect's concurrency model.
  * They provide atomic operations for safe state management in concurrent programs.
  *
- * @example
+ * **Example** (Managing shared state with refs)
+ *
  * ```ts
  * import { Effect, Ref } from "effect"
  *
@@ -3182,11 +4271,86 @@ export * as RegExp from "./RegExp.ts"
 export * as Request from "./Request.ts"
 
 /**
+ * The `RequestResolver` module provides the data-loading side of
+ * `Effect.request`. A `Request` describes what a fiber needs, while a
+ * `RequestResolver` describes how to collect, batch, execute, cache, trace,
+ * and complete those requests.
+ *
+ * **Mental model**
+ *
+ * - A resolver receives one or more `Request.Entry` values and must complete
+ *   each entry with either a success or failure
+ * - Concurrent requests made with the same resolver can be gathered into a
+ *   batch before the resolver is run
+ * - Batch keys split pending requests into independent groups, which is useful
+ *   when different backends, tenants, or query shapes must be resolved
+ *   separately
+ * - Delays and `batchN` tune how long requests are collected and how large
+ *   each batch may become
+ * - Resolvers can be wrapped with tracing, in-memory caching, cache services,
+ *   and persistence without changing the request type
+ *
+ * **Common tasks**
+ *
+ * - Create a resolver from batch logic: {@link make}
+ * - Create grouped batch logic: {@link makeGrouped} or {@link grouped}
+ * - Create a resolver from pure logic: {@link fromFunction} or
+ *   {@link fromFunctionBatched}
+ * - Create a resolver from effectful logic: {@link fromEffect} or
+ *   {@link fromEffectTagged}
+ * - Control batching: {@link setDelay}, {@link setDelayEffect},
+ *   {@link batchN}
+ * - Add operational behavior: {@link around}, {@link race}, {@link withSpan}
+ * - Reuse results: {@link withCache}, {@link asCache}, {@link persisted}
+ *
+ * **Gotchas**
+ *
+ * - Every entry passed to a resolver must be completed; leaving an entry
+ *   incomplete causes the waiting request to fail
+ * - Batched result collections must line up with the input entries in order
+ *   and length when using the batched helper constructors
+ * - Grouping controls which requests share a resolver run; choose stable keys
+ *   for requests that can safely be handled together
+ * - Caching and persistence depend on request identity and the request's
+ *   equality semantics, so model request values deliberately when cached
+ *
  * @since 2.0.0
  */
 export * as RequestResolver from "./RequestResolver.ts"
 
 /**
+ * The `Resource` module provides refreshable, scoped values. A
+ * `Resource<A, E>` stores the latest successful or failed acquisition result and
+ * can be read with {@link get}, refreshed manually with {@link refresh}, or
+ * refreshed automatically with {@link auto}.
+ *
+ * **Mental model**
+ *
+ * - A `Resource` wraps an acquisition `Effect` whose result is kept in a
+ *   `ScopedRef`
+ * - Each refresh re-runs acquisition and replaces the stored `Exit`
+ * - Replacing the stored value releases resources associated with the previous
+ *   scoped value
+ * - Reading a resource returns the current acquired value or fails with the
+ *   current acquisition error
+ *
+ * **Common tasks**
+ *
+ * - Create a manually refreshed resource with {@link manual}
+ * - Create a schedule-driven resource with {@link auto}
+ * - Read the current value with {@link get}
+ * - Force a reload with {@link refresh}
+ * - Check whether an unknown value is a resource with {@link isResource}
+ *
+ * **Gotchas**
+ *
+ * - Creating a resource requires a `Scope`; when the scope closes, scoped
+ *   values held by the resource are released
+ * - Failed acquisitions are stored too, so subsequent {@link get} calls fail
+ *   until a refresh succeeds
+ * - Automatic refreshes run in the resource scope and stop when that scope is
+ *   closed
+ *
  * @since 2.0.0
  */
 export * as Resource from "./Resource.ts"
@@ -3269,7 +4433,8 @@ export * as Result from "./Result.ts"
  * teardown, error reporting, and exit code management. These utilities are particularly useful
  * for creating CLI applications and server processes that need to manage their lifecycle properly.
  *
- * @example
+ * **Example** (Creating a main runner)
+ *
  * ```ts
  * import { Effect, Fiber, Runtime } from "effect"
  *
@@ -3300,7 +4465,8 @@ export * as Runtime from "./Runtime.ts"
  * along with a delay duration. Schedules can be combined, transformed, and used to implement
  * sophisticated retry and repetition logic.
  *
- * @example
+ * **Example** (Retrying and repeating effects)
+ *
  * ```ts
  * import { Effect, Schedule } from "effect"
  *
@@ -3326,6 +4492,25 @@ export * as Runtime from "./Runtime.ts"
 export * as Schedule from "./Schedule.ts"
 
 /**
+ * The `Scheduler` module defines the runtime scheduling services used by
+ * Effect fibers. A scheduler decides how runnable tasks are enqueued, when they
+ * are dispatched, and whether a fiber should yield after consuming its
+ * operation budget.
+ *
+ * **Common tasks**
+ *
+ * - Use {@link Scheduler} to provide a custom runtime scheduler
+ * - Use {@link MixedScheduler} for the default priority-aware scheduler
+ * - Use {@link MaxOpsBeforeYield} to tune fairness for CPU-bound fibers
+ * - Use {@link PreventSchedulerYield} only when a runtime should bypass yield checks
+ *
+ * **Gotchas**
+ *
+ * - Scheduler priorities affect the order of queued runtime tasks, not the
+ *   semantic result of an `Effect`
+ * - Disabling scheduler yields can improve throughput for controlled workloads,
+ *   but it can also let long-running fibers monopolize the JavaScript thread
+ *
  * @since 2.0.0
  */
 export * as Scheduler from "./Scheduler.ts"
@@ -3665,6 +4850,25 @@ export * as SchemaGetter from "./SchemaGetter.ts"
 export * as SchemaIssue from "./SchemaIssue.ts"
 
 /**
+ * The `SchemaParser` module turns schemas into reusable runtime operations for
+ * constructing, validating, decoding, and encoding values. It is the execution
+ * layer behind a schema's AST: parsers walk the schema structure, apply
+ * transformations, honor parse options, run checks, and report failures as
+ * `SchemaIssue.Issue` values.
+ *
+ * Use this module when you need a parser with a specific result shape:
+ * `Effect` for effectful parsing and service requirements, `Promise` for
+ * JavaScript interop, `Exit` or `Result` when failures should stay in data,
+ * `Option` for yes/no validation, and synchronous helpers when throwing is the
+ * desired boundary.
+ *
+ * Decoding reads from the encoded/input side of a schema into its decoded
+ * `Type`, while encoding runs the schema in the opposite direction. The
+ * `make*` helpers construct decoded values and apply constructor defaults before
+ * validation. Parse options supplied when a parser is created are merged with
+ * options supplied at call time, and schema-level parse annotations can further
+ * refine behavior.
+ *
  * @since 4.0.0
  */
 export * as SchemaParser from "./SchemaParser.ts"
@@ -3796,7 +5000,7 @@ export * as SchemaRepresentation from "./SchemaRepresentation.ts"
  * - Trim/case strings → {@link trim}, {@link toLowerCase}, {@link toUpperCase}, {@link capitalize}, {@link uncapitalize}, {@link snakeToCamel}
  * - Parse key-value strings → {@link splitKeyValue}
  * - Coerce string ↔ number/bigint → {@link numberFromString}, {@link bigintFromString}
- * - Coerce string ↔ Date → {@link dateFromString}
+ * - Coerce string ↔ Date/Duration → {@link dateFromString}, {@link durationFromString}
  * - Decode durations → {@link durationFromNanos}, {@link durationFromMillis}
  * - Wrap nullable/optional as Option → {@link optionFromNullOr}, {@link optionFromOptionalKey}, {@link optionFromOptional}
  * - Parse URLs → {@link urlFromString}
@@ -3848,6 +5052,22 @@ export * as SchemaRepresentation from "./SchemaRepresentation.ts"
 export * as SchemaTransformation from "./SchemaTransformation.ts"
 
 /**
+ * The `SchemaUtils` module contains focused helpers for schema patterns that
+ * are useful but too specialized for the core `Schema` API surface.
+ *
+ * Use this module when you need to describe a native class with a schema while
+ * keeping a plain struct as its encoded representation. This is especially
+ * useful for classes such as `Data.Error` subclasses that should decode from
+ * structured data, encode back to that data, and still preserve class identity
+ * for instance checks and schema optics.
+ *
+ * **Gotchas**
+ *
+ * - The constructor is called with the decoded struct fields as a single
+ *   argument, so the class constructor must accept that shape.
+ * - Encoding uses the instance itself as the encoded shape, so the instance
+ *   should expose properties compatible with the provided struct schema.
+ *
  * @since 4.0.0
  */
 export * as SchemaUtils from "./SchemaUtils.ts"
@@ -3870,31 +5090,178 @@ export * as SchemaUtils from "./SchemaUtils.ts"
 export * as Scope from "./Scope.ts"
 
 /**
+ * The `ScopedCache` module provides a cache for values that acquire scoped
+ * resources during lookup. Each cached entry owns a `Scope`, so resources
+ * created while computing a value stay alive for as long as that entry remains
+ * cached and are released when the entry is removed.
+ *
+ * A `ScopedCache` is itself created inside a scope. Calls to {@link get} run the
+ * lookup effect on cache misses, share the same in-flight lookup among
+ * concurrent callers for the same key, and store the resulting exit according
+ * to a time-to-live policy. Entries can be inserted manually with {@link set},
+ * refreshed with {@link refresh}, inspected without triggering lookup with
+ * {@link getOption}, and removed with {@link invalidate} or
+ * {@link invalidateAll}. Capacity limits evict the oldest entries.
+ *
+ * **Lifecycle notes**
+ *
+ * - Entry scopes are closed when entries expire, are invalidated, are evicted,
+ *   are replaced, or when the cache's owning scope closes
+ * - Successful and failed lookup exits are both cached according to the
+ *   configured TTL
+ * - Expired entries may remain counted by {@link size} until a cache operation
+ *   observes and removes them
+ * - Once the owning scope closes, the cache is closed and lookup-style
+ *   operations interrupt instead of acquiring new values
+ *
  * @since 4.0.0
  */
 export * as ScopedCache from "./ScopedCache.ts"
 
 /**
+ * The `ScopedRef` module provides a mutable reference for values that are tied
+ * to scoped resources. Each value stored in a `ScopedRef` is acquired within its
+ * own `Scope`, and replacing the value safely releases the resources associated
+ * with the previous value.
+ *
+ * Use `ScopedRef` when an application needs to keep a current resource-backed
+ * value, such as a live client, connection, subscription, or cached handle, and
+ * later swap it for a newly acquired value without leaking the old resources.
+ * Reads are simple, while updates are synchronized and resource-safe.
+ *
+ * **Gotchas**
+ *
+ * - A `ScopedRef` must itself be created and used within a `Scope`; when that
+ *   scope closes, the currently stored value is finalized.
+ * - Use {@link fromAcquire} or {@link set} for resourceful values so acquisition
+ *   and finalization are tracked correctly.
+ * - Use {@link make} only for values that do not acquire resources.
+ * - Updating a `ScopedRef` waits for the replacement acquisition and old
+ *   finalization to complete before returning.
+ *
  * @since 2.0.0
  */
 export * as ScopedRef from "./ScopedRef.ts"
 
 /**
- * @since 2.0.0
+ * The `Semaphore` module provides a counting semaphore for coordinating
+ * concurrent access to shared or limited resources. A semaphore tracks a fixed
+ * number of permits: effects acquire permits before entering a critical section
+ * and release them when they leave.
+ *
+ * Use semaphores to bound parallel work, protect rate-limited services, or
+ * serialize access to resources that cannot safely handle unlimited
+ * concurrency. Prefer {@link withPermit} and {@link withPermits} when possible,
+ * because they release permits automatically when the protected effect exits.
+ * Use {@link take} and {@link release} for lower-level protocols that need
+ * manual control.
+ *
+ * **Gotchas**
+ *
+ * - Pending acquisitions wait until enough permits are available.
+ * - {@link withPermitsIfAvailable} does not wait; it returns `Option.none` when
+ *   the requested permits cannot be acquired immediately.
+ * - Manual `take` / `release` usage must keep permit counts balanced.
+ *
+ * @since 4.0.0
  */
 export * as Semaphore from "./Semaphore.ts"
 
 /**
+ * The `Sink` module provides composable consumers for `Stream` values. A
+ * `Sink<A, In, L, E, R>` pulls input elements of type `In`, may require
+ * services `R`, may fail with `E`, and eventually produces a result `A` plus
+ * any leftover input `L` that was read but not consumed.
+ *
+ * **Mental model**
+ *
+ * - A sink is the terminal consumer used by `Stream.run`
+ * - Sinks can consume zero, one, many, or all input elements before finishing
+ * - Leftovers allow one sink to stop early without losing already-pulled input
+ * - Sink composition preserves typed errors and service requirements
+ * - Most sinks are built from `Channel` internally, but users compose them with
+ *   the higher-level APIs in this module
+ *
+ * **Common tasks**
+ *
+ * - Create simple sinks: {@link succeed}, {@link fail}, {@link fromEffect}
+ * - Fold input: {@link fold}
+ * - Collect values: {@link collect}
+ * - Count or drain input: {@link count}, {@link drain}
+ * - Transform results: {@link map}, {@link mapEffect}, {@link as}
+ * - Adapt input before consumption: {@link mapInput}, {@link mapInputEffect}
+ *
+ * **Gotchas**
+ *
+ * - A sink can finish before the stream is exhausted; check leftover-aware
+ *   combinators when composing parsers or protocol decoders
+ * - `In` is contravariant, so a sink that accepts broader input can be used
+ *   where narrower input is expected
+ * - Resource and service requirements are tracked in the `R` type parameter
+ *
  * @since 2.0.0
  */
 export * as Sink from "./Sink.ts"
 
 /**
+ * The `Stdio` module defines the service interface used by Effect programs to
+ * interact with process standard I/O. It models command-line arguments,
+ * standard output, standard error, and standard input as Effects, Sinks, and
+ * Streams so programs can depend on console I/O through `Context` instead of
+ * directly coupling to a specific runtime.
+ *
+ * Use this module when building command-line programs, tests, or platform
+ * integrations that need to read bytes from stdin, write text or bytes to
+ * stdout/stderr, or provide deterministic replacements for those capabilities.
+ * The `layerTest` helper is useful for tests because it supplies inert defaults
+ * and lets individual fields be overridden.
+ *
+ * Standard I/O operations are platform capabilities and may fail with
+ * `PlatformError`; handle those failures in the Effect error channel rather than
+ * assuming writes or reads are infallible.
+ *
  * @since 4.0.0
  */
 export * as Stdio from "./Stdio.ts"
 
 /**
+ * The `Stream` module provides a typed, composable way to describe effectful
+ * sequences of values. A `Stream<A, E, R>` can emit zero or more `A` values,
+ * fail with an `E`, and require services from `R` while preserving
+ * backpressure and resource safety.
+ *
+ * **Mental model**
+ *
+ * - A stream is a lazy description; it runs only when consumed with a `run*` function
+ * - Streams are pull-based and emit chunks internally for efficient throughput
+ * - `A` is the element type, `E` is the failure type, and `R` is the required context
+ * - Stream composition mirrors `Effect`: use `map`, `flatMap`, error handling, and `pipe`
+ * - Resource scopes, interruption, and finalizers are tracked by the Effect runtime
+ * - Interop functions connect streams to queues, pub/subs, web streams, async iterables, and channels
+ *
+ * **Common tasks**
+ *
+ * - Create streams: {@link make}, {@link fromIterable}, {@link fromEffect}, {@link fromQueue}
+ * - Transform values: {@link map}, {@link mapEffect}, {@link flatMap}, {@link filter}
+ * - Combine streams: {@link concat}, {@link merge}, {@link zip}, {@link race}
+ * - Control demand and timing: {@link take}, {@link drop}, {@link debounce}, {@link throttle}
+ * - Manage errors: {@link catchCause}, {@link catchIf}, {@link mapError}, {@link retry}
+ * - Manage resources and services: {@link scoped}, {@link ensuring}, {@link provide}
+ * - Consume streams: {@link runCollect}, {@link runForEach}, {@link runFold}, {@link runDrain}
+ *
+ * **Gotchas**
+ *
+ * - A stream is not a collection; constructors and operators build a description until it is run
+ * - Re-running a stream re-executes its effects unless it is explicitly shared or backed by external state
+ * - Operators such as {@link merge}, {@link race}, and {@link broadcast} introduce concurrency and interruption semantics
+ * - Prefer bounded constructors and sinks for large or infinite streams instead of collecting everything into memory
+ *
+ * **See also**
+ *
+ * - {@link Effect.Effect} for single-result effectful programs
+ * - {@link Sink.Sink} for consuming and folding streams
+ * - {@link Channel.Channel} for the lower-level primitive underlying streams
+ *
  * @since 2.0.0
  */
 export * as Stream from "./Stream.ts"
@@ -3985,31 +5352,147 @@ export * as String from "./String.ts"
 export * as Struct from "./Struct.ts"
 
 /**
+ * The `SubscriptionRef` module provides a mutable reference that can be read
+ * and updated like a `Ref`, while also exposing a stream of its current value
+ * and every subsequent change. It is useful when one part of an application
+ * owns evolving state and many fibers need to subscribe to consistent updates,
+ * such as configuration, coordination state, cached snapshots, or UI models.
+ *
+ * Updates are serialized with an internal semaphore and each update is
+ * published to subscribers. The {@link changes} stream replays the latest value
+ * first, then emits future updates, so new subscribers can start from the
+ * current state without performing a separate read. Prefer the effectful
+ * getters and update operations for concurrent code; the unsafe helpers bypass
+ * synchronization and should only be used when the caller already controls
+ * access.
+ *
  * @since 2.0.0
  */
 export * as SubscriptionRef from "./SubscriptionRef.ts"
 
 /**
+ * The `Symbol` module provides a small runtime guard for working with
+ * JavaScript `symbol` values. Use {@link isSymbol} when validating unknown
+ * input, narrowing union types, or building predicates that need to recognize
+ * primitive symbols such as those created by `Symbol()` or `Symbol.for`.
+ *
+ * The guard checks for the primitive `symbol` type; boxed objects created with
+ * `Object(Symbol())` are objects and do not satisfy this predicate.
+ *
  * @since 2.0.0
  */
 export * as Symbol from "./Symbol.ts"
 
 /**
+ * The `SynchronizedRef` module provides mutable references whose updates are
+ * serialized, including updates that run effects before deciding the next
+ * value. A `SynchronizedRef<A>` behaves like a `Ref<A>` for reading and basic
+ * updates, but uses an internal semaphore so concurrent modifications observe a
+ * consistent current value and apply one at a time.
+ *
+ * **When to use**
+ *
+ * - Coordinating shared state that may be updated by many fibers
+ * - Running effectful state transitions that must not overlap
+ * - Computing both a return value and a new stored value atomically
+ * - Applying partial updates with `Option`, where `None` leaves the value
+ *   unchanged
+ *
+ * **Gotchas**
+ *
+ * - Effectful update functions run while the semaphore is held, so long-running
+ *   effects delay other updates to the same ref
+ * - Failed effectful updates do not replace the stored value
+ * - `getUnsafe` and `makeUnsafe` bypass the `Effect` API and should be reserved
+ *   for low-level or carefully controlled code
+ *
  * @since 2.0.0
  */
 export * as SynchronizedRef from "./SynchronizedRef.ts"
 
 /**
+ * The `Take` module provides the representation used by stream-like producers
+ * to describe a single pull result. A `Take<A, E, Done>` is either a
+ * non-empty batch of emitted values, a failed `Exit`, or a successful `Exit`
+ * carrying the stream's completion value.
+ *
+ * `Take` is useful at boundaries where pull results need to be stored,
+ * transferred, or interpreted later while preserving the distinction between
+ * emitted elements, failures, and normal completion. Use {@link toPull} to turn
+ * a `Take` back into a `Pull`: value batches become successful pulls, failure
+ * exits are propagated, and successful exits signal completion with `Done`.
+ *
+ * **Gotchas**
+ *
+ * - A value batch is always represented by a `NonEmptyReadonlyArray`; empty
+ *   batches are not valid `Take` values.
+ * - Successful `Exit` values do not emit elements. They represent pull
+ *   completion and carry the `Done` value.
+ *
  * @since 2.0.0
  */
 export * as Take from "./Take.ts"
 
 /**
+ * The `Terminal` module defines the service interface used by platform
+ * integrations to model command-line input and output. It gives programs a
+ * uniform way to query terminal dimensions, read lines, stream low-level key
+ * events, and write text without depending directly on Node, the browser, or a
+ * test-specific console implementation.
+ *
+ * Use this module when building interactive command-line tools, prompts, or
+ * platform abstractions that need terminal capabilities as an Effect service.
+ * Implementations are supplied through context, so application code can depend
+ * on `Terminal` while tests and runtimes provide the concrete behavior.
+ *
+ * `readLine` can fail with {@link QuitError} when the user requests to quit,
+ * commonly via `Ctrl+C`. For lower-level interaction, `readInput` returns a
+ * scoped stream of {@link UserInput} values containing parsed key metadata and
+ * any raw character input.
+ *
  * @since 4.0.0
  */
 export * as Terminal from "./Terminal.ts"
 
 /**
+ * The `Tracer` module defines the low-level tracing model used by Effect to
+ * describe and propagate spans. A span records the lifetime of an operation,
+ * including its name, parent, attributes, links, annotations, sampling decision,
+ * kind, and completion status.
+ *
+ * **Mental model**
+ *
+ * - `Tracer` is the backend interface responsible for creating spans
+ * - `Span` values represent Effect-managed operations with mutable lifecycle
+ *   hooks for ending spans and adding attributes, events, or links
+ * - `ExternalSpan` represents trace context imported from another tracing
+ *   system so Effect spans can be parented by or linked to external work
+ * - `ParentSpan`, `Tracer`, and related context references control propagation,
+ *   sampling, and trace-level filtering through the Effect context
+ *
+ * **Common tasks**
+ *
+ * - Implement a custom tracing backend with {@link make}
+ * - Provide or inspect parent span context with {@link ParentSpan}
+ * - Convert external trace identifiers into Effect span values with
+ *   {@link externalSpan}
+ * - Configure span metadata with {@link SpanOptions}, {@link SpanKind}, and
+ *   {@link SpanLink}
+ * - Disable propagation or adjust trace filtering with
+ *   {@link DisablePropagation}, {@link CurrentTraceLevel}, and
+ *   {@link MinimumTraceLevel}
+ *
+ * **Gotchas**
+ *
+ * - This module exposes the tracing data model and backend hooks; most
+ *   application code should create spans through higher-level Effect APIs such
+ *   as `Effect.withSpan`
+ * - `ExternalSpan` only carries identity and metadata from another system; it
+ *   does not have lifecycle methods like `Span`
+ * - Propagation and sampling are context-dependent, so parent selection can be
+ *   affected by disabled propagation, root span options, and trace-level
+ *   thresholds
+ *
  * @since 2.0.0
  */
 export * as Tracer from "./Tracer.ts"
@@ -4128,11 +5611,56 @@ export * as TxChunk from "./TxChunk.ts"
 export * as TxDeferred from "./TxDeferred.ts"
 
 /**
+ * The `TxHashMap` module provides a transactional hash map for storing and
+ * updating key-value pairs inside Effect transactions. It is useful when
+ * multiple fibers need to coordinate shared map state and each read-modify-write
+ * sequence must be committed atomically.
+ *
+ * A `TxHashMap<K, V>` has the familiar shape of a `HashMap<K, V>`, but every
+ * operation returns an `Effect` and participates in transaction semantics
+ * through `TxRef`. Use it for concurrent registries, caches, counters, indexes,
+ * and other mutable maps whose updates should compose safely with other
+ * transactional references.
+ *
+ * **Common tasks**
+ *
+ * - Create maps with {@link empty}, {@link fromIterable}, or {@link make}
+ * - Read entries with {@link get}, {@link has}, {@link keys}, {@link values}, and {@link entries}
+ * - Update entries with {@link set}, {@link modify}, {@link modifyAt}, and {@link remove}
+ * - Inspect aggregate state with {@link size}, {@link isEmpty}, and {@link reduce}
+ *
+ * **Gotchas**
+ *
+ * - Operations are effectful; run them in `Effect.gen` and wrap multi-step
+ *   transactions with `Effect.tx` when the whole sequence must commit together.
+ * - Reads that may be absent return `Option`, so handle both `Some` and `None`
+ *   instead of assuming a key exists.
+ *
  * @since 2.0.0
  */
 export * as TxHashMap from "./TxHashMap.ts"
 
 /**
+ * The `TxHashSet` module provides a transactional hash set for storing unique
+ * values inside Effect transactions. A `TxHashSet<A>` wraps a `HashSet<A>` in a
+ * transactional reference, so reads and writes can be composed with other
+ * transactional operations and committed atomically.
+ *
+ * **Common tasks**
+ *
+ * - Create transactional sets with {@link empty}, {@link make}, or {@link fromIterable}
+ * - Mutate an existing set with {@link add}, {@link remove}, and {@link clear}
+ * - Query membership and size with {@link has}, {@link size}, and {@link isEmpty}
+ * - Derive new sets with {@link map}, {@link filter}, {@link union}, {@link intersection}, and {@link difference}
+ * - Fold or collect values with {@link reduce} and {@link toHashSet}
+ *
+ * **Gotchas**
+ *
+ * - Mutation operations update the same transactional set; transform operations
+ *   return a new `TxHashSet`
+ * - Operations are `Effect` values and must be yielded, piped, or run to take effect
+ * - Use `Effect.tx` when several operations must observe and commit one atomic transaction
+ *
  * @since 2.0.0
  */
 export * as TxHashSet from "./TxHashSet.ts"
@@ -4192,6 +5720,24 @@ export * as TxReentrantLock from "./TxReentrantLock.ts"
 export * as TxRef from "./TxRef.ts"
 
 /**
+ * The `TxSemaphore` module provides a transactional semaphore for coordinating
+ * access to limited resources from within Effect transactions. A semaphore
+ * tracks a fixed number of permits, and transactional operations can acquire,
+ * release, or inspect those permits atomically with other transactional state.
+ *
+ * Use `TxSemaphore` when permit accounting needs to compose with `TxRef` and
+ * other transactional updates, such as guarding resource pools, rate-limited
+ * sections, or workflows that must reserve capacity consistently before
+ * committing related state changes.
+ *
+ * **Gotchas**
+ *
+ * - Permit operations are intended for transactional workflows and are wrapped
+ *   with `Effect.tx`.
+ * - The semaphore capacity is fixed at construction time; releasing more
+ *   permits than the original capacity fails.
+ * - Creating a semaphore with a negative number of permits defects.
+ *
  * @since 4.0.0
  */
 export * as TxSemaphore from "./TxSemaphore.ts"
@@ -4292,6 +5838,19 @@ export * as Types from "./Types.ts"
 export * as UndefinedOr from "./UndefinedOr.ts"
 
 /**
+ * The `Unify` module contains the type-level protocol Effect uses to normalize
+ * unions of data types that opt in to unification. It is primarily a library
+ * authoring tool: data types expose hidden symbol properties describing how
+ * their variants should be widened, and {@link Unify} turns those protocol
+ * entries into the user-facing union type that TypeScript should infer.
+ *
+ * Most application code does not need to interact with these symbols directly.
+ * The main runtime helper, {@link unify}, is an identity function that preserves
+ * values and functions at runtime while applying {@link Unify} to the relevant
+ * static type. This is useful when authoring APIs that return branded or
+ * protocol-enabled values and need inference to collapse to the public Effect
+ * data type rather than exposing implementation details.
+ *
  * @since 2.0.0
  */
 export * as Unify from "./Unify.ts"

@@ -6,7 +6,8 @@ import { toJson } from "../Inspectable.ts"
 import type { Option } from "../Option.ts"
 import { hasProperty } from "../Predicate.ts"
 import type * as Result from "../Result.ts"
-import { exitFail, exitSucceed, PipeInspectableProto, YieldableProto } from "./core.ts"
+import { SingleShotGen } from "../Utils.ts"
+import { PipeInspectableProto } from "./core.ts"
 import * as option from "./option.ts"
 
 const TypeId = "~effect/data/Result"
@@ -18,7 +19,9 @@ const CommonProto = {
     _E: (_: never) => _
   },
   ...PipeInspectableProto,
-  ...YieldableProto
+  [Symbol.iterator]() {
+    return new SingleShotGen(this)
+  }
 }
 
 const SuccessProto = Object.assign(Object.create(CommonProto), {
@@ -41,9 +44,6 @@ const SuccessProto = Object.assign(Object.create(CommonProto), {
       _tag: this._tag,
       value: toJson(this.success)
     }
-  },
-  asEffect<L, R>(this: Result.Success<L, R>) {
-    return exitSucceed(this.success)
   }
 })
 
@@ -65,9 +65,6 @@ const FailureProto = Object.assign(Object.create(CommonProto), {
       _tag: this._tag,
       failure: toJson(this.failure)
     }
-  },
-  asEffect<A, E>(this: Result.Failure<A, E>) {
-    return exitFail(this.failure)
   }
 })
 

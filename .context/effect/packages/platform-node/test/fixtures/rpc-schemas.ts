@@ -104,7 +104,7 @@ export const UsersLive = UserRpcs.toLayer(Effect.gen(function*() {
   let emits = 0
   return UserRpcs.of({
     GetUser: (_) =>
-      CurrentUser.asEffect().pipe(
+      CurrentUser.pipe(
         Rpc.fork
       ),
     GetUserDeferred(_) {

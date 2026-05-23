@@ -1,4 +1,30 @@
 /**
+ * Schema-aware `RequestResolver` helpers for SQL-backed data loading.
+ *
+ * This module bridges `Effect.request` with `SqlClient` by representing each
+ * lookup or mutation as a `SqlRequest` and batching concurrent requests into a
+ * single SQL operation. Request payloads are encoded with the request schema
+ * before `execute` is called, and rows returned by the query are decoded with
+ * the result schema before entries are completed.
+ *
+ * Use `ordered` when a query returns exactly one row per request in the same
+ * order, `findById` for `where id in (...)` lookups, `grouped` for one-to-many
+ * relationships, and `void` for inserts, updates, deletes, or other
+ * side-effecting statements where no row is needed.
+ *
+ * **Gotchas**
+ *
+ * - `ordered` requires the result count and order to match the request batch.
+ * - `grouped` and `findById` rely on stable request/result keys and fail
+ *   missing requests with `NoSuchElementError`.
+ * - Equal payloads are equal `SqlRequest`s, which enables request batching,
+ *   deduplication, and cache reuse; model payload identity deliberately.
+ * - Batches are split by the active SQL transaction connection, so requests
+ *   made in different transactions are not resolved together.
+ * - Queries like `where id in (...)` often return rows in database order; use
+ *   `findById` or `grouped`, or preserve input order explicitly before choosing
+ *   `ordered`.
+ *
  * @since 4.0.0
  */
 import * as Arr from "../../Array.ts"
@@ -16,8 +42,11 @@ import * as SqlClient from "./SqlClient.ts"
 import { ResultLengthMismatch } from "./SqlError.ts"
 
 /**
- * @since 4.0.0
+ * Request type used by SQL request resolvers, carrying the input payload
+ * together with the resolver's result, error, and environment types.
+ *
  * @category requests
+ * @since 4.0.0
  */
 export interface SqlRequest<In, A, E, R> extends Request.Request<A, E | Schema.SchemaError, R> {
   readonly payload: In
@@ -37,8 +66,11 @@ const SqlRequestProto = {
 }
 
 /**
- * @since 4.0.0
+ * Submits a payload as a `SqlRequest` to a request resolver, either directly
+ * with a payload and resolver or curried by resolver.
+ *
  * @category requests
+ * @since 4.0.0
  */
 export const request: {
   <In, A, E, R>(
@@ -57,8 +89,11 @@ export const request: {
 } as any
 
 /**
- * @since 4.0.0
+ * Constructs a `SqlRequest` from a payload. Equality and hashing are based on
+ * the payload so equal requests can be batched and deduplicated.
+ *
  * @category requests
+ * @since 4.0.0
  */
 export const SqlRequest = <In, A, E, R>(payload: In): SqlRequest<In, A, E, R> => {
   const self = Object.create(SqlRequestProto)
@@ -67,15 +102,17 @@ export const SqlRequest = <In, A, E, R>(payload: In): SqlRequest<In, A, E, R> =>
 }
 
 /**
- * Create a resolver for a sql query with a request schema and a result schema.
+ * Creates a resolver for a SQL query with a request schema and a result schema.
  *
- * The request schema is used to validate the input of the query.
- * The result schema is used to validate the output of the query.
+ * **Details**
  *
- * Results are mapped to the requests in order, so the length of the results must match the length of the requests.
+ * The request schema is used to validate the input of the query, and the result
+ * schema is used to validate the output of the query. Results are mapped to the
+ * requests in order, so the length of the results must match the length of the
+ * requests.
  *
- * @since 4.0.0
  * @category resolvers
+ * @since 4.0.0
  */
 export const ordered = <Req extends Schema.Top, Res extends Schema.Top, _, E, R>(
   options: {
@@ -96,7 +133,7 @@ export const ordered = <Req extends Schema.Top, Res extends Schema.Top, _, E, R>
       E | ResultLengthMismatch,
       Req["EncodingServices"] | Res["DecodingServices"] | R
     >,
-    SqlClient.TransactionConnection["Service"] | undefined
+    SqlClient.TransactionConnection.Service | undefined
   >({
     key: transactionKey,
     resolver: Effect.fnUntraced(function*(entries) {
@@ -118,12 +155,12 @@ export const ordered = <Req extends Schema.Top, Res extends Schema.Top, _, E, R>
 }
 
 /**
- * Create a resolver the can return multiple results for a single request.
+ * Creates a batched SQL request resolver that encodes requests, decodes result
+ * rows, groups decoded results by matching request and result keys, and fails a
+ * request with `NoSuchElementError` when no result group exists.
  *
- * Results are grouped by a common key extracted from the request and result.
- *
- * @since 4.0.0
  * @category resolvers
+ * @since 4.0.0
  */
 export const grouped = <Req extends Schema.Top, Res extends Schema.Top, K, Row, E, R>(
   options: {
@@ -152,7 +189,7 @@ export const grouped = <Req extends Schema.Top, Res extends Schema.Top, K, Row, 
       E | Schema.SchemaError | Cause.NoSuchElementError,
       Req["EncodingServices"] | Res["DecodingServices"] | R
     >,
-    SqlClient.TransactionConnection["Service"] | undefined
+    SqlClient.TransactionConnection.Service | undefined
   >({
     key: transactionKey,
     resolver: Effect.fnUntraced(function*(entries) {
@@ -187,10 +224,12 @@ export const grouped = <Req extends Schema.Top, Res extends Schema.Top, K, Row, 
 }
 
 /**
- * Create a resolver that resolves results by id.
+ * Creates a batched resolver that fetches rows for encoded ids, decodes
+ * results, completes each matching request using `ResultId`, and fails missing
+ * ids with `NoSuchElementError`.
  *
- * @since 4.0.0
  * @category resolvers
+ * @since 4.0.0
  */
 export const findById = <Id extends Schema.Top, Res extends Schema.Top, Row, E, R>(
   options: {
@@ -218,13 +257,9 @@ export const findById = <Id extends Schema.Top, Res extends Schema.Top, Row, E, 
       E | Schema.SchemaError | Cause.NoSuchElementError,
       Id["EncodingServices"] | Res["DecodingServices"] | R
     >,
-    SqlClient.TransactionConnection["Service"] | undefined
+    SqlClient.TransactionConnection.Service | undefined
   >({
-    key(entry) {
-      const conn = entry.context.mapUnsafe.get(SqlClient.TransactionConnection.key)
-      if (!conn) return undefined
-      return Equal.byReferenceUnsafe(conn)
-    },
+    key: transactionKey,
     resolver: Effect.fnUntraced(function*(entries) {
       const [inputs, idMap] = yield* partitionRequestsById(entries, options.Id)
       const results = yield* options.execute(inputs as any).pipe(
@@ -275,7 +310,7 @@ const void_ = <Req extends Schema.Top, _, E, R>(
       E | Schema.SchemaError,
       Req["EncodingServices"] | R
     >,
-    SqlClient.TransactionConnection["Service"] | undefined
+    SqlClient.TransactionConnection.Service | undefined
   >({
     key: transactionKey,
     resolver: Effect.fnUntraced(function*(entries) {
@@ -293,8 +328,8 @@ export {
   /**
    * Create a resolver that performs side effects.
    *
-   * @since 4.0.0
    * @category resolvers
+   * @since 4.0.0
    */
   void_ as void
 }
@@ -353,8 +388,10 @@ const partitionRequestsById = function*<In, A, E, R, InE>(
   return [inputs, byIdMap] as const
 }
 
-function transactionKey<A>(entry: Request.Entry<A>): SqlClient.TransactionConnection["Service"] | undefined {
-  const conn = entry.context.mapUnsafe.get(SqlClient.TransactionConnection.key)
+function transactionKey<A>(entry: Request.Entry<A>): SqlClient.TransactionConnection.Service | undefined {
+  const client = entry.context.mapUnsafe.get(SqlClient.SqlClient.key)
+  if (!client) return undefined
+  const conn = entry.context.mapUnsafe.get(client.transactionService.key)
   if (!conn) return undefined
   return Equal.byReferenceUnsafe(conn)
 }

@@ -1,3 +1,14 @@
+/**
+ * The lexer module converts raw command-line arguments into the token stream
+ * consumed by the unstable CLI parser. It recognizes long options
+ * (`--name` / `--name=value`), short options (`-x`), clustered short options
+ * (`-abc`), option values supplied with `=`, and positional values.
+ *
+ * The `--` delimiter is handled before tokenization: everything after it is
+ * returned as trailing operands so values that look like options are preserved
+ * exactly. A lone `-` is also preserved as a value instead of being interpreted
+ * as an option.
+ */
 /** @internal */
 export type Token =
   | { _tag: "LongOption"; name: string; raw: string; value?: string }

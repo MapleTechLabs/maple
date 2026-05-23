@@ -33,7 +33,7 @@ const equalBytes = (left: Uint8Array, right: Uint8Array): boolean => {
 }
 
 describe("EventLog root secret derivation", () => {
-  it.effect("is deterministic for the same root secret", () =>
+  it.effect("derives the same material for identities with the same root secret", () =>
     Effect.gen(function*() {
       const rootSecret = makeRootSecret()
       const derive = makeGetIdentityRootSecretMaterial(globalThis.crypto)
@@ -54,7 +54,7 @@ describe("EventLog root secret derivation", () => {
       assert.deepStrictEqual(Redacted.value(first.signingPrivateKey), Redacted.value(second.signingPrivateKey))
     }))
 
-  it.effect("is domain separated between encryption and signing", () =>
+  it.effect("uses versioned, domain-separated labels for encryption and signing", () =>
     Effect.gen(function*() {
       const derive = makeGetIdentityRootSecretMaterial(globalThis.crypto)
       const derived = yield* derive(makeIdentity({

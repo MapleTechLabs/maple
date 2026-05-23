@@ -1,6 +1,6 @@
 import { hole, Number, pipe, Schema, String as Str, Struct } from "effect"
 import type { Reducer } from "effect"
-import { describe, expect, it, when } from "tstyche"
+import { describe, expect, it } from "tstyche"
 
 const aSym = Symbol.for("a")
 const bSym = Symbol.for("b")
@@ -51,10 +51,18 @@ describe("Struct", () => {
 
   describe("get", () => {
     it("errors", () => {
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.get).type.not.toBeCallableWith("b"))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Argument of type '"b"' is not assignable to parameter of type '"a" | unique symbol | 1'
+        Struct.get("b")
+      )
       expect(Struct.get).type.not.toBeCallableWith(mixedKeys, "b")
 
-      when(pipe).isCalledWith(optionalMixedKeys, expect(Struct.get).type.not.toBeCallableWith("b"))
+      pipe(
+        optionalMixedKeys,
+        // @ts-expect-error Argument of type '"b"' is not assignable to parameter of type '"a" | unique symbol | 1'
+        Struct.get("b")
+      )
       expect(Struct.get).type.not.toBeCallableWith(optionalMixedKeys, "b")
     })
 
@@ -90,13 +98,25 @@ describe("Struct", () => {
 
   describe("pick", () => {
     it("errors when picking a non-existent key", () => {
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.pick).type.not.toBeCallableWith(["d"]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type '"d"' is not assignable to type '"a" | unique symbol | 1'
+        Struct.pick(["d"])
+      )
       expect(Struct.pick).type.not.toBeCallableWith(mixedKeys, ["d"])
 
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.pick).type.not.toBeCallableWith([dSym]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type 'unique symbol' is not assignable to type '"a" | unique symbol | 1'
+        Struct.pick([dSym])
+      )
       expect(Struct.pick).type.not.toBeCallableWith(mixedKeys, [dSym])
 
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.pick).type.not.toBeCallableWith([4]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type '4' is not assignable to type '"a" | unique symbol | 1'
+        Struct.pick([4])
+      )
       expect(Struct.pick).type.not.toBeCallableWith(mixedKeys, [4])
     })
 
@@ -122,13 +142,25 @@ describe("Struct", () => {
 
   describe("omit", () => {
     it("errors when omitting a non-existent key", () => {
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.omit).type.not.toBeCallableWith(["d"]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type '"d"' is not assignable to type '"a" | unique symbol | 1'
+        Struct.omit(["d"])
+      )
       expect(Struct.omit).type.not.toBeCallableWith(mixedKeys, ["d"])
 
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.omit).type.not.toBeCallableWith([dSym]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type 'unique symbol' is not assignable to type '"a" | unique symbol | 1'
+        Struct.omit([dSym])
+      )
       expect(Struct.omit).type.not.toBeCallableWith(mixedKeys, [dSym])
 
-      when(pipe).isCalledWith(mixedKeys, expect(Struct.omit).type.not.toBeCallableWith([4]))
+      pipe(
+        mixedKeys,
+        // @ts-expect-error Type '4' is not assignable to type '"a" | unique symbol | 1'
+        Struct.omit([4])
+      )
       expect(Struct.omit).type.not.toBeCallableWith(mixedKeys, [4])
     })
 
@@ -158,9 +190,10 @@ describe("Struct", () => {
         { a: "a", b: 1 },
         { a: (n: number) => n }
       )
-      when(pipe).isCalledWith(
+      pipe(
         { a: "a", b: 1 },
-        expect(Struct.evolve).type.not.toBeCallableWith({ a: (n: number) => n })
+        // @ts-expect-error Type '(n: number) => number' is not assignable to type '(a: string) => unknown'
+        Struct.evolve({ a: (n: number) => n })
       )
     })
 

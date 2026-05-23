@@ -1,5 +1,21 @@
 /**
- * @since 1.0.0
+ * Command definitions for the `effect-bundle` bundle-size CLI.
+ *
+ * This module wires the top-level `bundle` command to the reporting service and
+ * exposes the workflows used when maintaining fixture bundle sizes. `compare`
+ * builds the package's local fixtures and compares them with matching fixture
+ * files from another checkout, `report` bundles an explicit list of entrypoints
+ * and prints a Markdown table, and `visualize` prompts for local fixtures before
+ * producing visualization output for inspection.
+ *
+ * Command output is intentionally split by workflow. `compare` requires an
+ * existing `--base-dir` (`-b`) and writes its Markdown report to `--output-path`
+ * (`-o`), defaulting to `stats.txt` resolved from the current working directory.
+ * `report` accepts one or more existing files and writes to stdout. `visualize`
+ * uses `--output-dir` (`-o`) for generated bundle artifacts, so `-o` names a
+ * file for `compare` but a directory for `visualize`.
+ *
+ * @since 4.0.0
  */
 import * as Console from "effect/Console"
 import * as Effect from "effect/Effect"
@@ -78,8 +94,10 @@ const report = Command.make("report", { paths: reportPaths }).pipe(
 )
 
 /**
- * @since 1.0.0
+ * Bundle analysis CLI command with subcommands for comparing fixture bundle sizes, reporting selected fixtures, and generating visualizations.
+ *
  * @category commands
+ * @since 4.0.0
  */
 export const cli = Command.make("bundle").pipe(
   Command.withSubcommands([compare, report, visualize])

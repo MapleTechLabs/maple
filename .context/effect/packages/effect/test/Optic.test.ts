@@ -382,7 +382,7 @@ Expected a value greater than 0, got -1.1`
     deepStrictEqual(getAll({ a: [1, -2, 3] }), [1, 3])
   })
 
-  it(`smoke test: "pretty good" persistency (copy only the path)`, () => {
+  it("replace copies only objects and arrays along the focused path", () => {
     type Task = { id: number; done: boolean; title: string }
     type Project = { id: number; name: string; tasks: Array<Task> }
     type State = { user: { id: string; name: string }; settings: { theme: "light" | "dark" }; projects: Array<Project> }

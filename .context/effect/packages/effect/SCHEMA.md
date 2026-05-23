@@ -294,19 +294,25 @@ If you want to extract the parts of a string that match a template, you can use 
 ```ts
 import { Schema } from "effect"
 
-const email = Schema.TemplateLiteralParser([
-  Schema.String.check(Schema.isMinLength(1)),
-  "@",
-  Schema.String.check(Schema.isMaxLength(64))
+const schema = Schema.TemplateLiteralParser([
+  Schema.String.check(Schema.isMinLength(2)),
+  ":",
+  Schema.Int
 ])
 
-// The inferred type is `readonly [string, "@", string]`
-export type Type = typeof email.Type
+// The inferred type is `readonly [string, ":", number]`
+export type Type = typeof schema.Type
 
-console.log(String(Schema.decodeUnknownExit(email)("a@b.com")))
-/*
-Success(["a","@","b.com"])
-*/
+console.log(String(Schema.decodeUnknownExit(schema)("aa:1")))
+// Success(["aa",":",1])
+
+console.log(String(Schema.decodeUnknownExit(schema)("a:1")))
+// Failure(Cause([Fail(SchemaError(Expected a value with a length of at least 2, got "a"
+//   at [0]))]))
+
+console.log(String(Schema.decodeUnknownExit(schema)("aa:1.2")))
+// Failure(Cause([Fail(SchemaError(Expected an integer, got 1.2
+//   at [2]))]))
 ```
 
 # Defining Composite Schemas
@@ -2392,6 +2398,35 @@ console.log(String(Schema.decodeUnknownExit(schema)("")))
 // Failure(Cause([Fail(SchemaError: length must be >= 3, got 0)]))
 ```
 
+### Filter error messages and schema identifiers
+
+The default formatter chooses the error label from the level that failed:
+
+- If the input does not match the base schema type, the formatter reports a
+  type-level failure. In that case, a schema `identifier` is used as the
+  expected label.
+- If the base type matches but a filter fails, the formatter reports a filter
+  failure. In that case, the filter's `message` annotation is used first, then
+  its `expected` annotation, and finally `<filter>` if neither is provided.
+
+An `identifier` does not name a failed filter. Use `expected` to name the
+filter in the default formatter, or `message` to replace the filter failure
+message completely.
+
+**Example** (Schema identifier versus filter expected message)
+
+```ts
+import { Schema } from "effect"
+
+const Username = Schema.NonEmptyString.annotate({ identifier: "Username" })
+
+console.log(String(Schema.decodeUnknownExit(Username)(null)))
+// Failure(Cause([Fail(SchemaError: Expected Username, got null)]))
+
+console.log(String(Schema.decodeUnknownExit(Username)("")))
+// Failure(Cause([Fail(SchemaError: Expected a value with a length of at least 1, got "")]))
+```
+
 ### Filter return shapes
 
 A filter predicate can return any of the shapes described by `Schema.FilterOutput`:
@@ -3158,9 +3193,9 @@ const URLFromString = Schema.String.pipe(
       decode: (s) =>
         Effect.try({
           try: () => new URL(s),
-          catch: (error) => new SchemaIssue.InvalidValue(Option.some(s), { cause: error })
+          catch: () => new Issue.InvalidValue(Option.some(s), { message: `Invalid URL string: ${s}` })
         }),
-      encode: (url) => Effect.succeed(url.toString())
+      encode: (url) => Effect.succeed(url.href)
     })
   )
 )
@@ -6166,6 +6201,10 @@ You can customize the messages of the `Issue` object in two main ways:
 
 - By passing formatter hooks
 - By annotating schemas with `message` or `messageMissingKey` or `messageUnexpectedKey`
+
+For the exact rule used by the default formatter for identifiers, filter
+`expected`, and `message` annotations, see
+[Filter error messages and schema identifiers](#filter-error-messages-and-schema-identifiers).
 
 ##### Hooks
 

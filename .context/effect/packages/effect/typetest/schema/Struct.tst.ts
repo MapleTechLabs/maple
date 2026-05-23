@@ -1,6 +1,6 @@
 import { flow, Schema, String as Str, Struct } from "effect"
 import type { Brand, SchemaAST } from "effect"
-import { describe, expect, it, when } from "tstyche"
+import { describe, expect, it } from "tstyche"
 
 describe("Struct", () => {
   it("ast type", () => {
@@ -598,12 +598,12 @@ describe("Struct", () => {
       const fABranded = (a: ABranded) => a
 
       fABranded(ABranded.make({ a: "a" }))
-      when(fABranded).isCalledWith(expect(BBranded.make).type.not.toBeCallableWith({ a: "a" }))
+      expect(fABranded).type.not.toBeCallableWith(BBranded.make({ a: "a" }))
 
       const fBBranded = (a: BBranded) => a
 
       fBBranded(BBranded.make({ a: "a" }))
-      when(fBBranded).isCalledWith(expect(ABranded.make).type.not.toBeCallableWith({ a: "a" }))
+      expect(fBBranded).type.not.toBeCallableWith(ABranded.make({ a: "a" }))
     })
 
     it("branded (Brand module)", () => {
@@ -617,12 +617,12 @@ describe("Struct", () => {
       const fABranded = (a: ABranded) => a
 
       fABranded(ABranded.make({ a: "a" }))
-      when(fABranded).isCalledWith(expect(BBranded.make).type.not.toBeCallableWith({ a: "a" }))
+      expect(fABranded).type.not.toBeCallableWith(BBranded.make({ a: "a" }))
 
       const fBBranded = (a: BBranded) => a
 
       fBBranded(BBranded.make({ a: "a" }))
-      when(fBBranded).isCalledWith(expect(ABranded.make).type.not.toBeCallableWith({ a: "a" }))
+      expect(fBBranded).type.not.toBeCallableWith(ABranded.make({ a: "a" }))
     })
   })
 

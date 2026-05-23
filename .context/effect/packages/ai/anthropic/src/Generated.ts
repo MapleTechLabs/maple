@@ -1,5 +1,5 @@
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 
 import * as Data from "effect/Data"

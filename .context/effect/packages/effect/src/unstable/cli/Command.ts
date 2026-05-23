@@ -1,4 +1,32 @@
 /**
+ * The `Command` module provides the core building block for defining and
+ * running Effect-based command-line applications. A `Command` combines a name,
+ * typed flags and positional arguments, optional subcommands, metadata for help
+ * output, and an effectful handler.
+ *
+ * **Common tasks**
+ *
+ * - Create commands with {@link make}
+ * - Add handlers with {@link withHandler}
+ * - Build nested command trees with {@link withSubcommands}
+ * - Share parent flags with subcommands using {@link withSharedFlags}
+ * - Add command-scoped global flags with {@link withGlobalFlags}
+ * - Attach help metadata with {@link withDescription}, {@link withShortDescription},
+ *   {@link withAlias}, and {@link withExamples}
+ * - Provide handler dependencies with {@link provide}, {@link provideSync},
+ *   {@link provideEffect}, and {@link provideEffectDiscard}
+ * - Execute commands with {@link run} or test them with {@link runWith}
+ *
+ * **Gotchas**
+ *
+ * - `withSharedFlags` accepts only flags, not positional arguments, and the
+ *   parsed values are available to descendants by yielding the parent command.
+ * - Shared flags may be written before or after the selected subcommand name.
+ * - Duplicate flags across command scopes are rejected so parsing and help
+ *   output remain unambiguous.
+ * - `runWith` is the preferred entry point for tests because it accepts an
+ *   explicit argument array instead of reading from the `Stdio` service.
+ *
  * @since 4.0.0
  */
 import type { NonEmptyArray, NonEmptyReadonlyArray } from "../../Array.ts"
@@ -10,13 +38,12 @@ import { dual } from "../../Function.ts"
 import type * as Layer from "../../Layer.ts"
 import * as Option from "../../Option.ts"
 import type * as Path from "../../Path.ts"
-import type { Pipeable } from "../../Pipeable.ts"
 import * as Predicate from "../../Predicate.ts"
 import * as References from "../../References.ts"
 import * as Result from "../../Result.ts"
 import * as Stdio from "../../Stdio.ts"
 import * as Terminal from "../../Terminal.ts"
-import type { NoInfer, Simplify } from "../../Types.ts"
+import type { Contravariant, Covariant, NoInfer, Simplify } from "../../Types.ts"
 import type { ChildProcessSpawner } from "../process/ChildProcessSpawner.ts"
 import * as CliError from "./CliError.ts"
 import * as CliOutput from "./CliOutput.ts"
@@ -35,13 +62,17 @@ import * as Param from "./Param.ts"
 /**
  * Represents a CLI command with its configuration, handler, and metadata.
  *
+ * **Details**
+ *
  * Commands are the core building blocks of CLI applications. They define:
+ *
  * - The command name and description
  * - Configuration including flags and arguments
  * - Handler function for execution
  * - Optional subcommands for hierarchical structures
  *
- * @example
+ * **Example** (Defining CLI commands)
+ *
  * ```ts
  * import { Console } from "effect"
  * import { Argument, Command, Flag } from "effect/unstable/cli"
@@ -74,20 +105,18 @@ import * as Param from "./Param.ts"
  * }, (config) => Console.log(`Hello, ${config.name}!`))
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
-export interface Command<Name extends string, Input, ContextInput = {}, E = never, R = never>
+export interface Command<in out Name extends string, in Input, out ContextInput = {}, out E = never, out R = never>
   extends
-    Pipeable,
-    Effect.Yieldable<
-      Command<Name, Input, ContextInput, E, R>,
+    Effect.Effect<
       ContextInput,
       never,
       CommandContext<Name>
     >
 {
-  readonly [TypeId]: typeof TypeId
+  readonly [TypeId]: Command.Variance<Input, E, R>
 
   /**
    * The name of the command.
@@ -126,17 +155,44 @@ export interface Command<Name extends string, Input, ContextInput = {}, E = neve
    * Custom annotations associated with this command.
    */
   readonly annotations: Context.Context<never>
+
+  /**
+   * Whether this command is hidden from parent help output, shell
+   * completions, and unknown-subcommand suggestions. Hidden commands still
+   * parse and execute normally when invoked by exact name.
+   */
+  readonly hidden: boolean
 }
 
 /**
+ * Companion namespace containing type-level helpers and configuration shapes
+ * used by `Command`.
+ *
  * @since 4.0.0
  */
 export declare namespace Command {
   /**
+   * Type-level variance marker for `Command`.
+   *
+   * **Details**
+   *
+   * The parsed input type is contravariant, while the command error and service
+   * requirement types are covariant.
+   *
+   * @category models
+   * @since 4.0.0
+   */
+  export interface Variance<in Input, out E, out R> {
+    readonly Input: Contravariant<Input>
+    readonly E: Covariant<E>
+    readonly R: Covariant<R>
+  }
+
+  /**
    * Represents a concrete usage example for a command.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface Example {
     readonly command: string
@@ -146,15 +202,17 @@ export declare namespace Command {
   /**
    * Configuration object for defining command flags, arguments, and nested structures.
    *
-   * Command.Config allows you to specify:
-   * - Individual flags and arguments using Param types
-   * - Nested configuration objects for organization
-   * - Arrays of parameters for repeated elements
+   * **Details**
    *
-   * @example
+   * `Command.Config` can contain individual flags and arguments using `Param`
+   * types, nested configuration objects for organization, and arrays of
+   * parameters for repeated elements.
+   *
+   * **Example** (Configuring command input)
+   *
    * ```ts
    * import { Argument, Flag } from "effect/unstable/cli"
-   * import type * as CliCommand from "effect/unstable/cli/Command"
+   * import type { Command as CliCommand } from "effect/unstable/cli"
    *
    * // Simple flat configuration
    * const simpleConfig: CliCommand.Command.Config = {
@@ -176,8 +234,8 @@ export declare namespace Command {
    * }
    * ```
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface Config {
     readonly [key: string]:
@@ -189,10 +247,12 @@ export declare namespace Command {
   /**
    * Configuration shape accepted by `Command.withSharedFlags`.
    *
+   * **Details**
+   *
    * Only flags are allowed here; arguments are intentionally excluded.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface FlagConfig {
     readonly [key: string]:
@@ -205,19 +265,21 @@ export declare namespace Command {
    * Utilities for working with command configurations.
    *
    * @since 4.0.0
-   * @category models
    */
   export namespace Config {
     /**
      * Infers the TypeScript type from a Command.Config structure.
      *
+     * **Details**
+     *
      * This type utility extracts the final configuration type that handlers will receive,
      * preserving the nested structure while converting Param types to their values.
      *
-     * @example
+     * **Example** (Inferring command input)
+     *
      * ```ts
      * import { Flag } from "effect/unstable/cli"
-     * import type * as CliCommand from "effect/unstable/cli/Command"
+     * import type { Command as CliCommand } from "effect/unstable/cli"
      *
      * const config = {
      *   name: Flag.string("name"),
@@ -237,8 +299,8 @@ export declare namespace Command {
      * // }
      * ```
      *
-     * @since 4.0.0
      * @category models
+     * @since 4.0.0
      */
     export type Infer<A extends Config> = Simplify<
       { readonly [Key in keyof A]: InferValue<A[Key]> }
@@ -247,8 +309,8 @@ export declare namespace Command {
     /**
      * Helper type utility for recursively inferring types from Config values.
      *
-     * @since 4.0.0
      * @category models
+     * @since 4.0.0
      */
     export type InferValue<A> = A extends ReadonlyArray<any> ? { readonly [Key in keyof A]: InferValue<A[Key]> }
       : A extends Param.Param<infer _Kind, infer _Value> ? _Value
@@ -259,16 +321,29 @@ export declare namespace Command {
   /**
    * Represents any Command regardless of its type parameters.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
-  export type Any = Command<string, unknown, unknown, unknown, unknown>
+  export interface Any extends Effect.Effect<any, never, any> {
+    readonly [TypeId]: any
+    readonly name: string
+    readonly description: string | undefined
+    readonly shortDescription: string | undefined
+    readonly alias: string | undefined
+    readonly examples: ReadonlyArray<Command.Example>
+    readonly subcommands: ReadonlyArray<{
+      readonly group: string | undefined
+      readonly commands: NonEmptyReadonlyArray<Command.Any>
+    }>
+    readonly annotations: Context.Context<never>
+    readonly hidden: boolean
+  }
 
   /**
    * A grouped set of subcommands used by `Command.withSubcommands`.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export interface SubcommandGroup<Commands extends ReadonlyArray<Any> = ReadonlyArray<Any>> {
     readonly group: string
@@ -278,25 +353,31 @@ export declare namespace Command {
   /**
    * Entry type accepted by `Command.withSubcommands`.
    *
-   * @since 4.0.0
    * @category models
+   * @since 4.0.0
    */
   export type SubcommandEntry = Any | SubcommandGroup<ReadonlyArray<Any>>
 }
 
 /**
- * The environment required by CLI commands, including file system and path operations.
+ * Services required by CLI parsing and execution.
  *
- * @since 4.0.0
+ * **Details**
+ *
+ * This includes file-system and path services for arguments, terminal and
+ * stdio services for running commands, and child-process spawning for
+ * process-related CLI features.
+ *
  * @category utility types
+ * @since 4.0.0
  */
 export type Environment = FileSystem.FileSystem | Path.Path | Terminal.Terminal | ChildProcessSpawner | Stdio.Stdio
 
 /**
  * A utility type to extract the error type from a `Command`.
  *
- * @since 4.0.0
  * @category utility types
+ * @since 4.0.0
  */
 export type Error<C> = C extends Command<
   infer _Name,
@@ -310,12 +391,15 @@ export type Error<C> = C extends Command<
 /**
  * Service context for a specific command, enabling subcommands to access their parent's parsed configuration.
  *
+ * **Details**
+ *
  * When a subcommand handler needs access to flags or arguments from a parent command,
  * it can yield the parent command directly to retrieve its config. This is powered by
  * Effect's service system - each command automatically creates a service that provides
  * its parsed input to child commands.
  *
- * @example
+ * **Example** (Accessing parent command context)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -342,8 +426,8 @@ export type Error<C> = C extends Command<
  * // Usage: app --verbose --config prod.json deploy --target staging
  * ```
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface CommandContext<Name extends string> {
   readonly _: unique symbol
@@ -353,8 +437,8 @@ export interface CommandContext<Name extends string> {
 /**
  * Represents the parsed tokens from command-line input before validation.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ParsedTokens {
   readonly flags: Record<string, ReadonlyArray<string>>
@@ -367,8 +451,10 @@ export interface ParsedTokens {
 }
 
 /**
+ * Returns `true` if the provided value is a `Command`.
+ *
+ * @category guards
  * @since 4.0.0
- * @category Guards
  */
 export const isCommand = (u: unknown): u is Command.Any => Predicate.hasProperty(u, TypeId)
 
@@ -377,13 +463,17 @@ export const isCommand = (u: unknown): u is Command.Any => Predicate.hasProperty
 /* ========================================================================== */
 
 /**
- * Creates a Command from a name, optional config, optional handler function, and optional description.
+ * Creates a `Command` from a name, an optional configuration, and an optional
+ * handler.
  *
- * The make function is the primary constructor for CLI commands. It provides multiple overloads
- * to support different patterns of command creation, from simple commands with no configuration
- * to complex commands with nested configurations and error handling.
+ * **Details**
  *
- * @example
+ * Use `withDescription` and related metadata combinators to add help text. The
+ * overloads support simple commands, configured commands, and commands with
+ * effectful handlers.
+ *
+ * **Example** (Creating commands)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Argument, Command, Flag } from "effect/unstable/cli"
@@ -426,8 +516,8 @@ export const isCommand = (u: unknown): u is Command.Any => Predicate.hasProperty
  *   }))
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const make: {
   <Name extends string>(name: Name): Command<Name, {}, {}, never, never>
@@ -462,7 +552,8 @@ export const make: {
 /**
  * Adds or replaces the handler for a command.
  *
- * @example
+ * **Example** (Adding command handlers)
+ *
  * ```ts
  * import { Console } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -480,8 +571,8 @@ export const make: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withHandler: {
   <A, R, E>(
@@ -497,7 +588,7 @@ export const withHandler: {
   self: Command<Name, A, ContextInput, XE, XR>,
   handler: (value: A) => Effect.Effect<void, E, R>
 ): Command<Name, A, ContextInput, E, Exclude<R, GlobalFlag.BuiltInSettingContext>> =>
-  makeCommand({ ...toImpl(self), handle: handler }))
+  makeCommand({ ...toImpl(self), handle: handler } as any))
 
 interface SubcommandGroupInternal {
   readonly group: string | undefined
@@ -553,11 +644,14 @@ const normalizeSubcommandEntries = (
 /**
  * Adds subcommands to a command, creating a hierarchical command structure.
  *
+ * **Details**
+ *
  * Subcommands can access their parent's parsed configuration by yielding the parent
  * command within their handler. This enables shared parent flags that affect
  * all subcommands.
  *
- * @example
+ * **Example** (Adding subcommands)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -585,8 +679,8 @@ const normalizeSubcommandEntries = (
  * // Usage: git --verbose clone --repo github.com/foo/bar
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withSubcommands: {
   <const Subcommands extends ReadonlyArray<Command.SubcommandEntry>>(
@@ -638,7 +732,7 @@ export const withSubcommands: {
   checkForDuplicateFlags(self, normalized.flat)
 
   const impl = toImpl(self)
-  const byName = new Map(normalized.flat.map((s) => [s.name, toImpl(s)] as const))
+  const byName = new Map(normalized.flat.map((s) => [s.name, toImpl(s as any)] as const))
 
   type NextInput = Simplify<Input | ContextInput>
   const SubcommandStateSymbol = Symbol("effect/cli/SubcommandState")
@@ -691,18 +785,20 @@ export const withSubcommands: {
     parse,
     parseContext: impl.parseContext,
     handle
-  })
+  }) as any
 })
 
 /**
  * Adds flags that are inherited by subcommands.
  *
+ * **Details**
+ *
  * Shared flags are available to this command's handler and to descendant
  * handlers via `yield* parentCommand`. Shared flags are accepted both before
  * and after a selected subcommand name (npm-style).
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withSharedFlags: {
   <const SharedFlags extends Command.FlagConfig>(
@@ -788,17 +884,19 @@ export const withSharedFlags: {
       parse,
       parseContext,
       handle
-    })
+    }) as any
   }
 )
 
 /**
  * Declares global flags for a command scope.
  *
+ * **Details**
+ *
  * Declared global flags apply to the command and all of its descendants.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withGlobalFlags: {
   <const GlobalFlags extends ReadonlyArray<GlobalFlag.GlobalFlag<any>>>(
@@ -832,7 +930,7 @@ export const withGlobalFlags: {
   ): Command<Name, Input, ContextInput, E, Exclude<R, ExtractGlobalFlagContext<GlobalFlags>>> => {
     const impl = toImpl(self)
     const next = Array.from(new Set([...impl.globalFlags, ...globalFlags]))
-    return makeCommand({ ...impl, globalFlags: next })
+    return makeCommand({ ...impl, globalFlags: next }) as any
   }
 )
 
@@ -851,10 +949,13 @@ type ExtractSubcommandContext<T extends ReadonlyArray<Command.SubcommandEntry>> 
 /**
  * Sets the description for a command.
  *
+ * **Details**
+ *
  * Descriptions provide users with information about what the command does
  * when they view help documentation.
  *
- * @example
+ * **Example** (Setting descriptions)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -869,8 +970,8 @@ type ExtractSubcommandContext<T extends ReadonlyArray<Command.SubcommandEntry>> 
  *   )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withDescription: {
   (description: string): <const Name extends string, Input, E, R, ContextInput>(
@@ -888,12 +989,14 @@ export const withDescription: {
 /**
  * Sets a short description for a command.
  *
+ * **Details**
+ *
  * Short descriptions are used when listing subcommands in help output and
  * shell completions. If no short description is provided, the full
  * `description` is used as a fallback.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withShortDescription: {
   (shortDescription: string): <const Name extends string, Input, E, R, ContextInput>(
@@ -911,11 +1014,13 @@ export const withShortDescription: {
 /**
  * Sets an alias for a command.
  *
+ * **Details**
+ *
  * Aliases are accepted as alternate subcommand names during parsing and are
  * shown in help output as `name, alias`.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withAlias: {
   (alias: string): <const Name extends string, Input, E, R, ContextInput>(
@@ -931,10 +1036,43 @@ export const withAlias: {
 ) => makeCommand({ ...toImpl(self), alias }))
 
 /**
+ * Hides a subcommand from parent help output, shell completions, and
+ * "did you mean?" suggestions while keeping it fully invocable by exact name.
+ *
+ * **When to use**
+ *
+ * Use this for experimental or internal subcommands that should be accepted but
+ * not advertised on the public CLI surface.
+ *
+ * **Example** (Hiding a subcommand)
+ *
+ * ```ts
+ * import { Command } from "effect/unstable/cli"
+ *
+ * // `experimental` still runs when invoked as `mycli experimental`,
+ * // but it does not appear under SUBCOMMANDS in `mycli --help`.
+ * const experimental = Command.make("experimental").pipe(
+ *   Command.withHidden
+ * )
+ *
+ * const root = Command.make("mycli").pipe(
+ *   Command.withSubcommands([experimental])
+ * )
+ * ```
+ *
+ * @category combinators
+ * @since 4.0.0
+ */
+export const withHidden = <const Name extends string, Input, E, R, ContextInput>(
+  self: Command<Name, Input, ContextInput, E, R>
+): Command<Name, Input, ContextInput, E, R> =>
+  makeCommand({ ...toImpl(self), hidden: true }) as Command<Name, Input, ContextInput, E, R>
+
+/**
  * Adds a custom annotation to a command.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const annotate: {
   <I, S>(
@@ -960,8 +1098,8 @@ export const annotate: {
 /**
  * Merges a Context of annotations into a command.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const annotateMerge: {
   <I>(
@@ -984,10 +1122,13 @@ export const annotateMerge: {
 /**
  * Sets usage examples for a command.
  *
+ * **Details**
+ *
  * Examples are exposed in structured `HelpDoc` data and rendered by the
  * default formatter in an `EXAMPLES` section.
  *
- * @example
+ * **Example** (Adding usage examples)
+ *
  * ```ts
  * import { Command } from "effect/unstable/cli"
  *
@@ -999,8 +1140,8 @@ export const annotateMerge: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withExamples: {
   (examples: ReadonlyArray<Command.Example>): <const Name extends string, Input, E, R, ContextInput>(
@@ -1032,7 +1173,8 @@ const mapHandler = <Name extends string, Input, E, R, ContextInput, E2, R2>(
  * Provides the handler of a command with the services produced by a layer
  * that optionally depends on the command-line input to be created.
  *
- * @example
+ * **Example** (Providing command services)
+ *
  * ```ts
  * import { Effect, FileSystem, PlatformError } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -1061,8 +1203,8 @@ const mapHandler = <Name extends string, Input, E, R, ContextInput, E2, R2>(
  *   )
  * ```
  *
- * @since 4.0.0
  * @category providing services
+ * @since 4.0.0
  */
 export const provide: {
   <Input, LR, LE, LA>(
@@ -1094,8 +1236,8 @@ export const provide: {
  * Provides the handler of a command with the implementation of a service that
  * optionally depends on the command-line input to be constructed.
  *
- * @since 4.0.0
  * @category providing services
+ * @since 4.0.0
  */
 export const provideSync: {
   <I, S, Input>(
@@ -1125,8 +1267,8 @@ export const provideSync: {
  * Provides the handler of a command with the service produced by an effect
  * that optionally depends on the command-line input to be created.
  *
- * @since 4.0.0
  * @category providing services
+ * @since 4.0.0
  */
 export const provideEffect: {
   <I, S, Input, R2, E2>(
@@ -1155,8 +1297,8 @@ export const provideEffect: {
  * Allows for execution of an effect, which optionally depends on command-line
  * input to be created, prior to executing the handler of a command.
  *
- * @since 4.0.0
  * @category providing services
+ * @since 4.0.0
  */
 export const provideEffectDiscard: {
   <_, Input, E2, R2>(
@@ -1231,9 +1373,16 @@ const showHelp = <Name extends string, Input, E, R, ContextInput>(
   })
 
 /**
- * Runs a command with the provided input arguments.
+ * Runs a command using the arguments supplied by the `Stdio` service.
  *
- * @example
+ * **When to use**
+ *
+ * Use `run` at an application entry point when arguments should come from
+ * `Stdio`; use `runWith` when you need an explicit argument array, such as in
+ * tests.
+ *
+ * **Example** (Running commands with standard input)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -1251,8 +1400,8 @@ const showHelp = <Name extends string, Input, E, R, ContextInput>(
  * })
  * ```
  *
- * @since 4.0.0
  * @category command execution
+ * @since 4.0.0
  */
 export const run: {
   (config: {
@@ -1280,12 +1429,15 @@ export const run: {
   ))
 
 /**
- * Runs a command with explicitly provided arguments instead of using process.argv.
+ * Runs a command with explicitly provided arguments instead of using arguments from `Stdio`.
  *
- * This function is useful for testing CLI applications or when you want to
+ * **When to use**
+ *
+ * Use this function for testing CLI applications or when you want to
  * programmatically execute commands with specific arguments.
  *
- * @example
+ * **Example** (Running commands with explicit arguments)
+ *
  * ```ts
  * import { Console, Effect } from "effect"
  * import { Command, Flag } from "effect/unstable/cli"
@@ -1315,8 +1467,8 @@ export const run: {
  * })
  * ```
  *
- * @since 4.0.0
  * @category command execution
+ * @since 4.0.0
  */
 export const runWith = <const Name extends string, Input, E, R, ContextInput>(
   command: Command<Name, Input, ContextInput, E, R>,

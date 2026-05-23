@@ -1,4 +1,24 @@
 /**
+ * Server-side RPC layers and storage contracts for encrypted event-log
+ * replication.
+ *
+ * This module is used by encrypted `EventLogRemote` clients that need a remote
+ * synchronization endpoint without exposing plaintext events to the server. The
+ * server stores ciphertext, initialization vectors, entry ids, and remote
+ * sequence numbers keyed by the client's public key and store id, then streams
+ * encrypted changes back to clients so they can decrypt locally with their
+ * identity private key material. This makes it suitable for offline-first
+ * synchronization, multi-device replication, and hosted backends where the
+ * transport or storage layer should not inspect event payloads.
+ *
+ * The server does not derive or hold encryption keys. It treats public keys as
+ * log identities, persists one session authentication binding per public key,
+ * and reuses the initialization vector supplied with each encrypted write
+ * request for the entries in that batch. Persisted remote ids, session signing
+ * key bindings, ciphertext, IVs, and sequence numbers are therefore part of the
+ * encrypted replication protocol and should be kept stable by durable storage
+ * implementations.
+ *
  * @since 4.0.0
  */
 import * as Uuid from "uuid"
@@ -19,8 +39,16 @@ import { ChangesRpc, EventLogProtocolError, EventLogRemoteRpcs, type StoreId, Wr
 import * as EventLogServer from "./EventLogServer.ts"
 
 /**
+ * Provides RPC handlers for the encrypted event-log server.
+ *
+ * **Details**
+ *
+ * Incoming encrypted write payloads are decoded and persisted through `Storage`;
+ * change streams read encrypted entries from storage and encode them for the
+ * remote protocol.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layerRpcHandlers = Layer.unwrap(Effect.gen(function*() {
   const storage = yield* Storage
@@ -70,16 +98,21 @@ export const layerRpcHandlers = Layer.unwrap(Effect.gen(function*() {
 }))
 
 /**
+ * Provides an encrypted event-log RPC server using `EventLogRemoteRpcs` and the
+ * encrypted server RPC handlers.
+ *
+ * @category layers
  * @since 4.0.0
- * @category Layers
  */
 export const layer: Layer.Layer<never, never, RpcServer.Protocol | Storage> = RpcServer.layer(EventLogRemoteRpcs).pipe(
   Layer.provide(layerRpcHandlers)
 )
 
 /**
- * @since 4.0.0
+ * Encrypted entry representation persisted by the encrypted event-log server.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export class PersistedEntry extends Schema.Class<PersistedEntry>(
   "effect/eventlog/EventLogServerEncrypted/PersistedEntry"
@@ -89,6 +122,8 @@ export class PersistedEntry extends Schema.Class<PersistedEntry>(
   encryptedEntry: Transferable.Uint8Array
 }) {
   /**
+   * String representation of the encrypted entry id.
+   *
    * @since 4.0.0
    */
   get entryIdString(): string {
@@ -97,8 +132,16 @@ export class PersistedEntry extends Schema.Class<PersistedEntry>(
 }
 
 /**
- * @since 4.0.0
+ * Storage service used by the encrypted event-log server.
+ *
+ * **Details**
+ *
+ * It provides the server remote id, stores session authentication bindings,
+ * persists encrypted entries, and streams encrypted changes for a public key and
+ * store id.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export class Storage extends Context.Service<Storage, {
   readonly getId: Effect.Effect<RemoteId>
@@ -119,8 +162,15 @@ export class Storage extends Context.Service<Storage, {
 }>()("effect/eventlog/EventLogServer/Storage") {}
 
 /**
- * @since 4.0.0
+ * Creates an in-memory encrypted server `Storage`.
+ *
+ * **Details**
+ *
+ * Data, session authentication bindings, and streams are process-local and are
+ * released with the surrounding scope.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export const makeStorageMemory: Effect.Effect<Storage["Service"], never, Scope.Scope> = Effect.gen(function*() {
   const knownIds = new Map<string, Map<string, number>>()
@@ -193,8 +243,10 @@ export const makeStorageMemory: Effect.Effect<Storage["Service"], never, Scope.S
 })
 
 /**
- * @since 4.0.0
+ * Provides encrypted server `Storage` using the in-memory implementation.
+ *
  * @category storage
+ * @since 4.0.0
  */
 export const layerStorageMemory: Layer.Layer<Storage> = Layer.effect(Storage)(makeStorageMemory)
 

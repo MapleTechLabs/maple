@@ -1,4 +1,23 @@
 /**
+ * Serves Swagger UI for an `HttpApi` by rendering the OpenAPI document generated
+ * from the API directly into an HTML page.
+ *
+ * Use this module when you want a lightweight documentation route for a running
+ * `HttpApi`, typically in development, staging, internal consoles, or public API
+ * reference pages where Swagger UI's exploration and request-building tools are
+ * preferred. The exported `layer` adds a `GET` route to an `HttpRouter`,
+ * defaults the mount path to `/docs`, and leaves API implementation and server
+ * wiring to `HttpApiBuilder` and the surrounding router layers.
+ *
+ * The page is self-contained: `OpenApi.fromApi` derives the specification from
+ * the API's groups, endpoints, schemas, and OpenAPI annotations, then the JSON
+ * is embedded into the HTML served to the browser. No separate `/openapi.json`
+ * endpoint is installed by this module, so clients or documentation pipelines
+ * that need the raw spec should use `OpenApi.fromApi` directly or expose a JSON
+ * route elsewhere. If the docs are public, mount the layer behind the same
+ * routing, security, or environment controls you want for the UI; generated
+ * server URLs and operation metadata come from the API's OpenAPI annotations.
+ *
  * @since 4.0.0
  */
 import * as Effect from "../../Effect.ts"
@@ -43,12 +62,11 @@ const makeHandler = <Id extends string, Groups extends HttpApiGroup.Any>(options
 }
 
 /**
- * Exported layer mounting Swagger/OpenAPI documentation UI.
+ * Mounts Swagger UI for an `HttpApi` at the configured path, defaulting to
+ * `/docs`, using the OpenAPI specification generated from the API.
  *
- * @param options.path Optional mount path (default "/docs").
- *
- * @since 4.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer = <Id extends string, Groups extends HttpApiGroup.Any>(
   api: HttpApi.HttpApi<Id, Groups>,

@@ -186,7 +186,7 @@ describe("toEquivalence", () => {
       assertFalse(equivalence({ a: 1, b: 2, c: 3 }, { a: 1, b: 2 }))
     })
 
-    it("Record(String, Number)", () => {
+    it("Record(String, UndefinedOr(Number))", () => {
       const schema = Schema.Record(Schema.String, Schema.UndefinedOr(Schema.Number))
       const equivalence = Schema.toEquivalence(schema)
       assertTrue(equivalence({ a: 1, b: undefined }, { a: 1, b: undefined }))

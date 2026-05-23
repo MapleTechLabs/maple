@@ -7,7 +7,7 @@ import { Cookies } from "effect/unstable/http"
 import { assertSuccess } from "../../utils/assert.ts"
 
 describe("Cookies", () => {
-  it("expireCookie", () => {
+  it("expireCookie returns a Result with an expired Set-Cookie value", () => {
     assertSuccess(
       Cookies.expireCookie(Cookies.empty, "session", { path: "/", secure: true }),
       Cookies.fromReadonlyRecord({
@@ -21,7 +21,7 @@ describe("Cookies", () => {
     )
   })
 
-  it("expireCookieUnsafe", () => {
+  it("expireCookieUnsafe adds an expired Set-Cookie value", () => {
     deepStrictEqual(
       Cookies.expireCookieUnsafe(Cookies.empty, "session", { path: "/", secure: true }),
       Cookies.fromReadonlyRecord({

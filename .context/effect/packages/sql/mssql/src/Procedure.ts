@@ -1,5 +1,22 @@
 /**
- * @since 1.0.0
+ * Typed builders for Microsoft SQL Server stored procedure definitions.
+ *
+ * This module describes the metadata consumed by `MssqlClient.call`: create a
+ * definition with `make`, add input and output parameters with their Tedious
+ * data types and `ParameterOptions`, optionally describe the returned row shape
+ * with `withRows`, and use `compile` to bind the input values before execution.
+ * It is useful when application code calls stored procedures for commands,
+ * reports, migrations, or workflows that return both result sets and output
+ * parameters.
+ *
+ * Parameter value types are supplied explicitly through `param<A>()` and
+ * `outputParam<A>()`; they are not inferred from the Tedious data type. Input
+ * values must be keyed by the parameter names in the definition, output
+ * parameters are collected separately from returned rows, and `withRows` only
+ * records the expected TypeScript row type, so row names and transforms still
+ * follow the configured `MssqlClient` result handling.
+ *
+ * @since 4.0.0
  */
 import { identity } from "effect/Function"
 import type { Pipeable } from "effect/Pipeable"
@@ -11,20 +28,26 @@ import type { ParameterOptions } from "tedious/lib/request.ts"
 import * as Parameter from "./Parameter.ts"
 
 /**
+ * Runtime type identifier used to mark SQL Server stored procedure definitions.
+ *
  * @category type id
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const TypeId: TypeId = "~@effect/sql-mssql/Procedure"
 
 /**
+ * Type-level identifier used to mark SQL Server stored procedure definitions.
+ *
  * @category type id
- * @since 1.0.0
+ * @since 4.0.0
  */
 export type TypeId = "~@effect/sql-mssql/Procedure"
 
 /**
- * @category model
- * @since 1.0.0
+ * Pipeable definition of a SQL Server stored procedure, tracking its input parameters, output parameters, and result row type.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface Procedure<
   I extends Record<string, Parameter.Parameter<any>>,
@@ -41,8 +64,10 @@ export interface Procedure<
 }
 
 /**
- * @category model
- * @since 1.0.0
+ * Stored procedure definition with concrete input values bound for execution.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface ProcedureWithValues<
   I extends Record<string, Parameter.Parameter<any>>,
@@ -53,11 +78,16 @@ export interface ProcedureWithValues<
 }
 
 /**
- * @since 1.0.0
+ * Namespace containing type helpers and result types for SQL Server stored procedures.
+ *
+ * @since 4.0.0
  */
-export namespace Procedure {
+export declare namespace Procedure {
   /**
-   * @since 1.0.0
+   * Maps a record of `Parameter` metadata to the corresponding record of parameter value types.
+   *
+   * @category utility types
+   * @since 4.0.0
    */
   export type ParametersRecord<
     A extends Record<string, Parameter.Parameter<any>>
@@ -69,8 +99,10 @@ export namespace Procedure {
     & {}
 
   /**
-   * @category model
-   * @since 1.0.0
+   * Result of a SQL Server stored procedure call, containing typed output parameter values and returned rows.
+   *
+   * @category models
+   * @since 4.0.0
    */
   export interface Result<
     O extends Record<string, Parameter.Parameter<any>>,
@@ -94,8 +126,10 @@ const procedureProto = {
 }
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Creates an empty SQL Server stored procedure definition for the given procedure name.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const make = (name: string): Procedure<{}, {}> => {
   const procedure = Object.create(procedureProto)
@@ -106,8 +140,10 @@ export const make = (name: string): Procedure<{}, {}> => {
 }
 
 /**
+ * Adds a typed input parameter to a SQL Server stored procedure definition.
+ *
  * @category combinator
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const param = <A>() =>
 <N extends string, T extends DataType>(
@@ -129,8 +165,10 @@ export const param = <A>() =>
 })
 
 /**
+ * Adds a typed output parameter to a SQL Server stored procedure definition.
+ *
  * @category combinator
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const outputParam = <A>() =>
 <N extends string, T extends DataType>(
@@ -152,8 +190,10 @@ export const outputParam = <A>() =>
 })
 
 /**
+ * Sets the expected row type for a SQL Server stored procedure definition.
+ *
  * @category combinator
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const withRows = <A extends object = Row>() =>
 <
@@ -164,8 +204,10 @@ export const withRows = <A extends object = Row>() =>
 ): Procedure<I, O, A> => self as any
 
 /**
+ * Binds input values to a SQL Server stored procedure definition, producing a value that can be executed with `MssqlClient.call`.
+ *
  * @category combinator
- * @since 1.0.0
+ * @since 4.0.0
  */
 export const compile = <
   I extends Record<string, Parameter.Parameter<any>>,

@@ -969,7 +969,7 @@ describe("Serializers", () => {
         )
         await decoding.fail(
           "not a url",
-          isDeno ? `TypeError: Invalid URL: 'not a url'` : `TypeError: Invalid URL`
+          `Invalid URL string: not a url`
         )
       })
 
@@ -2345,7 +2345,7 @@ Expected "Infinity" | "-Infinity" | "NaN", got "a"`
         )
         await decoding.fail(
           "not a url",
-          isDeno ? `TypeError: Invalid URL: 'not a url'` : `TypeError: Invalid URL`
+          `Invalid URL string: not a url`
         )
       })
 

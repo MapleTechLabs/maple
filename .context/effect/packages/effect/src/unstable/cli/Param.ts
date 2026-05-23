@@ -1,12 +1,29 @@
 /**
- * @internal
+ * The `Param` module defines the shared parser tree used by the unstable CLI
+ * `Argument` and `Flag` modules. A `Param<Kind, A>` describes how to consume
+ * either positional arguments or named flags from parsed command-line input and
+ * return a typed value.
  *
- * Param is the polymorphic implementation shared by Argument.ts and Flag.ts.
- * The `Kind` type parameter ("argument" | "flag") enables type-safe separation
- * while sharing parsing logic and combinators.
+ * **Common tasks**
  *
- * Users should import from `Argument` and `Flag` modules, not this module directly.
- * This module is not exported from the public API.
+ * - Build primitive CLI inputs such as strings, booleans, numbers, choices,
+ *   paths, files, and redacted values
+ * - Attach help metadata with aliases and descriptions
+ * - Transform parsed values with pure or effectful validation
+ * - Model missing inputs with `Option`, defaults, config fallbacks, or prompts
+ * - Accept repeated inputs with variadic, bounded, and non-empty parameters
+ *
+ * **Gotchas**
+ *
+ * - The `Kind` type parameter (`"argument"` or `"flag"`) keeps positional
+ *   arguments and flags separate while allowing the implementation and
+ *   combinators to be shared.
+ * - Combinators preserve the parameter kind, so an argument parameter cannot be
+ *   accidentally composed into a flag parameter or the reverse.
+ * - Parsers return both the remaining positional arguments and the parsed
+ *   value; this is important for argument ordering and variadic parameters.
+ * - Some parsers require CLI services such as filesystem, path, terminal, or
+ *   child-process support through the parsing environment.
  *
  * @since 4.0.0
  */
@@ -31,8 +48,15 @@ import * as Prompt from "./Prompt.ts"
 const TypeId = "~effect/cli/Param"
 
 /**
- * @since 4.0.0
+ * Polymorphic CLI parameter shared by `Argument` and `Flag`.
+ *
+ * **Details**
+ *
+ * A parameter knows whether it consumes positional arguments or flags and
+ * parses a `ParsedArgs` value into its typed result.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Param<Kind extends ParamKind, out A> extends Param.Variance<A> {
   readonly _tag: "Single" | "Map" | "Transform" | "Optional" | "Variadic"
@@ -41,60 +65,74 @@ export interface Param<Kind extends ParamKind, out A> extends Param.Variance<A> 
 }
 
 /**
- * @since 4.0.0
+ * Discriminator for whether a `Param` parses positional arguments or
+ * command-line flags.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type ParamKind = "argument" | "flag"
 
 /**
- * @since 4.0.0
+ * Services that parameter parsing can require, such as filesystem, path,
+ * terminal, and child-process support.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Environment = FileSystem.FileSystem | Path.Path | Terminal.Terminal | ChildProcessSpawner
 
 /**
  * Kind discriminator for positional argument parameters.
  *
- * @since 4.0.0
  * @category constants
+ * @since 4.0.0
  */
 export const argumentKind: "argument" = "argument" as const
 
 /**
  * Kind discriminator for flag parameters.
  *
- * @since 4.0.0
  * @category constants
+ * @since 4.0.0
  */
 export const flagKind: "flag" = "flag" as const
 
 /**
  * Represents any parameter.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type Any = Param<ParamKind, unknown>
 
 /**
  * Represents any positional argument parameter.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type AnyArgument = Param<typeof argumentKind, unknown>
 
 /**
  * Represents any flag parameter.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type AnyFlag = Param<typeof flagKind, unknown>
 
 /**
- * @since 4.0.0
+ * Function type used by parameters to parse currently available flags and
+ * positional arguments.
+ *
+ * **Details**
+ *
+ * It returns the remaining positional arguments together with the parsed value,
+ * or fails with a `CliError` while requiring the CLI parsing environment.
+ *
  * @category models
+ * @since 4.0.0
  */
 export type Parse<A> = (args: ParsedArgs) => Effect.Effect<
   readonly [leftover: ReadonlyArray<string>, value: A],
@@ -103,12 +141,16 @@ export type Parse<A> = (args: ParsedArgs) => Effect.Effect<
 >
 
 /**
+ * Namespace containing type-level utilities attached to the `Param` interface.
+ *
  * @since 4.0.0
  */
 export declare namespace Param {
   /**
-   * @since 4.0.0
+   * Variance and pipeability marker carried by every `Param` value.
+   *
    * @category models
+   * @since 4.0.0
    */
   export interface Variance<out A> extends Pipeable {
     readonly [TypeId]: {
@@ -121,8 +163,8 @@ export declare namespace Param {
  * Map of flag names to their provided string values.
  * Multiple occurrences of a flag produce multiple values.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type Flags = Record<string, ReadonlyArray<string>>
 
@@ -131,8 +173,8 @@ export type Flags = Record<string, ReadonlyArray<string>>
  * - `flags`: already-collected flag values by canonical flag name
  * - `arguments`: remaining positional arguments to be consumed
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface ParsedArgs {
   readonly flags: Flags
@@ -143,16 +185,23 @@ export interface ParsedArgs {
  * Represents a fallback prompt that can either be provided directly or
  * computed effectfully when the parameter is missing.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type FallbackPrompt<A> =
   | Prompt.Prompt<A>
   | Effect.Effect<Prompt.Prompt<A>, CliError.CliError, Environment>
 
 /**
- * @since 4.0.0
+ * Leaf parameter that reads one named argument or flag with a primitive parser.
+ *
+ * **Details**
+ *
+ * Single parameters carry the user-facing name, aliases, description, primitive
+ * type, and optional metavar/type name used in help output.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Single<Kind extends ParamKind, out A> extends Param<Kind, A> {
   readonly _tag: "Single"
@@ -162,11 +211,15 @@ export interface Single<Kind extends ParamKind, out A> extends Param<Kind, A> {
   readonly aliases: ReadonlyArray<string>
   readonly primitiveType: Primitive.Primitive<A>
   readonly typeName?: string | undefined
+  readonly hidden: boolean
 }
 
 /**
- * @since 4.0.0
+ * Parameter node that maps the successfully parsed value of another parameter
+ * with a pure function.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Map<Kind extends ParamKind, in out A, out B> extends Param<Kind, B> {
   readonly _tag: "Map"
@@ -176,8 +229,12 @@ export interface Map<Kind extends ParamKind, in out A, out B> extends Param<Kind
 }
 
 /**
- * @since 4.0.0
+ * Parameter node that rewrites another parameter's parser, allowing effectful
+ * validation, fallback behavior, or error translation while preserving the same
+ * parameter kind.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Transform<Kind extends ParamKind, in out A, out B> extends Param<Kind, B> {
   readonly _tag: "Transform"
@@ -187,8 +244,11 @@ export interface Transform<Kind extends ParamKind, in out A, out B> extends Para
 }
 
 /**
- * @since 4.0.0
+ * Parameter node that turns a missing argument or flag into `Option.none()` and
+ * a present parsed value into `Option.some(value)`.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Optional<Kind extends ParamKind, A> extends Param<Kind, Option.Option<A>> {
   readonly _tag: "Optional"
@@ -197,8 +257,12 @@ export interface Optional<Kind extends ParamKind, A> extends Param<Kind, Option.
 }
 
 /**
- * @since 4.0.0
+ * Parameter node that parses another parameter zero or more times and returns
+ * all parsed values as an array, respecting optional minimum and maximum
+ * occurrence bounds.
+ *
  * @category models
+ * @since 4.0.0
  */
 export interface Variadic<Kind extends ParamKind, A> extends Param<Kind, ReadonlyArray<A>> {
   readonly _tag: "Variadic"
@@ -220,9 +284,10 @@ const Proto = {
 /**
  * Type guard to check if a value is a Param.
  *
- * @example
+ * **Example** (Checking for params)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -233,17 +298,18 @@ const Proto = {
  * }
  * ```
  *
- * @since 4.0.0
  * @category refinements
+ * @since 4.0.0
  */
 export const isParam = (u: unknown): u is Param<any, ParamKind> => Predicate.hasProperty(u, TypeId)
 
 /**
  * Type guard to check if a param is a Single param (not composed).
  *
- * @example
+ * **Example** (Checking for single params)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -254,8 +320,8 @@ export const isParam = (u: unknown): u is Param<any, ParamKind> => Predicate.has
  * console.log(Param.isSingle(optionalParam)) // false
  * ```
  *
- * @since 4.0.0
  * @category refinements
+ * @since 4.0.0
  */
 export const isSingle = <const Kind extends ParamKind, A>(
   param: Param<Kind, A>
@@ -271,8 +337,16 @@ export const isFlagParam = <A>(
 ): single is Single<typeof flagKind, A> => single.kind === "flag"
 
 /**
- * @since 4.0.0
+ * Constructs a leaf `Single` parameter from its kind, name, primitive parser,
+ * and optional help metadata.
+ *
+ * **Details**
+ *
+ * The returned parser reads either one positional argument or the named flag,
+ * depending on `kind`.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const makeSingle = <const Kind extends ParamKind, A>(params: {
   readonly kind: Kind
@@ -281,6 +355,7 @@ export const makeSingle = <const Kind extends ParamKind, A>(params: {
   readonly typeName?: string | undefined
   readonly description?: Option.Option<string> | undefined
   readonly aliases?: ReadonlyArray<string> | undefined
+  readonly hidden?: boolean | undefined
 }): Single<Kind, A> => {
   const parse: Parse<A> = (args) =>
     params.kind === argumentKind
@@ -291,6 +366,7 @@ export const makeSingle = <const Kind extends ParamKind, A>(params: {
     ...params,
     description: params.description ?? Option.none(),
     aliases: params.aliases ?? [],
+    hidden: params.hidden ?? false,
     parse
   })
 }
@@ -298,9 +374,10 @@ export const makeSingle = <const Kind extends ParamKind, A>(params: {
 /**
  * Creates a string parameter.
  *
- * @example
+ * **Example** (Creating string parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -313,8 +390,8 @@ export const makeSingle = <const Kind extends ParamKind, A>(params: {
  * // Usage in CLI: --name "John Doe" or as positional argument
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const string = <const Kind extends ParamKind>(
   kind: Kind,
@@ -329,9 +406,10 @@ export const string = <const Kind extends ParamKind>(
 /**
  * Creates a boolean parameter.
  *
- * @example
+ * **Example** (Creating boolean parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -345,8 +423,8 @@ export const string = <const Kind extends ParamKind>(
  * // or as positional: true/false
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const boolean = <const Kind extends ParamKind>(
   kind: Kind,
@@ -361,9 +439,10 @@ export const boolean = <const Kind extends ParamKind>(
 /**
  * Creates an integer parameter.
  *
- * @example
+ * **Example** (Creating integer parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -376,8 +455,8 @@ export const boolean = <const Kind extends ParamKind>(
  * // Usage in CLI: --port 8080 or as positional argument: 42
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const integer = <const Kind extends ParamKind>(
   kind: Kind,
@@ -392,9 +471,10 @@ export const integer = <const Kind extends ParamKind>(
 /**
  * Creates a floating-point number parameter.
  *
- * @example
+ * **Example** (Creating float parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -407,8 +487,8 @@ export const integer = <const Kind extends ParamKind>(
  * // Usage in CLI: --rate 0.95 or as positional argument: 3.14159
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const float = <const Kind extends ParamKind>(
   kind: Kind,
@@ -423,9 +503,10 @@ export const float = <const Kind extends ParamKind>(
 /**
  * Creates a date parameter that parses ISO date strings.
  *
- * @example
+ * **Example** (Creating date parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -439,8 +520,8 @@ export const float = <const Kind extends ParamKind>(
  * // Parses to JavaScript Date object
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const date = <const Kind extends ParamKind>(
   kind: Kind,
@@ -456,9 +537,10 @@ export const date = <const Kind extends ParamKind>(
  * Constructs command-line params that represent a choice between several
  * inputs. The input will be mapped to it's associated value during parsing.
  *
- * @example
+ * **Example** (Creating valued choices)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -478,8 +560,8 @@ export const date = <const Kind extends ParamKind>(
  * ])
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const choiceWithValue = <
   const Kind extends ParamKind,
@@ -495,9 +577,10 @@ export const choiceWithValue = <
  * Constructs command-line params that represent a choice between several
  * string inputs.
  *
- * @example
+ * **Example** (Creating string choices)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -509,8 +592,8 @@ export const choiceWithValue = <
  * ])
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const choice = <
   const Kind extends ParamKind,
@@ -523,9 +606,10 @@ export const choice = <
 /**
  * Creates a path parameter that accepts file or directory paths.
  *
- * @example
+ * **Example** (Creating path parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -543,8 +627,8 @@ export const choice = <
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const path = <Kind extends ParamKind>(
   kind: Kind,
@@ -565,12 +649,15 @@ export const path = <Kind extends ParamKind>(
 /**
  * Creates a directory path parameter.
  *
+ * **Details**
+ *
  * This is a convenience function that creates a path parameter with the
  * `pathType` set to `"directory"` and a default type name of `"directory"`.
  *
- * @example
+ * **Example** (Creating directory parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -583,8 +670,8 @@ export const path = <Kind extends ParamKind>(
  * // Usage: --output-dir /path/to/dir --source /existing/dir
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const directory = <Kind extends ParamKind>(
   kind: Kind,
@@ -602,12 +689,15 @@ export const directory = <Kind extends ParamKind>(
 /**
  * Creates a file path parameter.
  *
+ * **Details**
+ *
  * This is a convenience function that creates a path parameter with a
  * `pathType` set to `"file"` and a default type name of `"file"`.
  *
- * @example
+ * **Example** (Creating file parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -620,8 +710,8 @@ export const directory = <Kind extends ParamKind>(
  * // Usage: --output result.txt --input existing-file.txt
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const file = <Kind extends ParamKind>(
   kind: Kind,
@@ -640,9 +730,10 @@ export const file = <Kind extends ParamKind>(
  * Creates a redacted parameter for sensitive data like passwords.
  * The value is masked in help output and logging.
  *
- * @example
+ * **Example** (Creating redacted parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -655,8 +746,8 @@ export const file = <Kind extends ParamKind>(
  * // Usage: --password (value will be hidden in help/logs)
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const redacted = <Kind extends ParamKind>(
   kind: Kind,
@@ -671,9 +762,10 @@ export const redacted = <Kind extends ParamKind>(
 /**
  * Creates a parameter that reads and returns file content as a string.
  *
- * @example
+ * **Example** (Reading file text)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -686,8 +778,8 @@ export const redacted = <Kind extends ParamKind>(
  * // Usage: --config config.txt (reads file content into string)
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fileText = <Kind extends ParamKind>(kind: Kind, name: string): Param<Kind, string> =>
   makeSingle({
@@ -699,12 +791,15 @@ export const fileText = <Kind extends ParamKind>(kind: Kind, name: string): Para
 /**
  * Creates a param that reads and parses the content of the specified file.
  *
+ * **Details**
+ *
  * The parser that is utilized will depend on the specified `format`, or the
  * extension of the file passed on the command-line if no `format` is specified.
  *
- * @example
+ * **Example** (Parsing file contents)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -718,8 +813,8 @@ export const fileText = <Kind extends ParamKind>(kind: Kind, name: string): Para
  * })
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fileParse = <Kind extends ParamKind>(
   kind: Kind,
@@ -735,10 +830,11 @@ export const fileParse = <Kind extends ParamKind>(
 /**
  * Creates a parameter that reads and validates file content using a schema.
  *
- * @example
+ * **Example** (Validating file contents)
+ *
  * ```ts
  * import { Schema } from "effect"
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  * // @internal - this module is not exported publicly
  *
  * // Parse JSON config file
@@ -759,8 +855,8 @@ export const fileParse = <Kind extends ParamKind>(
  * // Usage: --config config.json (reads and validates file content)
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const fileSchema = <Kind extends ParamKind, A>(
   kind: Kind,
@@ -776,14 +872,20 @@ export const fileSchema = <Kind extends ParamKind, A>(
 
 /**
  * Creates a param that parses key=value pairs.
- * Useful for options that accept configuration values.
  *
- * Note: Requires at least one key=value pair. The parsed pairs are merged
- * into a single record object.
+ * **When to use**
  *
- * @example
+ * Use it for options that accept configuration values.
+ *
+ * **Details**
+ *
+ * Requires at least one key=value pair. The parsed pairs are merged into a
+ * single record object.
+ *
+ * **Example** (Parsing key-value pairs)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -794,8 +896,8 @@ export const fileSchema = <Kind extends ParamKind, A>(
  * // --property name=value --property debug=true
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const keyValuePair = <Kind extends ParamKind>(
   kind: Kind,
@@ -816,25 +918,28 @@ export const keyValuePair = <Kind extends ParamKind>(
 /**
  * Creates an empty sentinel parameter that always fails to parse.
  *
+ * **When to use**
+ *
  * This is useful for creating placeholder parameters or for combinators.
  *
- * @example
+ * **Example** (Creating sentinel parameters)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
- * // Create a none parameter for composition
- * const noneParam = Param.none(Param.flagKind)
+ * const disabledDebugParam = Param.none(Param.flagKind)
  *
- * // Often used in conditional parameter creation
- * const conditionalParam = process.env.NODE_ENV === "production"
- *   ? Param.string(Param.flagKind, "my-dev-flag")
- *   : Param.none(Param.flagKind)
+ * const makeDebugParam = (enableDebug: boolean) =>
+ *   enableDebug ? Param.string(Param.flagKind, "debug") : disabledDebugParam
+ *
+ * console.log(makeDebugParam(true) === disabledDebugParam) // false
+ * console.log(makeDebugParam(false) === disabledDebugParam) // true
  * ```
  *
- * @since 4.0.0
  * @category constructors
+ * @since 4.0.0
  */
 export const none = <Kind extends ParamKind>(kind: Kind): Param<Kind, never> =>
   makeSingle({
@@ -848,15 +953,20 @@ const FLAG_DASH_REGEXP = /^-+/
 /**
  * Adds an alias to an option.
  *
+ * **When to use**
+ *
  * Aliases allow params to be specified with alternative names,
  * typically single-character shortcuts like "-f" for "--force".
+ *
+ * **Details**
  *
  * This works on any param structure by recursively finding the underlying
  * `Single` node and applying the alias there.
  *
- * @example
+ * **Example** (Adding parameter aliases)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -872,8 +982,8 @@ const FLAG_DASH_REGEXP = /^-+/
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withAlias: {
   <Kind extends ParamKind, A>(alias: string): (self: Param<Kind, A>) => Param<Kind, A>
@@ -889,12 +999,15 @@ export const withAlias: {
 /**
  * Adds a description to an option for help text.
  *
+ * **Details**
+ *
  * Descriptions provide users with information about what the option does
  * when they view help documentation.
  *
- * @example
+ * **Example** (Adding help descriptions)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -904,8 +1017,8 @@ export const withAlias: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withDescription: {
   <Kind extends ParamKind, A>(description: string): (self: Param<Kind, A>) => Param<Kind, A>
@@ -919,11 +1032,43 @@ export const withDescription: {
 })
 
 /**
+ * Hides a parameter from generated help output and completions while keeping
+ * it parseable on the command line.
+ *
+ * **When to use**
+ *
+ * Useful for experimental, internal, or deprecated flags that should be
+ * accepted but not advertised.
+ *
+ * **Example** (Hiding a flag from help)
+ *
+ * ```ts
+ * import { Param } from "effect/unstable/cli"
+ *
+ * // @internal - this module is not exported publicly
+ *
+ * const experimental = Param.boolean(Param.flagKind, "experimental-foo").pipe(
+ *   Param.withHidden
+ * )
+ * ```
+ *
+ * @category metadata
+ * @since 4.0.0
+ */
+export const withHidden = <Kind extends ParamKind, A>(self: Param<Kind, A>): Param<Kind, A> =>
+  transformSingle(self, <X>(single: Single<Kind, X>) =>
+    makeSingle({
+      ...single,
+      hidden: true
+    }))
+
+/**
  * Transforms the parsed value of an option using a mapping function.
  *
- * @example
+ * **Example** (Mapping parsed values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -932,8 +1077,8 @@ export const withDescription: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const map: {
   <A, B>(f: (a: A) => B): <Kind extends ParamKind>(self: Param<Kind, A>) => Param<Kind, B>
@@ -968,13 +1113,13 @@ const transform = <Kind extends ParamKind, A, B>(
 /**
  * Transforms the parsed value of an option using an effectful mapping function.
  *
- * @example
+ * **Example** (Mapping parsed values effectfully)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Effect } from "effect"
+ * import { CliError, Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
- * import { Effect } from "effect"
- * import { CliError } from "effect/unstable/cli"
  *
  * const validatedEmail = Param.string(Param.flagKind, "email").pipe(
  *   Param.mapEffect((email) =>
@@ -992,8 +1137,8 @@ const transform = <Kind extends ParamKind, A, B>(
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const mapEffect: {
   <A, B>(
@@ -1020,9 +1165,10 @@ export const mapEffect: {
  * Transforms the parsed value of an option using a function that may throw,
  * converting any thrown errors into failure messages.
  *
- * @example
+ * **Example** (Mapping thrown errors)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1035,8 +1181,8 @@ export const mapEffect: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const mapTryCatch: {
   <A, B>(
@@ -1078,14 +1224,18 @@ export const mapTryCatch: {
 })
 
 /**
- * Creates an optional option that returns None when not provided.
+ * Makes a flag or positional argument optional.
  *
- * Optional options never fail with MissingOption errors. If the option is not
- * provided on the command line, Option.none() is returned instead.
+ * **Details**
  *
- * @example
+ * When the parameter is absent, parsing succeeds with `Option.none()` instead
+ * of failing with a missing option or missing argument error. When present, the
+ * parsed value is wrapped in `Option.some()`.
+ *
+ * **Example** (Making parameters optional)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // Create an optional port option
  * // - When not provided: returns Option.none()
@@ -1093,8 +1243,8 @@ export const mapTryCatch: {
  * const port = Param.optional(Param.integer(Param.flagKind, "port"))
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const optional = <Kind extends ParamKind, A>(
   param: Param<Kind, A>
@@ -1131,15 +1281,17 @@ export const optional = <Kind extends ParamKind, A>(
 }
 
 /**
- * Makes an option optional by providing a default value.
+ * Makes a flag or positional argument optional by supplying a fallback value.
  *
- * This combinator is useful when you want to make an existing option optional
- * by providing a fallback value that will be used when the option is not
- * provided on the command line.
+ * **Details**
  *
- * @example
+ * The fallback may be a pure value or an effect. It is used only when the
+ * parameter is absent; provided values are parsed normally.
+ *
+ * **Example** (Providing default values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1156,8 +1308,8 @@ export const optional = <Kind extends ParamKind, A>(
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withDefault: {
   <const B>(
@@ -1186,8 +1338,8 @@ export const withDefault: {
 /**
  * Adds a fallback config that is loaded when a required parameter is missing.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withFallbackConfig: {
   <B>(config: Config.Config<B>): <Kind extends ParamKind, A>(self: Param<Kind, A>) => Param<Kind, A | B>
@@ -1207,7 +1359,7 @@ export const withFallbackConfig: {
       kind: error._tag === "MissingOption" ? "flag" : "argument"
     })
   const runConfig = (error: CliError.MissingOption | CliError.MissingArgument, args: ParsedArgs) =>
-    Config.option(config).asEffect().pipe(
+    Config.option(config).pipe(
       Effect.mapError((configError) => toInvalidValue(error, configError)),
       Effect.flatMap(Option.match({
         onNone: () => Effect.fail(error),
@@ -1226,8 +1378,8 @@ export const withFallbackConfig: {
 /**
  * Adds a fallback prompt that is shown when a required parameter is missing.
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withFallbackPrompt: {
   <B>(prompt: FallbackPrompt<B>): <Kind extends ParamKind, A>(self: Param<Kind, A>) => Param<Kind, A | B>
@@ -1253,8 +1405,8 @@ export const withFallbackPrompt: {
 /**
  * Represent options which can be used to configure variadic parameters.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export type VariadicParamOptions = {
   /**
@@ -1270,13 +1422,16 @@ export type VariadicParamOptions = {
 /**
  * Creates a variadic parameter that can be specified multiple times.
  *
+ * **Details**
+ *
  * This is the base combinator for creating parameters that accept multiple values.
  * The min and max parameters are optional - if not provided, the parameter can be
  * specified any number of times (0 to infinity).
  *
- * @example
+ * **Example** (Accepting multiple values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1292,12 +1447,12 @@ export type VariadicParamOptions = {
  * // Variadic with both min and max
  * const limited = Param.variadic(Param.string(Param.flagKind, "item"), {
  *   min: 2, // at least 2 times
- *   max: 2 // at most 5 times
+ *   max: 2 // at most 2 times
  * })
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const variadic = <Kind extends ParamKind, A>(
   self: Param<Kind, A>,
@@ -1324,12 +1479,15 @@ export const variadic = <Kind extends ParamKind, A>(
 /**
  * Wraps an option to allow it to be specified multiple times within a range.
  *
+ * **Details**
+ *
  * This combinator transforms an option to accept between `min` and `max`
  * occurrences on the command line, returning an array of all provided values.
  *
- * @example
+ * **Example** (Bounding repeated values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1351,8 +1509,8 @@ export const variadic = <Kind extends ParamKind, A>(
  * // Result: ["dev", "staging", "v1.0"]
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const between: {
   <A>(min: number, max: number): <Kind extends ParamKind>(self: Param<Kind, A>) => Param<Kind, ReadonlyArray<A>>
@@ -1371,12 +1529,15 @@ export const between: {
 /**
  * Wraps an option to allow it to be specified at most `max` times.
  *
+ * **Details**
+ *
  * This combinator transforms an option to accept between 0 and `max`
  * occurrences on the command line, returning an array of all provided values.
  *
- * @example
+ * **Example** (Limiting repeated values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1389,8 +1550,8 @@ export const between: {
  * // Result: ["warning1", "warning2"]
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const atMost: {
   <A>(max: number): <Kind extends ParamKind>(self: Param<Kind, A>) => Param<Kind, ReadonlyArray<A>>
@@ -1405,12 +1566,15 @@ export const atMost: {
 /**
  * Wraps an option to require it to be specified at least `min` times.
  *
+ * **Details**
+ *
  * This combinator transforms an option to accept at least `min`
  * occurrences on the command line, returning an array of all provided values.
  *
- * @example
+ * **Example** (Requiring repeated values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1424,8 +1588,8 @@ export const atMost: {
  * // Result: ["file1.txt", "file2.txt", "file3.txt"]
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const atLeast: {
   <A>(min: number): <Kind extends ParamKind>(self: Param<Kind, A>) => Param<Kind, ReadonlyArray<A>>
@@ -1439,14 +1603,17 @@ export const atLeast: {
 
 /**
  * Filters and transforms parsed values, failing with a custom error message
- * if the filter function returns None.
+ * if the filter function returns `Option.none()`.
  *
- * This combinator is useful for validation and transformation in a single step.
+ * **When to use**
  *
- * @example
+ * Use this combinator for validation and transformation in a single step.
+ *
+ * **Example** (Filtering and transforming values)
+ *
  * ```ts
  * import { Option } from "effect"
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  * // @internal - this module is not exported publicly
  *
  * const positiveInt = Param.integer(Param.flagKind, "count").pipe(
@@ -1457,8 +1624,8 @@ export const atLeast: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const filterMap: {
   <A, B>(
@@ -1495,9 +1662,10 @@ export const filterMap: {
 /**
  * Filters parsed values, failing with a custom error message if the predicate returns false.
  *
- * @example
+ * **Example** (Filtering parsed values)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1509,8 +1677,8 @@ export const filterMap: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const filter: {
   <A>(
@@ -1531,12 +1699,15 @@ export const filter: {
 /**
  * Sets a custom metavar (placeholder name) for the param in help documentation.
  *
+ * **Details**
+ *
  * The metavar is displayed in usage text to indicate what value the user should provide.
  * For example, `--output FILE` shows `FILE` as the metavar.
  *
- * @example
+ * **Example** (Setting metavars)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1549,8 +1720,8 @@ export const filter: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category metadata
+ * @since 4.0.0
  */
 export const withMetavar: {
   <K extends ParamKind>(metavar: string): <A>(self: Param<K, A>) => Param<K, A>
@@ -1568,10 +1739,11 @@ export const withMetavar: {
 /**
  * Validates parsed values against a Schema, providing detailed error messages.
  *
- * @example
+ * **Example** (Validating with schemas)
+ *
  * ```ts
  * import { Schema } from "effect"
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  * // @internal - this module is not exported publicly
  *
  * const isEmail = Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
@@ -1585,8 +1757,8 @@ export const withMetavar: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const withSchema: {
   <A, B>(schema: Schema.Codec<B, A>): <Kind extends ParamKind>(self: Param<Kind, A>) => Param<Kind, B>
@@ -1611,9 +1783,10 @@ export const withSchema: {
 /**
  * Provides a fallback param to use if this param fails to parse.
  *
- * @example
+ * **Example** (Falling back to another parameter)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1622,8 +1795,8 @@ export const withSchema: {
  * )
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const orElse: {
   <B, Kind extends ParamKind>(
@@ -1643,11 +1816,18 @@ export const orElse: {
   ))
 
 /**
- * Provides a fallback param, wrapping results in Either to distinguish which param succeeded.
+ * Provides a fallback param and returns a `Result` indicating which param
+ * succeeded.
  *
- * @example
+ * **Details**
+ *
+ * The original param's value is returned as `Result.succeed`, while the
+ * fallback param's value is returned as `Result.fail`.
+ *
+ * **Example** (Returning fallback results)
+ *
  * ```ts
- * import * as Param from "effect/unstable/cli/Param"
+ * import { Param } from "effect/unstable/cli"
  *
  * // @internal - this module is not exported publicly
  *
@@ -1657,8 +1837,8 @@ export const orElse: {
  * // Returns Result<string, string>
  * ```
  *
- * @since 4.0.0
  * @category combinators
+ * @since 4.0.0
  */
 export const orElseResult: {
   <Kind extends ParamKind, B>(

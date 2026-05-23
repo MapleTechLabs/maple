@@ -1,7 +1,7 @@
 /**
  * Service for fetching OpenAPI specifications from URLs or the filesystem.
  *
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
@@ -16,7 +16,8 @@ import type { SpecSource } from "./Config.ts"
 /**
  * Error when fetching a spec fails.
  *
- * @example
+ * **Example** (Creating a spec fetch error)
+ *
  * ```ts
  * import * as SpecFetcher from "@effect/ai-codegen/SpecFetcher"
  *
@@ -27,8 +28,8 @@ import type { SpecSource } from "./Config.ts"
  * })
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class SpecFetchError extends Data.TaggedError("SpecFetchError")<{
   readonly provider: string
@@ -39,8 +40,8 @@ export class SpecFetchError extends Data.TaggedError("SpecFetchError")<{
 /**
  * Service for fetching OpenAPI specifications.
  *
- * @since 1.0.0
  * @category models
+ * @since 4.0.0
  */
 export interface SpecFetcher {
   readonly fetch: (
@@ -50,8 +51,10 @@ export interface SpecFetcher {
 }
 
 /**
- * @since 1.0.0
+ * Context service tag for fetching OpenAPI specifications from configured sources.
+ *
  * @category tags
+ * @since 4.0.0
  */
 export const SpecFetcher: Context.Service<SpecFetcher, SpecFetcher> = Context.Service(
   "@effect/ai-codegen/SpecFetcher"
@@ -60,8 +63,8 @@ export const SpecFetcher: Context.Service<SpecFetcher, SpecFetcher> = Context.Se
 /**
  * Layer providing the SpecFetcher service.
  *
- * @since 1.0.0
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<
   SpecFetcher,

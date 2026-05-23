@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect"
 import { LibsqlContainer } from "./util.ts"
 
 const Migrations = Layer.effectDiscard(
-  LibsqlClient.LibsqlClient.asEffect().pipe(
+  LibsqlClient.LibsqlClient.pipe(
     Effect.andThen((sql) =>
       Effect.acquireRelease(
         sql`CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)`,

@@ -16,7 +16,8 @@
  * - **Supervision**: Monitor and restart failed fibers
  * - **Resource management**: Ensure proper cleanup on interruption
  *
- * @example
+ * **Example** (Running effects in fibers)
+ *
  * ```ts
  * import { Console, Effect, Fiber } from "effect"
  *
@@ -95,7 +96,8 @@ const TypeId = `~effect/Fiber/${version}`
  * Effects concurrently while maintaining structured concurrency and
  * cancellation safety.
  *
- * @example
+ * **Example** (Awaiting a forked fiber)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -111,8 +113,8 @@ const TypeId = `~effect/Fiber/${version}`
  * })
  * ```
  *
- * @since 2.0.0
  * @category models
+ * @since 2.0.0
  */
 export interface Fiber<out A, out E = never> extends Pipeable {
   readonly [TypeId]: Fiber.Variance<A, E>
@@ -142,7 +144,8 @@ export interface Fiber<out A, out E = never> extends Pipeable {
  * The Fiber namespace contains utility types and functions for working with fibers.
  * It provides type-level utilities for fiber operations and variance encoding.
  *
- * @example
+ * **Example** (Working with fiber types)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -163,14 +166,14 @@ export interface Fiber<out A, out E = never> extends Pipeable {
  * ```
  *
  * @since 2.0.0
- * @category models
  */
 export declare namespace Fiber {
   /**
    * Variance encoding for the Fiber type, specifying covariance in both the
    * success type `A` and the error type `E`.
    *
-   * @example
+   * **Example** (Upcasting fibers safely)
+   *
    * ```ts
    * import type { Fiber } from "effect"
    *
@@ -179,8 +182,8 @@ export declare namespace Fiber {
    * const upcast: Fiber.Fiber<unknown, unknown> = fiber
    * ```
    *
-   * @since 2.0.0
    * @category models
+   * @since 2.0.0
    */
   export interface Variance<out A, out E = never> {
     readonly _A: Covariant<A>
@@ -193,7 +196,8 @@ export {
   /**
    * Waits for a fiber to complete and returns its exit value.
    *
-   * @example
+   * **Example** (Awaiting a fiber exit)
+   *
    * ```ts
    * import { Effect, Fiber } from "effect"
    *
@@ -204,8 +208,8 @@ export {
    * })
    * ```
    *
-   * @since 2.0.0
    * @category combinators
+   * @since 2.0.0
    */
   await_ as await
 }
@@ -213,7 +217,8 @@ export {
  * Waits for all fibers in the provided iterable to complete and returns
  * an array of their exit values.
  *
- * @example
+ * **Example** (Awaiting multiple fiber exits)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -225,8 +230,8 @@ export {
  * })
  * ```
  *
- * @since 2.0.0
  * @category combinators
+ * @since 2.0.0
  */
 export const awaitAll: <A extends Fiber<any, any>>(
   self: Iterable<A>
@@ -243,7 +248,8 @@ export const awaitAll: <A extends Fiber<any, any>>(
  * Joins a fiber, blocking until it completes. If the fiber succeeds,
  * returns its value. If it fails, the error is propagated.
  *
- * @example
+ * **Example** (Joining a fiber)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -254,14 +260,22 @@ export const awaitAll: <A extends Fiber<any, any>>(
  * })
  * ```
  *
- * @since 2.0.0
  * @category combinators
+ * @since 2.0.0
  */
 export const join: <A, E>(self: Fiber<A, E>) => Effect<A, E> = effect.fiberJoin
 
 /**
- * @since 2.0.0
+ * Waits for all fibers to succeed and returns their values in input order.
+ *
+ * **Details**
+ *
+ * If any fiber fails, the returned `Effect` fails with that fiber's cause and
+ * stops waiting for additional results. This does not interrupt the remaining
+ * fibers.
+ *
  * @category combinators
+ * @since 2.0.0
  */
 export const joinAll: <A extends Iterable<Fiber<any, any>>>(
   self: A
@@ -277,7 +291,8 @@ export const joinAll: <A extends Iterable<Fiber<any, any>>>(
  * Interrupts a fiber, causing it to stop executing and clean up any
  * acquired resources.
  *
- * @example
+ * **Example** (Interrupting a fiber)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -290,8 +305,8 @@ export const joinAll: <A extends Iterable<Fiber<any, any>>>(
  * })
  * ```
  *
- * @since 2.0.0
  * @category interruption
+ * @since 2.0.0
  */
 export const interrupt: <A, E>(self: Fiber<A, E>) => Effect<void> = effect.fiberInterrupt
 
@@ -299,7 +314,8 @@ export const interrupt: <A, E>(self: Fiber<A, E>) => Effect<void> = effect.fiber
  * Interrupts a fiber with a specific fiber ID as the interruptor. This allows
  * tracking which fiber initiated the interruption.
  *
- * @example
+ * **Example** (Interrupting a fiber as another fiber)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -314,8 +330,8 @@ export const interrupt: <A, E>(self: Fiber<A, E>) => Effect<void> = effect.fiber
  * })
  * ```
  *
- * @since 2.0.0
  * @category interruption
+ * @since 2.0.0
  */
 export const interruptAs: {
   (
@@ -333,7 +349,8 @@ export const interruptAs: {
  * Interrupts all fibers in the provided iterable, causing them to stop executing
  * and clean up any acquired resources.
  *
- * @example
+ * **Example** (Interrupting multiple fibers)
+ *
  * ```ts
  * import { Console, Effect, Fiber } from "effect"
  *
@@ -371,8 +388,8 @@ export const interruptAs: {
  * })
  * ```
  *
- * @since 2.0.0
  * @category interruption
+ * @since 2.0.0
  */
 export const interruptAll: <A extends Iterable<Fiber<any, any>>>(
   fibers: A
@@ -383,7 +400,8 @@ export const interruptAll: <A extends Iterable<Fiber<any, any>>>(
  * interrupting fiber. This allows you to control which fiber is considered the source
  * of the interruption, which can be useful for debugging and tracing.
  *
- * @example
+ * **Example** (Interrupting multiple fibers as another fiber)
+ *
  * ```ts
  * import { Console, Effect, Fiber } from "effect"
  *
@@ -416,8 +434,8 @@ export const interruptAll: <A extends Iterable<Fiber<any, any>>>(
  * })
  * ```
  *
- * @since 2.0.0
  * @category interruption
+ * @since 2.0.0
  */
 export const interruptAllAs: {
   (fiberId: number): <A extends Iterable<Fiber<any, any>>>(fibers: A) => Effect<void>
@@ -428,7 +446,8 @@ export const interruptAllAs: {
  * Tests if a value is a Fiber. This is a type guard that can be used to
  * determine if an unknown value is a Fiber instance.
  *
- * @example
+ * **Example** (Checking for fibers)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -451,8 +470,8 @@ export const interruptAllAs: {
  * })
  * ```
  *
- * @since 2.0.0
  * @category guards
+ * @since 2.0.0
  */
 export const isFiber = (
   u: unknown
@@ -462,7 +481,8 @@ export const isFiber = (
  * Returns the current fiber if called from within a fiber context,
  * otherwise returns `undefined`.
  *
- * @example
+ * **Example** (Getting the current fiber)
+ *
  * ```ts
  * import { Effect, Fiber } from "effect"
  *
@@ -474,16 +494,21 @@ export const isFiber = (
  * })
  * ```
  *
- * @since 2.0.0
  * @category accessors
+ * @since 4.0.0
  */
 export const getCurrent: () => Fiber<any, any> | undefined = effect.getCurrentFiber
 
 /**
- * Links the lifetime of a fiber to the provided scope.
+ * Links a fiber to a `Scope` and returns the same fiber.
  *
- * @since 4.0.0
+ * **Details**
+ *
+ * When the scope is closed, the fiber is interrupted. If the scope is already
+ * closed, the fiber is interrupted immediately.
+ *
  * @category Scope
+ * @since 4.0.0
  */
 export const runIn: {
   (scope: Scope): <A, E>(self: Fiber<A, E>) => Fiber<A, E>

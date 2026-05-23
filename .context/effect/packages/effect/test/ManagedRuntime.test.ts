@@ -19,7 +19,7 @@ describe("ManagedRuntime", () => {
     const tag = Context.Service<string>("string")
     const layer = Layer.succeed(tag)("test")
     const runtime = ManagedRuntime.make(layer)
-    const result = await runtime.runPromise(tag.asEffect())
+    const result = await runtime.runPromise(tag)
     await runtime.dispose()
     strictEqual(result, "test")
   })

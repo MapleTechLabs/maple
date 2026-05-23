@@ -71,6 +71,8 @@
       "@effect/sql-mysql2/*": ["./packages/sql/mysql2/src/*.ts"],
       "@effect/sql-pg": ["./packages/sql/pg/src/index.ts"],
       "@effect/sql-pg/*": ["./packages/sql/pg/src/*.ts"],
+      "@effect/sql-pglite": ["./packages/sql/pglite/src/index.ts"],
+      "@effect/sql-pglite/*": ["./packages/sql/pglite/src/*.ts"],
       "@effect/sql-sqlite-bun": ["./packages/sql/sqlite-bun/src/index.ts"],
       "@effect/sql-sqlite-bun/*": ["./packages/sql/sqlite-bun/src/*.ts"],
       "@effect/sql-sqlite-do": ["./packages/sql/sqlite-do/src/index.ts"],
@@ -98,7 +100,29 @@
     },
     "plugins": [{
       "name": "@effect/language-service",
-      "namespaceImportPackages": []
+      "namespaceImportPackages": [],
+      "includeSuggestionsInTsc": false,
+      "ignoreEffectWarningsInTscExitCode": true,
+      "ignoreEffectErrorsInTscExitCode": true,
+      "overrides": [
+        {
+          "include": [
+            "./packages/*/typetest/**/*.ts",
+            "./packages/ai/*/typetest/**/*.ts",
+            "./packages/tools/*/typetest/**/*.ts",
+            "./packages/atom/*/typetest/**/*.ts"
+          ],
+          "options": {
+            "diagnosticSeverity": {
+              "floatingEffect": "off"
+            }
+          }
+        }
+      ],
+      "diagnosticSeverity": {
+        "unknownInEffectCatch": "off",
+        "multipleEffectProvide": "off"
+      }
     }]
   }
 }

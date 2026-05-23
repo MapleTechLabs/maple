@@ -1,4 +1,31 @@
 /**
+ * The `AtomHttpApi` module adapts typed `HttpApi` clients to the unstable atom
+ * reactivity runtime. Use it to define a `Context.Service` whose generated HTTP
+ * API client is available directly and whose endpoints can also be invoked as
+ * atoms: `query` creates an atom of `AsyncResult` for reads, while `mutation`
+ * creates an `AtomResultFn` for writes.
+ *
+ * It is intended for applications that want server state to participate in atom
+ * caching, invalidation, and hydration. Queries can be associated with
+ * `reactivityKeys` so they refresh when those keys are invalidated, mutations can
+ * invalidate the same keys after the request succeeds, and `timeToLive` controls
+ * whether idle query atoms expire, stay alive for a duration, or are kept alive.
+ *
+ * Serialization is schema-based and intentionally limited to decoded values.
+ * Mutation atoms are serializable only in `"decoded-only"` mode, while query
+ * atoms are serializable only in `"decoded-only"` mode when a stable
+ * `serializationKey` is supplied. Choose serialization keys that uniquely
+ * identify the endpoint request, keep reactivity keys stable across client and
+ * server registries during hydration, and avoid serializing response modes that
+ * expose raw `HttpClientResponse` values.
+ *
+ * The service wraps `HttpApiClient.make`, so the same `HttpApi` definition,
+ * schemas, base URL, middleware services, and HTTP client layer must be available
+ * wherever the atom runtime is constructed. Use `transformClient` and
+ * `transformResponse` for cross-cutting client behavior, and remember that
+ * schema or low-level HTTP client failures are raised as defects while endpoint
+ * and middleware failures remain typed errors.
+ *
  * @since 4.0.0
  */
 import * as Context from "../../Context.ts"
@@ -16,13 +43,21 @@ import type * as HttpApi from "../httpapi/HttpApi.ts"
 import * as HttpApiClient from "../httpapi/HttpApiClient.ts"
 import * as HttpApiEndpoint from "../httpapi/HttpApiEndpoint.ts"
 import type * as HttpApiGroup from "../httpapi/HttpApiGroup.ts"
+import type * as HttpApiMiddleware from "../httpapi/HttpApiMiddleware.ts"
 import * as AsyncResult from "./AsyncResult.ts"
 import * as Atom from "./Atom.ts"
 import * as Reactivity from "./Reactivity.ts"
 
 /**
+ * A `Context.Service` for an HTTP API client integrated with atom reactivity.
+ *
+ * **Details**
+ *
+ * It exposes the generated HTTP API client, an atom runtime, mutation helpers that
+ * return `AtomResultFn`s, and query helpers that return atoms of endpoint results.
+ *
+ * @category models
  * @since 4.0.0
- * @category Models
  */
 export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpApiGroup.Any>
   extends Context.Service<Self, HttpApiClient.Client<Groups, never, never>>
@@ -57,7 +92,7 @@ export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpA
       infer _Headers,
       infer _Success,
       infer _Error,
-      infer _R,
+      infer _Middleware,
       infer _RE
     >
   ] ? Atom.AtomResultFn<
@@ -67,7 +102,7 @@ export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpA
         }
       >,
       ResponseByMode<_Success["Type"], ResponseMode>,
-      _Error["Type"]
+      ErrorByMode<_Error, _Middleware, ResponseMode>
     >
     : never
 
@@ -119,13 +154,13 @@ export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpA
       infer _Headers,
       infer _Success,
       infer _Error,
-      infer _R,
+      infer _Middleware,
       infer _RE
     >
   ] ? Atom.Atom<
       AsyncResult.AsyncResult<
         ResponseByMode<_Success["Type"], ResponseMode>,
-        _Error["Type"]
+        ErrorByMode<_Error, _Middleware, ResponseMode>
       >
     >
     : never
@@ -138,8 +173,17 @@ declare global {
 }
 
 /**
+ * Creates a `Context.Service` class for an HTTP API client backed by an atom
+ * runtime.
+ *
+ * **Details**
+ *
+ * The options provide the API definition, HTTP client layer, optional client and
+ * response transforms, base URL, and runtime factory used by the query and
+ * mutation helpers.
+ *
+ * @category constructors
  * @since 4.0.0
- * @category Constructors
  */
 export const Service = <Self>() =>
 <const Id extends string, ApiId extends string, Groups extends HttpApiGroup.Any>(
@@ -316,3 +360,12 @@ type ResponseByMode<Success, ResponseMode extends HttpApiEndpoint.ClientResponse
   ["decoded-and-response"] ? [Success, HttpClientResponse]
   : [ResponseMode] extends ["response-only"] ? HttpClientResponse
   : Success
+
+type ErrorByMode<
+  Error extends Schema.Top,
+  Middleware,
+  ResponseMode extends HttpApiEndpoint.ClientResponseMode
+> =
+  | HttpApiMiddleware.Error<Middleware>
+  | HttpApiMiddleware.ClientError<Middleware>
+  | ([ResponseMode] extends ["response-only"] ? never : Error["Type"])

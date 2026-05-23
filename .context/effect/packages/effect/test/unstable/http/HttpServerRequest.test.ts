@@ -59,7 +59,7 @@ describe("HttpServerRequest", () => {
     strictEqual(clientRequest.headers["x-test"], "ok")
   })
 
-  it.effect("fromClientRequest preserves request metadata and body accessors", () =>
+  it.effect("fromClientRequest preserves request metadata and shares concurrent stream body accessors", () =>
     Effect.gen(function*() {
       const clientRequest = HttpClientRequest.post(new URL("http://localhost:3000/items?existing=1#top")).pipe(
         HttpClientRequest.appendUrlParam("page", "1"),

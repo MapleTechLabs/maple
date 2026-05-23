@@ -37,7 +37,7 @@ const logLayer = (handled: Ref.Ref<ReadonlyArray<string>>) =>
   )
 
 describe("EventLog", () => {
-  it.effect("writes entries and runs handlers", () =>
+  it.effect("writes a typed event, commits the entry, and runs its handler", () =>
     Effect.gen(function*() {
       const handled = yield* Ref.make<ReadonlyArray<string>>([])
       return yield* Effect.gen(function*() {
@@ -76,7 +76,7 @@ describe("EventLog", () => {
       assert.strictEqual(decrypted[0].entry.idString, entry.idString)
     }).pipe(Effect.provide(EventLogEncryption.layerSubtle)))
 
-  it.effect("writeFromRemote reports duplicate entries for downstream reactivity invalidation", () =>
+  it.effect("publishes local journal changes through a scoped subscription", () =>
     Effect.gen(function*() {
       const remoteId = EventJournal.makeRemoteIdUnsafe()
       const journal = yield* EventJournal.EventJournal

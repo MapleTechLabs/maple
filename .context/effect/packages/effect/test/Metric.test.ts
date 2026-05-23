@@ -60,6 +60,31 @@ describe("Metric", () => {
       assert.strictEqual(result, expected)
     }).pipe(Effect.provideService(Metric.MetricRegistry, new Map())))
 
+  it.effect("should record fiber runtime metrics once for yielded fibers", () => {
+    let starts = 0
+    let ends = 0
+    const service: Metric.FiberRuntimeMetricsService = {
+      recordFiberStart: () => {
+        starts++
+      },
+      recordFiberEnd: () => {
+        ends++
+      }
+    }
+
+    return Effect.gen(function*() {
+      const fiber = yield* Effect.forkChild(Effect.gen(function*() {
+        yield* Effect.yieldNow
+        yield* Effect.yieldNow
+      }))
+
+      yield* Fiber.join(fiber)
+
+      assert.strictEqual(starts, 1)
+      assert.strictEqual(ends, 1)
+    }).pipe(Effect.provideService(Metric.FiberRuntimeMetrics, service))
+  })
+
   describe("Counter", () => {
     it.effect("custom increment with value", () =>
       Effect.gen(function*() {
@@ -482,7 +507,7 @@ describe("Metric", () => {
   })
 
   describe("track", () => {
-    it.effect("updates on success", () =>
+    it.effect("maps exits while preserving the instrumented effect result", () =>
       Effect.gen(function*() {
         const id = nextId()
         const counter = Metric.counter(id).pipe(

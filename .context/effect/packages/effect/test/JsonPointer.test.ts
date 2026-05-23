@@ -122,7 +122,7 @@ describe("JsonPointer", () => {
         strictEqual(original, originalCopy)
       })
 
-      it("returns new string instance when changes are made", () => {
+      it("returns a different token value when escaping changes the input", () => {
         const input = "a~b"
         const result = escapeToken(input)
         strictEqual(result === input, false)
@@ -210,7 +210,7 @@ describe("JsonPointer", () => {
         deepStrictEqual(unescapeToken("a~1b~1c~1d"), "a/b/c/d")
       })
 
-      it("handles literal ~0 and ~1 in input (not escaped)", () => {
+      it("decodes escaped sequences at token boundaries and suffixes", () => {
         deepStrictEqual(unescapeToken("~0"), "~")
         deepStrictEqual(unescapeToken("~1"), "/")
         deepStrictEqual(unescapeToken("a~0"), "a~")
@@ -247,7 +247,7 @@ describe("JsonPointer", () => {
         strictEqual(original, originalCopy)
       })
 
-      it("returns new string instance when changes are made", () => {
+      it("returns a different token value when unescaping changes the input", () => {
         const input = "a~0b"
         const result = unescapeToken(input)
         strictEqual(result === input, false)

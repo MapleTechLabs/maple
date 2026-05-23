@@ -467,7 +467,7 @@ describe("toCodecOpenAI", () => {
       await decoding.succeed({ "0": "a", "1": 1 }, ["a", 1])
     })
 
-    it("Tuple([String, Finite]) + description", async () => {
+    it("Tuple([String, Finite]) + description", () => {
       const schema = Schema.Tuple([Schema.String, Schema.Finite]).annotate({ description: "description" })
       assertJsonSchema(schema, {
         "type": "object",
@@ -618,7 +618,7 @@ describe("toCodecOpenAI", () => {
   })
 
   describe("Record", () => {
-    it("EmptyParams", async () => {
+    it("EmptyParams", () => {
       assertJsonSchema(Tool.EmptyParams, {
         "type": "object",
         "properties": {},

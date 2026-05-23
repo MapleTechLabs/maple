@@ -720,6 +720,57 @@ describe("OpenAiLanguageModel", () => {
           ])
         ))
 
+      it.effect("uses canonical OpenAiMcp name for mcp_call", () =>
+        Effect.gen(function*() {
+          const result = yield* LanguageModel.generateText({
+            prompt: "Use MCP",
+            toolkit: McpToolkit
+          }).pipe(Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini")))
+
+          const toolCall = result.content.find((part) => part.type === "tool-call")
+          assert.isDefined(toolCall)
+          if (toolCall?.type === "tool-call") {
+            strictEqual(toolCall.name, "OpenAiMcp")
+            deepStrictEqual(toolCall.params, { packageName: "effect" })
+          }
+
+          const toolResult = result.content.find((part) => part.type === "tool-result")
+          assert.isDefined(toolResult)
+          if (toolResult?.type === "tool-result") {
+            strictEqual(toolResult.name, "OpenAiMcp")
+            strictEqual(toolResult.result.name, "CheckPackage")
+          }
+        }).pipe(Effect.provide(makeTestLayer({
+          body: {
+            output: [makeMcpCall("CheckPackage", { packageName: "effect" })]
+          }
+        }))))
+
+      it.effect("uses canonical OpenAiMcp name for mcp_approval_request", () =>
+        Effect.gen(function*() {
+          const result = yield* LanguageModel.generateText({
+            prompt: "Use MCP",
+            toolkit: McpToolkit
+          }).pipe(Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini")))
+
+          const toolCall = result.content.find((part) => part.type === "tool-call")
+          assert.isDefined(toolCall)
+          if (toolCall?.type === "tool-call") {
+            strictEqual(toolCall.name, "OpenAiMcp")
+            deepStrictEqual(toolCall.params, { packageName: "effect" })
+          }
+
+          const approvalRequest = result.content.find((part) => part.type === "tool-approval-request")
+          assert.isDefined(approvalRequest)
+          if (toolCall?.type === "tool-call" && approvalRequest?.type === "tool-approval-request") {
+            strictEqual(approvalRequest.toolCallId, toolCall.id)
+          }
+        }).pipe(Effect.provide(makeTestLayer({
+          body: {
+            output: [makeMcpApprovalRequest("CheckPackage", { packageName: "effect" })]
+          }
+        }))))
+
       it.effect("extracts reasoning parts", () =>
         Effect.gen(function*() {
           const result = yield* LanguageModel.generateText({
@@ -1065,6 +1116,143 @@ describe("OpenAiLanguageModel", () => {
         assert.isDefined(parts.find((part) => part.type === "reasoning-end" && part.id === "rs_missing:1"))
         assert.isDefined(parts.find((part) => part.type === "finish"))
       }))
+
+    it.effect("uses canonical OpenAiMcp name for streamed mcp_call", () =>
+      Effect.gen(function*() {
+        const outputItem = makeMcpCall("CheckPackage", { packageName: "effect" }, { id: "mcp_call_1" })
+        const streamEvents = [
+          {
+            type: "response.created",
+            sequence_number: 1,
+            response: makeDefaultResponse({
+              id: "resp_mcp_stream",
+              status: "in_progress",
+              output: []
+            })
+          },
+          {
+            type: "response.output_item.done",
+            output_index: 0,
+            sequence_number: 2,
+            item: outputItem
+          }
+        ] as unknown as ReadonlyArray<typeof Generated.ResponseStreamEvent.Type>
+
+        const partsChunk = yield* LanguageModel.streamText({
+          prompt: "Use MCP",
+          toolkit: McpToolkit,
+          disableToolCallResolution: true
+        }).pipe(
+          Stream.runCollect,
+          Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini")),
+          Effect.provide(makeStreamTestLayer(streamEvents))
+        )
+
+        const parts = globalThis.Array.from(partsChunk)
+        const toolCall = parts.find((part) => part.type === "tool-call")
+        assert.isDefined(toolCall)
+        if (toolCall?.type === "tool-call") {
+          strictEqual(toolCall.name, "OpenAiMcp")
+          deepStrictEqual(toolCall.params, { packageName: "effect" })
+        }
+
+        const toolResult = parts.find((part) => part.type === "tool-result")
+        assert.isDefined(toolResult)
+        if (toolResult?.type === "tool-result") {
+          strictEqual(toolResult.name, "OpenAiMcp")
+          strictEqual(toolResult.result.name, "CheckPackage")
+        }
+      }))
+
+    it.effect("uses canonical OpenAiMcp name for streamed mcp_approval_request", () =>
+      Effect.gen(function*() {
+        const outputItem = makeMcpApprovalRequest("CheckPackage", { packageName: "effect" }, { id: "approval_1" })
+        const streamEvents = [
+          {
+            type: "response.created",
+            sequence_number: 1,
+            response: makeDefaultResponse({
+              id: "resp_mcp_approval_stream",
+              status: "in_progress",
+              output: []
+            })
+          },
+          {
+            type: "response.output_item.done",
+            output_index: 0,
+            sequence_number: 2,
+            item: outputItem
+          }
+        ] as unknown as ReadonlyArray<typeof Generated.ResponseStreamEvent.Type>
+
+        const partsChunk = yield* LanguageModel.streamText({
+          prompt: "Use MCP",
+          toolkit: McpToolkit,
+          disableToolCallResolution: true
+        }).pipe(
+          Stream.runCollect,
+          Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini")),
+          Effect.provide(makeStreamTestLayer(streamEvents))
+        )
+
+        const parts = globalThis.Array.from(partsChunk)
+        const toolCall = parts.find((part) => part.type === "tool-call")
+        assert.isDefined(toolCall)
+        if (toolCall?.type === "tool-call") {
+          strictEqual(toolCall.name, "OpenAiMcp")
+          deepStrictEqual(toolCall.params, { packageName: "effect" })
+        }
+
+        const approvalRequest = parts.find((part) => part.type === "tool-approval-request")
+        assert.isDefined(approvalRequest)
+        if (toolCall?.type === "tool-call" && approvalRequest?.type === "tool-approval-request") {
+          strictEqual(approvalRequest.toolCallId, toolCall.id)
+        }
+      }))
+
+    it.effect("pre-resolves denied OpenAiMcp approvals without lookup failure", () =>
+      Effect.gen(function*() {
+        const result = yield* LanguageModel.generateText({
+          prompt: Prompt.make([
+            {
+              role: "assistant",
+              content: [
+                Prompt.toolCallPart({
+                  id: "mcp_tool_call_1",
+                  name: "OpenAiMcp",
+                  params: { packageName: "effect" },
+                  providerExecuted: true
+                }),
+                Prompt.makePart("tool-approval-request", {
+                  approvalId: "approval_1",
+                  toolCallId: "mcp_tool_call_1"
+                })
+              ]
+            },
+            {
+              role: "tool",
+              content: [
+                Prompt.toolApprovalResponsePart({
+                  approvalId: "approval_1",
+                  approved: false,
+                  reason: "Denied"
+                })
+              ]
+            },
+            { role: "user", content: "Continue" }
+          ]),
+          toolkit: McpToolkit
+        }).pipe(
+          Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini")),
+          Effect.provide(makeTestLayer({
+            body: {
+              output: [makeTextOutput("Handled denied MCP approval")]
+            }
+          }))
+        )
+
+        strictEqual(result.text, "Handled denied MCP approval")
+      }))
   })
 
   describe("withConfigOverride", () => {
@@ -1092,6 +1280,26 @@ describe("OpenAiLanguageModel", () => {
         const body = yield* getRequestBody(requests[0])
 
         strictEqual(body.temperature, 0.9)
+      }).pipe(Effect.provide(makeTestLayer())))
+  })
+
+  describe("config", () => {
+    it.effect("does not leak library-only fields into request body", () =>
+      Effect.gen(function*() {
+        yield* LanguageModel.generateText({ prompt: "test" }).pipe(
+          Effect.provide(OpenAiLanguageModel.model("gpt-4o-mini", {
+            fileIdPrefixes: ["file-"],
+            strictJsonSchema: false,
+            temperature: 0.5
+          }))
+        )
+
+        const requests = yield* MockHttpClient.requests
+        const body = yield* getRequestBody(requests[0])
+
+        strictEqual(body.fileIdPrefixes, undefined)
+        strictEqual(body.strictJsonSchema, undefined)
+        strictEqual(body.temperature, 0.5)
       }).pipe(Effect.provide(makeTestLayer())))
   })
 })
@@ -1251,6 +1459,34 @@ const makeFunctionCall = (
   ...overrides
 })
 
+const makeMcpCall = (
+  name: string,
+  args: Record<string, unknown>,
+  overrides: Partial<Generated.MCPToolCall> = {}
+): Generated.MCPToolCall => ({
+  type: "mcp_call",
+  id: "mcp_call_123",
+  server_label: "npm",
+  name,
+  arguments: JSON.stringify(args),
+  output: "ok",
+  status: "completed",
+  ...overrides
+})
+
+const makeMcpApprovalRequest = (
+  name: string,
+  args: Record<string, unknown>,
+  overrides: Partial<Generated.MCPApprovalRequest> & { readonly approval_request_id?: string } = {}
+): Generated.MCPApprovalRequest => ({
+  type: "mcp_approval_request",
+  id: "approval_123",
+  server_label: "npm",
+  name,
+  arguments: JSON.stringify(args),
+  ...overrides
+})
+
 const makeReasoningOutput = (
   summaries: Array<string>,
   overrides: Partial<Generated.ReasoningItem> = {}
@@ -1280,6 +1516,12 @@ const TestTool = Tool.make("TestTool", {
 })
 
 const TestToolkit = Toolkit.make(TestTool)
+
+const McpToolkit = Toolkit.make(OpenAiTool.Mcp({
+  server_label: "npm",
+  server_url: "https://example.com/mcp",
+  require_approval: "never"
+}))
 
 const TestToolkitLayer = TestToolkit.toLayer({
   TestTool: ({ input }) => Effect.succeed({ output: `processed: ${input}` })

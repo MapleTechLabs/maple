@@ -32,7 +32,7 @@ describe("Data", () => {
       assert.strictEqual(result, "C")
     })
 
-    it("no-fields class accepts void", () => {
+    it("allows classes without fields to be constructed without args", () => {
       class Empty extends Data.Class {}
       const e = new Empty()
       assert.ok(e instanceof Empty)
@@ -70,7 +70,7 @@ describe("Data", () => {
       assert.strictEqual(Equal.equals(a, b), false)
     })
 
-    it("no-fields tagged class accepts void", () => {
+    it("allows tagged classes without fields to be constructed without args", () => {
       class Empty extends Data.TaggedClass("Empty") {}
       const e = new Empty()
       assert.strictEqual(e._tag, "Empty")
@@ -193,7 +193,7 @@ describe("Data", () => {
       assert.ok(e.stack!.length > 0)
     })
 
-    it("no-fields error accepts void", () => {
+    it("allows errors without fields to be constructed without args", () => {
       class Empty extends Data.Error {}
       const e = new Empty()
       assert.ok(e instanceof globalThis.Error)
@@ -247,7 +247,7 @@ describe("Data", () => {
         assert.strictEqual(result, "caught: /test")
       }).pipe(Effect.runPromise))
 
-    it("no-fields tagged error accepts void", () => {
+    it("allows tagged errors without fields to be constructed without args", () => {
       class Boom extends Data.TaggedError("Boom") {}
       const e = new Boom()
       assert.strictEqual(e._tag, "Boom")

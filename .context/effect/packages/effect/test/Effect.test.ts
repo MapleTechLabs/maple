@@ -1,4 +1,4 @@
-import { assert, describe, it } from "@effect/vitest"
+import { assert, describe, it, vi } from "@effect/vitest"
 import { assertExitFailure } from "@effect/vitest/utils"
 import {
   Cause,
@@ -132,7 +132,7 @@ describe("Effect", () => {
   })
 
   it("Context.Service", () =>
-    ATag.asEffect().pipe(
+    ATag.pipe(
       Effect.tap((_) => Effect.sync(() => assert.strictEqual(_, "A"))),
       Effect.provideService(ATag, "A"),
       Effect.runPromise
@@ -140,28 +140,19 @@ describe("Effect", () => {
 
   describe("fromOption", () => {
     it("from a some", () =>
-      Option.some("A").asEffect().pipe(
+      Option.some("A").pipe(
+        Effect.fromOption,
         Effect.tap((_) => Effect.sync(() => assert.strictEqual(_, "A"))),
         Effect.runPromise
       ))
 
     it("from a none", () =>
-      Option.none().asEffect().pipe(
+      Option.none().pipe(
+        Effect.fromOption,
         Effect.flip,
         Effect.tap((error) => Effect.sync(() => assert.ok(error instanceof Cause.NoSuchElementError))),
         Effect.runPromise
       ))
-
-    it.effect("yieldable", () =>
-      Effect.gen(function*() {
-        const result = yield* Option.some("A")
-        assert.strictEqual(result, "A")
-
-        const error = yield* Effect.gen(function*() {
-          yield* Option.none()
-        }).pipe(Effect.flip)
-        assert.deepStrictEqual(error, new Cause.NoSuchElementError())
-      }))
   })
 
   describe("fromResult", () => {
@@ -173,22 +164,12 @@ describe("Effect", () => {
       ))
 
     it("from a failure", () =>
-      Result.fail("error").asEffect().pipe(
+      Result.fail("error").pipe(
+        Effect.fromResult,
         Effect.flip,
         Effect.tap((error) => Effect.sync(() => assert.strictEqual(error, "error"))),
         Effect.runPromise
       ))
-
-    it.effect("yieldable", () =>
-      Effect.gen(function*() {
-        const result = yield* Result.succeed("A")
-        assert.strictEqual(result, "A")
-
-        const error = yield* Effect.gen(function*() {
-          yield* Result.fail("error")
-        }).pipe(Effect.flip)
-        assert.strictEqual(error, "error")
-      }))
   })
 
   describe("gen", () => {
@@ -539,6 +520,26 @@ describe("Effect", () => {
       Effect.gen(function*() {
         const results = yield* Effect.filter(new Set([1, 2, 3, 4, 5]), (value) => Effect.succeed(value % 2 === 1))
         assert.deepStrictEqual(results, [1, 3, 5])
+      }))
+  })
+
+  describe("acquireDisposable", () => {
+    it.effect("releases disposables", ({ expect }) =>
+      Effect.gen(function*() {
+        const acquire = Effect.sync((): Disposable => ({ [Symbol.dispose]: release }))
+        const release = vi.fn(() => void 0)
+
+        yield* Effect.scoped(Effect.acquireDisposable(acquire))
+        expect(release).toHaveBeenCalledTimes(1)
+      }))
+
+    it.effect("releases async disposables", ({ expect }) =>
+      Effect.gen(function*() {
+        const acquire = Effect.sync((): AsyncDisposable => ({ [Symbol.asyncDispose]: release }))
+        const release = vi.fn(async () => void 0)
+
+        yield* Effect.scoped(Effect.acquireDisposable(acquire))
+        expect(release).toHaveBeenCalledTimes(1)
       }))
   })
 
@@ -2168,6 +2169,50 @@ describe("Effect", () => {
       }))
   })
 
+  describe("firstSuccessOf", () => {
+    it.effect("returns the first success and does not run later effects", () =>
+      Effect.gen(function*() {
+        const executed: Array<string> = []
+        const result = yield* Effect.firstSuccessOf([
+          Effect.sync(() => executed.push("first")).pipe(
+            Effect.flatMap(() => Effect.fail("e1" as const))
+          ),
+          Effect.sync(() => executed.push("second")).pipe(
+            Effect.as("success" as const)
+          ),
+          Effect.sync(() => executed.push("third")).pipe(
+            Effect.as("unreachable" as const)
+          )
+        ])
+
+        assert.strictEqual(result, "success")
+        assert.deepStrictEqual(executed, ["first", "second"])
+      }))
+
+    it.effect("fails with the last failure when all effects fail", () =>
+      Effect.gen(function*() {
+        const result = yield* Effect.firstSuccessOf([
+          Effect.fail("e1" as const),
+          Effect.fail("e2" as const),
+          Effect.fail("e3" as const)
+        ]).pipe(Effect.flip)
+
+        assert.strictEqual(result, "e3")
+      }))
+
+    it.effect("defects on an empty collection", () =>
+      Effect.gen(function*() {
+        const result = yield* Effect.firstSuccessOf([]).pipe(Effect.sandbox, Effect.flip)
+        const reason = result.reasons[0]
+
+        assert.isTrue(Cause.isDieReason(reason))
+        if (Cause.isDieReason(reason)) {
+          assert.instanceOf(reason.defect, Error)
+          assert.strictEqual(reason.defect.message, "Received an empty collection of effects")
+        }
+      }))
+  })
+
   describe("catchCause", () => {
     it.effect("first argument as success", () =>
       Effect.gen(function*() {
@@ -2600,7 +2645,7 @@ describe("Effect", () => {
           return 42
         })
 
-        // @effect-diagnostics-next-line multipleEffectProvide:off
+        // @effect-diagnostics multipleEffectProvide:off
         yield* Effect.void.pipe(
           Effect.provide(layer, { local: true }), // local always builds the layer
           Effect.provide(layer),

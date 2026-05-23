@@ -1,3 +1,23 @@
+/**
+ * Generate TypeScript source for JSON Schema declarations extracted from
+ * OpenAPI documents.
+ *
+ * This module is the schema-rendering stage of the OpenAPI generator. Callers
+ * register named OpenAPI 3.0 or 3.1 schemas, provide the reusable component
+ * definitions for the document, and receive source text containing exported
+ * TypeScript aliases plus Effect Schema runtime values. The generator first
+ * normalizes OpenAPI-specific schema shapes into Effect's JSON Schema model,
+ * then delegates recursive analysis and runtime expression construction to
+ * `SchemaRepresentation`.
+ *
+ * The renderer keeps the emitted module usable for both human maintainers and
+ * automated code-generation consumers by grouping recursive declarations,
+ * reusable references, and locally registered schemas. It also contains the
+ * HttpApi-specific multipart file substitutions that map generated schemas to
+ * Effect's multipart runtime types.
+ *
+ * @since 4.0.0
+ */
 import * as Arr from "effect/Array"
 import * as JsonSchema from "effect/JsonSchema"
 import * as Rec from "effect/Record"
@@ -16,6 +36,18 @@ interface GenerateHttpApiOptions extends GenerateOptions {
   } | undefined
 }
 
+/**
+ * Create a stateful JSON Schema code generator for OpenAPI-derived schemas.
+ *
+ * **Details**
+ *
+ * Schemas registered with the returned generator are converted into TypeScript
+ * type aliases and Effect Schema runtime declarations, with reusable OpenAPI
+ * component definitions supplied at generation time.
+ *
+ * @category code generation
+ * @since 4.0.0
+ */
 export function make() {
   const store: Record<string, JsonSchema.JsonSchema> = {}
 

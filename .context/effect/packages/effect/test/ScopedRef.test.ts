@@ -23,7 +23,7 @@ describe("ScopedRef", () => {
       const result = yield* ScopedRef.get(ref)
       strictEqual(result, 2)
     }))
-  it.effect("release on swap", () =>
+  it.effect("releases the previous resource when replaced", () =>
     Effect.gen(function*() {
       const counter = yield* Counter.make()
       const ref = yield* ScopedRef.make(() => 0)
@@ -37,7 +37,7 @@ describe("ScopedRef", () => {
       strictEqual(acquired, 2)
       strictEqual(released, 1)
     }))
-  it.effect("double release on double swap", () =>
+  it.effect("releases each previous resource across multiple replacements", () =>
     Effect.gen(function*() {
       const counter = yield* Counter.make()
       const ref = yield* ScopedRef.make(() => 0)
@@ -53,7 +53,7 @@ describe("ScopedRef", () => {
       strictEqual(acquired, 3)
       strictEqual(released, 2)
     }))
-  it.effect("full release", () =>
+  it.effect("releases the current resource when the scoped ref scope closes", () =>
     Effect.gen(function*() {
       const counter = yield* Counter.make()
       yield* pipe(
@@ -72,7 +72,7 @@ describe("ScopedRef", () => {
       strictEqual(acquired, 3)
       strictEqual(released, 3)
     }))
-  it.effect("full release", () =>
+  it.effect("fromAcquire tracks the initial resource through replacement and scope close", () =>
     Effect.gen(function*() {
       const ref = yield* Effect.scoped(ScopedRef.make(() => 0))
       strictEqual(ref.pipe(identity), ref)

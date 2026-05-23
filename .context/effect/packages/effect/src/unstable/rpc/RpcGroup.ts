@@ -1,4 +1,25 @@
 /**
+ * Groups typed `Rpc` definitions into a protocol that can be shared by
+ * clients, servers, tests, cluster entities, workflows, and other RPC
+ * integrations.
+ *
+ * An `RpcGroup` keeps RPC definitions keyed by their tags while preserving the
+ * payload, success, error, defect, middleware, and annotation metadata carried
+ * by each `Rpc`. Build groups with `make`, extend them with `add`, combine them
+ * with `merge`, remove calls with `omit`, and turn the final protocol into
+ * handler contexts or layers with `toHandlers`, `toLayer`, or `toLayerHandler`.
+ *
+ * Common uses include defining a service surface once and deriving both client
+ * and server implementations from it, splitting a large protocol into feature
+ * groups that are merged later, prefixing generated or proxied RPC names, and
+ * attaching metadata for higher-level runtimes. Composition order matters:
+ * `middleware` and `annotateRpcs` update only the RPCs currently in the group,
+ * duplicate tags from `add` or `merge` replace the existing definition, and
+ * handlers are keyed by the tags after any prefixing. Schema requirements still
+ * come from each RPC's payload, success, error, defect, and middleware schemas;
+ * grouping preserves those requirements but does not provide the services
+ * needed to encode, decode, or handle them.
+ *
  * @since 4.0.0
  */
 import type * as Cause from "../../Cause.ts"
@@ -19,8 +40,11 @@ import type * as RpcMiddleware from "./RpcMiddleware.ts"
 const TypeId = "~effect/rpc/RpcGroup"
 
 /**
- * @since 4.0.0
+ * A collection of RPC definitions that can be composed, annotated, and
+ * converted into server handlers or layers.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export interface RpcGroup<in out R extends Rpc.Any> extends Pipeable {
   new(_: never): {}
@@ -157,39 +181,54 @@ export interface RpcGroup<in out R extends Rpc.Any> extends Pipeable {
 }
 
 /**
- * @since 4.0.0
+ * An erased `RpcGroup` type for APIs that only need to know that a value is an
+ * RPC group.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export interface Any {
   readonly [TypeId]: typeof TypeId
 }
 
 /**
- * @since 4.0.0
+ * Builds the object type of server handler functions required to implement each
+ * RPC in a union.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export type HandlersFrom<Rpc extends Rpc.Any> = {
   readonly [Current in Rpc as Current["_tag"]]: Rpc.ToHandlerFn<Current>
 }
 
 /**
- * @since 4.0.0
+ * Extracts the server handler function type for a specific RPC tag from an RPC
+ * union.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export type HandlerFrom<Rpc extends Rpc.Any, Tag extends Rpc["_tag"]> = Extract<Rpc, { readonly _tag: Tag }> extends
   infer Current ? Current extends Rpc.Any ? Rpc.ToHandlerFn<Current> : never : never
 
 /**
- * @since 4.0.0
+ * Computes the services required by all handlers in a handler object for an RPC
+ * union.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export type HandlersServices<Rpcs extends Rpc.Any, Handlers> = keyof Handlers extends infer K ?
   K extends keyof Handlers & string ? HandlerServices<Rpcs, K, Handlers[K]> : never :
   never
 
 /**
- * @since 4.0.0
+ * Computes the services required by a single RPC handler, excluding services
+ * provided by middleware and `Scope` where the server supplies it.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export type HandlerServices<Rpcs extends Rpc.Any, K extends Rpcs["_tag"], Handler> = true extends
   Rpc.IsStream<Rpcs, K> ? Handler extends (...args: any) =>
@@ -215,8 +254,10 @@ export type HandlerServices<Rpcs extends Rpc.Any, K extends Rpcs["_tag"], Handle
   : never
 
 /**
- * @since 4.0.0
+ * Extracts the union of RPC definitions from an `RpcGroup`.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export type Rpcs<Group> = Group extends RpcGroup<infer R> ? string extends R["_tag"] ? never : R : never
 
@@ -368,8 +409,10 @@ const makeProto = <Rpcs extends Rpc.Any>(options: {
   }) as any
 
 /**
- * @since 4.0.0
+ * Creates an `RpcGroup` from one or more RPC definitions.
+ *
  * @category groups
+ * @since 4.0.0
  */
 export const make = <const Rpcs extends ReadonlyArray<Rpc.Any>>(
   ...rpcs: Rpcs

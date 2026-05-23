@@ -7,7 +7,7 @@
  * - YAML files (.yaml, .yml)
  * - Inline JSON strings
  *
- * @module OpenApiPatch
+ * @since 4.0.0
  */
 
 import * as Effect from "effect/Effect"
@@ -26,12 +26,15 @@ import * as Yaml from "yaml"
 /**
  * Error thrown when parsing a JSON Patch input fails.
  *
+ * **Details**
+ *
  * This error occurs when:
  * - A patch file cannot be read
  * - JSON or YAML syntax is invalid
  * - The file format is unsupported
  *
- * @example
+ * **Example** (Creating a parse error)
+ *
  * ```ts
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
  *
@@ -44,8 +47,8 @@ import * as Yaml from "yaml"
  * // "Failed to parse patch from ./patches/fix.json: Unexpected token at position 42"
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class JsonPatchParseError extends Schema.ErrorClass<JsonPatchParseError>("JsonPatchParseError")({
   _tag: Schema.tag("JsonPatchParseError"),
@@ -60,13 +63,16 @@ export class JsonPatchParseError extends Schema.ErrorClass<JsonPatchParseError>(
 /**
  * Error thrown when a parsed value does not conform to the JSON Patch schema.
  *
+ * **Details**
+ *
  * This error occurs when:
  * - The patch is not an array
  * - An operation is missing required fields (op, path)
  * - An operation has an unsupported op value
  * - An add/replace operation is missing the value field
  *
- * @example
+ * **Example** (Creating a validation error)
+ *
  * ```ts
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
  *
@@ -79,8 +85,8 @@ export class JsonPatchParseError extends Schema.ErrorClass<JsonPatchParseError>(
  * // "Invalid JSON Patch from inline: Expected 'add' | 'remove' | 'replace' at [0].op, got 'copy'"
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class JsonPatchValidationError extends Schema.ErrorClass<JsonPatchValidationError>("JsonPatchValidationError")({
   _tag: Schema.tag("JsonPatchValidationError"),
@@ -95,12 +101,15 @@ export class JsonPatchValidationError extends Schema.ErrorClass<JsonPatchValidat
 /**
  * Error thrown when applying a JSON Patch operation fails.
  *
+ * **Details**
+ *
  * This error occurs when:
  * - A path does not exist for remove/replace operations
  * - An array index is out of bounds
  * - The target location is not a valid container
  *
- * @example
+ * **Example** (Creating an application error)
+ *
  * ```ts
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
  *
@@ -116,8 +125,8 @@ export class JsonPatchValidationError extends Schema.ErrorClass<JsonPatchValidat
  * // "Failed to apply patch from ./patches/fix.json: operation 2 (remove at /paths/~1users): Property \"users\" does not exist"
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class JsonPatchApplicationError
   extends Schema.ErrorClass<JsonPatchApplicationError>("JsonPatchApplicationError")({
@@ -138,10 +147,13 @@ export class JsonPatchApplicationError
 /**
  * Error thrown when multiple JSON Patch operations fail.
  *
+ * **Details**
+ *
  * This error aggregates all application errors so users can see every
  * failing operation at once instead of fixing them one at a time.
  *
- * @example
+ * **Example** (Creating an aggregate error)
+ *
  * ```ts
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
  *
@@ -168,8 +180,8 @@ export class JsonPatchApplicationError
  * // "2 patch operations failed:\n  1. ..."
  * ```
  *
- * @since 1.0.0
  * @category errors
+ * @since 4.0.0
  */
 export class JsonPatchAggregateError extends Schema.ErrorClass<JsonPatchAggregateError>("JsonPatchAggregateError")({
   _tag: Schema.tag("JsonPatchAggregateError"),
@@ -193,8 +205,8 @@ export class JsonPatchAggregateError extends Schema.ErrorClass<JsonPatchAggregat
 /**
  * Schema for a JSON Patch "add" operation.
  *
- * @since 1.0.0
  * @category schemas
+ * @since 4.0.0
  */
 export const JsonPatchAdd: Schema.Codec<
   Extract<
@@ -211,8 +223,8 @@ export const JsonPatchAdd: Schema.Codec<
 /**
  * Schema for a JSON Patch "remove" operation.
  *
- * @since 1.0.0
  * @category schemas
+ * @since 4.0.0
  */
 export const JsonPatchRemove: Schema.Codec<
   Extract<
@@ -228,8 +240,8 @@ export const JsonPatchRemove: Schema.Codec<
 /**
  * Schema for a JSON Patch "replace" operation.
  *
- * @since 1.0.0
  * @category schemas
+ * @since 4.0.0
  */
 export const JsonPatchReplace: Schema.Codec<
   Extract<
@@ -246,11 +258,13 @@ export const JsonPatchReplace: Schema.Codec<
 /**
  * Schema for a single JSON Patch operation.
  *
+ * **Details**
+ *
  * Supports the subset of RFC 6902 operations that Effect's JsonPatch module
  * implements: `add`, `remove`, and `replace`.
  *
- * @since 1.0.0
  * @category schemas
+ * @since 4.0.0
  */
 export const JsonPatchOperation: Schema.Codec<JsonPatch.JsonPatchOperation> = Schema.Union([
   JsonPatchAdd,
@@ -261,11 +275,14 @@ export const JsonPatchOperation: Schema.Codec<JsonPatch.JsonPatchOperation> = Sc
 /**
  * Schema for a JSON Patch document (array of operations).
  *
+ * **Details**
+ *
  * A JSON Patch document is an ordered list of operations to apply to a JSON
  * document. Operations are applied in sequence, with each operation seeing
  * the result of previous operations.
  *
- * @example
+ * **Example** (Decoding a patch document)
+ *
  * ```ts
  * import { Schema } from "effect"
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
@@ -277,16 +294,16 @@ export const JsonPatchOperation: Schema.Codec<JsonPatch.JsonPatchOperation> = Sc
  * ])
  * ```
  *
- * @since 1.0.0
  * @category schemas
+ * @since 4.0.0
  */
 export const JsonPatchDocument = Schema.Array(JsonPatchOperation)
 
 /**
  * Type for a JSON Patch document.
  *
- * @since 1.0.0
  * @category types
+ * @since 4.0.0
  */
 export type JsonPatchDocument = typeof JsonPatchDocument.Type
 
@@ -409,11 +426,14 @@ const parseInlinePatch = Effect.fn("parseInlinePatch")(function*(input: string) 
 /**
  * Parse a JSON Patch from either a file path or inline JSON string.
  *
+ * **Details**
+ *
  * The input is first checked as a file path. If the file exists, it is read
  * and parsed based on its extension (.json, .yaml, .yml). Otherwise, the
  * input is parsed as inline JSON.
  *
- * @example
+ * **Example** (Parsing patch input)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
@@ -433,8 +453,8 @@ const parseInlinePatch = Effect.fn("parseInlinePatch")(function*(input: string) 
  * })
  * ```
  *
- * @since 1.0.0
  * @category parsing
+ * @since 4.0.0
  */
 export const parsePatchInput = Effect.fn("parsePatchInput")(function*(input: string) {
   if (looksLikeFilePath(input)) {
@@ -453,11 +473,14 @@ export const parsePatchInput = Effect.fn("parsePatchInput")(function*(input: str
 /**
  * Apply a sequence of JSON patches to a document.
  *
+ * **Details**
+ *
  * Patches are applied in order, with each patch operating on the result of
  * the previous one. All operations are attempted, and if any fail, the errors
  * are accumulated and reported together so users can fix all issues at once.
  *
- * @example
+ * **Example** (Applying patches)
+ *
  * ```ts
  * import { Effect } from "effect"
  * import * as OpenApiPatch from "@effect/openapi-generator/OpenApiPatch"
@@ -477,8 +500,8 @@ export const parsePatchInput = Effect.fn("parsePatchInput")(function*(input: str
  * })
  * ```
  *
- * @since 1.0.0
  * @category application
+ * @since 4.0.0
  */
 export const applyPatches = Effect.fn("applyPatches")(function*(
   patches: ReadonlyArray<{ readonly source: string; readonly patch: JsonPatchDocument }>,

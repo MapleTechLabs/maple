@@ -3,7 +3,7 @@ import { Prompt, Response } from "effect/unstable/ai"
 
 describe("Prompt", () => {
   describe("fromResponseParts", () => {
-    it("should handle interspersed text and response deltas", () => {
+    it("folds streamed text and reasoning deltas into an assistant message", () => {
       const parts = [
         Response.makePart("text-start", { id: "1" }),
         Response.makePart("text-delta", { id: "1", delta: "Hello" }),
@@ -29,7 +29,7 @@ describe("Prompt", () => {
       assert.deepStrictEqual(prompt, expected)
     })
 
-    it("should separate tool-calls and tool-results into different messages", () => {
+    it("places tool calls in assistant messages and tool results in tool messages", () => {
       const parts = [
         Response.makePart("tool-call", {
           id: "call-1",
@@ -127,7 +127,7 @@ describe("Prompt", () => {
       assert.deepStrictEqual((toolContent[1] as any).id, "call-A")
     })
 
-    it("should skip preliminary tool results", () => {
+    it("keeps only the final non-preliminary tool result", () => {
       const parts = [
         Response.makePart("tool-call", {
           id: "call-1",
@@ -208,12 +208,12 @@ describe("Prompt", () => {
       )
     })
 
-    it("should return an empty prompt if there are no messages", () => {
+    it("returns Prompt.empty when both inputs have no messages", () => {
       const merged = Prompt.concat(Prompt.empty, [])
       assert.deepStrictEqual(merged, Prompt.empty)
     })
 
-    it("should handle an empty prompt", () => {
+    it("accepts raw message input when the left prompt is empty", () => {
       const prompt = Prompt.empty
       const merged = Prompt.concat(prompt, [
         { role: "user", content: "a" },
@@ -232,7 +232,7 @@ describe("Prompt", () => {
       )
     })
 
-    it("should handle empty prompt input", () => {
+    it("returns the original prompt when the input has no messages", () => {
       const messages = [
         Prompt.makeMessage("user", {
           content: [Prompt.makePart("text", { text: "a" })]
@@ -248,7 +248,7 @@ describe("Prompt", () => {
   })
 
   describe("appendSystem", () => {
-    it("should append text to existing system message", () => {
+    it("appends text to the leading system message", () => {
       const prompt = Prompt.make([
         { role: "system", content: "You are an expert in programming." },
         { role: "user", content: "Hello, world!" }
@@ -264,7 +264,7 @@ describe("Prompt", () => {
       )
     })
 
-    it("should create a new system message if none exists", () => {
+    it("creates a leading system message if none exists", () => {
       const prompt = Prompt.make([
         { role: "user", content: "Hello, world!" }
       ])
@@ -279,7 +279,7 @@ describe("Prompt", () => {
       )
     })
 
-    it("should work with empty prompt", () => {
+    it("creates a system message for an empty prompt", () => {
       const prompt = Prompt.empty
 
       const result = Prompt.appendSystem(prompt, "You are a helpful assistant.")
@@ -292,7 +292,7 @@ describe("Prompt", () => {
   })
 
   describe("prependSystem", () => {
-    it("should prepend text to existing system message", () => {
+    it("prepends text to the leading system message", () => {
       const prompt = Prompt.make([
         {
           role: "system",
@@ -314,7 +314,7 @@ describe("Prompt", () => {
       )
     })
 
-    it("should create a new system message if none exists", () => {
+    it("creates a leading system message if none exists", () => {
       const prompt = Prompt.make([
         {
           role: "user",
@@ -332,7 +332,7 @@ describe("Prompt", () => {
       )
     })
 
-    it("should work with empty prompt", () => {
+    it("creates a system message for an empty prompt", () => {
       const prompt = Prompt.empty
 
       const result = Prompt.prependSystem(prompt, "You are a helpful assistant.")

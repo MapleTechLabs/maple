@@ -16,6 +16,9 @@
     "paths": {
       "effect": ["../../../effect/src/index.js"],
       "effect/*": ["../../../effect/src/*.js"]
-    }
+    },
+    "plugins": [
+      { "name": "@effect/language-service", "includeSuggestionsInTsc": false }
+    ]
   }
 }

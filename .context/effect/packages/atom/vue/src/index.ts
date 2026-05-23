@@ -1,5 +1,5 @@
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -11,55 +11,55 @@ import * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 import { computed, type ComputedRef, inject, type InjectionKey, type Ref, shallowRef, watchEffect } from "vue"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category modules
  */
 export * as AtomRegistry from "effect/unstable/reactivity/AtomRegistry"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category modules
  */
 export * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category modules
  */
 export * as Atom from "effect/unstable/reactivity/Atom"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category modules
  */
 export * as AtomRef from "effect/unstable/reactivity/AtomRef"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category re-exports
  */
 export * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category modules
  */
 export * as AtomRpc from "effect/unstable/reactivity/AtomRpc"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category registry
  */
 export const registryKey = Symbol.for("@effect/atom-vue/registryKey") as InjectionKey<AtomRegistry.AtomRegistry>
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category registry
  */
 export const defaultRegistry: AtomRegistry.AtomRegistry = AtomRegistry.make()
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category registry
  */
 export const injectRegistry = (): AtomRegistry.AtomRegistry => {
@@ -79,7 +79,7 @@ const useAtomValueRef = <A extends Atom.Atom<any>>(atom: () => A) => {
 }
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category composables
  */
 export const useAtom = <R, W, Mode extends "value" | "promise" | "promiseExit" = never>(
@@ -102,7 +102,7 @@ export const useAtom = <R, W, Mode extends "value" | "promise" | "promiseExit" =
 }
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category composables
  */
 export const useAtomValue = <A>(atom: () => Atom.Atom<A>): Readonly<Ref<A>> => useAtomValueRef(atom)[0]
@@ -156,7 +156,7 @@ function setAtom<R, W, Mode extends "value" | "promise" | "promiseExit" = never>
 }
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category composables
  */
 export const useAtomSet = <
@@ -195,7 +195,7 @@ export const useAtomSet = <
 }
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  * @category composables
  */
 export const useAtomRef = <A>(atomRef: () => AtomRef.ReadonlyRef<A>): Readonly<Ref<A>> => {

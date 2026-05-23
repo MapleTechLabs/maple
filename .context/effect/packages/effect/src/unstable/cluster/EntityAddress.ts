@@ -1,4 +1,22 @@
 /**
+ * The `EntityAddress` module defines the value used to locate an entity within
+ * a cluster. An address combines the entity type, entity id, and shard id so
+ * messages, persisted envelopes, workflow executions, and entity managers can
+ * agree on the same routing target.
+ *
+ * **Common tasks**
+ *
+ * - Build an address after resolving an entity id to a shard with `Sharding`
+ * - Attach an address to cluster envelopes and persisted messages
+ * - Compare or hash addresses when tracking active or resuming entities
+ *
+ * **Gotchas**
+ *
+ * - The shard id is part of the address identity; the same entity type and id
+ *   on a different shard is a different address.
+ * - Entity ids should be routed through the same shard group logic used by the
+ *   entity definition so messages are sent to the runner that owns the shard.
+ *
  * @since 4.0.0
  */
 import * as Equal from "../../Equal.ts"
@@ -13,8 +31,8 @@ const TypeId = "~effect/cluster/EntityAddress"
 /**
  * Represents the unique address of an entity within the cluster.
  *
- * @since 4.0.0
  * @category models
+ * @since 4.0.0
  */
 export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
   shardId: ShardId,
@@ -22,11 +40,15 @@ export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
   entityId: EntityId
 }) {
   /**
+   * Marks this value as a cluster entity address for runtime guards.
+   *
    * @since 4.0.0
    */
   readonly [TypeId] = TypeId
 
   /**
+   * Formats the entity type, entity id, and shard id as a readable address.
+   *
    * @since 4.0.0
    */
   override toString() {
@@ -34,6 +56,8 @@ export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
   }
 
   /**
+   * Compares entity addresses by entity type, entity id, and shard id.
+   *
    * @since 4.0.0
    */
   [Equal.symbol](that: EntityAddress): boolean {
@@ -42,6 +66,8 @@ export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
   }
 
   /**
+   * Computes a structural hash from the entity type, entity id, and shard id.
+   *
    * @since 4.0.0
    */
   [Hash.symbol]() {
@@ -49,8 +75,10 @@ export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
   }
 }
 /**
- * @since 4.0.0
+ * Constructs an `EntityAddress` from a shard ID, entity type, and entity ID.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make = (options: {
   readonly shardId: ShardId

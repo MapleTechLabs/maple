@@ -168,7 +168,7 @@ describe("HttpServer", () => {
 
   it.effect("mountApp", () =>
     Effect.gen(function*() {
-      const child = Effect.map(HttpServerRequest.HttpServerRequest.asEffect(), (_) => HttpServerResponse.text(_.url))
+      const child = Effect.map(HttpServerRequest.HttpServerRequest, (_) => HttpServerResponse.text(_.url))
       yield* HttpRouter.use((router) => router.prefixed("/child").add("*", "*", child)).pipe(
         HttpRouter.serve,
         Layer.build
@@ -518,7 +518,7 @@ describe("HttpServer", () => {
         yield* HttpRouter.add(
           "GET",
           "/home",
-          new CustomError({ name: "test" }).asEffect()
+          new CustomError({ name: "test" })
         ).pipe(
           HttpRouter.serve,
           Layer.build
@@ -535,7 +535,7 @@ describe("HttpServer", () => {
         yield* HttpRouter.add(
           "GET",
           "/home",
-          new HttpApiError.BadRequest({}).asEffect()
+          new HttpApiError.BadRequest({})
         ).pipe(
           HttpRouter.serve,
           Layer.build

@@ -8,7 +8,7 @@ import {
   requestPreResponseHandlers
 } from "effect/unstable/http/internal/preResponseHandler"
 
-describe("Http/App", () => {
+describe("HttpEffect", () => {
   describe("toWebHandler", () => {
     test("json", async () => {
       const handler = HttpEffect.toWebHandler(HttpServerResponse.json({ foo: "bar" }))
@@ -84,7 +84,7 @@ describe("Http/App", () => {
 
     test("stream runtime", async () => {
       const handler = Effect.succeed(HttpServerResponse.stream(
-        Stream.fromEffect(References.CurrentConcurrency.asEffect()).pipe(Stream.map(String), Stream.encodeText)
+        Stream.fromEffect(References.CurrentConcurrency).pipe(Stream.map(String), Stream.encodeText)
       )).pipe(
         HttpEffect.toWebHandlerWith(References.CurrentConcurrency.context(420))
       )
@@ -95,7 +95,7 @@ describe("Http/App", () => {
     test("stream layer", async () => {
       const { handler } = HttpEffect.toWebHandlerLayer(
         Effect.succeed(HttpServerResponse.stream(
-          References.CurrentConcurrency.asEffect().pipe(
+          References.CurrentConcurrency.pipe(
             Stream.fromEffect,
             Stream.map(String),
             Stream.encodeText

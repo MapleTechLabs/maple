@@ -116,7 +116,7 @@ describe("TxSubscriptionRef", () => {
         )
       }))
 
-    it.effect("changesStream emits initial value then updates", () =>
+    it.effect("failed transactions do not publish rolled back values", () =>
       Effect.gen(function*() {
         const ref = yield* Effect.tx(TxSubscriptionRef.make(0))
 
@@ -127,7 +127,7 @@ describe("TxSubscriptionRef", () => {
         assert.deepStrictEqual(initial, [0])
       }))
 
-    it.effect("changesStream emits updates after initial", () =>
+    it.effect("changesStream starts from the current value for each subscriber", () =>
       Effect.gen(function*() {
         const ref = yield* Effect.tx(TxSubscriptionRef.make(0))
 
@@ -141,7 +141,7 @@ describe("TxSubscriptionRef", () => {
         assert.deepStrictEqual(values, [2])
       }))
 
-    it.effect("scope close unsubscribes", () =>
+    it.effect("scope close releases the subscriber queue", () =>
       Effect.gen(function*() {
         const ref = yield* Effect.tx(TxSubscriptionRef.make(0))
 

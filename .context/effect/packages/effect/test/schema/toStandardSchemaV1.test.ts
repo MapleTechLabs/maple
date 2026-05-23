@@ -102,7 +102,7 @@ const AsyncString = Schema.String.pipe(Schema.decode({
 const AsyncNonEmptyString = AsyncString.check(Schema.isNonEmpty())
 
 describe("toStandardSchemaV1", () => {
-  it("should return a schema", () => {
+  it("should return a Standard Schema V1 schema", () => {
     const schema = Schema.FiniteFromString
     const standardSchema = Schema.toStandardSchemaV1(schema)
     assertTrue(Schema.isSchema(standardSchema))
@@ -173,7 +173,7 @@ describe("toStandardSchemaV1", () => {
       })
     })
 
-    it("async decoding should throw", () => {
+    it("async decoding should report a missing dependency", () => {
       const DepString = Schema.Number.pipe(Schema.decode({
         decode: SchemaGetter.onSome((n) =>
           Effect.gen(function*() {

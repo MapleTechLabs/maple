@@ -120,7 +120,7 @@ describe("MutableHashMap", () => {
     strictEqual(Array.from(map).length, 2)
   })
 
-  it("get", () => {
+  it("get returns the latest value for an equal key", () => {
     const map = pipe(
       HM.empty<Key, Value>(),
       HM.set(key(0, 0), value(0, 0)),
@@ -176,7 +176,7 @@ describe("MutableHashMap", () => {
     ])
   })
 
-  it("modifyAt", () => {
+  it("values", () => {
     const map = pipe(
       HM.empty<Key, Value>(),
       HM.set(key(0, 0), value(0, 0)),
@@ -219,7 +219,7 @@ describe("MutableHashMap", () => {
     strictEqual(HM.size(map), 2)
   })
 
-  it("remove", () => {
+  it("remove deletes an equal key in place", () => {
     const map = pipe(
       HM.empty<Key, Value>(),
       HM.set(key(0, 0), value(0, 0)),
@@ -248,7 +248,7 @@ describe("MutableHashMap", () => {
     )
   })
 
-  it("set", () => {
+  it("set overwrites equal keys without changing size", () => {
     const map = pipe(
       HM.empty<Key, Value>(),
       HM.set(key(0, 0), value(0, 0)),
@@ -277,7 +277,7 @@ describe("MutableHashMap", () => {
     strictEqual(HM.size(map), 2)
   })
 
-  it("modify", () => {
+  it("modify updates existing keys and ignores missing keys", () => {
     const map = pipe(
       HM.empty<Key, Value>(),
       HM.set(key(0, 0), value(0, 0)),

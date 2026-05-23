@@ -228,6 +228,17 @@ describe("Formatter", () => {
   })
 
   describe("formatJson", () => {
+    it("should omit circular references", () => {
+      const obj: any = { a: 1 }
+      obj.self = obj
+      strictEqual(formatJson(obj), `{"a":1}`)
+    })
+
+    it("preserves repeated non-circular references", () => {
+      const shared = { a: 1 }
+      strictEqual(formatJson({ left: shared, right: shared }), `{"left":{"a":1},"right":{"a":1}}`)
+    })
+
     it("should redact sensitive data", () => {
       strictEqual(formatJson(data), `{"secret":"[REDACTED]"}`)
       strictEqual(formatJson({ a: data }), `{"a":{"secret":"[REDACTED]"}}`)

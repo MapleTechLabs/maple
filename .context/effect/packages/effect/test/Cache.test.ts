@@ -50,7 +50,7 @@ describe("Cache", () => {
         const program = Effect.gen(function*() {
           const cache = yield* Cache.make({
             capacity: 10,
-            lookup: (_key: string) => Effect.map(TestService.asEffect(), (service) => service.value)
+            lookup: (_key: string) => Effect.map(TestService, (service) => service.value)
           })
           return yield* Cache.get(cache, "test")
         })
@@ -456,7 +456,7 @@ describe("Cache", () => {
           assert.strictEqual(lookupCount(), 0)
         }))
 
-      it.effect("set enfores capacity", () =>
+      it.effect("set enforces capacity", () =>
         Effect.gen(function*() {
           const cache = yield* Cache.make<string, number>({
             capacity: 2,

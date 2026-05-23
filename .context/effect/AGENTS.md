@@ -1,118 +1,83 @@
 This is the Effect library repository, focusing on functional programming patterns and effect systems in TypeScript.
 
-- The git base branch is `main`
-- Use `pnpm` as the package manager
-- Run `pnpm lint-fix` after editing files
-- Always run tests after making changes: `pnpm test <test_file.ts>`
-- Run type checking: `pnpm check:tsgo`
-  - If type checking continues to fail, run `pnpm clean` to clear caches, then re-run `pnpm check:tsgo`
-- Check JSDoc examples compile: when changes are localized to a single package, `cd` into that package directory and run `pnpm docgen` within it instead of running it at the root
+## Overview
 
-## Code Style Guidelines
+- The git base branch is `main`.
+- Use `pnpm` as the package manager.
+- Keep changes focused and follow established patterns in the repository.
+- Before writing code, read the relevant files in `./.patterns/` and inspect similar existing code.
 
-You **MUST** look at the `./.patterns/` directory as well as existing code in
-the repository to learn and follow established patterns before writing new code.
+## Workflow
 
-## Prefer `Effect.fnUntraced` over functions that return `Effect.gen`
+1. Inspect nearby implementation, tests, and pattern docs before editing.
+2. Make the smallest focused change that solves the task.
+3. Prefer existing abstractions and conventions over introducing new ones.
+4. For ad hoc runnable code, create a temporary file in `scratchpad/`, run it with `node scratchpad/<file>.ts`, and delete it when done.
+5. Run the validation appropriate to the change type.
+6. Report which validation commands were run and any commands that could not be run.
 
-Instead of writing:
+## Validation
 
-```ts
-const fn = (param: string) =>
-  Effect.gen(function*() {
-    // ...
-  })
-```
+Use the narrowest validation that still covers the change:
 
-Prefer:
+| Change type                 | Validation                                                                                                  |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Code changes                | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                                     |
+| Tests-only changes          | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                                     |
+| Type-level/API type changes | Targeted `pnpm test-types <filename>`, plus `pnpm check:tsgo` when source types changed                     |
+| JSDoc/example changes       | From the changed package directory, run `pnpm docgen`; also run `pnpm check:tsgo` when source types changed |
+| Docs-only changes           | `pnpm lint-fix`; no tests required unless examples or code changed                                          |
 
-```ts
-const fn = Effect.fnUntraced(function*(param: string) {
-  // ...
-})
-```
+If `pnpm check:tsgo` continues to fail unexpectedly, run `pnpm clean` and then re-run `pnpm check:tsgo`.
 
-## Using `Context.Service`
+## Coding Patterns
 
-Prefer the class syntax when working with `Context.Service`. For example:
+Read `.patterns/effect.md` before changing Effect code. In particular:
 
-```ts
-import { Context } from "effect"
-
-class MyService extends Context.Service<MyService, {
-  readonly doSomething: (input: string) => number
-}>()("MyService") {}
-```
-
-## Never use async / await or try / catch
-
-Instead use `Effect` apis like `Effect.fnUntraced`, `Effect.gen`,
-`Effect.tryPromise` etc.
-
-Look at existing code in the repository to learn and follow established patterns
-
-## Never use Date.now or new Date
-
-Instead use the `Clock` module, and `TestClock` for adjusting time in tests.
-
-## Barrel files
-
-The `index.ts` files are automatically generated. Do not manually edit them. Use
-`pnpm codegen` to regenerate barrel files after adding or removing modules.
-
-## Running test code
-
-If you need to run some code for testing or debugging purposes, create a new
-file in the `scratchpad/` directory at the root of the repository. You can then
-run the file with `node scratchpad/your-file.ts`.
-
-Make sure to delete the file after you are done testing.
+- Prefer `Effect.fnUntraced` over functions that only return `Effect.gen`.
+- Prefer class syntax for `Context.Service`.
+- Do not use `async` / `await` or `try` / `catch`; use Effect APIs such as `Effect.gen`, `Effect.fnUntraced`, and `Effect.tryPromise`.
+- Do not use `Date.now` or `new Date`; use `Clock`, and use `TestClock` in tests.
 
 ## Testing
 
-Before writing tests, always look at existing tests in the codebase for similar
-functionality to follow established patterns.
+Read `.patterns/testing.md` before writing or changing tests.
 
-- Test files are located in `packages/*/test/` directories for each package
-- Main Effect library tests: `packages/effect/test/`
-- Always verify implementations with tests
-- Run specific tests with: `pnpm test <filename>`
+- Test files are located in `packages/*/test/`.
+- Main Effect library tests are in `packages/effect/test/`.
+- Use `it.effect` for Effect-returning tests.
+- Use regular `it` for pure synchronous tests.
+- Do not use `Effect.runSync` in tests.
+- Do not use `expect` from Vitest; use `assert` from `@effect/vitest`.
+- Type-level tests are in `packages/*/typetest/` and run with `pnpm test-types <filename>`.
 
-### it.effect Testing Pattern
+## Documentation
 
-- Use `it.effect` for all Effect-based tests, not `Effect.runSync` with regular `it`
-- Import `{ assert, describe, it }` from `@effect/vitest`
-- Never use `expect` from vitest in Effect tests - use `assert` methods instead
-- All tests should use `it.effect("description", () => Effect.gen(function*() { ... }))`
+- For AI documentation, read `ai-docs/README.md` very carefully before writing examples.
+- AI documentation changes may include explanatory comments when useful.
+- For public JSDoc `@category` guidance, read `.patterns/jsdoc.md`.
+- When JSDoc examples are localized to a single package, run `pnpm docgen` from that package directory instead of the repository root.
 
-### Type level tests
+## Generated Files
 
-Type level tests are located in the `packages/*/typetest` directories of each package.
+Do not hand-edit generated files. Run the appropriate generator instead.
 
-You can run them with `pnpm test-types <filename>`.
-
-Take a look at the existing `.tst.ts` files for examples of how to write type
-level tests. They use the `tstyche` testing library.
-
-## Writing AI documentation
-
-Refer to `ai-docs/README.md` for instructions on how to write AI documentation.
-Read it very carefully before writing AI documentation examples.
-
-AI documentation changes can ignore the "Reduce comments" guideline. You can add
-comments to AI documentation examples as needed to explain the code.
+- `index.ts` barrel files are generated; run `pnpm codegen` after adding or removing modules.
 
 ## Changesets
 
-All pull requests must include a changeset. You can create changesets in the
-`.changeset/` directory.
-
-The have the following format:
+Create a changeset in `.changeset/` for runtime behavior changes or exported type/API changes:
 
 ```md
 ---
-"package-name": patch | minor | major
+"package-name": patch/minor/major
 ---
 
 A description of the change.
 ```
+
+Tests-only changes, internal refactors, docs-only changes, and JSDoc-only maintenance may skip changesets by maintainer decision.
+
+## Asking Before Risky Changes
+
+Ask before proceeding with broad refactors, public API changes, dependency or configuration changes, unclear requirements, or destructive operations.

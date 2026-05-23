@@ -1,5 +1,27 @@
 /**
- * @since 1.0.0
+ * Provides an Effect layer for configuring OpenTelemetry in Node.js
+ * processes. The module wires the Effect tracer, metrics producer, and logger
+ * into OpenTelemetry SDK providers when span processors, metric readers, or log
+ * record processors are supplied, and it builds the shared resource from
+ * `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`, and optional explicit
+ * service metadata.
+ *
+ * Use this module in Node services, workers, CLIs, or server runtimes that need
+ * Effect spans, metrics, and logs exported through OpenTelemetry processors and
+ * exporters. Telemetry is enabled only for the configured signal types, so an
+ * application can install tracing alone, metrics alone, logging alone, or any
+ * combination of them from the same layer.
+ *
+ * The layer is scoped. Tracer and logger providers are force-flushed and shut
+ * down when the scope is released, metric readers are shut down with the same
+ * lifecycle, and all shutdown waits are bounded by `shutdownTimeout` with a
+ * default of three seconds. Keep the layer scope alive for the lifetime of the
+ * process and release it during graceful shutdown so batched exporters have a
+ * chance to export final telemetry. When combining this layer with Node
+ * auto-instrumentations, register instrumentation before importing modules that
+ * should be patched, because many Node instrumentations hook module loading.
+ *
+ * @since 4.0.0
  */
 import type * as Otel from "@opentelemetry/api"
 import type { LoggerProviderConfig, LogRecordProcessor } from "@opentelemetry/sdk-logs"
@@ -18,8 +40,10 @@ import * as Resource from "./Resource.ts"
 import * as Tracer from "./Tracer.ts"
 
 /**
- * @since 1.0.0
- * @category Models
+ * Configuration for the Node OpenTelemetry layer, including optional tracing, metrics, logging, resource, and shutdown settings.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export interface Configuration {
   readonly spanProcessor?: SpanProcessor | ReadonlyArray<SpanProcessor> | undefined
@@ -38,8 +62,10 @@ export interface Configuration {
 }
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Creates a scoped Node OpenTelemetry tracer provider from one or more span processors and shuts it down when the layer is released.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layerTracerProvider = (
   processor: SpanProcessor | NonEmptyReadonlyArray<SpanProcessor>,
@@ -71,8 +97,10 @@ export const layerTracerProvider = (
   )
 
 /**
- * @since 1.0.0
- * @category Layers
+ * Creates a Node OpenTelemetry layer from configuration, enabling tracing, metrics, and logging only when their processors or readers are supplied.
+ *
+ * @category layers
+ * @since 4.0.0
  */
 export const layer: {
   (evaluate: LazyArg<Configuration>): Layer.Layer<Resource.Resource>
@@ -122,7 +150,9 @@ export const layer: {
   )
 
 /**
+ * Layer that provides an empty OpenTelemetry `Resource`.
+ *
+ * @category layers
  * @since 2.0.0
- * @category layer
  */
 export const layerEmpty: Layer.Layer<Resource.Resource> = Resource.layerEmpty

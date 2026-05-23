@@ -126,7 +126,7 @@ describe("LogLevel", () => {
       assert.deepStrictEqual(logs, filterLogs(level))
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("should use default log level when --log-level is not provided", () =>
+  it.effect("uses Info as the default minimum when --log-level is omitted", () =>
     Effect.gen(function*() {
       const logs = yield* testLogLevels()
       // Default minimum log level filters out Debug but keeps Info and above
@@ -134,7 +134,7 @@ describe("LogLevel", () => {
       assert.deepStrictEqual(logs, expected)
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("should expose built-in log-level setting value", () =>
+  it.effect("exposes the built-in log-level setting value", () =>
     Effect.gen(function*() {
       const seen: Array<Option.Option<string>> = []
       const command = Command.make("test").pipe(
@@ -151,7 +151,7 @@ describe("LogLevel", () => {
       assert.deepStrictEqual(seen, [Option.none(), Option.some("warn")])
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("should apply log level to subcommands", () =>
+  it.effect("applies the selected log level to subcommands", () =>
     Effect.gen(function*() {
       const parentCommand = Command.make("parent", {
         verbose: Flag.boolean("verbose")
@@ -180,7 +180,7 @@ describe("LogLevel", () => {
       )
     }).pipe(Effect.provide(TestLayer)))
 
-  it.effect("should fail with InvalidValue for invalid log levels", () =>
+  it.effect("keeps concurrent command log levels scoped to each run", () =>
     Effect.gen(function*() {
       const testCommand = Command.make("test", {}, () => Effect.logInfo("Should not see this"))
 

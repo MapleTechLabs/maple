@@ -1,12 +1,33 @@
 /**
- * @since 1.0.0
+ * Shared runtime helpers for running Effect programs as Node-compatible
+ * process entry points.
+ *
+ * This module provides the common `runMain` implementation used by
+ * Node-compatible platform packages. It is intended for CLIs, scripts,
+ * workers, servers, and other process-oriented programs that should run an
+ * Effect as their main fiber while still following Node process conventions.
+ *
+ * The runner installs `SIGINT` and `SIGTERM` handlers for the lifetime of the
+ * main fiber, translating those process signals into fiber interruption so
+ * Effect finalizers and the configured teardown can run. When the fiber exits,
+ * the signal listeners are removed and teardown determines the exit code. Clean
+ * success lets the Node event loop drain naturally instead of forcing
+ * `process.exit(0)`, while signal-triggered or non-zero exits call
+ * `process.exit` after teardown, so long-running resources should be modeled
+ * in the Effect scope and finalized explicitly.
+ *
+ * @since 4.0.0
  */
 import type { Effect } from "effect/Effect"
 import * as Runtime from "effect/Runtime"
 
 /**
- * @since 1.0.0
- * @category Run main
+ * Runs an Effect as the Node process main program, interrupting the fiber on
+ * `SIGINT` or `SIGTERM` and invoking the configured teardown to determine the
+ * process exit code.
+ *
+ * @category running
+ * @since 4.0.0
  */
 export const runMain: {
   (

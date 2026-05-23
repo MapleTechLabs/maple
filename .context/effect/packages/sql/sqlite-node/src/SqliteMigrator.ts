@@ -1,5 +1,20 @@
 /**
- * @since 1.0.0
+ * Utilities for applying Effect SQL migrations to Node.js SQLite databases.
+ *
+ * This module re-exports the shared `Migrator` loaders and error types, then
+ * provides `run` and `layer` helpers for applying ordered migrations through the
+ * current SQLite `SqlClient`. It is typically used at application startup, in
+ * tests that create temporary database files, or in layer graphs that must
+ * ensure a file-backed SQLite schema exists before dependent services start.
+ *
+ * Migrations are recorded in `effect_sql_migrations` by default and are loaded
+ * using the shared `<id>_<name>` file or record-key convention. Only migrations
+ * with an id greater than the latest recorded id are applied, so every client
+ * involved in startup should point at the same SQLite filename. Concurrent
+ * writers can surface SQLite lock timeout errors, and this adapter does not
+ * currently write SQLite schema dumps for `schemaDirectory`.
+ *
+ * @since 4.0.0
  */
 import type * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -8,13 +23,15 @@ import type * as Client from "effect/unstable/sql/SqlClient"
 import type { SqlError } from "effect/unstable/sql/SqlError"
 
 /**
- * @since 1.0.0
+ * @since 4.0.0
  */
 export * from "effect/unstable/sql/Migrator"
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Runs SQL migrations for a SQLite database using the shared `Migrator` implementation and the current `SqlClient`.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const run: <R2 = never>(
   options: Migrator.MigratorOptions<R2>
@@ -67,8 +84,10 @@ export const run: <R2 = never>(
 })
 
 /**
- * @category constructor
- * @since 1.0.0
+ * Creates a layer that runs the configured SQLite migrations during layer construction and provides no services.
+ *
+ * @category constructors
+ * @since 4.0.0
  */
 export const layer = <R>(
   options: Migrator.MigratorOptions<R>

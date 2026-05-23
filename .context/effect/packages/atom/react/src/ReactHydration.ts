@@ -1,5 +1,26 @@
 /**
- * @since 1.0.0
+ * React helpers for hydrating Atom registry state that was serialized on the
+ * server or produced by a previous render. This module exposes
+ * {@link HydrationBoundary}, a client component that receives dehydrated Atom
+ * values and applies them to the nearest {@link RegistryContext} before
+ * rendering children when it is safe to do so.
+ *
+ * **Common use cases**
+ *
+ * - Reusing Atom values that were collected during server rendering
+ * - Restoring client-side Atom state around a routed subtree
+ * - Keeping Atom-backed React trees consistent during hydration and transitions
+ *
+ * **React gotchas**
+ *
+ * - New Atom values can be hydrated during render so children see them
+ *   immediately.
+ * - Existing Atom values are queued until after commit to avoid updating the
+ *   current UI with transition data that might later be discarded.
+ * - Hydration is idempotent, so repeated or older dehydrated values are safe to
+ *   pass through the boundary.
+ *
+ * @since 4.0.0
  */
 "use client"
 import * as Hydration from "effect/unstable/reactivity/Hydration"
@@ -7,8 +28,11 @@ import * as React from "react"
 import { RegistryContext } from "./RegistryContext.ts"
 
 /**
- * @since 1.0.0
+ * Props for a boundary that applies dehydrated Atom values to the nearest
+ * {@link RegistryContext} while rendering its children.
+ *
  * @category components
+ * @since 4.0.0
  */
 export interface HydrationBoundaryProps {
   state?: Iterable<Hydration.DehydratedAtom>
@@ -16,8 +40,17 @@ export interface HydrationBoundaryProps {
 }
 
 /**
- * @since 1.0.0
+ * Hydrates dehydrated Atom values into the current Atom registry for a React
+ * subtree.
+ *
+ * **Details**
+ *
+ * New Atom values are hydrated during render so descendants can read them
+ * immediately, while values for existing Atoms are deferred until after commit
+ * so transition data does not update the current UI before React accepts it.
+ *
  * @category components
+ * @since 4.0.0
  */
 export const HydrationBoundary: React.FC<HydrationBoundaryProps> = ({
   children,

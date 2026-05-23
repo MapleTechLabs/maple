@@ -27,7 +27,7 @@ describe("WorkflowEngine", () => {
       ))
     ))
 
-  it.effect("executionId matches execute id", () =>
+  it.effect("discard returns the deterministic execution ID", () =>
     Effect.gen(function*() {
       const executionId = yield* IncrementWorkflow.executionId({ value: 1 })
       const discardedExecutionId = yield* IncrementWorkflow.execute({ value: 1 }, { discard: true })

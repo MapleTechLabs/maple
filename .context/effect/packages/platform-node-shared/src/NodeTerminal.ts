@@ -1,5 +1,22 @@
 /**
- * @since 1.0.0
+ * Shared Node.js implementation of Effect's `Terminal` service.
+ *
+ * This module is the process-backed terminal implementation used by Node
+ * platform packages. It adapts Node's `readline` APIs and the current
+ * process' `stdin` and `stdout` streams into a `Terminal`, making it suitable
+ * for CLIs, REPLs, prompts, full-screen terminal programs, and other
+ * command-line tools that need line input, keypress input, terminal
+ * dimensions, or prompt output.
+ *
+ * The implementation works with global process streams, so callers should
+ * acquire it with a scope or provide `layer` to ensure cleanup. When `stdin`
+ * is a TTY, raw mode is enabled while the scoped readline interface is active
+ * and restored on release; raw mode changes how keys are delivered and can
+ * affect other code reading stdin. In non-TTY environments such as pipes,
+ * redirected input, or CI, raw mode is unavailable, keypress behavior is
+ * limited, and stdout dimensions may be reported as zero.
+ *
+ * @since 4.0.0
  */
 import type * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
@@ -14,8 +31,12 @@ import * as Terminal from "effect/Terminal"
 import * as readline from "node:readline"
 
 /**
- * @since 1.0.0
+ * Creates a scoped process-backed `Terminal` using Node `readline`, enabling
+ * TTY raw mode while in scope and using the supplied predicate to decide when
+ * key input should end.
+ *
  * @category constructors
+ * @since 4.0.0
  */
 export const make: (
   shouldQuit?: (input: Terminal.UserInput) => boolean
@@ -47,6 +68,7 @@ export const make: (
     })
 
     const columns = Effect.sync(() => stdout.columns ?? 0)
+    const rows = Effect.sync(() => stdout.rows ?? 0)
 
     const readInput = Effect.gen(function*() {
       yield* RcRef.get(rlRef)
@@ -94,6 +116,7 @@ export const make: (
 
     return Terminal.make({
       columns,
+      rows,
       readInput,
       readLine,
       display
@@ -102,8 +125,11 @@ export const make: (
 )
 
 /**
- * @since 1.0.0
+ * Provides the default process-backed `Terminal` service, ending key input on
+ * Ctrl+C or Ctrl+D.
+ *
  * @category layers
+ * @since 4.0.0
  */
 export const layer: Layer.Layer<Terminal.Terminal> = Layer.effect(Terminal.Terminal, make(defaultShouldQuit))
 

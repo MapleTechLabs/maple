@@ -6,7 +6,7 @@ import { assertSuccess } from "../../utils/assert.ts"
 
 describe("UrlParams", () => {
   describe("UrlParamsSchema", () => {
-    it("serializer annotation", () => {
+    it("round-trips ordered pairs with the serializer annotation", () => {
       const iso = Schema.toIso(UrlParams.UrlParamsSchema)
       const params = UrlParams.make([["a", "1"], ["b", "2"]])
       assertSuccess(iso.getResult(params), [["a", "1"], ["b", "2"]])

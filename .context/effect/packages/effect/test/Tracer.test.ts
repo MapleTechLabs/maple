@@ -94,7 +94,7 @@ describe("Tracer", () => {
         strictEqual(span.attributes.get("code.stacktrace"), undefined)
       }))
 
-    it.effect("should handle nested withSpan calls with OtlpTracer", () =>
+    it.effect("should preserve nested span context with OtlpTracer", () =>
       Effect.gen(function*() {
         const innerEffect = Effect.succeed(42).pipe(
           Effect.withSpan("child-span", {
@@ -167,7 +167,7 @@ describe("Tracer", () => {
         ])
       }))
 
-    it.effect("should handle spans with attributes without crashing", () =>
+    it.effect("should attach attributes and kind to the current span", () =>
       Effect.gen(function*() {
         const result = yield* Effect.succeed(42).pipe(
           Effect.withSpan("test-span", {
