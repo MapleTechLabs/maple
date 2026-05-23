@@ -169,7 +169,7 @@ function deriveMeta(events: unknown[]): DerivedMeta {
 	return { recordedWidth, recordedHeight, startTime, actionMarkers, inactiveIntervals }
 }
 
-export type ReplayLoadStatus = "loading" | "error" | "empty" | "ready"
+type ReplayLoadStatus = "loading" | "error" | "empty" | "ready"
 
 export interface ReplayPlayerContextValue {
 	status: ReplayLoadStatus
@@ -178,8 +178,6 @@ export interface ReplayPlayerContextValue {
 	figureRef: React.RefObject<HTMLElement | null>
 	surfaceRef: React.RefObject<HTMLDivElement | null>
 	mountRef: React.RefObject<HTMLDivElement | null>
-	recordedWidth: number
-	recordedHeight: number
 	isPlaying: boolean
 	finished: boolean
 	/** Current playhead position, in trimmed (display) ms. */
@@ -470,8 +468,6 @@ export function ReplayPlayerProvider({
 			figureRef,
 			surfaceRef,
 			mountRef,
-			recordedWidth,
-			recordedHeight,
 			isPlaying,
 			finished,
 			displayCurrentMs,
@@ -493,8 +489,6 @@ export function ReplayPlayerProvider({
 		[
 			status,
 			error,
-			recordedWidth,
-			recordedHeight,
 			isPlaying,
 			finished,
 			displayCurrentMs,

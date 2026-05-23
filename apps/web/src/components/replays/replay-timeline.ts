@@ -136,7 +136,7 @@ export function parseChTimestampMs(ts: string): number {
 	return Date.parse(hasZone ? normalized : `${normalized}Z`)
 }
 
-export interface SpanDisplayRange {
+interface SpanDisplayRange {
 	/** Span start as an offset (real ms) from the recording's first event. */
 	readonly realOffsetMs: number
 	/** Span start mapped onto the trimmed (idle-collapsed) timeline. */

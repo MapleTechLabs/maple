@@ -1317,19 +1317,20 @@ export type LogsAggregatesHourlyRow = InferRow<typeof logsAggregatesHourly>
  * ReplacingMergeTree keyed by Version keeps the latest, so consumers should
  * read with `FINAL` (or dedupe `LIMIT 1 BY (OrgId, SessionId) ORDER BY Version DESC`).
  *
- * The event payloads themselves live in Cloudflare R2 (see `sessionReplayChunks`
- * for the index); this table only holds small, queryable metadata so the
- * sessions list/filter views never touch the multi-MB rrweb blobs.
+ * The rrweb event payloads live in `sessionReplayEvents` (one row per chunk,
+ * payload inline in ClickHouse — there is no R2 blob store); this table only
+ * holds small, queryable metadata so the sessions list/filter views never
+ * touch the multi-MB rrweb blobs.
  *
  * `TraceIds` carries the OTel trace ids observed during the session — the
  * correlation key that lets the trace detail view link to a replay and back.
  *
  * TTL is 30 days (shorter than traces/logs at 90d) — replays are large and
- * lose value faster. Keep in lockstep with the R2 bucket lifecycle rule.
+ * lose value faster; keep in lockstep with `sessionReplayEvents`' TTL.
  */
 export const sessionReplays = defineDatasource("session_replays", {
 	description:
-		"Per-session browser replay metadata (one row per session). Ingested directly from the @maple/browser SDK via POST /v1/sessionReplays/meta. Event blobs live in R2; this holds only queryable metadata. ReplacingMergeTree(Version) for start/end upsert.",
+		"Per-session browser replay metadata (one row per session). Ingested directly from the @maple/browser SDK via POST /v1/sessionReplays/meta. Event payloads live inline in session_replay_events; this holds only queryable metadata. ReplacingMergeTree(Version) for start/end upsert.",
 	schema: {
 		OrgId: column(t.string().lowCardinality(), { jsonPath: "$.org_id" }),
 		SessionId: column(t.string(), { jsonPath: "$.session_id" }),

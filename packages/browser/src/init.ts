@@ -57,6 +57,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		shutdown: async () => {
 			if (recorder) await recorder.flush(true)
 			if (events) await events.flush(true)
+			recorder?.stop()
 			events?.stop()
 			await shutdownTracing?.()
 			active = undefined
@@ -86,6 +87,10 @@ function installLifecycleHandlers(
 			sessionMetaRow(config, sessionId, startedAt, 2, "ended", recorder.getClickCount()),
 			true,
 		)
+		// flush() snapshots its buffer synchronously before awaiting, so stopping
+		// immediately after is safe and clears the rrweb subscription + flush timer.
+		recorder.stop()
+		events.stop()
 	}
 	// `visibilitychange → hidden` is the reliable "leaving" signal on mobile;
 	// pagehide covers desktop tab close / navigation.

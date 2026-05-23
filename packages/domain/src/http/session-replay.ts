@@ -192,36 +192,6 @@ export class SessionTranscriptResponse extends Schema.Class<SessionTranscriptRes
 	data: Schema.Array(SessionEventItem),
 }) {}
 
-// --- Search sessions by distilled event ---
-
-export class SearchSessionsRequest extends Schema.Class<SearchSessionsRequest>(
-	"SearchSessionsRequest",
-)({
-	startTime: TinybirdDateTime,
-	endTime: TinybirdDateTime,
-	type: Schema.optional(Schema.String),
-	level: Schema.optional(Schema.String),
-	minStatus: Schema.optional(Schema.Number),
-	urlSearch: Schema.optional(Schema.String),
-	messageSearch: Schema.optional(Schema.String),
-	traceId: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
-	offset: Schema.optional(Schema.Number),
-}) {}
-
-export class SearchSessionsResponse extends Schema.Class<SearchSessionsResponse>(
-	"SearchSessionsResponse",
-)({
-	data: Schema.Array(
-		Schema.Struct({
-			sessionId: Schema.String,
-			matchCount: Schema.Number,
-			firstTimestamp: Schema.String,
-			lastTimestamp: Schema.String,
-		}),
-	),
-}) {}
-
 // ---------------------------------------------------------------------------
 // API group
 // ---------------------------------------------------------------------------
@@ -273,13 +243,6 @@ export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")
 		HttpApiEndpoint.post("sessionTranscript", "/transcript", {
 			payload: SessionTranscriptRequest,
 			success: SessionTranscriptResponse,
-			error: sessionReplayEndpointErrors,
-		}),
-	)
-	.add(
-		HttpApiEndpoint.post("searchSessions", "/search", {
-			payload: SearchSessionsRequest,
-			success: SearchSessionsResponse,
 			error: sessionReplayEndpointErrors,
 		}),
 	)

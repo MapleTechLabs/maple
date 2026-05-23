@@ -15,10 +15,12 @@ export function getObservedTraceIds(): string[] {
 	return Array.from(observedTraceIds)
 }
 
-/** Global key external tracers look up to feed trace ids into the session. */
-export const SESSION_SINK_KEY = "__MAPLE_BROWSER_SESSION__"
+// Global key external tracers look up to feed trace ids into the session.
+// Kept in sync by hand with `lib/effect-sdk/src/client/layer.ts`, which redeclares
+// the same literal + shape to avoid depending on `@maple/browser`.
+const SESSION_SINK_KEY = "__MAPLE_BROWSER_SESSION__"
 
-export interface MapleBrowserSessionSink {
+interface MapleBrowserSessionSink {
 	readonly sessionId: string
 	readonly recordTraceId: (traceId: string) => void
 }

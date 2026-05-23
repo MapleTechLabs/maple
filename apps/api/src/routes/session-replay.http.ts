@@ -6,7 +6,6 @@ import {
 	ListReplaysResponse,
 	MapleApi,
 	ReplaysForTraceResponse,
-	SearchSessionsResponse,
 	SessionTranscriptResponse,
 	SessionTraceSummariesResponse,
 } from "@maple/domain/http"
@@ -142,30 +141,6 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						context: "sessionTranscript",
 					})
 					return new SessionTranscriptResponse({ data: compiled.castRows(rows) })
-				}),
-			)
-			.handle("searchSessions", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ "maple.org_id": tenant.orgId })
-					const compiled = CH.compile(
-						CH.searchSessionsByEventQuery({
-							type: payload.type,
-							level: payload.level,
-							minStatus: payload.minStatus,
-							urlSearch: payload.urlSearch,
-							messageSearch: payload.messageSearch,
-							traceId: payload.traceId,
-							limit: payload.limit,
-							offset: payload.offset,
-						}),
-						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
-					)
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
-						profile: "list",
-						context: "searchSessions",
-					})
-					return new SearchSessionsResponse({ data: compiled.castRows(rows) })
 				}),
 			)
 	}),

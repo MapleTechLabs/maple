@@ -24,8 +24,6 @@ const replaysSearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
 })
 
-export type ReplaysSearchParams = Schema.Schema.Type<typeof replaysSearchSchema>
-
 export const Route = effectRoute(createFileRoute("/replays/"))({
 	component: ReplaysPage,
 	validateSearch: Schema.toStandardSchemaV1(replaysSearchSchema),
