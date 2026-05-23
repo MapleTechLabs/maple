@@ -1086,7 +1086,7 @@ export type AlertChecksRow = InferRow<typeof alertChecks>
  *
  * Populated by materialized view, not direct ingestion.
  *
- * SOURCE TTL: 90d (matches `traces.ttl`). Update in lockstep if raw TTL
+ * SOURCE TTL: 30d (matches `traces.ttl`). Update in lockstep if raw TTL
  * changes — see docs/persistence.md.
  */
 export const tracesAggregatesHourly = defineDatasource("traces_aggregates_hourly", {
@@ -1149,7 +1149,7 @@ export type TracesAggregatesHourlyRow = InferRow<typeof tracesAggregatesHourly>
  * "errors per service per hour" / "log volume by severity" queries no
  * longer scan raw logs.
  *
- * SOURCE TTL: 90d (matches `logs.ttl`).
+ * SOURCE TTL: 30d (matches `logs.ttl`).
  */
 export const logsAggregatesHourly = defineDatasource("logs_aggregates_hourly", {
 	description:
