@@ -40,7 +40,7 @@ export const logs = defineDatasource("logs", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimestampTime)",
 		sortingKey: ["OrgId", "ServiceName", "TimestampTime", "Timestamp"],
-		ttl: "toDate(TimestampTime) + INTERVAL 90 DAY",
+		ttl: "toDate(TimestampTime) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -156,26 +156,6 @@ export const traces = defineDatasource("traces", {
 		 */
 		IsEntryPoint: t.uint8().defaultExpr(IS_ENTRY_POINT_EXPR),
 	},
-	/**
-	 * Backfills SampleRate + IsEntryPoint on existing rows when these columns
-	 * are added. Tinybird treats new columns with DEFAULT expressions as
-	 * "incompatible" changes and requires this query.
-	 *
-	 * Must produce identical values to the column DEFAULT expressions
-	 * (SAMPLE_RATE_EXPR / IS_ENTRY_POINT_EXPR) so backfilled values match
-	 * what new inserts would compute.
-	 */
-	forwardQuery:
-		"SELECT " +
-		"OrgId, Timestamp, TraceId, SpanId, ParentSpanId, TraceState, SpanName, " +
-		"SpanKind, ServiceName, ResourceSchemaUrl, ResourceAttributes, " +
-		"ScopeSchemaUrl, ScopeName, ScopeVersion, ScopeAttributes, Duration, " +
-		"StatusCode, StatusMessage, SpanAttributes, EventsTimestamp, EventsName, " +
-		"EventsAttributes, LinksTraceId, LinksSpanId, LinksTraceState, LinksAttributes, " +
-		SAMPLE_RATE_EXPR +
-		" AS SampleRate, " +
-		IS_ENTRY_POINT_EXPR +
-		" AS IsEntryPoint",
 	indexes: [
 		{
 			name: "idx_trace_id",
@@ -211,7 +191,7 @@ export const traces = defineDatasource("traces", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "ServiceName", "SpanName", "toDateTime(Timestamp)"],
-		ttl: "toDate(Timestamp) + INTERVAL 90 DAY",
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -277,7 +257,7 @@ export const serviceMapSpans = defineDatasource("service_map_spans", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "TraceId", "SpanId", "Timestamp"],
-		ttl: "Timestamp + INTERVAL 90 DAY",
+		ttl: "Timestamp + INTERVAL 30 DAY",
 	}),
 })
 
@@ -308,7 +288,7 @@ export const serviceMapChildren = defineDatasource("service_map_children", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "TraceId", "ParentSpanId", "Timestamp"],
-		ttl: "Timestamp + INTERVAL 90 DAY",
+		ttl: "Timestamp + INTERVAL 30 DAY",
 	}),
 })
 
@@ -552,7 +532,7 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "ServiceName", "Timestamp"],
-		ttl: "Timestamp + INTERVAL 90 DAY",
+		ttl: "Timestamp + INTERVAL 30 DAY",
 	}),
 })
 
@@ -657,7 +637,7 @@ export const traceListMv = defineDatasource("trace_list_mv", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
-		ttl: "Timestamp + INTERVAL 90 DAY",
+		ttl: "Timestamp + INTERVAL 30 DAY",
 	}),
 })
 
@@ -694,7 +674,7 @@ export const traceDetailSpans = defineDatasource("trace_detail_spans", {
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",
 		sortingKey: ["OrgId", "TraceId", "SpanId"],
-		ttl: "toDate(Timestamp) + INTERVAL 90 DAY",
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
 })
 
@@ -752,36 +732,10 @@ export const metricsSum = defineDatasource("metrics_sum", {
 		}),
 		IsMonotonic: column(t.bool(), { jsonPath: "$.is_monotonic" }),
 	},
-	forwardQuery: `
-    SELECT
-      OrgId,
-      ResourceAttributes,
-      ResourceSchemaUrl,
-      ScopeName,
-      ScopeVersion,
-      ScopeAttributes,
-      ScopeSchemaUrl,
-      ServiceName,
-      MetricName,
-      MetricDescription,
-      MetricUnit,
-      Attributes,
-      StartTimeUnix,
-      TimeUnix,
-      Value,
-      CAST(Flags, 'UInt32') AS Flags,
-      ExemplarsTraceId,
-      ExemplarsSpanId,
-      ExemplarsTimestamp,
-      ExemplarsValue,
-      ExemplarsFilteredAttributes,
-      AggregationTemporality,
-      IsMonotonic
-  `,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 365 DAY",
+		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -835,34 +789,10 @@ export const metricsGauge = defineDatasource("metrics_gauge", {
 			jsonPath: "$.exemplars_filtered_attributes[:]",
 		}),
 	},
-	forwardQuery: `
-    SELECT
-      OrgId,
-      ResourceAttributes,
-      ResourceSchemaUrl,
-      ScopeName,
-      ScopeVersion,
-      ScopeAttributes,
-      ScopeSchemaUrl,
-      ServiceName,
-      MetricName,
-      MetricDescription,
-      MetricUnit,
-      Attributes,
-      StartTimeUnix,
-      TimeUnix,
-      Value,
-      CAST(Flags, 'UInt32') AS Flags,
-      ExemplarsTraceId,
-      ExemplarsSpanId,
-      ExemplarsTimestamp,
-      ExemplarsValue,
-      ExemplarsFilteredAttributes
-  `,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 365 DAY",
+		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -928,40 +858,10 @@ export const metricsHistogram = defineDatasource("metrics_histogram", {
 			jsonPath: "$.aggregation_temporality",
 		}),
 	},
-	forwardQuery: `
-    SELECT
-      OrgId,
-      ResourceAttributes,
-      ResourceSchemaUrl,
-      ScopeName,
-      ScopeVersion,
-      ScopeAttributes,
-      ScopeSchemaUrl,
-      ServiceName,
-      MetricName,
-      MetricDescription,
-      MetricUnit,
-      Attributes,
-      StartTimeUnix,
-      TimeUnix,
-      Count,
-      Sum,
-      BucketCounts,
-      ExplicitBounds,
-      ExemplarsTraceId,
-      ExemplarsSpanId,
-      ExemplarsTimestamp,
-      ExemplarsValue,
-      ExemplarsFilteredAttributes,
-      CAST(Flags, 'UInt32') AS Flags,
-      CAST(Min, 'Nullable(Float64)') AS Min,
-      CAST(Max, 'Nullable(Float64)') AS Max,
-      AggregationTemporality
-  `,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 365 DAY",
+		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
@@ -1035,44 +935,10 @@ export const metricsExponentialHistogram = defineDatasource("metrics_exponential
 			jsonPath: "$.aggregation_temporality",
 		}),
 	},
-	forwardQuery: `
-      SELECT
-        OrgId,
-        ResourceAttributes,
-        ResourceSchemaUrl,
-        ScopeName,
-        ScopeVersion,
-        ScopeAttributes,
-        ScopeSchemaUrl,
-        ServiceName,
-        MetricName,
-        MetricDescription,
-        MetricUnit,
-        Attributes,
-        StartTimeUnix,
-        TimeUnix,
-        Count,
-        Sum,
-        Scale,
-        ZeroCount,
-        PositiveOffset,
-        PositiveBucketCounts,
-        NegativeOffset,
-        NegativeBucketCounts,
-        ExemplarsTraceId,
-        ExemplarsSpanId,
-        ExemplarsTimestamp,
-        ExemplarsValue,
-        ExemplarsFilteredAttributes,
-        CAST(Flags, 'UInt32') AS Flags,
-        CAST(Min, 'Nullable(Float64)') AS Min,
-        CAST(Max, 'Nullable(Float64)') AS Max,
-        AggregationTemporality
-    `,
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimeUnix)",
 		sortingKey: ["OrgId", "ServiceName", "MetricName", "Attributes", "toUnixTimestamp64Nano(TimeUnix)"],
-		ttl: "toDate(TimeUnix) + INTERVAL 365 DAY",
+		ttl: "toDate(TimeUnix) + INTERVAL 90 DAY",
 	}),
 })
 
