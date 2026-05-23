@@ -168,7 +168,7 @@ export const formatSignalMetric = (value: number | null, signalType: string): st
 		onNone: () => "n/a",
 		onSome: (v) =>
 			Match.value(signalType).pipe(
-				Match.when("error_rate", () => `${round(v)}%`),
+				Match.when("error_rate", () => `${round(v * 100, 1)}%`),
 				Match.whenOr("p95_latency", "p99_latency", () => `${round(v)}ms`),
 				Match.when("apdex", () => `${round(v, 3)}`),
 				Match.when("throughput", () => `${round(v)} rpm`),

@@ -164,6 +164,23 @@ export function formatSignalValue(signalType: AlertSignalType, value: number | n
 	}
 }
 
+/**
+ * Threshold unit conversion at the form↔domain boundary.
+ *
+ * The domain stores `error_rate` thresholds as a 0–1 ratio (matching the query
+ * engine's `countIf(Error)/count()` and the evaluation comparison). The form
+ * lets users enter a percent (e.g. `5` = 5%), so we divide by 100 on submit and
+ * multiply by 100 on load. All other signals pass through unchanged.
+ */
+export function formThresholdToDomain(signalType: AlertSignalType, value: string): number {
+	const n = Number(value)
+	return signalType === "error_rate" ? n / 100 : n
+}
+
+export function domainThresholdToForm(signalType: AlertSignalType, value: number): string {
+	return signalType === "error_rate" ? String(value * 100) : String(value)
+}
+
 export function parsePositiveNumber(value: string, fallback: number): number {
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed) || parsed <= 0) return fallback
@@ -218,8 +235,9 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
 		signalType: rule.signalType,
 		comparator: rule.comparator,
-		threshold: String(rule.threshold),
-		thresholdUpper: rule.thresholdUpper == null ? "" : String(rule.thresholdUpper),
+		threshold: domainThresholdToForm(rule.signalType, rule.threshold),
+		thresholdUpper:
+			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
@@ -288,10 +306,10 @@ export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 		groupBy: form.groupBy.length > 0 ? form.groupBy : null,
 		signalType,
 		comparator: form.comparator,
-		threshold: Number(form.threshold),
+		threshold: formThresholdToDomain(signalType, form.threshold),
 		thresholdUpper: isRangeComparator(form.comparator)
 			? Number.isFinite(Number(form.thresholdUpper))
-				? Number(form.thresholdUpper)
+				? formThresholdToDomain(signalType, form.thresholdUpper)
 				: null
 			: null,
 		windowMinutes: parsePositiveNumber(form.windowMinutes, 5),

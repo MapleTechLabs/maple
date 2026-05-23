@@ -10,6 +10,7 @@ import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { CheckIcon, EyeIcon, FireIcon, LoaderIcon, SquareTerminalIcon } from "@/components/icons"
 import { computeBreachStats, formatBreachDuration, type BreachStats } from "@/lib/alerts/breach-stats"
 import {
+	formThresholdToDomain,
 	formatSignalValue,
 	signalLabels,
 	type RuleFormState,
@@ -43,10 +44,13 @@ export function RuleLiveChartHero({
 	testing,
 	previewResult,
 }: RuleLiveChartHeroProps) {
-	const threshold = Number(form.threshold)
+	// The preview plots observed signal data in domain units (error_rate as a
+	// 0–1 ratio), so the threshold line must be converted from the form's percent
+	// input to the same domain units to line up with the data.
+	const threshold = formThresholdToDomain(form.signalType, form.threshold)
 	const thresholdUpper =
 		form.thresholdUpper.trim().length > 0 && Number.isFinite(Number(form.thresholdUpper))
-			? Number(form.thresholdUpper)
+			? formThresholdToDomain(form.signalType, form.thresholdUpper)
 			: null
 
 	const stats = useMemo(

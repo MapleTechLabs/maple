@@ -49,16 +49,17 @@ export function formatLatency(ms: number): string {
 }
 
 /**
- * Format an error rate percentage.
+ * Format an error rate (0–1 ratio) as a percentage string.
  */
 export function formatErrorRate(rate: number): string {
-	if (rate < 0.01) {
+	const pct = rate * 100
+	if (pct < 0.01) {
 		return "0%"
 	}
-	if (rate < 1) {
-		return `${rate.toFixed(2)}%`
+	if (pct < 1) {
+		return `${pct.toFixed(2)}%`
 	}
-	return `${rate.toFixed(1)}%`
+	return `${pct.toFixed(1)}%`
 }
 
 /**

@@ -161,6 +161,9 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 
 export function SignalAndThresholdSection({ form, onChange }: SignalAndThresholdSectionProps) {
 	const rangeMode = isRangeComparator(form.comparator)
+	// error_rate thresholds are entered as a percent (the form↔domain helpers in
+	// form-utils convert to/from the stored 0–1 ratio).
+	const isErrorRate = form.signalType === "error_rate"
 	const [advancedOpen, setAdvancedOpen] = useState(false)
 
 	const kind = signalTypeToKind(form.signalType)
@@ -236,6 +239,7 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 					<div className="min-w-0 space-y-1.5">
 						<Label htmlFor="rule-threshold" className="text-xs">
 							{rangeMode ? "Lower" : "Threshold"}
+							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
 						</Label>
 						<Input
 							id="rule-threshold"
@@ -256,6 +260,7 @@ export function SignalAndThresholdSection({ form, onChange }: SignalAndThreshold
 							)}
 						>
 							Upper
+							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
 						</Label>
 						<Input
 							id="rule-threshold-upper"

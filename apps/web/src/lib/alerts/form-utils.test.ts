@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { buildRuleRequest, defaultRuleForm, flattenAlertChartData, signalToQueryParams } from "./form-utils"
+import {
+	buildRuleRequest,
+	defaultRuleForm,
+	domainThresholdToForm,
+	flattenAlertChartData,
+	formThresholdToDomain,
+	signalToQueryParams,
+} from "./form-utils"
 
 const makePoint = (bucket: string, series: Record<string, number>) => ({ bucket, series })
 
@@ -80,6 +87,44 @@ describe("rule notes", () => {
 	it("sends null when the note is blank or whitespace-only", () => {
 		expect(buildRuleRequest({ ...defaultRuleForm(), name: "A", notes: "" }).notes).toBeNull()
 		expect(buildRuleRequest({ ...defaultRuleForm(), name: "A", notes: "   " }).notes).toBeNull()
+	})
+})
+
+describe("threshold unit conversion", () => {
+	it("converts error_rate thresholds between percent (form) and ratio (domain)", () => {
+		// User enters 5 (%), domain stores 0.05 (ratio) — the unit the query
+		// engine emits and AlertsService compares against.
+		expect(formThresholdToDomain("error_rate", "5")).toBe(0.05)
+		expect(formThresholdToDomain("error_rate", "50")).toBe(0.5)
+		expect(domainThresholdToForm("error_rate", 0.05)).toBe("5")
+		expect(domainThresholdToForm("error_rate", 0.5)).toBe("50")
+	})
+
+	it("passes non-error_rate thresholds through unchanged", () => {
+		expect(formThresholdToDomain("p95_latency", "500")).toBe(500)
+		expect(domainThresholdToForm("p95_latency", 500)).toBe("500")
+		expect(formThresholdToDomain("throughput", "1000")).toBe(1000)
+	})
+
+	it("stores error_rate threshold as a ratio on the upsert request", () => {
+		// The default form threshold "5" must round-trip to the 0.05 ratio the
+		// MCP tool also uses — so a default error-rate alert can actually fire.
+		const request = buildRuleRequest({
+			...defaultRuleForm(),
+			name: "Error rate",
+			signalType: "error_rate",
+		})
+		expect(request.threshold).toBe(0.05)
+	})
+
+	it("keeps latency thresholds in their native units on the upsert request", () => {
+		const request = buildRuleRequest({
+			...defaultRuleForm(),
+			name: "P95",
+			signalType: "p95_latency",
+			threshold: "500",
+		})
+		expect(request.threshold).toBe(500)
 	})
 })
 
