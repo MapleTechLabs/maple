@@ -46,7 +46,7 @@ export interface D1ConnectionClient {
 }
 
 const makeClient = (token: D1DatabaseToken): D1ConnectionClient => {
-	const env = WorkerEnvironment.asEffect()
+	const env = WorkerEnvironment
 	const d1 = env.pipe(Effect.map((e) => (e as Record<string, runtime.D1Database>)[token.LogicalId]))
 
 	return {

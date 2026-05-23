@@ -66,7 +66,7 @@ export interface KVNamespaceClient<Key extends string = string> {
 }
 
 const makeClient = (token: KVNamespaceToken): KVNamespaceClient => {
-	const env = WorkerEnvironment.asEffect()
+	const env = WorkerEnvironment
 	const raw = env.pipe(Effect.map((e) => (e as Record<string, runtime.KVNamespace>)[token.LogicalId]))
 	const tryPromise = <T>(fn: () => Promise<T>): Effect.Effect<T, KVNamespaceError> =>
 		Effect.tryPromise({

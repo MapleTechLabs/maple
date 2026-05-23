@@ -92,7 +92,7 @@ export interface R2BucketClient {
 }
 
 const makeClient = (token: R2BucketToken): R2BucketClient => {
-	const env = WorkerEnvironment.asEffect()
+	const env = WorkerEnvironment
 	const raw = env.pipe(Effect.map((e) => (e as Record<string, runtime.R2Bucket>)[token.LogicalId]))
 
 	const tryPromise = <T>(fn: () => Promise<T>): Effect.Effect<T, R2Error> =>

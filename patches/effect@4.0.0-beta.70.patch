@@ -1,5 +1,8 @@
+diff --git a/node_modules/effect/.bun-tag-c229b3c97d76a6b9 b/.bun-tag-c229b3c97d76a6b9
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/unstable/ai/McpServer.d.ts b/dist/unstable/ai/McpServer.d.ts
-index 52bba6ee3cae21f09e774fc5ef27c0ee4f169686..111e92a4eb74ae1906b28038d18cc20f1ed9433a 100644
+index 54d704a04d931c25bae1ca7f6c54877bae040317..0e5f97a8370ab0ce76a6a8e3d3495bbf29af0c7e 100644
 --- a/dist/unstable/ai/McpServer.d.ts
 +++ b/dist/unstable/ai/McpServer.d.ts
 @@ -10,7 +10,7 @@ import type * as RpcGroup from "../rpc/RpcGroup.ts";
@@ -11,15 +14,15 @@ index 52bba6ee3cae21f09e774fc5ef27c0ee4f169686..111e92a4eb74ae1906b28038d18cc20f
  import * as Tool from "./Tool.ts";
  import type * as Toolkit from "./Toolkit.ts";
  declare const McpServer_base: Context.ServiceClass<McpServer, "effect/ai/McpServer", {
-@@ -130,6 +130,7 @@ export declare const run: (options: {
+@@ -150,6 +150,7 @@ export declare const run: (options: {
      readonly name: string;
      readonly version: string;
      readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
 +    readonly clientSessions?: Map<string, typeof Initialize.payloadSchema.Type> | undefined;
  }) => Effect.Effect<never, never, McpServer | RpcServer.Protocol>;
  /**
-  * @since 4.0.0
-@@ -139,6 +140,7 @@ export declare const layer: (options: {
+  * Creates a layer that starts an MCP server over an existing
+@@ -163,6 +164,7 @@ export declare const layer: (options: {
      readonly name: string;
      readonly version: string;
      readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
@@ -27,7 +30,7 @@ index 52bba6ee3cae21f09e774fc5ef27c0ee4f169686..111e92a4eb74ae1906b28038d18cc20f
  }) => Layer.Layer<McpServer | McpServerClient, never, RpcServer.Protocol>;
  /**
   * Run the McpServer, using stdio for input and output.
-@@ -201,6 +203,7 @@ export declare const layerStdio: (options: {
+@@ -226,6 +228,7 @@ export declare const layerStdio: (options: {
      readonly name: string;
      readonly version: string;
      readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
@@ -35,7 +38,7 @@ index 52bba6ee3cae21f09e774fc5ef27c0ee4f169686..111e92a4eb74ae1906b28038d18cc20f
  }) => Layer.Layer<McpServer | McpServerClient, never, Stdio>;
  /**
   * Run the `McpServer`, registering a router with a `HttpRouter`
-@@ -213,6 +216,7 @@ export declare const layerHttp: (options: {
+@@ -238,6 +241,7 @@ export declare const layerHttp: (options: {
      readonly version: string;
      readonly path: HttpRouter.PathInput;
      readonly extensions?: Record<`${string}/${string}`, unknown> | undefined;
@@ -44,10 +47,10 @@ index 52bba6ee3cae21f09e774fc5ef27c0ee4f169686..111e92a4eb74ae1906b28038d18cc20f
  /**
   * Register a `Toolkit` with the `McpServer`.
 diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
-index 4b6de094df40ca585ebb848c3a02a24c11c76800..0f9a6d2b8f6b8bd573a441b249f12cc18b0c0317 100644
+index 86e26dd5d38a4a5c09fd321990212f6ee025d422..243ada155a1c96410e251e3a733a820cb5729993 100644
 --- a/dist/unstable/ai/McpServer.js
 +++ b/dist/unstable/ai/McpServer.js
-@@ -191,7 +191,7 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
+@@ -234,7 +234,7 @@ export const run = /*#__PURE__*/Effect.fnUntraced(function* (options) {
    const protocol = yield* RpcServer.Protocol;
    const server = yield* McpServer;
    const isHttp = Option.isSome(yield* Effect.serviceOption(HttpRouter.HttpRouter));

@@ -54,10 +54,10 @@ export class WorkflowStep extends Context.Service<
 // ---------------------------------------------------------------------------
 
 export const task = <T>(name: string, effect: Effect.Effect<T>): Effect.Effect<T, never, WorkflowStep> =>
-	WorkflowStep.asEffect().pipe(Effect.flatMap((step) => step.do(name, effect)))
+	WorkflowStep.pipe(Effect.flatMap((step) => step.do(name, effect)))
 
 export const sleep = (name: string, duration: string | number): Effect.Effect<void, never, WorkflowStep> =>
-	WorkflowStep.asEffect().pipe(
+	WorkflowStep.pipe(
 		Effect.flatMap((step) => step.sleep(name, duration)),
 		Effect.orDie,
 	)
@@ -66,7 +66,7 @@ export const sleepUntil = (
 	name: string,
 	timestamp: Date | number,
 ): Effect.Effect<void, never, WorkflowStep> =>
-	WorkflowStep.asEffect().pipe(
+	WorkflowStep.pipe(
 		Effect.flatMap((step) => step.sleepUntil(name, timestamp)),
 		Effect.orDie,
 	)
