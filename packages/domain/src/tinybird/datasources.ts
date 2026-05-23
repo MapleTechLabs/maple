@@ -1191,8 +1191,8 @@ export type LogsAggregatesHourlyRow = InferRow<typeof logsAggregatesHourly>
  * `TraceIds` carries the OTel trace ids observed during the session — the
  * correlation key that lets the trace detail view link to a replay and back.
  *
- * TTL is 30 days (shorter than traces/logs at 90d) — replays are large and
- * lose value faster; keep in lockstep with `sessionReplayEvents`' TTL.
+ * TTL is 30 days (matches traces/logs) — replays are large and lose value
+ * fast; keep in lockstep with `sessionReplayEvents`' TTL.
  */
 export const sessionReplays = defineDatasource("session_replays", {
 	description:
