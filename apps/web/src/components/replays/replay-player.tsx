@@ -17,6 +17,7 @@ import {
 	MinimizeIcon,
 } from "@/components/icons"
 import { formatClock, hostFromUrl, MARKER_STYLES } from "./replay-format"
+import { useReplayKeyboardShortcuts } from "@/hooks/use-replay-keyboard-shortcuts"
 
 const SPEEDS = [0.5, 1, 2, 4, 8] as const
 
@@ -34,6 +35,9 @@ function prettyUrl(url: string | undefined): string {
  */
 export function ReplaySurface({ url }: { url?: string }) {
 	const { status, error, figureRef, surfaceRef, mountRef, isFullscreen } = useReplayPlayer()
+
+	// Page-wide Space/←/→ transport — Space to play/pause, arrows to seek ±5s.
+	useReplayKeyboardShortcuts()
 
 	return (
 		<figure
@@ -116,6 +120,8 @@ function ReplayControls() {
 				type="button"
 				onClick={togglePlay}
 				aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+				aria-keyshortcuts="Space"
+				title={`${finished ? "Replay" : isPlaying ? "Pause" : "Play"} (Space)`}
 				className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
 			>
 				{finished ? (

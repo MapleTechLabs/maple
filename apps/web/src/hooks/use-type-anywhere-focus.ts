@@ -1,17 +1,5 @@
 import { useEffect, type RefObject } from "react"
-
-const EDITABLE_TAGS = new Set(["INPUT", "TEXTAREA", "SELECT"])
-
-function isEditableTarget(target: EventTarget | null): boolean {
-	if (!(target instanceof HTMLElement)) return false
-	if (EDITABLE_TAGS.has(target.tagName)) return true
-	if (target.isContentEditable) return true
-	return false
-}
-
-function isDialogOpen(): boolean {
-	return document.querySelector('[role="dialog"][data-state="open"]') !== null
-}
+import { isDialogOpen, isEditableTarget } from "@/lib/keyboard"
 
 function insertCharIntoTextarea(textarea: HTMLTextAreaElement, char: string): void {
 	const start = textarea.selectionStart ?? textarea.value.length

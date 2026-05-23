@@ -19,7 +19,7 @@ const hasTimestamp = (event: unknown): event is { timestamp: number } =>
 	typeof event === "object" &&
 	event !== null &&
 	"timestamp" in event &&
-	typeof (event as { timestamp: unknown }).timestamp === "number"
+	typeof event.timestamp === "number"
 
 const timestampOf = (event: unknown): number => (hasTimestamp(event) ? event.timestamp : 0)
 
