@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, KVNamespace, R2Bucket, Worker } from "alchemy/cloudflare"
+import { D1Database, KVNamespace, Worker } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveD1Name, resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -40,22 +40,6 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		adopt: true,
 	})
 
-	// Session-replay rrweb event blobs. 30-day lifecycle matches the
-	// session_replays / session_replay_chunks Tinybird TTL (see datasources.ts).
-	const replaysBucketName = resolveWorkerName("replays", stage)
-	const replaysBucket = await R2Bucket("MAPLE_REPLAYS", {
-		name: replaysBucketName,
-		adopt: true,
-		lifecycle: [
-			{
-				id: "expire-replays-30d",
-				conditions: { prefix: "" },
-				enabled: true,
-				deleteObjectsTransition: { condition: { maxAge: 60 * 60 * 24 * 30, type: "Age" } },
-			},
-		],
-	})
-
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -68,14 +52,6 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		bindings: {
 			MAPLE_DB: mapleDb,
 			MCP_SESSIONS: mcpSessions,
-			MAPLE_REPLAYS: replaysBucket,
-			// S3-compatible R2 credentials for presigning session-replay chunk
-			// GET URLs (aws4fetch). Supplied at deploy time; the same values are
-			// set on the Rust ingest service so it can PUT blobs.
-			R2_BUCKET: replaysBucketName,
-			...optionalPlain("R2_ENDPOINT"),
-			...optionalSecret("R2_ACCESS_KEY_ID"),
-			...optionalSecret("R2_SECRET_ACCESS_KEY"),
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			...optionalPlain("CLICKHOUSE_URL"),

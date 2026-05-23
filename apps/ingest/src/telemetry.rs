@@ -37,8 +37,8 @@ pub enum TelemetrySignal {
     Traces,
     Logs,
     Metrics,
-    /// Session-replay metadata + chunk-index rows (NDJSON written directly by
-    /// the ingest gateway, not derived from OTLP). Event blobs live in R2.
+    /// Session-replay metadata + rrweb event rows (NDJSON written directly by
+    /// the ingest gateway, not derived from OTLP). Events land in ClickHouse.
     SessionReplays,
 }
 

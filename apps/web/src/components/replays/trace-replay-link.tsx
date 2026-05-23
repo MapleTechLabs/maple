@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getReplaysForTraceResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { EyeIcon } from "@/components/icons"
 
 /**
@@ -9,7 +10,10 @@ import { EyeIcon } from "@/components/icons"
  * be dropped into any trace header unconditionally.
  */
 export function TraceReplayLink({ traceId }: { traceId: string }) {
+	const sessionReplaysEnabled = useSessionReplaysEnabled()
 	const result = useAtomValue(getReplaysForTraceResultAtom({ data: { traceId } }))
+
+	if (!sessionReplaysEnabled) return null
 
 	return Result.builder(result)
 		.onSuccess((data) => {

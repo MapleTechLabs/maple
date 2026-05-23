@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
@@ -6,6 +6,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { SessionsTable, type SessionRow } from "@/components/replays/sessions-table"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { listReplaysResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -31,6 +32,12 @@ export const Route = effectRoute(createFileRoute("/replays/"))({
 })
 
 function ReplaysPage() {
+	const sessionReplaysEnabled = useSessionReplaysEnabled()
+	if (!sessionReplaysEnabled) return <Navigate to="/" replace />
+	return <ReplaysPageContent />
+}
+
+function ReplaysPageContent() {
 	const search = Route.useSearch()
 	const { startTime, endTime } = useEffectiveTimeRange(
 		search.startTime,

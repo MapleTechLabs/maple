@@ -101,101 +101,6 @@ struct AppConfig {
     autumn_secret_key: Option<String>,
     autumn_api_url: String,
     autumn_flush_interval_secs: u64,
-    /// R2 (S3-compatible) config for session-replay event blobs. None when the
-    /// R2_* env vars are unset — replay blob ingest then returns 503.
-    r2: Option<R2Config>,
-}
-
-#[derive(Clone)]
-struct R2Config {
-    endpoint: String,
-    bucket: String,
-    access_key_id: String,
-    secret_access_key: String,
-}
-
-impl R2Config {
-    /// Present only when all three credential vars are set. Bucket defaults to
-    /// `maple-replays` to match the alchemy resource + the API service.
-    fn from_env() -> Option<Self> {
-        let endpoint = std::env::var("R2_ENDPOINT")
-            .ok()
-            .map(|v| v.trim().trim_end_matches('/').to_string())
-            .filter(|v| !v.is_empty())?;
-        let access_key_id = std::env::var("R2_ACCESS_KEY_ID")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())?;
-        let secret_access_key = std::env::var("R2_SECRET_ACCESS_KEY")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())?;
-        let bucket = std::env::var("R2_BUCKET")
-            .ok()
-            .map(|v| v.trim().to_string())
-            .filter(|v| !v.is_empty())
-            .unwrap_or_else(|| "maple-replays".to_string());
-        Some(Self {
-            endpoint,
-            bucket,
-            access_key_id,
-            secret_access_key,
-        })
-    }
-}
-
-/// Uploads session-replay event blobs to R2 via the S3-compatible API. Signs
-/// each PUT with rusty-s3 (region "auto", path-style) and sends bytes with the
-/// shared reqwest client.
-#[derive(Clone)]
-struct R2Uploader {
-    bucket: Arc<rusty_s3::Bucket>,
-    credentials: Arc<rusty_s3::Credentials>,
-    http: Client,
-}
-
-impl R2Uploader {
-    fn new(cfg: &R2Config, http: Client) -> Result<Self, String> {
-        let endpoint = url::Url::parse(&cfg.endpoint)
-            .map_err(|e| format!("invalid R2_ENDPOINT: {e}"))?;
-        let bucket = rusty_s3::Bucket::new(
-            endpoint,
-            rusty_s3::UrlStyle::Path,
-            cfg.bucket.clone(),
-            "auto".to_string(),
-        )
-        .map_err(|e| format!("invalid R2 bucket config: {e}"))?;
-        Ok(Self {
-            bucket: Arc::new(bucket),
-            credentials: Arc::new(rusty_s3::Credentials::new(
-                cfg.access_key_id.clone(),
-                cfg.secret_access_key.clone(),
-            )),
-            http,
-        })
-    }
-
-    async fn put(&self, key: &str, body: Bytes) -> Result<(), String> {
-        use rusty_s3::S3Action;
-        let action = self
-            .bucket
-            .put_object(Some(&self.credentials), key);
-        let url = action.sign(Duration::from_secs(60));
-        let response = self
-            .http
-            .put(url)
-            .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| format!("R2 PUT request failed: {e}"))?;
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(format!("R2 PUT returned {status}: {text}"));
-        }
-        Ok(())
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -453,7 +358,6 @@ impl AppConfig {
             autumn_secret_key,
             autumn_api_url,
             autumn_flush_interval_secs,
-            r2: R2Config::from_env(),
         })
     }
 }
@@ -624,7 +528,6 @@ struct AppState {
     config: AppConfig,
     http_client: Client,
     telemetry_pipeline: Option<TelemetryPipeline>,
-    r2_uploader: Option<R2Uploader>,
     resolver: IngestKeyResolver,
     org_inflight_limiter: OrgInFlightLimiter,
     sampling_resolver: SamplingPolicyResolver,
@@ -1053,17 +956,6 @@ async fn main() {
         None
     };
 
-    let r2_uploader = match config.r2.as_ref() {
-        Some(r2_config) => match R2Uploader::new(r2_config, http_client.clone()) {
-            Ok(uploader) => Some(uploader),
-            Err(error) => {
-                eprintln!("R2 uploader init error: {error}");
-                std::process::exit(1);
-            }
-        },
-        None => None,
-    };
-
     // Cloudflare D1 REST backend — the API writes ingest-key rows to D1, so
     // ingest reads them from the same place. We run a probe query before
     // accepting traffic; if anything is wrong (auth, schema, network) the
@@ -1123,7 +1015,6 @@ async fn main() {
             cache: cloudflare_connector_cache,
         },
         telemetry_pipeline,
-        r2_uploader,
         http_client,
         config: config.clone(),
         autumn_tracker,
@@ -1489,8 +1380,8 @@ fn replay_header(headers: &HeaderMap, name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Object-key-safe session id: bounded length, alphanumeric + `-`/`_` only, so
-/// a malicious value can't escape the `{org_id}/{session_id}/` R2 prefix.
+/// Storage-key-safe session id: bounded length, alphanumeric + `-`/`_` only, so
+/// a malicious value can't poison the `{org_id}/{session_id}` keying in ClickHouse.
 fn is_safe_replay_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
