@@ -12,13 +12,21 @@
 // `normalizeEvents` repairs the stream so those legacy sessions stay playable.
 // ---------------------------------------------------------------------------
 
-function timestampOf(event: unknown): number {
-	return typeof event === "object" &&
-		event !== null &&
-		typeof (event as { timestamp?: unknown }).timestamp === "number"
-		? (event as { timestamp: number }).timestamp
-		: 0
-}
+import { Array as Arr, Order } from "effect"
+
+/** True when `event` is an object carrying a numeric `timestamp` — narrows without a cast. */
+const hasTimestamp = (event: unknown): event is { timestamp: number } =>
+	typeof event === "object" &&
+	event !== null &&
+	"timestamp" in event &&
+	typeof (event as { timestamp: unknown }).timestamp === "number"
+
+const timestampOf = (event: unknown): number => (hasTimestamp(event) ? event.timestamp : 0)
+
+/** Order events by timestamp; ties keep input order (Arr.sort is a stable native sort). */
+const byTimestamp = Order.mapInput(Order.Number, timestampOf)
+
+const isSameEvent = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * Stable-sort the concatenated event stream by timestamp and drop exact adjacent
@@ -26,16 +34,5 @@ function timestampOf(event: unknown): number {
  * how rrweb recorded them; distinct events that merely share a timestamp survive.
  */
 export function normalizeEvents(events: ReadonlyArray<unknown>): unknown[] {
-	const sorted = events
-		.map((event, index) => ({ event, index, ts: timestampOf(event) }))
-		.sort((a, b) => a.ts - b.ts || a.index - b.index)
-	const out: unknown[] = []
-	let prev: string | undefined
-	for (const { event } of sorted) {
-		const key = JSON.stringify(event)
-		if (key === prev) continue
-		prev = key
-		out.push(event)
-	}
-	return out
+	return Arr.dedupeAdjacentWith(Arr.sort(events, byTimestamp), isSameEvent)
 }
