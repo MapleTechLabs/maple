@@ -1,14 +1,9 @@
 import { randomUUID } from "node:crypto"
 import {
-	githubCommits,
-	githubInstallations,
-	githubRepositories,
-	githubUnresolvedShas,
 	type GithubCommitInsert,
 	type GithubInstallationInsert,
 	type GithubInstallationRow,
 	type GithubRepositoryInsert,
-	type GithubRepositoryRow,
 } from "@maple/db"
 import {
 	GithubPersistenceError,
@@ -16,19 +11,15 @@ import {
 	GithubValidationError,
 	type OrgId,
 } from "@maple/domain/http"
-import { and, eq, inArray, sql } from "drizzle-orm"
-import { Context, Effect, Exit, Layer } from "effect"
-import { Database, type DatabaseClient } from "./DatabaseLive"
+import { Clock, Context, Effect, Exit, Layer } from "effect"
 import { GithubAppJwtService } from "./GithubAppJwtService"
+import { GithubCommitRepo } from "./GithubCommitRepo"
 import { GithubInstallationClient, type GithubCommit } from "./GithubInstallationClient"
+import { GithubInstallationRepo } from "./GithubInstallationRepo"
+import { GithubRepositoryRepo } from "./GithubRepositoryRepo"
 
 const RESOLVE_MAX_ATTEMPTS = 3
 const SHA_REGEX = /^[0-9a-f]{7,40}$/i
-
-const toPersistenceError = (error: unknown) =>
-	new GithubPersistenceError({
-		message: error instanceof Error ? error.message : "GitHub sync database error",
-	})
 
 const shortSha = (sha: string) => sha.slice(0, 7)
 
@@ -166,7 +157,13 @@ export interface GithubSyncServiceShape {
 		readonly orgId: string
 		readonly installationId: number
 	}) => Effect.Effect<
-		{ readonly repositoryCount: number },
+		{
+			readonly repositoryCount: number
+			// The local installation row reconcile resolved/upserted. `null` when
+			// metadata fetch failed (likely suspended/revoked) so callers can skip
+			// downstream work that needs an active installation.
+			readonly installation: GithubInstallationRow | null
+		},
 		GithubPersistenceError | GithubUpstreamError | GithubValidationError
 	>
 }
@@ -175,95 +172,50 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 	"GithubSyncService",
 	{
 		make: Effect.gen(function* () {
-			const database = yield* Database
 			const client = yield* GithubInstallationClient
-			const jwtService = yield* GithubAppJwtService
-
-			const dbExecute = <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-				database.execute(fn).pipe(Effect.mapError(toPersistenceError))
-
-			const loadRepoForOrg = (orgId: string, repoId: string) =>
-				dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(and(eq(githubRepositories.orgId, orgId), eq(githubRepositories.id, repoId)))
-						.limit(1),
-				).pipe(Effect.map((rows) => (rows[0] ?? null) as GithubRepositoryRow | null))
-
-			const loadInstallation = (orgId: string, installationDbId: string) =>
-				dbExecute((db) =>
-					db
-						.select()
-						.from(githubInstallations)
-						.where(
-							and(
-								eq(githubInstallations.orgId, orgId),
-								eq(githubInstallations.id, installationDbId),
-							),
-						)
-						.limit(1),
-				).pipe(Effect.map((rows) => (rows[0] ?? null) as GithubInstallationRow | null))
+			const installationRepo = yield* GithubInstallationRepo
+			const repositoryRepo = yield* GithubRepositoryRepo
+			const commitRepo = yield* GithubCommitRepo
 
 			// Upserts a batch of commits and clears any tombstones for the SHAs
 			// we just wrote. Pass `branches` to record which branch the commits
 			// appear on (push webhook); omit for paths that don't know.
-			const insertCommits = (
-				orgId: string,
+			const insertCommits = Effect.fn("GithubSyncService.insertCommits")(function* (
+				orgId: OrgId,
 				repoId: string,
 				commits: ReadonlyArray<GithubCommit>,
 				branches: ReadonlyArray<string> = [],
-			) =>
-				Effect.gen(function* () {
-					if (commits.length === 0) return 0
-					const syncedAt = Date.now()
-					for (const commit of commits) {
-						const insert = mapCommitToInsert(orgId, repoId, commit, branches, syncedAt)
-						const updateSet: Partial<GithubCommitInsert> = {
-							message: insert.message,
-							authorLogin: insert.authorLogin,
-							authorName: insert.authorName,
-							authorEmail: insert.authorEmail,
-							authorAvatarUrl: insert.authorAvatarUrl,
-							committerLogin: insert.committerLogin,
-							committerName: insert.committerName,
-							committerEmail: insert.committerEmail,
-							committerAvatarUrl: insert.committerAvatarUrl,
-							authoredAt: insert.authoredAt,
-							committedAt: insert.committedAt,
-							htmlUrl: insert.htmlUrl,
-							syncedAt,
-						}
-						// Only refresh branchesJson when the caller knew which branch
-						// these commits live on — otherwise preserve whatever's there.
-						if (branches.length > 0) updateSet.branchesJson = insert.branchesJson
-						yield* dbExecute((db) =>
-							db.insert(githubCommits).values(insert).onConflictDoUpdate({
-								target: [githubCommits.orgId, githubCommits.sha],
-								set: updateSet,
-							}),
-						)
-					}
-					yield* dbExecute((db) =>
-						db
-							.delete(githubUnresolvedShas)
-							.where(
-								and(
-									eq(githubUnresolvedShas.orgId, orgId),
-									inArray(githubUnresolvedShas.sha, commits.map((c) => c.sha)),
-								),
-							),
-					)
-					return commits.length
+			) {
+				if (commits.length === 0) return 0
+				const syncedAt = yield* Clock.currentTimeMillis
+				const refreshBranches = branches.length > 0
+				yield* Effect.forEach(commits, (commit) => {
+					const insert = mapCommitToInsert(orgId, repoId, commit, branches, syncedAt)
+					return commitRepo.upsertCommit(insert, { refreshBranches })
 				})
-
-			const touchRepoSynced = (repoId: string, syncedAt: number) =>
-				dbExecute((db) =>
-					db
-						.update(githubRepositories)
-						.set({ lastSyncedAt: syncedAt, updatedAt: syncedAt })
-						.where(eq(githubRepositories.id, repoId)),
+				yield* commitRepo.deleteUnresolvedShasByOrgAndShas(
+					orgId,
+					commits.map((c) => c.sha),
 				)
+				return commits.length
+			})
+
+			const upsertTombstone = Effect.fn("GithubSyncService.upsertTombstone")(function* (
+				orgId: OrgId,
+				sha: string,
+				permanent: boolean,
+				attempt = 1,
+			) {
+				const now = yield* Clock.currentTimeMillis
+				yield* commitRepo.upsertUnresolvedSha({
+					id: randomUUID(),
+					orgId,
+					sha,
+					permanent,
+					attempt,
+					now,
+				})
+			})
 
 			const runBackfill = Effect.fn("GithubSyncService.runBackfill")(function* (params: {
 				readonly orgId: string
@@ -271,11 +223,12 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 				readonly sinceUnixMs: number
 				readonly cursor: string | null
 			}) {
-				const repo = yield* loadRepoForOrg(params.orgId, params.repoId)
+				const orgId = params.orgId as OrgId
+				const repo = yield* repositoryRepo.findByOrgAndDbId(orgId, params.repoId)
 				if (!repo) {
 					return { orgId: params.orgId, repoId: params.repoId, cursor: null, done: true }
 				}
-				const installation = yield* loadInstallation(params.orgId, repo.installationId)
+				const installation = yield* installationRepo.findByOrgAndDbId(orgId, repo.installationId)
 				if (!installation) {
 					return { orgId: params.orgId, repoId: params.repoId, cursor: null, done: true }
 				}
@@ -283,12 +236,12 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					return { orgId: params.orgId, repoId: params.repoId, cursor: null, done: true }
 				}
 				if (!params.cursor) {
-					yield* dbExecute((db) =>
-						db
-							.update(githubRepositories)
-							.set({ backfillStatus: "running", backfillError: null, updatedAt: Date.now() })
-							.where(eq(githubRepositories.id, repo.id)),
-					)
+					const updatedAt = yield* Clock.currentTimeMillis
+					yield* repositoryRepo.updateById(repo.id, {
+						backfillStatus: "running",
+						backfillError: null,
+						updatedAt,
+					})
 				}
 				const since = new Date(params.sinceUnixMs).toISOString()
 				const page = yield* client.listCommitsPaginated(installation.installationId, {
@@ -298,20 +251,15 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					since,
 					cursor: params.cursor,
 				})
-				yield* insertCommits(params.orgId, repo.id, page.commits)
+				yield* insertCommits(orgId, repo.id, page.commits)
 				const done = page.nextCursor === null
-				const now = Date.now()
-				yield* dbExecute((db) =>
-					db
-						.update(githubRepositories)
-						.set({
-							lastSyncedAt: now,
-							lastFullBackfillAt: done ? now : repo.lastFullBackfillAt,
-							backfillStatus: done ? "complete" : "running",
-							updatedAt: now,
-						})
-						.where(eq(githubRepositories.id, repo.id)),
-				)
+				const now = yield* Clock.currentTimeMillis
+				yield* repositoryRepo.updateById(repo.id, {
+					lastSyncedAt: now,
+					lastFullBackfillAt: done ? now : repo.lastFullBackfillAt,
+					backfillStatus: done ? "complete" : "running",
+					updatedAt: now,
+				})
 				return {
 					orgId: params.orgId,
 					repoId: params.repoId,
@@ -332,20 +280,8 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 				readonly commits?: ReadonlyArray<WebhookPushCommit>
 				readonly commitShas?: ReadonlyArray<string>
 			}) {
-				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(
-							and(
-								eq(githubRepositories.orgId, params.orgId),
-								eq(githubRepositories.owner, params.owner),
-								eq(githubRepositories.name, params.name),
-							),
-						)
-						.limit(1),
-				)
-				const repo = (rows[0] ?? null) as GithubRepositoryRow | null
+				const orgId = params.orgId as OrgId
+				const repo = yield* repositoryRepo.findByOrgAndOwnerName(orgId, params.owner, params.name)
 				if (!repo || !repo.syncEnabled) return { written: 0 }
 
 				const branchName = params.ref.replace(/^refs\/heads\//, "")
@@ -368,12 +304,16 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					)
 				}
 				const written = yield* insertCommits(
-					params.orgId,
+					orgId,
 					repo.id,
 					commits,
 					branchName ? [branchName] : [],
 				)
-				yield* touchRepoSynced(repo.id, Date.now())
+				const syncedAt = yield* Clock.currentTimeMillis
+				yield* repositoryRepo.updateById(repo.id, {
+					lastSyncedAt: syncedAt,
+					updatedAt: syncedAt,
+				})
 				return { written }
 			})
 
@@ -382,33 +322,17 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					if (!SHA_REGEX.test(params.sha)) {
 						return { resolved: false }
 					}
-					const tombstoneRows = yield* dbExecute((db) =>
-						db
-							.select()
-							.from(githubUnresolvedShas)
-							.where(
-								and(
-									eq(githubUnresolvedShas.orgId, params.orgId),
-									eq(githubUnresolvedShas.sha, params.sha),
-								),
-							)
-							.limit(1),
-					)
-					const tombstone = tombstoneRows[0] ?? null
+					const orgId = params.orgId as OrgId
+					const tombstone = yield* commitRepo.findUnresolvedSha(orgId, params.sha)
 					if (tombstone?.permanent) return { resolved: false }
 
 					// Use GitHub's commit search API: one call per installation finds
 					// the SHA across every accessible repo, regardless of how many.
 					// (Beats iterating repos and calling getCommit per-repo.)
-					const installations = (yield* dbExecute((db) =>
-						db
-							.select()
-							.from(githubInstallations)
-							.where(eq(githubInstallations.orgId, params.orgId)),
-					)) as ReadonlyArray<GithubInstallationRow>
+					const installations = yield* installationRepo.listByOrg(orgId)
 
 					if (installations.length === 0) {
-						yield* upsertTombstone(params.orgId, params.sha, false)
+						yield* upsertTombstone(orgId, params.sha, false)
 						return { resolved: false }
 					}
 
@@ -421,19 +345,10 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 						if (!hit) continue
 						// Map the search result to a connected repo row in our DB. If
 						// the user has sync disabled for the repo, treat as unresolved.
-						const repoRows = (yield* dbExecute((db) =>
-							db
-								.select()
-								.from(githubRepositories)
-								.where(
-									and(
-										eq(githubRepositories.orgId, params.orgId),
-										eq(githubRepositories.githubRepoId, hit.repository.id),
-									),
-								)
-								.limit(1),
-						)) as ReadonlyArray<GithubRepositoryRow>
-						const repo = repoRows[0]
+						const repo = yield* repositoryRepo.findByOrgAndGithubRepoId(
+							orgId,
+							hit.repository.id,
+						)
 						if (!repo || !repo.syncEnabled) continue
 						// Search response includes everything getCommit would return,
 						// so we can upsert directly without a follow-up call.
@@ -444,90 +359,39 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 							author: hit.author,
 							committer: hit.committer,
 						}
-						yield* insertCommits(params.orgId, repo.id, [synthetic])
+						yield* insertCommits(orgId, repo.id, [synthetic])
 						return { resolved: true }
 					}
 
 					const attempt = (tombstone?.attemptCount ?? 0) + 1
-					yield* upsertTombstone(params.orgId, params.sha, attempt >= RESOLVE_MAX_ATTEMPTS, attempt)
+					yield* upsertTombstone(orgId, params.sha, attempt >= RESOLVE_MAX_ATTEMPTS, attempt)
 					return { resolved: false }
 				},
 			)
-
-			const upsertTombstone = (
-				orgId: string,
-				sha: string,
-				permanent: boolean,
-				attempt = 1,
-			) =>
-				Effect.gen(function* () {
-					const now = Date.now()
-					yield* dbExecute((db) =>
-						db
-							.insert(githubUnresolvedShas)
-							.values({
-								id: randomUUID(),
-								orgId,
-								sha,
-								attemptCount: attempt,
-								lastAttemptAt: now,
-								permanent,
-								createdAt: now,
-								updatedAt: now,
-							})
-							.onConflictDoUpdate({
-								target: [githubUnresolvedShas.orgId, githubUnresolvedShas.sha],
-								set: {
-									attemptCount: sql`${githubUnresolvedShas.attemptCount} + 1`,
-									lastAttemptAt: now,
-									permanent,
-									updatedAt: now,
-								},
-							}),
-					)
-				})
 
 			const runReconcile = Effect.fn("GithubSyncService.runReconcile")(function* (params: {
 				readonly orgId: string
 				readonly installationId: number
 			}) {
-				yield* jwtService.invalidateInstallationToken(params.installationId)
+				const orgId = params.orgId as OrgId
 				const metadataExit = yield* Effect.exit(
 					client.getInstallationMetadata(params.installationId),
 				)
 
 				if (Exit.isFailure(metadataExit)) {
 					// Likely suspended or revoked
-					yield* dbExecute((db) =>
-						db
-							.update(githubInstallations)
-							.set({ suspendedAt: Date.now(), updatedAt: Date.now() })
-							.where(
-								and(
-									eq(githubInstallations.orgId, params.orgId),
-									eq(githubInstallations.installationId, params.installationId),
-								),
-							),
-					)
-					return { repositoryCount: 0 }
+					const suspendedAt = yield* Clock.currentTimeMillis
+					yield* installationRepo.updateSuspended(orgId, params.installationId, suspendedAt)
+					return { repositoryCount: 0, installation: null }
 				}
 
 				const metadata = metadataExit.value
-				const now = Date.now()
+				const now = yield* Clock.currentTimeMillis
 
-				const installationRows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubInstallations)
-						.where(
-							and(
-								eq(githubInstallations.orgId, params.orgId),
-								eq(githubInstallations.installationId, params.installationId),
-							),
-						)
-						.limit(1),
+				let installation = yield* installationRepo.findByOrgAndInstallationId(
+					orgId,
+					params.installationId,
 				)
-				let installation = (installationRows[0] ?? null) as GithubInstallationRow | null
 
 				const installationUpdate: Partial<GithubInstallationInsert> = {
 					appSlug: metadata.app_slug,
@@ -544,37 +408,11 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 				}
 
 				if (installation) {
-					yield* dbExecute((db) =>
-						db
-							.update(githubInstallations)
-							.set(installationUpdate)
-							.where(eq(githubInstallations.id, installation!.id)),
-					)
+					yield* installationRepo.updateById(installation.id, installationUpdate)
 				} else {
-					const id = randomUUID()
-					yield* dbExecute((db) =>
-						db.insert(githubInstallations).values({
-							id,
-							orgId: params.orgId,
-							installationId: params.installationId,
-							appSlug: metadata.app_slug,
-							accountId: metadata.account.id,
-							accountLogin: metadata.account.login,
-							accountAvatarUrl: metadata.account.avatar_url ?? null,
-							accountType: metadata.account.type,
-							targetType: metadata.target_type,
-							repositorySelection: metadata.repository_selection,
-							permissionsJson: JSON.stringify(metadata.permissions ?? {}),
-							eventsJson: JSON.stringify(metadata.events ?? []),
-							suspendedAt: metadata.suspended_at ? Date.parse(metadata.suspended_at) : null,
-							installedByUserId: "system",
-							createdAt: now,
-							updatedAt: now,
-						} satisfies GithubInstallationInsert),
-					)
-					installation = {
-						id,
-						orgId: params.orgId,
+					const insertRow: GithubInstallationInsert = {
+						id: randomUUID(),
+						orgId,
 						installationId: params.installationId,
 						appSlug: metadata.app_slug,
 						accountId: metadata.account.id,
@@ -590,24 +428,30 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 						createdAt: now,
 						updatedAt: now,
 					}
+					yield* installationRepo.insert(insertRow)
+					// Re-fetch through the repo so the row goes through the same
+					// enum-decode pipeline as any other read — keeps the runtime
+					// invariant ("all returned rows have validated enums") intact.
+					installation = yield* installationRepo.findByOrgAndInstallationId(
+						orgId,
+						params.installationId,
+					)
+					if (!installation) {
+						return yield* Effect.fail(
+							new GithubPersistenceError({
+								code: "InstallationMissingAfterInsert",
+								message: `Failed to load installation ${params.installationId} after insert`,
+							}),
+						)
+					}
 				}
 
 				if (installation.suspendedAt) {
-					return { repositoryCount: 0 }
+					return { repositoryCount: 0, installation }
 				}
 
 				const repos = yield* client.listInstallationRepositories(params.installationId)
-				const existing = (yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(
-							and(
-								eq(githubRepositories.orgId, params.orgId),
-								eq(githubRepositories.installationId, installation!.id),
-							),
-						),
-				)) as ReadonlyArray<GithubRepositoryRow>
+				const existing = yield* repositoryRepo.listByOrgAndInstallation(orgId, installation.id)
 				const existingByGithubId = new Map(existing.map((r) => [r.githubRepoId, r]))
 				const seen = new Set<number>()
 
@@ -615,50 +459,42 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 					seen.add(repo.id)
 					const prev = existingByGithubId.get(repo.id)
 					if (prev) {
-						yield* dbExecute((db) =>
-							db
-								.update(githubRepositories)
-								.set({
-									owner: repo.owner.login,
-									name: repo.name,
-									defaultBranch: repo.default_branch,
-									private: repo.private,
-									htmlUrl: repo.html_url,
-									updatedAt: now,
-								})
-								.where(eq(githubRepositories.id, prev.id)),
-						)
+						yield* repositoryRepo.updateById(prev.id, {
+							owner: repo.owner.login,
+							name: repo.name,
+							defaultBranch: repo.default_branch,
+							private: repo.private,
+							htmlUrl: repo.html_url,
+							updatedAt: now,
+						})
 					} else {
-						yield* dbExecute((db) =>
-							db.insert(githubRepositories).values({
-								id: randomUUID(),
-								orgId: params.orgId,
-								installationId: installation!.id,
-								githubRepoId: repo.id,
-								owner: repo.owner.login,
-								name: repo.name,
-								defaultBranch: repo.default_branch,
-								private: repo.private,
-								htmlUrl: repo.html_url,
-								syncEnabled: true,
-								backfillStatus: "pending",
-								createdAt: now,
-								updatedAt: now,
-							} satisfies GithubRepositoryInsert),
-						)
+						const repoInsert: GithubRepositoryInsert = {
+							id: randomUUID(),
+							orgId,
+							installationId: installation.id,
+							githubRepoId: repo.id,
+							owner: repo.owner.login,
+							name: repo.name,
+							defaultBranch: repo.default_branch,
+							private: repo.private,
+							htmlUrl: repo.html_url,
+							syncEnabled: true,
+							backfillStatus: "pending",
+							createdAt: now,
+							updatedAt: now,
+						}
+						yield* repositoryRepo.insert(repoInsert)
 					}
 				}
 				// Mark removed repos as disabled — do NOT delete commit history
 				const removed = existing.filter((r) => !seen.has(r.githubRepoId))
 				for (const repo of removed) {
-					yield* dbExecute((db) =>
-						db
-							.update(githubRepositories)
-							.set({ syncEnabled: false, updatedAt: now })
-							.where(eq(githubRepositories.id, repo.id)),
-					)
+					yield* repositoryRepo.updateById(repo.id, {
+						syncEnabled: false,
+						updatedAt: now,
+					})
 				}
-				return { repositoryCount: repos.length }
+				return { repositoryCount: repos.length, installation }
 			})
 
 			return {
@@ -670,15 +506,18 @@ export class GithubSyncService extends Context.Service<GithubSyncService, Github
 		}),
 	},
 ) {
-	// `bareLayer` lets tests substitute the GithubInstallationClient dep. The
-	// production `layer` bundles the real client so app.ts only has to merge
-	// it once.
-	static readonly bareLayer = Layer.effect(this, this.make)
+	// `bareLayer` lets tests substitute the GithubInstallationClient dep. Repos
+	// are still provided here (they have no test-relevant behavior), so tests
+	// only need to wire the mock client + jwt service + a real Database.
+	static readonly bareLayer = Layer.effect(this, this.make).pipe(
+		Layer.provide(GithubInstallationRepo.layer),
+		Layer.provide(GithubRepositoryRepo.layer),
+		Layer.provide(GithubCommitRepo.layer),
+	)
 	static readonly layer = this.bareLayer.pipe(
 		Layer.provide(GithubInstallationClient.layer),
 		Layer.provide(GithubAppJwtService.layer),
 	)
-	static readonly Default = this.layer
 }
 
 export type { OrgId }

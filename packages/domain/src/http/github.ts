@@ -4,46 +4,128 @@ import { Authorization } from "./current-tenant"
 
 // --- Errors ---
 
+// `code` on each error class is a stable, machine-readable identifier for the
+// failure case. Required (not optional) so every throw site picks one
+// explicitly — defeats the "always-undefined" trap of optional discriminators.
+// The literal union doubles as inline documentation of the failure taxonomy:
+// adding a new throw site forces an exhaustive list update in code review,
+// and dashboards/alerts/traces filter on the stable code rather than parsing
+// drift-prone message text.
+
+export const GithubForbiddenErrorCode = Schema.Literals(["NotAdmin"])
+export type GithubForbiddenErrorCode = Schema.Schema.Type<typeof GithubForbiddenErrorCode>
+
 export class GithubForbiddenError extends Schema.TaggedErrorClass<GithubForbiddenError>()(
 	"@maple/http/errors/GithubForbiddenError",
 	{
+		code: GithubForbiddenErrorCode,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 403 },
 ) {}
 
+export const GithubValidationErrorCode = Schema.Literals([
+	// Required GitHub App env var missing (appId, appSlug, privateKeyPem, webhookSecret).
+	"MissingAppConfig",
+	// Configured GITHUB_APP_PRIVATE_KEY can't be loaded as a valid PEM —
+	// crypto.createPrivateKey / createSign threw. Operator needs to fix the env var.
+	"InvalidPrivateKey",
+	// OAuth install state token not found in DB (forged / stale / wrong-provider).
+	"StateNotRecognized",
+	// OAuth install state token past its TTL.
+	"StateExpired",
+	// `returnTo` URL parses to a different origin than the install request.
+	"ReturnToCrossOrigin",
+	// `x-hub-signature-256` header missing sha256= prefix or not valid hex.
+	"WebhookSignatureMalformed",
+	// HMAC key import from the configured webhook secret failed.
+	"WebhookSecretImportFailed",
+	// crypto.subtle.verify threw while comparing the signature.
+	"WebhookSignatureVerifyFailed",
+])
+export type GithubValidationErrorCode = Schema.Schema.Type<typeof GithubValidationErrorCode>
+
 export class GithubValidationError extends Schema.TaggedErrorClass<GithubValidationError>()(
 	"@maple/http/errors/GithubValidationError",
 	{
+		code: GithubValidationErrorCode,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 400 },
 ) {}
 
+export const GithubNotConnectedErrorCode = Schema.Literals([
+	// No installation row in our DB for this org+id.
+	"InstallationNotFound",
+	// No repository row in our DB for this org+id.
+	"RepositoryNotFound",
+])
+export type GithubNotConnectedErrorCode = Schema.Schema.Type<typeof GithubNotConnectedErrorCode>
+
 export class GithubNotConnectedError extends Schema.TaggedErrorClass<GithubNotConnectedError>()(
 	"@maple/http/errors/GithubNotConnectedError",
 	{
+		code: GithubNotConnectedErrorCode,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 409 },
 ) {}
 
+export const GithubUpstreamErrorCode = Schema.Literals([
+	// Network / fetch threw before getting a response from GitHub.
+	"RequestFailed",
+	// GitHub returned a non-2xx response.
+	"Non2xx",
+	// Response body couldn't be parsed as JSON.
+	"ResponseNotJson",
+	// JSON parsed but didn't match the expected schema.
+	"ResponseSchemaMismatch",
+	// Installation token response had an unparseable / non-finite expiry.
+	"TokenInvalidExpiry",
+])
+export type GithubUpstreamErrorCode = Schema.Schema.Type<typeof GithubUpstreamErrorCode>
+
 export class GithubUpstreamError extends Schema.TaggedErrorClass<GithubUpstreamError>()(
 	"@maple/http/errors/GithubUpstreamError",
 	{
+		code: GithubUpstreamErrorCode,
 		message: Schema.String,
 		status: Schema.optional(Schema.Number),
 	},
 	{ httpApiStatus: 502 },
 ) {}
 
+export const GithubPersistenceErrorCode = Schema.Literals([
+	// Generic underlying DB error (DatabaseError from drizzle).
+	"Database",
+	// commit row's `branches_json` failed JSON/schema decode.
+	"BranchesDecodeFailed",
+	// installation row's enum fields (accountType / repositorySelection) failed decode.
+	"InstallationRowDecodeFailed",
+	// repository row's enum field (backfillStatus) failed decode.
+	"RepositoryRowDecodeFailed",
+	// Re-fetch immediately after insert returned no row — DB consistency issue.
+	"InstallationMissingAfterInsert",
+])
+export type GithubPersistenceErrorCode = Schema.Schema.Type<typeof GithubPersistenceErrorCode>
+
 export class GithubPersistenceError extends Schema.TaggedErrorClass<GithubPersistenceError>()(
 	"@maple/http/errors/GithubPersistenceError",
 	{
+		code: GithubPersistenceErrorCode,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 503 },
 ) {}
+
+export const GithubSyncQueueEnqueueErrorCode = Schema.Literals([
+	// Cloudflare Queues rejected the publish (single or batch — `jobs.length`
+	// disambiguates).
+	"EnqueueFailed",
+])
+export type GithubSyncQueueEnqueueErrorCode = Schema.Schema.Type<
+	typeof GithubSyncQueueEnqueueErrorCode
+>
 
 // Raised when publishing to the GitHub sync queue fails. The underlying
 // Cloudflare Queues error rides in `cause` via Schema.Defect so the original
@@ -52,6 +134,7 @@ export class GithubPersistenceError extends Schema.TaggedErrorClass<GithubPersis
 export class GithubSyncQueueEnqueueError extends Schema.TaggedErrorClass<GithubSyncQueueEnqueueError>()(
 	"@maple/http/errors/GithubSyncQueueEnqueueError",
 	{
+		code: GithubSyncQueueEnqueueErrorCode,
 		message: Schema.String,
 		jobs: Schema.Array(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect),

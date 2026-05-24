@@ -16,7 +16,7 @@ type BatchLike = {
 	readonly messages: ReadonlyArray<MessageLike>
 }
 
-const dispatch = Effect.fn("dispatch")(function* (job: GithubSyncJob) {
+const dispatch = Effect.fn("GithubSyncConsumer.dispatch")(function* (job: GithubSyncJob) {
 	yield* Effect.annotateCurrentSpan({ "job.orgId": job.orgId, "job.tag": job._tag })
 	const sync = yield* GithubSyncService
 	const queue = yield* GithubSyncQueue
@@ -65,7 +65,7 @@ const dispatch = Effect.fn("dispatch")(function* (job: GithubSyncJob) {
 	)
 })
 
-const processMessage = Effect.fn("processMessage")(function* (message: MessageLike) {
+const processMessage = Effect.fn("GithubSyncConsumer.processMessage")(function* (message: MessageLike) {
 	yield* Effect.annotateCurrentSpan({ "message.id": message.id ?? "<unknown>" })
 
 	const decodedJob = yield* Effect.result(decodeGithubSyncJob(message.body))

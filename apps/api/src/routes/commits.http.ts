@@ -9,31 +9,22 @@ import {
 } from "@maple/domain/http"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { GithubCommitRepo } from "../services/GithubCommitRepo"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
-import { GithubRepoService } from "@/services/GithubRepoService"
-
-const parseBranches = (json: string): ReadonlyArray<string> => {
-	try {
-		const parsed = JSON.parse(json)
-		return Array.isArray(parsed) ? parsed.filter((v) => typeof v === "string") : []
-	} catch {
-		return []
-	}
-}
 
 export const HttpCommitsLive = HttpApiBuilder.group(MapleApi, "commits", (handlers) =>
 	Effect.gen(function* () {
 		const queue = yield* GithubSyncQueue
-		const githubRepo = yield* GithubRepoService
+		const commitRepo = yield* GithubCommitRepo
 
 		return handlers
 			.handle("commitsLookupBySha", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const commits = yield* githubRepo.findEnrichedCommitsByShas({
-						orgId: tenant.orgId,
-						shas: payload.shas,
-					})
+					const commits = yield* commitRepo.findEnrichedCommitsByShas(
+						tenant.orgId,
+						payload.shas,
+					)
 
 					const commitLookupMap = new Map(
 						commits.map((row) => [
@@ -59,7 +50,7 @@ export const HttpCommitsLive = HttpApiBuilder.group(MapleApi, "commits", (handle
 								}),
 								authoredAt: row.authoredAt,
 								committedAt: row.committedAt,
-								branches: parseBranches(row.branchesJson),
+								branches: row.branches,
 								prNumber: row.prNumber,
 							}),
 						]),

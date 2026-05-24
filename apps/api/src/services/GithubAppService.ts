@@ -1,14 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto"
-import {
-	githubCommits,
-	githubInstallations,
-	githubRepositories,
-	githubReleases,
-	githubUnresolvedShas,
-	oauthAuthStates,
-	type GithubInstallationRow,
-	type GithubRepositoryRow,
-} from "@maple/db"
+import { randomBytes } from "node:crypto"
 import {
 	GithubNotConnectedError,
 	GithubPersistenceError,
@@ -17,27 +7,41 @@ import {
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { and, eq, inArray, lt, sql } from "drizzle-orm"
-import { Context, Effect, Exit, Layer, Option } from "effect"
-import { Database, type DatabaseClient } from "./DatabaseLive"
+import { Clock, Context, Effect, Exit, Layer, Option } from "effect"
 import { Env } from "./Env"
 import {
 	githubIntegrationMissingEnv,
 	GithubAppJwtService,
 } from "./GithubAppJwtService"
+import { GithubCommitRepo } from "./GithubCommitRepo"
+import {
+	GithubInstallationRepo,
+	type DecodedGithubInstallationRow,
+} from "./GithubInstallationRepo"
+import { GithubOauthAuthStateRepo } from "./GithubOauthAuthStateRepo"
+import {
+	GithubRepositoryRepo,
+	type DecodedGithubRepositoryRow,
+} from "./GithubRepositoryRepo"
 
-const GITHUB_PROVIDER = "github"
 const STATE_TTL_MS = 10 * 60_000
 
-const toPersistenceError = (error: unknown) =>
-	new GithubPersistenceError({
-		message: error instanceof Error ? error.message : "GitHub integration database error",
-	})
-
 export interface GithubInstallationListItem {
-	readonly row: GithubInstallationRow
+	readonly row: DecodedGithubInstallationRow
 	readonly repositoryCount: number
 }
+
+// Github integration application service. Owns the multi-primitive workflows
+// that don't fit into a single repo/queue:
+//   - getStatus              — env config + installation count
+//   - startInstall           — generate state token, persist via oauth-state repo, build install URL
+//   - consumeState           — validate + delete state row, return install context
+//   - listInstallations      — installations + cross-repo count join
+//   - listRepositories       — repos + cross-repo commit-count join
+//   - disconnectInstallation — cascade delete across 3 repos + uninstall URL
+//
+// Pure repo/queue wrappers (setRepoSyncEnabled, findRepoForBackfill,
+// enqueueRepoBackfill) live at call sites — they don't earn the indirection.
 
 export interface GithubAppServiceShape {
 	readonly getStatus: (
@@ -73,15 +77,7 @@ export interface GithubAppServiceShape {
 		orgId: OrgId,
 		installationDbId: string,
 	) => Effect.Effect<
-		ReadonlyArray<GithubRepositoryRow & { readonly commitCount: number }>,
-		GithubNotConnectedError | GithubPersistenceError
-	>
-	readonly setRepoSyncEnabled: (params: {
-		readonly orgId: OrgId
-		readonly repositoryId: string
-		readonly enabled: boolean
-	}) => Effect.Effect<
-		{ readonly repositoryId: string; readonly syncEnabled: boolean },
+		ReadonlyArray<DecodedGithubRepositoryRow & { readonly commitCount: number }>,
 		GithubNotConnectedError | GithubPersistenceError
 	>
 	readonly disconnectInstallation: (params: {
@@ -91,47 +87,31 @@ export interface GithubAppServiceShape {
 		{ readonly disconnected: boolean; readonly uninstallUrl: string | null },
 		GithubNotConnectedError | GithubPersistenceError | GithubUpstreamError
 	>
-	readonly findRepoForBackfill: (
-		orgId: OrgId,
-		repositoryId: string,
-	) => Effect.Effect<
-		GithubRepositoryRow,
-		GithubNotConnectedError | GithubPersistenceError
-	>
 }
+
+const GITHUB_PROVIDER = "github"
 
 export class GithubAppService extends Context.Service<GithubAppService, GithubAppServiceShape>()(
 	"GithubAppService",
 	{
 		make: Effect.gen(function* () {
-			const database = yield* Database
 			const env = yield* Env
 			const jwtService = yield* GithubAppJwtService
-
-			const dbExecute = <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-				database.execute(fn).pipe(Effect.mapError(toPersistenceError))
+			const installationRepo = yield* GithubInstallationRepo
+			const repositoryRepo = yield* GithubRepositoryRepo
+			const commitRepo = yield* GithubCommitRepo
+			const oauthStateRepo = yield* GithubOauthAuthStateRepo
 
 			const getStatus = Effect.fn("GithubAppService.getStatus")(function* (orgId: OrgId) {
 				const missingEnv = githubIntegrationMissingEnv(env)
-				const installationsCount = yield* dbExecute((db) =>
-					db
-						.select({ count: sql<number>`count(*)` })
-						.from(githubInstallations)
-						.where(eq(githubInstallations.orgId, orgId)),
-				)
-				const count = Number(installationsCount[0]?.count ?? 0)
+				const installations = yield* installationRepo.countByOrg(orgId)
 				return {
 					configured: missingEnv.length === 0,
 					appSlug: Option.getOrNull(env.GITHUB_APP_SLUG),
 					missingEnv,
-					installations: count,
+					installations,
 				}
 			})
-
-			const purgeExpiredStates = (currentTime: number) =>
-				dbExecute((db) =>
-					db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, currentTime)),
-				)
 
 			const startInstall = Effect.fn("GithubAppService.startInstall")(function* (params: {
 				readonly orgId: OrgId
@@ -141,49 +121,42 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 			}) {
 				const config = yield* jwtService.resolveConfig
 				const state = randomBytes(24).toString("base64url")
-				const currentTime = Date.now()
-				yield* purgeExpiredStates(currentTime)
-				yield* dbExecute((db) =>
-					db.insert(oauthAuthStates).values({
-						state,
-						orgId: params.orgId,
-						provider: GITHUB_PROVIDER,
-						initiatedByUserId: params.userId,
-						redirectUri: params.callbackUrl,
-						returnTo: params.returnTo ?? null,
-						createdAt: currentTime,
-						expiresAt: currentTime + STATE_TTL_MS,
-					}),
-				)
+				const currentTime = yield* Clock.currentTimeMillis
+				yield* oauthStateRepo.purgeExpired(currentTime)
+				yield* oauthStateRepo.insert({
+					state,
+					orgId: params.orgId,
+					initiatedByUserId: params.userId,
+					redirectUri: params.callbackUrl,
+					returnTo: params.returnTo ?? null,
+					createdAt: currentTime,
+					expiresAt: currentTime + STATE_TTL_MS,
+				})
 				const installUrl = `${config.appBaseUrl}/apps/${encodeURIComponent(config.appSlug)}/installations/new?state=${encodeURIComponent(state)}`
 				return { redirectUrl: installUrl, state }
 			})
 
 			const consumeState = Effect.fn("GithubAppService.consumeState")(function* (state: string) {
-				const rows = yield* dbExecute((db) =>
-					db.select().from(oauthAuthStates).where(eq(oauthAuthStates.state, state)).limit(1),
-				)
-				const row = rows[0]
+				const row = yield* oauthStateRepo.findByState(state)
 				if (!row || row.provider !== GITHUB_PROVIDER) {
 					return yield* Effect.fail(
 						new GithubValidationError({
+							code: "StateNotRecognized",
 							message: "GitHub install state not recognized — restart the connect flow",
 						}),
 					)
 				}
-				if (row.expiresAt < Date.now()) {
-					yield* dbExecute((db) =>
-						db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)),
-					)
+				const now = yield* Clock.currentTimeMillis
+				if (row.expiresAt < now) {
+					yield* oauthStateRepo.deleteByState(state)
 					return yield* Effect.fail(
 						new GithubValidationError({
+							code: "StateExpired",
 							message: "GitHub install state expired — restart the connect flow",
 						}),
 					)
 				}
-				yield* dbExecute((db) =>
-					db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)),
-				)
+				yield* oauthStateRepo.deleteByState(state)
 				return {
 					orgId: row.orgId as OrgId,
 					userId: row.initiatedByUserId as UserId,
@@ -194,23 +167,8 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 			const listInstallations = Effect.fn("GithubAppService.listInstallations")(function* (
 				orgId: OrgId,
 			) {
-				const rows = (yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubInstallations)
-						.where(eq(githubInstallations.orgId, orgId)),
-				)) as ReadonlyArray<GithubInstallationRow>
-				const counts = yield* dbExecute((db) =>
-					db
-						.select({
-							installationId: githubRepositories.installationId,
-							count: sql<number>`count(*)`,
-						})
-						.from(githubRepositories)
-						.where(eq(githubRepositories.orgId, orgId))
-						.groupBy(githubRepositories.installationId),
-				)
-				const countMap = new Map(counts.map((c) => [c.installationId, Number(c.count)]))
+				const rows = yield* installationRepo.listByOrg(orgId)
+				const countMap = yield* repositoryRepo.countByInstallationForOrg(orgId)
 				return rows.map((row) => ({
 					row,
 					repositoryCount: countMap.get(row.id) ?? 0,
@@ -221,99 +179,33 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				orgId: OrgId,
 				installationDbId: string,
 			) {
-				const installationRows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubInstallations)
-						.where(
-							and(
-								eq(githubInstallations.orgId, orgId),
-								eq(githubInstallations.id, installationDbId),
-							),
-						)
-						.limit(1),
-				)
-				if (!installationRows[0]) {
+				const installation = yield* installationRepo.findByOrgAndDbId(orgId, installationDbId)
+				if (!installation) {
 					return yield* Effect.fail(
 						new GithubNotConnectedError({
+							code: "InstallationNotFound",
 							message: "Installation not found for this org",
 						}),
 					)
 				}
-				const repos = (yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(
-							and(
-								eq(githubRepositories.orgId, orgId),
-								eq(githubRepositories.installationId, installationDbId),
-							),
-						),
-				)) as ReadonlyArray<GithubRepositoryRow>
-				const counts = yield* dbExecute((db) =>
-					db
-						.select({ repoId: githubCommits.repoId, count: sql<number>`count(*)` })
-						.from(githubCommits)
-						.where(eq(githubCommits.orgId, orgId))
-						.groupBy(githubCommits.repoId),
-				)
-				const countMap = new Map(counts.map((c) => [c.repoId, Number(c.count)]))
+				const repos = yield* repositoryRepo.listByOrgAndInstallation(orgId, installationDbId)
+				const countMap = yield* commitRepo.countByRepoForOrg(orgId)
 				return repos.map((repo) => ({
 					...repo,
 					commitCount: countMap.get(repo.id) ?? 0,
 				}))
 			})
 
-			const setRepoSyncEnabled = Effect.fn("GithubAppService.setRepoSyncEnabled")(function* (
-				params: { readonly orgId: OrgId; readonly repositoryId: string; readonly enabled: boolean },
-			) {
-				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(
-							and(
-								eq(githubRepositories.orgId, params.orgId),
-								eq(githubRepositories.id, params.repositoryId),
-							),
-						)
-						.limit(1),
-				)
-				if (!rows[0]) {
-					return yield* Effect.fail(
-						new GithubNotConnectedError({
-							message: "Repository not found for this org",
-						}),
-					)
-				}
-				yield* dbExecute((db) =>
-					db
-						.update(githubRepositories)
-						.set({ syncEnabled: params.enabled, updatedAt: Date.now() })
-						.where(eq(githubRepositories.id, params.repositoryId)),
-				)
-				return { repositoryId: params.repositoryId, syncEnabled: params.enabled }
-			})
-
 			const disconnectInstallation = Effect.fn("GithubAppService.disconnectInstallation")(
 				function* (params: { readonly orgId: OrgId; readonly installationId: string }) {
-					const rows = yield* dbExecute((db) =>
-						db
-							.select()
-							.from(githubInstallations)
-							.where(
-								and(
-									eq(githubInstallations.orgId, params.orgId),
-									eq(githubInstallations.id, params.installationId),
-								),
-							)
-							.limit(1),
+					const installation = yield* installationRepo.findByOrgAndDbId(
+						params.orgId,
+						params.installationId,
 					)
-					const installation = rows[0]
 					if (!installation) {
 						return yield* Effect.fail(
 							new GithubNotConnectedError({
+								code: "InstallationNotFound",
 								message: "Installation not found for this org",
 							}),
 						)
@@ -322,73 +214,27 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 					// Hard delete: remove the installation, its repos, and all derived data
 					// (commits, releases, tombstones). The user wants the integration fully
 					// gone so re-connecting starts from a clean slate.
-					const repoIds = (yield* dbExecute((db) =>
-						db
-							.select({ id: githubRepositories.id })
-							.from(githubRepositories)
-							.where(
-								and(
-									eq(githubRepositories.orgId, params.orgId),
-									eq(githubRepositories.installationId, params.installationId),
-								),
-							),
-					)) as ReadonlyArray<{ id: string }>
+					const repoIds = yield* repositoryRepo.listIdsByOrgAndInstallation(
+						params.orgId,
+						params.installationId,
+					)
 
 					if (repoIds.length > 0) {
-						const ids = repoIds.map((r) => r.id)
-						yield* dbExecute((db) =>
-							db
-								.delete(githubCommits)
-								.where(
-									and(
-										eq(githubCommits.orgId, params.orgId),
-										inArray(githubCommits.repoId, ids),
-									),
-								),
-						)
-						yield* dbExecute((db) =>
-							db
-								.delete(githubReleases)
-								.where(
-									and(
-										eq(githubReleases.orgId, params.orgId),
-										inArray(githubReleases.repoId, ids),
-									),
-								),
-						)
+						yield* commitRepo.deleteByOrgAndRepoIds(params.orgId, repoIds)
+						yield* commitRepo.deleteReleasesByOrgAndRepoIds(params.orgId, repoIds)
 					}
-					yield* dbExecute((db) =>
-						db
-							.delete(githubRepositories)
-							.where(
-								and(
-									eq(githubRepositories.orgId, params.orgId),
-									eq(githubRepositories.installationId, params.installationId),
-								),
-							),
+					yield* repositoryRepo.deleteByOrgAndInstallation(
+						params.orgId,
+						params.installationId,
 					)
-					yield* dbExecute((db) =>
-						db
-							.delete(githubInstallations)
-							.where(eq(githubInstallations.id, params.installationId)),
-					)
+					yield* installationRepo.deleteById(params.installationId)
+
 					// Tombstones are org-scoped (not repo-scoped) — if this is the last
 					// installation for the org, drop them all so a re-sync starts clean.
-					const remaining = (yield* dbExecute((db) =>
-						db
-							.select({ count: sql<number>`count(*)` })
-							.from(githubInstallations)
-							.where(eq(githubInstallations.orgId, params.orgId)),
-					)) as ReadonlyArray<{ count: number }>
-					if (Number(remaining[0]?.count ?? 0) === 0) {
-						yield* dbExecute((db) =>
-							db
-								.delete(githubUnresolvedShas)
-								.where(eq(githubUnresolvedShas.orgId, params.orgId)),
-						)
+					const remaining = yield* installationRepo.countByOrg(params.orgId)
+					if (remaining === 0) {
+						yield* commitRepo.deleteUnresolvedShasByOrg(params.orgId)
 					}
-
-					yield* jwtService.invalidateInstallationToken(installation.installationId)
 
 					const configExit = yield* Effect.exit(jwtService.resolveConfig)
 					const uninstallUrl = Exit.isSuccess(configExit)
@@ -398,59 +244,25 @@ export class GithubAppService extends Context.Service<GithubAppService, GithubAp
 				},
 			)
 
-			const findRepoForBackfill = Effect.fn("GithubAppService.findRepoForBackfill")(function* (
-				orgId: OrgId,
-				repositoryId: string,
-			) {
-				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(githubRepositories)
-						.where(
-							and(
-								eq(githubRepositories.orgId, orgId),
-								eq(githubRepositories.id, repositoryId),
-							),
-						)
-						.limit(1),
-				)
-				const repo = rows[0]
-				if (!repo) {
-					return yield* Effect.fail(
-						new GithubNotConnectedError({
-							message: "Repository not found for this org",
-						}),
-					)
-				}
-				return repo as GithubRepositoryRow
-			})
-
 			return {
 				getStatus,
 				startInstall,
 				consumeState,
 				listInstallations,
 				listRepositories,
-				setRepoSyncEnabled,
 				disconnectInstallation,
-				findRepoForBackfill,
 			} satisfies GithubAppServiceShape
 		}),
 	},
 ) {
+	// Self-providing layer for all the github primitives this service depends
+	// on. `GithubSyncQueue` is no longer wired here — backfill enqueuing now
+	// lives on the queue itself, callers reach it directly.
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(GithubAppJwtService.layer),
+		Layer.provide(GithubInstallationRepo.layer),
+		Layer.provide(GithubRepositoryRepo.layer),
+		Layer.provide(GithubCommitRepo.layer),
+		Layer.provide(GithubOauthAuthStateRepo.layer),
 	)
-	static readonly Default = this.layer
-}
-
-// Re-export schema tables that route handlers may also need to query for
-// commit-lookup and resync workflows. Note: these only re-export the names;
-// the actual queries always go through the @maple/db package.
-export {
-	githubCommits,
-	githubInstallations,
-	githubRepositories,
-	githubReleases,
-	githubUnresolvedShas,
 }

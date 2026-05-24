@@ -2,57 +2,86 @@ import {
 	CurrentTenant,
 	GithubBackfillRepoResponse,
 	GithubDisconnectResponse,
+	GithubForbiddenError,
 	GithubIntegrationStatus,
 	GithubInstallationSummary,
 	GithubInstallationsListResponse,
+	GithubNotConnectedError,
 	GithubRepositoriesListResponse,
 	GithubRepositorySummary,
 	GithubSetRepoSyncResponse,
 	GithubStartConnectResponse,
-	GithubForbiddenError,
+	GithubValidationError,
 	MapleApi,
 } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { isSameOrigin, resolveRequestOrigin } from "../lib/http-origin"
+import { requireAdmin } from "../lib/auth"
 import { GithubAppService } from "../services/GithubAppService"
+import type { DecodedGithubInstallationRow } from "../services/GithubInstallationRepo"
+import { GithubRepositoryRepo, type DecodedGithubRepositoryRow } from "../services/GithubRepositoryRepo"
 import { GithubSyncQueue } from "../services/GithubSyncQueue"
+import { GITHUB_CALLBACK_PATH } from "./github-callback.http"
 
-const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
-const ADMIN_ROLES = new Set(["root", "org:admin"])
-const BACKFILL_WINDOW_MS = 90 * 24 * 60 * 60 * 1000
-
-const requireAdmin = (roles: ReadonlyArray<string>) =>
-	Effect.gen(function* () {
-		if (roles.some((role) => ADMIN_ROLES.has(role))) return
-		yield* Effect.fail(
-			new GithubForbiddenError({
-				message: "Only org admins can manage integrations",
-			}),
-		)
+const repoNotFound = () =>
+	new GithubNotConnectedError({
+		code: "RepositoryNotFound",
+		message: "Repository not found for this org",
 	})
 
-const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
-	const headers = req.headers as Record<string, string | undefined>
-	const forwardedHost = headers["x-forwarded-host"]
-	const forwardedProto = headers["x-forwarded-proto"]
-	const host = forwardedHost ?? headers.host
-	if (host) {
-		const proto =
-			forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
-		return `${proto}://${host}`
-	}
-	try {
-		const parsed = new URL(req.url)
-		return `${parsed.protocol}//${parsed.host}`
-	} catch {
-		return ""
-	}
-}
+const forbidden = () =>
+	new GithubForbiddenError({
+		code: "NotAdmin",
+		message: "Only org admins can manage integrations",
+	})
+
+const toInstallationSummary = ({
+	row,
+	repositoryCount,
+}: {
+	readonly row: DecodedGithubInstallationRow
+	readonly repositoryCount: number
+}) =>
+	new GithubInstallationSummary({
+		id: row.id,
+		installationId: row.installationId,
+		appSlug: row.appSlug,
+		accountId: row.accountId,
+		accountLogin: row.accountLogin,
+		accountAvatarUrl: row.accountAvatarUrl,
+		accountType: row.accountType,
+		repositorySelection: row.repositorySelection,
+		suspendedAt: row.suspendedAt,
+		installedByUserId: row.installedByUserId,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
+		repositoryCount,
+	})
+
+const toRepositorySummary = (row: DecodedGithubRepositoryRow & { readonly commitCount: number }) =>
+	new GithubRepositorySummary({
+		id: row.id,
+		installationId: row.installationId,
+		githubRepoId: row.githubRepoId,
+		owner: row.owner,
+		name: row.name,
+		defaultBranch: row.defaultBranch,
+		private: row.private,
+		htmlUrl: row.htmlUrl,
+		syncEnabled: row.syncEnabled,
+		lastSyncedAt: row.lastSyncedAt,
+		lastFullBackfillAt: row.lastFullBackfillAt,
+		backfillStatus: row.backfillStatus,
+		backfillError: row.backfillError,
+		commitCount: row.commitCount,
+	})
 
 export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers) =>
 	Effect.gen(function* () {
 		const app = yield* GithubAppService
+		const repositoryRepo = yield* GithubRepositoryRepo
 		const queue = yield* GithubSyncQueue
 
 		return handlers
@@ -66,9 +95,22 @@ export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers
 			.handle("githubStart", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					yield* requireAdmin(tenant.roles, forbidden)
 					const req = yield* HttpServerRequest.HttpServerRequest
-					const callbackUrl = `${resolveRequestOrigin(req)}${GITHUB_CALLBACK_PATH}`
+					const origin = resolveRequestOrigin(req)
+					// `returnTo` is user-supplied and stored in the DB, then later
+					// used as `window.location.replace(returnTo)` in the callback
+					// popup. Reject any cross-origin URL up front to close an
+					// open-redirect vector. Relative paths are always same-origin.
+					if (payload.returnTo && !isSameOrigin(origin, payload.returnTo)) {
+						return yield* Effect.fail(
+							new GithubValidationError({
+								code: "ReturnToCrossOrigin",
+								message: "returnTo must point at the same origin as the install request",
+							}),
+						)
+					}
+					const callbackUrl = `${origin}${GITHUB_CALLBACK_PATH}`
 					const result = yield* app.startInstall({
 						orgId: tenant.orgId,
 						userId: tenant.userId,
@@ -83,24 +125,7 @@ export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers
 					const tenant = yield* CurrentTenant.Context
 					const items = yield* app.listInstallations(tenant.orgId)
 					return new GithubInstallationsListResponse({
-						installations: items.map(
-							({ row, repositoryCount }) =>
-								new GithubInstallationSummary({
-									id: row.id,
-									installationId: row.installationId,
-									appSlug: row.appSlug,
-									accountId: row.accountId,
-									accountLogin: row.accountLogin,
-									accountAvatarUrl: row.accountAvatarUrl,
-									accountType: row.accountType === "Organization" ? "Organization" : "User",
-									repositorySelection: row.repositorySelection === "all" ? "all" : "selected",
-									suspendedAt: row.suspendedAt,
-									installedByUserId: row.installedByUserId,
-									createdAt: row.createdAt,
-									updatedAt: row.updatedAt,
-									repositoryCount,
-								}),
-						),
+						installations: items.map(toInstallationSummary),
 					})
 				}),
 			)
@@ -109,68 +134,43 @@ export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers
 					const tenant = yield* CurrentTenant.Context
 					const repos = yield* app.listRepositories(tenant.orgId, params.installationId)
 					return new GithubRepositoriesListResponse({
-						repositories: repos.map(
-							(row) =>
-								new GithubRepositorySummary({
-									id: row.id,
-									installationId: row.installationId,
-									githubRepoId: row.githubRepoId,
-									owner: row.owner,
-									name: row.name,
-									defaultBranch: row.defaultBranch,
-									private: row.private,
-									htmlUrl: row.htmlUrl,
-									syncEnabled: row.syncEnabled,
-									lastSyncedAt: row.lastSyncedAt,
-									lastFullBackfillAt: row.lastFullBackfillAt,
-									backfillStatus:
-										row.backfillStatus === "running"
-											? "running"
-											: row.backfillStatus === "complete"
-												? "complete"
-												: row.backfillStatus === "failed"
-													? "failed"
-													: "pending",
-									backfillError: row.backfillError,
-									commitCount: row.commitCount,
-								}),
-						),
+						repositories: repos.map(toRepositorySummary),
 					})
 				}),
 			)
 			.handle("githubSetRepoSync", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
-					const result = yield* app.setRepoSyncEnabled({
-						orgId: tenant.orgId,
-						repositoryId: params.repositoryId,
-						enabled: payload.enabled,
+					yield* requireAdmin(tenant.roles, forbidden)
+					const repo = yield* repositoryRepo.findByOrgAndDbId(
+						tenant.orgId,
+						params.repositoryId,
+					)
+					if (!repo) return yield* Effect.fail(repoNotFound())
+					const updatedAt = yield* Clock.currentTimeMillis
+					yield* repositoryRepo.updateById(repo.id, {
+						syncEnabled: payload.enabled,
+						updatedAt,
 					})
 					if (payload.enabled) {
-						yield* queue.enqueue({
-							_tag: "BackfillRepo",
-							orgId: tenant.orgId,
-							repoId: result.repositoryId,
-							sinceUnixMs: Date.now() - BACKFILL_WINDOW_MS,
-							cursor: null,
-						})
+						yield* queue.enqueueBackfill({ orgId: tenant.orgId, repoId: repo.id })
 					}
-					return new GithubSetRepoSyncResponse(result)
+					return new GithubSetRepoSyncResponse({
+						repositoryId: repo.id,
+						syncEnabled: payload.enabled,
+					})
 				}),
 			)
 			.handle("githubBackfillRepo", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
-					const repo = yield* app.findRepoForBackfill(tenant.orgId, params.repositoryId)
-					yield* queue.enqueue({
-						_tag: "BackfillRepo",
-						orgId: tenant.orgId,
-						repoId: repo.id,
-						sinceUnixMs: Date.now() - BACKFILL_WINDOW_MS,
-						cursor: null,
-					})
+					yield* requireAdmin(tenant.roles, forbidden)
+					const repo = yield* repositoryRepo.findByOrgAndDbId(
+						tenant.orgId,
+						params.repositoryId,
+					)
+					if (!repo) return yield* Effect.fail(repoNotFound())
+					yield* queue.enqueueBackfill({ orgId: tenant.orgId, repoId: repo.id })
 					return new GithubBackfillRepoResponse({
 						repositoryId: repo.id,
 						enqueued: true,
@@ -180,7 +180,7 @@ export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers
 			.handle("githubDisconnect", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					yield* requireAdmin(tenant.roles, forbidden)
 					const result = yield* app.disconnectInstallation({
 						orgId: tenant.orgId,
 						installationId: params.installationId,
@@ -190,5 +190,3 @@ export const HttpGithubLive = HttpApiBuilder.group(MapleApi, "github", (handlers
 			)
 	}),
 )
-
-export { GITHUB_CALLBACK_PATH }

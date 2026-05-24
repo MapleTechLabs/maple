@@ -13,10 +13,7 @@ import { eq } from "drizzle-orm"
 import { Database } from "./DatabaseLive"
 import { GithubAppJwtService } from "./GithubAppJwtService"
 import { GithubAppService } from "./GithubAppService"
-import {
-	cleanupTempDirs,
-	createTempDbUrl as makeTempDb,
-} from "./test-sqlite"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "./test-sqlite"
 import { fullGithubConfig, makeBaseLayer, type TestGithubConfig } from "./github-test-helpers"
 
 const createdTempDirs: string[] = []
@@ -29,6 +26,9 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const makeLayer = (override: Partial<TestGithubConfig> = {}) => {
 	const { url } = tempDb()
 	const cfg = { ...fullGithubConfig(url), ...override }
+	// GithubAppService no longer depends on the queue, so no WorkerEnvironment
+	// substitution is needed in tests — the regular `.layer` self-provides all
+	// of its github primitives.
 	return GithubAppService.layer.pipe(
 		Layer.provideMerge(GithubAppJwtService.layer),
 		Layer.provideMerge(makeBaseLayer(cfg)),
@@ -285,41 +285,10 @@ describe("GithubAppService", () => {
 		})
 	})
 
-	describe("setRepoSyncEnabled", () => {
-		it("flips sync_enabled for the chosen repo", async () => {
-			const after = await Effect.runPromise(
-				Effect.gen(function* () {
-					const svc = yield* GithubAppService
-					const { repoIds } = yield* seed("org_1", { repoCount: 1 })
-					yield* svc.setRepoSyncEnabled({
-						orgId: asOrgId("org_1"),
-						repositoryId: repoIds[0]!,
-						enabled: false,
-					})
-					const database = yield* Database
-					const rows = yield* database.execute((db) =>
-						db.select().from(githubRepositories).where(eq(githubRepositories.id, repoIds[0]!)),
-					)
-					return rows[0]
-				}).pipe(Effect.provide(makeLayer())),
-			)
-			expect((after as any).syncEnabled).toBe(false)
-		})
-
-		it("rejects unknown repositoryId", async () => {
-			const exit = await Effect.runPromiseExit(
-				Effect.gen(function* () {
-					const svc = yield* GithubAppService
-					return yield* svc.setRepoSyncEnabled({
-						orgId: asOrgId("org_1"),
-						repositoryId: "no-such-repo",
-						enabled: true,
-					})
-				}).pipe(Effect.provide(makeLayer())),
-			)
-			expect(Exit.isFailure(exit)).toBe(true)
-		})
-	})
+	// `setRepoSyncEnabled` + `findRepoForBackfill` were thin passthroughs over
+	// GithubRepositoryRepo.updateById / findByOrgAndDbId; the github.http.ts
+	// handlers now call the repo directly. Behavior is covered by the repo's
+	// own unit coverage + the route-level coverage of those handlers.
 
 	describe("disconnectInstallation — hard delete", () => {
 		it("deletes installation + repos + commits + releases and clears tombstones", async () => {

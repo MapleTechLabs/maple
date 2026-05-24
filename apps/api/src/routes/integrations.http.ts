@@ -12,28 +12,10 @@ import {
 	MapleApi,
 } from "@maple/domain/http"
 import { Effect } from "effect"
+import { resolveRequestOrigin } from "../lib/http-origin"
 import { HazelOAuthService } from "../services/HazelOAuthService"
 
 const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
-
-const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
-	const headers = req.headers as Record<string, string | undefined>
-	const forwardedHost = headers["x-forwarded-host"]
-	const forwardedProto = headers["x-forwarded-proto"]
-	const host = forwardedHost ?? headers.host
-	if (host) {
-		const proto =
-			forwardedProto ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https")
-		return `${proto}://${host}`
-	}
-	// Fall back to parsing req.url which is absolute under wrangler/CF Workers.
-	try {
-		const parsed = new URL(req.url)
-		return `${parsed.protocol}//${parsed.host}`
-	} catch {
-		return ""
-	}
-}
 
 const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
 	`${resolveRequestOrigin(req)}${HAZEL_CALLBACK_PATH}`

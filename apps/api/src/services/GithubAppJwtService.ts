@@ -1,13 +1,14 @@
 import { createPrivateKey, createSign } from "node:crypto"
 import {
 	GithubUpstreamError,
+	type GithubUpstreamErrorCode,
 	GithubValidationError,
 } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { causeMessage, githubErrorMessage } from "../lib/cause-message"
 import { Env, type EnvShape } from "./Env"
 
 const JWT_TTL_SECONDS = 540 // 9 minutes — under GitHub's 10-minute max
-const INSTALLATION_TOKEN_REFRESH_LEEWAY_MS = 5 * 60_000 // 5 minutes
 
 const base64UrlEncode = (input: Buffer | string): string => {
 	const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input
@@ -34,7 +35,7 @@ const requireSome = <A>(
 	message: string,
 ): Effect.Effect<A, GithubValidationError> =>
 	Option.match(opt, {
-		onNone: () => Effect.fail(new GithubValidationError({ message })),
+		onNone: () => Effect.fail(new GithubValidationError({ code: "MissingAppConfig", message })),
 		onSome: (value) => Effect.succeed(value),
 	})
 
@@ -84,22 +85,26 @@ export interface GithubInstallationToken {
 
 export interface GithubAppJwtServiceShape {
 	readonly resolveConfig: Effect.Effect<ResolvedGithubAppConfig, GithubValidationError>
-	readonly mintAppJwt: Effect.Effect<string, GithubValidationError | GithubUpstreamError>
+	// Signing only fails on bad config (missing env or malformed PEM) — both
+	// surface as GithubValidationError. No upstream call involved.
+	readonly mintAppJwt: Effect.Effect<string, GithubValidationError>
 	readonly getInstallationToken: (
 		installationId: number,
 	) => Effect.Effect<
 		GithubInstallationToken,
 		GithubValidationError | GithubUpstreamError
 	>
-	readonly invalidateInstallationToken: (installationId: number) => Effect.Effect<void>
 	readonly verifyWebhookSignature: (
 		signatureHeader: string | null | undefined,
-		body: ArrayBuffer,
+		body: string,
 	) => Effect.Effect<boolean, GithubValidationError>
 }
 
-const toUpstreamError = (message: string, status?: number) =>
-	new GithubUpstreamError({ message, ...(status === undefined ? {} : { status }) })
+const toUpstreamError = (
+	code: GithubUpstreamErrorCode,
+	message: string,
+	status?: number,
+) => new GithubUpstreamError({ code, message, ...(status === undefined ? {} : { status }) })
 
 export class GithubAppJwtService extends Context.Service<
 	GithubAppJwtService,
@@ -107,13 +112,13 @@ export class GithubAppJwtService extends Context.Service<
 >()("GithubAppJwtService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
-		const cache = new Map<number, GithubInstallationToken>()
 
 		const resolveConfig = resolveGithubAppConfig(env)
 
 		const mintAppJwt = Effect.fn("GithubAppJwtService.mintAppJwt")(function* () {
 			const config = yield* resolveConfig
-			const now = Math.floor(Date.now() / 1000)
+			const nowMillis = yield* Clock.currentTimeMillis
+			const now = Math.floor(nowMillis / 1000)
 			const header = { alg: "RS256", typ: "JWT" }
 			const payload = {
 				iat: now - 60,
@@ -124,6 +129,10 @@ export class GithubAppJwtService extends Context.Service<
 			const payloadEncoded = base64UrlEncode(JSON.stringify(payload))
 			const signingInput = `${headerEncoded}.${payloadEncoded}`
 
+			// Local crypto operation — failure here almost always means the
+			// configured GITHUB_APP_PRIVATE_KEY isn't a valid PEM. Surface as a
+			// config-shaped GithubValidationError so operators look at the env
+			// var, not the network.
 			const signature = yield* Effect.try({
 				try: () => {
 					const key = createPrivateKey({ key: config.privateKeyPem, format: "pem" })
@@ -133,18 +142,24 @@ export class GithubAppJwtService extends Context.Service<
 					return signer.sign(key)
 				},
 				catch: (cause) =>
-					toUpstreamError(
-						cause instanceof Error
-							? `Failed to sign GitHub App JWT: ${cause.message}`
-							: "Failed to sign GitHub App JWT",
-					),
+					new GithubValidationError({
+						code: "InvalidPrivateKey",
+						message: causeMessage(cause, "Failed to sign GitHub App JWT"),
+					}),
 			})
 
 			return `${signingInput}.${base64UrlEncode(signature)}`
 		})
 
-		const requestInstallationToken = Effect.fn(
-			"GithubAppJwtService.requestInstallationToken",
+		// Mint a fresh installation token on every call. Previously we cached
+		// per-isolate; analysis showed the cache provided ~no user-facing
+		// latency benefit (the only sync caller is the install callback's
+		// runReconcile, which always cache-misses on first contact) and
+		// introduced a stale-token edge case on disconnect+reinstall since
+		// invalidation only reached the calling isolate's Map. GitHub's app
+		// auth endpoint is ~12.5k req/hr — nowhere near our usage.
+		const getInstallationToken = Effect.fn(
+			"GithubAppJwtService.getInstallationToken",
 		)(function* (installationId: number) {
 			const config = yield* resolveConfig
 			const jwt = yield* mintAppJwt()
@@ -161,53 +176,39 @@ export class GithubAppJwtService extends Context.Service<
 					}),
 				catch: (cause) =>
 					toUpstreamError(
-						cause instanceof Error
-							? `Installation token request failed: ${cause.message}`
-							: "Installation token request failed",
+						"RequestFailed",
+						causeMessage(cause, "Installation token request failed"),
 					),
 			})
 			if (!response.ok) {
 				const text = yield* Effect.tryPromise({
 					try: () => response.text(),
-					catch: () => toUpstreamError("Installation token request failed", response.status),
+					catch: () =>
+						toUpstreamError("Non2xx", "Installation token request failed", response.status),
 				})
 				return yield* Effect.fail(
 					toUpstreamError(
-						`Installation token request failed (${response.status}): ${text || response.statusText}`,
+						"Non2xx",
+						`Installation token request failed (${response.status}): ${githubErrorMessage(text) || response.statusText}`,
 						response.status,
 					),
 				)
 			}
 			const json = (yield* Effect.tryPromise({
 				try: () => response.json() as Promise<{ token: string; expires_at: string }>,
-				catch: () => toUpstreamError("Installation token response was not JSON"),
+				catch: () => toUpstreamError("ResponseNotJson", "Installation token response was not JSON"),
 			})) as { token: string; expires_at: string }
 			const expiresAt = Date.parse(json.expires_at)
 			if (!Number.isFinite(expiresAt)) {
-				return yield* Effect.fail(toUpstreamError("Installation token has invalid expiry"))
+				return yield* Effect.fail(
+					toUpstreamError("TokenInvalidExpiry", "Installation token has invalid expiry"),
+				)
 			}
 			return { token: json.token, expiresAt } satisfies GithubInstallationToken
 		})
 
-		const getInstallationToken = Effect.fn("GithubAppJwtService.getInstallationToken")(function* (
-			installationId: number,
-		) {
-			const cached = cache.get(installationId)
-			if (cached && cached.expiresAt - Date.now() > INSTALLATION_TOKEN_REFRESH_LEEWAY_MS) {
-				return cached
-			}
-			const fresh = yield* requestInstallationToken(installationId)
-			cache.set(installationId, fresh)
-			return fresh
-		})
-
-		const invalidateInstallationToken = (installationId: number) =>
-			Effect.sync(() => {
-				cache.delete(installationId)
-			})
-
 		const verifyWebhookSignature = Effect.fn("GithubAppJwtService.verifyWebhookSignature")(
-			function* (signatureHeader: string | null | undefined, body: ArrayBuffer) {
+			function* (signatureHeader: string | null | undefined, body: string) {
 				if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
 					return false
 				}
@@ -215,17 +216,19 @@ export class GithubAppJwtService extends Context.Service<
 				const provided = signatureHeader.slice("sha256=".length)
 				const providedBytes = yield* Effect.try({
 					try: () => {
+						// Buffer.from(..., "hex") silently drops invalid chars and
+						// odd-length tails — explicitly validate so we fail loud
+						// instead of comparing a truncated signature.
 						if (!/^[0-9a-f]+$/i.test(provided) || provided.length % 2 !== 0) {
 							throw new Error("malformed signature")
 						}
-						const out = new Uint8Array(provided.length / 2)
-						for (let i = 0; i < out.length; i++) {
-							out[i] = Number.parseInt(provided.slice(i * 2, i * 2 + 2), 16)
-						}
-						return out
+						return new Uint8Array(Buffer.from(provided, "hex"))
 					},
 					catch: () =>
-						new GithubValidationError({ message: "Malformed GitHub webhook signature" }),
+						new GithubValidationError({
+							code: "WebhookSignatureMalformed",
+							message: "Malformed GitHub webhook signature",
+						}),
 				})
 
 				const key = yield* Effect.tryPromise({
@@ -239,14 +242,17 @@ export class GithubAppJwtService extends Context.Service<
 						),
 					catch: () =>
 						new GithubValidationError({
+							code: "WebhookSecretImportFailed",
 							message: "Failed to import webhook secret",
 						}),
 				})
 
+				const bodyBytes = new TextEncoder().encode(body)
 				return yield* Effect.tryPromise({
-					try: () => crypto.subtle.verify("HMAC", key, providedBytes, body),
+					try: () => crypto.subtle.verify("HMAC", key, providedBytes, bodyBytes),
 					catch: () =>
 						new GithubValidationError({
+							code: "WebhookSignatureVerifyFailed",
 							message: "Failed to verify webhook signature",
 						}),
 				})
@@ -255,13 +261,14 @@ export class GithubAppJwtService extends Context.Service<
 
 		return {
 			resolveConfig,
+			// `Effect.fn` returns a function; invoking once yields a reusable
+			// Effect whose generator runs fresh on every `yield*` (so each
+			// caller gets a freshly-signed JWT).
 			mintAppJwt: mintAppJwt(),
 			getInstallationToken,
-			invalidateInstallationToken,
 			verifyWebhookSignature,
 		} satisfies GithubAppJwtServiceShape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-	static readonly Default = this.layer
 }

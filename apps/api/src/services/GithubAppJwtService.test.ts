@@ -104,13 +104,10 @@ describe("GithubAppJwtService", () => {
 	})
 
 	describe("verifyWebhookSignature", () => {
-		const signWith = (secret: string, body: ArrayBuffer) =>
-			"sha256=" +
-			createHmac("sha256", secret)
-				.update(Buffer.from(body))
-				.digest("hex")
+		const signWith = (secret: string, body: string) =>
+			"sha256=" + createHmac("sha256", secret).update(body).digest("hex")
 
-		const body = new TextEncoder().encode('{"hello":"world"}').buffer as ArrayBuffer
+		const body = '{"hello":"world"}'
 
 		it("returns true for a valid signature", async () => {
 			const result = await Effect.runPromise(
@@ -165,14 +162,4 @@ describe("GithubAppJwtService", () => {
 		})
 	})
 
-	describe("invalidateInstallationToken", () => {
-		it("does not throw when no token is cached", async () => {
-			await Effect.runPromise(
-				Effect.gen(function* () {
-					const svc = yield* GithubAppJwtService
-					yield* svc.invalidateInstallationToken(42)
-				}).pipe(Effect.provide(makeLayer())),
-			)
-		})
-	})
 })

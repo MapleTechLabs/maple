@@ -1,8 +1,10 @@
 import {
 	GithubUpstreamError,
+	type GithubUpstreamErrorCode,
 	GithubValidationError,
 } from "@maple/domain/http"
 import { Context, Effect, Layer, Schema } from "effect"
+import { causeMessage, githubErrorMessage } from "../lib/cause-message"
 import { GithubAppJwtService } from "./GithubAppJwtService"
 
 const USER_AGENT = "maple-github-app"
@@ -102,8 +104,11 @@ const decodeBranches = Schema.decodeUnknownEffect(Schema.Array(GithubBranchSchem
 const decodeInstallation = Schema.decodeUnknownEffect(GithubInstallationSchema)
 const decodeSearchCommits = Schema.decodeUnknownEffect(SearchCommitsResponseSchema)
 
-const toUpstreamError = (message: string, status?: number) =>
-	new GithubUpstreamError({ message, ...(status === undefined ? {} : { status }) })
+const toUpstreamError = (
+	code: GithubUpstreamErrorCode,
+	message: string,
+	status?: number,
+) => new GithubUpstreamError({ code, message, ...(status === undefined ? {} : { status }) })
 
 const parseNextLink = (linkHeader: string | null): string | null => {
 	if (!linkHeader) return null
@@ -120,10 +125,14 @@ const expectOk = (response: Response, label: string) =>
 		if (response.ok) return
 		const text = yield* Effect.tryPromise({
 			try: () => response.text(),
-			catch: () => toUpstreamError(`${label} failed`, response.status),
+			catch: () => toUpstreamError("Non2xx", `${label} failed`, response.status),
 		})
 		return yield* Effect.fail(
-			toUpstreamError(`${label} failed (${response.status}): ${text || response.statusText}`, response.status),
+			toUpstreamError(
+				"Non2xx",
+				`${label} failed (${response.status}): ${githubErrorMessage(text) || response.statusText}`,
+				response.status,
+			),
 		)
 	})
 
@@ -136,10 +145,12 @@ const parseJson = <A>(
 	Effect.gen(function* () {
 		const json = yield* Effect.tryPromise({
 			try: () => response.json(),
-			catch: () => toUpstreamError(`${label} returned non-JSON`),
+			catch: () => toUpstreamError("ResponseNotJson", `${label} returned non-JSON`),
 		})
 		return yield* decoder(json).pipe(
-			Effect.mapError(() => toUpstreamError(`${label} returned unexpected payload`)),
+			Effect.mapError(() =>
+				toUpstreamError("ResponseSchemaMismatch", `${label} returned unexpected payload`),
+			),
 		)
 	})
 
@@ -244,14 +255,10 @@ export class GithubInstallationClient extends Context.Service<
 						}),
 					catch: (cause) =>
 						toUpstreamError(
-							cause instanceof Error
-								? `GitHub request failed: ${cause.message}`
-								: "GitHub request failed",
+							"RequestFailed",
+							causeMessage(cause, "GitHub request failed"),
 						),
 				})
-				if (response.status === 401 || response.status === 403) {
-					yield* jwtService.invalidateInstallationToken(installationId)
-				}
 				return response
 			})
 
@@ -355,10 +362,12 @@ export class GithubInstallationClient extends Context.Service<
 			if (!response.ok) return [] as ReadonlyArray<GithubCommit>
 			const json = yield* Effect.tryPromise({
 				try: () => response.json() as Promise<{ commits?: unknown }>,
-				catch: () => toUpstreamError("compareRefs returned non-JSON"),
+				catch: () => toUpstreamError("ResponseNotJson", "compareRefs returned non-JSON"),
 			})
 			const decoded = yield* decodeCommits(json.commits ?? []).pipe(
-				Effect.mapError(() => toUpstreamError("compareRefs returned unexpected payload")),
+				Effect.mapError(() =>
+					toUpstreamError("ResponseSchemaMismatch", "compareRefs returned unexpected payload"),
+				),
 			)
 			return decoded as ReadonlyArray<GithubCommit>
 		})
@@ -383,9 +392,8 @@ export class GithubInstallationClient extends Context.Service<
 					}),
 				catch: (cause) =>
 					toUpstreamError(
-						cause instanceof Error
-							? `getInstallationMetadata failed: ${cause.message}`
-							: "getInstallationMetadata failed",
+						"RequestFailed",
+						causeMessage(cause, "getInstallationMetadata failed"),
 					),
 			})
 			yield* expectOk(response, "getInstallationMetadata")
