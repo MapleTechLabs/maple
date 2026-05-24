@@ -501,6 +501,161 @@ export const competitors: Record<string, Competitor> = {
 			},
 		],
 	},
+	dash0: {
+		name: "Dash0",
+		slug: "dash0",
+		tagline: "OpenTelemetry-native observability you can actually own",
+		description:
+			"Dash0 and Maple are both OpenTelemetry-native with transparent usage-based pricing and no per-seat fees. The difference is ownership: Maple is open source and self-hostable, so you can run it on your own infrastructure — including your own ClickHouse — for full data sovereignty and retention control, instead of a closed SaaS backend.",
+		features: {
+			"Pricing model": {
+				maple: "Usage-based, transparent",
+				competitor: "Usage-based, transparent",
+			},
+			"Open source": {
+				maple: true,
+				competitor: false,
+			},
+			"OpenTelemetry native": {
+				maple: true,
+				competitor: true,
+			},
+			"Distributed tracing": {
+				maple: true,
+				competitor: true,
+			},
+			"Log management": {
+				maple: true,
+				competitor: true,
+			},
+			"Metrics & dashboards": {
+				maple: true,
+				competitor: true,
+			},
+			"AI / MCP integration": {
+				maple: true,
+				competitor: true,
+			},
+			"Self-hosting available": {
+				maple: true,
+				competitor: false,
+			},
+			"No vendor lock-in": {
+				maple: true,
+				competitor: true,
+			},
+			"Custom dashboards": {
+				maple: true,
+				competitor: true,
+			},
+			Alerting: {
+				maple: true,
+				competitor: true,
+			},
+			"Setup time": {
+				maple: "Minutes",
+				competitor: "Minutes",
+			},
+			"Proprietary agents required": {
+				maple: false,
+				competitor: false,
+			},
+			"Data retention control": {
+				maple: "Configurable",
+				competitor: "Fixed periods",
+			},
+			"Team seats included": {
+				maple: "Unlimited",
+				competitor: "No per-seat fees",
+			},
+			"API-first design": {
+				maple: true,
+				competitor: true,
+			},
+		},
+		painPoints: [
+			{
+				problem: "Closed-source SaaS backend — no way to audit how your telemetry is processed",
+				solution:
+					"Maple's source is available under FSL-1.1. Inspect every line, contribute features, and trust there are no black boxes.",
+			},
+			{
+				problem: "No self-hosting option — your telemetry has to live in Dash0's cloud",
+				solution:
+					"Self-host Maple on your own infrastructure to meet data residency and compliance requirements and keep telemetry inside your own perimeter.",
+			},
+			{
+				problem: "Fixed retention windows you can't tune to your own needs",
+				solution:
+					"Self-hosting puts you in control of retention and storage — keep data as long as your compliance and debugging workflows require.",
+			},
+			{
+				problem: "SaaS-only means an ongoing subscription with no escape hatch",
+				solution:
+					"Run Maple on infrastructure you already own to eliminate per-data SaaS fees — or use the hosted version when you'd rather not operate it.",
+			},
+		],
+		migrationSteps: [
+			{
+				title: "Keep your OpenTelemetry instrumentation",
+				description:
+					"Both Dash0 and Maple ingest standard OTLP, so your existing SDKs, auto-instrumentation, and semantic conventions carry over unchanged. Nothing to rewrite.",
+			},
+			{
+				title: "Re-point your OTel Collector exporter",
+				description:
+					"Change the OTLP exporter endpoint from Dash0 to Maple — or dual-ship to both during the transition to verify your data lands correctly.",
+			},
+			{
+				title: "Recreate dashboards and alerts",
+				description:
+					"Rebuild your monitoring views in Maple's dashboard builder and set up alerting rules. AI-assisted setup helps you get there faster.",
+			},
+		],
+		faqs: [
+			{
+				question: "How is Maple different from Dash0?",
+				answer: "The fundamentals are similar — both are OpenTelemetry-native, both have transparent usage-based pricing with no per-seat fees, and both offer an MCP integration for AI agents. The real difference is ownership: Maple is open source (FSL-1.1) and self-hostable on your own infrastructure, including your own ClickHouse, with full control over data retention and residency. Dash0 is a closed-source, SaaS-only backend.",
+			},
+			{
+				question: "Is Maple open source? Can I self-host it?",
+				answer: "Yes to both. Maple's source is available under the Functional Source License (FSL-1.1) and can be self-hosted on your own infrastructure for full data sovereignty and compliance. Dash0's observability backend is closed-source and SaaS-only with no self-hosting — they do open-source client-side tooling like their OpenTelemetry distribution and Kubernetes operator, but not the platform itself.",
+			},
+			{
+				question: "How hard is it to migrate from Dash0 to Maple?",
+				answer: "Moving the telemetry pipeline is about as easy as it gets: since both platforms ingest standard OTLP, you just re-point your OpenTelemetry Collector's exporter at Maple's endpoint — no instrumentation changes. You can dual-ship to both backends during the transition. Dashboards, saved views, and alert rules don't transfer over OTLP, so plan to recreate those in Maple.",
+			},
+			{
+				question: "Can I keep my telemetry on my own infrastructure?",
+				answer: "Yes — self-host Maple for full data residency and sovereignty, which is useful for compliance requirements that keep data inside your own perimeter. Dash0 is SaaS-only, so your telemetry lives in their cloud. Maple also offers a hosted version if you'd rather not operate it yourself.",
+			},
+			{
+				question: "How does Maple's pricing compare to Dash0?",
+				answer: "Both use transparent, usage-based pricing and neither charges per seat, so the models are comparable (Dash0 bills per data point; Maple bills per GB of ingested data). The main lever Maple gives you is self-hosting: run it on infrastructure you already own and you pay for compute and storage instead of per-data SaaS fees.",
+			},
+			{
+				question: "Will my OpenTelemetry instrumentation work with Maple?",
+				answer: "Yes. Maple is built for OpenTelemetry from the ground up and ingests standard OTLP for traces, logs, and metrics. Any instrumentation that already works with Dash0 works with Maple unchanged — your pipeline stays vendor-neutral.",
+			},
+		],
+		stats: [
+			{
+				value: "100%",
+				label: "Open source",
+				detail: "Source-available under FSL-1.1 — audit, contribute, and self-host freely",
+			},
+			{
+				value: "1",
+				label: "Config change to migrate",
+				detail: "Both are OTLP-native — just re-point your OTel Collector exporter",
+			},
+			{
+				value: "Yes",
+				label: "Self-hostable",
+				detail: "Run Maple on your own infrastructure, including your own ClickHouse — Dash0 is SaaS-only",
+			},
+		],
+	},
 }
 
 export const featureCategories = [

@@ -223,6 +223,14 @@ export const nav_vs_new_relic = () => `Maple vs New Relic`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const nav_vs_dash0 = () => `Maple vs Dash0`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const nav_nextjs = () => `Next.js`
 
 
@@ -864,6 +872,14 @@ export const bill_link_vs_gf = () => `Full vs Grafana Cloud`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const bill_link_vs_nr = () => `Full vs New Relic`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const bill_link_vs_dash0 = () => `Full vs Dash0`
 
 
 /**
@@ -2068,6 +2084,14 @@ export const footer_vs_grafana = () => `vs Grafana`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const footer_vs_new_relic = () => `vs New Relic`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const footer_vs_dash0 = () => `vs Dash0`
 
 
 /**
@@ -3708,6 +3732,142 @@ export const page_dd_selfhost = () => `セルフホスト可能`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const page_dd_selfhost_desc = () => `自社インフラでMapleを実行し、完全なデータ主権、コンプライアンス、コスト管理を実現。`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_title = () => `Dash0 Alternative (Open Source) — Maple vs Dash0`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_desc = () => `Compare Maple and Dash0 for observability. Both are OpenTelemetry-native with transparent pricing and an MCP integration — Maple adds open source, self-hosting, and full control over your data.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_heading = () => `Maple vs Dash0`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_subtitle = () => `Dash0 and Maple are both OpenTelemetry-native with transparent usage-based pricing and no per-seat fees. The difference is ownership: Maple is open source and self-hostable, so you can run it on your own infrastructure — including your own ClickHouse — for full data sovereignty and retention control, instead of a closed SaaS backend.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_advantages = () => `Key advantages over Dash0`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_oss = () => `Open source`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_oss_desc = () => `Maple's source is available under the Functional Source License (FSL-1.1) — inspect every line, contribute features, and trust there are no black boxes. Dash0's backend is closed-source SaaS.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_selfhost = () => `Self-hosting available`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_selfhost_desc = () => `Run Maple on your own infrastructure for data residency and compliance. Dash0 is SaaS-only, so your telemetry has to live in their cloud.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_retention = () => `Full retention control`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_retention_desc = () => `Self-hosting puts you in control of retention and storage — keep data as long as your compliance and debugging workflows require, instead of fixed SaaS windows.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_sovereignty = () => `Your data, your perimeter`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_sovereignty_desc = () => `Keep telemetry inside your own infrastructure for sovereignty and compliance — no third-party cloud sees your data unless you choose the hosted version.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_clickhouse = () => `Run on your own ClickHouse`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_clickhouse_desc = () => `Maple's query engine speaks ClickHouse, so a self-hosted deployment can run on a ClickHouse instance you operate and scale yourself.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_migrate = () => `Drop-in pipeline migration`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const page_dash0_migrate_desc = () => `Both platforms ingest standard OTLP, so moving your telemetry is just re-pointing your OpenTelemetry Collector exporter — no instrumentation changes. (Dashboards and alerts are recreated in Maple.)`
 
 
 /**

@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react"
 
-type Competitor = "datadog" | "grafana" | "new-relic"
+type Competitor = "datadog" | "grafana" | "new-relic" | "dash0"
 
 interface SliderConfig {
 	key: string
@@ -94,6 +94,38 @@ const competitorConfigs: Record<Competitor, { name: string; sliders: SliderConfi
 			},
 		],
 	},
+	dash0: {
+		name: "Dash0",
+		sliders: [
+			{
+				key: "spans",
+				label: "Spans / mo",
+				min: 10,
+				max: 5000,
+				step: 10,
+				default: 100,
+				unit: "M",
+			},
+			{
+				key: "logs",
+				label: "Log records / mo",
+				min: 10,
+				max: 5000,
+				step: 10,
+				default: 100,
+				unit: "M",
+			},
+			{
+				key: "metricPoints",
+				label: "Metric data points / mo",
+				min: 10,
+				max: 20000,
+				step: 50,
+				default: 500,
+				unit: "M",
+			},
+		],
+	},
 }
 
 function calculateDatadog(values: Record<string, number>) {
@@ -156,6 +188,22 @@ function calculateNewRelic(values: Record<string, number>) {
 	}
 }
 
+function calculateDash0(values: Record<string, number>) {
+	// Dash0 published per-data-point pricing: spans & logs $0.60 per million, metrics $0.20 per million
+	const spanCost = values.spans * 0.6
+	const logCost = values.logs * 0.6
+	const metricCost = values.metricPoints * 0.2
+
+	return {
+		total: spanCost + logCost + metricCost,
+		breakdown: [
+			{ label: "Spans", value: spanCost, detail: `${values.spans}M × $0.60/M` },
+			{ label: "Logs", value: logCost, detail: `${values.logs}M × $0.60/M` },
+			{ label: "Metrics", value: metricCost, detail: `${values.metricPoints}M × $0.20/M` },
+		].filter((item) => item.value > 0),
+	}
+}
+
 function calculateMaple(values: Record<string, number>, competitor: Competitor) {
 	const baseCost = 39
 	let totalDataGB: number
@@ -165,6 +213,10 @@ function calculateMaple(values: Record<string, number>, competitor: Competitor) 
 		totalDataGB = values.logVolume + values.apmHosts * 5 // ~5 GB traces per APM host
 	} else if (competitor === "grafana") {
 		totalDataGB = values.logVolume + values.traceVolume + values.metricSeries * 0.1 // rough metrics GB
+	} else if (competitor === "dash0") {
+		// Convert data-point counts to an estimated GB equivalent for Maple's volume-based pricing:
+		// ~1 KB per span and per log record, ~0.1 KB per metric data point.
+		totalDataGB = values.spans * 1 + values.logs * 1 + values.metricPoints * 0.1
 	} else {
 		totalDataGB = values.dataVolume
 	}
@@ -256,6 +308,7 @@ export function PricingCalculator({ competitor }: { competitor: Competitor }) {
 	const competitorCost = useMemo(() => {
 		if (competitor === "datadog") return calculateDatadog(values)
 		if (competitor === "grafana") return calculateGrafana(values)
+		if (competitor === "dash0") return calculateDash0(values)
 		return calculateNewRelic(values)
 	}, [competitor, values])
 
@@ -385,6 +438,8 @@ export function PricingCalculator({ competitor }: { competitor: Competitor }) {
 				Estimates based on published pricing as of 2025. Actual costs may vary based on contract
 				terms, volume discounts, and additional features. Maple pricing based on the Startup plan
 				($29/mo with 300 GB total included data).
+				{competitor === "dash0" &&
+					" Dash0 bills per data point (spans & logs $0.60/M, metrics $0.20/M); Maple bills per GB, so the Maple estimate converts data points to volume at roughly 1 KB per span and log record and 0.1 KB per metric data point. Your real ratio depends on attribute and payload sizes."}
 			</p>
 		</div>
 	)

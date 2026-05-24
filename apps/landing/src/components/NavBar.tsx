@@ -51,6 +51,7 @@ function NavBarInner({ locale = "en" }: { locale?: string }) {
 		{ href: l("/compare/datadog"), label: () => m.nav_vs_datadog() },
 		{ href: l("/compare/grafana"), label: () => m.nav_vs_grafana() },
 		{ href: l("/compare/new-relic"), label: () => m.nav_vs_new_relic() },
+		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0() },
 	]
 
 	const integrationLinks = [
