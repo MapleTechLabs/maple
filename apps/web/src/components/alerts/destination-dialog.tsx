@@ -424,7 +424,7 @@ export function DestinationDialog({
 					</DialogDescription>
 				</DialogHeader>
 
-				<div className="space-y-5">
+				<div className="space-y-5 px-6">
 					{!isEditing && (
 						<div className="space-y-2">
 							<div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
