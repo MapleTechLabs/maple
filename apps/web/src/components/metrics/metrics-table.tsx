@@ -7,6 +7,7 @@ import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/tinybird/metrics"
 import { listMetricsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 function formatNumber(num: number): string {
 	if (num >= 1_000_000) {
@@ -19,7 +20,7 @@ function formatNumber(num: number): string {
 }
 
 function formatTimeAgo(timestamp: string): string {
-	const date = new Date(timestamp)
+	const date = new Date(normalizeTimestampInput(timestamp))
 	const now = new Date()
 	const diffMs = now.getTime() - date.getTime()
 	const diffSec = Math.floor(diffMs / 1000)

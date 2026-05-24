@@ -14,6 +14,7 @@ import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/tinybir
 import { computeBucketSeconds } from "@/api/tinybird/timeseries-utils"
 import { formatBucketLabel, formatNumber, inferBucketSeconds, inferRangeMs } from "@/lib/format"
 import { formatForTinybird } from "@/lib/time-utils"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
 import { SEVERITY_COLORS, SEVERITY_ORDER } from "@/lib/severity"
 
@@ -105,8 +106,8 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 
 		const left = refAreaLeft
 		const right = refAreaRight ?? refAreaLeft
-		const leftMs = new Date(left).getTime()
-		const rightMs = new Date(right).getTime()
+		const leftMs = new Date(normalizeTimestampInput(left)).getTime()
+		const rightMs = new Date(normalizeTimestampInput(right)).getTime()
 
 		if (Number.isNaN(leftMs) || Number.isNaN(rightMs)) {
 			setRefAreaLeft(null)

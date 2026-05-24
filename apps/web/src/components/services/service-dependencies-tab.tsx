@@ -8,6 +8,7 @@ import {
 	getServiceExternalEdgesResultAtom,
 } from "@/lib/services/atoms/tinybird-query-atoms"
 import { formatLatency } from "@/lib/format"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
 
@@ -81,8 +82,8 @@ export function ServiceDependenciesTab({
 	)
 
 	const durationSeconds = useMemo(() => {
-		const s = new Date(effectiveStartTime.replace(" ", "T") + "Z").getTime()
-		const e = new Date(effectiveEndTime.replace(" ", "T") + "Z").getTime()
+		const s = new Date(normalizeTimestampInput(effectiveStartTime)).getTime()
+		const e = new Date(normalizeTimestampInput(effectiveEndTime)).getTime()
 		return s > 0 && e > 0 ? Math.max((e - s) / 1000, 1) : 3600
 	}, [effectiveStartTime, effectiveEndTime])
 

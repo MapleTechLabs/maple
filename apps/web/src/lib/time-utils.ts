@@ -1,4 +1,5 @@
 import { subMinutes, subHours, subDays, subWeeks, subMonths, startOfDay, format } from "date-fns"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 // Format date for Tinybird/ClickHouse DateTime compatibility
 // Converts to ClickHouse format: "YYYY-MM-DD HH:mm:ss"
@@ -114,8 +115,8 @@ export function formatTimeRangeDisplay(startTime?: string, endTime?: string): st
 		return "Custom range"
 	}
 
-	const start = new Date(startTime)
-	const end = new Date(endTime)
+	const start = new Date(normalizeTimestampInput(startTime))
+	const end = new Date(normalizeTimestampInput(endTime))
 	const diffMs = end.getTime() - start.getTime()
 
 	const minutes = Math.round(diffMs / (60 * 1000))

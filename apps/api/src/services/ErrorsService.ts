@@ -54,7 +54,7 @@ import {
 	orgIngestKeys,
 } from "@maple/db"
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
-import { CH } from "@maple/query-engine"
+import { CH, parseWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schedule, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
 import { Database, DatabaseError, type DatabaseClient } from "./DatabaseLive"
@@ -803,11 +803,11 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 					conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
 				if (!opts.includeArchived) conditions.push(isNull(errorIssues.archivedAt))
 				if (opts.endTime) {
-					const endMs = Date.parse(opts.endTime)
+					const endMs = parseWarehouseDateTime(opts.endTime)
 					if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, endMs))
 				}
 				if (opts.startTime) {
-					const startMs = Date.parse(opts.startTime)
+					const startMs = parseWarehouseDateTime(opts.startTime)
 					if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, startMs))
 				}
 
@@ -837,8 +837,10 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			function* (orgId, issueId, opts) {
 				yield* Effect.annotateCurrentSpan({ orgId, issueId })
 				const issueRow = yield* requireIssue(orgId, issueId)
-				const endMs = opts.endTime ? Date.parse(opts.endTime) : (yield* Clock.currentTimeMillis)
-				const startMs = opts.startTime ? Date.parse(opts.startTime) : endMs - DEFAULT_DETAIL_WINDOW_MS
+				const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : (yield* Clock.currentTimeMillis)
+				const startMs = opts.startTime
+						? parseWarehouseDateTime(opts.startTime)
+						: endMs - DEFAULT_DETAIL_WINDOW_MS
 				const bucketSeconds = opts.bucketSeconds ?? 3600
 				const sampleLimit = opts.sampleLimit ?? 25
 
@@ -894,7 +896,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				const timeseries = timeseriesRows.map(
 					(row) =>
 						new ErrorIssueTimeseriesPoint({
-							bucket: decodeIsoDateTimeStringSync(new Date(String(row.bucket)).toISOString()),
+							bucket: decodeIsoDateTimeStringSync(warehouseDateTimeToIso(String(row.bucket))),
 							count: Number(row.count ?? 0),
 						}),
 				)
@@ -906,7 +908,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 							spanId: decodeSpanIdSync(String(row.spanId ?? "")),
 							serviceName: String(row.serviceName ?? ""),
 							timestamp: decodeIsoDateTimeStringSync(
-								new Date(String(row.timestamp)).toISOString(),
+								warehouseDateTimeToIso(String(row.timestamp)),
 							),
 							exceptionMessage: String(row.exceptionMessage ?? ""),
 							durationMicros: Number(row.durationMicros ?? 0),
@@ -1046,7 +1048,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				if (opts.snoozeUntil === null) {
 					snoozeUntilMs = null
 				} else {
-					const parsed = Date.parse(opts.snoozeUntil)
+					const parsed = parseWarehouseDateTime(opts.snoozeUntil)
 					if (!Number.isFinite(parsed)) {
 						return yield* Effect.fail(
 							new ErrorValidationError({
@@ -1789,8 +1791,8 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 
 			const fingerprintResults = yield* Effect.forEach(rows, (row) =>
 				Effect.gen(function* () {
-					const firstSeenMs = Date.parse(row.firstSeen)
-					const lastSeenMs = Date.parse(row.lastSeen)
+					const firstSeenMs = parseWarehouseDateTime(row.firstSeen)
+					const lastSeenMs = parseWarehouseDateTime(row.lastSeen)
 					const existing = yield* dbExecute((db) =>
 						db
 							.select()

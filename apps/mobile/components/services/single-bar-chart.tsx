@@ -1,4 +1,5 @@
 import { Text, View } from "react-native"
+import { normalizeTimestamp } from "../../lib/format"
 
 interface SingleBarChartProps {
 	data: Array<{ bucket: string; value: number }>
@@ -23,7 +24,7 @@ export function SingleBarChart({ data, height = 100, color }: SingleBarChartProp
 
 	const formatLabel = (bucket: string) => {
 		try {
-			const date = new Date(bucket.includes("T") ? bucket : bucket.replace(" ", "T") + "Z")
+			const date = new Date(normalizeTimestamp(bucket))
 			return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
 		} catch {
 			return bucket.slice(11, 16)

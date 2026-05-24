@@ -33,6 +33,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
 import type { Dashboard, DashboardWidget } from "@/components/dashboard-builder/types"
 import type { DashboardSortOption } from "@/atoms/dashboard-preferences-atoms"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 const SORT_LABELS: Record<DashboardSortOption, string> = {
 	updated: "Recently Updated",
@@ -44,7 +45,7 @@ const SORT_LABELS: Record<DashboardSortOption, string> = {
 
 function formatTimeAgo(dateStr: string): string {
 	const now = Date.now()
-	const then = new Date(dateStr).getTime()
+	const then = new Date(normalizeTimestampInput(dateStr)).getTime()
 	const diffMs = now - then
 	const diffMins = Math.floor(diffMs / 60000)
 	if (diffMins < 1) return "Just now"
@@ -53,7 +54,7 @@ function formatTimeAgo(dateStr: string): string {
 	if (diffHours < 24) return `${diffHours}h ago`
 	const diffDays = Math.floor(diffHours / 24)
 	if (diffDays < 30) return `${diffDays}d ago`
-	return new Date(dateStr).toLocaleDateString()
+	return new Date(normalizeTimestampInput(dateStr)).toLocaleDateString()
 }
 
 function DashboardPreview({ widgets }: { widgets: DashboardWidget[] }) {

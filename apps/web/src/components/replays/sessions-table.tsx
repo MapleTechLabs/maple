@@ -15,6 +15,7 @@ import {
 	CircleWarningIcon,
 	EyeIcon,
 } from "@/components/icons"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { formatDuration, gradientFor, hostFromUrl } from "./replay-format"
 
 export interface SessionRow {
@@ -36,7 +37,7 @@ export interface SessionRow {
 }
 
 function parseTs(startTime: string): number {
-	return Date.parse(startTime.includes("T") ? startTime : `${startTime.replace(" ", "T")}Z`)
+	return Date.parse(normalizeTimestampInput(startTime))
 }
 
 function formatRelative(startTime: string): string {

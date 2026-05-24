@@ -6,6 +6,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { getServiceUsageResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import type { ServiceUsageResponse } from "@/api/tinybird/service-usage"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 function formatNumber(num: number): string {
 	if (num >= 1_000_000) {
@@ -63,8 +64,8 @@ function sumTotals(response: ServiceUsageResponse) {
 
 function shiftRangeBack(startTime?: string, endTime?: string) {
 	if (!startTime || !endTime) return { startTime: undefined, endTime: undefined }
-	const start = new Date(startTime.replace(" ", "T") + "Z")
-	const end = new Date(endTime.replace(" ", "T") + "Z")
+	const start = new Date(normalizeTimestampInput(startTime))
+	const end = new Date(normalizeTimestampInput(endTime))
 	if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
 		return { startTime: undefined, endTime: undefined }
 	}

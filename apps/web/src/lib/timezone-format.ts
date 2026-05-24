@@ -1,23 +1,15 @@
+import { warehouseDateTimeToIso } from "@maple/query-engine"
 import { getBrowserTimeZone, isValidIanaTimeZone } from "@/atoms/timezone-preference-atoms"
 
 type TimezoneFormatInput = string | number | Date
 
-const TINYBIRD_UTC_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?$/
-
+/**
+ * Normalize a tz-less warehouse (Tinybird/ClickHouse) DateTime string to an
+ * explicit-UTC ISO string. Delegates to the canonical shared helper so web,
+ * mobile, and the API all agree on one normalization.
+ */
 export function normalizeTimestampInput(value: string): string {
-	const trimmed = value.trim()
-	const match = TINYBIRD_UTC_PATTERN.exec(trimmed)
-	if (!match) {
-		return trimmed
-	}
-
-	const [, date, time, fractional] = match
-	if (!fractional) {
-		return `${date}T${time}Z`
-	}
-
-	const milliseconds = `${fractional}000`.slice(0, 3)
-	return `${date}T${time}.${milliseconds}Z`
+	return warehouseDateTimeToIso(value)
 }
 
 function toValidDate(input: TimezoneFormatInput): Date | null {

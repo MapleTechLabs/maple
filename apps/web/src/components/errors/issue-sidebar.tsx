@@ -5,6 +5,7 @@ import { getServiceColorClass } from "@maple/ui/lib/colors"
 
 import { PRIORITY_LABEL, PriorityBarsIcon } from "@/components/icons"
 import { formatRelativeTime } from "@/lib/format"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 import { ActorChip } from "./actor-chip"
 import { clampPriority, shortIssueId } from "./issue-id"
@@ -124,12 +125,12 @@ export function IssueSidebar({
 						{totalInWindow.toLocaleString()}
 					</span>
 				</Row>
-				<Row label="First seen" title={new Date(issue.firstSeenAt).toLocaleString()}>
+				<Row label="First seen" title={new Date(normalizeTimestampInput(issue.firstSeenAt)).toLocaleString()}>
 					<span className="text-right tabular-nums text-muted-foreground">
 						{formatRelativeTime(issue.firstSeenAt)}
 					</span>
 				</Row>
-				<Row label="Last seen" title={new Date(issue.lastSeenAt).toLocaleString()}>
+				<Row label="Last seen" title={new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}>
 					<span className="text-right tabular-nums text-foreground">
 						{formatRelativeTime(issue.lastSeenAt)}
 					</span>

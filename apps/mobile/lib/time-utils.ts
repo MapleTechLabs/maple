@@ -1,3 +1,5 @@
+import { normalizeTimestamp } from "./format"
+
 export type TimeRangeKey = "1h" | "24h" | "7d" | "30d"
 
 export function formatForTinybird(date: Date): string {
@@ -40,8 +42,8 @@ const TARGET_POINTS = 30
 const AUTO_BUCKET_LADDER = [300, 900, 1800, 3600, 14400, 86400] as const
 
 export function computeBucketSeconds(startTime: string, endTime: string): number {
-	const startMs = new Date(startTime.replace(" ", "T") + "Z").getTime()
-	const endMs = new Date(endTime.replace(" ", "T") + "Z").getTime()
+	const startMs = new Date(normalizeTimestamp(startTime)).getTime()
+	const endMs = new Date(normalizeTimestamp(endTime)).getTime()
 	if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
 		return 300
 	}

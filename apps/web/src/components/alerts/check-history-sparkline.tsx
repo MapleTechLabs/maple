@@ -2,6 +2,7 @@ import * as React from "react"
 import { CartesianGrid, Dot, Legend, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
 import type { AlertCheckDocument, AlertSignalType } from "@maple/domain/http"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import {
 	type ChartConfig,
 	ChartContainer,
@@ -45,7 +46,7 @@ export function CheckHistorySparkline({
 		const statusLookup = new Map<string, AlertCheckDocument["status"]>()
 
 		for (const check of sorted) {
-			const t = new Date(check.timestamp).getTime()
+			const t = new Date(normalizeTimestampInput(check.timestamp)).getTime()
 			const key = isMulti ? check.groupKey : SINGLE_SERIES_KEY
 			const existing = byTimestamp.get(t) ?? { t }
 			existing[key] = check.observedValue

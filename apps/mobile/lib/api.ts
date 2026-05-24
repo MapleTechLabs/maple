@@ -1,3 +1,4 @@
+import { normalizeTimestamp } from "./format"
 import { getHttpInfo, type HttpInfo } from "./http"
 
 export { getHttpInfo, type HttpInfo } from "./http"
@@ -193,8 +194,8 @@ export async function fetchServiceOverview(startTime: string, endTime: string): 
 		{ startTime, endTime },
 	)
 
-	const startMs = new Date(startTime.replace(" ", "T") + "Z").getTime()
-	const endMs = new Date(endTime.replace(" ", "T") + "Z").getTime()
+	const startMs = new Date(normalizeTimestamp(startTime)).getTime()
+	const endMs = new Date(normalizeTimestamp(endTime)).getTime()
 	const durationSeconds = Math.max((endMs - startMs) / 1000, 1)
 
 	// Group raw rows by service+environment and aggregate. The service-overview

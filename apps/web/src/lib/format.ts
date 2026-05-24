@@ -110,7 +110,7 @@ export function formatBucketLabel(
 ): string {
 	if (typeof value !== "string") return ""
 
-	const date = new Date(value)
+	const date = new Date(normalizeTimestampInput(value))
 	if (Number.isNaN(date.getTime())) return value
 
 	const includeDate = context.rangeMs >= 24 * 60 * 60 * 1000 || (context.bucketSeconds ?? 0) >= 24 * 60 * 60

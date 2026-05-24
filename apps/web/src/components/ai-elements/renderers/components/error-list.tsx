@@ -1,4 +1,5 @@
 import type { BaseComponentProps } from "@json-render/react"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 interface ErrorListProps {
 	errors: Array<{
@@ -15,7 +16,7 @@ export function ErrorList({ props }: BaseComponentProps<ErrorListProps>) {
 	return (
 		<div className="max-h-[300px] space-y-1 overflow-y-auto">
 			{errors.map((err) => {
-				const lastSeen = new Date(err.lastSeen)
+				const lastSeen = new Date(normalizeTimestampInput(err.lastSeen))
 				const timeAgo = formatTimeAgo(lastSeen)
 				return (
 					<div

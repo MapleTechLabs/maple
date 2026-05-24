@@ -1,5 +1,6 @@
 import type { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { Array as Arr, Clock, Config, Context, Deferred, Effect, Layer, Option } from "effect"
 import { EdgeCacheService } from "./EdgeCacheService"
 
@@ -196,7 +197,7 @@ export const pointsToBuckets = (
 	const byBucket = new Map<number, TimeseriesPoint[]>()
 
 	for (const point of points) {
-		const ms = new Date(point.bucket).getTime()
+		const ms = parseWarehouseDateTime(point.bucket)
 		if (Number.isNaN(ms)) continue
 		const aligned = Math.floor(ms / bucketMs) * bucketMs
 		const existing = byBucket.get(aligned)
@@ -249,7 +250,7 @@ const slicePointsFromBuckets = (
 		if (bucket.endMs <= startMs) continue
 		if (bucket.startMs >= endMs) break
 		for (const point of bucket.points) {
-			const ms = new Date(point.bucket).getTime()
+			const ms = parseWarehouseDateTime(point.bucket)
 			if (Number.isNaN(ms)) continue
 			if (ms >= startMs && ms < endMs) {
 				out.push(point)
@@ -417,7 +418,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 							m.cachable
 								? []
 								: rangePoints.filter((point) => {
-										const ms = new Date(point.bucket).getTime()
+										const ms = parseWarehouseDateTime(point.bucket)
 										return (
 											!Number.isNaN(ms) && ms >= request.startMs && ms < request.endMs
 										)

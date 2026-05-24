@@ -13,6 +13,7 @@ import { type GetMetricTimeSeriesInput, type MetricTimeSeriesResponse } from "@/
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { getMetricTimeSeriesResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
 import { formatBackendError } from "@/lib/error-messages"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 const chartConfig = {
 	avgValue: {
@@ -100,7 +101,7 @@ export function MetricsVolumeChart({
 		})
 		.onSuccess((response) => {
 			const chartData = response.data.map((point) => ({
-				time: new Date(point.bucket).toLocaleTimeString("en-US", {
+				time: new Date(normalizeTimestampInput(point.bucket)).toLocaleTimeString("en-US", {
 					hour: "2-digit",
 					minute: "2-digit",
 				}),

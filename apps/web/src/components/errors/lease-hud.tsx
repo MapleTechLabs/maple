@@ -1,6 +1,7 @@
 import * as React from "react"
 import type { ActorDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { ActorChip } from "./actor-chip"
 
 interface LeaseHudProps {
@@ -23,8 +24,8 @@ export function LeaseHud({ leaseExpiresAt, claimedAt, leaseHolder, className }: 
 		return () => clearInterval(id)
 	}, [])
 
-	const expiresMs = Date.parse(leaseExpiresAt)
-	const claimedMs = claimedAt ? Date.parse(claimedAt) : null
+	const expiresMs = Date.parse(normalizeTimestampInput(leaseExpiresAt))
+	const claimedMs = claimedAt ? Date.parse(normalizeTimestampInput(claimedAt)) : null
 	if (!Number.isFinite(expiresMs)) return null
 
 	const remainingMs = Math.max(0, expiresMs - now)

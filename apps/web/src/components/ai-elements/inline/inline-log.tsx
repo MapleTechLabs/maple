@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { SeverityBadge } from "@/components/logs/severity-badge"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { InlineLogData } from "./types"
 
 export function InlineLog({ data }: { data: InlineLogData }) {
@@ -12,7 +13,7 @@ export function InlineLog({ data }: { data: InlineLogData }) {
 			</span>
 			{data.timestamp && (
 				<span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-					{new Date(data.timestamp).toLocaleTimeString()}
+					{new Date(normalizeTimestampInput(data.timestamp)).toLocaleTimeString()}
 				</span>
 			)}
 			{data.traceId && (

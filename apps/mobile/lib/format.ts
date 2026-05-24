@@ -10,7 +10,7 @@ export function formatDuration(ms: number): string {
 
 const TINYBIRD_UTC_PATTERN = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.(\d+))?$/
 
-function normalizeTimestamp(value: string): string {
+export function normalizeTimestamp(value: string): string {
 	const match = TINYBIRD_UTC_PATTERN.exec(value.trim())
 	if (!match) return value
 	const [, date, time, frac] = match

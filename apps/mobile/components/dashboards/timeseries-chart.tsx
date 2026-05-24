@@ -1,6 +1,7 @@
 import { Text, View } from "react-native"
 import type { CustomTimeseriesPoint } from "../../lib/api"
 import { getServiceColor } from "../../lib/colors"
+import { normalizeTimestamp } from "../../lib/format"
 
 interface TimeseriesChartProps {
 	points: CustomTimeseriesPoint[]
@@ -12,7 +13,7 @@ const DEFAULT_HEIGHT = 120
 
 function formatLabel(bucket: string) {
 	try {
-		const d = new Date(bucket.includes("T") ? bucket : bucket.replace(" ", "T") + "Z")
+		const d = new Date(normalizeTimestamp(bucket))
 		return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })
 	} catch {
 		return bucket.slice(11, 16)

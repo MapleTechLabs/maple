@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { QueryEngineExecuteRequest } from "@maple/query-engine"
+import { QueryEngineExecuteRequest, warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	ErrorsByTypeRequest,
 	ErrorsSummaryRequest,
@@ -80,8 +80,8 @@ const getErrorsByTypeEffect = Effect.fn("QueryEngine.getErrorsByType")(function*
 			sampleMessage: raw.sampleMessage,
 			count: Number(raw.count),
 			affectedServicesCount: Number(raw.affectedServicesCount),
-			firstSeen: new Date(raw.firstSeen),
-			lastSeen: new Date(raw.lastSeen),
+			firstSeen: new Date(warehouseDateTimeToIso(raw.firstSeen)),
+			lastSeen: new Date(warehouseDateTimeToIso(raw.lastSeen)),
 		})),
 	}
 })
@@ -298,7 +298,7 @@ const getErrorDetailTracesEffect = Effect.fn("QueryEngine.getErrorDetailTraces")
 	return {
 		data: result.data.map((raw) => ({
 			traceId: raw.traceId,
-			startTime: new Date(raw.startTime),
+			startTime: new Date(warehouseDateTimeToIso(raw.startTime)),
 			durationMicros: Number(raw.durationMicros),
 			spanCount: Number(raw.spanCount),
 			services: [...raw.services],

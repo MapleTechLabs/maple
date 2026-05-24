@@ -1,5 +1,6 @@
 import type { BaseComponentProps } from "@json-render/react"
 import { SeverityBadge } from "@/components/logs/severity-badge"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 interface LogListProps {
 	logs: Array<{
@@ -26,7 +27,7 @@ export function LogList({ props }: BaseComponentProps<LogListProps>) {
 			)}
 			<div className="max-h-[300px] space-y-0.5 overflow-y-auto">
 				{logs.map((log) => {
-					const time = new Date(log.timestamp).toLocaleTimeString()
+					const time = new Date(normalizeTimestampInput(log.timestamp)).toLocaleTimeString()
 					return (
 						<div
 							key={`${log.timestamp}-${log.body.slice(0, 30)}`}

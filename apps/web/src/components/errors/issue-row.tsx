@@ -10,12 +10,13 @@ import type { IssueMutations } from "./use-issue-mutations"
 import { clampPriority, shortIssueId } from "./issue-id"
 import { PriorityBarsIcon, WorkflowRingIcon } from "@/components/icons"
 import { formatNumber } from "@/lib/format"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { getServiceColorClass } from "@maple/ui/lib/colors"
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 
 function formatLastSeen(iso: string): string {
-	const d = new Date(iso)
+	const d = new Date(normalizeTimestampInput(iso))
 	if (Number.isNaN(d.getTime())) return iso
 	const diffMs = Date.now() - d.getTime()
 	if (diffMs < 60_000) return "now"
@@ -180,7 +181,7 @@ export function IssueRow({ issue, mutations, selected, focused, onSelectToggle, 
 
 				<span
 					className="relative z-10 w-12 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
-					title={`Last seen ${new Date(issue.lastSeenAt).toLocaleString()}`}
+					title={`Last seen ${new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}`}
 				>
 					{formatLastSeen(issue.lastSeenAt)}
 				</span>

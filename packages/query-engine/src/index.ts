@@ -1,4 +1,5 @@
 export * from "./query-engine"
+export * from "./datetime"
 export * from "./where-clause"
 export * from "./traces-shared"
 export * from "./sql"
