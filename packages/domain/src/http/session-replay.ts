@@ -4,7 +4,7 @@ import { SessionId, TraceId } from "../primitives"
 import { TinybirdDateTime } from "../query-engine"
 import { Authorization } from "./current-tenant"
 import { QueryEngineExecutionError, QueryEngineTimeoutError } from "./query-engine"
-import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
+import { WarehouseQueryError, WarehouseQuotaExceededError } from "./warehouse"
 
 // ---------------------------------------------------------------------------
 // Session replay endpoint schemas
@@ -199,8 +199,8 @@ export class SessionTranscriptResponse extends Schema.Class<SessionTranscriptRes
 const sessionReplayEndpointErrors = [
 	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 ] as const
 
 export class SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays")

@@ -11,7 +11,7 @@ import {
 	KubernetesIcon,
 	ServerIcon,
 } from "@/components/icons"
-import type { ServicePlatform } from "@/api/tinybird/service-map"
+import type { ServicePlatform } from "@/api/warehouse/service-map"
 import { getDbDescriptor, withAlpha } from "./service-map-db"
 import { getServiceMapNodeColor, type ServiceNodeData } from "./service-map-utils"
 

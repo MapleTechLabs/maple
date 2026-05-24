@@ -9,7 +9,7 @@ import {
 	WidgetDisplayConfigSchema,
 	WidgetLayoutSchema,
 } from "@maple/domain/http"
-import { resolveTenant } from "@/mcp/lib/query-tinybird"
+import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { McpQueryError } from "@/mcp/tools/types"
 

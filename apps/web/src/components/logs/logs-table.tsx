@@ -3,7 +3,7 @@ import { Result } from "@/lib/effect-atom"
 import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type Log } from "@/api/tinybird/logs"
+import { type Log } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "./log-detail-sheet"
 import type { LogsSearchParams } from "@/routes/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"

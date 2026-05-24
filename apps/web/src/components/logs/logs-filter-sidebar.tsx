@@ -7,7 +7,7 @@ import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { FilterSection, SearchableFilterSection } from "@/components/filters/filter-section"
 import { Route } from "@/routes/logs"
 import { Separator } from "@maple/ui/components/ui/separator"
-import { getLogsFacetsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getLogsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,

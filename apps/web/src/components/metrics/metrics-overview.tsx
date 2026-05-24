@@ -4,8 +4,8 @@ import { Input } from "@maple/ui/components/ui/input"
 import { MetricsSummaryCards, type MetricType } from "./metrics-summary-cards"
 import { MetricsVolumeChart } from "./metrics-volume-chart"
 import { MetricsTable } from "./metrics-table"
-import type { Metric } from "@/api/tinybird/metrics"
-import type { GetMetricTimeSeriesInput } from "@/api/tinybird/metrics"
+import type { Metric } from "@/api/warehouse/metrics"
+import type { GetMetricTimeSeriesInput } from "@/api/warehouse/metrics"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
 interface MetricsOverviewProps {

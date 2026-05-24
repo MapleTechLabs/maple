@@ -3,9 +3,9 @@ import { FileIcon, GridSquareCirclePlusIcon, ChartLineIcon, DatabaseIcon } from 
 
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { getServiceUsageResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getServiceUsageResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import type { ServiceUsageResponse } from "@/api/tinybird/service-usage"
+import type { ServiceUsageResponse } from "@/api/warehouse/service-usage"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 function formatNumber(num: number): string {

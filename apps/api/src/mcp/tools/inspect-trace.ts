@@ -1,5 +1,5 @@
 import { requiredStringParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { withTenantExecutor } from "../lib/query-tinybird"
+import { withTenantExecutor } from "../lib/query-warehouse"
 import { formatDurationFromMs, truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"

@@ -1,5 +1,5 @@
 import { optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { queryTinybird } from "../lib/query-tinybird"
+import { queryWarehouse } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit, clampOffset } from "../lib/limits"
 import { formatNumber, formatTable } from "../lib/format"
@@ -38,7 +38,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 
 			const [metricsResult, summaryResult] = yield* Effect.all(
 				[
-					queryTinybird("list_metrics", {
+					queryWarehouse("list_metrics", {
 						start_time: st,
 						end_time: et,
 						service,
@@ -47,7 +47,7 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 						offset: off,
 						limit: lim,
 					}),
-					queryTinybird("metrics_summary", {
+					queryWarehouse("metrics_summary", {
 						start_time: st,
 						end_time: et,
 						service,

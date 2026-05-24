@@ -6,7 +6,7 @@ import {
 	getServiceMapForServiceResultAtom,
 	getServiceMapDbEdgesForServiceResultAtom,
 	getServiceExternalEdgesResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatLatency } from "@/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"

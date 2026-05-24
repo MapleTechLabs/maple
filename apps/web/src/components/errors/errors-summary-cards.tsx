@@ -3,8 +3,8 @@ import { CircleWarningIcon, CirclePercentageIcon, ServerIcon, PulseIcon } from "
 
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type GetErrorsSummaryInput } from "@/api/tinybird/errors"
-import { getErrorsSummaryResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { type GetErrorsSummaryInput } from "@/api/warehouse/errors"
+import { getErrorsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 function formatNumber(num: number): string {

@@ -1,7 +1,7 @@
 import { Array as Arr, Clock, Effect, HashMap, HashSet, Option, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { SpanHierarchyOutput, ListLogsOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { InspectTraceOutput, SpanNode } from "./types"
 import { toLogEntry } from "./row-mappers"
 
@@ -80,7 +80,7 @@ export const inspectTrace = Effect.fn("Observability.inspectTrace")(function* (
 	traceId: string,
 	options?: InspectTraceOptions,
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan("traceId", traceId)
 
 	const nowMs = yield* Clock.currentTimeMillis

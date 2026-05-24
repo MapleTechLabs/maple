@@ -78,7 +78,7 @@ export const search = Command.make("search", {
 				}
 			}
 
-			const result = yield* client.queryTinybird("list_traces", params)
+			const result = yield* client.queryWarehouse("list_traces", params)
 
 			// MCP returns: { traceId, rootSpanName, durationMs, spanCount, services, hasError }
 			const traces = result.data as Array<{

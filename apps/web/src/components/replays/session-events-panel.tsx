@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { getSessionTranscriptResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getSessionTranscriptResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { useReplayPlayer } from "./replay-player-context"
 import { parseChTimestampMs } from "./replay-timeline"

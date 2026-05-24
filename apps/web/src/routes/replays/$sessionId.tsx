@@ -13,7 +13,7 @@ import {
 	getReplayEventsResultAtom,
 	getReplayResultAtom,
 	getSessionTranscriptResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {

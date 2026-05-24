@@ -18,7 +18,7 @@ import {
 	getCustomChartServiceDetailResultAtom,
 	getServiceApdexTimeSeriesResultAtom,
 	getServiceReleasesTimelineResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { detectReleaseMarkers } from "@/lib/services/release-markers"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"

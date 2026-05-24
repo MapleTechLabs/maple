@@ -8,7 +8,7 @@ import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { listReplaysResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { listReplaysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 

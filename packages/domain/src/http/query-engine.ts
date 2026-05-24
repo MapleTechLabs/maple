@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { QueryEngineExecuteRequest, QueryEngineExecuteResponse, TinybirdDateTime } from "../query-engine"
 import { Authorization } from "./current-tenant"
-import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
+import { WarehouseQueryError, WarehouseQuotaExceededError } from "./warehouse"
 
 // ---------------------------------------------------------------------------
 // Dedicated endpoint schemas
@@ -1027,16 +1027,16 @@ export class QueryEngineTimeoutError extends Schema.TaggedErrorClass<QueryEngine
 const queryEngineEndpointErrors = [
 	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 ] as const
 
 const validatedQueryEndpointErrors = [
 	QueryEngineValidationError,
 	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 ] as const
 
 export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
@@ -1332,8 +1332,8 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 				RawSqlValidationError,
 				QueryEngineExecutionError,
 				QueryEngineTimeoutError,
-				TinybirdQueryError,
-				TinybirdQuotaExceededError,
+				WarehouseQueryError,
+				WarehouseQuotaExceededError,
 			] as const,
 		}),
 	)

@@ -1,7 +1,7 @@
 import { formatDuration } from "@/lib/format"
 import { getServiceLegendColor, calculateSelfTime } from "@maple/ui/colors"
 import { getHttpInfo } from "@maple/ui/lib/http"
-import type { SpanNode } from "@/api/tinybird/traces"
+import type { SpanNode } from "@/api/warehouse/traces"
 
 interface TraceTimelineTooltipProps {
 	span: SpanNode

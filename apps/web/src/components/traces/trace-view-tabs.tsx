@@ -7,7 +7,7 @@ import { TraceTimeline } from "./trace-timeline"
 import { TraceFlowView } from "./flow-view"
 import { TraceViewProvider } from "./trace-view-context"
 import { DEFAULT_COLOR_BY, type ColorByField } from "./color-by"
-import type { SpanNode, Span } from "@/api/tinybird/traces"
+import type { SpanNode, Span } from "@/api/warehouse/traces"
 
 interface TraceViewTabsProps {
 	rootSpans: SpanNode[]

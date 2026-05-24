@@ -20,9 +20,9 @@ import {
 	getCustomChartTimeSeriesResultAtom,
 	getOverviewTimeSeriesResultAtom,
 	getServicesFacetsResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
-import type { CustomChartTimeSeriesResponse } from "@/api/tinybird/custom-charts"
-import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/tinybird/services"
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-charts"
+import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 

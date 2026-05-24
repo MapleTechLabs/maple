@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { decodeWidgetJson, withDashboardMutation } from "../lib/dashboard-mutations"
 import { formatValidationSummary, inspectWidgetsAfterMutation } from "../lib/inspect-widget"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 
 const TOOL = "update_dashboard_widget"
 

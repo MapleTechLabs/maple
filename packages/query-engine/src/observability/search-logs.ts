@@ -1,11 +1,11 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import type { ListLogsOutput, LogsCountOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { SearchLogsInput } from "./types"
 import { toLogEntry } from "./row-mappers"
 
 export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input: SearchLogsInput) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 30
 	const offset = input.offset ?? 0
 

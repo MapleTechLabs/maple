@@ -11,7 +11,7 @@ import {
 } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { QueryBuilderQueryDraftSchema } from "./query-engine"
-import { TinybirdQueryError, TinybirdQuotaExceededError } from "./tinybird"
+import { WarehouseQueryError, WarehouseQuotaExceededError } from "./warehouse"
 
 
 
@@ -644,8 +644,8 @@ export class AlertsApiGroup extends HttpApiGroup.make("alerts")
 				AlertPersistenceError,
 				AlertNotFoundError,
 				AlertDeliveryError,
-				TinybirdQueryError,
-				TinybirdQuotaExceededError,
+				WarehouseQueryError,
+				WarehouseQuotaExceededError,
 			],
 		}),
 	)

@@ -1,8 +1,8 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import { findSlowTraces } from "./find-slow-traces"
-import { ObservabilityError, TinybirdExecutor } from "./TinybirdExecutor"
-import type { TinybirdExecutorShape } from "./TinybirdExecutor"
+import { ObservabilityError, WarehouseExecutor } from "./WarehouseExecutor"
+import type { WarehouseExecutorShape } from "./WarehouseExecutor"
 
 interface CapturedCalls {
 	sqlQueries: string[]
@@ -13,7 +13,7 @@ const makeMockExecutor = (
 	captured: CapturedCalls,
 	sqlRows: ReadonlyArray<Record<string, unknown>> = [],
 	pipeData: ReadonlyArray<Record<string, unknown>> = [],
-): TinybirdExecutorShape => ({
+): WarehouseExecutorShape => ({
 	orgId: "org_test",
 	sqlQuery: (sql: string) => {
 		captured.sqlQueries.push(sql)
@@ -25,7 +25,7 @@ const makeMockExecutor = (
 	},
 })
 
-const makeLayer = (executor: TinybirdExecutorShape) => Layer.succeed(TinybirdExecutor, executor)
+const makeLayer = (executor: WarehouseExecutorShape) => Layer.succeed(WarehouseExecutor, executor)
 
 describe("findSlowTraces", () => {
 	it.effect("issues ORDER BY Duration DESC at the DB (not in JS) with the requested limit", () =>
@@ -127,7 +127,7 @@ describe("findSlowTraces", () => {
 
 	it.effect("propagates ObservabilityError from the executor", () =>
 		Effect.gen(function* () {
-			const failingExecutor: TinybirdExecutorShape = {
+			const failingExecutor: WarehouseExecutorShape = {
 				orgId: "org_test",
 				sqlQuery: () =>
 					Effect.fail(

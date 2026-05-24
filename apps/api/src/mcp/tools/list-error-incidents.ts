@@ -2,7 +2,7 @@ import { McpQueryError, optionalStringParam, validationError, type McpToolRegist
 import { formatTable } from "../lib/format"
 import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
 import { ErrorIssueId } from "@maple/domain/http"
 

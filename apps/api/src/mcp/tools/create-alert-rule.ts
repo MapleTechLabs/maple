@@ -8,7 +8,7 @@ import {
 } from "./types"
 import { Effect, Match, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import { resolveTenant } from "@/mcp/lib/query-tinybird"
+import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { AlertsService } from "@/services/AlertsService"
 import { AlertRuleUpsertRequest } from "@maple/domain/http"
 

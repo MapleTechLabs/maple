@@ -25,7 +25,7 @@ import {
 	visualizationToDisplayType,
 } from "../lib/raw-sql-widget"
 import { formatValidationSummary, inspectWidgetsAfterMutation } from "../lib/inspect-widget"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 
 const TOOL = "add_dashboard_widget"
 

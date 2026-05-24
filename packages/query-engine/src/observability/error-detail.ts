@@ -1,6 +1,6 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import type { ErrorDetailTracesOutput, ErrorsTimeseriesOutput, ListLogsOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
 
 export interface ErrorDetailTrace {
@@ -28,7 +28,7 @@ export const errorDetail = Effect.fn("Observability.errorDetail")(function* (inp
 	readonly includeTimeseries?: boolean
 	readonly limit?: number
 }) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 5
 
 	yield* Effect.annotateCurrentSpan({

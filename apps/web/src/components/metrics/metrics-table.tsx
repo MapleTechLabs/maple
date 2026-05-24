@@ -5,8 +5,8 @@ import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@maple/ui/comp
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MetricTypeBadge } from "./metric-type-badge"
-import { type Metric, type ListMetricsInput } from "@/api/tinybird/metrics"
-import { listMetricsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
+import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 

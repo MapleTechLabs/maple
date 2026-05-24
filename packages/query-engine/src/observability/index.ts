@@ -1,11 +1,11 @@
 export {
-	TinybirdExecutor,
+	WarehouseExecutor,
 	ObservabilityError,
-	type TinybirdExecutorShape,
+	type WarehouseExecutorShape,
 	type ExecutorQueryOptions,
 	type ExecutorQuerySettings,
 	type ExecutorQueryProfile,
-} from "./TinybirdExecutor"
+} from "./WarehouseExecutor"
 export type * from "./types"
 export { toSpanResult, toLogEntry, toErrorSummary } from "./row-mappers"
 export { aggregateServiceRows, weightedAvg } from "./aggregation"

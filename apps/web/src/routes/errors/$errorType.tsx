@@ -33,10 +33,10 @@ import {
 	getErrorsByTypeResultAtom,
 	getErrorDetailTracesResultAtom,
 	getErrorsTimeseriesResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
-import { computeBucketSeconds, toIsoBucket } from "@/api/tinybird/timeseries-utils"
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import { computeBucketSeconds, toIsoBucket } from "@/api/warehouse/timeseries-utils"
 import { OptionalStringArrayParam } from "@/lib/search-params"
-import type { ErrorByType, ErrorDetailTrace, ErrorsTimeseriesItem } from "@/api/tinybird/errors"
+import type { ErrorByType, ErrorDetailTrace, ErrorsTimeseriesItem } from "@/api/warehouse/errors"
 
 const errorDetailSearchSchema = Schema.Struct({
 	startTime: Schema.optional(Schema.String),

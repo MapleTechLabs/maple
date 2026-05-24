@@ -1,27 +1,27 @@
 import { Effect } from "effect"
 import type { DataSourceEndpoint } from "@/components/dashboard-builder/types"
 
-import { getServiceUsage } from "@/api/tinybird/service-usage"
-import { getServiceOverview, getServiceApdexTimeSeries, getServicesFacets } from "@/api/tinybird/services"
-import { listTraces, getTracesFacets, getTracesDurationStats } from "@/api/tinybird/traces"
-import { listLogs, getLogsCount, getLogsFacets } from "@/api/tinybird/logs"
+import { getServiceUsage } from "@/api/warehouse/service-usage"
+import { getServiceOverview, getServiceApdexTimeSeries, getServicesFacets } from "@/api/warehouse/services"
+import { listTraces, getTracesFacets, getTracesDurationStats } from "@/api/warehouse/traces"
+import { listLogs, getLogsCount, getLogsFacets } from "@/api/warehouse/logs"
 import {
 	getErrorsByType,
 	getErrorsFacets,
 	getErrorsSummary,
 	getErrorDetailTraces,
-} from "@/api/tinybird/errors"
-import { getErrorRateByService } from "@/api/tinybird/error-rates"
-import { listMetrics, getMetricsSummary } from "@/api/tinybird/metrics"
+} from "@/api/warehouse/errors"
+import { getErrorRateByService } from "@/api/warehouse/error-rates"
+import { listMetrics, getMetricsSummary } from "@/api/warehouse/metrics"
 import {
 	getCustomChartTimeSeries,
 	getCustomChartBreakdown,
 	getCustomChartServiceSparklines,
-} from "@/api/tinybird/custom-charts"
-import { getQueryBuilderTimeseries } from "@/api/tinybird/query-builder-timeseries"
-import { getQueryBuilderBreakdown } from "@/api/tinybird/query-builder-breakdown"
-import { getQueryBuilderList } from "@/api/tinybird/query-builder-list"
-import { getRawSqlChart } from "@/api/tinybird/raw-sql-chart"
+} from "@/api/warehouse/custom-charts"
+import { getQueryBuilderTimeseries } from "@/api/warehouse/query-builder-timeseries"
+import { getQueryBuilderBreakdown } from "@/api/warehouse/query-builder-breakdown"
+import { getQueryBuilderList } from "@/api/warehouse/query-builder-list"
+import { getRawSqlChart } from "@/api/warehouse/raw-sql-chart"
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ServerFunction = (opts: { data: any }) => Effect.Effect<any, unknown, unknown>

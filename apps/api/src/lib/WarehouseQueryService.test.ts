@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { TinybirdQueryError, OrgId, UserId } from "@maple/domain/http"
+import { WarehouseQueryError, OrgId, UserId } from "@maple/domain/http"
 import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
 import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
@@ -139,7 +139,7 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 		expect(Exit.isFailure(exit)).toBe(true)
 
 		const failure = getError(exit)
-		expect(failure).toBeInstanceOf(TinybirdQueryError)
+		expect(failure).toBeInstanceOf(WarehouseQueryError)
 		expect(failure).toMatchObject({
 			category: "upstream",
 			upstreamStatus: 503,
@@ -147,10 +147,10 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 	})
 })
 
-describe("TinybirdQueryError category surfaces transient classification", () => {
+describe("WarehouseQueryError category surfaces transient classification", () => {
 	it("emits category=upstream on 503", () => {
 		// Sanity check that the constructor flow we depend on for retry is intact.
-		const err = new TinybirdQueryError({
+		const err = new WarehouseQueryError({
 			pipe: "test",
 			message: "upstream",
 			category: "upstream",

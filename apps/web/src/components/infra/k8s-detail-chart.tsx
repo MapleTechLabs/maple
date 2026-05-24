@@ -15,8 +15,8 @@ import {
 	podInfraTimeseriesResultAtom,
 	nodeInfraTimeseriesResultAtom,
 	workloadInfraTimeseriesResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
-import type { PodInfraMetric, NodeInfraMetric, WorkloadInfraMetric, WorkloadKind } from "@/api/tinybird/infra"
+} from "@/lib/services/atoms/warehouse-query-atoms"
+import type { PodInfraMetric, NodeInfraMetric, WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
 import { formatPercent } from "./format"
 import { formatBackendError } from "@/lib/error-messages"
 

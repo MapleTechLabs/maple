@@ -1,11 +1,11 @@
 import { Array as Arr, Effect, pipe, Record } from "effect"
 import type { ServiceOverviewOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { ListServicesInput, ServiceSummary } from "./types"
 import { aggregateServiceRows, weightedAvg } from "./aggregation"
 
 export const listServices = Effect.fn("Observability.listServices")(function* (input: ListServicesInput) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 
 	yield* Effect.annotateCurrentSpan("environment", input.environment ?? "all")
 

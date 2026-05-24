@@ -3,7 +3,7 @@ import { CircleWarningIcon, ChevronDownIcon, ChevronUpIcon } from "@/components/
 
 import { Alert, AlertTitle, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@maple/ui/components/ui/collapsible"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 interface LogErrorBannerProps {
 	log: Log

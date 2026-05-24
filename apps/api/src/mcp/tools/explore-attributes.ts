@@ -1,6 +1,6 @@
 import { optionalNumberParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { resolveTenant } from "../lib/query-tinybird"
-import { queryTinybird } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
+import { queryWarehouse } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit } from "../lib/limits"
 import { formatNumber, formatTable } from "../lib/format"
@@ -9,7 +9,7 @@ import { createDualContent } from "../lib/structured-output"
 import { formatNextSteps } from "../lib/next-steps"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
 import { ObservabilityError } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerExploreAttributesTool(server: McpToolRegistrar) {
 	server.tool(
@@ -40,7 +40,7 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 			const lim = clampLimit(params.limit, { defaultValue: 50, max: 500 })
 			const scope = (params.scope ?? "span") as "span" | "resource"
 			const tenant = yield* resolveTenant
-			const executorLayer = makeTinybirdExecutorFromTenant(tenant)
+			const executorLayer = makeWarehouseExecutorFromTenant(tenant)
 			const mapError = (e: ObservabilityError) =>
 				new McpQueryError({ message: e.message, pipe: e.pipe ?? "explore_attributes", cause: e })
 
@@ -97,9 +97,9 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				}
 			}
 
-			// Services source uses different pipe - delegate to queryTinybird directly
+			// Services source uses different pipe - delegate to queryWarehouse directly
 			if (params.source === "services") {
-				const result = yield* queryTinybird<{
+				const result = yield* queryWarehouse<{
 					facetType: string
 					name: string
 					count?: number

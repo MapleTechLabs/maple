@@ -2,7 +2,7 @@ import { Array as Arr, Effect, Option, pipe } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
 import { escapeForSQL } from "./sql-utils"
 
@@ -16,7 +16,7 @@ import { escapeForSQL } from "./sql-utils"
 export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function* (
 	input: FindSlowTracesInput,
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 10
 
 	yield* Effect.annotateCurrentSpan("service", input.service ?? "all")

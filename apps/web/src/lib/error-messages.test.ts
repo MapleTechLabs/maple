@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest"
 import { formatBackendError } from "./error-messages"
 
 describe("formatBackendError", () => {
-	it("formats TinybirdQuotaExceededError with execution time setting", () => {
+	it("formats WarehouseQuotaExceededError with execution time setting", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQuotaExceededError",
+			_tag: "@maple/http/errors/WarehouseQuotaExceededError",
 			message: "Code: 159. TIMEOUT_EXCEEDED",
 			pipe: "listLogs",
 			setting: "max_execution_time",
@@ -13,9 +13,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("30s execution limit")
 	})
 
-	it("formats TinybirdQuotaExceededError with memory setting", () => {
+	it("formats WarehouseQuotaExceededError with memory setting", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQuotaExceededError",
+			_tag: "@maple/http/errors/WarehouseQuotaExceededError",
 			message: "memory limit",
 			pipe: "listTraces",
 			setting: "max_memory_usage",
@@ -54,9 +54,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("Syntax error")
 	})
 
-	it("formats TinybirdQueryError without leaking the internal pipe label", () => {
+	it("formats WarehouseQueryError without leaking the internal pipe label", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "DB::Exception: syntax error",
 			pipe: "spanHierarchy",
 		})
@@ -65,9 +65,9 @@ describe("formatBackendError", () => {
 		expect(result.description).not.toContain("spanHierarchy")
 	})
 
-	it("formats TinybirdQueryError with upstream category as transient", () => {
+	it("formats WarehouseQueryError with upstream category as transient", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "Request failed with status 503",
 			pipe: "listLogs",
 			category: "upstream",
@@ -77,9 +77,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("503")
 	})
 
-	it("formats TinybirdQueryError with auth category as credentials issue", () => {
+	it("formats WarehouseQueryError with auth category as credentials issue", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "Request failed with status 401",
 			pipe: "listLogs",
 			category: "auth",
@@ -89,9 +89,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("invalid or expired")
 	})
 
-	it("formats TinybirdQueryError with config category as configuration issue", () => {
+	it("formats WarehouseQueryError with config category as configuration issue", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "Database default does not exist",
 			pipe: "sqlQuery",
 			category: "config",
@@ -101,9 +101,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("Database default does not exist")
 	})
 
-	it("formats TinybirdQueryError with client category as decode issue", () => {
+	it("formats WarehouseQueryError with client category as decode issue", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "Unexpected token '<'",
 			pipe: "sqlQuery",
 			category: "client",
@@ -112,9 +112,9 @@ describe("formatBackendError", () => {
 		expect(result.description).toContain("Unexpected token")
 	})
 
-	it("rewrites TinybirdQueryError when message leaks a 5xx status", () => {
+	it("rewrites WarehouseQueryError when message leaks a 5xx status", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "Request failed with status 521: error code: 521",
 			pipe: "sqlQuery",
 		})
@@ -124,7 +124,7 @@ describe("formatBackendError", () => {
 
 	it("does not leak the (sqlQuery) pipe suffix", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message: "DB::Exception: out of memory",
 			pipe: "sqlQuery",
 		})
@@ -134,7 +134,7 @@ describe("formatBackendError", () => {
 
 	it("strips raw nginx HTML and converts leaked 503 to a friendly message", () => {
 		const result = formatBackendError({
-			_tag: "@maple/http/errors/TinybirdQueryError",
+			_tag: "@maple/http/errors/WarehouseQueryError",
 			message:
 				"Request failed with status 503: <html><head><title>503 Service Temporarily Unavailable</title></head><body><center><h1>503 Service Temporarily Unavailable</h1></center><hr><center>nginx</center></body></html>",
 			pipe: "sqlQuery",

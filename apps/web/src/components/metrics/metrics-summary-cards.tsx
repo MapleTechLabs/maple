@@ -3,8 +3,8 @@ import { PlusIcon, ChartLineIcon, ChartBarIcon, ChartBarTrendUpIcon } from "@/co
 
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type ListMetricsInput } from "@/api/tinybird/metrics"
-import { getMetricsSummaryResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { type ListMetricsInput } from "@/api/warehouse/metrics"
+import { getMetricsSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 export type MetricType = ListMetricsInput["metricType"]
 

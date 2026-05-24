@@ -2,7 +2,7 @@ import * as React from "react"
 import { Replayer } from "@rrweb/replay"
 import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from "@rrweb/types"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { getReplayEventsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getReplayEventsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { normalizeEvents } from "./replay-events"
 import { buildTimeline, type InactiveInterval, type Timeline } from "./replay-timeline"
 

@@ -1,5 +1,5 @@
 import { optionalNumberParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { withTenantExecutor } from "../lib/query-tinybird"
+import { withTenantExecutor } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit } from "../lib/limits"
 import { formatDurationMs, formatDurationFromMs, formatTable } from "../lib/format"

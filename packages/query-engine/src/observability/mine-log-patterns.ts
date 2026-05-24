@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import type { ListLogsOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { MineLogPatternsInput, LogPattern } from "./types"
 import { TemplateMiner, TemplateMinerConfig } from "../drain"
 
@@ -18,7 +18,7 @@ const DEFAULT_LIMIT = 50
 export const mineLogPatterns = Effect.fn("Observability.mineLogPatterns")(function* (
 	input: MineLogPatternsInput,
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const sampleSize = input.sampleSize ?? DEFAULT_SAMPLE_SIZE
 	const limit = input.limit ?? DEFAULT_LIMIT
 

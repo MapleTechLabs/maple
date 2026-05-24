@@ -1,4 +1,4 @@
-import type { SpanNode } from "@/api/tinybird/traces"
+import type { SpanNode } from "@/api/warehouse/traces"
 import {
 	Select,
 	SelectContent,

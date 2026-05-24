@@ -8,7 +8,7 @@ import {
 import { Effect, Option, Schema } from "effect"
 import { formatTable } from "../lib/format"
 import { createDualContent } from "../lib/structured-output"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
 import { ErrorIssueId } from "@maple/domain/http"
 

@@ -9,7 +9,7 @@ import { formatNumber, formatTable, truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
 import { WorkflowState } from "@maple/domain/http"
 

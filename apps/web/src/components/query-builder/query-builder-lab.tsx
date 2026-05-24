@@ -33,9 +33,9 @@ import { getPerformanceHints, hasSlowHints, slowHintsSummary } from "@/lib/query
 import {
 	getQueryBuilderTimeseriesResultAtom,
 	listMetricsResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { type FormulaDraft, type TimeseriesPoint } from "@/components/query-builder/formula-results"
-import { type QueryBuilderTimeseriesInput } from "@/api/tinybird/query-builder-timeseries"
+import { type QueryBuilderTimeseriesInput } from "@/api/warehouse/query-builder-timeseries"
 import {
 	AGGREGATIONS_BY_SOURCE,
 	createFormulaDraft,

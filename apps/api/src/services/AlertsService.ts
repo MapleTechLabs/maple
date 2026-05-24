@@ -60,8 +60,8 @@ import {
 	type AlertDestinationId,
 	type AlertIncidentId,
 	QueryEngineExecutionError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 	QueryEngineTimeoutError,
 	QueryEngineValidationError,
 	RoleName,
@@ -919,8 +919,8 @@ export interface AlertsServiceShape {
 		| AlertPersistenceError
 		| AlertNotFoundError
 		| AlertDeliveryError
-		| TinybirdQueryError
-		| TinybirdQuotaExceededError
+		| WarehouseQueryError
+		| WarehouseQuotaExceededError
 	>
 	readonly listIncidents: (orgId: OrgId) => Effect.Effect<AlertIncidentsListResponse, AlertPersistenceError>
 	readonly listRuleChecks: (
@@ -1242,7 +1242,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 		// Collapse alert-domain semantic errors (validation/execution/timeout from
 		// the query engine layer) into AlertValidation/AlertDelivery, but let the
-		// Tinybird tagged errors (TinybirdQueryError + TinybirdQuotaExceededError)
+		// Tinybird tagged errors (WarehouseQueryError + WarehouseQuotaExceededError)
 		// propagate so the client receives the tag + structured fields
 		// (upstreamStatus, setting, pipe). formatBackendError on the frontend
 		// handles them.
@@ -1252,8 +1252,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				| QueryEngineValidationError
 				| QueryEngineExecutionError
 				| QueryEngineTimeoutError
-				| TinybirdQueryError
-				| TinybirdQuotaExceededError,
+				| WarehouseQueryError
+				| WarehouseQuotaExceededError,
 				R
 			>,
 		) =>
@@ -1282,8 +1282,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
 			| AlertValidationError
 			| AlertDeliveryError
-			| TinybirdQueryError
-			| TinybirdQuotaExceededError
+			| WarehouseQueryError
+			| WarehouseQuotaExceededError
 		> {
 			const endMs = yield* now
 			const startMs = endMs - rule.windowMinutes * 60_000
@@ -3506,18 +3506,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 											? "validation"
 											: error instanceof AlertDeliveryError
 												? "evaluation"
-												: error instanceof TinybirdQuotaExceededError
+												: error instanceof WarehouseQuotaExceededError
 													? "tinybird_quota"
-													: error instanceof TinybirdQueryError
+													: error instanceof WarehouseQueryError
 														? `tinybird_${error.category ?? "query"}`
 														: "unknown"
 									const upstreamStatus =
-										error instanceof TinybirdQueryError ? error.upstreamStatus : undefined
+										error instanceof WarehouseQueryError ? error.upstreamStatus : undefined
 									const quotaSetting =
-										error instanceof TinybirdQuotaExceededError ? error.setting : undefined
+										error instanceof WarehouseQuotaExceededError ? error.setting : undefined
 									const pipe =
-										error instanceof TinybirdQueryError ||
-										error instanceof TinybirdQuotaExceededError
+										error instanceof WarehouseQueryError ||
+										error instanceof WarehouseQuotaExceededError
 											? error.pipe
 											: undefined
 									yield* Effect.logError("Alert rule evaluation failed").pipe(

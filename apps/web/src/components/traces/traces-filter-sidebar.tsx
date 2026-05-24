@@ -5,7 +5,7 @@ import { FilterSection, SearchableFilterSection, SingleCheckboxFilter } from "./
 import { DurationRangeFilter } from "./duration-range-filter"
 import { Route } from "@/routes/traces"
 import { Separator } from "@maple/ui/components/ui/separator"
-import type { TracesFacetsResponse } from "@/api/tinybird/traces"
+import type { TracesFacetsResponse } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import {
 	FilterSidebarBody,

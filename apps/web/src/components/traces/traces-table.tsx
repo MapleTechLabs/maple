@@ -6,7 +6,7 @@ import { useVirtualizer } from "@tanstack/react-virtual"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type Trace } from "@/api/tinybird/traces"
+import { type Trace } from "@/api/warehouse/traces"
 import type { TracesSearchParams } from "@/routes/traces"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { QueryErrorState } from "@/components/common/query-error-state"

@@ -3,7 +3,7 @@ import { CircleInfoIcon, PulseIcon, SquareTerminalIcon } from "@/components/icon
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { LogHeroHeader } from "./log-hero-header"
 import { LogMetaStrip } from "./log-meta-strip"

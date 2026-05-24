@@ -4,7 +4,7 @@ import {
 	McpQueryError,
 	type McpToolRegistrar,
 } from "./types"
-import { withTenantExecutor, resolveTenant } from "../lib/query-tinybird"
+import { withTenantExecutor, resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit, clampOffset } from "../lib/limits"
 import { formatTable } from "../lib/format"

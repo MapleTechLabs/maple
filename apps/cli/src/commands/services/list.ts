@@ -24,7 +24,7 @@ export const list = Command.make("list", {
 			const client = yield* MapleClient
 			const { startTime, endTime } = resolveTimeRange({ since, start, end })
 
-			const result = yield* client.queryTinybird("service_overview", {
+			const result = yield* client.queryWarehouse("service_overview", {
 				start_time: startTime,
 				end_time: endTime,
 				...(Option.isSome(environment) && { environments: environment.value }),

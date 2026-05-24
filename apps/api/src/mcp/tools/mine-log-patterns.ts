@@ -1,12 +1,12 @@
 import { optionalNumberParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { truncate, formatNumber } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { mineLogPatterns } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 	server.tool(
@@ -51,7 +51,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				sampleSize,
 				limit: lim,
 			}).pipe(
-				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
+				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError((e) => new McpQueryError({ message: e.message, pipe: "list_logs", cause: e })),
 			)
 

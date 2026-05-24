@@ -1,7 +1,7 @@
 import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { ListTracesOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor, ObservabilityError, type TinybirdExecutorShape } from "./TinybirdExecutor"
+import { WarehouseExecutor, ObservabilityError, type WarehouseExecutorShape } from "./WarehouseExecutor"
 import type { SearchTracesInput, SearchTracesOutput, SpanResult } from "./types"
 import { toSpanResult } from "./row-mappers"
 import { escapeForSQL } from "./sql-utils"
@@ -18,7 +18,7 @@ import { escapeForSQL } from "./sql-utils"
  * back to the `list_traces` Tinybird pipe for fast MV-backed queries.
  */
 export const searchTraces = Effect.fn("Observability.searchTraces")(function* (input: SearchTracesInput) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 20
 	const offset = input.offset ?? 0
 
@@ -69,7 +69,7 @@ const parseAttributeMap = (str: string): Effect.Effect<Record<string, string>> =
  * Returns matched span data, not root span summaries.
  */
 const spanLevelSearch = (
-	executor: TinybirdExecutorShape,
+	executor: WarehouseExecutorShape,
 	input: SearchTracesInput,
 	limit: number,
 	offset: number,
@@ -176,7 +176,7 @@ const spanLevelSearch = (
  * Fast (MV-backed) but limited to root span filtering.
  */
 const rootLevelSearch = (
-	executor: TinybirdExecutorShape,
+	executor: WarehouseExecutorShape,
 	input: SearchTracesInput,
 	limit: number,
 	offset: number,

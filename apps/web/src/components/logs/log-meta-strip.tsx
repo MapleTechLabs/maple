@@ -7,7 +7,7 @@ import { CopyableValue } from "@/components/attributes"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { encodeLogKey } from "@/lib/log-key"
 import { buildLogJsonPayload } from "./log-raw-panel"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 interface LogMetaStripProps {
 	log: Log

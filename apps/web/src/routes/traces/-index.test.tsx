@@ -103,7 +103,7 @@ vi.mock("@/hooks/use-effective-time-range", () => ({
 	}),
 }))
 
-vi.mock("@/lib/services/atoms/tinybird-query-atoms", () => ({
+vi.mock("@/lib/services/atoms/warehouse-query-atoms", () => ({
 	getTracesFacetsResultAtom: () => atoms.facets,
 	getLogsFacetsResultAtom: () => atoms.logsFacets,
 	getMetricAttributeKeysResultAtom: () => atoms.metricAttributeKeys,

@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { cn } from "@maple/ui/lib/utils"
 
 import { ArrowUpDownIcon } from "@/components/icons"
-import type { WorkloadKind } from "@/api/tinybird/infra"
+import type { WorkloadKind } from "@/api/warehouse/infra"
 import { HostStatusBadge } from "./status-badge"
 import { UsageBar } from "./usage-bar"
 import { deriveHostStatus, formatRelative, type HostStatus } from "./format"

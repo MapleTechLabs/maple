@@ -9,7 +9,7 @@ import {
 } from "./types"
 import { resolveTimeRange } from "../lib/time"
 import { Effect, Schema } from "effect"
-import { resolveTenant } from "@/mcp/lib/query-tinybird"
+import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { QueryEngineService } from "@/services/QueryEngineService"
 import {
 	QuerySpec,
@@ -332,9 +332,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							Effect.succeed(taggedErrorResult(error._tag, error.message)),
 						"@maple/http/errors/QueryEngineTimeoutError": (error) =>
 							Effect.succeed(taggedErrorResult(error._tag, error.message)),
-						"@maple/http/errors/TinybirdQueryError": (error) =>
+						"@maple/http/errors/WarehouseQueryError": (error) =>
 							Effect.succeed(taggedErrorResult(error._tag, error.message)),
-						"@maple/http/errors/TinybirdQuotaExceededError": (error) =>
+						"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
 							Effect.succeed(taggedErrorResult(error._tag, error.message)),
 					}),
 				)

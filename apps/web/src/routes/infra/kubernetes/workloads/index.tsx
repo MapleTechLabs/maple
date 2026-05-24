@@ -14,12 +14,12 @@ import { cn } from "@maple/ui/lib/utils"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { WorkloadTable, WorkloadTableLoading, type WorkloadRow } from "@/components/infra/workload-table"
 import { WorkloadsFilterSidebarView, type WorkloadFilters } from "@/components/infra/k8s-filter-sidebar"
-import { listWorkloadsResultAtom, workloadFacetsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { listWorkloadsResultAtom, workloadFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import type { WorkloadKind } from "@/api/tinybird/infra"
+import type { WorkloadKind } from "@/api/warehouse/infra"
 
 const WorkloadKindLiteral = Schema.Literals(["deployment", "statefulset", "daemonset"])
 

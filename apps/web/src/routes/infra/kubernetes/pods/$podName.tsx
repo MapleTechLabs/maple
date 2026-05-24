@@ -12,9 +12,9 @@ import { FolderIcon } from "@/components/icons"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
-import { podDetailSummaryResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import type { PodInfraMetric } from "@/api/tinybird/infra"
+import type { PodInfraMetric } from "@/api/warehouse/infra"
 
 const podDetailSearchSchema = Schema.Struct({
 	namespace: Schema.optional(Schema.String),

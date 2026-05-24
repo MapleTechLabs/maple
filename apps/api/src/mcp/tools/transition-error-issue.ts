@@ -7,7 +7,7 @@ import {
 } from "./types"
 import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
 import { ErrorsService } from "@/services/ErrorsService"
 import { ErrorIssueId, WorkflowState } from "@maple/domain/http"

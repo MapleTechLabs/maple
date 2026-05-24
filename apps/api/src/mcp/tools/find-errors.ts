@@ -1,12 +1,12 @@
 import { optionalNumberParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange } from "../lib/time"
 import { formatNumber, formatTable } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { findErrors } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerFindErrorsTool(server: McpToolRegistrar) {
 	server.tool(
@@ -29,7 +29,7 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				environment: environment ?? undefined,
 				limit: limit ?? 20,
 			}).pipe(
-				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
+				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.catchTag("@maple/query-engine/errors/ObservabilityError", (e) =>
 					Effect.fail(
 						new McpQueryError({ message: e.message, pipe: e.pipe ?? "errors_by_type", cause: e }),

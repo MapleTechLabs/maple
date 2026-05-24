@@ -6,7 +6,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTraceSummariesResultAtom,
 	getSpanHierarchyResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	type DisplayMarker,
 	useReplayPlayer,

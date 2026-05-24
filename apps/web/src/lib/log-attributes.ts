@@ -1,4 +1,4 @@
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 export type ChipTone = "error" | "warn" | "info" | "muted"
 

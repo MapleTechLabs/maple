@@ -1,5 +1,5 @@
 import type { Node, Edge } from "@xyflow/react"
-import type { SpanNode } from "@/api/tinybird/traces"
+import type { SpanNode } from "@/api/warehouse/traces"
 
 export interface AggregatedDuration {
 	total: number

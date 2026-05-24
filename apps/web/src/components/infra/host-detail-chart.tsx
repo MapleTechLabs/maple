@@ -11,8 +11,8 @@ import {
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
-import type { HostInfraMetric } from "@/api/tinybird/infra"
+import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import type { HostInfraMetric } from "@/api/warehouse/infra"
 import { formatBytesPerSecond, formatPercent } from "./format"
 import { formatBackendError } from "@/lib/error-messages"
 

@@ -1,5 +1,5 @@
 import { Effect, Layer, Redacted, Schema, Context } from "effect"
-import type { TinybirdPipe } from "@maple/domain/tinybird-pipes"
+import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { CliConfig } from "./CliConfig"
 
 export class MapleApiError extends Schema.TaggedErrorClass<MapleApiError>()("MapleApiError", {
@@ -8,8 +8,8 @@ export class MapleApiError extends Schema.TaggedErrorClass<MapleApiError>()("Map
 }) {}
 
 export interface MapleClientShape {
-	readonly queryTinybird: <T = any>(
-		pipe: TinybirdPipe,
+	readonly queryWarehouse: <T = any>(
+		pipe: WarehouseQueryName,
 		params?: Record<string, unknown>,
 	) => Effect.Effect<{ data: Array<T> }, MapleApiError>
 
@@ -153,8 +153,8 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 			services_facets: "explore_attributes",
 		}
 
-		const queryTinybird = <T = any>(
-			pipe: TinybirdPipe,
+		const queryWarehouse = <T = any>(
+			pipe: WarehouseQueryName,
 			params?: Record<string, unknown>,
 		): Effect.Effect<{ data: Array<T> }, MapleApiError> =>
 			Effect.gen(function* () {
@@ -256,7 +256,7 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 			)
 		}
 
-		return { queryTinybird, callTool, queryEngine }
+		return { queryWarehouse, callTool, queryEngine }
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

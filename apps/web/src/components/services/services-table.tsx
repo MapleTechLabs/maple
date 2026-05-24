@@ -11,11 +11,11 @@ import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { QueryErrorState } from "@/components/common/query-error-state"
-import { type ServiceOverview, type CommitBreakdown } from "@/api/tinybird/services"
+import { type ServiceOverview, type CommitBreakdown } from "@/api/warehouse/services"
 import {
 	getCustomChartServiceSparklinesResultAtom,
 	getServiceOverviewResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import type { ServicesSearchParams } from "@/routes/services/index"
 
 function formatLatency(ms: number): string {

@@ -4,7 +4,7 @@ import {
 	requiredStringParam,
 	type McpToolRegistrar,
 } from "./types"
-import { resolveTenant } from "@/mcp/lib/query-tinybird"
+import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit } from "../lib/limits"
 import { formatTable } from "../lib/format"
@@ -15,7 +15,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Effect, Schema } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
 import type { TracesMetric } from "@maple/query-engine"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.tool(
@@ -49,7 +49,7 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				timeRange: { startTime: st, endTime: et },
 				limit: resolvedLimit,
 			}).pipe(
-				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
+				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError(toMcpQueryError("top_operations")),
 			)
 

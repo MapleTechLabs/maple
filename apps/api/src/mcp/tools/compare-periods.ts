@@ -1,5 +1,5 @@
 import { McpQueryError, optionalStringParam, type McpToolRegistrar } from "./types"
-import { queryTinybird } from "../lib/query-tinybird"
+import { queryWarehouse } from "../lib/query-warehouse"
 import { getSpamPatternsParam } from "@/lib/spam-patterns"
 import { resolveTimeRange } from "../lib/time"
 import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "../lib/format"
@@ -80,26 +80,26 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 			// Query both periods in parallel
 			const [currentSummary, previousSummary, currentServices, previousServices] = yield* Effect.all(
 				[
-					queryTinybird("errors_summary", {
+					queryWarehouse("errors_summary", {
 						start_time: curSt,
 						end_time: curEt,
 						exclude_spam_patterns: getSpamPatternsParam(),
 						...(service_name && { services: service_name }),
 						...(environment && { deployment_envs: environment }),
 					}),
-					queryTinybird("errors_summary", {
+					queryWarehouse("errors_summary", {
 						start_time: prevSt,
 						end_time: prevEt,
 						exclude_spam_patterns: getSpamPatternsParam(),
 						...(service_name && { services: service_name }),
 						...(environment && { deployment_envs: environment }),
 					}),
-					queryTinybird("service_overview", {
+					queryWarehouse("service_overview", {
 						start_time: curSt,
 						end_time: curEt,
 						...(environment && { environments: environment }),
 					}),
-					queryTinybird("service_overview", {
+					queryWarehouse("service_overview", {
 						start_time: prevSt,
 						end_time: prevEt,
 						...(environment && { environments: environment }),

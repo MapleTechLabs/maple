@@ -35,15 +35,15 @@ import {
 	getServiceOverviewResultAtom,
 	getServicePlatformsResultAtom,
 	getServiceWorkloadsResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import type {
 	GetServiceMapInput,
 	ServiceDbEdge,
 	ServiceEdge,
 	ServicePlatform,
-} from "@/api/tinybird/service-map"
-import type { GetServiceOverviewInput, ServiceOverview } from "@/api/tinybird/services"
-import type { ServiceWorkload } from "@/api/tinybird/service-infra"
+} from "@/api/warehouse/service-map"
+import type { GetServiceOverviewInput, ServiceOverview } from "@/api/warehouse/services"
+import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { ServiceMapNode } from "./service-map-node"
 import { ServiceMapEdge } from "./service-map-edge"

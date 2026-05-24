@@ -16,9 +16,9 @@ import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
 import {
 	listPodsResultAtom,
 	workloadDetailSummaryResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import type { WorkloadInfraMetric, WorkloadKind } from "@/api/tinybird/infra"
+import type { WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
 
 const workloadDetailSearchSchema = Schema.Struct({
 	namespace: Schema.optional(Schema.String),

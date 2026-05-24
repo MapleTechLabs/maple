@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import * as CH from "../ch"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 
 export type { SessionTranscriptOutput } from "../ch/queries/session-events"
 
@@ -26,7 +26,7 @@ export interface SearchSessionsInput {
 export const searchSessions = Effect.fn("Observability.searchSessions")(function* (
 	input: SearchSessionsInput,
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan("orgId", executor.orgId)
 	const compiled = CH.compile(
 		CH.searchSessionsByEventQuery({
@@ -49,7 +49,7 @@ export const searchSessions = Effect.fn("Observability.searchSessions")(function
 export const getSessionTranscript = Effect.fn("Observability.getSessionTranscript")(function* (input: {
 	readonly sessionId: string
 }) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, sessionId: input.sessionId })
 	const compiled = CH.compile(CH.sessionTranscriptQuery(), {
 		orgId: executor.orgId,

@@ -6,7 +6,7 @@ import {
 	McpQueryError,
 	type McpToolRegistrar,
 } from "./types"
-import { withTenantExecutor } from "../lib/query-tinybird"
+import { withTenantExecutor } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit, clampOffset } from "../lib/limits"
 import { formatDurationFromMs, formatTable } from "../lib/format"
@@ -14,7 +14,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { searchTraces } from "@maple/query-engine/observability"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 
 export function registerSearchTracesTool(server: McpToolRegistrar) {
 	server.tool(

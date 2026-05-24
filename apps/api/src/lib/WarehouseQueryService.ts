@@ -1,8 +1,8 @@
 import {
-	TinybirdQueryError,
-	type TinybirdQueryRequest,
-	TinybirdQueryResponse,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	type WarehouseQueryRequest,
+	WarehouseQueryResponse,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
@@ -17,12 +17,12 @@ import {
 	detectQuotaSetting,
 	resolveSettings,
 	type QueryProfileName,
-	type TinybirdQuerySettings,
-} from "./TinybirdQueryProfile"
+	type WarehouseQuerySettings,
+} from "./WarehouseQueryProfile"
 
 export type SqlQueryOptions = {
 	profile?: QueryProfileName
-	settings?: TinybirdQuerySettings
+	settings?: WarehouseQuerySettings
 	/**
 	 * Semantic name for the query (e.g. "errorsByType", "spanHierarchy").
 	 * Annotated on the executeSql span as `query.context` so traces can be filtered
@@ -54,13 +54,8 @@ interface TinybirdSdkSqlClientConfig {
 
 type SqlClientConfig = ClickHouseSqlClientConfig | TinybirdSdkSqlClientConfig
 
-export type WarehouseSqlError = TinybirdQueryError | TinybirdQuotaExceededError
-/**
- * Legacy alias kept so callers that imported `TinybirdSqlError` keep compiling
- * during the rename. Prefer `WarehouseSqlError` in new code.
- */
-export type TinybirdSqlError = WarehouseSqlError
-type TinybirdQueryErrorCategory =
+export type WarehouseSqlError = WarehouseQueryError | WarehouseQuotaExceededError
+type WarehouseQueryErrorCategory =
 	| "query"
 	| "upstream"
 	| "auth"
@@ -71,9 +66,9 @@ type TinybirdQueryErrorCategory =
 export interface WarehouseQueryServiceShape {
 	readonly query: (
 		tenant: TenantContext,
-		payload: TinybirdQueryRequest,
+		payload: WarehouseQueryRequest,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<TinybirdQueryResponse, WarehouseSqlError>
+	) => Effect.Effect<WarehouseQueryResponse, WarehouseSqlError>
 	readonly sqlQuery: (
 		tenant: TenantContext,
 		sql: string,
@@ -83,7 +78,7 @@ export interface WarehouseQueryServiceShape {
 		tenant: TenantContext,
 		datasource: string,
 		rows: ReadonlyArray<T>,
-	) => Effect.Effect<void, TinybirdQueryError>
+	) => Effect.Effect<void, WarehouseQueryError>
 }
 
 const clientCache = new Map<string, CachedClient>()
@@ -211,7 +206,7 @@ const TRANSIENT_RETRY_SCHEDULE = Schedule.exponential("100 millis", 2.0).pipe(
 )
 
 const isTransientUpstreamError = (error: WarehouseSqlError): boolean =>
-	error._tag === "@maple/http/errors/TinybirdQueryError" && error.category === "upstream"
+	error._tag === "@maple/http/errors/WarehouseQueryError" && error.category === "upstream"
 
 export class WarehouseQueryService extends Context.Service<
 	WarehouseQueryService,
@@ -241,13 +236,13 @@ export class WarehouseQueryService extends Context.Service<
 				return undefined
 			}
 
-			const toTinybirdQueryError = (pipe: string, error: unknown) =>
-				new TinybirdQueryError({
-					message: cleanErrorMessage(unknownToMessage(error, "Tinybird query failed")),
+			const toWarehouseQueryError = (pipe: string, error: unknown) =>
+				new WarehouseQueryError({
+					message: cleanErrorMessage(unknownToMessage(error, "Warehouse query failed")),
 					pipe,
 				})
 
-			const mapTinybirdError = (pipe: string, error: unknown) => {
+			const mapWarehouseError = (pipe: string, error: unknown) => {
 				const details = getClickHouseErrorDetails(error)
 				const rawMessage = details.message
 				const message = cleanErrorMessage(rawMessage)
@@ -257,7 +252,7 @@ export class WarehouseQueryService extends Context.Service<
 					clickhouseType: details.type,
 				}
 				if (setting) {
-					return new TinybirdQuotaExceededError({ pipe, message, setting, ...clickhouseFields })
+					return new WarehouseQuotaExceededError({ pipe, message, setting, ...clickhouseFields })
 				}
 				const upstreamStatus = extractUpstreamStatus(rawMessage)
 				const type = details.type
@@ -269,7 +264,7 @@ export class WarehouseQueryService extends Context.Service<
 						rawMessage,
 					)
 				if (isAuthFailure) {
-					return new TinybirdQueryError({
+					return new WarehouseQueryError({
 						pipe,
 						message,
 						category: "auth",
@@ -288,7 +283,7 @@ export class WarehouseQueryService extends Context.Service<
 						rawMessage,
 					)
 				if (isTransientFailure) {
-					return new TinybirdQueryError({
+					return new WarehouseQueryError({
 						pipe,
 						message,
 						category: "upstream",
@@ -303,7 +298,7 @@ export class WarehouseQueryService extends Context.Service<
 						rawMessage,
 					)
 				if (isConfigFailure) {
-					return new TinybirdQueryError({
+					return new WarehouseQueryError({
 						pipe,
 						message,
 						category: "config",
@@ -317,7 +312,7 @@ export class WarehouseQueryService extends Context.Service<
 						rawMessage,
 					)
 				if (isClientFailure) {
-					return new TinybirdQueryError({
+					return new WarehouseQueryError({
 						pipe,
 						message,
 						category: "client",
@@ -331,7 +326,7 @@ export class WarehouseQueryService extends Context.Service<
 						rawMessage,
 					)
 				if (isSchemaDrift) {
-					return new TinybirdQueryError({
+					return new WarehouseQueryError({
 						pipe,
 						message,
 						category: "schema_drift",
@@ -339,7 +334,7 @@ export class WarehouseQueryService extends Context.Service<
 						...clickhouseFields,
 					})
 				}
-				return new TinybirdQueryError({
+				return new WarehouseQueryError({
 					pipe,
 					message,
 					category: "query",
@@ -382,7 +377,7 @@ export class WarehouseQueryService extends Context.Service<
 			) {
 				const override = yield* orgClickHouseSettings
 					.resolveRuntimeConfig(tenant.orgId)
-					.pipe(Effect.mapError((error) => toTinybirdQueryError(label, error)))
+					.pipe(Effect.mapError((error) => toWarehouseQueryError(label, error)))
 
 				if (Option.isSome(override)) {
 					yield* Effect.annotateCurrentSpan("clientSource", "org_override")
@@ -466,7 +461,7 @@ export class WarehouseQueryService extends Context.Service<
 
 				const leftoverParam = sql.match(/__PARAM_(\w+)__/)
 				if (leftoverParam) {
-					return yield* new TinybirdQueryError({
+					return yield* new WarehouseQueryError({
 						pipe,
 						message: `Compiled SQL contains unresolved param '${leftoverParam[1]}' — query was built with param.${leftoverParam[1]}() but '${leftoverParam[1]}' was not provided in the runtime params object`,
 					})
@@ -496,7 +491,7 @@ export class WarehouseQueryService extends Context.Service<
 				let retryAttempts = 0
 				const result = yield* Effect.tryPromise({
 					try: () => client.sql(finalSql),
-					catch: (error) => mapTinybirdError(pipe, error),
+					catch: (error) => mapWarehouseError(pipe, error),
 				}).pipe(
 					Effect.tapError((error) =>
 						isTransientUpstreamError(error)
@@ -543,14 +538,14 @@ export class WarehouseQueryService extends Context.Service<
 
 			const query = Effect.fn("WarehouseQueryService.query")(function* (
 				tenant: TenantContext,
-				payload: TinybirdQueryRequest,
+				payload: WarehouseQueryRequest,
 				options?: SqlQueryOptions,
 			) {
 				yield* Effect.annotateCurrentSpan("pipe", payload.pipe)
 				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
 				if (!tenant.orgId || tenant.orgId.trim() === "") {
-					return yield* new TinybirdQueryError({
+					return yield* new WarehouseQueryError({
 						pipe: payload.pipe,
 						message: "org_id must not be empty",
 					})
@@ -562,7 +557,7 @@ export class WarehouseQueryService extends Context.Service<
 				})
 
 				if (!compiled) {
-					return yield* new TinybirdQueryError({
+					return yield* new WarehouseQueryError({
 						message: `Unsupported pipe: ${payload.pipe}`,
 						pipe: payload.pipe,
 					})
@@ -570,7 +565,7 @@ export class WarehouseQueryService extends Context.Service<
 
 				const rows = yield* executeSql(tenant, compiled.sql, payload.pipe, options)
 
-				return new TinybirdQueryResponse({
+				return new WarehouseQueryResponse({
 					data: Array.from(compiled.castRows(rows)),
 				})
 			})
@@ -581,13 +576,13 @@ export class WarehouseQueryService extends Context.Service<
 				options?: SqlQueryOptions,
 			) {
 				if (!tenant.orgId || tenant.orgId.trim() === "") {
-					return yield* new TinybirdQueryError({
+					return yield* new WarehouseQueryError({
 						pipe: "sqlQuery",
 						message: "org_id must not be empty (sqlQuery)",
 					})
 				}
 				if (!sql.includes("OrgId")) {
-					return yield* new TinybirdQueryError({
+					return yield* new WarehouseQueryError({
 						pipe: "sqlQuery",
 						message: "SQL query must contain OrgId filter (sqlQuery)",
 					})
@@ -651,7 +646,7 @@ export class WarehouseQueryService extends Context.Service<
 							)
 						}
 					},
-					catch: (error) => toTinybirdQueryError(label, error),
+					catch: (error) => toWarehouseQueryError(label, error),
 				}).pipe(
 					Effect.tapError((error) =>
 						Effect.logError("WarehouseQueryService.ingest failed", {
@@ -677,7 +672,7 @@ export class WarehouseQueryService extends Context.Service<
 
 	static readonly query = (
 		tenant: TenantContext,
-		payload: TinybirdQueryRequest,
+		payload: WarehouseQueryRequest,
 		options?: SqlQueryOptions,
 	) => this.use((service) => service.query(tenant, payload, options))
 

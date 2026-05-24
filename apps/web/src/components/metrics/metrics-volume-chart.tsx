@@ -9,9 +9,9 @@ import {
 } from "@maple/ui/components/ui/chart"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@maple/ui/components/ui/card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type GetMetricTimeSeriesInput, type MetricTimeSeriesResponse } from "@/api/tinybird/metrics"
+import { type GetMetricTimeSeriesInput, type MetricTimeSeriesResponse } from "@/api/warehouse/metrics"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
-import { getMetricTimeSeriesResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getMetricTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatBackendError } from "@/lib/error-messages"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 

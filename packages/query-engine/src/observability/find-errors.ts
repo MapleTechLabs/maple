@@ -1,11 +1,11 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import type { ErrorsByTypeOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { FindErrorsInput } from "./types"
 import { toErrorSummary } from "./row-mappers"
 
 export const findErrors = Effect.fn("Observability.findErrors")(function* (input: FindErrorsInput) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 
 	const result = yield* executor.query<ErrorsByTypeOutput>(
 		"errors_by_type",

@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { getReplaysForTraceResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getReplaysForTraceResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { EyeIcon } from "@/components/icons"
 

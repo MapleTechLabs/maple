@@ -38,7 +38,7 @@ const errorTag = (error: unknown): string | undefined => {
 }
 
 const DECODE_ERROR_TAGS = new Set([
-	"TinybirdDecodeError",
+	"WarehouseDecodeError",
 	"@maple/http/errors/QueryEngineValidationError",
 ])
 

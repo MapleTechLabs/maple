@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { TinybirdQueryError } from "@maple/domain"
+import { WarehouseQueryError } from "@maple/domain"
 import { ObservabilityError } from "@maple/query-engine/observability"
 import { toMcpQueryError } from "./map-warehouse-error"
 
 describe("toMcpQueryError", () => {
 	it("forwards plain query errors verbatim with the pipe label", () => {
-		const err = new TinybirdQueryError({
+		const err = new WarehouseQueryError({
 			message: "boom",
 			pipe: "service_overview",
 			category: "query",
@@ -16,7 +16,7 @@ describe("toMcpQueryError", () => {
 	})
 
 	it("appends the schema-apply hint when the underlying error is schema_drift", () => {
-		const err = new TinybirdQueryError({
+		const err = new WarehouseQueryError({
 			message:
 				"Unknown expression or function identifier 'SampleRate' in scope SELECT ServiceName ...",
 			pipe: "service_overview",

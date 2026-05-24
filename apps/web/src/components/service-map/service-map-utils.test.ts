@@ -7,8 +7,8 @@ import {
 	getServiceMapNodeColor,
 	type ServiceNodeData,
 } from "./service-map-utils"
-import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/tinybird/service-map"
-import type { ServiceOverview } from "@/api/tinybird/services"
+import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/warehouse/service-map"
+import type { ServiceOverview } from "@/api/warehouse/services"
 
 const baseEdge = (overrides: Partial<ServiceEdge> = {}): ServiceEdge => ({
 	sourceService: "api",

@@ -1,5 +1,5 @@
 import { optionalNumberParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit, clampOffset } from "../lib/limits"
 import { truncate, formatNumber } from "../lib/format"
@@ -7,7 +7,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { searchLogs } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerSearchLogsTool(server: McpToolRegistrar) {
 	server.tool(
@@ -61,7 +61,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				limit: lim,
 				offset: off,
 			}).pipe(
-				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
+				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError((e) => new McpQueryError({ message: e.message, pipe: "list_logs", cause: e })),
 			)
 

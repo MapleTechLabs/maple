@@ -9,7 +9,7 @@ import { getCacheInfo, cacheResultStyles } from "@/lib/cache"
 import { getHttpInfo, HTTP_METHOD_COLORS } from "@maple/ui/lib/http"
 import { PixelDurationBar } from "./pixel-duration-bar"
 import { countDescendants } from "./auto-collapse"
-import type { SpanNode } from "@/api/tinybird/traces"
+import type { SpanNode } from "@/api/warehouse/traces"
 
 interface SpanRowProps {
 	span: SpanNode

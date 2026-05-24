@@ -71,7 +71,7 @@ export const formatBackendError = (input: unknown): FormattedError => {
 
 	if (hasTag(error)) {
 		switch (error._tag) {
-			case "@maple/http/errors/TinybirdQuotaExceededError": {
+			case "@maple/http/errors/WarehouseQuotaExceededError": {
 				const setting = stringField(error, "setting") ?? "limit"
 				return {
 					title: "Query was too expensive",
@@ -103,7 +103,7 @@ export const formatBackendError = (input: unknown): FormattedError => {
 					description: causeMessage ? `${message}: ${causeMessage}` : message,
 				}
 			}
-			case "@maple/http/errors/TinybirdQueryError": {
+			case "@maple/http/errors/WarehouseQueryError": {
 				const message = stringField(error, "message") ?? "Database query failed"
 				const category = stringField(error, "category")
 				const upstreamStatus =

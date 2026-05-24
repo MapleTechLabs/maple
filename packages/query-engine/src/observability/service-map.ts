@@ -1,6 +1,6 @@
 import { Array as Arr, Effect, pipe } from "effect"
 import type { ServiceDependenciesOutput } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange, ServiceEdge } from "./types"
 
 export const serviceMap = Effect.fn("Observability.serviceMap")(function* (input: {
@@ -8,7 +8,7 @@ export const serviceMap = Effect.fn("Observability.serviceMap")(function* (input
 	readonly service?: string
 	readonly environment?: string
 }) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 
 	yield* Effect.annotateCurrentSpan({
 		service: input.service ?? "all",

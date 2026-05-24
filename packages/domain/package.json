@@ -8,7 +8,7 @@
 		"./primitives": "./src/primitives.ts",
 		"./query-engine": "./src/query-engine.ts",
 		"./tinybird-project-sync": "./src/tinybird/project-sync.ts",
-		"./tinybird-pipes": "./src/tinybird-pipes.ts",
+		"./warehouse-queries": "./src/warehouse-queries.ts",
 		"./tinybird": "./src/tinybird/index.ts",
 		"./clickhouse": "./src/clickhouse/index.ts",
 		"./where-clause": "./src/where-clause.ts",

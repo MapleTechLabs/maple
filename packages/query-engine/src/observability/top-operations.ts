@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe } from "effect"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
 import type { TracesMetric } from "../query-engine"
 import { escapeForSQL } from "./sql-utils"
@@ -25,7 +25,7 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 	readonly timeRange: TimeRange
 	readonly limit?: number
 }) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 	const limit = input.limit ?? 20
 	const esc = escapeForSQL
 	const metricExpr = METRIC_EXPRESSIONS[input.metric] ?? "count()"

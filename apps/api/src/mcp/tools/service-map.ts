@@ -1,12 +1,12 @@
 import { optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
-import { resolveTenant } from "../lib/query-tinybird"
+import { resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange } from "../lib/time"
 import { formatNumber, formatDurationFromMs, formatPercent, formatTable } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { serviceMap } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
 export function registerServiceMapTool(server: McpToolRegistrar) {
 	server.tool(
@@ -27,7 +27,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 				service: service_name ?? undefined,
 				environment: environment ?? undefined,
 			}).pipe(
-				Effect.provide(makeTinybirdExecutorFromTenant(tenant)),
+				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError(
 					(e) => new McpQueryError({ message: e.message, pipe: "service_dependencies", cause: e }),
 				),

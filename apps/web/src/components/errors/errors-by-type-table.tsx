@@ -7,13 +7,13 @@ import { ArrowRightIcon, ChevronDownIcon, ChevronRightIcon } from "@/components/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { type GetErrorsByTypeInput, type ErrorByType } from "@/api/tinybird/errors"
+import { type GetErrorsByTypeInput, type ErrorByType } from "@/api/warehouse/errors"
 import { formatDuration } from "@/lib/format"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import {
 	getErrorDetailTracesResultAtom,
 	getErrorsByTypeResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { HttpSpanLabel } from "@/components/traces/http-span-label"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 

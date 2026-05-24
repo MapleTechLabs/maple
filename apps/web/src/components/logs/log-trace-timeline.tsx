@@ -3,9 +3,9 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/utils"
 import { getSeverityColor } from "@/lib/severity"
-import type { Log, LogsResponse } from "@/api/tinybird/logs"
-import type { SpanHierarchyResponse } from "@/api/tinybird/traces"
-import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import type { Log, LogsResponse } from "@/api/warehouse/logs"
+import type { SpanHierarchyResponse } from "@/api/warehouse/traces"
+import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 
 function formatRelativeMs(ms: number): string {

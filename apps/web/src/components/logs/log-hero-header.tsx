@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/utils"
 import { CopyableValue, tryParseJson } from "@/components/attributes"
 import { highlightCode } from "@/lib/sugar-high"
 import { SeverityBadge } from "./severity-badge"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 const HERO_TONE: Record<string, string> = {
 	TRACE: "bg-severity-trace/5 border-severity-trace/20",

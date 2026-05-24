@@ -3,16 +3,16 @@ import { Effect } from "effect"
 
 // --- Mock effect-utils BEFORE importing anything that uses it ---
 const executeQueryEngineMock = vi.fn()
-const runTinybirdQueryMock = vi.fn()
+const runWarehouseQueryMock = vi.fn()
 
-vi.mock("@/api/tinybird/effect-utils", async () => {
-	const actual = await vi.importActual<typeof import("@/api/tinybird/effect-utils")>(
-		"@/api/tinybird/effect-utils",
+vi.mock("@/api/warehouse/effect-utils", async () => {
+	const actual = await vi.importActual<typeof import("@/api/warehouse/effect-utils")>(
+		"@/api/warehouse/effect-utils",
 	)
 	return {
 		...actual,
 		executeQueryEngine: (...args: unknown[]) => executeQueryEngineMock(...args),
-		runTinybirdQuery: (...args: unknown[]) => runTinybirdQueryMock(...args),
+		runWarehouseQuery: (...args: unknown[]) => runWarehouseQueryMock(...args),
 	}
 })
 
@@ -47,7 +47,7 @@ executeQueryEngineMock.mockImplementation((operation: string) => {
 	return Effect.succeed({ result: { kind: "list", source: "traces", data: [] } })
 })
 
-runTinybirdQueryMock.mockImplementation(() =>
+runWarehouseQueryMock.mockImplementation(() =>
 	Effect.succeed({
 		data: [
 			{
@@ -66,8 +66,8 @@ runTinybirdQueryMock.mockImplementation(() =>
 )
 
 // --- Now import production code ---
-import { listTraces } from "@/api/tinybird/traces"
-import { listLogs } from "@/api/tinybird/logs"
+import { listTraces } from "@/api/warehouse/traces"
+import { listLogs } from "@/api/warehouse/logs"
 import { serverFunctionMap } from "@/components/dashboard-builder/data-source-registry"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 

@@ -12,9 +12,9 @@ import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PodTable, type PodRow } from "@/components/infra/pod-table"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
-import { listPodsResultAtom, nodeDetailSummaryResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { listPodsResultAtom, nodeDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import type { NodeInfraMetric } from "@/api/tinybird/infra"
+import type { NodeInfraMetric } from "@/api/warehouse/infra"
 
 export const Route = createFileRoute("/infra/kubernetes/nodes/$nodeName")({
 	component: NodeDetailPage,

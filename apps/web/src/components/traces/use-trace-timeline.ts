@@ -1,5 +1,5 @@
 import * as React from "react"
-import type { SpanNode } from "@/api/tinybird/traces"
+import type { SpanNode } from "@/api/warehouse/traces"
 import type { TimelineBar, ViewportState, TimelineState, TimelineAction } from "./trace-timeline-types"
 import { ROW_HEIGHT, ROW_GAP, OVERSCAN } from "./trace-timeline-types"
 import { getValueHue } from "@maple/ui/colors"

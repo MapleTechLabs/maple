@@ -3,7 +3,7 @@ import { toast } from "sonner"
 import { CopyIcon } from "@/components/icons"
 import { useClipboard } from "@maple/ui/hooks/use-clipboard"
 import { highlightCode } from "@/lib/sugar-high"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 /** Serialize a log into the pretty-printed JSON shown in the Raw panel. */
 export function buildLogJsonPayload(log: Log): string {

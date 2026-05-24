@@ -7,8 +7,8 @@ import {
 	QueryEngineValidationError,
 	RawSqlExecuteResponse,
 	RawSqlValidationError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	ErrorsByTypeResponse,
@@ -53,13 +53,13 @@ import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { CH, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 
-const isTaggedHttpError = (value: unknown): value is TinybirdQueryError | TinybirdQuotaExceededError =>
-	value instanceof TinybirdQueryError || value instanceof TinybirdQuotaExceededError
+const isTaggedHttpError = (value: unknown): value is WarehouseQueryError | WarehouseQuotaExceededError =>
+	value instanceof WarehouseQueryError || value instanceof WarehouseQuotaExceededError
 
 const mapExecError = <A, R>(
 	effect: Effect.Effect<A, unknown, R>,
 	context: string,
-): Effect.Effect<A, QueryEngineExecutionError | TinybirdQueryError | TinybirdQuotaExceededError, R> =>
+): Effect.Effect<A, QueryEngineExecutionError | WarehouseQueryError | WarehouseQuotaExceededError, R> =>
 	effect.pipe(
 		Effect.mapError((cause) => {
 			if (isTaggedHttpError(cause)) {

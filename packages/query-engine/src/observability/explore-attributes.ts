@@ -4,7 +4,7 @@ import type {
 	SpanAttributeValuesOutput,
 	ResourceAttributeValuesOutput,
 } from "@maple/domain/tinybird"
-import { TinybirdExecutor } from "./TinybirdExecutor"
+import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { ExploreAttributesInput, AttributeKeyResult, AttributeValueResult } from "./types"
 
 // All three key endpoints (span_attribute_keys, resource_attribute_keys, metric_attribute_keys)
@@ -17,7 +17,7 @@ type AttributeValueRow = SpanAttributeValuesOutput | ResourceAttributeValuesOutp
 export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKeys")(function* (
 	input: ExploreAttributesInput,
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 
 	const pipeName =
 		input.source === "traces"
@@ -72,7 +72,7 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 export const exploreAttributeValues = Effect.fn("Observability.exploreAttributeValues")(function* (
 	input: ExploreAttributesInput & { key: string },
 ) {
-	const executor = yield* TinybirdExecutor
+	const executor = yield* WarehouseExecutor
 
 	const pipeName =
 		input.scope === "resource"

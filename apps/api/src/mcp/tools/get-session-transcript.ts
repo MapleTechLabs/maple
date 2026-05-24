@@ -3,7 +3,7 @@ import {
 	McpQueryError,
 	type McpToolRegistrar,
 } from "./types"
-import { withTenantExecutor, resolveTenant } from "../lib/query-tinybird"
+import { withTenantExecutor, resolveTenant } from "../lib/query-warehouse"
 import { truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"

@@ -6,7 +6,7 @@ import {
 	type McpToolResult,
 } from "./types"
 import { Effect, Schema } from "effect"
-import { resolveTenant } from "@/mcp/lib/query-tinybird"
+import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { createDualContent } from "../lib/structured-output"
 import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"

@@ -6,7 +6,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { FilterSection } from "@/components/traces/filter-section"
 import { Route } from "@/routes/services/index"
 import { Separator } from "@maple/ui/components/ui/separator"
-import { getServicesFacetsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,

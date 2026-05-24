@@ -1,6 +1,6 @@
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { fleetUtilizationTimeseriesResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { fleetUtilizationTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 
 import { StatRail, StatRailItem, StatRailLoading } from "./primitives/stat-rail"
 import { deriveHostStatus, formatPercent, severityLevel } from "./format"

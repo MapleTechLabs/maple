@@ -1,7 +1,7 @@
 import type { Node, Edge } from "@xyflow/react"
-import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/tinybird/service-map"
-import type { ServiceOverview } from "@/api/tinybird/services"
-import type { ServiceWorkload } from "@/api/tinybird/service-infra"
+import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/warehouse/service-map"
+import type { ServiceOverview } from "@/api/warehouse/services"
+import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { getServiceLegendColor } from "@maple/ui/colors"
 import { getDbColor } from "./service-map-db"
 

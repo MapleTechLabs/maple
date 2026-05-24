@@ -1,4 +1,4 @@
-import type { TinybirdQueryError, TinybirdQuotaExceededError } from "@maple/domain"
+import type { WarehouseQueryError, WarehouseQuotaExceededError } from "@maple/domain"
 import type { ObservabilityError } from "@maple/query-engine/observability"
 import { McpQueryError } from "../tools/types"
 
@@ -12,9 +12,9 @@ const SCHEMA_DRIFT_HINT =
  * raw HTTP-domain errors (legacy `WarehouseQueryService.query` path), or the
  * `ObservabilityError` wrapper used by the DSL/observability functions in
  * `@maple/query-engine`. Both carry an optional `category` field with the same
- * literals — see TinybirdExecutorLive for the forwarding.
+ * literals — see WarehouseExecutorLive for the forwarding.
  */
-export type WarehouseError = TinybirdQueryError | TinybirdQuotaExceededError | ObservabilityError
+export type WarehouseError = WarehouseQueryError | WarehouseQuotaExceededError | ObservabilityError
 
 const enrich = (error: WarehouseError): string => {
 	const category = "category" in error ? error.category : undefined

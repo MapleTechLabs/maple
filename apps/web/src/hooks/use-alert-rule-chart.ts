@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
-import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
-import { computeBucketSeconds } from "@/api/tinybird/timeseries-utils"
+import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { type RuleFormState, signalToQueryParams, flattenAlertChartData } from "@/lib/alerts/form-utils"
 

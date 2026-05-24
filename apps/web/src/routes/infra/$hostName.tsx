@@ -10,7 +10,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { HostDetailHeader, HostDetailHeaderLoading } from "@/components/infra/host-detail-header"
 import { MetricStrip } from "@/components/infra/host-detail-chart"
 import { HostMetadataPanel } from "@/components/infra/host-metadata-panel"
-import { hostDetailSummaryResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { hostDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
 export const Route = createFileRoute("/infra/$hostName")({

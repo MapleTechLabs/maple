@@ -2,7 +2,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getResourceAttributeKeysResultAtom,
 	getSpanAttributeKeysResultAtom,
-} from "@/lib/services/atoms/tinybird-query-atoms"
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	Autocomplete,
 	AutocompleteCollection,

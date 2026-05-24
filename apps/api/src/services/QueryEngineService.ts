@@ -12,8 +12,8 @@ import {
 	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
 	QueryEngineValidationError,
-	TinybirdQueryError,
-	TinybirdQuotaExceededError,
+	WarehouseQueryError,
+	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import { Clock, Array as Arr, Duration, Effect, Layer, Match, Metric, Option, Result, Context } from "effect"
 import type { TenantContext } from "./AuthService"
@@ -21,7 +21,7 @@ import { BucketCacheService } from "../lib/BucketCacheService"
 import { EdgeCacheService } from "../lib/EdgeCacheService"
 import { makeExpandMacros } from "./RawSqlChartService"
 import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
-import type { QueryProfileName } from "../lib/TinybirdQueryProfile"
+import type { QueryProfileName } from "../lib/WarehouseQueryProfile"
 import * as QueryEngineMetrics from "../lib/QueryEngineMetrics"
 
 interface TimeRangeBounds {
@@ -72,8 +72,8 @@ export interface QueryEngineRawSqlEvaluateRequest {
 export type QueryEngineDirectError =
 	| QueryEngineExecutionError
 	| QueryEngineTimeoutError
-	| TinybirdQueryError
-	| TinybirdQuotaExceededError
+	| WarehouseQueryError
+	| WarehouseQuotaExceededError
 
 export type QueryEngineRouteError = QueryEngineValidationError | QueryEngineDirectError
 
@@ -611,9 +611,9 @@ const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")(functi
  * don't read like they're remapping errors.
  */
 const annotateWarehouseError = <A, R>(
-	effect: Effect.Effect<A, TinybirdQueryError | TinybirdQuotaExceededError, R>,
+	effect: Effect.Effect<A, WarehouseQueryError | WarehouseQuotaExceededError, R>,
 	context: string,
-): Effect.Effect<A, TinybirdQueryError | TinybirdQuotaExceededError, R> =>
+): Effect.Effect<A, WarehouseQueryError | WarehouseQuotaExceededError, R> =>
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
@@ -637,7 +637,7 @@ const executeCHQuery = <Output extends Record<string, any>, Params extends Recor
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
-): Effect.Effect<ReadonlyArray<Output>, TinybirdQueryError | TinybirdQuotaExceededError> => {
+): Effect.Effect<ReadonlyArray<Output>, WarehouseQueryError | WarehouseQuotaExceededError> => {
 	const compiled = CH.compile(query, params)
 	return annotateWarehouseError(
 		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
@@ -653,7 +653,7 @@ const executeCHUnionQuery = <Output extends Record<string, any>, Params extends 
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
-): Effect.Effect<ReadonlyArray<Output>, TinybirdQueryError | TinybirdQuotaExceededError> => {
+): Effect.Effect<ReadonlyArray<Output>, WarehouseQueryError | WarehouseQuotaExceededError> => {
 	const compiled = CH.compileUnion(query, params)
 	return annotateWarehouseError(
 		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
@@ -870,8 +870,8 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 		QueryEngineExecuteResponse,
 		| QueryEngineValidationError
 		| QueryEngineExecutionError
-		| TinybirdQueryError
-		| TinybirdQuotaExceededError
+		| WarehouseQueryError
+		| WarehouseQuotaExceededError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.source", request.query.source)
@@ -1544,8 +1544,8 @@ export const makeQueryEngineEvaluate = (warehouse: QueryEngineWarehouse) =>
 		ReadonlyArray<GroupedAlertObservation>,
 		| QueryEngineValidationError
 		| QueryEngineExecutionError
-		| TinybirdQueryError
-		| TinybirdQuotaExceededError
+		| WarehouseQueryError
+		| WarehouseQuotaExceededError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.source", request.query.source)
@@ -1727,7 +1727,7 @@ export const makeQueryEngineEvaluateRawSql = (warehouse: QueryEngineWarehouse) =
 		request: QueryEngineRawSqlEvaluateRequest,
 	): Effect.fn.Return<
 		ReadonlyArray<GroupedAlertObservation>,
-		QueryEngineValidationError | TinybirdQueryError | TinybirdQuotaExceededError
+		QueryEngineValidationError | WarehouseQueryError | WarehouseQuotaExceededError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.reducer", request.reducer)

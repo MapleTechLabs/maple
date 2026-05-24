@@ -18,7 +18,7 @@ import { HostSummaryCards, HostSummaryCardsLoading } from "@/components/infra/ho
 import { InstallHostModal } from "@/components/infra/install-modal"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
 import { PageHero } from "@/components/infra/primitives/page-hero"
-import { listHostsResultAtom } from "@/lib/services/atoms/tinybird-query-atoms"
+import { listHostsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
 export const Route = createFileRoute("/infra/")({

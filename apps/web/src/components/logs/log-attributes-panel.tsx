@@ -2,7 +2,7 @@ import { useState } from "react"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { Input } from "@maple/ui/components/ui/input"
 import { AttributesTable, ResourceAttributesSection } from "@/components/attributes"
-import type { Log } from "@/api/tinybird/logs"
+import type { Log } from "@/api/warehouse/logs"
 
 interface LogAttributesPanelProps {
 	log: Log
