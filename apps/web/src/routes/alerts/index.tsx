@@ -578,6 +578,26 @@ function AlertsPage() {
 		</Tabs>
 	)
 
+	const headerActions =
+		activeTab === "settings" ? (
+			// Settings: the header owns the add action only once destinations exist.
+			// While empty, the empty-state CTA is the single add affordance (avoids a duplicate).
+			isAdmin && Result.isSuccess(destinationsResult) && destinations.length > 0 ? (
+				<Button size="sm" onClick={() => openDestinationDialog()}>
+					<PlusIcon size={14} />
+					Add destination
+				</Button>
+			) : undefined
+		) : (
+			<Button
+				size="sm"
+				render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
+			>
+				<PlusIcon size={14} />
+				New rule
+			</Button>
+		)
+
 	return (
 		<>
 			<DashboardLayout
@@ -595,15 +615,7 @@ function AlertsPage() {
 						</p>
 					</div>
 				}
-				headerActions={
-					<Button
-						size="sm"
-						render={<Link to="/alerts/create" search={{ serviceName: search.serviceName }} />}
-					>
-						<PlusIcon size={14} />
-						New rule
-					</Button>
-				}
+				headerActions={headerActions}
 				stickyContent={tabBar}
 			>
 				<div className="space-y-6">
@@ -858,20 +870,12 @@ function AlertsPage() {
 						<div className="space-y-10">
 							{/* Destinations section */}
 							<section className="space-y-4">
-								<div className="flex items-start justify-between gap-4">
-									<div>
-										<h2 className="text-lg font-semibold">Destinations</h2>
-										<p className="text-muted-foreground text-sm">
-											Destinations are reusable across rules and keep provider retries
-											and failures auditable.
-										</p>
-									</div>
-									{isAdmin && (
-										<Button size="sm" onClick={() => openDestinationDialog()}>
-											<PlusIcon size={14} />
-											Add destination
-										</Button>
-									)}
+								<div>
+									<h2 className="text-lg font-semibold">Destinations</h2>
+									<p className="text-muted-foreground text-sm">
+										Destinations are reusable across rules and keep provider retries and
+										failures auditable.
+									</p>
 								</div>
 
 								{Result.isInitial(destinationsResult) ? (
