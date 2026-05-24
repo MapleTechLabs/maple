@@ -4,9 +4,9 @@ import { Effect } from "effect"
 import { resolveMcpTenantContext } from "@/mcp/lib/resolve-tenant"
 import { toMcpQueryError } from "@/mcp/lib/map-warehouse-error"
 import { McpAuthMissingError } from "@/mcp/tools/types"
-import { WarehouseQueryService } from "@/services/WarehouseQueryService"
+import { WarehouseQueryService } from "@/lib/WarehouseQueryService"
 import { TinybirdExecutor } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
 import type { TenantContext } from "@/services/AuthService"
 
 export const resolveTenant = Effect.gen(function* () {

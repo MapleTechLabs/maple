@@ -10,11 +10,11 @@ import {
 	PortableDashboardDocument,
 	UserId,
 } from "@maple/domain/http"
-import { Database, DatabaseError } from "./DatabaseLive"
-import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
+import { Database, DatabaseError } from "../lib/DatabaseLive"
+import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
-import { Env } from "./Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "./test-sqlite"
+import { Env } from "../lib/Env"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
 
 const createdTempDirs: string[] = []
 

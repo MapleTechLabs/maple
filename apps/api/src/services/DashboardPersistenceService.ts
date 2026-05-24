@@ -21,7 +21,7 @@ import { dashboards, dashboardVersions, type DashboardVersionRow } from "@maple/
 import { and, desc, eq, lt } from "drizzle-orm"
 import { Clock, Effect, Layer, Option, Schema, Context } from "effect"
 import { randomUUID } from "node:crypto"
-import { Database } from "./DatabaseLive"
+import { Database } from "../lib/DatabaseLive"
 import { summarizeDashboardChange } from "./dashboard-changes"
 
 const decodeDashboardIdSync = Schema.decodeUnknownSync(DashboardId)

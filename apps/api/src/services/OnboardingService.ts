@@ -4,7 +4,7 @@ import { OnboardingPersistenceError, OnboardingStateResponse } from "@maple/doma
 import type { OrgId } from "@maple/domain/http"
 import { and, eq, isNull } from "drizzle-orm"
 import { Clock, Context, Effect, Layer } from "effect"
-import { Database } from "./DatabaseLive"
+import { Database } from "../lib/DatabaseLive"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({

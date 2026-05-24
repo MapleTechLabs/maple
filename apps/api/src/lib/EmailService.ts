@@ -20,7 +20,7 @@ export interface EmailServiceShape {
 
 const EMAIL_TIMEOUT = Duration.seconds(15)
 
-export class EmailService extends Context.Service<EmailService, EmailServiceShape>()("@maple/api/services/EmailService", {
+export class EmailService extends Context.Service<EmailService, EmailServiceShape>()("@maple/api/lib/EmailService", {
 	make: Effect.gen(function* () {
 		const env = yield* Env
 		const apiKey = env.RESEND_API_KEY

@@ -15,7 +15,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Effect, Schema } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
 import type { TracesMetric } from "@maple/query-engine"
-import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
 
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.tool(

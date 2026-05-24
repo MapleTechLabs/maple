@@ -3,7 +3,7 @@ import { Effect, Option, Redacted, Schema } from "effect"
 import type { TenantContext as McpTenantContext } from "@/lib/tenant-context"
 import { AuthService } from "@/services/AuthService"
 import { ApiKeysService } from "@/services/ApiKeysService"
-import { Env } from "@/services/Env"
+import { Env } from "@/lib/Env"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
 import {
 	McpAuthMissingError,

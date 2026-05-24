@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { Env } from "../services/Env"
+import { Env } from "../lib/Env"
 
 const resourceFromRequest = (req: HttpServerRequest.HttpServerRequest, suffix: string) => {
 	const proto = req.headers["x-forwarded-proto"] ?? "https"

@@ -13,9 +13,9 @@ import {
 import { oauthAuthStates, oauthConnections, type OAuthAuthStateRow, type OAuthConnectionRow } from "@maple/db"
 import { and, eq, lt } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "./Crypto"
-import { Database, type DatabaseClient } from "./DatabaseLive"
-import { Env, type EnvShape } from "./Env"
+import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "../lib/Crypto"
+import { Database, type DatabaseClient } from "../lib/DatabaseLive"
+import { Env, type EnvShape } from "../lib/Env"
 
 const HAZEL_PROVIDER = "hazel"
 const STATE_TTL_MS = 10 * 60_000 // 10 minutes

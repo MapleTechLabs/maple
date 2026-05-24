@@ -20,9 +20,9 @@ import {
 	type DestinationSecretConfig,
 	type EnrichedDestinationSecretConfig,
 } from "./AlertDestinationHydration"
-import { parseBase64Aes256GcmKey } from "./Crypto"
-import { Database } from "./DatabaseLive"
-import { Env } from "./Env"
+import { parseBase64Aes256GcmKey } from "../lib/Crypto"
+import { Database } from "../lib/DatabaseLive"
+import { Env } from "../lib/Env"
 
 /*
  * Shared notification dispatch for alert-adjacent features (error issues /

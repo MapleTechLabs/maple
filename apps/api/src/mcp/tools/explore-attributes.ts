@@ -9,7 +9,7 @@ import { createDualContent } from "../lib/structured-output"
 import { formatNextSteps } from "../lib/next-steps"
 import { exploreAttributeKeys, exploreAttributeValues } from "@maple/query-engine/observability"
 import { ObservabilityError } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
 
 export function registerExploreAttributesTool(server: McpToolRegistrar) {
 	server.tool(

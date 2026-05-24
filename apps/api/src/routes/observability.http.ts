@@ -10,7 +10,7 @@ import {
 	diagnoseService,
 	searchLogs,
 } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "../services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "../lib/TinybirdExecutorLive"
 
 const mapError = (e: { message: string; pipe?: string }) =>
 	new ObservabilityApiError({ message: e.message, pipe: e.pipe, cause: e })

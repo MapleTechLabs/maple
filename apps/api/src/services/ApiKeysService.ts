@@ -13,8 +13,8 @@ import {
 import { API_KEY_PREFIX, apiKeys, generateApiKey, hashApiKey, parseIngestKeyLookupHmacKey } from "@maple/db"
 import { and, desc, eq } from "drizzle-orm"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
-import { Database } from "./DatabaseLive"
-import { Env } from "./Env"
+import { Database } from "../lib/DatabaseLive"
+import { Env } from "../lib/Env"
 
 export interface ResolvedApiKey {
 	readonly orgId: OrgId

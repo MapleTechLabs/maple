@@ -57,10 +57,10 @@ import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "driz
 import { CH, parseWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schedule, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
-import { Database, DatabaseError, type DatabaseClient } from "./DatabaseLive"
-import { Env } from "./Env"
+import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
+import { Env } from "../lib/Env"
 import { NotificationDispatcher } from "./NotificationDispatcher"
-import { WarehouseQueryService } from "./WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueDocument.fields.id)
 const decodeErrorIncidentIdSync = Schema.decodeUnknownSync(ErrorIncidentDocument.fields.id)

@@ -8,10 +8,10 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
-import { Env } from "./Env"
+import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
+import { Env } from "../lib/Env"
 import { CloudflareLogpushService } from "./CloudflareLogpushService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "./test-sqlite"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "../lib/test-sqlite"
 
 const createdTempDirs: string[] = []
 

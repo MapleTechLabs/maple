@@ -9,16 +9,16 @@ import {
 	RoleName,
 	UserId,
 } from "@maple/domain/http"
-import type { WarehouseQueryServiceShape } from "./WarehouseQueryService"
-import { WarehouseQueryService } from "./WarehouseQueryService"
+import type { WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { AlertRuntime, type AlertRuntimeShape, AlertsService, type AlertsServiceShape } from "./AlertsService"
-import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
-import { BucketCacheService } from "./BucketCacheService"
-import { EdgeCacheService } from "./EdgeCacheService"
-import { Env } from "./Env"
+import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
+import { BucketCacheService } from "../lib/BucketCacheService"
+import { EdgeCacheService } from "../lib/EdgeCacheService"
+import { Env } from "../lib/Env"
 import { HazelOAuthService } from "./HazelOAuthService"
 import { QueryEngineService } from "./QueryEngineService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb, executeSql, queryFirstRow } from "./test-sqlite"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb, executeSql, queryFirstRow } from "../lib/test-sqlite"
 
 const createdTempDirs: string[] = []
 

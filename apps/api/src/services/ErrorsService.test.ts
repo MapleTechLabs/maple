@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { ErrorPersistenceError } from "@maple/domain/http"
-import { DatabaseError } from "./DatabaseLive"
+import { DatabaseError } from "../lib/DatabaseLive"
 import { describeCause, isBusyDatabaseError, makePersistenceError } from "./ErrorsService"
 
 describe("makePersistenceError", () => {

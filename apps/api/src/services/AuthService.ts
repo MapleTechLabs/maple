@@ -11,7 +11,7 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
-import { Env } from "./Env"
+import { Env } from "../lib/Env"
 
 export interface TenantContext {
 	readonly orgId: OrgId

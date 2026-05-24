@@ -3,7 +3,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"
 import { MapleApi, PrometheusSDTarget, SDPersistenceError, SDUnauthorizedError } from "@maple/domain/http"
 import { Array as Arr, Effect, Option, Redacted, Schema } from "effect"
-import { Env } from "../services/Env"
+import { Env } from "../lib/Env"
 import { ScrapeTargetsService } from "../services/ScrapeTargetsService"
 
 export const HttpServiceDiscoveryLive = HttpApiBuilder.group(MapleApi, "serviceDiscovery", (handlers) =>

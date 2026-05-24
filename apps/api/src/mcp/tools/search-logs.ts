@@ -7,7 +7,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { searchLogs } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
 
 export function registerSearchLogsTool(server: McpToolRegistrar) {
 	server.tool(

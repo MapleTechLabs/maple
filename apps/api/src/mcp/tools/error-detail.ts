@@ -13,7 +13,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { errorDetail } from "@maple/query-engine/observability"
-import { makeTinybirdExecutorFromTenant } from "@/services/TinybirdExecutorLive"
+import { makeTinybirdExecutorFromTenant } from "@/lib/TinybirdExecutorLive"
 
 export function registerErrorDetailTool(server: McpToolRegistrar) {
 	server.tool(

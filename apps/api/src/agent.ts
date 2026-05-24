@@ -17,8 +17,8 @@ const setupCache = new WeakMap<object, Promise<MapleAgentSetup>>()
 const buildSetup = async (env: Record<string, unknown>): Promise<MapleAgentSetup> => {
 	const [appMod, dbMod, envMod, registryMod] = await Promise.all([
 		import("./app"),
-		import("./services/DatabaseD1Live"),
-		import("./services/WorkerEnvironment"),
+		import("./lib/DatabaseD1Live"),
+		import("./lib/WorkerEnvironment"),
 		import("./mcp/tools/registry"),
 	])
 

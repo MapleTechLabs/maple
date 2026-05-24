@@ -7,7 +7,7 @@ import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } from "./app"
 import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
-import { DatabaseD1Live } from "./services/DatabaseD1Live"
+import { DatabaseD1Live } from "./lib/DatabaseD1Live"
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
 

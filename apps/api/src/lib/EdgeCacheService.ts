@@ -277,7 +277,7 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 }
 
 export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceShape>()(
-	"@maple/api/services/EdgeCacheService",
+	"@maple/api/lib/EdgeCacheService",
 ) {
 	static readonly layer = Layer.sync(this, () => {
 		const workers = detectWorkersCache()

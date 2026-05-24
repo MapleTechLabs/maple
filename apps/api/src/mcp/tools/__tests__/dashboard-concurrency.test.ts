@@ -19,10 +19,10 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "@/services/DatabaseLibsqlLive"
+import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
-import { Env } from "@/services/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/services/test-sqlite"
+import { Env } from "@/lib/Env"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
 
 const createdTempDirs: string[] = []
 

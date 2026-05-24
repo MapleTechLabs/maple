@@ -5,7 +5,7 @@ import {
 	type ExecutorQueryOptions,
 } from "@maple/query-engine/observability"
 import { WarehouseQueryService } from "./WarehouseQueryService"
-import type { TenantContext } from "./AuthService"
+import type { TenantContext } from "../services/AuthService"
 
 /**
  * Creates a TinybirdExecutor layer that resolves the tenant from the current

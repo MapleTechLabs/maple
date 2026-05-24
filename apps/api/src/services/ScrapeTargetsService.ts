@@ -19,9 +19,9 @@ import {
 import { scrapeTargets } from "@maple/db"
 import { and, eq } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "./Crypto"
-import { Database } from "./DatabaseLive"
-import { Env } from "./Env"
+import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
+import { Database } from "../lib/DatabaseLive"
+import { Env } from "../lib/Env"
 import { safeFetch, validateExternalUrl } from "../lib/url-validator"
 
 type ScrapeTargetRow = typeof scrapeTargets.$inferSelect

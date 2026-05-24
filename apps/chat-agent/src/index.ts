@@ -15,10 +15,10 @@ import { z } from "zod"
 import type { Env } from "./lib/types"
 import { resolveOrgOpenrouterKey } from "@maple/api/agent"
 import { trackTokenUsage } from "./lib/autumn-tracker"
-import { createMapleAiTools } from "./lib/direct-tools"
-import { applyApprovalGates } from "./lib/gated-tools"
+import { createMapleAiTools } from "./services/direct-tools"
+import { applyApprovalGates } from "./services/gated-tools"
 import { createChatModel } from "./lib/model-gateway"
-import { SYSTEM_PROMPT, DASHBOARD_BUILDER_SYSTEM_PROMPT } from "./lib/system-prompt"
+import { SYSTEM_PROMPT, DASHBOARD_BUILDER_SYSTEM_PROMPT } from "./services/system-prompt"
 import { orgIdFromDoName, parseDoNameFromUrl, verifyRequest } from "./lib/auth"
 
 interface DashboardContext {

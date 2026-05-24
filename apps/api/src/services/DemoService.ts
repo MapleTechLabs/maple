@@ -1,6 +1,6 @@
 import { DemoSeedError, DemoSeedResponse, type OrgId, type UserId } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
-import { Env } from "./Env"
+import { Env } from "../lib/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
 import { generateDemoBatches } from "./demo/fixtures"
 

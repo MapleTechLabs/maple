@@ -17,12 +17,12 @@ import {
 } from "@maple/domain/http"
 import { Clock, Array as Arr, Duration, Effect, Layer, Match, Metric, Option, Result, Context } from "effect"
 import type { TenantContext } from "./AuthService"
-import { BucketCacheService } from "./BucketCacheService"
-import { EdgeCacheService } from "./EdgeCacheService"
+import { BucketCacheService } from "../lib/BucketCacheService"
+import { EdgeCacheService } from "../lib/EdgeCacheService"
 import { makeExpandMacros } from "./RawSqlChartService"
-import { WarehouseQueryService, type WarehouseQueryServiceShape } from "./WarehouseQueryService"
-import type { QueryProfileName } from "./TinybirdQueryProfile"
-import * as QueryEngineMetrics from "./QueryEngineMetrics"
+import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
+import type { QueryProfileName } from "../lib/TinybirdQueryProfile"
+import * as QueryEngineMetrics from "../lib/QueryEngineMetrics"
 
 interface TimeRangeBounds {
 	readonly startMs: number

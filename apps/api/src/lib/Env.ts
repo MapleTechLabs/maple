@@ -130,6 +130,6 @@ const makeEnv = Effect.gen(function* () {
 	return env
 })
 
-export class Env extends Context.Service<Env, EnvShape>()("@maple/api/services/Env") {
+export class Env extends Context.Service<Env, EnvShape>()("@maple/api/lib/Env") {
 	static readonly layer = Layer.effect(this, makeEnv)
 }

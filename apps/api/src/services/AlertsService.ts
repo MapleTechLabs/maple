@@ -95,10 +95,10 @@ import {
 	Schema,
 	Context,
 } from "effect"
-import * as AlertingMetrics from "./AlertingMetrics"
+import * as AlertingMetrics from "../lib/AlertingMetrics"
 import type { TenantContext } from "./AuthService"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "./Crypto"
-import { Database, type DatabaseClient } from "./DatabaseLive"
+import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
+import { Database, type DatabaseClient } from "../lib/DatabaseLive"
 import {
 	buildAlertChatUrl,
 	dispatchDelivery as dispatchDeliveryImpl,
@@ -107,10 +107,10 @@ import {
 	formatEventTypeLabel,
 	formatSignalMetric,
 } from "./AlertDeliveryDispatch"
-import { Env } from "./Env"
+import { Env } from "../lib/Env"
 import { HazelOAuthService } from "./HazelOAuthService"
 import { QueryEngineService, type GroupedAlertObservation } from "./QueryEngineService"
-import { WarehouseQueryService } from "./WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { validateExternalUrl } from "../lib/url-validator"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import {

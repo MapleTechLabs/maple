@@ -9,9 +9,9 @@ import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
 import { Clock, Effect, Layer, Option, Redacted, Schedule, Context } from "effect"
 import { Env } from "./Env"
-import type { TenantContext } from "./AuthService"
-import { OrgClickHouseSettingsService } from "./OrgClickHouseSettingsService"
-import { compilePipeQuery } from "./PipeQueryDispatcher"
+import type { TenantContext } from "../services/AuthService"
+import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
+import { compilePipeQuery } from "../services/PipeQueryDispatcher"
 import {
 	appendSettings,
 	detectQuotaSetting,
@@ -216,7 +216,7 @@ const isTransientUpstreamError = (error: WarehouseSqlError): boolean =>
 export class WarehouseQueryService extends Context.Service<
 	WarehouseQueryService,
 	WarehouseQueryServiceShape
->()("@maple/api/services/WarehouseQueryService", {
+>()("@maple/api/lib/WarehouseQueryService", {
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const orgClickHouseSettings = yield* OrgClickHouseSettingsService

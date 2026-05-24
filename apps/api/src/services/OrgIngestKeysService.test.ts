@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it } from "vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { hashIngestKey } from "@maple/db"
-import { Database, DatabaseError } from "./DatabaseLive"
-import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
-import { Env } from "./Env"
+import { Database, DatabaseError } from "../lib/DatabaseLive"
+import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
+import { Env } from "../lib/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "./test-sqlite"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "../lib/test-sqlite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`

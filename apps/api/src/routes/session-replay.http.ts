@@ -11,7 +11,7 @@ import {
 } from "@maple/domain/http"
 import { Effect } from "effect"
 import { CH } from "@maple/query-engine"
-import { WarehouseQueryService } from "../services/WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
 export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionReplays", (handlers) =>
 	Effect.gen(function* () {

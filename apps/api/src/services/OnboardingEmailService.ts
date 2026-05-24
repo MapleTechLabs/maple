@@ -9,11 +9,11 @@ import {
 	WelcomeEmail,
 } from "@maple/email/onboarding"
 import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
-import { EmailService } from "./EmailService"
-import { Env } from "./Env"
+import { EmailService } from "../lib/EmailService"
+import { Env } from "../lib/Env"
 import { OnboardingService } from "./OnboardingService"
 import type { OnboardingEmailField } from "./OnboardingService"
-import { WarehouseQueryService } from "./WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
 const SYSTEM_ONBOARDING_USER = UserId.make("system-onboarding")
 const ROOT_ROLE = RoleName.make("root")

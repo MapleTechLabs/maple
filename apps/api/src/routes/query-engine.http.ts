@@ -49,7 +49,7 @@ import {
 import { Effect } from "effect"
 import { QueryEngineService } from "../services/QueryEngineService"
 import { RawSqlChartService } from "../services/RawSqlChartService"
-import { WarehouseQueryService } from "../services/WarehouseQueryService"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { CH, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 

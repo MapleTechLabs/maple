@@ -1,7 +1,7 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { Effect, Option, Redacted } from "effect"
 import { autumnHandler, type CustomerData } from "autumn-js/backend"
-import { Env } from "../services/Env"
+import { Env } from "../lib/Env"
 import { AuthService } from "../services/AuthService"
 
 export const AutumnRouter = HttpRouter.use((router) =>

@@ -17,7 +17,7 @@ import {
 import { orgIngestAttributeMappings } from "@maple/db"
 import { and, eq } from "drizzle-orm"
 import { Array, Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import { Database, DatabaseError } from "./DatabaseLive"
+import { Database, DatabaseError } from "../lib/DatabaseLive"
 
 type MappingRow = typeof orgIngestAttributeMappings.$inferSelect
 

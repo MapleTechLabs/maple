@@ -17,10 +17,10 @@ import { render } from "@react-email/components"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
 import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Context } from "effect"
 import { WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
-import { Database } from "./DatabaseLive"
-import { EmailService } from "./EmailService"
-import { Env } from "./Env"
-import { WarehouseQueryService } from "./WarehouseQueryService"
+import { Database } from "../lib/DatabaseLive"
+import { EmailService } from "../lib/EmailService"
+import { Env } from "../lib/Env"
+import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
 const SYSTEM_DIGEST_USER = UserId.make("system-digest")
 const ROOT_ROLE = RoleName.make("root")

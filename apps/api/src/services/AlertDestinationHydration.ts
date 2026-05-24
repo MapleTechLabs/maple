@@ -1,6 +1,6 @@
 import type { AlertDestinationRow } from "@maple/db"
 import { Effect, Schema } from "effect"
-import { decryptAes256Gcm } from "./Crypto"
+import { decryptAes256Gcm } from "../lib/Crypto"
 
 export const DestinationPublicConfigSchema = Schema.Struct({
 	summary: Schema.String,
