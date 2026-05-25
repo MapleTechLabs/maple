@@ -35,6 +35,12 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 				dashboards = dashboards.filter((d) => d.name.toLowerCase().includes(lowerSearch))
 			}
 
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				search: search ?? "none",
+				resultCount: dashboards.length,
+			})
+
 			const lines: string[] = [
 				`## Dashboards`,
 				`Total: ${dashboards.length} dashboard${dashboards.length !== 1 ? "s" : ""}`,

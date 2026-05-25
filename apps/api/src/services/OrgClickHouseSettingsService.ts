@@ -29,7 +29,7 @@ import {
 } from "@maple/domain/clickhouse"
 import { orgClickHouseSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
 import {
 	decryptAes256Gcm,
 	encryptAes256Gcm,
@@ -316,16 +316,15 @@ const decodeStatus = (raw: string | null | undefined): "connected" | "error" | n
 	return null
 }
 
-// --- Desired-schema cache ----------------------------------------------------
+// --- Desired-schema parsing --------------------------------------------------
 //
-// We parse the bundled snapshot statements once on first use and reuse the
-// result. Parsing is cheap, but the snapshot is also static across the
-// process lifetime so re-parsing on every request would be wasted work.
+// We parse the bundled snapshot statements from the static migration snapshot.
+// Parsing is cheap, but the snapshot is also static across the process
+// lifetime so the service memoizes the result in a `Ref` (created in `make`)
+// to avoid re-parsing on every request without resorting to module-global
+// mutable state.
 
-let cachedDesiredTables: ReadonlyArray<DesiredTable> | null = null
-
-const getDesiredTables = (): ReadonlyArray<DesiredTable> => {
-	if (cachedDesiredTables) return cachedDesiredTables
+const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 	const out: DesiredTable[] = []
 	for (const stmt of clickHouseMigrations[0]?.statements ?? []) {
 		const parsed = parseEmittedStatement(stmt)
@@ -337,7 +336,6 @@ const getDesiredTables = (): ReadonlyArray<DesiredTable> => {
 			createStatement: stmt,
 		})
 	}
-	cachedDesiredTables = out
 	return out
 }
 
@@ -540,6 +538,17 @@ export class OrgClickHouseSettingsService extends Context.Service<
 		const database = yield* Database
 		const env = yield* Env
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
+
+		// Memoize the parsed desired-schema snapshot per service instance. The
+		// snapshot is static, so we parse it at most once and reuse it.
+		const desiredTablesCache = yield* Ref.make<ReadonlyArray<DesiredTable> | null>(null)
+		const getDesiredTables = Effect.gen(function* () {
+			const cached = yield* Ref.get(desiredTablesCache)
+			if (cached) return cached
+			const parsed = parseDesiredTables()
+			yield* Ref.set(desiredTablesCache, parsed)
+			return parsed
+		})
 
 		const requireAdmin = Effect.fn("OrgClickHouseSettingsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
@@ -756,7 +765,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const row = yield* requireActiveRow(orgId)
 			const config = yield* loadConfigForRow(row)
 			const actual = yield* fetchActualSchema(config)
-			const entries = computeSchemaDiff({ tables: getDesiredTables() }, actual)
+			const entries = computeSchemaDiff({ tables: yield* getDesiredTables }, actual)
 			return new OrgClickHouseSchemaDiffResponse({
 				expectedSchemaVersion: clickHouseProjectRevision,
 				appliedSchemaVersion: row.schemaVersion ?? null,
@@ -784,7 +793,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const ranMigrations = yield* runPendingMigrations(config)
 			applied.push(...ranMigrations)
 
-			const desired = getDesiredTables()
+			const desired = yield* getDesiredTables
 			const desiredByName = new Map(desired.map((t) => [t.name, t]))
 			const actual = yield* fetchActualSchema(config)
 			const entries = computeSchemaDiff({ tables: desired }, actual)

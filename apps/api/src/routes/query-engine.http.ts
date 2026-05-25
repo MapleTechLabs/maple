@@ -49,28 +49,18 @@ import {
 import { Effect } from "effect"
 import { QueryEngineService } from "../services/QueryEngineService"
 import { RawSqlChartService } from "../services/RawSqlChartService"
-import { WarehouseQueryService } from "../lib/WarehouseQueryService"
+import { WarehouseQueryService, type WarehouseSqlError } from "../lib/WarehouseQueryService"
 import { CH, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
 
-const isTaggedHttpError = (value: unknown): value is WarehouseQueryError | WarehouseQuotaExceededError =>
-	value instanceof WarehouseQueryError || value instanceof WarehouseQuotaExceededError
-
+// `warehouse.sqlQuery` fails with the `WarehouseSqlError` tagged union
+// (`WarehouseQueryError | WarehouseQuotaExceededError`). Both are passed through
+// unchanged so HTTP status mapping stays accurate; this combinator only exists
+// to satisfy the typed error channel without widening to `unknown`.
 const mapExecError = <A, R>(
-	effect: Effect.Effect<A, unknown, R>,
-	context: string,
-): Effect.Effect<A, QueryEngineExecutionError | WarehouseQueryError | WarehouseQuotaExceededError, R> =>
-	effect.pipe(
-		Effect.mapError((cause) => {
-			if (isTaggedHttpError(cause)) {
-				return cause
-			}
-			return new QueryEngineExecutionError({
-				message: context,
-				causeMessage: cause instanceof Error ? cause.message : String(cause),
-			})
-		}),
-	)
+	effect: Effect.Effect<A, WarehouseSqlError, R>,
+	_context: string,
+): Effect.Effect<A, WarehouseQueryError | WarehouseQuotaExceededError, R> => effect
 
 // Build a ±1h partition-pruning window around a ClickHouse datetime string
 // (`YYYY-MM-DD HH:mm:ss[.ffffff]`). Sub-second precision is irrelevant for the
@@ -333,7 +323,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							"serviceOverview query failed",
 						),
 					)
-					return new ServiceOverviewResponse({ data: rows as any[] })
+					return new ServiceOverviewResponse({ data: rows })
 				}),
 			)
 			.handle("serviceApdex", ({ payload }) =>
@@ -418,7 +408,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"serviceDependencies query failed",
 					)
-					return new ServiceDependenciesResponse({ data: compiled.castRows(rows) as any[] })
+					return new ServiceDependenciesResponse({ data: rows })
 				}),
 			)
 			.handle("serviceDependenciesForService", ({ payload }) =>
@@ -442,7 +432,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"serviceDependenciesForService query failed",
 					)
-					return new ServiceDependenciesResponse({ data: compiled.castRows(rows) as any[] })
+					return new ServiceDependenciesResponse({ data: rows })
 				}),
 			)
 			.handle("serviceDbEdges", ({ payload }) =>
@@ -459,7 +449,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"serviceDbEdges query failed",
 					)
-					return new ServiceDbEdgesResponse({ data: compiled.castRows(rows) as any[] })
+					return new ServiceDbEdgesResponse({ data: rows })
 				}),
 			)
 			.handle("serviceDbEdgesForService", ({ payload }) =>
@@ -483,7 +473,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"serviceDbEdgesForService query failed",
 					)
-					return new ServiceDbEdgesResponse({ data: compiled.castRows(rows) as any[] })
+					return new ServiceDbEdgesResponse({ data: rows })
 				}),
 			)
 			.handle("serviceExternalEdges", ({ payload }) =>
@@ -503,7 +493,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"serviceExternalEdges query failed",
 					)
-					return new ServiceExternalEdgesResponse({ data: compiled.castRows(rows) as any[] })
+					return new ServiceExternalEdgesResponse({ data: rows })
 				}),
 			)
 			.handle("servicePlatforms", ({ payload }) =>
@@ -618,7 +608,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							"serviceUsage query failed",
 						),
 					)
-					return new ServiceUsageResponse({ data: rows as any[] })
+					return new ServiceUsageResponse({ data: rows })
 				}),
 			)
 			.handle("listLogs", ({ payload }) =>
@@ -653,7 +643,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							"listLogs query failed",
 						),
 					)
-					return new ListLogsResponse({ data: rows as any[] })
+					return new ListLogsResponse({ data: rows })
 				}),
 			)
 			.handle("getLog", ({ payload }) =>
@@ -678,7 +668,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"getLog query failed",
 					)
-					return new GetLogResponse({ data: rows as any[] })
+					return new GetLogResponse({ data: rows })
 				}),
 			)
 			.handle("listMetrics", ({ payload }) =>
@@ -701,7 +691,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"listMetrics query failed",
 					)
-					return new ListMetricsResponse({ data: rows as any[] })
+					return new ListMetricsResponse({ data: rows })
 				}),
 			)
 			.handle("metricsSummary", ({ payload }) =>
@@ -1008,7 +998,10 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							},
 						)
 						const rows = yield* mapExecError(
-							warehouse.sqlQuery(tenant, compiled.sql, { profile: "aggregation" }),
+							warehouse.sqlQuery(tenant, compiled.sql, {
+								profile: "aggregation",
+								context: "hostInfraTimeseries",
+							}),
 							"hostInfraTimeseries (network) query failed",
 						)
 						const typedRows = compiled.castRows(rows)
@@ -1479,11 +1472,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"podFacets query failed",
 					)
-					const typedRows = compiled.castRows(rows) as ReadonlyArray<{
-						name: string
-						count: number
-						facetType: string
-					}>
+					const typedRows = compiled.castRows(rows)
 					const buckets = {
 						pods: [] as Array<{ name: string; count: number }>,
 						namespaces: [] as Array<{ name: string; count: number }>,
@@ -1553,11 +1542,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"nodeFacets query failed",
 					)
-					const typedRows = compiled.castRows(rows) as ReadonlyArray<{
-						name: string
-						count: number
-						facetType: string
-					}>
+					const typedRows = compiled.castRows(rows)
 					const buckets = {
 						nodes: [] as Array<{ name: string; count: number }>,
 						clusters: [] as Array<{ name: string; count: number }>,
@@ -1602,11 +1587,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						}),
 						"workloadFacets query failed",
 					)
-					const typedRows = compiled.castRows(rows) as ReadonlyArray<{
-						name: string
-						count: number
-						facetType: string
-					}>
+					const typedRows = compiled.castRows(rows)
 					const buckets = {
 						workloads: [] as Array<{ name: string; count: number }>,
 						namespaces: [] as Array<{ name: string; count: number }>,

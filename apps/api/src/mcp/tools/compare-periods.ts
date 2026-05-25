@@ -262,7 +262,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 
 			return {
 				content: createDualContent(lines.join("\n"), {
-					tool: "compare_periods" as any,
+					tool: "compare_periods",
 					data: {
 						currentPeriod: { start: curSt, end: curEt },
 						previousPeriod: { start: prevSt, end: prevEt },

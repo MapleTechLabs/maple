@@ -10,9 +10,10 @@ import {
 	diagnoseService,
 	searchLogs,
 } from "@maple/query-engine/observability"
+import { ObservabilityError } from "@maple/query-engine/observability"
 import { makeWarehouseExecutorFromTenant } from "../lib/WarehouseExecutorLive"
 
-const mapError = (e: { message: string; pipe?: string }) =>
+const mapError = (e: ObservabilityError) =>
 	new ObservabilityApiError({ message: e.message, pipe: e.pipe, cause: e })
 
 export const HttpObservabilityLive = HttpApiBuilder.group(MapleApi, "observability", (handlers) =>
@@ -53,8 +54,8 @@ export const HttpObservabilityLive = HttpApiBuilder.group(MapleApi, "observabili
 						serviceCount: result.serviceCount,
 						spanCount: result.spanCount,
 						rootDurationMs: result.rootDurationMs,
-						spans: result.spans as any,
-						logs: result.logs as any,
+						spans: result.spans,
+						logs: result.logs,
 					}
 				}),
 			)
@@ -78,10 +79,10 @@ export const HttpObservabilityLive = HttpApiBuilder.group(MapleApi, "observabili
 					return {
 						serviceName: result.serviceName,
 						timeRange: result.timeRange,
-						health: result.health as any,
-						topErrors: result.topErrors as any,
-						recentTraces: result.recentTraces as any,
-						recentLogs: result.recentLogs as any,
+						health: result.health,
+						topErrors: result.topErrors,
+						recentTraces: result.recentTraces,
+						recentLogs: result.recentLogs,
 					}
 				}),
 			)
@@ -95,7 +96,7 @@ export const HttpObservabilityLive = HttpApiBuilder.group(MapleApi, "observabili
 					return {
 						timeRange: result.timeRange,
 						total: result.total,
-						logs: result.logs as any,
+						logs: result.logs,
 						pagination: result.pagination,
 					}
 				}),

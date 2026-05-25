@@ -5,7 +5,7 @@ import { formatPercent, formatDurationFromMs, formatNumber, formatTable } from "
 import { formatNextSteps } from "../lib/next-steps"
 import { createDualContent } from "../lib/structured-output"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { Array as Arr, Effect, Layer, Schema } from "effect"
+import { Array as Arr, Effect, Schema } from "effect"
 import { listServices } from "@maple/query-engine/observability"
 import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
 
@@ -21,6 +21,10 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 		Effect.fn("McpTool.listServices")(function* ({ start_time, end_time, environment }) {
 			const { st, et } = resolveTimeRange(start_time, end_time)
 			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				environment: environment ?? "all",
+			})
 
 			const services = yield* listServices({
 				timeRange: { startTime: st, endTime: et },
@@ -29,6 +33,8 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError(toMcpQueryError("service_overview")),
 			)
+
+			yield* Effect.annotateCurrentSpan("resultCount", services.length)
 
 			const lines: string[] = [
 				`## Services`,

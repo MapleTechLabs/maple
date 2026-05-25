@@ -53,7 +53,8 @@ describe("CloudflareLogpushService", () => {
 		const { url, dbPath } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const result = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const result = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
@@ -91,12 +92,13 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
 
-			const result = yield* CloudflareLogpushService.list(asOrgId("org_a"))
+			const result = yield* service.list(asOrgId("org_a"))
 
 			assert.strictEqual(result.connectors.length, 1)
 			assert.strictEqual("secret" in result.connectors[0]!, false)
@@ -107,11 +109,12 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const created = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
-			const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
+			const setup = yield* service.getSetup(asOrgId("org_a"), created.connector.id)
 
 			assert.strictEqual(setup.destinationConf, created.setup.destinationConf)
 		}).pipe(Effect.provide(makeLayer(url)))
@@ -121,16 +124,17 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const created = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
-			const rotated = yield* CloudflareLogpushService.rotateSecret(
+			const rotated = yield* service.rotateSecret(
 				asOrgId("org_a"),
 				created.connector.id,
 				asUserId("user_b"),
 			)
-			const connector = yield* CloudflareLogpushService.list(asOrgId("org_a")).pipe(
+			const connector = yield* service.list(asOrgId("org_a")).pipe(
 				Effect.map((rows) => rows.connectors[0]!),
 			)
 
@@ -144,11 +148,12 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const created = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
-			const updated = yield* CloudflareLogpushService.update(
+			const updated = yield* service.update(
 				asOrgId("org_a"),
 				created.connector.id,
 				asUserId("user_b"),
@@ -159,7 +164,7 @@ describe("CloudflareLogpushService", () => {
 					enabled: false,
 				},
 			)
-			const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
+			const setup = yield* service.getSetup(asOrgId("org_a"), created.connector.id)
 
 			assert.strictEqual(updated.name, "Zone A")
 			assert.strictEqual(updated.zoneName, "zone-a.example.com")
@@ -173,12 +178,13 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const created = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
-			yield* CloudflareLogpushService.delete(asOrgId("org_a"), created.connector.id)
-			const result = yield* CloudflareLogpushService.list(asOrgId("org_a"))
+			yield* service.delete(asOrgId("org_a"), created.connector.id)
+			const result = yield* service.list(asOrgId("org_a"))
 
 			assert.deepStrictEqual(result.connectors, [])
 		}).pipe(Effect.provide(makeLayer(url)))
@@ -188,15 +194,15 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const created = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
 			})
 
-			const missing = yield* CloudflareLogpushService.getSetup(
-				asOrgId("org_b"),
-				created.connector.id,
-			).pipe(Effect.flip)
+			const missing = yield* service.getSetup(asOrgId("org_b"), created.connector.id).pipe(
+				Effect.flip,
+			)
 
 			assert.instanceOf(missing, CloudflareLogpushNotFoundError)
 		}).pipe(Effect.provide(makeLayer(url)))
@@ -206,7 +212,8 @@ describe("CloudflareLogpushService", () => {
 		const { url } = createTempDbUrl()
 
 		return Effect.gen(function* () {
-			const result = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+			const service = yield* CloudflareLogpushService
+			const result = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: " ",
 				zoneName: " ",
 			}).pipe(Effect.flip)

@@ -33,12 +33,10 @@ export const HttpDashboardsLive = HttpApiBuilder.group(MapleApi, "dashboards", (
 			.handle("upsert", ({ params, payload }) =>
 				Effect.gen(function* () {
 					if (params.dashboardId !== payload.dashboard.id) {
-						return yield* Effect.fail(
-							new DashboardValidationError({
-								message: "Dashboard ID mismatch",
-								details: ["Path dashboardId must match payload.dashboard.id"],
-							}),
-						)
+						return yield* new DashboardValidationError({
+							message: "Dashboard ID mismatch",
+							details: ["Path dashboardId must match payload.dashboard.id"],
+						})
 					}
 
 					const tenant = yield* CurrentTenant.Context
@@ -100,25 +98,21 @@ export const HttpDashboardsLive = HttpApiBuilder.group(MapleApi, "dashboards", (
 				Effect.gen(function* () {
 					const template = getTemplateById(params.templateId)
 					if (!template) {
-						return yield* Effect.fail(
-							new DashboardTemplateNotFoundError({
-								templateId: params.templateId,
-								message: `Template "${params.templateId}" not found`,
-							}),
-						)
+						return yield* new DashboardTemplateNotFoundError({
+							templateId: params.templateId,
+							message: `Template "${params.templateId}" not found`,
+						})
 					}
 
-					const provided: TemplateParameterValues = (payload.parameters ?? {}) as TemplateParameterValues
+					const provided: TemplateParameterValues = payload.parameters ?? {}
 					const missing = template.parameters
 						.filter((p) => p.required && !provided[p.key])
 						.map((p) => p.key)
 					if (missing.length > 0) {
-						return yield* Effect.fail(
-							new DashboardValidationError({
-								message: "Missing required template parameters",
-								details: missing,
-							}),
-						)
+						return yield* new DashboardValidationError({
+							message: "Missing required template parameters",
+							details: missing,
+						})
 					}
 
 					const built = yield* Effect.try({

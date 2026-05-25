@@ -62,7 +62,9 @@ const runDb = <A>(
 ): Effect.Effect<A, IngestAttributeMappingPersistenceError> =>
 	effect.pipe(
 		Effect.tapCause((cause) =>
-			Effect.logError("Attribute mapping database operation failed", { operation, cause }),
+			Effect.logError("Attribute mapping database operation failed").pipe(
+				Effect.annotateLogs({ operation, cause }),
+			),
 		),
 		Effect.mapError(toPersistenceError),
 	)
@@ -142,7 +144,9 @@ export class IngestAttributeMappingService extends Context.Service<
 			const row = yield* selectById(orgId, mappingId)
 			if (Option.isSome(row)) return row.value
 
-			yield* Effect.logWarning("Attribute mapping not found", { mappingId, orgId })
+			yield* Effect.logWarning("Attribute mapping not found").pipe(
+				Effect.annotateLogs({ mappingId, orgId }),
+			)
 			return yield* new IngestAttributeMappingNotFoundError({
 				mappingId,
 				message: "Attribute mapping not found",
@@ -194,10 +198,9 @@ export class IngestAttributeMappingService extends Context.Service<
 
 			const row = yield* selectById(orgId, id)
 			if (Option.isNone(row)) {
-				yield* Effect.logError("Attribute mapping missing after insert", {
-					mappingId: id,
-					orgId,
-				})
+				yield* Effect.logError("Attribute mapping missing after insert").pipe(
+					Effect.annotateLogs({ mappingId: id, orgId }),
+				)
 				return yield* new IngestAttributeMappingPersistenceError({
 					message: "Failed to create attribute mapping",
 				})
@@ -246,7 +249,9 @@ export class IngestAttributeMappingService extends Context.Service<
 
 			const row = yield* selectById(orgId, mappingId)
 			if (Option.isNone(row)) {
-				yield* Effect.logError("Attribute mapping missing after update", { mappingId, orgId })
+				yield* Effect.logError("Attribute mapping missing after update").pipe(
+					Effect.annotateLogs({ mappingId, orgId }),
+				)
 				return yield* new IngestAttributeMappingPersistenceError({
 					message: "Failed to load updated attribute mapping",
 				})
@@ -276,7 +281,9 @@ export class IngestAttributeMappingService extends Context.Service<
 
 			const deleted = Option.fromNullishOr(rows[0])
 			if (Option.isNone(deleted)) {
-				yield* Effect.logWarning("Attribute mapping not found", { mappingId, orgId })
+				yield* Effect.logWarning("Attribute mapping not found").pipe(
+					Effect.annotateLogs({ mappingId, orgId }),
+				)
 				return yield* new IngestAttributeMappingNotFoundError({
 					mappingId,
 					message: "Attribute mapping not found",

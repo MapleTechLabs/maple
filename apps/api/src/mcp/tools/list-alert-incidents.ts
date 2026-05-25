@@ -56,6 +56,13 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 			const openCount = incidents.filter((i) => i.status === "open").length
 			const resolvedCount = incidents.filter((i) => i.status === "resolved").length
 
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				status: status ?? "all",
+				severity: severity ?? "all",
+				resultCount: incidents.length,
+			})
+
 			const lines: string[] = [
 				`## Alert Incidents`,
 				`Total: ${incidents.length} (${openCount} open, ${resolvedCount} resolved)`,

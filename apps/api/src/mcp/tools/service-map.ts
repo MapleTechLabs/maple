@@ -3,7 +3,7 @@ import { resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange } from "../lib/time"
 import { formatNumber, formatDurationFromMs, formatPercent, formatTable } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
-import { Array as Arr, Effect, Schema } from "effect"
+import { Array as Arr, Effect, HashSet, Order, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { serviceMap } from "@maple/query-engine/observability"
 import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
@@ -21,8 +21,13 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 		Effect.fn("McpTool.serviceMap")(function* ({ start_time, end_time, service_name, environment }) {
 			const { st, et } = resolveTimeRange(start_time, end_time)
 			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				service: service_name ?? "all",
+				environment: environment ?? "all",
+			})
 
-			let edges = yield* serviceMap({
+			const allEdges = yield* serviceMap({
 				timeRange: { startTime: st, endTime: et },
 				service: service_name ?? undefined,
 				environment: environment ?? undefined,
@@ -33,13 +38,14 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 				),
 			)
 
-			// Filter to edges involving the specified service
-			if (service_name) {
-				edges = Arr.filter(
-					edges,
-					(e) => e.sourceService === service_name || e.targetService === service_name,
-				)
-			}
+			// The warehouse query does not scope by service, so filter to edges
+			// involving the specified service here.
+			const edges = service_name
+				? Arr.filter(
+						allEdges,
+						(e) => e.sourceService === service_name || e.targetService === service_name,
+					)
+				: allEdges
 
 			if (edges.length === 0) {
 				const filterInfo = service_name ? ` involving "${service_name}"` : ""
@@ -50,16 +56,15 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 				}
 			}
 
-			const services = new Set<string>()
-			for (const e of edges) {
-				services.add(e.sourceService)
-				services.add(e.targetService)
-			}
+			const services = HashSet.fromIterable(
+				Arr.flatMap(edges, (e) => [e.sourceService, e.targetService]),
+			)
+			const serviceCount = HashSet.size(services)
 
 			const lines: string[] = [
 				`## Service Map`,
 				`Time range: ${st} — ${et}`,
-				`Services: ${services.size} | Edges: ${edges.length}`,
+				`Services: ${serviceCount} | Edges: ${edges.length}`,
 				``,
 			]
 
@@ -86,13 +91,16 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			lines.push(formatTable(headers, rows))
 
 			const nextSteps: string[] = []
-			const errorEdges = Arr.filter(
-				Arr.map(edges, (e) => ({
-					service: e.targetService,
-					errorRate: e.callCount > 0 ? e.errorCount / e.callCount : 0,
-				})),
-				(e) => e.errorRate > 0.01,
-			).sort((a, b) => b.errorRate - a.errorRate)
+			const errorEdges = Arr.sort(
+				Arr.filter(
+					Arr.map(edges, (e) => ({
+						service: e.targetService,
+						errorRate: e.callCount > 0 ? e.errorCount / e.callCount : 0,
+					})),
+					(e) => e.errorRate > 0.01,
+				),
+				Order.mapInput(Order.flip(Order.Number), (e: { errorRate: number }) => e.errorRate),
+			)
 
 			for (const e of Arr.take(errorEdges, 2)) {
 				nextSteps.push(
@@ -117,7 +125,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 							avgDurationMs: e.avgDurationMs,
 							p95DurationMs: e.p95DurationMs,
 						})),
-						serviceCount: services.size,
+						serviceCount,
 					},
 				}),
 			}

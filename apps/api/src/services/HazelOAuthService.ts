@@ -12,7 +12,7 @@ import {
 } from "@maple/domain/http"
 import { oauthAuthStates, oauthConnections, type OAuthAuthStateRow, type OAuthConnectionRow } from "@maple/db"
 import { and, eq, lt } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "effect"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "../lib/Crypto"
 import { Database, type DatabaseClient } from "../lib/DatabaseLive"
 import { Env, type EnvShape } from "../lib/Env"
@@ -23,18 +23,18 @@ const REFRESH_LEEWAY_MS = 60_000 // 1 minute
 
 const TokenResponseSchema = Schema.Struct({
 	access_token: Schema.String,
-	token_type: Schema.optional(Schema.String),
-	expires_in: Schema.optional(Schema.Number),
-	refresh_token: Schema.optional(Schema.String),
-	scope: Schema.optional(Schema.String),
-	id_token: Schema.optional(Schema.String),
+	token_type: Schema.optionalKey(Schema.String),
+	expires_in: Schema.optionalKey(Schema.Number),
+	refresh_token: Schema.optionalKey(Schema.String),
+	scope: Schema.optionalKey(Schema.String),
+	id_token: Schema.optionalKey(Schema.String),
 })
 
 const UserInfoSchema = Schema.Struct({
 	sub: Schema.String,
-	email: Schema.optional(Schema.String),
-	email_verified: Schema.optional(Schema.Boolean),
-	name: Schema.optional(Schema.String),
+	email: Schema.optionalKey(Schema.String),
+	email_verified: Schema.optionalKey(Schema.Boolean),
+	name: Schema.optionalKey(Schema.String),
 })
 
 const HazelOrganizationsResponseSchema = Schema.Struct({
@@ -71,7 +71,7 @@ const HazelChannelWebhookResponseSchema = Schema.Struct({
 const DiscoveryDocumentSchema = Schema.Struct({
 	authorization_endpoint: Schema.String,
 	token_endpoint: Schema.String,
-	userinfo_endpoint: Schema.optional(Schema.String),
+	userinfo_endpoint: Schema.optionalKey(Schema.String),
 })
 
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponseSchema)
@@ -312,31 +312,32 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					)
 				})
 
-			let cachedDiscovery: {
+			const cachedDiscovery = yield* Ref.make<{
 				url: string
 				doc: Schema.Schema.Type<typeof DiscoveryDocumentSchema>
-			} | null = null
+			} | null>(null)
 
 			const resolveConfig: Effect.Effect<
 				ResolvedHazelOAuthConfig,
 				IntegrationsValidationError | IntegrationsUpstreamError
 			> = Effect.gen(function* () {
 				const base = yield* resolveEnv(env)
-				if (cachedDiscovery && cachedDiscovery.url === base.discoveryUrl) {
+				const cached = yield* Ref.get(cachedDiscovery)
+				if (cached && cached.url === base.discoveryUrl) {
 					return {
 						...base,
-						authorizeUrl: cachedDiscovery.doc.authorization_endpoint,
-						tokenUrl: cachedDiscovery.doc.token_endpoint,
+						authorizeUrl: cached.doc.authorization_endpoint,
+						tokenUrl: cached.doc.token_endpoint,
 						userInfoUrl:
-							cachedDiscovery.doc.userinfo_endpoint ??
-							cachedDiscovery.doc.authorization_endpoint.replace(
+							cached.doc.userinfo_endpoint ??
+							cached.doc.authorization_endpoint.replace(
 								/\/oauth\/authorize$/,
 								"/oauth/userinfo",
 							),
 					}
 				}
 				const doc = yield* fetchDiscoveryDocument(base.discoveryUrl)
-				cachedDiscovery = { url: base.discoveryUrl, doc }
+				yield* Ref.set(cachedDiscovery, { url: base.discoveryUrl, doc })
 				return {
 					...base,
 					authorizeUrl: doc.authorization_endpoint,

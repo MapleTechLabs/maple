@@ -108,11 +108,14 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const purgeOrgScopedRows = Effect.fn("OrganizationService.purgeOrgScopedRows")(function* (
 				orgId: OrgId,
 			) {
-				for (const table of ORG_SCOPED_TABLES) {
-					yield* database
-						.execute((db) => db.delete(table).where(eq(table.orgId, orgId)))
-						.pipe(Effect.mapError(toPersistenceError))
-				}
+				yield* Effect.forEach(
+					ORG_SCOPED_TABLES,
+					(table) =>
+						database
+							.execute((db) => db.delete(table).where(eq(table.orgId, orgId)))
+							.pipe(Effect.mapError(toPersistenceError)),
+					{ discard: true },
+				)
 			})
 
 			const deleteClerkOrganization = Effect.fn("OrganizationService.deleteClerkOrganization")(

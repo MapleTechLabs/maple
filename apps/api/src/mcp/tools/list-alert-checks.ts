@@ -69,6 +69,13 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 			const skipped = checks.filter((c) => c.status === "skipped").length
 			const transitions = checks.filter((c) => c.incidentTransition !== "none").length
 
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				ruleId: rule_id,
+				status: status ?? "all",
+				resultCount: checks.length,
+			})
+
 			const lines: string[] = [
 				`## Alert Checks`,
 				`Rule: ${rule_id}`,

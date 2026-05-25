@@ -78,8 +78,8 @@ const stringifyPayload = (dashboard: DashboardDocument) =>
 			}),
 	})
 
-const createDashboardDocument = (portableDashboard: PortableDashboardDocument) => {
-	const now = new Date().toISOString()
+const createDashboardDocument = (portableDashboard: PortableDashboardDocument, nowMillis: number) => {
+	const now = new Date(nowMillis).toISOString()
 
 	return new DashboardDocument({
 		id: decodeDashboardIdSync(randomUUID()),
@@ -371,7 +371,8 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				userId: UserId,
 				dashboard: PortableDashboardDocument,
 			) {
-				const createdDashboard = createDashboardDocument(dashboard)
+				const nowMillis = yield* Clock.currentTimeMillis
+				const createdDashboard = createDashboardDocument(dashboard, nowMillis)
 				return yield* upsertInternal(orgId, userId, createdDashboard)
 			})
 

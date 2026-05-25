@@ -12,7 +12,7 @@ import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { AlertsService } from "@/services/AlertsService"
 import { AlertRuleUpsertRequest } from "@maple/domain/http"
 
-const decodeAlertRuleRequest = Schema.decodeUnknownSync(AlertRuleUpsertRequest)
+const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
 const decodeJsonValue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
 const splitCsv = (value: string): string[] =>
@@ -306,15 +306,16 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				}
 			}
 
-			const decoded = yield* Effect.try({
-				try: () => decodeAlertRuleRequest(built.request),
-				catch: (error) =>
-					new McpQueryError({
-						message: `Invalid alert rule: ${String(error)}`,
-						pipe: "create_alert_rule",
-						cause: error,
-					}),
-			})
+			const decoded = yield* decodeAlertRuleRequest(built.request).pipe(
+				Effect.mapError(
+					(error) =>
+						new McpQueryError({
+							message: `Invalid alert rule: ${String(error)}`,
+							pipe: "create_alert_rule",
+							cause: error,
+						}),
+				),
+			)
 
 			const tenant = yield* resolveTenant
 			const alerts = yield* AlertsService

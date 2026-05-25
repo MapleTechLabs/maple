@@ -62,7 +62,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				offset: off,
 			}).pipe(
 				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
-				Effect.mapError((e) => new McpQueryError({ message: e.message, pipe: "list_logs", cause: e })),
+				Effect.catchTag("@maple/query-engine/errors/ObservabilityError", (e) =>
+					Effect.fail(new McpQueryError({ message: e.message, pipe: "search_logs", cause: e })),
+				),
 			)
 
 			yield* Effect.annotateCurrentSpan("resultCount", result.logs.length)

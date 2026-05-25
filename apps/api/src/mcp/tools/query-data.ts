@@ -8,15 +8,22 @@ import {
 	type McpToolResult,
 } from "./types"
 import { resolveTimeRange } from "../lib/time"
-import { Effect, Schema } from "effect"
+import { Effect, Match, Schema } from "effect"
 import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { QueryEngineService } from "@/services/QueryEngineService"
 import {
+	MetricType,
 	QuerySpec,
 	type TracesFilters,
 	type LogsFilters,
 	type MetricsFilters,
 	type QuerySpec as QuerySpecType,
+	type TracesTimeseriesQuery,
+	type TracesBreakdownQuery,
+	type LogsTimeseriesQuery,
+	type LogsBreakdownQuery,
+	type MetricsTimeseriesQuery,
+	type MetricsBreakdownQuery,
 } from "@maple/query-engine"
 import { formatQueryResult } from "../lib/format-query-result"
 import type { QueryDataQueryContext } from "@maple/domain"
@@ -65,9 +72,10 @@ const queryDataSchema = Schema.Struct({
 	metric_name: optionalStringParam(
 		"Metric name — required for source=metrics. Use list_metrics to discover available metrics.",
 	),
-	metric_type: optionalStringParam(
-		"Metric type — required for source=metrics. Values: sum, gauge, histogram, exponential_histogram",
-	),
+	metric_type: Schema.optional(MetricType).annotate({
+		description:
+			"Metric type — required for source=metrics. Values: sum, gauge, histogram, exponential_histogram",
+	}),
 	// Shared attribute filtering
 	attribute_key: optionalStringParam(
 		"Attribute key for filtering or group_by=attribute. Use explore_attributes to discover keys.",
@@ -131,157 +139,167 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 			if (!params.start_time) decisions.push(`start_time: defaulted to 1 hour ago (${st})`)
 			if (!params.end_time) decisions.push(`end_time: defaulted to now (${et})`)
 
-			type AnySpec = Record<string, unknown>
-			let rawSpec: QuerySpecType
+			const rawSpec: QuerySpecType = Match.value(params.source).pipe(
+				Match.when("traces", (): QuerySpecType => {
+					const attributeFilters: Array<{ key: string; value?: string; mode: "equals" | "exists" }> =
+						[]
+					if (params.attribute_key) {
+						attributeFilters.push({
+							key: params.attribute_key,
+							...(params.attribute_value
+								? { value: params.attribute_value, mode: "equals" as const }
+								: { mode: "exists" as const }),
+						})
+					}
 
-			if (params.source === "traces") {
-				const attributeFilters: Array<{ key: string; value?: string; mode: "equals" | "exists" }> = []
-				if (params.attribute_key) {
-					attributeFilters.push({
-						key: params.attribute_key,
-						...(params.attribute_value
-							? { value: params.attribute_value, mode: "equals" as const }
-							: { mode: "exists" as const }),
-					})
-				}
+					const filters: TracesFilters = {
+						...(params.service_name && { serviceName: params.service_name }),
+						...(params.span_name && { spanName: params.span_name }),
+						...(params.root_spans_only && { rootSpansOnly: params.root_spans_only }),
+						...(params.environments && { environments: splitCsv(params.environments) }),
+						...(params.commit_shas && { commitShas: splitCsv(params.commit_shas) }),
+						...(params.group_by === "attribute" &&
+							params.attribute_key && { groupByAttributeKeys: [params.attribute_key] }),
+						...(attributeFilters.length > 0 && { attributeFilters }),
+						...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),
+					}
+					const hasFilters = Object.keys(filters).length > 0
 
-				const filters: TracesFilters = {
-					...(params.service_name && { serviceName: params.service_name }),
-					...(params.span_name && { spanName: params.span_name }),
-					...(params.root_spans_only && { rootSpansOnly: params.root_spans_only }),
-					...(params.environments && { environments: splitCsv(params.environments) }),
-					...(params.commit_shas && { commitShas: splitCsv(params.commit_shas) }),
-					...(params.group_by === "attribute" &&
-						params.attribute_key && { groupByAttributeKeys: [params.attribute_key] }),
-					...(attributeFilters.length > 0 && { attributeFilters }),
-					...(params.apdex_threshold_ms && { apdexThresholdMs: params.apdex_threshold_ms }),
-				}
-				const hasFilters = Object.keys(filters).length > 0
-
-				const tracesMetric = params.metric ?? "count"
-				if (!params.metric)
-					decisions.push(
-						`metric: defaulted to "count" (available: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate, apdex)`,
-					)
-
-				if (params.kind === "timeseries") {
-					const groupBy = params.group_by ? [params.group_by] : ["none"]
-					if (!params.group_by)
+					const tracesMetric = (params.metric ?? "count") as TracesTimeseriesQuery["metric"]
+					if (!params.metric)
 						decisions.push(
-							`group_by: defaulted to "none" (available: service, span_name, status_code, http_method, attribute, none)`,
+							`metric: defaulted to "count" (available: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate, apdex)`,
 						)
-					rawSpec = {
-						kind: "timeseries",
-						source: "traces",
-						metric: tracesMetric,
-						groupBy,
-						...(hasFilters && { filters }),
-						...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
-					} as AnySpec as QuerySpecType
-				} else {
-					const groupBy = params.group_by ?? "service"
+
+					if (params.kind === "timeseries") {
+						const groupBy = (params.group_by ? [params.group_by] : ["none"]) as NonNullable<
+							TracesTimeseriesQuery["groupBy"]
+						>
+						if (!params.group_by)
+							decisions.push(
+								`group_by: defaulted to "none" (available: service, span_name, status_code, http_method, attribute, none)`,
+							)
+						return {
+							kind: "timeseries",
+							source: "traces",
+							metric: tracesMetric,
+							groupBy,
+							...(hasFilters && { filters }),
+							...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
+						} satisfies TracesTimeseriesQuery
+					}
+					const groupBy = (params.group_by ?? "service") as TracesBreakdownQuery["groupBy"]
 					if (!params.group_by)
 						decisions.push(
 							`group_by: defaulted to "service" (available: service, span_name, status_code, http_method, attribute)`,
 						)
-					rawSpec = {
+					return {
 						kind: "breakdown",
 						source: "traces",
 						metric: tracesMetric,
 						groupBy,
 						...(hasFilters && { filters }),
 						...(params.limit && { limit: params.limit }),
-					} as AnySpec as QuerySpecType
-				}
-			} else if (params.source === "logs") {
-				if (!params.metric) decisions.push(`metric: fixed to "count" (only option for logs)`)
+					} satisfies TracesBreakdownQuery
+				}),
+				Match.when("logs", (): QuerySpecType => {
+					if (!params.metric) decisions.push(`metric: fixed to "count" (only option for logs)`)
 
-				const filters: LogsFilters = {
-					...(params.service_name && { serviceName: params.service_name }),
-					...(params.severity && { severity: params.severity }),
-				}
-				const hasFilters = Object.keys(filters).length > 0
+					const filters: LogsFilters = {
+						...(params.service_name && { serviceName: params.service_name }),
+						...(params.severity && { severity: params.severity }),
+					}
+					const hasFilters = Object.keys(filters).length > 0
 
-				if (params.kind === "timeseries") {
-					const groupBy = params.group_by ? [params.group_by] : ["none"]
-					if (!params.group_by)
-						decisions.push(`group_by: defaulted to "none" (available: service, severity, none)`)
-					rawSpec = {
-						kind: "timeseries",
-						source: "logs",
-						metric: "count",
-						groupBy,
-						...(hasFilters && { filters }),
-						...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
-					} as AnySpec as QuerySpecType
-				} else {
-					const groupBy = params.group_by ?? "service"
+					if (params.kind === "timeseries") {
+						const groupBy = (params.group_by ? [params.group_by] : ["none"]) as NonNullable<
+							LogsTimeseriesQuery["groupBy"]
+						>
+						if (!params.group_by)
+							decisions.push(`group_by: defaulted to "none" (available: service, severity, none)`)
+						return {
+							kind: "timeseries",
+							source: "logs",
+							metric: "count",
+							groupBy,
+							...(hasFilters && { filters }),
+							...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
+						} satisfies LogsTimeseriesQuery
+					}
+					const groupBy = (params.group_by ?? "service") as LogsBreakdownQuery["groupBy"]
 					if (!params.group_by)
 						decisions.push(`group_by: defaulted to "service" (available: service, severity)`)
-					rawSpec = {
+					return {
 						kind: "breakdown",
 						source: "logs",
 						metric: "count",
 						groupBy,
 						...(hasFilters && { filters }),
 						...(params.limit && { limit: params.limit }),
-					} as AnySpec as QuerySpecType
-				}
-			} else {
-				// metrics
-				const metricsAttributeFilters: Array<{
-					key: string
-					value?: string
-					mode: "equals" | "exists"
-				}> = []
-				if (params.group_by !== "attribute" && params.attribute_key) {
-					metricsAttributeFilters.push({
-						key: params.attribute_key,
-						...(params.attribute_value
-							? { value: params.attribute_value, mode: "equals" as const }
-							: { mode: "exists" as const }),
-					})
-				}
+					} satisfies LogsBreakdownQuery
+				}),
+				Match.when("metrics", (): QuerySpecType => {
+					// metric_name presence is enforced by the validation above.
+					const metricName = params.metric_name ?? ""
+					const metricType = params.metric_type ?? "sum"
 
-				const filters: MetricsFilters = {
-					metricName: params.metric_name!,
-					metricType: params.metric_type as MetricsFilters["metricType"],
-					...(params.service_name && { serviceName: params.service_name }),
-					...(params.group_by === "attribute" &&
-						params.attribute_key && { groupByAttributeKey: params.attribute_key }),
-					...(metricsAttributeFilters.length > 0 && { attributeFilters: metricsAttributeFilters }),
-				}
+					const metricsAttributeFilters: Array<{
+						key: string
+						value?: string
+						mode: "equals" | "exists"
+					}> = []
+					if (params.group_by !== "attribute" && params.attribute_key) {
+						metricsAttributeFilters.push({
+							key: params.attribute_key,
+							...(params.attribute_value
+								? { value: params.attribute_value, mode: "equals" as const }
+								: { mode: "exists" as const }),
+						})
+					}
 
-				const metricsMetric = params.metric ?? "avg"
-				if (!params.metric)
-					decisions.push(
-						`metric: defaulted to "avg" (available: avg, sum, min, max, count, rate, increase)`,
-					)
+					const filters: MetricsFilters = {
+						metricName,
+						metricType,
+						...(params.service_name && { serviceName: params.service_name }),
+						...(params.group_by === "attribute" &&
+							params.attribute_key && { groupByAttributeKey: params.attribute_key }),
+						...(metricsAttributeFilters.length > 0 && { attributeFilters: metricsAttributeFilters }),
+					}
 
-				if (params.kind === "timeseries") {
-					const groupBy = params.group_by ? [params.group_by] : ["none"]
-					if (!params.group_by)
-						decisions.push(`group_by: defaulted to "none" (available: service, attribute, none)`)
-					rawSpec = {
-						kind: "timeseries",
-						source: "metrics",
-						metric: metricsMetric,
-						groupBy,
-						filters,
-						...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
-					} as AnySpec as QuerySpecType
-				} else {
+					if (!params.metric)
+						decisions.push(
+							`metric: defaulted to "avg" (available: avg, sum, min, max, count, rate, increase)`,
+						)
+
+					if (params.kind === "timeseries") {
+						const metricsMetric = (params.metric ?? "avg") as MetricsTimeseriesQuery["metric"]
+						const groupBy = (params.group_by ? [params.group_by] : ["none"]) as NonNullable<
+							MetricsTimeseriesQuery["groupBy"]
+						>
+						if (!params.group_by)
+							decisions.push(`group_by: defaulted to "none" (available: service, attribute, none)`)
+						return {
+							kind: "timeseries",
+							source: "metrics",
+							metric: metricsMetric,
+							groupBy,
+							filters,
+							...(params.bucket_seconds && { bucketSeconds: params.bucket_seconds }),
+						} satisfies MetricsTimeseriesQuery
+					}
+					const metricsMetric = (params.metric ?? "avg") as MetricsBreakdownQuery["metric"]
 					if (!params.group_by) decisions.push(`group_by: defaulted to "service"`)
-					rawSpec = {
+					return {
 						kind: "breakdown",
 						source: "metrics",
 						metric: metricsMetric,
 						groupBy: "service",
 						filters,
 						...(params.limit && { limit: params.limit }),
-					} as AnySpec as QuerySpecType
-				}
-			}
+					} satisfies MetricsBreakdownQuery
+				}),
+				Match.exhaustive,
+			)
 
 			const decodedQuery = yield* Effect.try({
 				try: () => decodeQuerySpecSync(rawSpec) as QuerySpecType,

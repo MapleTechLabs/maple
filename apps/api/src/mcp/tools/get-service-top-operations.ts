@@ -2,6 +2,7 @@ import {
 	optionalNumberParam,
 	optionalStringParam,
 	requiredStringParam,
+	validationError,
 	type McpToolRegistrar,
 } from "./types"
 import { resolveTenant } from "@/mcp/lib/query-warehouse"
@@ -12,10 +13,12 @@ import { formatMetricValue } from "../lib/format-query-result"
 import { formatNextSteps } from "../lib/next-steps"
 import { createDualContent } from "../lib/structured-output"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
-import type { TracesMetric } from "@maple/query-engine"
+import { TracesMetric } from "@maple/query-engine"
 import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
+
+const decodeTracesMetric = Schema.decodeUnknownOption(TracesMetric)
 
 export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.tool(
@@ -39,9 +42,21 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		}) {
 			const range = resolveTimeRange(start_time, end_time, { maxHours: 24 * 7 })
 			const { st, et } = range
-			const resolvedMetric = (metric ?? "count") as TracesMetric
+			const metricOption = metric === undefined ? Option.some("count" as const) : decodeTracesMetric(metric)
+			if (Option.isNone(metricOption)) {
+				return validationError(
+					`Invalid metric: ${metric}. Must be one of: count, error_rate, avg_duration, p95_duration.`,
+				)
+			}
+			const resolvedMetric = metricOption.value
 			const resolvedLimit = clampLimit(limit, { defaultValue: 20, max: 500 })
 			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				service: service_name,
+				metric: resolvedMetric,
+				limit: resolvedLimit,
+			})
 
 			const operations = yield* topOperations({
 				serviceName: service_name,

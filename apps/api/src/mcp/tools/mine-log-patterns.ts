@@ -41,6 +41,13 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			const sampleSize = Math.min(Math.max(Number(sample_size) || 10_000, 1), 50_000)
 			const lim = Math.min(Math.max(Number(limit) || 50, 1), 200)
 			const tenant = yield* resolveTenant
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				service: service ?? "all",
+				severity: severity ?? "all",
+				sampleSize,
+				limit: lim,
+			})
 
 			const result = yield* mineLogPatterns({
 				timeRange: { startTime: st, endTime: et },
@@ -52,8 +59,12 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				limit: lim,
 			}).pipe(
 				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
-				Effect.mapError((e) => new McpQueryError({ message: e.message, pipe: "list_logs", cause: e })),
+				Effect.catchTag("@maple/query-engine/errors/ObservabilityError", (e) =>
+					Effect.fail(new McpQueryError({ message: e.message, pipe: "mine_log_patterns", cause: e })),
+				),
 			)
+
+			yield* Effect.annotateCurrentSpan("resultCount", result.patterns.length)
 
 			if (result.patterns.length === 0) {
 				return {

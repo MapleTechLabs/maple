@@ -52,24 +52,32 @@ export class DemoService extends Context.Service<DemoService>()("@maple/api/serv
 				ratePerHour: DEMO_RATE_PER_HOUR,
 			})
 
-			let spansSent = 0
-			for (const batch of tracesByBatch) {
-				yield* postOtlp("/v1/traces", { resourceSpans: batch }, keys.publicKey)
-				spansSent += batch.reduce(
-					(acc, rs) =>
-						acc + rs.scopeSpans.reduce((s, sc) => s + sc.spans.length, 0),
-					0,
-				)
-			}
+			yield* Effect.forEach(
+				tracesByBatch,
+				(batch) => postOtlp("/v1/traces", { resourceSpans: batch }, keys.publicKey),
+				{ concurrency: 1, discard: true },
+			)
+			const spansSent = tracesByBatch.reduce(
+				(total, batch) =>
+					total +
+					batch.reduce((acc, rs) => acc + rs.scopeSpans.reduce((s, sc) => s + sc.spans.length, 0), 0),
+				0,
+			)
 
-			let logsSent = 0
-			for (const batch of logsByBatch) {
-				yield* postOtlp("/v1/logs", { resourceLogs: batch }, keys.publicKey)
-				logsSent += batch.reduce(
-					(acc, rl) => acc + rl.scopeLogs.reduce((s, sc) => s + sc.logRecords.length, 0),
-					0,
-				)
-			}
+			yield* Effect.forEach(
+				logsByBatch,
+				(batch) => postOtlp("/v1/logs", { resourceLogs: batch }, keys.publicKey),
+				{ concurrency: 1, discard: true },
+			)
+			const logsSent = logsByBatch.reduce(
+				(total, batch) =>
+					total +
+					batch.reduce(
+						(acc, rl) => acc + rl.scopeLogs.reduce((s, sc) => s + sc.logRecords.length, 0),
+						0,
+					),
+				0,
+			)
 
 			return new DemoSeedResponse({
 				seeded: true,

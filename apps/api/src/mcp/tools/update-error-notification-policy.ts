@@ -6,17 +6,18 @@ import {
 	validationError,
 	type McpToolRegistrar,
 } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
 import {
+	AlertDestinationId,
+	AlertSeverity,
 	ErrorNotificationPolicyUpsertRequest,
-	type AlertDestinationId,
-	type AlertSeverity,
 } from "@maple/domain/http"
 
-const validSeverities: ReadonlyArray<AlertSeverity> = ["warning", "critical"]
+const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
+const decodeDestinationId = Schema.decodeUnknownEffect(AlertDestinationId)
 
 export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistrar) {
 	server.tool(
@@ -48,10 +49,13 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			min_occurrence_count,
 			severity,
 		}) {
-			if (severity !== undefined && !validSeverities.includes(severity as AlertSeverity)) {
-				return validationError(
-					`Invalid severity: ${severity}. Must be one of: ${validSeverities.join(", ")}.`,
-				)
+			let decodedSeverity: AlertSeverity | undefined
+			if (severity !== undefined) {
+				const parsed = decodeSeverity(severity)
+				if (Option.isNone(parsed)) {
+					return validationError(`Invalid severity: ${severity}. Must be one of: warning, critical.`)
+				}
+				decodedSeverity = parsed.value
 			}
 
 			const tenant = yield* resolveTenant
@@ -68,16 +72,28 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			}> = {}
 			if (enabled !== undefined) patch.enabled = enabled
 			if (destination_ids !== undefined) {
-				patch.destinationIds = destination_ids
+				const tokens = destination_ids
 					.split(",")
 					.map((s) => s.trim())
-					.filter((s) => s.length > 0) as unknown as ReadonlyArray<AlertDestinationId>
+					.filter((s) => s.length > 0)
+				patch.destinationIds = yield* Effect.forEach(tokens, (token) =>
+					decodeDestinationId(token).pipe(
+						Effect.mapError(
+							(cause) =>
+								new McpQueryError({
+									message: `Invalid alert destination ID: ${token}`,
+									pipe: "update_error_notification_policy",
+									cause,
+								}),
+						),
+					),
+				)
 			}
 			if (notify_on_first_seen !== undefined) patch.notifyOnFirstSeen = notify_on_first_seen
 			if (notify_on_regression !== undefined) patch.notifyOnRegression = notify_on_regression
 			if (notify_on_resolve !== undefined) patch.notifyOnResolve = notify_on_resolve
 			if (min_occurrence_count !== undefined) patch.minOccurrenceCount = min_occurrence_count
-			if (severity !== undefined) patch.severity = severity as AlertSeverity
+			if (decodedSeverity !== undefined) patch.severity = decodedSeverity
 
 			const decodedPatch = yield* Schema.decodeUnknownEffect(ErrorNotificationPolicyUpsertRequest)(patch).pipe(
 				Effect.mapError(
@@ -93,14 +109,24 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			const policy = yield* errors
 				.upsertNotificationPolicy(tenant.orgId, tenant.userId, decodedPatch)
 				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: "message" in error ? error.message : String(error),
-								pipe: "update_error_notification_policy",
-								cause: error,
-							}),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ErrorPersistenceError": (error) =>
+							Effect.fail(
+								new McpQueryError({
+									message: error.message,
+									pipe: "update_error_notification_policy",
+									cause: error,
+								}),
+							),
+						"@maple/http/errors/ErrorValidationError": (error) =>
+							Effect.fail(
+								new McpQueryError({
+									message: error.message,
+									pipe: "update_error_notification_policy",
+									cause: error,
+								}),
+							),
+					}),
 				)
 
 			const lines = [

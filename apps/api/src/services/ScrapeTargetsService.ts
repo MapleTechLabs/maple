@@ -115,18 +115,18 @@ const decryptCredentials = (
 		() => toEncryptionError("Failed to decrypt auth credentials"),
 	)
 
-const VALID_AUTH_TYPES = ["none", "bearer", "basic"] as const
+const decodeAuthTypeEffect = Schema.decodeUnknownEffect(ScrapeAuthType)
 
 const validateAuthType = (authType: string | undefined) => {
 	if (authType === undefined) return Effect.succeed(undefined)
-	if (!(VALID_AUTH_TYPES as readonly string[]).includes(authType)) {
-		return Effect.fail(
-			new ScrapeTargetValidationError({
-				message: `Invalid auth type: "${authType}". Must be one of: ${VALID_AUTH_TYPES.join(", ")}`,
-			}),
-		)
-	}
-	return Effect.succeed(authType as (typeof VALID_AUTH_TYPES)[number])
+	return decodeAuthTypeEffect(authType).pipe(
+		Effect.mapError(
+			() =>
+				new ScrapeTargetValidationError({
+					message: `Invalid auth type: "${authType}". Must be one of: none, bearer, basic`,
+				}),
+		),
+	)
 }
 
 const validateAuthCredentials = (authType: string, authCredentials: string | null | undefined) => {

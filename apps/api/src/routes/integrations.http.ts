@@ -8,11 +8,12 @@ import {
 	HazelOrganizationsListResponse,
 	HazelStartConnectResponse,
 	IntegrationsForbiddenError,
-	IntegrationsValidationError,
 	MapleApi,
+	RoleName,
 } from "@maple/domain/http"
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import { HazelOAuthService } from "../services/HazelOAuthService"
+import { requireAdmin as requireAdminRole } from "../lib/auth"
 
 const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
 
@@ -27,28 +28,20 @@ const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string 
 		return `${proto}://${host}`
 	}
 	// Fall back to parsing req.url which is absolute under wrangler/CF Workers.
-	try {
-		const parsed = new URL(req.url)
-		return `${parsed.protocol}//${parsed.host}`
-	} catch {
-		return ""
-	}
+	return Option.match(Option.liftThrowable(() => new URL(req.url))(), {
+		onNone: () => "",
+		onSome: (parsed) => `${parsed.protocol}//${parsed.host}`,
+	})
 }
 
 const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
 	`${resolveRequestOrigin(req)}${HAZEL_CALLBACK_PATH}`
 
-const ADMIN_ROLES = new Set(["root", "org:admin"])
-
-const requireAdmin = (roles: ReadonlyArray<string>) =>
-	Effect.gen(function* () {
-		if (roles.some((role) => ADMIN_ROLES.has(role))) return
-		yield* Effect.fail(
-			new IntegrationsForbiddenError({
-				message: "Only org admins can manage integrations",
-			}),
-		)
-	})
+const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
+	requireAdminRole(
+		roles,
+		() => new IntegrationsForbiddenError({ message: "Only org admins can manage integrations" }),
+	)
 
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
@@ -80,7 +73,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 			.handle("hazelStart", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					yield* requireAdmin(tenant.roles)
 					const req = yield* HttpServerRequest.HttpServerRequest
 					const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
 						callbackUrl: resolveCallbackUrl(req),
@@ -120,7 +113,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 			.handle("hazelDisconnect", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles as ReadonlyArray<string>)
+					yield* requireAdmin(tenant.roles)
 					const result = yield* hazel.disconnect(tenant.orgId)
 					return new HazelDisconnectResponse(result)
 				}),
@@ -238,28 +231,39 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				}
 
 				return yield* hazel.completeConnect(code, state).pipe(
-					Effect.match({
-						onFailure: (error) =>
+					Effect.map((result) =>
+						htmlResponse(
+							renderCallbackPage({
+								status: "success",
+								message: "You can close this window and return to Maple.",
+								returnTo: result.returnTo,
+							}),
+						),
+					),
+					Effect.catchTag("@maple/http/errors/IntegrationsValidationError", (error) =>
+						Effect.succeed(
 							htmlResponse(
 								renderCallbackPage({
 									status: "error",
-									message:
-										error instanceof IntegrationsValidationError
-											? error.message
-											: "Failed to complete Hazel connection",
+									message: error.message,
 									returnTo: null,
 								}),
 								400,
 							),
-						onSuccess: (result) =>
+						),
+					),
+					Effect.catch(() =>
+						Effect.succeed(
 							htmlResponse(
 								renderCallbackPage({
-									status: "success",
-									message: "You can close this window and return to Maple.",
-									returnTo: result.returnTo,
+									status: "error",
+									message: "Failed to complete Hazel connection",
+									returnTo: null,
 								}),
+								400,
 							),
-					}),
+						),
+					),
 				)
 			})
 

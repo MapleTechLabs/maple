@@ -619,7 +619,7 @@ const annotateWarehouseError = <A, R>(
 			Effect.annotateCurrentSpan({
 				"error.context": context,
 				"error.tag": error._tag,
-				"error.pipe": error.pipe,
+				"error.message": error.message,
 			}),
 		),
 	)
@@ -630,36 +630,44 @@ const annotateWarehouseError = <A, R>(
  * length, duration, and tenant data — `query.context` is propagated through
  * SqlQueryOptions so it lands on the same span instead of an extra wrapper.
  */
-const executeCHQuery = <Output extends Record<string, any>, Params extends Record<string, any>>(
+const executeCHQuery = Effect.fnUntraced(function* <
+	Output extends Record<string, any>,
+	Params extends Record<string, any>,
+>(
 	warehouse: Pick<WarehouseQueryServiceShape, "sqlQuery">,
 	tenant: TenantContext,
 	query: CH.CHQuery<any, Output>,
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
-): Effect.Effect<ReadonlyArray<Output>, WarehouseQueryError | WarehouseQuotaExceededError> => {
+) {
 	const compiled = CH.compile(query, params)
-	return annotateWarehouseError(
+	const rows = yield* annotateWarehouseError(
 		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
 		context,
-	).pipe(Effect.map((rows) => compiled.castRows(rows)))
-}
+	)
+	return compiled.castRows(rows)
+})
 
 /** Same as executeCHQuery but for union queries. */
-const executeCHUnionQuery = <Output extends Record<string, any>, Params extends Record<string, any>>(
+const executeCHUnionQuery = Effect.fnUntraced(function* <
+	Output extends Record<string, any>,
+	Params extends Record<string, any>,
+>(
 	warehouse: Pick<WarehouseQueryServiceShape, "sqlQuery">,
 	tenant: TenantContext,
 	query: CH.CHUnionQuery<Output>,
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
-): Effect.Effect<ReadonlyArray<Output>, WarehouseQueryError | WarehouseQuotaExceededError> => {
+) {
 	const compiled = CH.compileUnion(query, params)
-	return annotateWarehouseError(
+	const rows = yield* annotateWarehouseError(
 		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
 		context,
-	).pipe(Effect.map((rows) => compiled.castRows(rows)))
-}
+	)
+	return compiled.castRows(rows)
+})
 
 type QueryEngineWarehouse = Pick<WarehouseQueryServiceShape, "sqlQuery">
 

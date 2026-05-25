@@ -501,31 +501,4 @@ export class CloudflareLogpushService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
-
-	static readonly list = (orgId: OrgId) => this.use((service) => service.list(orgId))
-
-	static readonly create = (
-		orgId: OrgId,
-		userId: UserId,
-		request: CreateCloudflareLogpushConnectorRequest,
-	) => this.use((service) => service.create(orgId, userId, request))
-
-	static readonly update = (
-		orgId: OrgId,
-		connectorId: CloudflareLogpushConnectorId,
-		userId: UserId,
-		request: UpdateCloudflareLogpushConnectorRequest,
-	) => this.use((service) => service.update(orgId, connectorId, userId, request))
-
-	static readonly delete = (orgId: OrgId, connectorId: CloudflareLogpushConnectorId) =>
-		this.use((service) => service.delete(orgId, connectorId))
-
-	static readonly getSetup = (orgId: OrgId, connectorId: CloudflareLogpushConnectorId) =>
-		this.use((service) => service.getSetup(orgId, connectorId))
-
-	static readonly rotateSecret = (
-		orgId: OrgId,
-		connectorId: CloudflareLogpushConnectorId,
-		userId: UserId,
-	) => this.use((service) => service.rotateSecret(orgId, connectorId, userId))
 }

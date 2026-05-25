@@ -15,7 +15,7 @@ import type { OrgId as OrgIdType, RoleName as RoleNameType } from "@maple/domain
 import { createClerkClient } from "@clerk/backend"
 import { render } from "@react-email/components"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
-import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Context } from "effect"
+import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Ref, Context } from "effect"
 import { WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
 import { Database } from "../lib/DatabaseLive"
 import { EmailService } from "../lib/EmailService"
@@ -194,7 +194,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// Query all data in parallel. service_overview and get_service_usage
 			// use the *_compare pipes which UNION ALL current + previous windows
 			// into a single Tinybird query, tagging rows with a `period` column.
-			const [overviewResponse, currentErrors, usageResponse, topErrors] = yield* Effect.all(
+			const [overviewResponse, usageResponse, topErrors] = yield* Effect.all(
 				[
 					warehouse.query(systemTenant, {
 						pipe: "service_overview_compare",
@@ -204,10 +204,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							previous_start_time: previousStart,
 							previous_end_time: currentStart,
 						},
-					}),
-					warehouse.query(systemTenant, {
-						pipe: "errors_summary",
-						params: { start_time: currentStart, end_time: currentEnd },
 					}),
 					warehouse.query(systemTenant, {
 						pipe: "get_service_usage_compare",
@@ -236,8 +232,6 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						}),
 				),
 			)
-
-			void currentErrors
 
 			// Split UNION ALL'd rows by period discriminator
 			const overviewRows = overviewResponse.data as Array<ServiceOverviewCompareRow>
@@ -402,7 +396,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 		})
 
 		const SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
-		let lastSyncAt: number | null = null
+		const lastSyncAt = yield* Ref.make<number | null>(null)
 
 		const paginateClerk = <T>(
 			fetchPage: (params: {
@@ -416,6 +410,11 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				let offset = 0
 				const all: T[] = []
 
+				// Genuine cursor pagination: each page advances `offset` by the
+				// number of rows it returned, and the terminating condition depends
+				// on the just-fetched page (totalCount / empty page). Effect v4
+				// (beta) ships neither `iterate` nor `loop`, so an imperative
+				// while-loop driving sequential `yield*`s is the clearest form here.
 				while (true) {
 					const page = yield* Effect.tryPromise({
 						try: () => fetchPage({ limit: PAGE_SIZE, offset }),
@@ -437,27 +436,27 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				"Failed to list Clerk organizations",
 			)
 
-			const memberships: Array<{ orgId: string; userId: string; email: string }> = []
+			const perOrgMemberships = yield* Effect.forEach(orgs, (org) =>
+				Effect.gen(function* () {
+					const members = yield* paginateClerk(
+						(params) =>
+							clerk.organizations.getOrganizationMembershipList({
+								organizationId: org.id,
+								...params,
+							}),
+						`Failed to list Clerk members for org ${org.id}`,
+					)
 
-			for (const org of orgs) {
-				const members = yield* paginateClerk(
-					(params) =>
-						clerk.organizations.getOrganizationMembershipList({
-							organizationId: org.id,
-							...params,
-						}),
-					`Failed to list Clerk members for org ${org.id}`,
-				)
+					return members.flatMap((member) => {
+						const memberEmail = member.publicUserData?.identifier
+						const memberUserId = member.publicUserData?.userId
+						if (!memberEmail || !memberUserId) return []
+						return [{ orgId: org.id, userId: memberUserId, email: memberEmail }]
+					})
+				}),
+			)
 
-				for (const member of members) {
-					const memberEmail = member.publicUserData?.identifier
-					const memberUserId = member.publicUserData?.userId
-					if (!memberEmail || !memberUserId) continue
-					memberships.push({ orgId: org.id, userId: memberUserId, email: memberEmail })
-				}
-			}
-
-			return memberships
+			return perOrgMemberships.flat()
 		})
 
 		const reconcileSubscriptions = Effect.fn("DigestService.reconcileSubscriptions")(function* (
@@ -551,7 +550,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			// Rate-limit: only sync from Clerk once per 24 hours
 			const now = yield* Clock.currentTimeMillis
-			if (lastSyncAt != null && now - lastSyncAt < SYNC_INTERVAL_MS) return
+			const lastSync = yield* Ref.get(lastSyncAt)
+			if (lastSync != null && now - lastSync < SYNC_INTERVAL_MS) return
 
 			const clerk = createClerkClient({
 				secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
@@ -560,7 +560,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const memberships = yield* fetchAllClerkMemberships(clerk)
 			yield* reconcileSubscriptions(memberships)
 
-			lastSyncAt = now
+			yield* Ref.set(lastSyncAt, now)
 
 			yield* Effect.logInfo("Digest subscriptions synced from Clerk").pipe(
 				Effect.annotateLogs({ memberCount: memberships.length }),

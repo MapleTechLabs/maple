@@ -945,7 +945,7 @@ export interface AlertsServiceShape {
 		},
 		AlertPersistenceError | AlertDeliveryError | AlertValidationError | AlertNotFoundError
 		// Note: warehouse tagged errors flow up from evaluateRule but are caught
-		// inside the per-rule Effect.catchAll in the scheduler tick, so the tick
+		// inside the per-rule Effect.catch in the scheduler tick, so the tick
 		// itself never surfaces them.
 	>
 }
@@ -1527,35 +1527,38 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			sentAt: new Date(context.sentAtMs).toISOString(),
 		})
 
-		const toDeliveryAttemptFailure = (error: unknown): DeliveryAttemptFailure => {
-			if (error instanceof AlertValidationError) {
-				return {
-					message: error.message,
-					kind: "payload",
-					retryable: false,
-				}
-			}
-
-			if (error instanceof AlertDeliveryError) {
-				return {
-					message: error.message,
-					kind: error.message.includes("timed out") ? "timeout" : "transport",
-					retryable: true,
-				}
-			}
-
-			if (error instanceof AlertNotFoundError) {
-				return {
-					message: error.message,
-					kind: "destination",
-					retryable: false,
-				}
-			}
-
-			return {
-				message: error instanceof Error ? error.message : "Delivery failed",
-				kind: "unknown",
-				retryable: false,
+		const toDeliveryAttemptFailure = (
+			error:
+				| AlertValidationError
+				| AlertDeliveryError
+				| AlertNotFoundError
+				| AlertPersistenceError,
+		): DeliveryAttemptFailure => {
+			switch (error._tag) {
+				case "@maple/http/errors/AlertValidationError":
+					return {
+						message: error.message,
+						kind: "payload",
+						retryable: false,
+					}
+				case "@maple/http/errors/AlertDeliveryError":
+					return {
+						message: error.message,
+						kind: error.message.includes("timed out") ? "timeout" : "transport",
+						retryable: true,
+					}
+				case "@maple/http/errors/AlertNotFoundError":
+					return {
+						message: error.message,
+						kind: "destination",
+						retryable: false,
+					}
+				default:
+					return {
+						message: error.message,
+						kind: "unknown",
+						retryable: false,
+					}
 			}
 		}
 
@@ -2790,52 +2793,64 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				)
 			})
 
+			const recoverDeliveryFailure = (
+				row: AlertDeliveryEventRow,
+				error: AlertValidationError | AlertDeliveryError | AlertPersistenceError,
+			) => {
+				const failure = toDeliveryAttemptFailure(error)
+				failureCount += 1
+				return Effect.gen(function* () {
+					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
+					yield* finalizeClaimedDelivery(row.id, currentTime, {
+						status: "failed",
+						attemptedAt: currentTime,
+						errorMessage: failure.message,
+					})
+
+					if (failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS) {
+						// Carry the original delivery payload through the retry. Empty
+						// payloads here would force the next attempt to fall back on
+						// rule-row defaults, losing observed value, sample count,
+						// dedupe context, and links.
+						const retryPayload = (yield* parseDeliveryPayload(row.payloadJson).pipe(
+							Effect.orElseSucceed(() => ({})),
+						)) as Record<string, unknown>
+						yield* insertDeliveryEvent(
+							row.orgId as OrgId,
+							row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
+							decodeAlertRuleIdSync(row.ruleId),
+							decodeAlertDestinationIdSync(row.destinationId),
+							decodeAlertEventTypeSync(row.eventType),
+							retryPayload,
+							currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
+							row.deliveryKey,
+							row.attemptNumber + 1,
+						)
+					}
+
+					yield* Effect.logWarning("Alert delivery attempt failed").pipe(
+						Effect.annotateLogs({
+							workerId,
+							deliveryKey: row.deliveryKey,
+							attemptNumber: row.attemptNumber,
+							destinationId: row.destinationId,
+							failureKind: failure.kind,
+							errorMessage: failure.message,
+							willRetry: failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS,
+						}),
+					)
+				})
+			}
+
 			yield* Effect.forEach(rows, (row) =>
 				processOneDelivery(row).pipe(
-					Effect.catch((error) => {
-						const failure = toDeliveryAttemptFailure(error)
-						failureCount += 1
-						return Effect.gen(function* () {
-							yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-							yield* finalizeClaimedDelivery(row.id, currentTime, {
-								status: "failed",
-								attemptedAt: currentTime,
-								errorMessage: failure.message,
-							})
-
-							if (failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS) {
-								// Carry the original delivery payload through the retry. Empty
-								// payloads here would force the next attempt to fall back on
-								// rule-row defaults, losing observed value, sample count,
-								// dedupe context, and links.
-								const retryPayload = (yield* parseDeliveryPayload(row.payloadJson).pipe(
-									Effect.orElseSucceed(() => ({})),
-								)) as Record<string, unknown>
-								yield* insertDeliveryEvent(
-									row.orgId as OrgId,
-									row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
-									decodeAlertRuleIdSync(row.ruleId),
-									decodeAlertDestinationIdSync(row.destinationId),
-									decodeAlertEventTypeSync(row.eventType),
-									retryPayload,
-									currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
-									row.deliveryKey,
-									row.attemptNumber + 1,
-								)
-							}
-
-							yield* Effect.logWarning("Alert delivery attempt failed").pipe(
-								Effect.annotateLogs({
-									workerId,
-									deliveryKey: row.deliveryKey,
-									attemptNumber: row.attemptNumber,
-									destinationId: row.destinationId,
-									failureKind: failure.kind,
-									errorMessage: failure.message,
-									willRetry: failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS,
-								}),
-							)
-						})
+					Effect.catchTags({
+						"@maple/http/errors/AlertValidationError": (error) =>
+							recoverDeliveryFailure(row, error),
+						"@maple/http/errors/AlertDeliveryError": (error) =>
+							recoverDeliveryFailure(row, error),
+						"@maple/http/errors/AlertPersistenceError": (error) =>
+							recoverDeliveryFailure(row, error),
 					}),
 				),
 			)
@@ -3386,6 +3401,40 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			let evaluationFailureCount = 0
 			const pendingChecks = yield* Ref.make<AlertChecksRow[]>([])
 
+			const recordEvaluationFailure = (
+				row: AlertRuleRow,
+				error:
+					| AlertValidationError
+					| AlertDeliveryError
+					| AlertNotFoundError
+					| AlertPersistenceError
+					| WarehouseQueryError
+					| WarehouseQuotaExceededError,
+				failureCategory: string,
+				fields?: {
+					readonly upstreamStatus?: number
+					readonly quotaSetting?: string
+					readonly pipe?: string
+				},
+			) => {
+				evaluationFailureCount += 1
+				return Effect.gen(function* () {
+					yield* Metric.update(AlertingMetrics.evaluationFailuresTotal, 1)
+					yield* Effect.logError("Alert rule evaluation failed").pipe(
+						Effect.annotateLogs({
+							workerId,
+							ruleId: row.id,
+							orgId: row.orgId,
+							failureCategory,
+							errorMessage: error.message,
+							upstreamStatus: fields?.upstreamStatus,
+							quotaSetting: fields?.quotaSetting,
+							pipe: fields?.pipe,
+						}),
+					)
+				})
+			}
+
 			yield* Effect.forEach(
 				rows,
 				(row) =>
@@ -3497,45 +3546,23 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							}
 							yield* Metric.update(AlertingMetrics.ruleEvaluationDurationMs, (yield* now) - ruleStart)
 						}).pipe(
-							Effect.catch((error) => {
-								evaluationFailureCount += 1
-								return Effect.gen(function* () {
-									yield* Metric.update(AlertingMetrics.evaluationFailuresTotal, 1)
-									const taggedFailureCategory =
-										error instanceof AlertValidationError
-											? "validation"
-											: error instanceof AlertDeliveryError
-												? "evaluation"
-												: error instanceof WarehouseQuotaExceededError
-													? "tinybird_quota"
-													: error instanceof WarehouseQueryError
-														? `tinybird_${error.category ?? "query"}`
-														: "unknown"
-									const upstreamStatus =
-										error instanceof WarehouseQueryError ? error.upstreamStatus : undefined
-									const quotaSetting =
-										error instanceof WarehouseQuotaExceededError ? error.setting : undefined
-									const pipe =
-										error instanceof WarehouseQueryError ||
-										error instanceof WarehouseQuotaExceededError
-											? error.pipe
-											: undefined
-									yield* Effect.logError("Alert rule evaluation failed").pipe(
-										Effect.annotateLogs({
-											workerId,
-											ruleId: row.id,
-											orgId: row.orgId,
-											failureCategory: taggedFailureCategory,
-											errorMessage:
-												error instanceof Error
-													? error.message
-													: "Alert rule evaluation failed",
-											upstreamStatus,
-											quotaSetting,
-											pipe,
-										}),
-									)
-								})
+							Effect.catchTags({
+								"@maple/http/errors/AlertValidationError": (error) =>
+									recordEvaluationFailure(row, error, "validation"),
+								"@maple/http/errors/AlertDeliveryError": (error) =>
+									recordEvaluationFailure(row, error, "evaluation"),
+								"@maple/http/errors/AlertPersistenceError": (error) =>
+									recordEvaluationFailure(row, error, "unknown"),
+								"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
+									recordEvaluationFailure(row, error, "tinybird_quota", {
+										quotaSetting: error.setting,
+										pipe: error.pipe,
+									}),
+								"@maple/http/errors/WarehouseQueryError": (error) =>
+									recordEvaluationFailure(row, error, `tinybird_${error.category ?? "query"}`, {
+										upstreamStatus: error.upstreamStatus,
+										pipe: error.pipe,
+									}),
 							}),
 						)
 					}),

@@ -18,7 +18,7 @@ import {
 } from "@/dashboard-templates/helpers"
 import type { TemplateParameterValues, WidgetDef } from "@/dashboard-templates"
 
-const decodePortableDashboard = Schema.decodeUnknownSync(PortableDashboardDocument)
+const decodePortableDashboard = Schema.decodeUnknownEffect(PortableDashboardDocument)
 const PortableDashboardFromJson = Schema.fromJsonString(PortableDashboardDocument)
 const decodeParamKey = Schema.decodeUnknownSync(DashboardTemplateParameterKey)
 
@@ -377,21 +377,21 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 
 				const timeRangeValue = TIME_RANGE_MAP[params.time_range ?? "1h"] ?? "1h"
 
-				portable = yield* Effect.try({
-					try: () =>
-						decodePortableDashboard({
-							name: params.name,
-							...(params.description && { description: params.description }),
-							timeRange: { type: "relative", value: timeRangeValue },
-							widgets: result,
-						}),
-					catch: (error) =>
-						new McpQueryError({
-							message: `Widget generation error: ${String(error)}`,
-							pipe: "create_dashboard",
-							cause: error,
-						}),
-				})
+				portable = yield* decodePortableDashboard({
+					name: params.name,
+					...(params.description && { description: params.description }),
+					timeRange: { type: "relative", value: timeRangeValue },
+					widgets: result,
+				}).pipe(
+					Effect.mapError(
+						(error) =>
+							new McpQueryError({
+								message: `Widget generation error: ${String(error)}`,
+								pipe: "create_dashboard",
+								cause: error,
+							}),
+					),
+				)
 			} else if (templateName) {
 				const template = getTemplate(templateName)
 				if (!template) {

@@ -66,6 +66,13 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 				rules = rules.filter((r) => r.enabled)
 			}
 
+			yield* Effect.annotateCurrentSpan({
+				orgId: tenant.orgId,
+				signalType: signal_type ?? "all",
+				severity: severity ?? "all",
+				resultCount: rules.length,
+			})
+
 			const lines: string[] = [
 				`## Alert Rules`,
 				`Total: ${rules.length} rule${rules.length !== 1 ? "s" : ""}`,

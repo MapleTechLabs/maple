@@ -202,111 +202,112 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 			transformObj !== undefined && Object.keys(transformObj).some((k) => k !== "reduceToValue")
 
 		const queryEngine = yield* QueryEngineService
-		const queryResults: InspectChartQueryResult[] = []
 
-		for (const draft of enabledRawDrafts) {
-			const buildResult = isTimeseries
-				? buildTimeseriesQuerySpec(draft)
-				: buildBreakdownQuerySpec(draft)
+		const queryResults: InspectChartQueryResult[] = yield* Effect.forEach(
+			enabledRawDrafts,
+			(draft) =>
+				Effect.gen(function* () {
+					const buildResult = isTimeseries
+						? buildTimeseriesQuerySpec(draft)
+						: buildBreakdownQuerySpec(draft)
 
-			const builderWarnings =
-				buildResult.warnings && buildResult.warnings.length > 0
-					? [...buildResult.warnings]
-					: undefined
-			const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
+					const builderWarnings =
+						buildResult.warnings && buildResult.warnings.length > 0
+							? [...buildResult.warnings]
+							: undefined
+					const builderWarningFlags: ChartFlag[] = builderWarnings ? ["BUILDER_WARNINGS"] : []
 
-			if (!buildResult.query) {
-				const preFlags: ChartFlag[] = isBreakdown ? ["BROKEN_BREAKDOWN"] : ["EMPTY"]
-				queryResults.push({
-					queryId: draft.id,
-					queryName: draft.name,
-					status: "error",
-					error: buildResult.error ?? "Failed to build query spec",
-					stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
-					flags: [...preFlags, ...builderWarningFlags],
-					...(builderWarnings && { builderWarnings }),
-				})
-				continue
-			}
+					if (!buildResult.query) {
+						const preFlags: ChartFlag[] = isBreakdown ? ["BROKEN_BREAKDOWN"] : ["EMPTY"]
+						return {
+							queryId: draft.id,
+							queryName: draft.name,
+							status: "error",
+							error: buildResult.error ?? "Failed to build query spec",
+							stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
+							flags: [...preFlags, ...builderWarningFlags],
+							...(builderWarnings && { builderWarnings }),
+						} satisfies InspectChartQueryResult
+					}
 
-			const decodedSpecResult = yield* Effect.result(decodeQuerySpec(buildResult.query))
-			if (Result.isFailure(decodedSpecResult)) {
-				queryResults.push({
-					queryId: draft.id,
-					queryName: draft.name,
-					status: "error",
-					error: `Invalid query specification: ${decodedSpecResult.failure.message}`,
-					stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
-					flags: ["EMPTY", ...builderWarningFlags],
-					...(builderWarnings && { builderWarnings }),
-				})
-				continue
-			}
-			const decodedSpec = decodedSpecResult.success
+					const decodedSpecResult = yield* Effect.result(decodeQuerySpec(buildResult.query))
+					if (Result.isFailure(decodedSpecResult)) {
+						return {
+							queryId: draft.id,
+							queryName: draft.name,
+							status: "error",
+							error: `Invalid query specification: ${decodedSpecResult.failure.message}`,
+							stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
+							flags: ["EMPTY", ...builderWarningFlags],
+							...(builderWarnings && { builderWarnings }),
+						} satisfies InspectChartQueryResult
+					}
+					const decodedSpec = decodedSpecResult.success
 
-			const exit = yield* queryEngine
-				.execute(tenant, {
-					startTime: timeRange.startTime,
-					endTime: timeRange.endTime,
-					query: decodedSpec,
-				})
-				.pipe(Effect.exit)
+					const exit = yield* queryEngine
+						.execute(tenant, {
+							startTime: timeRange.startTime,
+							endTime: timeRange.endTime,
+							query: decodedSpec,
+						})
+						.pipe(Effect.exit)
 
-			if (Exit.isFailure(exit)) {
-				// `execute` fails with a `QueryEngineRouteError` union — every member
-				// carries a `message`. A defect (no typed failure) falls back to the
-				// pretty-printed cause.
-				const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-				const errorMessage = failure ? failure.message : Cause.pretty(exit.cause)
-				queryResults.push({
-					queryId: draft.id,
-					queryName: draft.name,
-					status: "error",
-					error: errorMessage,
-					stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
-					flags: ["EMPTY", ...builderWarningFlags],
-					...(builderWarnings && { builderWarnings }),
-				})
-				continue
-			}
+					if (Exit.isFailure(exit)) {
+						// `execute` fails with a `QueryEngineRouteError` union — every member
+						// carries a `message`. A defect (no typed failure) falls back to the
+						// pretty-printed cause.
+						const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
+						const errorMessage = failure ? failure.message : Cause.pretty(exit.cause)
+						return {
+							queryId: draft.id,
+							queryName: draft.name,
+							status: "error",
+							error: errorMessage,
+							stats: { rowCount: 0, seriesCount: 0, seriesStats: [] },
+							flags: ["EMPTY", ...builderWarningFlags],
+							...(builderWarnings && { builderWarnings }),
+						} satisfies InspectChartQueryResult
+					}
 
-			const result = exit.value.result
-			let stats: QueryStats = { rowCount: 0, seriesCount: 0, seriesStats: [] }
-			if (result.kind === "timeseries") {
-				stats = computeTimeseriesStats(result.data)
-			} else if (result.kind === "breakdown") {
-				stats = computeBreakdownStats(result.data)
-			}
+					const result = exit.value.result
+					let stats: QueryStats = { rowCount: 0, seriesCount: 0, seriesStats: [] }
+					if (result.kind === "timeseries") {
+						stats = computeTimeseriesStats(result.data)
+					} else if (result.kind === "breakdown") {
+						stats = computeBreakdownStats(result.data)
+					}
 
-			let reducedValue: number | null | undefined
-			if (reduceToValue && typeof reduceToValue.field === "string") {
-				const reduced = applyReduceToValue(
-					result,
-					reduceToValue.field,
-					typeof reduceToValue.aggregate === "string" ? reduceToValue.aggregate : "avg",
-				)
-				reducedValue = reduced.value
-			}
+					let reducedValue: number | null | undefined
+					if (reduceToValue && typeof reduceToValue.field === "string") {
+						const reduced = applyReduceToValue(
+							result,
+							reduceToValue.field,
+							typeof reduceToValue.aggregate === "string" ? reduceToValue.aggregate : "avg",
+						)
+						reducedValue = reduced.value
+					}
 
-			const flags = computeFlags(stats, {
-				metric: draft.aggregation,
-				source: draft.dataSource,
-				kind: isTimeseries ? "timeseries" : "breakdown",
-				...(widget.display.unit !== undefined && { displayUnit: widget.display.unit }),
-				...(builderWarningFlags.length > 0 && { preFlags: builderWarningFlags }),
-			})
+					const flags = computeFlags(stats, {
+						metric: draft.aggregation,
+						source: draft.dataSource,
+						kind: isTimeseries ? "timeseries" : "breakdown",
+						...(widget.display.unit !== undefined && { displayUnit: widget.display.unit }),
+						...(builderWarningFlags.length > 0 && { preFlags: builderWarningFlags }),
+					})
 
-			queryResults.push({
-				queryId: draft.id,
-				queryName: draft.name,
-				status: "ok",
-				spec: buildResult.query,
-				stats: statsToData(stats),
-				...(reducedValue !== undefined && { reducedValue }),
-				flags,
-				...(builderWarnings && { builderWarnings }),
-			})
-		}
+					return {
+						queryId: draft.id,
+						queryName: draft.name,
+						status: "ok",
+						spec: buildResult.query,
+						stats: statsToData(stats),
+						...(reducedValue !== undefined && { reducedValue }),
+						flags,
+						...(builderWarnings && { builderWarnings }),
+					} satisfies InspectChartQueryResult
+				}),
+			{ concurrency: 1 },
+		)
 
 		const allFlags = queryResults.flatMap((r) => r.flags)
 		const verdict = verdictFromFlags(allFlags)

@@ -369,7 +369,10 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdShape>()("bench/
 					new UpstreamStatusError({ source: "Tinybird", status: response.status, message: text.slice(0, 500) }),
 				)
 			}
-			const parsed = JSON.parse(text) as { data: ReadonlyArray<Record<string, unknown>> }
+			const parsed = yield* Effect.try({
+				try: () => JSON.parse(text) as { data: ReadonlyArray<Record<string, unknown>> },
+				catch: (cause) => new HttpRequestError({ url: cfg.host, message: String(cause) }),
+			})
 			return parsed.data
 		})
 
