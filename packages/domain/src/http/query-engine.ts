@@ -10,9 +10,9 @@ import { WarehouseQueryError, WarehouseQuotaExceededError } from "./warehouse"
 
 export class SpanHierarchyRequest extends Schema.Class<SpanHierarchyRequest>("SpanHierarchyRequest")({
 	traceId: Schema.String,
-	spanId: Schema.optionalKey(Schema.String),
-	startTime: Schema.optionalKey(TinybirdDateTime),
-	endTime: Schema.optionalKey(TinybirdDateTime),
+	spanId: Schema.optional(Schema.String),
+	startTime: Schema.optional(TinybirdDateTime),
+	endTime: Schema.optional(TinybirdDateTime),
 }) {}
 
 export class SpanHierarchyResponse extends Schema.Class<SpanHierarchyResponse>("SpanHierarchyResponse")({
@@ -37,8 +37,8 @@ export class SpanHierarchyResponse extends Schema.Class<SpanHierarchyResponse>("
 export class SpanDetailRequest extends Schema.Class<SpanDetailRequest>("SpanDetailRequest")({
 	traceId: Schema.String,
 	spanId: Schema.String,
-	startTime: Schema.optionalKey(TinybirdDateTime),
-	endTime: Schema.optionalKey(TinybirdDateTime),
+	startTime: Schema.optional(TinybirdDateTime),
+	endTime: Schema.optional(TinybirdDateTime),
 }) {}
 
 export class SpanDetailResponse extends Schema.Class<SpanDetailResponse>("SpanDetailResponse")({
@@ -52,16 +52,16 @@ export class SpanDetailResponse extends Schema.Class<SpanDetailResponse>("SpanDe
 	),
 }) {}
 
-const OptionalStringArray = Schema.optionalKey(Schema.Array(Schema.String))
+const OptionalStringArray = Schema.optional(Schema.Array(Schema.String))
 
 export class ErrorsByTypeRequest extends Schema.Class<ErrorsByTypeRequest>("ErrorsByTypeRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	rootOnly: Schema.optionalKey(Schema.Boolean),
+	rootOnly: Schema.optional(Schema.Boolean),
 	services: OptionalStringArray,
 	deploymentEnvs: OptionalStringArray,
 	fingerprintHashes: OptionalStringArray,
-	limit: Schema.optionalKey(Schema.Number),
+	limit: Schema.optional(Schema.Number),
 }) {}
 
 export class ErrorsByTypeResponse extends Schema.Class<ErrorsByTypeResponse>("ErrorsByTypeResponse")({
@@ -84,7 +84,7 @@ export class ErrorsTimeseriesRequest extends Schema.Class<ErrorsTimeseriesReques
 		endTime: TinybirdDateTime,
 		fingerprintHash: Schema.String,
 		services: OptionalStringArray,
-		bucketSeconds: Schema.optionalKey(Schema.Number),
+		bucketSeconds: Schema.optional(Schema.Number),
 	},
 ) {}
 
@@ -102,7 +102,7 @@ export class ErrorsTimeseriesResponse extends Schema.Class<ErrorsTimeseriesRespo
 export class ErrorsSummaryRequest extends Schema.Class<ErrorsSummaryRequest>("ErrorsSummaryRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	rootOnly: Schema.optionalKey(Schema.Boolean),
+	rootOnly: Schema.optional(Schema.Boolean),
 	services: OptionalStringArray,
 	deploymentEnvs: OptionalStringArray,
 	fingerprintHashes: OptionalStringArray,
@@ -126,9 +126,9 @@ export class ErrorDetailTracesRequest extends Schema.Class<ErrorDetailTracesRequ
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	fingerprintHash: Schema.String,
-	rootOnly: Schema.optionalKey(Schema.Boolean),
+	rootOnly: Schema.optional(Schema.Boolean),
 	services: OptionalStringArray,
-	limit: Schema.optionalKey(Schema.Number),
+	limit: Schema.optional(Schema.Number),
 }) {}
 
 export class ErrorDetailTracesResponse extends Schema.Class<ErrorDetailTracesResponse>(
@@ -184,8 +184,8 @@ export class ServiceApdexRequest extends Schema.Class<ServiceApdexRequest>("Serv
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	serviceName: Schema.String,
-	apdexThresholdMs: Schema.optionalKey(Schema.Number),
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	apdexThresholdMs: Schema.optional(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class ServiceApdexResponse extends Schema.Class<ServiceApdexResponse>("ServiceApdexResponse")({
@@ -204,7 +204,7 @@ export class ServiceReleasesRequest extends Schema.Class<ServiceReleasesRequest>
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	serviceName: Schema.String,
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class ServiceReleasesResponse extends Schema.Class<ServiceReleasesResponse>("ServiceReleasesResponse")(
@@ -224,7 +224,7 @@ export class ServiceDependenciesRequest extends Schema.Class<ServiceDependencies
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 export class ServiceDependenciesResponse extends Schema.Class<ServiceDependenciesResponse>(
@@ -236,7 +236,7 @@ export class ServiceDependenciesResponse extends Schema.Class<ServiceDependencie
 export class ServiceDbEdgesRequest extends Schema.Class<ServiceDbEdgesRequest>("ServiceDbEdgesRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 export class ServiceDbEdgesResponse extends Schema.Class<ServiceDbEdgesResponse>("ServiceDbEdgesResponse")({
@@ -249,7 +249,7 @@ export class ServiceExternalEdgesRequest extends Schema.Class<ServiceExternalEdg
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	serviceName: Schema.String,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 // Service-scoped variants for the service-detail page's Dependencies tab.
@@ -262,7 +262,7 @@ export class ServiceDependenciesForServiceRequest extends Schema.Class<ServiceDe
 	serviceName: Schema.String,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 export class ServiceDbEdgesForServiceRequest extends Schema.Class<ServiceDbEdgesForServiceRequest>(
@@ -271,7 +271,7 @@ export class ServiceDbEdgesForServiceRequest extends Schema.Class<ServiceDbEdges
 	serviceName: Schema.String,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 export class ServiceExternalEdgesResponse extends Schema.Class<ServiceExternalEdgesResponse>(
@@ -285,7 +285,7 @@ const ServicePlatformLiteral = Schema.Literals(["kubernetes", "cloudflare", "lam
 export class ServicePlatformsRequest extends Schema.Class<ServicePlatformsRequest>("ServicePlatformsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	deploymentEnv: Schema.optionalKey(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
 export class ServicePlatformsResponse extends Schema.Class<ServicePlatformsResponse>(
@@ -335,7 +335,7 @@ export class ServiceWorkloadsResponse extends Schema.Class<ServiceWorkloadsRespo
 export class ServiceUsageRequest extends Schema.Class<ServiceUsageRequest>("ServiceUsageRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	service: Schema.optionalKey(Schema.String),
+	service: Schema.optional(Schema.String),
 }) {}
 
 export class ServiceUsageResponse extends Schema.Class<ServiceUsageResponse>("ServiceUsageResponse")({
@@ -345,16 +345,16 @@ export class ServiceUsageResponse extends Schema.Class<ServiceUsageResponse>("Se
 export class ListLogsRequest extends Schema.Class<ListLogsRequest>("ListLogsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	service: Schema.optionalKey(Schema.String),
-	severity: Schema.optionalKey(Schema.String),
-	minSeverity: Schema.optionalKey(Schema.Number),
-	traceId: Schema.optionalKey(Schema.String),
-	spanId: Schema.optionalKey(Schema.String),
-	cursor: Schema.optionalKey(Schema.String),
-	search: Schema.optionalKey(Schema.String),
-	deploymentEnv: Schema.optionalKey(Schema.String),
-	deploymentEnvMatchMode: Schema.optionalKey(Schema.Literal("contains")),
-	limit: Schema.optionalKey(Schema.Number),
+	service: Schema.optional(Schema.String),
+	severity: Schema.optional(Schema.String),
+	minSeverity: Schema.optional(Schema.Number),
+	traceId: Schema.optional(Schema.String),
+	spanId: Schema.optional(Schema.String),
+	cursor: Schema.optional(Schema.String),
+	search: Schema.optional(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
+	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
+	limit: Schema.optional(Schema.Number),
 }) {}
 
 export class ListLogsResponse extends Schema.Class<ListLogsResponse>("ListLogsResponse")({
@@ -368,8 +368,8 @@ export class ListLogsResponse extends Schema.Class<ListLogsResponse>("ListLogsRe
 export class GetLogRequest extends Schema.Class<GetLogRequest>("GetLogRequest")({
 	timestamp: Schema.String,
 	serviceName: Schema.String,
-	traceId: Schema.optionalKey(Schema.String),
-	spanId: Schema.optionalKey(Schema.String),
+	traceId: Schema.optional(Schema.String),
+	spanId: Schema.optional(Schema.String),
 }) {}
 
 // `data` holds 0 or 1 rows — the requested log, or nothing if it aged out.
@@ -380,11 +380,11 @@ export class GetLogResponse extends Schema.Class<GetLogResponse>("GetLogResponse
 export class ListMetricsRequest extends Schema.Class<ListMetricsRequest>("ListMetricsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	service: Schema.optionalKey(Schema.String),
-	metricType: Schema.optionalKey(Schema.String),
-	search: Schema.optionalKey(Schema.String),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	service: Schema.optional(Schema.String),
+	metricType: Schema.optional(Schema.String),
+	search: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 export class ListMetricsResponse extends Schema.Class<ListMetricsResponse>("ListMetricsResponse")({
@@ -394,7 +394,7 @@ export class ListMetricsResponse extends Schema.Class<ListMetricsResponse>("List
 export class MetricsSummaryRequest extends Schema.Class<MetricsSummaryRequest>("MetricsSummaryRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	service: Schema.optionalKey(Schema.String),
+	service: Schema.optional(Schema.String),
 }) {}
 
 export class MetricsSummaryResponse extends Schema.Class<MetricsSummaryResponse>("MetricsSummaryResponse")({
@@ -414,9 +414,9 @@ export class MetricsSummaryResponse extends Schema.Class<MetricsSummaryResponse>
 export class ListHostsRequest extends Schema.Class<ListHostsRequest>("ListHostsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	search: Schema.optionalKey(Schema.String),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	search: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 const HostRow = Schema.Struct({
@@ -470,7 +470,7 @@ export class HostInfraTimeseriesRequest extends Schema.Class<HostInfraTimeseries
 	endTime: TinybirdDateTime,
 	hostName: Schema.String,
 	metric: Schema.Literals(["cpu", "memory", "filesystem", "network", "load15"]),
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeseriesResponse>(
@@ -483,7 +483,7 @@ export class HostInfraTimeseriesResponse extends Schema.Class<HostInfraTimeserie
 			value: Schema.Number,
 		}),
 	),
-	groupByAttributeKey: Schema.optionalKey(Schema.String),
+	groupByAttributeKey: Schema.optional(Schema.String),
 	unit: Schema.Literals(["percent", "load", "bytes_per_second"]),
 }) {}
 
@@ -492,7 +492,7 @@ export class FleetUtilizationTimeseriesRequest extends Schema.Class<FleetUtiliza
 )({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class FleetUtilizationTimeseriesResponse extends Schema.Class<FleetUtilizationTimeseriesResponse>(
@@ -524,21 +524,21 @@ const FacetRow = Schema.Struct({
 export class ListPodsRequest extends Schema.Class<ListPodsRequest>("ListPodsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	search: Schema.optionalKey(Schema.String),
-	podNames: Schema.optionalKey(StringArray),
-	namespaces: Schema.optionalKey(StringArray),
-	nodeNames: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	deployments: Schema.optionalKey(StringArray),
-	statefulsets: Schema.optionalKey(StringArray),
-	daemonsets: Schema.optionalKey(StringArray),
-	jobs: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
-	computeTypes: Schema.optionalKey(StringArray),
-	workloadKind: Schema.optionalKey(WorkloadKindLiteral),
-	workloadName: Schema.optionalKey(Schema.String),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	search: Schema.optional(Schema.String),
+	podNames: Schema.optional(StringArray),
+	namespaces: Schema.optional(StringArray),
+	nodeNames: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	deployments: Schema.optional(StringArray),
+	statefulsets: Schema.optional(StringArray),
+	daemonsets: Schema.optional(StringArray),
+	jobs: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	computeTypes: Schema.optional(StringArray),
+	workloadKind: Schema.optional(WorkloadKindLiteral),
+	workloadName: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 const PodRow = Schema.Struct({
@@ -569,17 +569,17 @@ export class ListPodsResponse extends Schema.Class<ListPodsResponse>("ListPodsRe
 export class PodFacetsRequest extends Schema.Class<PodFacetsRequest>("PodFacetsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	search: Schema.optionalKey(Schema.String),
-	podNames: Schema.optionalKey(StringArray),
-	namespaces: Schema.optionalKey(StringArray),
-	nodeNames: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	deployments: Schema.optionalKey(StringArray),
-	statefulsets: Schema.optionalKey(StringArray),
-	daemonsets: Schema.optionalKey(StringArray),
-	jobs: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
-	computeTypes: Schema.optionalKey(StringArray),
+	search: Schema.optional(Schema.String),
+	podNames: Schema.optional(StringArray),
+	namespaces: Schema.optional(StringArray),
+	nodeNames: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	deployments: Schema.optional(StringArray),
+	statefulsets: Schema.optional(StringArray),
+	daemonsets: Schema.optional(StringArray),
+	jobs: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	computeTypes: Schema.optional(StringArray),
 }) {}
 
 export class PodFacetsResponse extends Schema.Class<PodFacetsResponse>("PodFacetsResponse")({
@@ -602,7 +602,7 @@ export class PodDetailSummaryRequest extends Schema.Class<PodDetailSummaryReques
 		startTime: TinybirdDateTime,
 		endTime: TinybirdDateTime,
 		podName: Schema.String,
-		namespace: Schema.optionalKey(Schema.String),
+		namespace: Schema.optional(Schema.String),
 	},
 ) {}
 
@@ -638,9 +638,9 @@ export class PodInfraTimeseriesRequest extends Schema.Class<PodInfraTimeseriesRe
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	podName: Schema.String,
-	namespace: Schema.optionalKey(Schema.String),
+	namespace: Schema.optional(Schema.String),
 	metric: Schema.Literals(["cpu_usage", "cpu_limit", "cpu_request", "memory_limit", "memory_request"]),
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class PodInfraTimeseriesResponse extends Schema.Class<PodInfraTimeseriesResponse>(
@@ -659,12 +659,12 @@ export class PodInfraTimeseriesResponse extends Schema.Class<PodInfraTimeseriesR
 export class ListNodesRequest extends Schema.Class<ListNodesRequest>("ListNodesRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	search: Schema.optionalKey(Schema.String),
-	nodeNames: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	search: Schema.optional(Schema.String),
+	nodeNames: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 const NodeRow = Schema.Struct({
@@ -685,10 +685,10 @@ export class ListNodesResponse extends Schema.Class<ListNodesResponse>("ListNode
 export class NodeFacetsRequest extends Schema.Class<NodeFacetsRequest>("NodeFacetsRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	search: Schema.optionalKey(Schema.String),
-	nodeNames: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
+	search: Schema.optional(Schema.String),
+	nodeNames: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
 }) {}
 
 export class NodeFacetsResponse extends Schema.Class<NodeFacetsResponse>("NodeFacetsResponse")({
@@ -731,7 +731,7 @@ export class NodeInfraTimeseriesRequest extends Schema.Class<NodeInfraTimeseries
 	endTime: TinybirdDateTime,
 	nodeName: Schema.String,
 	metric: Schema.Literals(["cpu_usage", "uptime"]),
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class NodeInfraTimeseriesResponse extends Schema.Class<NodeInfraTimeseriesResponse>(
@@ -751,14 +751,14 @@ export class ListWorkloadsRequest extends Schema.Class<ListWorkloadsRequest>("Li
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	kind: WorkloadKindLiteral,
-	search: Schema.optionalKey(Schema.String),
-	workloadNames: Schema.optionalKey(StringArray),
-	namespaces: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
-	computeTypes: Schema.optionalKey(StringArray),
-	limit: Schema.optionalKey(Schema.Number),
-	offset: Schema.optionalKey(Schema.Number),
+	search: Schema.optional(Schema.String),
+	workloadNames: Schema.optional(StringArray),
+	namespaces: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	computeTypes: Schema.optional(StringArray),
+	limit: Schema.optional(Schema.Number),
+	offset: Schema.optional(Schema.Number),
 }) {}
 
 const WorkloadRow = Schema.Struct({
@@ -781,12 +781,12 @@ export class WorkloadFacetsRequest extends Schema.Class<WorkloadFacetsRequest>("
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
 	kind: WorkloadKindLiteral,
-	search: Schema.optionalKey(Schema.String),
-	workloadNames: Schema.optionalKey(StringArray),
-	namespaces: Schema.optionalKey(StringArray),
-	clusters: Schema.optionalKey(StringArray),
-	environments: Schema.optionalKey(StringArray),
-	computeTypes: Schema.optionalKey(StringArray),
+	search: Schema.optional(Schema.String),
+	workloadNames: Schema.optional(StringArray),
+	namespaces: Schema.optional(StringArray),
+	clusters: Schema.optional(StringArray),
+	environments: Schema.optional(StringArray),
+	computeTypes: Schema.optional(StringArray),
 }) {}
 
 export class WorkloadFacetsResponse extends Schema.Class<WorkloadFacetsResponse>("WorkloadFacetsResponse")({
@@ -806,7 +806,7 @@ export class WorkloadDetailSummaryRequest extends Schema.Class<WorkloadDetailSum
 	endTime: TinybirdDateTime,
 	kind: WorkloadKindLiteral,
 	workloadName: Schema.String,
-	namespace: Schema.optionalKey(Schema.String),
+	namespace: Schema.optional(Schema.String),
 }) {}
 
 export class WorkloadDetailSummaryResponse extends Schema.Class<WorkloadDetailSummaryResponse>(
@@ -834,10 +834,10 @@ export class WorkloadInfraTimeseriesRequest extends Schema.Class<WorkloadInfraTi
 	endTime: TinybirdDateTime,
 	kind: WorkloadKindLiteral,
 	workloadName: Schema.String,
-	namespace: Schema.optionalKey(Schema.String),
+	namespace: Schema.optional(Schema.String),
 	metric: Schema.Literals(["cpu_usage", "cpu_limit", "memory_limit"]),
-	groupByPod: Schema.optionalKey(Schema.Boolean),
-	bucketSeconds: Schema.optionalKey(Schema.Number),
+	groupByPod: Schema.optional(Schema.Boolean),
+	bucketSeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class WorkloadInfraTimeseriesResponse extends Schema.Class<WorkloadInfraTimeseriesResponse>(
@@ -870,18 +870,18 @@ const QueryBuilderAddOnsSchema = Schema.Struct({
 const queryDraftBaseFields = {
 	id: Schema.String,
 	name: Schema.String,
-	enabled: Schema.optionalKey(Schema.Boolean),
-	hidden: Schema.optionalKey(Schema.Boolean),
-	whereClause: Schema.optionalKey(Schema.String),
+	enabled: Schema.optional(Schema.Boolean),
+	hidden: Schema.optional(Schema.Boolean),
+	whereClause: Schema.optional(Schema.String),
 	aggregation: Schema.String,
-	stepInterval: Schema.optionalKey(Schema.String),
-	orderByDirection: Schema.optionalKey(Schema.Literals(["desc", "asc"])),
-	addOns: Schema.optionalKey(QueryBuilderAddOnsSchema),
-	groupBy: Schema.optionalKey(Schema.mutable(Schema.Array(Schema.String))),
-	having: Schema.optionalKey(Schema.String),
-	orderBy: Schema.optionalKey(Schema.String),
-	limit: Schema.optionalKey(Schema.String),
-	legend: Schema.optionalKey(Schema.String),
+	stepInterval: Schema.optional(Schema.String),
+	orderByDirection: Schema.optional(Schema.Literals(["desc", "asc"])),
+	addOns: Schema.optional(QueryBuilderAddOnsSchema),
+	groupBy: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+	having: Schema.optional(Schema.String),
+	orderBy: Schema.optional(Schema.String),
+	limit: Schema.optional(Schema.String),
+	legend: Schema.optional(Schema.String),
 }
 
 export const TracesQueryDraftSchema = Schema.Struct({
@@ -897,10 +897,10 @@ export const LogsQueryDraftSchema = Schema.Struct({
 export const MetricsQueryDraftSchema = Schema.Struct({
 	...queryDraftBaseFields,
 	dataSource: Schema.Literal("metrics"),
-	signalSource: Schema.optionalKey(Schema.Literals(["default", "meter"])),
-	metricName: Schema.optionalKey(Schema.String),
-	metricType: Schema.optionalKey(Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])),
-	isMonotonic: Schema.optionalKey(Schema.Boolean),
+	signalSource: Schema.optional(Schema.Literals(["default", "meter"])),
+	metricName: Schema.optional(Schema.String),
+	metricType: Schema.optional(Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])),
+	isMonotonic: Schema.optional(Schema.Boolean),
 })
 
 export const QueryBuilderQueryDraftSchema = Schema.Union([
@@ -942,7 +942,7 @@ export class ExecuteQueryBuilderResponse extends Schema.Class<ExecuteQueryBuilde
 			data: Schema.Array(QueryBuilderBreakdownItem),
 		}),
 	]),
-	warnings: Schema.optionalKey(Schema.Array(Schema.String)),
+	warnings: Schema.optional(Schema.Array(Schema.String)),
 }) {}
 
 // ---------------------------------------------------------------------------
@@ -966,7 +966,7 @@ export class RawSqlExecuteRequest extends Schema.Class<RawSqlExecuteRequest>("Ra
 	displayType: RawSqlDisplayType,
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
-	granularitySeconds: Schema.optionalKey(Schema.Number),
+	granularitySeconds: Schema.optional(Schema.Number),
 }) {}
 
 export class RawSqlExecuteResponse extends Schema.Class<RawSqlExecuteResponse>("RawSqlExecuteResponse")({
@@ -1006,8 +1006,8 @@ export class QueryEngineExecutionError extends Schema.TaggedErrorClass<QueryEngi
 	"@maple/http/errors/QueryEngineExecutionError",
 	{
 		message: Schema.String,
-		causeMessage: Schema.optionalKey(Schema.String),
-		pipe: Schema.optionalKey(Schema.String),
+		causeMessage: Schema.optional(Schema.String),
+		pipe: Schema.optional(Schema.String),
 	},
 	{ httpApiStatus: 502 },
 ) {}
