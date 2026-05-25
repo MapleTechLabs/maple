@@ -5,7 +5,7 @@ import type {
 	TrailingSlashOption,
 } from "@tanstack/react-router"
 import { createRouter } from "@tanstack/react-router"
-import { Effect, Exit, type ManagedRuntime, type Tracer } from "effect"
+import { Clock, Effect, Exit, type ManagedRuntime, type Tracer } from "effect"
 import type { Atom, AtomRegistry } from "effect/unstable/reactivity"
 
 // ---------------------------------------------------------------------------
@@ -147,10 +147,14 @@ export function createEffectRouter<
 	// Navigation-level span tracking
 	// ---------------------------------------------------------------------------
 
+	// Span end timestamps are nanoseconds. Source the wall clock through the
+	// runtime's Clock (testable) rather than a raw Date.now(), then scale to ns.
+	const nowNanos = (): bigint => BigInt(managedRuntime.runSync(Clock.currentTimeMillis)) * 1_000_000n
+
 	router.subscribe("onBeforeNavigate", (event) => {
 		// End any lingering span from a previous navigation (shouldn't happen, but defensive)
 		if (_currentNavigationSpan) {
-			_currentNavigationSpan.end(BigInt(Date.now() * 1_000_000), Exit.void)
+			_currentNavigationSpan.end(nowNanos(), Exit.void)
 		}
 
 		_currentNavigationSpan = managedRuntime.runSync(
@@ -166,7 +170,7 @@ export function createEffectRouter<
 
 	router.subscribe("onResolved", () => {
 		if (_currentNavigationSpan) {
-			_currentNavigationSpan.end(BigInt(Date.now() * 1_000_000), Exit.void)
+			_currentNavigationSpan.end(nowNanos(), Exit.void)
 			_currentNavigationSpan = undefined
 		}
 	})
@@ -178,6 +182,10 @@ export function createEffectRouter<
 // Navigation span access
 // ---------------------------------------------------------------------------
 
+// Known SPA singleton: a single browser document has exactly one active
+// navigation at a time, so module-level mutable state is acceptable here.
+// Intentionally not a FiberRef — the router subscribe callbacks are synchronous
+// DOM-event handlers, not Effect fibers.
 let _currentNavigationSpan: Tracer.Span | undefined
 
 /**

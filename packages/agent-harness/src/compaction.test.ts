@@ -101,10 +101,16 @@ describe("agent harness compaction", () => {
 		)
 
 		expect(prepared).toBeDefined()
-		const result = applyCompaction(snapshot, "turn-3", prepared!, {
-			summary: "Compressed older context",
-			turnContextSummary: "Split turn preserved",
-		})
+		const result = applyCompaction(
+			snapshot,
+			"turn-3",
+			prepared!,
+			{
+				summary: "Compressed older context",
+				turnContextSummary: "Split turn preserved",
+			},
+			1_700_000_000_000,
+		)
 
 		expect(result.entry.details.droppedEntryIds).toContain("user-1")
 		expect(result.entry.turnContextSummary).toBe("Split turn preserved")

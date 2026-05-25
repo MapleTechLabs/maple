@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { AgentHarnessCompactionError } from "./errors"
 import {
 	buildSessionContext,
@@ -20,6 +20,11 @@ import type {
 const isToolResultMessage = (entry: SessionEntry): boolean =>
 	entry.type === "message" && entry.message.role === "tool"
 
+// TODO: decode tool-result parts through a Schema.Struct instead of the
+// hand-rolled `as Record<string, unknown>` casts + typeof guards below. The
+// shape comes from the `ai` SDK's tool-result content parts; decoding it
+// properly is deferred (lower priority) to avoid coupling to that SDK's
+// evolving internal types here.
 const extractToolDetails = (entries: ReadonlyArray<SessionEntry>) => {
 	const toolNames = new Set<string>()
 	const readFiles = new Set<string>()
@@ -133,11 +138,12 @@ export const applyCompaction = (
 		readonly turnContextSummary?: string
 		readonly details?: Partial<CompactionPreparation["details"]>
 	},
+	now: number,
 ): CompactionResult => {
 	const previousDetails = preparation.previousCompaction?.details
 	const entry: SessionCompactionEntry = {
-		id: `${snapshot.sessionId}:compaction:${Date.now()}`,
-		createdAt: Date.now(),
+		id: `${snapshot.sessionId}:compaction:${now}`,
+		createdAt: now,
 		turnId,
 		type: "compaction",
 		summary: summary.summary,
@@ -160,33 +166,34 @@ export const applyCompaction = (
 	}
 }
 
-export const compactSnapshot = (
+export const compactSnapshot = Effect.fn("AgentHarness.compactSnapshot")(function* (
 	snapshot: SessionSnapshot,
 	turnId: string,
 	modelGateway: AgentModelGatewayShape,
 	abortSignal?: AbortSignal,
-) =>
-	Effect.gen(function* () {
-		const preparation = prepareCompaction(snapshot, modelGateway.contextWindow)
-		if (!preparation) return undefined
+) {
+	const preparation = prepareCompaction(snapshot, modelGateway.contextWindow)
+	if (!preparation) return undefined
 
-		const summary = yield* modelGateway
-			.summarizeCompaction({
-				snapshot,
-				preparation,
-				abortSignal,
-			})
-			.pipe(
-				Effect.mapError(
-					(error) =>
-						new AgentHarnessCompactionError({
-							message: error.message,
-						}),
-				),
-			)
+	const summary = yield* modelGateway
+		.summarizeCompaction({
+			snapshot,
+			preparation,
+			abortSignal,
+		})
+		.pipe(
+			Effect.mapError(
+				(error) =>
+					new AgentHarnessCompactionError({
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
 
-		return applyCompaction(snapshot, turnId, preparation, summary)
-	})
+	const now = yield* Clock.currentTimeMillis
+	return applyCompaction(snapshot, turnId, preparation, summary, now)
+})
 
 export const renderCompactionPrompt = (
 	snapshot: SessionSnapshot,
