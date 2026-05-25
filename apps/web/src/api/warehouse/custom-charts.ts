@@ -1,6 +1,7 @@
 import {
 	QueryEngineExecuteRequest,
 	type MetricsMetric,
+	type QueryEngineExecuteResponse,
 	type QuerySpec,
 	type TracesMetric,
 } from "@maple/query-engine"
@@ -36,8 +37,9 @@ function querySpanMetricsCalls(params: {
 		// full wall time for two empty round-trips; running them concurrently caps
 		// the worst case at `max(t1, t2)`. Preserve the canonical-name priority by
 		// preferring the first candidate's non-empty result when both succeed.
-		const responses = yield* Effect.all(
-			SPANMETRICS_CALLS_CANDIDATES.map((metricName) =>
+		const responses = yield* Effect.forEach(
+			SPANMETRICS_CALLS_CANDIDATES,
+			(metricName) =>
 				executeQueryEngine(
 					"queryEngine.spanMetricsCalls",
 					new QueryEngineExecuteRequest({
@@ -63,7 +65,6 @@ function querySpanMetricsCalls(params: {
 						},
 					}),
 				).pipe(Effect.orElseSucceed(() => null)),
-			),
 			{ concurrency: SPANMETRICS_CALLS_CANDIDATES.length },
 		)
 
@@ -317,7 +318,7 @@ export function getCustomChartTimeSeries({ data }: { data: CustomChartTimeSeries
 	return getCustomChartTimeSeriesEffect({ data })
 }
 
-const getCustomChartTimeSeriesEffect = Effect.fn("Tinybird.getCustomChartTimeSeries")(function* ({
+const getCustomChartTimeSeriesEffect = Effect.fn("QueryEngine.getCustomChartTimeSeries")(function* ({
 	data,
 }: {
 	data: CustomChartTimeSeriesInput
@@ -467,7 +468,7 @@ export function getCustomChartBreakdown({ data }: { data: CustomChartBreakdownIn
 	return getCustomChartBreakdownEffect({ data })
 }
 
-const getCustomChartBreakdownEffect = Effect.fn("Tinybird.getCustomChartBreakdown")(function* ({
+const getCustomChartBreakdownEffect = Effect.fn("QueryEngine.getCustomChartBreakdown")(function* ({
 	data,
 }: {
 	data: CustomChartBreakdownInput
@@ -603,9 +604,7 @@ function resolveThroughput(
 	return rawCount
 }
 
-function extractAllMetricsSeries(response: {
-	result: { kind: string; data: ReadonlyArray<{ bucket: string; series: Record<string, number> }> }
-}): Map<string, AllMetricsPoint> {
+function extractAllMetricsSeries(response: QueryEngineExecuteResponse): Map<string, AllMetricsPoint> {
 	const map = new Map<string, AllMetricsPoint>()
 	if (response.result.kind !== "timeseries") return map
 	for (const point of response.result.data) {
@@ -663,7 +662,7 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 		{ concurrency: 2 },
 	)
 
-	const allMetrics = extractAllMetricsSeries(allMetricsRes as any)
+	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	const metricsMap = new Map(
 		metricsResult.data.map((r) => [toIsoBucket(String(r.bucket)), Number(r.sumValue)]),
@@ -738,7 +737,7 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 		{ concurrency: 2 },
 	)
 
-	const allMetrics = extractAllMetricsSeries(allMetricsRes as any)
+	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
 	// SpanMetrics: aggregate across all services per bucket
 	const metricsMap = new Map<string, number>()

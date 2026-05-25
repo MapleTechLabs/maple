@@ -1,7 +1,5 @@
-import { Effect, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { QueryEngineExecuteRequest, type QuerySpec } from "@maple/query-engine"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { mapleApiClientLayer } from "@/lib/registry"
 import { formatForTinybird } from "@/lib/time-utils"
 import {
 	buildFormulaResults,
@@ -11,8 +9,16 @@ import {
 } from "@/components/query-builder/formula-results"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { buildTimeseriesQuerySpec } from "@/lib/query-builder/model"
-import { decodeInput, WarehouseQueryError } from "@/api/warehouse/effect-utils"
+import {
+	decodeInput,
+	executeQueryEngine,
+	invalidWarehouseInput,
+	type WarehouseApiError,
+	type BackendError,
+} from "@/api/warehouse/effect-utils"
 import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
+
+type ExecuteError = WarehouseApiError | BackendError
 
 const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
 
@@ -101,7 +107,6 @@ export interface QueryBuilderTimeseriesResponse {
 	debug?: QueryBuilderTimeseriesDebug
 }
 
-const decodeQueryEngineRequest = Schema.decodeUnknownSync(QueryEngineExecuteRequest)
 const toEpochMs = (value: string): number => new Date(value.replace(" ", "T") + "Z").getTime()
 
 function computeAutoBucketSeconds(startTime: string, endTime: string): number {
@@ -246,51 +251,42 @@ function buildExecutionWindows(
 	return windows
 }
 
-async function executeTimeseriesQuery(
+const executeTimeseriesQuery = Effect.fn("QueryEngine.executeTimeseriesQuery")(function* (
 	startTime: string,
 	endTime: string,
 	spec: QuerySpec,
-): Promise<TimeseriesPoint[]> {
-	const payload = decodeQueryEngineRequest({
-		startTime,
-		endTime,
-		query: spec,
-	})
-
-	const response = await Effect.runPromise(
-		executeTimeseriesQueryEffect(payload).pipe(Effect.provide(mapleApiClientLayer)),
+) {
+	const request = yield* decodeInput(
+		QueryEngineExecuteRequest,
+		{ startTime, endTime, query: spec },
+		"executeTimeseriesQuery.request",
 	)
 
+	const response = yield* executeQueryEngine("queryEngine.timeseriesQuery", request)
+
 	if (response.result.kind !== "timeseries") {
-		return Promise.reject(new Error("Unexpected non-timeseries result"))
+		return yield* invalidWarehouseInput("executeTimeseriesQuery", "Unexpected non-timeseries result")
 	}
 
 	return response.result.data.map((point) => ({
 		bucket: point.bucket,
 		series: { ...point.series },
-	}))
-}
-
-const executeTimeseriesQueryEffect = Effect.fn("Tinybird.executeTimeseriesQuery")(function* (
-	payload: QueryEngineExecuteRequest,
-) {
-	const client = yield* MapleApiAtomClient
-	return yield* client.queryEngine.execute({
-		payload: new QueryEngineExecuteRequest(payload),
-	})
+	})) satisfies TimeseriesPoint[]
 })
 
-async function executeTimeseriesQueryWithFallback(
+type ExecuteTimeseriesFn = (
+	startTime: string,
+	endTime: string,
+	spec: QuerySpec,
+) => Effect.Effect<TimeseriesPoint[], ExecuteError>
+
+function executeTimeseriesQueryWithFallback(
 	startTime: string,
 	endTime: string,
 	spec: QuerySpec,
 	strategy: ReturnType<typeof resolveStrategy>,
 	allowFallback: boolean,
-): Promise<{
-	points: TimeseriesPoint[]
-	attempts: QueryExecutionAttempt[]
-	fallbackUsed: boolean
-}> {
+) {
 	return executeTimeseriesQueryWithFallbackUsing(
 		startTime,
 		endTime,
@@ -301,27 +297,44 @@ async function executeTimeseriesQueryWithFallback(
 	)
 }
 
-async function executeTimeseriesQueryWithFallbackUsing(
-	startTime: string,
-	endTime: string,
-	spec: QuerySpec,
-	strategy: ReturnType<typeof resolveStrategy>,
-	allowFallback: boolean,
-	executeFn: (startTime: string, endTime: string, spec: QuerySpec) => Promise<TimeseriesPoint[]>,
-): Promise<{
-	points: TimeseriesPoint[]
-	attempts: QueryExecutionAttempt[]
-	fallbackUsed: boolean
-}> {
-	const windows = buildExecutionWindows(startTime, endTime, strategy, allowFallback)
-	const attempts: QueryExecutionAttempt[] = []
-	let lastPoints: TimeseriesPoint[] = []
+const executeTimeseriesQueryWithFallbackUsing = Effect.fn("QueryEngine.executeTimeseriesQueryWithFallback")(
+	function* (
+		startTime: string,
+		endTime: string,
+		spec: QuerySpec,
+		strategy: ReturnType<typeof resolveStrategy>,
+		allowFallback: boolean,
+		executeFn: ExecuteTimeseriesFn,
+	) {
+		const windows = buildExecutionWindows(startTime, endTime, strategy, allowFallback)
+		const attempts: QueryExecutionAttempt[] = []
+		let lastPoints: TimeseriesPoint[] = []
 
-	for (const [index, window] of windows.entries()) {
-		const windowSpec = resolveExecutionSpecForWindow(spec, window)
+		for (const [index, window] of windows.entries()) {
+			const windowSpec = resolveExecutionSpecForWindow(spec, window)
 
-		try {
-			const points = await executeFn(window.startTime, window.endTime, windowSpec)
+			const outcome = yield* Effect.result(executeFn(window.startTime, window.endTime, windowSpec))
+
+			if (Result.isFailure(outcome)) {
+				const error = outcome.failure
+				const message = error instanceof Error ? error.message : "Query execution failed"
+
+				attempts.push({
+					startTime: window.startTime,
+					endTime: window.endTime,
+					kind: window.kind,
+					points: 0,
+					hasSeries: false,
+					error: message,
+				})
+
+				if (window.kind === "primary") {
+					return yield* Effect.fail(error)
+				}
+				continue
+			}
+
+			const points = outcome.success
 			const hasSeries = hasAnySeriesData(points)
 
 			attempts.push({
@@ -340,30 +353,15 @@ async function executeTimeseriesQueryWithFallbackUsing(
 					fallbackUsed: index > 0,
 				}
 			}
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "Query execution failed"
-
-			attempts.push({
-				startTime: window.startTime,
-				endTime: window.endTime,
-				kind: window.kind,
-				points: 0,
-				hasSeries: false,
-				error: message,
-			})
-
-			if (window.kind === "primary") {
-				return Promise.reject(error)
-			}
 		}
-	}
 
-	return {
-		points: lastPoints,
-		attempts,
-		fallbackUsed: false,
-	}
-}
+		return {
+			points: lastPoints,
+			attempts,
+			fallbackUsed: false,
+		}
+	},
+)
 
 function toDisplayNameById(
 	entries: Array<{ id: string; name: string; legend?: string }>,
@@ -553,55 +551,72 @@ function appendPercentChangeSeries(
 	}
 }
 
-async function runQueryWindow(
+const runQueryWindow = Effect.fn("QueryEngine.runQueryWindow")(function* (
 	startTime: string,
 	endTime: string,
 	enabledQueries: QueryBuilderTimeseriesInput["queries"],
 	formulas: FormulaDraft[],
 	strategy: ReturnType<typeof resolveStrategy>,
 	allowFallback: boolean,
-): Promise<{
-	queryResults: QueryRunResult[]
-	allResults: QueryRunResult[]
-	debug: QueryExecutionDebug[]
-}> {
+) {
 	const debug: QueryExecutionDebug[] = []
 
-	const queryResults = await Promise.all(
-		enabledQueries.map(async (query): Promise<QueryRunResult> => {
-			const built = buildTimeseriesQuerySpec(query)
+	const queryResults = yield* Effect.forEach(
+		enabledQueries,
+		(query) =>
+			Effect.gen(function* () {
+				const built = buildTimeseriesQuerySpec(query)
 
-			if (!built.query) {
-				debug.push({
-					queryId: query.id,
-					queryName: query.name,
-					source: query.dataSource,
-					spec: null,
-					attempts: [],
-					fallbackUsed: false,
-				})
+				if (!built.query) {
+					debug.push({
+						queryId: query.id,
+						queryName: query.name,
+						source: query.dataSource,
+						spec: null,
+						attempts: [],
+						fallbackUsed: false,
+					})
 
-				return {
-					queryId: query.id,
-					queryName: query.name,
-					source: query.dataSource,
-					status: "error",
-					error: built.error ?? "Failed to build query",
-					warnings: built.warnings,
-					data: [],
+					return {
+						queryId: query.id,
+						queryName: query.name,
+						source: query.dataSource,
+						status: "error",
+						error: built.error ?? "Failed to build query",
+						warnings: built.warnings,
+						data: [],
+					} satisfies QueryRunResult
 				}
-			}
 
-			const querySpec = resolveTimeseriesBucketSpec(built.query, startTime, endTime)
+				const querySpec = resolveTimeseriesBucketSpec(built.query, startTime, endTime)
 
-			try {
-				const execution = await executeTimeseriesQueryWithFallback(
-					startTime,
-					endTime,
-					querySpec,
-					strategy,
-					allowFallback,
+				const outcome = yield* Effect.result(
+					executeTimeseriesQueryWithFallback(startTime, endTime, querySpec, strategy, allowFallback),
 				)
+
+				if (Result.isFailure(outcome)) {
+					const error = outcome.failure
+					debug.push({
+						queryId: query.id,
+						queryName: query.name,
+						source: query.dataSource,
+						spec: querySpec,
+						attempts: [],
+						fallbackUsed: false,
+					})
+
+					return {
+						queryId: query.id,
+						queryName: query.name,
+						source: query.dataSource,
+						status: "error",
+						error: error instanceof Error ? error.message : "Query execution failed",
+						warnings: built.warnings,
+						data: [],
+					} satisfies QueryRunResult
+				}
+
+				const execution = outcome.success
 				debug.push({
 					queryId: query.id,
 					queryName: query.name,
@@ -630,28 +645,9 @@ async function runQueryWindow(
 						query.aggregation === "error_rate"
 							? normalizeErrorRatePoints(execution.points)
 							: execution.points,
-				}
-			} catch (error) {
-				debug.push({
-					queryId: query.id,
-					queryName: query.name,
-					source: query.dataSource,
-					spec: querySpec,
-					attempts: [],
-					fallbackUsed: false,
-				})
-
-				return {
-					queryId: query.id,
-					queryName: query.name,
-					source: query.dataSource,
-					status: "error",
-					error: error instanceof Error ? error.message : "Query execution failed",
-					warnings: built.warnings,
-					data: [],
-				}
-			}
-		}),
+				} satisfies QueryRunResult
+			}),
+		{ concurrency: enabledQueries.length },
 	)
 
 	const formulaResults =
@@ -661,7 +657,7 @@ async function runQueryWindow(
 		allResults: [...queryResults, ...formulaResults],
 		debug,
 	}
-}
+})
 
 function shiftRunResults(results: QueryRunResult[], shiftMs: number): QueryRunResult[] {
 	return results.map((result) => ({
@@ -684,9 +680,17 @@ export const __testables = {
 	normalizeErrorRatePoints,
 }
 
-async function getQueryBuilderTimeseriesInternal(
-	input: QueryBuilderTimeseriesInput,
-): Promise<QueryBuilderTimeseriesResponse> {
+export function getQueryBuilderTimeseries({ data }: { data: QueryBuilderTimeseriesInput }) {
+	return getQueryBuilderTimeseriesEffect({ data })
+}
+
+const getQueryBuilderTimeseriesEffect = Effect.fn("QueryEngine.getQueryBuilderTimeseries")(function* ({
+	data,
+}: {
+	data: QueryBuilderTimeseriesInput
+}) {
+	const input = yield* decodeInput(QueryBuilderTimeseriesInputSchema, data, "getQueryBuilderTimeseries")
+
 	const formulas: FormulaDraft[] = (input.formulas ?? []).map((formula) => ({
 		id: formula.id,
 		name: formula.name,
@@ -701,143 +705,123 @@ async function getQueryBuilderTimeseriesInternal(
 
 	const enabledQueries = input.queries.filter((query) => query.enabled !== false)
 	if (enabledQueries.length === 0) {
-		throw new Error("No enabled queries to run")
+		return yield* invalidWarehouseInput("getQueryBuilderTimeseries", "No enabled queries to run")
 	}
 
-	try {
-		const currentWindow = await runQueryWindow(
-			input.startTime,
-			input.endTime,
+	const currentWindow = yield* runQueryWindow(
+		input.startTime,
+		input.endTime,
+		enabledQueries,
+		formulas,
+		strategy,
+		true,
+	)
+	const successfulQueryCount = countSuccessfulQuerySeries(currentWindow.queryResults)
+	if (successfulQueryCount === 0) {
+		return yield* invalidWarehouseInput(
+			"getQueryBuilderTimeseries",
+			noQueryDataMessage(currentWindow.queryResults),
+		)
+	}
+
+	const allResults = currentWindow.allResults
+
+	const successfulCount = allResults.filter(
+		(result) => result.status === "success" && hasAnySeriesData(result.data),
+	).length
+
+	if (successfulCount === 0) {
+		const firstError = allResults.find((result) => result.error)?.error
+		return yield* invalidWarehouseInput(
+			"getQueryBuilderTimeseries",
+			firstError ?? "No successful query results",
+		)
+	}
+
+	const displayNameById = toDisplayNameById([
+		...enabledQueries,
+		...formulas.map((formula) => ({
+			id: formula.id,
+			name: formula.name,
+			legend: formula.legend,
+		})),
+	])
+	const usedSeriesNames = new Set<string>()
+	const mergedCurrent = mergeQueryRunResults(allResults, displayNameById, {
+		usedSeriesNames,
+	})
+	const mergedSets = [mergedCurrent]
+	let mergedPrevious: {
+		rowsByBucket: Map<string, Record<string, string | number>>
+		seriesNameByStableKey: Map<string, string>
+		seriesNames: string[]
+	} | null = null
+
+	const startMs = toEpochMs(input.startTime)
+	const endMs = toEpochMs(input.endTime)
+	const shiftMs = Number.isFinite(startMs) && Number.isFinite(endMs) ? endMs - startMs : 0
+	let previousStartTime: string | null = null
+	let previousEndTime: string | null = null
+	let previousDebug: QueryExecutionDebug[] = []
+
+	if (comparison.mode === "previous_period" && shiftMs > 0) {
+		previousStartTime = formatForTinybird(new Date(startMs - shiftMs))
+		previousEndTime = formatForTinybird(new Date(endMs - shiftMs))
+
+		const previousWindow = yield* runQueryWindow(
+			previousStartTime,
+			previousEndTime,
 			enabledQueries,
 			formulas,
 			strategy,
-			true,
+			false,
 		)
-		const successfulQueryCount = countSuccessfulQuerySeries(currentWindow.queryResults)
-		if (successfulQueryCount === 0) {
-			throw new Error(noQueryDataMessage(currentWindow.queryResults))
-		}
+		previousDebug = previousWindow.debug
 
-		const allResults = currentWindow.allResults
-
-		const successfulCount = allResults.filter(
-			(result) => result.status === "success" && hasAnySeriesData(result.data),
-		).length
-
-		if (successfulCount === 0) {
-			const firstError = allResults.find((result) => result.error)?.error
-			throw new Error(firstError ?? "No successful query results")
-		}
-
-		const displayNameById = toDisplayNameById([
-			...enabledQueries,
-			...formulas.map((formula) => ({
-				id: formula.id,
-				name: formula.name,
-				legend: formula.legend,
-			})),
-		])
-		const usedSeriesNames = new Set<string>()
-		const mergedCurrent = mergeQueryRunResults(allResults, displayNameById, {
+		const shiftedPreviousResults = shiftRunResults(previousWindow.allResults, shiftMs)
+		mergedPrevious = mergeQueryRunResults(shiftedPreviousResults, displayNameById, {
+			seriesSuffix: " (prev)",
 			usedSeriesNames,
 		})
-		const mergedSets = [mergedCurrent]
-		let mergedPrevious: {
-			rowsByBucket: Map<string, Record<string, string | number>>
-			seriesNameByStableKey: Map<string, string>
-			seriesNames: string[]
-		} | null = null
-
-		const startMs = toEpochMs(input.startTime)
-		const endMs = toEpochMs(input.endTime)
-		const shiftMs = Number.isFinite(startMs) && Number.isFinite(endMs) ? endMs - startMs : 0
-		let previousStartTime: string | null = null
-		let previousEndTime: string | null = null
-		let previousDebug: QueryExecutionDebug[] = []
-
-		if (comparison.mode === "previous_period" && shiftMs > 0) {
-			previousStartTime = formatForTinybird(new Date(startMs - shiftMs))
-			previousEndTime = formatForTinybird(new Date(endMs - shiftMs))
-
-			const previousWindow = await runQueryWindow(
-				previousStartTime,
-				previousEndTime,
-				enabledQueries,
-				formulas,
-				strategy,
-				false,
-			)
-			previousDebug = previousWindow.debug
-
-			const shiftedPreviousResults = shiftRunResults(previousWindow.allResults, shiftMs)
-			mergedPrevious = mergeQueryRunResults(shiftedPreviousResults, displayNameById, {
-				seriesSuffix: " (prev)",
-				usedSeriesNames,
-			})
-			mergedSets.push(mergedPrevious)
-		}
-
-		const mergedRows = combineRows(mergedSets)
-		if (comparison.mode === "previous_period" && comparison.includePercentChange && mergedPrevious) {
-			appendPercentChangeSeries(
-				mergedRows,
-				mergedCurrent.seriesNameByStableKey,
-				mergedPrevious.seriesNameByStableKey,
-			)
-		}
-
-		const debugInfo: QueryBuilderTimeseriesDebug = {
-			primaryWindow: {
-				startTime: input.startTime,
-				endTime: input.endTime,
-			},
-			comparison: {
-				mode: comparison.mode,
-				includePercentChange: comparison.includePercentChange,
-				shiftedByMs: shiftMs > 0 ? shiftMs : 0,
-				previousStartTime,
-				previousEndTime,
-			},
-			strategy: {
-				enableEmptyRangeFallback: strategy.enableEmptyRangeFallback,
-				fallbackWindowSeconds: strategy.fallbackWindowSeconds,
-				maxFallbackRangeSeconds: strategy.maxFallbackRangeSeconds,
-			},
-			queries: currentWindow.debug,
-			previousQueries: previousDebug,
-		}
-
-		if (input.debug === true) {
-			console.info("[QueryBuilder] timeseries execution", debugInfo)
-		}
-
-		return {
-			data: mergedRows,
-			...(input.debug === true ? { debug: debugInfo } : {}),
-		}
-	} catch (error) {
-		throw error instanceof Error ? error : new Error("Failed to fetch query-builder timeseries")
+		mergedSets.push(mergedPrevious)
 	}
-}
 
-export function getQueryBuilderTimeseries({ data }: { data: QueryBuilderTimeseriesInput }) {
-	return getQueryBuilderTimeseriesEffect({ data })
-}
+	const mergedRows = combineRows(mergedSets)
+	if (comparison.mode === "previous_period" && comparison.includePercentChange && mergedPrevious) {
+		appendPercentChangeSeries(
+			mergedRows,
+			mergedCurrent.seriesNameByStableKey,
+			mergedPrevious.seriesNameByStableKey,
+		)
+	}
 
-const getQueryBuilderTimeseriesEffect = Effect.fn("Tinybird.getQueryBuilderTimeseries")(function* ({
-	data,
-}: {
-	data: QueryBuilderTimeseriesInput
-}) {
-	const input = yield* decodeInput(QueryBuilderTimeseriesInputSchema, data, "getQueryBuilderTimeseries")
+	const debugInfo: QueryBuilderTimeseriesDebug = {
+		primaryWindow: {
+			startTime: input.startTime,
+			endTime: input.endTime,
+		},
+		comparison: {
+			mode: comparison.mode,
+			includePercentChange: comparison.includePercentChange,
+			shiftedByMs: shiftMs > 0 ? shiftMs : 0,
+			previousStartTime,
+			previousEndTime,
+		},
+		strategy: {
+			enableEmptyRangeFallback: strategy.enableEmptyRangeFallback,
+			fallbackWindowSeconds: strategy.fallbackWindowSeconds,
+			maxFallbackRangeSeconds: strategy.maxFallbackRangeSeconds,
+		},
+		queries: currentWindow.debug,
+		previousQueries: previousDebug,
+	}
 
-	return yield* Effect.tryPromise({
-		try: () => getQueryBuilderTimeseriesInternal(input),
-		catch: (cause) =>
-			new WarehouseQueryError({
-				operation: "getQueryBuilderTimeseries",
-				message: cause instanceof Error ? cause.message : "Failed to fetch query-builder timeseries",
-				cause,
-			}),
-	})
+	if (input.debug === true) {
+		yield* Effect.logInfo("timeseries execution", debugInfo)
+	}
+
+	return {
+		data: mergedRows,
+		...(input.debug === true ? { debug: debugInfo } : {}),
+	} satisfies QueryBuilderTimeseriesResponse
 })

@@ -1,6 +1,7 @@
 import { Atom } from "@/lib/effect-atom"
 import { Effect, Schema } from "effect"
 import { encodeKey } from "@/lib/cache-key"
+import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
 import {
 	getCustomChartServiceDetail,
 	getCustomChartServiceSparklines,
@@ -81,7 +82,13 @@ import {
 	listReplays,
 } from "@/api/warehouse/replays"
 
-type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, unknown, unknown>
+/**
+ * The error union every warehouse server function fails with: the structured
+ * `WarehouseApiError` family plus tagged `@maple/http/errors/*` backend errors.
+ */
+type QueryError = WarehouseApiError | BackendError
+
+type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, QueryError, never>
 
 interface QueryAtomOptions {
 	staleTime?: number
@@ -91,29 +98,26 @@ export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
 	"@maple/web/services/QueryAtomError",
 	{
 		message: Schema.String,
-		cause: Schema.optional(Schema.Unknown),
+		cause: Schema.optionalKey(Schema.Unknown),
 	},
 ) {}
 
-const isTaggedBackendError = (error: unknown): boolean =>
-	typeof error === "object" &&
-	error !== null &&
-	"_tag" in error &&
-	typeof (error as { _tag: unknown })._tag === "string" &&
-	(error as { _tag: string })._tag.startsWith("@maple/http/errors/")
+// The error union surfaced to atom consumers: the structured query errors plus
+// any tagged backend error, all normalized through `QueryAtomError`'s shape for
+// anything that is not already a known tagged error.
+type QueryAtomFailure = QueryError | QueryAtomError
 
-const toQueryAtomError = (error: unknown): unknown => {
-	if (error instanceof QueryAtomError) return error
+const isTaggedBackendError = (error: QueryError): boolean =>
+	error._tag.startsWith("@maple/http/errors/")
+
+const toQueryAtomError = (error: QueryError): QueryAtomFailure => {
+	// Tagged `@maple/http/errors/*` errors are already user-presentable via
+	// `formatBackendError`; pass them through untouched.
 	if (isTaggedBackendError(error)) return error
-	if (error instanceof Error) {
-		return new QueryAtomError({
-			message: error.message,
-			cause: error,
-		})
-	}
-
+	// Remaining: a structured `WarehouseApiError`, all of which carry `message`.
+	const message = "message" in error ? error.message : "Warehouse query atom failed"
 	return new QueryAtomError({
-		message: "Warehouse query atom failed",
+		message,
 		cause: error,
 	})
 }
@@ -124,7 +128,7 @@ function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, o
 	const family = Atom.family((key: string) => {
 		let resultAtom = Atom.make(
 			Schema.decodeUnknownEffect(UnknownFromJson)(key).pipe(
-				Effect.flatMap((input) => query(input as Input) as Effect.Effect<Output, unknown, never>),
+				Effect.flatMap((input) => query(input as Input)),
 				Effect.mapError(toQueryAtomError),
 			),
 		)

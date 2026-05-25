@@ -195,6 +195,12 @@ function HazelOAuthFields({
 		)
 	const channelsLoading = orgIdForChannels.length > 0 && channelsResult.waiting
 
+	// Surface failures explicitly. Without these, an OAuth/API error renders
+	// identically to "not connected" / "no data", silently hiding the problem.
+	const statusFailed = Result.isFailure(statusResult)
+	const organizationsFailed = Result.isFailure(organizationsResult)
+	const channelsFailed = Result.isFailure(channelsResult)
+
 	useEffect(() => {
 		function onMessage(event: MessageEvent) {
 			if (event.data && event.data.type === "maple:integration:hazel") {
@@ -244,6 +250,12 @@ function HazelOAuthFields({
 	if (!status || !status.connected) {
 		return (
 			<div className="space-y-2 rounded-md border border-dashed border-border/60 p-3">
+				{statusFailed ? (
+					<p className="text-xs text-destructive">
+						Couldn't check your Hazel connection status. This may be a temporary issue — try
+						connecting again.
+					</p>
+				) : null}
 				<p className="text-xs text-muted-foreground">
 					Connect Maple to your Hazel account via OAuth. We'll fetch the organizations and channels
 					you can post into and provision a dedicated webhook for this destination.
@@ -328,7 +340,11 @@ function HazelOAuthFields({
 						</SelectGroup>
 					</SelectContent>
 				</Select>
-				{organizations.length === 0 ? (
+				{organizationsFailed ? (
+					<p className="text-[11px] text-destructive">
+						Couldn't load your Hazel organizations. Try reconnecting or refreshing.
+					</p>
+				) : organizations.length === 0 ? (
 					<p className="text-[11px] text-muted-foreground">
 						No organizations returned. Make sure your Hazel account is a member of at least one
 						organization.
@@ -375,7 +391,11 @@ function HazelOAuthFields({
 						</SelectGroup>
 					</SelectContent>
 				</Select>
-				{orgIdForChannels.length > 0 && !channelsLoading && channels.length === 0 ? (
+				{orgIdForChannels.length > 0 && !channelsLoading && channelsFailed ? (
+					<p className="text-[11px] text-destructive">
+						Couldn't load channels for this organization. Try reselecting the organization.
+					</p>
+				) : orgIdForChannels.length > 0 && !channelsLoading && channels.length === 0 ? (
 					<p className="text-[11px] text-muted-foreground">
 						No channels. Make sure your account is in at least one channel of this organization.
 					</p>

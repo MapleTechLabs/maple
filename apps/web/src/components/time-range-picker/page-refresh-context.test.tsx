@@ -3,7 +3,7 @@
 import { Atom, Registry, RegistryContext, Result } from "@/lib/effect-atom"
 import { Effect } from "effect"
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
@@ -56,10 +56,12 @@ function Harness({
 	timePreset?: string
 	onRelativeRangeRefresh?: (range: { startTime: string; endTime: string; presetValue: string }) => void
 }) {
-	const counterA = { current: 0 }
-	const counterB = { current: 0 }
-	const atomA = makeCounterAtom(counterA)
-	const atomB = makeCounterAtom(counterB)
+	// Atoms must be created once per Harness instance, not on every render —
+	// calling `makeCounterAtom` (which calls `Atom.make`) in the component body
+	// would mint a fresh atom each render and lose its state. `useState`'s lazy
+	// initializer runs exactly once per mount, giving each Harness stable atoms.
+	const [atomA] = useState(() => makeCounterAtom({ current: 0 }))
+	const [atomB] = useState(() => makeCounterAtom({ current: 0 }))
 
 	return (
 		<PageRefreshProvider timePreset={timePreset} onRelativeRangeRefresh={onRelativeRangeRefresh}>

@@ -1,5 +1,5 @@
 import { QueryEngineExecuteRequest, type MetricType } from "@maple/query-engine"
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { ListMetricsRequest, MetricsSummaryRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { mapleApiClientLayer } from "@/lib/registry"
@@ -68,7 +68,7 @@ const listMetricsEffect = Effect.fn("QueryEngine.listMetrics")(function* ({
 	data: ListMetricsInput
 }) {
 	const input = yield* decodeInput(ListMetricsInputSchema, data ?? {}, "listMetrics")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("listMetrics", () =>
 		Effect.gen(function* () {
@@ -145,7 +145,7 @@ export function getMetricTimeSeries({ data }: { data: GetMetricTimeSeriesInput }
 	return getMetricTimeSeriesEffect({ data })
 }
 
-const getMetricTimeSeriesEffect = Effect.fn("Tinybird.getMetricTimeSeries")(function* ({
+const getMetricTimeSeriesEffect = Effect.fn("QueryEngine.getMetricTimeSeries")(function* ({
 	data,
 }: {
 	data: GetMetricTimeSeriesInput
@@ -257,7 +257,7 @@ const getMetricsSummaryEffect = Effect.fn("QueryEngine.getMetricsSummary")(funct
 }) {
 	const input = yield* decodeInput(GetMetricsSummaryInputSchema, data ?? {}, "getMetricsSummary")
 
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("metricsSummary", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
@@ -293,11 +293,9 @@ export function getMetricAttributeKeys({ data }: { data: GetMetricAttributeKeysI
 	return getMetricAttributeKeysEffect({ data })
 }
 
-const defaultTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 const getMetricAttributeKeysEffect = Effect.fn("QueryEngine.getMetricAttributeKeys")(function* ({
@@ -306,7 +304,7 @@ const getMetricAttributeKeysEffect = Effect.fn("QueryEngine.getMetricAttributeKe
 	data: GetMetricAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetMetricAttributeKeysInputSchema, data ?? {}, "getMetricAttributeKeys")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,

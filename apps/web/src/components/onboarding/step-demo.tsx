@@ -58,11 +58,17 @@ export function StepDemo({
 	const overviewResult = useAtomValue(
 		getServiceOverviewResultAtom({ data: { startTime, endTime } }),
 	)
+	// Only a *resolved success* tells us whether the backend already has data.
+	// A failure must NOT be silently read as "empty" — otherwise a transient
+	// fetch error would offer to seed demo data on top of a populated backend.
 	const services = Result.isSuccess(overviewResult) ? overviewResult.value.data : []
 	const realServices = services.filter(
 		(s) => !(typeof s.serviceName === "string" && s.serviceName.startsWith("demo-")),
 	)
 	const hasExistingData = realServices.length > 0
+	// Gate the demo-seed offer on a known-empty backend. If the lookup failed we
+	// can't be sure it's empty, so we surface the error instead of seeding.
+	const overviewFailed = Result.isFailure(overviewResult)
 
 	async function handleSeed() {
 		setIsSeeding(true)
@@ -88,6 +94,50 @@ export function StepDemo({
 		onSkipDemo()
 		onComplete()
 		navigate({ to: "/" })
+	}
+
+	if (overviewFailed) {
+		// We couldn't determine whether the backend already has data. Don't offer
+		// to seed demo data (it could land on top of real telemetry); send the
+		// user to connect their own app instead.
+		return (
+			<div className="flex-1 flex flex-col items-center justify-center px-6 py-12 overflow-auto">
+				<div className="w-full max-w-md flex flex-col gap-8">
+					<div className="text-center space-y-3">
+						<span className="text-[11px] font-semibold uppercase tracking-widest text-destructive">
+							Couldn't check your workspace
+						</span>
+						<h1 className="text-3xl font-semibold tracking-tight">
+							Let's connect your app
+						</h1>
+						<p className="text-muted-foreground text-[15px] leading-relaxed">
+							We couldn't load your existing services right now, so we'll skip the demo and head
+							straight to setup. You can always add demo data later from settings.
+						</p>
+					</div>
+
+					<Card className="border-primary/40 bg-primary/[0.02]">
+						<CardContent className="p-6 flex flex-col gap-5">
+							<div className="flex items-center gap-3">
+								<div className="flex size-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-primary/5 ring-1 ring-inset ring-primary/20 text-primary">
+									<CodeIcon size={18} />
+								</div>
+								<div>
+									<h3 className="text-sm font-semibold tracking-tight">Connect my app</h3>
+									<p className="text-xs text-muted-foreground">
+										Pick a plan and grab your ingest key
+									</p>
+								</div>
+							</div>
+							<Button size="lg" onClick={handleSkip} className="gap-2 w-full">
+								Continue to setup
+								<RocketIcon size={14} />
+							</Button>
+						</CardContent>
+					</Card>
+				</div>
+			</div>
+		)
 	}
 
 	if (hasExistingData) {

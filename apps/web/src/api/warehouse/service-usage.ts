@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { ServiceUsageRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
@@ -26,11 +26,9 @@ const GetServiceUsageInput = Schema.Struct({
 
 export type GetServiceUsageInput = Schema.Schema.Type<typeof GetServiceUsageInput>
 
-const defaultTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 export const getServiceUsage = Effect.fn("QueryEngine.getServiceUsage")(function* ({
@@ -39,7 +37,7 @@ export const getServiceUsage = Effect.fn("QueryEngine.getServiceUsage")(function
 	data: GetServiceUsageInput
 }) {
 	const input = yield* decodeInput(GetServiceUsageInput, data ?? {}, "getServiceUsage")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceUsage", () =>
 		Effect.gen(function* () {

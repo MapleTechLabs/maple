@@ -79,13 +79,6 @@ import { listLogs } from "@/api/warehouse/logs"
 import { serverFunctionMap } from "@/components/dashboard-builder/data-source-registry"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 
-// `serverFunctionMap` entries are typed with a deliberately loose
-// `Effect.Effect<any, unknown, unknown>` requirement (mirrors use-widget-data's
-// runtime call). `it.effect` requires the requirement channel to be `never`, so
-// narrow it through this typed boundary instead of scattering inline casts.
-const runServerFn = (effect: Effect.Effect<unknown, unknown, unknown>) =>
-	effect as Effect.Effect<unknown, unknown, never>
-
 // -------------------------------------------------------------------------
 // 1. Verify listTraces works with exactly the params a list widget sends
 // -------------------------------------------------------------------------
@@ -171,7 +164,7 @@ describe("list widget data flow", () => {
 				limit: 25,
 			}
 
-			const response = yield* runServerFn(serverFn({ data: params })).pipe(
+			const response = yield* serverFn({ data: params }).pipe(
 				Effect.map((res) => {
 					// This is what widgetFetchAtom does:
 					return (res as { data?: unknown })?.data ?? res
@@ -196,7 +189,7 @@ describe("list widget data flow", () => {
 				limit: 25,
 			}
 
-			const response = yield* runServerFn(serverFn({ data: params })).pipe(
+			const response = yield* serverFn({ data: params }).pipe(
 				Effect.map((res) => {
 					return (res as { data?: unknown })?.data ?? res
 				}),
@@ -259,7 +252,7 @@ describe("widgetFetchAtom simulation", () => {
 			const serverFn = serverFunctionMap[endpoint as keyof typeof serverFunctionMap]
 			assert.isDefined(serverFn)
 
-			const result = yield* runServerFn(serverFn!({ data: params })).pipe(
+			const result = yield* serverFn!({ data: params }).pipe(
 				Effect.map((res) => (res as { data?: unknown })?.data ?? res),
 			)
 
@@ -282,7 +275,7 @@ describe("widgetFetchAtom simulation", () => {
 			const { endpoint, params } = JSON.parse(key)
 			const serverFn = serverFunctionMap[endpoint as keyof typeof serverFunctionMap]
 
-			const result = yield* runServerFn(serverFn!({ data: params })).pipe(
+			const result = yield* serverFn!({ data: params }).pipe(
 				Effect.map((res) => (res as { data?: unknown })?.data ?? res),
 			)
 
@@ -368,7 +361,7 @@ describe("buildWidgetDataSource for list", () => {
 					{ ...params4, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
 				],
 			] as const) {
-				const result = yield* runServerFn(fn({ data: p }))
+				const result = yield* fn({ data: p })
 				expect(result).toHaveProperty("data")
 			}
 		}),

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
+import { Effect } from "effect"
 import type { QuerySpec } from "@maple/query-engine"
 import { __testables } from "@/api/warehouse/query-builder-timeseries"
+import { WarehouseQueryError } from "@/api/warehouse/effect-utils"
 import type { QueryRunResult } from "@/components/query-builder/formula-results"
 
 function makeQueryResult(overrides: Partial<QueryRunResult> = {}): QueryRunResult {
@@ -147,38 +149,44 @@ describe("query-builder timeseries strategy", () => {
 		}
 
 		const seenBucketSeconds: number[] = []
-		const result = await __testables.executeTimeseriesQueryWithFallbackUsing(
-			"2026-01-02 00:00:00",
-			"2026-01-02 01:00:00",
-			spec,
-			{
-				enableEmptyRangeFallback: true,
-				fallbackWindowSeconds: [24 * 60 * 60, 7 * 24 * 60 * 60],
-				maxFallbackRangeSeconds: 31 * 24 * 60 * 60,
-			},
-			true,
-			async (windowStart, _windowEnd, windowSpec) => {
-				if (windowSpec.kind !== "timeseries") {
-					return []
-				}
+		const result = await Effect.runPromise(
+			__testables.executeTimeseriesQueryWithFallbackUsing(
+				"2026-01-02 00:00:00",
+				"2026-01-02 01:00:00",
+				spec,
+				{
+					enableEmptyRangeFallback: true,
+					fallbackWindowSeconds: [24 * 60 * 60, 7 * 24 * 60 * 60],
+					maxFallbackRangeSeconds: 31 * 24 * 60 * 60,
+				},
+				true,
+				(windowStart, _windowEnd, windowSpec) =>
+					Effect.gen(function* () {
+						if (windowSpec.kind !== "timeseries") {
+							return []
+						}
 
-				seenBucketSeconds.push(windowSpec.bucketSeconds ?? -1)
+						seenBucketSeconds.push(windowSpec.bucketSeconds ?? -1)
 
-				if (windowStart === "2026-01-02 00:00:00") {
-					return []
-				}
+						if (windowStart === "2026-01-02 00:00:00") {
+							return []
+						}
 
-				if (windowStart === "2026-01-01 01:00:00") {
-					return Promise.reject(new Error("Timeseries query too expensive"))
-				}
+						if (windowStart === "2026-01-01 01:00:00") {
+							return yield* new WarehouseQueryError({
+								operation: "test",
+								message: "Timeseries query too expensive",
+							})
+						}
 
-				return [
-					{
-						bucket: "2026-01-01T00:00:00.000Z",
-						series: { total: 5 },
-					},
-				]
-			},
+						return [
+							{
+								bucket: "2026-01-01T00:00:00.000Z",
+								series: { total: 5 },
+							},
+						]
+					}),
+			),
 		)
 
 		expect(seenBucketSeconds).toEqual([300, 3600, 14400])

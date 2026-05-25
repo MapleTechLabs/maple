@@ -286,7 +286,7 @@ function TracesTrack({
 					</>
 				))
 				.onSuccess((res) => {
-					const summaries = res.data as ReadonlyArray<SessionTraceSummary>
+					const summaries: ReadonlyArray<SessionTraceSummary> = res.data
 					return (
 						<>
 							{header(summaries.length)}
@@ -447,7 +447,7 @@ function TraceSpanLane({
 			</div>
 		))
 		.onSuccess((res) => {
-			const spans = res.spans as ReadonlyArray<SpanRow>
+			const spans: ReadonlyArray<SpanRow> = res.spans
 			if (spans.length === 0) {
 				return (
 					<div className="bg-muted/10 px-3 py-2 text-[11px] text-muted-foreground">

@@ -50,11 +50,20 @@ export type WarehouseApiError =
 	| WarehouseTransformError
 	| WarehouseInvalidInputError
 
+/**
+ * Structural shape of a tagged backend error surfaced by the Maple API client.
+ * Backend errors are a sprawling union of `@maple/http/errors/*` tagged classes;
+ * we narrow on the `_tag` prefix rather than re-importing every class.
+ */
+export interface BackendError {
+	readonly _tag: string
+}
+
 function toMessage(cause: unknown, fallback: string): string {
 	return cause instanceof Error ? cause.message : fallback
 }
 
-const isTaggedBackendError = (cause: unknown): boolean =>
+const isTaggedBackendError = (cause: unknown): cause is BackendError =>
 	typeof cause === "object" &&
 	cause !== null &&
 	"_tag" in cause &&
@@ -81,7 +90,7 @@ export function decodeInput<S extends Schema.Top & { readonly DecodingServices: 
 export function runWarehouseQuery<A>(
 	operation: string,
 	execute: () => Effect.Effect<A, unknown, MapleApiAtomClient>,
-): Effect.Effect<A, unknown> {
+): Effect.Effect<A, WarehouseApiError | BackendError> {
 	return Effect.suspend(execute).pipe(
 		Effect.withSpan(operation),
 		Effect.provide(mapleApiClientLayer),
@@ -147,7 +156,10 @@ export function extractCount(response: QueryEngineExecuteResponse): number {
 	return 0
 }
 
-export function executeQueryEngine(operation: string, payload: QueryEngineExecuteRequest) {
+export function executeQueryEngine(
+	operation: string,
+	payload: QueryEngineExecuteRequest,
+): Effect.Effect<QueryEngineExecuteResponse, WarehouseQueryError | BackendError> {
 	return executeQueryEngineEffect(payload).pipe(
 		Effect.provide(mapleApiClientLayer),
 		Effect.mapError((cause) => {

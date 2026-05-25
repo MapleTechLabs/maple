@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { QueryEngineExecuteRequest } from "@maple/query-engine"
 import { ServiceOverviewRequest, ServiceApdexRequest, ServiceReleasesRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -155,7 +155,7 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	data: GetServiceOverviewInput
 }) {
 	const input = yield* decodeInput(GetServiceOverviewInput, data ?? {}, "getServiceOverview")
-	const fallback = defaultServicesTimeRange()
+	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceOverview", () =>
 		Effect.gen(function* () {
@@ -256,11 +256,9 @@ const GetServicesFacetsInput = Schema.Struct({
 
 export type GetServicesFacetsInput = Schema.Schema.Type<typeof GetServicesFacetsInput>
 
-const defaultServicesTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultServicesTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 export function getServicesFacets({ data }: { data: GetServicesFacetsInput }) {
@@ -273,7 +271,7 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 	data: GetServicesFacetsInput
 }) {
 	const input = yield* decodeInput(GetServicesFacetsInput, data ?? {}, "getServicesFacets")
-	const fallback = defaultServicesTimeRange()
+	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getServicesFacets",
@@ -331,7 +329,7 @@ const getServiceReleasesTimelineEffect = Effect.fn("QueryEngine.getServiceReleas
 	data: GetServiceDetailInput
 }) {
 	const input = yield* decodeInput(GetServiceDetailInput, data, "getServiceReleasesTimeline")
-	const fallback = defaultServicesTimeRange()
+	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
 
 	const result = yield* runWarehouseQuery("serviceReleases", () =>
@@ -402,7 +400,7 @@ const getServiceApdexTimeSeriesEffect = Effect.fn("QueryEngine.getServiceApdexTi
 	data: GetServiceDetailInput
 }) {
 	const input = yield* decodeInput(GetServiceDetailInput, data, "getServiceApdexTimeSeries")
-	const fallback = defaultServicesTimeRange()
+	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
 
 	const result = yield* runWarehouseQuery("serviceApdex", () =>

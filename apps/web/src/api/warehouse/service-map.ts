@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import {
 	ServiceDbEdgesForServiceRequest,
 	ServiceDbEdgesRequest,
@@ -98,11 +98,9 @@ function transformEdge(row: Record<string, unknown>, durationSeconds: number): S
 	}
 }
 
-const defaultTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 export const getServiceMap = Effect.fn("QueryEngine.getServiceMap")(function* ({
@@ -111,7 +109,7 @@ export const getServiceMap = Effect.fn("QueryEngine.getServiceMap")(function* ({
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMap")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDependencies", () =>
 		Effect.gen(function* () {
@@ -150,7 +148,7 @@ export const getServiceMapForService = Effect.fn("QueryEngine.getServiceMapForSe
 		data,
 		"getServiceMapForService",
 	)
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDependenciesForService", () =>
 		Effect.gen(function* () {
@@ -201,7 +199,7 @@ export const getServiceMapDbEdges = Effect.fn("QueryEngine.getServiceMapDbEdges"
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapDbEdges")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDbEdges", () =>
 		Effect.gen(function* () {
@@ -235,7 +233,7 @@ export const getServiceMapDbEdgesForService = Effect.fn("QueryEngine.getServiceM
 			data,
 			"getServiceMapDbEdgesForService",
 		)
-		const fallback = defaultTimeRange()
+		const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 		const result = yield* runWarehouseQuery("serviceDbEdgesForService", () =>
 			Effect.gen(function* () {
@@ -267,7 +265,7 @@ export const getServicePlatforms = Effect.fn("QueryEngine.getServicePlatforms")(
 	data: GetServiceMapInput
 }) {
 	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServicePlatforms")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("servicePlatforms", () =>
 		Effect.gen(function* () {

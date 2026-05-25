@@ -1,7 +1,8 @@
 import { Result, useAtom, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useCallback, useEffect, useMemo, useRef } from "react"
-import { Cause, Exit, Schema } from "effect"
+import { Cause, Exit, Option, Schema } from "effect"
 import {
+	DashboardConcurrencyError,
 	DashboardCreateRequest,
 	DashboardDocument,
 	DashboardId,
@@ -54,49 +55,32 @@ function getErrorMessage(error: unknown): string {
 	return "Dashboard persistence is temporarily unavailable"
 }
 
-// Walk a Cause/Exit failure chain to detect a server-side concurrency
-// rejection. The persistence layer surfaces these as a tagged error with the
-// `@maple/http/errors/DashboardConcurrencyError` identifier; this matches both
-// Effect-tagged class instances and the JSON shape the HTTP boundary decodes
-// into on the client side.
-function isConcurrencyConflict(failure: unknown): boolean {
-	const visit = (value: unknown): boolean => {
-		if (value === null || typeof value !== "object") return false
-		const tag = (value as { _tag?: unknown })._tag
-		if (typeof tag === "string" && tag.includes("DashboardConcurrencyError")) return true
-		if (Cause.isCause(value)) {
-			return visit(Cause.squash(value))
-		}
-		return false
-	}
-
-	if (Exit.isExit(failure)) {
-		if (!Exit.isFailure(failure)) return false
-		return visit(Cause.squash(failure.cause))
-	}
-	return visit(failure)
+// Detect a server-side concurrency rejection. The persistence layer surfaces
+// these as the tagged `DashboardConcurrencyError` from `@maple/domain/http`;
+// pull the first failure out of the mutation's `Exit` and match on its tag.
+function isConcurrencyConflict(failure: Exit.Exit<unknown, unknown>): boolean {
+	if (!Exit.isFailure(failure)) return false
+	return Option.match(Cause.findErrorOption(failure.cause), {
+		onNone: () => false,
+		onSome: (error) => error instanceof DashboardConcurrencyError,
+	})
 }
 
+const decodeDashboardDocument = Schema.decodeUnknownOption(DashboardDocument)
+
+// Validate an unknown payload (a mutation result or list item) against the
+// `DashboardDocument` schema. A decoded document is structurally a `Dashboard`
+// once its `readonly` arrays are widened to the mutable web equivalents (its
+// branded ids / ISO timestamps are already assignable to the web type's strings).
 function ensureDashboard(value: unknown): Dashboard | null {
-	if (typeof value !== "object" || value === null) {
-		return null
-	}
-
-	const dashboard = value as Partial<Dashboard>
-
-	if (
-		typeof dashboard.id !== "string" ||
-		typeof dashboard.name !== "string" ||
-		!Array.isArray(dashboard.widgets) ||
-		typeof dashboard.createdAt !== "string" ||
-		typeof dashboard.updatedAt !== "string" ||
-		typeof dashboard.timeRange !== "object" ||
-		dashboard.timeRange === null
-	) {
-		return null
-	}
-
-	return dashboard as Dashboard
+	return Option.match(decodeDashboardDocument(value), {
+		onNone: () => null,
+		onSome: (document) => ({
+			...document,
+			tags: document.tags ? [...document.tags] : undefined,
+			widgets: [...document.widgets] as Dashboard["widgets"],
+		}),
+	})
 }
 
 function toDashboardDocument(dashboard: Dashboard): DashboardDocument {

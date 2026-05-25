@@ -1,4 +1,4 @@
-import { Cause, Exit } from "effect"
+import { Cause, Exit, Option } from "effect"
 import { HttpClientError } from "effect/unstable/http"
 import { isChunkLoadError } from "./chunk-reload"
 
@@ -57,11 +57,10 @@ const numberField = (value: unknown, key: string): number | undefined => {
 
 const unwrap = (error: unknown): unknown => {
 	if (Cause.isCause(error)) {
-		return Cause.squash(error)
+		return Option.getOrElse(Cause.findErrorOption(error), () => error)
 	}
 	if (Exit.isExit(error)) {
-		const found = Exit.isFailure(error) ? Cause.squash(error.cause) : undefined
-		if (found !== undefined) return found
+		return Option.getOrElse(Exit.findErrorOption(error), () => error)
 	}
 	return error
 }

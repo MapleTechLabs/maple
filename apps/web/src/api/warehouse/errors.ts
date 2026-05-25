@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { QueryEngineExecuteRequest, warehouseDateTimeToIso } from "@maple/query-engine"
 import {
 	ErrorsByTypeRequest,
@@ -54,7 +54,7 @@ const getErrorsByTypeEffect = Effect.fn("QueryEngine.getErrorsByType")(function*
 	data: GetErrorsByTypeInput
 }) {
 	const input = yield* decodeInput(GetErrorsByTypeInputSchema, data ?? {}, "getErrorsByType")
-	const fallback = defaultErrorsTimeRange()
+	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("errorsByType", () =>
 		Effect.gen(function* () {
@@ -113,11 +113,9 @@ const GetErrorsFacetsInputSchema = Schema.Struct({
 
 export type GetErrorsFacetsInput = Schema.Schema.Type<typeof GetErrorsFacetsInputSchema>
 
-const defaultErrorsTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultErrorsTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 export function getErrorsFacets({ data }: { data: GetErrorsFacetsInput }) {
@@ -130,7 +128,7 @@ const getErrorsFacetsEffect = Effect.fn("QueryEngine.getErrorsFacets")(function*
 	data: GetErrorsFacetsInput
 }) {
 	const input = yield* decodeInput(GetErrorsFacetsInputSchema, data ?? {}, "getErrorsFacets")
-	const fallback = defaultErrorsTimeRange()
+	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getErrorsFacets",
@@ -209,7 +207,7 @@ const getErrorsSummaryEffect = Effect.fn("QueryEngine.getErrorsSummary")(functio
 	data: GetErrorsSummaryInput
 }) {
 	const input = yield* decodeInput(GetErrorsSummaryInputSchema, data ?? {}, "getErrorsSummary")
-	const fallback = defaultErrorsTimeRange()
+	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("errorsSummary", () =>
 		Effect.gen(function* () {
@@ -277,7 +275,7 @@ const getErrorDetailTracesEffect = Effect.fn("QueryEngine.getErrorDetailTraces")
 	data: GetErrorDetailTracesInput
 }) {
 	const input = yield* decodeInput(GetErrorDetailTracesInputSchema, data ?? {}, "getErrorDetailTraces")
-	const fallback = defaultErrorsTimeRange()
+	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("errorDetailTraces", () =>
 		Effect.gen(function* () {
@@ -334,7 +332,7 @@ const getErrorsTimeseriesEffect = Effect.fn("QueryEngine.getErrorsTimeseries")(f
 	data: GetErrorsTimeseriesInput
 }) {
 	const input = yield* decodeInput(GetErrorsTimeseriesInputSchema, data ?? {}, "getErrorsTimeseries")
-	const fallback = defaultErrorsTimeRange()
+	const fallback = defaultErrorsTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("errorsTimeseries", () =>
 		Effect.gen(function* () {

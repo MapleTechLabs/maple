@@ -229,7 +229,7 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: Over
 
 	const releaseMarkers: ChartReferenceLine[] = useMemo(() => {
 		const timeline = Result.builder(releasesResult)
-			.onSuccess((r) => r.data as Array<{ bucket: string; commitSha: string; count: number }>)
+			.onSuccess((r) => r.data)
 			.orElse(() => [])
 		return detectReleaseMarkers(timeline).map((m) => ({
 			x: m.bucket,
@@ -243,11 +243,14 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: Over
 		(Result.isSuccess(detailResult) && detailResult.waiting) ||
 		(Result.isSuccess(apdexResult) && apdexResult.waiting)
 
-	const detailPoints = Result.builder(detailResult)
-		.onSuccess((response) => response.data as unknown as Record<string, unknown>[])
+	// ServiceDetail/Apdex points are typed structs; the chart grid consumes a
+	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
+	// so this is a safe widening (no `as unknown` round-trip needed).
+	const detailPoints: Record<string, unknown>[] = Result.builder(detailResult)
+		.onSuccess((response) => response.data.map((point) => ({ ...point })))
 		.orElse(() => [])
-	const apdexPoints = Result.builder(apdexResult)
-		.onSuccess((response) => response.data as unknown as Record<string, unknown>[])
+	const apdexPoints: Record<string, unknown>[] = Result.builder(apdexResult)
+		.onSuccess((response) => response.data.map((point) => ({ ...point })))
 		.orElse(() => [])
 
 	const widgetData: Record<string, Record<string, unknown>[]> = {

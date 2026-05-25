@@ -1,10 +1,8 @@
-import { Effect, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
 import { QueryEngineExecuteRequest } from "@maple/query-engine"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { mapleApiClientLayer } from "@/lib/registry"
 import { buildBreakdownQuerySpec } from "@/lib/query-builder/model"
-import { decodeInput, WarehouseQueryError } from "@/api/warehouse/effect-utils"
+import { decodeInput, executeQueryEngine, invalidWarehouseInput } from "@/api/warehouse/effect-utils"
 
 const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
 
@@ -28,8 +26,6 @@ export interface QueryBuilderBreakdownResponse {
 	data: Array<Record<string, string | number>>
 }
 
-const decodeQueryEngineRequest = Schema.decodeUnknownSync(QueryEngineExecuteRequest)
-
 function normalizeErrorRateBreakdownData(data: BreakdownQueryResult["data"]): BreakdownQueryResult["data"] {
 	return data.map((item) => ({
 		...item,
@@ -37,20 +33,11 @@ function normalizeErrorRateBreakdownData(data: BreakdownQueryResult["data"]): Br
 	}))
 }
 
-const executeBreakdownQueryEffect = Effect.fn("Tinybird.executeBreakdownQuery")(function* (
-	payload: QueryEngineExecuteRequest,
-) {
-	const client = yield* MapleApiAtomClient
-	return yield* client.queryEngine.execute({
-		payload: new QueryEngineExecuteRequest(payload),
-	})
-})
-
-async function executeBreakdownQuery(
+const executeBreakdownQuery = Effect.fn("QueryEngine.executeBreakdownQuery")(function* (
 	startTime: string,
 	endTime: string,
 	query: QueryBuilderBreakdownInput["queries"][number],
-): Promise<BreakdownQueryResult> {
+) {
 	const built = buildBreakdownQuerySpec(query)
 
 	if (!built.query) {
@@ -60,58 +47,58 @@ async function executeBreakdownQuery(
 			status: "error",
 			error: built.error ?? "Failed to build breakdown query",
 			data: [],
-		}
+		} satisfies BreakdownQueryResult
 	}
 
-	const payload = decodeQueryEngineRequest({
-		startTime,
-		endTime,
-		query: built.query,
-	})
+	const request = yield* decodeInput(
+		QueryEngineExecuteRequest,
+		{
+			startTime,
+			endTime,
+			query: built.query,
+		},
+		"executeBreakdownQuery.request",
+	)
 
-	try {
-		const response = await Effect.runPromise(
-			executeBreakdownQueryEffect(payload).pipe(Effect.provide(mapleApiClientLayer)),
-		)
+	// Per-query failures are folded into the result status rather than failing the
+	// whole batch, so one bad query doesn't blank the chart. Capture the outcome.
+	const outcome = yield* Effect.result(executeQueryEngine("queryEngine.breakdownQuery", request))
 
-		if (response.result.kind !== "breakdown") {
-			return {
-				queryId: query.id,
-				queryName: query.name,
-				status: "error",
-				error: "Unexpected non-breakdown result",
-				data: [],
-			}
-		}
-
-		return {
-			queryId: query.id,
-			queryName: query.name,
-			status: "success",
-			error: null,
-			data:
-				query.aggregation === "error_rate"
-					? normalizeErrorRateBreakdownData(
-							response.result.data.map((item) => ({
-								name: item.name,
-								value: item.value,
-							})),
-						)
-					: response.result.data.map((item) => ({
-							name: item.name,
-							value: item.value,
-						})),
-		}
-	} catch (error) {
+	if (Result.isFailure(outcome)) {
+		const error = outcome.failure
 		return {
 			queryId: query.id,
 			queryName: query.name,
 			status: "error",
 			error: error instanceof Error ? error.message : "Breakdown query failed",
 			data: [],
-		}
+		} satisfies BreakdownQueryResult
 	}
-}
+
+	const response = outcome.success
+	if (response.result.kind !== "breakdown") {
+		return {
+			queryId: query.id,
+			queryName: query.name,
+			status: "error",
+			error: "Unexpected non-breakdown result",
+			data: [],
+		} satisfies BreakdownQueryResult
+	}
+
+	const mapped = response.result.data.map((item) => ({
+		name: item.name,
+		value: item.value,
+	}))
+
+	return {
+		queryId: query.id,
+		queryName: query.name,
+		status: "success",
+		error: null,
+		data: query.aggregation === "error_rate" ? normalizeErrorRateBreakdownData(mapped) : mapped,
+	} satisfies BreakdownQueryResult
+})
 
 function toDisplayName(query: { name: string; legend?: string }): string {
 	const trimmedLegend = (query.legend ?? "").trim()
@@ -167,30 +154,6 @@ function mergeBreakdownResults(
 	})
 }
 
-async function getQueryBuilderBreakdownInternal(
-	input: QueryBuilderBreakdownInput,
-): Promise<QueryBuilderBreakdownResponse> {
-	const enabledQueries = input.queries.filter((query) => query.enabled !== false)
-	if (enabledQueries.length === 0) {
-		throw new Error("No enabled queries to run")
-	}
-
-	const results = await Promise.all(
-		enabledQueries.map((query) => executeBreakdownQuery(input.startTime, input.endTime, query)),
-	)
-
-	const firstError = results.find((r) => r.status === "error" && r.error)?.error
-	const anySuccess = results.some((r) => r.status === "success" && r.data.length > 0)
-
-	if (!anySuccess) {
-		throw new Error(firstError ?? "No breakdown data found in selected time range")
-	}
-
-	return {
-		data: mergeBreakdownResults(results, enabledQueries),
-	}
-}
-
 export function getQueryBuilderBreakdown({ data }: { data: QueryBuilderBreakdownInput }) {
 	return getQueryBuilderBreakdownEffect({ data })
 }
@@ -199,20 +162,35 @@ export const __testables = {
 	normalizeErrorRateBreakdownData,
 }
 
-const getQueryBuilderBreakdownEffect = Effect.fn("Tinybird.getQueryBuilderBreakdown")(function* ({
+const getQueryBuilderBreakdownEffect = Effect.fn("QueryEngine.getQueryBuilderBreakdown")(function* ({
 	data,
 }: {
 	data: QueryBuilderBreakdownInput
 }) {
 	const input = yield* decodeInput(QueryBuilderBreakdownInputSchema, data, "getQueryBuilderBreakdown")
 
-	return yield* Effect.tryPromise({
-		try: () => getQueryBuilderBreakdownInternal(input),
-		catch: (cause) =>
-			new WarehouseQueryError({
-				operation: "getQueryBuilderBreakdown",
-				message: cause instanceof Error ? cause.message : "Failed to fetch query-builder breakdown",
-				cause,
-			}),
-	})
+	const enabledQueries = input.queries.filter((query) => query.enabled !== false)
+	if (enabledQueries.length === 0) {
+		return yield* invalidWarehouseInput("getQueryBuilderBreakdown", "No enabled queries to run")
+	}
+
+	const results = yield* Effect.forEach(
+		enabledQueries,
+		(query) => executeBreakdownQuery(input.startTime, input.endTime, query),
+		{ concurrency: enabledQueries.length },
+	)
+
+	const firstError = results.find((r) => r.status === "error" && r.error)?.error
+	const anySuccess = results.some((r) => r.status === "success" && r.data.length > 0)
+
+	if (!anySuccess) {
+		return yield* invalidWarehouseInput(
+			"getQueryBuilderBreakdown",
+			firstError ?? "No breakdown data found in selected time range",
+		)
+	}
+
+	return {
+		data: mergeBreakdownResults(results, enabledQueries),
+	}
 })

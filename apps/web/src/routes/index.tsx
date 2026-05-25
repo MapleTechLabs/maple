@@ -175,6 +175,13 @@ function DashboardContent({
 
 	// Wait for facets before fetching data to avoid a cascading double-fetch
 	// when environmentFilter changes from undefined → ["production"]
+	//
+	// The hook is handed a different atom on the `facetsReady` flip (disabled →
+	// real), but both branches yield stable atom identities: the real atom comes
+	// from an `Atom.family` keyed by encoded params, and `disabledResultAtom()`
+	// returns a single module-scoped `keepAlive` atom (same reference every call).
+	// So this is a one-time mount transition, not a per-render churn — no
+	// in-render `Atom.make` and no lost state.
 	const facetsReady = !Result.isInitial(facetsResult)
 
 	const overviewResult = useRetainedRefreshableResultValue(
@@ -213,8 +220,11 @@ function DashboardContent({
 		(Result.isSuccess(overviewResult) && overviewResult.waiting) ||
 		(Result.isSuccess(logVolumeResult) && logVolumeResult.waiting)
 
-	const overviewPoints = Result.builder(overviewResult)
-		.onSuccess((response) => response.data as unknown as Record<string, unknown>[])
+	// Overview points are typed structs; the chart grid consumes a generic
+	// `Record<string, unknown>[]`. Each point's fields are all primitive, so
+	// spreading widens to the record shape without an `as unknown` round-trip.
+	const overviewPoints: Record<string, unknown>[] = Result.builder(overviewResult)
+		.onSuccess((response) => response.data.map((point) => ({ ...point })))
 		.orElse(() => EMPTY_ARRAY)
 
 	const logPoints = Result.builder(logVolumeResult)

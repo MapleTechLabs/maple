@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { QueryEngineExecuteRequest, type AttributeFilter } from "@maple/query-engine"
 import { TraceId, SpanId } from "@maple/domain"
 import { SpanHierarchyRequest, SpanDetailRequest } from "@maple/domain/http"
@@ -624,7 +624,7 @@ const getTracesFacetsEffect = Effect.fn("QueryEngine.getTracesFacets")(function*
 	if (input.service) yield* Effect.annotateCurrentSpan("service", input.service)
 
 	const filters = buildTracesFiltersFromInput(input)
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
 
@@ -681,7 +681,7 @@ const getTracesDurationStatsEffect = Effect.fn("QueryEngine.getTracesDurationSta
 }) {
 	const input = yield* decodeInput(GetTracesFacetsInputSchema, data ?? {}, "getTracesDurationStats")
 	const filters = buildTracesFiltersFromInput(input)
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getTracesDurationStats",
@@ -712,11 +712,9 @@ export function getSpanAttributeKeys({ data }: { data: GetSpanAttributeKeysInput
 	return getSpanAttributeKeysEffect({ data })
 }
 
-const defaultTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 const getSpanAttributeKeysEffect = Effect.fn("QueryEngine.getSpanAttributeKeys")(function* ({
@@ -725,7 +723,7 @@ const getSpanAttributeKeysEffect = Effect.fn("QueryEngine.getSpanAttributeKeys")
 	data: GetSpanAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetSpanAttributeKeysInputSchema, data ?? {}, "getSpanAttributeKeys")
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -772,7 +770,7 @@ const getSpanAttributeValuesEffect = Effect.fn("QueryEngine.getSpanAttributeValu
 		return { data: [] }
 	}
 
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getSpanAttributeValues",
 		new QueryEngineExecuteRequest({
@@ -820,7 +818,7 @@ const getResourceAttributeKeysEffect = Effect.fn("QueryEngine.getResourceAttribu
 		data ?? {},
 		"getResourceAttributeKeys",
 	)
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -871,7 +869,7 @@ const getResourceAttributeValuesEffect = Effect.fn("QueryEngine.getResourceAttri
 		return { data: [] }
 	}
 
-	const fallback = defaultTimeRange()
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getResourceAttributeValues",
 		new QueryEngineExecuteRequest({

@@ -3,7 +3,7 @@ import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { SessionsTable, type SessionRow } from "@/components/replays/sessions-table"
+import { SessionsTable } from "@/components/replays/sessions-table"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
@@ -89,7 +89,7 @@ function ReplaysPageContent() {
 				title="Session Replays"
 				description="Watch what your users actually saw and did in the browser."
 			>
-				<SessionsTable sessions={data.data as ReadonlyArray<SessionRow>} />
+				<SessionsTable sessions={data.data} />
 			</DashboardLayout>
 		))
 		.render()

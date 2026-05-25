@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import type { DataSourceEndpoint } from "@/components/dashboard-builder/types"
+import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
 
 import { getServiceUsage } from "@/api/warehouse/service-usage"
 import { getServiceOverview, getServiceApdexTimeSeries, getServicesFacets } from "@/api/warehouse/services"
@@ -23,8 +24,20 @@ import { getQueryBuilderBreakdown } from "@/api/warehouse/query-builder-breakdow
 import { getQueryBuilderList } from "@/api/warehouse/query-builder-list"
 import { getRawSqlChart } from "@/api/warehouse/raw-sql-chart"
 
+/**
+ * Error channel shared by every warehouse server function. They fail with the
+ * `WarehouseApiError` union (decode / query / transform / invalid-input) or a
+ * tagged `@maple/http/errors/*` backend error surfaced by the API client. The
+ * requirement channel is `never` — each function self-provides its layers via
+ * `runWarehouseQuery` / `executeQueryEngine`.
+ */
+export type ServerFunctionError = WarehouseApiError | BackendError
+
+// The success channel stays `any`: each endpoint resolves a distinct response
+// shape, and the registry is consumed through a single structural `{ data }`
+// accessor that does not depend on the concrete success type.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ServerFunction = (opts: { data: any }) => Effect.Effect<any, unknown, unknown>
+type ServerFunction = (opts: { data: any }) => Effect.Effect<any, ServerFunctionError, never>
 
 const markdownStaticServerFn: ServerFunction = () => Effect.succeed({ data: null })
 

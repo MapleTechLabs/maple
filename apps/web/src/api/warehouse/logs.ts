@@ -1,4 +1,4 @@
-import { Effect, Schema } from "effect"
+import { Clock, Effect, Schema } from "effect"
 import { QueryEngineExecuteRequest } from "@maple/query-engine"
 import { TraceId, SpanId } from "@maple/domain"
 import { GetLogRequest, ListLogsRequest } from "@maple/domain/http"
@@ -90,7 +90,7 @@ export function listLogs({ data }: { data: ListLogsInput }) {
 const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { data: ListLogsInput }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "listLogs")
 	const limit = input.limit ?? DEFAULT_LIMIT
-	const fallback = defaultLogsTimeRange()
+	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
 
 	const logsResult = yield* runWarehouseQuery("listLogs", () =>
 		Effect.gen(function* () {
@@ -175,11 +175,9 @@ export function getLogsCount({ data }: { data: ListLogsInput }) {
 	return getLogsCountEffect({ data })
 }
 
-const defaultLogsTimeRange = () => {
-	const now = new Date()
-	const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
-	const fmt = (d: Date) => d.toISOString().replace("T", " ").slice(0, 19)
-	return { startTime: fmt(dayAgo), endTime: fmt(now) }
+const defaultLogsTimeRange = (nowMillis: number) => {
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
 const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
@@ -188,7 +186,7 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 	data: ListLogsInput
 }) {
 	const input = yield* decodeInput(ListLogsInputSchema, data ?? {}, "getLogsCount")
-	const fallback = defaultLogsTimeRange()
+	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsCount",
@@ -251,7 +249,7 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 	data: GetLogsFacetsInput
 }) {
 	const input = yield* decodeInput(GetLogsFacetsInputSchema, data ?? {}, "getLogsFacets")
-	const fallback = defaultLogsTimeRange()
+	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
 
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogsFacets",
@@ -321,7 +319,7 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	data: GetLogAttributeKeysInput
 }) {
 	const input = yield* decodeInput(GetLogAttributeKeysInputSchema, data ?? {}, "getLogAttributeKeys")
-	const fallback = defaultLogsTimeRange()
+	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
 	const request = new QueryEngineExecuteRequest({
 		startTime: input.startTime ?? fallback.startTime,
 		endTime: input.endTime ?? fallback.endTime,
@@ -372,7 +370,7 @@ const getLogAttributeValuesEffect = Effect.fn("QueryEngine.getLogAttributeValues
 		return { data: [] }
 	}
 
-	const fallback = defaultLogsTimeRange()
+	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
 	const response = yield* executeQueryEngine(
 		"queryEngine.getLogAttributeValues",
 		new QueryEngineExecuteRequest({
