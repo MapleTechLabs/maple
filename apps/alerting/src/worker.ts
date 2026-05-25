@@ -217,27 +217,34 @@ const scheduled = (controller: globalThis.ScheduledController) =>
 		const workerCtx = yield* Worker.WorkerContext
 		const env = (yield* WorkerEnvironment) as Record<string, unknown>
 
-		// Flush always runs — even if a tick escalates to a defect — matching the
-		// previous `finally { ctx.waitUntil(telemetry.flush(env)) }`. The generic
-		// `R` collapses the cron branches' differing service requirements into one
-		// type param (a bare `yield*`/`.pipe` over the union resolves to `never`).
-		const withFlush = <R>(tick: Effect.Effect<void, never, R>) =>
-			tick.pipe(
-				Effect.ensuring(
-					workerCtx.waitUntil(
-						Effect.promise(() => drainMacrotask().then(() => telemetry.flush(env))),
-					),
-				),
-			)
+		// Dispatch the cron tick inside a `gen` so the branches' differing service
+		// requirements accumulate into a single unioned `R` (passing the ternary's
+		// union of effects to a generic `<R>` param doesn't unify — `R` is
+		// contravariant).
+		const tick = Effect.gen(function* () {
+			switch (controller.cron) {
+				case "*/15 * * * *":
+					yield* digestTick
+					break
+				case "0 * * * *":
+					yield* serviceMapRollupTick
+					break
+				case "0 9 * * *":
+					yield* onboardingTick
+					break
+				default:
+					yield* Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
+			}
+		})
 
-		yield* withFlush(
-			controller.cron === "*/15 * * * *"
-				? digestTick
-				: controller.cron === "0 * * * *"
-					? serviceMapRollupTick
-					: controller.cron === "0 9 * * *"
-						? onboardingTick
-						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true }),
+		// Flush always runs — even if a tick escalates to a defect — matching the
+		// previous `finally { ctx.waitUntil(telemetry.flush(env)) }`.
+		yield* tick.pipe(
+			Effect.ensuring(
+				workerCtx.waitUntil(
+					Effect.promise(() => drainMacrotask().then(() => telemetry.flush(env))),
+				),
+			),
 		)
 	})
 

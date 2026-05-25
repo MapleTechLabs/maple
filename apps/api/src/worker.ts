@@ -1,8 +1,9 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { Worker, WorkerEnvironment } from "@maple/effect-cf"
-import { Cause, Effect, FileSystem, Layer, Option, Path } from "effect"
+import { Effect, FileSystem, Layer, Option, Path } from "effect"
 import { Headers, HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
+import * as HttpEffect from "effect/unstable/http/HttpEffect"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } from "./app"
@@ -115,6 +116,12 @@ const drainMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 
 const sessionIdOf = (response: HttpServerResponse.HttpServerResponse): string | null =>
 	Option.getOrNull(Headers.get(response.headers, "mcp-session-id"))
 
+// Pass-through server middleware. Load-bearing: without ANY middleware, POST
+// /mcp hangs on Cloudflare (suspected Effect RpcServer/HttpRouter scope bug).
+// Routing it through `HttpEffect.toHandled` with this middleware mirrors the
+// old `HttpRouter.toWebHandler(..., { middleware })` exactly.
+const passThrough: HttpMiddleware.HttpMiddleware = (httpApp) => httpApp
+
 // Per-request HTTP handler. Runs inside the `Worker.make` runtime, so `env` is a
 // real `WorkerEnvironment` service (not AsyncLocalStorage) — which is why MCP KV
 // session persistence + body-peek diagnostics + telemetry flush can all live
@@ -147,16 +154,23 @@ const render = Effect.gen(function* () {
 	}
 
 	const router = yield* HttpRouter.HttpRouter
-	const response = yield* HttpMiddleware.tracer(router.asHttpEffect()).pipe(
-		Effect.catchCause((cause) =>
+
+	// `toHandled` runs the full effect HTTP chain — tracer middleware, the
+	// pass-through middleware (/mcp hang fix), error→response conversion, AND the
+	// pre-response handlers that `HttpMiddleware.cors` registers to attach CORS
+	// headers to real responses. (`asHttpEffect` alone skips pre-response
+	// handlers, so OPTIONS got CORS but actual responses did not.) We capture the
+	// final response instead of "sending" it, then hand it back to `Worker.make`.
+	let captured: HttpServerResponse.HttpServerResponse | undefined
+	yield* HttpEffect.toHandled(
+		router.asHttpEffect(),
+		(_request, response) =>
 			Effect.sync(() => {
-				console.error("[worker] handler failed:", Cause.pretty(cause))
-				return HttpServerResponse.text(`worker handler error: ${Cause.pretty(cause)}`, {
-					status: 504,
-				})
+				captured = response
 			}),
-		),
+		passThrough,
 	)
+	const response = captured ?? HttpServerResponse.text("worker produced no response", { status: 500 })
 
 	// Persist only when the server issued a new session — i.e. on `initialize`,
 	// where the response sid differs from the request sid. Subsequent requests
