@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { describe, it } from "@effect/vitest"
 import { Effect } from "effect"
+import { beforeEach, expect, vi } from "vitest"
 
 const executeQueryEngineMock = vi.fn()
 
@@ -35,72 +36,73 @@ describe("tinybird traces attribute filter params", () => {
 		})
 	})
 
-	it("forwards basic filter params to list_traces", async () => {
-		await Effect.runPromise(
-			listTraces({
+	it.effect("forwards basic filter params to list_traces", () =>
+		Effect.gen(function* () {
+			yield* listTraces({
 				data: {
 					startTime: "2026-02-01 00:00:00",
 					endTime: "2026-02-01 01:00:00",
 				},
-			}),
-		)
+			})
 
-		expect(executeQueryEngineMock).toHaveBeenCalledWith(
-			"queryEngine.listTraces",
-			expect.objectContaining({
-				startTime: "2026-02-01 00:00:00",
-				endTime: "2026-02-01 01:00:00",
-			}),
-		)
-	})
+			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+				"queryEngine.listTraces",
+				expect.objectContaining({
+					startTime: "2026-02-01 00:00:00",
+					endTime: "2026-02-01 01:00:00",
+				}),
+			)
+		}),
+	)
 
-	it("forwards filter params to traces_facets and traces_duration_stats", async () => {
-		await Effect.runPromise(
-			getTracesFacets({
+	it.effect("forwards filter params to traces_facets and traces_duration_stats", () =>
+		Effect.gen(function* () {
+			yield* getTracesFacets({
 				data: {
 					startTime: "2026-02-01 00:00:00",
 					endTime: "2026-02-01 01:00:00",
 				},
-			}),
-		)
+			})
 
-		expect(executeQueryEngineMock).toHaveBeenCalledWith(
-			"queryEngine.getTracesFacets",
-			expect.objectContaining({
-				startTime: "2026-02-01 00:00:00",
-				endTime: "2026-02-01 01:00:00",
-			}),
-		)
-		expect(executeQueryEngineMock).toHaveBeenCalledWith(
-			"queryEngine.getTracesDurationStats",
-			expect.objectContaining({
-				startTime: "2026-02-01 00:00:00",
-				endTime: "2026-02-01 01:00:00",
-			}),
-		)
-	})
+			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+				"queryEngine.getTracesFacets",
+				expect.objectContaining({
+					startTime: "2026-02-01 00:00:00",
+					endTime: "2026-02-01 01:00:00",
+				}),
+			)
+			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+				"queryEngine.getTracesDurationStats",
+				expect.objectContaining({
+					startTime: "2026-02-01 00:00:00",
+					endTime: "2026-02-01 01:00:00",
+				}),
+			)
+		}),
+	)
 
-	it("forwards filter params to standalone traces_duration_stats", async () => {
-		await Effect.runPromise(
-			getTracesDurationStats({
+	it.effect("forwards filter params to standalone traces_duration_stats", () =>
+		Effect.gen(function* () {
+			yield* getTracesDurationStats({
 				data: {
 					startTime: "2026-02-01 00:00:00",
 					endTime: "2026-02-01 01:00:00",
 				},
-			}),
-		)
+			})
 
-		expect(executeQueryEngineMock).toHaveBeenCalledWith(
-			"queryEngine.getTracesDurationStats",
-			expect.objectContaining({
-				startTime: "2026-02-01 00:00:00",
-				endTime: "2026-02-01 01:00:00",
-			}),
-		)
-	})
+			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+				"queryEngine.getTracesDurationStats",
+				expect.objectContaining({
+					startTime: "2026-02-01 00:00:00",
+					endTime: "2026-02-01 01:00:00",
+				}),
+			)
+		}),
+	)
 
-	it("builds a curated rootSpan summary for overview rows", async () => {
-		executeQueryEngineMock.mockReturnValueOnce(
+	it.effect("builds a curated rootSpan summary for overview rows", () =>
+		Effect.gen(function* () {
+			executeQueryEngineMock.mockReturnValueOnce(
 			Effect.succeed({
 				result: {
 					kind: "list",
@@ -126,33 +128,32 @@ describe("tinybird traces attribute filter params", () => {
 			}),
 		)
 
-		const response = await Effect.runPromise(
-			listTraces({
+			const response = yield* listTraces({
 				data: {
 					startTime: "2026-02-01 00:00:00",
 					endTime: "2026-02-01 01:00:00",
 				},
-			}),
-		)
+			})
 
-		expect(response.data[0]).toMatchObject({
-			rootSpanName: "GET",
-			rootSpan: {
-				name: "GET",
-				kind: "SPAN_KIND_SERVER",
-				statusCode: "Ok",
-				attributes: {
-					"http.method": "GET",
-					"http.route": "/checkout",
-					"http.status_code": "200",
+			expect(response.data[0]).toMatchObject({
+				rootSpanName: "GET",
+				rootSpan: {
+					name: "GET",
+					kind: "SPAN_KIND_SERVER",
+					statusCode: "Ok",
+					attributes: {
+						"http.method": "GET",
+						"http.route": "/checkout",
+						"http.status_code": "200",
+					},
+					http: {
+						method: "GET",
+						route: "/checkout",
+						statusCode: 200,
+						isError: false,
+					},
 				},
-				http: {
-					method: "GET",
-					route: "/checkout",
-					statusCode: 200,
-					isError: false,
-				},
-			},
-		})
-	})
+			})
+		}),
+	)
 })

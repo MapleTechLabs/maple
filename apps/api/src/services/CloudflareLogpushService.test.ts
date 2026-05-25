@@ -1,8 +1,7 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { hashCloudflareLogpushSecret } from "@maple/db"
 import {
-	CloudflareLogpushEncryptionError,
 	CloudflareLogpushNotFoundError,
 	CloudflareLogpushValidationError,
 	OrgId,
@@ -50,182 +49,169 @@ const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
 describe("CloudflareLogpushService", () => {
-	it("creates a connector with encrypted secret and generated setup", async () => {
+	it.effect("creates a connector with encrypted secret and generated setup", () => {
 		const { url, dbPath } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+		return Effect.gen(function* () {
+			const result = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: "Edge requests",
 				zoneName: "example.com",
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
+			})
 
-		expect(result.connector.serviceName).toBe("cloudflare/example.com")
-		expect(result.connector.dataset).toBe("http_requests")
-		expect(
-			result.setup.destinationConf.startsWith(
-				`https://ingest.example.com/v1/logpush/cloudflare/http_requests/${result.connector.id}?secret=maple_cf_`,
-			),
-		).toBe(true)
+			assert.strictEqual(result.connector.serviceName, "cloudflare/example.com")
+			assert.strictEqual(result.connector.dataset, "http_requests")
+			assert.isTrue(
+				result.setup.destinationConf.startsWith(
+					`https://ingest.example.com/v1/logpush/cloudflare/http_requests/${result.connector.id}?secret=maple_cf_`,
+				),
+			)
 
-		const row = await queryFirstRow<{
-			secret_ciphertext: string
-			secret_hash: string
-		}>(dbPath, "SELECT secret_ciphertext, secret_hash FROM cloudflare_logpush_connectors WHERE id = ?", [
-			result.connector.id,
-		])
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{
+					secret_ciphertext: string
+					secret_hash: string
+				}>(
+					dbPath,
+					"SELECT secret_ciphertext, secret_hash FROM cloudflare_logpush_connectors WHERE id = ?",
+					[result.connector.id],
+				),
+			)
 
-		const secret = new URL(result.setup.destinationConf).searchParams.get("secret")!
-		expect(row).toBeDefined()
-		expect(row?.secret_ciphertext).not.toBe(secret)
-		expect(row?.secret_hash).toBe(hashCloudflareLogpushSecret(secret, "maple-test-lookup-secret"))
+			const secret = new URL(result.setup.destinationConf).searchParams.get("secret")!
+			assert.isDefined(row)
+			assert.notStrictEqual(row?.secret_ciphertext, secret)
+			assert.strictEqual(
+				row?.secret_hash,
+				hashCloudflareLogpushSecret(secret, "maple-test-lookup-secret"),
+			)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("lists connectors without exposing secrets", async () => {
+	it.effect("lists connectors without exposing secrets", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
+		return Effect.gen(function* () {
+			yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
 
-				return yield* CloudflareLogpushService.list(asOrgId("org_a"))
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
+			const result = yield* CloudflareLogpushService.list(asOrgId("org_a"))
 
-		expect(result.connectors).toHaveLength(1)
-		expect("secret" in result.connectors[0]!).toBe(false)
+			assert.strictEqual(result.connectors.length, 1)
+			assert.strictEqual("secret" in result.connectors[0]!, false)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("returns deterministic setup payload for an existing connector", async () => {
+	it.effect("returns deterministic setup payload for an existing connector", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
-				const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
+		return Effect.gen(function* () {
+			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
+			const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
 
-				return { created, setup }
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
-
-		expect(result.setup.destinationConf).toBe(result.created.setup.destinationConf)
+			assert.strictEqual(setup.destinationConf, created.setup.destinationConf)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("rotates only the secret", async () => {
+	it.effect("rotates only the secret", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
-				const rotated = yield* CloudflareLogpushService.rotateSecret(
-					asOrgId("org_a"),
-					created.connector.id,
-					asUserId("user_b"),
-				)
-				const connector = yield* CloudflareLogpushService.list(asOrgId("org_a")).pipe(
-					Effect.map((rows) => rows.connectors[0]!),
-				)
+		return Effect.gen(function* () {
+			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
+			const rotated = yield* CloudflareLogpushService.rotateSecret(
+				asOrgId("org_a"),
+				created.connector.id,
+				asUserId("user_b"),
+			)
+			const connector = yield* CloudflareLogpushService.list(asOrgId("org_a")).pipe(
+				Effect.map((rows) => rows.connectors[0]!),
+			)
 
-				return { created, rotated, connector }
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
-
-		expect(result.rotated.destinationConf).not.toBe(result.created.setup.destinationConf)
-		expect(result.connector.name).toBe(result.created.connector.name)
-		expect(result.connector.zoneName).toBe(result.created.connector.zoneName)
+			assert.notStrictEqual(rotated.destinationConf, created.setup.destinationConf)
+			assert.strictEqual(connector.name, created.connector.name)
+			assert.strictEqual(connector.zoneName, created.connector.zoneName)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("updates metadata without changing the secret", async () => {
+	it.effect("updates metadata without changing the secret", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
-				const updated = yield* CloudflareLogpushService.update(
-					asOrgId("org_a"),
-					created.connector.id,
-					asUserId("user_b"),
-					{
-						name: "Zone A",
-						zoneName: "zone-a.example.com",
-						serviceName: "cloudflare/zone-a",
-						enabled: false,
-					},
-				)
-				const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
+		return Effect.gen(function* () {
+			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
+			const updated = yield* CloudflareLogpushService.update(
+				asOrgId("org_a"),
+				created.connector.id,
+				asUserId("user_b"),
+				{
+					name: "Zone A",
+					zoneName: "zone-a.example.com",
+					serviceName: "cloudflare/zone-a",
+					enabled: false,
+				},
+			)
+			const setup = yield* CloudflareLogpushService.getSetup(asOrgId("org_a"), created.connector.id)
 
-				return { created, updated, setup }
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
-
-		expect(result.updated.name).toBe("Zone A")
-		expect(result.updated.zoneName).toBe("zone-a.example.com")
-		expect(result.updated.serviceName).toBe("cloudflare/zone-a")
-		expect(result.updated.enabled).toBe(false)
-		expect(result.setup.destinationConf).toBe(result.created.setup.destinationConf)
+			assert.strictEqual(updated.name, "Zone A")
+			assert.strictEqual(updated.zoneName, "zone-a.example.com")
+			assert.strictEqual(updated.serviceName, "cloudflare/zone-a")
+			assert.strictEqual(updated.enabled, false)
+			assert.strictEqual(setup.destinationConf, created.setup.destinationConf)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("deletes a connector", async () => {
+	it.effect("deletes a connector", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
-				yield* CloudflareLogpushService.delete(asOrgId("org_a"), created.connector.id)
-				return yield* CloudflareLogpushService.list(asOrgId("org_a"))
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
+		return Effect.gen(function* () {
+			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
+			yield* CloudflareLogpushService.delete(asOrgId("org_a"), created.connector.id)
+			const result = yield* CloudflareLogpushService.list(asOrgId("org_a"))
 
-		expect(result.connectors).toEqual([])
+			assert.deepStrictEqual(result.connectors, [])
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("isolates connectors by org", async () => {
+	it.effect("isolates connectors by org", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
-				const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
-					name: "Edge requests",
-					zoneName: "example.com",
-				})
+		return Effect.gen(function* () {
+			const created = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+				name: "Edge requests",
+				zoneName: "example.com",
+			})
 
-				const missing = yield* CloudflareLogpushService.getSetup(
-					asOrgId("org_b"),
-					created.connector.id,
-				).pipe(Effect.flip)
+			const missing = yield* CloudflareLogpushService.getSetup(
+				asOrgId("org_b"),
+				created.connector.id,
+			).pipe(Effect.flip)
 
-				return missing
-			}).pipe(Effect.provide(makeLayer(url))),
-		)
-
-		expect(result).toBeInstanceOf(CloudflareLogpushNotFoundError)
+			assert.instanceOf(missing, CloudflareLogpushNotFoundError)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 
-	it("rejects blank names and zone names", async () => {
+	it.effect("rejects blank names and zone names", () => {
 		const { url } = createTempDbUrl()
 
-		const result = await Effect.runPromise(
-			CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
+		return Effect.gen(function* () {
+			const result = yield* CloudflareLogpushService.create(asOrgId("org_a"), asUserId("user_a"), {
 				name: " ",
 				zoneName: " ",
-			}).pipe(Effect.flip, Effect.provide(makeLayer(url))),
-		)
+			}).pipe(Effect.flip)
 
-		expect(result).toBeInstanceOf(CloudflareLogpushValidationError)
+			assert.instanceOf(result, CloudflareLogpushValidationError)
+		}).pipe(Effect.provide(makeLayer(url)))
 	})
 })

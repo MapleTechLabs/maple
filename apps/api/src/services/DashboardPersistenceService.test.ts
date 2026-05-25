@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import {
 	DashboardId,
@@ -106,10 +106,10 @@ const makePortableDashboard = (
 	})
 
 describe("DashboardPersistenceService", () => {
-	it("lists dashboards only for the requested org", async () => {
+	it.effect("lists dashboards only for the requested org", () => {
 		const dbUrl = createTempDbUrl()
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(
 				asOrgId("org_a"),
 				asUserId("user_a"),
@@ -120,17 +120,15 @@ describe("DashboardPersistenceService", () => {
 				asUserId("user_b"),
 				makeDashboard({ id: asDashboardId("b-1"), name: "Org B" }),
 			)
-			return yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+
+			assert.strictEqual(dashboards.dashboards.length, 1)
+			assert.strictEqual(dashboards.dashboards[0]!.id, asDashboardId("a-1"))
+			assert.strictEqual(dashboards.dashboards[0]!.name, "Org A")
 		}).pipe(Effect.provide(makeLayer(dbUrl)))
-
-		const dashboards = await Effect.runPromise(program)
-
-		expect(dashboards.dashboards).toHaveLength(1)
-		expect(dashboards.dashboards[0]!.id).toBe(asDashboardId("a-1"))
-		expect(dashboards.dashboards[0]!.name).toBe("Org A")
 	})
 
-	it("upserts by replacing existing dashboard rows for the same org/id", async () => {
+	it.effect("upserts by replacing existing dashboard rows for the same org/id", () => {
 		const dbUrl = createTempDbUrl()
 
 		const original = makeDashboard({
@@ -145,23 +143,21 @@ describe("DashboardPersistenceService", () => {
 			updatedAt: asIsoDateTimeString(new Date("2026-01-01T01:00:00.000Z").toISOString()),
 		})
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), original)
 			yield* DashboardPersistenceService.upsert(asOrgId("org_a"), asUserId("user_a"), updated)
-			return yield* DashboardPersistenceService.list(asOrgId("org_a"))
+			const dashboards = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+
+			assert.strictEqual(dashboards.dashboards.length, 1)
+			assert.strictEqual(dashboards.dashboards[0]!.name, "Second Name")
+			assert.strictEqual(dashboards.dashboards[0]!.updatedAt, updated.updatedAt)
 		}).pipe(Effect.provide(makeLayer(dbUrl)))
-
-		const dashboards = await Effect.runPromise(program)
-
-		expect(dashboards.dashboards).toHaveLength(1)
-		expect(dashboards.dashboards[0]!.name).toBe("Second Name")
-		expect(dashboards.dashboards[0]!.updatedAt).toBe(updated.updatedAt)
 	})
 
-	it("creates dashboards from the portable import payload with fresh metadata", async () => {
+	it.effect("creates dashboards from the portable import payload with fresh metadata", () => {
 		const dbUrl = createTempDbUrl()
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const created = yield* DashboardPersistenceService.create(
 				asOrgId("org_a"),
 				asUserId("user_a"),
@@ -174,48 +170,41 @@ describe("DashboardPersistenceService", () => {
 
 			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
 
-			return { created, listed }
+			assert.strictEqual(typeof created.id, "string")
+			assert.strictEqual(created.name, "Imported Dashboard")
+			assert.strictEqual(created.description, "Imported from JSON")
+			assert.deepStrictEqual(created.tags, ["imported"])
+			assert.deepStrictEqual(created.widgets, [])
+			assert.strictEqual(typeof created.createdAt, "string")
+			assert.strictEqual(typeof created.updatedAt, "string")
+			assert.strictEqual(listed.dashboards.length, 1)
+			assert.strictEqual(listed.dashboards[0]!.id, created.id)
 		}).pipe(Effect.provide(makeLayer(dbUrl)))
-
-		const { created, listed } = await Effect.runPromise(program)
-
-		expect(created.id).toBeTypeOf("string")
-		expect(created.name).toBe("Imported Dashboard")
-		expect(created.description).toBe("Imported from JSON")
-		expect(created.tags).toEqual(["imported"])
-		expect(created.widgets).toEqual([])
-		expect(created.createdAt).toBeTypeOf("string")
-		expect(created.updatedAt).toBeTypeOf("string")
-		expect(listed.dashboards).toHaveLength(1)
-		expect(listed.dashboards[0]!.id).toBe(created.id)
 	})
 
-	it("returns DashboardNotFoundError when deleting a missing dashboard", async () => {
+	it.effect("returns DashboardNotFoundError when deleting a missing dashboard", () => {
 		const dbUrl = createTempDbUrl()
 
-		const program = DashboardPersistenceService.delete(asOrgId("org_a"), asDashboardId("missing")).pipe(
-			Effect.provide(makeLayer(dbUrl)),
-		)
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				DashboardPersistenceService.delete(asOrgId("org_a"), asDashboardId("missing")),
+			)
+			const failure = getError(exit)
 
-		const exit = await Effect.runPromiseExit(program)
-		const failure = getError(exit)
-
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(failure).toBeInstanceOf(DashboardNotFoundError)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.instanceOf(failure, DashboardNotFoundError)
+		}).pipe(Effect.provide(makeLayer(dbUrl)))
 	})
 
-	it("maps database/driver errors to DashboardPersistenceError", async () => {
-		const failingLayer = DashboardPersistenceService.layer.pipe(
-			Layer.provide(failingDatabaseLayer),
-		)
+	it.effect("maps database/driver errors to DashboardPersistenceError", () => {
+		const failingLayer = DashboardPersistenceService.layer.pipe(Layer.provide(failingDatabaseLayer))
 
-		const exit = await Effect.runPromiseExit(
-			DashboardPersistenceService.list(asOrgId("org_a")).pipe(Effect.provide(failingLayer)),
-		)
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(DashboardPersistenceService.list(asOrgId("org_a")))
+			const failure = getError(exit)
 
-		const failure = getError(exit)
-
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(failure).toBeInstanceOf(DashboardPersistenceError)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.instanceOf(failure, DashboardPersistenceError)
+		}).pipe(Effect.provide(failingLayer))
 	})
 })

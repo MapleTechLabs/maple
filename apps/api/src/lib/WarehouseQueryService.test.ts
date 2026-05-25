@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { WarehouseQueryError, OrgId, UserId } from "@maple/domain/http"
 import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
@@ -68,7 +68,9 @@ const transient503 = () =>
 	new Error("HTTP status 503 service temporarily unavailable")
 
 describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", () => {
-	it("recovers after two 503s on the third attempt", async () => {
+	// Runs under it.live: the retry schedule uses real exponential backoff
+	// delays, so the default TestClock would stall the retries.
+	it.live("recovers after two 503s on the third attempt", () => {
 		let attempts = 0
 		__testables.setClientFactory(() => ({
 			sql: async () => {
@@ -82,17 +84,17 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 		const layer = buildLayer(url)
 		const tenant = makeTenant()
 
-		const result = await Effect.runPromise(
-			WarehouseQueryService.use((service) =>
+		return Effect.gen(function* () {
+			const result = yield* WarehouseQueryService.use((service) =>
 				service.sqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
-			).pipe(Effect.provide(layer)),
-		)
+			)
 
-		expect(attempts).toBe(3)
-		expect(result).toEqual([{ ok: 1 }])
+			assert.strictEqual(attempts, 3)
+			assert.deepStrictEqual(result, [{ ok: 1 }])
+		}).pipe(Effect.provide(layer))
 	})
 
-	it("does not retry non-transient errors (auth)", async () => {
+	it.effect("does not retry non-transient errors (auth)", () => {
 		let attempts = 0
 		__testables.setClientFactory(() => ({
 			sql: async () => {
@@ -105,17 +107,20 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 		const layer = buildLayer(url)
 		const tenant = makeTenant()
 
-		const exit = await Effect.runPromiseExit(
-			WarehouseQueryService.use((service) =>
-				service.sqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
-			).pipe(Effect.provide(layer)),
-		)
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.sqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+				),
+			)
 
-		expect(attempts).toBe(1)
-		expect(Exit.isFailure(exit)).toBe(true)
+			assert.strictEqual(attempts, 1)
+			assert.isTrue(Exit.isFailure(exit))
+		}).pipe(Effect.provide(layer))
 	})
 
-	it("gives up after the configured retry budget when all attempts fail", async () => {
+	// Runs under it.live: exhausts the real backoff schedule before giving up.
+	it.live("gives up after the configured retry budget when all attempts fail", () => {
 		let attempts = 0
 		__testables.setClientFactory(() => ({
 			sql: async () => {
@@ -128,22 +133,22 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 		const layer = buildLayer(url)
 		const tenant = makeTenant()
 
-		const exit = await Effect.runPromiseExit(
-			WarehouseQueryService.use((service) =>
-				service.sqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
-			).pipe(Effect.provide(layer)),
-		)
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.sqlQuery(tenant, "SELECT 1 FROM traces WHERE OrgId = 'org_test'"),
+				),
+			)
 
-		// 1 initial + 2 retries
-		expect(attempts).toBe(3)
-		expect(Exit.isFailure(exit)).toBe(true)
+			// 1 initial + 2 retries
+			assert.strictEqual(attempts, 3)
+			assert.isTrue(Exit.isFailure(exit))
 
-		const failure = getError(exit)
-		expect(failure).toBeInstanceOf(WarehouseQueryError)
-		expect(failure).toMatchObject({
-			category: "upstream",
-			upstreamStatus: 503,
-		})
+			const failure = getError(exit)
+			assert.instanceOf(failure, WarehouseQueryError)
+			assert.strictEqual((failure as WarehouseQueryError).category, "upstream")
+			assert.strictEqual((failure as WarehouseQueryError).upstreamStatus, 503)
+		}).pipe(Effect.provide(layer))
 	})
 })
 
@@ -156,6 +161,6 @@ describe("WarehouseQueryError category surfaces transient classification", () =>
 			category: "upstream",
 			upstreamStatus: 503,
 		})
-		expect(err.category).toBe("upstream")
+		assert.strictEqual(err.category, "upstream")
 	})
 })

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { Effect, Layer, Schema } from "effect"
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Layer } from "effect"
 import { QueryEngineExecuteResponse } from "@maple/query-engine"
 import { EdgeCacheService, makeEdgeCacheService, type EdgeCacheBackend } from "./EdgeCacheService"
 
@@ -31,11 +31,11 @@ const makeLayer = (backend: EdgeCacheBackend) =>
 	Layer.succeed(EdgeCacheService, makeEdgeCacheService(backend))
 
 describe("EdgeCacheService.getOrCompute (no schema)", () => {
-	it("round-trips a plain object through the JSON cache backend", async () => {
+	it.effect("round-trips a plain object through the JSON cache backend", () => {
 		const backend = makeJsonRoundtripBackend()
 		let computeCalls = 0
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const cache = yield* EdgeCacheService
 			const compute = Effect.sync(() => {
 				computeCalls += 1
@@ -43,21 +43,18 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 			})
 			const first = yield* cache.getOrCompute({ bucket: "plain", key: "k1", ttlSeconds: 30 }, compute)
 			const second = yield* cache.getOrCompute({ bucket: "plain", key: "k1", ttlSeconds: 30 }, compute)
-			return { first, second }
-		})
 
-		const { first, second } = await Effect.runPromise(program.pipe(Effect.provide(makeLayer(backend))))
-
-		expect(computeCalls).toBe(1)
-		expect(first.hit).toBe(false)
-		expect(first.value).toEqual({ hello: "world", n: 42 })
-		expect(second.hit).toBe(true)
-		expect(second.value).toEqual({ hello: "world", n: 42 })
+			assert.strictEqual(computeCalls, 1)
+			assert.strictEqual(first.hit, false)
+			assert.deepStrictEqual(first.value, { hello: "world", n: 42 })
+			assert.strictEqual(second.hit, true)
+			assert.deepStrictEqual(second.value, { hello: "world", n: 42 })
+		}).pipe(Effect.provide(makeLayer(backend)))
 	})
 })
 
 describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
-	it("revives a Schema.Class instance after a JSON-roundtrip cache hit", async () => {
+	it.effect("revives a Schema.Class instance after a JSON-roundtrip cache hit", () => {
 		const backend = makeJsonRoundtripBackend()
 		let computeCalls = 0
 
@@ -73,7 +70,7 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 				},
 			})
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const cache = yield* EdgeCacheService
 			const compute = Effect.sync(() => {
 				computeCalls += 1
@@ -97,47 +94,43 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 				},
 				compute,
 			)
-			return { first, second }
-		})
 
-		const { first, second } = await Effect.runPromise(program.pipe(Effect.provide(makeLayer(backend))))
-
-		expect(computeCalls).toBe(1)
-		expect(first.hit).toBe(false)
-		expect(first.value).toBeInstanceOf(QueryEngineExecuteResponse)
-		expect(second.hit).toBe(true)
-		// The whole point of the fix: the cache HIT must give us back a real
-		// class instance, not a plain object — otherwise the HTTP API encoder
-		// rejects it with `Expected QueryEngineExecuteResponse, got {...}`.
-		expect(second.value).toBeInstanceOf(QueryEngineExecuteResponse)
-		expect(second.value.result.kind).toBe("timeseries")
-		if (second.value.result.kind === "timeseries") {
-			expect(second.value.result.data).toHaveLength(2)
-		}
+			assert.strictEqual(computeCalls, 1)
+			assert.strictEqual(first.hit, false)
+			assert.instanceOf(first.value, QueryEngineExecuteResponse)
+			assert.strictEqual(second.hit, true)
+			// The whole point of the fix: the cache HIT must give us back a real
+			// class instance, not a plain object — otherwise the HTTP API encoder
+			// rejects it with `Expected QueryEngineExecuteResponse, got {...}`.
+			assert.instanceOf(second.value, QueryEngineExecuteResponse)
+			assert.strictEqual(second.value.result.kind, "timeseries")
+			if (second.value.result.kind === "timeseries") {
+				assert.strictEqual(second.value.result.data.length, 2)
+			}
+		}).pipe(Effect.provide(makeLayer(backend)))
 	})
 
-	it("treats a stale-shape cache entry as a miss and recomputes", async () => {
+	it.effect("treats a stale-shape cache entry as a miss and recomputes", () => {
 		const backend = makeJsonRoundtripBackend()
-		// Pre-populate the cache with a value that does NOT match the schema.
-		// The schema-aware decode should fail and the call should fall through
-		// to the compute path, then overwrite the bad entry.
-		const composite = "qe:" // bucket prefix
-		const sha256Hex = async (input: string): Promise<string> => {
-			const bytes = new TextEncoder().encode(input)
-			const digest = await crypto.subtle.digest("SHA-256", bytes)
-			const view = new Uint8Array(digest)
-			let out = ""
-			for (let i = 0; i < view.length; i++) {
-				out += view[i]!.toString(16).padStart(2, "0")
-			}
-			return out
-		}
-		const hash = await sha256Hex("k-stale")
-		backend.store.set(`${composite}${hash}`, JSON.stringify({ wrong: "shape" }))
-
 		let computeCalls = 0
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
+			// Pre-populate the cache with a value that does NOT match the schema.
+			// The schema-aware decode should fail and the call should fall through
+			// to the compute path, then overwrite the bad entry.
+			const composite = "qe:" // bucket prefix
+			const sha256Hex = (input: string): Promise<string> =>
+				crypto.subtle.digest("SHA-256", new TextEncoder().encode(input)).then((digest) => {
+					const view = new Uint8Array(digest)
+					let out = ""
+					for (let i = 0; i < view.length; i++) {
+						out += view[i]!.toString(16).padStart(2, "0")
+					}
+					return out
+				})
+			const hash = yield* Effect.promise(() => sha256Hex("k-stale"))
+			backend.store.set(`${composite}${hash}`, JSON.stringify({ wrong: "shape" }))
+
 			const cache = yield* EdgeCacheService
 			const compute = Effect.sync(() => {
 				computeCalls += 1
@@ -149,7 +142,7 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 					},
 				})
 			})
-			return yield* cache.getOrCompute(
+			const result = yield* cache.getOrCompute(
 				{
 					bucket: "qe",
 					key: "k-stale",
@@ -158,20 +151,18 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 				},
 				compute,
 			)
-		})
 
-		const result = await Effect.runPromise(program.pipe(Effect.provide(makeLayer(backend))))
-
-		expect(computeCalls).toBe(1)
-		expect(result.hit).toBe(false)
-		expect(result.value).toBeInstanceOf(QueryEngineExecuteResponse)
+			assert.strictEqual(computeCalls, 1)
+			assert.strictEqual(result.hit, false)
+			assert.instanceOf(result.value, QueryEngineExecuteResponse)
+		}).pipe(Effect.provide(makeLayer(backend)))
 	})
 
-	it("dedupes concurrent callers; both receive a class instance", async () => {
+	it.effect("dedupes concurrent callers; both receive a class instance", () => {
 		const backend = makeJsonRoundtripBackend()
 		let computeCalls = 0
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const cache = yield* EdgeCacheService
 			const compute = Effect.sync(() => {
 				computeCalls += 1
@@ -193,16 +184,13 @@ describe("EdgeCacheService.getOrCompute (with Schema.Class schema)", () => {
 				[cache.getOrCompute(opts, compute), cache.getOrCompute(opts, compute)],
 				{ concurrency: "unbounded" },
 			)
-			return { a, b }
-		})
 
-		const { a, b } = await Effect.runPromise(program.pipe(Effect.provide(makeLayer(backend))))
-
-		// Compute should run at most once thanks to in-flight dedup. Both
-		// results must be live class instances (the dedup path returns the
-		// pre-encode value without going through decode).
-		expect(computeCalls).toBe(1)
-		expect(a.value).toBeInstanceOf(QueryEngineExecuteResponse)
-		expect(b.value).toBeInstanceOf(QueryEngineExecuteResponse)
+			// Compute should run at most once thanks to in-flight dedup. Both
+			// results must be live class instances (the dedup path returns the
+			// pre-encode value without going through decode).
+			assert.strictEqual(computeCalls, 1)
+			assert.instanceOf(a.value, QueryEngineExecuteResponse)
+			assert.instanceOf(b.value, QueryEngineExecuteResponse)
+		}).pipe(Effect.provide(makeLayer(backend)))
 	})
 })

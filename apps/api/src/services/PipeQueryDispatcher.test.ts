@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { compilePipeQuery } from "./PipeQueryDispatcher"

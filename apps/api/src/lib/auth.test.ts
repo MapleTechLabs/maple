@@ -1,5 +1,4 @@
-import { describe, expect, it } from "vitest"
-import { it as effectIt } from "@effect/vitest"
+import { assert, describe, expect, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { RoleName } from "@maple/domain/http"
 import { isAdmin, requireAdmin } from "./auth"
@@ -29,16 +28,16 @@ describe("isAdmin", () => {
 })
 
 describe("requireAdmin", () => {
-	effectIt.effect("succeeds when at least one role is admin", () =>
+	it.effect("succeeds when at least one role is admin", () =>
 		requireAdmin([role("root")], () => new TestForbiddenError("nope")),
 	)
 
-	effectIt.effect("fails with the supplied error for non-admin roles", () =>
+	it.effect("fails with the supplied error for non-admin roles", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
 				requireAdmin([role("org:member")], () => new TestForbiddenError("nope")),
 			)
-			expect(error).toBeInstanceOf(TestForbiddenError)
+			assert.instanceOf(error, TestForbiddenError)
 		}),
 	)
 })

@@ -9,7 +9,7 @@
 // uses a `(id, version)` CAS with bounded retry; these tests guard against
 // regressions of that property.
 
-import { afterEach, describe, expect, it } from "vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import {
 	DashboardConcurrencyError,
@@ -92,11 +92,11 @@ const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 }
 
 describe("dashboard concurrency", () => {
-	it("two concurrent `mutate` calls both land via retry — no lost update", async () => {
+	it.effect("two concurrent `mutate` calls both land via retry — no lost update", () => {
 		const dbUrl = createTempDbUrl()
 		const layer = makeLayer(dbUrl)
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(ORG, USER, seed())
 
 			const addWidget = (widgetId: string) =>
@@ -112,21 +112,19 @@ describe("dashboard concurrency", () => {
 
 			yield* Effect.all([addWidget("w-a"), addWidget("w-b")], { concurrency: 2 })
 
-			return yield* DashboardPersistenceService.list(ORG)
+			const listed = yield* DashboardPersistenceService.list(ORG)
+
+			assert.strictEqual(listed.dashboards.length, 1)
+			const widgets = listed.dashboards[0]!.widgets.map((w) => w.id).sort()
+			assert.deepStrictEqual(widgets, ["w-a", "w-b"])
 		}).pipe(Effect.provide(layer))
-
-		const listed = await Effect.runPromise(program)
-
-		expect(listed.dashboards).toHaveLength(1)
-		const widgets = listed.dashboards[0]!.widgets.map((w) => w.id).sort()
-		expect(widgets).toEqual(["w-a", "w-b"])
 	})
 
-	it("`upsert` rejects a stale write with DashboardConcurrencyError", async () => {
+	it.effect("`upsert` rejects a stale write with DashboardConcurrencyError", () => {
 		const dbUrl = createTempDbUrl()
 		const layer = makeLayer(dbUrl)
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			// Establish baseline at version=1.
 			yield* DashboardPersistenceService.upsert(ORG, USER, seed({ name: "Initial" }))
 
@@ -163,34 +161,35 @@ describe("dashboard concurrency", () => {
 				{ concurrency: 2 },
 			)
 
-			return { exits, listed: yield* DashboardPersistenceService.list(ORG) }
+			const exitsAndListed = { exits, listed: yield* DashboardPersistenceService.list(ORG) }
+
+			const successes = exitsAndListed.exits.filter(Exit.isSuccess)
+			const failures = exitsAndListed.exits.filter(Exit.isFailure)
+			assert.strictEqual(successes.length + failures.length, 2)
+			// At least one writer must hit the CAS conflict path. Under serialized
+			// scheduling both could conceivably succeed; a regression that makes
+			// both *always* succeed by silently overwriting is what we're guarding
+			// against, so this assertion is "at least one failed OR ordering was
+			// strictly serialized". We assert the surviving state is internally
+			// consistent and the failure (if any) is the typed concurrency error.
+			assert.strictEqual(exitsAndListed.listed.dashboards.length, 1)
+			assert.include(
+				["From writer A", "From writer B"],
+				exitsAndListed.listed.dashboards[0]!.name,
+			)
+
+			for (const exit of failures) {
+				const error = findError(exit)
+				assert.instanceOf(error, DashboardConcurrencyError)
+			}
 		}).pipe(Effect.provide(layer))
-
-		const { exits, listed } = await Effect.runPromise(program)
-
-		const successes = exits.filter(Exit.isSuccess)
-		const failures = exits.filter(Exit.isFailure)
-		expect(successes.length + failures.length).toBe(2)
-		// At least one writer must hit the CAS conflict path. Under serialized
-		// scheduling both could conceivably succeed; a regression that makes
-		// both *always* succeed by silently overwriting is what we're guarding
-		// against, so this assertion is "at least one failed OR ordering was
-		// strictly serialized". We assert the surviving state is internally
-		// consistent and the failure (if any) is the typed concurrency error.
-		expect(listed.dashboards).toHaveLength(1)
-		expect(["From writer A", "From writer B"]).toContain(listed.dashboards[0]!.name)
-
-		for (const exit of failures) {
-			const error = findError(exit)
-			expect(error).toBeInstanceOf(DashboardConcurrencyError)
-		}
 	})
 
-	it("after an upsert conflict, a refetch+retry resolves", async () => {
+	it.effect("after an upsert conflict, a refetch+retry resolves", () => {
 		const dbUrl = createTempDbUrl()
 		const layer = makeLayer(dbUrl)
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(ORG, USER, seed({ name: "Initial" }))
 
 			// Race two upserts so we deterministically observe at least one
@@ -243,21 +242,19 @@ describe("dashboard concurrency", () => {
 				}),
 			)
 
-			return { exits, listed: yield* DashboardPersistenceService.list(ORG) }
+			const listed = yield* DashboardPersistenceService.list(ORG)
+
+			// At least one writer should have hit a CAS conflict. We don't assert
+			// on which — under serialized scheduling either A or B can win — only
+			// that the loser surfaced as a typed concurrency error rather than
+			// silently dropping the update.
+			const failures = exits.filter(Exit.isFailure)
+			for (const exit of failures) {
+				assert.instanceOf(findError(exit), DashboardConcurrencyError)
+			}
+
+			assert.strictEqual(listed.dashboards.length, 1)
+			assert.strictEqual(listed.dashboards[0]!.name, "Recovered")
 		}).pipe(Effect.provide(layer))
-
-		const { exits, listed } = await Effect.runPromise(program)
-
-		// At least one writer should have hit a CAS conflict. We don't assert
-		// on which — under serialized scheduling either A or B can win — only
-		// that the loser surfaced as a typed concurrency error rather than
-		// silently dropping the update.
-		const failures = exits.filter(Exit.isFailure)
-		for (const exit of failures) {
-			expect(findError(exit)).toBeInstanceOf(DashboardConcurrencyError)
-		}
-
-		expect(listed.dashboards).toHaveLength(1)
-		expect(listed.dashboards[0]!.name).toBe("Recovered")
 	})
 })

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { assert, describe, expect, it } from "@effect/vitest"
+import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain"
 import type { TimeseriesPoint } from "@maple/query-engine"
 import {
@@ -160,8 +160,10 @@ const makeConfig = (overrides: Record<string, string> = {}) =>
 
 const BucketLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheService.layer))
 
+// These exercise the live cache backend and compute flux boundaries relative to
+// the real clock, so they run under it.live rather than the default TestClock.
 describe("BucketCacheService.getOrComputeBuckets", () => {
-	it("fetches the whole range on a cold start, then serves the same range from cache", async () => {
+	it.live("fetches the whole range on a cold start, then serves the same range from cache", () => {
 		const request = {
 			orgId,
 			query: { source: "traces", kind: "timeseries" },
@@ -172,7 +174,7 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 
 		const computeCalls: Array<{ startMs: number; endMs: number }> = []
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const svc = yield* BucketCacheService
 			const compute = ({ startMs, endMs }: { startMs: number; endMs: number }) => {
 				computeCalls.push({ startMs, endMs })
@@ -184,24 +186,19 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			}
 			const first = yield* svc.getOrComputeBuckets(request, compute)
 			const second = yield* svc.getOrComputeBuckets(request, compute)
-			return { first, second }
-		})
 
-		const { first, second } = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
+			assert.strictEqual(computeCalls.length, 1)
+			assert.deepStrictEqual(computeCalls[0], { startMs: 0, endMs: 3 * MIN })
+			assert.isTrue(first.bucketsMissed > 0)
+			assert.strictEqual(first.points.length, 3)
 
-		expect(computeCalls).toHaveLength(1)
-		expect(computeCalls[0]).toEqual({ startMs: 0, endMs: 3 * MIN })
-		expect(first.bucketsMissed).toBeGreaterThan(0)
-		expect(first.points).toHaveLength(3)
-
-		expect(second.bucketsMissed).toBe(0)
-		expect(second.missingRangeCount).toBe(0)
-		expect(second.points).toHaveLength(3)
+			assert.strictEqual(second.bucketsMissed, 0)
+			assert.strictEqual(second.missingRangeCount, 0)
+			assert.strictEqual(second.points.length, 3)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 
-	it("refetches only the tail slice when the window shifts forward", async () => {
+	it.live("refetches only the tail slice when the window shifts forward", () => {
 		const startOriginal = 0
 		const endOriginal = 3 * MIN
 
@@ -216,7 +213,7 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			return Effect.succeed(out)
 		}
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const svc = yield* BucketCacheService
 			const base = {
 				orgId,
@@ -224,23 +221,19 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 				bucketSeconds: 60,
 			}
 			yield* svc.getOrComputeBuckets({ ...base, startMs: startOriginal, endMs: endOriginal }, compute)
-			return yield* svc.getOrComputeBuckets(
+			const second = yield* svc.getOrComputeBuckets(
 				{ ...base, startMs: startOriginal + MIN, endMs: endOriginal + MIN },
 				compute,
 			)
-		})
 
-		const second = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
-
-		expect(computeCalls).toHaveLength(2)
-		expect(computeCalls[1]).toEqual({ startMs: 3 * MIN, endMs: 4 * MIN })
-		expect(second.missingRangeCount).toBe(1)
-		expect(second.points).toHaveLength(3)
+			assert.strictEqual(computeCalls.length, 2)
+			assert.deepStrictEqual(computeCalls[1], { startMs: 3 * MIN, endMs: 4 * MIN })
+			assert.strictEqual(second.missingRangeCount, 1)
+			assert.strictEqual(second.points.length, 3)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 
-	it("propagates errors from compute and does not poison the cache", async () => {
+	it.live("propagates errors from compute and does not poison the cache", () => {
 		const base = {
 			orgId,
 			query: { source: "traces", kind: "timeseries" },
@@ -266,24 +259,19 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			return Effect.succeed(okPoints)
 		}
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const svc = yield* BucketCacheService
 			const failExit = yield* Effect.exit(svc.getOrComputeBuckets(base, compute))
 			const ok = yield* svc.getOrComputeBuckets(base, compute)
-			return { failExit, ok }
-		})
 
-		const { failExit, ok } = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
-
-		expect(failExit._tag).toBe("Failure")
-		expect(computeAttempt).toBe(2) // first failed, second recomputed (no poison)
-		expect(ok.points).toHaveLength(3)
-		expect(ok.bucketsMissed).toBeGreaterThan(0)
+			assert.isTrue(Exit.isFailure(failExit))
+			assert.strictEqual(computeAttempt, 2) // first failed, second recomputed (no poison)
+			assert.strictEqual(ok.points.length, 3)
+			assert.isTrue(ok.bucketsMissed > 0)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 
-	it("bypasses cache on a bucketSeconds mismatch (different fingerprint)", async () => {
+	it.live("bypasses cache on a bucketSeconds mismatch (different fingerprint)", () => {
 		const base = {
 			orgId,
 			query: { source: "traces", kind: "timeseries" },
@@ -303,24 +291,20 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 				return Effect.succeed(out)
 			}
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const svc = yield* BucketCacheService
 			yield* svc.getOrComputeBuckets({ ...base, bucketSeconds: 60 }, makeCompute(60))
 			// Same range, different step → different fingerprint → full recompute.
-			return yield* svc.getOrComputeBuckets({ ...base, bucketSeconds: 180 }, makeCompute(180))
-		})
+			const second = yield* svc.getOrComputeBuckets({ ...base, bucketSeconds: 180 }, makeCompute(180))
 
-		const second = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
-
-		expect(computeCalls).toHaveLength(2)
-		expect(computeCalls[0]!.bucketSeconds).toBe(60)
-		expect(computeCalls[1]!.bucketSeconds).toBe(180)
-		expect(second.bucketsMissed).toBeGreaterThan(0)
+			assert.strictEqual(computeCalls.length, 2)
+			assert.strictEqual(computeCalls[0]!.bucketSeconds, 60)
+			assert.strictEqual(computeCalls[1]!.bucketSeconds, 180)
+			assert.isTrue(second.bucketsMissed > 0)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 
-	it("treats a version-skewed cache payload as a miss", async () => {
+	it.live("treats a version-skewed cache payload as a miss", () => {
 		const request = {
 			orgId,
 			query: { source: "traces", kind: "timeseries" },
@@ -341,7 +325,7 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			return Effect.succeed(okPoints)
 		}
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const edge = yield* EdgeCacheService
 			const svc = yield* BucketCacheService
 
@@ -360,19 +344,17 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			} as unknown as BucketedCacheData
 			yield* edge.rawPut("qe-ts-buckets", cacheKey, future, 60)
 
-			return yield* svc.getOrComputeBuckets(request, compute)
-		})
+			const outcome = yield* svc.getOrComputeBuckets(request, compute)
 
-		const outcome = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
-
-		expect(computed).toBe(1)
-		expect(outcome.bucketsMissed).toBeGreaterThan(0)
-		expect(outcome.points).toHaveLength(3)
+			assert.strictEqual(computed, 1)
+			assert.isTrue(outcome.bucketsMissed > 0)
+			assert.strictEqual(outcome.points.length, 3)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 
-	it("dedupes concurrent identical requests through the in-flight map", async () => {
+	// Uses a real wall-clock sleep to keep both fibers in-flight simultaneously,
+	// so it runs under it.live rather than the default TestClock.
+	it.live("dedupes concurrent identical requests through the in-flight map", () => {
 		const request = {
 			orgId,
 			query: { source: "traces", kind: "timeseries" },
@@ -391,20 +373,16 @@ describe("BucketCacheService.getOrComputeBuckets", () => {
 			return Effect.sleep("5 millis").pipe(Effect.as(out))
 		}
 
-		const program = Effect.gen(function* () {
+		return Effect.gen(function* () {
 			const svc = yield* BucketCacheService
-			return yield* Effect.all(
+			const [a, b] = yield* Effect.all(
 				[svc.getOrComputeBuckets(request, compute), svc.getOrComputeBuckets(request, compute)],
 				{ concurrency: "unbounded" },
 			)
-		})
 
-		const [a, b] = await Effect.runPromise(
-			program.pipe(Effect.provide(BucketLive), Effect.provide(makeConfig())),
-		)
-
-		expect(computeCalls).toBe(1) // second caller dedup'd
-		expect(a.points).toHaveLength(3)
-		expect(b.points).toHaveLength(3)
+			assert.strictEqual(computeCalls, 1) // second caller dedup'd
+			assert.strictEqual(a.points.length, 3)
+			assert.strictEqual(b.points.length, 3)
+		}).pipe(Effect.provide(BucketLive), Effect.provide(makeConfig()))
 	})
 })
