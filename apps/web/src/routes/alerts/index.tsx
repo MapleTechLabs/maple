@@ -40,6 +40,7 @@ import {
 	MagnifierIcon,
 	PaperPlaneIcon,
 	PlusIcon,
+	TruckIcon,
 } from "@/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -967,7 +968,7 @@ function AlertsPage() {
 									<Empty className="py-12">
 										<EmptyHeader>
 											<EmptyMedia variant="icon">
-												<PaperPlaneIcon size={18} />
+												<TruckIcon size={18} />
 											</EmptyMedia>
 											<EmptyTitle>No notifications sent yet</EmptyTitle>
 											<EmptyDescription>
