@@ -41,6 +41,10 @@ export const DestinationSecretConfigSchema = Schema.Union([
 		webhookUrl: Schema.String,
 		webhookToken: Schema.String,
 	}),
+	Schema.Struct({
+		type: Schema.Literal("discord"),
+		webhookUrl: Schema.String,
+	}),
 ])
 
 export type DestinationPublicConfig = Schema.Schema.Type<typeof DestinationPublicConfigSchema>

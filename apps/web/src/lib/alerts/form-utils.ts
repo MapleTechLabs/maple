@@ -4,6 +4,7 @@ import {
 	AlertRuleDocument,
 	AlertRuleTestRequest,
 	AlertRuleUpsertRequest,
+	DiscordAlertDestinationConfig,
 	HazelAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
 	PagerDutyAlertDestinationConfig,
@@ -451,6 +452,7 @@ export type DestinationFormState = {
 	name: string
 	enabled: boolean
 	channelLabel: string
+	/** Slack and Discord both use this incoming-webhook URL field. */
 	webhookUrl: string
 	integrationKey: string
 	url: string
@@ -555,6 +557,13 @@ export function buildDestinationCreatePayload(form: DestinationFormState): Alert
 				hazelChannelName: form.hazelChannelName.trim(),
 			})
 		}
+		case "discord":
+			return new DiscordAlertDestinationConfig({
+				type: "discord",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				webhookUrl: form.webhookUrl.trim(),
+			})
 	}
 }
 
@@ -604,6 +613,13 @@ export function buildDestinationUpdatePayload(form: DestinationFormState): Alert
 						: form.hazelOrganizationLogoUrl.trim() || undefined,
 				hazelChannelId: form.hazelChannelId.trim() || undefined,
 				hazelChannelName: form.hazelChannelName.trim() || undefined,
+			}
+		case "discord":
+			return {
+				type: "discord",
+				name: form.name.trim() || undefined,
+				enabled: form.enabled,
+				webhookUrl: form.webhookUrl.trim() || undefined,
 			}
 	}
 }

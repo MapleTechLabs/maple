@@ -22,6 +22,7 @@ export const AlertDestinationType = Schema.Literals([
 	"webhook",
 	"hazel",
 	"hazel-oauth",
+	"discord",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -195,12 +196,22 @@ export class HazelOAuthAlertDestinationConfig extends Schema.Class<HazelOAuthAle
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class DiscordAlertDestinationConfig extends Schema.Class<DiscordAlertDestinationConfig>(
+	"DiscordAlertDestinationConfig",
+)({
+	type: Schema.Literal("discord"),
+	name: ChannelLabel,
+	webhookUrl: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationCreateRequest = Schema.Union([
 	SlackAlertDestinationConfig,
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 	HazelAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
+	DiscordAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
 
@@ -251,6 +262,14 @@ export class UpdateHazelOAuthAlertDestinationConfig extends Schema.Class<UpdateH
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+export class UpdateDiscordAlertDestinationConfig extends Schema.Class<UpdateDiscordAlertDestinationConfig>(
+	"UpdateDiscordAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	webhookUrl: Schema.optionalKey(Schema.String),
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("slack"),
@@ -271,6 +290,10 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("hazel-oauth"),
 		...UpdateHazelOAuthAlertDestinationConfig.fields,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("discord"),
+		...UpdateDiscordAlertDestinationConfig.fields,
 	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>

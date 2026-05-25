@@ -483,6 +483,10 @@ const buildPublicConfig = (request: AlertDestinationCreateRequest): DestinationP
 				hazelChannelId: r.hazelChannelId,
 				hazelChannelName: r.hazelChannelName,
 			}),
+			discord: (r) => ({
+				summary: summarizeWebhookUrl(r.webhookUrl),
+				channelLabel: null,
+			}),
 		}),
 	)
 
@@ -514,6 +518,10 @@ const buildSecretConfig = (request: AlertDestinationCreateRequest): DestinationS
 					"Hazel-OAuth secret config must be built via the channel-webhook provisioning path",
 				)
 			},
+			discord: (r) => ({
+				type: "discord" as const,
+				webhookUrl: r.webhookUrl.trim(),
+			}),
 		}),
 	)
 
@@ -1684,6 +1692,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				yield* validateDestinationUrl(request.url, "url")
 			} else if (request.type === "hazel") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+			} else if (request.type === "discord") {
+				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			}
 			const destinationId = makeUuid()
 			const publicConfig = buildPublicConfig(request)
@@ -1761,6 +1771,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			} else if (request.type === "webhook" && request.url != null && request.url.trim().length > 0) {
 				yield* validateDestinationUrl(request.url, "url")
 			} else if (request.type === "hazel" && request.webhookUrl != null && request.webhookUrl.trim().length > 0) {
+				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+			} else if (
+				request.type === "discord" &&
+				request.webhookUrl != null &&
+				request.webhookUrl.trim().length > 0
+			) {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			}
 
@@ -1913,6 +1929,24 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									webhookToken,
 								} satisfies DestinationSecretConfig,
 							}
+						}),
+					discord: (r) =>
+						Effect.succeed({
+							nextPublicConfig: {
+								summary:
+									r.webhookUrl != null && r.webhookUrl.trim().length > 0
+										? summarizeWebhookUrl(r.webhookUrl)
+										: hydrated.publicConfig.summary,
+								channelLabel: null,
+							} satisfies DestinationPublicConfig,
+							nextSecretConfig: {
+								type: "discord" as const,
+								webhookUrl:
+									normalizeOptionalString(r.webhookUrl) ??
+									(hydrated.secretConfig.type === "discord"
+										? hydrated.secretConfig.webhookUrl
+										: ""),
+							} satisfies DestinationSecretConfig,
 						}),
 				}),
 			)

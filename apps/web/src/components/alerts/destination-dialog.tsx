@@ -45,11 +45,15 @@ interface DestinationDialogProps {
 	onSave: () => void
 }
 
-function isFormReady(form: DestinationFormState): boolean {
+function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 	if (form.name.trim().length === 0) return false
 	switch (form.type) {
 		case "hazel-oauth":
 			return form.hazelOrganizationId.trim().length > 0 && form.hazelChannelId.trim().length > 0
+		// On create the secret is required; when editing, a blank value keeps the
+		// stored one.
+		case "discord":
+			return isEditing || form.webhookUrl.trim().length > 0
 		default:
 			return true
 	}
@@ -550,6 +554,34 @@ export function DestinationDialog({
 								</div>
 							)}
 
+							{form.type === "discord" && (
+								<div className="space-y-1.5">
+									<Label htmlFor="destination-discord-webhook" className="text-xs">
+										Discord webhook URL
+									</Label>
+									<Input
+										id="destination-discord-webhook"
+										value={form.webhookUrl}
+										onChange={(event) =>
+											onFormChange((current) => ({
+												...current,
+												webhookUrl: event.target.value,
+											}))
+										}
+										placeholder={
+											isEditing
+												? "Leave blank to keep current webhook"
+												: "https://discord.com/api/webhooks/..."
+										}
+										className="font-mono text-xs"
+									/>
+									<p className="text-[11px] text-muted-foreground">
+										In Discord: Channel settings → Integrations → Webhooks → New Webhook,
+										then copy the URL.
+									</p>
+								</div>
+							)}
+
 							{form.type === "webhook" && (
 								<>
 									<div className="space-y-1.5">
@@ -686,7 +718,7 @@ export function DestinationDialog({
 					</Button>
 					<Button
 						onClick={onSave}
-						disabled={saving || !isFormReady(form)}
+						disabled={saving || !isFormReady(form, isEditing)}
 						style={{
 							background: provider.accent,
 							borderColor: provider.accent,

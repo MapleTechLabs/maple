@@ -189,6 +189,23 @@ const slackAttachmentColor = (eventType: string, severity: string): string => {
 	return "#ecb22e" // warning
 }
 
+/** Discord embed colors are decimal ints — the int forms of the Slack hexes. */
+const discordEmbedColor = (eventType: string, severity: string): number => {
+	if (eventType === "resolve") return 0x2eb67d
+	if (eventType === "test") return 0x36c5f0
+	if (severity === "critical") return 0xe01e5a
+	return 0xecb22e // warning
+}
+
+const formatObservedSummary = (context: DispatchContext): string => {
+	const observed = formatSignalMetric(context.value, context.signalType)
+	const comparison =
+		context.comparator === "between" || context.comparator === "not_between"
+			? `${formatComparator(context.comparator)} ${formatSignalMetric(context.threshold, context.signalType)} and ${formatSignalMetric(context.thresholdUpper ?? context.threshold, context.signalType)}`
+			: `${formatComparator(context.comparator)} ${formatSignalMetric(context.threshold, context.signalType)}`
+	return `${observed} ${comparison}`
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Dispatch                                                                  */
 /* -------------------------------------------------------------------------- */
@@ -267,6 +284,23 @@ const buildSlackBlocks = (context: DispatchContext, linkUrl: string, chatUrl: st
 	{
 		type: "context",
 		elements: [{ type: "mrkdwn", text: "\u{1F341} Maple Alerts" }],
+	},
+]
+
+const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: string) => [
+	{
+		title: `${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
+		url: linkUrl,
+		color: discordEmbedColor(context.eventType, context.severity),
+		fields: [
+			{ name: "Severity", value: context.severity, inline: true },
+			{ name: "Signal", value: formatSignalLabel(context.signalType), inline: true },
+			{ name: "Group", value: context.groupKey ?? "all", inline: true },
+			{ name: "Observed", value: formatObservedSummary(context), inline: true },
+			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
+			{ name: "Links", value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`, inline: false },
+		],
+		footer: { text: "\u{1F341} Maple Alerts" },
 	},
 ]
 
@@ -495,6 +529,31 @@ export const dispatchDelivery = (
 						return {
 							providerMessage: `Delivered to Hazel #${config.hazelChannelName}`,
 							providerReference: context.dedupeKey,
+							responseCode: response.status,
+						} as DispatchResult
+					}),
+				discord: (config) =>
+					Effect.gen(function* () {
+						const response = yield* runTimedFetch("discord", "Discord", fetchFn, timeoutMs, () =>
+							safeFetch(config.webhookUrl, {
+								method: "POST",
+								headers: { "content-type": "application/json" },
+								body: JSON.stringify({
+									username: "Maple Alerts",
+									content: `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`,
+									embeds: buildDiscordEmbeds(context, linkUrl, chatUrl),
+								}),
+								fetchFn,
+							}),
+						)
+						if (!response.ok) {
+							return yield* Effect.fail(
+								makeDeliveryError(`Discord delivery failed with ${response.status}`, "discord"),
+							)
+						}
+						return {
+							providerMessage: "Delivered to Discord",
+							providerReference: null,
 							responseCode: response.status,
 						} as DispatchResult
 					}),
