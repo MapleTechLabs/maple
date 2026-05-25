@@ -18,7 +18,7 @@ export const list = Command.make("list", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (f) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since: f.since, start: f.start, end: f.end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since: f.since, start: f.start, end: f.end })
 
 			const result = yield* client.callTool("find_errors", {
 				start_time: startTime,

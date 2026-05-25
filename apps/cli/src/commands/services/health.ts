@@ -17,7 +17,7 @@ export const health = Command.make("health", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (f) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since: f.since, start: f.start, end: f.end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since: f.since, start: f.start, end: f.end })
 
 			const result = yield* client.callTool("diagnose_service", {
 				service_name: f.serviceName,

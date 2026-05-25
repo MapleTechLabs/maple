@@ -26,7 +26,7 @@ export const keys = Command.make("keys", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (f) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since: f.since, start: f.start, end: f.end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since: f.since, start: f.start, end: f.end })
 
 			const result = yield* client.callTool("explore_attributes", {
 				source: f.source,

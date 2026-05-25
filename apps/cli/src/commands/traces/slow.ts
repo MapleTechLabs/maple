@@ -18,7 +18,7 @@ export const slow = Command.make("slow", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (f) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since: f.since, start: f.start, end: f.end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since: f.since, start: f.start, end: f.end })
 
 			const result = yield* client.callTool("find_slow_traces", {
 				start_time: startTime,

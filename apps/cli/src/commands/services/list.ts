@@ -22,7 +22,7 @@ export const list = Command.make("list", {
 	Command.withHandler(
 		Effect.fnUntraced(function* ({ since, start, end, environment, json }) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since, start, end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since, start, end })
 
 			const result = yield* client.queryWarehouse("service_overview", {
 				start_time: startTime,

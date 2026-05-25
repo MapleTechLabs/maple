@@ -17,7 +17,7 @@ export const map = Command.make("map", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (f) {
 			const client = yield* MapleClient
-			const { startTime, endTime } = resolveTimeRange({ since: f.since, start: f.start, end: f.end })
+			const { startTime, endTime } = yield* resolveTimeRange({ since: f.since, start: f.start, end: f.end })
 
 			const result = yield* client.callTool("service_map", {
 				start_time: startTime,

@@ -1,28 +1,32 @@
-import { Effect, Layer, Redacted, Schema, Context } from "effect"
+import { Context, Effect, Layer, Redacted, Ref, Schema } from "effect"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { CliConfig } from "./CliConfig"
 
-export class MapleApiError extends Schema.TaggedErrorClass<MapleApiError>()("MapleApiError", {
-	message: Schema.String,
-	pipe: Schema.optional(Schema.String),
-}) {}
+export class MapleApiError extends Schema.TaggedErrorClass<MapleApiError>()(
+	"@maple/cli/services/MapleApiError",
+	{
+		message: Schema.String,
+		queryName: Schema.optionalKey(Schema.String),
+	},
+) {}
 
 export interface MapleClientShape {
-	readonly queryWarehouse: <T = any>(
-		pipe: WarehouseQueryName,
+	readonly queryWarehouse: <T = unknown>(
+		queryName: WarehouseQueryName,
 		params?: Record<string, unknown>,
 	) => Effect.Effect<{ data: Array<T> }, MapleApiError>
 
-	readonly callTool: (name: string, args: Record<string, unknown>) => Effect.Effect<any, MapleApiError>
+	readonly callTool: (
+		name: string,
+		args: Record<string, unknown>,
+	) => Effect.Effect<Record<string, unknown>, MapleApiError>
 
 	readonly queryEngine: (request: {
 		startTime: string
 		endTime: string
 		query: unknown
-	}) => Effect.Effect<{ result: any }, MapleApiError>
+	}) => Effect.Effect<{ result: unknown }, MapleApiError>
 }
-
-let nextId = 1
 
 export class MapleClient extends Context.Service<MapleClient, MapleClientShape>()("@maple/cli/services/MapleClient", {
 	make: Effect.gen(function* () {
@@ -30,15 +34,20 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 		const mcpUrl = config.mcpUrl
 		const token = Redacted.value(config.apiToken)
 
-		// Initialize MCP session
-		let sessionId: string | null = null
+		// JSON-RPC request id counter + MCP session id, held in Refs so the state
+		// lives with the service instance instead of leaking module-level mutables.
+		const nextIdRef = yield* Ref.make(1)
+		const sessionIdRef = yield* Ref.make<string | null>(null)
+		const nextId = Ref.getAndUpdate(nextIdRef, (n) => n + 1)
 
 		const ensureSession = Effect.gen(function* () {
-			if (sessionId) return sessionId
+			const existing = yield* Ref.get(sessionIdRef)
+			if (existing) return existing
 
-			const res = yield* Effect.tryPromise({
-				try: async () => {
-					const resp = await fetch(mcpUrl, {
+			const id = yield* nextId
+			const sid = yield* Effect.tryPromise({
+				try: () =>
+					fetch(mcpUrl, {
 						method: "POST",
 						headers: {
 							"content-type": "application/json",
@@ -46,7 +55,7 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 						},
 						body: JSON.stringify({
 							jsonrpc: "2.0",
-							id: nextId++,
+							id,
 							method: "initialize",
 							params: {
 								protocolVersion: "2024-11-05",
@@ -54,84 +63,90 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 								clientInfo: { name: "maple-cli", version: "0.1.0" },
 							},
 						}),
-					})
-					const sid = resp.headers.get("mcp-session-id")
-					if (!sid) throw new Error("No Mcp-Session-Id header in response")
-					return sid
-				},
+					}),
 				catch: (error) =>
 					new MapleApiError({
 						message: `MCP init failed: ${error instanceof Error ? error.message : String(error)}`,
 					}),
 			})
 
-			sessionId = res
-			return res
+			const header = sid.headers.get("mcp-session-id")
+			if (!header) {
+				return yield* new MapleApiError({ message: "No Mcp-Session-Id header in response" })
+			}
+
+			yield* Ref.set(sessionIdRef, header)
+			return header
 		})
 
-		const callTool = (name: string, args: Record<string, unknown>): Effect.Effect<any, MapleApiError> =>
-			Effect.gen(function* () {
-				const sid = yield* ensureSession
+		const callTool = Effect.fn("MapleClient.callTool")(function* (
+			name: string,
+			args: Record<string, unknown>,
+		) {
+			const sid = yield* ensureSession
+			const id = yield* nextId
 
-				const result = yield* Effect.tryPromise({
-					try: async () => {
-						const resp = await fetch(mcpUrl, {
-							method: "POST",
-							headers: {
-								"content-type": "application/json",
-								authorization: `Bearer ${token}`,
-								"mcp-session-id": sid,
-							},
-							body: JSON.stringify({
-								jsonrpc: "2.0",
-								id: nextId++,
-								method: "tools/call",
-								params: { name, arguments: args },
-							}),
-						})
+			const result = yield* Effect.tryPromise({
+				try: () =>
+					fetch(mcpUrl, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: `Bearer ${token}`,
+							"mcp-session-id": sid,
+						},
+						body: JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							method: "tools/call",
+							params: { name, arguments: args },
+						}),
+					}).then(async (resp) => {
 						if (!resp.ok) {
 							const text = await resp.text()
-							throw new Error(`HTTP ${resp.status}: ${text}`)
+							return { __httpError: `HTTP ${resp.status}: ${text}` } as const
 						}
-						return await resp.json()
-					},
-					catch: (error) =>
-						new MapleApiError({
-							message: `MCP tool ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
-						}),
-				})
+						return (await resp.json()) as Record<string, unknown>
+					}),
+				catch: (error) =>
+					new MapleApiError({
+						message: `MCP tool ${name} failed: ${error instanceof Error ? error.message : String(error)}`,
+					}),
+			})
 
-				const res = result as any
-				if (res.error) {
-					return yield* Effect.fail(
-						new MapleApiError({ message: `MCP error: ${JSON.stringify(res.error)}` }),
-					)
-				}
+			if ("__httpError" in result) {
+				return yield* new MapleApiError({ message: `MCP tool ${name} failed: ${result.__httpError}` })
+			}
 
-				// Extract structured data from the dual content format
-				// Second text content item contains JSON with __maple_ui marker
-				const content = res.result?.content ?? []
-				const textContent = content
-					.filter((c: any) => c.type === "text" && !c.text?.includes("__maple_ui"))
-					.map((c: any) => c.text)
-					.join("\n")
+			const res = result as Record<string, any>
+			if (res.error) {
+				return yield* new MapleApiError({ message: `MCP error: ${JSON.stringify(res.error)}` })
+			}
 
-				for (const c of content) {
-					if (c.type === "text" && c.text?.includes("__maple_ui")) {
-						try {
-							const parsed = JSON.parse(c.text)
-							// Preserve both structured data and human-readable text
-							parsed._text = textContent
-							return parsed
-						} catch {
-							// fall through
-						}
+			// Extract structured data from the dual content format
+			// Second text content item contains JSON with __maple_ui marker
+			const content = res.result?.content ?? []
+			const textContent = content
+				.filter((c: any) => c.type === "text" && !c.text?.includes("__maple_ui"))
+				.map((c: any) => c.text)
+				.join("\n")
+
+			for (const c of content) {
+				if (c.type === "text" && c.text?.includes("__maple_ui")) {
+					try {
+						const parsed = JSON.parse(c.text) as Record<string, unknown>
+						// Preserve both structured data and human-readable text
+						parsed._text = textContent
+						return parsed
+					} catch {
+						// fall through
 					}
 				}
+			}
 
-				// Return raw text content if no structured data found
-				return { _raw: true, text: textContent, content }
-			})
+			// Return raw text content if no structured data found
+			return { _raw: true, text: textContent, content } as Record<string, unknown>
+		})
 
 		// Query Tinybird pipes by calling MCP tools that wrap them
 		// We map pipe names to MCP tool calls
@@ -153,85 +168,91 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 			services_facets: "explore_attributes",
 		}
 
-		const queryWarehouse = <T = any>(
-			pipe: WarehouseQueryName,
+		const queryWarehouse = Effect.fn("MapleClient.queryWarehouse")(function* <T = unknown>(
+			queryName: WarehouseQueryName,
 			params?: Record<string, unknown>,
-		): Effect.Effect<{ data: Array<T> }, MapleApiError> =>
-			Effect.gen(function* () {
-				// Direct MCP tool calls with proper param mapping
-				const sid = yield* ensureSession
-				const id = nextId++
+		) {
+			// Map the warehouse query name to the MCP tool that wraps it. A missing
+			// mapping is a typed failure, raised before crossing the fetch boundary.
+			const toolName = PIPE_TO_TOOL[queryName]
+			if (!toolName) {
+				return yield* new MapleApiError({
+					message: `No MCP tool mapping for query: ${queryName}`,
+					queryName,
+				})
+			}
 
-				// Call the internal _query endpoint directly via a custom tool call
-				// Since MCP wraps the tinybird queries, we call the tool and parse its structured output
-				const result = yield* Effect.tryPromise({
-					try: async () => {
-						// Use tools/call to call the appropriate tool
-						const toolName = PIPE_TO_TOOL[pipe]
-						if (!toolName) {
-							throw new Error(`No MCP tool mapping for pipe: ${pipe}`)
-						}
+			const sid = yield* ensureSession
+			const id = yield* nextId
+			const args = mapParamsToToolArgs(queryName, params ?? {})
 
-						// Map params to MCP tool arguments
-						const args = mapParamsToToolArgs(pipe, params ?? {})
-
-						const resp = await fetch(mcpUrl, {
-							method: "POST",
-							headers: {
-								"content-type": "application/json",
-								authorization: `Bearer ${token}`,
-								"mcp-session-id": sid,
-							},
-							body: JSON.stringify({
-								jsonrpc: "2.0",
-								id,
-								method: "tools/call",
-								params: { name: toolName, arguments: args },
-							}),
-						})
+			const result = yield* Effect.tryPromise({
+				try: () =>
+					fetch(mcpUrl, {
+						method: "POST",
+						headers: {
+							"content-type": "application/json",
+							authorization: `Bearer ${token}`,
+							"mcp-session-id": sid,
+						},
+						body: JSON.stringify({
+							jsonrpc: "2.0",
+							id,
+							method: "tools/call",
+							params: { name: toolName, arguments: args },
+						}),
+					}).then(async (resp) => {
 						if (!resp.ok) {
 							const text = await resp.text()
-							throw new Error(`HTTP ${resp.status}: ${text}`)
+							return { __httpError: `HTTP ${resp.status}: ${text}` } as const
 						}
-						return await resp.json()
-					},
-					catch: (error) =>
-						new MapleApiError({
-							message: `Query ${pipe} failed: ${error instanceof Error ? error.message : String(error)}`,
-							pipe,
-						}),
-				})
-
-				const res = result as any
-				if (res.error) {
-					return yield* Effect.fail(
-						new MapleApiError({ message: `MCP error: ${JSON.stringify(res.error)}`, pipe }),
-					)
-				}
-
-				// Parse structured data from dual content (second text item has __maple_ui marker)
-				const content = res.result?.content ?? []
-				for (const c of content) {
-					if (c.type === "text" && c.text?.includes("__maple_ui")) {
-						try {
-							const parsed = JSON.parse(c.text)
-							return { data: extractDataArray(pipe, parsed) as T[] }
-						} catch {
-							// fall through
-						}
-					}
-				}
-
-				return { data: [] as T[] }
+						return (await resp.json()) as Record<string, unknown>
+					}),
+				catch: (error) =>
+					new MapleApiError({
+						message: `Query ${queryName} failed: ${error instanceof Error ? error.message : String(error)}`,
+						queryName,
+					}),
 			})
 
-		const queryEngine = (request: {
+			if ("__httpError" in result) {
+				return yield* new MapleApiError({
+					message: `Query ${queryName} failed: ${result.__httpError}`,
+					queryName,
+				})
+			}
+
+			const res = result as Record<string, any>
+			if (res.error) {
+				return yield* new MapleApiError({
+					message: `MCP error: ${JSON.stringify(res.error)}`,
+					queryName,
+				})
+			}
+
+			// Parse structured data from dual content (second text item has __maple_ui marker)
+			const content = res.result?.content ?? []
+			for (const c of content) {
+				if (c.type === "text" && c.text?.includes("__maple_ui")) {
+					try {
+						const parsed = JSON.parse(c.text)
+						return { data: extractDataArray(queryName, parsed) as T[] }
+					} catch {
+						// fall through
+					}
+				}
+			}
+
+			return { data: [] as T[] }
+		})
+
+		const queryEngine = Effect.fn("MapleClient.queryEngine")(function* (request: {
 			startTime: string
 			endTime: string
 			query: unknown
-		}): Effect.Effect<{ result: any }, MapleApiError> => {
+		}) {
 			const q = request.query as any
-			return callTool("query_data", {
+			const result = yield* callTool("query_data", {
 				source: q.source,
 				kind: q.kind,
 				metric: q.metric,
@@ -246,17 +267,19 @@ export class MapleClient extends Context.Service<MapleClient, MapleClientShape>(
 					attribute_key: q.filters.attributeFilters[0].key,
 					attribute_value: q.filters.attributeFilters[0].value,
 				}),
-			}).pipe(
-				Effect.map((result) => {
-					if (result._raw) {
-						return { result: { kind: q.kind, source: q.source, data: [] } }
-					}
-					return { result: { kind: q.kind, source: q.source, data: result.data ?? result } }
-				}),
-			)
-		}
+			})
+			if (result._raw) {
+				return { result: { kind: q.kind, source: q.source, data: [] } }
+			}
+			return { result: { kind: q.kind, source: q.source, data: result.data ?? result } }
+		})
 
-		return { queryWarehouse, callTool, queryEngine }
+		// NOTE: returned as a bare object (typed by MapleClientShape) rather than
+		// MapleClient.of(...) — calling the static `.of` inside an inline `make`
+		// creates a self-reference cycle in the class's own base expression
+		// (TS2506). The shape is still fully checked against MapleClientShape.
+		const shape: MapleClientShape = { queryWarehouse, callTool, queryEngine }
+		return shape
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make)
