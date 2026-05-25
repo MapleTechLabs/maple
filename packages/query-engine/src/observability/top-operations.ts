@@ -1,22 +1,12 @@
 import { Array as Arr, Effect, pipe } from "effect"
+import * as CH from "../ch"
+import type { TracesMetric } from "../query-engine"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
-import type { TracesMetric } from "../query-engine"
-import { escapeForSQL } from "./sql-utils"
 
 export interface TopOperation {
 	readonly name: string
 	readonly value: number
-}
-
-const METRIC_EXPRESSIONS: Record<string, string> = {
-	count: "count()",
-	avg_duration: "avg(Duration) / 1000000",
-	p50_duration: "quantile(0.5)(Duration) / 1000000",
-	p95_duration: "quantile(0.95)(Duration) / 1000000",
-	p99_duration: "quantile(0.99)(Duration) / 1000000",
-	error_rate: "if(count() > 0, countIf(StatusCode = 'Error') / count(), 0)",
-	apdex: "if(count() > 0, round((countIf(Duration / 1000000 < 500) + countIf(Duration / 1000000 >= 500 AND Duration / 1000000 < 2000) * 0.5) / count(), 4), 0)",
 }
 
 export const topOperations = Effect.fn("Observability.topOperations")(function* (input: {
@@ -26,35 +16,20 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 	readonly limit?: number
 }) {
 	const executor = yield* WarehouseExecutor
-	const limit = input.limit ?? 20
-	const esc = escapeForSQL
-	const metricExpr = METRIC_EXPRESSIONS[input.metric] ?? "count()"
 
 	yield* Effect.annotateCurrentSpan({
 		service: input.serviceName,
 		metric: input.metric,
 	})
 
-	const sql = `
-      SELECT
-        SpanName as name,
-        ${metricExpr} as value
-      FROM traces
-      WHERE OrgId = '${esc(executor.orgId)}'
-        AND ServiceName = '${esc(input.serviceName)}'
-        AND Timestamp >= parseDateTimeBestEffort('${esc(input.timeRange.startTime)}')
-        AND Timestamp <= parseDateTimeBestEffort('${esc(input.timeRange.endTime)}')
-      GROUP BY name
-      ORDER BY value DESC
-      LIMIT ${limit}
-      FORMAT JSON
-    `
+	const compiled = CH.compile(CH.topOperationsQuery({ metric: input.metric, limit: input.limit ?? 20 }), {
+		orgId: executor.orgId,
+		serviceName: input.serviceName,
+		startTime: input.timeRange.startTime,
+		endTime: input.timeRange.endTime,
+	})
 
-	interface TopOpRow {
-		readonly name: string
-		readonly value: number
-	}
-	const rows = yield* executor.sqlQuery<TopOpRow>(sql, { profile: "aggregation" })
+	const rows = compiled.castRows(yield* executor.sqlQuery(compiled.sql, { profile: "aggregation" }))
 	yield* Effect.annotateCurrentSpan("operationCount", rows.length)
 	return pipe(
 		rows,

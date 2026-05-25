@@ -298,22 +298,15 @@ interface TracesFilterAccumulator {
 }
 
 function operatorToFilterMode(operator: string): AccumulatedAttributeFilter["mode"] {
-	switch (operator) {
-		case "exists":
-			return "exists"
-		case ">":
-			return "gt"
-		case ">=":
-			return "gte"
-		case "<":
-			return "lt"
-		case "<=":
-			return "lte"
-		case "contains":
-			return "contains"
-		default:
-			return "equals"
-	}
+	return Match.value(operator).pipe(
+		Match.when("exists", () => "exists" as const),
+		Match.when(">", () => "gt" as const),
+		Match.when(">=", () => "gte" as const),
+		Match.when("<", () => "lt" as const),
+		Match.when("<=", () => "lte" as const),
+		Match.when("contains", () => "contains" as const),
+		Match.orElse(() => "equals" as const),
+	)
 }
 
 function applyTracesClause(
@@ -567,55 +560,33 @@ export function resolveGroupBy(
 			continue
 		}
 
-		let resolved: string | null = null
-		if (source === "traces") {
-			switch (token) {
-				case "service":
-				case "service.name":
-					resolved = "service"
-					break
-				case "span":
-				case "span.name":
-					resolved = "span_name"
-					break
-				case "status":
-				case "status.code":
-					resolved = "status_code"
-					break
-				case "http.method":
-					resolved = "http_method"
-					break
-				case "none":
-				case "all":
-					resolved = "none"
-					break
-			}
-		} else if (source === "logs") {
-			switch (token) {
-				case "service":
-				case "service.name":
-					resolved = "service"
-					break
-				case "severity":
-					resolved = "severity"
-					break
-				case "none":
-				case "all":
-					resolved = "none"
-					break
-			}
-		} else {
-			switch (token) {
-				case "service":
-				case "service.name":
-					resolved = "service"
-					break
-				case "none":
-				case "all":
-					resolved = "none"
-					break
-			}
-		}
+		const resolved: string | null = Match.value(source).pipe(
+			Match.when("traces", () =>
+				Match.value(token).pipe(
+					Match.whenOr("service", "service.name", () => "service"),
+					Match.whenOr("span", "span.name", () => "span_name"),
+					Match.whenOr("status", "status.code", () => "status_code"),
+					Match.when("http.method", () => "http_method"),
+					Match.whenOr("none", "all", () => "none"),
+					Match.orElse(() => null),
+				),
+			),
+			Match.when("logs", () =>
+				Match.value(token).pipe(
+					Match.whenOr("service", "service.name", () => "service"),
+					Match.when("severity", () => "severity"),
+					Match.whenOr("none", "all", () => "none"),
+					Match.orElse(() => null),
+				),
+			),
+			Match.orElse(() =>
+				Match.value(token).pipe(
+					Match.whenOr("service", "service.name", () => "service"),
+					Match.whenOr("none", "all", () => "none"),
+					Match.orElse(() => null),
+				),
+			),
+		)
 
 		if (resolved == null) {
 			warnings.push(`Unsupported ${source} group by ignored: ${raw}`)

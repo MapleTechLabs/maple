@@ -4,7 +4,10 @@ import type { ListTracesOutput } from "@maple/domain/tinybird"
 import { WarehouseExecutor, ObservabilityError, type WarehouseExecutorShape } from "./WarehouseExecutor"
 import type { SearchTracesInput, SearchTracesOutput, SpanResult } from "./types"
 import { toSpanResult } from "./row-mappers"
-import { escapeForSQL } from "./sql-utils"
+import { escapeForSQL, safeUInt } from "./sql-utils"
+
+const MAX_LIMIT = 1000
+const MAX_OFFSET = 1_000_000
 
 /**
  * Search for spans matching the given criteria.
@@ -19,8 +22,8 @@ import { escapeForSQL } from "./sql-utils"
  */
 export const searchTraces = Effect.fn("Observability.searchTraces")(function* (input: SearchTracesInput) {
 	const executor = yield* WarehouseExecutor
-	const limit = input.limit ?? 20
-	const offset = input.offset ?? 0
+	const limit = safeUInt(input.limit, 20, MAX_LIMIT)
+	const offset = safeUInt(input.offset, 0, MAX_OFFSET)
 
 	yield* Effect.annotateCurrentSpan(
 		"searchMode",
@@ -92,8 +95,12 @@ const spanLevelSearch = (
 				),
 				optionalCondition(input.service, (s) => `ServiceName = '${esc(s)}'`),
 				input.hasError ? Option.some(`StatusCode = 'Error'`) : Option.none(),
-				optionalCondition(input.minDurationMs, (d) => `Duration >= ${d} * 1000000`),
-				optionalCondition(input.maxDurationMs, (d) => `Duration <= ${d} * 1000000`),
+				input.minDurationMs != null
+					? Option.some(`Duration >= ${safeUInt(input.minDurationMs, 0, Number.MAX_SAFE_INTEGER)} * 1000000`)
+					: Option.none(),
+				input.maxDurationMs != null
+					? Option.some(`Duration <= ${safeUInt(input.maxDurationMs, 0, Number.MAX_SAFE_INTEGER)} * 1000000`)
+					: Option.none(),
 				optionalCondition(input.httpMethod, (m) => `SpanAttributes['http.method'] = '${esc(m)}'`),
 				optionalCondition(input.traceId, (id) => `TraceId = '${esc(id)}'`),
 			],

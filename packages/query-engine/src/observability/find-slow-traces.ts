@@ -4,7 +4,9 @@ import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
-import { escapeForSQL } from "./sql-utils"
+import { escapeForSQL, safeUInt } from "./sql-utils"
+
+const MAX_LIMIT = 1000
 
 /**
  * Returns the slowest root spans in a time range, ordered by Duration DESC at
@@ -17,7 +19,7 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 	input: FindSlowTracesInput,
 ) {
 	const executor = yield* WarehouseExecutor
-	const limit = input.limit ?? 10
+	const limit = safeUInt(input.limit, 10, MAX_LIMIT)
 
 	yield* Effect.annotateCurrentSpan("service", input.service ?? "all")
 

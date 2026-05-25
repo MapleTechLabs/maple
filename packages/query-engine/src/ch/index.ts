@@ -342,6 +342,14 @@ export {
 	type DbStatementSamplesOutput,
 } from "./queries/internal"
 
+// Queries — Top Operations (per-service operation ranking by metric)
+export {
+	topOperationsQuery,
+	type TopOperationsMetric,
+	type TopOperationsOpts,
+	type TopOperationsOutput,
+} from "./queries/top-operations"
+
 // Queries — Infrastructure (host-centric aggregations over hostmetrics)
 export {
 	listHostsQuery,
