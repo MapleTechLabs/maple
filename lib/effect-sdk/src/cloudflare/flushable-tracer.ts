@@ -6,7 +6,8 @@
 // resolves them lazily from the worker `env` at first flush, so the layer
 // itself can be constructed at module scope without env.
 // ---------------------------------------------------------------------------
-import { Cause, type Context, Layer, type Option, Tracer } from "effect"
+import { Cause, type Context, Layer, type Option, Predicate, Tracer } from "effect"
+import * as ErrorReporter from "effect/ErrorReporter"
 import * as OtlpResource from "effect/unstable/observability/OtlpResource"
 import type { ExtractTag } from "effect/Types"
 
@@ -28,6 +29,24 @@ export interface SpanBufferOptions {
 	readonly dropSpan?: ((name: string) => boolean) | undefined
 }
 
+// Errors carrying Effect's `[ErrorReporter.ignore]` flag are benign by design —
+// Effect's own "don't report this failure" signal. The canonical case is
+// `HttpServerError { reason: RouteNotFound }` (unmatched routes → 404), which
+// would otherwise surface as an Error-status span. We key off the annotation
+// rather than concrete error tags so the check stays robust and HTTP-agnostic;
+// genuine failures (400 parse errors, 500s) keep `ignore = false` and trace.
+const isIgnoredFailure = (error: unknown): boolean =>
+	Predicate.hasProperty(error, ErrorReporter.ignore) && error[ErrorReporter.ignore] === true
+
+const isIgnoredSpan = (span: SpanImpl): boolean => {
+	const status = span.status
+	if (status._tag !== "Ended") return false
+	const exit = status.exit
+	if (exit._tag !== "Failure") return false
+	// Cause is flat in effect v4: walk `reasons`, pick Fail reasons, inspect their error.
+	return exit.cause.reasons.some((reason) => Cause.isFailReason(reason) && isIgnoredFailure(reason.error))
+}
+
 export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	let buffer: Array<OtlpSpan> = []
 	let disabled = false
@@ -37,6 +56,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		if (disabled) return
 		if (!span.sampled) return
 		if (dropSpan !== undefined && dropSpan(span.name)) return
+		if (isIgnoredSpan(span)) return
 		if (buffer.length >= MAX_BUFFER) return
 		buffer.push(makeOtlpSpan(span))
 	}
