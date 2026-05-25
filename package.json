@@ -56,6 +56,8 @@
 			"@effect/language-service": "^0.85.1",
 			"@effect/opentelemetry": "4.0.0-beta.70",
 			"@effect/platform-bun": "4.0.0-beta.70",
+			"@effect/sql-d1": "4.0.0-beta.70",
+			"@effect/sql-pg": "4.0.0-beta.70",
 			"effect": "4.0.0-beta.70"
 		},
 		"react": {

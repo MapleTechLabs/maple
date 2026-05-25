@@ -1,20 +1,21 @@
 {
-	"name": "@maple/effect-cloudflare",
+	"name": "@maple/effect-cf",
 	"private": true,
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./worker-environment": "./src/worker-environment.ts",
-		"./d1-connection": "./src/d1-connection.ts"
+		"./package.json": "./package.json"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@effect/sql-d1": "catalog:effect",
+		"@effect/sql-pg": "catalog:effect",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20260405.0",
+		"@cloudflare/workers-types": "^4.20260421.1",
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling"

@@ -1,21 +1,17 @@
-import { createMapleD1Client, type CloudflareD1Database } from "@maple/db/client"
+import { createMapleD1Client } from "@maple/db/client"
 import { migrateAlertQuerySignalTypes, reshapeDashboardWidgets } from "@maple/db/migrate"
-import { D1Database as D1DatabaseToken } from "@maple/effect-cloudflare/d1-connection"
 import { Effect, Layer } from "effect"
 import { Database, type DatabaseClient, type DatabaseShape, toDatabaseError } from "./DatabaseLive"
-
-const MAPLE_DB = D1DatabaseToken("MAPLE_DB")
+import { MapleDb } from "./MapleD1"
 
 const makeD1Database = Effect.gen(function* () {
-	const conn = yield* D1DatabaseToken.bind(MAPLE_DB)
-	const binding = yield* conn.raw
-	if (!binding) {
-		return yield* Effect.die(new Error("Missing worker D1 binding: MAPLE_DB"))
-	}
+	// `MapleDb` resolves the validated raw `MAPLE_DB` D1 binding. A missing or
+	// malformed binding fails `MapleDb.layer` with `BindingNotFound/Validation`,
+	// converted to a defect via `Layer.orDie` below — preserving the original
+	// fail-fast (surfaced as a boot error in `wrangler tail`).
+	const binding = yield* MapleDb
 
-	const client = createMapleD1Client(
-		binding as unknown as CloudflareD1Database,
-	) as unknown as DatabaseClient
+	const client = createMapleD1Client(binding) as unknown as DatabaseClient
 
 	// The D1 worker never calls runMigrations; the data migration is guarded by
 	// the _maple_data_migrations table, so every later boot is a single SELECT.
@@ -45,4 +41,8 @@ const makeD1Database = Effect.gen(function* () {
 	} satisfies DatabaseShape)
 })
 
-export const DatabaseD1Live = Layer.effect(Database, makeD1Database)
+// Self-provides the D1 binding layer (orDie'd) so the only remaining
+// requirement is `WorkerEnvironment`, which `Worker.make` supplies from `env`.
+export const DatabaseD1Live = Layer.effect(Database, makeD1Database).pipe(
+	Layer.provide(Layer.orDie(MapleDb.layer)),
+)

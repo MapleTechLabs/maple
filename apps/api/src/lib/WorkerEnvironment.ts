@@ -1,5 +1,5 @@
-// Thin re-export of the runtime-shared `WorkerEnvironment` from
-// `@maple/effect-cloudflare`. The shared service uses the same tag
-// (`"Cloudflare.Workers.WorkerEnvironment"`) so provision is compatible with
-// any prior in-tree usage.
-export { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
+// Re-export effect-cf's `WorkerEnvironment` Context tag. Inside `Worker.make`
+// the layer is supplied automatically from the worker `env`; this re-export is
+// for code that provides it manually (e.g. the Durable Object agent in
+// `agent.ts`, and the `@maple/api/alerting` barrel).
+export { WorkerEnvironment } from "@maple/effect-cf"

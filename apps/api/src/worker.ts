@@ -1,13 +1,13 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Context, FileSystem, Layer, Path } from "effect"
-import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
+import { Worker, WorkerEnvironment } from "@maple/effect-cf"
+import { Cause, Effect, FileSystem, Layer, Option, Path } from "effect"
+import { Headers, HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } from "./app"
-import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
 import { DatabaseD1Live } from "./lib/DatabaseD1Live"
+import { persistSession, preloadSession, type SessionsBinding } from "./mcp/lib/session-store"
 
 const WorkerFileSystemLive = FileSystem.layerNoop({})
 
@@ -36,46 +36,42 @@ const WorkerPlatformLive = Layer.mergeAll(
 	WorkerHttpPlatformLive,
 )
 
-// Construct telemetry once at module scope — `layer` is stable, `flush(env)`
-// resolves env lazily on first call. Including `telemetry.layer` in the
-// handler's layer composition is the critical bit: the Tracer reference must
-// live in the same runtime as the routes that emit spans.
+// Telemetry is constructed once at module scope — `layer` is stable, `flush(env)`
+// resolves env lazily. `telemetry.layer` lives in the same runtime as the routes
+// (it's part of `AppLayer`) so the Tracer reference is shared with the spans the
+// HTTP tracer middleware emits.
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "maple-api",
 	dropSpanNames: ["McpServer/Notifications."],
 })
 
-// POST /mcp hangs indefinitely on Cloudflare Workers when `toWebHandler` is
-// called with no middleware (1101 in prod, miniflare "worker hung" locally).
-// Suspected Effect RpcServer / HttpRouter scope-propagation bug. Providing
-// ANY middleware — even a pass-through — unsticks it. Paired with
-// `disableLogger: true` so Effect's default `HttpMiddleware.logger` does not
-// double-log; application logs flow through the OTLP logger installed by
-// `telemetry.layer`.
-const passThroughMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) => httpApp
+// The full application layer. `Worker.make` supplies `WorkerEnvironment`, the
+// `ConfigProvider` (from the worker `env`), `ExecutionContext`, and
+// `WorkerContext` automatically — so `DatabaseD1Live` (which needs
+// `WorkerEnvironment`) and any `Config` reads resolve without manual wiring.
+// `HttpRouter.layer` provides the router service that `AllRoutes` registers into
+// (previously supplied internally by `HttpRouter.toWebHandler`).
+const composedLayer = AllRoutes.pipe(
+	Layer.provideMerge(MainLive),
+	Layer.provideMerge(ApiAuthLive),
+	Layer.provideMerge(ApiObservabilityLive),
+	Layer.provideMerge(WorkerPlatformLive),
+	Layer.provideMerge(DatabaseD1Live),
+	Layer.provideMerge(telemetry.layer),
+	Layer.provideMerge(HttpRouter.layer),
+)
 
-const buildHandler = () =>
-	HttpRouter.toWebHandler(
-		AllRoutes.pipe(
-			Layer.provideMerge(MainLive),
-			Layer.provideMerge(ApiAuthLive),
-			Layer.provideMerge(ApiObservabilityLive),
-			Layer.provideMerge(WorkerPlatformLive),
-			Layer.provideMerge(DatabaseD1Live),
-			Layer.provideMerge(WorkerEnvironment.layer),
-			Layer.provideMerge(telemetry.layer),
-			Layer.provideMerge(WorkerConfigProviderLayer),
-		),
-		{ middleware: passThroughMiddleware, disableLogger: true },
-	)
-
-// Single isolate-wide handler — `toWebHandler` builds its own ManagedRuntime
-// once and keeps it for the lifetime of the isolate. Built eagerly at module
-// load so a layer construction failure surfaces as a startup error in
-// `wrangler tail` instead of silently hanging the first request and bricking
-// the isolate (Cloudflare 1101).
-const cachedHandler = buildHandler()
-const getHandler = () => cachedHandler
+// `HttpApiBuilder` encodes each API error as a phantom `Request<"Error", E>`
+// layer requirement — a contract that "whoever runs this converts those errors
+// to HTTP responses." `render` does exactly that (`asHttpEffect` + `catchCause`),
+// and `Worker.make` supplies the worker services, so we discharge the phantom
+// requirements down to `WorkerEnvironment`. This mirrors effect-cf's own HTTP
+// worker example, which casts the `HttpApiBuilder` layer the same way.
+const AppLayer: Layer.Layer<
+	Layer.Success<typeof composedLayer>,
+	Layer.Error<typeof composedLayer>,
+	WorkerEnvironment
+> = composedLayer as never
 
 const isMcpPost = (request: Request): boolean => {
 	if (request.method !== "POST") return false
@@ -96,103 +92,99 @@ const readMcpSessionsBinding = (env: Record<string, unknown>): SessionsBinding |
 
 type McpFrame = { method: string; id: string }
 
-// Peek the JSON-RPC body without consuming the request stream. Returns the
-// first frame's method and id (string-coerced; "-" if absent). Tolerates batch
-// payloads and malformed JSON — diagnostics only, never throws.
+// Peek the JSON-RPC body without consuming the request stream (we read a clone,
+// leaving the original body for the router). Tolerates batch payloads and
+// malformed JSON — diagnostics only, never throws.
 const peekMcpFrame = (body: string): McpFrame => {
 	try {
 		const parsed = JSON.parse(body)
 		const first = Array.isArray(parsed) ? parsed[0] : parsed
 		const method = typeof first?.method === "string" ? first.method : "-"
-		const id =
-			first?.id === undefined || first?.id === null ? "-" : String(first.id)
+		const id = first?.id === undefined || first?.id === null ? "-" : String(first.id)
 		return { method, id }
 	} catch {
 		return { method: "-", id: "-" }
 	}
 }
 
-// The handler should never throw under normal operation — Effect surfaces
-// errors as HTTP responses. If it does (layer construction failure, fatal
-// runtime error), we surface it as a 504 outside Effect.
-//
-// MCP session persistence runs OUTSIDE the Effect runtime on purpose. Effect's
-// fiber scheduler doesn't reliably propagate AsyncLocalStorage through every
-// generator resumption / scope finalizer / forked fiber, so reading a binding
-// via ALS from inside an `override set()` on the clientSessions Map silently
-// no-ops in some paths — sessions stay in-memory only and the next isolate 404s.
-// Driving the KV preload+put from this outer async context means the bindings
-// come from `env` directly — no AsyncLocalStorage required.
-const handle = async (
-	request: Request,
-	env: Record<string, unknown>,
-	ctx: ExecutionContext,
-): Promise<Response> => {
+// Yield one macrotask so Effect's scheduler can drain `scheduleTask(fn, 0)` tasks
+// — notably `HttpMiddleware.tracer`'s `span.end` — before we flush the OTLP
+// buffer, so the root server span lands instead of appearing parentless.
+const drainMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
+const sessionIdOf = (response: HttpServerResponse.HttpServerResponse): string | null =>
+	Option.getOrNull(Headers.get(response.headers, "mcp-session-id"))
+
+// Per-request HTTP handler. Runs inside the `Worker.make` runtime, so `env` is a
+// real `WorkerEnvironment` service (not AsyncLocalStorage) — which is why MCP KV
+// session persistence + body-peek diagnostics + telemetry flush can all live
+// here rather than in an outer wrapper.
+const render = Effect.gen(function* () {
+	const request = yield* Worker.NativeRequest
+	const env = (yield* WorkerEnvironment) as Record<string, unknown>
+	const workerCtx = yield* Worker.WorkerContext
+
 	const kv = readMcpSessionsBinding(env)
 	const isMcp = isMcpPost(request)
 	const reqSid = isMcp ? request.headers.get("mcp-session-id") : null
-
-	// MCP diagnostics: buffer the body so we can peek the JSON-RPC method/id
-	// before handing it off to Effect, then re-emit the request with the
-	// buffered body so the inner handler still sees a readable stream.
-	let forwardRequest = request
-	let mcpFrame: McpFrame | null = null
 	const startedAt = Date.now()
+
+	let mcpFrame: McpFrame | null = null
 	if (isMcp) {
-		const bodyText = await request.text()
-		mcpFrame = peekMcpFrame(bodyText)
-		forwardRequest = new Request(request.url, {
-			method: request.method,
-			headers: request.headers,
-			body: bodyText,
-		})
-		console.log(
-			`[mcp-in] method=${mcpFrame.method} id=${mcpFrame.id}` +
-				` sid=${reqSid ?? "-"} body_len=${bodyText.length}`,
+		const bodyText = yield* Effect.promise(() => request.clone().text())
+		const frame = peekMcpFrame(bodyText)
+		mcpFrame = frame
+		yield* Effect.sync(() =>
+			console.log(
+				`[mcp-in] method=${frame.method} id=${frame.id}` +
+					` sid=${reqSid ?? "-"} body_len=${bodyText.length}`,
+			),
 		)
 	}
 
-	if (kv && reqSid) await preloadSession(kv, reqSid)
-
-	const { handler } = getHandler()
-	try {
-		const response = await handler(forwardRequest, Context.empty() as never)
-		if (kv && isMcp) {
-			const resSid = response.headers.get("mcp-session-id")
-			// Only persist when the server issued a new session — i.e. on
-			// `initialize`, where the response sid differs from the request sid
-			// (or the request had none). Subsequent requests echo the same sid;
-			// re-putting on every call would burn KV write quota for no reason.
-			if (resSid && resSid !== reqSid) {
-				const put = persistSession(kv, resSid)
-				if (put) ctx.waitUntil(put)
-			}
-		}
-		if (isMcp && mcpFrame) {
-			console.log(
-				`[mcp-out] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` status=${response.status} dur=${Date.now() - startedAt}ms` +
-					` body_len=${response.headers.get("content-length") ?? "-"}` +
-					` resp_sid=${response.headers.get("mcp-session-id") ?? "-"}`,
-			)
-		}
-		ctx.waitUntil(telemetry.flush(env))
-		return response
-	} catch (err) {
-		console.error("[worker] handler failed:", err)
-		if (isMcp && mcpFrame) {
-			console.error(
-				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` dur=${Date.now() - startedAt}ms`,
-			)
-		}
-		ctx.waitUntil(telemetry.flush(env))
-		const message = err instanceof Error ? err.message : String(err)
-		return new Response(`worker handler error: ${message}`, { status: 504 })
+	if (kv && reqSid) {
+		yield* Effect.promise(() => preloadSession(kv, reqSid))
 	}
-}
 
-export default {
-	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
-		handle(request, env, ctx),
-}
+	const router = yield* HttpRouter.HttpRouter
+	const response = yield* HttpMiddleware.tracer(router.asHttpEffect()).pipe(
+		Effect.catchCause((cause) =>
+			Effect.sync(() => {
+				console.error("[worker] handler failed:", Cause.pretty(cause))
+				return HttpServerResponse.text(`worker handler error: ${Cause.pretty(cause)}`, {
+					status: 504,
+				})
+			}),
+		),
+	)
+
+	// Persist only when the server issued a new session — i.e. on `initialize`,
+	// where the response sid differs from the request sid. Subsequent requests
+	// echo the same sid; re-putting every call would burn KV write quota.
+	if (kv && isMcp) {
+		const resSid = sessionIdOf(response)
+		if (resSid && resSid !== reqSid) {
+			const put = persistSession(kv, resSid)
+			if (put) yield* workerCtx.waitUntil(Effect.promise(() => put))
+		}
+	}
+
+	if (isMcp && mcpFrame) {
+		const frame = mcpFrame
+		yield* Effect.sync(() =>
+			console.log(
+				`[mcp-out] method=${frame.method} id=${frame.id}` +
+					` status=${response.status} dur=${Date.now() - startedAt}ms` +
+					` resp_sid=${sessionIdOf(response) ?? "-"}`,
+			),
+		)
+	}
+
+	yield* workerCtx.waitUntil(
+		Effect.promise(() => drainMacrotask().then(() => telemetry.flush(env))),
+	)
+
+	return response
+})
+
+export default Worker.make(AppLayer, { fetch: render })

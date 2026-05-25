@@ -32,7 +32,7 @@
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
-		"@maple/effect-cloudflare": "workspace:*",
+		"@maple/effect-cf": "workspace:*",
 		"@maple/email": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"@maple/query-engine": "workspace:*",

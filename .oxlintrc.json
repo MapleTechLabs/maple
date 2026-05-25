@@ -17,5 +17,5 @@
 			}
 		]
 	},
-	"ignorePatterns": [".context"]
+	"ignorePatterns": [".context", "lib/effect-cf"]
 }

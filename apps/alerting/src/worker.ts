@@ -18,11 +18,7 @@ import {
 	WarehouseQueryService,
 } from "@maple/api/alerting"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import {
-	runScheduledEffect,
-	WorkerConfigProviderLayer,
-	WorkerEnvironment,
-} from "@maple/effect-cloudflare"
+import { Worker, WorkerEnvironment } from "@maple/effect-cf"
 import { Cause, Effect, Layer } from "effect"
 
 // Module-scope construction; `flush(env)` resolves env on first call. The
@@ -30,11 +26,13 @@ import { Cause, Effect, Layer } from "effect"
 // signal.
 const telemetry = MapleCloudflareSDK.make({ serviceName: "alerting" })
 
-const buildLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
+// `Worker.make` supplies the `ConfigProvider` (from the worker `env`) and the
+// `WorkerEnvironment` service, so `Env.layer`'s `Config` reads and
+// `DatabaseD1Live`'s binding lookup resolve without manual wiring.
+const buildLayer = () => {
+	const EnvLive = Env.layer
 
-	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironment.layer))
+	const DatabaseLive = DatabaseD1Live
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 
@@ -103,7 +101,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		OnboardingEmailServiceLive,
 		ErrorsServiceLive,
 		ServiceMapRollupServiceLive,
-	).pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
+	).pipe(Layer.provideMerge(telemetry.layer))
 }
 
 const alertTick = Effect.gen(function* () {
@@ -208,35 +206,42 @@ const serviceMapRollupTick = Effect.gen(function* () {
 	),
 )
 
-interface ScheduledEventLike {
-	readonly cron: string
-}
+const AppLayer = buildLayer()
 
-interface ExecutionContextLike {
-	waitUntil(promise: Promise<unknown>): void
-}
+// Yield one macrotask so Effect's scheduler drains `scheduleTask(fn, 0)` work
+// (e.g. span ends) before the OTLP buffer flush, keeping spans non-parentless.
+const drainMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-export default {
-	async scheduled(
-		event: ScheduledEventLike,
-		env: Record<string, unknown>,
-		ctx: ExecutionContextLike,
-	): Promise<void> {
-		const program =
-			event.cron === "*/15 * * * *"
+const scheduled = (controller: globalThis.ScheduledController) =>
+	Effect.gen(function* () {
+		const workerCtx = yield* Worker.WorkerContext
+		const env = (yield* WorkerEnvironment) as Record<string, unknown>
+
+		// Flush always runs — even if a tick escalates to a defect — matching the
+		// previous `finally { ctx.waitUntil(telemetry.flush(env)) }`. The generic
+		// `R` collapses the cron branches' differing service requirements into one
+		// type param (a bare `yield*`/`.pipe` over the union resolves to `never`).
+		const withFlush = <R>(tick: Effect.Effect<void, never, R>) =>
+			tick.pipe(
+				Effect.ensuring(
+					workerCtx.waitUntil(
+						Effect.promise(() => drainMacrotask().then(() => telemetry.flush(env))),
+					),
+				),
+			)
+
+		yield* withFlush(
+			controller.cron === "*/15 * * * *"
 				? digestTick
-				: event.cron === "0 * * * *"
+				: controller.cron === "0 * * * *"
 					? serviceMapRollupTick
-					: event.cron === "0 9 * * *"
+					: controller.cron === "0 9 * * *"
 						? onboardingTick
-						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
-		try {
-			await runScheduledEffect(buildLayer(env), program, ctx)
-		} finally {
-			ctx.waitUntil(telemetry.flush(env))
-		}
-	},
-	fetch(_request: Request): Response {
-		return new Response("maple-alerting: scheduled only", { status: 404 })
-	},
-}
+						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true }),
+		)
+	})
+
+export default Worker.make(AppLayer, {
+	scheduled,
+	fetch: Effect.succeed(new Response("maple-alerting: scheduled only", { status: 404 })),
+})
