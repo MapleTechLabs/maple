@@ -101,16 +101,6 @@ export type WorkerHandler<ROut, A = WorkerFetchSuccess> = Effect.Effect<
 
 export type WorkerRpcHandler<ROut, A = unknown> = Effect.Effect<A, unknown, WorkerRpcContext<ROut>>;
 
-// maple divergence: scheduled (cron) handler support. Upstream effect-cf ships
-// only fetch/queue/rpc; cron workers need a `scheduled` entrypoint. The handler
-// runs through the same per-invocation runtime as fetch, with access to
-// WorkerContext (waitUntil), WorkerEnvironment, and the user layer.
-type WorkerScheduledContext<ROut> = WorkerBaseContext<ROut> | Scope.Scope;
-
-export type WorkerScheduledHandler<ROut> = (
-  controller: globalThis.ScheduledController,
-) => Effect.Effect<void, unknown, WorkerScheduledContext<ROut>>;
-
 export type WorkerRpc<ROut> = Record<string, (...args: Array<any>) => WorkerRpcHandler<ROut>>;
 
 export type WorkerRpcShape<Rpc extends WorkerRpc<ROut>, ROut> = {
@@ -140,7 +130,6 @@ export type RpcHandlers<ROut, Api> = {
 export interface WorkerOptions<ROut, Rpc extends WorkerRpc<ROut>> {
   readonly fetch?: Effect.Effect<WorkerFetchSuccess, unknown, WorkerFetchContext<ROut>>;
   readonly queue?: QueueHandler<ROut>;
-  readonly scheduled?: WorkerScheduledHandler<ROut>; // maple divergence
   readonly rpc?: Rpc;
 }
 
@@ -154,7 +143,6 @@ export type WorkerClass<Rpc extends WorkerRpc<ROut>, ROut> = new (
 ) => CloudflareWorkerEntrypoint<WorkerEnv> & {
   fetch(request: Request): Promise<Response>;
   queue(batch: globalThis.MessageBatch): Promise<void>;
-  scheduled(controller: globalThis.ScheduledController): Promise<void>; // maple divergence
 } & WorkerRpcShape<Rpc, ROut>;
 
 export interface FetchHandler<Env extends WorkerEnv = WorkerEnv> {
@@ -190,7 +178,7 @@ const isWorkerOptions = <ROut, Rpc extends WorkerRpc<ROut>>(
 ): options is WorkerOptions<ROut, Rpc> =>
   typeof options === "object" &&
   options !== null &&
-  ("fetch" in options || "queue" in options || "scheduled" in options || "rpc" in options);
+  ("fetch" in options || "queue" in options || "rpc" in options);
 
 export function make<ROut, LayerError>(
   layer: Layer.Layer<ROut, LayerError, ExecutionContext | WorkerContext | WorkerEnvironment>,
@@ -273,19 +261,6 @@ export function make<ROut, LayerError, const Rpc extends WorkerRpc<ROut> = Recor
       const messages = batch.messages.map((message) => fromMessage(message, message.body));
 
       return this[RunSymbol](queueHandler(fromMessageBatch(batch, messages)));
-    }
-
-    // maple divergence: cron entrypoint. CF passes the env/ctx via the
-    // constructor, so `scheduled(controller)` only receives the controller; the
-    // handler reaches env/waitUntil through WorkerEnvironment/WorkerContext.
-    scheduled(controller: globalThis.ScheduledController): Promise<void> {
-      const scheduledHandler = options.scheduled;
-
-      if (scheduledHandler === undefined) {
-        return Promise.resolve();
-      }
-
-      return this[RunSymbol](scheduledHandler(controller));
     }
   }
 

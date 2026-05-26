@@ -17,9 +17,10 @@ Keep this list current so re-syncs stay tractable. Apply changes additively and 
 - **`src/cloudflare-env.d.ts`** (maple-added): ambient `declare namespace Cloudflare { interface Env {} }`
   so the vendored source typechecks standalone in this package. Each consuming worker's generated
   `worker-configuration.d.ts` merges with it.
-- **`src/Worker.ts`** (maple-extended): added a `scheduled` handler to `WorkerOptions` /
-  `WorkerClass` and a `scheduled(controller)` method on the generated entrypoint, so cron workers
-  can run through `Worker.make`. Upstream only ships `fetch` / `queue` / `rpc`.
+
+The `src/` TypeScript is otherwise an unmodified mirror of upstream. Maple consumes only the
+binding primitives (`Binding`, `D1`, `WorkerConfig`, `WorkerEnvironment`); the workers keep their
+own hand-rolled `fetch`/`scheduled` entrypoints rather than `Worker.make`.
 
 ## Notes
 

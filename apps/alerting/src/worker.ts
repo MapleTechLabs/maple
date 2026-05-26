@@ -16,23 +16,26 @@ import {
 	QueryEngineService,
 	ServiceMapRollupService,
 	WarehouseQueryService,
+	WorkerEnvironmentLive,
 } from "@maple/api/alerting"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { Worker, WorkerEnvironment } from "@maple/effect-cf"
+import { WorkerConfig } from "@maple/effect-cf"
 import { Cause, Effect, Layer } from "effect"
+import { runScheduledEffect } from "./lib/runtime"
 
 // Module-scope construction; `flush(env)` resolves env on first call. The
 // in-isolate buffers coalesce concurrent scheduled ticks into one POST per
 // signal.
 const telemetry = MapleCloudflareSDK.make({ serviceName: "alerting" })
 
-// `Worker.make` supplies the `ConfigProvider` (from the worker `env`) and the
-// `WorkerEnvironment` service, so `Env.layer`'s `Config` reads and
-// `DatabaseD1Live`'s binding lookup resolve without manual wiring.
 const buildLayer = () => {
-	const EnvLive = Env.layer
+	// `WorkerConfig.providerLayer` reads the env-backed Effect ConfigProvider via
+	// `WorkerEnvironment`; `DatabaseD1Live` reads the `MAPLE_DB` binding the same
+	// way. Both get `WorkerEnvironment` from `WorkerEnvironmentLive`.
+	const ConfigLive = WorkerConfig.providerLayer.pipe(Layer.provide(WorkerEnvironmentLive))
+	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 
-	const DatabaseLive = DatabaseD1Live
+	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironmentLive))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 
@@ -101,7 +104,7 @@ const buildLayer = () => {
 		OnboardingEmailServiceLive,
 		ErrorsServiceLive,
 		ServiceMapRollupServiceLive,
-	).pipe(Layer.provideMerge(telemetry.layer))
+	).pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
 }
 
 const alertTick = Effect.gen(function* () {
@@ -206,49 +209,35 @@ const serviceMapRollupTick = Effect.gen(function* () {
 	),
 )
 
-const AppLayer = buildLayer()
+interface ScheduledEventLike {
+	readonly cron: string
+}
 
-// Yield one macrotask so Effect's scheduler drains `scheduleTask(fn, 0)` work
-// (e.g. span ends) before the OTLP buffer flush, keeping spans non-parentless.
-const drainMacrotask = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+interface ExecutionContextLike {
+	waitUntil(promise: Promise<unknown>): void
+}
 
-const scheduled = (controller: globalThis.ScheduledController) =>
-	Effect.gen(function* () {
-		const workerCtx = yield* Worker.WorkerContext
-		const env = (yield* WorkerEnvironment) as Record<string, unknown>
-
-		// Dispatch the cron tick inside a `gen` so the branches' differing service
-		// requirements accumulate into a single unioned `R` (passing the ternary's
-		// union of effects to a generic `<R>` param doesn't unify — `R` is
-		// contravariant).
-		const tick = Effect.gen(function* () {
-			switch (controller.cron) {
-				case "*/15 * * * *":
-					yield* digestTick
-					break
-				case "0 * * * *":
-					yield* serviceMapRollupTick
-					break
-				case "0 9 * * *":
-					yield* onboardingTick
-					break
-				default:
-					yield* Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
-			}
-		})
-
-		// Flush always runs — even if a tick escalates to a defect — matching the
-		// previous `finally { ctx.waitUntil(telemetry.flush(env)) }`.
-		yield* tick.pipe(
-			Effect.ensuring(
-				workerCtx.waitUntil(
-					Effect.promise(() => drainMacrotask().then(() => telemetry.flush(env))),
-				),
-			),
-		)
-	})
-
-export default Worker.make(AppLayer, {
-	scheduled,
-	fetch: Effect.succeed(new Response("maple-alerting: scheduled only", { status: 404 })),
-})
+export default {
+	async scheduled(
+		event: ScheduledEventLike,
+		env: Record<string, unknown>,
+		ctx: ExecutionContextLike,
+	): Promise<void> {
+		const program =
+			event.cron === "*/15 * * * *"
+				? digestTick
+				: event.cron === "0 * * * *"
+					? serviceMapRollupTick
+					: event.cron === "0 9 * * *"
+						? onboardingTick
+						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
+		try {
+			await runScheduledEffect(buildLayer(), program, ctx)
+		} finally {
+			ctx.waitUntil(telemetry.flush(env))
+		}
+	},
+	fetch(_request: Request): Response {
+		return new Response("maple-alerting: scheduled only", { status: 404 })
+	},
+}

@@ -16,4 +16,4 @@ export { OrgClickHouseSettingsService } from "./services/OrgClickHouseSettingsSe
 export { QueryEngineService } from "./services/QueryEngineService"
 export { ServiceMapRollupService } from "./services/ServiceMapRollupService"
 export { WarehouseQueryService } from "./lib/WarehouseQueryService"
-export { WorkerEnvironment } from "./lib/WorkerEnvironment"
+export { WorkerEnvironment, WorkerEnvironmentLive } from "./lib/WorkerEnvironment"
