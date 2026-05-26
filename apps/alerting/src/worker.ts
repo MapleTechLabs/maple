@@ -16,25 +16,26 @@ import {
 	QueryEngineService,
 	ServiceMapRollupService,
 	WarehouseQueryService,
+	WorkerEnvironmentLive,
 } from "@maple/api/alerting"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import {
-	runScheduledEffect,
-	WorkerConfigProviderLayer,
-	WorkerEnvironment,
-} from "@maple/effect-cloudflare"
+import { WorkerConfig } from "@maple/effect-cf"
 import { Cause, Effect, Layer } from "effect"
+import { runScheduledEffect } from "./lib/runtime"
 
 // Module-scope construction; `flush(env)` resolves env on first call. The
 // in-isolate buffers coalesce concurrent scheduled ticks into one POST per
 // signal.
 const telemetry = MapleCloudflareSDK.make({ serviceName: "alerting" })
 
-const buildLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
+const buildLayer = () => {
+	// `WorkerConfig.providerLayer` reads the env-backed Effect ConfigProvider via
+	// `WorkerEnvironment`; `DatabaseD1Live` reads the `MAPLE_DB` binding the same
+	// way. Both get `WorkerEnvironment` from `WorkerEnvironmentLive`.
+	const ConfigLive = WorkerConfig.providerLayer.pipe(Layer.provide(WorkerEnvironmentLive))
 	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 
-	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironment.layer))
+	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironmentLive))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 
@@ -231,7 +232,7 @@ export default {
 						? onboardingTick
 						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
 		try {
-			await runScheduledEffect(buildLayer(env), program, ctx)
+			await runScheduledEffect(buildLayer(), program, ctx)
 		} finally {
 			ctx.waitUntil(telemetry.flush(env))
 		}

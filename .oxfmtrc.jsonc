@@ -4,5 +4,5 @@
 	"printWidth": 110,
 	"useTabs": true,
 	"tabWidth": 4,
-	"ignorePatterns": [".context", "deploy"],
+	"ignorePatterns": [".context", "deploy", "lib/effect-cf"],
 }
