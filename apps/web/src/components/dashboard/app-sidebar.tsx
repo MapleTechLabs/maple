@@ -86,6 +86,7 @@ interface SignalsNavItem {
 	title: string
 	href: string
 	icon: typeof PulseIcon
+	badge?: string
 	subItems?: { title: string; href: string }[]
 }
 
@@ -109,6 +110,7 @@ const signalsNavItems: SignalsNavItem[] = [
 		title: "Replays",
 		href: "/replays",
 		icon: PlayRotateClockwiseIcon,
+		badge: "Beta",
 	},
 	{
 		title: "Infrastructure",

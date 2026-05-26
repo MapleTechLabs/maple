@@ -11,6 +11,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { listReplaysResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Badge } from "@maple/ui/components/ui/badge"
 
 const replaysSearchSchema = Schema.Struct({
 	startTime: Schema.optional(Schema.String),
@@ -60,11 +61,20 @@ function ReplaysPageContent() {
 
 	const breadcrumbs = [{ label: "Session Replays" }]
 
+	const titleContent = (
+		<div className="flex items-center gap-2">
+			<h1 className="text-2xl font-semibold tracking-tight truncate">Session Replays</h1>
+			<Badge variant="secondary" className="text-xs font-medium">
+				Beta
+			</Badge>
+		</div>
+	)
+
 	return Result.builder(result)
 		.onInitial(() => (
 			<DashboardLayout
 				breadcrumbs={breadcrumbs}
-				title="Session Replays"
+				titleContent={titleContent}
 				description="Watch what your users actually saw and did in the browser."
 			>
 				<div className="space-y-2">
@@ -77,7 +87,7 @@ function ReplaysPageContent() {
 		.onError((error) => (
 			<DashboardLayout
 				breadcrumbs={breadcrumbs}
-				title="Session Replays"
+				titleContent={titleContent}
 				description="Watch what your users actually saw and did in the browser."
 			>
 				<QueryErrorState error={error} titleOverride="Failed to load session replays" />
@@ -86,7 +96,7 @@ function ReplaysPageContent() {
 		.onSuccess((data) => (
 			<DashboardLayout
 				breadcrumbs={breadcrumbs}
-				title="Session Replays"
+				titleContent={titleContent}
 				description="Watch what your users actually saw and did in the browser."
 			>
 				<SessionsTable sessions={data.data} />
