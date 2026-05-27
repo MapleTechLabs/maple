@@ -224,9 +224,16 @@ export function errorMessage(error: unknown): string {
 export function ReplayPlayerProvider({
 	sessionId,
 	children,
+	previewEvents,
 }: {
 	sessionId: string
 	children: React.ReactNode
+	/**
+	 * Escape hatch for the placeholder-data preview route: a ready-made rrweb
+	 * event array that bypasses the warehouse fetch entirely. Production callers
+	 * never pass this, so the atom path below is unchanged.
+	 */
+	previewEvents?: ReadonlyArray<unknown>
 }) {
 	// Chunks carry their rrweb events inline (read straight from ClickHouse); parse
 	// + concatenate them in order. Memoized on the (referentially stable) result so
@@ -238,6 +245,12 @@ export function ReplayPlayerProvider({
 		error: unknown
 		events: unknown[]
 	}>(() => {
+		if (previewEvents) {
+			const decoded = normalizeEvents(previewEvents)
+			return decoded.length >= 2
+				? { status: "ready" as const, error: null, events: decoded }
+				: { status: "empty" as const, error: null, events: EMPTY_EVENTS }
+		}
 		return Result.builder(eventsResult)
 			.onInitial(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS }))
 			.onError((e) => ({ status: "error" as const, error: e, events: EMPTY_EVENTS }))
@@ -248,7 +261,7 @@ export function ReplayPlayerProvider({
 					: { status: "empty" as const, error: null, events: EMPTY_EVENTS }
 			})
 			.orElse(() => ({ status: "loading" as const, error: null, events: EMPTY_EVENTS }))
-	}, [eventsResult])
+	}, [eventsResult, previewEvents])
 
 	const figureRef = React.useRef<HTMLElement | null>(null)
 	const surfaceRef = React.useRef<HTMLDivElement | null>(null)

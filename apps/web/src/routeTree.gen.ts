@@ -34,6 +34,7 @@ import { Route as DashboardsIndexRouteImport } from './routes/dashboards/index'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
+import { Route as ReplaysPreviewRouteImport } from './routes/replays/preview'
 import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
@@ -177,6 +178,11 @@ const ServicesServiceNameRoute = ServicesServiceNameRouteImport.update({
   path: '/services/$serviceName',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReplaysPreviewRoute = ReplaysPreviewRouteImport.update({
+  id: '/replays/preview',
+  path: '/replays/preview',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReplaysSessionIdRoute = ReplaysSessionIdRouteImport.update({
   id: '/replays/$sessionId',
   path: '/replays/$sessionId',
@@ -294,6 +300,7 @@ export interface FileRoutesByFullPath {
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
+  '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -338,6 +345,7 @@ export interface FileRoutesByTo {
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
+  '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts': typeof AlertsIndexRoute
@@ -383,6 +391,7 @@ export interface FileRoutesById {
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
+  '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
@@ -429,6 +438,7 @@ export interface FileRouteTypes {
     | '/infra/$hostName'
     | '/logs/$logId'
     | '/replays/$sessionId'
+    | '/replays/preview'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
@@ -473,6 +483,7 @@ export interface FileRouteTypes {
     | '/infra/$hostName'
     | '/logs/$logId'
     | '/replays/$sessionId'
+    | '/replays/preview'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts'
@@ -517,6 +528,7 @@ export interface FileRouteTypes {
     | '/infra/$hostName'
     | '/logs/$logId'
     | '/replays/$sessionId'
+    | '/replays/preview'
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
@@ -562,6 +574,7 @@ export interface RootRouteChildren {
   InfraHostNameRoute: typeof InfraHostNameRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
+  ReplaysPreviewRoute: typeof ReplaysPreviewRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   TracesTraceIdRoute: typeof TracesTraceIdRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
@@ -760,6 +773,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicesServiceNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/replays/preview': {
+      id: '/replays/preview'
+      path: '/replays/preview'
+      fullPath: '/replays/preview'
+      preLoaderRoute: typeof ReplaysPreviewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/replays/$sessionId': {
       id: '/replays/$sessionId'
       path: '/replays/$sessionId'
@@ -906,6 +926,7 @@ const rootRouteChildren: RootRouteChildren = {
   InfraHostNameRoute: InfraHostNameRoute,
   LogsLogIdRoute: LogsLogIdRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
+  ReplaysPreviewRoute: ReplaysPreviewRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   TracesTraceIdRoute: TracesTraceIdRoute,
   AlertsIndexRoute: AlertsIndexRoute,

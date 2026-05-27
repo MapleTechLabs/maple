@@ -1,4 +1,5 @@
 import * as React from "react"
+import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
 import { cn } from "@maple/ui/utils"
@@ -21,6 +22,7 @@ import {
 	MediaPauseIcon,
 	ArrowPathIcon,
 	PulseIcon,
+	ExternalLinkIcon,
 } from "@/components/icons"
 
 // ---------------------------------------------------------------------------
@@ -45,7 +47,7 @@ function pct(ms: number, totalMs: number): number {
 	return Math.min(100, Math.max(0, (ms / totalMs) * 100))
 }
 
-interface SessionTraceSummary {
+export interface SessionTraceSummary {
 	readonly traceId: string
 	readonly startTime: string
 	readonly durationMs: number
@@ -55,7 +57,14 @@ interface SessionTraceSummary {
 	readonly hasError: number
 }
 
-export function ReplayEditorTimeline({ traceIds }: { traceIds: ReadonlyArray<string> }) {
+export function ReplayEditorTimeline({
+	traceIds,
+	previewSummaries,
+}: {
+	traceIds: ReadonlyArray<string>
+	/** Placeholder-data preview: render these summaries instead of fetching them. */
+	previewSummaries?: ReadonlyArray<SessionTraceSummary>
+}) {
 	const player = useReplayPlayer()
 
 	return (
@@ -66,7 +75,7 @@ export function ReplayEditorTimeline({ traceIds }: { traceIds: ReadonlyArray<str
 			<div className="relative">
 				<TimeRuler totalMs={player.displayTotalMs} />
 				<ActivityTrack player={player} />
-				<TracesTrack traceIds={traceIds} player={player} />
+				<TracesTrack traceIds={traceIds} player={player} previewSummaries={previewSummaries} />
 				<Playhead player={player} />
 			</div>
 		</section>
@@ -97,7 +106,7 @@ function TransportRow({ player }: { player: ReplayPlayerContextValue }) {
 				)}
 			</button>
 
-			<span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+			<span className="font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 				Timeline
 			</span>
 
@@ -237,14 +246,16 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 function TracesTrack({
 	traceIds,
 	player,
+	previewSummaries,
 }: {
 	traceIds: ReadonlyArray<string>
 	player: ReplayPlayerContextValue
+	previewSummaries?: ReadonlyArray<SessionTraceSummary>
 }) {
 	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds } }))
 
 	const header = (count: number | null) => (
-		<div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+		<div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 			<PulseIcon className="size-3.5" />
 			Traces
 			{count != null && count > 0 && (
@@ -254,6 +265,19 @@ function TracesTrack({
 			)}
 		</div>
 	)
+
+	if (previewSummaries) {
+		return (
+			<div>
+				{header(previewSummaries.length)}
+				<ul>
+					{previewSummaries.map((s) => (
+						<TraceRow key={s.traceId} summary={s} player={player} preview />
+					))}
+				</ul>
+			</div>
+		)
+	}
 
 	if (traceIds.length === 0) {
 		return (
@@ -312,9 +336,12 @@ function TracesTrack({
 function TraceRow({
 	summary,
 	player,
+	preview = false,
 }: {
 	summary: SessionTraceSummary
 	player: ReplayPlayerContextValue
+	/** Preview rows have no real trace to expand, so the span lane is disabled. */
+	preview?: boolean
 }) {
 	const [expanded, setExpanded] = React.useState(false)
 	const range = spanDisplayRange({
@@ -329,29 +356,49 @@ function TraceRow({
 	return (
 		<li className="border-b border-border/40 last:border-b-0">
 			<div className="flex items-stretch">
-				<button
-					type="button"
-					onClick={() => setExpanded((v) => !v)}
+				<div
 					className={cn(
 						LANE_GUTTER,
-						"flex shrink-0 items-center gap-1 border-r border-border/60 px-2 py-2 text-left text-xs transition-colors hover:bg-muted/50",
+						"flex shrink-0 items-center gap-0.5 border-r border-border/60 pr-1 pl-1.5 text-xs",
 					)}
-					title={`${summary.rootServiceName} · ${summary.spanCount} spans`}
 				>
-					{expanded ? (
-						<ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
+					{preview ? (
+						<span className="size-5 shrink-0" aria-hidden />
 					) : (
-						<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
+						<button
+							type="button"
+							onClick={() => setExpanded((v) => !v)}
+							aria-expanded={expanded}
+							title={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
+							className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+						>
+							{expanded ? (
+								<ChevronDownIcon className="size-3.5" />
+							) : (
+								<ChevronRightIcon className="size-3.5" />
+							)}
+						</button>
 					)}
-					<span className="min-w-0 truncate">
-						<span className="block truncate font-medium text-foreground">
-							{summary.rootSpanName || "trace"}
+					<Link
+						to="/traces/$traceId"
+						params={{ traceId: summary.traceId }}
+						search={{ t: summary.startTime }}
+						target="_blank"
+						rel="noreferrer"
+						title={`Open trace in new tab · ${summary.rootServiceName} · ${summary.spanCount} spans`}
+						className="group/trace flex min-w-0 flex-1 items-center rounded px-1 py-1.5 text-left transition-colors hover:bg-muted/50"
+					>
+						<span className="min-w-0 flex-1">
+							<span className="flex items-center gap-1 truncate font-medium text-foreground">
+								<span className="truncate">{summary.rootSpanName || "trace"}</span>
+								<ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100" />
+							</span>
+							<span className="block truncate font-mono text-[10px] text-muted-foreground">
+								{summary.rootServiceName}
+							</span>
 						</span>
-						<span className="block truncate font-mono text-[10px] text-muted-foreground">
-							{summary.rootServiceName}
-						</span>
-					</span>
-				</button>
+					</Link>
+				</div>
 				<button
 					type="button"
 					onClick={() => player.seekDisplay(range.displayStartMs)}
@@ -398,7 +445,7 @@ function TraceBar({
 			className={cn(
 				"absolute top-1/2 flex h-5 -translate-y-1/2 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white ring-1 ring-inset transition-[filter] hover:brightness-110",
 				isError ? "bg-destructive ring-destructive/40" : "bg-primary ring-primary/40",
-				outOfRange && "opacity-60 ring-dashed",
+				outOfRange && "opacity-60 outline-1 outline-dashed outline-white/70 -outline-offset-1",
 			)}
 			style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 6 }}
 		>

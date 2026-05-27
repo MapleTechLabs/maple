@@ -17,6 +17,7 @@ import {
 	MinimizeIcon,
 } from "@/components/icons"
 import { formatClock, hostFromUrl, MARKER_STYLES } from "./replay-format"
+import { MarkerLegend } from "./marker-legend"
 import { useReplayKeyboardShortcuts } from "@/hooks/use-replay-keyboard-shortcuts"
 
 const SPEEDS = [0.5, 1, 2, 4, 8] as const
@@ -92,6 +93,14 @@ export function ReplaySurface({ url }: { url?: string }) {
 			</div>
 
 			<ReplayControls />
+
+			{/* Legend for the scrubber's action-marker dots — otherwise the colors
+			    are undiscoverable. Hidden in fullscreen to keep the surface clean. */}
+			{!isFullscreen && (
+				<div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-3 py-1.5">
+					<MarkerLegend />
+				</div>
+			)}
 		</figure>
 	)
 }
@@ -169,6 +178,7 @@ function ReplayControls() {
 				type="button"
 				onClick={toggleSkipInactive}
 				aria-pressed={skipInactive}
+				title={skipInactive ? "Idle gaps skipped during playback" : "Skip idle gaps"}
 				className={cn(
 					"shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
 					skipInactive
@@ -183,6 +193,7 @@ function ReplayControls() {
 				type="button"
 				onClick={toggleFullscreen}
 				aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+				title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 				className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 			>
 				{isFullscreen ? (
@@ -211,7 +222,10 @@ function Scrubber({
 }) {
 	const trackRef = React.useRef<HTMLDivElement | null>(null)
 	const [dragging, setDragging] = React.useState(false)
+	const [hoverMs, setHoverMs] = React.useState<number | null>(null)
 	const pct = totalMs > 0 ? Math.min(100, (currentMs / totalMs) * 100) : 0
+	const hoverPct =
+		hoverMs != null && totalMs > 0 ? Math.min(100, Math.max(0, (hoverMs / totalMs) * 100)) : null
 
 	const msFromClientX = React.useCallback(
 		(clientX: number) => {
@@ -239,14 +253,27 @@ function Scrubber({
 				onSeek(msFromClientX(e.clientX))
 			}}
 			onPointerMove={(e) => {
-				if (dragging) onSeek(msFromClientX(e.clientX))
+				const ms = msFromClientX(e.clientX)
+				setHoverMs(ms)
+				if (dragging) onSeek(ms)
 			}}
+			onPointerLeave={() => setHoverMs(null)}
 			onPointerUp={(e) => {
 				e.currentTarget.releasePointerCapture(e.pointerId)
 				setDragging(false)
 			}}
 			className="group relative h-6 flex-1 cursor-pointer touch-none select-none"
 		>
+			{/* Hover time bubble — surfaces the timestamp under the cursor while
+			    scanning, so seeking is precise. */}
+			{hoverPct != null && (
+				<div
+					className="pointer-events-none absolute -top-7 z-10 -translate-x-1/2 rounded bg-popover px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-popover-foreground shadow-sm ring-1 ring-border"
+					style={{ left: `${hoverPct}%` }}
+				>
+					{formatClock(hoverMs ?? 0)}
+				</div>
+			)}
 			{/* Track */}
 			<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
 				{/* Idle bands — greyed/hatched, under the progress fill */}
