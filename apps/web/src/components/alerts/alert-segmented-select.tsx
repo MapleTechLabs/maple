@@ -1,4 +1,6 @@
 import type { ReactNode } from "react"
+import { useId } from "react"
+import { motion } from "motion/react"
 import { ToggleGroup, ToggleGroupItem } from "@maple/ui/components/ui/toggle-group"
 import { cn } from "@maple/ui/utils"
 import { CheckIcon } from "@/components/icons"
@@ -12,6 +14,13 @@ export type AlertSegmentedOption<T extends string> = {
 
 type Size = "sm" | "default"
 
+/* A segmented control styled as a recessed *track* with a single elevated
+   *pill* that slides between segments. The pill is a Motion shared-layout
+   element (`layoutId`), so changing the selection animates the pill gliding to
+   its new slot instead of snapping a flat background on/off. We keep Base UI's
+   ToggleGroup underneath for roles + arrow-key navigation, but neutralize its
+   per-item pressed background — the sliding pill is now the only selection
+   indicator. */
 export function AlertSegmentedSelect<T extends string>({
 	options,
 	value,
@@ -27,6 +36,7 @@ export function AlertSegmentedSelect<T extends string>({
 	className?: string
 	"aria-label"?: string
 }) {
+	const pillId = useId()
 	return (
 		<ToggleGroup
 			value={[value]}
@@ -34,22 +44,41 @@ export function AlertSegmentedSelect<T extends string>({
 				const next = values[0] as T | undefined
 				if (next && next !== value) onChange(next)
 			}}
-			variant="outline"
+			variant="default"
 			size={size}
 			aria-label={ariaLabel}
-			className={cn("w-fit", className)}
+			className={cn(
+				"w-fit gap-0.5 rounded-lg border border-input bg-black/[0.04] p-0.5 dark:bg-black/25",
+				className,
+			)}
 		>
-			{options.map((option) => (
-				<ToggleGroupItem
-					key={option.value}
-					value={option.value}
-					disabled={option.disabled}
-					aria-label={typeof option.label === "string" ? option.label : option.value}
-				>
-					{option.icon}
-					{option.label}
-				</ToggleGroupItem>
-			))}
+			{options.map((option) => {
+				const selected = option.value === value
+				return (
+					<ToggleGroupItem
+						key={option.value}
+						value={option.value}
+						disabled={option.disabled}
+						aria-label={typeof option.label === "string" ? option.label : option.value}
+						className={cn(
+							"relative rounded-md border-transparent bg-transparent text-muted-foreground transition-colors",
+							"hover:bg-transparent hover:text-foreground",
+							"data-pressed:bg-transparent data-pressed:text-foreground dark:data-pressed:bg-transparent",
+						)}
+					>
+						{selected && (
+							<motion.span
+								aria-hidden
+								layoutId={`alert-seg-pill-${pillId}`}
+								className="-z-10 absolute inset-0 rounded-md bg-background shadow-sm ring-1 ring-border/70 dark:bg-input dark:ring-white/10"
+								transition={{ type: "spring", stiffness: 380, damping: 32 }}
+							/>
+						)}
+						{option.icon}
+						{option.label}
+					</ToggleGroupItem>
+				)
+			})}
 		</ToggleGroup>
 	)
 }

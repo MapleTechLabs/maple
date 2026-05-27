@@ -86,9 +86,9 @@ const SIGNAL_KIND_OPTIONS: ReadonlyArray<{
 	label: string
 	icon: ReactNode
 }> = [
-	{ value: "builtin", label: "Built-in", icon: <BoltIcon className="size-3.5" /> },
-	{ value: "builder_query", label: "Query", icon: <SlidersIcon className="size-3.5" /> },
-	{ value: "raw_query", label: "Raw SQL", icon: <BracketsCurlyIcon className="size-3.5" /> },
+	{ value: "builtin", label: "Built-in", icon: <BoltIcon className="size-3" /> },
+	{ value: "builder_query", label: "Query", icon: <SlidersIcon className="size-3" /> },
+	{ value: "raw_query", label: "Raw SQL", icon: <BracketsCurlyIcon className="size-3" /> },
 ]
 
 /* The "built-in" tier-2 row: 5 small chips with icons. Icons are deliberately
@@ -213,6 +213,7 @@ export function SignalAndThresholdSection({
 					onChange={setKind}
 					aria-label="Signal kind"
 					size="sm"
+					className="[&_[data-pressed]_svg]:opacity-100 [&_[data-slot=toggle]]:gap-1.5"
 				/>
 
 				{/* Tier 2: only for built-ins. Icon chips, single short row. */}
