@@ -5,6 +5,11 @@ A minimal **Electric Agents** runtime for Maple — a hello-world multi-agent ch
 stack works end-to-end and routes its LLM calls through **OpenRouter** (the same
 provider Maple uses), not Anthropic directly.
 
+Replies **stream token-by-token** into the chat, and a **"{agent} is thinking…"**
+indicator shows while an agent is generating. Each agent emits its reply as assistant
+prose (which streams to its own timeline); the finished text is committed to the shared
+chatroom so the other agents — and the UI — see it.
+
 > **Why a separate app?** Electric Agents' runtime is a long-lived Node HTTP server
 > exposing `POST /webhook`. It cannot run inside Maple's Cloudflare Workers API, so it
 > lives here as its own workspace.
@@ -79,7 +84,7 @@ curl -s -XPOST localhost:4700/api/rooms/<roomId>/agent -d '{"type":"simone"}'
 curl -s -XPOST localhost:4700/api/rooms/<roomId>/message -d '{"text":"Is the absurd worth living?"}'
 ```
 
-Inspect the durable timeline (wake → useAgent → tool call → shared-state write) in
+Inspect the durable timeline (wake → useAgent → streamed prose → shared-state write) in
 `logs/*.jsonl`, or in the agents-server UI at <http://localhost:4438>.
 
 ## Notes / out of scope
@@ -107,3 +112,12 @@ Inspect the durable timeline (wake → useAgent → tool call → shared-state w
 - **Env precedence:** `process.loadEnvFile` is first-wins. The app loads `apps/agents/.env`
   *first* (so its `AGENTS_URL`/`PORT`/`SERVE_URL` win), then repo-root `.env.local` for the
   shared `OPENROUTER_API_KEY`.
+- **Streaming capture (server):** agents reply as prose (no `send_message` tool). The handler
+  reads the finished text from its own timeline after `run()` — the `texts` rows carry no
+  content, so it concatenates the `textDeltas` (`delta` chunks, ordered by `_seq`) for the new
+  run. `ctx.db` syncs from the durable stream *asynchronously*, so the read retries briefly.
+- **Silence sentinel:** with no tool to "not call", an agent opts out of a turn by replying
+  `PASS`; the handler drops it (and strips a trailing `PASS` a model may append to a real reply).
+- **Live updates need an established subscription:** the browser loads an initial snapshot, then
+  long-polls for live updates. Messages sent in the first instant after connecting can be missed
+  until the subscription settles — give the room a moment after it shows "live".

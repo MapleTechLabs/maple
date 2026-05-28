@@ -204,6 +204,55 @@ body {
 	word-break: break-word;
 }
 
+/* Streaming + thinking */
+.msg-streaming {
+	border-color: var(--accent);
+	box-shadow: 0 0 0 1px var(--accent);
+	animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+	0%,
+	100% {
+		box-shadow: 0 0 0 1px var(--accent);
+	}
+	50% {
+		box-shadow: 0 0 8px 0 var(--accent);
+	}
+}
+.cursor {
+	display: inline-block;
+	margin-left: 1px;
+	color: var(--accent);
+	animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink {
+	to {
+		opacity: 0;
+	}
+}
+.thinking {
+	color: var(--muted);
+	font-style: italic;
+}
+.thinking-dots::after {
+	content: "";
+	animation: dots 1.4s steps(4, end) infinite;
+}
+@keyframes dots {
+	0% {
+		content: "";
+	}
+	25% {
+		content: ".";
+	}
+	50% {
+		content: "..";
+	}
+	75% {
+		content: "...";
+	}
+}
+
 /* Composer */
 .composer {
 	display: flex;

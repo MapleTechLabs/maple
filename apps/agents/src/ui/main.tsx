@@ -7,6 +7,7 @@ import {
 	type MessagesCollection,
 	useChatroom,
 } from "./hooks/useChatroom.js"
+import { useAgentStream } from "./hooks/useAgentStream.js"
 import { useEntityTypes } from "./hooks/useEntityTypes.js"
 import "./main.css"
 
@@ -62,6 +63,99 @@ function MessageList({ collection }: { collection: MessagesCollection }) {
 						<div className="bubble">
 							<div className="sender">{m.senderName}</div>
 							<div className="text">{m.text}</div>
+						</div>
+					</div>
+				)
+			})}
+			<div ref={bottomRef} />
+		</>
+	)
+}
+
+interface ProbeState {
+	type: string
+	working: boolean
+	text: string
+}
+
+// Hidden per-agent probe: hooks can't run in a loop, so we render one of these per
+// agent and lift its live streaming state up to LiveActivity.
+function AgentProbe({
+	agentsUrl,
+	url,
+	type,
+	onUpdate,
+}: {
+	agentsUrl: string
+	url: string
+	type: string
+	onUpdate: (url: string, state: ProbeState) => void
+}) {
+	const { working, text } = useAgentStream(agentsUrl, url)
+	useEffect(() => {
+		onUpdate(url, { type, working, text })
+	}, [url, type, working, text, onUpdate])
+	return null
+}
+
+// Renders, for each agent currently generating, a live streaming bubble (filling in
+// token-by-token) or a "thinking…" indicator before the first token arrives.
+function LiveActivity({
+	collection,
+	agentsUrl,
+}: {
+	collection: AgentsCollection
+	agentsUrl: string
+}) {
+	const { data: agents = [] } = useLiveQuery(
+		(q) => q.from({ a: collection }).select(({ a }) => a),
+		[collection],
+	)
+	const [probes, setProbes] = useState<Record<string, ProbeState>>({})
+	const onUpdate = useCallback((url: string, state: ProbeState) => {
+		setProbes((prev) => {
+			const cur = prev[url]
+			if (cur && cur.working === state.working && cur.text === state.text && cur.type === state.type) {
+				return prev
+			}
+			return { ...prev, [url]: state }
+		})
+	}, [])
+
+	const bottomRef = useRef<HTMLDivElement>(null)
+	const active = (agents as Array<any>)
+		.map((a) => ({ url: a.url as string, ...probes[a.url] }))
+		.filter((e): e is { url: string } & ProbeState => Boolean(e.working))
+
+	useEffect(() => {
+		if (active.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+	}, [active.length, active.map((e) => e.text).join("|")])
+
+	return (
+		<>
+			{(agents as Array<any>).map((a) => (
+				<AgentProbe key={a.url} agentsUrl={agentsUrl} url={a.url} type={a.type} onUpdate={onUpdate} />
+			))}
+			{active.map((e) => {
+				const trimmed = e.text.trim()
+				const hasText = trimmed.length > 0 && trimmed !== "PASS"
+				return (
+					<div key={e.url} className="msg msg-agent">
+						<div className="avatar" style={{ background: colorFor(e.type) }}>
+							{initials(e.type)}
+						</div>
+						<div className="bubble msg-streaming">
+							<div className="sender">{e.type}</div>
+							{hasText ? (
+								<div className="text">
+									{e.text}
+									<span className="cursor">▍</span>
+								</div>
+							) : (
+								<div className="thinking">
+									thinking<span className="thinking-dots" />
+								</div>
+							)}
 						</div>
 					</div>
 				)
@@ -244,6 +338,9 @@ function App() {
 						<div className="empty">Connecting to room…</div>
 					) : (
 						<div className="empty">No room selected.</div>
+					)}
+					{messagesCollection && agentsCollection && (
+						<LiveActivity collection={agentsCollection} agentsUrl={config.agentsUrl} />
 					)}
 				</div>
 				<div className="composer">

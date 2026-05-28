@@ -1,6 +1,5 @@
 import { db } from "@electric-ax/agents-runtime"
-import type { AgentTool, EntityRegistry, SharedStateHandle } from "@electric-ax/agents-runtime"
-import { Type } from "@sinclair/typebox"
+import type { EntityRegistry, SharedStateHandle } from "@electric-ax/agents-runtime"
 import { z } from "zod"
 import { chatroomSchema } from "./schema.js"
 
@@ -17,6 +16,15 @@ export type ChatroomState = SharedStateHandle<typeof chatroomSchema>
  */
 export const DEFAULT_MODEL = "moonshotai/kimi-k2.5"
 const PROVIDER = "openrouter" as const
+
+/** Sentinel an agent emits to stay silent (since there's no tool to "not call"). */
+const SILENCE = "PASS"
+
+// Appended to every persona prompt: the agent replies as plain prose (which streams
+// token-by-token to its timeline), and uses PASS to opt out of a turn.
+const REPLY_INSTRUCTIONS = `
+
+Write your reply directly as your message — just the text you want to say, nothing else. Do not mention tools or narrate your actions. If you have nothing worth adding this turn, reply with exactly: ${SILENCE}`
 
 const resolveApiKey = (provider: string): string | undefined =>
 	provider === PROVIDER ? process.env.OPENROUTER_API_KEY : undefined
@@ -86,16 +94,70 @@ export function registerChatAgent(
 				},
 			})
 
+			// No tools: the agent replies as assistant prose, which streams to its own
+			// timeline (text_delta rows) — that's what the UI renders live. We capture
+			// the finished text below and commit it to shared state for coordination.
 			ctx.useAgent({
-				systemPrompt,
+				systemPrompt: systemPrompt + REPLY_INSTRUCTIONS,
 				model: DEFAULT_MODEL,
 				provider: PROVIDER,
 				getApiKey: resolveApiKey,
-				tools: [createSendMessageTool(chatroom.messages, ctx.entityUrl, name)],
+				tools: [],
 			})
+
+			// Record existing runs so we can isolate the one this run() produces.
+			const priorRunKeys = new Set(
+				((ctx.db.collections.runs as any).toArray as Array<{ key: string }>).map((r) => r.key),
+			)
+
 			await ctx.agent.run()
+
+			// Models sometimes append the sentinel to a real reply ("… again. PASS")
+			// or return it alone — strip a trailing PASS and treat empties as silence.
+			const reply = (await readLatestRunText(ctx.db, priorRunKeys))
+				.replace(/\s*\bPASS\b\.?\s*$/i, "")
+				.trim()
+			if (reply.length > 0 && reply.toUpperCase() !== SILENCE) {
+				const tx = (chatroom.messages as any).insert({
+					key: crypto.randomUUID(),
+					role: "agent",
+					sender: ctx.entityUrl,
+					senderName: name,
+					text: reply,
+					timestamp: Date.now(),
+				})
+				await awaitPersisted(tx)
+			}
 		},
 	})
+}
+
+/**
+ * Read the assistant prose produced by the most recent run. The `texts` collection
+ * rows carry no content — the streamed characters live in `textDeltas` (one `delta`
+ * chunk per token-ish), so we concatenate this run's deltas in stream order.
+ */
+async function readLatestRunText(entityDb: any, priorRunKeys: Set<string>): Promise<string> {
+	// ctx.db's collections sync from the durable stream asynchronously, so the just-
+	// finished run's deltas may not be present the instant run() resolves. Retry briefly.
+	for (let attempt = 0; attempt < 12; attempt++) {
+		const runs = entityDb.collections.runs.toArray as Array<{ key: string }>
+		const newRun = runs.find((r) => !priorRunKeys.has(r.key))
+		if (newRun) {
+			const deltas = (
+				entityDb.collections.textDeltas.toArray as Array<{
+					run_id?: string
+					delta: string
+					_seq?: number
+				}>
+			)
+				.filter((d) => d.run_id === newRun.key)
+				.sort((a, b) => (a._seq ?? 0) - (b._seq ?? 0))
+			if (deltas.length > 0) return deltas.map((d) => d.delta).join("").trim()
+		}
+		await new Promise((r) => setTimeout(r, 150))
+	}
+	return ""
 }
 
 /** Read all messages from the shared state and format as conversation context. */
@@ -120,44 +182,9 @@ function getConversationHistory(chatroom: ChatroomState): string {
 	)
 }
 
-type MessageCollection = ChatroomState["messages"]
-
 /** Wait for a shared state write to be persisted to the durable stream. */
 async function awaitPersisted(transaction: unknown): Promise<void> {
 	const promise = (transaction as { isPersisted?: { promise?: Promise<unknown> } } | null)?.isPersisted
 		?.promise
 	if (promise) await promise
-}
-
-function createSendMessageTool(
-	messages: MessageCollection,
-	entityUrl: string,
-	displayName: string,
-): AgentTool {
-	return {
-		name: "send_message",
-		label: "Send Message",
-		description: "Post a message to the chatroom.",
-		parameters: Type.Object({
-			text: Type.String({ description: "The message text to send" }),
-		}),
-		execute: async (_toolCallId, params) => {
-			const { text } = params as { text: string }
-
-			const transaction = (messages as any).insert({
-				key: crypto.randomUUID(),
-				role: "agent",
-				sender: entityUrl,
-				senderName: displayName,
-				text,
-				timestamp: Date.now(),
-			})
-			await awaitPersisted(transaction)
-
-			return {
-				content: [{ type: "text" as const, text: "Message sent." }],
-				details: { text },
-			}
-		},
-	}
 }
