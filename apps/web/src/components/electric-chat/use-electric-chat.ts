@@ -8,9 +8,23 @@ import { chatroomSchema, type ChatMessage } from "./schema"
 
 export type MessagesCollection = Collection<ChatMessage>
 
-export interface LiveTool {
+export interface ToolRecord {
 	name: string
+	toolCallId?: string
 	status: string
+	args?: unknown
+	result?: unknown
+	error?: string
+}
+
+/** Tool results stream as JSON strings; parse back to objects so output renders. */
+function parseMaybeJson(value: unknown): unknown {
+	if (typeof value !== "string") return value
+	try {
+		return JSON.parse(value)
+	} catch {
+		return value
+	}
 }
 
 async function retry<T>(fn: () => Promise<T>, attempts = 15, delay = 1000): Promise<T> {
@@ -105,14 +119,18 @@ export function useAssistantStream(roomId: string | null) {
 	const working = state === "working"
 
 	let text = ""
-	let tools: LiveTool[] = []
+	let tools: ToolRecord[] = []
 	if (working && runs.length > 0) {
 		const active = [...runs].reverse().find((r) => r.status === "started") ?? runs[runs.length - 1]
 		if (active) {
 			text = (active.texts ?? []).map((t) => t.text).join("")
 			tools = (active.toolCalls ?? []).map((t: any) => ({
 				name: t.tool_name as string,
+				toolCallId: t.tool_call_id ?? t.key,
 				status: t.status as string,
+				args: t.args,
+				result: parseMaybeJson(t.result),
+				...(t.error ? { error: t.error } : {}),
 			}))
 		}
 	}

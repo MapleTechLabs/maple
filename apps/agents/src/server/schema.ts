@@ -7,9 +7,19 @@ export const messageSchema = z.object({
 	senderName: z.string().min(1),
 	text: z.string().min(1),
 	timestamp: z.number(),
-	// Optional compact summary of tools the agent called this turn (assistant agent only).
+	// Tools the agent called this turn (assistant agent only) — name, args, and output,
+	// so the client can render full tool cards.
 	tools: z
-		.array(z.object({ name: z.string(), status: z.string() }))
+		.array(
+			z.object({
+				name: z.string(),
+				toolCallId: z.string().optional(),
+				status: z.string(),
+				args: z.unknown().optional(),
+				result: z.unknown().optional(),
+				error: z.string().optional(),
+			}),
+		)
 		.optional(),
 })
 

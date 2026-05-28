@@ -9,7 +9,18 @@ export const messageSchema = z.object({
 	senderName: z.string().min(1),
 	text: z.string().min(1),
 	timestamp: z.number(),
-	tools: z.array(z.object({ name: z.string(), status: z.string() })).optional(),
+	tools: z
+		.array(
+			z.object({
+				name: z.string(),
+				toolCallId: z.string().optional(),
+				status: z.string(),
+				args: z.unknown().optional(),
+				result: z.unknown().optional(),
+				error: z.string().optional(),
+			}),
+		)
+		.optional(),
 })
 
 export type ChatMessage = z.infer<typeof messageSchema>

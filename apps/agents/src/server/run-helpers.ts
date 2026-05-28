@@ -10,10 +10,25 @@ export interface ChatMessage {
 	timestamp: number
 }
 
-/** A compact record of a tool the agent called during a turn (persisted with the message). */
-export interface ToolSummary {
+/** A record of a tool the agent called during a turn (persisted with the message). */
+export interface ToolRecord {
 	name: string
+	toolCallId?: string
 	status: string
+	args?: unknown
+	/** The tool's output, parsed from JSON when the runtime stored it as a string. */
+	result?: unknown
+	error?: string
+}
+
+/** The runtime stores tool results as JSON strings on the stream; parse back to objects. */
+function parseMaybeJson(value: unknown): unknown {
+	if (typeof value !== "string") return value
+	try {
+		return JSON.parse(value)
+	} catch {
+		return value
+	}
 }
 
 /** Wait for a shared-state write to be persisted to the durable stream. */
@@ -59,21 +74,33 @@ export async function readLatestRunText(entityDb: any, priorRunKeys: Set<string>
 	return ""
 }
 
-/** Read the tool calls the most recent run made, as a compact summary for message history. */
-export function readLatestRunToolCalls(entityDb: any, priorRunKeys: Set<string>): ToolSummary[] {
+/** Read the tool calls the most recent run made (name, args, result) for message history. */
+export function readLatestRunToolCalls(entityDb: any, priorRunKeys: Set<string>): ToolRecord[] {
 	const newRunKey = findNewRunKey(entityDb, priorRunKeys)
 	if (!newRunKey) return []
 	return (
 		entityDb.collections.toolCalls.toArray as Array<{
 			run_id?: string
+			key?: string
+			tool_call_id?: string
 			tool_name?: string
 			status?: string
+			args?: unknown
+			result?: unknown
+			error?: string
 			_seq?: number
 		}>
 	)
 		.filter((t) => t.run_id === newRunKey && t.tool_name)
 		.sort((a, b) => (a._seq ?? 0) - (b._seq ?? 0))
-		.map((t) => ({ name: t.tool_name as string, status: t.status ?? "completed" }))
+		.map((t) => ({
+			name: t.tool_name as string,
+			toolCallId: t.tool_call_id ?? t.key,
+			status: t.status ?? "completed",
+			args: t.args,
+			result: parseMaybeJson(t.result),
+			...(t.error ? { error: t.error } : {}),
+		}))
 }
 
 /** Format the shared-state messages as plain-text conversation context for the LLM. */

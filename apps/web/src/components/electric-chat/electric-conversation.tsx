@@ -13,28 +13,45 @@ import {
 } from "@/components/ai-elements/prompt-input"
 import { RichText } from "@/components/ai-elements/rich-text"
 import { ThinkingIndicator } from "@/components/ai-elements/thinking-indicator"
-import { cn } from "@/lib/utils"
-import { GearIcon } from "@/components/icons"
+import { Tool } from "@/components/ai-elements/tool"
+import { ToolGroup } from "@/components/ai-elements/tool-group"
 import { useLiveQuery } from "@tanstack/react-db"
 import { CHAT_REST } from "./config"
 import type { ChatMessage } from "./schema"
-import { type LiveTool, useAssistantStream, useChatroom } from "./use-electric-chat"
+import { type ToolRecord, useAssistantStream, useChatroom } from "./use-electric-chat"
 
-function ToolChip({ tool }: { tool: LiveTool }) {
-	const running = tool.status !== "completed" && tool.status !== "failed"
+// Map our Electric tool status onto the UIMessage tool `state` the <Tool> card expects.
+function toToolState(status: string): string {
+	if (status === "completed") return "output-available"
+	if (status === "failed" || status === "error") return "output-error"
+	return "input-available" // started / args_complete / executing → "running"
+}
+
+// Render full tool cards (name, args, output) — same UI as the non-Electric /chat.
+// A single tool renders one card; multiple collapse into a ToolGroup.
+function ToolsView({ tools }: { tools: ReadonlyArray<ToolRecord> }) {
+	if (tools.length === 0) return null
+	const cards = tools.map((t, i) => {
+		const state = toToolState(t.status)
+		return (
+			<Tool
+				key={t.toolCallId ?? `${t.name}-${i}`}
+				toolName={t.name}
+				toolCallId={t.toolCallId ?? `${t.name}-${i}`}
+				state={state}
+				input={t.args}
+				output={t.result}
+				errorText={t.error}
+			/>
+		)
+	})
+	if (tools.length === 1) return <>{cards}</>
+	const runningCount = tools.filter((t) => toToolState(t.status) === "input-available").length
+	const errorCount = tools.filter((t) => toToolState(t.status) === "output-error").length
 	return (
-		<span
-			className={cn(
-				"inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
-				tool.status === "failed"
-					? "border-destructive/40 text-destructive"
-					: "border-border text-muted-foreground",
-			)}
-		>
-			<GearIcon className={cn("size-3", running && "animate-spin")} />
-			<span className="font-mono">{tool.name}</span>
-			<span className="opacity-60">{tool.status}</span>
-		</span>
+		<ToolGroup count={tools.length} runningCount={runningCount} errorCount={errorCount} defaultOpen={runningCount > 0}>
+			{cards}
+		</ToolGroup>
 	)
 }
 
@@ -88,14 +105,8 @@ export function ElectricConversation({ roomId }: { roomId: string }) {
 					{(messages as ChatMessage[]).map((m) => (
 						<Message key={m.key} from={m.role === "user" ? "user" : "assistant"}>
 							<MessageContent>
+								{m.tools && m.tools.length > 0 && <ToolsView tools={m.tools} />}
 								{m.role === "user" ? m.text : <RichText>{m.text}</RichText>}
-								{m.tools && m.tools.length > 0 && (
-									<div className="mt-1 flex flex-wrap gap-1.5">
-										{m.tools.map((t, i) => (
-											<ToolChip key={`${t.name}-${i}`} tool={t} />
-										))}
-									</div>
-								)}
 							</MessageContent>
 						</Message>
 					))}
@@ -103,13 +114,7 @@ export function ElectricConversation({ roomId }: { roomId: string }) {
 					{(showThinking || showStreaming) && (
 						<Message from="assistant">
 							<MessageContent>
-								{liveTools.length > 0 && (
-									<div className="mb-1 flex flex-wrap gap-1.5">
-										{liveTools.map((t, i) => (
-											<ToolChip key={`live-${t.name}-${i}`} tool={t} />
-										))}
-									</div>
-								)}
+								{liveTools.length > 0 && <ToolsView tools={liveTools} />}
 								{showStreaming ? <RichText>{streamingText}</RichText> : <ThinkingIndicator />}
 							</MessageContent>
 						</Message>
