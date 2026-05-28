@@ -24,6 +24,7 @@ import {
 	Conversation,
 	ConversationContent,
 	ConversationEmptyState,
+	ConversationLoadingSkeleton,
 	ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
 import { Message, MessageContent } from "@/components/ai-elements/message"
@@ -456,16 +457,6 @@ export function ChatConversation({
 					</PromptInputFooter>
 				</PromptInput>
 			</div>
-		</div>
-	)
-}
-
-export function ConversationLoadingSkeleton() {
-	return (
-		<div className="flex flex-col gap-3 py-6" aria-hidden>
-			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-			<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
 		</div>
 	)
 }

@@ -18,8 +18,14 @@ import { registerAssistantAgent } from "./assistant-agent.js"
 import { registerChatAgent } from "./chat-agent.js"
 
 const AGENTS_URL = process.env.AGENTS_URL ?? "http://localhost:4438"
+// portless injects PORT (a per-worktree 4000-4999 port). loadEnvFile above is
+// first-wins, so it won't clobber it; 4700 is only the standalone fallback.
 const PORT = Number(process.env.PORT ?? 4700)
-const SERVE_URL = process.env.SERVE_URL ?? `http://localhost:${PORT}`
+// The agents-server (in Docker) delivers wakes back to this process, so the URL
+// must (a) be reachable from inside the container — host.docker.internal, not
+// localhost — and (b) track the actual bound PORT, which portless assigns
+// dynamically per worktree.
+const SERVE_URL = process.env.SERVE_URL ?? `http://host.docker.internal:${PORT}`
 
 if (!process.env.OPENROUTER_API_KEY) {
 	console.warn(
@@ -145,6 +151,13 @@ const server = http.createServer(async (req, res) => {
 			"Access-Control-Allow-Headers": "Content-Type",
 		})
 		res.end()
+		return
+	}
+
+	// Health/landing — keeps the bare portless URL (https://agents.localhost) from
+	// 404ing when opened directly. This is an API-only server otherwise.
+	if ((req.url === "/" || req.url === "/health") && req.method === "GET") {
+		writeJson(res, 200, { ok: true, service: "agents", serveUrl: SERVE_URL })
 		return
 	}
 

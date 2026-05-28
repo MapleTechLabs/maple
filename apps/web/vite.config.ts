@@ -16,6 +16,10 @@ export default defineConfig(({ mode }) => {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
 		process.env.VITE_CHAT_AGENT_URL ??= siblingUrl("chat-agent")
+		// /electric-chat REST (rooms/messages) lives in apps/agents, a portless app.
+		// The live stream (VITE_ELECTRIC_AGENTS_URL) stays the shared Docker
+		// agents-server on :4438 — it isn't a portless app.
+		process.env.VITE_ELECTRIC_CHAT_REST ??= siblingUrl("agents")
 	}
 
 	if (!process.env.VITE_MAPLE_AUTH_MODE) {

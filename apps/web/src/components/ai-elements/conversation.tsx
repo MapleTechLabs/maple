@@ -56,6 +56,14 @@ export const ConversationEmptyState = ({
 	</div>
 )
 
+export const ConversationLoadingSkeleton = () => (
+	<div className="flex flex-col gap-3 py-6" aria-hidden>
+		<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+		<div className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+		<div className="h-3 w-1/3 animate-pulse rounded bg-muted" />
+	</div>
+)
+
 export type ConversationScrollButtonProps = ComponentProps<typeof Button>
 
 export const ConversationScrollButton = ({ className, ...props }: ConversationScrollButtonProps) => {

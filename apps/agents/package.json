@@ -3,9 +3,10 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "portless": { "name": "agents", "script": "dev:app" },
   "scripts": {
-    "dev": "bun run dev:server & bun run dev:ui",
-    "dev:server": "tsx watch src/server/index.ts",
+    "dev": "portless",
+    "dev:app": "tsx watch src/server/index.ts",
     "dev:ui": "vite",
     "start": "tsx src/server/index.ts",
     "build": "vite build",

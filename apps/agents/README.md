@@ -20,8 +20,11 @@ assistant. It replies to every message, streams prose, and has **read-only Maple
 (`Bearer maple_svc_$INTERNAL_SERVICE_TOKEN` + `X-Org-Id`). It's consumed by the comparison
 route `/electric-chat` in `apps/web` (next to the existing `/chat`).
 
-Run order for the web comparison: `bun run infra` → `bun run dev:server` (this app, `:4700`)
+Run order for the web comparison: `bun run infra` → `bun run dev` (this app — runs
+through portless at `https://[<worktree>.]agents.localhost`, port assigned per worktree)
 → the **Maple API** (`bun --filter @maple/api dev:app`, `:3472`, for tools) → `apps/web`.
+When `apps/web` also runs under portless its `/electric-chat` REST base auto-resolves to
+this app's sibling URL (`siblingUrl("agents")`), so the two stay matched per worktree.
 
 The tools call the Maple API's `/mcp` over the MCP SDK and return real data (verified:
 `list_services` renders a live service table). If `apps/api` isn't running the assistant
@@ -43,14 +46,20 @@ use different copies and live updates don't reach the UI (only the initial snaps
 ## Architecture
 
 ```
-Web UI (Vite, :5175) ──/api──▶ this Node app (:4700)
+Web UI (Vite, :5175) ──/api──▶ this Node app (portless; :4700 standalone)
    │  reads live messages                  │  write user message to shared state
    │  (durable-streams) from :4438         ▼
-   │                          Electric Agents Server (docker, :4438) ──webhook──▶ runtime (:4700)
+   │                          Electric Agents Server (docker, :4438) ──webhook──▶ runtime ($PORT)
    ▲                            │  durable streams (Postgres + LMDB)        │ dispatches to
    └────────────────────────────┴── agent writes reply ◀── ctx.useAgent() → │ the agent handler
                                                               OpenRouter LLM ┘
 ```
+
+This app runs through **portless** (`bun run dev` → `dev:app`), which assigns a
+per-worktree `PORT` and serves it at `https://[<worktree>.]agents.localhost`. The
+Docker agents-server reaches the webhook via `host.docker.internal:${PORT}` —
+`src/server/index.ts` derives `SERVE_URL` from the assigned port, so no fixed `:4700`
+is needed and multiple worktrees no longer collide on the port.
 
 Three docker services back it (see `docker-compose.yml`): Postgres, Electric, and the
 Electric Agents Server. Only the agents-server is published, on `:4438` (it also
@@ -73,17 +82,19 @@ docker compose ps        # wait for all three healthy/started
 cp .env.example .env
 # set OPENROUTER_API_KEY=...  (reuse Maple's OpenRouter key)
 
-# 4. Start the runtime server + web UI
-bun run dev              # runs the agents server (:4700) AND the chat UI (:5175)
+# 4. Start the runtime server (through portless)
+bun run dev              # https://[<worktree>.]agents.localhost (per-worktree port)
 ```
 
-Then open **<http://localhost:5175>** — create a room, add agents from the right-hand
-panel, and chat. Name an agent in your message ("Camus, …") to be sure they reply;
-unaddressed messages get answered only ~half the time by design.
+For the standalone philosophers chat UI, run the backend and Vite UI directly (no
+portless): `bun run dev:app` (backend, falls back to `:4700`) and `bun run dev:ui`
+(Vite, `:5175`), then open **<http://localhost:5175>** — create a room, add agents from
+the right-hand panel, and chat. Name an agent in your message ("Camus, …") to be sure
+they reply; unaddressed messages get answered only ~half the time by design.
 
-> `bun run dev` runs both processes. To run them separately use `bun run dev:server`
-> and `bun run dev:ui`. The UI (Vite) proxies `/api` to the server on `:4700` and
-> connects to the agents-server (`:4438`) directly for the live message stream.
+> The UI (Vite) proxies `/api` to the backend on `:4700` and connects to the
+> agents-server (`:4438`) directly for the live message stream. The proxy target is the
+> standalone `:4700`, so run `dev:ui` alongside `dev:app` (not the portless `dev`).
 
 ## Drive it (CLI / REST)
 
