@@ -1,0 +1,86 @@
+# Minimal Electric Agents infra for Maple (local dev only).
+#
+# Ported from electric-ax's agents-server docker-compose.full.yml. Three services:
+#   postgres        — entity state + event logs (internal only, not published)
+#   electric        — sync service bridging Postgres -> runtime (internal only)
+#   electric-agents — durable streams + entity lifecycle; the ONLY published port
+#
+# Only the agents-server is published to the host, on 4438 (it also listens on
+# 4438 inside the container — see the note on ELECTRIC_AGENTS_BASE_URL below).
+# This avoids colliding with any other Electric or durable-streams container you
+# may already be running (e.g. on 3333 / 4437).
+#
+# The agents-server delivers wakes back to the Node app (running on the host at
+# :4700). The app registers its serveEndpoint as http://host.docker.internal:4700
+# (see SERVE_URL in .env.example) so the container can reach the host process.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_connections=300
+      - -c
+      - shared_buffers=256MB
+    environment:
+      POSTGRES_DB: electric_agents
+      POSTGRES_USER: electric_agents
+      POSTGRES_PASSWORD: electric_agents
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U electric_agents -d electric_agents']
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - electric-agents-postgres-data:/var/lib/postgresql
+
+  electric:
+    image: electricsql/electric:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://electric_agents:electric_agents@postgres:5432/electric_agents
+      ELECTRIC_INSECURE: 'true'
+
+  electric-agents:
+    # Pin a concrete version: the runtime (@electric-ax/agents-runtime) sends a
+    # `default_dispatch_policy` that only server >= 0.4.x understands. The `latest`
+    # tag can resolve to a stale cached image, so pin explicitly.
+    image: electricax/agents-server:0.4.9
+    pull_policy: missing
+    restart: unless-stopped
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      electric:
+        condition: service_started
+    environment:
+      ELECTRIC_AGENTS_LOG_LEVEL: debug
+      # BASE_URL is the server's self-URL. It must resolve to the same place from
+      # BOTH inside the container (internal subscription callbacks) AND the host
+      # (the runtime app's wake "claim callbacks"). So we run the server on 4438
+      # internally AND publish 4438:4438 — localhost:4438 then works everywhere.
+      # (We can't use 4437, the agents-server default, because another local
+      # durable-streams container already holds host port 4437.)
+      ELECTRIC_AGENTS_BASE_URL: http://localhost:4438
+      DATABASE_URL: postgres://electric_agents:electric_agents@postgres:5432/electric_agents
+      ELECTRIC_AGENTS_HOST: 0.0.0.0
+      ELECTRIC_AGENTS_PORT: 4438
+      ELECTRIC_AGENTS_STREAMS_DATA_DIR: /var/lib/electric-agents/streams
+      ELECTRIC_AGENTS_ELECTRIC_URL: http://electric:3000
+    ports:
+      - '4438:4438'
+    volumes:
+      - electric-agents-streams-data:/var/lib/electric-agents/streams
+
+volumes:
+  electric-agents-postgres-data:
+  electric-agents-streams-data:
