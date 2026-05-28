@@ -1,5 +1,7 @@
 import { z } from "zod"
 
+// Browser-side mirror of the shared chatroom schema defined in apps/agents. Must
+// match so the durable-stream client materializes rows the same way.
 export const messageSchema = z.object({
 	key: z.string().min(1),
 	role: z.enum(["user", "agent"]),
@@ -7,15 +9,11 @@ export const messageSchema = z.object({
 	senderName: z.string().min(1),
 	text: z.string().min(1),
 	timestamp: z.number(),
-	// Optional compact summary of tools the agent called this turn (assistant agent only).
-	tools: z
-		.array(z.object({ name: z.string(), status: z.string() }))
-		.optional(),
+	tools: z.array(z.object({ name: z.string(), status: z.string() })).optional(),
 })
 
-export type Message = z.infer<typeof messageSchema>
+export type ChatMessage = z.infer<typeof messageSchema>
 
-/** Shared chatroom state: a single `messages` collection observed by every agent. */
 export const chatroomSchema = {
 	messages: {
 		schema: messageSchema,

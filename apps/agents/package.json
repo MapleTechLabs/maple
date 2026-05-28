@@ -20,6 +20,7 @@
     "@electric-ax/agents": "^0.4.8",
     "@electric-ax/agents-runtime": "^0.3.4",
     "@mariozechner/pi-agent-core": "^0.70.6",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@sinclair/typebox": "^0.34.49",
     "@tanstack/db": "^0.6.7",
     "@tanstack/react-db": "^0.1.85",

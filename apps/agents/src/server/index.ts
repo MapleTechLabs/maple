@@ -14,6 +14,7 @@ for (const file of [`${HERE}/.env`, `${ROOT}/.env.local`, `${ROOT}/.env`]) {
 
 import http from "node:http"
 import { createEntityRegistry, createRuntimeHandler } from "@electric-ax/agents-runtime"
+import { registerAssistantAgent } from "./assistant-agent.js"
 import { registerChatAgent } from "./chat-agent.js"
 
 const AGENTS_URL = process.env.AGENTS_URL ?? "http://localhost:4438"
@@ -74,6 +75,9 @@ DEBATE: Engage Socrates or Camus directly by name. You and Camus are old friends
 STYLE: 1-3 sentences max. Ground claims in concrete examples. No lengthy analysis — make your point and move on.`,
 )
 
+// Single 1:1 Maple assistant (Electric-backed chat used by apps/web's /electric-chat).
+registerAssistantAgent(registry)
+
 const runtime = createRuntimeHandler({
 	baseUrl: AGENTS_URL,
 	serveEndpoint: `${SERVE_URL}/webhook`,
@@ -87,6 +91,7 @@ interface Room {
 	id: string
 	name: string
 	createdAt: number
+	orgId?: string
 	agents: Array<{ id: string; type: string; entityUrl: string }>
 }
 
@@ -119,8 +124,8 @@ async function spawnAgent(room: Room, type: string): Promise<string> {
 		method: "PUT",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({
-			args: { chatroomId: room.id },
-			tags: { room_id: room.id },
+			args: { chatroomId: room.id, ...(room.orgId ? { orgId: room.orgId } : {}) },
+			tags: { room_id: room.id, ...(room.orgId ? { org_id: room.orgId } : {}) },
 			initialMessage: `You have joined chatroom "${room.name}". Wait for messages.`,
 		}),
 	})
@@ -170,18 +175,22 @@ const server = http.createServer(async (req, res) => {
 		return
 	}
 
-	// Create room + spawn one random philosopher.
+	// Create a room. `agent` picks the type to spawn ("assistant" for the 1:1 Maple
+	// chat); otherwise a random philosopher (the demo). `orgId` scopes assistant tools.
 	if (req.url === "/api/rooms" && req.method === "POST") {
 		try {
-			const body = (await readJson(req)) as { name?: string }
+			const body = (await readJson(req)) as { name?: string; agent?: string; orgId?: string }
 			const id = crypto.randomUUID().slice(0, 8)
 			const name = body.name ? `${body.name}-${id.slice(0, 4)}` : `room-${id}`
-			const room: Room = { id, name, agents: [], createdAt: Date.now() }
+			const room: Room = { id, name, agents: [], createdAt: Date.now(), orgId: body.orgId }
 			rooms.set(id, room)
 
-			const philosophers = ["socrates", "camus", "simone"]
-			const random = philosophers[Math.floor(Math.random() * philosophers.length)]!
-			await spawnAgent(room, random)
+			let type = body.agent
+			if (!type) {
+				const philosophers = ["socrates", "camus", "simone"]
+				type = philosophers[Math.floor(Math.random() * philosophers.length)]!
+			}
+			await spawnAgent(room, type)
 
 			writeJson(res, 200, {
 				id: room.id,

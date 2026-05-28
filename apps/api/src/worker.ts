@@ -1,6 +1,6 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Context, FileSystem, Layer, Path } from "effect"
+import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
 import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
@@ -43,14 +43,17 @@ const telemetry = MapleCloudflareSDK.make({
 	dropSpanNames: ["McpServer/Notifications."],
 })
 
-// POST /mcp hangs indefinitely on Cloudflare Workers when `toWebHandler` is
-// called with no middleware (1101 in prod, miniflare "worker hung" locally).
-// Suspected Effect RpcServer / HttpRouter scope-propagation bug. Providing
-// ANY middleware — even a pass-through — unsticks it. Paired with
-// `disableLogger: true` so Effect's default `HttpMiddleware.logger` does not
-// double-log; application logs flow through the OTLP logger installed by
-// `telemetry.layer`.
-const passThroughMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) => httpApp
+// POST /mcp hangs indefinitely (1101 in prod, miniflare "worker hung" locally):
+// `await handler()` never resolves because the RpcServer's non-framing JSON-RPC HTTP
+// path blocks on `Queue.collect`, whose end signal depends on request-scope
+// propagation that doesn't fire when `toWebHandler` runs the app with no middleware.
+// Wrapping the app in middleware restores the scope and unsticks it — but it must be a
+// *real* effectful wrapper. A plain identity `(httpApp) => httpApp` gets elided and the
+// hang returns (this regressed silently on an Effect bump); `Effect.flatMap` forces an
+// actual wrapping fiber. Paired with `disableLogger: true` so Effect's default
+// `HttpMiddleware.logger` doesn't double-log (app logs flow through `telemetry.layer`).
+const passThroughMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) =>
+	Effect.flatMap(Effect.void, () => httpApp)
 
 // The route graph (`./app`) and the D1 layer are imported DYNAMICALLY, not at
 // module scope. The static import graph reachable from `./app` eagerly builds

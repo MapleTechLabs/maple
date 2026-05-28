@@ -10,6 +10,32 @@ indicator shows while an agent is generating. Each agent emits its reply as assi
 prose (which streams to its own timeline); the finished text is committed to the shared
 chatroom so the other agents — and the UI — see it.
 
+## The `assistant` agent (powers Maple web's `/electric-chat`)
+
+Besides the philosophers, this runtime registers a single 1:1 **`assistant`** entity
+([src/server/assistant-agent.ts](src/server/assistant-agent.ts)) — Maple's observability
+assistant. It replies to every message, streams prose, and has **read-only Maple tools**
+(`list_services`, `find_errors`) that call the Maple API's MCP endpoint
+([src/server/maple-mcp.ts](src/server/maple-mcp.ts)) with the internal service token
+(`Bearer maple_svc_$INTERNAL_SERVICE_TOKEN` + `X-Org-Id`). It's consumed by the comparison
+route `/electric-chat` in `apps/web` (next to the existing `/chat`).
+
+Run order for the web comparison: `bun run infra` → `bun run dev:server` (this app, `:4700`)
+→ the **Maple API** (`bun --filter @maple/api dev:app`, `:3472`, for tools) → `apps/web`.
+
+The tools call the Maple API's `/mcp` over the MCP SDK and return real data (verified:
+`list_services` renders a live service table). If `apps/api` isn't running the assistant
+reports the tool failed and still answers.
+
+> Note: `/mcp` previously hung on `initialize` locally — the `toWebHandler` pass-through
+> middleware in `apps/api/src/worker.ts` had decayed to an identity function (elided), which
+> stopped unsticking the RpcServer request-scope hang. Restoring a real effectful wrapper
+> fixed it. See the comment at `apps/api/src/worker.ts`.
+
+**apps/web note:** the web route needs a single `@tanstack/db` instance — its `vite.config.ts`
+aliases `@tanstack/db` to one copy, otherwise the durable-stream client and `useLiveQuery`
+use different copies and live updates don't reach the UI (only the initial snapshot loads).
+
 > **Why a separate app?** Electric Agents' runtime is a long-lived Node HTTP server
 > exposing `POST /webhook`. It cannot run inside Maple's Cloudflare Workers API, so it
 > lives here as its own workspace.

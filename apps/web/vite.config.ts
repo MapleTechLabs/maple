@@ -40,6 +40,10 @@ export default defineConfig(({ mode }) => {
 		"VITE_MAPLE_AUTH_MODE",
 		"VITE_CLERK_PUBLISHABLE_KEY",
 		"VITE_MAPLE_INGEST_KEY",
+		// Electric Agents comparison chat (/electric-chat): the agents-server (live
+		// stream) and the apps/agents REST (rooms/messages). Defaulted in code.
+		"VITE_ELECTRIC_AGENTS_URL",
+		"VITE_ELECTRIC_CHAT_REST",
 	] as const
 	const define: Record<string, string> = {}
 	for (const key of overrideKeys) {
@@ -53,6 +57,12 @@ export default defineConfig(({ mode }) => {
 		envDir,
 		resolve: {
 			tsconfigPaths: true,
+			// Pin a single @tanstack/db instance so the Electric durable-streams client
+			// and useLiveQuery (in /electric-chat) share one collection registry —
+			// otherwise live updates don't propagate to the UI (only the snapshot loads).
+			alias: {
+				"@tanstack/db": path.resolve(import.meta.dirname, "node_modules/@tanstack/db"),
+			},
 		},
 		define,
 		plugins: [

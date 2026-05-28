@@ -67,6 +67,11 @@ const mainNavItems = [
 		href: "/chat",
 		icon: ChatBubbleSparkleIcon,
 	},
+	{
+		title: "Chat (Electric)",
+		href: "/electric-chat",
+		icon: ChatBubbleSparkleIcon,
+	},
 ]
 
 const topologyNavItems = [
