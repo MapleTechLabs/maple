@@ -977,6 +977,90 @@ fn gzip(body: Vec<u8>) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("finish gzip Tinybird body: {error}"))
 }
 
+// --- Local (chDB) encode path ----------------------------------------------
+//
+// The standalone `maple` binary writes to an embedded chDB instead of the
+// Tinybird WAL/export pipeline. It reuses the exact same OTLP→NDJSON encoders
+// below so the two write paths can never diverge in row shape. These helpers
+// expose a datasource-tagged batch decoupled from `EncodedFrame`/the pipeline.
+
+/// One datasource's NDJSON rows, ready to INSERT into the matching chDB table.
+pub struct LocalBatch {
+    pub datasource: String,
+    pub row_count: usize,
+    pub payload: Vec<u8>,
+}
+
+/// Standard datasource names with inert WAL/export settings. The encoders only
+/// read the `datasource_*` fields; every other field is unused on the encode
+/// path, so the pipeline-only values here are placeholders.
+fn local_encode_config() -> TinybirdConfig {
+    TinybirdConfig {
+        endpoint: String::new(),
+        token: String::new(),
+        queue_dir: PathBuf::new(),
+        queue_max_bytes: 1,
+        org_queue_max_bytes: 1,
+        queue_channel_capacity: 1,
+        wal_shards: 1,
+        batch_max_rows: 1,
+        batch_max_bytes: 1,
+        batch_max_wait: Duration::from_secs(1),
+        export_concurrency_per_shard: 1,
+        export_max_attempts: 1,
+        datasource_traces: "traces".to_string(),
+        datasource_logs: "logs".to_string(),
+        datasource_metrics_sum: "metrics_sum".to_string(),
+        datasource_metrics_gauge: "metrics_gauge".to_string(),
+        datasource_metrics_histogram: "metrics_histogram".to_string(),
+        datasource_metrics_exponential_histogram: "metrics_exponential_histogram".to_string(),
+        datasource_session_replays: "session_replays".to_string(),
+        datasource_session_replay_events: "session_replay_events".to_string(),
+        datasource_session_events: "session_events".to_string(),
+    }
+}
+
+fn frames_to_batches(frames: Vec<EncodedFrame>) -> Vec<LocalBatch> {
+    frames
+        .into_iter()
+        .filter(|frame| frame.row_count > 0)
+        .map(|frame| LocalBatch {
+            datasource: frame.datasource,
+            row_count: frame.row_count,
+            payload: frame.payload,
+        })
+        .collect()
+}
+
+/// Encode OTLP traces to per-datasource NDJSON batches for the local write
+/// path. Sampling is disabled (keep everything) since local volume is small.
+pub fn encode_local_traces(
+    org_id: &str,
+    request: &ExportTraceServiceRequest,
+) -> Result<Vec<LocalBatch>, PipelineError> {
+    let (frames, _) =
+        encode_traces(&local_encode_config(), org_id, request, &SamplingPolicy::default(), &[])?;
+    Ok(frames_to_batches(frames))
+}
+
+/// Encode OTLP logs to NDJSON batches for the local write path.
+pub fn encode_local_logs(
+    org_id: &str,
+    request: &ExportLogsServiceRequest,
+) -> Result<Vec<LocalBatch>, PipelineError> {
+    let (frames, _) = encode_logs(&local_encode_config(), org_id, request)?;
+    Ok(frames_to_batches(frames))
+}
+
+/// Encode OTLP metrics to per-type NDJSON batches for the local write path.
+pub fn encode_local_metrics(
+    org_id: &str,
+    request: &ExportMetricsServiceRequest,
+) -> Result<Vec<LocalBatch>, PipelineError> {
+    let (frames, _) = encode_metrics(&local_encode_config(), org_id, request)?;
+    Ok(frames_to_batches(frames))
+}
+
 fn encode_traces(
     cfg: &TinybirdConfig,
     org_id: &str,
