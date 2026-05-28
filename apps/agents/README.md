@@ -12,13 +12,13 @@ provider Maple uses), not Anthropic directly.
 ## Architecture
 
 ```
-You (CLI / curl)
-   │  write user message to shared state
-   ▼
-Electric Agents Server (docker, host :4438)  ──webhook──▶  this Node app (:4700)
-   │  durable streams (Postgres + LMDB)                  │ createRuntimeHandler dispatches
-   ▲                                                      ▼ to the matching agent handler
-   └── agent writes reply to shared state ◀──── ctx.useAgent() → OpenRouter LLM
+Web UI (Vite, :5175) ──/api──▶ this Node app (:4700)
+   │  reads live messages                  │  write user message to shared state
+   │  (durable-streams) from :4438         ▼
+   │                          Electric Agents Server (docker, :4438) ──webhook──▶ runtime (:4700)
+   ▲                            │  durable streams (Postgres + LMDB)        │ dispatches to
+   └────────────────────────────┴── agent writes reply ◀── ctx.useAgent() → │ the agent handler
+                                                              OpenRouter LLM ┘
 ```
 
 Three docker services back it (see `docker-compose.yml`): Postgres, Electric, and the
@@ -42,13 +42,21 @@ docker compose ps        # wait for all three healthy/started
 cp .env.example .env
 # set OPENROUTER_API_KEY=...  (reuse Maple's OpenRouter key)
 
-# 4. Start the runtime app
-bun run dev              # tsx watch; listens on :4700, registers entity types
+# 4. Start the runtime server + web UI
+bun run dev              # runs the agents server (:4700) AND the chat UI (:5175)
 ```
 
-## Drive it
+Then open **<http://localhost:5175>** — create a room, add agents from the right-hand
+panel, and chat. Name an agent in your message ("Camus, …") to be sure they reply;
+unaddressed messages get answered only ~half the time by design.
 
-Via the bundled CLI (`@electric-ax/agents`):
+> `bun run dev` runs both processes. To run them separately use `bun run dev:server`
+> and `bun run dev:ui`. The UI (Vite) proxies `/api` to the server on `:4700` and
+> connects to the agents-server (`:4438`) directly for the live message stream.
+
+## Drive it (CLI / REST)
+
+If you'd rather not use the UI — via the bundled CLI (`@electric-ax/agents`):
 
 ```bash
 bun run agents spawn /socrates/demo-1 --args '{"chatroomId":"demo"}'
@@ -81,7 +89,8 @@ Inspect the durable timeline (wake → useAgent → tool call → shared-state w
   passing a full custom `Model` object to `ctx.useAgent`. Base id is enough here.
 - **Key:** a plain `OPENROUTER_API_KEY` env var. Org-scoped encrypted keys
   (`OrgOpenRouterSettingsService` + D1) are intentionally out of scope.
-- No Maple-data tools, no web UI, no production deploy — local dev only.
+- No Maple-data tools and no production deploy — local dev only. (A minimal Vite + React
+  chat UI is included under `src/ui/`.)
 
 ## Gotchas (why the config looks the way it does)
 

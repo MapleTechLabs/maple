@@ -4,8 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server/index.ts",
+    "dev": "bun run dev:server & bun run dev:ui",
+    "dev:server": "tsx watch src/server/index.ts",
+    "dev:ui": "vite",
     "start": "tsx src/server/index.ts",
+    "build": "vite build",
     "infra": "docker compose up -d",
     "infra:down": "docker compose down",
     "infra:logs": "docker compose logs -f electric-agents",
@@ -19,11 +22,18 @@
     "@mariozechner/pi-agent-core": "^0.70.6",
     "@sinclair/typebox": "^0.34.49",
     "@tanstack/db": "^0.6.7",
+    "@tanstack/react-db": "^0.1.85",
+    "react": "catalog:react",
+    "react-dom": "catalog:react",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "catalog:tooling",
+    "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
+    "@vitejs/plugin-react": "^6.0.2",
     "tsx": "^4.22.3",
-    "typescript": "catalog:tooling"
+    "typescript": "catalog:tooling",
+    "vite": "catalog:"
   }
 }
