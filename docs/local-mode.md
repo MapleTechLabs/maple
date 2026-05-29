@@ -8,6 +8,26 @@ distributable "try Maple locally" bundle.
 Everything is single-tenant: every row is written under `org_id = "local"`, and
 every compiled query filters on it.
 
+## Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh | sh
+```
+
+The installer ([scripts/install.sh](../scripts/install.sh)) detects your OS/arch,
+downloads the matching bundle from the latest GitHub release, verifies its
+checksum, installs the three files into `~/.maple/bin`, clears the macOS
+Gatekeeper quarantine, and symlinks `maple` onto your PATH. Then:
+
+```bash
+maple start        # OTLP ingest + embedded ClickHouse + UI on :4318
+maple services     # query the running server
+maple traces
+```
+
+Env overrides: `MAPLE_VERSION` (pin a release tag), `MAPLE_INSTALL_DIR` (bundle
+location, default `~/.maple/bin`), `MAPLE_BIN_DIR` (PATH symlink location).
+
 ## The three pieces
 
 | Piece | Package | Role |

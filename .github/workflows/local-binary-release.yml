@@ -193,7 +193,14 @@ jobs:
                   if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
                     gh release create "$TAG" --repo "$REPO" \
                       --title "$TAG" \
-                      --notes "Local Maple (\`maple start\`) bundles. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them."
+                      --notes "Local Maple (\`maple start\`) bundles.
+
+**Install (macOS / Linux):**
+\`\`\`
+curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh
+\`\`\`
+
+Or download a bundle below and extract it. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them."
                   fi
                   # download-artifact nests each artifact in its own subdir.
                   find dist -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -print0 \
