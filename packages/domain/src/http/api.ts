@@ -19,6 +19,7 @@ import { QueryEngineApiGroup } from "./query-engine"
 import { ScrapeTargetsApiGroup } from "./scrape-targets"
 import { ServiceDiscoveryApiGroup } from "./service-discovery"
 import { SessionReplaysApiGroup } from "./session-replay"
+import { WarehouseApiGroup } from "./warehouse"
 export class MapleApi extends HttpApi.make("MapleApi")
 	.add(AuthPublicApiGroup)
 	.add(AuthApiGroup)
@@ -41,6 +42,7 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(ScrapeTargetsApiGroup)
 	.add(ServiceDiscoveryApiGroup)
 	.add(SessionReplaysApiGroup)
+	.add(WarehouseApiGroup)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Maple API",

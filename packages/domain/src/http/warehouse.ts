@@ -63,7 +63,7 @@ export class WarehouseApiGroup extends HttpApiGroup.make("warehouse")
 		HttpApiEndpoint.post("query", "/query", {
 			payload: WarehouseQueryRequest,
 			success: WarehouseQueryResponse,
-			error: WarehouseQueryError,
+			error: [WarehouseQueryError, WarehouseQuotaExceededError] as const,
 		}),
 	)
 	.prefix("/api/tinybird")

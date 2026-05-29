@@ -25,6 +25,7 @@ import { HttpQueryEngineLive } from "./routes/query-engine.http"
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
 import { HttpServiceDiscoveryLive } from "./routes/sd.http"
 import { HttpSessionReplaysLive } from "./routes/session-replay.http"
+import { HttpWarehouseLive } from "./routes/warehouse.http"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
 import { BucketCacheService } from "./lib/BucketCacheService"
 import { ErrorsService } from "./services/ErrorsService"
@@ -152,7 +153,7 @@ export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpScrapeTargetsLive),
 	Layer.provide(HttpServiceDiscoveryLive),
-	Layer.provide(Layer.mergeAll(HttpQueryEngineLive, HttpSessionReplaysLive)),
+	Layer.provide(Layer.mergeAll(HttpQueryEngineLive, HttpSessionReplaysLive, HttpWarehouseLive)),
 )
 
 export const AllRoutes = Layer.mergeAll(
