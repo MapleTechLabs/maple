@@ -1,18 +1,21 @@
 name: Local Binary Release
 
 # Builds the distributable `maple` local binary (embedded chDB + bundled SPA)
-# for macOS and Linux, then attaches a 2-file bundle (`maple` + `libchdb.so`)
-# per platform to a GitHub release.
+# for macOS and Linux, then attaches a 3-file bundle (`maple` + `libchdb.so`
+# + `maple-cli`) per platform to a GitHub release.
 #
 # Why native runners (no cross-compilation): `chdb-rust`'s build.rs downloads a
 # prebuilt, platform-specific `libchdb.so` for the *host* and links it. Cross-
 # compiling would fetch+link the wrong architecture's engine, so each target is
 # built on a matching native runner instead.
 #
+# Each build job publishes its own tarball immediately after packaging — no
+# separate aggregation step — so a slow or queued runner can never block the
+# other platforms from appearing on the release.
+#
 # Triggers:
-#   - push a `v*` tag                  → build + publish to the matching release
-#   - workflow_dispatch (manual)       → build + upload artifacts (no release
-#                                        unless `tag` input is given)
+#   - push a `v*` tag       → build + publish each platform's bundle as it finishes
+#   - workflow_dispatch     → build + upload artifacts (no release unless `tag` input given)
 
 on:
     push:
@@ -154,54 +157,36 @@ jobs:
                   if-no-files-found: error
                   retention-days: 7
 
-    release:
-        name: Publish release
-        needs: build
-        runs-on: ubuntu-latest
-        # Only publish when we have a tag to attach to (tag push or a manual run
-        # that supplied the `tag` input).
-        if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
-        steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-            - name: Resolve tag
-              id: tag
+            - name: Publish to release
+              # Each platform publishes its own tarball as soon as it's built — no
+              # waiting for other platforms. `gh release create` is idempotent (the
+              # `|| true` swallows the "already exists" error from concurrent jobs);
+              # `gh release upload --clobber` is safe to re-run.
+              if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPO: ${{ github.repository }}
               run: |
                   set -euo pipefail
                   ref="${{ github.ref }}"
                   input_tag="${{ github.event.inputs.tag }}"
                   if [ -n "$input_tag" ]; then
-                    tag="$input_tag"
+                    TAG="$input_tag"
                   else
-                    tag="${ref#refs/tags/}"
+                    TAG="${ref#refs/tags/}"
                   fi
-                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
-
-            - name: Download all bundles
-              uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-              with:
-                  path: dist
-
-            - name: Publish bundles to release
-              env:
-                  GH_TOKEN: ${{ github.token }}
-                  TAG: ${{ steps.tag.outputs.tag }}
-                  REPO: ${{ github.repository }}
-              run: |
-                  set -euo pipefail
-                  # Create the release if it doesn't exist yet (idempotent).
-                  if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-                    gh release create "$TAG" --repo "$REPO" \
-                      --title "$TAG" \
-                      --notes "Local Maple (\`maple start\`) bundles.
+                  tarball="${{ steps.package.outputs.tarball }}"
+                  # Create the release if it doesn't exist yet. Multiple platforms
+                  # may race here; ignore the "already exists" error.
+                  gh release create "$TAG" --repo "$REPO" \
+                    --title "$TAG" \
+                    --notes "Local Maple (\`maple start\`) bundles.
 
 **Install (macOS / Linux):**
 \`\`\`
 curl -fsSL https://maple.dev/cli/install | sh
 \`\`\`
 
-Or download a bundle below and extract it. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them."
-                  fi
-                  # download-artifact nests each artifact in its own subdir.
-                  find dist -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -print0 \
-                    | xargs -0 gh release upload "$TAG" --repo "$REPO" --clobber
+Or download a bundle below and extract it. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them." 2>/dev/null || true
+                  gh release upload "$TAG" "$tarball" "${tarball}.sha256" \
+                    --repo "$REPO" --clobber
