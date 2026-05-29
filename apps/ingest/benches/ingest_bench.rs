@@ -12,7 +12,7 @@ use axum::routing::post;
 use axum::Router;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use flate2::read::GzDecoder;
-use maple_ingest::telemetry::{SamplingPolicy, TelemetryPipeline, TinybirdConfig};
+use maple_ingest::telemetry::{DatasourceNames, SamplingPolicy, TelemetryPipeline, TinybirdConfig};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
@@ -106,13 +106,7 @@ impl BenchFixture {
                 batch_max_wait: Duration::from_millis(10),
                 export_concurrency_per_shard: 1,
                 export_max_attempts: 20,
-                datasource_traces: "traces".to_string(),
-                datasource_logs: "logs".to_string(),
-                datasource_metrics_sum: "metrics_sum".to_string(),
-                datasource_metrics_gauge: "metrics_gauge".to_string(),
-                datasource_metrics_histogram: "metrics_histogram".to_string(),
-                datasource_metrics_exponential_histogram: "metrics_exponential_histogram"
-                    .to_string(),
+                datasources: DatasourceNames::defaults(),
                 datasource_session_replays: "session_replays".to_string(),
                 datasource_session_replay_events: "session_replay_events".to_string(),
                 datasource_session_events: "session_events".to_string(),
