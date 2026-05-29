@@ -11,10 +11,14 @@ every compiled query filters on it.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh | sh
+curl -fsSL https://maple.dev/cli/install | sh
 ```
 
-The installer ([scripts/install.sh](../scripts/install.sh)) detects your OS/arch,
+(`maple.dev/cli/install` is [scripts/install.sh](../scripts/install.sh) served by
+`apps/landing` — the build copies it to `public/cli/install`. The raw GitHub URL
+`https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh` works too.)
+
+The installer detects your OS/arch,
 downloads the matching bundle from the latest GitHub release, verifies its
 checksum, installs the three files into `~/.maple/bin`, clears the macOS
 Gatekeeper quarantine, and symlinks `maple` onto your PATH. Then:

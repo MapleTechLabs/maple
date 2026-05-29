@@ -1,7 +1,11 @@
 #!/bin/sh
 # Maple local-binary installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh | sh
+#   curl -fsSL https://maple.dev/cli/install | sh
+#
+# (maple.dev/cli/install is this same file, served by apps/landing. The raw
+#  GitHub URL — raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh —
+#  works too.)
 #
 # Downloads the platform bundle from the latest GitHub release, verifies its
 # checksum, and installs the 3-file bundle (`maple` + `libchdb.so` + `maple-cli`)

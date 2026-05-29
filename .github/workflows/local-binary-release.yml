@@ -197,7 +197,7 @@ jobs:
 
 **Install (macOS / Linux):**
 \`\`\`
-curl -fsSL https://raw.githubusercontent.com/$REPO/main/scripts/install.sh | sh
+curl -fsSL https://maple.dev/cli/install | sh
 \`\`\`
 
 Or download a bundle below and extract it. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them."
