@@ -159,7 +159,7 @@ End-user and platform documentation lives in `docs/`:
 - `docs/sampling-throughput.md` — How Maple handles sampling-aware throughput metrics
 - `docs/persistence.md` — Database persistence and migration operations
 - `docs/sst-fork-workflow.md` — Running maple against a local SST fork, syncing with upstream, and opening PRs from fork branches
-- `docs/local-mode.md` — Local mode (single `maple` binary: OTLP ingest + embedded chDB + query CLI + UI), the `/local/query` contract, dev workflow, and the release bundle
+- `docs/local-mode.md` — Local mode (single Bun-compiled `maple` binary from `apps/cli`: CLI + OTLP-ingest/query server + bundled UI, talking to embedded chDB via `bun:ffi`→libchdb), the `/local/query` contract, dev workflow, and the 2-file release bundle
 
 ## Self-Observability (Trace Loop Prevention)
 
