@@ -254,6 +254,20 @@
 	}
 }
 
+/* Loading spinner — the shared <Spinner> renders the Nucleo "Pixel Essential" loader
+   (LoaderIcon). Step it frame-by-frame instead of rotating smoothly so it reads as a
+   retro pixel loader. Scoped to local-ui; the only animate-spin consumer here is the
+   <Spinner> (role="status"). */
+@keyframes pixel-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+[role="status"].animate-spin {
+	animation: pixel-spin 1s steps(8, end) infinite;
+}
+
 /* ReactFlow Controls styling */
 .react-flow__controls {
 	box-shadow: none !important;

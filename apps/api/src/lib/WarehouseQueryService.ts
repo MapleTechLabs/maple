@@ -11,7 +11,7 @@ import { Clock, Effect, Layer, Option, Redacted, Schedule, Context } from "effec
 import { Env } from "./Env"
 import type { TenantContext } from "../services/AuthService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
-import { compilePipeQuery } from "../services/PipeQueryDispatcher"
+import { compilePipeQuery } from "@maple/query-engine/ch"
 import {
 	appendSettings,
 	detectQuotaSetting,

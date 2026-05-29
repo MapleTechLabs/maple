@@ -5,8 +5,8 @@
 // This replaces the Tinybird SDK's named pipe execution with the CH query engine.
 // ---------------------------------------------------------------------------
 
-import { CH } from "@maple/query-engine"
-import type { TracesMetric } from "@maple/query-engine"
+import * as CH from "./index"
+import type { TracesMetric } from "../query-engine"
 import type { OrgId } from "@maple/domain"
 import { Array as A, Match, Result } from "effect"
 

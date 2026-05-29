@@ -10,6 +10,12 @@ const LOCAL_BINARY_URL = process.env.MAPLE_LOCAL_URL ?? "http://127.0.0.1:4318"
 
 export default defineConfig({
 	plugins: [tsconfigPaths(), tailwindcss(), viteReact()],
+	// `@maple/ui` and this app each resolve their own `react`/`react-dom` copy in
+	// the monorepo; dedupe so Base UI components (Popover, etc.) share a single
+	// React instance — otherwise hooks throw "more than one copy of React".
+	resolve: {
+		dedupe: ["react", "react-dom"],
+	},
 	// Emit a static SPA whose assets the Rust binary embeds via rust-embed.
 	build: {
 		outDir: "dist",

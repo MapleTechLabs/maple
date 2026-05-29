@@ -5,6 +5,7 @@ import { LogsView } from "./views/logs-view"
 import { SessionsListView } from "./views/sessions-list-view"
 import { SessionDetailView } from "./views/session-detail-view"
 import { navigate, useLocation } from "./lib/router"
+import { ConnectButton } from "./components/connect-button"
 
 type Route =
 	| { name: "traces" }
@@ -57,6 +58,9 @@ export function App() {
 				<NavTab label="Traces" active={tab === "traces"} onClick={() => switchTab("/traces")} />
 				<NavTab label="Logs" active={tab === "logs"} onClick={() => switchTab("/logs")} />
 				<NavTab label="Sessions" active={tab === "sessions"} onClick={() => switchTab("/sessions")} />
+				<div className="ml-auto">
+					<ConnectButton />
+				</div>
 			</header>
 
 			<main className="min-h-0 flex-1">

@@ -1,7 +1,7 @@
-import { describe, expect, it } from "@effect/vitest"
+import { describe, expect, it } from "vitest"
 import { Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
-import { compilePipeQuery } from "./PipeQueryDispatcher"
+import { compilePipeQuery } from "./pipe-dispatch"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 

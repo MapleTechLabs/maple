@@ -126,6 +126,11 @@ export {
 // Compilation
 export { compileCH as compile, compileUnion, type CompiledQuery, QueryBuilderError } from "./compile"
 
+// Pipe dispatch — maps Tinybird-style pipe names + params to compiled CH SQL.
+// Shared by the cloud WarehouseQueryService and the local-cli executor so both
+// resolve a pipe name to identical SQL.
+export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
+
 // Union
 export { unionAll, type CHUnionQuery, type InferUnionOutput } from "./union"
 
