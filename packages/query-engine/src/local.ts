@@ -1,10 +1,10 @@
-// Shared client for the local Maple binary's `POST /local/query` endpoint, used
-// by both the browser SPA (`apps/local-ui`) and the query CLI (`apps/local-cli`).
+// Shared client for the local Maple server's `POST /local/query` endpoint, used
+// by both the browser SPA (`apps/local-ui`) and the query CLI (`apps/cli`).
 // The endpoint runs raw SQL through the in-process chDB session and returns a
 // bare JSON array.
 //
-// The output FORMAT is owned by the server: `handle_query` in
-// `apps/ingest/src/bin/local.rs` strips whatever trailing `FORMAT <fmt>` the
+// The output FORMAT is owned by the server: `forceJsonEachRow` in
+// `apps/cli/src/server/serve.ts` strips whatever trailing `FORMAT <fmt>` the
 // compiler emitted (`CH.compile(...)` appends `FORMAT JSON`) and re-runs the
 // query as `FORMAT JSONEachRow`. So callers POST `compiled.sql` verbatim.
 

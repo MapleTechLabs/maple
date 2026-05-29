@@ -27,7 +27,7 @@
 		"lib/effect-cloudflare": {
 			"ignoreDependencies": ["cloudflare"]
 		},
-		"apps/local-cli": {
+		"apps/cli": {
 			"entry": ["src/bin.ts"]
 		}
 	},

@@ -1,13 +1,14 @@
 name: Local Binary Release
 
-# Builds the distributable `maple` local binary (embedded chDB + bundled SPA)
-# for macOS and Linux, then attaches a 3-file bundle (`maple` + `libchdb.so`
-# + `maple-cli`) per platform to a GitHub release.
+# Builds the distributable `maple` local binary (a single Bun-compiled
+# executable: CLI + OTLP-ingest/query server + bundled SPA) for macOS and Linux,
+# then attaches a 2-file bundle (`maple` + `libchdb.so`) per platform to a
+# GitHub release.
 #
-# Why native runners (no cross-compilation): `chdb-rust`'s build.rs downloads a
-# prebuilt, platform-specific `libchdb.so` for the *host* and links it. Cross-
-# compiling would fetch+link the wrong architecture's engine, so each target is
-# built on a matching native runner instead.
+# Why native runners (no cross-compilation): the bundle ships a prebuilt,
+# platform-specific `libchdb.so` (downloaded from chdb-io/chdb-core releases),
+# which `maple` dlopens via bun:ffi at runtime. We fetch the engine matching the
+# host, so each target is built on a matching native runner.
 #
 # Each build job publishes its own tarball immediately after packaging — no
 # separate aggregation step — so a slow or queued runner can never block the
@@ -35,9 +36,6 @@ concurrency:
 permissions:
     contents: write
 
-env:
-    CARGO_TERM_COLOR: never
-
 jobs:
     build:
         name: Build ${{ matrix.target }}
@@ -63,39 +61,26 @@ jobs:
 
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
-            - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
-            - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-              with:
-                  workspaces: apps/ingest
-
-            - name: Install patchelf (Linux)
-              if: ${{ matrix.os == 'linux' }}
-              run: sudo apt-get update && sudo apt-get install -y patchelf
-
             - name: Install JS dependencies
               run: bun install --frozen-lockfile
 
             - name: Build local binary bundle
-              # The script builds the local-ui SPA, compiles maple-cli into
-              # apps/ingest/cli-dist/ (rust-embed bakes BOTH the SPA and CLI into
-              # the maple binary), then copies libchdb.so beside maple and rewrites
-              # the dynamic-load path so the 2-file bundle is relocatable.
+              # Builds the SPA, inlines it into the binary, compiles apps/cli with
+              # `bun build --compile`, and downloads the matching libchdb beside it.
+              # Output bundle lands in ./dist (maple + libchdb.so).
               run: scripts/build-local-binary.sh
 
             - name: Ad-hoc codesign (macOS)
-              # install_name_tool rewrote the load command, invalidating any prior
-              # signature. Re-sign ad-hoc so the binary runs locally once the user
-              # clears Gatekeeper quarantine. Production distribution should layer
-              # Developer ID signing + notarization on top (requires APPLE_* secrets
-              # not configured here).
+              # bun-compiled binaries run locally once Gatekeeper quarantine is
+              # cleared; ad-hoc sign both files for good measure. Production
+              # distribution should layer Developer ID signing + notarization on
+              # top (requires APPLE_* secrets not configured here).
               if: ${{ matrix.os == 'macos' }}
               run: |
                   set -euo pipefail
-                  BIN_DIR="apps/ingest/target/release"
-                  codesign --force --sign - "$BIN_DIR/libchdb.so"
-                  codesign --force --sign - "$BIN_DIR/maple"
-                  codesign --verify --verbose "$BIN_DIR/maple"
+                  codesign --force --sign - dist/libchdb.so
+                  codesign --force --sign - dist/maple
+                  codesign --verify --verbose dist/maple
 
             - name: Resolve version
               id: version
@@ -119,14 +104,12 @@ jobs:
                   version="${{ steps.version.outputs.version }}"
                   target="${{ matrix.target }}"
                   name="maple-${version}-${target}"
-                  BIN_DIR="apps/ingest/target/release"
                   staging="$RUNNER_TEMP/$name"
                   rm -rf "$staging"
                   mkdir -p "$staging"
-                  cp "$BIN_DIR/maple" "$staging/maple"
-                  cp "$BIN_DIR/libchdb.so" "$staging/libchdb.so"
+                  cp dist/maple "$staging/maple"
+                  cp dist/libchdb.so "$staging/libchdb.so"
                   # Smoke-check the relocatable 2-file bundle (maple + libchdb.so).
-                  # The query CLI is now embedded inside maple and extracted at runtime.
                   ( cd "$staging" && ./maple --help >/dev/null 2>&1 ) || \
                     echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
                   tarball="$RUNNER_TEMP/${name}.tar.gz"
@@ -176,7 +159,7 @@ jobs:
                     'Local Maple (`maple start`) bundles.' \
                     '**Install (macOS / Linux):**' \
                     'curl -fsSL https://maple.dev/cli/install | sh' \
-                    'Or download a bundle below. Each archive contains `maple` + `libchdb.so` + `maple-cli` — keep all three in the same directory. macOS: run `xattr -dr com.apple.quarantine maple maple-cli libchdb.so` after extracting.' \
+                    'Or download a bundle below. Each archive contains `maple` + `libchdb.so` — keep both in the same directory. macOS: run `xattr -dr com.apple.quarantine maple libchdb.so` after extracting.' \
                     > "$RUNNER_TEMP/release-notes.md"
                   gh release create "$TAG" --repo "$REPO" \
                     --title "$TAG" \

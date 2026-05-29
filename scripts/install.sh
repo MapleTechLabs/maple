@@ -8,14 +8,15 @@
 #  works too.)
 #
 # Downloads the platform bundle from the latest GitHub release, verifies its
-# checksum, and installs the 3-file bundle (`maple` + `libchdb.so` + `maple-cli`)
-# into ~/.maple/bin, then puts `maple` on your PATH.
+# checksum, and installs the 2-file bundle (`maple` + `libchdb.so`) into
+# ~/.maple/bin, then puts `maple` on your PATH.
 #
-# The three files MUST stay in the same directory: the `maple` binary finds
-# `libchdb.so` via a relative rpath (@loader_path / $ORIGIN) and forwards every
-# subcommand other than `start` to the sibling `maple-cli`. We install all three
-# together and symlink only `maple` onto PATH — `current_exe()` resolves the
-# symlink to the real directory, so the siblings are still found.
+# The two files MUST stay in the same directory: `maple` (a single Bun-compiled
+# binary that does everything — CLI, OTLP-ingest/query server, and UI host)
+# dlopens `libchdb.so` via bun:ffi, resolving it relative to its own executable
+# path. We install both into ~/.maple/bin and symlink only `maple` onto PATH;
+# the binary also falls back to ~/.maple/bin when resolving libchdb, so the
+# symlink works regardless of how the path resolves.
 #
 # Env overrides:
 #   MAPLE_VERSION      release tag to install (default: latest)

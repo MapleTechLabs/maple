@@ -1,4 +1,6 @@
+import { Toaster, toast } from "sonner"
 import { cn } from "@maple/ui/utils"
+import { AttributesProvider } from "@maple/ui/components/attributes"
 import { TraceListView } from "./views/trace-list-view"
 import { TraceDetailView } from "./views/trace-detail-view"
 import { LogsView } from "./views/logs-view"
@@ -6,6 +8,11 @@ import { SessionsListView } from "./views/sessions-list-view"
 import { SessionDetailView } from "./views/session-detail-view"
 import { navigate, useLocation } from "./lib/router"
 import { ConnectButton } from "./components/connect-button"
+import { highlightJson } from "./lib/highlight"
+
+// Stable references so the AttributesProvider context value keeps its identity
+// across renders (otherwise every CopyableValue consumer re-renders).
+const notifyCopied = (message?: string) => toast.success(message ?? "Copied to clipboard")
 
 type Route =
 	| { name: "traces" }
@@ -52,8 +59,9 @@ export function App() {
 	}
 
 	return (
-		<div className="flex h-screen flex-col bg-background text-foreground">
-			<header className="flex shrink-0 items-center gap-1 border-b px-4 py-2">
+		<AttributesProvider notifyCopied={notifyCopied} highlightJson={highlightJson}>
+			<div className="flex h-screen flex-col bg-background text-foreground">
+				<header className="flex shrink-0 items-center gap-1 border-b px-4 py-2">
 				<span className="mr-4 font-display text-sm font-semibold">Maple — Local</span>
 				<NavTab label="Traces" active={tab === "traces"} onClick={() => switchTab("/traces")} />
 				<NavTab label="Logs" active={tab === "logs"} onClick={() => switchTab("/logs")} />
@@ -86,7 +94,9 @@ export function App() {
 					/>
 				)}
 			</main>
-		</div>
+			</div>
+			<Toaster position="bottom-right" theme="system" />
+		</AttributesProvider>
 	)
 }
 

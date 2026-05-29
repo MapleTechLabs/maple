@@ -8,14 +8,21 @@ import {
 	redirect,
 	useRouterState,
 } from "@tanstack/react-router"
+import { toast } from "sonner"
 import { hasSelectedPlan } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
+import { AttributesProvider } from "@maple/ui/components/attributes"
+import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import type { RouterAuthContext } from "@/router"
 import { captureChatReferrer } from "@/components/chat/auto-contexts"
 
 const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required"])
+
+// Stable references so the AttributesProvider context value never changes
+// identity across renders (avoids re-rendering every CopyableValue consumer).
+const notifyCopied = (message?: string) => toast.success(message ?? "Copied to clipboard")
 
 export const Route = createRootRouteWithContext<{ auth: RouterAuthContext }>()({
 	beforeLoad: ({ context, location }) => {
@@ -46,10 +53,10 @@ function AppFrame() {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
-		<>
+		<AttributesProvider notifyCopied={notifyCopied} highlightJson={highlightCode}>
 			<Outlet />
 			<Toaster />
-		</>
+		</AttributesProvider>
 	)
 }
 

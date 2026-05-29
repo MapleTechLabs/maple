@@ -1,83 +1,62 @@
 #!/usr/bin/env bash
-# Build the distributable `maple` local binary.
+# Build the distributable `maple` local binary — a single Bun-compiled
+# executable plus libchdb. No Rust/cargo involved.
 #
 # Pipeline:
 #   1. Build the lightweight SPA (`apps/local-ui` → its `dist/`).
-#   2. Sync that `dist/` into `apps/ingest/ui-dist/` so rust-embed bakes the
-#      UI assets into the binary at compile time.
-#   3. Compile the query CLI (`apps/local-cli`) into `apps/ingest/cli-dist/`
-#      so rust-embed also bakes the CLI binary into `maple` at compile time.
-#      The CLI is embedded — not shipped separately.
-#   4. Compile the `maple` bin target with the `local` feature (chDB + clap +
-#      rust-embed + mime_guess). rust-embed picks up both ui-dist/ and cli-dist/.
-#   5. Bundle `libchdb.so` next to the binary and rewrite the dynamic-load path
-#      so the binary is relocatable (no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH).
+#   2. Inline that dist into apps/cli/src/server/ui-embed.gen.ts so
+#      `bun build --compile` bakes the SPA into the binary.
+#   3. Compile apps/cli (the CLI + the OTLP-ingest/query server) into a single
+#      executable with `bun build --compile`. The schema artifacts and SPA are
+#      embedded; the OTLP encoders run in-process; chDB is reached via bun:ffi.
+#   4. Download libchdb (v26.1.0, matching what we test against) for the host
+#      platform and place it beside the binary. At runtime `maple` dlopens the
+#      sibling libchdb (resolved relative to its own path) — no rpath tricks.
+#   5. Restore the committed ui-embed.gen.ts stub so the tree stays clean.
 #
-# The distributable is a 2-file bundle: `maple` + `libchdb.so`. The query CLI
-# is embedded inside `maple` and extracted to ~/.maple/ on first use.
-# chdb-rust links `libchdb.so` with a bare install name, so the script rewrites
-# the load path to @rpath/$ORIGIN so the loader finds it beside the binary.
+# The distributable is a 2-file bundle: `maple` + `libchdb.so`. Keep them in the
+# same directory.
 #
 # Usage:
-#   scripts/build-local-binary.sh            # release build
-#   PROFILE=debug scripts/build-local-binary.sh
+#   scripts/build-local-binary.sh                 # release build into ./dist
+#   OUT_DIR=/tmp/maple scripts/build-local-binary.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-UI_DIST="$REPO_ROOT/apps/local-ui/dist"
-EMBED_DIR="$REPO_ROOT/apps/ingest/ui-dist"
-CLI_EMBED_DIR="$REPO_ROOT/apps/ingest/cli-dist"
-PROFILE="${PROFILE:-release}"
-INGEST_DIR="$REPO_ROOT/apps/ingest"
-OUT_BIN="$INGEST_DIR/target/$PROFILE/maple"
+OUT_DIR="${OUT_DIR:-$REPO_ROOT/dist}"
+LIBCHDB_VERSION="${LIBCHDB_VERSION:-v26.1.0}"
+UI_EMBED="$REPO_ROOT/apps/cli/src/server/ui-embed.gen.ts"
+
+mkdir -p "$OUT_DIR"
 
 echo "==> Building local-ui SPA"
 bun --filter @maple/local-ui build
 
-echo "==> Syncing $UI_DIST -> $EMBED_DIR"
-rm -rf "$EMBED_DIR"
-mkdir -p "$EMBED_DIR"
-cp -R "$UI_DIST"/. "$EMBED_DIR"/
+echo "==> Inlining SPA into ui-embed.gen.ts"
+restore_stub() { git -C "$REPO_ROOT" checkout -- "$UI_EMBED" 2>/dev/null || true; }
+trap restore_stub EXIT
+bun run "$REPO_ROOT/scripts/gen-ui-embed.ts"
 
-echo "==> Compiling query CLI -> cli-dist/maple-cli (embedded into maple)"
-rm -rf "$CLI_EMBED_DIR"
-mkdir -p "$CLI_EMBED_DIR"
-( cd "$REPO_ROOT" && bun build apps/local-cli/src/bin.ts --compile --outfile "$CLI_EMBED_DIR/maple-cli" )
+echo "==> Compiling maple binary (bun build --compile)"
+( cd "$REPO_ROOT" && bun build apps/cli/src/bin.ts --compile --outfile "$OUT_DIR/maple" )
 
-echo "==> Compiling maple binary ($PROFILE, with embedded SPA + CLI)"
-CARGO_FLAGS=(--features local --bin maple)
-if [ "$PROFILE" = "release" ]; then
-	CARGO_FLAGS+=(--release)
-fi
-( cd "$INGEST_DIR" && cargo build "${CARGO_FLAGS[@]}" )
-
-echo "==> Bundling libchdb beside the binary (relocatable)"
-LIBCHDB="$(find "$INGEST_DIR/target/$PROFILE/build" -name 'libchdb.so' 2>/dev/null | head -1 || true)"
-if [ -z "$LIBCHDB" ]; then
-	echo "ERROR: libchdb.so not found under target/$PROFILE/build — was chdb-rust built?" >&2
-	exit 1
-fi
-cp "$LIBCHDB" "$(dirname "$OUT_BIN")/libchdb.so"
-
-case "$(uname -s)" in
-	Darwin)
-		# Add an @loader_path rpath (ignore if it already exists) and repoint the
-		# bare `libchdb.so` load command at it.
-		install_name_tool -add_rpath @loader_path "$OUT_BIN" 2>/dev/null || true
-		install_name_tool -change libchdb.so @rpath/libchdb.so "$OUT_BIN"
-		;;
-	Linux)
-		# Prefer patchelf to set an $ORIGIN rpath so the loader finds the sibling
-		# libchdb.so. If patchelf is unavailable, the bundle still works when the
-		# binary is launched with LD_LIBRARY_PATH=. (documented in the release).
-		if command -v patchelf >/dev/null 2>&1; then
-			patchelf --set-rpath '$ORIGIN' "$OUT_BIN"
-		else
-			echo "WARN: patchelf not found; run with LD_LIBRARY_PATH=\$(dirname maple)" >&2
-		fi
-		;;
+echo "==> Downloading libchdb $LIBCHDB_VERSION for this platform"
+case "$(uname -s)-$(uname -m)" in
+	Linux-x86_64)        ASSET="linux-x86_64-libchdb.tar.gz" ;;
+	Linux-aarch64)       ASSET="linux-aarch64-libchdb.tar.gz" ;;
+	Darwin-x86_64)       ASSET="macos-x86_64-libchdb.tar.gz" ;;
+	Darwin-arm64)        ASSET="macos-arm64-libchdb.tar.gz" ;;
+	*) echo "ERROR: unsupported platform $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
+URL="https://github.com/chdb-io/chdb-core/releases/download/$LIBCHDB_VERSION/$ASSET"
+TMP="$(mktemp -d)"
+curl -fsSL "$URL" -o "$TMP/libchdb.tar.gz"
+tar -xzf "$TMP/libchdb.tar.gz" -C "$TMP"
+LIB="$(find "$TMP" -name 'libchdb.so' -o -name 'libchdb.dylib' | head -1)"
+[ -n "$LIB" ] || { echo "ERROR: libchdb not found in $ASSET" >&2; exit 1; }
+cp "$LIB" "$OUT_DIR/libchdb.so"
+rm -rf "$TMP"
 
-echo "==> Done. Bundle in $(dirname "$OUT_BIN"):"
-echo "      maple        ($(du -h "$OUT_BIN" | cut -f1), includes embedded query CLI)"
-echo "      libchdb.so   ($(du -h "$(dirname "$OUT_BIN")/libchdb.so" | cut -f1))"
+echo "==> Done. Bundle in $OUT_DIR:"
+echo "      maple        ($(du -h "$OUT_DIR/maple" | cut -f1))"
+echo "      libchdb.so   ($(du -h "$OUT_DIR/libchdb.so" | cut -f1))"

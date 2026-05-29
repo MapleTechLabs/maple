@@ -450,6 +450,8 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 					}),
 				),
 			),
+		)
+		.pipe(
 			// ----- Attributes -----
 			Match.when("span_attribute_keys", () =>
 				eraseType(

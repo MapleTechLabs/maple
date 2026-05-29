@@ -1,23 +1,31 @@
-import { useState, useMemo } from "react"
-import { toast } from "sonner"
-import { ChevronRightIcon, CopyIcon } from "@/components/icons"
-import { useClipboard } from "@maple/ui/hooks/use-clipboard"
-import { highlightCode } from "@/lib/sugar-high"
+"use client"
+
+import { useMemo, useState } from "react"
+import { ChevronRightIcon, CopyIcon } from "../icons"
+import { useClipboard } from "../../hooks/use-clipboard"
+import { useAttributesConfig } from "./context"
 
 interface CollapsibleJsonValueProps {
 	value: string
 	parsed: unknown
 }
 
+/**
+ * Collapsed preview of a JSON attribute value that expands into a pretty-printed,
+ * optionally syntax-highlighted block with a copy control. Highlighting is
+ * supplied by the `AttributesProvider` (`highlightJson`); without it the JSON
+ * renders as plain text.
+ */
 export function CollapsibleJsonValue({ value, parsed }: CollapsibleJsonValueProps) {
 	const clipboard = useClipboard()
+	const { notifyCopied, highlightJson } = useAttributesConfig()
 	const [expanded, setExpanded] = useState(false)
 
-	const highlighted = useMemo(() => {
-		if (!expanded) return ""
-		const pretty = JSON.stringify(parsed, null, 2)
-		return highlightCode(pretty)
-	}, [expanded, parsed])
+	const pretty = useMemo(() => (expanded ? JSON.stringify(parsed, null, 2) : ""), [expanded, parsed])
+	const highlighted = useMemo(
+		() => (expanded && highlightJson ? highlightJson(pretty) : ""),
+		[expanded, highlightJson, pretty],
+	)
 
 	const preview = value.length > 80 ? value.slice(0, 80) + "…" : value
 
@@ -45,7 +53,7 @@ export function CollapsibleJsonValue({ value, parsed }: CollapsibleJsonValueProp
 							onClick={(e) => {
 								e.stopPropagation()
 								clipboard.copy(value)
-								toast.success("Copied to clipboard")
+								notifyCopied?.()
 							}}
 						>
 							<CopyIcon size={10} />
@@ -54,7 +62,11 @@ export function CollapsibleJsonValue({ value, parsed }: CollapsibleJsonValueProp
 					</div>
 					<div className="max-h-64 overflow-auto p-2">
 						<pre className="text-xs leading-relaxed">
-							<code dangerouslySetInnerHTML={{ __html: highlighted }} />
+							{highlightJson ? (
+								<code dangerouslySetInnerHTML={{ __html: highlighted }} />
+							) : (
+								<code>{pretty}</code>
+							)}
 						</pre>
 					</div>
 				</div>

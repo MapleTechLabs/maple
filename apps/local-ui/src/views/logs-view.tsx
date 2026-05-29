@@ -1,13 +1,16 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
+import { LogAttributeChip } from "@maple/ui/components/logs/log-attribute-chip"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Separator } from "@maple/ui/components/ui/separator"
-import type { LogsListOutput } from "@maple/query-engine/ch"
+import { pickImportantAttributes } from "@maple/ui/lib/log-attributes"
+import { getSeverityColor } from "@maple/ui/lib/severity"
 import { useLocalLogs, useLocalLogSeverities } from "../hooks/use-local-logs"
 import { useLocalServices } from "../hooks/use-local-services"
 import { useQueryParams } from "../lib/router"
 import { DEFAULT_RANGE } from "../lib/time"
+import { normalizeLog, type LocalLog } from "../lib/log-shape"
+import { LogDetailSheet } from "../components/log-detail-sheet"
 import { FilterSection, SearchableFilterSection } from "../components/filter-section"
 import {
 	FilterSidebarBody,
@@ -18,7 +21,8 @@ import { PageShell } from "../components/page-shell"
 import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
 import { EmptyState, ErrorState } from "../components/view-states"
 
-const ROW_HEIGHT = 40
+const ROW_HEIGHT = 36
+const VISIBLE_CHIPS = 4
 
 export function LogsView() {
 	const [query, setParams] = useQueryParams()
@@ -32,8 +36,14 @@ export function LogsView() {
 	const { data, isPending, isError, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
 		useLocalLogs({ service, severity, search, range })
 
-	const rows: ReadonlyArray<LogsListOutput> = data?.pages.flat() ?? []
+	const rows = useMemo<ReadonlyArray<LocalLog>>(
+		() => (data?.pages.flat() ?? []).map(normalizeLog),
+		[data],
+	)
 	const scrollRef = useRef<HTMLDivElement>(null)
+
+	const [selectedLog, setSelectedLog] = useState<LocalLog | null>(null)
+	const [sheetOpen, setSheetOpen] = useState(false)
 
 	const virtualizer = useVirtualizer({
 		count: rows.length,
@@ -50,6 +60,11 @@ export function LogsView() {
 			fetchNextPage()
 		}
 	}, [virtualItems, rows.length, hasNextPage, isFetchingNextPage, fetchNextPage])
+
+	const openLog = (log: LocalLog) => {
+		setSelectedLog(log)
+		setSheetOpen(true)
+	}
 
 	const hasActiveFilters = !!service || !!severity
 
@@ -124,23 +139,14 @@ export function LogsView() {
 						{virtualItems.map((virtualRow) => {
 							const log = rows[virtualRow.index]
 							return (
-								<div
+								<LogRow
 									key={virtualRow.key}
-									className="absolute inset-x-0 flex items-center gap-3 border-b px-4 font-mono text-xs"
-									style={{
-										height: virtualRow.size,
-										transform: `translateY(${virtualRow.start}px)`,
-									}}
-								>
-									<span className="w-44 shrink-0 text-muted-foreground">{log.timestamp}</span>
-									<SeverityBadge severity={log.severityText || "info"} className="shrink-0" />
-									<span className="w-40 shrink-0 truncate text-muted-foreground" title={log.serviceName}>
-										{log.serviceName}
-									</span>
-									<span className="min-w-0 flex-1 truncate" title={log.body}>
-										{log.body}
-									</span>
-								</div>
+									log={log}
+									top={virtualRow.start}
+									height={virtualRow.size}
+									selected={selectedLog === log}
+									onClick={openLog}
+								/>
 							)
 						})}
 					</div>
@@ -151,6 +157,74 @@ export function LogsView() {
 					) : null}
 				</div>
 			)}
+
+			<LogDetailSheet log={selectedLog} open={sheetOpen} onOpenChange={setSheetOpen} />
 		</PageShell>
+	)
+}
+
+function LogRow({
+	log,
+	top,
+	height,
+	selected,
+	onClick,
+}: {
+	log: LocalLog
+	top: number
+	height: number
+	selected: boolean
+	onClick: (log: LocalLog) => void
+}) {
+	const chips = useMemo(() => pickImportantAttributes(log, VISIBLE_CHIPS), [log])
+	const severityColor = getSeverityColor(log.severityText)
+
+	return (
+		<div
+			data-selected={selected || undefined}
+			style={{
+				position: "absolute",
+				insetInline: 0,
+				top: 0,
+				transform: `translateY(${top}px)`,
+				height,
+				borderLeftWidth: "3px",
+				borderLeftColor: severityColor,
+			}}
+			className="flex cursor-pointer items-center gap-3 border-b px-4 font-mono text-xs hover:bg-muted/50 data-[selected]:bg-primary/5"
+			tabIndex={0}
+			role="listitem"
+			onClick={() => onClick(log)}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault()
+					onClick(log)
+				}
+			}}
+		>
+			<span
+				className="hidden w-12 shrink-0 text-[10px] font-semibold uppercase tabular-nums md:inline-block"
+				style={{ color: severityColor }}
+			>
+				{log.severityText}
+			</span>
+			<span className="w-44 shrink-0 text-muted-foreground tabular-nums">{log.timestamp}</span>
+			<span
+				className="hidden w-36 shrink-0 truncate text-muted-foreground/70 md:inline-block"
+				title={log.serviceName}
+			>
+				{log.serviceName}
+			</span>
+			<span className="min-w-0 flex-1 truncate" title={log.body}>
+				{log.body}
+			</span>
+			{chips.length > 0 && (
+				<div className="hidden min-w-0 max-w-[45%] shrink items-center gap-1 overflow-hidden md:flex">
+					{chips.map((chip) => (
+						<LogAttributeChip key={chip.key} attrKey={chip.key} value={chip.value} tone={chip.tone} />
+					))}
+				</div>
+			)}
+		</div>
 	)
 }

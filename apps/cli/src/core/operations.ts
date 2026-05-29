@@ -186,3 +186,81 @@ export const rawQuery = (sql: string) =>
 		const executor = yield* WarehouseExecutor
 		return yield* executor.sqlQuery(sql)
 	})
+
+// Custom traces analytics share the `group_by_*` presence-flag convention the
+// pipe dispatcher expects (see `pipeParamsToTraces*Opts`).
+const groupByParam = (groupBy?: string): Record<string, string> => {
+	switch (groupBy) {
+		case "service":
+			return { group_by_service: "1" }
+		case "span_name":
+			return { group_by_span_name: "1" }
+		case "status_code":
+			return { group_by_status_code: "1" }
+		case "http_method":
+			return { group_by_http_method: "1" }
+		default:
+			return {}
+	}
+}
+
+export const tracesTimeseries = (p: {
+	range: Range
+	service?: string
+	spanName?: string
+	groupBy?: string
+	errorsOnly?: boolean
+	environment?: string
+	bucketSeconds?: number
+}) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const result = yield* executor.query("custom_traces_timeseries", {
+			start_time: p.range.startTime,
+			end_time: p.range.endTime,
+			...(p.bucketSeconds ? { bucket_seconds: p.bucketSeconds } : {}),
+			...(p.service ? { service_name: p.service } : {}),
+			...(p.spanName ? { span_name: p.spanName } : {}),
+			...(p.errorsOnly ? { errors_only: "1" } : {}),
+			...(p.environment ? { environments: p.environment } : {}),
+			...groupByParam(p.groupBy),
+		})
+		return result.data
+	})
+
+export const tracesBreakdown = (p: {
+	range: Range
+	service?: string
+	spanName?: string
+	groupBy?: string
+	limit?: number
+	errorsOnly?: boolean
+	environment?: string
+}) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const result = yield* executor.query("custom_traces_breakdown", {
+			start_time: p.range.startTime,
+			end_time: p.range.endTime,
+			limit: p.limit ?? 10,
+			...(p.service ? { service_name: p.service } : {}),
+			...(p.spanName ? { span_name: p.spanName } : {}),
+			...(p.errorsOnly ? { errors_only: "1" } : {}),
+			...(p.environment ? { environments: p.environment } : {}),
+			...groupByParam(p.groupBy ?? "service"),
+		})
+		return result.data
+	})
+
+export const compareServiceOverview = (p: { current: Range; previous: Range; environment?: string }) =>
+	Effect.gen(function* () {
+		const executor = yield* WarehouseExecutor
+		const result = yield* executor.query("service_overview_compare", {
+			current_start_time: p.current.startTime,
+			current_end_time: p.current.endTime,
+			previous_start_time: p.previous.startTime,
+			previous_end_time: p.previous.endTime,
+			...(p.environment ? { environments: p.environment } : {}),
+		})
+		return result.data
+	})

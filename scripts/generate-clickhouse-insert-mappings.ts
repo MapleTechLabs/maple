@@ -20,7 +20,7 @@ const OTLP_DATASOURCES = [
 const ORG_PLACEHOLDER = "__ORG__"
 
 const outputPath = fileURLToPath(
-	new URL("../apps/ingest/schema/local-inserts.json", import.meta.url),
+	new URL("../apps/cli/src/server/schema/local-inserts.json", import.meta.url),
 )
 const checkMode = process.argv.includes("--check")
 

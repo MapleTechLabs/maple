@@ -1,10 +1,12 @@
-import { toast } from "sonner"
-import { ChevronRightIcon } from "@/components/icons"
-import { cn } from "@maple/ui/utils"
-import { useClipboard } from "@maple/ui/hooks/use-clipboard"
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@maple/ui/components/ui/collapsible"
+"use client"
+
+import { ChevronRightIcon } from "../icons"
+import { cn } from "../../lib/utils"
+import { useClipboard } from "../../hooks/use-clipboard"
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible"
+import { groupAttributesByNamespace } from "../../lib/log-attributes"
 import { CollapsibleJsonValue } from "./json-value"
-import { groupAttributesByNamespace } from "@/lib/log-attributes"
+import { useAttributesConfig } from "./context"
 
 export function CopyableValue({
 	value,
@@ -16,6 +18,7 @@ export function CopyableValue({
 	className?: string
 }) {
 	const clipboard = useClipboard()
+	const { notifyCopied } = useAttributesConfig()
 
 	return (
 		<span
@@ -25,7 +28,7 @@ export function CopyableValue({
 			)}
 			onClick={() => {
 				clipboard.copy(value)
-				toast.success("Copied to clipboard")
+				notifyCopied?.()
 			}}
 			title="Click to copy"
 		>

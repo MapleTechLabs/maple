@@ -14,7 +14,9 @@
 		"@tanstack/react-query": "^5.90.2",
 		"@tanstack/react-virtual": "^3.13.23",
 		"react": "catalog:react",
-		"react-dom": "catalog:react"
+		"react-dom": "catalog:react",
+		"sonner": "^2.0.7",
+		"sugar-high": "^1.0.0"
 	},
 	"devDependencies": {
 		"@tailwindcss/vite": "catalog:tailwind",

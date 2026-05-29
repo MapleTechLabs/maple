@@ -1,6 +1,8 @@
 import * as Command from "effect/unstable/cli/Command"
 import * as Argument from "effect/unstable/cli/Argument"
+import * as Flag from "effect/unstable/cli/Flag"
 import { Effect, Option } from "effect"
+import type { TracesMetric } from "@maple/query-engine"
 import * as f from "../lib/flags"
 import { printJson } from "../lib/output"
 import { resolveRange } from "../core/time"
@@ -45,6 +47,41 @@ export const diagnose = Command.make("diagnose", {
 				serviceName: a.serviceName,
 				range,
 				environment: Option.getOrUndefined(a.environment),
+			})
+			yield* printJson(result)
+		}),
+	),
+)
+
+export const topOps = Command.make("top-ops", {
+	serviceName: Argument.string("service-name").pipe(Argument.withDescription("Service to inspect")),
+	metric: Flag.choice("metric", [
+		"count",
+		"avg_duration",
+		"p50_duration",
+		"p95_duration",
+		"p99_duration",
+		"error_rate",
+		"apdex",
+	]).pipe(Flag.withDescription("Ranking metric"), Flag.withDefault("count")),
+	since: f.since,
+	start: f.start,
+	end: f.end,
+	limit: f.limit,
+}).pipe(
+	Command.withDescription("Top operations (span names) for a service, ranked by a metric"),
+	Command.withHandler(
+		Effect.fnUntraced(function* (a) {
+			const range = resolveRange({
+				since: a.since,
+				start: Option.getOrUndefined(a.start),
+				end: Option.getOrUndefined(a.end),
+			})
+			const result = yield* Ops.topOperations({
+				serviceName: a.serviceName,
+				metric: a.metric as TracesMetric,
+				range,
+				limit: a.limit,
 			})
 			yield* printJson(result)
 		}),

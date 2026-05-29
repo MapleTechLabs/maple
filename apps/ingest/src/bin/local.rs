@@ -61,63 +61,35 @@ struct LocalState {
 #[command(
     name = "maple",
     version,
-    about = "Local Maple: OTLP ingest + embedded ClickHouse + UI",
-    long_about = "Local Maple: OTLP ingest + embedded ClickHouse + UI.\n\n\
-        Run `maple start` to start the server, then use the query subcommands\n\
-        to inspect your telemetry. Query commands are forwarded to the bundled\n\
-        `maple-cli` binary — run `maple <command> --help` for their flags."
+    about = "Maple: local OTLP ingest + embedded ClickHouse + UI, plus the query CLI",
+    long_about = "Maple.\n\n\
+        `maple start` runs the local server (OTLP ingest + embedded ClickHouse + UI)\n\
+        and `maple stop` stops it. Every other command is the unified query CLI —\n\
+        it works against the local server or a remote workspace (`maple login`) and\n\
+        is forwarded to the bundled `maple-cli` binary.\n\n\
+        Run `maple help` for the full command list, or `maple <command> --help`\n\
+        for a command's flags.",
+    // Let `help` fall through to the embedded CLI (via the external catch-all)
+    // instead of clap's built-in, so `maple help` shows the full command list.
+    disable_help_subcommand = true
 )]
 struct Cli {
     #[command(subcommand)]
-    command: Commands,
-}
-
-/// Passthrough args for query subcommands forwarded to maple-cli.
-/// All flags and positional arguments are accepted and forwarded verbatim.
-#[derive(Args)]
-struct PassthroughArgs {
-    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-    args: Vec<String>,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    // ── Server ────────────────────────────────────────────────────────────────
     /// Start the local ingest + query server.
     Start(StartArgs),
     /// Stop a running `maple start` server.
     Stop(StopArgs),
 
-    // ── Query (forwarded to maple-cli) ────────────────────────────────────────
-    /// List services and their health metrics (p50/p95/p99, error rate).
-    Services(PassthroughArgs),
-    /// Search root traces with optional service / time / error filters.
-    Traces(PassthroughArgs),
-    /// Inspect all spans in a single trace.
-    Trace(PassthroughArgs),
-    /// Find the slowest root traces.
-    #[command(name = "slow-traces")]
-    SlowTraces(PassthroughArgs),
-    /// Show the service dependency graph.
-    #[command(name = "service-map")]
-    ServiceMap(PassthroughArgs),
-    /// Run a health + performance diagnosis for a service.
-    Diagnose(PassthroughArgs),
-    /// List error groups with fingerprints and occurrence counts.
-    Errors(PassthroughArgs),
-    /// Show detail for a single error group (stack trace, timeseries).
-    Error(PassthroughArgs),
-    /// Search log lines.
-    Logs(PassthroughArgs),
-    /// Mine recurring patterns from log lines.
-    #[command(name = "log-patterns")]
-    LogPatterns(PassthroughArgs),
-    /// Explore span and resource attribute keys and values.
-    Attributes(PassthroughArgs),
-    /// List metric names in the local store.
-    Metrics(PassthroughArgs),
-    /// Run raw SQL against the embedded ClickHouse store.
-    Query(PassthroughArgs),
+    /// Any other command (traces, errors, services, login, …) is forwarded
+    /// verbatim to the bundled query CLI. This catch-all means the Rust binary
+    /// never has to enumerate (and drift from) the CLI's command list.
+    #[command(external_subcommand)]
+    External(Vec<String>),
 }
 
 #[derive(Args)]
@@ -140,27 +112,24 @@ struct StopArgs {
 #[tokio::main]
 async fn main() {
     match Cli::parse().command {
-        Commands::Start(args) => start(args).await,
-        Commands::Stop(args) => stop(args),
-        // Forward every query subcommand to maple-cli, prepending its name.
-        Commands::Services(a)    => forward_to_cli(prepend("services", a.args)),
-        Commands::Traces(a)      => forward_to_cli(prepend("traces", a.args)),
-        Commands::Trace(a)       => forward_to_cli(prepend("trace", a.args)),
-        Commands::SlowTraces(a)  => forward_to_cli(prepend("slow-traces", a.args)),
-        Commands::ServiceMap(a)  => forward_to_cli(prepend("service-map", a.args)),
-        Commands::Diagnose(a)    => forward_to_cli(prepend("diagnose", a.args)),
-        Commands::Errors(a)      => forward_to_cli(prepend("errors", a.args)),
-        Commands::Error(a)       => forward_to_cli(prepend("error", a.args)),
-        Commands::Logs(a)        => forward_to_cli(prepend("logs", a.args)),
-        Commands::LogPatterns(a) => forward_to_cli(prepend("log-patterns", a.args)),
-        Commands::Attributes(a)  => forward_to_cli(prepend("attributes", a.args)),
-        Commands::Metrics(a)     => forward_to_cli(prepend("metrics", a.args)),
-        Commands::Query(a)       => forward_to_cli(prepend("query", a.args)),
+        Some(Commands::Start(args)) => start(args).await,
+        Some(Commands::Stop(args)) => stop(args),
+        // Everything else is forwarded verbatim to the embedded query CLI
+        // (args[0] is the subcommand name). `maple` / `maple help` show the
+        // CLI's own help so the full command list is always accurate.
+        Some(Commands::External(args)) => forward_to_cli(normalize_help(args)),
+        None => forward_to_cli(vec!["--help".to_string()]),
     }
 }
 
-fn prepend(name: &str, mut args: Vec<String>) -> Vec<String> {
-    args.insert(0, name.to_string());
+/// Map `maple help [cmd]` to the CLI's `--help` flag form (`maple-cli [cmd]
+/// --help`), since the embedded Effect CLI uses `--help` rather than a `help`
+/// subcommand. Other args pass through untouched.
+fn normalize_help(mut args: Vec<String>) -> Vec<String> {
+    if args.first().map(String::as_str) == Some("help") {
+        args.remove(0);
+        args.push("--help".to_string());
+    }
     args
 }
 
@@ -184,11 +153,23 @@ fn forward_to_cli(args: Vec<String>) -> ! {
         std::process::exit(127);
     };
 
-    // Derive an 8-hex-char stamp from the first 4 bytes of the content — fast,
-    // no crypto dep needed. Collisions are harmless (worst case: stale extract).
+    // Derive a content stamp so a new `maple` build re-extracts an updated CLI.
+    // Hashing only the first bytes is NOT enough: every bun-compiled binary
+    // shares the same magic-number prefix (e.g. Mach-O `cffaedfe`), so two
+    // different CLI builds would collide and the stale extract would be reused
+    // forever. Fold in the length plus bytes sampled from the head and tail —
+    // cheap (no full-file scan, no crypto dep) and distinct across builds.
     let bytes = asset.data.as_ref();
-    let stamp = bytes.iter().take(4).fold(0u32, |acc, &b| acc.rotate_left(8) ^ b as u32);
-    let stamp_hex = format!("{stamp:08x}");
+    let mut stamp: u64 = bytes.len() as u64;
+    let head_end = bytes.len().min(64);
+    for &b in &bytes[..head_end] {
+        stamp = stamp.rotate_left(8) ^ b as u64;
+    }
+    let tail_start = bytes.len().saturating_sub(64);
+    for &b in &bytes[tail_start..] {
+        stamp = stamp.rotate_left(8) ^ b as u64;
+    }
+    let stamp_hex = format!("{stamp:016x}");
 
     let extract_dir = std::env::var_os("HOME")
         .map(|h| std::path::PathBuf::from(h).join(".maple"))

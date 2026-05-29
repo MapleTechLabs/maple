@@ -7,7 +7,7 @@ import {
 } from "../packages/domain/src/generated/clickhouse-schema"
 
 const outputPath = fileURLToPath(
-	new URL("../apps/ingest/schema/local-schema.sql", import.meta.url),
+	new URL("../apps/cli/src/server/schema/local-schema.sql", import.meta.url),
 )
 const checkMode = process.argv.includes("--check")
 

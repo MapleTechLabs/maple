@@ -42,6 +42,9 @@ describe("compilePipeQuery", () => {
 			"resource_attribute_values",
 			"custom_traces_timeseries",
 			"custom_traces_breakdown",
+			"top_operations",
+			"slow_traces",
+			"span_search",
 		] as const
 
 		for (const pipe of knownPipes) {
