@@ -1,8 +1,7 @@
 // The shared operation surface — thin wrappers over @maple/query-engine
 // observability functions, parameterised by simple request objects. The CLI
-// commands and the HTTP server both call these, so the two transports never
-// drift. Every operation returns an Effect requiring `WarehouseExecutor`
-// (provided by the local executor layer).
+// commands call these. Every operation returns an Effect requiring
+// `WarehouseExecutor` (provided by the local executor layer).
 
 import { Effect } from "effect"
 import type { TracesMetric } from "@maple/query-engine"

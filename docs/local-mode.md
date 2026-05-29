@@ -1,0 +1,86 @@
+# Local mode
+
+Local mode runs Maple as a single self-contained binary: OTLP ingest, an
+embedded ClickHouse (chDB) store, a query API, and a UI — no cloud, no Tinybird,
+no auth. It's for poking at telemetry on your own machine and for the
+distributable "try Maple locally" bundle.
+
+Everything is single-tenant: every row is written under `org_id = "local"`, and
+every compiled query filters on it.
+
+## The three pieces
+
+| Piece | Package | Role |
+| --- | --- | --- |
+| `maple` server binary | `apps/ingest` (`src/bin/local.rs`, `local` cargo feature) | Serves OTLP ingest, the embedded chDB, `POST /local/query`, and the bundled SPA — all on one port. |
+| `maple-cli` query CLI | `apps/local-cli` (Effect + Bun) | Subcommands (`services`, `traces`, `errors`, `logs`, `query`, …) compile queries with `@maple/query-engine` and POST them to `/local/query`, printing JSON to stdout. |
+| local UI (SPA) | `apps/local-ui` (Vite + React) | Browser UI. Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. Built to `dist/` and embedded into the server binary via `rust-embed`. |
+
+The server binary on port **4318** is the hub. Both the CLI and the SPA are thin
+clients of its `/local/query` endpoint, via the shared
+[`executeLocalQuery`](../packages/query-engine/src/local.ts) helper in
+`@maple/query-engine/local`.
+
+## The `/local/query` contract
+
+Clients POST `{ "sql": "..." }` and get back a bare JSON array of rows.
+
+The **server owns the output FORMAT**. chDB runs SQL verbatim, and the handler
+wraps line-delimited rows into a JSON array, so it always needs
+`FORMAT JSONEachRow`. `CH.compile(...)` appends `FORMAT JSON`, so the handler
+(`force_json_each_row` in `local.rs`) strips any trailing `FORMAT <ident>` the
+client sent and re-appends `FORMAT JSONEachRow`. Clients therefore POST
+`compiled.sql` verbatim — no client-side format rewriting.
+
+## Dev workflow
+
+Run the server and the SPA dev server in two terminals:
+
+```bash
+# Terminal 1 — the binary (OTLP ingest + query API + chDB) on :4318
+bun --filter @maple/ingest local           # = cargo run --features local --bin maple -- start
+
+# Terminal 2 — the Vite SPA dev server on :4319, proxying /local → :4318
+bun --filter @maple/local-ui dev
+```
+
+Open <http://127.0.0.1:4319>. Vite proxies `/local/*` to the binary (override the
+target with `MAPLE_LOCAL_URL`).
+
+Query from the CLI against the same binary:
+
+```bash
+bun run apps/local-cli/src/bin.ts services
+bun run apps/local-cli/src/bin.ts traces --service api --since 1h
+bun run apps/local-cli/src/bin.ts query "SELECT count() FROM otel_traces"
+```
+
+The CLI targets `http://127.0.0.1:4318` by default; override with `MAPLE_LOCAL_URL`.
+
+### Seeding data
+
+Send OpenTelemetry to the binary's OTLP/HTTP endpoints
+(`POST /v1/{traces,logs,metrics}`, proto or JSON). For OTLP/JSON, trace and span
+IDs must be hex strings.
+
+## Release bundle
+
+`scripts/build-local-binary.sh` produces a relocatable 3-file bundle (also built
+per-platform by `.github/workflows/local-binary-release.yml`):
+
+```
+maple        # the server binary (UI embedded)
+libchdb.so   # the chDB engine (~320 MB) — chdb-rust links it by bare name, so
+             #   the script rewrites the load path to @rpath/$ORIGIN beside maple
+maple-cli    # the compiled query CLI (bun build --compile)
+```
+
+**Keep all three in the same directory.** End users get a single `maple`
+command: `maple start` runs the server, and any other subcommand
+(`maple services`, `maple traces`, `maple query "..."`, …) is forwarded by the
+server binary to the sibling `maple-cli` (via `exec` on Unix).
+
+```bash
+bun --filter @maple/ingest local:build      # local release build of just the binary
+scripts/build-local-binary.sh               # full 3-file bundle
+```

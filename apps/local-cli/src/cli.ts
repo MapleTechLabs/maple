@@ -5,7 +5,6 @@ import { errors, error } from "./commands/errors"
 import { logs, logPatterns } from "./commands/logs"
 import { attributes } from "./commands/attributes"
 import { metrics, query } from "./commands/data"
-import { serve } from "./commands/serve"
 
 // Root command name is "maple" (not "maple-local"): in the release bundle this
 // CLI is invoked by the `maple` server binary as a forwarded subcommand, so
@@ -29,6 +28,5 @@ export const cli = Command.make("maple").pipe(
 		attributes,
 		metrics,
 		query,
-		serve,
 	]),
 )

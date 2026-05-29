@@ -6,7 +6,7 @@ import {
 	type ExecutorQueryOptions,
 } from "@maple/query-engine/observability"
 import { OrgId } from "@maple/domain/http"
-import { executeLocalQuery } from "./local-query"
+import { executeLocalQuery } from "@maple/query-engine/local"
 
 // Local mode is single-tenant: the Rust binary writes every row under this
 // OrgId, and every compiled query filters on it. `OrgId` is a non-empty trimmed
@@ -39,7 +39,7 @@ export const makeLocalWarehouseExecutor = (baseUrl: string) =>
 			orgId: LOCAL_ORG_ID,
 			sqlQuery: <T = Record<string, unknown>>(sql: string, _options?: ExecutorQueryOptions) =>
 				Effect.tryPromise({
-					try: () => executeLocalQuery<T>(baseUrl, sql),
+					try: () => executeLocalQuery<T>(sql, baseUrl),
 					catch: toObservabilityError(undefined),
 				}),
 			query: <T>(pipe: string, params: Record<string, unknown>, _options?: ExecutorQueryOptions) =>
@@ -52,7 +52,7 @@ export const makeLocalWarehouseExecutor = (baseUrl: string) =>
 						})
 					}
 					const rows = yield* Effect.tryPromise({
-						try: () => executeLocalQuery<Record<string, unknown>>(baseUrl, compiled.sql),
+						try: () => executeLocalQuery<Record<string, unknown>>(compiled.sql, baseUrl),
 						catch: toObservabilityError(pipe),
 					})
 					// Type-erased executor boundary — mirrors WarehouseExecutorLive in apps/api.
@@ -64,5 +64,5 @@ export const makeLocalWarehouseExecutor = (baseUrl: string) =>
 /** Base URL of the local Maple binary, overridable via `MAPLE_LOCAL_URL`. */
 export const resolveBaseUrl = (): string => process.env.MAPLE_LOCAL_URL ?? DEFAULT_BASE_URL
 
-/** Env-resolved executor layer shared by the CLI and the HTTP server. */
+/** Env-resolved executor layer used by the CLI commands. */
 export const LocalWarehouseExecutorLive = makeLocalWarehouseExecutor(resolveBaseUrl())

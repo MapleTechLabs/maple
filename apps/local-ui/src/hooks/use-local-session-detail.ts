@@ -5,7 +5,7 @@ import type {
 	SessionTraceSummaryOutput,
 	SessionTranscriptOutput,
 } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "../lib/local-query-client"
+import { executeLocalQuery } from "@maple/query-engine/local"
 import { LOCAL_ORG_ID } from "../lib/constants"
 
 /** Finalized metadata for one session (latest ReplacingMergeTree version). */

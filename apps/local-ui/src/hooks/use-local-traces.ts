@@ -1,7 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import type { TracesRootListOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "../lib/local-query-client"
+import { executeLocalQuery } from "@maple/query-engine/local"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { boundsForRange } from "../lib/time"
 

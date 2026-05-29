@@ -304,7 +304,11 @@ struct QueryBody {
 }
 
 async fn handle_query(State(state): State<Arc<LocalState>>, Json(body): Json<QueryBody>) -> Response {
-    match state.chdb.query(body.sql).await {
+    // This handler owns the output FORMAT: it wraps line-delimited rows into a
+    // JSON array, so it always runs the query as `FORMAT JSONEachRow` regardless
+    // of what the caller sent (`CH.compile(...)` appends `FORMAT JSON`). Callers
+    // POST `compiled.sql` verbatim.
+    match state.chdb.query(force_json_each_row(&body.sql)).await {
         Ok(bytes) => {
             // chDB returns JSONEachRow (one JSON object per line). Wrap the
             // lines into a JSON array without re-parsing each row.
@@ -315,6 +319,33 @@ async fn handle_query(State(state): State<Arc<LocalState>>, Json(body): Json<Que
         }
         Err(error) => server_error(format!("query failed: {error}")),
     }
+}
+
+/// Strip a trailing `FORMAT <ident>` clause (optionally followed by `;`) and
+/// re-append `FORMAT JSONEachRow`, making the server the single owner of the
+/// output format. `<ident>` must be a bare identifier bounded by whitespace on
+/// both sides so we only strip a real trailing clause, not e.g. a `formatX`
+/// column reference. Case-insensitive; ASCII-lowercasing preserves byte length,
+/// so indices map back to the original string.
+fn force_json_each_row(sql: &str) -> String {
+    let mut s = sql.trim_end();
+    if let Some(stripped) = s.strip_suffix(';') {
+        s = stripped.trim_end();
+    }
+
+    let lower = s.to_ascii_lowercase();
+    if let Some(pos) = lower.rfind("format") {
+        let before_ok = pos == 0 || s[..pos].chars().next_back().is_some_and(char::is_whitespace);
+        let rest = &s[pos + "format".len()..];
+        let after_ok = rest.starts_with(char::is_whitespace);
+        let ident = rest.trim();
+        let is_ident = !ident.is_empty() && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        if before_ok && after_ok && is_ident {
+            s = s[..pos].trim_end();
+        }
+    }
+
+    format!("{s}\nFORMAT JSONEachRow")
 }
 
 // --- Bundled SPA -----------------------------------------------------------
@@ -344,4 +375,41 @@ fn bad_request(message: impl Into<String>) -> Response {
 
 fn server_error(message: impl Into<String>) -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, message.into()).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::force_json_each_row;
+
+    #[test]
+    fn replaces_trailing_format_json() {
+        assert_eq!(force_json_each_row("SELECT 1 FORMAT JSON"), "SELECT 1\nFORMAT JSONEachRow");
+    }
+
+    #[test]
+    fn appends_when_no_format_clause() {
+        assert_eq!(force_json_each_row("SELECT 1"), "SELECT 1\nFORMAT JSONEachRow");
+    }
+
+    #[test]
+    fn idempotent_on_json_each_row() {
+        assert_eq!(force_json_each_row("SELECT 1 FORMAT JSONEachRow"), "SELECT 1\nFORMAT JSONEachRow");
+    }
+
+    #[test]
+    fn tolerates_trailing_semicolon_and_whitespace() {
+        assert_eq!(force_json_each_row("SELECT 1 FORMAT JSON ;  "), "SELECT 1\nFORMAT JSONEachRow");
+    }
+
+    #[test]
+    fn case_insensitive_keyword() {
+        assert_eq!(force_json_each_row("select 1 format json"), "select 1\nFORMAT JSONEachRow");
+    }
+
+    #[test]
+    fn does_not_strip_format_function_call() {
+        // A trailing `formatDateTime(...)` is not a FORMAT clause and must survive.
+        let sql = "SELECT formatDateTime(ts, '%F') AS day";
+        assert_eq!(force_json_each_row(sql), format!("{sql}\nFORMAT JSONEachRow"));
+    }
 }

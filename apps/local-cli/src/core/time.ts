@@ -1,5 +1,4 @@
-// Time-range resolution shared by the CLI and the HTTP server. Plain (non-Effect)
-// so the Bun.serve fetch handler can call it directly. Emits ClickHouse-style
+// Time-range resolution for the CLI commands. Emits ClickHouse-style
 // `YYYY-MM-DD HH:mm:ss` UTC strings, matching what the query engine expects.
 
 export interface Range {

@@ -7,7 +7,6 @@
 	"type": "module",
 	"scripts": {
 		"start": "bun run src/bin.ts",
-		"serve": "bun run src/bin.ts serve",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
