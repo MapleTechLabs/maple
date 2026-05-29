@@ -30,12 +30,15 @@ export function WidgetBuilderProvider({
 			createElement(
 				WidgetBuilderPreview.Provider,
 				{ value: initialState as never },
-				createElement(AutocompleteValuesProvider, {
-					startTime: resolvedTime?.startTime,
-					endTime: resolvedTime?.endTime,
-					lazy: true,
+				createElement(
+					AutocompleteValuesProvider,
+					{
+						startTime: resolvedTime?.startTime,
+						endTime: resolvedTime?.endTime,
+						lazy: true,
+					},
 					children,
-				}),
+				),
 			),
 		),
 	)

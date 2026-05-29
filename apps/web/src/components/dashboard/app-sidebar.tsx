@@ -448,13 +448,14 @@ export function AppSidebar() {
 														href="https://discord.gg/BnXjKuwJqP"
 														target="_blank"
 														rel="noopener noreferrer"
+														aria-label="Community Discord"
 													/>
 												}
 											>
 												<DiscordIcon size={16} />
 												Community Discord
 											</DropdownMenuItem>
-											<DropdownMenuItem render={<a href="mailto:support@maple.dev" />}>
+											<DropdownMenuItem render={<a href="mailto:support@maple.dev" aria-label="Email Support" />}>
 												<EnvelopeIcon size={16} />
 												Email Support
 											</DropdownMenuItem>

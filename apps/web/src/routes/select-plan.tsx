@@ -25,10 +25,17 @@ function resolveRedirectTarget(target: string | undefined): string {
 }
 
 function SelectPlanPage() {
+	// Clerk hooks below require ClerkProvider, which is absent when auth is
+	// disabled (self-hosted). Gate at this hook-free boundary so the inner
+	// component can call hooks unconditionally.
 	if (!isClerkAuthEnabled) {
 		return <Navigate to="/" replace />
 	}
 
+	return <SelectPlanPageInner />
+}
+
+function SelectPlanPageInner() {
 	const { isLoaded, isSignedIn, orgId } = useAuth()
 	const { data: customer, isLoading: isCustomerLoading } = useCustomer()
 	const { redirect_url } = Route.useSearch()

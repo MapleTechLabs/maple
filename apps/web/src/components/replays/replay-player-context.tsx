@@ -343,6 +343,9 @@ export function ReplayPlayerProvider({
 
 	// Mount the engine once events are ready. Keyed on `events` — a fresh session
 	// rebuilds. The surface's mount div is committed before this parent effect runs.
+	// The returned cleanup calls observer.disconnect() + replayer.destroy(), which
+	// tears down every replayer.on(...) subscription registered below.
+	// oxlint-disable-next-line react-doctor/effect-needs-cleanup
 	React.useEffect(() => {
 		if (status !== "ready") return
 		const mount = mountRef.current

@@ -194,6 +194,7 @@ export function InstallHostModal({ open, onOpenChange }: InstallModalProps) {
 								href="https://maple.dev/docs/infrastructure"
 								target="_blank"
 								rel="noopener noreferrer"
+								aria-label="View docs"
 							/>
 						}
 					>

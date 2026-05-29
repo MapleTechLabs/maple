@@ -12,6 +12,10 @@ export function useInfraEnabled(): boolean {
 	if (import.meta.env.DEV) return true
 	if (!isClerkAuthEnabled) return true
 
+	// Guarded by the build-time `isClerkAuthEnabled` constant above: in
+	// self-hosted builds there is no ClerkProvider, so calling this hook
+	// unconditionally would crash. The branch is statically resolved per build.
+	// oxlint-disable-next-line react-doctor/rules-of-hooks
 	const { organization, isLoaded } = useOrganization()
 	if (!isLoaded) return false
 

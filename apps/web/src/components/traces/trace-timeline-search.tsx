@@ -33,6 +33,7 @@ export function TraceTimelineSearch({
 						{matchCount} of {totalCount}
 					</span>
 					<button
+						type="button"
 						onClick={() => onQueryChange("")}
 						className="text-muted-foreground hover:text-foreground shrink-0"
 					>

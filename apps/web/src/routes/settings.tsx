@@ -131,6 +131,7 @@ function SettingsNav({
 							return (
 								<button
 									key={item.id}
+									type="button"
 									onClick={() => onSelect(item.id)}
 									className={cn(
 										"group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors text-left",

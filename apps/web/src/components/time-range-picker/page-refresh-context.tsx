@@ -43,7 +43,7 @@ export function PageRefreshProvider({
 	const [isReloading, setIsReloading] = React.useState(false)
 	const reloadTimeoutRef = React.useRef<ReturnType<typeof setTimeout>>(null)
 
-	const triggerReload = React.useEffectEvent(() => {
+	const reload = React.useCallback(() => {
 		const relativeRange = resolveRelativeRefreshRange(timePreset)
 		if (relativeRange) {
 			onRelativeRangeRefresh?.(relativeRange)
@@ -53,7 +53,7 @@ export function PageRefreshProvider({
 		if (reloadTimeoutRef.current) clearTimeout(reloadTimeoutRef.current)
 		setIsReloading(true)
 		reloadTimeoutRef.current = setTimeout(() => setIsReloading(false), 600)
-	})
+	}, [timePreset, onRelativeRangeRefresh])
 
 	React.useEffect(() => {
 		return () => {
@@ -65,9 +65,9 @@ export function PageRefreshProvider({
 		() => ({
 			refreshVersion,
 			isReloading,
-			reload: () => triggerReload(),
+			reload,
 		}),
-		[isReloading, refreshVersion],
+		[isReloading, refreshVersion, reload],
 	)
 
 	return <PageRefreshContext value={value}>{children}</PageRefreshContext>
