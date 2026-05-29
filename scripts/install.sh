@@ -59,10 +59,12 @@ esac
 # --- resolve release tag ------------------------------------------------------
 tag="${MAPLE_VERSION:-}"
 if [ -z "$tag" ]; then
-	tag="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+	# Use -sS (not -f) so a 404 "no releases yet" doesn't print a confusing
+	# curl error — we give our own clear message below.
+	tag="$(curl -sSL "https://api.github.com/repos/$REPO/releases/latest" \
 		| sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)"
 fi
-[ -n "$tag" ] || die "could not resolve the latest release tag (set MAPLE_VERSION to pin one)"
+[ -n "$tag" ] || die "no release found for $REPO — check https://github.com/$REPO/releases or set MAPLE_VERSION to pin a tag"
 
 name="maple-${tag}-${target}"
 url="https://github.com/$REPO/releases/download/${tag}/${name}.tar.gz"
