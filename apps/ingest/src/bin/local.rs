@@ -85,6 +85,8 @@ enum Commands {
     // ── Server ────────────────────────────────────────────────────────────────
     /// Start the local ingest + query server.
     Start(StartArgs),
+    /// Stop a running `maple start` server.
+    Stop(StopArgs),
 
     // ── Query (forwarded to maple-cli) ────────────────────────────────────────
     /// List services and their health metrics (p50/p95/p99, error rate).
@@ -128,10 +130,18 @@ struct StartArgs {
     data_dir: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct StopArgs {
+    /// Data directory used to locate the PID file (default: ~/.maple/data).
+    #[arg(long)]
+    data_dir: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() {
     match Cli::parse().command {
         Commands::Start(args) => start(args).await,
+        Commands::Stop(args) => stop(args),
         // Forward every query subcommand to maple-cli, prepending its name.
         Commands::Services(a)    => forward_to_cli(prepend("services", a.args)),
         Commands::Traces(a)      => forward_to_cli(prepend("traces", a.args)),
@@ -235,9 +245,22 @@ fn forward_to_cli(args: Vec<String>) -> ! {
 
 async fn start(args: StartArgs) {
     let data_dir = args.data_dir.unwrap_or_else(default_data_dir);
+    let pid_path = pid_file_path(&data_dir);
+
     if let Err(error) = std::fs::create_dir_all(&data_dir) {
         eprintln!("Failed to create data dir {}: {error}", data_dir.display());
         std::process::exit(1);
+    }
+
+    // --- already-running check -------------------------------------------
+    if let Some(pid) = read_pid(&pid_path) {
+        if is_process_alive(pid) {
+            eprintln!("maple is already running (PID {pid}).");
+            eprintln!("  Run `maple stop` to stop it.");
+            std::process::exit(1);
+        }
+        // Stale PID file from a previous crash — remove it silently.
+        let _ = std::fs::remove_file(&pid_path);
     }
 
     eprintln!("Opening chDB at {} (bootstrapping schema)...", data_dir.display());
@@ -276,14 +299,121 @@ async fn start(args: StartArgs) {
         }
     };
 
+    // --- write PID file ---------------------------------------------------
+    let my_pid = std::process::id();
+    if let Err(e) = std::fs::write(&pid_path, my_pid.to_string()) {
+        eprintln!("Warning: could not write PID file {}: {e}", pid_path.display());
+    }
+
     println!("maple listening on http://{addr}");
     println!("  OTLP/HTTP:  POST /v1/{{traces,logs,metrics}}");
     println!("  query API:  POST /local/query  {{ \"sql\": \"...\" }}");
     println!("  UI:         http://{addr}/");
+    println!("  PID:        {my_pid}  (stop with `maple stop`)");
 
-    if let Err(error) = axum::serve(listener, app).await {
+    let res = axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await;
+
+    // --- cleanup ----------------------------------------------------------
+    let _ = std::fs::remove_file(&pid_path);
+    if let Err(error) = res {
         eprintln!("Server error: {error}");
         std::process::exit(1);
+    }
+}
+
+/// Stop a running `maple start` process by reading its PID file and sending SIGTERM.
+fn stop(args: StopArgs) -> ! {
+    let data_dir = args.data_dir.unwrap_or_else(default_data_dir);
+    let pid_path = pid_file_path(&data_dir);
+
+    let Some(pid) = read_pid(&pid_path) else {
+        eprintln!("maple is not running (no PID file found at {}).", pid_path.display());
+        std::process::exit(1);
+    };
+
+    if !is_process_alive(pid) {
+        eprintln!("maple is not running (stale PID file; cleaning up).");
+        let _ = std::fs::remove_file(&pid_path);
+        std::process::exit(1);
+    }
+
+    send_signal(pid, "TERM");
+    eprint!("Stopping maple (PID {pid})");
+
+    // Wait up to 5 s for the process to exit.
+    for _ in 0..50 {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        eprint!(".");
+        if !is_process_alive(pid) {
+            let _ = std::fs::remove_file(&pid_path);
+            eprintln!("\nmaple stopped.");
+            std::process::exit(0);
+        }
+    }
+
+    eprintln!("\nmaple did not stop within 5 s. Force-kill with: kill -9 {pid}");
+    std::process::exit(1);
+}
+
+// --- process / PID helpers -----------------------------------------------
+
+fn pid_file_path(data_dir: &PathBuf) -> PathBuf {
+    // Place the PID file one level above the data dir (e.g. ~/.maple/maple.pid)
+    // so `maple stop` can find it without knowing the full data path.
+    data_dir
+        .parent()
+        .unwrap_or(data_dir.as_path())
+        .join("maple.pid")
+}
+
+fn read_pid(path: &PathBuf) -> Option<u32> {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+}
+
+/// Returns true if a process with this PID is currently alive (signal 0).
+fn is_process_alive(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+fn send_signal(pid: u32, sig: &str) {
+    let _ = std::process::Command::new("kill")
+        .args([&format!("-{sig}"), &pid.to_string()])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+/// Resolves when SIGINT (Ctrl-C) or SIGTERM is received.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let sigterm = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let sigterm = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = sigterm => {},
     }
 }
 
