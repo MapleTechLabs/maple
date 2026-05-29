@@ -1,4 +1,4 @@
-import { formatDuration } from "@/lib/format"
+import { formatDuration } from "../../lib/format"
 import type { ViewportState } from "./trace-timeline-types"
 import { TIME_AXIS_HEIGHT } from "./trace-timeline-types"
 

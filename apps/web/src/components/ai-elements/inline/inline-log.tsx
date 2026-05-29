@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router"
-import { SeverityBadge } from "@/components/logs/severity-badge"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { InlineLogData } from "./types"
 

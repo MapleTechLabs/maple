@@ -1,4 +1,4 @@
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 export interface TimelineBar {
 	span: SpanNode

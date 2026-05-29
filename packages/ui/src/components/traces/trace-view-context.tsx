@@ -1,6 +1,6 @@
 import * as React from "react"
 import type { ReactNode } from "react"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 import type { ColorByField } from "./color-by"
 
 interface TraceViewContextValue {

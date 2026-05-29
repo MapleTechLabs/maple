@@ -14,6 +14,7 @@ import {
 	runWarehouseQuery,
 } from "@/api/warehouse/effect-utils"
 import { getHttpInfo, type HttpInfo } from "@maple/ui/lib/http"
+import type { Span, SpanNode } from "@maple/ui/types"
 
 const toTraceId = Schema.decodeSync(TraceId)
 const toSpanId = Schema.decodeSync(SpanId)
@@ -268,26 +269,10 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 	}
 })
 
-export interface Span {
-	traceId: TraceId
-	spanId: SpanId
-	parentSpanId: string
-	spanName: string
-	serviceName: string
-	spanKind: string
-	durationMs: number
-	startTime: string
-	statusCode: string
-	statusMessage: string
-	spanAttributes: Record<string, string>
-	resourceAttributes: Record<string, string>
-}
-
-export interface SpanNode extends Span {
-	children: SpanNode[]
-	depth: number
-	isMissing?: boolean
-}
+// Canonical Span/SpanNode shapes live in @maple/ui so the shared trace
+// components can consume them; re-export here so existing
+// `@/api/warehouse/traces` importers keep working unchanged.
+export type { Span, SpanNode } from "@maple/ui/types"
 
 export interface SpanHierarchyResponse {
 	traceId: TraceId

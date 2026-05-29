@@ -15,7 +15,7 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
-import { SEVERITY_COLORS } from "@/lib/severity"
+import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
 import { formatBackendError } from "@/lib/error-messages"
 
 function LoadingState() {

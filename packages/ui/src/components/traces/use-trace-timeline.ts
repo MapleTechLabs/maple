@@ -1,8 +1,8 @@
 import * as React from "react"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 import type { TimelineBar, ViewportState, TimelineState, TimelineAction } from "./trace-timeline-types"
 import { ROW_HEIGHT, ROW_GAP, OVERSCAN } from "./trace-timeline-types"
-import { getValueHue } from "@maple/ui/colors"
+import { getValueHue } from "../../lib/colors"
 import { resolveColorValue, isStatusCodePreset, type ColorByField } from "./color-by"
 import { computeDefaultExpandedSpanIds, countDescendants } from "./auto-collapse"
 

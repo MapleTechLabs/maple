@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react"
 import { afterEach, describe, expect, it } from "vitest"
 
-import { HttpSpanLabel } from "./http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 
 afterEach(() => {
 	cleanup()

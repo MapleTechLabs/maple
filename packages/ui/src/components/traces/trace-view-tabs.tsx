@@ -1,13 +1,13 @@
 import * as React from "react"
-import { MenuIcon, FireIcon, NetworkNodesIcon } from "@/components/icons"
+import { MenuIcon, FireIcon, NetworkNodesIcon } from "../icons"
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "../ui/tabs"
 import { SpanHierarchy } from "./span-hierarchy"
 import { TraceTimeline } from "./trace-timeline"
 import { TraceFlowView } from "./flow-view"
 import { TraceViewProvider } from "./trace-view-context"
 import { DEFAULT_COLOR_BY, type ColorByField } from "./color-by"
-import type { SpanNode, Span } from "@/api/warehouse/traces"
+import type { SpanNode, Span } from "../../lib/types"
 
 interface TraceViewTabsProps {
 	rootSpans: SpanNode[]
@@ -67,7 +67,14 @@ export function TraceViewTabs({
 				</TabsContent>
 
 				<TabsContent value="flow" className="flex-1 min-h-0">
-					<TraceFlowView />
+					<TraceFlowView
+							rootSpans={rootSpans}
+							totalDurationMs={totalDurationMs}
+							traceStartTime={traceStartTime}
+							services={services}
+							selectedSpanId={selectedSpanId}
+							onSelectSpan={onSelectSpan}
+						/>
 				</TabsContent>
 			</Tabs>
 		</TraceViewProvider>

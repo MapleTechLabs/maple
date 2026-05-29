@@ -1,5 +1,5 @@
 import * as React from "react"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 export interface AttributeKey {
 	kind: "spanAttribute" | "resourceAttribute"

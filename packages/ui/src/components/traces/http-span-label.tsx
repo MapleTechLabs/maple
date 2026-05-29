@@ -1,5 +1,5 @@
-import { getHttpInfo, HTTP_METHOD_COLORS } from "@maple/ui/lib/http"
-import { cn } from "@maple/ui/utils"
+import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
+import { cn } from "../../lib/utils"
 
 interface HttpSpanLabelProps {
 	spanName: string

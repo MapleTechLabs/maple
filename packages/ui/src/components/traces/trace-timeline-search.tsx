@@ -1,5 +1,5 @@
 import * as React from "react"
-import { MagnifierIcon, XmarkIcon } from "@/components/icons"
+import { MagnifierIcon, XmarkIcon } from "../icons"
 
 interface TraceTimelineSearchProps {
 	query: string

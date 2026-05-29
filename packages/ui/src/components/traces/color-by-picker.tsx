@@ -1,4 +1,4 @@
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 import {
 	Select,
 	SelectContent,
@@ -8,7 +8,7 @@ import {
 	SelectSeparator,
 	SelectTrigger,
 	SelectValue,
-} from "@maple/ui/components/ui/select"
+} from "../ui/select"
 import {
 	colorByFieldId,
 	colorByFromId,

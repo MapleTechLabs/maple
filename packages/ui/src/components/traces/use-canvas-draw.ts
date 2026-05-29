@@ -1,7 +1,7 @@
 import type { BarRect, TimelineBar, ViewportState } from "./trace-timeline-types"
 import { ROW_GAP, ROW_HEIGHT } from "./trace-timeline-types"
 import { CANVAS_COLORS, crisp, truncateText } from "./draw-helpers"
-import { formatDuration } from "@/lib/format"
+import { formatDuration } from "../../lib/format"
 
 const FONT = '500 11px ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace'
 

@@ -16,7 +16,7 @@ import { formatBucketLabel, formatNumber, inferBucketSeconds, inferRangeMs } fro
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import type { LogsSearchParams } from "@/routes/logs"
-import { SEVERITY_COLORS, SEVERITY_ORDER } from "@/lib/severity"
+import { SEVERITY_COLORS, SEVERITY_ORDER } from "@maple/ui/lib/severity"
 
 /** More bars than the default 40-point target for a denser histogram. */
 const HISTOGRAM_TARGET_POINTS = 150

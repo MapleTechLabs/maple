@@ -14,6 +14,7 @@
 	},
 	"dependencies": {
 		"@base-ui/react": "catalog:ui",
+		"@maple/domain": "workspace:*",
 		"@xyflow/react": "catalog:ui",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
