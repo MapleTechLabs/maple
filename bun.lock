@@ -86,23 +86,6 @@
         "wrangler": "^4.14.4",
       },
     },
-    "apps/cli": {
-      "name": "@maple/cli",
-      "bin": {
-        "maple": "./src/bin.ts",
-      },
-      "dependencies": {
-        "@effect/platform-bun": "catalog:effect",
-        "@maple/domain": "workspace:*",
-        "effect": "catalog:effect",
-      },
-      "devDependencies": {
-        "@effect/language-service": "catalog:effect",
-        "@types/bun": "^1.3.11",
-        "@types/node": "catalog:tooling",
-        "typescript": "catalog:tooling",
-      },
-    },
     "apps/ingest": {
       "name": "@maple/ingest",
     },
@@ -144,9 +127,9 @@
       },
     },
     "apps/local-cli": {
-      "name": "@maple/local-cli",
+      "name": "@maple/cli",
       "bin": {
-        "maple-local": "./src/bin.ts",
+        "maple-cli": "./src/bin.ts",
       },
       "dependencies": {
         "@effect/platform-bun": "catalog:effect",
@@ -1316,7 +1299,7 @@
 
     "@maple/chat-agent": ["@maple/chat-agent@workspace:apps/chat-agent"],
 
-    "@maple/cli": ["@maple/cli@workspace:apps/cli"],
+    "@maple/cli": ["@maple/cli@workspace:apps/local-cli"],
 
     "@maple/clickhouse-cli": ["@maple/clickhouse-cli@workspace:packages/clickhouse-cli"],
 
@@ -1333,8 +1316,6 @@
     "@maple/ingest": ["@maple/ingest@workspace:apps/ingest"],
 
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
-
-    "@maple/local-cli": ["@maple/local-cli@workspace:apps/local-cli"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
 
