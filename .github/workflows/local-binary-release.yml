@@ -178,15 +178,16 @@ jobs:
                   tarball="${{ steps.package.outputs.tarball }}"
                   # Create the release if it doesn't exist yet. Multiple platforms
                   # may race here; ignore the "already exists" error.
+                  # Write notes to a file using printf so we avoid heredoc indentation
+                  # issues inside a YAML literal block scalar.
+                  printf '%s\n\n%s\n```\n%s\n```\n\n%s\n' \
+                    'Local Maple (`maple start`) bundles.' \
+                    '**Install (macOS / Linux):**' \
+                    'curl -fsSL https://maple.dev/cli/install | sh' \
+                    'Or download a bundle below. Each archive contains `maple` + `libchdb.so` + `maple-cli` — keep all three in the same directory. macOS: run `xattr -dr com.apple.quarantine maple maple-cli libchdb.so` after extracting.' \
+                    > "$RUNNER_TEMP/release-notes.md"
                   gh release create "$TAG" --repo "$REPO" \
                     --title "$TAG" \
-                    --notes "Local Maple (\`maple start\`) bundles.
-
-**Install (macOS / Linux):**
-\`\`\`
-curl -fsSL https://maple.dev/cli/install | sh
-\`\`\`
-
-Or download a bundle below and extract it. Each archive contains the \`maple\` server binary, its \`libchdb.so\` engine, and the \`maple-cli\` query binary — keep all three in the same directory. Run \`./maple start\`, then query with \`./maple services\`, \`./maple traces\`, \`./maple query \"...\"\`, etc. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple maple-cli libchdb.so\` after extracting if Gatekeeper blocks them." 2>/dev/null || true
+                    --notes-file "$RUNNER_TEMP/release-notes.md" 2>/dev/null || true
                   gh release upload "$TAG" "$tarball" "${tarball}.sha256" \
                     --repo "$REPO" --clobber
