@@ -1,4 +1,4 @@
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 export type ColorByField =
 	| { kind: "preset"; key: "service" | "spanKind" | "statusCode" }

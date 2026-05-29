@@ -1,7 +1,7 @@
 import type { BaseComponentProps } from "@json-render/react"
 import { cn } from "@maple/ui/utils"
 import { formatDuration } from "@/lib/format"
-import { HttpSpanLabel } from "@/components/traces/http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 
 interface TraceListProps {
 	traces: Array<{

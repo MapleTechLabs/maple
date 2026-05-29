@@ -1,6 +1,8 @@
+import type { SpanId, TraceId } from "@maple/domain"
+
 export interface Span {
-	traceId: string
-	spanId: string
+	traceId: TraceId
+	spanId: SpanId
 	parentSpanId: string
 	spanName: string
 	serviceName: string
@@ -16,4 +18,5 @@ export interface Span {
 export interface SpanNode extends Span {
 	children: SpanNode[]
 	depth: number
+	isMissing?: boolean
 }

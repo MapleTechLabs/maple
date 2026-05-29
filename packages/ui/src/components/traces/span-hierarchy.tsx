@@ -1,10 +1,10 @@
 import * as React from "react"
 
-import { Button } from "@maple/ui/components/ui/button"
+import { Button } from "../ui/button"
 import { SpanRow } from "./span-row"
 import { useTraceView } from "./trace-view-context"
 import { collectAllCollapsibleIds, computeDefaultExpandedSpanIds } from "./auto-collapse"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 export function SpanHierarchy() {
 	const { rootSpans, totalDurationMs, traceStartTime, services, selectedSpanId, onSelectSpan } =

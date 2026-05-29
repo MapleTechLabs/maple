@@ -1,8 +1,8 @@
 import * as React from "react"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 import type { ViewportState } from "./trace-timeline-types"
 import { MINIMAP_HEIGHT } from "./trace-timeline-types"
-import { getValueHue } from "@maple/ui/colors"
+import { getValueHue } from "../../lib/colors"
 import { resolveColorValue, isStatusCodePreset, type ColorByField } from "./color-by"
 
 interface TraceTimelineMinimapProps {

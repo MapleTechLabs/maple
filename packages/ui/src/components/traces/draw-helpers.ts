@@ -1,4 +1,4 @@
-import { formatDuration } from "@/lib/format"
+import { formatDuration } from "../../lib/format"
 
 /**
  * Truncate text with ellipsis to fit within a maxWidth (in CSS pixels).

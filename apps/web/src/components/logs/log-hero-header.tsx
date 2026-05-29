@@ -8,7 +8,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui
 import { cn } from "@maple/ui/utils"
 import { CopyableValue, tryParseJson } from "@/components/attributes"
 import { highlightCode } from "@/lib/sugar-high"
-import { SeverityBadge } from "./severity-badge"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import type { Log } from "@/api/warehouse/logs"
 
 const HERO_TONE: Record<string, string> = {

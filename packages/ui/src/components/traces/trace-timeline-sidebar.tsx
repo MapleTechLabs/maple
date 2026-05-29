@@ -1,10 +1,10 @@
 import * as React from "react"
 
-import { ChevronDownIcon, ChevronRightIcon } from "@/components/icons"
-import { cn } from "@maple/ui/utils"
-import { getServiceLegendColor } from "@maple/ui/colors"
-import { formatDuration } from "@/lib/format"
-import { getCacheInfo } from "@/lib/cache"
+import { ChevronDownIcon, ChevronRightIcon } from "../icons"
+import { cn } from "../../lib/utils"
+import { getServiceLegendColor } from "../../lib/colors"
+import { formatDuration } from "../../lib/format"
+import { getCacheInfo } from "../../lib/cache"
 import type { TimelineBar } from "./trace-timeline-types"
 import { DEPTH_INDENT, OVERSCAN, ROW_GAP, ROW_HEIGHT } from "./trace-timeline-types"
 

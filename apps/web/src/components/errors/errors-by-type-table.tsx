@@ -14,7 +14,7 @@ import {
 	getErrorDetailTracesResultAtom,
 	getErrorsByTypeResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { HttpSpanLabel } from "@/components/traces/http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 function formatNumber(num: number): string {

@@ -1,6 +1,6 @@
-import { Badge } from "@maple/ui/components/ui/badge"
-import { cn } from "@maple/ui/utils"
-import { getSeverityColor } from "@/lib/severity"
+import { Badge } from "../ui/badge"
+import { cn } from "../../lib/utils"
+import { getSeverityColor } from "../../lib/severity"
 
 interface SeverityBadgeProps {
 	severity: string

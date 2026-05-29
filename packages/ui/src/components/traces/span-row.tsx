@@ -1,15 +1,15 @@
-import { ChevronRightIcon, ChevronDownIcon } from "@/components/icons"
+import { ChevronRightIcon, ChevronDownIcon } from "../icons"
 
-import { Badge } from "@maple/ui/components/ui/badge"
-import { Button } from "@maple/ui/components/ui/button"
-import { cn } from "@maple/ui/utils"
-import { formatDuration } from "@/lib/format"
-import { getServiceLegendColor } from "@maple/ui/lib/colors"
-import { getCacheInfo, cacheResultStyles } from "@/lib/cache"
-import { getHttpInfo, HTTP_METHOD_COLORS } from "@maple/ui/lib/http"
+import { Badge } from "../ui/badge"
+import { Button } from "../ui/button"
+import { cn } from "../../lib/utils"
+import { formatDuration } from "../../lib/format"
+import { getServiceLegendColor } from "../../lib/colors"
+import { getCacheInfo, cacheResultStyles } from "../../lib/cache"
+import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
 import { PixelDurationBar } from "./pixel-duration-bar"
 import { countDescendants } from "./auto-collapse"
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 interface SpanRowProps {
 	span: SpanNode

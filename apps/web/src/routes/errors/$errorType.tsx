@@ -28,7 +28,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
-import { HttpSpanLabel } from "@/components/traces/http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import {
 	getErrorsByTypeResultAtom,
 	getErrorDetailTracesResultAtom,

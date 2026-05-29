@@ -1,7 +1,7 @@
-import { formatDuration } from "@/lib/format"
-import { getServiceLegendColor, calculateSelfTime } from "@maple/ui/colors"
-import { getHttpInfo } from "@maple/ui/lib/http"
-import type { SpanNode } from "@/api/warehouse/traces"
+import { formatDuration } from "../../lib/format"
+import { getServiceLegendColor, calculateSelfTime } from "../../lib/colors"
+import { getHttpInfo } from "../../lib/http"
+import type { SpanNode } from "../../lib/types"
 
 interface TraceTimelineTooltipProps {
 	span: SpanNode

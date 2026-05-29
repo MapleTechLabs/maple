@@ -1,4 +1,4 @@
-import type { SpanNode } from "@/api/warehouse/traces"
+import type { SpanNode } from "../../lib/types"
 
 // Traces below this many total spans expand fully (unchanged behaviour).
 export const LONG_TRACE_THRESHOLD = 25
