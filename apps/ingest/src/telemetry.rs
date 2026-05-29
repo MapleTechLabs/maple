@@ -1021,66 +1021,6 @@ fn gzip(body: Vec<u8>) -> Result<Vec<u8>, String> {
         .map_err(|error| format!("finish gzip Tinybird body: {error}"))
 }
 
-// --- Local (chDB) encode path ----------------------------------------------
-//
-// The standalone `maple` binary writes to an embedded chDB instead of the
-// Tinybird WAL/export pipeline. It reuses the exact same OTLP→NDJSON encoders
-// below so the two write paths can never diverge in row shape. These helpers
-// expose a datasource-tagged batch decoupled from `EncodedFrame`/the pipeline.
-
-/// One datasource's NDJSON rows, ready to INSERT into the matching chDB table.
-pub struct LocalBatch {
-    pub datasource: String,
-    pub row_count: usize,
-    pub payload: Vec<u8>,
-}
-
-fn frames_to_batches(frames: Vec<EncodedFrame>) -> Vec<LocalBatch> {
-    frames
-        .into_iter()
-        .filter(|frame| frame.row_count > 0)
-        .map(|frame| LocalBatch {
-            datasource: frame.datasource,
-            row_count: frame.row_count,
-            payload: frame.payload,
-        })
-        .collect()
-}
-
-/// Encode OTLP traces to per-datasource NDJSON batches for the local write
-/// path. Sampling is disabled (keep everything) since local volume is small.
-pub fn encode_local_traces(
-    org_id: &str,
-    request: &ExportTraceServiceRequest,
-) -> Result<Vec<LocalBatch>, PipelineError> {
-    let (frames, _) = encode_traces(
-        &DatasourceNames::defaults(),
-        org_id,
-        request,
-        &SamplingPolicy::default(),
-        &[],
-    )?;
-    Ok(frames_to_batches(frames))
-}
-
-/// Encode OTLP logs to NDJSON batches for the local write path.
-pub fn encode_local_logs(
-    org_id: &str,
-    request: &ExportLogsServiceRequest,
-) -> Result<Vec<LocalBatch>, PipelineError> {
-    let (frames, _) = encode_logs(&DatasourceNames::defaults(), org_id, request)?;
-    Ok(frames_to_batches(frames))
-}
-
-/// Encode OTLP metrics to per-type NDJSON batches for the local write path.
-pub fn encode_local_metrics(
-    org_id: &str,
-    request: &ExportMetricsServiceRequest,
-) -> Result<Vec<LocalBatch>, PipelineError> {
-    let (frames, _) = encode_metrics(&DatasourceNames::defaults(), org_id, request)?;
-    Ok(frames_to_batches(frames))
-}
-
 fn encode_traces(
     datasources: &DatasourceNames,
     org_id: &str,
