@@ -143,6 +143,8 @@ export {
 	tracesBreakdownQuery,
 	tracesListQuery,
 	tracesRootListQuery,
+	slowTracesQuery,
+	spanSearchQuery,
 	type TracesTimeseriesOpts,
 	type TracesBreakdownOpts,
 	type TracesListOpts,
@@ -151,6 +153,10 @@ export {
 	type TracesBreakdownOutput,
 	type TracesListOutput,
 	type TracesRootListOutput,
+	type SlowTracesOpts,
+	type SlowTracesOutput,
+	type SpanSearchOpts,
+	type SpanSearchOutput,
 } from "./queries/traces"
 
 // Queries — Attribute Keys & Values

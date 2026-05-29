@@ -1,10 +1,11 @@
-import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
+import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { TraceId, SpanId } from "@maple/domain"
 import type { ListTracesOutput } from "@maple/domain/tinybird"
+import type { SpanSearchOutput } from "../ch"
 import { WarehouseExecutor, ObservabilityError, type WarehouseExecutorShape } from "./WarehouseExecutor"
 import type { SearchTracesInput, SearchTracesOutput, SpanResult } from "./types"
 import { toSpanResult } from "./row-mappers"
-import { escapeForSQL, safeUInt } from "./sql-utils"
+import { safeUInt } from "./sql-utils"
 
 const MAX_LIMIT = 1000
 const MAX_OFFSET = 1_000_000
@@ -13,12 +14,15 @@ const MAX_OFFSET = 1_000_000
  * Search for spans matching the given criteria.
  *
  * When `spanName` is provided (and `rootOnly` is not true), queries the raw
- * `traces` table directly to find matching spans. This avoids the unreliable
- * EXISTS subquery in the `list_traces` pipe and returns the **matched span**
- * data instead of root span summaries.
+ * `traces` table (via the `span_search` pipe) to find matching spans. This
+ * avoids the unreliable EXISTS subquery in the `list_traces` pipe and returns
+ * the **matched span** data instead of root span summaries.
  *
  * When searching by root-level fields only (service, error, duration), falls
- * back to the `list_traces` Tinybird pipe for fast MV-backed queries.
+ * back to the `list_traces` pipe for fast MV-backed queries.
+ *
+ * Both paths route through `executor.query(pipe, ...)`, so the same code runs
+ * unchanged against local chDB and the remote warehouse.
  */
 export const searchTraces = Effect.fn("Observability.searchTraces")(function* (input: SearchTracesInput) {
 	const executor = yield* WarehouseExecutor
@@ -55,21 +59,11 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 	} satisfies SearchTracesOutput
 })
 
-const esc = escapeForSQL
-
-const StringRecordFromJson = Schema.fromJsonString(Schema.Record(Schema.String, Schema.String))
-
-/** Parse ClickHouse's toString(Map) output back into a Record. */
-const parseAttributeMap = (str: string): Effect.Effect<Record<string, string>> => {
-	if (!str || str === "{}" || str === "{'':''}") return Effect.succeed({})
-	return Schema.decodeUnknownEffect(StringRecordFromJson)(str.replace(/'/g, '"')).pipe(
-		Effect.orElseSucceed(() => ({})),
-	)
-}
-
 /**
- * Query the raw `traces` table directly for span-level filtering.
- * Returns matched span data, not root span summaries.
+ * Span-level filtering via the `span_search` pipe. Returns matched span data,
+ * not root span summaries. The pipe compiles to a raw `traces` scan with the
+ * supplied filters (span name exact/contains, service, error, duration bounds,
+ * http method, trace id, and arbitrary attribute filters).
  */
 const spanLevelSearch = (
 	executor: WarehouseExecutorShape,
@@ -77,91 +71,27 @@ const spanLevelSearch = (
 	limit: number,
 	offset: number,
 ): Effect.Effect<ReadonlyArray<SpanResult>, ObservabilityError> => {
-	const optionalCondition = (
-		value: string | number | undefined | null,
-		toSql: (v: string) => string,
-	): Option.Option<string> => (value != null ? Option.some(toSql(String(value))) : Option.none())
-
-	const conditions: string[] = [
-		`OrgId = '${esc(executor.orgId)}'`,
-		`Timestamp >= parseDateTimeBestEffort('${esc(input.timeRange.startTime)}')`,
-		`Timestamp <= parseDateTimeBestEffort('${esc(input.timeRange.endTime)}')`,
-		...pipe(
-			[
-				optionalCondition(input.spanName, (name) =>
-					input.spanNameMatchMode === "contains"
-						? `positionCaseInsensitive(SpanName, '${esc(name)}') > 0`
-						: `SpanName = '${esc(name)}'`,
-				),
-				optionalCondition(input.service, (s) => `ServiceName = '${esc(s)}'`),
-				input.hasError ? Option.some(`StatusCode = 'Error'`) : Option.none(),
-				input.minDurationMs != null
-					? Option.some(`Duration >= ${safeUInt(input.minDurationMs, 0, Number.MAX_SAFE_INTEGER)} * 1000000`)
-					: Option.none(),
-				input.maxDurationMs != null
-					? Option.some(`Duration <= ${safeUInt(input.maxDurationMs, 0, Number.MAX_SAFE_INTEGER)} * 1000000`)
-					: Option.none(),
-				optionalCondition(input.httpMethod, (m) => `SpanAttributes['http.method'] = '${esc(m)}'`),
-				optionalCondition(input.traceId, (id) => `TraceId = '${esc(id)}'`),
-			],
-			Arr.getSomes,
-		),
-	]
-
-	const attrConditions = pipe(
-		input.attributeFilters ?? [],
-		Arr.map((af) => {
-			const positive =
-				af.mode === "contains"
-					? `positionCaseInsensitive(SpanAttributes['${esc(af.key)}'], '${esc(af.value)}') > 0`
-					: `SpanAttributes['${esc(af.key)}'] = '${esc(af.value)}'`
-			return af.negated ? `NOT (${positive})` : positive
-		}),
-	)
-
-	const allConditions = [...conditions, ...attrConditions]
-
-	const sql = `
-    SELECT
-      TraceId as traceId,
-      SpanId as spanId,
-      SpanName as spanName,
-      ServiceName as serviceName,
-      Duration / 1000000 as durationMs,
-      StatusCode as statusCode,
-      StatusMessage as statusMessage,
-      toString(SpanAttributes) as attributesStr,
-      toString(ResourceAttributes) as resourceAttributesStr,
-      toString(Timestamp) as timestamp
-    FROM traces
-    WHERE ${allConditions.join("\n      AND ")}
-    ORDER BY Timestamp DESC
-    LIMIT ${limit}
-    OFFSET ${offset}
-    FORMAT JSON
-  `
-
-	interface RawSpanRow {
-		readonly traceId: string
-		readonly spanId: string
-		readonly spanName: string
-		readonly serviceName: string
-		readonly durationMs: number
-		readonly statusCode: string
-		readonly statusMessage: string
-		readonly attributesStr: string
-		readonly resourceAttributesStr: string
-		readonly timestamp: string
+	const params: Record<string, unknown> = {
+		start_time: input.timeRange.startTime,
+		end_time: input.timeRange.endTime,
+		limit,
+		offset,
+		...(input.service && { service: input.service }),
+		...(input.spanName && { span_name: input.spanName }),
+		...(input.spanNameMatchMode === "contains" && { span_name_match_mode: "contains" }),
+		...(input.hasError && { has_error: true }),
+		...(input.minDurationMs != null && { min_duration_ms: input.minDurationMs }),
+		...(input.maxDurationMs != null && { max_duration_ms: input.maxDurationMs }),
+		...(input.httpMethod && { http_method: input.httpMethod }),
+		...(input.traceId && { trace_id: input.traceId }),
+		...(input.attributeFilters?.length && { attribute_filters: input.attributeFilters }),
 	}
 
-	return Effect.flatMap(executor.sqlQuery<RawSpanRow>(sql, { profile: "list" }), (rows) =>
-		Effect.forEach(rows, (row) =>
-			Effect.map(
-				Effect.all({
-					attributes: parseAttributeMap(row.attributesStr),
-					resourceAttributes: parseAttributeMap(row.resourceAttributesStr),
-				}),
-				({ attributes, resourceAttributes }): SpanResult => ({
+	return Effect.map(
+		executor.query<SpanSearchOutput>("span_search", params, { profile: "list" }),
+		(result): ReadonlyArray<SpanResult> =>
+			result.data.map(
+				(row): SpanResult => ({
 					traceId: Schema.decodeSync(TraceId)(row.traceId),
 					spanId: Schema.decodeSync(SpanId)(row.spanId),
 					spanName: row.spanName,
@@ -169,17 +99,16 @@ const spanLevelSearch = (
 					durationMs: Number(row.durationMs),
 					statusCode: row.statusCode,
 					statusMessage: row.statusMessage ?? "",
-					attributes,
-					resourceAttributes,
-					timestamp: row.timestamp,
+					attributes: row.spanAttributes ?? {},
+					resourceAttributes: row.resourceAttributes ?? {},
+					timestamp: String(row.timestamp),
 				}),
 			),
-		),
 	)
 }
 
 /**
- * Root-level search using the `list_traces` Tinybird pipe.
+ * Root-level search using the `list_traces` pipe.
  * Fast (MV-backed) but limited to root span filtering.
  */
 const rootLevelSearch = (

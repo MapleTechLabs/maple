@@ -1,5 +1,5 @@
 import { Array as Arr, Effect, pipe } from "effect"
-import * as CH from "../ch"
+import type { TopOperationsOutput } from "../ch/queries/top-operations"
 import type { TracesMetric } from "../query-engine"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { TimeRange } from "./types"
@@ -22,17 +22,20 @@ export const topOperations = Effect.fn("Observability.topOperations")(function* 
 		metric: input.metric,
 	})
 
-	const compiled = CH.compile(CH.topOperationsQuery({ metric: input.metric, limit: input.limit ?? 20 }), {
-		orgId: executor.orgId,
-		serviceName: input.serviceName,
-		startTime: input.timeRange.startTime,
-		endTime: input.timeRange.endTime,
-	})
-
-	const rows = compiled.castRows(yield* executor.sqlQuery(compiled.sql, { profile: "aggregation" }))
-	yield* Effect.annotateCurrentSpan("operationCount", rows.length)
+	const result = yield* executor.query<TopOperationsOutput>(
+		"top_operations",
+		{
+			service_name: input.serviceName,
+			metric: input.metric,
+			limit: input.limit ?? 20,
+			start_time: input.timeRange.startTime,
+			end_time: input.timeRange.endTime,
+		},
+		{ profile: "aggregation" },
+	)
+	yield* Effect.annotateCurrentSpan("operationCount", result.data.length)
 	return pipe(
-		rows,
+		result.data,
 		Arr.map((r): TopOperation => ({ name: r.name, value: Number(r.value) })),
 	)
 })

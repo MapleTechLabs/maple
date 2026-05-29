@@ -6,7 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import * as CH from "./index"
-import type { TracesMetric } from "../query-engine"
+import type { TracesMetric, AttributeFilter } from "../query-engine"
 import type { OrgId } from "@maple/domain"
 import { Array as A, Match, Result } from "effect"
 
@@ -250,6 +250,8 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 			Match.when("error_rate_by_service", () =>
 				eraseType(CH.compile(CH.errorRateByServiceQuery(), { orgId, startTime, endTime })),
 			),
+		)
+		.pipe(
 			Match.when("service_overview", () =>
 				eraseType(
 					CH.compile(
@@ -513,6 +515,61 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 			Match.when("custom_traces_breakdown", () => {
 				const bdOpts = pipeParamsToTracesBreakdownOpts(params)
 				return eraseType(CH.compile(CH.tracesBreakdownQuery(bdOpts), { orgId, startTime, endTime }))
+			}),
+			Match.when("top_operations", () =>
+				eraseType(
+					CH.compile(
+						CH.topOperationsQuery({
+							metric: (str("metric") ?? "count") as TracesMetric,
+							limit: int("limit", 20)!,
+						}),
+						{ orgId, startTime, endTime, serviceName: str("service_name") ?? "" },
+					),
+				),
+			),
+			Match.when("slow_traces", () =>
+				eraseType(
+					CH.compile(
+						CH.slowTracesQuery({
+							service: str("service"),
+							environment: str("deployment_env") ?? str("environment"),
+							limit: int("limit", 10),
+						}),
+						{ orgId, startTime, endTime },
+					),
+				),
+			),
+			Match.when("span_search", () => {
+				const httpMethod = str("http_method")
+				const passedFilters = Array.isArray(params.attribute_filters)
+					? (params.attribute_filters as AttributeFilter[])
+					: undefined
+				// `--http-method` is just an equality filter on the `http.method`
+				// span attribute, so fold it into the attribute-filter list.
+				const attributeFilters: AttributeFilter[] | undefined = httpMethod
+					? [...(passedFilters ?? []), { key: "http.method", value: httpMethod, mode: "equals" }]
+					: passedFilters
+				return eraseType(
+					CH.compile(
+						CH.spanSearchQuery({
+							serviceName: str("service"),
+							spanName: str("span_name"),
+							matchModes:
+								str("span_name_match_mode") === "contains" ? { spanName: "contains" } : undefined,
+							errorsOnly: bool("has_error"),
+							minDurationMs: int("min_duration_ms"),
+							maxDurationMs: int("max_duration_ms"),
+							attributeFilters,
+							resourceAttributeFilters: Array.isArray(params.resource_attribute_filters)
+								? (params.resource_attribute_filters as AttributeFilter[])
+								: undefined,
+							traceId: str("trace_id"),
+							limit: int("limit", 20),
+							offset: int("offset", 0),
+						}),
+						{ orgId, startTime, endTime },
+					),
+				)
 			}),
 			Match.orElse(() => undefined),
 		)

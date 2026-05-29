@@ -451,6 +451,114 @@ export function tracesListQuery(opts: TracesListOpts) {
 }
 
 // ---------------------------------------------------------------------------
+// Slow traces query
+//
+// DSL port of the previously string-interpolated query in
+// `observability/find-slow-traces.ts`. Returns the slowest root spans
+// (`ParentSpanId = ''`) ordered by Duration DESC at the database, so the
+// caller gets the actual slowest traces in the window rather than the most
+// recent. OrgId-scoped per the Warehouse Query Pattern.
+// ---------------------------------------------------------------------------
+
+export interface SlowTracesOpts {
+	service?: string
+	environment?: string
+	limit?: number
+}
+
+export interface SlowTracesOutput {
+	readonly traceId: string
+	readonly spanName: string
+	readonly serviceName: string
+	readonly durationMs: number
+	readonly statusCode: string
+	readonly timestamp: string
+}
+
+export function slowTracesQuery(opts: SlowTracesOpts) {
+	return from(Traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanName: $.SpanName,
+			serviceName: $.ServiceName,
+			durationMs: $.Duration.div(1000000),
+			statusCode: $.StatusCode,
+			timestamp: CH.toString_($.Timestamp),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			$.ParentSpanId.eq(""),
+			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
+			CH.when(opts.environment, (v: string) =>
+				$.ResourceAttributes.get("deployment.environment").eq(v),
+			),
+		])
+		.orderBy(["durationMs", "desc"])
+		.limit(opts.limit ?? 10)
+		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
+// Span-level search query
+//
+// DSL port of the raw `traces` scan in `observability/search-traces.ts`
+// (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
+// flexible span-level filtering: span name (exact or contains), service,
+// error, duration bounds, attribute filters, and trace id. OrgId-scoped via
+// `tracesBaseWhereConditions`.
+// ---------------------------------------------------------------------------
+
+export interface SpanSearchOpts extends TracesQueryOpts {
+	traceId?: string
+	limit?: number
+	offset?: number
+}
+
+export interface SpanSearchOutput {
+	readonly traceId: string
+	readonly spanId: string
+	readonly spanName: string
+	readonly serviceName: string
+	readonly durationMs: number
+	readonly statusCode: string
+	readonly statusMessage: string
+	readonly spanAttributes: Record<string, string>
+	readonly resourceAttributes: Record<string, string>
+	readonly timestamp: string
+}
+
+export function spanSearchQuery(opts: SpanSearchOpts) {
+	const limit = opts.limit ?? 20
+	const offset = opts.offset ?? 0
+
+	let q = from(Traces)
+		.select(($) => ({
+			traceId: $.TraceId,
+			spanId: $.SpanId,
+			spanName: $.SpanName,
+			serviceName: $.ServiceName,
+			durationMs: $.Duration.div(1000000),
+			statusCode: $.StatusCode,
+			statusMessage: $.StatusMessage,
+			spanAttributes: $.SpanAttributes,
+			resourceAttributes: $.ResourceAttributes,
+			timestamp: CH.toString_($.Timestamp),
+		}))
+		.where(($) => [...buildWhereConditions($, opts), CH.when(opts.traceId, (v: string) => $.TraceId.eq(v))])
+		.orderBy(["timestamp", "desc"])
+		.limit(limit)
+		.format("JSON")
+
+	if (offset > 0) {
+		q = q.offset(offset)
+	}
+
+	return q
+}
+
+// ---------------------------------------------------------------------------
 // Root trace list query (aggregated root-span-level, for trace list UI)
 // ---------------------------------------------------------------------------
 
