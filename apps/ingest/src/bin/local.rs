@@ -40,6 +40,12 @@ use maple_ingest::telemetry::{self, LocalBatch};
 /// `CH.compile(...)` and the placeholder the insert mappings substitute.
 const ORG_ID: &str = "local";
 
+/// Name of the bundled query CLI (compiled from `apps/local-cli` via
+/// `bun build --compile`). The release bundle places it next to `maple`; every
+/// subcommand other than `start` is forwarded to it, so end users get a single
+/// `maple` command (`maple start`, `maple services`, `maple traces`, ...).
+const CLI_BIN_NAME: &str = "maple-cli";
+
 /// SPA assets baked into the binary at compile time. `apps/local-ui` builds
 /// here in a later phase; until then this holds a placeholder page.
 #[derive(RustEmbed)]
@@ -51,7 +57,14 @@ struct LocalState {
 }
 
 #[derive(Parser)]
-#[command(name = "maple", version, about = "Local Maple: OTLP ingest + embedded ClickHouse + UI")]
+#[command(
+    name = "maple",
+    version,
+    about = "Local Maple: OTLP ingest + embedded ClickHouse + UI",
+    long_about = "Local Maple: OTLP ingest + embedded ClickHouse + UI.\n\n\
+        `maple start` runs the server. Any other subcommand (services, traces, \
+        errors, logs, query, ...) is forwarded to the bundled query CLI."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -61,6 +74,10 @@ struct Cli {
 enum Commands {
     /// Start the local ingest + query server.
     Start(StartArgs),
+    /// Query the running server: services, traces, errors, logs, query, etc.
+    /// Forwarded to the bundled `maple-cli` binary beside this executable.
+    #[command(external_subcommand)]
+    Query(Vec<String>),
 }
 
 #[derive(Args)]
@@ -77,7 +94,47 @@ struct StartArgs {
 async fn main() {
     match Cli::parse().command {
         Commands::Start(args) => start(args).await,
+        Commands::Query(args) => forward_to_cli(args),
     }
+}
+
+/// Forward a non-`start` subcommand to the bundled `maple-cli` query binary,
+/// which lives next to this executable in the release bundle. On Unix we `exec`
+/// so signals and the exit code pass through transparently. If the CLI isn't
+/// found (e.g. a dev `cargo run` build with no sibling binary), print how to run
+/// it from the repo instead.
+fn forward_to_cli(args: Vec<String>) -> ! {
+    let cli_path = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(CLI_BIN_NAME)));
+
+    if let Some(path) = cli_path.filter(|p| p.exists()) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            let err = std::process::Command::new(&path).args(&args).exec();
+            eprintln!("maple: failed to exec {}: {err}", path.display());
+            std::process::exit(1);
+        }
+        #[cfg(not(unix))]
+        {
+            match std::process::Command::new(&path).args(&args).status() {
+                Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+                Err(err) => {
+                    eprintln!("maple: failed to run {}: {err}", path.display());
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
+    eprintln!(
+        "maple: `{CLI_BIN_NAME}` (the query CLI) was not found next to this binary.\n\
+         In a release bundle it ships alongside `maple`. From a dev checkout, run:\n  \
+         bun run apps/local-cli/src/bin.ts {}",
+        args.join(" ")
+    );
+    std::process::exit(127);
 }
 
 async fn start(args: StartArgs) {

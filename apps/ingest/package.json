@@ -6,6 +6,8 @@
 		"dev": "portless",
 		"dev:app": "set -a && source ../../.env.local && set +a && INGEST_PORT=${PORT:-3473} cargo run",
 		"start": "cargo run --release",
+		"local": "cargo run --features local --bin maple -- start",
+		"local:build": "cargo build --release --features local --bin maple",
 		"build": "cargo build --release",
 		"test": "cargo test",
 		"typecheck": "cargo check"

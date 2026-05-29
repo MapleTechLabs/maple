@@ -9,11 +9,15 @@
 #      rust-embed + mime_guess).
 #   4. Bundle `libchdb.so` next to the binary and rewrite the dynamic-load path
 #      so the binary is relocatable (no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH).
+#   5. Compile the query CLI (`apps/local-cli`) to a standalone `maple-cli`
+#      binary beside `maple`. The `maple` server forwards every non-`start`
+#      subcommand to it, so end users get one command (`maple services`, etc.).
 #
-# The distributable is a 2-file bundle: `maple` + `libchdb.so` (the chDB engine,
-# ~320 MB) in the same directory. chdb-rust links `libchdb.so` with a bare
-# install name, so out of the box the loader can't find it; we copy the lib
-# beside the binary and point the load command at `@rpath`/`$ORIGIN`.
+# The distributable is a 3-file bundle: `maple` + `libchdb.so` (the chDB engine,
+# ~320 MB) + `maple-cli` (the query CLI) in the same directory. chdb-rust links
+# `libchdb.so` with a bare install name, so out of the box the loader can't find
+# it; we copy the lib beside the binary and point the load command at
+# `@rpath`/`$ORIGIN`.
 #
 # Usage:
 #   scripts/build-local-binary.sh            # release build
@@ -69,6 +73,11 @@ case "$(uname -s)" in
 		;;
 esac
 
+echo "==> Compiling query CLI -> maple-cli (bun build --compile)"
+CLI_BIN="$(dirname "$OUT_BIN")/maple-cli"
+( cd "$REPO_ROOT" && bun build apps/local-cli/src/bin.ts --compile --outfile "$CLI_BIN" )
+
 echo "==> Done. Bundle in $(dirname "$OUT_BIN"):"
 echo "      maple        ($(du -h "$OUT_BIN" | cut -f1))"
 echo "      libchdb.so   ($(du -h "$(dirname "$OUT_BIN")/libchdb.so" | cut -f1))"
+echo "      maple-cli    ($(du -h "$CLI_BIN" | cut -f1))"
