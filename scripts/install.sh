@@ -89,17 +89,17 @@ if curl -fsSL "${url}.sha256" -o "$tmp/bundle.sha256" 2>/dev/null; then
 	say "Checksum verified."
 fi
 
-# --- install the 3-file bundle ------------------------------------------------
+# --- install the 2-file bundle ------------------------------------------------
 tar -xzf "$tmp/bundle.tar.gz" -C "$tmp"
 [ -d "$tmp/$name" ] || die "unexpected archive layout (no $name/ directory)"
 
 mkdir -p "$INSTALL_DIR"
-cp "$tmp/$name/maple" "$tmp/$name/maple-cli" "$tmp/$name/libchdb.so" "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/maple" "$INSTALL_DIR/maple-cli"
+cp "$tmp/$name/maple" "$tmp/$name/libchdb.so" "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/maple"
 
 # macOS: clear the Gatekeeper quarantine flag set on downloaded files.
 if [ "$os" = "Darwin" ] && command -v xattr >/dev/null 2>&1; then
-	xattr -dr com.apple.quarantine "$INSTALL_DIR/maple" "$INSTALL_DIR/maple-cli" "$INSTALL_DIR/libchdb.so" 2>/dev/null || true
+	xattr -dr com.apple.quarantine "$INSTALL_DIR/maple" "$INSTALL_DIR/libchdb.so" 2>/dev/null || true
 fi
 
 # --- put `maple` on PATH ------------------------------------------------------
@@ -115,7 +115,7 @@ mkdir -p "$link_dir"
 ln -sf "$INSTALL_DIR/maple" "$link_dir/maple"
 
 say ""
-say "✓ Installed to $INSTALL_DIR"
+say "✓ Installed to $INSTALL_DIR (maple + libchdb.so)"
 say "✓ Linked  $link_dir/maple"
 case ":$PATH:" in
 	*":$link_dir:"*) ;;

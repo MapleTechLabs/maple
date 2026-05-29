@@ -40,17 +40,18 @@ use maple_ingest::telemetry::{self, LocalBatch};
 /// `CH.compile(...)` and the placeholder the insert mappings substitute.
 const ORG_ID: &str = "local";
 
-/// Name of the bundled query CLI (compiled from `apps/local-cli` via
-/// `bun build --compile`). The release bundle places it next to `maple`; every
-/// subcommand other than `start` is forwarded to it, so end users get a single
-/// `maple` command (`maple start`, `maple services`, `maple traces`, ...).
-const CLI_BIN_NAME: &str = "maple-cli";
-
 /// SPA assets baked into the binary at compile time. `apps/local-ui` builds
 /// here in a later phase; until then this holds a placeholder page.
 #[derive(RustEmbed)]
 #[folder = "ui-dist/"]
 struct UiAssets;
+
+/// The `maple-cli` query binary, baked into `maple` at compile time.
+/// Built by the build script into `apps/ingest/cli-dist/` before `cargo build`
+/// so rust-embed can pick it up. Extracted on first use to `~/.maple/`.
+#[derive(RustEmbed)]
+#[folder = "cli-dist/"]
+struct CliAssets;
 
 struct LocalState {
     chdb: Chdb,
@@ -62,22 +63,59 @@ struct LocalState {
     version,
     about = "Local Maple: OTLP ingest + embedded ClickHouse + UI",
     long_about = "Local Maple: OTLP ingest + embedded ClickHouse + UI.\n\n\
-        `maple start` runs the server. Any other subcommand (services, traces, \
-        errors, logs, query, ...) is forwarded to the bundled query CLI."
+        Run `maple start` to start the server, then use the query subcommands\n\
+        to inspect your telemetry. Query commands are forwarded to the bundled\n\
+        `maple-cli` binary — run `maple <command> --help` for their flags."
 )]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
 
+/// Passthrough args for query subcommands forwarded to maple-cli.
+/// All flags and positional arguments are accepted and forwarded verbatim.
+#[derive(Args)]
+struct PassthroughArgs {
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    args: Vec<String>,
+}
+
 #[derive(Subcommand)]
 enum Commands {
+    // ── Server ────────────────────────────────────────────────────────────────
     /// Start the local ingest + query server.
     Start(StartArgs),
-    /// Query the running server: services, traces, errors, logs, query, etc.
-    /// Forwarded to the bundled `maple-cli` binary beside this executable.
-    #[command(external_subcommand)]
-    Query(Vec<String>),
+
+    // ── Query (forwarded to maple-cli) ────────────────────────────────────────
+    /// List services and their health metrics (p50/p95/p99, error rate).
+    Services(PassthroughArgs),
+    /// Search root traces with optional service / time / error filters.
+    Traces(PassthroughArgs),
+    /// Inspect all spans in a single trace.
+    Trace(PassthroughArgs),
+    /// Find the slowest root traces.
+    #[command(name = "slow-traces")]
+    SlowTraces(PassthroughArgs),
+    /// Show the service dependency graph.
+    #[command(name = "service-map")]
+    ServiceMap(PassthroughArgs),
+    /// Run a health + performance diagnosis for a service.
+    Diagnose(PassthroughArgs),
+    /// List error groups with fingerprints and occurrence counts.
+    Errors(PassthroughArgs),
+    /// Show detail for a single error group (stack trace, timeseries).
+    Error(PassthroughArgs),
+    /// Search log lines.
+    Logs(PassthroughArgs),
+    /// Mine recurring patterns from log lines.
+    #[command(name = "log-patterns")]
+    LogPatterns(PassthroughArgs),
+    /// Explore span and resource attribute keys and values.
+    Attributes(PassthroughArgs),
+    /// List metric names in the local store.
+    Metrics(PassthroughArgs),
+    /// Run raw SQL against the embedded ClickHouse store.
+    Query(PassthroughArgs),
 }
 
 #[derive(Args)]
@@ -94,47 +132,105 @@ struct StartArgs {
 async fn main() {
     match Cli::parse().command {
         Commands::Start(args) => start(args).await,
-        Commands::Query(args) => forward_to_cli(args),
+        // Forward every query subcommand to maple-cli, prepending its name.
+        Commands::Services(a)    => forward_to_cli(prepend("services", a.args)),
+        Commands::Traces(a)      => forward_to_cli(prepend("traces", a.args)),
+        Commands::Trace(a)       => forward_to_cli(prepend("trace", a.args)),
+        Commands::SlowTraces(a)  => forward_to_cli(prepend("slow-traces", a.args)),
+        Commands::ServiceMap(a)  => forward_to_cli(prepend("service-map", a.args)),
+        Commands::Diagnose(a)    => forward_to_cli(prepend("diagnose", a.args)),
+        Commands::Errors(a)      => forward_to_cli(prepend("errors", a.args)),
+        Commands::Error(a)       => forward_to_cli(prepend("error", a.args)),
+        Commands::Logs(a)        => forward_to_cli(prepend("logs", a.args)),
+        Commands::LogPatterns(a) => forward_to_cli(prepend("log-patterns", a.args)),
+        Commands::Attributes(a)  => forward_to_cli(prepend("attributes", a.args)),
+        Commands::Metrics(a)     => forward_to_cli(prepend("metrics", a.args)),
+        Commands::Query(a)       => forward_to_cli(prepend("query", a.args)),
     }
 }
 
-/// Forward a non-`start` subcommand to the bundled `maple-cli` query binary,
-/// which lives next to this executable in the release bundle. On Unix we `exec`
-/// so signals and the exit code pass through transparently. If the CLI isn't
-/// found (e.g. a dev `cargo run` build with no sibling binary), print how to run
-/// it from the repo instead.
-fn forward_to_cli(args: Vec<String>) -> ! {
-    let cli_path = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.join(CLI_BIN_NAME)));
+fn prepend(name: &str, mut args: Vec<String>) -> Vec<String> {
+    args.insert(0, name.to_string());
+    args
+}
 
-    if let Some(path) = cli_path.filter(|p| p.exists()) {
-        #[cfg(unix)]
-        {
-            use std::os::unix::process::CommandExt;
-            let err = std::process::Command::new(&path).args(&args).exec();
-            eprintln!("maple: failed to exec {}: {err}", path.display());
+/// Extract the embedded `maple-cli` binary to `~/.maple/` (once per version)
+/// and exec into it with the provided args.
+///
+/// The extracted path includes a short content hash so a new `maple` build
+/// automatically re-extracts an updated CLI. Old versions are cleaned up.
+/// Files written by a running process are not quarantined by macOS Gatekeeper,
+/// so no `xattr` call is needed at runtime.
+///
+/// Dev fallback: if `CliAssets` is empty (build ran without `cli-dist/` present,
+/// e.g. a raw `cargo run` in the dev checkout), prints a hint and exits.
+fn forward_to_cli(args: Vec<String>) -> ! {
+    let Some(asset) = CliAssets::get("maple-cli") else {
+        eprintln!(
+            "maple: the embedded query CLI was not found.\n\
+             In a dev checkout, run the CLI directly:\n  \
+             bun run apps/local-cli/src/bin.ts {}", args.join(" ")
+        );
+        std::process::exit(127);
+    };
+
+    // Derive an 8-hex-char stamp from the first 4 bytes of the content — fast,
+    // no crypto dep needed. Collisions are harmless (worst case: stale extract).
+    let bytes = asset.data.as_ref();
+    let stamp = bytes.iter().take(4).fold(0u32, |acc, &b| acc.rotate_left(8) ^ b as u32);
+    let stamp_hex = format!("{stamp:08x}");
+
+    let extract_dir = std::env::var_os("HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".maple"))
+        .unwrap_or_else(std::env::temp_dir);
+    let cli_path = extract_dir.join(format!("maple-cli-{stamp_hex}"));
+
+    if !cli_path.exists() {
+        // Clean up old versions before writing the new one.
+        if let Ok(entries) = std::fs::read_dir(&extract_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name();
+                let s = name.to_string_lossy();
+                if s.starts_with("maple-cli-") && s != format!("maple-cli-{stamp_hex}") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        if let Err(e) = std::fs::create_dir_all(&extract_dir) {
+            eprintln!("maple: failed to create {}: {e}", extract_dir.display());
             std::process::exit(1);
         }
-        #[cfg(not(unix))]
+        if let Err(e) = std::fs::write(&cli_path, bytes) {
+            eprintln!("maple: failed to write {}: {e}", cli_path.display());
+            std::process::exit(1);
+        }
+        #[cfg(unix)]
         {
-            match std::process::Command::new(&path).args(&args).status() {
-                Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-                Err(err) => {
-                    eprintln!("maple: failed to run {}: {err}", path.display());
-                    std::process::exit(1);
-                }
+            use std::os::unix::fs::PermissionsExt;
+            if let Err(e) = std::fs::set_permissions(&cli_path, std::fs::Permissions::from_mode(0o755)) {
+                eprintln!("maple: failed to chmod {}: {e}", cli_path.display());
+                std::process::exit(1);
             }
         }
     }
 
-    eprintln!(
-        "maple: `{CLI_BIN_NAME}` (the query CLI) was not found next to this binary.\n\
-         In a release bundle it ships alongside `maple`. From a dev checkout, run:\n  \
-         bun run apps/local-cli/src/bin.ts {}",
-        args.join(" ")
-    );
-    std::process::exit(127);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = std::process::Command::new(&cli_path).args(&args).exec();
+        eprintln!("maple: failed to exec {}: {err}", cli_path.display());
+        std::process::exit(1);
+    }
+    #[cfg(not(unix))]
+    {
+        match std::process::Command::new(&cli_path).args(&args).status() {
+            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+            Err(err) => {
+                eprintln!("maple: failed to run {}: {err}", cli_path.display());
+                std::process::exit(1);
+            }
+        }
+    }
 }
 
 async fn start(args: StartArgs) {

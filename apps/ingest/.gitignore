@@ -7,3 +7,8 @@ target/.wal
 # generated SPA output.
 /ui-dist/*
 !/ui-dist/.gitkeep
+
+# cli-dist/ holds the compiled maple-cli binary, baked into `maple` by rust-embed.
+# Keep the folder tracked (.gitkeep) for consistent builds; ignore the binary.
+/cli-dist/*
+!/cli-dist/.gitkeep

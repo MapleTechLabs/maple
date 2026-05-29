@@ -77,11 +77,10 @@ jobs:
               run: bun install --frozen-lockfile
 
             - name: Build local binary bundle
-              # PROFILE defaults to `release`. The script builds the local-ui SPA,
-              # syncs it into apps/ingest/ui-dist/ (rust-embed bakes it in), builds
-              # `maple` with the `local` feature, then copies libchdb.so beside the
-              # binary and rewrites the dynamic-load path so the bundle is
-              # relocatable (no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH needed).
+              # The script builds the local-ui SPA, compiles maple-cli into
+              # apps/ingest/cli-dist/ (rust-embed bakes BOTH the SPA and CLI into
+              # the maple binary), then copies libchdb.so beside maple and rewrites
+              # the dynamic-load path so the 2-file bundle is relocatable.
               run: scripts/build-local-binary.sh
 
             - name: Ad-hoc codesign (macOS)
@@ -96,7 +95,6 @@ jobs:
                   BIN_DIR="apps/ingest/target/release"
                   codesign --force --sign - "$BIN_DIR/libchdb.so"
                   codesign --force --sign - "$BIN_DIR/maple"
-                  codesign --force --sign - "$BIN_DIR/maple-cli"
                   codesign --verify --verbose "$BIN_DIR/maple"
 
             - name: Resolve version
@@ -127,16 +125,10 @@ jobs:
                   mkdir -p "$staging"
                   cp "$BIN_DIR/maple" "$staging/maple"
                   cp "$BIN_DIR/libchdb.so" "$staging/libchdb.so"
-                  cp "$BIN_DIR/maple-cli" "$staging/maple-cli"
-                  # Smoke-check the relocatable bundle: run from a clean directory
-                  # with no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH. Skip on the Linux
-                  # arm64 cross-runner where the binary is native but we still want
-                  # the check to be non-fatal if the runner lacks GUI/loader bits.
+                  # Smoke-check the relocatable 2-file bundle (maple + libchdb.so).
+                  # The query CLI is now embedded inside maple and extracted at runtime.
                   ( cd "$staging" && ./maple --help >/dev/null 2>&1 ) || \
                     echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
-                  # `maple-cli --help` needs no server and proves the forwarded CLI runs.
-                  ( cd "$staging" && ./maple-cli --help >/dev/null 2>&1 ) || \
-                    echo "::warning::'maple-cli --help' smoke check did not exit cleanly on $target"
                   tarball="$RUNNER_TEMP/${name}.tar.gz"
                   tar -C "$RUNNER_TEMP" -czf "$tarball" "$name"
                   if command -v shasum >/dev/null 2>&1; then

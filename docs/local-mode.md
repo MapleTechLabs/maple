@@ -37,7 +37,7 @@ location, default `~/.maple/bin`), `MAPLE_BIN_DIR` (PATH symlink location).
 | Piece | Package | Role |
 | --- | --- | --- |
 | `maple` server binary | `apps/ingest` (`src/bin/local.rs`, `local` cargo feature) | Serves OTLP ingest, the embedded chDB, `POST /local/query`, and the bundled SPA — all on one port. |
-| `maple-cli` query CLI | `apps/local-cli` (Effect + Bun) | Subcommands (`services`, `traces`, `errors`, `logs`, `query`, …) compile queries with `@maple/query-engine` and POST them to `/local/query`, printing JSON to stdout. |
+| `maple-cli` query CLI | `apps/local-cli` (Effect + Bun) | Subcommands (`services`, `traces`, `errors`, `logs`, `query`, …) compile queries with `@maple/query-engine` and POST them to `/local/query`, printing JSON to stdout. **Embedded inside the `maple` binary** at build time; extracted to `~/.maple/` on first use. |
 | local UI (SPA) | `apps/local-ui` (Vite + React) | Browser UI. Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. Built to `dist/` and embedded into the server binary via `rust-embed`. |
 
 The server binary on port **4318** is the hub. Both the CLI and the SPA are thin
@@ -89,22 +89,22 @@ IDs must be hex strings.
 
 ## Release bundle
 
-`scripts/build-local-binary.sh` produces a relocatable 3-file bundle (also built
+`scripts/build-local-binary.sh` produces a relocatable **2-file bundle** (also built
 per-platform by `.github/workflows/local-binary-release.yml`):
 
 ```
-maple        # the server binary (UI embedded)
+maple        # the server binary — SPA + query CLI both embedded inside
 libchdb.so   # the chDB engine (~320 MB) — chdb-rust links it by bare name, so
              #   the script rewrites the load path to @rpath/$ORIGIN beside maple
-maple-cli    # the compiled query CLI (bun build --compile)
 ```
 
-**Keep all three in the same directory.** End users get a single `maple`
-command: `maple start` runs the server, and any other subcommand
-(`maple services`, `maple traces`, `maple query "..."`, …) is forwarded by the
-server binary to the sibling `maple-cli` (via `exec` on Unix).
+The query CLI (`maple-cli`, compiled from `apps/local-cli` via `bun build --compile`)
+is **embedded inside `maple`** at build time via `rust-embed`. On the first query
+command, `maple` extracts it to `~/.maple/maple-cli-<hash>` and execs into it. The
+hash acts as a version stamp — a new `maple` binary automatically re-extracts an
+updated CLI, cleaning up the old version.
 
 ```bash
 bun --filter @maple/ingest local:build      # local release build of just the binary
-scripts/build-local-binary.sh               # full 3-file bundle
+scripts/build-local-binary.sh               # full 2-file bundle
 ```
