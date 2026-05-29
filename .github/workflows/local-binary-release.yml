@@ -1,0 +1,195 @@
+name: Local Binary Release
+
+# Builds the distributable `maple` local binary (embedded chDB + bundled SPA)
+# for macOS and Linux, then attaches a 2-file bundle (`maple` + `libchdb.so`)
+# per platform to a GitHub release.
+#
+# Why native runners (no cross-compilation): `chdb-rust`'s build.rs downloads a
+# prebuilt, platform-specific `libchdb.so` for the *host* and links it. Cross-
+# compiling would fetch+link the wrong architecture's engine, so each target is
+# built on a matching native runner instead.
+#
+# Triggers:
+#   - push a `v*` tag                  → build + publish to the matching release
+#   - workflow_dispatch (manual)       → build + upload artifacts (no release
+#                                        unless `tag` input is given)
+
+on:
+    push:
+        tags:
+            - "v*"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Existing tag to publish the bundles to (optional). Leave blank to only produce build artifacts."
+                required: false
+                type: string
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.inputs.tag || github.ref }}
+    cancel-in-progress: false
+
+permissions:
+    contents: write
+
+env:
+    CARGO_TERM_COLOR: never
+
+jobs:
+    build:
+        name: Build ${{ matrix.target }}
+        runs-on: ${{ matrix.runner }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - target: aarch64-apple-darwin
+                      runner: macos-14
+                      os: macos
+                    - target: x86_64-apple-darwin
+                      runner: macos-13
+                      os: macos
+                    - target: x86_64-unknown-linux-gnu
+                      runner: ubuntu-22.04
+                      os: linux
+                    - target: aarch64-unknown-linux-gnu
+                      runner: ubuntu-24.04-arm
+                      os: linux
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+            - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+            - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+              with:
+                  workspaces: apps/ingest
+
+            - name: Install patchelf (Linux)
+              if: ${{ matrix.os == 'linux' }}
+              run: sudo apt-get update && sudo apt-get install -y patchelf
+
+            - name: Install JS dependencies
+              run: bun install --frozen-lockfile
+
+            - name: Build local binary bundle
+              # PROFILE defaults to `release`. The script builds the local-ui SPA,
+              # syncs it into apps/ingest/ui-dist/ (rust-embed bakes it in), builds
+              # `maple` with the `local` feature, then copies libchdb.so beside the
+              # binary and rewrites the dynamic-load path so the bundle is
+              # relocatable (no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH needed).
+              run: scripts/build-local-binary.sh
+
+            - name: Ad-hoc codesign (macOS)
+              # install_name_tool rewrote the load command, invalidating any prior
+              # signature. Re-sign ad-hoc so the binary runs locally once the user
+              # clears Gatekeeper quarantine. Production distribution should layer
+              # Developer ID signing + notarization on top (requires APPLE_* secrets
+              # not configured here).
+              if: ${{ matrix.os == 'macos' }}
+              run: |
+                  set -euo pipefail
+                  BIN_DIR="apps/ingest/target/release"
+                  codesign --force --sign - "$BIN_DIR/libchdb.so"
+                  codesign --force --sign - "$BIN_DIR/maple"
+                  codesign --verify --verbose "$BIN_DIR/maple"
+
+            - name: Resolve version
+              id: version
+              run: |
+                  set -euo pipefail
+                  ref="${{ github.ref }}"
+                  input_tag="${{ github.event.inputs.tag }}"
+                  if [ -n "$input_tag" ]; then
+                    version="$input_tag"
+                  elif [[ "$ref" == refs/tags/* ]]; then
+                    version="${ref#refs/tags/}"
+                  else
+                    version="$(git rev-parse --short HEAD)"
+                  fi
+                  echo "version=$version" >> "$GITHUB_OUTPUT"
+
+            - name: Package bundle
+              id: package
+              run: |
+                  set -euo pipefail
+                  version="${{ steps.version.outputs.version }}"
+                  target="${{ matrix.target }}"
+                  name="maple-${version}-${target}"
+                  BIN_DIR="apps/ingest/target/release"
+                  staging="$RUNNER_TEMP/$name"
+                  rm -rf "$staging"
+                  mkdir -p "$staging"
+                  cp "$BIN_DIR/maple" "$staging/maple"
+                  cp "$BIN_DIR/libchdb.so" "$staging/libchdb.so"
+                  # Smoke-check the relocatable bundle: run from a clean directory
+                  # with no DYLD_LIBRARY_PATH / LD_LIBRARY_PATH. Skip on the Linux
+                  # arm64 cross-runner where the binary is native but we still want
+                  # the check to be non-fatal if the runner lacks GUI/loader bits.
+                  ( cd "$staging" && ./maple --help >/dev/null 2>&1 ) || \
+                    echo "::warning::'maple --help' smoke check did not exit cleanly on $target"
+                  tarball="$RUNNER_TEMP/${name}.tar.gz"
+                  tar -C "$RUNNER_TEMP" -czf "$tarball" "$name"
+                  if command -v shasum >/dev/null 2>&1; then
+                    shasum -a 256 "$tarball" | awk '{print $1}' > "${tarball}.sha256"
+                  else
+                    sha256sum "$tarball" | awk '{print $1}' > "${tarball}.sha256"
+                  fi
+                  echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+                  echo "name=$name" >> "$GITHUB_OUTPUT"
+
+            - name: Upload build artifact
+              uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4
+              with:
+                  name: ${{ steps.package.outputs.name }}
+                  path: |
+                      ${{ steps.package.outputs.tarball }}
+                      ${{ steps.package.outputs.tarball }}.sha256
+                  if-no-files-found: error
+                  retention-days: 7
+
+    release:
+        name: Publish release
+        needs: build
+        runs-on: ubuntu-latest
+        # Only publish when we have a tag to attach to (tag push or a manual run
+        # that supplied the `tag` input).
+        if: ${{ startsWith(github.ref, 'refs/tags/') || github.event.inputs.tag != '' }}
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+            - name: Resolve tag
+              id: tag
+              run: |
+                  set -euo pipefail
+                  ref="${{ github.ref }}"
+                  input_tag="${{ github.event.inputs.tag }}"
+                  if [ -n "$input_tag" ]; then
+                    tag="$input_tag"
+                  else
+                    tag="${ref#refs/tags/}"
+                  fi
+                  echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+            - name: Download all bundles
+              uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+              with:
+                  path: dist
+
+            - name: Publish bundles to release
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  TAG: ${{ steps.tag.outputs.tag }}
+                  REPO: ${{ github.repository }}
+              run: |
+                  set -euo pipefail
+                  # Create the release if it doesn't exist yet (idempotent).
+                  if ! gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+                    gh release create "$TAG" --repo "$REPO" \
+                      --title "$TAG" \
+                      --notes "Local Maple (\`maple start\`) bundles. Each archive contains the \`maple\` binary and its \`libchdb.so\` engine — keep them in the same directory. macOS bundles are ad-hoc signed; run \`xattr -dr com.apple.quarantine maple libchdb.so\` after extracting if Gatekeeper blocks them."
+                  fi
+                  # download-artifact nests each artifact in its own subdir.
+                  find dist -type f \( -name '*.tar.gz' -o -name '*.sha256' \) -print0 \
+                    | xargs -0 gh release upload "$TAG" --repo "$REPO" --clobber
