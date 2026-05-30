@@ -255,13 +255,21 @@ export const start = Command.make("start", {
 			// stopped notice.
 			yield* Effect.scoped(
 				Effect.gen(function* () {
+					// Only announce "stopped" if we actually started. The finalizer is
+					// registered up front so it fires on the SIGINT/SIGTERM shutdown, but
+					// a startup failure also unwinds this scope — without the guard it
+					// would print a misleading "✓ maple stopped" before the error.
+					let started = false
 					yield* Effect.addFinalizer(() =>
-						Effect.sync(() => process.stderr.write(`\n${green("✓")} maple stopped\n`)),
+						Effect.sync(() => {
+							if (started) process.stderr.write(`\n${green("✓")} maple stopped\n`)
+						}),
 					)
 
 					const { port: boundPort } = yield* startServer({ port: a.port, dataDir, assets }).pipe(
 						Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })),
 					)
+					started = true
 
 					// Bootstrap succeeded — stamp the store so a later start over an
 					// incompatible binary upgrade is detected instead of crashing.

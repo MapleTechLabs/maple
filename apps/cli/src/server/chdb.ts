@@ -14,6 +14,7 @@ import { Effect, Schema, type Scope } from "effect"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+import { storeHasData } from "./store-version"
 
 /** A chDB failure — locating libchdb, opening the connection, or bootstrapping
  *  the schema. Carries the underlying message verbatim. */
@@ -100,22 +101,52 @@ export class Chdb {
 
 	static open(options: ChdbOptions): Chdb {
 		const sym = symbols()
-		const args = ["clickhouse", `--path=${options.dataDir}`]
+		// `--async_load_databases=0`: make chdb_connect BLOCK until every persisted
+		// table has finished loading before it returns. chDB v26.1.0 defaults this to
+		// true, so connect returns while the existing tables (our ~30 MVs feeding
+		// MergeTree targets) are still loading on background loader threads — and the
+		// `#bootstrap` DDL we run immediately after (`CREATE TABLE IF NOT EXISTS …`)
+		// then races the concurrent load of the same table, tripping a
+		// `recursive_mutex lock failed: Invalid argument` → `ASYNC_LOAD_WAIT_FAILED`
+		// → chdb_connect returns NULL. Most visible after an unclean kill, when more
+		// load/merge work is still in flight on reopen. Waiting serializes load before
+		// bootstrap and removes the race. (`--async_load_system_database=0` is already
+		// the default in this build; set for symmetry / future-proofing.)
+		const args = [
+			"clickhouse",
+			"--async_load_databases=0",
+			"--async_load_system_database=0",
+			`--path=${options.dataDir}`,
+		]
 		const argBufs = args.map(cstr)
 		const argv = new BigUint64Array(args.length)
 		argBufs.forEach((b, i) => {
 			argv[i] = BigInt(ptr(b))
 		})
 		const connPtrPtr = sym.chdb_connect(args.length, ptr(argv))
-		if (!connPtrPtr) throw new Error("chdb_connect returned NULL")
+		if (!connPtrPtr) throw new Error(Chdb.#connectFailure(options.dataDir, "chdb_connect returned NULL"))
 		// chdb_connect returns chdb_connection* (a double pointer); chdb_query
 		// wants chdb_connection — dereference once.
 		const conn = read.ptr(connPtrPtr, 0) as Pointer
-		if (!conn) throw new Error("chdb_connect produced a NULL connection")
+		if (!conn) throw new Error(Chdb.#connectFailure(options.dataDir, "chdb_connect produced a NULL connection"))
 
 		const db = new Chdb(sym, connPtrPtr, conn)
 		db.#bootstrap(options.schemaSql)
 		return db
+	}
+
+	// chdb_connect failing over a *populated* store almost always means an
+	// unloadable on-disk state (e.g. a pipeline left inconsistent by an unclean
+	// kill); point the user at the recovery path rather than the raw libchdb
+	// message. A failure over an empty dir is a different problem (missing/broken
+	// libchdb), so keep the generic message there.
+	static #connectFailure(dataDir: string, raw: string): string {
+		if (!storeHasData(dataDir)) return raw
+		return (
+			`${raw} — the local store at ${dataDir} could not be opened ` +
+			`(it may be inconsistent after an unclean shutdown). ` +
+			`Recover with \`maple start --reset\` (this wipes the local store).`
+		)
 	}
 
 	/** Run a query and return the result bytes decoded as UTF-8 text. */
