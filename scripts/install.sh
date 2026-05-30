@@ -11,6 +11,9 @@
 # checksum, and installs the 2-file bundle (`maple` + `libchdb.so`) into
 # ~/.maple/bin, then puts `maple` on your PATH.
 #
+# Already installed? `maple update` upgrades in place (same artifact, atomic
+# swap) — re-running this installer is only needed for a first install.
+#
 # The two files MUST stay in the same directory: `maple` (a single Bun-compiled
 # binary that does everything — CLI, OTLP-ingest/query server, and UI host)
 # dlopens `libchdb.so` via bun:ffi, resolving it relative to its own executable

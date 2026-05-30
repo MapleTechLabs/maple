@@ -45,6 +45,31 @@ location, default `~/.maple/bin`), `MAPLE_BIN_DIR` (PATH symlink location),
 `MAPLE_SKIP_CHECKSUM=1` (skip SHA-256 verification — only for air-gapped mirrors
 without the `.sha256`; not recommended).
 
+### Updating
+
+Once installed, the binary keeps itself current:
+
+- **Startup notice.** On any command, `maple` checks GitHub Releases for a newer
+  version — at most **once per 24h** (the result is cached in
+  `~/.maple/config.json` as `lastUpdateCheck` / `latestKnownVersion`, so every
+  other run stays instant and offline). When a newer release exists it prints a
+  one-line `update available` notice to stderr; it never changes behavior
+  mid-run. The check is skipped for dev builds, non-interactive shells
+  (CI/pipes), and the `--version`/`--help`/`update` paths. Opt out entirely with
+  `MAPLE_NO_UPDATE_CHECK=1`.
+- **`maple update`** downloads the latest release bundle, verifies its SHA-256,
+  and installs it **in place** — an atomic rename over both files, safe even
+  though the running binary is being replaced (the install dir's `cp`-based
+  installer can't overwrite a running executable; the rename swaps the directory
+  entry while the live process keeps its old inode). It then clears the macOS
+  quarantine flag. Restart any running `maple start` afterward.
+  - `maple update --check` — report current vs. latest without installing.
+  - `maple update --version <tag>` — install a specific release (e.g. `v0.6.0`);
+    also the way to downgrade.
+
+This is the same artifact the installer fetches, so `maple update` and re-running
+`curl … | sh` are interchangeable.
+
 ### Uninstall
 
 ```bash

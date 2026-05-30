@@ -10,6 +10,7 @@ import { timeseries, breakdown, compare } from "./commands/analytics"
 import { login, logout, whoami } from "./commands/auth"
 import { use } from "./commands/config"
 import { start, stop, reset } from "./commands/server"
+import { update } from "./commands/update"
 
 // One CLI, two backends. Every query command bottoms out at the shared
 // `WarehouseExecutor`; the active mode (local chDB vs remote warehouse) is
@@ -45,6 +46,8 @@ export const cli = Command.make("maple").pipe(
 		start,
 		stop,
 		reset,
+		// Self-update
+		update,
 		// Services
 		services,
 		diagnose,

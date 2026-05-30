@@ -13,6 +13,11 @@ export interface StoredConfig {
 	token?: string
 	orgId?: string
 	defaultMode?: "local" | "remote"
+	/** ISO timestamp of the last startup update check (throttles the GitHub probe). */
+	lastUpdateCheck?: string
+	/** Latest release tag seen by the update check (e.g. "v0.6.0"), cached so the
+	 *  notice can render between probes without hitting the network. */
+	latestKnownVersion?: string
 }
 
 export const CONFIG_DIR = path.join(os.homedir(), ".maple")
@@ -61,6 +66,10 @@ export interface MapleConfigShape {
 	readonly defaultMode: "local" | "remote" | undefined
 	/** API URL to use for `maple login` when none is passed. */
 	readonly defaultApiUrl: string
+	/** ISO timestamp of the last startup update check (undefined = never checked). */
+	readonly lastUpdateCheck: string | undefined
+	/** Latest release tag seen by the last update check, or undefined. */
+	readonly latestKnownVersion: string | undefined
 	/** Persist config fields (merged with existing). */
 	readonly write: (next: StoredConfig) => Effect.Effect<void, PlatformError.PlatformError>
 	/** Remove the stored token (used by `maple logout`). */
@@ -71,6 +80,11 @@ export interface MapleConfigShape {
 	) => Effect.Effect<void, PlatformError.PlatformError>
 	/** Drop the pinned default mode, reverting to auto-detect (`maple use auto`). */
 	readonly clearDefaultMode: () => Effect.Effect<void, PlatformError.PlatformError>
+	/** Stamp the update-check timestamp (always) and the latest seen tag (when
+	 *  provided — omitted on a failed probe so the cached version is preserved). */
+	readonly recordUpdateCheck: (
+		latestTag?: string,
+	) => Effect.Effect<void, PlatformError.PlatformError>
 }
 
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>()(
@@ -87,6 +101,8 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>(
 				localUrl: env.MAPLE_LOCAL_URL ?? DEFAULT_LOCAL_URL,
 				defaultMode: stored.defaultMode,
 				defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
+				lastUpdateCheck: stored.lastUpdateCheck,
+				latestKnownVersion: stored.latestKnownVersion,
 				write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
 				clearToken: () =>
 					writeMerged(fs, (cur) => {
@@ -99,6 +115,12 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>(
 						const { defaultMode: _mode, ...rest } = cur
 						return rest
 					}),
+				recordUpdateCheck: (latestTag) =>
+					writeMerged(fs, (cur) => ({
+						...cur,
+						lastUpdateCheck: new Date().toISOString(),
+						...(latestTag ? { latestKnownVersion: latestTag } : {}),
+					})),
 			} satisfies MapleConfigShape
 		}),
 	},

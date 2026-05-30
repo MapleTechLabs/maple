@@ -6,6 +6,7 @@ import * as Command from "effect/unstable/cli/Command"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
 import { Mode } from "./core/mode"
+import { maybeNotifyUpdate } from "./core/update"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
 import { MAPLE_VERSION } from "./version"
 
@@ -19,4 +20,11 @@ const MainLayer = WarehouseExecutorFromMode.pipe(
 	Layer.provideMerge(BunServices.layer),
 )
 
-Command.run(cli, { version: MAPLE_VERSION }).pipe(Effect.provide(MainLayer), BunRuntime.runMain)
+// Throttled, non-blocking "update available" notice before dispatching the
+// command. It never fails and short-circuits to a cached decision on most runs
+// (network is hit at most once per 24h), so the latency cost is negligible.
+maybeNotifyUpdate.pipe(
+	Effect.flatMap(() => Command.run(cli, { version: MAPLE_VERSION })),
+	Effect.provide(MainLayer),
+	BunRuntime.runMain,
+)
