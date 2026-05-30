@@ -126,6 +126,11 @@ export {
 // Compilation
 export { compileCH as compile, compileUnion, type CompiledQuery, QueryBuilderError } from "./compile"
 
+// Pipe dispatch — maps Tinybird-style pipe names + params to compiled CH SQL.
+// Shared by the cloud WarehouseQueryService and the local CLI executor so both
+// resolve a pipe name to identical SQL.
+export { compilePipeQuery, type PipeCompiledQuery } from "./pipe-dispatch"
+
 // Union
 export { unionAll, type CHUnionQuery, type InferUnionOutput } from "./union"
 
@@ -138,6 +143,8 @@ export {
 	tracesBreakdownQuery,
 	tracesListQuery,
 	tracesRootListQuery,
+	slowTracesQuery,
+	spanSearchQuery,
 	type TracesTimeseriesOpts,
 	type TracesBreakdownOpts,
 	type TracesListOpts,
@@ -146,6 +153,10 @@ export {
 	type TracesBreakdownOutput,
 	type TracesListOutput,
 	type TracesRootListOutput,
+	type SlowTracesOpts,
+	type SlowTracesOutput,
+	type SpanSearchOpts,
+	type SpanSearchOutput,
 } from "./queries/traces"
 
 // Queries — Attribute Keys & Values

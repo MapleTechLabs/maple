@@ -5,8 +5,9 @@
 	"portless": { "name": "landing", "script": "dev:app" },
 	"scripts": {
 		"dev": "portless",
-		"dev:app": "astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
-		"build": "astro build",
+		"sync:install": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install",
+		"dev:app": "bun run sync:install && astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
+		"build": "bun run sync:install && astro build",
 		"preview": "astro preview",
 		"astro": "astro"
 	},

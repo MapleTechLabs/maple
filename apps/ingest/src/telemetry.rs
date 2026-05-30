@@ -42,6 +42,55 @@ pub enum TelemetrySignal {
     SessionReplays,
 }
 
+/// Datasource (ClickHouse/Tinybird table) names the OTLP→NDJSON encoders write
+/// to. This is the entire config surface the encoders depend on — kept separate
+/// so the local chDB path can encode without fabricating a full pipeline config.
+/// Session-replay datasources live on `TinybirdConfig`, not here: they're written
+/// by the gateway's direct NDJSON path, not derived from OTLP.
+#[derive(Clone, Debug)]
+pub struct DatasourceNames {
+    pub traces: String,
+    pub logs: String,
+    pub metrics_sum: String,
+    pub metrics_gauge: String,
+    pub metrics_histogram: String,
+    pub metrics_exponential_histogram: String,
+}
+
+impl DatasourceNames {
+    /// Canonical datasource names (match the deployed Tinybird datasources and
+    /// the embedded chDB schema). Single source of truth for local + tests.
+    pub fn defaults() -> Self {
+        Self {
+            traces: "traces".into(),
+            logs: "logs".into(),
+            metrics_sum: "metrics_sum".into(),
+            metrics_gauge: "metrics_gauge".into(),
+            metrics_histogram: "metrics_histogram".into(),
+            metrics_exponential_histogram: "metrics_exponential_histogram".into(),
+        }
+    }
+
+    /// Read overrides from `INGEST_TINYBIRD_DATASOURCE_*`, falling back to defaults.
+    pub fn from_env() -> Self {
+        let d = Self::defaults();
+        Self {
+            traces: std::env::var("INGEST_TINYBIRD_DATASOURCE_TRACES").unwrap_or(d.traces),
+            logs: std::env::var("INGEST_TINYBIRD_DATASOURCE_LOGS").unwrap_or(d.logs),
+            metrics_sum: std::env::var("INGEST_TINYBIRD_DATASOURCE_METRICS_SUM")
+                .unwrap_or(d.metrics_sum),
+            metrics_gauge: std::env::var("INGEST_TINYBIRD_DATASOURCE_METRICS_GAUGE")
+                .unwrap_or(d.metrics_gauge),
+            metrics_histogram: std::env::var("INGEST_TINYBIRD_DATASOURCE_METRICS_HISTOGRAM")
+                .unwrap_or(d.metrics_histogram),
+            metrics_exponential_histogram: std::env::var(
+                "INGEST_TINYBIRD_DATASOURCE_METRICS_EXPONENTIAL_HISTOGRAM",
+            )
+            .unwrap_or(d.metrics_exponential_histogram),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct TinybirdConfig {
     pub endpoint: String,
@@ -56,12 +105,7 @@ pub struct TinybirdConfig {
     pub batch_max_wait: Duration,
     pub export_concurrency_per_shard: usize,
     pub export_max_attempts: u32,
-    pub datasource_traces: String,
-    pub datasource_logs: String,
-    pub datasource_metrics_sum: String,
-    pub datasource_metrics_gauge: String,
-    pub datasource_metrics_histogram: String,
-    pub datasource_metrics_exponential_histogram: String,
+    pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
     pub datasource_session_replay_events: String,
     pub datasource_session_events: String,
@@ -292,7 +336,7 @@ impl TelemetryPipeline {
         attribute_mappings: &[AttributeMappingRule],
     ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = encode_traces(
-            &self.inner.cfg,
+            &self.inner.cfg.datasources,
             org_id,
             request,
             sampling_policy,
@@ -307,7 +351,7 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportLogsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
-        let (frames, stats) = encode_logs(&self.inner.cfg, org_id, request)?;
+        let (frames, stats) = encode_logs(&self.inner.cfg.datasources, org_id, request)?;
         self.commit_frames(frames).await?;
         Ok(stats)
     }
@@ -317,7 +361,7 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportMetricsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
-        let (frames, stats) = encode_metrics(&self.inner.cfg, org_id, request)?;
+        let (frames, stats) = encode_metrics(&self.inner.cfg.datasources, org_id, request)?;
         self.commit_frames(frames).await?;
         Ok(stats)
     }
@@ -978,7 +1022,7 @@ fn gzip(body: Vec<u8>) -> Result<Vec<u8>, String> {
 }
 
 fn encode_traces(
-    cfg: &TinybirdConfig,
+    datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportTraceServiceRequest,
     policy: &SamplingPolicy,
@@ -1105,14 +1149,14 @@ fn encode_traces(
         org_id,
         routing_key,
         TelemetrySignal::Traces,
-        cfg.datasource_traces.clone(),
+        datasources.traces.clone(),
         rows,
     );
     Ok((frames, stats))
 }
 
 fn encode_logs(
-    cfg: &TinybirdConfig,
+    datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportLogsServiceRequest,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
@@ -1165,7 +1209,7 @@ fn encode_logs(
         org_id,
         routing_key,
         TelemetrySignal::Logs,
-        cfg.datasource_logs.clone(),
+        datasources.logs.clone(),
         rows,
     );
     Ok((frames, stats))
@@ -1201,7 +1245,7 @@ fn encode_log_row(
 }
 
 fn encode_metrics(
-    cfg: &TinybirdConfig,
+    datasources: &DatasourceNames,
     org_id: &str,
     request: &ExportMetricsServiceRequest,
 ) -> Result<(Vec<EncodedFrame>, AcceptStats), PipelineError> {
@@ -1235,7 +1279,7 @@ fn encode_metrics(
                         for point in &gauge.data_points {
                             push_metric_number_row(
                                 &mut by_datasource,
-                                &cfg.datasource_metrics_gauge,
+                                &datasources.metrics_gauge,
                                 point,
                                 metric,
                                 &service_name,
@@ -1255,7 +1299,7 @@ fn encode_metrics(
                         for point in &sum.data_points {
                             push_metric_number_row(
                                 &mut by_datasource,
-                                &cfg.datasource_metrics_sum,
+                                &datasources.metrics_sum,
                                 point,
                                 metric,
                                 &service_name,
@@ -1290,7 +1334,7 @@ fn encode_metrics(
                             );
                             push_json(
                                 &mut by_datasource,
-                                &cfg.datasource_metrics_histogram,
+                                &datasources.metrics_histogram,
                                 extend(
                                     row,
                                     json!({
@@ -1328,7 +1372,7 @@ fn encode_metrics(
                             let negative = point.negative.as_ref();
                             push_json(
                                 &mut by_datasource,
-                                &cfg.datasource_metrics_exponential_histogram,
+                                &datasources.metrics_exponential_histogram,
                                 extend(
                                     row,
                                     json!({
@@ -1737,12 +1781,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(10),
             export_concurrency_per_shard: 1,
             export_max_attempts: 20,
-            datasource_traces: "traces".to_string(),
-            datasource_logs: "logs".to_string(),
-            datasource_metrics_sum: "metrics_sum".to_string(),
-            datasource_metrics_gauge: "metrics_gauge".to_string(),
-            datasource_metrics_histogram: "metrics_histogram".to_string(),
-            datasource_metrics_exponential_histogram: "metrics_exponential_histogram".to_string(),
+            datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),
             datasource_session_replay_events: "session_replay_events".to_string(),
             datasource_session_events: "session_events".to_string(),
@@ -1946,7 +1985,7 @@ mod tests {
         };
 
         let (frames, stats) =
-            encode_traces(&test_cfg(), "org_1", &request, &SamplingPolicy::default(), &[]).unwrap();
+            encode_traces(&test_cfg().datasources, "org_1", &request, &SamplingPolicy::default(), &[]).unwrap();
         assert_eq!(stats.rows, 1);
         assert_eq!(stats.dropped, 0);
         assert_eq!(frames.len(), 1);
@@ -2097,7 +2136,7 @@ mod tests {
             }],
         };
 
-        let (frames, stats) = encode_logs(&test_cfg(), "org_1", &request).unwrap();
+        let (frames, stats) = encode_logs(&test_cfg().datasources, "org_1", &request).unwrap();
         assert_eq!(stats.rows, 1);
         assert_eq!(frames[0].datasource, "logs");
 
@@ -2308,7 +2347,7 @@ mod tests {
             }],
         };
 
-        let (frames, stats) = encode_metrics(&test_cfg(), "org_1", &request).unwrap();
+        let (frames, stats) = encode_metrics(&test_cfg().datasources, "org_1", &request).unwrap();
         assert_eq!(stats.rows, 4);
         let rows = frame_rows_by_datasource(frames);
         assert_eq!(
@@ -2688,7 +2727,7 @@ mod tests {
 
     #[test]
     fn logs_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
-        let (frames, _) = encode_logs(&test_cfg(), "org_contract", &populated_log_request()).unwrap();
+        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &populated_log_request()).unwrap();
         let row = frame_row(&frames[0]);
         assert_row_keys_match(&row, schema_contract::LOGS, "logs");
         // Spot-check the resource_attributes carry the org id, since OrgId's
@@ -2699,7 +2738,7 @@ mod tests {
     #[test]
     fn traces_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
         let (frames, _) =
-            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
+            encode_traces(&test_cfg().datasources, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         let row = frame_row(&frames[0]);
         assert_row_keys_match(&row, schema_contract::TRACES, "traces");
@@ -2708,7 +2747,7 @@ mod tests {
 
     #[test]
     fn metrics_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
-        let (frames, _) = encode_metrics(&test_cfg(), "org_contract", &one_of_each_metric_request()).unwrap();
+        let (frames, _) = encode_metrics(&test_cfg().datasources, "org_contract", &one_of_each_metric_request()).unwrap();
         let rows = frame_rows_by_datasource(frames);
         assert_row_keys_match(&rows["metrics_sum"], &schema_contract::metrics_sum(), "metrics_sum");
         assert_row_keys_match(&rows["metrics_gauge"], &schema_contract::metrics_gauge(), "metrics_gauge");
@@ -2746,20 +2785,20 @@ mod tests {
         };
 
         let (log_frames, _) =
-            encode_logs(&test_cfg(), "org_contract", &populated_log_request()).unwrap();
+            encode_logs(&test_cfg().datasources, "org_contract", &populated_log_request()).unwrap();
         let log_row = frame_row(&log_frames[0]);
         let ts = log_row["timestamp"].as_str().unwrap();
         assert!(pattern(ts), "logs.timestamp not DateTime64(9): {ts:?}");
 
         let (trace_frames, _) =
-            encode_traces(&test_cfg(), "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
+            encode_traces(&test_cfg().datasources, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         let trace_row = frame_row(&trace_frames[0]);
         let ts = trace_row["start_time"].as_str().unwrap();
         assert!(pattern(ts), "traces.start_time not DateTime64(9): {ts:?}");
 
         let (metric_frames, _) =
-            encode_metrics(&test_cfg(), "org_contract", &one_of_each_metric_request()).unwrap();
+            encode_metrics(&test_cfg().datasources, "org_contract", &one_of_each_metric_request()).unwrap();
         for frame in &metric_frames {
             let row = frame_row(frame);
             let start_ts = row["start_timestamp"].as_str().unwrap();
@@ -2783,30 +2822,31 @@ mod tests {
         // env vars. The frames emitted by the encoders must carry the
         // configured name (which becomes the `name` query parameter on the
         // Tinybird import call), not the hardcoded default.
-        let mut cfg = test_cfg();
-        cfg.datasource_logs = "tenant_logs_v2".into();
-        cfg.datasource_traces = "tenant_traces_v2".into();
-        cfg.datasource_metrics_sum = "tenant_sum_v2".into();
-        cfg.datasource_metrics_gauge = "tenant_gauge_v2".into();
-        cfg.datasource_metrics_histogram = "tenant_hist_v2".into();
-        cfg.datasource_metrics_exponential_histogram = "tenant_exp_v2".into();
+        let names = DatasourceNames {
+            traces: "tenant_traces_v2".into(),
+            logs: "tenant_logs_v2".into(),
+            metrics_sum: "tenant_sum_v2".into(),
+            metrics_gauge: "tenant_gauge_v2".into(),
+            metrics_histogram: "tenant_hist_v2".into(),
+            metrics_exponential_histogram: "tenant_exp_v2".into(),
+        };
 
-        let (log_frames, _) = encode_logs(&cfg, "org_contract", &populated_log_request()).unwrap();
+        let (log_frames, _) = encode_logs(&names, "org_contract", &populated_log_request()).unwrap();
         assert_eq!(log_frames[0].datasource, "tenant_logs_v2");
 
         let (trace_frames, _) =
-            encode_traces(&cfg, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
+            encode_traces(&names, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
                 .unwrap();
         assert_eq!(trace_frames[0].datasource, "tenant_traces_v2");
 
         let (metric_frames, _) =
-            encode_metrics(&cfg, "org_contract", &one_of_each_metric_request()).unwrap();
-        let datasources: std::collections::BTreeSet<_> =
+            encode_metrics(&names, "org_contract", &one_of_each_metric_request()).unwrap();
+        let emitted: std::collections::BTreeSet<_> =
             metric_frames.iter().map(|f| f.datasource.as_str()).collect();
-        assert!(datasources.contains("tenant_sum_v2"));
-        assert!(datasources.contains("tenant_gauge_v2"));
-        assert!(datasources.contains("tenant_hist_v2"));
-        assert!(datasources.contains("tenant_exp_v2"));
+        assert!(emitted.contains("tenant_sum_v2"));
+        assert!(emitted.contains("tenant_gauge_v2"));
+        assert!(emitted.contains("tenant_hist_v2"));
+        assert!(emitted.contains("tenant_exp_v2"));
     }
 
     #[test]
@@ -2817,7 +2857,7 @@ mod tests {
         let mut request = populated_log_request();
         request.resource_logs[0].scope_logs[0].log_records[0].severity_text.clear();
         request.resource_logs[0].scope_logs[0].log_records[0].severity_number = 9; // INFO
-        let (frames, _) = encode_logs(&test_cfg(), "org_contract", &request).unwrap();
+        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &request).unwrap();
         let row = frame_row(&frames[0]);
         assert_eq!(row["severity_text"], "INFO");
     }
@@ -2831,7 +2871,7 @@ mod tests {
         request.resource_logs[0].scope_logs[0].log_records[0].time_unix_nano = 0;
         request.resource_logs[0].scope_logs[0].log_records[0].observed_time_unix_nano =
             1_700_000_100_000_000_000;
-        let (frames, _) = encode_logs(&test_cfg(), "org_contract", &request).unwrap();
+        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &request).unwrap();
         let row = frame_row(&frames[0]);
         assert_eq!(row["timestamp"], "2023-11-14 22:15:00.000000000");
     }
@@ -2881,7 +2921,7 @@ mod tests {
                 schema_url: String::new(),
             }],
         };
-        let (frames, stats) = encode_metrics(&test_cfg(), "org_contract", &request).unwrap();
+        let (frames, stats) = encode_metrics(&test_cfg().datasources, "org_contract", &request).unwrap();
         assert!(frames.is_empty(), "summary metrics should not produce frames");
         assert_eq!(stats.rows, 0);
     }

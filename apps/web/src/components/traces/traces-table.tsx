@@ -12,7 +12,7 @@ import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { formatRelativeTime } from "@/lib/format"
-import { HttpSpanLabel } from "./http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
 
 export interface TracesTableViewProps {

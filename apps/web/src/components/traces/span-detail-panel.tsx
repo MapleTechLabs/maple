@@ -24,7 +24,7 @@ import { type Log, type LogsResponse } from "@/api/warehouse/logs"
 import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { formatDuration } from "@/lib/format"
 import { cn } from "@maple/ui/utils"
-import { getCacheInfo, cacheResultStyles } from "@/lib/cache"
+import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
 import { getServiceLegendColor } from "@maple/ui/lib/colors"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -32,7 +32,7 @@ import { getSpanDetailResultAtom, listLogsResultAtom } from "@/lib/services/atom
 import { CopyableValue, AttributesTable, ResourceAttributesSection } from "@/components/attributes"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
-import { HttpSpanLabel } from "./http-span-label"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 
 interface SpanDetailPanelProps {
 	span: SpanNode

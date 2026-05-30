@@ -1,19 +1,23 @@
-import { Array as Arr, Effect, Option, pipe } from "effect"
+import { Array as Arr, Effect, pipe } from "effect"
 import { TraceId } from "@maple/domain"
 import type { TracesDurationStatsOutput } from "@maple/domain/tinybird"
 import { Schema } from "effect"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 import type { FindSlowTracesInput, FindSlowTracesOutput, SpanResult } from "./types"
-import { escapeForSQL, safeUInt } from "./sql-utils"
+import { safeUInt } from "./sql-utils"
 
 const MAX_LIMIT = 1000
 
 /**
  * Returns the slowest root spans in a time range, ordered by Duration DESC at
- * the database. Previously this fetched 500 rows from the `list_traces` pipe
- * (sorted by recency) and sorted them in JS, which both over-fetched and
- * returned the wrong page when the actual slowest traces were older than the
- * 500 most-recent.
+ * the database via the `slow_traces` pipe. Previously this fetched 500 rows
+ * from the `list_traces` pipe (sorted by recency) and sorted them in JS, which
+ * both over-fetched and returned the wrong page when the actual slowest traces
+ * were older than the 500 most-recent.
+ *
+ * Routing through a named pipe (rather than building raw SQL here) lets the
+ * same code run unchanged against both local chDB and the remote warehouse —
+ * the executor decides where the compiled SQL runs.
  */
 export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function* (
 	input: FindSlowTracesInput,
@@ -23,55 +27,28 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 
 	yield* Effect.annotateCurrentSpan("service", input.service ?? "all")
 
-	const esc = escapeForSQL
-
-	const conditions: string[] = [
-		`OrgId = '${esc(executor.orgId)}'`,
-		`Timestamp >= parseDateTimeBestEffort('${esc(input.timeRange.startTime)}')`,
-		`Timestamp <= parseDateTimeBestEffort('${esc(input.timeRange.endTime)}')`,
-		`ParentSpanId = ''`,
-		...pipe(
-			[
-				input.service ? Option.some(`ServiceName = '${esc(input.service)}'`) : Option.none(),
-				input.environment
-					? Option.some(
-							`ResourceAttributes['deployment.environment'] = '${esc(input.environment)}'`,
-						)
-					: Option.none(),
-			],
-			Arr.getSomes,
-		),
-	]
-
-	const sql = `
-      SELECT
-        TraceId as traceId,
-        SpanName as spanName,
-        ServiceName as serviceName,
-        Duration / 1000000 as durationMs,
-        StatusCode as statusCode,
-        toString(ResourceAttributes) as resourceAttributesStr,
-        toString(Timestamp) as timestamp
-      FROM traces
-      WHERE ${conditions.join("\n        AND ")}
-      ORDER BY Duration DESC
-      LIMIT ${limit}
-      FORMAT JSON
-    `
-
 	interface SlowTraceRow {
 		readonly traceId: string
 		readonly spanName: string
 		readonly serviceName: string
 		readonly durationMs: number
 		readonly statusCode: string
-		readonly resourceAttributesStr: string
 		readonly timestamp: string
 	}
 
-	const [rows, statsResult] = yield* Effect.all(
+	const [slowResult, statsResult] = yield* Effect.all(
 		[
-			executor.sqlQuery<SlowTraceRow>(sql, { profile: "list" }),
+			executor.query<SlowTraceRow>(
+				"slow_traces",
+				{
+					start_time: input.timeRange.startTime,
+					end_time: input.timeRange.endTime,
+					...(input.service && { service: input.service }),
+					...(input.environment && { deployment_env: input.environment }),
+					limit,
+				},
+				{ profile: "list" },
+			),
 			executor.query<TracesDurationStatsOutput>(
 				"traces_duration_stats",
 				{
@@ -85,6 +62,8 @@ export const findSlowTraces = Effect.fn("Observability.findSlowTraces")(function
 		],
 		{ concurrency: "unbounded" },
 	)
+
+	const rows = slowResult.data
 
 	const traces: ReadonlyArray<SpanResult> = pipe(
 		rows,

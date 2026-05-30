@@ -31,8 +31,8 @@ use hmac::{Hmac, Mac};
 use maple_ingest::metrics;
 use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
-    AttributeMappingRule, MappingOperation, MappingSourceContext, PipelineError, SamplingPolicy,
-    TelemetryPipeline, TinybirdConfig,
+    AttributeMappingRule, DatasourceNames, MappingOperation, MappingSourceContext, PipelineError,
+    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -247,22 +247,7 @@ impl AppConfig {
                 std::env::var("INGEST_EXPORT_MAX_ATTEMPTS").ok(),
                 20,
             )?,
-            datasource_traces: std::env::var("INGEST_TINYBIRD_DATASOURCE_TRACES")
-                .unwrap_or_else(|_| "traces".to_string()),
-            datasource_logs: std::env::var("INGEST_TINYBIRD_DATASOURCE_LOGS")
-                .unwrap_or_else(|_| "logs".to_string()),
-            datasource_metrics_sum: std::env::var("INGEST_TINYBIRD_DATASOURCE_METRICS_SUM")
-                .unwrap_or_else(|_| "metrics_sum".to_string()),
-            datasource_metrics_gauge: std::env::var("INGEST_TINYBIRD_DATASOURCE_METRICS_GAUGE")
-                .unwrap_or_else(|_| "metrics_gauge".to_string()),
-            datasource_metrics_histogram: std::env::var(
-                "INGEST_TINYBIRD_DATASOURCE_METRICS_HISTOGRAM",
-            )
-            .unwrap_or_else(|_| "metrics_histogram".to_string()),
-            datasource_metrics_exponential_histogram: std::env::var(
-                "INGEST_TINYBIRD_DATASOURCE_METRICS_EXPONENTIAL_HISTOGRAM",
-            )
-            .unwrap_or_else(|_| "metrics_exponential_histogram".to_string()),
+            datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_string()),
             datasource_session_replay_events: std::env::var(

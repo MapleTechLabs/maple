@@ -11,12 +11,22 @@ function t(offsetMs: number): string {
 
 const emptyAttrs: Record<string, string> = {}
 
+// Static fixture data for the marketing visualization. The trace id types are
+// branded (TraceId/SpanId) in @maple/ui; brand these literal sample ids here
+// rather than pulling effect + @maple/domain into the landing bundle. Real span
+// data is branded via Schema decode in @maple/web.
+const brandTraceId = (id: string): SpanNode["traceId"] => id as SpanNode["traceId"]
+const brandSpanId = (id: string): SpanNode["spanId"] => id as SpanNode["spanId"]
+
 function span(
-	overrides: Partial<SpanNode> &
-		Pick<SpanNode, "spanId" | "spanName" | "serviceName" | "durationMs" | "startTime">,
+	overrides: Omit<Partial<SpanNode>, "spanId" | "traceId"> &
+		Pick<SpanNode, "spanName" | "serviceName" | "durationMs" | "startTime"> & {
+			spanId: string
+		},
 ): SpanNode {
+	const { spanId, ...rest } = overrides
 	return {
-		traceId: "a3f8c1d2e5b7f901",
+		traceId: brandTraceId("a3f8c1d2e5b7f901"),
 		parentSpanId: "",
 		spanKind: "SPAN_KIND_SERVER",
 		statusCode: "Ok",
@@ -25,7 +35,8 @@ function span(
 		resourceAttributes: emptyAttrs,
 		children: [],
 		depth: 0,
-		...overrides,
+		...rest,
+		spanId: brandSpanId(spanId),
 	}
 }
 

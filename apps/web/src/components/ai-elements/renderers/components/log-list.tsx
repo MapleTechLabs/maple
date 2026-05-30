@@ -1,5 +1,5 @@
 import type { BaseComponentProps } from "@json-render/react"
-import { SeverityBadge } from "@/components/logs/severity-badge"
+import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 interface LogListProps {
