@@ -10,9 +10,16 @@
 // struct, so there is no struct-offset fragility across libchdb versions.
 
 import { CString, dlopen, FFIType, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi"
+import { Effect, Schema, type Scope } from "effect"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
+
+/** A chDB failure — locating libchdb, opening the connection, or bootstrapping
+ *  the schema. Carries the underlying message verbatim. */
+export class ChdbError extends Schema.TaggedErrorClass<ChdbError>()("@maple/cli/ChdbError", {
+	message: Schema.String,
+}) {}
 
 /** Locate `libchdb` at runtime, in priority order:
  *  1. `MAPLE_LIBCHDB` env (explicit override)
@@ -164,3 +171,19 @@ export class Chdb {
 		}
 	}
 }
+
+/**
+ * Acquire a chDB connection as a scoped resource: `Chdb.open` (which bootstraps
+ * the schema) on acquire, `close()` as a finalizer. Open failures — a missing
+ * libchdb, a NULL connection, a rejected bootstrap — surface as a typed
+ * `ChdbError` instead of an unhandled throw. The synchronous `query`/`exec`
+ * methods are unchanged; only the lifecycle is Effect-managed.
+ */
+export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError, Scope.Scope> =>
+	Effect.acquireRelease(
+		Effect.try({
+			try: () => Chdb.open(options),
+			catch: (error) => new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
+		}),
+		(db) => Effect.sync(() => db.close()),
+	)

@@ -1,5 +1,5 @@
-import { Context, Effect, Layer } from "effect"
-import * as fs from "node:fs"
+import { Context, Effect, Layer, type PlatformError } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import * as os from "node:os"
 import * as path from "node:path"
 
@@ -21,29 +21,34 @@ export const CONFIG_PATH = path.join(CONFIG_DIR, "config.json")
 export const DEFAULT_LOCAL_URL = "http://127.0.0.1:4318"
 export const DEFAULT_API_URL = "https://api.maple.dev"
 
-const readStored = (): StoredConfig => {
-	try {
-		const parsed = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")) as unknown
-		return typeof parsed === "object" && parsed !== null ? (parsed as StoredConfig) : {}
-	} catch {
+const readStored = (fs: FileSystem): Effect.Effect<StoredConfig> =>
+	fs.readFileString(CONFIG_PATH).pipe(
+		Effect.flatMap((raw) =>
+			Effect.try({
+				try: (): StoredConfig => {
+					const parsed = JSON.parse(raw) as unknown
+					return typeof parsed === "object" && parsed !== null ? (parsed as StoredConfig) : {}
+				},
+				catch: () => new Error("invalid config"),
+			}),
+		),
 		// Missing/unreadable/invalid file → empty config. The CLI still works in
 		// local mode (auto-detect) and `maple login` will create the file.
-		return {}
-	}
-}
+		Effect.orElseSucceed((): StoredConfig => ({})),
+	)
 
-const writeMerged = (mutate: (cur: StoredConfig) => StoredConfig): void => {
-	const merged = mutate(readStored())
-	fs.mkdirSync(CONFIG_DIR, { recursive: true })
-	fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 })
-	// writeFileSync's `mode` only applies on create; chmod an existing file too so
-	// a token never sits in a world-readable file.
-	try {
-		fs.chmodSync(CONFIG_PATH, 0o600)
-	} catch {
-		/* best effort */
-	}
-}
+const writeMerged = (
+	fs: FileSystem,
+	mutate: (cur: StoredConfig) => StoredConfig,
+): Effect.Effect<void, PlatformError.PlatformError> =>
+	Effect.gen(function* () {
+		const merged = mutate(yield* readStored(fs))
+		yield* fs.makeDirectory(CONFIG_DIR, { recursive: true })
+		yield* fs.writeFileString(CONFIG_PATH, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 })
+		// writeFileString's `mode` only applies on create; chmod an existing file
+		// too so a token never sits in a world-readable file (best effort).
+		yield* fs.chmod(CONFIG_PATH, 0o600).pipe(Effect.ignore)
+	})
 
 export interface MapleConfigShape {
 	/** Remote API base URL (env `MAPLE_API_URL` overrides the stored value). */
@@ -57,16 +62,17 @@ export interface MapleConfigShape {
 	/** API URL to use for `maple login` when none is passed. */
 	readonly defaultApiUrl: string
 	/** Persist config fields (merged with existing). */
-	readonly write: (next: StoredConfig) => Effect.Effect<void>
+	readonly write: (next: StoredConfig) => Effect.Effect<void, PlatformError.PlatformError>
 	/** Remove the stored token (used by `maple logout`). */
-	readonly clearToken: () => Effect.Effect<void>
+	readonly clearToken: () => Effect.Effect<void, PlatformError.PlatformError>
 }
 
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>()(
 	"@maple/cli/MapleConfig",
 	{
-		make: Effect.sync((): MapleConfigShape => {
-			const stored = readStored()
+		make: Effect.gen(function* () {
+			const fs = yield* FileSystem
+			const stored = yield* readStored(fs)
 			const env = process.env
 			return {
 				apiUrl: env.MAPLE_API_URL ?? stored.apiUrl,
@@ -75,15 +81,13 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>(
 				localUrl: env.MAPLE_LOCAL_URL ?? DEFAULT_LOCAL_URL,
 				defaultMode: stored.defaultMode,
 				defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
-				write: (next) => Effect.sync(() => writeMerged((cur) => ({ ...cur, ...next }))),
+				write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
 				clearToken: () =>
-					Effect.sync(() =>
-						writeMerged((cur) => {
-							const { token: _token, ...rest } = cur
-							return rest
-						}),
-					),
-			}
+					writeMerged(fs, (cur) => {
+						const { token: _token, ...rest } = cur
+						return rest
+					}),
+			} satisfies MapleConfigShape
 		}),
 	},
 ) {

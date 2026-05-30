@@ -2,8 +2,9 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
+import { Effect, type Scope } from "effect"
 import { gunzipSync } from "node:zlib"
-import { Chdb } from "./chdb"
+import { acquireChdb, type Chdb, type ChdbError } from "./chdb"
 import { buildInsertSql } from "./inserts"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch } from "./otlp/encode"
 import { decodeLogsRequest, decodeMetricsRequest, decodeTraceRequest } from "./otlp/proto"
@@ -20,11 +21,6 @@ export interface ServerOptions {
 	readonly dataDir: string
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
-}
-
-export interface RunningServer {
-	readonly port: number
-	stop(): void
 }
 
 const CORS_HEADERS = {
@@ -158,34 +154,37 @@ function serveAsset(assets: AssetResolver, pathname: string): Response {
 	return text("UI not built", 404)
 }
 
-/** Start the server. Opens chDB (bootstrapping the schema) before binding, so a
- *  failure surfaces before we accept traffic. Returns once listening. */
-export function startServer(options: ServerOptions): RunningServer {
-	const db = Chdb.open({ dataDir: options.dataDir, schemaSql })
-
-	const server = Bun.serve({
-		port: options.port,
-		hostname: "127.0.0.1",
-		async fetch(req) {
-			const url = new URL(req.url)
-			if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS })
-			if (url.pathname === "/health") return text("OK")
-			if (req.method === "POST") {
-				if (url.pathname === "/v1/traces") return ingest(db, "traces", req)
-				if (url.pathname === "/v1/logs") return ingest(db, "logs", req)
-				if (url.pathname === "/v1/metrics") return ingest(db, "metrics", req)
-				if (url.pathname === "/local/query") return handleQuery(db, req)
-			}
-			if (req.method === "GET" && options.assets) return serveAsset(options.assets, url.pathname)
-			return text("not found", 404)
-		},
-	})
-
-	return {
-		port: server.port ?? options.port,
-		stop() {
-			server.stop(true)
-			db.close()
-		},
+/** The `Bun.serve` fetch handler, closed over the chDB connection. Request
+ *  handling stays synchronous chDB work — only the server lifecycle is Effect. */
+const makeFetch =
+	(db: Chdb, options: ServerOptions) =>
+	async (req: Request): Promise<Response> => {
+		const url = new URL(req.url)
+		if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS })
+		if (url.pathname === "/health") return text("OK")
+		if (req.method === "POST") {
+			if (url.pathname === "/v1/traces") return ingest(db, "traces", req)
+			if (url.pathname === "/v1/logs") return ingest(db, "logs", req)
+			if (url.pathname === "/v1/metrics") return ingest(db, "metrics", req)
+			if (url.pathname === "/local/query") return handleQuery(db, req)
+		}
+		if (req.method === "GET" && options.assets) return serveAsset(options.assets, url.pathname)
+		return text("not found", 404)
 	}
-}
+
+/** Start the server as a scoped resource. Opens chDB (bootstrapping the schema)
+ *  before binding, so a failure surfaces before we accept traffic, and ties both
+ *  the chDB connection and the listening socket to the current `Scope`. When the
+ *  scope closes the socket stops first, then chDB closes (reverse acquisition
+ *  order). Resolves with the bound port once listening. */
+export const startServer = (
+	options: ServerOptions,
+): Effect.Effect<{ readonly port: number }, ChdbError, Scope.Scope> =>
+	Effect.gen(function* () {
+		const db = yield* acquireChdb({ dataDir: options.dataDir, schemaSql })
+		const server = yield* Effect.acquireRelease(
+			Effect.sync(() => Bun.serve({ port: options.port, hostname: "127.0.0.1", fetch: makeFetch(db, options) })),
+			(s) => Effect.sync(() => s.stop(true)),
+		)
+		return { port: server.port ?? options.port }
+	})
