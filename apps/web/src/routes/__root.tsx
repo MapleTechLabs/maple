@@ -115,11 +115,16 @@ function ClerkReverseRedirects() {
 		if (customerError) {
 			return <AppFrame />
 		}
-		if (isCustomerLoading) {
+		// Dev-only: `?quota_preview=` forces the usage-alert banner for visual
+		// review; render the shell without waiting on the customer query (which
+		// may stall when Autumn isn't configured locally).
+		const quotaPreview =
+			import.meta.env.DEV && typeof window !== "undefined" && window.location.search.includes("quota_preview")
+		if (isCustomerLoading && !quotaPreview) {
 			return null
 		}
 		const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start"]
-		if (!selectedPlan && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
+		if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
 			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
 		}
 		if (selectedPlan && pathname === "/select-plan") {

@@ -16,6 +16,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { useIsMobile } from "@maple/ui/hooks/use-mobile"
 import { LayoutLeftIcon } from "@/components/icons"
 import { ConnectButton } from "@/components/header/connect-button"
+import { QuotaBanner } from "@/components/billing/quota-banner"
 import { Link, defaultParseSearch } from "@tanstack/react-router"
 
 export interface BreadcrumbItem {
@@ -128,6 +129,7 @@ export function DashboardLayout({
 							{breadcrumbActions}
 						</div>
 					</header>
+					<QuotaBanner />
 					<PageLayout.Body>
 						{filterSidebar && (
 							<PageLayout.FilterSidebar>{filterSidebar}</PageLayout.FilterSidebar>
