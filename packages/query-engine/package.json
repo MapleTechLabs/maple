@@ -6,6 +6,7 @@
 		".": "./src/index.ts",
 		"./query-engine": "./src/query-engine.ts",
 		"./where-clause": "./src/where-clause.ts",
+		"./formula-results": "./src/formula-results.ts",
 		"./traces-shared": "./src/traces-shared.ts",
 		"./query-builder": "./src/query-builder/model.ts",
 		"./sql": "./src/sql/index.ts",

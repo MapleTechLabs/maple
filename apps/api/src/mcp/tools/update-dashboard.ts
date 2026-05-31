@@ -63,12 +63,18 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 			const result = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
 					Effect.sync(() => {
+						// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`;
+						// the Schema.Class constructor permits an absent key but rejects a
+						// present `undefined`. A tag-less / description-less dashboard surfaces
+						// those fields as `undefined`, so omit the key instead of forwarding it.
 						if (portable) {
 							return new DashboardDocument({
 								id: existing.id,
 								name: portable.name,
-								description: portable.description,
-								tags: portable.tags,
+								...(portable.description !== undefined && {
+									description: portable.description,
+								}),
+								...(portable.tags !== undefined && { tags: portable.tags }),
 								timeRange: portable.timeRange,
 								widgets: portable.widgets,
 								createdAt: existing.createdAt,
@@ -83,11 +89,13 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 								}
 							: existing.timeRange
 
+						const nextDescription = description ?? existing.description
+
 						return new DashboardDocument({
 							id: existing.id,
 							name: name ?? existing.name,
-							description: description ?? existing.description,
-							tags: existing.tags,
+							...(nextDescription !== undefined && { description: nextDescription }),
+							...(existing.tags !== undefined && { tags: existing.tags }),
 							timeRange,
 							widgets: existing.widgets,
 							createdAt: existing.createdAt,

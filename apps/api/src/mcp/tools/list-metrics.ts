@@ -74,8 +74,12 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 				`Time range: ${st} — ${et}${formatClampNote(range)}`,
 			]
 
-			// Summary counts by type
-			if (summary.length > 0) {
+			// `metrics_summary` is scoped only by service, NOT by search/metric_type.
+			// Printing those totals next to an empty filtered result reads as a
+			// contradiction ("47 sum metrics … No metrics found"), so suppress them
+			// whenever a narrowing filter matched nothing.
+			const hasNarrowingFilter = Boolean(search) || Boolean(metric_type)
+			if (summary.length > 0 && (metrics.length > 0 || !hasNarrowingFilter)) {
 				lines.push(``)
 				for (const s of summary) {
 					lines.push(
@@ -85,7 +89,19 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 			}
 
 			if (metrics.length === 0) {
-				lines.push(``, `No metrics found matching filters.`)
+				const filterDesc = [
+					search ? `name contains "${search}"` : null,
+					metric_type ? `type=${metric_type}` : null,
+					service ? `service=${service}` : null,
+				]
+					.filter(Boolean)
+					.join(", ")
+				lines.push(
+					``,
+					filterDesc
+						? `No metrics found matching ${filterDesc} in this time range.`
+						: `No metrics found in this time range.`,
+				)
 				return { content: [{ type: "text", text: lines.join("\n") }] }
 			}
 

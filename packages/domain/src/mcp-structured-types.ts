@@ -421,6 +421,12 @@ export interface ReorderDashboardWidgetsData {
 	updatedWidgetIds: string[]
 }
 
+export interface ReplaceDashboardWidgetsData {
+	dashboard: DashboardRow
+	widgetIds: string[]
+	validation?: WidgetInspectionSummary
+}
+
 // ---------------------------------------------------------------------------
 // Compare periods types
 // ---------------------------------------------------------------------------
@@ -527,6 +533,8 @@ export type InspectChartFlag =
 	| "CARDINALITY_EXPLOSION"
 	| "UNIT_MISMATCH"
 	| "BROKEN_BREAKDOWN"
+	| "EMPTY_GROUPING"
+	| "METRIC_NOT_FOUND"
 	| "BUILDER_WARNINGS"
 
 export type InspectChartVerdict = "looks_healthy" | "suspicious" | "broken"
@@ -794,6 +802,7 @@ export type StructuredToolOutput =
 	| { tool: "update_dashboard_widget"; data: UpdateDashboardWidgetData }
 	| { tool: "remove_dashboard_widget"; data: RemoveDashboardWidgetData }
 	| { tool: "reorder_dashboard_widgets"; data: ReorderDashboardWidgetsData }
+	| { tool: "replace_dashboard_widgets"; data: ReplaceDashboardWidgetsData }
 	| { tool: "compare_periods"; data: ComparePeriodsData }
 	| { tool: "explore_attributes"; data: ExploreAttributesData }
 	| { tool: "list_services"; data: ListServicesData }

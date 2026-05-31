@@ -283,6 +283,7 @@ interface AccumulatedAttributeFilter {
 	key: string
 	value?: string
 	mode: "equals" | "exists" | "gt" | "gte" | "lt" | "lte" | "contains"
+	negated?: boolean
 }
 
 interface TracesFilterAccumulator {
@@ -297,16 +298,40 @@ interface TracesFilterAccumulator {
 	resourceAttributeFilters: AccumulatedAttributeFilter[]
 }
 
-function operatorToFilterMode(operator: string): AccumulatedAttributeFilter["mode"] {
+// Maps a parsed where-clause operator to a positive attribute-filter `mode`
+// plus a `negated` flag. The CH compiler (`buildAttrFilterCondition`) wraps a
+// negated filter in `NOT (...)`, so `!=`/`!contains`/`!exists` reuse the
+// positive mode with `negated: true` rather than introducing new modes. This is
+// the bug fix for negation silently collapsing into the positive predicate.
+function operatorToAttrFilter(operator: string): {
+	mode: AccumulatedAttributeFilter["mode"]
+	negated: boolean
+} {
 	return Match.value(operator).pipe(
-		Match.when("exists", () => "exists" as const),
-		Match.when(">", () => "gt" as const),
-		Match.when(">=", () => "gte" as const),
-		Match.when("<", () => "lt" as const),
-		Match.when("<=", () => "lte" as const),
-		Match.when("contains", () => "contains" as const),
-		Match.orElse(() => "equals" as const),
+		Match.when("exists", () => ({ mode: "exists" as const, negated: false })),
+		Match.when("!exists", () => ({ mode: "exists" as const, negated: true })),
+		Match.when(">", () => ({ mode: "gt" as const, negated: false })),
+		Match.when(">=", () => ({ mode: "gte" as const, negated: false })),
+		Match.when("<", () => ({ mode: "lt" as const, negated: false })),
+		Match.when("<=", () => ({ mode: "lte" as const, negated: false })),
+		Match.when("contains", () => ({ mode: "contains" as const, negated: false })),
+		Match.when("!contains", () => ({ mode: "contains" as const, negated: true })),
+		Match.when("!=", () => ({ mode: "equals" as const, negated: true })),
+		Match.orElse(() => ({ mode: "equals" as const, negated: false })),
 	)
+}
+
+// Builds an accumulated attribute filter from a clause, omitting `value` for the
+// value-less `exists`/`!exists` operators and only setting `negated` when true.
+function makeAttrFilter(attributeKey: string, operator: string, value: string): AccumulatedAttributeFilter {
+	const { mode, negated } = operatorToAttrFilter(operator)
+	const hasValue = operator !== "exists" && operator !== "!exists"
+	return {
+		key: attributeKey,
+		mode,
+		...(negated ? { negated: true } : {}),
+		...(hasValue ? { value } : {}),
+	}
 }
 
 function applyTracesClause(
@@ -327,11 +352,7 @@ function applyTracesClause(
 			...filters,
 			attributeFilters: [
 				...filters.attributeFilters,
-				{
-					key: attributeKey,
-					mode: operatorToFilterMode(clause.operator),
-					...(clause.operator !== "exists" ? { value: clause.value } : {}),
-				},
+				makeAttrFilter(attributeKey, clause.operator, clause.value),
 			],
 		}
 	}
@@ -346,11 +367,7 @@ function applyTracesClause(
 			...filters,
 			resourceAttributeFilters: [
 				...filters.resourceAttributeFilters,
-				{
-					key: resourceKey,
-					mode: operatorToFilterMode(clause.operator),
-					...(clause.operator !== "exists" ? { value: clause.value } : {}),
-				},
+				makeAttrFilter(resourceKey, clause.operator, clause.value),
 			],
 		}
 	}
@@ -383,8 +400,24 @@ function applyTracesClause(
 			return { ...filters, errorsOnly: boolValue }
 		}),
 		Match.orElse(() => {
-			warnings.push(`Unsupported traces filter ignored: ${clause.key}`)
-			return filters
+			// A bare key outside the small structured allowlist is almost always a
+			// span attribute (`query.context`, `error.type`, `db.system`, …).
+			// Silently dropping the predicate was the #1 "confidently-wrong
+			// dashboard" footgun, so treat it as `attr.<key>` — on traces every
+			// Map-backed attribute is reachable this way. The only genuine drop
+			// left is exceeding the 5-filter cap, which still warns (and is
+			// escalated to a hard write error by the widget mutation tools).
+			if (filters.attributeFilters.length >= 5) {
+				warnings.push(`Maximum of 5 attr.* filters supported; ignoring ${clause.key}`)
+				return filters
+			}
+			return {
+				...filters,
+				attributeFilters: [
+					...filters.attributeFilters,
+					makeAttrFilter(key, clause.operator, clause.value),
+				],
+			}
 		}),
 	)
 }
@@ -649,20 +682,50 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 	}
 
 	if (query.dataSource === "traces") {
-		const allowedMetrics = new Set([
-			"count",
-			"avg_duration",
-			"p50_duration",
-			"p95_duration",
-			"p99_duration",
-			"error_rate",
-		])
+		// A non-empty `valueField` (e.g. "attr.result.rowCount") switches the query
+		// into numeric-attribute aggregation mode: `aggregation` becomes a numeric
+		// function over that span attribute instead of a duration-based metric.
+		const numericValueField = (query.valueField ?? "").trim()
+		const isNumericAggregation = numericValueField.length > 0
+		const numericAggregationFns = new Set(["avg", "sum", "min", "max", "p50", "p95", "p99"])
 
-		if (!allowedMetrics.has(query.aggregation)) {
+		if (isNumericAggregation) {
+			if (!numericAggregationFns.has(query.aggregation)) {
+				return {
+					query: null,
+					warnings,
+					error: `Numeric-attribute aggregation requires one of avg/sum/min/max/p50/p95/p99 (got: ${query.aggregation})`,
+				}
+			}
+		} else {
+			const allowedMetrics = new Set([
+				"count",
+				"avg_duration",
+				"p50_duration",
+				"p95_duration",
+				"p99_duration",
+				"error_rate",
+			])
+
+			if (!allowedMetrics.has(query.aggregation)) {
+				return {
+					query: null,
+					warnings,
+					error: `Unsupported traces metric: ${query.aggregation}`,
+				}
+			}
+		}
+
+		// Preserve attribute-key case (ClickHouse Map keys are case-sensitive); only
+		// strip a leading `attr.` prefix if present.
+		const numericAttributeKey = isNumericAggregation
+			? numericValueField.replace(/^attr\./i, "").trim()
+			: ""
+		if (isNumericAggregation && !numericAttributeKey) {
 			return {
 				query: null,
 				warnings,
-				error: `Unsupported traces metric: ${query.aggregation}`,
+				error: "valueField must reference a span attribute, e.g. attr.result.rowCount",
 			}
 		}
 
@@ -692,20 +755,33 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 
 		const specFilters = buildTracesSpecFilters(filters)
+		const finalFilters = isNumericAggregation
+			? {
+					...(specFilters ?? {}),
+					numericAggregation: {
+						key: numericAttributeKey,
+						fn: query.aggregation as "avg" | "sum" | "min" | "max" | "p50" | "p95" | "p99",
+					},
+				}
+			: specFilters
 
 		return {
 			query: {
 				kind: "timeseries",
 				source: "traces",
-				metric: query.aggregation as
-					| "count"
-					| "avg_duration"
-					| "p50_duration"
-					| "p95_duration"
-					| "p99_duration"
-					| "error_rate",
+				// Numeric-attribute aggregations carry `metric: "count"` (still a useful
+				// sample count); the charted value comes from `filters.numericAggregation`.
+				metric: isNumericAggregation
+					? "count"
+					: (query.aggregation as
+							| "count"
+							| "avg_duration"
+							| "p50_duration"
+							| "p95_duration"
+							| "p99_duration"
+							| "error_rate"),
 				groupBy,
-				filters: specFilters,
+				filters: finalFilters,
 				bucketSeconds,
 			} as QuerySpec,
 			warnings,
@@ -877,14 +953,19 @@ const FILTER_MODE_TO_DISPLAY: Record<string, string> = {
 	contains: "contains",
 }
 
-function formatAttrFilterClause(prefix: string, af: { key: string; value?: string; mode: string }): string {
+function formatAttrFilterClause(
+	prefix: string,
+	af: { key: string; value?: string; mode: string; negated?: boolean },
+): string {
 	if (af.mode === "exists") {
-		return `${prefix}.${af.key} exists`
+		return `${prefix}.${af.key} ${af.negated ? "!exists" : "exists"}`
 	}
-	const op = FILTER_MODE_TO_DISPLAY[af.mode] ?? "="
 	if (af.mode === "contains") {
-		return `${prefix}.${af.key} contains "${af.value ?? ""}"`
+		return `${prefix}.${af.key} ${af.negated ? "!contains" : "contains"} "${af.value ?? ""}"`
 	}
+	// `negated` only ever pairs with `equals` here (operatorToAttrFilter never
+	// negates the numeric comparators), so render it as `!=`.
+	const op = af.negated && af.mode === "equals" ? "!=" : (FILTER_MODE_TO_DISPLAY[af.mode] ?? "=")
 	return `${prefix}.${af.key} ${op} "${af.value ?? ""}"`
 }
 

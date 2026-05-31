@@ -1,8 +1,12 @@
-import { McpQueryError, requiredStringParam, type McpToolRegistrar } from "./types"
+import { McpQueryError, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { decodeWidgetJson, withDashboardMutation } from "../lib/dashboard-mutations"
-import { formatValidationSummary, inspectWidgetsAfterMutation } from "../lib/inspect-widget"
+import {
+	collectBlockingBuilderWarnings,
+	formatValidationSummary,
+	inspectWidgetsAfterMutation,
+} from "../lib/inspect-widget"
 import { resolveTenant } from "../lib/query-warehouse"
 
 const TOOL = "update_dashboard_widget"
@@ -24,6 +28,14 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 		}),
 		Effect.fn("McpTool.updateDashboardWidget")(function* ({ dashboard_id, widget_id, widget_json }) {
 			const parsedWidget = yield* decodeWidgetJson(widget_json, TOOL)
+
+			// Reject clauses the engine can't honor before persisting the replacement.
+			const blockingWarnings = yield* collectBlockingBuilderWarnings(parsedWidget.dataSource)
+			if (blockingWarnings.length > 0) {
+				return validationError(
+					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT updated):\n- ${blockingWarnings.join("\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
+				)
+			}
 
 			const result = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
 				Effect.gen(function* () {

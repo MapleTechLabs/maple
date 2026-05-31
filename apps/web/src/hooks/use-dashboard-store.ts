@@ -125,11 +125,18 @@ function ensureDashboard(value: unknown): Dashboard | null {
 }
 
 function toDashboardDocument(dashboard: Dashboard): DashboardDocument {
+	// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`; the
+	// Schema.Class constructor rejects a present `undefined`. The web `Dashboard`
+	// carries them as optional and `ensureDashboard` stamps an explicit
+	// `tags: undefined`, so destructure them out of the spread and re-add only when set.
+	const { description, tags, ...rest } = dashboard
 	return new DashboardDocument({
-		...dashboard,
+		...rest,
 		id: asDashboardId(dashboard.id),
 		createdAt: asIsoDateTimeString(dashboard.createdAt),
 		updatedAt: asIsoDateTimeString(dashboard.updatedAt),
+		...(description !== undefined && { description }),
+		...(tags !== undefined && { tags }),
 		timeRange:
 			dashboard.timeRange.type === "absolute"
 				? {
@@ -142,9 +149,13 @@ function toDashboardDocument(dashboard: Dashboard): DashboardDocument {
 }
 
 function toPortableDashboardDocument(dashboard: PortableDashboard): PortableDashboardDocument {
+	// See `toDashboardDocument`: omit the optionalKey `description`/`tags` rather than
+	// forwarding a present `undefined`, which the Schema.Class constructor rejects.
+	const { description, tags, ...rest } = dashboard
 	return new PortableDashboardDocument({
-		...dashboard,
-		tags: dashboard.tags ? [...dashboard.tags] : undefined,
+		...rest,
+		...(description !== undefined && { description }),
+		...(tags !== undefined && { tags: [...tags] }),
 		widgets: structuredClone(dashboard.widgets),
 		timeRange:
 			dashboard.timeRange.type === "absolute"

@@ -13,6 +13,8 @@ export type ChartFlag =
 	| "CARDINALITY_EXPLOSION"
 	| "UNIT_MISMATCH"
 	| "BROKEN_BREAKDOWN"
+	| "EMPTY_GROUPING"
+	| "METRIC_NOT_FOUND"
 	| "BUILDER_WARNINGS"
 
 export type ChartVerdict = "looks_healthy" | "suspicious" | "broken"
@@ -21,8 +23,15 @@ const BROKEN_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>([
 	"EMPTY",
 	"ALL_NULLS",
 	"BROKEN_BREAKDOWN",
+	"EMPTY_GROUPING",
+	"METRIC_NOT_FOUND",
 	"UNIT_MISMATCH",
 ])
+
+// Flags that describe data quirks (sparse/expected) rather than a broken chart.
+// They are reported as notes but never downgrade the verdict on their own —
+// otherwise low-traffic/bursty instances flag every widget as "suspicious".
+const INFORMATIONAL_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>(["SUSPICIOUS_GAP"])
 
 const SAMPLE_HEAD = 3
 const SAMPLE_TAIL = 3
@@ -177,6 +186,13 @@ export interface FlagContext {
 	source?: "traces" | "logs" | "metrics"
 	kind?: "timeseries" | "breakdown"
 	displayUnit?: string
+	/**
+	 * True when the series is a numeric span-attribute aggregation (p95 of
+	 * `result.rowCount`, etc.). Its values are an arbitrary numeric attribute, not a
+	 * duration/percent/count, so metric-class heuristics (negative-value,
+	 * unrealistic-magnitude, unit-mismatch) are skipped to avoid false flags.
+	 */
+	numericAggregation?: boolean
 	/** Pre-existing flags (e.g. BROKEN_BREAKDOWN detected before stats). */
 	preFlags?: readonly ChartFlag[]
 }
@@ -260,7 +276,7 @@ export function computeFlags(stats: QueryStats, ctx: FlagContext = {}): ChartFla
 		flags.push("SUSPICIOUS_GAP")
 	}
 
-	const metricClass = classifyMetric(ctx.metric)
+	const metricClass = ctx.numericAggregation ? "unknown" : classifyMetric(ctx.metric)
 	if (
 		totalNegative > 0 &&
 		(metricClass === "count" || metricClass === "percent" || metricClass === "duration") &&
@@ -318,9 +334,16 @@ export function computeFlags(stats: QueryStats, ctx: FlagContext = {}): ChartFla
 }
 
 export function verdictFromFlags(flags: readonly ChartFlag[]): ChartVerdict {
-	if (flags.length === 0) return "looks_healthy"
 	for (const flag of flags) {
 		if (BROKEN_FLAGS.has(flag)) return "broken"
 	}
-	return "suspicious"
+	// Only non-informational flags downgrade to "suspicious". A result whose
+	// sole flag is informational (e.g. SUSPICIOUS_GAP on a bursty/idle instance,
+	// where the UI auto-extends the window anyway) stays healthy and is surfaced
+	// as a note instead — so "suspicious" keeps meaning something.
+	return flags.some((f) => !INFORMATIONAL_FLAGS.has(f)) ? "suspicious" : "looks_healthy"
+}
+
+export function isInformationalFlag(flag: ChartFlag): boolean {
+	return INFORMATIONAL_FLAGS.has(flag)
 }

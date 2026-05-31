@@ -44,7 +44,11 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 				id: dashboard.id,
 				name: dashboard.name,
 				description: dashboard.description,
-				tags: dashboard.tags ? [...dashboard.tags] : undefined,
+				// Always emit `tags` (even empty) so the returned JSON round-trips
+				// cleanly back through `update_dashboard`'s `dashboard_json`/the
+				// incremental widget tools — an omitted `tags` previously made callers
+				// guess whether the field was a document field at all.
+				tags: dashboard.tags ? [...dashboard.tags] : [],
 				timeRange: dashboard.timeRange,
 				widgets: dashboard.widgets.map((w) => ({
 					id: w.id,

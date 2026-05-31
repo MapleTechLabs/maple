@@ -84,8 +84,12 @@ const createDashboardDocument = (portableDashboard: PortableDashboardDocument, n
 	return new DashboardDocument({
 		id: decodeDashboardIdSync(randomUUID()),
 		name: portableDashboard.name,
-		description: portableDashboard.description,
-		tags: portableDashboard.tags,
+		// `description`/`tags` are `Schema.optionalKey`; the Schema.Class constructor
+		// rejects a present `undefined`. Omit the key when the portable source has none.
+		...(portableDashboard.description !== undefined && {
+			description: portableDashboard.description,
+		}),
+		...(portableDashboard.tags !== undefined && { tags: portableDashboard.tags }),
 		timeRange: portableDashboard.timeRange,
 		widgets: portableDashboard.widgets,
 		createdAt: decodeIsoDateTimeStringSync(now),

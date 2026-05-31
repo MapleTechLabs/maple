@@ -208,12 +208,23 @@ describe("verdictFromFlags", () => {
 		expect(verdictFromFlags(["ALL_NULLS"])).toBe("broken")
 		expect(verdictFromFlags(["UNIT_MISMATCH"])).toBe("broken")
 		expect(verdictFromFlags(["BROKEN_BREAKDOWN"])).toBe("broken")
+		expect(verdictFromFlags(["EMPTY_GROUPING"])).toBe("broken")
+		expect(verdictFromFlags(["METRIC_NOT_FOUND"])).toBe("broken")
 	})
 
 	it("returns suspicious for milder flags", () => {
 		expect(verdictFromFlags(["ALL_ZEROS"])).toBe("suspicious")
 		expect(verdictFromFlags(["FLAT_LINE"])).toBe("suspicious")
-		expect(verdictFromFlags(["SUSPICIOUS_GAP"])).toBe("suspicious")
 		expect(verdictFromFlags(["BUILDER_WARNINGS"])).toBe("suspicious")
+	})
+
+	it("treats SUSPICIOUS_GAP as informational — it never downgrades the verdict alone", () => {
+		// Sparse/bursty data on low-traffic instances is expected and the UI
+		// auto-extends the window; flagging every such widget made "suspicious"
+		// meaningless. The flag is still reported, just not verdict-affecting.
+		expect(verdictFromFlags(["SUSPICIOUS_GAP"])).toBe("looks_healthy")
+		// …but it doesn't suppress a real problem alongside it.
+		expect(verdictFromFlags(["SUSPICIOUS_GAP", "ALL_ZEROS"])).toBe("suspicious")
+		expect(verdictFromFlags(["SUSPICIOUS_GAP", "EMPTY"])).toBe("broken")
 	})
 })

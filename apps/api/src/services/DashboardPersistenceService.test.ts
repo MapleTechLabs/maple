@@ -182,6 +182,29 @@ describe("DashboardPersistenceService", () => {
 		}).pipe(Effect.provide(makeLayer(dbUrl)))
 	})
 
+	it.effect("creates a dashboard from a portable payload with no tags or description", () => {
+		const dbUrl = createTempDbUrl()
+
+		// `tags`/`description` are `Schema.optionalKey`; `makePortableDashboard`
+		// omits both here. The create path must not forward their `undefined` values
+		// into `new DashboardDocument(...)`, which the Schema.Class constructor rejects.
+		return Effect.gen(function* () {
+			const created = yield* DashboardPersistenceService.create(
+				asOrgId("org_a"),
+				asUserId("user_a"),
+				makePortableDashboard({ name: "No Tags" }),
+			)
+
+			const listed = yield* DashboardPersistenceService.list(asOrgId("org_a"))
+
+			assert.strictEqual(created.name, "No Tags")
+			assert.strictEqual(created.description, undefined)
+			assert.strictEqual(created.tags, undefined)
+			assert.strictEqual(listed.dashboards.length, 1)
+			assert.strictEqual(listed.dashboards[0]!.id, created.id)
+		}).pipe(Effect.provide(makeLayer(dbUrl)))
+	})
+
 	it.effect("returns DashboardNotFoundError when deleting a missing dashboard", () => {
 		const dbUrl = createTempDbUrl()
 

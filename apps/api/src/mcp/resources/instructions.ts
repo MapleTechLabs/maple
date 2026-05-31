@@ -57,9 +57,11 @@ queries carry ONLY the shared fields. The metric-only fields — \`metricName\`,
 queries; do not add them to trace or log queries.
 
 ### whereClause is a custom grammar (NOT SQL)
-Operators (the only ones): \`=\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`contains\`, \`exists\`. Clauses joined by \` AND \` (case-insensitive). Quoted values use double quotes. Keys are lowercased. **There is no \`IS NULL\` / \`IS NOT NULL\`** — use \`<key> exists\` to require an attribute be present.
+Operators (the only ones): \`=\`, \`!=\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`contains\`, \`!contains\`, \`exists\`, \`!exists\`. Clauses joined by \` AND \` (case-insensitive). Quoted values use double quotes. Keys are lowercased. **There is no \`IS NULL\` / \`IS NOT NULL\`** — use \`<key> exists\` (present) or \`<key> !exists\` (absent).
 - Wrong: \`service.name = "ingest" AND maple.signal IS NOT NULL\`
 - Right: \`service.name = "ingest" AND maple.signal exists\`
+
+On \`dataSource: "traces"\` you can filter by ANY span/resource attribute: a bare key outside the structured allowlist (\`service.name\`, \`span.name\`, \`deployment.environment\`, \`deployment.commit_sha\`, \`root_only\`, \`has_error\`) is auto-treated as \`attr.<key>\`, so \`query.context = "x"\`, \`error.type != "Timeout"\`, \`db.system = "clickhouse"\` all work; or write \`attr.<key>\` / \`resource.<key>\` explicitly (max 5 each). Clauses the engine cannot honor (over the cap, unsupported logs/metrics keys) now **fail the write** (add/update/replace widget) — nothing is saved — instead of being silently dropped.
 
 ### Valid \`aggregation\` per \`dataSource\`
 - traces: \`count\`, \`avg_duration\`, \`p50_duration\`, \`p95_duration\`, \`p99_duration\`, \`error_rate\`
@@ -68,8 +70,8 @@ Operators (the only ones): \`=\`, \`>\`, \`<\`, \`>=\`, \`<=\`, \`contains\`, \`
 
 \`rate\`/\`sum\`/\`increase\` are invalid for traces.
 
-### \`groupBy\` only accepts a literal allowlist + \`attr.<key>\` (silent drop trap)
-The query-builder does NOT accept arbitrary attribute names directly. Each data source has a small allowlist of named groupings; for anything outside that list you MUST use \`attr.<key>\`. Tokens that aren't recognized are **silently dropped with a warning that never reaches you** — the widget renders as if no groupBy was set (one "all" series), but the legend may still look plausible. This is the single most common reason a "grouped" widget shows a single aggregate bar.
+### \`groupBy\` only accepts a literal allowlist + \`attr.<key>\`
+The query-builder does NOT accept arbitrary attribute names directly. Each data source has a small allowlist of named groupings; for anything outside that list you MUST use \`attr.<key>\`. Unrecognized tokens are dropped — which now makes the widget mutation tools **reject the write** (nothing saved) rather than silently grouping by nothing. Separately, if a groupBy on a valid attribute finds zero distinct values the chart collapses to one "all" series, which \`inspect_chart_data\` flags as \`EMPTY_GROUPING\` (verdict \`broken\`).
 
 - **traces** — recognized literals: \`service\` / \`service.name\`, \`span\` / \`span.name\`, \`status\` / \`status.code\`, \`http.method\`, \`none\` / \`all\`. Everything else (\`maple.signal\`, \`http.response.status_code\`, \`http.route\`, \`server.address\`, \`error.type\`, \`maple.org_id\`, \`maple.ingest.*\`, etc.) MUST be prefixed: \`attr.maple.signal\`, \`attr.http.response.status_code\`, \`attr.http.route\`, \`attr.server.address\`, \`attr.error.type\`, \`attr.maple.org_id\`, \`attr.maple.ingest.upstream_pool\`, etc.
 - **logs** — recognized literals: \`service\` / \`service.name\`, \`severity\`, \`none\` / \`all\`. **No \`attr.*\` support yet** — grouping by arbitrary log attributes is not supported, the token will be silently dropped.
@@ -94,8 +96,11 @@ Valid aggregates: \`sum | first | count | avg | max | min\`. **No \`last\`.** Wi
 \`\`\`
 \`baseNames\` matches each hidden query's \`legend || name\`. Otherwise the auxiliary series render at full scale and skew percent-axis charts.
 
+### Batch rebuild
+\`replace_dashboard_widgets\` replaces a dashboard's ENTIRE widget list in one atomic, validated write — \`widgets_json\` is a JSON array of widget objects (same shape as \`widgets[]\` from \`get_dashboard\`); per-widget \`id\`/\`layout\` are optional (auto-generated/auto-placed). Every widget is validated before anything persists, so one bad widget aborts the whole batch. Prefer it over many incremental calls or a corruption-prone full \`dashboard_json\` replace.
+
 ### Verification
-After submitting widget JSON, do NOT trust the success response — verify by calling \`inspect_chart_data\` against the widget, or by loading the dashboard URL and watching for \`Invalid input for getQueryBuilderTimeseries\`. Note: \`whereClause\` is treated as opaque \`Schema.String\`, so unsupported clauses (e.g. SQL \`IS NOT NULL\`) silently degrade to "no filter" at query time without any visible error.
+The mutation tools now reject clauses the engine can't honor BEFORE persisting (a bad whereClause/groupBy fails the write — nothing saved — instead of degrading to wrong/empty data), and return an automatic \`inspect_chart_data\` summary. \`inspect_chart_data\` now also evaluates \`formulas[]\` (formula/hit-rate widgets verify end-to-end) and applies \`reduceToValue\` with the renderer's first-numeric-field fallback (stat \`reducedValue\` reflects what renders); \`SUSPICIOUS_GAP\` is informational and never downgrades the verdict on its own. After writing a widget: read the validation summary, fix any \`suspicious\`/\`broken\` widget, and resubmit — or call \`inspect_chart_data\` / \`get_dashboard\` / load the dashboard URL. Flags to know: \`EMPTY_GROUPING\` (groupBy found zero distinct values), \`METRIC_NOT_FOUND\` (metrics widget's metric name isn't in the warehouse — distinct from a real metric with no recent data), \`BUILDER_WARNINGS\`.
 
 ## Raw SQL Widgets (\`raw_sql_chart\` endpoint)
 

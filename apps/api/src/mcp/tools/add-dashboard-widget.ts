@@ -24,7 +24,11 @@ import {
 	validateRawSqlMacro,
 	visualizationToDisplayType,
 } from "../lib/raw-sql-widget"
-import { formatValidationSummary, inspectWidgetsAfterMutation } from "../lib/inspect-widget"
+import {
+	collectBlockingBuilderWarnings,
+	formatValidationSummary,
+	inspectWidgetsAfterMutation,
+} from "../lib/inspect-widget"
 import { resolveTenant } from "../lib/query-warehouse"
 
 const TOOL = "add_dashboard_widget"
@@ -127,6 +131,16 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 				})
 			} else {
 				dataSource = yield* decodeDataSourceJson(data_source_json!, TOOL)
+			}
+
+			// Reject clauses the query engine can't honor BEFORE persisting, so a
+			// mis-scoped widget (dropped filter / group-by) can never be saved
+			// silently. Raw-SQL widgets short-circuit (no query-builder warnings).
+			const blockingWarnings = yield* collectBlockingBuilderWarnings(dataSource)
+			if (blockingWarnings.length > 0) {
+				return validationError(
+					`This widget's query has clauses the engine can't honor, which would silently change what the chart shows (the widget was NOT saved):\n- ${blockingWarnings.join("\n- ")}\n\nFix and retry. Notes: span/resource attributes work automatically (e.g. \`query.context = "x"\`) but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys; prefix non-allowlisted groupBy keys with \`attr.\`.`,
+				)
 			}
 
 			const explicitLayout = layout_json ? yield* decodeLayoutJson(layout_json, TOOL) : undefined

@@ -22,7 +22,7 @@ The query draft schema ([packages/domain/src/http/query-engine.ts](packages/doma
 - For `dataSource: "traces"` or `"logs"`: **do not** include `metricName`, `metricType`, `isMonotonic`, or `signalSource`. They are not part of the trace/log query shape.
 - For `dataSource: "metrics"`: include `metricName` (the metric to query), `metricType`, and optionally `isMonotonic` / `signalSource`.
 
-A trace query that still carries empty `metricName`/`metricType` is legacy shape — stored dashboards were migrated to drop them.
+Never add `metricName`/`metricType`/`isMonotonic`/`signalSource` to a trace or log query — they belong solely to `dataSource: "metrics"` queries. (Older stored dashboards were migrated to drop them; new widgets must not reintroduce them.)
 
 ## Trap 2 — `whereClause` is a custom grammar, not SQL
 
@@ -30,17 +30,19 @@ Parser: [packages/domain/src/where-clause.ts:7](packages/domain/src/where-clause
 
 | Operator | Example |
 |---|---|
-| `=` | `service.name = "ingest"` |
+| `=` `!=` | `service.name = "ingest"`, `error.type != "Timeout"` |
 | `>` `<` `>=` `<=` | `http.request.body.size > 1000` |
-| `contains` | `http.route contains "v1"` |
-| `exists` | `maple.signal exists` |
+| `contains` `!contains` | `http.route contains "v1"`, `http.route !contains "/health"` |
+| `exists` `!exists` | `maple.signal exists`, `db.system !exists` |
 
 Rules:
 
 - Clauses join with ` AND ` (case-insensitive). No `OR`, no parentheses.
 - Keys are normalized to lowercase by the parser.
 - Quoted values use double quotes.
-- **There is no `IS NULL` / `IS NOT NULL`.** To require an attribute be present, use `<key> exists`. This is the single most common mistake.
+- **There is no `IS NULL` / `IS NOT NULL`.** To require an attribute be present, use `<key> exists`; to require it absent, `<key> !exists`. This is the single most common mistake.
+- **Attribute filters work directly.** On `dataSource: "traces"` you can filter by any span/resource attribute — `query.context = "tracesList"`, `error.type != "Timeout"`, `db.system = "clickhouse"`. Bare keys outside the small structured allowlist (`service.name`, `span.name`, `deployment.environment`, `deployment.commit_sha`, `root_only`, `has_error`) are auto-treated as span attributes; you can also write them explicitly as `attr.<key>` / `resource.<key>`. Cap: 5 `attr.*` + 5 `resource.*` filters per query.
+- **Unhonored clauses are now rejected at write time.** `add_dashboard_widget` / `update_dashboard_widget` / `replace_dashboard_widgets` run the builder before persisting and FAIL (nothing saved) if a clause can't be honored — e.g. exceeding the attr cap, or an unsupported logs/metrics filter key. (This used to be a silent drop.)
 
 Wrong:
 
@@ -152,11 +154,18 @@ From `normalizeTraceAggregation` / `normalizeMetricsAggregation` in [apps/web/sr
 
 ## `groupBy` prefix conventions
 
-Source-dependent:
+The query-builder `groupBy` accepts a small **literal allowlist per source**; everything else
+MUST be prefixed `attr.<key>`. A token that isn't recognized and isn't `attr.`-prefixed is
+dropped — and now causes the widget mutation tools to **reject the write** rather than silently
+breaking the breakdown.
 
-- **traces:** unprefixed dotted attribute names — `maple.signal`, `error.type`, `http.response.status_code`, `service.name`, `maple.org_id`.
-- **logs:** unprefixed — `service.name`, `severity`.
-- **metrics:** `attr.` prefix on resource/attribute keys — `attr.signal`, `attr.status`, `attr.org_id`.
+- **traces:** bare literals are only `service` / `service.name`, `span` / `span.name`, `status` / `status.code`, `http.method`, `none` / `all`. **Every other attribute needs the `attr.` prefix** — `attr.maple.signal`, `attr.error.type`, `attr.http.response.status_code`, `attr.maple.org_id`, etc. (Writing `error.type` bare in `groupBy` does NOT work — use `attr.error.type`.)
+- **logs:** bare literals only — `service` / `service.name`, `severity`, `none`. Logs do not support `attr.*` group by.
+- **metrics:** bare `service` / `none`; everything else uses `attr.` — `attr.signal`, `attr.status`, `attr.org_id`.
+
+If a `groupBy` on an attribute finds zero distinct values, the chart collapses to a single
+`all` series. `inspect_chart_data` now flags this as `EMPTY_GROUPING` (verdict `broken`) instead
+of silently showing the ungrouped total.
 
 ## `display.unit` is mandatory
 
@@ -181,23 +190,36 @@ When a chart uses `formulas` and the auxiliary queries shouldn't render on their
 
 ## Verification — MCP success ≠ query success
 
-`update_dashboard_widget` and friends return success even when the stored shape will fail at query time. After submitting:
+The widget mutation tools now do two things automatically that used to be silent gaps:
 
-1. Call `mcp__maple__inspect_chart_data` against the widget, **or**
-2. Call `mcp__maple__get_dashboard` to read back the stored JSON and confirm shape, **or**
-3. Load the dashboard URL in the browser and watch for `Invalid input for getQueryBuilderTimeseries`.
+- **Pre-persist rejection:** unhonored where-clause/groupBy clauses fail the write (nothing saved) — so a `IS NULL`, a 6th attr filter, or an unsupported logs/metrics key surfaces as an error instead of degrading to wrong/empty data.
+- **Auto-validation:** the response includes an `inspect_chart_data` summary (verdict + flags). `inspect_chart_data` now also **evaluates `formulas[]`** (so formula/hit-rate widgets verify end-to-end) and **applies `reduceToValue`** with the same first-numeric-field fallback the renderer uses (so stat-tile `reducedValue` reflects what renders). `SUSPICIOUS_GAP` is informational only — sparse/bursty data no longer downgrades the verdict.
 
-If you see that error, the culprit is almost always Trap 1 (metric fields on a trace/log query, or a malformed query draft) or Trap 2 (SQL `IS NULL` instead of `exists`).
+Still confirm after submitting:
 
-**`whereClause` failures are invisible to the schema.** `whereClause` is just `Schema.String` — the parser ([packages/domain/src/where-clause.ts](packages/domain/src/where-clause.ts)) accepts the field at decode time and silently drops unsupported clauses at query time. A Trap 2 `IS NOT NULL` degrades to "no `maple.signal` filter applied" without producing any error in the UI — just wrong/empty results. Always run `parseWhereClause` on the clause (or eyeball it against the operator table above).
+1. Read the returned validation summary; if `verdict` is `suspicious`/`broken`, fix and resubmit.
+2. Call `mcp__maple__inspect_chart_data` for a deeper look, **or** `mcp__maple__get_dashboard` to read back the stored JSON, **or** load the dashboard URL.
+
+Verdict flags worth knowing: `EMPTY_GROUPING` (groupBy found zero distinct values → one `all` series), `METRIC_NOT_FOUND` (a metrics widget references a metric name not in the warehouse — distinct from a real metric with no recent data), `BUILDER_WARNINGS` (a clause the engine couldn't honor).
+
+If you see `Invalid input for getQueryBuilderTimeseries`, the culprit is almost always Trap 1 (metric fields on a trace/log query) or a malformed query draft.
+
+## Rebuilding many widgets at once
+
+To replace a dashboard's whole widget list in one validated, atomic write, use
+`mcp__maple__replace_dashboard_widgets` (`widgets_json` = a JSON array of widget objects, same
+shape as `widgets[]` from `get_dashboard`). `id` and `layout` are optional per widget
+(auto-generated / auto-placed). Every widget is validated before anything persists — if one
+widget's query can't be honored, nothing is saved. This is the safe middle ground between N
+incremental `add_dashboard_widget` calls and the corruption-prone full `dashboard_json` replace.
 
 ## Quick checklist before submitting widget JSON
 
 - [ ] Trace/log queries omit `metricName`/`metricType`/`isMonotonic`/`signalSource`; metrics queries include `metricName` + `metricType`.
-- [ ] `whereClause` uses only `=`, `>`, `<`, `>=`, `<=`, `contains`, `exists`, joined by ` AND `.
+- [ ] `whereClause` uses only `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `!contains`, `exists`, `!exists`, joined by ` AND ` (no SQL `IS NULL`).
 - [ ] `aggregation` is valid for the chosen `dataSource` (no `rate`/`sum` on traces).
-- [ ] `groupBy` uses the right prefix (`attr.` for metrics; unprefixed for traces/logs).
+- [ ] `groupBy` uses the right prefix: bare only for the per-source allowlist (traces: `service`/`span`/`status`/`http.method`); **every other attribute needs `attr.<key>`** (traces & metrics). Logs: bare `service`/`severity` only.
 - [ ] `display.unit` is set (and matches the aggregation — `duration_ms`, `percent`, etc.).
 - [ ] Stat widgets include `dataSource.transform.reduceToValue`.
 - [ ] Formula charts with hidden queries include `dataSource.transform.hideSeries.baseNames`.
-- [ ] After submitting, verify with `inspect_chart_data` or by loading the dashboard.
+- [ ] After submitting, read the auto-validation summary; verify `suspicious`/`broken` widgets with `inspect_chart_data` or by loading the dashboard.

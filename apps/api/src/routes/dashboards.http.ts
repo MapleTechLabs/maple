@@ -142,10 +142,13 @@ export const HttpDashboardsLive = HttpApiBuilder.group(MapleApi, "dashboards", (
 							}),
 					})
 
+					// `description`/`tags` are `Schema.optionalKey`; the Schema.Class
+					// constructor rejects a present `undefined`. A template that defines
+					// neither surfaces them as `undefined`, so omit the key in that case.
 					const portable = new PortableDashboardDocument({
 						name: payload.name ?? built.name,
-						description: built.description,
-						tags: built.tags,
+						...(built.description !== undefined && { description: built.description }),
+						...(built.tags !== undefined && { tags: built.tags }),
 						timeRange: built.timeRange,
 						widgets: built.widgets,
 					})

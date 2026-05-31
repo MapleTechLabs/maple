@@ -34,6 +34,7 @@ import { registerListMetricsTool } from "./list-metrics"
 import { registerListServicesTool } from "./list-services"
 import { registerQueryDataTool } from "./query-data"
 import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
+import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
 import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets"
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
 import { registerSearchLogsTool } from "./search-logs"
@@ -105,6 +106,7 @@ export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition
 	registerDescribeWarehouseTablesTool(registrar)
 	registerUpdateDashboardWidgetTool(registrar)
 	registerRemoveDashboardWidgetTool(registrar)
+	registerReplaceDashboardWidgetsTool(registrar)
 	registerReorderDashboardWidgetsTool(registrar)
 	registerInspectChartDataTool(registrar)
 	registerComparePeriodsTool(registrar)

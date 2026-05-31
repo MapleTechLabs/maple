@@ -140,8 +140,13 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 				return new DashboardDocument({
 					id: existing.id,
 					name: existing.name,
-					description: existing.description,
-					tags: existing.tags,
+					// `description`/`tags` are `Schema.optionalKey` — the Schema.Class
+					// constructor permits the key to be *absent* but rejects a present
+					// `undefined` ("Expected array, got undefined"). A dashboard stored
+					// without either field surfaces as `undefined` here, so omit the key
+					// rather than forwarding `undefined` and crashing the mutation.
+					...(existing.description !== undefined && { description: existing.description }),
+					...(existing.tags !== undefined && { tags: existing.tags }),
 					timeRange: existing.timeRange,
 					widgets: nextWidgets,
 					createdAt: existing.createdAt,
