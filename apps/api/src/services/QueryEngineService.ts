@@ -934,7 +934,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						endTime: request.endTime,
 						bucketSeconds: bucketSeconds!,
 					},
-					"Failed to execute traces all-metrics timeseries query",
+					"tracesAllMetricsTimeseries",
 				)
 
 				return new QueryEngineExecuteResponse({
@@ -963,7 +963,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds: bucketSeconds!,
 				},
-				"Failed to execute traces timeseries query",
+				"tracesTimeseries",
 			)
 
 			const field = tracesMetricFieldMap[request.query.metric]
@@ -996,7 +996,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds: bucketSeconds!,
 				},
-				"Failed to execute logs timeseries query",
+				"logsTimeseries",
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -1038,7 +1038,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						profile: "aggregation",
 						context: "metrics rate/increase query",
 					}),
-					"Failed to execute metrics rate/increase query",
+					"metricsRateIncrease",
 				)
 				const rateResult = compiled.castRows(rawRows)
 
@@ -1078,7 +1078,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds: bucketSeconds!,
 				},
-				"Failed to execute metrics timeseries query",
+				"metricsTimeseries",
 			)
 
 			const metricValueField = {
@@ -1133,7 +1133,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						request.query.metric === "apdex" ? request.query.apdexThresholdMs : undefined,
 				}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"Failed to execute traces breakdown query",
+				"tracesBreakdown",
 			)
 
 			const field = tracesMetricFieldMap[request.query.metric]
@@ -1164,7 +1164,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					limit: request.query.limit,
 				}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"Failed to execute logs breakdown query",
+				"logsBreakdown",
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -1193,7 +1193,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					startTime: request.startTime,
 					endTime: request.endTime,
 				},
-				"Failed to execute metrics breakdown query",
+				"metricsBreakdown",
 			)
 
 			const valueFieldMap = {
@@ -1236,7 +1236,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						| undefined,
 				}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"Failed to execute traces list query",
+				"tracesList",
 				"list",
 			)
 
@@ -1275,7 +1275,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					startTime: request.startTime,
 					endTime: request.endTime,
 				},
-				"Failed to execute attribute keys query",
+				"attributeKeys",
 				"discovery",
 			)
 
@@ -1304,7 +1304,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					tenant,
 					CH.tracesFacetsQuery(opts),
 					baseParams,
-					"Failed to execute traces facets query",
+					"tracesFacets",
 					"discovery",
 				)
 				return new QueryEngineExecuteResponse({
@@ -1333,7 +1333,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						matchModes: envMatchMode ? { deploymentEnv: envMatchMode } : undefined,
 					}),
 					baseParams,
-					"Failed to execute logs facets query",
+					"logsFacets",
 					"discovery",
 				)
 				return new QueryEngineExecuteResponse({
@@ -1366,7 +1366,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 						fingerprintHashes: filters?.fingerprintHashes as string[] | undefined,
 					}),
 					baseParams,
-					"Failed to execute errors facets query",
+					"errorsFacets",
 					// "list" (1.5 GB), not "discovery" (512 MB): the error-type facet groups
 					// error_events by a variable-length ErrorLabel key, which tips just over
 					// the discovery cap (~490 MiB observed in production).
@@ -1391,7 +1391,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					tenant,
 					CH.servicesFacetsQuery(),
 					baseParams,
-					"Failed to execute services facets query",
+					"servicesFacets",
 					"discovery",
 				)
 				return new QueryEngineExecuteResponse({
@@ -1418,7 +1418,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 				tenant,
 				CH.tracesDurationStatsQuery(opts),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"Failed to execute traces duration stats query",
+				"tracesDurationStats",
 			)
 			const row = rows[0]
 			return new QueryEngineExecuteResponse({
@@ -1456,7 +1456,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 				tenant,
 				queryFn({ attributeKey: request.query.attributeKey, limit: request.query.limit }),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				`Failed to execute ${request.query.scope} attribute values query`,
+				`attributeValues:${request.query.scope}`,
 				"discovery",
 			)
 			return new QueryEngineExecuteResponse({
@@ -1484,7 +1484,7 @@ export const makeQueryEngineExecute = (warehouse: QueryEngineWarehouse) =>
 					matchModes: envMatchMode ? { deploymentEnv: envMatchMode } : undefined,
 				}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"Failed to execute logs count query",
+				"logsCount",
 				"discovery",
 			)
 			return new QueryEngineExecuteResponse({
@@ -1622,7 +1622,7 @@ export const makeQueryEngineEvaluate = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds,
 				},
-				"Failed to evaluate traces alert query",
+				"tracesAlertEval",
 			)
 
 			for (const row of rows) {
@@ -1655,7 +1655,7 @@ export const makeQueryEngineEvaluate = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds,
 				},
-				"Failed to evaluate logs alert query",
+				"logsAlertEval",
 			)
 
 			for (const row of rows) {
@@ -1688,7 +1688,7 @@ export const makeQueryEngineEvaluate = (warehouse: QueryEngineWarehouse) =>
 					endTime: request.endTime,
 					bucketSeconds,
 				},
-				"Failed to evaluate metrics alert query",
+				"metricsAlertEval",
 			)
 
 			for (const row of rows) {

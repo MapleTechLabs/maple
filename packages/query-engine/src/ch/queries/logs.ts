@@ -411,6 +411,70 @@ export interface LogsFacetsOutput {
 }
 
 export function logsFacetsQuery(opts: LogsQueryOpts): CHUnionQuery<LogsFacetsOutput> {
+	// Facets only filter on dimensions the hourly MV carries (service, severity,
+	// deployment env), so route to `logs_aggregates_hourly` and collapse three
+	// full raw-`logs` scans into three cheap pre-aggregated reads. The lone
+	// exception is the `contains` env match mode, which needs a substring scan on
+	// the raw map column — fall back to raw `logs` there (mirrors the
+	// `canUseLogsAggregatesHourly` guard used by the timeseries query).
+	if (opts.matchModes?.deploymentEnv === "contains") {
+		return logsFacetsQueryFromRaw(opts)
+	}
+	return logsFacetsQueryFromMv(opts)
+}
+
+function logsFacetsQueryFromMv(opts: LogsQueryOpts): CHUnionQuery<LogsFacetsOutput> {
+	const baseWhere = (
+		$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
+	): Array<CH.Condition | undefined> => [
+		$.OrgId.eq(param.string("orgId")),
+		$.Hour.gte(param.dateTime("startTime")),
+		$.Hour.lte(param.dateTime("endTime")),
+		CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+		CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+		opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+	]
+
+	const severityQuery = from(LogsAggregatesHourly)
+		.select(($) => ({
+			severityText: $.SeverityText,
+			serviceName: CH.lit(""),
+			deploymentEnv: CH.lit(""),
+			count: CH.sum($.Count),
+			facetType: CH.lit("severity"),
+		}))
+		.where(baseWhere)
+		.groupBy("severityText")
+
+	const serviceQuery = from(LogsAggregatesHourly)
+		.select(($) => ({
+			severityText: CH.lit(""),
+			serviceName: $.ServiceName,
+			deploymentEnv: CH.lit(""),
+			count: CH.sum($.Count),
+			facetType: CH.lit("service"),
+		}))
+		.where(baseWhere)
+		.groupBy("serviceName")
+
+	const envQuery = from(LogsAggregatesHourly)
+		.select(($) => ({
+			severityText: CH.lit(""),
+			serviceName: CH.lit(""),
+			deploymentEnv: $.DeploymentEnv,
+			count: CH.sum($.Count),
+			facetType: CH.lit("deploymentEnv"),
+		}))
+		.where(($) => [...baseWhere($), $.DeploymentEnv.neq("")])
+		.groupBy("deploymentEnv")
+
+	return unionAll(severityQuery, serviceQuery, envQuery)
+		.orderBy(["count", "desc"])
+		.limit(500)
+		.format("JSON")
+}
+
+function logsFacetsQueryFromRaw(opts: LogsQueryOpts): CHUnionQuery<LogsFacetsOutput> {
 	const baseWhere = ($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(param.string("orgId")),
 		$.TimestampTime.gte(param.dateTime("startTime")),

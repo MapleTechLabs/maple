@@ -387,16 +387,29 @@ describe("errorRateByServiceQuery", () => {
 // ---------------------------------------------------------------------------
 
 describe("logsFacetsQuery", () => {
-	it("compiles UNION ALL with severity, service, and deploymentEnv facets", () => {
+	it("routes to logs_aggregates_hourly with severity/service/deploymentEnv facets", () => {
 		const q = logsFacetsQuery({})
 		const { sql } = compileUnion(q, baseParams)
 		const unionCount = (sql.match(/UNION ALL/g) || []).length
 		expect(unionCount).toBe(2)
+		expect(sql).toContain("FROM logs_aggregates_hourly")
+		// Pre-aggregated reads — no raw map lookups on the MV path.
+		expect(sql).not.toContain("ResourceAttributes")
 		expect(sql).toContain("'severity' AS facetType")
 		expect(sql).toContain("'service' AS facetType")
 		expect(sql).toContain("'deploymentEnv' AS facetType")
-		expect(sql).toContain("ResourceAttributes['deployment.environment']")
+		expect(sql).toContain("sum(Count) AS count")
+		// Env facet reads the top-level MV column, not the resource-attr map.
+		expect(sql).toContain("DeploymentEnv AS deploymentEnv")
 		expect(sql).toContain("ORDER BY count DESC")
+	})
+
+	it("filters on Hour instead of the dual Timestamp/TimestampTime predicates", () => {
+		const q = logsFacetsQuery({})
+		const { sql } = compileUnion(q, baseParams)
+		expect(sql).toContain("Hour >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Hour <= '2024-01-02 00:00:00'")
+		expect(sql).not.toContain("TimestampTime")
 	})
 
 	it("applies optional filters", () => {
@@ -404,6 +417,19 @@ describe("logsFacetsQuery", () => {
 		const { sql } = compileUnion(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("SeverityText = 'ERROR'")
+	})
+
+	it("falls back to raw `logs` for `contains`-mode environment match", () => {
+		const q = logsFacetsQuery({
+			environments: ["prod"],
+			matchModes: { deploymentEnv: "contains" },
+		})
+		const { sql } = compileUnion(q, baseParams)
+		expect(sql).toContain("FROM logs")
+		expect(sql).not.toContain("logs_aggregates_hourly")
+		expect(sql).toContain(
+			"positionCaseInsensitive(ResourceAttributes['deployment.environment'], 'prod')",
+		)
 	})
 })
 
@@ -442,11 +468,12 @@ describe("environments filter", () => {
 		expect(sql).toContain("ResourceAttributes['deployment.environment'] IN ('production')")
 	})
 
-	it("logsFacetsQuery applies environments filter to all branches", () => {
+	it("logsFacetsQuery applies environments filter to all branches via the MV column", () => {
 		const q = logsFacetsQuery({ environments: ["production"] })
 		const { sql } = compileUnion(q, baseParams)
-		const matches =
-			sql.match(/ResourceAttributes\['deployment\.environment'\] IN \('production'\)/g) || []
+		expect(sql).toContain("FROM logs_aggregates_hourly")
+		const matches = sql.match(/DeploymentEnv IN \('production'\)/g) || []
 		expect(matches.length).toBe(3)
+		expect(sql).not.toContain("ResourceAttributes")
 	})
 })

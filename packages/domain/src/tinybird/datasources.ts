@@ -492,6 +492,9 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		K8sCluster: t.simpleAggregateFunction("max", t.string()),
 		K8sPodName: t.simpleAggregateFunction("max", t.string()),
 		K8sDeploymentName: t.simpleAggregateFunction("max", t.string()),
+		K8sStatefulSetName: t.simpleAggregateFunction("max", t.string()),
+		K8sDaemonSetName: t.simpleAggregateFunction("max", t.string()),
+		K8sNamespaceName: t.simpleAggregateFunction("max", t.string()),
 		CloudPlatform: t.simpleAggregateFunction("max", t.string()),
 		CloudProvider: t.simpleAggregateFunction("max", t.string()),
 		FaasName: t.simpleAggregateFunction("max", t.string()),
@@ -499,6 +502,19 @@ export const servicePlatformsHourly = defineDatasource("service_platforms_hourly
 		ProcessRuntimeName: t.simpleAggregateFunction("max", t.string()),
 		SpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 	},
+	// The K8sStatefulSetName/K8sDaemonSetName/K8sNamespaceName columns were added
+	// after this datasource already held data. This MV's 90-day TTL outlives the
+	// `traces` source's 30-day TTL, so a re-populate from `traces` can't refill
+	// the 30-90 day window. Forward-migrate existing rows in place instead,
+	// defaulting the new columns to '' (the empty-string sentinel the `max()`
+	// platform classifier already treats as "attribute not present").
+	forwardQuery: `SELECT
+    OrgId, Hour, ServiceName, DeploymentEnv,
+    K8sCluster, K8sPodName, K8sDeploymentName,
+    defaultValueOfTypeName('SimpleAggregateFunction(max, String)') AS K8sStatefulSetName,
+    defaultValueOfTypeName('SimpleAggregateFunction(max, String)') AS K8sDaemonSetName,
+    defaultValueOfTypeName('SimpleAggregateFunction(max, String)') AS K8sNamespaceName,
+    CloudPlatform, CloudProvider, FaasName, MapleSdkType, ProcessRuntimeName, SpanCount`,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "Hour", "ServiceName", "DeploymentEnv"],
