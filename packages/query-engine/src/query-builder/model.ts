@@ -682,50 +682,20 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 	}
 
 	if (query.dataSource === "traces") {
-		// A non-empty `valueField` (e.g. "attr.result.rowCount") switches the query
-		// into numeric-attribute aggregation mode: `aggregation` becomes a numeric
-		// function over that span attribute instead of a duration-based metric.
-		const numericValueField = (query.valueField ?? "").trim()
-		const isNumericAggregation = numericValueField.length > 0
-		const numericAggregationFns = new Set(["avg", "sum", "min", "max", "p50", "p95", "p99"])
+		const allowedMetrics = new Set([
+			"count",
+			"avg_duration",
+			"p50_duration",
+			"p95_duration",
+			"p99_duration",
+			"error_rate",
+		])
 
-		if (isNumericAggregation) {
-			if (!numericAggregationFns.has(query.aggregation)) {
-				return {
-					query: null,
-					warnings,
-					error: `Numeric-attribute aggregation requires one of avg/sum/min/max/p50/p95/p99 (got: ${query.aggregation})`,
-				}
-			}
-		} else {
-			const allowedMetrics = new Set([
-				"count",
-				"avg_duration",
-				"p50_duration",
-				"p95_duration",
-				"p99_duration",
-				"error_rate",
-			])
-
-			if (!allowedMetrics.has(query.aggregation)) {
-				return {
-					query: null,
-					warnings,
-					error: `Unsupported traces metric: ${query.aggregation}`,
-				}
-			}
-		}
-
-		// Preserve attribute-key case (ClickHouse Map keys are case-sensitive); only
-		// strip a leading `attr.` prefix if present.
-		const numericAttributeKey = isNumericAggregation
-			? numericValueField.replace(/^attr\./i, "").trim()
-			: ""
-		if (isNumericAggregation && !numericAttributeKey) {
+		if (!allowedMetrics.has(query.aggregation)) {
 			return {
 				query: null,
 				warnings,
-				error: "valueField must reference a span attribute, e.g. attr.result.rowCount",
+				error: `Unsupported traces metric: ${query.aggregation}`,
 			}
 		}
 
@@ -755,33 +725,20 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		}
 
 		const specFilters = buildTracesSpecFilters(filters)
-		const finalFilters = isNumericAggregation
-			? {
-					...(specFilters ?? {}),
-					numericAggregation: {
-						key: numericAttributeKey,
-						fn: query.aggregation as "avg" | "sum" | "min" | "max" | "p50" | "p95" | "p99",
-					},
-				}
-			: specFilters
 
 		return {
 			query: {
 				kind: "timeseries",
 				source: "traces",
-				// Numeric-attribute aggregations carry `metric: "count"` (still a useful
-				// sample count); the charted value comes from `filters.numericAggregation`.
-				metric: isNumericAggregation
-					? "count"
-					: (query.aggregation as
-							| "count"
-							| "avg_duration"
-							| "p50_duration"
-							| "p95_duration"
-							| "p99_duration"
-							| "error_rate"),
+				metric: query.aggregation as
+					| "count"
+					| "avg_duration"
+					| "p50_duration"
+					| "p95_duration"
+					| "p99_duration"
+					| "error_rate",
 				groupBy,
-				filters: finalFilters,
+				filters: specFilters,
 				bucketSeconds,
 			} as QuerySpec,
 			warnings,

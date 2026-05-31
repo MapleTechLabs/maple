@@ -223,3 +223,40 @@ incremental `add_dashboard_widget` calls and the corruption-prone full `dashboar
 - [ ] Stat widgets include `dataSource.transform.reduceToValue`.
 - [ ] Formula charts with hidden queries include `dataSource.transform.hideSeries.baseNames`.
 - [ ] After submitting, read the auto-validation summary; verify `suspicious`/`broken` widgets with `inspect_chart_data` or by loading the dashboard.
+
+## Numeric attribute aggregation (traces)
+
+Traces charts can aggregate a **numeric span attribute** instead of span Duration —
+e.g. p95 of `result.rowCount`, the distribution of `db.duration_ms`, or avg of
+`db.retry.attempts`.
+
+In a query-builder draft (`dataSource: "traces"`), set:
+
+- `aggregation` to one of `avg`, `sum`, `min`, `max`, `p50`, `p95`, `p99`
+- `valueField` to the attribute, e.g. `"attr.result.rowCount"` (the `attr.` prefix
+  is optional; the key after it is case-sensitive)
+
+Example widget query draft:
+
+```json
+{
+  "id": "a",
+  "name": "A",
+  "dataSource": "traces",
+  "aggregation": "p95",
+  "valueField": "attr.result.rowCount",
+  "whereClause": "service.name = \"api\"",
+  "groupBy": ["service.name"]
+}
+```
+
+Notes & gotchas:
+
+- The attribute value is coerced with `toFloat64OrNull`, so spans whose attribute is
+  missing or non-numeric are **skipped** by the aggregate (they do not count as 0).
+- Numeric-attribute aggregation always runs on the **raw `traces`** table — the
+  pre-aggregated materialized views only hold Duration — so very wide time ranges are
+  more expensive than a Duration metric. Keep the range/filters tight.
+- Duration-based metrics (`count`, `avg_duration`, `p50/p95/p99_duration`,
+  `error_rate`, `apdex`) are unchanged; omit `valueField` to use them.
+- Only `traces` supports this. Logs/metrics drafts ignore `valueField`.

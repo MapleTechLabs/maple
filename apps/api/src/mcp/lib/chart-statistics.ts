@@ -186,13 +186,6 @@ export interface FlagContext {
 	source?: "traces" | "logs" | "metrics"
 	kind?: "timeseries" | "breakdown"
 	displayUnit?: string
-	/**
-	 * True when the series is a numeric span-attribute aggregation (p95 of
-	 * `result.rowCount`, etc.). Its values are an arbitrary numeric attribute, not a
-	 * duration/percent/count, so metric-class heuristics (negative-value,
-	 * unrealistic-magnitude, unit-mismatch) are skipped to avoid false flags.
-	 */
-	numericAggregation?: boolean
 	/** Pre-existing flags (e.g. BROKEN_BREAKDOWN detected before stats). */
 	preFlags?: readonly ChartFlag[]
 }
