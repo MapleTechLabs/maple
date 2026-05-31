@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use maple_ingest::metrics;
+use moka::future::Cache;
 use reqwest::Client;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::time::Instant;
 use tracing::{error, info, warn};
@@ -235,5 +236,256 @@ async fn flush_all(
                 );
             }
         }
+    }
+}
+
+/// Synchronous, cached entitlement check against Autumn's `POST /v1/check`.
+///
+/// Unlike [`AutumnTracker`] (fire-and-forget usage metering), this sits in the
+/// ingest hot path and gates a request *before* it is accepted. It is only
+/// constructed when `AUTUMN_ENFORCE_LIMITS=true` and `AUTUMN_SECRET_KEY` is set,
+/// so local dev / self-hosted deployments are unaffected.
+#[derive(Clone)]
+pub struct AutumnEntitlements {
+    client: Client,
+    secret_key: String,
+    api_url: String,
+    // Keyed by `"{org_id}:{feature_id}"`. Holds both confirmed decisions and
+    // fail-open allows; a single TTL keeps it simple and mirrors the other moka
+    // resolver caches in the gateway.
+    cache: Cache<String, bool>,
+}
+
+#[derive(Serialize)]
+struct CheckRequest<'a> {
+    customer_id: &'a str,
+    feature_id: &'a str,
+}
+
+// Autumn's `/v1/check` response (snake_case on the wire). We only model the
+// fields the gating decision needs and `#[serde(default)]` everything, so any
+// added/renamed field is ignored rather than failing the parse (which would fail
+// us open). `balance` is the `Balance` object, or null when the customer has no
+// balance for the feature.
+#[derive(Deserialize)]
+struct CheckResponse {
+    #[serde(default)]
+    allowed: bool,
+    #[serde(default)]
+    balance: Option<FeatureBalance>,
+}
+
+#[derive(Deserialize)]
+struct FeatureBalance {
+    #[serde(default)]
+    unlimited: bool,
+    #[serde(default, alias = "overageAllowed")]
+    overage_allowed: bool,
+    /// Remaining balance available for use.
+    #[serde(default)]
+    remaining: Option<f64>,
+}
+
+impl AutumnEntitlements {
+    pub fn new(client: Client, secret_key: String, api_url: &str, cache_ttl_secs: u64) -> Self {
+        let api_url = api_url.trim_end_matches('/').to_string();
+        let cache = Cache::builder()
+            .time_to_live(Duration::from_secs(cache_ttl_secs.max(1)))
+            .max_capacity(10_000)
+            .build();
+
+        info!(cache_ttl_secs, "Autumn entitlement enforcement enabled");
+
+        Self {
+            client,
+            secret_key,
+            api_url,
+            cache,
+        }
+    }
+
+    /// Returns whether `org_id` may ingest the given `feature_id`
+    /// (`"logs" | "traces" | "metrics"`). Fails open (`true`) on any
+    /// transport/decode error so a billing-provider outage never drops
+    /// customer data.
+    pub async fn is_allowed(&self, org_id: &str, feature_id: &str) -> bool {
+        let cache_key = format!("{org_id}:{feature_id}");
+        if let Some(allowed) = self.cache.get(&cache_key).await {
+            return allowed;
+        }
+
+        let allowed = self.fetch_allowed(org_id, feature_id).await;
+        self.cache.insert(cache_key, allowed).await;
+        allowed
+    }
+
+    async fn fetch_allowed(&self, org_id: &str, feature_id: &str) -> bool {
+        let body = CheckRequest {
+            customer_id: org_id,
+            feature_id,
+        };
+
+        let result = self
+            .client
+            .post(format!("{}/v1/check", self.api_url))
+            .header("Authorization", format!("Bearer {}", self.secret_key))
+            .timeout(Duration::from_secs(5))
+            .json(&body)
+            .send()
+            .await;
+
+        let response = match result {
+            Ok(resp) if resp.status().is_success() => resp,
+            Ok(resp) => {
+                warn!(
+                    org_id,
+                    feature_id,
+                    status = %resp.status(),
+                    "Autumn check returned non-success; failing open"
+                );
+                return true;
+            }
+            Err(err) => {
+                warn!(
+                    org_id,
+                    feature_id,
+                    error = %err,
+                    "Autumn check request failed; failing open"
+                );
+                return true;
+            }
+        };
+
+        match response.json::<CheckResponse>().await {
+            Ok(check) => decide_allowed(&check),
+            Err(err) => {
+                warn!(
+                    org_id,
+                    feature_id,
+                    error = %err,
+                    "Failed to decode Autumn check response; failing open"
+                );
+                true
+            }
+        }
+    }
+}
+
+/// Block only when the org genuinely has no headroom for the feature:
+/// - no balance object: defer to Autumn's own `allowed` flag. An org with no
+///   subscription gets `allowed:false` + `balance:null`, so this blocks.
+/// - unlimited or overage-allowed (usage-based `startup` plan): always allow.
+/// - hard-capped (`starter`): block once `remaining <= 0`. We gate on `remaining`
+///   rather than `allowed` because Autumn's default `required_balance` is 1,
+///   which would flip `allowed` to false at <1 GB left (~98%) — premature for a
+///   GB-denominated meter. Fall back to `allowed` if `remaining` is absent.
+fn decide_allowed(check: &CheckResponse) -> bool {
+    match &check.balance {
+        None => check.allowed,
+        Some(balance) => {
+            if balance.unlimited || balance.overage_allowed {
+                true
+            } else {
+                match balance.remaining {
+                    Some(remaining) => remaining > 0.0,
+                    None => check.allowed,
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resp(allowed: bool, balance: Option<FeatureBalance>) -> CheckResponse {
+        CheckResponse { allowed, balance }
+    }
+
+    fn obj(unlimited: bool, overage_allowed: bool, remaining: Option<f64>) -> Option<FeatureBalance> {
+        Some(FeatureBalance {
+            unlimited,
+            overage_allowed,
+            remaining,
+        })
+    }
+
+    #[test]
+    fn no_balance_defers_to_allowed() {
+        // No subscription: Autumn returns allowed:false + balance:null -> block.
+        assert!(!decide_allowed(&resp(false, None)));
+        assert!(decide_allowed(&resp(true, None)));
+    }
+
+    #[test]
+    fn unlimited_allows() {
+        assert!(decide_allowed(&resp(false, obj(true, false, Some(-5.0)))));
+    }
+
+    #[test]
+    fn overage_allows() {
+        // Usage-based `startup` plan is never blocked, even when over the
+        // included amount.
+        assert!(decide_allowed(&resp(false, obj(false, true, Some(-5.0)))));
+    }
+
+    #[test]
+    fn hardcap_with_remaining_allows() {
+        assert!(decide_allowed(&resp(true, obj(false, false, Some(10.0)))));
+    }
+
+    #[test]
+    fn hardcap_depleted_blocks() {
+        assert!(!decide_allowed(&resp(true, obj(false, false, Some(0.0)))));
+        assert!(!decide_allowed(&resp(true, obj(false, false, Some(-1.0)))));
+    }
+
+    #[test]
+    fn hardcap_without_remaining_falls_back_to_allowed() {
+        assert!(decide_allowed(&resp(true, obj(false, false, None))));
+        assert!(!decide_allowed(&resp(false, obj(false, false, None))));
+    }
+
+    #[test]
+    fn deserializes_wire_shape_with_remaining_and_extra_fields() {
+        // Real `/v1/check` body (snake_case, with fields we don't model).
+        let json = r#"{
+            "allowed": true,
+            "customer_id": "org_123",
+            "balance": {
+                "feature_id": "logs",
+                "granted": 50,
+                "remaining": 12.5,
+                "usage": 37.5,
+                "unlimited": false,
+                "overage_allowed": false,
+                "next_reset_at": 1234567890
+            },
+            "flag": null
+        }"#;
+        let check: CheckResponse = serde_json::from_str(json).expect("parses");
+        assert!(decide_allowed(&check));
+        assert_eq!(check.balance.unwrap().remaining, Some(12.5));
+    }
+
+    #[test]
+    fn deserializes_null_balance_no_subscription() {
+        let json = r#"{"allowed": false, "balance": null, "flag": null}"#;
+        let check: CheckResponse = serde_json::from_str(json).expect("parses");
+        assert!(!decide_allowed(&check));
+    }
+
+    #[tokio::test]
+    async fn fails_open_on_transport_error() {
+        // Port 1 is closed => connection refused => we must fail open (allow),
+        // never dropping customer data on a billing-provider outage.
+        let entitlements = AutumnEntitlements::new(
+            Client::new(),
+            "sk_test".to_string(),
+            "http://127.0.0.1:1",
+            60,
+        );
+        assert!(entitlements.is_allowed("org_123", "logs").await);
     }
 }

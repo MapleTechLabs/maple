@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use autumn::AutumnTracker;
+use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
 use axum::extract::Path;
@@ -101,6 +101,8 @@ struct AppConfig {
     autumn_secret_key: Option<String>,
     autumn_api_url: String,
     autumn_flush_interval_secs: u64,
+    autumn_enforce_limits: bool,
+    autumn_check_cache_ttl_secs: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -327,6 +329,22 @@ impl AppConfig {
             1,
         )?;
 
+        // Billing enforcement: when enabled, the gateway rejects ingestion for
+        // orgs that are over their hard-capped base-plan allotment or have no
+        // active subscription (see AutumnEntitlements). Off by default so it can
+        // be deployed dark and flipped on per-environment after verification.
+        let autumn_enforce_limits = parse_bool(
+            "AUTUMN_ENFORCE_LIMITS",
+            std::env::var("AUTUMN_ENFORCE_LIMITS").ok(),
+            false,
+        )?;
+
+        let autumn_check_cache_ttl_secs = parse_u64(
+            "AUTUMN_CHECK_CACHE_TTL_SECS",
+            std::env::var("AUTUMN_CHECK_CACHE_TTL_SECS").ok(),
+            60,
+        )?;
+
         Ok(Self {
             port,
             otlp_grpc_port,
@@ -343,6 +361,8 @@ impl AppConfig {
             autumn_secret_key,
             autumn_api_url,
             autumn_flush_interval_secs,
+            autumn_enforce_limits,
+            autumn_check_cache_ttl_secs,
         })
     }
 }
@@ -519,6 +539,7 @@ struct AppState {
     attribute_mapping_resolver: AttributeMappingResolver,
     cloudflare_resolver: CloudflareConnectorResolver,
     autumn_tracker: Option<AutumnTracker>,
+    autumn_entitlements: Option<AutumnEntitlements>,
 }
 
 #[derive(Clone)]
@@ -961,6 +982,18 @@ async fn main() {
         )
     });
 
+    // Entitlement enforcement is opt-in: requires both a secret key and the
+    // AUTUMN_ENFORCE_LIMITS flag. When absent, ingestion is never billing-gated.
+    let autumn_entitlements = match (&config.autumn_secret_key, config.autumn_enforce_limits) {
+        (Some(key), true) => Some(AutumnEntitlements::new(
+            http_client.clone(),
+            key.clone(),
+            &config.autumn_api_url,
+            config.autumn_check_cache_ttl_secs,
+        )),
+        _ => None,
+    };
+
     let ingest_key_cache = Cache::builder()
         .time_to_live(Duration::from_secs(60))
         .max_capacity(1_000)
@@ -1003,6 +1036,7 @@ async fn main() {
         http_client,
         config: config.clone(),
         autumn_tracker,
+        autumn_entitlements,
     });
 
     let cors = CorsLayer::new()
@@ -1921,6 +1955,33 @@ async fn handle_signal_inner(
         resolve_ms = key_resolve_start.elapsed().as_millis() as u64,
         "Authenticated"
     );
+
+    // --- Billing entitlement (per-signal) ---
+    // Reject ingestion when the org has no active subscription or has exhausted
+    // its hard-capped base-plan allotment for this signal. Fails open on any
+    // Autumn error (see AutumnEntitlements::is_allowed). Inert unless
+    // AUTUMN_ENFORCE_LIMITS=true and AUTUMN_SECRET_KEY is set.
+    if let Some(entitlements) = &state.autumn_entitlements {
+        let feature_id = signal.path();
+        if !entitlements
+            .is_allowed(&resolved_key.org_id, feature_id)
+            .await
+        {
+            warn!(
+                org_id = %resolved_key.org_id,
+                feature_id,
+                "Ingestion blocked: plan limit reached or no active subscription"
+            );
+            return Err((
+                ApiError::new(
+                    StatusCode::PAYMENT_REQUIRED,
+                    "Plan limit reached or no active subscription",
+                ),
+                "billing_limit",
+            ));
+        }
+    }
+
     let _org_inflight_permit = state
         .org_inflight_limiter
         .try_acquire(&resolved_key.org_id)
@@ -2068,6 +2129,24 @@ async fn handle_cloudflare_logpush_inner(
 
     Span::current().record("maple.org_id", &resolved.org_id.as_str());
     Span::current().record("maple.ingest.self_managed", resolved.self_managed);
+
+    // Logpush bills the `logs` feature — gate it the same way as OTLP logs.
+    if let Some(entitlements) = &state.autumn_entitlements {
+        if !entitlements.is_allowed(&resolved.org_id, "logs").await {
+            warn!(
+                org_id = %resolved.org_id,
+                connector_id,
+                "Cloudflare logpush blocked: plan limit reached or no active subscription"
+            );
+            return Err((
+                ApiError::new(
+                    StatusCode::PAYMENT_REQUIRED,
+                    "Plan limit reached or no active subscription",
+                ),
+                "billing_limit",
+            ));
+        }
+    }
     debug!(
         connector_id = %resolved.connector_id,
         org_id = %resolved.org_id,
