@@ -32,6 +32,7 @@ import {
 } from "@/components/icons"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { OrgClickHouseSettingsUpsertRequest } from "@maple/domain/http"
+import { DataPlatformUsageSection } from "@/components/settings/data-platform-usage-section"
 
 function getExitErrorMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): string {
 	if (Exit.isSuccess(exit)) return fallback
@@ -67,10 +68,7 @@ interface OrgClickHouseSettingsSectionProps {
 	hasEntitlement: boolean
 }
 
-export function OrgClickHouseSettingsSection({
-	isAdmin,
-	hasEntitlement,
-}: OrgClickHouseSettingsSectionProps) {
+export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgClickHouseSettingsSectionProps) {
 	const [chUrl, setChUrl] = useState("")
 	const [chUser, setChUser] = useState("default")
 	const [chPassword, setChPassword] = useState("")
@@ -93,10 +91,9 @@ export function OrgClickHouseSettingsSection({
 	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "upsert"), {
 		mode: "promiseExit",
 	})
-	const applyMutation = useAtomSet(
-		MapleApiAtomClient.mutation("orgClickHouseSettings", "applySchema"),
-		{ mode: "promiseExit" },
-	)
+	const applyMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "applySchema"), {
+		mode: "promiseExit",
+	})
 	const deleteMutation = useAtomSet(MapleApiAtomClient.mutation("orgClickHouseSettings", "delete"), {
 		mode: "promiseExit",
 	})
@@ -229,6 +226,7 @@ export function OrgClickHouseSettingsSection({
 	return (
 		<>
 			<div className="max-w-2xl space-y-6">
+				<DataPlatformUsageSection />
 				<Card>
 					<CardHeader>
 						<div className="flex items-center justify-between gap-3">
@@ -293,7 +291,9 @@ export function OrgClickHouseSettingsSection({
 										id="ch-password"
 										type="password"
 										placeholder={
-											configured ? "Leave blank to keep the current password" : "Optional"
+											configured
+												? "Leave blank to keep the current password"
+												: "Optional"
 										}
 										value={chPassword}
 										onChange={(event) => setChPassword(event.target.value)}
@@ -341,9 +341,9 @@ export function OrgClickHouseSettingsSection({
 								<div className="space-y-1">
 									<CardTitle>Schema</CardTitle>
 									<CardDescription>
-										Compare your cluster against Maple&apos;s bundled schema snapshot. Apply
-										creates missing tables and views, and adds missing columns to existing
-										tables. Type mismatches are skipped: resolve those manually.
+										Compare your cluster against Maple&apos;s bundled schema snapshot.
+										Apply creates missing tables and views, and adds missing columns to
+										existing tables. Type mismatches are skipped: resolve those manually.
 									</CardDescription>
 								</div>
 							</div>
@@ -445,7 +445,10 @@ export function OrgClickHouseSettingsSection({
 												{isDrifted && isExpanded ? (
 													<ul className="mt-2 ml-6 space-y-1 font-mono text-xs">
 														{entry.columnDrifts.map((drift) => (
-															<li key={`${entry.name}-${drift.column}`} className="text-muted-foreground">
+															<li
+																key={`${entry.name}-${drift.column}`}
+																className="text-muted-foreground"
+															>
 																{drift.kind === "missing"
 																	? `– missing column \`${drift.column}\` (expected ${drift.expectedType})`
 																	: drift.kind === "extra"
@@ -512,8 +515,8 @@ export function OrgClickHouseSettingsSection({
 						<AlertDialogTitle>Disable BYO ClickHouse?</AlertDialogTitle>
 						<AlertDialogDescription>
 							This org will fall back to the default Maple-managed Tinybird Cloud. Tables in
-							your ClickHouse cluster are NOT touched: disable just removes Maple&apos;s
-							pointer to it.
+							your ClickHouse cluster are NOT touched: disable just removes Maple&apos;s pointer
+							to it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

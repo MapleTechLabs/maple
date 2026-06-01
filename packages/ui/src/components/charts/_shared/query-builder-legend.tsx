@@ -78,6 +78,33 @@ export function legendBlockHeight(
 	return 6 + rows * 22
 }
 
+const MIN_CHART_PLOT_HEIGHT = 100 // keep plot + x-axis readable
+const MAX_LEGEND_FRACTION = 0.45 // stats table never exceeds ~45% of the widget
+const MIN_LEGEND_HEIGHT = 44 // header row + partial scrollable row
+
+/**
+ * Like {@link legendBlockHeight}, but caps the reservation to the measured
+ * container height so the chart keeps a usable plot height in short widgets.
+ * The legend body (`h-full overflow-auto`) scrolls inside the capped strip.
+ */
+export function responsiveLegendHeight(
+	variant: "compact" | "stats",
+	seriesCount: number,
+	containerHeight: number | undefined,
+): number {
+	const ideal = legendBlockHeight(variant, seriesCount)
+	if (!containerHeight || containerHeight <= 0) return ideal // pre-measure: avoid flash
+	const cap = Math.min(
+		Math.round(containerHeight * MAX_LEGEND_FRACTION),
+		containerHeight - MIN_CHART_PLOT_HEIGHT,
+	)
+	if (cap < MIN_LEGEND_HEIGHT) {
+		// Widget too short to honor both — give the legend a small scrollable strip.
+		return Math.min(MIN_LEGEND_HEIGHT, Math.round(containerHeight * MAX_LEGEND_FRACTION))
+	}
+	return Math.max(MIN_LEGEND_HEIGHT, Math.min(ideal, cap))
+}
+
 const STAT_COLUMNS: ReadonlyArray<{ label: string; field: keyof SeriesStats }> = [
 	{ label: "Min", field: "min" },
 	{ label: "Max", field: "max" },

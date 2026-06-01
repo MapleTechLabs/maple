@@ -1,13 +1,15 @@
 import * as React from "react"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
+import { cn } from "../../../lib/utils"
+import { useContainerSize } from "../../../hooks/use-container-size"
 import { getSemanticSeriesColor } from "../../../lib/semantic-series-colors"
 import type { BaseChartProps } from "../_shared/chart-types"
 import {
 	type LegendSeries,
 	QueryBuilderLegend,
 	computeSeriesStats,
-	legendBlockHeight,
+	responsiveLegendHeight,
 } from "../_shared/query-builder-legend"
 import { thresholdReferenceLines } from "../_shared/threshold-lines"
 import {
@@ -150,14 +152,18 @@ export function QueryBuilderBarChart({
 		[seriesDefinitions, chartConfig],
 	)
 
+	const containerRef = React.useRef<HTMLDivElement>(null)
+	const { height: containerHeight } = useContainerSize(containerRef)
+
 	const variant = showStats ? "stats" : "compact"
 	const showLegendBlock = legend === "visible" || legend === "right"
 	const legendPosition = legend === "right" ? "right" : "bottom"
-	const legendHeight = legendBlockHeight(variant, seriesDefinitions.length)
+	const legendHeight = responsiveLegendHeight(variant, seriesDefinitions.length, containerHeight)
 
 	return (
-		<ChartContainer config={chartConfig} className={className}>
-			<BarChart data={displayData} accessibilityLayer syncId={syncId} syncMethod="value">
+		<div ref={containerRef} className={cn("h-full w-full", className)}>
+			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
+				<BarChart data={displayData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<CartesianGrid vertical={false} />
 				<XAxis
 					dataKey="bucket"
@@ -260,6 +266,7 @@ export function QueryBuilderBarChart({
 					/>
 				))}
 			</BarChart>
-		</ChartContainer>
+			</ChartContainer>
+		</div>
 	)
 }

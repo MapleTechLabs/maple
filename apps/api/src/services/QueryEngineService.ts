@@ -15,7 +15,7 @@ import {
 	WarehouseQueryError,
 	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
-import { Clock, Array as Arr, Duration, Effect, Layer, Match, Metric, Option, Result, Context } from "effect"
+import { Clock, Array as Arr, Config, Duration, Effect, Layer, Match, Metric, Option, Result, Context } from "effect"
 import type { TenantContext } from "./AuthService"
 import { BucketCacheService } from "../lib/BucketCacheService"
 import { EdgeCacheService } from "../lib/EdgeCacheService"
@@ -23,6 +23,7 @@ import { makeExpandMacros } from "./RawSqlChartService"
 import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
 import type { QueryProfileName } from "../lib/WarehouseQueryProfile"
 import * as QueryEngineMetrics from "../lib/QueryEngineMetrics"
+import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
 
 interface TimeRangeBounds {
 	readonly startMs: number
@@ -1552,6 +1553,141 @@ const composeMetricsGroupKey = (
 	return filtered.join(" \u00b7 ")
 }
 
+/** Structural request slice that `computeEvaluateBuckets` needs for one range. */
+interface EvaluateRangeRequest {
+	readonly query: QuerySpec
+	readonly startTime: string
+	readonly endTime: string
+}
+
+/**
+ * Run the alert query for a single time range and emit one `TimeseriesPoint`
+ * per bucket, encoding the per-(bucket, group) value + sample count via
+ * `encodeEvalPoints`. Backs the bucket-cached evaluate path: the bucket cache
+ * stores these points and re-fetches only the missing ranges. Decoding them
+ * (`decodeEvalPoints`) reproduces the same per-group observations the direct
+ * `evaluate` path builds inline, so a cached evaluation matches an uncached one
+ * for real timeseries data (where each (bucket, group) row is unique). Assumes
+ * the source is already validated as a supported timeseries query.
+ */
+const computeEvaluateBuckets = Effect.fnUntraced(function* (
+	warehouse: QueryEngineWarehouse,
+	tenant: TenantContext,
+	request: EvaluateRangeRequest,
+	bucketSeconds: number,
+) {
+	const obs: BucketGroupObs[] = []
+	const query = request.query
+
+	// Caller guarantees a supported timeseries query; this guard also narrows the
+	// QuerySpec union (discriminated on both `kind` and `source`) so the per-source
+	// branches can read `filters`/`metric`/`groupBy`.
+	if (query.kind !== "timeseries") {
+		return encodeEvalPoints(obs)
+	}
+
+	if (query.source === "traces") {
+		const opts = extractTracesOpts(query.filters as Record<string, unknown>)
+		const rows = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			CH.tracesTimeseriesQuery({
+				...opts,
+				metric: query.metric,
+				needsSampling: false,
+				groupBy: query.groupBy as readonly string[] | undefined,
+				apdexThresholdMs: query.metric === "apdex" ? query.apdexThresholdMs : undefined,
+				bucketSeconds,
+			}),
+			{
+				orgId: tenant.orgId,
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+			},
+			"tracesAlertEval",
+		)
+		for (const row of rows) {
+			const sampleCount = Number(row.count ?? 0)
+			const value = sampleCount > 0 ? tracesAggregateValueForMetric(query.metric, row) : null
+			obs.push({
+				bucket: normalizeBucket(row.bucket),
+				groupKey: row.groupName || "all",
+				value,
+				sampleCount,
+			})
+		}
+	} else if (query.source === "logs") {
+		const rows = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			CH.logsTimeseriesQuery({
+				serviceName: query.filters?.serviceName,
+				severity: query.filters?.severity,
+				environments: query.filters?.environments,
+				matchModes: query.filters?.deploymentEnvMatchMode
+					? { deploymentEnv: query.filters.deploymentEnvMatchMode }
+					: undefined,
+				groupBy: query.groupBy as readonly string[] | undefined,
+				bucketSeconds,
+			}),
+			{
+				orgId: tenant.orgId,
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+			},
+			"logsAlertEval",
+		)
+		for (const row of rows) {
+			const sampleCount = Number(row.count ?? 0)
+			obs.push({
+				bucket: normalizeBucket(row.bucket),
+				groupKey: row.groupName || "all",
+				value: sampleCount > 0 ? sampleCount : null,
+				sampleCount,
+			})
+		}
+	} else {
+		const groupByAttribute = query.groupBy?.includes("attribute")
+		const groupByAttributeKey = groupByAttribute ? query.filters.groupByAttributeKey : undefined
+		const rows = yield* executeCHQuery(
+			warehouse,
+			tenant,
+			CH.metricsTimeseriesQuery({
+				metricType: query.filters.metricType,
+				serviceName: query.filters.serviceName,
+				groupByAttributeKey,
+			}),
+			{
+				orgId: tenant.orgId,
+				metricName: query.filters.metricName,
+				startTime: request.startTime,
+				endTime: request.endTime,
+				bucketSeconds,
+			},
+			"metricsAlertEval",
+		)
+		for (const row of rows) {
+			const sampleCount = Number(row.dataPointCount ?? 0)
+			const value = sampleCount > 0 ? metricsAggregateValueForMetric(query.metric, row) : null
+			const groupKey = composeMetricsGroupKey(
+				query.groupBy as readonly string[] | undefined,
+				row.serviceName ?? "",
+				row.attributeValue ?? "",
+			)
+			obs.push({
+				bucket: normalizeBucket(row.bucket),
+				groupKey,
+				value,
+				sampleCount,
+			})
+		}
+	}
+
+	return encodeEvalPoints(obs)
+})
+
 export const makeQueryEngineEvaluate = (warehouse: QueryEngineWarehouse) =>
 	Effect.fn("QueryEngineService.evaluate")(function* (
 		tenant: TenantContext,
@@ -1820,6 +1956,9 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			const executeImpl = makeQueryEngineExecute(warehouse)
 			const evaluateImpl = makeQueryEngineEvaluate(warehouse)
 			const evaluateRawSqlImpl = makeQueryEngineEvaluateRawSql(warehouse)
+			const evalBucketCacheEnabled = yield* Config.boolean("QE_EVAL_BUCKET_CACHE_ENABLED").pipe(
+				Config.withDefault(true),
+			)
 
 			const recordCacheOutcome = (hit: boolean) =>
 				Metric.update(
@@ -1956,10 +2095,103 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				},
 			)
 
+			// Bucket-cached evaluate: each alert rule re-queries a near-fully-
+			// overlapping window every tick, so route it through the same bucket
+			// cache the dashboard timeseries path uses — only the missing tail is
+			// fetched, and the flux boundary keeps the live tail fresh (no added
+			// alert staleness). The reducer/sampleCountStrategy are applied AFTER
+			// the fetch (unchanged), so the cache key is independent of them and two
+			// rules over the same query+window share buckets.
+			const bucketCachedEvaluate = Effect.fn("QueryEngineService.bucketCachedEvaluate")(
+				function* (
+					tenant: TenantContext,
+					request: QueryEngineEvaluateRequest,
+					bucketSeconds: number,
+					range: { readonly startMs: number; readonly endMs: number },
+				) {
+					yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
+					yield* Effect.annotateCurrentSpan("query.source", request.query.source)
+					yield* Effect.annotateCurrentSpan("query.reducer", request.reducer)
+
+					// Pin bucketSeconds + an `__eval` discriminator so evaluate points
+					// (which encode value + sampleCount) never collide with dashboard
+					// execute points (value only) under the shared cache namespace.
+					const pinnedQuery = { ...request.query, bucketSeconds }
+
+					const outcome = yield* bucketCache.getOrComputeBuckets(
+						{
+							orgId: tenant.orgId,
+							query: { __eval: true, query: pinnedQuery },
+							bucketSeconds,
+							startMs: range.startMs,
+							endMs: range.endMs,
+						},
+						({ startMs, endMs }) =>
+							computeEvaluateBuckets(
+								warehouse,
+								tenant,
+								{
+									query: request.query,
+									startTime: msToTinybirdDateTime(startMs),
+									endTime: msToTinybirdDateTime(endMs),
+								},
+								bucketSeconds,
+							),
+					)
+
+					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsHit, outcome.bucketsHit)
+					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsMissed, outcome.bucketsMissed)
+					yield* Metric.update(
+						QueryEngineMetrics.bucketCacheMissingRanges,
+						outcome.missingRangeCount,
+					)
+					yield* recordCacheOutcome(outcome.bucketsMissed === 0)
+					yield* Effect.annotateCurrentSpan("cache.bucketsHit", outcome.bucketsHit)
+					yield* Effect.annotateCurrentSpan("cache.bucketsMissed", outcome.bucketsMissed)
+					yield* Effect.annotateCurrentSpan("cache.missingRangeCount", outcome.missingRangeCount)
+
+					const byGroup = decodeEvalPoints(outcome.points)
+					if (byGroup.size === 0) {
+						byGroup.set("all", [{ value: null, sampleCount: 0, hasData: false }])
+					}
+					const result = reducePerGroupObservations(byGroup, request.reducer)
+					yield* Effect.annotateCurrentSpan("result.groupCount", result.length)
+					return result
+				},
+			)
+
 			const cachedEvaluate = Effect.fn("QueryEngineService.cachedEvaluate")(
 				function* (tenant: TenantContext, request: QueryEngineEvaluateRequest) {
 					return yield* withTimeout(
 						Effect.gen(function* () {
+							const source = request.query.source
+							const bucketable =
+								request.query.kind === "timeseries" &&
+								(source === "traces" || source === "logs" || source === "metrics")
+
+							if (evalBucketCacheEnabled && bucketCache.enabled && bucketable) {
+								const startMs = toEpochMs(request.startTime)
+								const endMs = toEpochMs(request.endTime)
+								const bucketSeconds =
+									request.query.bucketSeconds ?? computeBucketSeconds(startMs, endMs)
+								if (
+									Number.isFinite(startMs) &&
+									Number.isFinite(endMs) &&
+									endMs > startMs &&
+									endMs - startMs >= bucketSeconds * 1000
+								) {
+									// Validate up front: the bucket path bypasses evaluateImpl,
+									// whose generator is what otherwise runs validateEvaluate.
+									yield* validateEvaluate(request)
+									return yield* bucketCachedEvaluate(tenant, request, bucketSeconds, {
+										startMs,
+										endMs,
+									})
+								}
+							}
+
+							// Fallback: legacy 30s blob cache around the direct evaluate
+							// (tiny ranges, unsupported sources, or the kill switch off).
 							const key = buildEvaluateCacheKey(tenant.orgId, request)
 							const { value, hit } = yield* edgeCache.getOrCompute(
 								{ bucket: "qe-evaluate", key, ttlSeconds: 30 },
