@@ -69,6 +69,24 @@ describe("compilePipeQuery", () => {
 		expect(result).toBeUndefined()
 	})
 
+	describe("logs free-text search param", () => {
+		// The dispatch reads `str("search")` for both list_logs and logs_count;
+		// callers must emit `search` (not `body_search`) or the filter is dropped.
+		for (const pipe of ["list_logs", "logs_count"] as const) {
+			it(`${pipe} applies a Body ILIKE filter from the search param`, () => {
+				const result = compilePipeQuery(pipe, { ...baseParams(), search: "boom" })
+				expect(result).toBeDefined()
+				expect(result!.sql).toContain("Body ILIKE '%boom%'")
+			})
+
+			it(`${pipe} ignores the stale body_search key`, () => {
+				const result = compilePipeQuery(pipe, { ...baseParams(), body_search: "boom" })
+				expect(result).toBeDefined()
+				expect(result!.sql).not.toContain("Body ILIKE")
+			})
+		}
+	})
+
 	it("injects OrgId into SQL", () => {
 		const result = compilePipeQuery("list_traces", baseParams())
 		expect(result!.sql).toContain("test-org")
