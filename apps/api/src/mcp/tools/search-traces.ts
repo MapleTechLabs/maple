@@ -93,7 +93,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 			)
 
 			const spans = result.spans
-			yield* Effect.annotateCurrentSpan("resultCount", spans.length)
+			yield* Effect.annotateCurrentSpan({ resultCount: spans.length, "result.count": spans.length })
 			if (spans.length === 0) {
 				return {
 					content: [

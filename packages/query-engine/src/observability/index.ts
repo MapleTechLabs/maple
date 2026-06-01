@@ -12,6 +12,7 @@ export { aggregateServiceRows, weightedAvg } from "./aggregation"
 export { listServices } from "./list-services"
 export { searchTraces } from "./search-traces"
 export { inspectTrace } from "./inspect-trace"
+export { spanDetail, type SpanDetailInput, type SpanDetailResult } from "./span-detail"
 export { findErrors } from "./find-errors"
 export { errorDetail, type ErrorDetailTrace, type ErrorDetailOutput } from "./error-detail"
 export { diagnoseService } from "./diagnose-service"
@@ -27,3 +28,10 @@ export {
 	type SearchSessionsInput,
 	type SessionTranscriptOutput,
 } from "./session-events"
+export {
+	getSessionTraces,
+	type SessionTracesInput,
+	type SessionTracesOutput,
+	type SessionReplayDetailOutput,
+	type SessionTraceSummaryOutput,
+} from "./session-replays"

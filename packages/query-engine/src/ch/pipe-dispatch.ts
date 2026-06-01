@@ -220,6 +220,7 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 							serviceName: str("service"),
 							severity: str("severity"),
 							traceId: str("trace_id"),
+							spanId: str("span_id"),
 							search: str("search"),
 							environments: str("deployment_env") ? [str("deployment_env")!] : undefined,
 							matchModes:

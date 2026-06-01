@@ -110,6 +110,7 @@ export interface SpanNodeData {
 	parentSpanId: string
 	spanName: string
 	serviceName: string
+	spanKind?: string
 	durationMs: number
 	statusCode: string
 	statusMessage: string
@@ -123,6 +124,12 @@ export interface InspectTraceData {
 	serviceCount: number
 	spanCount: number
 	rootDurationMs: number
+	/** Spans actually included in `spans` (the bounded overview). */
+	renderedSpanCount?: number
+	/** Total spans in the trace before the overview cap. */
+	totalSpanCount?: number
+	/** True when `spans` is a bounded subset of the full trace. */
+	truncated?: boolean
 	spans: SpanNodeData[]
 	logs: Array<{
 		timestamp: string
@@ -131,6 +138,14 @@ export interface InspectTraceData {
 		body: string
 		spanId?: string
 	}>
+}
+
+export interface InspectSpanData {
+	traceId: string
+	spanId: string
+	found: boolean
+	attributes: Record<string, string>
+	resourceAttributes: Record<string, string>
 }
 
 export interface LogRow {
@@ -775,14 +790,46 @@ export interface GetSessionTranscriptData {
 	}>
 }
 
+export interface GetSessionTracesData {
+	session: {
+		sessionId: string
+		startTime: string
+		endTime: string | null
+		durationMs: number | null
+		status: string
+		userId: string
+		urlInitial: string
+		browserName: string
+		osName: string
+		deviceType: string
+		country: string
+		serviceName: string
+		pageViews: number
+		clickCount: number
+		errorCount: number
+	}
+	totalTraceCount: number
+	traces: ReadonlyArray<{
+		traceId: string
+		startTime: string
+		durationMs: number
+		rootSpanName: string
+		rootServiceName: string
+		spanCount: number
+		hasError: boolean
+	}>
+}
+
 export type StructuredToolOutput =
 	| { tool: "search_sessions"; data: SearchSessionsData }
 	| { tool: "get_session_transcript"; data: GetSessionTranscriptData }
+	| { tool: "get_session_traces"; data: GetSessionTracesData }
 	| { tool: "search_traces"; data: SearchTracesData }
 	| { tool: "find_slow_traces"; data: FindSlowTracesData }
 	| { tool: "find_errors"; data: FindErrorsData }
 	| { tool: "error_detail"; data: ErrorDetailData }
 	| { tool: "inspect_trace"; data: InspectTraceData }
+	| { tool: "inspect_span"; data: InspectSpanData }
 	| { tool: "search_logs"; data: SearchLogsData }
 	| { tool: "mine_log_patterns"; data: MineLogPatternsData }
 	| { tool: "diagnose_service"; data: DiagnoseServiceData }

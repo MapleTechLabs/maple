@@ -25,7 +25,7 @@ export const mineLogPatterns = Effect.fn("Observability.mineLogPatterns")(functi
 	const optionalParams: Record<string, unknown> = {
 		...(input.service && { service: input.service }),
 		...(input.severity && { severity: input.severity }),
-		...(input.search && { body_search: input.search }),
+		...(input.search && { search: input.search }),
 		...(input.traceId && { trace_id: input.traceId }),
 	}
 

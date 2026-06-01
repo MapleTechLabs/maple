@@ -20,6 +20,7 @@ interface LogsQueryOpts {
 	serviceName?: string
 	severity?: string
 	traceId?: string
+	spanId?: string
 	search?: string
 	environments?: readonly string[]
 	matchModes?: {
@@ -230,6 +231,7 @@ export function logsCountQuery(opts: LogsQueryOpts) {
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+			CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
 			CH.when(opts.search, (v: string) => $.Body.ilike(`%${v}%`)),
 			environmentCondition($, opts),
 		])
@@ -242,7 +244,6 @@ export function logsCountQuery(opts: LogsQueryOpts) {
 
 export interface LogsListOpts extends LogsQueryOpts {
 	minSeverity?: number
-	spanId?: string
 	cursor?: string
 	limit?: number
 }

@@ -12,8 +12,9 @@ export const searchLogs = Effect.fn("Observability.searchLogs")(function* (input
 	const optionalParams: Record<string, unknown> = {
 		...(input.service && { service: input.service }),
 		...(input.severity && { severity: input.severity }),
-		...(input.search && { body_search: input.search }),
+		...(input.search && { search: input.search }),
 		...(input.traceId && { trace_id: input.traceId }),
+		...(input.spanId && { span_id: input.spanId }),
 	}
 
 	const params = {
