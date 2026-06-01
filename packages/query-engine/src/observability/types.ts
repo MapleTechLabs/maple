@@ -75,6 +75,9 @@ export interface SpanNode {
 	readonly parentSpanId: string
 	readonly spanName: string
 	readonly serviceName: string
+	/** OTel span kind (e.g. "Server", "Client", "Internal"). Used to prioritise
+	 * service-entry spans when bounding a large trace to an overview. */
+	readonly spanKind: string
 	readonly durationMs: number
 	readonly statusCode: string
 	readonly statusMessage: string
@@ -134,6 +137,7 @@ export interface SearchLogsInput {
 	readonly severity?: string
 	readonly search?: string
 	readonly traceId?: string
+	readonly spanId?: string
 	readonly limit?: number
 	readonly offset?: number
 }

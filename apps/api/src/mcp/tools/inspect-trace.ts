@@ -1,15 +1,23 @@
 import { requiredStringParam, optionalStringParam, McpQueryError, type McpToolRegistrar } from "./types"
 import { withTenantExecutor } from "../lib/query-warehouse"
-import { formatDurationFromMs, truncate } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
+import { renderTraceOverview } from "../lib/render-trace"
 import { inspectTrace, type SpanNode } from "@maple/query-engine/observability"
+
+/**
+ * Render budget for a single trace overview. Traces can hold thousands of spans
+ * (the SQL caps at 5_000); dumping all of them blows up the agent context.
+ * `selectOverviewSpans` keeps errors, roots and the longest/structural spans up
+ * to this budget — deeper inspection goes through `inspect_span` / `search_traces`.
+ */
+const MAX_OVERVIEW_SPANS = 100
 
 export function registerInspectTraceTool(server: McpToolRegistrar) {
 	server.tool(
 		"inspect_trace",
-		"Get the full span tree and logs for a single trace. Use this to understand request flow, find bottlenecks, and see error context. Pass `timestamp` (any timestamp from the trace) so the query can prune ClickHouse partitions to a ±1h window. Without `timestamp` only the last 24h is scanned — pass `timestamp` for older traces.",
+		"Get the span tree and logs for a single trace. Use this to understand request flow, find bottlenecks, and see error context. Large traces are bounded to an overview (errors and longest spans first); use `inspect_span` for one span's full attributes. Pass `timestamp` (any timestamp from the trace) so the query can prune ClickHouse partitions to a ±1h window. Without `timestamp` only the last 24h is scanned — pass `timestamp` for older traces.",
 		Schema.Struct({
 			trace_id: requiredStringParam("The trace ID to inspect"),
 			timestamp: optionalStringParam(
@@ -48,65 +56,25 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				}
 			}
 
-			const lines: string[] = [
-				`## Trace ${trace_id} (${result.serviceCount} services, ${result.spanCount} spans, ${formatDurationFromMs(result.rootDurationMs)})`,
-				``,
-			]
-
-			const renderNode = (node: SpanNode, prefix: string, isLast: boolean): void => {
-				const connector = prefix === "" ? "" : isLast ? "\u2514\u2500\u2500 " : "\u251C\u2500\u2500 "
-				const status =
-					node.statusCode === "Error" ? " [Error]" : node.statusCode === "Ok" ? " [Ok]" : ""
-				lines.push(
-					`${prefix}${connector}${node.spanName} — ${node.serviceName} (${formatDurationFromMs(node.durationMs)})${status}`,
-				)
-				const detailPrefix = prefix + (prefix === "" ? "" : isLast ? "    " : "\u2502   ")
-				if (node.statusCode === "Error" && node.statusMessage) {
-					lines.push(`${detailPrefix}    Status: "${truncate(node.statusMessage, 100)}"`)
-				}
-				const attrEntries = Object.entries(node.attributes)
-				if (attrEntries.length > 0) {
-					const attrStr = pipe(
-						attrEntries,
-						Arr.take(5),
-						Arr.map(([k, v]) => `${k}=${truncate(String(v), 60)}`),
-					).join(", ")
-					lines.push(`${detailPrefix}    {${attrStr}}`)
-				}
-				const resAttrEntries = Object.entries(node.resourceAttributes)
-				if (resAttrEntries.length > 0) {
-					const resAttrStr = pipe(
-						resAttrEntries,
-						Arr.take(5),
-						Arr.map(([k, v]) => `${k}=${truncate(String(v), 60)}`),
-					).join(", ")
-					lines.push(`${detailPrefix}    resource: {${resAttrStr}}`)
-				}
-				const childPrefix = prefix + (prefix === "" ? "" : isLast ? "    " : "\u2502   ")
-				Arr.forEach(node.children, (child, i) => {
-					renderNode(child, childPrefix, i === node.children.length - 1)
-				})
-			}
-
-			Arr.forEach(result.spans, (root) => {
-				renderNode(root, "", true)
+			const { lines, overview } = renderTraceOverview({
+				traceId: trace_id,
+				serviceCount: result.serviceCount,
+				spanCount: result.spanCount,
+				rootDurationMs: result.rootDurationMs,
+				spans: result.spans,
+				logs: result.logs,
+				budget: MAX_OVERVIEW_SPANS,
 			})
 
-			if (result.logs.length > 0) {
-				lines.push(``, `Related Logs (${result.logs.length}):`)
-				Arr.forEach(result.logs, (log) => {
-					const ts = log.timestamp
-					const time = ts.split(" ")[1] ?? ts
-					const sev = log.severityText.padEnd(5)
-					lines.push(`  ${time} [${sev}] ${log.serviceName}: ${truncate(log.body, 100)}`)
-				})
-			}
+			yield* Effect.annotateCurrentSpan({
+				"result.count": result.spanCount,
+				renderedSpanCount: overview.renderedCount,
+			})
 
 			const collectServices = (n: SpanNode): string[] => [
 				n.serviceName,
 				...Arr.flatMap(n.children, collectServices),
 			]
-
 			const services = pipe(result.spans, Arr.flatMap(collectServices), Arr.dedupe)
 
 			const nextSteps: string[] = []
@@ -129,7 +97,12 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 						serviceCount: result.serviceCount,
 						spanCount: result.spanCount,
 						rootDurationMs: result.rootDurationMs,
-						spans: [...result.spans] as any,
+						// Structured payload mirrors the rendered overview, not the full
+						// (up to 5_000-span) tree — keeps the response bounded.
+						spans: [...overview.roots] as any,
+						renderedSpanCount: overview.renderedCount,
+						totalSpanCount: overview.totalCount,
+						truncated: overview.truncated,
 						logs: pipe(
 							result.logs,
 							Arr.map((l) => ({ ...l })),
