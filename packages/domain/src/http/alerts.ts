@@ -320,10 +320,72 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
 	destinations: Schema.Array(AlertDestinationDocument),
 }) {}
 
+/**
+ * A single template string (title or body). Capped to keep stored configs and
+ * rendered notifications bounded. Markdown is allowed in `body`; channels render
+ * it per their own dialect (Slack mrkdwn, Discord markdown, plain text).
+ */
+const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
+
+export const AlertNotificationTemplateOverride = Schema.Struct({
+	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
+	body: Schema.optionalKey(Schema.NullOr(TemplateString)),
+}).annotate({ identifier: "@maple/AlertNotificationTemplateOverride" })
+export type AlertNotificationTemplateOverride = Schema.Schema.Type<typeof AlertNotificationTemplateOverride>
+
+/**
+ * User-customizable notification message. `title` + Markdown `body` use
+ * `{{ variable }}` substitution over {@link ALERT_TEMPLATE_VARIABLES}. `overrides`
+ * keyed by destination type let power users tailor a specific channel; unset
+ * fields fall back override → top-level → built-in default. A `null` template
+ * (or unset field) reproduces Maple's built-in notification format exactly.
+ */
+export const AlertNotificationTemplate = Schema.Struct({
+	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
+	body: Schema.optionalKey(Schema.NullOr(TemplateString)),
+	overrides: Schema.optionalKey(
+		Schema.NullOr(Schema.Record(Schema.String, AlertNotificationTemplateOverride)),
+	),
+}).annotate({ identifier: "@maple/AlertNotificationTemplate" })
+export type AlertNotificationTemplate = Schema.Schema.Type<typeof AlertNotificationTemplate>
+
+/**
+ * The variables available to notification templates. Every value is a
+ * pre-formatted string (so templates never do arithmetic). Mirrors the fields
+ * the built-in formatters surface. Surfaced in the rule editor as a reference.
+ */
+export const ALERT_TEMPLATE_VARIABLES: ReadonlyArray<{
+	readonly key: string
+	readonly description: string
+}> = [
+	{ key: "rule.name", description: "Alert rule name" },
+	{ key: "rule.id", description: "Alert rule id" },
+	{ key: "event.type", description: "trigger | resolve | renotify | test" },
+	{ key: "event.label", description: 'Human label, e.g. "Triggered"' },
+	{ key: "event.emoji", description: "Event emoji" },
+	{ key: "severity", description: "warning | critical" },
+	{ key: "signal", description: "Raw signal type" },
+	{ key: "signal.label", description: 'Human signal label, e.g. "Error Rate"' },
+	{ key: "comparator.label", description: 'Comparison operator, e.g. ">"' },
+	{ key: "threshold", description: "Formatted threshold value" },
+	{ key: "thresholdUpper", description: "Formatted upper threshold (range alerts)" },
+	{ key: "value", description: "Formatted observed value" },
+	{ key: "observed.summary", description: "Observed value + comparison" },
+	{ key: "sampleCount", description: "Number of samples in the window" },
+	{ key: "group", description: 'Group key, or "all"' },
+	{ key: "window", description: 'Evaluation window, e.g. "5m"' },
+	{ key: "incidentId", description: "Incident id (empty for tests)" },
+	{ key: "incidentStatus", description: "open | resolved" },
+	{ key: "links.app", description: "Deep link to the alert in Maple" },
+	{ key: "links.chat", description: "Deep link to Maple AI for this alert" },
+	{ key: "sentAt", description: "ISO timestamp the notification was sent" },
+]
+
 export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRuleDocument")({
 	id: AlertRuleId,
 	name: Schema.String,
 	notes: Schema.NullOr(Schema.String),
+	notificationTemplate: Schema.NullOr(AlertNotificationTemplate),
 	enabled: Schema.Boolean,
 	severity: AlertSeverity,
 	serviceNames: Schema.Array(Schema.String),
@@ -358,6 +420,7 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>("AlertRuleUpsertRequest")({
 	name: ChannelLabel,
 	notes: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	notificationTemplate: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
 	enabled: Schema.optionalKey(Schema.Boolean),
 	severity: AlertSeverity,
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),

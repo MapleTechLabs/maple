@@ -124,6 +124,20 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				lines.push(`No notification destinations configured.`)
 			}
 
+			// Message template
+			const template = rule.notificationTemplate
+			if (template && (template.title || template.body)) {
+				lines.push(``)
+				lines.push(`### Message Template`)
+				if (template.title) lines.push(`Title: ${template.title}`)
+				if (template.body) {
+					lines.push(`Body:`)
+					lines.push("```")
+					lines.push(template.body)
+					lines.push("```")
+				}
+			}
+
 			lines.push(
 				formatNextSteps([
 					"`list_alert_incidents` — see triggered alerts for this rule",

@@ -1,0 +1,1 @@
+ALTER TABLE `alert_rules` ADD `notification_template_json` text;

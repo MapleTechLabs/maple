@@ -1,9 +1,12 @@
-import type { Dispatch, SetStateAction } from "react"
+import { useState, type Dispatch, type SetStateAction } from "react"
 import { Link } from "@tanstack/react-router"
 
-import type { AlertDestinationDocument } from "@maple/domain/http"
+import { ALERT_TEMPLATE_VARIABLES, type AlertDestinationDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
+import { Input } from "@maple/ui/components/ui/input"
+import { Label } from "@maple/ui/components/ui/label"
+import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import {
 	AlertMultiSegmentedSelect,
@@ -12,7 +15,7 @@ import {
 import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { SectionLabel } from "@/components/alerts/signal-and-threshold-section"
 import { destinationTypeLabels, type RuleFormState } from "@/lib/alerts/form-utils"
-import { LoaderIcon, PaperPlaneIcon } from "@/components/icons"
+import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, PaperPlaneIcon } from "@/components/icons"
 
 interface NotificationsSectionProps {
 	form: RuleFormState
@@ -21,6 +24,13 @@ interface NotificationsSectionProps {
 	onSendTest: () => void
 	testing: boolean
 }
+
+const TITLE_PLACEHOLDER = "{{ event.emoji }} {{ rule.name }} — {{ event.label }}"
+const BODY_PLACEHOLDER = [
+	"*Severity:* {{ severity }}",
+	"*Signal:* {{ signal.label }}",
+	"*Observed:* {{ observed.summary }}",
+].join("\n")
 
 /**
  * Pick which destinations receive this rule's notifications, plus an optional
@@ -37,6 +47,14 @@ export function NotificationsSection({
 }: NotificationsSectionProps) {
 	const hasDestinations = destinations.length > 0
 	const hasSelection = form.destinationIds.length > 0
+	const hasTemplate = form.notificationTitle.length > 0 || form.notificationBody.length > 0
+	const [templateOpen, setTemplateOpen] = useState(hasTemplate)
+
+	const appendToBody = (token: string) =>
+		onChange((c) => ({
+			...c,
+			notificationBody: c.notificationBody.length > 0 ? `${c.notificationBody} ${token}` : token,
+		}))
 
 	return (
 		<Card className="p-4">
@@ -99,6 +117,85 @@ export function NotificationsSection({
 						aria-label="Notification destinations"
 						size="sm"
 					/>
+				)}
+			</div>
+
+			{/* Message template — optional {{ variable }} customization. */}
+			<div className="mt-4 border-t border-border/60 pt-3">
+				<button
+					type="button"
+					onClick={() => setTemplateOpen((open) => !open)}
+					className="flex w-full items-center justify-between gap-2 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+					aria-expanded={templateOpen}
+				>
+					<span className="flex items-center gap-1.5">
+						{templateOpen ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+						Message template
+					</span>
+					{hasTemplate && !templateOpen && (
+						<span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+							Customized
+						</span>
+					)}
+				</button>
+
+				{templateOpen && (
+					<div className="mt-3 space-y-3">
+						<p className="text-muted-foreground text-xs">
+							Customize the Slack / Discord / PagerDuty message. Leave blank to use Maple's
+							default format. Supports{" "}
+							<code className="rounded bg-muted px-1">{"{{ variable }}"}</code> substitution.
+						</p>
+
+						<div className="space-y-1.5">
+							<Label htmlFor="notification-title" className="text-xs">
+								Title
+							</Label>
+							<Input
+								id="notification-title"
+								value={form.notificationTitle}
+								onChange={(e) =>
+									onChange((c) => ({ ...c, notificationTitle: e.target.value }))
+								}
+								placeholder={TITLE_PLACEHOLDER}
+							/>
+						</div>
+
+						<div className="space-y-1.5">
+							<Label htmlFor="notification-body" className="text-xs">
+								Body (Markdown)
+							</Label>
+							<Textarea
+								id="notification-body"
+								value={form.notificationBody}
+								onChange={(e) =>
+									onChange((c) => ({ ...c, notificationBody: e.target.value }))
+								}
+								placeholder={BODY_PLACEHOLDER}
+								rows={4}
+								className="font-mono text-xs"
+							/>
+						</div>
+
+						<div className="space-y-1.5">
+							<span className="text-muted-foreground text-[11px]">
+								Insert a variable:
+							</span>
+							<div className="flex flex-wrap gap-1">
+								{ALERT_TEMPLATE_VARIABLES.map((variable) => (
+									<button
+										key={variable.key}
+										type="button"
+										title={variable.description}
+										onClick={() => appendToBody(`{{ ${variable.key} }}`)}
+										className="rounded border border-border/60 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:border-border hover:text-foreground"
+									>
+										{variable.key}
+									</button>
+								))}
+							</div>
+						</div>
+					</div>
 				)}
 			</div>
 		</Card>

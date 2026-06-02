@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import { Exit, Schema } from "effect"
 import {
 	AlertDestinationCreateRequest,
+	AlertNotificationTemplate,
+	AlertRuleUpsertRequest,
 	PagerDutyAlertDestinationConfig,
 	SlackAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
@@ -148,5 +150,59 @@ describe("AlertDestinationCreateRequest", () => {
 		})
 
 		expect(Exit.isFailure(result)).toBe(true)
+	})
+})
+
+describe("AlertNotificationTemplate", () => {
+	const decode = Schema.decodeUnknownSync(AlertNotificationTemplate)
+	const decodeExit = Schema.decodeUnknownExit(AlertNotificationTemplate)
+
+	it("decodes a title + body + per-destination overrides", () => {
+		const decoded = decode({
+			title: "{{ rule.name }} fired",
+			body: "*Observed:* {{ observed.summary }}",
+			overrides: { slack: { body: "slack-only body" } },
+		})
+		expect(decoded).toEqual({
+			title: "{{ rule.name }} fired",
+			body: "*Observed:* {{ observed.summary }}",
+			overrides: { slack: { body: "slack-only body" } },
+		})
+	})
+
+	it("decodes an empty template (all fields optional)", () => {
+		expect(decode({})).toEqual({})
+	})
+
+	it("rejects a title longer than the 4000-char cap", () => {
+		const result = decodeExit({ title: "x".repeat(4001) })
+		expect(Exit.isFailure(result)).toBe(true)
+	})
+})
+
+describe("AlertRuleUpsertRequest notificationTemplate", () => {
+	const decode = Schema.decodeUnknownSync(AlertRuleUpsertRequest)
+
+	const baseRule = {
+		name: "Checkout errors",
+		severity: "critical" as const,
+		signalType: "error_rate" as const,
+		comparator: "gt" as const,
+		threshold: 0.05,
+		windowMinutes: 5,
+		destinationIds: [],
+	}
+
+	it("accepts an embedded notification template", () => {
+		const decoded = decode({
+			...baseRule,
+			notificationTemplate: { title: "T", body: "B" },
+		})
+		expect(decoded.notificationTemplate).toEqual({ title: "T", body: "B" })
+	})
+
+	it("accepts a null template and a fully omitted template", () => {
+		expect(decode({ ...baseRule, notificationTemplate: null }).notificationTemplate).toBeNull()
+		expect(decode(baseRule).notificationTemplate).toBeUndefined()
 	})
 })

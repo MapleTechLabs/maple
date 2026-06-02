@@ -67,6 +67,13 @@ export type RuleFormState = {
 	rawQuerySql: string
 	rawQueryReducer: QueryEngineAlertReducer
 	destinationIds: AlertDestinationId[]
+	/**
+	 * Custom notification message. Empty strings mean "use the built-in format".
+	 * `title` + Markdown `body` support `{{ variable }}` substitution; channels
+	 * render them per their dialect (Slack Block Kit, Discord embed, …).
+	 */
+	notificationTitle: string
+	notificationBody: string
 }
 
 export const signalLabels: Record<AlertSignalType, string> = {
@@ -225,6 +232,8 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		rawQuerySql: DEFAULT_RAW_QUERY_SQL,
 		rawQueryReducer: "identity",
 		destinationIds: [],
+		notificationTitle: "",
+		notificationBody: "",
 	}
 }
 
@@ -280,6 +289,8 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		rawQuerySql: rule.rawQuerySql ?? DEFAULT_RAW_QUERY_SQL,
 		rawQueryReducer: rule.rawQueryReducer ?? "identity",
 		destinationIds: [...rule.destinationIds],
+		notificationTitle: rule.notificationTemplate?.title ?? "",
+		notificationBody: rule.notificationTemplate?.body ?? "",
 	}
 }
 
@@ -379,6 +390,15 @@ export function deriveRuleQueryIssues(form: RuleFormState): string[] {
 export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 	const signalType = form.signalType
 	const queryOwnsScope = signalType === "builder_query" || signalType === "raw_query"
+	const notificationTitle = form.notificationTitle.trim()
+	const notificationBody = form.notificationBody.trim()
+	const notificationTemplate =
+		notificationTitle.length > 0 || notificationBody.length > 0
+			? {
+					...(notificationTitle.length > 0 ? { title: notificationTitle } : {}),
+					...(notificationBody.length > 0 ? { body: notificationBody } : {}),
+				}
+			: null
 	return new AlertRuleUpsertRequest({
 		name: form.name.trim(),
 		notes: form.notes.trim() || null,
@@ -410,6 +430,7 @@ export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 		rawQuerySql: signalType === "raw_query" ? form.rawQuerySql.trim() || null : null,
 		rawQueryReducer: signalType === "raw_query" ? form.rawQueryReducer : null,
 		destinationIds: [...form.destinationIds],
+		notificationTemplate,
 	})
 }
 

@@ -92,6 +92,8 @@ interface CreateAlertRuleParams {
 	query_builder_draft?: string
 	raw_query_sql?: string
 	raw_query_reducer?: string
+	notification_title?: string
+	notification_body?: string
 }
 
 function buildAlertRuleRequest(
@@ -225,6 +227,15 @@ function buildAlertRuleRequest(
 	if (params.raw_query_sql) request.rawQuerySql = params.raw_query_sql
 	if (params.raw_query_reducer) request.rawQueryReducer = params.raw_query_reducer
 
+	// Notification message template ({{ variable }} substitution; omit for the
+	// built-in format). title + Markdown body.
+	const notificationTemplate: Record<string, string> = {}
+	if (params.notification_title) notificationTemplate.title = params.notification_title
+	if (params.notification_body) notificationTemplate.body = params.notification_body
+	if (Object.keys(notificationTemplate).length > 0) {
+		request.notificationTemplate = notificationTemplate
+	}
+
 	return { request }
 }
 
@@ -295,6 +306,15 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 			),
 			raw_query_reducer: optionalStringParam(
 				"How to collapse raw_query result rows into one value: identity, sum, avg, min, max (default: identity).",
+			),
+			notification_title: optionalStringParam(
+				"Custom notification title template. Supports {{ variable }} substitution, e.g. " +
+					'"{{ event.emoji }} {{ rule.name }} — {{ event.label }}". Omit for the built-in format. ' +
+					"Variables: rule.name, severity, signal.label, comparator.label, threshold, value, observed.summary, group, window, links.app, links.chat.",
+			),
+			notification_body: optionalStringParam(
+				"Custom notification body template (Markdown). Supports {{ variable }} substitution and " +
+					'{{#if key}}…{{/if}} blocks, e.g. "*Severity:* {{ severity }}\\n*Observed:* {{ observed.summary }}". Omit for the built-in format.',
 			),
 		}),
 		Effect.fn("McpTool.createAlertRule")(function* (params) {

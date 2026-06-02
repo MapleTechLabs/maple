@@ -348,6 +348,83 @@ describe("AlertsService", () => {
 		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })))
 	})
 
+	itEffect("snapshots a custom notification template into the delivered payload", () => {
+		const { url } = createTempDbUrl()
+		const state = {
+			tracesAggregateRows: [
+				{
+					count: 200,
+					avgDuration: 40,
+					p50Duration: 20,
+					p95Duration: 120,
+					p99Duration: 240,
+					errorRate: 10,
+					satisfiedCount: 180,
+					toleratingCount: 10,
+					apdexScore: 0.925,
+				},
+			],
+		}
+		const bodies: string[] = []
+		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+			bodies.push(typeof init?.body === "string" ? init.body : "")
+			return new Response("ok", { status: 200 })
+		}) as typeof fetch
+
+		const clock = makeManualClock()
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_tpl")
+			const userId = asUserId("user_tpl")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Checkout error rate",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 2,
+					consecutiveHealthyRequired: 2,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+					notificationTemplate: {
+						title: "{{ severity }} on {{ rule.name }}",
+						body: "*Observed:* {{ observed.summary }}",
+					},
+				}),
+			)
+
+			yield* alerts.runSchedulerTick()
+			yield* clock.adjust(Duration.minutes(1))
+			yield* alerts.runSchedulerTick()
+
+			// The custom template is re-read from the rule and surfaces through
+			// get_alert_rule / listRules.
+			const rules = yield* alerts.listRules(orgId)
+			expect(rules.rules[0]?.notificationTemplate?.title).toBe(
+				"{{ severity }} on {{ rule.name }}",
+			)
+
+			// The webhook body is the snapshotted delivery payload — it carries the
+			// template so retries and downstream consumers render the same message.
+			expect(bodies).toHaveLength(1)
+			const payload = JSON.parse(bodies[0]!) as {
+				template?: { title?: string; body?: string }
+			}
+			expect(payload.template?.title).toBe("{{ severity }} on {{ rule.name }}")
+			expect(payload.template?.body).toBe("*Observed:* {{ observed.summary }}")
+		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })))
+	})
+
 	itEffect("skips no-data error-rate rules instead of opening incidents", () => {
 		const { url } = createTempDbUrl()
 		const state = {

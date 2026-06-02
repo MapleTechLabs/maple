@@ -11,6 +11,14 @@ import type { AlertDestinationRow } from "@maple/db"
 import { Clock, Duration, Effect, Match, Option } from "effect"
 import type { EnrichedDestinationSecretConfig } from "./AlertDestinationHydration"
 import { safeFetch } from "../lib/url-validator"
+import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
+import {
+	hasCustomTemplate,
+	renderTemplate,
+	resolveTemplate,
+	type NotificationTemplateConfig,
+	type TemplateContext,
+} from "./alert-templating/renderer"
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -41,6 +49,14 @@ export interface DispatchContext {
 	readonly windowMinutes: number
 	readonly value: number | null
 	readonly sampleCount: number | null
+	/**
+	 * User-customized notification template (title + Markdown body, optional
+	 * per-destination overrides). `null`/absent → the built-in hardcoded format.
+	 * Snapshotted at enqueue time so retries and post-fire edits stay stable.
+	 */
+	readonly template?: NotificationTemplateConfig | null
+	/** Epoch ms the notification was sent — exposed to templates as `sentAt`. */
+	readonly sentAtMs?: number
 }
 
 export interface DispatchResult {
@@ -143,7 +159,7 @@ export const formatSignalLabel = (signal: string) => {
 	return labels[signal] ?? signal
 }
 
-const eventTypeEmoji = (type: string) => {
+export const eventTypeEmoji = (type: string) => {
 	const map: Record<string, string> = {
 		trigger: "\u{1F6A8}",
 		resolve: "\u2705",
@@ -176,7 +192,7 @@ export const formatSignalMetric = (value: number | null, signalType: string): st
 			),
 	})
 
-const formatWindow = (minutes: number): string => {
+export const formatWindow = (minutes: number): string => {
 	if (minutes < 60) return `${minutes}m`
 	const hours = minutes / 60
 	return hours % 1 === 0 ? `${hours}h` : `${minutes}m`
@@ -197,7 +213,12 @@ const discordEmbedColor = (eventType: string, severity: string): number => {
 	return 0xecb22e // warning
 }
 
-const formatObservedSummary = (context: DispatchContext): string => {
+type ObservedContext = Pick<
+	DispatchContext,
+	"value" | "signalType" | "comparator" | "threshold" | "thresholdUpper"
+>
+
+const formatObservedSummary = (context: ObservedContext): string => {
 	const observed = formatSignalMetric(context.value, context.signalType)
 	const comparison =
 		context.comparator === "between" || context.comparator === "not_between"
@@ -304,6 +325,171 @@ const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: 
 	},
 ]
 
+/* -------------------------------------------------------------------------- */
+/*  Templated notifications                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The subset of {@link DispatchContext} the templating layer reads. Narrowed so
+ * it can be exercised in tests without constructing a destination row / secret
+ * config (which a full `DispatchContext` requires). The full context satisfies it.
+ */
+export type TemplateRenderContext = Pick<
+	DispatchContext,
+	| "ruleId"
+	| "ruleName"
+	| "eventType"
+	| "severity"
+	| "signalType"
+	| "comparator"
+	| "threshold"
+	| "thresholdUpper"
+	| "value"
+	| "sampleCount"
+	| "groupKey"
+	| "windowMinutes"
+	| "incidentId"
+	| "incidentStatus"
+	| "dedupeKey"
+	| "template"
+	| "sentAtMs"
+>
+
+/**
+ * Build the flat `{{ variable }}` context for templated notifications. Every
+ * value is a pre-formatted string, reusing the same helpers the hardcoded
+ * formatters use, so templated and default output stay consistent.
+ */
+export const buildTemplateContext = (
+	context: TemplateRenderContext,
+	linkUrl: string,
+	chatUrl: string,
+): TemplateContext => ({
+	"rule.name": context.ruleName,
+	"rule.id": context.ruleId,
+	"event.type": context.eventType,
+	"event.label": formatEventTypeLabel(context.eventType),
+	"event.emoji": eventTypeEmoji(context.eventType),
+	severity: context.severity,
+	signal: context.signalType,
+	"signal.label": formatSignalLabel(context.signalType),
+	"comparator.label": formatComparator(context.comparator),
+	threshold: formatSignalMetric(context.threshold, context.signalType),
+	thresholdUpper:
+		context.thresholdUpper != null
+			? formatSignalMetric(context.thresholdUpper, context.signalType)
+			: "",
+	value: formatSignalMetric(context.value, context.signalType),
+	observed: formatSignalMetric(context.value, context.signalType),
+	"observed.summary": formatObservedSummary(context),
+	sampleCount: context.sampleCount != null ? String(context.sampleCount) : "",
+	group: context.groupKey ?? "all",
+	window: formatWindow(context.windowMinutes),
+	incidentId: context.incidentId ?? "",
+	incidentStatus: context.incidentStatus,
+	dedupeKey: context.dedupeKey,
+	"links.app": linkUrl,
+	linkUrl,
+	"links.chat": chatUrl,
+	chatUrl,
+	sentAt: context.sentAtMs != null ? new Date(context.sentAtMs).toISOString() : "",
+})
+
+/** Minimal Markdown → Slack mrkdwn transform: `**b**`→`*b*`, `[t](url)`→`<url|t>`. */
+const markdownToSlackMrkdwn = (markdown: string): string =>
+	markdown.replace(/\*\*([^*]+)\*\*/g, "*$1*").replace(/\[([^\]]+)\]\(([^)]+)\)/g, "<$2|$1>")
+
+const truncate = (value: string, max: number): string =>
+	value.length > max ? `${value.slice(0, max - 1)}…` : value
+
+/**
+ * Resolve + render the effective title/body for a destination. Returns `null`
+ * when the rule has no custom template (caller falls back to the hardcoded
+ * formatter) or when rendering fails for any reason — templating must never
+ * block delivery.
+ */
+const renderTitleBody = (
+	context: TemplateRenderContext,
+	destinationType: AlertDestinationType,
+	linkUrl: string,
+	chatUrl: string,
+): { title: string; body: string } | null => {
+	const resolved = resolveTemplate(context.template, destinationType)
+	if (!hasCustomTemplate(resolved)) return null
+	try {
+		const templateCtx = buildTemplateContext(context, linkUrl, chatUrl)
+		const title =
+			renderTemplate(resolved.title ?? DEFAULT_TITLE_TEMPLATE, templateCtx).text.trim() ||
+			context.ruleName
+		const body = renderTemplate(resolved.body ?? DEFAULT_BODY_TEMPLATE, templateCtx).text
+		return { title, body }
+	} catch {
+		return null
+	}
+}
+
+export const buildSlackBlocksFromTemplate = (
+	title: string,
+	body: string,
+	context: Pick<DispatchContext, "eventType">,
+	linkUrl: string,
+	chatUrl: string,
+) => [
+	{
+		type: "header",
+		text: { type: "plain_text", text: truncate(title, 150), emoji: true },
+	},
+	{
+		type: "section",
+		text: { type: "mrkdwn", text: markdownToSlackMrkdwn(body) },
+	},
+	{ type: "divider" },
+	{
+		type: "actions",
+		elements: [
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Open in Maple", emoji: true },
+				url: linkUrl,
+				...(context.eventType !== "resolve" && { style: "danger" }),
+			},
+			{
+				type: "button",
+				text: { type: "plain_text", text: "Ask Maple AI", emoji: true },
+				url: chatUrl,
+				style: "primary",
+			},
+		],
+	},
+	{
+		type: "context",
+		elements: [{ type: "mrkdwn", text: "\u{1F341} Maple Alerts" }],
+	},
+]
+
+export const buildDiscordEmbedsFromTemplate = (
+	title: string,
+	body: string,
+	context: Pick<DispatchContext, "eventType" | "severity">,
+	linkUrl: string,
+	chatUrl: string,
+) => [
+	{
+		title: truncate(title, 256),
+		url: linkUrl,
+		color: discordEmbedColor(context.eventType, context.severity),
+		description: truncate(body, 4096),
+		fields: [
+			{
+				name: "Links",
+				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				inline: false,
+			},
+		],
+		footer: { text: "\u{1F341} Maple Alerts" },
+	},
+]
+
 export const dispatchDelivery = (
 	context: DispatchContext,
 	payloadJson: string,
@@ -317,16 +503,28 @@ export const dispatchDelivery = (
 			Match.discriminatorsExhaustive("type")({
 				slack: (config) =>
 					Effect.gen(function* () {
+						const templated = renderTitleBody(context, "slack", linkUrl, chatUrl)
+						const blocks = templated
+							? buildSlackBlocksFromTemplate(
+									templated.title,
+									templated.body,
+									context,
+									linkUrl,
+									chatUrl,
+								)
+							: buildSlackBlocks(context, linkUrl, chatUrl)
 						const response = yield* runTimedFetch("slack", "Slack", fetchFn, timeoutMs, () =>
 							safeFetch(config.webhookUrl, {
 								method: "POST",
 								headers: { "content-type": "application/json" },
 								body: JSON.stringify({
-									text: `${context.ruleName}: ${formatEventTypeLabel(context.eventType)}`,
+									text:
+										templated?.title ??
+										`${context.ruleName}: ${formatEventTypeLabel(context.eventType)}`,
 									attachments: [
 										{
 											color: slackAttachmentColor(context.eventType, context.severity),
-											blocks: buildSlackBlocks(context, linkUrl, chatUrl),
+											blocks,
 										},
 									],
 								}),
@@ -346,15 +544,20 @@ export const dispatchDelivery = (
 					}),
 				pagerduty: (config) =>
 					Effect.gen(function* () {
+						const templated = renderTitleBody(context, "pagerduty", linkUrl, chatUrl)
 						const body = {
 							routing_key: config.integrationKey,
 							event_action: context.eventType === "resolve" ? "resolve" : "trigger",
 							dedup_key: context.dedupeKey,
 							payload: {
-								summary: `${context.ruleName} ${context.eventType}`,
+								summary: truncate(
+									templated?.title ?? `${context.ruleName} ${context.eventType}`,
+									1024,
+								),
 								source: context.groupKey ?? "maple-alerts",
 								severity: context.severity === "critical" ? "critical" : "warning",
 								custom_details: {
+									...(templated ? { message: templated.body } : {}),
 									ruleName: context.ruleName,
 									signalType: context.signalType,
 									value: context.value,
@@ -481,6 +684,7 @@ export const dispatchDelivery = (
 								value: context.value,
 								sampleCount: context.sampleCount,
 							},
+							template: context.template ?? null,
 							linkUrl,
 							chatUrl,
 							sentAt: new Date(yield* Clock.currentTimeMillis).toISOString(),
@@ -534,14 +738,26 @@ export const dispatchDelivery = (
 					}),
 				discord: (config) =>
 					Effect.gen(function* () {
+						const templated = renderTitleBody(context, "discord", linkUrl, chatUrl)
+						const embeds = templated
+							? buildDiscordEmbedsFromTemplate(
+									templated.title,
+									templated.body,
+									context,
+									linkUrl,
+									chatUrl,
+								)
+							: buildDiscordEmbeds(context, linkUrl, chatUrl)
 						const response = yield* runTimedFetch("discord", "Discord", fetchFn, timeoutMs, () =>
 							safeFetch(config.webhookUrl, {
 								method: "POST",
 								headers: { "content-type": "application/json" },
 								body: JSON.stringify({
 									username: "Maple Alerts",
-									content: `**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`,
-									embeds: buildDiscordEmbeds(context, linkUrl, chatUrl),
+									content:
+										templated?.title ??
+										`**${context.ruleName}**: ${formatEventTypeLabel(context.eventType)}`,
+									embeds,
 								}),
 								fetchFn,
 							}),

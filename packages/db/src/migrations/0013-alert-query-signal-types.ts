@@ -9,9 +9,10 @@
 //     rows carry no compiled QuerySpec)
 //   - converts existing `signal_type = 'query'` rows to `builder_query`,
 //     building a query-builder draft from the old triplet
-//   - carries over the `notes` column (added by drizzle migration 0014, which
-//     runs before this data migration), so a fresh install's table-swap does
-//     not drop it
+//   - carries over the `notes` column (added by drizzle migration 0014) and the
+//     `notification_template_json` column (added by drizzle migration 0016) —
+//     both drizzle migrations run before this data migration, so a fresh
+//     install's table-swap does not drop them
 //
 // Idempotent: guarded by the `_maple_data_migrations` bookkeeping table and an
 // `alert_rules` shape probe, so it is safe on every libSQL startup / D1 boot
@@ -47,6 +48,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 				org_id text NOT NULL,
 				name text NOT NULL,
 				notes text,
+				notification_template_json text,
 				enabled integer DEFAULT 1 NOT NULL,
 				severity text NOT NULL,
 				service_names_json text,
@@ -81,7 +83,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 		`)
 		await db.run(sql`
 			INSERT INTO alert_rules (
-				id, org_id, name, notes, enabled, severity, service_names_json, exclude_service_names_json,
+				id, org_id, name, notes, notification_template_json, enabled, severity, service_names_json, exclude_service_names_json,
 				signal_type, comparator, threshold, threshold_upper, window_minutes, minimum_sample_count,
 				consecutive_breaches_required, consecutive_healthy_required, renotify_interval_minutes,
 				metric_name, metric_type, metric_aggregation, apdex_threshold_ms,
@@ -90,7 +92,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 				last_scheduled_at, created_at, updated_at, created_by, updated_by
 			)
 			SELECT
-				id, org_id, name, notes, enabled, severity, service_names_json, exclude_service_names_json,
+				id, org_id, name, notes, notification_template_json, enabled, severity, service_names_json, exclude_service_names_json,
 				CASE WHEN signal_type = 'query' THEN 'builder_query' ELSE signal_type END,
 				comparator, threshold, threshold_upper, window_minutes, minimum_sample_count,
 				consecutive_breaches_required, consecutive_healthy_required, renotify_interval_minutes,
