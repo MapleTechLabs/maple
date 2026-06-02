@@ -1,0 +1,60 @@
+name: MCP Token Cost
+
+# Measures the token cost of the MCP tool definitions (name + description +
+# input schema) and posts the per-tool table + a diff vs the PR base to the job
+# summary. Informational — tool-description bloat shows up here on every PR.
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "apps/api/src/mcp/**"
+            - "packages/domain/src/**"
+            - ".github/workflows/token-cost.yml"
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    token-cost:
+        name: Token Cost
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+              with:
+                  fetch-depth: 0
+
+            - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+
+            - run: bun install --frozen-lockfile
+
+            - name: Measure (PR head)
+              run: bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
+
+            # Re-measure against the base source (reusing the same node_modules) for a
+            # best-effort delta. Source-only swap avoids a second install.
+            - name: Measure (base)
+              continue-on-error: true
+              run: |
+                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/api/src packages/domain/src || true
+                  bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
+                  git checkout HEAD -- apps/api/src packages/domain/src || true
+
+            - name: Summary
+              run: |
+                  head=$(jq '.total' "$RUNNER_TEMP/head.json")
+                  base=$(jq '.total' "$RUNNER_TEMP/base.json" 2>/dev/null || echo 0)
+                  delta=$((head - base))
+                  {
+                    echo "## MCP tool-definition token cost"
+                    echo ""
+                    echo "**Total: ${head} tokens** (base: ${base}, delta: ${delta})"
+                    echo ""
+                    echo '```'
+                    cat "$RUNNER_TEMP/head.txt"
+                    echo '```'
+                  } >> "$GITHUB_STEP_SUMMARY"

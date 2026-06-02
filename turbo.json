@@ -13,6 +13,10 @@
 			"dependsOn": ["^build"],
 			"outputs": []
 		},
+		"eval": {
+			"dependsOn": ["^build"],
+			"cache": false
+		},
 		"dev": {
 			"cache": false,
 			"persistent": true,

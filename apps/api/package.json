@@ -13,6 +13,9 @@
 		"dev": "portless",
 		"dev:app": "bun run ../../scripts/portless-wrangler.ts --env-file ../../.env.local --port ${PORT:-3472} --inspector-port=$((${PORT:-3472} + 10000))",
 		"test": "vitest run",
+		"eval": "vitest run --config vitest.eval.config.ts",
+		"eval:check": "bun run scripts/eval-runtime-check.ts",
+		"measure-tokens": "bun run scripts/measure-token-cost.ts",
 		"typecheck": "tsc --noEmit",
 		"typecheck:test": "tsc --noEmit -p tsconfig.test.json",
 		"tinybird:dev": "tinybird dev",
@@ -43,12 +46,16 @@
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
+		"@ai-sdk/openai-compatible": "^2.0.30",
 		"@cloudflare/workers-types": "^4.20260405.0",
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
+		"ai": "^6.0.146",
 		"atmn": "^1.0.1",
+		"gpt-tokenizer": "^3.0.1",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
+		"vitest-evals": "^0.4.0",
 		"wrangler": "^4.41.0"
 	}
 }
