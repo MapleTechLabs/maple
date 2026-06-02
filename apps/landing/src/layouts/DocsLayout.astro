@@ -5,6 +5,7 @@ import DocsTableOfContents from "../components/docs/DocsTableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
 import AvailableSdks from "../components/docs/AvailableSdks.astro";
+import DocsSearch from "../components/docs/DocsSearch.tsx";
 
 interface Props {
     title: string;
@@ -55,6 +56,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
                     </a>
                 </div>
                 <div class="flex items-center gap-4">
+                    <DocsSearch client:idle />
                     <a
                         href="https://github.com/Makisuo/maple"
                         target="_blank"

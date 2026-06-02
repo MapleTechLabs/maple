@@ -2,7 +2,10 @@
 	"name": "@maple/landing",
 	"version": "0.0.1",
 	"type": "module",
-	"portless": { "name": "landing", "script": "dev:app" },
+	"portless": {
+		"name": "landing",
+		"script": "dev:app"
+	},
 	"scripts": {
 		"dev": "portless",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
@@ -32,6 +35,7 @@
 		"autumn-js": "^1.2.5",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
+		"fuse.js": "^7.4.1",
 		"motion": "^12.38.0",
 		"react": "catalog:react",
 		"react-dom": "catalog:react",
