@@ -52,6 +52,63 @@ export const makeLargeTraceSpans = (count = LARGE_TRACE_SPAN_COUNT): SpanHierarc
 	return rows
 }
 
+/** A distinct trace id for the "small trace renders in full" regression guard. */
+export const SMALL_TRACE_ID = "5b8aa5a2d2c872e8321cf37308d69df2"
+
+/**
+ * A small trace (1 root + 4 children, all Ok) — well under MAX_OVERVIEW_SPANS,
+ * so `inspect_trace` must render the full tree with NO "Showing N of M" note.
+ */
+export const makeSmallTraceSpans = (): SpanHierarchyOutput[] => {
+	const rootId = "aaaa000000000001"
+	const root: SpanHierarchyOutput = {
+		traceId: SMALL_TRACE_ID,
+		spanId: rootId,
+		parentSpanId: "",
+		spanName: "GET /api/orders",
+		serviceName: FIXTURES.service,
+		spanKind: "Server",
+		durationMs: 42,
+		startTime: "2026-06-02 10:00:00",
+		statusCode: "Ok",
+		statusMessage: "",
+		spanAttributes: "{}",
+		resourceAttributes: "{}",
+		relationship: "related",
+	}
+	const children = Array.from({ length: 4 }, (_, i): SpanHierarchyOutput => ({
+		traceId: SMALL_TRACE_ID,
+		spanId: `aaaa00000000001${i}`,
+		parentSpanId: rootId,
+		spanName: `step-${i}`,
+		serviceName: FIXTURES.service,
+		spanKind: "Internal",
+		durationMs: i + 1,
+		startTime: "2026-06-02 10:00:00",
+		statusCode: "Ok",
+		statusMessage: "",
+		spanAttributes: "{}",
+		resourceAttributes: "{}",
+		relationship: "related",
+	}))
+	return [root, ...children]
+}
+
+/** Trace + span ids for the `inspect_span` drill-down regression guards. */
+export const SPAN_DETAIL_TRACE_ID = "9c2f1e7a4b6d83f05e1a2c3d4e5f6071"
+export const SPAN_DETAIL_SPAN_ID = "c1c1c1c1c1c1c1c1"
+export const MISSING_SPAN_ID = "deadbeefdeadbeef"
+
+/** One full-attribute row for `inspect_span` (shape: spanDetailQuery output). */
+export const makeSpanDetailRows = (): ReadonlyArray<Record<string, unknown>> => [
+	{
+		traceId: SPAN_DETAIL_TRACE_ID,
+		spanId: SPAN_DETAIL_SPAN_ID,
+		spanAttributes: JSON.stringify({ "http.method": "POST", "http.route": "/api/checkout" }),
+		resourceAttributes: JSON.stringify({ "service.name": FIXTURES.service }),
+	},
+]
+
 export const makeTraceLogs = (): ListLogsOutput[] => [
 	{
 		timestamp: "2026-06-02 10:00:00",
