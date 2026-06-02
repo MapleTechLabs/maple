@@ -2,7 +2,12 @@ import { useMemo, useState } from "react"
 import { Sheet, SheetContent, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
-import { Input } from "@maple/ui/components/ui/input"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Alert, AlertTitle, AlertDescription } from "@maple/ui/components/ui/alert"
@@ -325,28 +330,25 @@ function LogAttributesPanel({ log }: { log: LocalLog }) {
 	return (
 		<div className="space-y-3">
 			{hasAttributes && (
-				<div className="relative">
-					<MagnifierIcon
-						strokeWidth={2}
-						className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input
+				<InputGroup>
+					<InputGroupAddon>
+						<MagnifierIcon />
+					</InputGroupAddon>
+					<InputGroupInput
+						size="sm"
 						type="text"
 						value={attrSearch}
 						onChange={(e) => setAttrSearch(e.target.value)}
 						placeholder="Search attributes..."
-						className="h-7 pl-7 pr-7 text-xs"
 					/>
 					{attrSearch && (
-						<button
-							type="button"
-							onClick={() => setAttrSearch("")}
-							className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-						>
-							<XmarkIcon strokeWidth={2} className="size-3" />
-						</button>
+						<InputGroupAddon align="inline-end">
+							<InputGroupButton aria-label="Clear search" onClick={() => setAttrSearch("")}>
+								<XmarkIcon />
+							</InputGroupButton>
+						</InputGroupAddon>
 					)}
-				</div>
+				</InputGroup>
 			)}
 
 			<AttributesTable

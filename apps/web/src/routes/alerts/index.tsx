@@ -41,12 +41,18 @@ import {
 	PaperPlaneIcon,
 	PlusIcon,
 	TruckIcon,
+	XmarkIcon,
 } from "@/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Input } from "@maple/ui/components/ui/input"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
@@ -634,18 +640,26 @@ function AlertsPage() {
 					{activeTab === "rules" && (
 						<div className="space-y-4">
 							<div className="flex items-center gap-3">
-								<div className="relative flex-1 max-w-xs">
-									<MagnifierIcon
-										size={14}
-										className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-									/>
-									<Input
+								<InputGroup className="flex-1 max-w-xs">
+									<InputGroupAddon>
+										<MagnifierIcon />
+									</InputGroupAddon>
+									<InputGroupInput
 										placeholder="Search rules..."
 										value={searchQuery}
 										onChange={(e) => setSearchQuery(e.target.value)}
-										className="pl-9"
 									/>
-								</div>
+									{searchQuery && (
+										<InputGroupAddon align="inline-end">
+											<InputGroupButton
+												aria-label="Clear search"
+												onClick={() => setSearchQuery("")}
+											>
+												<XmarkIcon />
+											</InputGroupButton>
+										</InputGroupAddon>
+									)}
+								</InputGroup>
 								{showCreatorFilter && (
 									<Select
 										items={creatorOptions}

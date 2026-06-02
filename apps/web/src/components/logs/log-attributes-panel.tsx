@@ -1,6 +1,11 @@
 import { useState } from "react"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
-import { Input } from "@maple/ui/components/ui/input"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
 import { AttributesTable, ResourceAttributesSection } from "@/components/attributes"
 import type { Log } from "@/api/warehouse/logs"
 
@@ -21,28 +26,25 @@ export function LogAttributesPanel({ log }: LogAttributesPanelProps) {
 	return (
 		<div className="space-y-3">
 			{hasAttributes && (
-				<div className="relative">
-					<MagnifierIcon
-						strokeWidth={2}
-						className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none"
-					/>
-					<Input
+				<InputGroup>
+					<InputGroupAddon>
+						<MagnifierIcon />
+					</InputGroupAddon>
+					<InputGroupInput
+						size="sm"
 						type="text"
 						value={attrSearch}
 						onChange={(e) => setAttrSearch(e.target.value)}
 						placeholder="Search attributes..."
-						className="h-7 pl-7 pr-7 text-xs"
 					/>
 					{attrSearch && (
-						<button
-							type="button"
-							onClick={() => setAttrSearch("")}
-							className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-						>
-							<XmarkIcon strokeWidth={2} className="size-3" />
-						</button>
+						<InputGroupAddon align="inline-end">
+							<InputGroupButton aria-label="Clear search" onClick={() => setAttrSearch("")}>
+								<XmarkIcon />
+							</InputGroupButton>
+						</InputGroupAddon>
 					)}
-				</div>
+				</InputGroup>
 			)}
 
 			<AttributesTable

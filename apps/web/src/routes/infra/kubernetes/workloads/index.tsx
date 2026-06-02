@@ -3,12 +3,17 @@ import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { Input } from "@maple/ui/components/ui/input"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
-import { GridIcon, MagnifierIcon } from "@/components/icons"
+import { GridIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { cn } from "@maple/ui/lib/utils"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
@@ -228,12 +233,12 @@ function WorkloadsPageContent() {
 									}`}
 								>
 									<div className="flex flex-wrap items-center justify-between gap-3">
-										<div className="relative">
-											<MagnifierIcon
-												size={12}
-												className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-											/>
-											<Input
+										<InputGroup className="w-64">
+											<InputGroupAddon>
+												<MagnifierIcon />
+											</InputGroupAddon>
+											<InputGroupInput
+												size="sm"
 												placeholder="Search…"
 												value={search.search ?? ""}
 												onChange={(e) =>
@@ -244,9 +249,25 @@ function WorkloadsPageContent() {
 														}),
 													})
 												}
-												className="h-8 w-64 pl-7 text-xs"
 											/>
-										</div>
+											{search.search && (
+												<InputGroupAddon align="inline-end">
+													<InputGroupButton
+														aria-label="Clear search"
+														onClick={() =>
+															navigate({
+																search: (prev) => ({
+																	...prev,
+																	search: undefined,
+																}),
+															})
+														}
+													>
+														<XmarkIcon />
+													</InputGroupButton>
+												</InputGroupAddon>
+											)}
+										</InputGroup>
 										<span className="text-xs text-muted-foreground">
 											{wls.length} {wls.length === 1 ? "workload" : "workloads"}
 										</span>

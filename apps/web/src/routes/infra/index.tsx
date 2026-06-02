@@ -6,11 +6,16 @@ import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { Input } from "@maple/ui/components/ui/input"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
 import { cn } from "@maple/ui/lib/utils"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MagnifierIcon, PlusIcon, ServerIcon } from "@/components/icons"
+import { MagnifierIcon, PlusIcon, ServerIcon, XmarkIcon } from "@/components/icons"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { FleetGrid } from "@/components/infra/fleet-grid"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
@@ -175,18 +180,24 @@ function FleetView({
 			{showFleetGrid && <FleetGrid hosts={hosts} />}
 
 			<div className="flex flex-wrap items-center justify-between gap-3">
-				<div className="relative">
-					<MagnifierIcon
-						size={12}
-						className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input
+				<InputGroup className="w-64">
+					<InputGroupAddon>
+						<MagnifierIcon />
+					</InputGroupAddon>
+					<InputGroupInput
+						size="sm"
 						placeholder="Search hosts…"
 						value={search}
 						onChange={(e) => onSearchChange(e.target.value)}
-						className="h-8 w-64 pl-7 text-xs"
 					/>
-				</div>
+					{search && (
+						<InputGroupAddon align="inline-end">
+							<InputGroupButton aria-label="Clear search" onClick={() => onSearchChange("")}>
+								<XmarkIcon />
+							</InputGroupButton>
+						</InputGroupAddon>
+					)}
+				</InputGroup>
 				<div
 					role="tablist"
 					aria-label="Filter hosts by status"
