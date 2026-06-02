@@ -18,6 +18,9 @@
 		"apps/chat-agent": {
 			"entry": ["alchemy.run.ts"]
 		},
+		"apps/local-ui": {
+			"entry": ["src/worker.ts", "alchemy.run.ts"]
+		},
 		"packages/domain": {
 			"entry": ["scripts/**/*.ts"]
 		},
