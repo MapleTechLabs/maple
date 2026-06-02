@@ -2,7 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { hashIngestKey } from "@maple/db"
-import { Database, DatabaseError } from "../lib/DatabaseLive"
+import { Database, DatabaseError, type DatabaseShape } from "../lib/DatabaseLive"
 import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
@@ -17,7 +17,7 @@ import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from ".
 const failingDatabaseLayer = Layer.succeed(
 	Database,
 	Database.of({
-		client: undefined as unknown as Database["client"],
+		client: undefined as unknown as DatabaseShape["client"],
 		execute: () =>
 			Effect.fail(
 				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),

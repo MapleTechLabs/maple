@@ -15,7 +15,11 @@ import {
 } from "./QueryEngineService"
 import type { TenantContext } from "./AuthService"
 
-const assert = Object.assign(nodeAssert, {
+const assert: typeof nodeAssert & {
+	isTrue: (value: unknown) => void
+	isDefined: (value: unknown) => void
+	include: (actual: string, expected: string) => void
+} = Object.assign(nodeAssert, {
 	isTrue: (value: unknown) => nodeAssert.strictEqual(value, true),
 	isDefined: (value: unknown) => nodeAssert.notStrictEqual(value, undefined),
 	include: (actual: string, expected: string) => nodeAssert.ok(actual.includes(expected)),

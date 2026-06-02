@@ -34,6 +34,7 @@ export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures
 			}
 			return { data: rule.rows as ReadonlyArray<Record<string, unknown>> }
 		},
+		insert: async () => {},
 	}))
 }
 

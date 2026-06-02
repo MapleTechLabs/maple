@@ -3,6 +3,7 @@ import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effe
 import { WarehouseQueryError, OrgId, UserId } from "@maple/domain/http"
 import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
+import type { TenantContext } from "../services/AuthService"
 import { DatabaseLibsqlLive } from "./DatabaseLibsqlLive"
 import { Env } from "./Env"
 import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "./test-sqlite"
@@ -57,11 +58,11 @@ const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
-const makeTenant = () => ({
+const makeTenant = (): TenantContext => ({
 	orgId: asOrgId("org_test"),
 	userId: asUserId("user_test"),
 	roles: [],
-	authMode: "session" as const,
+	authMode: "self_hosted",
 })
 
 const transient503 = () =>
@@ -78,6 +79,7 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 				if (attempts < 3) throw transient503()
 				return { data: [{ ok: 1 }] }
 			},
+			insert: async () => {},
 		}))
 
 		const { url } = createTempDbUrl()
@@ -101,6 +103,7 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 				attempts++
 				throw new Error("HTTP status 401 authentication failed")
 			},
+			insert: async () => {},
 		}))
 
 		const { url } = createTempDbUrl()
@@ -127,6 +130,7 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 				attempts++
 				throw transient503()
 			},
+			insert: async () => {},
 		}))
 
 		const { url } = createTempDbUrl()
@@ -148,6 +152,75 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 			assert.instanceOf(failure, WarehouseQueryError)
 			assert.strictEqual((failure as WarehouseQueryError).category, "upstream")
 			assert.strictEqual((failure as WarehouseQueryError).upstreamStatus, 503)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("WarehouseQueryService.ingest writes through the SQL client", () => {
+	it.effect("forwards datasource + rows to the client's insert", () => {
+		const calls: Array<{ datasource: string; rows: ReadonlyArray<unknown> }> = []
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [] }),
+			insert: async (datasource, rows) => {
+				calls.push({ datasource, rows })
+			},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const rows = [{ trace_id: "a" }, { trace_id: "b" }]
+
+		return Effect.gen(function* () {
+			yield* WarehouseQueryService.use((service) => service.ingest(tenant, "traces", rows))
+
+			assert.strictEqual(calls.length, 1)
+			assert.strictEqual(calls[0]?.datasource, "traces")
+			assert.deepStrictEqual(calls[0]?.rows, rows)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("short-circuits without calling insert when there are no rows", () => {
+		let inserts = 0
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [] }),
+			insert: async () => {
+				inserts++
+			},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+
+		return Effect.gen(function* () {
+			yield* WarehouseQueryService.use((service) => service.ingest(tenant, "traces", []))
+			assert.strictEqual(inserts, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("maps a failed insert to WarehouseQueryError", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [] }),
+			insert: async () => {
+				throw new Error("HTTP 400 Bad Request: DB::Exception: Syntax error")
+			},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) =>
+					service.ingest(tenant, "traces", [{ trace_id: "a" }]),
+				),
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = getError(exit)
+			assert.instanceOf(failure, WarehouseQueryError)
 		}).pipe(Effect.provide(layer))
 	})
 })

@@ -83,9 +83,10 @@ export interface WarehouseQueryServiceShape {
 
 const clientCache = new Map<string, CachedClient>()
 
-/** Minimal client interface — only raw SQL execution is needed now. */
+/** Minimal client interface — raw SQL execution plus row inserts. */
 interface SqlClient {
 	readonly sql: (sql: string) => Promise<{ data: ReadonlyArray<Record<string, unknown>> }>
+	readonly insert: (datasource: string, rows: ReadonlyArray<unknown>) => Promise<void>
 }
 
 const createClickHouseSqlClient = (config: ClickHouseSqlClientConfig): SqlClient => {
@@ -104,6 +105,9 @@ const createClickHouseSqlClient = (config: ClickHouseSqlClientConfig): SqlClient
 			const data = await resultSet.json<Record<string, unknown>>()
 			return { data }
 		},
+		insert: async (datasource, rows) => {
+			await client.insert({ table: datasource, values: rows, format: "JSONEachRow" })
+		},
 	}
 }
 
@@ -117,6 +121,23 @@ const createTinybirdSdkSqlClient = (config: TinybirdSdkSqlClientConfig): SqlClie
 	})
 	return {
 		sql: async (sql: string) => client.sql(sql),
+		insert: async (datasource, rows) => {
+			if (rows.length === 0) return
+			const ndjson = rows.map((row) => JSON.stringify(row)).join("\n")
+			const url = `${config.host.replace(/\/$/, "")}/v0/events?name=${encodeURIComponent(datasource)}&wait=false`
+			const response = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/x-ndjson",
+					Authorization: `Bearer ${config.token}`,
+				},
+				body: ndjson,
+			})
+			if (!response.ok) {
+				const body = await response.text().catch(() => "")
+				throw new Error(`HTTP ${response.status} ${response.statusText}: ${body.slice(0, 500)}`)
+			}
+		},
 	}
 }
 
@@ -603,49 +624,21 @@ export class WarehouseQueryService extends Context.Service<
 
 				const label = `ingest:${datasource}`
 				const resolved = yield* resolveSqlConfig(tenant, label)
-				const ndjson = rows.map((row) => JSON.stringify(row)).join("\n")
 
-				const { url, headers } =
-					resolved.config._tag === "tinybird"
-						? {
-								url: `${resolved.config.host.replace(/\/$/, "")}/v0/events?name=${encodeURIComponent(datasource)}&wait=false`,
-								headers: {
-									"Content-Type": "application/x-ndjson",
-									Authorization: `Bearer ${resolved.config.token}`,
-								} as Record<string, string>,
-							}
-						: (() => {
-								// Direct INSERT to ClickHouse using JSONEachRow — same wire format
-								// as the NDJSON we already build above. The query string carries the
-								// target table; ClickHouse parses each line as one row.
-								const ch: Record<string, string> = {
-									"Content-Type": "application/x-ndjson",
-									"X-ClickHouse-User": resolved.config.username,
-									"X-ClickHouse-Database": resolved.config.database,
-								}
-								if (resolved.config.password.length > 0) {
-									ch["X-ClickHouse-Key"] = resolved.config.password
-								}
-								return {
-									url: `${resolved.config.url.replace(/\/$/, "")}/?query=${encodeURIComponent(`INSERT INTO ${datasource} FORMAT JSONEachRow`)}`,
-									headers: ch,
-								}
-							})()
+				// Insert through the same client the read path uses (official
+				// @clickhouse/client-web for ClickHouse, Tinybird Events API for
+				// Tinybird) so the wire protocol is handled correctly — a hand-rolled
+				// `?query=INSERT … FORMAT JSONEachRow` POST had its query param dropped
+				// by managed ClickHouse, which then parsed the NDJSON body as SQL.
+				const cacheKey = resolved.source === "managed" ? "__managed__" : tenant.orgId
+				const client = getCachedOrCreateClient(
+					cacheKey,
+					resolved.config,
+					yield* Clock.currentTimeMillis,
+				)
 
 				yield* Effect.tryPromise({
-					try: async () => {
-						const response = await fetch(url, {
-							method: "POST",
-							headers,
-							body: ndjson,
-						})
-						if (!response.ok) {
-							const body = await response.text().catch(() => "")
-							throw new Error(
-								`HTTP ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
-							)
-						}
-					},
+					try: () => client.insert(datasource, rows),
 					catch: (error) => toWarehouseQueryError(label, error),
 				}).pipe(
 					Effect.tapError((error) =>

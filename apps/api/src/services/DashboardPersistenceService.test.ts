@@ -10,7 +10,7 @@ import {
 	PortableDashboardDocument,
 	UserId,
 } from "@maple/domain/http"
-import { Database, DatabaseError } from "../lib/DatabaseLive"
+import { Database, DatabaseError, type DatabaseShape } from "../lib/DatabaseLive"
 import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "../lib/Env"
@@ -25,7 +25,7 @@ const createdTempDirs: string[] = []
 const failingDatabaseLayer = Layer.succeed(
 	Database,
 	Database.of({
-		client: undefined as unknown as Database["client"],
+		client: undefined as unknown as DatabaseShape["client"],
 		execute: () =>
 			Effect.fail(
 				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
