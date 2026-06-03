@@ -9,6 +9,7 @@ import {
 	trimSparseLeadingBuckets,
 } from "@/api/warehouse/timeseries-utils"
 import { summarizeSampling } from "@/lib/sampling"
+import { querySpanMetricsCalls, resolveThroughput } from "@/api/warehouse/custom-charts"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -82,7 +83,11 @@ function coerceRow(raw: Record<string, unknown>): CoercedRow {
 	}
 }
 
-function aggregateByServiceEnvironment(rows: CoercedRow[], durationSeconds: number): ServiceOverview[] {
+function aggregateByServiceEnvironment(
+	rows: CoercedRow[],
+	durationSeconds: number,
+	metricsByService: Map<string, number>,
+): ServiceOverview[] {
 	const groups = new Map<string, CoercedRow[]>()
 
 	for (const row of rows) {
@@ -102,7 +107,13 @@ function aggregateByServiceEnvironment(rows: CoercedRow[], durationSeconds: numb
 		const totalErrors = group.reduce((sum, r) => sum + r.errorCount, 0)
 		const totalEstimated = group.reduce((sum, r) => sum + r.estimatedSpanCount, 0)
 
-		const sampling = summarizeSampling(totalEstimated, totalSpans, durationSeconds)
+		// Mirror the detail-page / overview-chart / sparkline paths: resolve
+		// throughput as SpanMetrics `calls` (pre-sampling) → sum(SampleRate) → raw
+		// count, then summarize. Without this the list shows the raw traced count
+		// while every other surface shows the extrapolated estimate.
+		const metricsCalls = metricsByService.get(group[0].serviceName)
+		const resolvedCount = resolveThroughput(totalSpans, totalEstimated, metricsCalls)
+		const sampling = summarizeSampling(resolvedCount, totalSpans, durationSeconds)
 
 		// Weighted average of latencies by span count
 		let p50 = 0
@@ -157,19 +168,45 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	const input = yield* decodeInput(GetServiceOverviewInput, data ?? {}, "getServiceOverview")
 	const fallback = defaultServicesTimeRange(yield* Clock.currentTimeMillis)
 
-	const result = yield* runWarehouseQuery("serviceOverview", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.queryEngine.serviceOverview({
-				payload: new ServiceOverviewRequest({
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
-					environments: input.environments,
-					commitShas: input.commitShas,
+	const startTime = input.startTime ?? fallback.startTime
+	const endTime = input.endTime ?? fallback.endTime
+	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+
+	const [result, metricsResult] = yield* Effect.all(
+		[
+			runWarehouseQuery("serviceOverview", () =>
+				Effect.gen(function* () {
+					const client = yield* MapleApiAtomClient
+					return yield* client.queryEngine.serviceOverview({
+						payload: new ServiceOverviewRequest({
+							startTime,
+							endTime,
+							environments: input.environments,
+							commitShas: input.commitShas,
+						}),
+					})
 				}),
-			})
-		}),
+			),
+			// SpanMetrics `calls` counter for ALL services in one grouped query
+			// (no service filter). Same source the detail page / overview chart /
+			// sparklines use; resilient to absence (returns `{ data: [] }`).
+			querySpanMetricsCalls({
+				start_time: startTime,
+				end_time: endTime,
+				bucket_seconds: bucketSeconds,
+			}),
+		],
+		{ concurrency: 2 },
 	)
+
+	// Total SpanMetrics `calls` per service across the window (sum of per-bucket
+	// `increase`). Keyed by service only — same granularity as the list sparkline.
+	const metricsByService = new Map<string, number>()
+	for (const r of metricsResult.data) {
+		const service = String(r.serviceName)
+		if (!service) continue
+		metricsByService.set(service, (metricsByService.get(service) ?? 0) + Number(r.sumValue))
+	}
 
 	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
 	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
@@ -177,7 +214,7 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 
 	const coercedRows = result.data.map(coerceRow)
 	return {
-		data: aggregateByServiceEnvironment(coercedRows, durationSeconds),
+		data: aggregateByServiceEnvironment(coercedRows, durationSeconds, metricsByService),
 	}
 })
 

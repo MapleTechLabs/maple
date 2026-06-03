@@ -104,7 +104,7 @@ function resolveSpanMetricsCallsMetric(params: {
 	})
 }
 
-function querySpanMetricsCalls(params: {
+export function querySpanMetricsCalls(params: {
 	service?: string
 	start_time?: string
 	end_time?: string
@@ -658,7 +658,7 @@ interface AllMetricsPoint {
  * `?? rawCount` won't work as the fallback because `estimatedSpanCount` is
  * coerced to 0 when the column is missing; treat 0 as "no value" explicitly.
  */
-function resolveThroughput(
+export function resolveThroughput(
 	rawCount: number,
 	estimatedSpanCount: number,
 	metricsThroughput: number | undefined,
