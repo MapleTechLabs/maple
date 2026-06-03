@@ -1,8 +1,17 @@
 // ---------------------------------------------------------------------------
-// Pipe Query Dispatcher
+// Named-Query Registry (pipe dispatch)
 //
-// Maps Tinybird pipe names + params to compiled CH SQL queries.
-// This replaces the Tinybird SDK's named pipe execution with the CH query engine.
+// The single canonical mapping from a named query ("pipe") + flat params to
+// compiled ClickHouse SQL. This is NOT a legacy Tinybird shim — it is the
+// registry that backs `WarehouseExecutor.query(pipe, …)`, making the executor
+// portable across backends (managed ClickHouse via the API, and chDB-local via
+// the CLI). The pipe names are the cross-binary wire contract defined in
+// `@maple/domain/warehouse-queries` (`warehouseQueries`); keep it additive.
+//
+// Note: the flat snake_case param shape here is the wire format the CLI sends.
+// It is deliberately distinct from the structured camelCase `QuerySpec` filters
+// consumed by `QueryEngineService` — same output opts, different input formats,
+// so the two adapters are not duplicates.
 // ---------------------------------------------------------------------------
 
 import * as CH from "./index"

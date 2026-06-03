@@ -1,6 +1,6 @@
 import { Context, Effect, Layer } from "effect"
 import { RawSqlValidationError } from "@maple/domain/http"
-import { escapeClickHouseString } from "@maple/query-engine"
+import { escapeClickHouseString } from "../sql"
 
 // ---------------------------------------------------------------------------
 // Raw SQL chart macro expansion + safety checks.

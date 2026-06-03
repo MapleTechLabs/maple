@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { cacheTtlForQueryKind, snapToWindow, snapWindowForQueryKind } from "./QueryEngineService"
+import { cacheTtlForQueryKind, snapToWindow, snapWindowForQueryKind } from "@maple/query-engine/runtime"
 
 describe("snapToWindow", () => {
 	it("snaps within a single minute when window is 15s", () => {

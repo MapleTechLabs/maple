@@ -1,3 +1,14 @@
+/**
+ * The named-query registry: the canonical set of pipe names that
+ * `compilePipeQuery` (in `@maple/query-engine`) lowers to ClickHouse SQL. This
+ * is a cross-binary wire contract — it backs `WarehouseExecutor.query(pipe, …)`
+ * and the `POST /api/tinybird/query` payload the CLI (local + remote modes)
+ * sends. Treat it as additive: only append new names; renaming/removing a name
+ * is a breaking change for already-shipped CLI binaries.
+ *
+ * NB: alert evaluation does NOT go through this registry — it uses the
+ * structured `QuerySpec` → `QueryEngineService.evaluate` path instead.
+ */
 export const warehouseQueries = [
 	"list_traces",
 	"span_hierarchy",
@@ -24,12 +35,6 @@ export const warehouseQueries = [
 	"error_issue_timeseries",
 	"error_issue_sample_traces",
 	"service_apdex_time_series",
-	"alert_traces_aggregate",
-	"alert_metrics_aggregate",
-	"alert_logs_aggregate",
-	"alert_traces_aggregate_by_service",
-	"alert_metrics_aggregate_by_service",
-	"alert_logs_aggregate_by_service",
 	"custom_traces_timeseries",
 	"custom_traces_breakdown",
 	"top_operations",

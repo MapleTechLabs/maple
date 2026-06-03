@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Cause, Effect, Exit, Option } from "effect"
 import { RawSqlValidationError } from "@maple/domain/http"
-import { RawSqlChartService } from "./RawSqlChartService"
+import { RawSqlChartService } from "./raw-sql"
 
 const baseInput = {
 	orgId: "org_abc",

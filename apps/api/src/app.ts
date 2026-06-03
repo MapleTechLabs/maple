@@ -48,7 +48,7 @@ import { OrgOpenRouterSettingsService } from "./services/OrgOpenRouterSettingsSe
 import { OrgClickHouseSettingsService } from "./services/OrgClickHouseSettingsService"
 import { OrganizationService } from "./services/OrganizationService"
 import { QueryEngineService } from "./services/QueryEngineService"
-import { RawSqlChartService } from "./services/RawSqlChartService"
+import { RawSqlChartService } from "@maple/query-engine/runtime"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
 

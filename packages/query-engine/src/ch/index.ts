@@ -340,7 +340,7 @@ export {
 // Queries — Alerts: removed. Alert evaluation now reuses the dashboard
 // timeseries queries (tracesTimeseriesQuery / logsTimeseriesQuery /
 // metricsTimeseriesQuery) so dashboards and alerts share the same grouping
-// and filter semantics. See QueryEngineService.makeQueryEngineEvaluate.
+// and filter semantics. See `makeQueryEngineEvaluate` in @maple/query-engine/runtime.
 
 // Queries — Alert Checks (historical rule evaluations)
 export {

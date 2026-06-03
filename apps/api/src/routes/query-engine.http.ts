@@ -50,7 +50,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { QueryEngineService } from "../services/QueryEngineService"
-import { RawSqlChartService } from "../services/RawSqlChartService"
+import { RawSqlChartService } from "@maple/query-engine/runtime"
 import { WarehouseQueryService, type WarehouseSqlError } from "../lib/WarehouseQueryService"
 import { CH, QueryEngineExecuteRequest } from "@maple/query-engine"
 import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
