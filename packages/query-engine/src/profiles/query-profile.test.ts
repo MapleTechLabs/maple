@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { appendSettings, detectQuotaSetting, QueryProfile, resolveSettings } from "./WarehouseQueryProfile"
+import { appendSettings, detectQuotaSetting, QueryProfile, resolveSettings } from "./query-profile"
 
 describe("appendSettings", () => {
 	it("returns sql unchanged when settings are undefined", () => {
@@ -116,12 +116,8 @@ describe("detectQuotaSetting", () => {
 	})
 
 	it("classifies by ClickHouse type when code is missing", () => {
-		expect(detectQuotaSetting("anything", undefined, "TIMEOUT_EXCEEDED")).toBe(
-			"max_execution_time",
-		)
-		expect(detectQuotaSetting("anything", undefined, "MEMORY_LIMIT_EXCEEDED")).toBe(
-			"max_memory_usage",
-		)
+		expect(detectQuotaSetting("anything", undefined, "TIMEOUT_EXCEEDED")).toBe("max_execution_time")
+		expect(detectQuotaSetting("anything", undefined, "MEMORY_LIMIT_EXCEEDED")).toBe("max_memory_usage")
 		expect(detectQuotaSetting("anything", undefined, "UNKNOWN_IDENTIFIER")).toBeUndefined()
 	})
 })

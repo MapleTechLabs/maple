@@ -18,6 +18,16 @@ export type WarehouseQuerySettings = {
 export type QueryProfileName = "discovery" | "list" | "aggregation" | "explain" | "unbounded"
 
 /**
+ * The shared profile/settings selector carried by every warehouse query path
+ * (the `WarehouseExecutor` interface, `WarehouseQueryService.sqlQuery`, and the
+ * CLI executors). Profile defaults are overridden by explicit `settings`.
+ */
+export type WarehouseQueryOptions = {
+	profile?: QueryProfileName
+	settings?: WarehouseQuerySettings
+}
+
+/**
  * Named cost profiles. Pick one at the call site (not at the query
  * definition) since the same query can be cheap as a one-off and
  * expensive as a dropdown populator.
@@ -62,10 +72,7 @@ export const appendSettings = (sql: string, settings: WarehouseQuerySettings | u
 /**
  * Resolve effective settings: profile defaults overridden by explicit settings.
  */
-export const resolveSettings = (options?: {
-	profile?: QueryProfileName
-	settings?: WarehouseQuerySettings
-}): WarehouseQuerySettings | undefined => {
+export const resolveSettings = (options?: WarehouseQueryOptions): WarehouseQuerySettings | undefined => {
 	if (!options) return undefined
 	const base = options.profile ? QueryProfile[options.profile] : undefined
 	if (!base && !options.settings) return undefined

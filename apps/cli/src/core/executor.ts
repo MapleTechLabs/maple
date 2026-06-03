@@ -99,7 +99,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 					"db.duration_ms": Math.round(performance.now() - started),
 					"result.rowCount": rows.length,
 				})
-				// Type-erased executor boundary — mirrors WarehouseExecutorLive in apps/api.
+				// Type-erased executor boundary — mirrors WarehouseQueryService.asExecutor in apps/api.
 				return { data: compiled.castRows(rows) as unknown as ReadonlyArray<T> }
 			}).pipe(
 				Effect.withSpan("warehouse.query", {

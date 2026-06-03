@@ -5,6 +5,7 @@ import {
 	WarehouseQuotaExceededError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
+import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
 import { Clock, Effect, Layer, Option, Redacted, Schedule, Context } from "effect"
@@ -13,12 +14,18 @@ import type { TenantContext } from "../services/AuthService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
 import { compilePipeQuery } from "@maple/query-engine/ch"
 import {
+	WarehouseExecutor,
+	ObservabilityError,
+	type WarehouseExecutorShape,
+	type ExecutorQueryOptions,
+} from "@maple/query-engine/observability"
+import {
 	appendSettings,
 	detectQuotaSetting,
 	resolveSettings,
 	type QueryProfileName,
 	type WarehouseQuerySettings,
-} from "./WarehouseQueryProfile"
+} from "@maple/query-engine/profiles"
 
 export type SqlQueryOptions = {
 	profile?: QueryProfileName
@@ -79,7 +86,26 @@ export interface WarehouseQueryServiceShape {
 		datasource: string,
 		rows: ReadonlyArray<T>,
 	) => Effect.Effect<void, WarehouseQueryError>
+	/**
+	 * Present this service as the package-level `WarehouseExecutor` for a given
+	 * tenant. This is the single managed-warehouse implementation of that
+	 * interface — the observability functions in `@maple/query-engine` and the
+	 * MCP tools consume `WarehouseExecutor`, not this service directly.
+	 */
+	readonly asExecutor: (tenant: TenantContext) => WarehouseExecutorShape
 }
+
+/**
+ * Map a `WarehouseSqlError` into the package-facing `ObservabilityError`,
+ * preserving the `category` (incl. `schema_drift`) that MCP/HTTP layers branch
+ * on for remediation hints.
+ */
+const toObservabilityError = (error: WarehouseSqlError, pipe?: string): ObservabilityError =>
+	new ObservabilityError({
+		message: error.message,
+		...(pipe !== undefined ? { pipe } : {}),
+		...("category" in error && error.category !== undefined ? { category: error.category } : {}),
+	})
 
 const clientCache = new Map<string, CachedClient>()
 
@@ -653,10 +679,35 @@ export class WarehouseQueryService extends Context.Service<
 				)
 			})
 
+			const asExecutor = (tenant: TenantContext): WarehouseExecutorShape => ({
+				orgId: tenant.orgId,
+				query: <T>(
+					pipe: WarehouseQueryName,
+					params: Record<string, unknown>,
+					options?: ExecutorQueryOptions,
+				) =>
+					query(tenant, { pipe, params }, options).pipe(
+						Effect.map((response) => ({ data: response.data as unknown as ReadonlyArray<T> })),
+						Effect.mapError((error) => toObservabilityError(error, pipe)),
+						Effect.withSpan("WarehouseExecutor.query", {
+							attributes: { pipe, orgId: tenant.orgId, "query.profile": options?.profile },
+						}),
+					),
+				sqlQuery: <T>(sql: string, options?: ExecutorQueryOptions) =>
+					sqlQuery(tenant, sql, { ...options, context: "warehouseExecutor.sqlQuery" }).pipe(
+						Effect.map((rows) => rows as unknown as ReadonlyArray<T>),
+						Effect.mapError((error) => toObservabilityError(error)),
+						Effect.withSpan("WarehouseExecutor.sqlQuery", {
+							attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+						}),
+					),
+			})
+
 			return {
 				query,
 				sqlQuery,
 				ingest,
+				asExecutor,
 			} satisfies WarehouseQueryServiceShape
 		}),
 	},
@@ -672,6 +723,18 @@ export class WarehouseQueryService extends Context.Service<
 	static readonly ingest = <T>(tenant: TenantContext, datasource: string, rows: ReadonlyArray<T>) =>
 		this.use((service) => service.ingest(tenant, datasource, rows))
 }
+
+/**
+ * Layer that provides the package-level `WarehouseExecutor` for a tenant,
+ * backed by `WarehouseQueryService`. Co-located with the impl — this replaces
+ * the former standalone `WarehouseExecutorLive` shim. The executor name is a
+ * public contract from `@maple/query-engine`; only the wiring lives here.
+ */
+export const makeWarehouseExecutorFromTenant = (tenant: TenantContext) =>
+	Layer.effect(
+		WarehouseExecutor,
+		Effect.map(WarehouseQueryService, (warehouse) => warehouse.asExecutor(tenant)),
+	)
 
 export const __testables = {
 	setClientFactory: (factory: typeof createClient) => {

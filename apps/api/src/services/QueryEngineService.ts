@@ -21,7 +21,7 @@ import { BucketCacheService } from "../lib/BucketCacheService"
 import { EdgeCacheService } from "../lib/EdgeCacheService"
 import { makeExpandMacros } from "./RawSqlChartService"
 import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
-import type { QueryProfileName } from "../lib/WarehouseQueryProfile"
+import type { QueryProfileName } from "@maple/query-engine/profiles"
 import * as QueryEngineMetrics from "../lib/QueryEngineMetrics"
 import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
 

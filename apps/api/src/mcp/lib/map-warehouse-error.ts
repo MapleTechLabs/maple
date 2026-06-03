@@ -12,7 +12,7 @@ const SCHEMA_DRIFT_HINT =
  * raw HTTP-domain errors (legacy `WarehouseQueryService.query` path), or the
  * `ObservabilityError` wrapper used by the DSL/observability functions in
  * `@maple/query-engine`. Both carry an optional `category` field with the same
- * literals — see WarehouseExecutorLive for the forwarding.
+ * literals — see `WarehouseQueryService.asExecutor` for the forwarding.
  */
 export type WarehouseError = WarehouseQueryError | WarehouseQuotaExceededError | ObservabilityError
 

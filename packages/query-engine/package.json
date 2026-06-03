@@ -11,6 +11,7 @@
 		"./query-builder": "./src/query-builder/model.ts",
 		"./sql": "./src/sql/index.ts",
 		"./ch": "./src/ch/index.ts",
+		"./profiles": "./src/profiles/index.ts",
 		"./observability": "./src/observability/index.ts",
 		"./local": "./src/local.ts"
 	},

@@ -16,7 +16,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Effect, Option, Schema } from "effect"
 import { topOperations } from "@maple/query-engine/observability"
 import { TracesMetric } from "@maple/query-engine"
-import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseQueryService"
 
 const decodeTracesMetric = Schema.decodeUnknownOption(TracesMetric)
 

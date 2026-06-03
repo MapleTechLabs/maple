@@ -6,7 +6,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { findErrors } from "@maple/query-engine/observability"
-import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseQueryService"
 
 export function registerFindErrorsTool(server: McpToolRegistrar) {
 	server.tool(

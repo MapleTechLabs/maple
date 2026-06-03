@@ -6,7 +6,7 @@ import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { mineLogPatterns } from "@maple/query-engine/observability"
-import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseQueryService"
 
 export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 	server.tool(

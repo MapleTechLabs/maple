@@ -7,7 +7,7 @@ import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { Array as Arr, Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { diagnoseService } from "@maple/query-engine/observability"
-import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseQueryService"
 
 export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 	server.tool(

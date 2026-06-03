@@ -11,7 +11,7 @@ import {
 	searchLogs,
 } from "@maple/query-engine/observability"
 import { ObservabilityError } from "@maple/query-engine/observability"
-import { makeWarehouseExecutorFromTenant } from "../lib/WarehouseExecutorLive"
+import { makeWarehouseExecutorFromTenant } from "../lib/WarehouseQueryService"
 
 const mapError = (e: ObservabilityError) =>
 	new ObservabilityApiError({ message: e.message, pipe: e.pipe, cause: e })
