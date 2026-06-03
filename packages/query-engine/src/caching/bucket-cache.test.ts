@@ -1,7 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain"
-import type { TimeseriesPoint } from "@maple/query-engine"
+import type { TimeseriesPoint } from "../query-engine"
 import {
 	BucketCacheService,
 	findMissingRanges,
@@ -10,8 +10,9 @@ import {
 	pointsToBuckets,
 	type BucketedCacheData,
 	type CachedBucket,
-} from "./BucketCacheService"
-import { EdgeCacheService } from "./EdgeCacheService"
+} from "./bucket-cache"
+import { EdgeCacheService } from "./edge-cache"
+import { MemoryCacheBackendLive } from "./cache-backend"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const orgId = asOrgId("org_test")
@@ -158,7 +159,10 @@ const makeConfig = (overrides: Record<string, string> = {}) =>
 		}),
 	)
 
-const BucketLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheService.layer))
+const BucketLive = BucketCacheService.layer.pipe(
+	Layer.provideMerge(EdgeCacheService.layer),
+	Layer.provide(MemoryCacheBackendLive),
+)
 
 // These exercise the live cache backend and compute flux boundaries relative to
 // the real clock, so they run under it.live rather than the default TestClock.

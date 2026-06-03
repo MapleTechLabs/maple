@@ -1,8 +1,8 @@
 import type { OrgId } from "@maple/domain"
-import type { TimeseriesPoint } from "@maple/query-engine"
-import { parseWarehouseDateTime } from "@maple/query-engine"
+import type { TimeseriesPoint } from "../query-engine"
+import { parseWarehouseDateTime } from "../datetime"
 import { Array as Arr, Clock, Config, Context, Deferred, Effect, Layer, Option } from "effect"
-import { EdgeCacheService } from "./EdgeCacheService"
+import { EdgeCacheService } from "./edge-cache"
 
 /**
  * Inclusive start, exclusive end. Epoch milliseconds.

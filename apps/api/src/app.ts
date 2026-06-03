@@ -27,7 +27,8 @@ import { HttpServiceDiscoveryLive } from "./routes/sd.http"
 import { HttpSessionReplaysLive } from "./routes/session-replay.http"
 import { HttpWarehouseLive } from "./routes/warehouse.http"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
-import { BucketCacheService } from "./lib/BucketCacheService"
+import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/caching"
+import { CacheBackendLive } from "./lib/CacheBackendLive"
 import { ErrorsService } from "./services/ErrorsService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
@@ -38,7 +39,6 @@ import { CloudflareLogpushService } from "./services/CloudflareLogpushService"
 import { DashboardPersistenceService } from "./services/DashboardPersistenceService"
 import { DemoService } from "./services/DemoService"
 import { DigestService } from "./services/DigestService"
-import { EdgeCacheService } from "./lib/EdgeCacheService"
 import { OnboardingService } from "./services/OnboardingService"
 import { EmailService } from "./lib/EmailService"
 import { Env } from "./lib/Env"
@@ -94,13 +94,18 @@ export const DemoServiceLive = DemoService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
 )
 
+// EdgeCacheService's storage backend (Workers KV / in-memory) is injected via
+// the CacheBackend port. Define the wired layer once so it memoizes to a single
+// instance shared by the bucket cache and the direct edge cache.
+export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
+
 export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
-	Layer.provideMerge(EdgeCacheService.layer),
+	Layer.provideMerge(EdgeCacheServiceLive),
 )
 
 export const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
-	Layer.provideMerge(EdgeCacheService.layer),
+	Layer.provideMerge(EdgeCacheServiceLive),
 	Layer.provideMerge(BucketCacheServiceLive),
 )
 

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { QueryEngineExecuteResponse } from "@maple/query-engine"
-import { EdgeCacheService, makeEdgeCacheService, type EdgeCacheBackend } from "./EdgeCacheService"
+import { QueryEngineExecuteResponse } from "../query-engine"
+import { EdgeCacheService, makeEdgeCacheService, type EdgeCacheBackend } from "./edge-cache"
 
 /**
  * In-memory backend that mirrors the Workers cache JSON-roundtrip:

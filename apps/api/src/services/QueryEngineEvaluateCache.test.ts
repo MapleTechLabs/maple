@@ -7,8 +7,10 @@ import { makeQueryEngineEvaluate } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
 import type { TenantContext } from "./AuthService"
 import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
-import { EdgeCacheService } from "../lib/EdgeCacheService"
-import { BucketCacheService } from "../lib/BucketCacheService"
+import { EdgeCacheService, BucketCacheService } from "@maple/query-engine/caching"
+import { CacheBackendLive } from "../lib/CacheBackendLive"
+
+const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -145,8 +147,8 @@ const makeFullStub = (
 const makeQueryEngineLayer = (stub: WarehouseQueryServiceShape) =>
 	QueryEngineService.layer.pipe(
 		Layer.provide(Layer.succeed(WarehouseQueryService, stub)),
-		Layer.provide(EdgeCacheService.layer),
-		Layer.provide(BucketCacheService.layer.pipe(Layer.provide(EdgeCacheService.layer))),
+		Layer.provide(edgeCacheLive),
+		Layer.provide(BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))),
 		Layer.provide(makeConfig()),
 	)
 
@@ -175,8 +177,8 @@ describe("QueryEngineService.evaluate via bucket cache", () => {
 		const counter = { n: 0 }
 		const layer = QueryEngineService.layer.pipe(
 			Layer.provide(Layer.succeed(WarehouseQueryService, makeFullStub(COUNT_ROWS, counter))),
-			Layer.provide(EdgeCacheService.layer),
-			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(EdgeCacheService.layer))),
+			Layer.provide(edgeCacheLive),
+			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))),
 			Layer.provide(makeConfig({ QE_EVAL_BUCKET_CACHE_ENABLED: "false" })),
 		)
 

@@ -1,121 +1,40 @@
-import {
-	WarehouseQueryError,
-	type WarehouseQueryRequest,
-	WarehouseQueryResponse,
-	WarehouseQuotaExceededError,
-} from "@maple/domain/http"
-import type { OrgId } from "@maple/domain"
-import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
-import { Clock, Effect, Layer, Option, Redacted, Schedule, Context } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import type { WarehouseQueryRequest } from "@maple/domain/http"
+import {
+	makeWarehouseExecutor,
+	toWarehouseQueryError,
+	type ResolvedWarehouseConfig,
+	type SqlQueryOptions,
+	type WarehouseExecutorDeps,
+	type WarehouseQueryServiceShape,
+	type WarehouseSqlClient,
+	type WarehouseSqlError,
+} from "@maple/query-engine/execution"
+import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "./Env"
 import type { TenantContext } from "../services/AuthService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
-import { compilePipeQuery } from "@maple/query-engine/ch"
-import {
-	WarehouseExecutor,
-	ObservabilityError,
-	type WarehouseExecutorShape,
-	type ExecutorQueryOptions,
-} from "@maple/query-engine/observability"
-import {
-	appendSettings,
-	detectQuotaSetting,
-	resolveSettings,
-	type QueryProfileName,
-	type WarehouseQuerySettings,
-} from "@maple/query-engine/profiles"
 
-export type SqlQueryOptions = {
-	profile?: QueryProfileName
-	settings?: WarehouseQuerySettings
-	/**
-	 * Semantic name for the query (e.g. "errorsByType", "spanHierarchy").
-	 * Annotated on the executeSql span as `query.context` so traces can be filtered
-	 * and grouped by call site without re-running the SQL.
-	 */
-	context?: string
-}
+// ---------------------------------------------------------------------------
+// WarehouseQueryService — the API's managed-warehouse executor.
+//
+// The execution logic (SQL run, retry, error mapping, client cache, OrgId
+// scoping, span instrumentation) lives in `@maple/query-engine/execution`. This
+// file is the host-app wiring: it constructs the actual ClickHouse / Tinybird
+// drivers (the ONLY place `@clickhouse/client-web` + `@tinybirdco/sdk` are
+// used) and resolves the per-org upstream config from the DB + env, injecting
+// both into `makeWarehouseExecutor`.
+// ---------------------------------------------------------------------------
 
-const CLIENT_CACHE_TTL_MS = 30_000
-interface CachedClient {
-	client: SqlClient
-	cacheKey: string
-	expiresAt: number
-}
+// Re-export the executor types so existing import sites stay stable.
+export type { WarehouseQueryServiceShape, SqlQueryOptions, WarehouseSqlError }
 
-interface ClickHouseSqlClientConfig {
-	readonly _tag: "clickhouse"
-	readonly url: string
-	readonly username: string
-	readonly password: string
-	readonly database: string
-}
+type ClickHouseConfig = Extract<ResolvedWarehouseConfig, { _tag: "clickhouse" }>
+type TinybirdConfig = Extract<ResolvedWarehouseConfig, { _tag: "tinybird" }>
 
-interface TinybirdSdkSqlClientConfig {
-	readonly _tag: "tinybird"
-	readonly host: string
-	readonly token: string
-}
-
-type SqlClientConfig = ClickHouseSqlClientConfig | TinybirdSdkSqlClientConfig
-
-export type WarehouseSqlError = WarehouseQueryError | WarehouseQuotaExceededError
-type WarehouseQueryErrorCategory =
-	| "query"
-	| "upstream"
-	| "auth"
-	| "config"
-	| "client"
-	| "schema_drift"
-
-export interface WarehouseQueryServiceShape {
-	readonly query: (
-		tenant: TenantContext,
-		payload: WarehouseQueryRequest,
-		options?: SqlQueryOptions,
-	) => Effect.Effect<WarehouseQueryResponse, WarehouseSqlError>
-	readonly sqlQuery: (
-		tenant: TenantContext,
-		sql: string,
-		options?: SqlQueryOptions,
-	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, WarehouseSqlError>
-	readonly ingest: <T>(
-		tenant: TenantContext,
-		datasource: string,
-		rows: ReadonlyArray<T>,
-	) => Effect.Effect<void, WarehouseQueryError>
-	/**
-	 * Present this service as the package-level `WarehouseExecutor` for a given
-	 * tenant. This is the single managed-warehouse implementation of that
-	 * interface — the observability functions in `@maple/query-engine` and the
-	 * MCP tools consume `WarehouseExecutor`, not this service directly.
-	 */
-	readonly asExecutor: (tenant: TenantContext) => WarehouseExecutorShape
-}
-
-/**
- * Map a `WarehouseSqlError` into the package-facing `ObservabilityError`,
- * preserving the `category` (incl. `schema_drift`) that MCP/HTTP layers branch
- * on for remediation hints.
- */
-const toObservabilityError = (error: WarehouseSqlError, pipe?: string): ObservabilityError =>
-	new ObservabilityError({
-		message: error.message,
-		...(pipe !== undefined ? { pipe } : {}),
-		...("category" in error && error.category !== undefined ? { category: error.category } : {}),
-	})
-
-const clientCache = new Map<string, CachedClient>()
-
-/** Minimal client interface — raw SQL execution plus row inserts. */
-interface SqlClient {
-	readonly sql: (sql: string) => Promise<{ data: ReadonlyArray<Record<string, unknown>> }>
-	readonly insert: (datasource: string, rows: ReadonlyArray<unknown>) => Promise<void>
-}
-
-const createClickHouseSqlClient = (config: ClickHouseSqlClientConfig): SqlClient => {
+const createClickHouseSqlClient = (config: ClickHouseConfig): WarehouseSqlClient => {
 	const client = createClickHouseClient({
 		url: config.url,
 		username: config.username,
@@ -137,7 +56,7 @@ const createClickHouseSqlClient = (config: ClickHouseSqlClientConfig): SqlClient
 	}
 }
 
-const createTinybirdSdkSqlClient = (config: TinybirdSdkSqlClientConfig): SqlClient => {
+const createTinybirdSdkSqlClient = (config: TinybirdConfig): WarehouseSqlClient => {
 	const client = new Tinybird({
 		baseUrl: config.host,
 		token: config.token,
@@ -167,551 +86,84 @@ const createTinybirdSdkSqlClient = (config: TinybirdSdkSqlClientConfig): SqlClie
 	}
 }
 
-const createClient = (config: SqlClientConfig): SqlClient =>
+const createClient = (config: ResolvedWarehouseConfig): WarehouseSqlClient =>
 	config._tag === "clickhouse" ? createClickHouseSqlClient(config) : createTinybirdSdkSqlClient(config)
 
 let sqlClientFactory: typeof createClient = createClient
-
-const normalizeSqlForClickHouseClient = (sql: string): string =>
-	sql
-		.replace(/;\s*$/, "")
-		.replace(/\s+FORMAT\s+(?:JSONEachRow|JSON)\s*$/i, "")
-		.replace(/;\s*$/, "")
-
-type ClickHouseErrorDetails = {
-	readonly message: string
-	readonly code?: string
-	readonly type?: string
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-	typeof value === "object" && value !== null
-
-const unknownToMessage = (error: unknown, fallback = "ClickHouse query failed"): string => {
-	if (typeof error === "string") return error
-	if (error instanceof Error) return error.message
-	if (isRecord(error) && typeof error.message === "string") return error.message
-	return fallback
-}
-
-const getClickHouseErrorDetails = (error: unknown): ClickHouseErrorDetails => {
-	const message = unknownToMessage(error)
-	if (!isRecord(error)) return { message }
-	const code =
-		typeof error.code === "string"
-			? error.code
-			: typeof error.code === "number"
-				? String(error.code)
-				: undefined
-	const type = typeof error.type === "string" ? error.type : undefined
-	return { message, code, type }
-}
-
-const authClickHouseTypes = new Set([
-	"AUTHENTICATION_FAILED",
-	"ACCESS_DENIED",
-	"USER_DOESNT_EXIST",
-	"REQUIRED_PASSWORD",
-])
-
-const configClickHouseTypes = new Set([
-	"UNKNOWN_DATABASE",
-	"UNKNOWN_TABLE",
-	"TABLE_IS_DROPPED",
-	"UNKNOWN_SETTING",
-])
-
-const transientClickHouseTypes = new Set([
-	"NETWORK_ERROR",
-	"SOCKET_TIMEOUT",
-	"TOO_MANY_SIMULTANEOUS_QUERIES",
-	"SERVER_OVERLOADED",
-	"CANNOT_SCHEDULE_TASK",
-	"KEEPER_EXCEPTION",
-	"ALL_CONNECTION_TRIES_FAILED",
-])
-
-// CH error types raised when a column or function reference doesn't exist in
-// the cluster's schema. For BYO-ClickHouse customers this is almost always
-// schema drift between Maple's expected schema and what the cluster has —
-// resolved by running schema apply, not by retrying. Surfacing it as a
-// distinct category lets the MCP layer return an actionable message.
-const schemaDriftClickHouseTypes = new Set([
-	"UNKNOWN_IDENTIFIER",
-	"NO_SUCH_COLUMN_IN_TABLE",
-	"THERE_IS_NO_COLUMN",
-	"NOT_FOUND_COLUMN_IN_BLOCK",
-])
-
-// Only retry transient upstream failures (5xx, 408, 429, network blips). Non-transient
-// errors (auth, config, schema_drift, query) re-fail immediately — there's nothing to
-// recover from by trying again. Caps at 2 retries (3 attempts total) to bound worst-case
-// tail latency: at concurrency=4 in the alerting tick, a fully-degraded warehouse can
-// still let the tick finish within its 60s window.
-const TRANSIENT_RETRY_SCHEDULE = Schedule.exponential("100 millis", 2.0).pipe(
-	Schedule.both(Schedule.recurs(2)),
-)
-
-const isTransientUpstreamError = (error: WarehouseSqlError): boolean =>
-	error._tag === "@maple/http/errors/WarehouseQueryError" && error.category === "upstream"
 
 export class WarehouseQueryService extends Context.Service<
 	WarehouseQueryService,
 	WarehouseQueryServiceShape
 >()("@maple/api/lib/WarehouseQueryService", {
-		make: Effect.gen(function* () {
-			const env = yield* Env
-			const orgClickHouseSettings = yield* OrgClickHouseSettingsService
+	make: Effect.gen(function* () {
+		const env = yield* Env
+		const orgClickHouseSettings = yield* OrgClickHouseSettingsService
 
-			const cleanErrorMessage = (raw: string): string => {
-				let cleaned = raw
-				const htmlIndex = cleaned.search(/<\s*(html|head|body|center|h1|hr|title)\b/i)
-				if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
-				cleaned = cleaned
-					.replace(/<[^>]+>/g, " ")
-					.replace(/\s+/g, " ")
-					.trim()
-				if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()
-				return cleaned || raw.slice(0, 200)
-			}
+		/**
+		 * Resolve the upstream config for this tenant's queries.
+		 *
+		 * Resolution order:
+		 *   1. Per-org BYO ClickHouse row (`org_clickhouse_settings`)
+		 *   2. Env-level managed ClickHouse (`CLICKHOUSE_URL` set)
+		 *   3. Env-level managed Tinybird (`TINYBIRD_HOST` + `TINYBIRD_TOKEN`)
+		 */
+		const resolveConfig: WarehouseExecutorDeps["resolveConfig"] = Effect.fn(
+			"WarehouseQueryService.resolveSqlConfig",
+		)(function* (tenant, label) {
+			const override = yield* orgClickHouseSettings
+				.resolveRuntimeConfig(tenant.orgId)
+				.pipe(Effect.mapError((error) => toWarehouseQueryError(label, error)))
 
-			const extractUpstreamStatus = (message: string): number | undefined => {
-				const match = message.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)
-				if (match) return Number(match[1])
-				const titleMatch = message.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)
-				if (titleMatch) return Number(titleMatch[1])
-				return undefined
-			}
-
-			const toWarehouseQueryError = (pipe: string, error: unknown) =>
-				new WarehouseQueryError({
-					message: cleanErrorMessage(unknownToMessage(error, "Warehouse query failed")),
-					pipe,
-				})
-
-			const mapWarehouseError = (pipe: string, error: unknown) => {
-				const details = getClickHouseErrorDetails(error)
-				const rawMessage = details.message
-				const message = cleanErrorMessage(rawMessage)
-				const setting = detectQuotaSetting(rawMessage, details.code, details.type)
-				const clickhouseFields = {
-					clickhouseCode: details.code,
-					clickhouseType: details.type,
-				}
-				if (setting) {
-					return new WarehouseQuotaExceededError({ pipe, message, setting, ...clickhouseFields })
-				}
-				const upstreamStatus = extractUpstreamStatus(rawMessage)
-				const type = details.type
-				const isAuthFailure =
-					upstreamStatus === 401 ||
-					upstreamStatus === 403 ||
-					(type !== undefined && authClickHouseTypes.has(type)) ||
-					/authentication failed|access denied|not enough privileges|password is incorrect/i.test(
-						rawMessage,
-					)
-				if (isAuthFailure) {
-					return new WarehouseQueryError({
-						pipe,
-						message,
-						category: "auth",
-						upstreamStatus,
-						...clickhouseFields,
-					})
-				}
-				const isTransientFailure =
-					(upstreamStatus !== undefined &&
-						(upstreamStatus === 408 ||
-							upstreamStatus === 429 ||
-							(upstreamStatus >= 500 && upstreamStatus < 600))) ||
-					(type !== undefined && transientClickHouseTypes.has(type)) ||
-					/^Timeout error\.?$/i.test(rawMessage) ||
-					/The user aborted a request|Failed to fetch|fetch failed|NetworkError|Load failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|certificate/i.test(
-						rawMessage,
-					)
-				if (isTransientFailure) {
-					return new WarehouseQueryError({
-						pipe,
-						message,
-						category: "upstream",
-						upstreamStatus,
-						...clickhouseFields,
-					})
-				}
-				const isConfigFailure =
-					(upstreamStatus !== undefined && upstreamStatus === 404) ||
-					(type !== undefined && configClickHouseTypes.has(type)) ||
-					/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist/i.test(
-						rawMessage,
-					)
-				if (isConfigFailure) {
-					return new WarehouseQueryError({
-						pipe,
-						message,
-						category: "config",
-						upstreamStatus,
-						...clickhouseFields,
-					})
-				}
-				const isClientFailure =
-					error instanceof SyntaxError ||
-					/Cannot decode .* as JSON|Unexpected token .* JSON|Stream has been already consumed|Failed to parse ClickHouse response/i.test(
-						rawMessage,
-					)
-				if (isClientFailure) {
-					return new WarehouseQueryError({
-						pipe,
-						message,
-						category: "client",
-						upstreamStatus,
-						...clickhouseFields,
-					})
-				}
-				const isSchemaDrift =
-					(type !== undefined && schemaDriftClickHouseTypes.has(type)) ||
-					/Unknown (?:expression or function )?identifier|Missing columns|There is no column|No such column/i.test(
-						rawMessage,
-					)
-				if (isSchemaDrift) {
-					return new WarehouseQueryError({
-						pipe,
-						message,
-						category: "schema_drift",
-						upstreamStatus,
-						...clickhouseFields,
-					})
-				}
-				return new WarehouseQueryError({
-					pipe,
-					message,
-					category: "query",
-					upstreamStatus,
-					...clickhouseFields,
-				})
-			}
-
-			const sqlClientCacheKey = (config: SqlClientConfig): string =>
-				config._tag === "clickhouse"
-					? `clickhouse:${config.url}:${config.username}:${config.password}:${config.database}`
-					: `tinybird:${config.host}:${config.token}`
-
-			const getCachedOrCreateClient = (
-				orgId: OrgId | "__managed__",
-				config: SqlClientConfig,
-				nowMs: number,
-			) => {
-				const cacheKey = sqlClientCacheKey(config)
-				const cached = clientCache.get(orgId)
-				if (cached && cached.cacheKey === cacheKey && cached.expiresAt > nowMs) {
-					return cached.client
-				}
-				const client = sqlClientFactory(config)
-				clientCache.set(orgId, { client, cacheKey, expiresAt: nowMs + CLIENT_CACHE_TTL_MS })
-				return client
-			}
-
-			/**
-			 * Resolve the upstream config for this tenant's queries.
-			 *
-			 * Resolution order:
-			 *   1. Per-org BYO ClickHouse row (`org_clickhouse_settings`)
-			 *   2. Env-level managed ClickHouse (`CLICKHOUSE_URL` set)
-			 *   3. Env-level managed Tinybird (`TINYBIRD_HOST` + `TINYBIRD_TOKEN`)
-			 */
-			const resolveSqlConfig = Effect.fn("WarehouseQueryService.resolveSqlConfig")(function* (
-				tenant: TenantContext,
-				label: string,
-			) {
-				const override = yield* orgClickHouseSettings
-					.resolveRuntimeConfig(tenant.orgId)
-					.pipe(Effect.mapError((error) => toWarehouseQueryError(label, error)))
-
-				if (Option.isSome(override)) {
-					yield* Effect.annotateCurrentSpan("clientSource", "org_override")
-					yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
-					return {
-						config: {
-							_tag: "clickhouse" as const,
-							url: override.value.url,
-							username: override.value.user,
-							password: override.value.password,
-							database: override.value.database,
-						},
-						source: "org_override" as const,
-					}
-				}
-
-				yield* Effect.annotateCurrentSpan("clientSource", "managed")
-				if (Option.isSome(env.CLICKHOUSE_URL)) {
-					yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
-					return {
-						config: {
-							_tag: "clickhouse" as const,
-							url: env.CLICKHOUSE_URL.value,
-							username: env.CLICKHOUSE_USER,
-							password: Option.match(env.CLICKHOUSE_PASSWORD, {
-								onNone: () => Redacted.value(env.TINYBIRD_TOKEN),
-								onSome: Redacted.value,
-							}),
-							database: env.CLICKHOUSE_DATABASE,
-						},
-						source: "managed" as const,
-					}
-				}
-
-				yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+			if (Option.isSome(override)) {
+				yield* Effect.annotateCurrentSpan("clientSource", "org_override")
+				yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
 				return {
 					config: {
-						_tag: "tinybird" as const,
-						host: env.TINYBIRD_HOST,
-						token: Redacted.value(env.TINYBIRD_TOKEN),
+						_tag: "clickhouse" as const,
+						url: override.value.url,
+						username: override.value.user,
+						password: override.value.password,
+						database: override.value.database,
+					},
+					source: "org_override" as const,
+				}
+			}
+
+			yield* Effect.annotateCurrentSpan("clientSource", "managed")
+			if (Option.isSome(env.CLICKHOUSE_URL)) {
+				yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
+				return {
+					config: {
+						_tag: "clickhouse" as const,
+						url: env.CLICKHOUSE_URL.value,
+						username: env.CLICKHOUSE_USER,
+						password: Option.match(env.CLICKHOUSE_PASSWORD, {
+							onNone: () => Redacted.value(env.TINYBIRD_TOKEN),
+							onSome: Redacted.value,
+						}),
+						database: env.CLICKHOUSE_DATABASE,
 					},
 					source: "managed" as const,
 				}
-			})
-
-			/**
-			 * Cap traced SQL at 16 KB. OTel's default attribute size limit is 32 KB,
-			 * and 16 KB covers the overwhelming majority of compiled DSL queries while
-			 * leaving headroom for other span attributes. Logs use a tighter cap below.
-			 */
-			const SQL_TRACE_MAX = 16_384
-			const SQL_LOG_MAX = 1_000
-
-			const truncateSql = (s: string, maxLen: number) =>
-				s.length > maxLen ? s.slice(0, maxLen) + "...[truncated]" : s
-
-			/**
-			 * Stable 32-bit FNV-1a hash over SQL with literals and numbers normalized.
-			 * Lets the same query with different params group together in trace search.
-			 */
-			const fingerprintSql = (s: string): string => {
-				const normalized = s.replace(/'[^']*'/g, "'?'").replace(/\b\d+\b/g, "?")
-				let h = 0x811c9dc5
-				for (let i = 0; i < normalized.length; i++) {
-					h ^= normalized.charCodeAt(i)
-					h = Math.imul(h, 0x01000193)
-				}
-				return (h >>> 0).toString(16).padStart(8, "0")
 			}
 
-			const executeSql = Effect.fn("WarehouseQueryService.executeSql")(function* (
-				tenant: TenantContext,
-				sql: string,
-				pipe: string,
-				options?: SqlQueryOptions,
-			) {
-				const startedAtMs = yield* Clock.currentTimeMillis
-				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
-				yield* Effect.annotateCurrentSpan("tenant.userId", tenant.userId)
-				yield* Effect.annotateCurrentSpan("tenant.authMode", tenant.authMode)
-
-				const leftoverParam = sql.match(/__PARAM_(\w+)__/)
-				if (leftoverParam) {
-					return yield* new WarehouseQueryError({
-						pipe,
-						message: `Compiled SQL contains unresolved param '${leftoverParam[1]}' — query was built with param.${leftoverParam[1]}() but '${leftoverParam[1]}' was not provided in the runtime params object`,
-					})
-				}
-
-				const resolved = yield* resolveSqlConfig(tenant, pipe)
-				const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
-				yield* Effect.annotateCurrentSpan("db.system", peerService)
-				yield* Effect.annotateCurrentSpan("peer.service", peerService)
-				const settings = resolveSettings(options)
-				const sqlForClient =
-					resolved.config._tag === "clickhouse" ? normalizeSqlForClickHouseClient(sql) : sql
-				const finalSql = appendSettings(sqlForClient, settings)
-				const sqlLength = finalSql.length
-				const sqlTruncated = sqlLength > SQL_TRACE_MAX
-				yield* Effect.annotateCurrentSpan("db.statement", truncateSql(finalSql, SQL_TRACE_MAX))
-				yield* Effect.annotateCurrentSpan("db.statement.length", sqlLength)
-				yield* Effect.annotateCurrentSpan("db.statement.truncated", sqlTruncated)
-				yield* Effect.annotateCurrentSpan("db.statement.fingerprint", fingerprintSql(finalSql))
-				yield* Effect.annotateCurrentSpan("query.pipe", pipe)
-				if (options?.context) yield* Effect.annotateCurrentSpan("query.context", options.context)
-				if (options?.profile) yield* Effect.annotateCurrentSpan("query.profile", options.profile)
-				if (settings) yield* Effect.annotateCurrentSpan("ch.settings", JSON.stringify(settings))
-
-				const cacheKey = resolved.source === "managed" ? "__managed__" : tenant.orgId
-				const client = getCachedOrCreateClient(cacheKey, resolved.config, yield* Clock.currentTimeMillis)
-				let retryAttempts = 0
-				const result = yield* Effect.tryPromise({
-					try: () => client.sql(finalSql),
-					catch: (error) => mapWarehouseError(pipe, error),
-				}).pipe(
-					Effect.tapError((error) =>
-						isTransientUpstreamError(error)
-							? Effect.sync(() => {
-									retryAttempts++
-								})
-							: Effect.void,
-					),
-					Effect.retry({
-						schedule: TRANSIENT_RETRY_SCHEDULE,
-						while: isTransientUpstreamError,
-					}),
-					Effect.tapError((error) =>
-						Effect.gen(function* () {
-							const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs
-							yield* Effect.annotateCurrentSpan("db.duration_ms", elapsedMs)
-							yield* Effect.annotateCurrentSpan("db.retry.attempts", retryAttempts)
-							yield* Effect.logError("WarehouseQueryService.executeSql failed", {
-								pipe,
-								context: options?.context,
-								orgId: tenant.orgId,
-								backend: resolved.config._tag,
-								durationMs: elapsedMs,
-								retryAttempts,
-								error: String(error),
-								message: error.message,
-								sql: truncateSql(finalSql, SQL_LOG_MAX),
-								sqlLength,
-								sqlFingerprint: fingerprintSql(finalSql),
-								profile: options?.profile,
-							})
-						}),
-					),
-				)
-
-				yield* Effect.annotateCurrentSpan("result.rowCount", result.data.length)
-				yield* Effect.annotateCurrentSpan(
-					"db.duration_ms",
-					(yield* Clock.currentTimeMillis) - startedAtMs,
-				)
-				yield* Effect.annotateCurrentSpan("db.retry.attempts", retryAttempts)
-				return result.data
-			})
-
-			const query = Effect.fn("WarehouseQueryService.query")(function* (
-				tenant: TenantContext,
-				payload: WarehouseQueryRequest,
-				options?: SqlQueryOptions,
-			) {
-				yield* Effect.annotateCurrentSpan("pipe", payload.pipe)
-				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
-
-				if (!tenant.orgId || tenant.orgId.trim() === "") {
-					return yield* new WarehouseQueryError({
-						pipe: payload.pipe,
-						message: "org_id must not be empty",
-					})
-				}
-
-				const compiled = compilePipeQuery(payload.pipe, {
-					...payload.params,
-					org_id: tenant.orgId,
-				})
-
-				if (!compiled) {
-					return yield* new WarehouseQueryError({
-						message: `Unsupported pipe: ${payload.pipe}`,
-						pipe: payload.pipe,
-					})
-				}
-
-				const rows = yield* executeSql(tenant, compiled.sql, payload.pipe, options)
-
-				return new WarehouseQueryResponse({
-					data: Array.from(compiled.castRows(rows)),
-				})
-			})
-
-			const sqlQuery = Effect.fn("WarehouseQueryService.sqlQuery")(function* (
-				tenant: TenantContext,
-				sql: string,
-				options?: SqlQueryOptions,
-			) {
-				if (!tenant.orgId || tenant.orgId.trim() === "") {
-					return yield* new WarehouseQueryError({
-						pipe: "sqlQuery",
-						message: "org_id must not be empty (sqlQuery)",
-					})
-				}
-				if (!sql.includes("OrgId")) {
-					return yield* new WarehouseQueryError({
-						pipe: "sqlQuery",
-						message: "SQL query must contain OrgId filter (sqlQuery)",
-					})
-				}
-				return yield* executeSql(tenant, sql, "sqlQuery", options)
-			})
-
-			const ingest = Effect.fn("WarehouseQueryService.ingest")(function* <T>(
-				tenant: TenantContext,
-				datasource: string,
-				rows: ReadonlyArray<T>,
-			) {
-				yield* Effect.annotateCurrentSpan("datasource", datasource)
-				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
-				yield* Effect.annotateCurrentSpan("rowCount", rows.length)
-
-				if (rows.length === 0) return
-
-				const label = `ingest:${datasource}`
-				const resolved = yield* resolveSqlConfig(tenant, label)
-
-				// Insert through the same client the read path uses (official
-				// @clickhouse/client-web for ClickHouse, Tinybird Events API for
-				// Tinybird) so the wire protocol is handled correctly — a hand-rolled
-				// `?query=INSERT … FORMAT JSONEachRow` POST had its query param dropped
-				// by managed ClickHouse, which then parsed the NDJSON body as SQL.
-				const cacheKey = resolved.source === "managed" ? "__managed__" : tenant.orgId
-				const client = getCachedOrCreateClient(
-					cacheKey,
-					resolved.config,
-					yield* Clock.currentTimeMillis,
-				)
-
-				yield* Effect.tryPromise({
-					try: () => client.insert(datasource, rows),
-					catch: (error) => toWarehouseQueryError(label, error),
-				}).pipe(
-					Effect.tapError((error) =>
-						Effect.logError("WarehouseQueryService.ingest failed", {
-							datasource,
-							rowCount: rows.length,
-							backend: resolved.config._tag,
-							error: String(error),
-							message: error.message,
-						}),
-					),
-				)
-			})
-
-			const asExecutor = (tenant: TenantContext): WarehouseExecutorShape => ({
-				orgId: tenant.orgId,
-				query: <T>(
-					pipe: WarehouseQueryName,
-					params: Record<string, unknown>,
-					options?: ExecutorQueryOptions,
-				) =>
-					query(tenant, { pipe, params }, options).pipe(
-						Effect.map((response) => ({ data: response.data as unknown as ReadonlyArray<T> })),
-						Effect.mapError((error) => toObservabilityError(error, pipe)),
-						Effect.withSpan("WarehouseExecutor.query", {
-							attributes: { pipe, orgId: tenant.orgId, "query.profile": options?.profile },
-						}),
-					),
-				sqlQuery: <T>(sql: string, options?: ExecutorQueryOptions) =>
-					sqlQuery(tenant, sql, { ...options, context: "warehouseExecutor.sqlQuery" }).pipe(
-						Effect.map((rows) => rows as unknown as ReadonlyArray<T>),
-						Effect.mapError((error) => toObservabilityError(error)),
-						Effect.withSpan("WarehouseExecutor.sqlQuery", {
-							attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
-						}),
-					),
-			})
-
+			yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
 			return {
-				query,
-				sqlQuery,
-				ingest,
-				asExecutor,
-			} satisfies WarehouseQueryServiceShape
-		}),
-	},
-) {
+				config: {
+					_tag: "tinybird" as const,
+					host: env.TINYBIRD_HOST,
+					token: Redacted.value(env.TINYBIRD_TOKEN),
+				},
+				source: "managed" as const,
+			}
+		})
+
+		return makeWarehouseExecutor({
+			createClient: (config) => sqlClientFactory(config),
+			resolveConfig,
+		})
+	}),
+}) {
 	static readonly layer = Layer.effect(this, this.make)
 
 	static readonly query = (
@@ -726,9 +178,8 @@ export class WarehouseQueryService extends Context.Service<
 
 /**
  * Layer that provides the package-level `WarehouseExecutor` for a tenant,
- * backed by `WarehouseQueryService`. Co-located with the impl — this replaces
- * the former standalone `WarehouseExecutorLive` shim. The executor name is a
- * public contract from `@maple/query-engine`; only the wiring lives here.
+ * backed by `WarehouseQueryService`. The executor name is a public contract
+ * from `@maple/query-engine`; only the wiring lives here.
  */
 export const makeWarehouseExecutorFromTenant = (tenant: TenantContext) =>
 	Layer.effect(
@@ -739,10 +190,8 @@ export const makeWarehouseExecutorFromTenant = (tenant: TenantContext) =>
 export const __testables = {
 	setClientFactory: (factory: typeof createClient) => {
 		sqlClientFactory = factory
-		clientCache.clear()
 	},
 	reset: () => {
 		sqlClientFactory = createClient
-		clientCache.clear()
 	},
 }

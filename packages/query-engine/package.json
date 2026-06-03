@@ -12,6 +12,8 @@
 		"./sql": "./src/sql/index.ts",
 		"./ch": "./src/ch/index.ts",
 		"./profiles": "./src/profiles/index.ts",
+		"./caching": "./src/caching/index.ts",
+		"./execution": "./src/execution/index.ts",
 		"./runtime": "./src/runtime/index.ts",
 		"./observability": "./src/observability/index.ts",
 		"./local": "./src/local.ts"

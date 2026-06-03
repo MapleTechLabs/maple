@@ -27,8 +27,8 @@ import {
 	type TimeRangeBounds,
 } from "@maple/query-engine/runtime"
 import type { TenantContext } from "./AuthService"
-import { BucketCacheService } from "../lib/BucketCacheService"
-import { EdgeCacheService } from "../lib/EdgeCacheService"
+import { BucketCacheService } from "@maple/query-engine/caching"
+import { EdgeCacheService } from "@maple/query-engine/caching"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import * as QueryEngineMetrics from "../lib/QueryEngineMetrics"
 

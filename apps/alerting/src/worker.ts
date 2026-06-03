@@ -2,6 +2,7 @@ import {
 	AlertRuntime,
 	AlertsService,
 	BucketCacheService,
+	CacheBackendLive,
 	DatabaseD1Live,
 	DigestService,
 	EdgeCacheService,
@@ -44,11 +45,15 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive)),
 	)
 
-	const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheService.layer))
+	// EdgeCacheService's storage backend is injected via the CacheBackend port.
+	// Define the wired layer once so it memoizes to a single shared instance.
+	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
+
+	const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheServiceLive))
 
 	const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 		Layer.provide(WarehouseQueryServiceLive),
-		Layer.provide(EdgeCacheService.layer),
+		Layer.provide(EdgeCacheServiceLive),
 		Layer.provide(BucketCacheServiceLive),
 	)
 

@@ -1,4 +1,7 @@
 import { Clock, Context, Deferred, Effect, Layer, Option, Schema } from "effect"
+import { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
+
+export { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
 
 export class EdgeCacheIOError extends Schema.TaggedErrorClass<EdgeCacheIOError>()(
 	"@maple/api/EdgeCacheIOError",
@@ -53,25 +56,6 @@ export interface EdgeCacheServiceShape {
 	) => Effect.Effect<void, EdgeCacheIOError>
 }
 
-/**
- * Internal storage interface; exported for tests so they can inject a fake
- * backend that simulates the Workers cache JSON-roundtrip behaviour.
- */
-export interface EdgeCacheBackend {
-	readonly get: (bucket: string, hash: string, nowMs: number) => Promise<unknown | undefined>
-	readonly put: (
-		bucket: string,
-		hash: string,
-		value: unknown,
-		ttlSeconds: number,
-		nowMs: number,
-	) => Promise<void>
-}
-
-const SYNTHETIC_HOST = "https://maple-api.internal"
-
-const buildCacheUrl = (bucket: string, hash: string): string => `${SYNTHETIC_HOST}/cache/${bucket}/${hash}`
-
 const sha256Hex = async (input: string): Promise<string> => {
 	const bytes = new TextEncoder().encode(input)
 	const digest = await crypto.subtle.digest("SHA-256", bytes)
@@ -81,65 +65,6 @@ const sha256Hex = async (input: string): Promise<string> => {
 		out += view[i]!.toString(16).padStart(2, "0")
 	}
 	return out
-}
-
-const detectWorkersCache = (): Cache | null => {
-	try {
-		const g = globalThis as { caches?: { default?: Cache } }
-		return g.caches?.default ?? null
-	} catch {
-		return null
-	}
-}
-
-const makeWorkersBackend = (cache: Cache): EdgeCacheBackend => ({
-	get: async (bucket, hash) => {
-		const response = await cache.match(buildCacheUrl(bucket, hash))
-		if (!response) return undefined
-		try {
-			return (await response.json()) as unknown
-		} catch {
-			return undefined
-		}
-	},
-	put: async (bucket, hash, value, ttlSeconds) => {
-		const body = JSON.stringify(value)
-		const response = new Response(body, {
-			headers: {
-				"Content-Type": "application/json",
-				"Cache-Control": `max-age=${ttlSeconds}`,
-			},
-		})
-		await cache.put(buildCacheUrl(bucket, hash), response)
-	},
-})
-
-interface MemoryEntry {
-	readonly value: unknown
-	readonly expiresAt: number
-}
-
-const makeMemoryBackend = (): EdgeCacheBackend => {
-	const store = new Map<string, MemoryEntry>()
-	const composite = (bucket: string, hash: string) => `${bucket}:${hash}`
-
-	return {
-		get: async (bucket, hash, nowMs) => {
-			const entry = store.get(composite(bucket, hash))
-			if (!entry) return undefined
-			if (entry.expiresAt <= nowMs) {
-				store.delete(composite(bucket, hash))
-				return undefined
-			}
-			return entry.value
-		},
-		put: async (bucket, hash, value, ttlSeconds, nowMs) => {
-			store.set(composite(bucket, hash), {
-				value,
-				expiresAt: nowMs + ttlSeconds * 1000,
-			})
-		},
-	}
 }
 
 /**
@@ -291,10 +216,16 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceShape>()(
 	"@maple/api/lib/EdgeCacheService",
 ) {
-	static readonly layer = Layer.sync(this, () => {
-		const workers = detectWorkersCache()
-		return EdgeCacheService.of(
-			makeEdgeCacheService(workers ? makeWorkersBackend(workers) : makeMemoryBackend()),
-		)
-	})
+	/**
+	 * Backed by the injected `CacheBackend` (Workers KV in prod, in-memory in
+	 * tests/dev — supplied by the host app). The runtime binding never enters
+	 * this package, keeping `globalThis.caches` out of the web/cli bundles.
+	 */
+	static readonly layer = Layer.effect(
+		this,
+		Effect.gen(function* () {
+			const backend = yield* CacheBackend
+			return EdgeCacheService.of(makeEdgeCacheService(backend))
+		}),
+	)
 }

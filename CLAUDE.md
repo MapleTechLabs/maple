@@ -84,7 +84,18 @@ src/
 
 ### Warehouse Query Pattern
 
-**IMPORTANT:** Maple no longer uses Tinybird pipes/endpoints. All backend queries go through the ClickHouse DSL in `@maple/query-engine` and execute via `WarehouseQueryService.sqlQuery()` (defined in `apps/api/src/services/WarehouseQueryService.ts`). The deployed Tinybird project contains only datasources and materialized views — zero pipes. The service routes to either Tinybird SDK or ClickHouse depending on org config.
+**IMPORTANT:** Maple no longer uses Tinybird pipes/endpoints. All backend queries go through the ClickHouse DSL in `@maple/query-engine` and execute via `WarehouseQueryService.sqlQuery()`. The deployed Tinybird project contains only datasources and materialized views — zero pipes. The service routes to either Tinybird SDK or ClickHouse depending on org config.
+
+The "engine" lives in `@maple/query-engine`, organized by concern (each is its own subpath export):
+
+- `./ch` — the ClickHouse DSL (`from().select().where()`, `compile`, table/function defs) + `compilePipeQuery` (the named-query registry backing `WarehouseExecutor.query`).
+- `./runtime` — the dashboard/alert lowering: validation, `QuerySpec` → CH, the `evaluate`/`evaluateRawSql` paths, cache-key builders, and the raw-SQL macro safety pass. Generic over tenant (`T extends QueryTenant`).
+- `./execution` — the warehouse executor: `makeWarehouseExecutor(deps)` owns SQL run, retry, error mapping, client cache, OrgId scoping, and span instrumentation. The host app injects driver construction (`WarehouseClient`-style `createClient`) + per-org config resolution (`OrgWarehouseConfig`-style `resolveConfig`); the ClickHouse/Tinybird SDKs stay in `apps/api/src/lib/WarehouseQueryService.ts` (the only place those drivers are imported).
+- `./caching` — `EdgeCacheService` (blob) + `BucketCacheService` (timeseries) behind a `CacheBackend` port; the Cloudflare Workers KV backend lives in `apps/api/src/lib/CacheBackendLive.ts` (keeps `globalThis.caches` out of the web/cli bundles).
+- `./profiles` — query cost profiles (discovery/list/aggregation/explain/unbounded) → CH `SETTINGS`.
+- `./observability` — high-level MCP/agent functions (`searchTraces`, `findErrors`, …) over the abstract `WarehouseExecutor` port.
+
+The package **root barrel stays pure** (no driver/KV/DB imports) so it can feed the web/cli bundles; execution/caching/runtime are reachable only via their explicit subpaths, which only `apps/api` imports. `apps/api/src/lib/WarehouseQueryService.ts` is thin wiring (drivers + config resolution) that composes `makeWarehouseExecutor`; `apps/api/src/services/QueryEngineService.ts` is thin wiring (the edge/bucket caches) that composes the `./runtime` lowering.
 
 Pattern (see `apps/api/src/routes/query-engine.http.ts` and `apps/api/src/services/QueryEngineService.ts` for examples):
 

@@ -13,8 +13,8 @@ import type { WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { AlertRuntime, type AlertRuntimeShape, AlertsService, type AlertsServiceShape } from "./AlertsService"
 import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
-import { BucketCacheService } from "../lib/BucketCacheService"
-import { EdgeCacheService } from "../lib/EdgeCacheService"
+import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/caching"
+import { CacheBackendLive } from "../lib/CacheBackendLive"
 import { Env } from "../lib/Env"
 import { HazelOAuthService } from "./HazelOAuthService"
 import { QueryEngineService } from "./QueryEngineService"
@@ -146,10 +146,11 @@ const makeLayer = (
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
 	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
-	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheService.layer))
+	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
+	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))
 	const queryEngineLive = QueryEngineService.layer.pipe(
 		Layer.provide(warehouseLive),
-		Layer.provide(EdgeCacheService.layer),
+		Layer.provide(edgeCacheLive),
 		Layer.provide(bucketCacheLive),
 		// Wire the test config so QE_EVAL_BUCKET_CACHE_ENABLED=false reaches
 		// QueryEngineService. These alert-logic stubs return aggregate-shaped rows
