@@ -23,6 +23,11 @@ export { WorkerConfigProvider, WorkerConfigProviderLayer } from "./config-provid
 export { WorkerEnvironment, layerFromEnvRecord } from "./worker-environment.ts"
 
 // ---------------------------------------------------------------------------
+// Cache API
+// ---------------------------------------------------------------------------
+export { WorkersCache } from "./workers-cache.ts"
+
+// ---------------------------------------------------------------------------
 // Durable Objects
 // ---------------------------------------------------------------------------
 export { DurableObjectState, fromDurableObjectState } from "./durable-object-state.ts"
