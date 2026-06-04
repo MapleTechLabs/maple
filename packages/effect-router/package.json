@@ -12,7 +12,7 @@
 	"devDependencies": {
 		"@effect/atom-react": "catalog:effect",
 		"@effect/language-service": "catalog:effect",
-		"@tanstack/react-router": "^1.168.10",
+		"@tanstack/react-router": "^1.170.11",
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"effect": "catalog:effect",

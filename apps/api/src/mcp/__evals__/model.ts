@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai"
 
 /**
  * Default eval model — matches apps/chat-agent's prod default
- * (`DEFAULT_MODEL_ID` in apps/chat-agent/src/lib/model-gateway.ts), so evals
+ * (`DEFAULT_MODEL_ID` in apps/chat-agent/src/lib/openrouter.ts), so evals
  * reflect what real users run. Override with `MCP_EVAL_MODEL`.
  */
 export const DEFAULT_EVAL_MODEL = "moonshotai/kimi-k2.5"
@@ -15,7 +15,7 @@ export const hasEvalCredentials = (): boolean => Boolean(process.env.OPENROUTER_
 
 /**
  * Build the eval model via OpenRouter — same wiring as
- * apps/chat-agent/src/lib/model-gateway.ts `createChatModel`.
+ * apps/chat-agent/src/lib/openrouter.ts `createChatModel`.
  */
 export const createEvalModel = (): LanguageModel => {
 	const apiKey = process.env.OPENROUTER_API_KEY
