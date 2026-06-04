@@ -29,8 +29,18 @@ function isLegacyFreePlan(sub: Subscription): boolean {
 	return sub.plan?.name?.toLowerCase() === "free"
 }
 
+// Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
+// body is an `autumn_api_error` from a failed response validation) as `data`
+// rather than `error`. Those payloads have no `subscriptions`/`balances`, so a
+// blind `customer.subscriptions.find(...)` would throw and take down every
+// route. Treat anything without a `subscriptions` array as "no usable customer"
+// and let callers fail open instead of crashing.
+export function isUsableCustomer(customer: Customer | null | undefined): customer is Customer {
+	return !!customer && Array.isArray(customer.subscriptions)
+}
+
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
-	if (!customer) return null
+	if (!isUsableCustomer(customer)) return null
 
 	return (
 		customer.subscriptions.find((sub) => {
@@ -48,7 +58,7 @@ export function hasSelectedPlan(customer: Customer | null | undefined): boolean 
 export function hasBringYourOwnCloudAddOn(customer: Customer | null | undefined): boolean {
 	if (!customer) return false
 
-	return !!customer.flags.bringyourowncloud
+	return !!customer.flags?.bringyourowncloud
 }
 
 // A balance is "hard-capped" when it has a finite grant and bills no overage —

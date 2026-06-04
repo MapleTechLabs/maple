@@ -32,7 +32,7 @@
 		"@xyflow/react": "catalog:ui",
 		"alchemy": "^0.91.2",
 		"astro": "^5.17.1",
-		"autumn-js": "^1.2.5",
+		"autumn-js": "^1.2.27",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",
 		"fuse.js": "^7.4.1",

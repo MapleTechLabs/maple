@@ -5,6 +5,7 @@ import {
 	getQuotaStatus,
 	hasBringYourOwnCloudAddOn,
 	hasSelectedPlan,
+	isUsableCustomer,
 	isUsageBasedPlan,
 } from "./plan-gating"
 
@@ -66,6 +67,7 @@ function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
 			env: "sandbox",
 			archived: false,
 			baseVariantId: null,
+			config: { ignorePastDue: false },
 		},
 		autoEnable: false,
 		addOn: false,
@@ -118,6 +120,7 @@ describe("hasSelectedPlan", () => {
 					env: "sandbox",
 					archived: false,
 					baseVariantId: null,
+					config: { ignorePastDue: false },
 				},
 			}),
 		])
@@ -159,6 +162,35 @@ describe("hasBringYourOwnCloudAddOn", () => {
 		const customer = buildCustomer([])
 
 		expect(hasBringYourOwnCloudAddOn(customer)).toBe(false)
+	})
+})
+
+describe("malformed / error-shaped customer payloads", () => {
+	// Autumn's `useCustomer` surfaces an upstream response-validation failure as a
+	// `200` whose body is `{ code: "autumn_api_error" }` — it has no
+	// `subscriptions`/`flags`. The gating helpers must treat it as "no usable
+	// customer" rather than throwing `Cannot read properties of undefined
+	// (reading 'find')`, which previously took down every route.
+	const errorPayload = {
+		message: "Response validation failed",
+		code: "autumn_api_error",
+		statusCode: 200,
+	} as unknown as Customer
+
+	it("isUsableCustomer distinguishes real customers from error payloads", () => {
+		expect(isUsableCustomer(null)).toBe(false)
+		expect(isUsableCustomer(undefined)).toBe(false)
+		expect(isUsableCustomer(errorPayload)).toBe(false)
+		expect(isUsableCustomer(buildCustomer([]))).toBe(true)
+	})
+
+	it("gating helpers never throw on an error payload and fail closed", () => {
+		expect(() => hasSelectedPlan(errorPayload)).not.toThrow()
+		expect(hasSelectedPlan(errorPayload)).toBe(false)
+		expect(hasBringYourOwnCloudAddOn(errorPayload)).toBe(false)
+		expect(isUsageBasedPlan(errorPayload)).toBe(false)
+		expect(getQuotaStatus(errorPayload)).toBe("ok")
+		expect(getFeatureQuotas(errorPayload)).toEqual([])
 	})
 })
 

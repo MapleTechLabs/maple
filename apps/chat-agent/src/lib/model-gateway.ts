@@ -2,31 +2,27 @@ import {
 	generateText,
 	stepCountIs,
 	streamText,
-	type LanguageModel,
 	type LanguageModelUsage,
 	type ModelMessage,
 	type StreamTextOnFinishCallback,
 	type ToolSet,
 } from "ai"
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { Effect } from "effect"
 import {
 	AgentHarnessModelError,
 	renderCompactionPrompt,
 	type AgentModelGatewayShape,
 } from "@maple/agent-harness"
+import {
+	DEFAULT_MODEL_ID as OPENROUTER_DEFAULT_MODEL_ID,
+	createChatModel,
+	createOpenRouterRequestOptions,
+	type OpenRouterAppOptions,
+} from "./openrouter"
 
-export const DEFAULT_MODEL_ID = "moonshotai/kimi-k2.5:nitro"
+export { DEFAULT_MODEL_ID, createChatModel } from "./openrouter"
+
 const DEFAULT_CONTEXT_WINDOW = 128_000
-
-export const createChatModel = (apiKey: string): LanguageModel => {
-	const openrouter = createOpenAICompatible({
-		name: "openrouter",
-		baseURL: "https://openrouter.ai/api/v1",
-		apiKey,
-	})
-	return openrouter.chatModel(DEFAULT_MODEL_ID)
-}
 
 const parseCompactionSummary = (raw: string) => {
 	try {
@@ -54,24 +50,41 @@ const parseCompactionSummary = (raw: string) => {
 
 export interface CreateModelGatewayOptions {
 	readonly onCompactionUsage?: (usage: LanguageModelUsage) => void
+	readonly openRouter?: OpenRouterAppOptions & {
+		readonly sessionId?: string
+		readonly orgId?: string
+		readonly environment?: string
+		readonly isByok?: boolean
+	}
 }
 
 export const createModelGateway = (
 	apiKey: string,
 	options: CreateModelGatewayOptions = {},
 ): AgentModelGatewayShape => {
-	const model = createChatModel(apiKey)
+	const model = createChatModel(apiKey, options.openRouter)
 
 	return {
-		modelId: DEFAULT_MODEL_ID,
+		modelId: OPENROUTER_DEFAULT_MODEL_ID,
 		contextWindow: DEFAULT_CONTEXT_WINDOW,
 		summarizeCompaction: ({ snapshot, preparation, abortSignal }) =>
 			Effect.tryPromise({
 				try: async () => {
+					const requestOptions = createOpenRouterRequestOptions({
+						traceId: `${snapshot.sessionId}:compaction:${preparation.firstKeptEntryId}`,
+						traceName: "Maple Agent Compaction",
+						generationName: "Summarize Compaction",
+						sessionId: options.openRouter?.sessionId ?? snapshot.sessionId,
+						orgId: options.openRouter?.orgId,
+						operation: "agent.compaction",
+						environment: options.openRouter?.environment,
+						isByok: options.openRouter?.isByok,
+					})
 					const result = await generateText({
 						model,
 						abortSignal,
 						temperature: 0,
+						providerOptions: requestOptions.providerOptions,
 						system: [
 							"Return a compact JSON object with keys `summary` and optional `turnContextSummary`.",
 							"The summary must preserve user intent, constraints, prior findings, and important operational details.",

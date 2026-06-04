@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useAgent } from "agents/react"
 import { useAgentChat } from "@cloudflare/ai-chat/react"
+import { autoTransformMessages } from "@cloudflare/ai-chat/ai-chat-v5-migration"
 import { useAuth } from "@clerk/clerk-react"
 import { chatAgentUrl } from "@/lib/services/common/chat-agent-url"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
@@ -179,23 +180,32 @@ export function ChatConversation({
 	}, [orgId, mode, alertContext, widgetFixContext, activeContexts, referrerPath])
 
 	const getInitialMessages = useMemo(
-		() => async ({ url }: { url: string }) => {
-			const token = await getToken()
-			const getMessagesUrl = new URL(url)
-			getMessagesUrl.pathname += "/get-messages"
-			const response = await fetch(getMessagesUrl.toString(), {
-				headers: token ? { Authorization: `Bearer ${token}` } : {},
-			})
-			if (!response.ok) return []
-			const text = await response.text()
-			if (!text.trim()) return []
-			try {
-				return JSON.parse(text)
-			} catch {
-				return []
-			}
-		},
-		[getToken],
+		() =>
+			async ({
+				url,
+			}: {
+				agent: string
+				name: string
+				url?: string
+			}) => {
+				const token = await getToken()
+				const baseUrl = url ?? agent.getHttpUrl()
+				const getMessagesUrl = new URL(baseUrl)
+				getMessagesUrl.pathname += "/get-messages"
+				const response = await fetch(getMessagesUrl.toString(), {
+					headers: token ? { Authorization: `Bearer ${token}` } : {},
+				})
+				if (!response.ok) return []
+				const text = await response.text()
+				if (!text.trim()) return []
+				try {
+					const parsed = JSON.parse(text) as unknown
+					return Array.isArray(parsed) ? autoTransformMessages(parsed) : []
+				} catch {
+					return []
+				}
+			},
+		[agent, getToken],
 	)
 
 	const { messages, sendMessage, status, addToolApprovalResponse } = useAgentChat({

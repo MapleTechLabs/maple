@@ -1,4 +1,5 @@
 import { AIChatAgent } from "@cloudflare/ai-chat"
+import { autoTransformMessages } from "@cloudflare/ai-chat/ai-chat-v5-migration"
 import {
 	tool,
 	convertToModelMessages,
@@ -11,13 +12,13 @@ import {
 	type UIMessage,
 } from "ai"
 import { routeAgentRequest } from "agents"
-import { z } from "zod"
+import { Schema } from "effect"
 import type { Env } from "./lib/types"
 import { resolveOrgOpenrouterKey } from "@maple/api/agent"
 import { trackTokenUsage } from "./lib/autumn-tracker"
 import { createMapleAiTools } from "./services/direct-tools"
 import { applyApprovalGates } from "./services/gated-tools"
-import { createChatModel } from "./lib/model-gateway"
+import { createChatModel, createOpenRouterRequestOptions } from "./lib/openrouter"
 import { SYSTEM_PROMPT, DASHBOARD_BUILDER_SYSTEM_PROMPT } from "./services/system-prompt"
 import { orgIdFromDoName, parseDoNameFromUrl, verifyRequest } from "./lib/auth"
 
@@ -211,10 +212,35 @@ const QUERY_SOURCES = ["traces", "logs", "metrics"] as const
 const QUERY_SOURCES_SET = new Set<string>(QUERY_SOURCES)
 const QUERY_BUILDER_CHART_IDS = ["query-builder-bar", "query-builder-area", "query-builder-line"] as const
 
-const widgetDisplaySchema = z.object({
-	title: z.string().trim().min(1).describe("Widget title shown in the dashboard header"),
-	unit: z
-		.enum([
+const toToolInputSchema = <S extends Schema.Top & Schema.Decoder<unknown>>(schema: S) =>
+	Schema.toStandardSchemaV1(Schema.toStandardJSONSchemaV1(schema))
+
+const NonEmptyTrimmedString = Schema.Trim.pipe(Schema.check(Schema.isMinLength(1)))
+
+const ReduceToValueTransformSchema = Schema.Struct({
+	field: Schema.String,
+	aggregate: Schema.Literals(["sum", "first", "count", "avg", "max", "min"]),
+})
+
+const WidgetTransformSchema = Schema.Struct({
+	reduceToValue: Schema.optionalKey(ReduceToValueTransformSchema),
+	fieldMap: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
+	flattenSeries: Schema.optionalKey(Schema.Struct({ valueField: Schema.String })),
+	limit: Schema.optionalKey(Schema.Number),
+	sortBy: Schema.optionalKey(
+		Schema.Struct({
+			field: Schema.String,
+			direction: Schema.Literals(["asc", "desc"]),
+		}),
+	),
+})
+
+const widgetDisplaySchema = Schema.Struct({
+	title: NonEmptyTrimmedString.annotate({
+		description: "Widget title shown in the dashboard header",
+	}),
+	unit: Schema.optionalKey(
+		Schema.Literals([
 			"none",
 			"number",
 			"percent",
@@ -225,114 +251,91 @@ const widgetDisplaySchema = z.object({
 			"bytes",
 			"requests_per_sec",
 			"short",
-		])
-		.optional(),
-	chartId: z.enum(QUERY_BUILDER_CHART_IDS).optional(),
-	columns: z
-		.array(
-			z.object({
-				field: z.string(),
-				header: z.string(),
-				unit: z.string().optional(),
-				align: z.enum(["left", "center", "right"]).optional(),
+		]),
+	),
+	chartId: Schema.optionalKey(Schema.Literals(QUERY_BUILDER_CHART_IDS)),
+	columns: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				field: Schema.String,
+				header: Schema.String,
+				unit: Schema.optionalKey(Schema.String),
+				align: Schema.optionalKey(Schema.Literals(["left", "center", "right"])),
 			}),
-		)
-		.optional(),
-	listDataSource: z.enum(["traces", "logs"]).optional().describe("Data source for list visualization"),
-	listLimit: z.number().min(1).max(50).optional().describe("Max items in list visualization"),
-	listWhereClause: z.string().optional().describe("Filter for list visualization"),
-	listRootOnly: z.boolean().optional().describe("Only root spans for trace lists"),
+		),
+	),
+	listDataSource: Schema.optionalKey(
+		Schema.Literals(["traces", "logs"]).annotate({
+			description: "Data source for list visualization",
+		}),
+	),
+	listLimit: Schema.optionalKey(
+		Schema.Number.pipe(
+			Schema.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(50)),
+		).annotate({
+			description: "Max items in list visualization",
+		}),
+	),
+	listWhereClause: Schema.optionalKey(
+		Schema.String.annotate({ description: "Filter for list visualization" }),
+	),
+	listRootOnly: Schema.optionalKey(Schema.Boolean.annotate({ description: "Only root spans for trace lists" })),
 })
 
-const dashboardWidgetDataSourceSchema = z
-	.object({
-		endpoint: z.string().describe("One of the available DataSourceEndpoint values"),
-		params: z.record(z.string(), z.unknown()).optional(),
-		transform: z
-			.object({
-				reduceToValue: z
-					.object({
-						field: z.string(),
-						aggregate: z.enum(["sum", "first", "count", "avg", "max", "min"]),
-					})
-					.optional(),
-				fieldMap: z.record(z.string(), z.string()).optional(),
-				flattenSeries: z.object({ valueField: z.string() }).optional(),
-				limit: z.number().optional(),
-				sortBy: z
-					.object({
-						field: z.string(),
-						direction: z.enum(["asc", "desc"]),
-					})
-					.optional(),
-			})
-			.optional(),
-	})
-	.superRefine((dataSource, ctx) => {
-		if (dataSource.endpoint !== "custom_query_builder_timeseries") {
-			return
+const dashboardWidgetDataSourceBaseSchema = Schema.Struct({
+	endpoint: Schema.String.annotate({
+		description: "One of the available DataSourceEndpoint values",
+	}),
+	params: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+	transform: Schema.optionalKey(WidgetTransformSchema),
+})
+
+type DashboardWidgetDataSourceInput = Schema.Schema.Type<typeof dashboardWidgetDataSourceBaseSchema>
+
+function hasValidCustomQueryBuilderDataSource(dataSource: DashboardWidgetDataSourceInput): boolean {
+	if (dataSource.endpoint !== "custom_query_builder_timeseries") return true
+
+	const params = dataSource.params
+	if (!params || typeof params !== "object" || Array.isArray(params)) return false
+
+	const rawQueries = params.queries
+	if (!Array.isArray(rawQueries) || rawQueries.length === 0) return false
+
+	for (const rawQuery of rawQueries) {
+		if (typeof rawQuery !== "object" || rawQuery === null || Array.isArray(rawQuery)) {
+			return false
 		}
 
-		const params = dataSource.params
-		if (!params || typeof params !== "object" || Array.isArray(params)) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: "custom_query_builder_timeseries requires params.queries[]",
-				path: ["params"],
-			})
-			return
+		const query = rawQuery as Record<string, unknown>
+		const querySource = query.dataSource ?? query.source
+		if (typeof querySource !== "string" || !QUERY_SOURCES_SET.has(querySource)) {
+			return false
 		}
 
-		const rawQueries = (params as Record<string, unknown>).queries
-		if (!Array.isArray(rawQueries) || rawQueries.length === 0) {
-			ctx.addIssue({
-				code: z.ZodIssueCode.custom,
-				message: "custom_query_builder_timeseries requires params.queries[]",
-				path: ["params", "queries"],
-			})
-			return
+		if (querySource !== "metrics") continue
+
+		if (typeof query.metricName !== "string" || query.metricName.trim().length === 0) {
+			return false
 		}
 
-		for (const [index, rawQuery] of rawQueries.entries()) {
-			if (typeof rawQuery !== "object" || rawQuery === null || Array.isArray(rawQuery)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "Each query must be an object",
-					path: ["params", "queries", index],
-				})
-				continue
-			}
-
-			const query = rawQuery as Record<string, unknown>
-			const querySource = query.dataSource ?? query.source
-			if (typeof querySource !== "string" || !QUERY_SOURCES_SET.has(querySource)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "Each query must provide dataSource or source in traces|logs|metrics",
-					path: ["params", "queries", index, "dataSource"],
-				})
-				continue
-			}
-
-			if (querySource !== "metrics") continue
-
-			if (typeof query.metricName !== "string" || query.metricName.trim().length === 0) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "Metrics queries require metricName",
-					path: ["params", "queries", index, "metricName"],
-				})
-			}
-
-			if (typeof query.metricType !== "string" || !METRIC_TYPES_SET.has(query.metricType)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: "Metrics queries require a valid metricType",
-					path: ["params", "queries", index, "metricType"],
-				})
-			}
+		if (typeof query.metricType !== "string" || !METRIC_TYPES_SET.has(query.metricType)) {
+			return false
 		}
-	})
+	}
+
+	return true
+}
+
+const dashboardWidgetDataSourceSchema = dashboardWidgetDataSourceBaseSchema.pipe(
+	Schema.refine(
+		(dataSource): dataSource is DashboardWidgetDataSourceInput =>
+			hasValidCustomQueryBuilderDataSource(dataSource),
+		{
+			message:
+				"custom_query_builder_timeseries requires params.queries[] with valid traces|logs|metrics query objects; metrics queries require metricName and metricType",
+		},
+	),
+)
 
 // ---------------------------------------------------------------------------
 // Endpoint → MCP tool mapping for test_widget_query
@@ -495,29 +498,27 @@ function createDashboardBuilderTools(mcpTools: McpToolSet) {
 		test_widget_query: tool({
 			description:
 				"Test a dashboard widget query before adding it. Runs the query the widget would use via MCP tools and returns the results so you can verify data exists and makes sense. ALWAYS call this before add_dashboard_widget.",
-			inputSchema: z.object({
-				endpoint: z
-					.string()
-					.describe(
-						"Widget data source endpoint (e.g., 'service_usage', 'errors_summary', 'custom_query_builder_timeseries')",
+			inputSchema: toToolInputSchema(
+				Schema.Struct({
+					endpoint: Schema.String.annotate({
+						description:
+							"Widget data source endpoint (e.g., 'service_usage', 'errors_summary', 'custom_query_builder_timeseries')",
+					}),
+					params: Schema.optionalKey(
+						Schema.Record(Schema.String, Schema.Unknown).annotate({
+							description: "Parameters for the query (startTime, endTime, limit, queries[], etc.)",
+						}),
 					),
-				params: z
-					.record(z.string(), z.unknown())
-					.optional()
-					.describe("Parameters for the query (startTime, endTime, limit, queries[], etc.)"),
-				transform: z
-					.object({
-						reduceToValue: z
-							.object({
-								field: z.string(),
-								aggregate: z.enum(["sum", "first", "count", "avg", "max", "min"]),
-							})
-							.optional(),
-						limit: z.number().optional(),
-					})
-					.optional()
-					.describe("Transform config to preview what the widget would display"),
-			}),
+					transform: Schema.optionalKey(
+						Schema.Struct({
+							reduceToValue: Schema.optionalKey(ReduceToValueTransformSchema),
+							limit: Schema.optionalKey(Schema.Number),
+						}).annotate({
+							description: "Transform config to preview what the widget would display",
+						}),
+					),
+				}),
+			),
 			execute: async ({ endpoint, params: rawParams, transform }) => {
 				const p = rawParams ?? {}
 
@@ -629,20 +630,26 @@ function createDashboardBuilderTools(mcpTools: McpToolSet) {
 		add_dashboard_widget: tool({
 			description:
 				"Add a widget to the user's dashboard. IMPORTANT: You must first call test_widget_query with the same endpoint/params/transform to verify the data exists BEFORE calling this tool. Titles must be specific and non-empty. For charts, use chartId from query-builder-area|query-builder-line|query-builder-bar.",
-			inputSchema: z.object({
-				visualization: z.enum(["stat", "chart", "table", "list"]),
-				dataSource: dashboardWidgetDataSourceSchema,
-				display: widgetDisplaySchema,
-			}),
+			inputSchema: toToolInputSchema(
+				Schema.Struct({
+					visualization: Schema.Literals(["stat", "chart", "table", "list"]),
+					dataSource: dashboardWidgetDataSourceSchema,
+					display: widgetDisplaySchema,
+				}),
+			),
 			execute: async () => ({
 				status: "proposed",
 			}),
 		}),
 		remove_dashboard_widget: tool({
 			description: "Remove a widget from the dashboard by its title.",
-			inputSchema: z.object({
-				widgetTitle: z.string().describe("The title of the widget to remove"),
-			}),
+			inputSchema: toToolInputSchema(
+				Schema.Struct({
+					widgetTitle: Schema.String.annotate({
+						description: "The title of the widget to remove",
+					}),
+				}),
+			),
 			execute: async () => ({
 				status: "proposed",
 			}),
@@ -797,19 +804,32 @@ class ChatAgent extends AIChatAgent<Env> {
 				}
 			}
 
-			const modelMessages = await convertToModelMessages(messages as UIMessage[], {
+			const normalizedMessages = autoTransformMessages([...messages])
+			const modelMessages = await convertToModelMessages(normalizedMessages, {
 				tools: allTools as ToolSet,
 				ignoreIncompleteToolCalls: true,
 			})
+			const openRouterRequestOptions = createOpenRouterRequestOptions({
+				traceId: turnId,
+				traceName: "Maple Chat Agent",
+				generationName: "Chat Turn",
+				sessionId: this.name,
+				orgId,
+				operation: "chat.turn",
+				mode,
+				environment: env.MAPLE_ENVIRONMENT,
+				isByok,
+			})
 
 			const result = streamText({
-				model: createChatModel(apiKey),
+				model: createChatModel(apiKey, { appBaseUrl: env.MAPLE_APP_BASE_URL }),
 				system: systemPrompt,
 				messages: modelMessages,
 				tools: allTools as ToolSet,
 				stopWhen: stepCountIs(20),
 				abortSignal,
 				onFinish: wrappedOnFinish,
+				providerOptions: openRouterRequestOptions.providerOptions,
 			})
 
 			return result.toUIMessageStreamResponse()

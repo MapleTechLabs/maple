@@ -10,7 +10,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"ai": "^6.0.146",
+		"ai": "^6.0.196",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

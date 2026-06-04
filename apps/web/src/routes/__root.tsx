@@ -9,7 +9,7 @@ import {
 	useRouterState,
 } from "@tanstack/react-router"
 import { toast } from "sonner"
-import { hasSelectedPlan } from "@/lib/billing/plan-gating"
+import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
 import { AttributesProvider } from "@maple/ui/components/attributes"
@@ -111,8 +111,11 @@ function ClerkReverseRedirects() {
 	}
 
 	if (isSignedIn && orgId) {
-		// If Autumn is down, let users through rather than blocking them
-		if (customerError) {
+		// If Autumn is down — or returns an error-shaped `200` payload that isn't
+		// a usable customer — let users through rather than blocking them. Without
+		// this, a malformed customer falls through as "no plan" and bounces the
+		// user into /quick-start onboarding.
+		if (customerError || (customer && !isUsableCustomer(customer))) {
 			return <AppFrame />
 		}
 		// Dev-only: `?quota_preview=` forces the usage-alert banner for visual
