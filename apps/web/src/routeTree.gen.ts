@@ -36,6 +36,7 @@ import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
 import { Route as ReplaysPreviewRouteImport } from './routes/replays/preview'
 import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
+import { Route as RecommendationsRecommendationKeyRouteImport } from './routes/recommendations/$recommendationKey'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
 import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
 import { Route as ErrorsErrorTypeRouteImport } from './routes/errors/$errorType'
@@ -188,6 +189,12 @@ const ReplaysSessionIdRoute = ReplaysSessionIdRouteImport.update({
   path: '/replays/$sessionId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RecommendationsRecommendationKeyRoute =
+  RecommendationsRecommendationKeyRouteImport.update({
+    id: '/recommendations/$recommendationKey',
+    path: '/recommendations/$recommendationKey',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const LogsLogIdRoute = LogsLogIdRouteImport.update({
   id: '/logs/$logId',
   path: '/logs/$logId',
@@ -299,6 +306,7 @@ export interface FileRoutesByFullPath {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
@@ -344,6 +352,7 @@ export interface FileRoutesByTo {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
@@ -390,6 +399,7 @@ export interface FileRoutesById {
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
   '/logs/$logId': typeof LogsLogIdRoute
+  '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
   '/replays/preview': typeof ReplaysPreviewRoute
   '/services/$serviceName': typeof ServicesServiceNameRoute
@@ -437,6 +447,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
     | '/replays/preview'
     | '/services/$serviceName'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
     | '/replays/preview'
     | '/services/$serviceName'
@@ -527,6 +539,7 @@ export interface FileRouteTypes {
     | '/errors/$errorType'
     | '/infra/$hostName'
     | '/logs/$logId'
+    | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
     | '/replays/preview'
     | '/services/$serviceName'
@@ -573,6 +586,7 @@ export interface RootRouteChildren {
   ErrorsErrorTypeRoute: typeof ErrorsErrorTypeRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
+  RecommendationsRecommendationKeyRoute: typeof RecommendationsRecommendationKeyRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
   ReplaysPreviewRoute: typeof ReplaysPreviewRoute
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
@@ -787,6 +801,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReplaysSessionIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/recommendations/$recommendationKey': {
+      id: '/recommendations/$recommendationKey'
+      path: '/recommendations/$recommendationKey'
+      fullPath: '/recommendations/$recommendationKey'
+      preLoaderRoute: typeof RecommendationsRecommendationKeyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logs/$logId': {
       id: '/logs/$logId'
       path: '/logs/$logId'
@@ -925,6 +946,7 @@ const rootRouteChildren: RootRouteChildren = {
   ErrorsErrorTypeRoute: ErrorsErrorTypeRoute,
   InfraHostNameRoute: InfraHostNameRoute,
   LogsLogIdRoute: LogsLogIdRoute,
+  RecommendationsRecommendationKeyRoute: RecommendationsRecommendationKeyRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
   ReplaysPreviewRoute: ReplaysPreviewRoute,
   ServicesServiceNameRoute: ServicesServiceNameRoute,

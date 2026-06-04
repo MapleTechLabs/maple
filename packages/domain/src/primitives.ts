@@ -164,6 +164,9 @@ export const IngestMappingOperation = Schema.Literals(["move", "copy"]).annotate
 })
 export type IngestMappingOperation = Schema.Schema.Type<typeof IngestMappingOperation>
 
+export const RecommendationIssueId = MapleUuidId("@maple/RecommendationIssueId", "Recommendation Issue ID")
+export type RecommendationIssueId = Schema.Schema.Type<typeof RecommendationIssueId>
+
 export const TinybirdDeploymentId = MapleId("@maple/TinybirdDeploymentId", "Tinybird Deployment ID")
 export type TinybirdDeploymentId = Schema.Schema.Type<typeof TinybirdDeploymentId>
 

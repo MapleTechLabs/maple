@@ -27,6 +27,7 @@ import { AlertWarningIcon, ArrowPathIcon, CheckIcon, CopyIcon, EyeIcon, ShieldIc
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
+import { RecommendedMappingsSection } from "./recommended-mappings-section"
 
 function maskKey(key: string): string {
 	if (key.length <= 18) return key
@@ -283,7 +284,9 @@ export function IngestionSection() {
 				</Card>
 			</div>
 
-			<AttributeMappingsSection />
+			<RecommendedMappingsSection />
+
+				<AttributeMappingsSection />
 			</div>
 
 			<AlertDialog open={regenerateDialogOpen} onOpenChange={setRegenerateDialogOpen}>
