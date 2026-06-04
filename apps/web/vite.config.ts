@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import path from "node:path"
 import { defineConfig, loadEnv } from "vite"
 import { devtools } from "@tanstack/devtools-vite"
@@ -51,6 +52,11 @@ export default defineConfig(({ mode }) => {
 
 	return {
 		envDir,
+		// Keep the Playwright perf suite (perf/*.perf.spec.ts) out of the Vitest
+		// run — it's executed separately via `bun run test:perf`.
+		test: {
+			include: ["src/**/*.test.{ts,tsx}"],
+		},
 		resolve: {
 			tsconfigPaths: true,
 		},
