@@ -1,9 +1,16 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
+import { Effect, Exit } from "effect"
 import { compileCH } from "../compile"
 import {
+	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
+	serviceDbQuerySummarySQL,
+	serviceDbQueryTimeseriesSQL,
+	serviceDbTopQueriesSQL,
+	serviceDependenciesSQL,
 	serviceDependenciesForServiceQuery,
 	serviceExternalEdgesSQL,
+	servicePlatformsSQL,
 } from "./service-map"
 import { serviceMapResolutionsRollupSQL } from "./service-map-rollup"
 
@@ -88,6 +95,56 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 		expect(sql).toContain("OrgId = 'org\\'attack'")
 	})
+
+	it.effect("decodes external edge rows and validates targetType", () =>
+		Effect.gen(function* () {
+			const compiled = serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					sourceService: "artifacts-api",
+					targetType: "http",
+					targetSystem: "",
+					targetName: "checkout.internal",
+					callCount: "11",
+					errorCount: "1",
+					avgDurationMs: "12.5",
+					p95DurationMs: "40",
+					estimatedSpanCount: "22",
+				},
+			])
+			expect(rows).toEqual([
+				{
+					sourceService: "artifacts-api",
+					targetType: "http",
+					targetSystem: "",
+					targetName: "checkout.internal",
+					callCount: 11,
+					errorCount: 1,
+					avgDurationMs: 12.5,
+					p95DurationMs: 40,
+					estimatedSpanCount: 22,
+				},
+			])
+
+			const invalid = yield* Effect.exit(
+				compiled.decodeRows([
+					{
+						sourceService: "artifacts-api",
+						targetType: "database",
+						targetSystem: "",
+						targetName: "postgres",
+						callCount: 1,
+						errorCount: 0,
+						avgDurationMs: 1,
+						p95DurationMs: 1,
+						estimatedSpanCount: 1,
+					},
+				]),
+			)
+			expect(Exit.isFailure(invalid)).toBe(true)
+		}),
+	)
 })
 
 // ---------------------------------------------------------------------------
@@ -150,6 +207,38 @@ describe("serviceMapResolutionsRollupSQL", () => {
 // ---------------------------------------------------------------------------
 // serviceDependenciesForServiceQuery — service-scoped service↔service edges
 // ---------------------------------------------------------------------------
+
+describe("serviceDependenciesSQL", () => {
+	it.effect("decodes service dependency rows with numeric strings from ClickHouse JSON", () =>
+		Effect.gen(function* () {
+			const compiled = serviceDependenciesSQL({ deploymentEnv: "production" }, baseParams)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					sourceService: "artifacts-api",
+					targetService: "checkout-api",
+					callCount: "12",
+					errorCount: "2",
+					avgDurationMs: "8.5",
+					p95DurationMs: "30",
+					estimatedSpanCount: "18",
+				},
+			])
+
+			expect(rows).toEqual([
+				{
+					sourceService: "artifacts-api",
+					targetService: "checkout-api",
+					callCount: 12,
+					errorCount: 2,
+					avgDurationMs: 8.5,
+					p95DurationMs: 30,
+					estimatedSpanCount: 18,
+				},
+			])
+		}),
+	)
+})
 
 describe("serviceDependenciesForServiceQuery", () => {
 	it("filters SourceService on the hourly branch", () => {
@@ -224,6 +313,36 @@ describe("serviceDependenciesForServiceQuery", () => {
 // ---------------------------------------------------------------------------
 
 describe("serviceDbEdgesForServiceQuery", () => {
+	it.effect("decodes org-wide database edge rows with numeric strings from ClickHouse JSON", () =>
+		Effect.gen(function* () {
+			const compiled = serviceDbEdgesSQL({ deploymentEnv: "production" }, baseParams)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					sourceService: "artifacts-api",
+					dbSystem: "postgresql",
+					callCount: "42",
+					errorCount: "3",
+					avgDurationMs: "14.25",
+					p95DurationMs: "88",
+					estimatedSpanCount: "63",
+				},
+			])
+
+			expect(rows).toEqual([
+				{
+					sourceService: "artifacts-api",
+					dbSystem: "postgresql",
+					callCount: 42,
+					errorCount: 3,
+					avgDurationMs: 14.25,
+					p95DurationMs: 88,
+					estimatedSpanCount: 63,
+				},
+			])
+		}),
+	)
+
 	it("filters ServiceName on both branches (hourly MV + raw traces)", () => {
 		const { sql } = compileCH(
 			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
@@ -283,4 +402,228 @@ describe("serviceDbEdgesForServiceQuery", () => {
 		)
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 	})
+})
+
+// ---------------------------------------------------------------------------
+// serviceDbQuerySummarySQL / serviceDbQueryTimeseriesSQL / serviceDbTopQueriesSQL
+// ---------------------------------------------------------------------------
+
+describe("service-map database query summaries", () => {
+	const params = {
+		...baseParams,
+		dbSystem: "postgresql",
+		sourceService: "artifacts-api",
+		deploymentEnv: "production",
+		bucketSeconds: 300,
+		topN: 5,
+	}
+
+	it("scopes summary by org, db system, service, deployment env, and time window", () => {
+		const { sql } = serviceDbQuerySummarySQL(params)
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("ServiceName = 'artifacts-api'")
+		expect(sql).toContain("ResourceAttributes['deployment.environment'] = 'production'")
+		expect(sql).toContain("Timestamp >= toDateTime('2024-01-01 00:00:00')")
+		expect(sql).toContain("Timestamp <= toDateTime('2024-01-02 00:00:00')")
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = 'postgresql'",
+		)
+	})
+
+	it("uses weighted TDigest quantiles for P50/P95 latency", () => {
+		const { sql } = serviceDbQuerySummarySQL(params)
+		expect(sql).toContain(
+			"quantilesTDigestWeighted(0.5, 0.95)(Duration, toUInt32(greatest(SampleRate, 1.0)))",
+		)
+		expect(sql).toContain("AS p50DurationMs")
+		expect(sql).toContain("AS p95DurationMs")
+	})
+
+	it("buckets query activity by the requested interval", () => {
+		const { sql } = serviceDbQueryTimeseriesSQL(params)
+		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 300 SECOND) AS bucket")
+		expect(sql).toContain("GROUP BY bucket")
+		expect(sql).toContain("ORDER BY bucket ASC")
+		expect(sql).toContain("LIMIT 2000")
+	})
+
+	it("groups top queries by statement fingerprint or a hashed query label fallback", () => {
+		const { sql } = serviceDbTopQueriesSQL(params)
+		expect(sql).toContain("SpanAttributes['db.statement.fingerprint']")
+		expect(sql).toContain("SpanAttributes['db.query.summary']")
+		expect(sql).toContain("cityHash64")
+		expect(sql).toContain("GROUP BY queryKey")
+		expect(sql).toContain("ORDER BY estimatedQueryCount DESC")
+		expect(sql).toContain("LIMIT 5")
+	})
+
+	it("clamps untrusted bucket and limit values", () => {
+		const timeseries = serviceDbQueryTimeseriesSQL({ ...params, bucketSeconds: 1 }).sql
+		const topQueries = serviceDbTopQueriesSQL({ ...params, topN: 500 }).sql
+		expect(timeseries).toContain("INTERVAL 60 SECOND")
+		expect(topQueries).toContain("LIMIT 50")
+	})
+
+	it("escapes raw params in summary SQL", () => {
+		const { sql } = serviceDbQuerySummarySQL({
+			...baseParams,
+			dbSystem: "post'gres",
+			sourceService: "svc'one",
+			deploymentEnv: "prod'west",
+		})
+		expect(sql).toContain("= 'post\\'gres'")
+		expect(sql).toContain("ServiceName = 'svc\\'one'")
+		expect(sql).toContain("ResourceAttributes['deployment.environment'] = 'prod\\'west'")
+	})
+
+	it.effect("decodes summary rows with numeric strings from ClickHouse JSON", () =>
+		Effect.gen(function* () {
+			const compiled = serviceDbQuerySummarySQL(params)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					queryCount: "10",
+					estimatedQueryCount: "14.5",
+					errorCount: "2",
+					estimatedErrorCount: "3.5",
+					errorRate: "0.2",
+					avgDurationMs: "12.25",
+					p50DurationMs: "9",
+					p95DurationMs: "30",
+					activeServiceCount: "4",
+				},
+			])
+
+			expect(rows).toEqual([
+				{
+					queryCount: 10,
+					estimatedQueryCount: 14.5,
+					errorCount: 2,
+					estimatedErrorCount: 3.5,
+					errorRate: 0.2,
+					avgDurationMs: 12.25,
+					p50DurationMs: 9,
+					p95DurationMs: 30,
+					activeServiceCount: 4,
+				},
+			])
+		}),
+	)
+
+	it.effect("decodes timeseries rows with numeric strings from ClickHouse JSON", () =>
+		Effect.gen(function* () {
+			const compiled = serviceDbQueryTimeseriesSQL(params)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					bucket: "2024-01-01 00:05:00",
+					queryCount: "12",
+					estimatedQueryCount: "16",
+					errorCount: "1",
+					errorRate: "0.0625",
+					avgDurationMs: "7.5",
+					p50DurationMs: "4",
+					p95DurationMs: "20",
+				},
+			])
+
+			expect(rows).toEqual([
+				{
+					bucket: "2024-01-01 00:05:00",
+				queryCount: 12,
+				estimatedQueryCount: 16,
+				errorCount: 1,
+				errorRate: 0.0625,
+				avgDurationMs: 7.5,
+				p50DurationMs: 4,
+				p95DurationMs: 20,
+			},
+		])
+		}),
+	)
+
+	it.effect("decodes top-query rows with numeric strings from ClickHouse JSON", () =>
+		Effect.gen(function* () {
+			const compiled = serviceDbTopQueriesSQL(params)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					queryKey: "abc",
+					queryLabel: "SELECT users",
+					sampleStatement: "SELECT * FROM users WHERE id = ?",
+					sampleService: "artifacts-api",
+					serviceCount: "1",
+					queryCount: "50",
+					estimatedQueryCount: "75",
+					errorCount: "3",
+					errorRate: "0.06",
+					avgDurationMs: "12.5",
+					p50DurationMs: "8",
+					p95DurationMs: "44",
+					lastSeen: "2024-01-01 00:05:00",
+				},
+			])
+
+			expect(rows[0]).toMatchObject({
+				queryKey: "abc",
+				serviceCount: 1,
+				queryCount: 50,
+				estimatedQueryCount: 75,
+				errorRate: 0.06,
+			})
+		}),
+	)
+})
+
+describe("servicePlatformsSQL", () => {
+	it.effect("decodes platform rows with the declared string columns", () =>
+		Effect.gen(function* () {
+			const compiled = servicePlatformsSQL({ deploymentEnv: "production" }, baseParams)
+
+			const rows = yield* compiled.decodeRows([
+				{
+					serviceName: "artifacts-api",
+					k8sCluster: "prod",
+					k8sPodName: "artifacts-api-123",
+					k8sDeploymentName: "artifacts-api",
+					cloudPlatform: "",
+					cloudProvider: "aws",
+					faasName: "",
+					mapleSdkType: "node",
+					processRuntimeName: "nodejs",
+				},
+			])
+
+			expect(rows[0]).toMatchObject({
+				serviceName: "artifacts-api",
+				k8sDeploymentName: "artifacts-api",
+				cloudProvider: "aws",
+				mapleSdkType: "node",
+			})
+		}),
+	)
+
+	it.effect("fails decoding when a platform string column is missing", () =>
+		Effect.gen(function* () {
+			const compiled = servicePlatformsSQL({}, baseParams)
+
+			const exit = yield* Effect.exit(
+				compiled.decodeRows([
+					{
+						serviceName: "artifacts-api",
+						k8sCluster: "prod",
+						k8sPodName: "artifacts-api-123",
+						k8sDeploymentName: "artifacts-api",
+						cloudPlatform: "",
+						cloudProvider: "aws",
+						faasName: "",
+						mapleSdkType: "node",
+					},
+				]),
+			)
+
+			expect(Exit.isFailure(exit)).toBe(true)
+		}),
+	)
 })

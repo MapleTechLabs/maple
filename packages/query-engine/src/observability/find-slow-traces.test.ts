@@ -16,6 +16,8 @@ const makeMockExecutor = (
 ): WarehouseExecutorShape => ({
 	orgId: "org_test",
 	sqlQuery: () => Effect.succeed([] as ReadonlyArray<never>),
+	compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
+	compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })
 		const data = pipe === "slow_traces" ? slowRows : pipe === "traces_duration_stats" ? statsRows : []
@@ -127,6 +129,8 @@ describe("findSlowTraces", () => {
 			const failingExecutor: WarehouseExecutorShape = {
 				orgId: "org_test",
 				sqlQuery: () => Effect.succeed([]),
+				compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
+				compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
 				query: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({

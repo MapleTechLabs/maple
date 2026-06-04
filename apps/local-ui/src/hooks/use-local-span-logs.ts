@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { LogsListOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { toClickHouseDateTime } from "../lib/time"
 import { normalizeLog, type LocalLog } from "../lib/log-shape"
@@ -23,9 +22,7 @@ export function useLocalSpanLogs(traceId: string | undefined, spanId: string | u
 				CH.logsListQuery({ traceId: traceId!, spanId: spanId!, limit: 100 }),
 				{ orgId: LOCAL_ORG_ID, startTime, endTime },
 			)
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<LogsListOutput>
+			const rows = await executeLocalCompiledQuery(compiled)
 			return rows.map(normalizeLog)
 		},
 	})

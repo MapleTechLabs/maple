@@ -13,14 +13,17 @@
 // straight from `sqlQuery` into `ingest` with no reshaping.
 // ---------------------------------------------------------------------------
 
-import type { CompiledQuery } from "../compile"
-import { compileCH } from "../compile"
+import { Schema } from "effect"
+import type { CompiledQuery, CompiledQueryRowSchema } from "../compile"
+import { compileCH, unsafeCompiledQuery } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
 import { from, fromQuery } from "../query"
 import { escapeClickHouseString } from "../../sql/sql-fragment"
 import { ServiceMapEdgesHourly, Traces } from "../tables"
 import { serviceMapEdgeJoinSQL } from "./service-map"
+
+const CHNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 /** One pre-aggregated service-to-service edge bucket — mirrors the columns of
  * the `service_map_edges_hourly` ClickHouse table. */
@@ -39,6 +42,22 @@ export interface ServiceMapEdgesHourlyOutput {
 	readonly SampleRateSum: number
 }
 
+const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesHourlyOutput> =
+	Schema.Struct({
+		OrgId: Schema.String,
+		Hour: Schema.String,
+		SourceService: Schema.String,
+		TargetService: Schema.String,
+		DeploymentEnv: Schema.String,
+		CallCount: CHNumber,
+		ErrorCount: CHNumber,
+		DurationSumMs: CHNumber,
+		MaxDurationMs: CHNumber,
+		SampledSpanCount: CHNumber,
+		UnsampledSpanCount: CHNumber,
+		SampleRateSum: CHNumber,
+	})
+
 export interface ServiceMapEdgesRollupParams {
 	readonly orgId: string
 	/** Tinybird datetime string — start of the completed hour (inclusive). */
@@ -51,6 +70,11 @@ export interface ServiceMapEdgesRollupParams {
 export interface ServiceMapEdgesExistingHour {
 	readonly hourTs: number
 }
+
+const ServiceMapEdgesExistingHourSchema: CompiledQueryRowSchema<ServiceMapEdgesExistingHour> =
+	Schema.Struct({
+		hourTs: CHNumber,
+	})
 
 /**
  * SQL listing the distinct hours already present in `service_map_edges_hourly`
@@ -82,10 +106,10 @@ export function serviceMapEdgesExistingHoursSQL(params: {
 		endTime: params.endTime,
 	})
 
-	return {
+	return unsafeCompiledQuery({
 		sql,
-		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceMapEdgesExistingHour>,
-	}
+		rowSchema: ServiceMapEdgesExistingHourSchema,
+	})
 }
 
 /**
@@ -104,10 +128,10 @@ export function serviceMapEdgesRollupSQL(
 	})}
 FORMAT JSON`
 
-	return {
+	return unsafeCompiledQuery({
 		sql,
-		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceMapEdgesHourlyOutput>,
-	}
+		rowSchema: ServiceMapEdgesHourlyOutputSchema,
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +157,16 @@ export interface ServiceAddressResolutionsHourlyOutput {
 	readonly ResolvedTargetService: string
 	readonly DeploymentEnv: string
 }
+
+const ServiceAddressResolutionsHourlyOutputSchema: CompiledQueryRowSchema<ServiceAddressResolutionsHourlyOutput> =
+	Schema.Struct({
+		OrgId: Schema.String,
+		Hour: Schema.String,
+		SourceService: Schema.String,
+		ParentServerAddress: Schema.String,
+		ResolvedTargetService: Schema.String,
+		DeploymentEnv: Schema.String,
+	})
 
 export function serviceMapResolutionsRollupSQL(
 	params: ServiceMapEdgesRollupParams,
@@ -203,8 +237,8 @@ export function serviceMapResolutionsRollupSQL(
 		hourEnd: params.hourEnd,
 	})
 
-	return {
+	return unsafeCompiledQuery({
 		sql,
-		castRows: (rows) => rows as unknown as ReadonlyArray<ServiceAddressResolutionsHourlyOutput>,
-	}
+		rowSchema: ServiceAddressResolutionsHourlyOutputSchema,
+	})
 }

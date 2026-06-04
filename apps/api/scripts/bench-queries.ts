@@ -585,7 +585,7 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 	yield* Console.log(`  org: ${orgId}   window: ${startTime} → ${endTime} (${config.since})   top: ${topN}`)
 
 	const rows = yield* tinybird.query(compiled.sql)
-	const samples = compiled.castRows(rows) as ReadonlyArray<Sample>
+	const samples: ReadonlyArray<Sample> = yield* compiled.decodeRows(rows)
 
 	if (samples.length === 0) {
 		yield* Console.log("No samples found. Widen --since or drop filters.")

@@ -17,23 +17,18 @@
 import * as CH from "./index"
 import type { TracesMetric, AttributeFilter } from "../query-engine"
 import type { OrgId } from "@maple/domain"
+import { unsafeCompiledQuery, type CompiledQuery } from "./compile"
 import { Array as A, Match, Result } from "effect"
 
 type CompileTarget = Parameters<typeof CH.compile>[0]
 
-export interface PipeCompiledQuery {
-	readonly sql: string
-	readonly castRows: (rows: ReadonlyArray<Record<string, unknown>>) => ReadonlyArray<unknown>
-}
+export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
 
 /** Erase the specific output type for the generic pipe dispatcher. */
-function eraseType<T>(compiled: {
-	sql: string
-	castRows: (rows: ReadonlyArray<Record<string, unknown>>) => ReadonlyArray<T>
-}): PipeCompiledQuery {
-	return compiled
+function eraseType<T>(compiled: CompiledQuery<T>): PipeCompiledQuery {
+	return compiled as CompiledQuery<unknown>
 }
 
 /**
@@ -67,14 +62,13 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 			{ orgId, startTime: ranges.previousStart, endTime: ranges.previousEnd },
 			{ skipFormat: true },
 		).sql
-		return {
+		return unsafeCompiledQuery({
 			sql:
 				`SELECT 'current' AS period, * FROM (\n${currentSql}\n)\n` +
 				`UNION ALL\n` +
 				`SELECT 'previous' AS period, * FROM (\n${previousSql}\n)\n` +
 				`FORMAT JSON`,
-			castRows: (rows) => rows as ReadonlyArray<unknown>,
-		}
+		})
 	}
 
 	return Match.value(pipe)

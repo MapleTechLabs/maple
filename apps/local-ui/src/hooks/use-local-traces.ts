@@ -1,7 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { TracesRootListOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { boundsForRange } from "../lib/time"
 
@@ -39,8 +38,7 @@ export function useLocalTraces(filters: TraceFilters) {
 				}),
 				{ orgId: LOCAL_ORG_ID, startTime, endTime },
 			)
-			const rows = await executeLocalQuery(compiled.sql)
-			return compiled.castRows(rows) as ReadonlyArray<TracesRootListOutput>
+			return executeLocalCompiledQuery(compiled)
 		},
 		getNextPageParam: (lastPage) =>
 			lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1]?.startTime : undefined,

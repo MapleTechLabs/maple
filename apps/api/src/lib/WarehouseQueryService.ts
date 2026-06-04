@@ -12,6 +12,7 @@ import {
 	type WarehouseSqlClient,
 	type WarehouseSqlError,
 } from "@maple/query-engine/execution"
+import type { CompiledQuery } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { Env } from "./Env"
 import type { TenantContext } from "../services/AuthService"
@@ -171,6 +172,18 @@ export class WarehouseQueryService extends Context.Service<
 		payload: WarehouseQueryRequest,
 		options?: SqlQueryOptions,
 	) => this.use((service) => service.query(tenant, payload, options))
+
+	static readonly compiledQuery = <T>(
+		tenant: TenantContext,
+		compiled: CompiledQuery<T>,
+		options?: SqlQueryOptions,
+	) => this.use((service) => service.compiledQuery(tenant, compiled, options))
+
+	static readonly compiledQueryFirst = <T>(
+		tenant: TenantContext,
+		compiled: CompiledQuery<T>,
+		options?: SqlQueryOptions,
+	) => this.use((service) => service.compiledQueryFirst(tenant, compiled, options))
 
 	static readonly ingest = <T>(tenant: TenantContext, datasource: string, rows: ReadonlyArray<T>) =>
 		this.use((service) => service.ingest(tenant, datasource, rows))

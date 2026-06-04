@@ -275,6 +275,65 @@ export class ServiceDbEdgesForServiceRequest extends Schema.Class<ServiceDbEdges
 	deploymentEnv: Schema.optional(Schema.String),
 }) {}
 
+export class ServiceDbQuerySummaryRequest extends Schema.Class<ServiceDbQuerySummaryRequest>(
+	"ServiceDbQuerySummaryRequest",
+)({
+	dbSystem: Schema.String,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	sourceService: Schema.optional(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
+	bucketSeconds: Schema.optional(Schema.Number),
+	topN: Schema.optional(Schema.Number),
+}) {}
+
+const ServiceDbQuerySummaryData = Schema.Struct({
+	queryCount: Schema.Number,
+	estimatedQueryCount: Schema.Number,
+	errorCount: Schema.Number,
+	estimatedErrorCount: Schema.Number,
+	errorRate: Schema.Number,
+	avgDurationMs: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	activeServiceCount: Schema.Number,
+})
+
+const ServiceDbQueryTimeseriesPoint = Schema.Struct({
+	bucket: Schema.String,
+	queryCount: Schema.Number,
+	estimatedQueryCount: Schema.Number,
+	errorCount: Schema.Number,
+	errorRate: Schema.Number,
+	avgDurationMs: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+})
+
+const ServiceDbTopQuery = Schema.Struct({
+	queryKey: Schema.String,
+	queryLabel: Schema.String,
+	sampleStatement: Schema.String,
+	sampleService: Schema.String,
+	serviceCount: Schema.Number,
+	queryCount: Schema.Number,
+	estimatedQueryCount: Schema.Number,
+	errorCount: Schema.Number,
+	errorRate: Schema.Number,
+	avgDurationMs: Schema.Number,
+	p50DurationMs: Schema.Number,
+	p95DurationMs: Schema.Number,
+	lastSeen: Schema.String,
+})
+
+export class ServiceDbQuerySummaryResponse extends Schema.Class<ServiceDbQuerySummaryResponse>(
+	"ServiceDbQuerySummaryResponse",
+)({
+	summary: Schema.NullOr(ServiceDbQuerySummaryData),
+	timeseries: Schema.Array(ServiceDbQueryTimeseriesPoint),
+	topQueries: Schema.Array(ServiceDbTopQuery),
+}) {}
+
 export class ServiceExternalEdgesResponse extends Schema.Class<ServiceExternalEdgesResponse>(
 	"ServiceExternalEdgesResponse",
 )({
@@ -1151,6 +1210,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceDbEdgesForService", "/service-db-edges-for-service", {
 			payload: ServiceDbEdgesForServiceRequest,
 			success: ServiceDbEdgesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceDbQuerySummary", "/service-db-query-summary", {
+			payload: ServiceDbQuerySummaryRequest,
+			success: ServiceDbQuerySummaryResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

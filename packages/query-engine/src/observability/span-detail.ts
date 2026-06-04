@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, Schema, pipe } from "effect"
+import { Array as Arr, Effect, Option, Schema, pipe } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
@@ -70,10 +70,9 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 			? { orgId: executor.orgId, startTime: range.startTime, endTime: range.endTime }
 			: { orgId: executor.orgId },
 	)
-	const rows = yield* executor.sqlQuery(compiled.sql, { profile: "discovery" })
-	const row = compiled.castRows(rows)[0]
+	const maybeRow = yield* executor.compiledQueryFirst(compiled, { profile: "discovery" })
 
-	if (!row) {
+	if (Option.isNone(maybeRow)) {
 		return {
 			found: false,
 			traceId: input.traceId,
@@ -83,6 +82,7 @@ export const spanDetail = Effect.fn("Observability.spanDetail")(function* (input
 		} satisfies SpanDetailResult
 	}
 
+	const row = maybeRow.value
 	const spanAttributes = yield* parseAttributes(row.spanAttributes ?? "{}")
 	const resourceAttributes = yield* parseAttributes(row.resourceAttributes ?? "{}")
 	return {

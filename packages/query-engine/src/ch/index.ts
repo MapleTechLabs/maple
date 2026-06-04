@@ -88,8 +88,11 @@ export {
 	greatest_ as greatest,
 	// Date/time
 	toStartOfInterval,
+	toStartOfHour,
+	toUnixTimestamp,
 	intervalSub,
 	formatDateTime,
+	toDateTime,
 	// Conditional
 	if_,
 	multiIf,
@@ -124,7 +127,15 @@ export {
 } from "./query"
 
 // Compilation
-export { compileCH as compile, compileUnion, type CompiledQuery, QueryBuilderError } from "./compile"
+export {
+	compileCH as compile,
+	compileUnion,
+	unsafeCompiledQuery,
+	type CompiledQuery,
+	type CompiledQueryRowSchema,
+	QueryBuilderError,
+	CompiledQueryDecodeError,
+} from "./compile"
 
 // Pipe dispatch — maps Tinybird-style pipe names + params to compiled CH SQL.
 // Shared by the cloud WarehouseQueryService and the local CLI executor so both
@@ -304,6 +315,9 @@ export {
 	serviceDependenciesForServiceQuery,
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,
+	serviceDbQuerySummarySQL,
+	serviceDbQueryTimeseriesSQL,
+	serviceDbTopQueriesSQL,
 	servicePlatformsSQL,
 	serviceMapEdgeJoinSQL,
 	type ServiceDependenciesOpts,
@@ -312,6 +326,10 @@ export {
 	type ServiceDbEdgesOpts,
 	type ServiceDbEdgesForServiceOpts,
 	type ServiceDbEdgesOutput,
+	type ServiceDbQuerySummaryParams,
+	type ServiceDbQuerySummaryOutput,
+	type ServiceDbQueryTimeseriesOutput,
+	type ServiceDbTopQueryOutput,
 	type ServicePlatformsOpts,
 	type ServicePlatformsOutput,
 	serviceExternalEdgesSQL,

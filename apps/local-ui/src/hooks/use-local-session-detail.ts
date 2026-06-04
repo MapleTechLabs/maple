@@ -1,11 +1,12 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
+import { Option } from "effect"
 import type {
 	SessionReplayDetailOutput,
 	SessionTraceSummaryOutput,
 	SessionTranscriptOutput,
 } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledFirstRow, executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 
 /** Finalized metadata for one session (latest ReplacingMergeTree version). */
@@ -18,10 +19,8 @@ export function useLocalSessionDetail(sessionId: string | undefined) {
 				orgId: LOCAL_ORG_ID,
 				sessionId: sessionId!,
 			})
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<SessionReplayDetailOutput>
-			return rows[0] ?? null
+			const row = await executeLocalCompiledFirstRow(compiled)
+			return Option.getOrNull(row)
 		},
 	})
 }
@@ -36,8 +35,7 @@ export function useLocalSessionTranscript(sessionId: string | undefined) {
 				orgId: LOCAL_ORG_ID,
 				sessionId: sessionId!,
 			})
-			const rows = await executeLocalQuery(compiled.sql)
-			return compiled.castRows(rows) as ReadonlyArray<SessionTranscriptOutput>
+			return executeLocalCompiledQuery(compiled)
 		},
 	})
 }
@@ -51,8 +49,7 @@ export function useLocalSessionTraces(traceIds: ReadonlyArray<string> | undefine
 			const compiled = CH.compile(CH.sessionTraceSummariesQuery({ traceIds: traceIds! }), {
 				orgId: LOCAL_ORG_ID,
 			})
-			const rows = await executeLocalQuery(compiled.sql)
-			return compiled.castRows(rows) as ReadonlyArray<SessionTraceSummaryOutput>
+			return executeLocalCompiledQuery(compiled)
 		},
 	})
 }

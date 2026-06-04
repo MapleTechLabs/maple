@@ -1,10 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type {
-	SessionReplaysFacetsOutput,
-	SessionReplaysListOutput,
-} from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { boundsForRange } from "../lib/time"
 import type { FilterOption } from "../components/filter-section"
@@ -42,8 +38,7 @@ export function useLocalSessions(filters: SessionFilters) {
 				}),
 				{ orgId: LOCAL_ORG_ID, startTime, endTime },
 			)
-			const rows = await executeLocalQuery(compiled.sql)
-			return compiled.castRows(rows) as ReadonlyArray<SessionReplaysListOutput>
+			return executeLocalCompiledQuery(compiled)
 		},
 		getNextPageParam: (lastPage) =>
 			lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1]?.startTime : undefined,
@@ -86,9 +81,7 @@ export function useLocalSessionFacets(filters: SessionFilters) {
 				}),
 				{ orgId: LOCAL_ORG_ID, startTime, endTime },
 			)
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<SessionReplaysFacetsOutput>
+			const rows = await executeLocalCompiledQuery(compiled)
 
 			const pick = (facetType: string): ReadonlyArray<FilterOption> =>
 				rows

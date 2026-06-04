@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { SpanDetailOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { Option } from "effect"
+import { executeLocalCompiledFirstRow } from "@/lib/query"
 import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { LOCAL_ORG_ID } from "../lib/constants"
 
@@ -25,11 +25,9 @@ export function useLocalSpanDetail(traceId: string | undefined, spanId: string |
 			const compiled = CH.compile(CH.spanDetailQuery({ traceId: traceId!, spanId: spanId! }), {
 				orgId: LOCAL_ORG_ID,
 			})
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<SpanDetailOutput>
-			const row = rows[0]
-			if (!row) return null
+			const maybeRow = await executeLocalCompiledFirstRow(compiled)
+			if (Option.isNone(maybeRow)) return null
+			const row = maybeRow.value
 			return {
 				spanAttributes: parseAttributes(row.spanAttributes),
 				resourceAttributes: parseAttributes(row.resourceAttributes),

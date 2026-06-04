@@ -15,7 +15,7 @@ import { createColumnAccessor, createJoinedColumnAccessor } from "./query"
 import { aliased } from "./expr"
 import { raw, ident, escapeClickHouseString, compile as compileSqlFragment } from "../sql/sql-fragment"
 import { compileQuery, type SqlQuery } from "../sql/sql-query"
-import { Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 
 // ---------------------------------------------------------------------------
 // QueryBuilderError — tagged error for invariant violations in the DSL.
@@ -30,6 +30,15 @@ export class QueryBuilderError extends Schema.TaggedErrorClass<QueryBuilderError
 	},
 ) {}
 
+export class CompiledQueryDecodeError extends Schema.TaggedErrorClass<CompiledQueryDecodeError>()(
+	"@maple/query-engine/ch/CompiledQueryDecodeError",
+	{
+		message: Schema.String,
+		rowIndex: Schema.Number,
+		cause: Schema.optional(Schema.Unknown),
+	},
+) {}
+
 // ---------------------------------------------------------------------------
 // CompiledQuery — bundles the SQL string with its output type so consumers
 // never need to cast manually.
@@ -40,7 +49,82 @@ export interface CompiledQuery<Output> {
 	/** Type-safe cast of raw query results. The cast is sound because the
 	 *  Output type is derived from the SELECT clause that produced the SQL. */
 	readonly castRows: (rows: ReadonlyArray<Record<string, unknown>>) => ReadonlyArray<Output>
+	/** Runtime decode of raw query results. Queries built from handwritten SQL
+	 *  should provide a row schema so schema drift is caught before consumers
+	 *  read fields from `Record<string, unknown>`. */
+	readonly decodeRows: (
+		rows: ReadonlyArray<Record<string, unknown>>,
+	) => Effect.Effect<ReadonlyArray<Output>, CompiledQueryDecodeError>
+	/** Runtime decode of only the first row, returned as an Option so callers
+	 *  don't need to hand-roll `rows[0] ?? null` at every point lookup. */
+	readonly decodeFirstRow: (
+		rows: ReadonlyArray<Record<string, unknown>>,
+	) => Effect.Effect<Option.Option<Output>, CompiledQueryDecodeError>
 }
+
+export type CompiledQueryRowSchema<Output> = Schema.Schema<Output>
+
+const makeCompiledQuery = <Output>(
+	sql: string,
+	rowSchema?: CompiledQueryRowSchema<Output>,
+): CompiledQuery<Output> => {
+	const decodeRow = rowSchema
+		? (Schema.decodeUnknownEffect(rowSchema) as (
+				row: unknown,
+			) => Effect.Effect<Output, unknown, never>)
+		: undefined
+
+	const decodeRows: CompiledQuery<Output>["decodeRows"] = (rows) => {
+		if (!rowSchema) return Effect.succeed(rows as unknown as ReadonlyArray<Output>)
+		if (!decodeRow) return Effect.succeed(rows as unknown as ReadonlyArray<Output>)
+
+		return Effect.forEach(rows, (row, index) =>
+			decodeRow(row).pipe(
+				Effect.mapError(
+					(cause) =>
+						new CompiledQueryDecodeError({
+							message: `Compiled query row ${index} did not match its declared output schema`,
+							rowIndex: index,
+							cause,
+						}),
+				),
+			),
+		).pipe(Effect.map((decodedRows) => decodedRows as ReadonlyArray<Output>))
+	}
+
+	return {
+		sql,
+		castRows: (rows) => rows as unknown as ReadonlyArray<Output>,
+		decodeRows,
+		decodeFirstRow: (rows) => {
+			const row = rows[0]
+			if (row == null) return Effect.succeed(Option.none<Output>())
+			if (!decodeRow) return Effect.succeed(Option.some(row as unknown as Output))
+
+			return decodeRow(row).pipe(
+				Effect.map(Option.some),
+				Effect.mapError(
+					(cause) =>
+						new CompiledQueryDecodeError({
+							message: "Compiled query row 0 did not match its declared output schema",
+							rowIndex: 0,
+							cause,
+						}),
+				),
+			)
+		},
+	}
+}
+
+/**
+ * Explicit constructor for SQL that cannot yet be expressed through the typed
+ * DSL. Prefer `compile(CH.from(...))`; use this only for deliberately
+ * handwritten ClickHouse SQL and pass `rowSchema` whenever possible.
+ */
+export const unsafeCompiledQuery = <Output>(args: {
+	readonly sql: string
+	readonly rowSchema?: CompiledQueryRowSchema<Output>
+}): CompiledQuery<Output> => makeCompiledQuery(args.sql, args.rowSchema)
 
 export function compileCH<
 	Cols extends ColumnDefs,
@@ -149,8 +233,7 @@ export function compileCH<
 	}
 
 	return {
-		sql,
-		castRows: (rows) => rows as unknown as ReadonlyArray<Output>,
+		...makeCompiledQuery<Output>(sql),
 	}
 }
 
@@ -191,8 +274,7 @@ export function compileUnion<Output extends Record<string, any>, Params extends 
 	}
 
 	return {
-		sql,
-		castRows: (rows) => rows as unknown as ReadonlyArray<Output>,
+		...makeCompiledQuery<Output>(sql),
 	}
 }
 

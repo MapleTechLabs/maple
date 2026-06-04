@@ -6,7 +6,11 @@ import {
 	type ExecutorQueryOptions,
 } from "@maple/query-engine/observability"
 import { OrgId } from "@maple/domain/http"
-import { WarehouseQueryError, WarehouseValidationError } from "@maple/domain/http/warehouse-errors"
+import {
+	WarehouseQueryError,
+	WarehouseSchemaDriftError,
+	WarehouseValidationError,
+} from "@maple/domain/http/warehouse-errors"
 import { executeLocalQuery } from "@maple/query-engine/local"
 import { debugLog } from "../lib/debug"
 
@@ -77,6 +81,74 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 					},
 				}),
 			),
+		compiledQuery: (compiled, options?: ExecutorQueryOptions) =>
+			Effect.gen(function* () {
+				const started = performance.now()
+				const rows = yield* Effect.tryPromise({
+					try: () => exec<Record<string, unknown>>(compiled.sql, "compiledQuery"),
+					catch: toWarehouseError("compiledQuery"),
+				})
+				yield* Effect.annotateCurrentSpan({
+					"db.duration_ms": Math.round(performance.now() - started),
+					"result.rowCount": rows.length,
+				})
+				return yield* compiled.decodeRows(rows).pipe(
+					Effect.mapError(
+						(error) =>
+							new WarehouseSchemaDriftError({
+								message: error.message,
+								pipe: "compiledQuery",
+								cause: error,
+							}),
+					),
+				)
+			}).pipe(
+				Effect.withSpan("warehouse.compiledQuery", {
+					kind: "client",
+					attributes: {
+						"db.system": "clickhouse",
+						"peer.service": "chdb",
+						"db.statement": truncateSql(compiled.sql),
+						"db.statement.length": compiled.sql.length,
+						"query.context": "compiledQuery",
+						...(options?.profile ? { "query.profile": options.profile } : {}),
+					},
+				}),
+			),
+		compiledQueryFirst: (compiled, options?: ExecutorQueryOptions) =>
+			Effect.gen(function* () {
+				const started = performance.now()
+				const rows = yield* Effect.tryPromise({
+					try: () => exec<Record<string, unknown>>(compiled.sql, "compiledQueryFirst"),
+					catch: toWarehouseError("compiledQueryFirst"),
+				})
+				yield* Effect.annotateCurrentSpan({
+					"db.duration_ms": Math.round(performance.now() - started),
+					"result.rowCount": rows.length,
+				})
+				return yield* compiled.decodeFirstRow(rows).pipe(
+					Effect.mapError(
+						(error) =>
+							new WarehouseSchemaDriftError({
+								message: error.message,
+								pipe: "compiledQueryFirst",
+								cause: error,
+							}),
+					),
+				)
+			}).pipe(
+				Effect.withSpan("warehouse.compiledQueryFirst", {
+					kind: "client",
+					attributes: {
+						"db.system": "clickhouse",
+						"peer.service": "chdb",
+						"db.statement": truncateSql(compiled.sql),
+						"db.statement.length": compiled.sql.length,
+						"query.context": "compiledQueryFirst",
+						...(options?.profile ? { "query.profile": options.profile } : {}),
+					},
+				}),
+			),
 		query: <T>(pipe: string, params: Record<string, unknown>, _options?: ExecutorQueryOptions) =>
 			Effect.gen(function* () {
 				const compiled = compilePipeQuery(pipe, { ...params, org_id: LOCAL_ORG_ID })
@@ -99,8 +171,18 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 					"db.duration_ms": Math.round(performance.now() - started),
 					"result.rowCount": rows.length,
 				})
+				const decodedRows = yield* compiled.decodeRows(rows).pipe(
+					Effect.mapError(
+						(error) =>
+							new WarehouseSchemaDriftError({
+								message: error.message,
+								pipe,
+								cause: error,
+							}),
+					),
+				)
 				// Type-erased executor boundary — mirrors WarehouseQueryService.asExecutor in apps/api.
-				return { data: compiled.castRows(rows) as unknown as ReadonlyArray<T> }
+				return { data: decodedRows as ReadonlyArray<T> }
 			}).pipe(
 				Effect.withSpan("warehouse.query", {
 					kind: "client",

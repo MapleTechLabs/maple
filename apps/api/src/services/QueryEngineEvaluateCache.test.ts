@@ -67,6 +67,7 @@ const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): QueryEngi
 
 const evalStub = (rows: ReadonlyArray<Record<string, unknown>>) => ({
 	sqlQuery: () => Effect.succeed(rows as never),
+	compiledQuery: (_tenant, compiled) => compiled.decodeRows(rows).pipe(Effect.orDie),
 })
 
 describe("makeQueryEngineEvaluate (shared bucket-encoding core)", () => {
@@ -139,6 +140,14 @@ const makeFullStub = (
 		sqlQuery: () => {
 			counter.n += 1
 			return Effect.succeed(rows as never)
+		},
+		compiledQuery: (_tenant, compiled) => {
+			counter.n += 1
+			return compiled.decodeRows(rows).pipe(Effect.orDie)
+		},
+		compiledQueryFirst: (_tenant, compiled) => {
+			counter.n += 1
+			return compiled.decodeFirstRow(rows).pipe(Effect.orDie)
 		},
 		ingest: () => Effect.void,
 		sql: () => Promise.resolve({ data: [] }),

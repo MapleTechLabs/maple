@@ -23,6 +23,7 @@ export interface ServiceNodeData {
 	samplingWeight: number
 	errorRate: number
 	avgLatencyMs: number
+	p95LatencyMs?: number
 	services: string[]
 	selected: boolean
 	infra?: ServiceNodeInfra
@@ -242,6 +243,7 @@ export function buildFlowElements({
 				samplingWeight: 1,
 				errorRate: agg.callCount > 0 ? agg.errorCount / agg.callCount : 0,
 				avgLatencyMs: agg.callCount > 0 ? agg.durationSumMs / agg.callCount : 0,
+				p95LatencyMs: agg.maxP95,
 				services,
 				selected: false,
 				dbSystem,

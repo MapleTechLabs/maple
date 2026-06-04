@@ -2496,8 +2496,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			)
 
 			const tenant = systemTenant(orgId)
-			const rawRows = yield* warehouse
-				.sqlQuery(tenant, compiled.sql, { profile: "list", context: "listAlertChecks" })
+			const rows = yield* warehouse
+				.compiledQuery(tenant, compiled, { profile: "list", context: "listAlertChecks" })
 				.pipe(
 					Effect.mapError(
 						(error) =>
@@ -2506,7 +2506,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							}),
 					),
 				)
-			const rows = compiled.castRows(rawRows)
 
 			const checks = yield* Effect.try({
 				try: () =>

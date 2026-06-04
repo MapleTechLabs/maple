@@ -1,6 +1,13 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { WarehouseQueryError, WarehouseUpstreamError, OrgId, UserId } from "@maple/domain/http"
+import {
+	WarehouseQueryError,
+	WarehouseSchemaDriftError,
+	WarehouseUpstreamError,
+	OrgId,
+	UserId,
+} from "@maple/domain/http"
+import { unsafeCompiledQuery } from "@maple/query-engine/ch"
 import { __testables, WarehouseQueryService } from "./WarehouseQueryService"
 import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsService"
 import type { TenantContext } from "../services/AuthService"
@@ -151,6 +158,164 @@ describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", 
 			const failure = getError(exit)
 			assert.instanceOf(failure, WarehouseUpstreamError)
 			assert.strictEqual((failure as WarehouseUpstreamError).upstreamStatus, 503)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("WarehouseQueryService.compiledQuery", () => {
+	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
+
+	it.effect("executes compiled SQL and decodes rows with the compiled row schema", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [{ serviceName: "api", count: "42" }] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly serviceName: string; readonly count: number }>({
+			sql: "SELECT ServiceName AS serviceName, count() AS count FROM traces WHERE OrgId = 'org_test'",
+			rowSchema: Schema.Struct({ serviceName: Schema.String, count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const result = yield* WarehouseQueryService.use((service) =>
+				service.compiledQuery(tenant, compiled),
+			)
+
+			assert.deepStrictEqual(result, [{ serviceName: "api", count: 42 }])
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("maps row decode failures to WarehouseSchemaDriftError", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [{ count: "not-a-number" }] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly count: number }>({
+			sql: "SELECT count() AS count FROM traces WHERE OrgId = 'org_test'",
+			rowSchema: Schema.Struct({ count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) => service.compiledQuery(tenant, compiled)),
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = getError(exit)
+			assert.instanceOf(failure, WarehouseSchemaDriftError)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("still enforces OrgId scoping for compiled SQL", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [{ count: 1 }] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly count: number }>({
+			sql: "SELECT count() AS count FROM traces",
+			rowSchema: Schema.Struct({ count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) => service.compiledQuery(tenant, compiled)),
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = getError(exit)
+			assert.strictEqual(
+				(failure as { message?: string } | undefined)?.message,
+				"SQL query must contain OrgId filter (sqlQuery)",
+			)
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("WarehouseQueryService.compiledQueryFirst", () => {
+	const RowNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
+
+	it.effect("returns Some with the decoded first row", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [{ serviceName: "api", count: "42" }, { serviceName: "worker", count: "9" }] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly serviceName: string; readonly count: number }>({
+			sql: "SELECT ServiceName AS serviceName, count() AS count FROM traces WHERE OrgId = 'org_test'",
+			rowSchema: Schema.Struct({ serviceName: Schema.String, count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const result = yield* WarehouseQueryService.use((service) =>
+				service.compiledQueryFirst(tenant, compiled),
+			)
+
+			assert.isTrue(Option.isSome(result))
+			if (Option.isSome(result)) {
+				assert.deepStrictEqual(result.value, { serviceName: "api", count: 42 })
+			}
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("returns None when the compiled SQL returns no rows", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly count: number }>({
+			sql: "SELECT count() AS count FROM traces WHERE OrgId = 'org_test'",
+			rowSchema: Schema.Struct({ count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const result = yield* WarehouseQueryService.use((service) =>
+				service.compiledQueryFirst(tenant, compiled),
+			)
+
+			assert.deepStrictEqual(result, Option.none())
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("maps first-row decode failures to WarehouseSchemaDriftError", () => {
+		__testables.setClientFactory(() => ({
+			sql: async () => ({ data: [{ count: "not-a-number" }] }),
+			insert: async () => {},
+		}))
+
+		const { url } = createTempDbUrl()
+		const layer = buildLayer(url)
+		const tenant = makeTenant()
+		const compiled = unsafeCompiledQuery<{ readonly count: number }>({
+			sql: "SELECT count() AS count FROM traces WHERE OrgId = 'org_test'",
+			rowSchema: Schema.Struct({ count: RowNumber }),
+		})
+
+		return Effect.gen(function* () {
+			const exit = yield* Effect.exit(
+				WarehouseQueryService.use((service) => service.compiledQueryFirst(tenant, compiled)),
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = getError(exit)
+			assert.instanceOf(failure, WarehouseSchemaDriftError)
 		}).pipe(Effect.provide(layer))
 	})
 })

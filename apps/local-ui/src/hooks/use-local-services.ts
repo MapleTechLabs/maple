@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { ServicesFacetsOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { boundsForRange } from "../lib/time"
 import type { FilterOption } from "../components/filter-section"
@@ -22,9 +21,7 @@ export function useLocalServices(range: string | undefined) {
 				startTime,
 				endTime,
 			})
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<ServicesFacetsOutput>
+			const rows = await executeLocalCompiledQuery(compiled)
 			return rows
 				.filter((row) => row.facetType === "service" && row.name)
 				.map((row) => ({ name: row.name, count: row.count }))

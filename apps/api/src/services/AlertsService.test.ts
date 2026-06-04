@@ -93,6 +93,10 @@ function makeWarehouseStub(state: {
 	return {
 		query: (_tenant, payload) => Effect.fail(new Error(`Unexpected pipe ${payload.pipe}`)) as never,
 		sqlQuery: sqlQueryStub,
+		compiledQuery: (_tenant, compiled) =>
+			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie))),
+		compiledQueryFirst: (_tenant, compiled) =>
+			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie))),
 		ingest: () => Effect.void,
 	}
 }
@@ -1448,9 +1452,14 @@ describe("AlertsService", () => {
 			estimatedSpanCount: 200,
 		}
 
+		const alertRows = [breachingRow, healthyRow] as ReadonlyArray<Record<string, unknown>>
 		const stub: WarehouseQueryServiceShape = {
 			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
-			sqlQuery: () => Effect.succeed([breachingRow, healthyRow]) as never,
+			sqlQuery: () => Effect.succeed(alertRows) as never,
+			compiledQuery: (_tenant, compiled) =>
+				compiled.decodeRows(alertRows).pipe(Effect.orDie) as never,
+			compiledQueryFirst: (_tenant, compiled) =>
+				compiled.decodeFirstRow(alertRows).pipe(Effect.orDie) as never,
 		}
 		const clock = makeManualClock()
 

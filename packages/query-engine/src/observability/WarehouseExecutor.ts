@@ -1,6 +1,7 @@
-import { Context, type Effect } from "effect"
+import { Context, type Effect, type Option } from "effect"
 import type { WarehouseError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
+import type { CompiledQuery } from "../ch"
 
 /**
  * The error channel of every `WarehouseExecutor` method. This is the warehouse
@@ -43,6 +44,16 @@ export interface WarehouseExecutorShape {
 		sql: string,
 		options?: ExecutorQueryOptions,
 	) => Effect.Effect<ReadonlyArray<T>, WarehouseExecutorError>
+
+	readonly compiledQuery: <T>(
+		compiled: CompiledQuery<T>,
+		options?: ExecutorQueryOptions,
+	) => Effect.Effect<ReadonlyArray<T>, WarehouseExecutorError>
+
+	readonly compiledQueryFirst: <T>(
+		compiled: CompiledQuery<T>,
+		options?: ExecutorQueryOptions,
+	) => Effect.Effect<Option.Option<T>, WarehouseExecutorError>
 }
 
 export class WarehouseExecutor extends Context.Service<WarehouseExecutor, WarehouseExecutorShape>()(

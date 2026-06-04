@@ -20,11 +20,14 @@
 // over two grouped subqueries), then compiled to SQL — no hand-written SQL.
 // ---------------------------------------------------------------------------
 
-import { compileCH, type CompiledQuery } from "../compile"
+import { Schema } from "effect"
+import { compileCH, unsafeCompiledQuery, type CompiledQuery, type CompiledQueryRowSchema } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
 import { from, fromQuery } from "../query"
 import { MetricsGauge, ServicePlatformsHourly } from "../tables"
+
+const CHNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])
 
 export interface ServiceWorkloadsOpts {
 	services: ReadonlyArray<string>
@@ -41,6 +44,17 @@ export interface ServiceWorkloadsOutput {
 	readonly avgMemoryLimitUtilization: number | null
 }
 
+const ServiceWorkloadsOutputSchema: CompiledQueryRowSchema<ServiceWorkloadsOutput> = Schema.Struct({
+	serviceName: Schema.String,
+	workloadKind: Schema.Literals(["deployment", "statefulset", "daemonset", "unknown"]),
+	workloadName: Schema.String,
+	namespace: Schema.String,
+	clusterName: Schema.String,
+	podCount: CHNumber,
+	avgCpuLimitUtilization: Schema.NullOr(CHNumber),
+	avgMemoryLimitUtilization: Schema.NullOr(CHNumber),
+})
+
 // `IN ()` is invalid SQL, so an empty service list short-circuits to a
 // zero-row result with the right column shape.
 const EMPTY_WORKLOADS_SQL = `SELECT '' AS serviceName, '' AS workloadKind, '' AS workloadName,
@@ -51,15 +65,12 @@ const EMPTY_WORKLOADS_SQL = `SELECT '' AS serviceName, '' AS workloadKind, '' AS
 WHERE 0
 FORMAT JSON`
 
-const castWorkloadRows = (rows: ReadonlyArray<Record<string, unknown>>) =>
-	rows as unknown as ReadonlyArray<ServiceWorkloadsOutput>
-
 export function serviceWorkloadsSQL(
 	opts: ServiceWorkloadsOpts,
 	params: { orgId: string; startTime: string; endTime: string },
 ): CompiledQuery<ServiceWorkloadsOutput> {
 	if (opts.services.length === 0) {
-		return { sql: EMPTY_WORKLOADS_SQL, castRows: castWorkloadRows }
+		return unsafeCompiledQuery({ sql: EMPTY_WORKLOADS_SQL, rowSchema: ServiceWorkloadsOutputSchema })
 	}
 
 	// Per-service workload identity from the pre-aggregated MV. `max()` over the
@@ -176,5 +187,5 @@ export function serviceWorkloadsSQL(
 		endTime: params.endTime,
 	})
 
-	return { sql, castRows: castWorkloadRows }
+	return unsafeCompiledQuery({ sql, rowSchema: ServiceWorkloadsOutputSchema })
 }

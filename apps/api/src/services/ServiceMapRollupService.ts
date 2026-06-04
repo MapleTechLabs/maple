@@ -82,12 +82,10 @@ export class ServiceMapRollupService extends Context.Service<
 				startTime: toTinybirdDateTime(oldestHourMs),
 				endTime: toTinybirdDateTime(currentHourMs),
 			})
-			const existingRaw = yield* warehouse.sqlQuery(tenant, existingCompiled.sql, {
+			const existingRows = yield* warehouse.compiledQuery(tenant, existingCompiled, {
 				context: "serviceMapRollupExistingHours",
 			})
-			const existing = new Set(
-				existingCompiled.castRows(existingRaw).map((row) => Number(row.hourTs)),
-			)
+			const existing = new Set(existingRows.map((row) => Number(row.hourTs)))
 
 			const missing = candidates.filter((hourMs) => !existing.has(Math.floor(hourMs / 1000)))
 
@@ -102,10 +100,9 @@ export class ServiceMapRollupService extends Context.Service<
 						const hourEnd = toTinybirdDateTime(hourMs + HOUR_MS)
 
 						const rollup = CH.serviceMapEdgesRollupSQL({ orgId, hourStart, hourEnd })
-						const raw = yield* warehouse.sqlQuery(tenant, rollup.sql, {
+						const rows = yield* warehouse.compiledQuery(tenant, rollup, {
 							context: "serviceMapRollup",
 						})
-						const rows = rollup.castRows(raw)
 						if (rows.length > 0) {
 							yield* warehouse.ingest(tenant, "service_map_edges_hourly", rows)
 							edgesWritten += rows.length
@@ -129,10 +126,9 @@ export class ServiceMapRollupService extends Context.Service<
 							hourStart,
 							hourEnd,
 						})
-						const resolutionsRaw = yield* warehouse.sqlQuery(tenant, resolutionsRollup.sql, {
+						const resolutionsRows = yield* warehouse.compiledQuery(tenant, resolutionsRollup, {
 							context: "serviceMapResolutionsRollup",
 						})
-						const resolutionsRows = resolutionsRollup.castRows(resolutionsRaw)
 						if (resolutionsRows.length > 0) {
 							yield* warehouse.ingest(
 								tenant,

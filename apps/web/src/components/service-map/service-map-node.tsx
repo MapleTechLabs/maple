@@ -132,7 +132,7 @@ const Handles = () => (
  * infrastructure dependencies stand out from application services on the map.
  */
 function DatabaseNode({ data }: { data: ServiceNodeData }) {
-	const { label, throughput, errorRate, avgLatencyMs, dbSystem, selected } = data
+	const { label, throughput, errorRate, avgLatencyMs, p95LatencyMs, dbSystem, selected } = data
 	const { category, Icon, label: systemLabel, color, branded } = getDbDescriptor(dbSystem)
 
 	return (
@@ -185,6 +185,7 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 							valueClassName={errorRateClass(errorRate)}
 						/>
 						<MetricCell label="avg" value={formatLatency(avgLatencyMs)} />
+						<MetricCell label="p95" value={formatLatency(p95LatencyMs ?? 0)} />
 					</div>
 				</div>
 			</div>

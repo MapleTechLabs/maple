@@ -1,7 +1,6 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { LogsBreakdownOutput, LogsListOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { boundsForRange } from "../lib/time"
 import type { FilterOption } from "../components/filter-section"
@@ -39,8 +38,7 @@ export function useLocalLogs(filters: LogFilters) {
 				}),
 				{ orgId: LOCAL_ORG_ID, startTime, endTime },
 			)
-			const rows = await executeLocalQuery(compiled.sql)
-			return compiled.castRows(rows) as ReadonlyArray<LogsListOutput>
+			return executeLocalCompiledQuery(compiled)
 		},
 		getNextPageParam: (lastPage) =>
 			lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1]?.timestamp : undefined,
@@ -62,9 +60,7 @@ export function useLocalLogSeverities(range: string | undefined) {
 				startTime,
 				endTime,
 			})
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql),
-			) as ReadonlyArray<LogsBreakdownOutput>
+			const rows = await executeLocalCompiledQuery(compiled)
 			return rows.filter((row) => row.name).map((row) => ({ name: row.name, count: row.count }))
 		},
 	})

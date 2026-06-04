@@ -2,6 +2,7 @@ import { Clock, Effect, Schema } from "effect"
 import {
 	ServiceDbEdgesForServiceRequest,
 	ServiceDbEdgesRequest,
+	ServiceDbQuerySummaryRequest,
 	ServiceDependenciesForServiceRequest,
 	ServiceDependenciesRequest,
 	ServicePlatformsRequest,
@@ -44,6 +45,51 @@ export interface ServiceDbEdgesResponse {
 	edges: ServiceDbEdge[]
 }
 
+export interface ServiceDbQuerySummary {
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	estimatedErrorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+	activeServiceCount: number
+}
+
+export interface ServiceDbQueryTimeseriesPoint {
+	bucket: string
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+}
+
+export interface ServiceDbTopQuery {
+	queryKey: string
+	queryLabel: string
+	sampleStatement: string
+	sampleService: string
+	serviceCount: number
+	queryCount: number
+	estimatedQueryCount: number
+	errorCount: number
+	errorRate: number
+	avgDurationMs: number
+	p50DurationMs: number
+	p95DurationMs: number
+	lastSeen: string
+}
+
+export interface ServiceDbQuerySummaryResponse {
+	summary: ServiceDbQuerySummary | null
+	timeseries: ReadonlyArray<ServiceDbQueryTimeseriesPoint>
+	topQueries: ReadonlyArray<ServiceDbTopQuery>
+}
+
 export type ServicePlatform = "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown"
 
 export interface ServicePlatformInfo {
@@ -77,6 +123,20 @@ const GetServiceMapForServiceInputSchema = Schema.Struct({
 })
 
 export type GetServiceMapForServiceInput = Schema.Schema.Type<typeof GetServiceMapForServiceInputSchema>
+
+const GetServiceDbQuerySummaryInputSchema = Schema.Struct({
+	dbSystem: Schema.String,
+	startTime: Schema.optional(WarehouseDateTimeString),
+	endTime: Schema.optional(WarehouseDateTimeString),
+	sourceService: Schema.optional(Schema.String),
+	deploymentEnv: Schema.optional(Schema.String),
+	bucketSeconds: Schema.optional(Schema.Number),
+	topN: Schema.optional(Schema.Number),
+})
+
+export type GetServiceDbQuerySummaryInput = Schema.Schema.Type<
+	typeof GetServiceDbQuerySummaryInputSchema
+>
 
 function transformEdge(row: Record<string, unknown>, durationSeconds: number): ServiceEdge {
 	const callCount = Number(row.callCount ?? 0)
@@ -258,6 +318,42 @@ export const getServiceMapDbEdgesForService = Effect.fn("QueryEngine.getServiceM
 		}
 	},
 )
+
+export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuerySummary")(function* ({
+	data,
+}: {
+	data: GetServiceDbQuerySummaryInput
+}) {
+	const input = yield* decodeInput(
+		GetServiceDbQuerySummaryInputSchema,
+		data,
+		"getServiceDbQuerySummary",
+	)
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+
+	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceDbQuerySummary({
+				payload: new ServiceDbQuerySummaryRequest({
+					dbSystem: input.dbSystem,
+					startTime: input.startTime ?? fallback.startTime,
+					endTime: input.endTime ?? fallback.endTime,
+					sourceService: input.sourceService,
+					deploymentEnv: input.deploymentEnv,
+					bucketSeconds: input.bucketSeconds,
+					topN: input.topN,
+				}),
+			})
+		}),
+	)
+
+	return {
+		summary: result.summary,
+		timeseries: result.timeseries,
+		topQueries: result.topQueries,
+	} satisfies ServiceDbQuerySummaryResponse
+})
 
 export const getServicePlatforms = Effect.fn("QueryEngine.getServicePlatforms")(function* ({
 	data,

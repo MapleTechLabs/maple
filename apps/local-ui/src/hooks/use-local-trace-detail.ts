@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import { buildTraceDetail, type SpanHierarchyRow, type TraceDetail } from "@maple/ui/lib/span-tree"
-import { executeLocalQuery } from "@/lib/query"
+import { buildTraceDetail, type TraceDetail } from "@maple/ui/lib/span-tree"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 
 /**
@@ -19,7 +19,7 @@ export function useLocalTraceDetail(traceId: string | undefined) {
 			const compiled = CH.compile(CH.spanHierarchyQuery({ traceId: traceId! }), {
 				orgId: LOCAL_ORG_ID,
 			})
-			const rows = await executeLocalQuery<SpanHierarchyRow>(compiled.sql)
+			const rows = await executeLocalCompiledQuery(compiled)
 			return buildTraceDetail(rows)
 		},
 	})

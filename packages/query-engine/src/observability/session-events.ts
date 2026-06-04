@@ -41,8 +41,7 @@ export const searchSessions = Effect.fn("Observability.searchSessions")(function
 		}),
 		{ orgId: executor.orgId, startTime: input.startTime, endTime: input.endTime },
 	)
-	const rows = yield* executor.sqlQuery(compiled.sql, { profile: "list" })
-	return compiled.castRows(rows)
+	return yield* executor.compiledQuery(compiled, { profile: "list" })
 })
 
 /**
@@ -77,6 +76,5 @@ export const getSessionTranscript = Effect.fn("Observability.getSessionTranscrip
 			sessionId: input.sessionId,
 		},
 	)
-	const rows = yield* executor.sqlQuery(compiled.sql, { profile: "list" })
-	return compiled.castRows(rows)
+	return yield* executor.compiledQuery(compiled, { profile: "list" })
 })

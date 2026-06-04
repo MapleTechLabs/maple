@@ -13,7 +13,7 @@ import {
 	TraceId,
 	UserId,
 } from "@maple/domain/http"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { CH } from "@maple/query-engine"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
@@ -44,12 +44,12 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						}),
 						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
 					)
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "listReplays",
 					})
 					return new ListReplaysResponse({
-						data: compiled.castRows(rows).map((row) => ({
+						data: rows.map((row) => ({
 							...row,
 							sessionId: decodeSessionId(row.sessionId),
 							userId: row.userId ? decodeUserId(row.userId) : null,
@@ -72,12 +72,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						}),
 						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
 					)
-					const rows = compiled.castRows(
-						yield* warehouse.sqlQuery(tenant, compiled.sql, {
-							profile: "list",
-							context: "replaysFacets",
-						}),
-					)
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "replaysFacets",
+					})
 					// ClickHouse serializes integer aggregates (`uniq(...)`) as JSON strings,
 					// while the Tinybird path returns numbers; castRows is a plain cast, so
 					// coerce at the edge before the Schema.Number response validates.
@@ -105,11 +103,11 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
 					})
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+					const maybeData = yield* warehouse.compiledQueryFirst(tenant, compiled, {
 						profile: "discovery",
 						context: "getReplay",
 					})
-					const data = compiled.castRows(rows)[0] ?? null
+					const data = Option.getOrNull(maybeData)
 					return new GetReplayResponse({
 						data: data
 							? {
@@ -133,12 +131,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
 					})
-					const chunks = compiled.castRows(
-						yield* warehouse.sqlQuery(tenant, compiled.sql, {
-							profile: "list",
-							context: "getReplayEvents",
-						}),
-					)
+					const chunks = yield* warehouse.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "getReplayEvents",
+					})
 					// rrweb payloads come straight from ClickHouse (no R2 / presigning);
 					// each chunk's `events` is the rrweb array JSON the player parses.
 					return new GetReplayEventsResponse({ chunks })
@@ -156,12 +152,12 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						startTime: payload.startTime,
 						endTime: payload.endTime,
 					})
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "replaysForTrace",
 					})
 					return new ReplaysForTraceResponse({
-						data: compiled.castRows(rows).map((row) => ({
+						data: rows.map((row) => ({
 							...row,
 							sessionId: decodeSessionId(row.sessionId),
 						})),
@@ -184,12 +180,12 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						CH.sessionTraceSummariesQuery({ traceIds: payload.traceIds }),
 						{ orgId: tenant.orgId },
 					)
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "sessionTraceSummaries",
 					})
 					return new SessionTraceSummariesResponse({
-						data: compiled.castRows(rows).map((row) => ({
+						data: rows.map((row) => ({
 							...row,
 							traceId: decodeTraceId(row.traceId),
 						})),
@@ -207,12 +203,12 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						orgId: tenant.orgId,
 						sessionId: payload.sessionId,
 					})
-					const rows = yield* warehouse.sqlQuery(tenant, compiled.sql, {
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "sessionTranscript",
 					})
 					return new SessionTranscriptResponse({
-						data: compiled.castRows(rows).map((row) => ({
+						data: rows.map((row) => ({
 							...row,
 							traceId: row.traceId ? decodeTraceId(row.traceId) : null,
 						})),

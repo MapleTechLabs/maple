@@ -25,6 +25,16 @@ const makeExecutor = (
 		captured.sqls.push(sql)
 		return Effect.succeed(rows as ReadonlyArray<never>)
 	}) as WarehouseExecutorShape["sqlQuery"],
+	compiledQuery: ((compiled) => {
+		const rows = responses[captured.sqls.length] ?? []
+		captured.sqls.push(compiled.sql)
+		return compiled.decodeRows(rows).pipe(Effect.orDie)
+	}) as WarehouseExecutorShape["compiledQuery"],
+	compiledQueryFirst: ((compiled) => {
+		const rows = responses[captured.sqls.length] ?? []
+		captured.sqls.push(compiled.sql)
+		return compiled.decodeFirstRow(rows).pipe(Effect.orDie)
+	}) as WarehouseExecutorShape["compiledQueryFirst"],
 })
 
 const makeLayer = (executor: WarehouseExecutorShape) => Layer.succeed(WarehouseExecutor, executor)
@@ -99,6 +109,22 @@ describe("getSessionTraces", () => {
 				orgId: "org_test",
 				query: () => Effect.succeed({ data: [] }),
 				sqlQuery: () =>
+					Effect.fail(
+						new WarehouseUpstreamError({
+							pipe: "session_traces",
+							message: "ClickHouse exploded",
+							upstreamStatus: 503,
+						}),
+					),
+				compiledQuery: () =>
+					Effect.fail(
+						new WarehouseUpstreamError({
+							pipe: "session_traces",
+							message: "ClickHouse exploded",
+							upstreamStatus: 503,
+						}),
+					),
+				compiledQueryFirst: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({
 							pipe: "session_traces",

@@ -25,7 +25,7 @@ import {
 	type WarehouseError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
-import { Array as Arr, Duration, Effect, Match, Option, Result } from "effect"
+import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
 import type { QueryProfileName } from "../profiles"
 import { makeExpandMacros } from "./raw-sql"
 import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
@@ -47,6 +47,11 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 		sql: string,
 		options?: { readonly profile?: QueryProfileName; readonly context?: string },
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, WarehouseError>
+	readonly compiledQuery: <Output>(
+		tenant: T,
+		compiled: CH.CompiledQuery<Output>,
+		options?: { readonly profile?: QueryProfileName; readonly context?: string },
+	) => Effect.Effect<ReadonlyArray<Output>, WarehouseError>
 }
 
 export interface TimeRangeBounds {
@@ -645,11 +650,7 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	profile: QueryProfileName = "aggregation",
 ) {
 	const compiled = CH.compile(query, params)
-	const rows = yield* annotateWarehouseError(
-		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
-		context,
-	)
-	return compiled.castRows(rows)
+	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, { profile, context }), context)
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -666,11 +667,7 @@ const executeCHUnionQuery = Effect.fnUntraced(function* <
 	profile: QueryProfileName = "aggregation",
 ) {
 	const compiled = CH.compileUnion(query, params)
-	const rows = yield* annotateWarehouseError(
-		warehouse.sqlQuery(tenant, compiled.sql, { profile, context }),
-		context,
-	)
-	return compiled.castRows(rows)
+	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, { profile, context }), context)
 })
 
 const tracesMetricFieldMap = {
@@ -1036,14 +1033,13 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						bucketSeconds: bucketSeconds!,
 					},
 				)
-				const rawRows = yield* annotateWarehouseError(
-					warehouse.sqlQuery(tenant, compiled.sql, {
+				const rateResult = yield* annotateWarehouseError(
+					warehouse.compiledQuery(tenant, compiled, {
 						profile: "aggregation",
 						context: "metrics rate/increase query",
 					}),
 					"metricsRateIncrease",
 				)
-				const rateResult = compiled.castRows(rawRows)
 
 				const rateValueField = request.query.metric === "rate" ? "rateValue" : "increaseValue"
 
@@ -1858,6 +1854,12 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		return result
 	})
 
+const RawSqlAlertRowSchema = Schema.Struct({
+	value: Schema.Unknown,
+	group: Schema.optional(Schema.Unknown),
+	samples: Schema.optional(Schema.Unknown),
+})
+
 /**
  * Evaluate a raw-SQL alert query. Mirrors `makeQueryEngineEvaluate` but the
  * data comes from user-authored ClickHouse SQL instead of a structured spec.
@@ -1897,20 +1899,19 @@ export const makeQueryEngineEvaluateRawSql = <T extends QueryTenant>(
 			),
 		)
 
-		const rows = yield* annotateWarehouseError(
+		const rawRows = yield* annotateWarehouseError(
 			warehouse.sqlQuery(tenant, expanded.sql, { profile: "list", context: "alertRawQuery" }),
 			"alertRawQuery",
 		)
-
-		const missingValue = rows.find((row) => !Object.prototype.hasOwnProperty.call(row, "value"))
-		if (missingValue != null) {
-			return yield* Effect.fail(
-				new QueryEngineValidationError({
-					message: "Invalid raw SQL alert query",
-					details: ["Raw SQL alert queries must return a column named value."],
-				}),
-			)
-		}
+		const rows = yield* Schema.decodeUnknownEffect(Schema.Array(RawSqlAlertRowSchema))(rawRows).pipe(
+			Effect.mapError(
+				() =>
+					new QueryEngineValidationError({
+						message: "Invalid raw SQL alert query",
+						details: ["Raw SQL alert queries must return a column named value."],
+					}),
+			),
+		)
 
 		const byGroup = new Map<
 			string,
@@ -1918,8 +1919,7 @@ export const makeQueryEngineEvaluateRawSql = <T extends QueryTenant>(
 		>()
 		for (const row of rows) {
 			const rawGroup = row.group
-			const groupKey =
-				typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : "all"
+			const groupKey = typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : "all"
 			const numValue = row.value == null ? null : Number(row.value)
 			const value = numValue != null && Number.isFinite(numValue) ? numValue : null
 			const rawSamples = row.samples == null ? 1 : Number(row.samples)
@@ -1940,4 +1940,3 @@ export const makeQueryEngineEvaluateRawSql = <T extends QueryTenant>(
 		yield* Effect.annotateCurrentSpan("result.groupCount", result.length)
 		return result
 	})
-

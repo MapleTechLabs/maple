@@ -854,9 +854,8 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 					bucketSeconds,
 				})
 				const timeseriesEffect = warehouse
-					.sqlQuery(tenant, timeseriesCompiled.sql, { context: "errorIssueTimeseries" })
+					.compiledQuery(tenant, timeseriesCompiled, { context: "errorIssueTimeseries" })
 					.pipe(
-						Effect.map((rows) => timeseriesCompiled.castRows(rows)),
 						Effect.mapError((e) => makePersistenceError(e)),
 					)
 
@@ -867,9 +866,8 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 					endTime: toTinybirdDateTime(endMs),
 				})
 				const samplesEffect = warehouse
-					.sqlQuery(tenant, samplesCompiled.sql, { context: "errorIssueSampleTraces" })
+					.compiledQuery(tenant, samplesCompiled, { context: "errorIssueSampleTraces" })
 					.pipe(
-						Effect.map((rows) => samplesCompiled.castRows(rows)),
 						Effect.mapError((e) => makePersistenceError(e)),
 					)
 
@@ -1773,10 +1771,10 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				endTime: toTinybirdDateTime(windowEndMs),
 			})
 			const issuesRaw = yield* warehouse
-				.sqlQuery(tenant, issuesCompiled.sql, { context: "errorIssuesScan" })
+				.compiledQuery(tenant, issuesCompiled, { context: "errorIssuesScan" })
 				.pipe(Effect.mapError(makePersistenceError))
 
-			const rows = issuesCompiled.castRows(issuesRaw).map((raw) => ({
+			const rows = issuesRaw.map((raw) => ({
 				fingerprintHash: String(raw.fingerprintHash ?? ""),
 				serviceName: String(raw.serviceName ?? ""),
 				exceptionType: String(raw.exceptionType ?? ""),

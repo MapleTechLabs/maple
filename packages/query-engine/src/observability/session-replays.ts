@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, Option } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
@@ -63,8 +63,8 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 		orgId: executor.orgId,
 		sessionId: input.sessionId,
 	})
-	const detailRows = yield* executor.sqlQuery(detailCompiled.sql, { profile: "discovery" })
-	const session = detailCompiled.castRows(detailRows)[0] ?? null
+	const maybeSession = yield* executor.compiledQueryFirst(detailCompiled, { profile: "discovery" })
+	const session = Option.getOrNull(maybeSession)
 	if (!session) {
 		return { session: null, traces: [], totalTraceCount: 0 } satisfies SessionTracesOutput
 	}
@@ -82,8 +82,7 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	const summariesCompiled = CH.compile(CH.sessionTraceSummariesQuery({ traceIds }), {
 		orgId: executor.orgId,
 	})
-	const summaryRows = yield* executor.sqlQuery(summariesCompiled.sql, { profile: "list" })
-	const traces = summariesCompiled.castRows(summaryRows)
+	const traces = yield* executor.compiledQuery(summariesCompiled, { profile: "list" })
 
 	return { session, traces, totalTraceCount } satisfies SessionTracesOutput
 })

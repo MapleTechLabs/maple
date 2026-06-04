@@ -2,11 +2,12 @@ import { Clock, Effect, Ref, Schedule } from "effect"
 import {
 	type WarehouseQueryRequest,
 	WarehouseQueryResponse,
+	WarehouseSchemaDriftError,
 	WarehouseUpstreamError,
 	WarehouseValidationError,
 } from "@maple/domain/http"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
-import { compilePipeQuery } from "../ch"
+import { compilePipeQuery, type CompiledQuery } from "../ch"
 import type { ExecutorQueryOptions, WarehouseExecutorShape } from "../observability"
 import { appendSettings, resolveSettings } from "../profiles"
 import { mapWarehouseError, toWarehouseQueryError, type WarehouseSqlError } from "./errors"
@@ -192,9 +193,19 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		}
 
 		const rows = yield* executeSql(tenant, compiled.sql, payload.pipe, options)
+		const decodedRows = yield* compiled.decodeRows(rows).pipe(
+			Effect.mapError(
+				(error) =>
+					new WarehouseSchemaDriftError({
+						pipe: payload.pipe,
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
 
 		return new WarehouseQueryResponse({
-			data: Array.from(compiled.castRows(rows)),
+			data: Array.from(decodedRows),
 		})
 	})
 
@@ -216,6 +227,42 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			})
 		}
 		return yield* executeSql(tenant, sql, "sqlQuery", options)
+	})
+
+	const compiledQuery = Effect.fn("WarehouseQueryService.compiledQuery")(function* <T>(
+		tenant: ExecutionTenant,
+		compiled: CompiledQuery<T>,
+		options?: SqlQueryOptions,
+	) {
+		const rows = yield* sqlQuery(tenant, compiled.sql, options)
+		return yield* compiled.decodeRows(rows).pipe(
+			Effect.mapError(
+				(error) =>
+					new WarehouseSchemaDriftError({
+						pipe: "compiledQuery",
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
+	})
+
+	const compiledQueryFirst = Effect.fn("WarehouseQueryService.compiledQueryFirst")(function* <T>(
+		tenant: ExecutionTenant,
+		compiled: CompiledQuery<T>,
+		options?: SqlQueryOptions,
+	) {
+		const rows = yield* sqlQuery(tenant, compiled.sql, options)
+		return yield* compiled.decodeFirstRow(rows).pipe(
+			Effect.mapError(
+				(error) =>
+					new WarehouseSchemaDriftError({
+						pipe: "compiledQueryFirst",
+						message: error.message,
+						cause: error,
+					}),
+			),
+		)
 	})
 
 	const ingest = Effect.fn("WarehouseQueryService.ingest")(function* <T>(
@@ -276,7 +323,22 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
 				}),
 			),
+		compiledQuery: <T>(compiled: CompiledQuery<T>, options?: ExecutorQueryOptions) =>
+			compiledQuery(tenant, compiled, { ...options, context: "warehouseExecutor.compiledQuery" }).pipe(
+				Effect.withSpan("WarehouseExecutor.compiledQuery", {
+					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+				}),
+			),
+		compiledQueryFirst: <T>(compiled: CompiledQuery<T>, options?: ExecutorQueryOptions) =>
+			compiledQueryFirst(tenant, compiled, {
+				...options,
+				context: "warehouseExecutor.compiledQueryFirst",
+			}).pipe(
+				Effect.withSpan("WarehouseExecutor.compiledQueryFirst", {
+					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+				}),
+			),
 	})
 
-	return { query, sqlQuery, ingest, asExecutor } satisfies WarehouseQueryServiceShape
+	return { query, sqlQuery, compiledQuery, compiledQueryFirst, ingest, asExecutor } satisfies WarehouseQueryServiceShape
 }

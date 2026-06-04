@@ -51,6 +51,7 @@ import {
 	getServiceMap,
 	getServiceMapDbEdges,
 	getServiceMapDbEdgesForService,
+	getServiceDbQuerySummary,
 	getServiceMapForService,
 	getServicePlatforms,
 } from "@/api/warehouse/service-map"
@@ -365,6 +366,10 @@ export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(
 	getServiceMapDbEdgesForService,
 	{ staleTime: 15_000 },
 )
+
+export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
+	staleTime: 15_000,
+})
 
 export const getServiceExternalEdgesResultAtom = makeQueryAtomFamily(getServiceExternalEdges, {
 	staleTime: 30_000,

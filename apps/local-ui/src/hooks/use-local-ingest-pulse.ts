@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import type { LocalIngestPulseOutput } from "@maple/query-engine/ch"
-import { executeLocalQuery } from "@/lib/query"
+import { executeLocalCompiledQuery } from "@/lib/query"
 import { LOCAL_ORG_ID } from "../lib/constants"
 import { parseClickHouseDateTime, toClickHouseDateTime } from "../lib/time"
 
@@ -43,9 +42,7 @@ export function useLocalIngestPulse() {
 				startTime: toClickHouseDateTime(now - WINDOW_MS),
 				endTime: toClickHouseDateTime(now + 60 * 1000),
 			})
-			const rows = compiled.castRows(
-				await executeLocalQuery(compiled.sql, AbortSignal.timeout(PROBE_TIMEOUT_MS)),
-			) as ReadonlyArray<LocalIngestPulseOutput>
+			const rows = await executeLocalCompiledQuery(compiled, AbortSignal.timeout(PROBE_TIMEOUT_MS))
 
 			const active = rows.filter((row) => row.count > 0)
 			const recentCount = active.reduce((sum, row) => sum + row.count, 0)

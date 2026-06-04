@@ -15,6 +15,8 @@ interface CapturedCalls {
 const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorShape => ({
 	orgId: "org_test",
 	sqlQuery: () => Effect.succeed([] as ReadonlyArray<never>),
+	compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
+	compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })
 		return Effect.succeed({ data: [] as ReadonlyArray<never> })

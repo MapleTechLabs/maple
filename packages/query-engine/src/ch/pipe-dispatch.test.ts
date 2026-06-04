@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { describe, expect, it } from "@effect/vitest"
+import { Effect, Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { compilePipeQuery } from "./pipe-dispatch"
 
@@ -60,6 +60,7 @@ describe("compilePipeQuery", () => {
 				expect(result).toBeDefined()
 				expect(result!.sql).toContain("test-org")
 				expect(typeof result!.castRows).toBe("function")
+				expect(typeof result!.decodeRows).toBe("function")
 			})
 		}
 	})
@@ -103,6 +104,14 @@ describe("compilePipeQuery", () => {
 		const rows = [{ traceId: "abc" }]
 		expect(result!.castRows(rows)).toEqual(rows)
 	})
+
+	it.effect("decodeRows passes through rows for DSL-backed pipes without row schemas", () =>
+		Effect.gen(function* () {
+			const result = compilePipeQuery("list_traces", baseParams())
+			const rows = [{ traceId: "abc" }]
+			expect(yield* result!.decodeRows(rows)).toEqual(rows)
+		}),
+	)
 
 	describe("compare pipes (UNION ALL with period discriminator)", () => {
 		const compareParams = () => ({

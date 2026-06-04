@@ -69,9 +69,14 @@ const makeTraceTimeseriesRow = (
 function makeTinybirdStub(overrides: Partial<Parameters<typeof makeQueryEngineExecute>[0]> = {}) {
 	const unexpected = (name: string) => () =>
 		Effect.die(new Error(`Unexpected tinybird call in test: ${name}`))
+	const sqlQuery = overrides.sqlQuery ?? unexpected("sqlQuery")
 
 	return {
-		sqlQuery: unexpected("sqlQuery"),
+		sqlQuery,
+		compiledQuery: (tenant, compiled, options) =>
+			sqlQuery(tenant, compiled.sql, options).pipe(
+				Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie)),
+			),
 		...overrides,
 	} satisfies Parameters<typeof makeQueryEngineExecute>[0]
 }

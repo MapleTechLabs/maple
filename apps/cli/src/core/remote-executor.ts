@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { Effect, type Option } from "effect"
 import { type WarehouseExecutorShape, type ExecutorQueryOptions } from "@maple/query-engine/observability"
 import { WarehouseClientError, WarehouseQueryError } from "@maple/domain/http/warehouse-errors"
 import { debugLog } from "../lib/debug"
@@ -74,5 +74,13 @@ export const makeRemoteWarehouseExecutorShape = (
 			Effect.fail(
 				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "sqlQuery" }),
 			) as Effect.Effect<ReadonlyArray<T>, WarehouseClientError>,
+		compiledQuery: <T>(_compiled: unknown, _options?: ExecutorQueryOptions) =>
+			Effect.fail(
+				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "compiledQuery" }),
+			) as Effect.Effect<ReadonlyArray<T>, WarehouseClientError>,
+		compiledQueryFirst: <T>(_compiled: unknown, _options?: ExecutorQueryOptions) =>
+			Effect.fail(
+				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "compiledQueryFirst" }),
+			) as Effect.Effect<Option.Option<T>, WarehouseClientError>,
 	}
 }
