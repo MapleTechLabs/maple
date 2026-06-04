@@ -44,13 +44,13 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { cn } from "@maple/ui/lib/utils"
 import {
+	BoltIcon,
 	CircleXmarkIcon,
 	DotsVerticalIcon,
 	FireIcon,
 	LoaderIcon,
 	PencilIcon,
 	PlusIcon,
-	PulseIcon,
 	TrashIcon,
 } from "@/components/icons"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -351,7 +351,7 @@ export function ScrapeTargetsSection() {
 									{probingId === target.id ? (
 										<LoaderIcon size={14} className="animate-spin" />
 									) : (
-										<PulseIcon size={14} />
+										<BoltIcon size={14} />
 									)}
 									Test
 								</Button>
