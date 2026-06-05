@@ -1,24 +1,13 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useState, type ReactNode } from "react"
 import { Exit } from "effect"
-import { CreateApiKeyRequest, type ApiKeyId, type ApiKeyResponse } from "@maple/domain/http"
+import type { ApiKeyId, ApiKeyResponse } from "@maple/domain/http"
 import { toast } from "sonner"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { Badge } from "@maple/ui/components/ui/badge"
-import { Input } from "@maple/ui/components/ui/input"
-import { Label } from "@maple/ui/components/ui/label"
-import {
-	Dialog,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogPanel,
-	DialogTitle,
-} from "@maple/ui/components/ui/dialog"
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -31,22 +20,24 @@ import {
 	AlertDialogTitle,
 } from "@maple/ui/components/ui/alert-dialog"
 import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@maple/ui/components/ui/dropdown-menu"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
 	AlertWarningIcon,
-	CheckIcon,
 	CopyIcon,
+	DotsVerticalIcon,
 	KeyIcon,
 	PlusIcon,
 	SquareTerminalIcon,
+	TrashIcon,
 } from "@/components/icons"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { CreateApiKeyDialog } from "./create-api-key-dialog"
 
 type ApiKey = ApiKeyResponse
 
@@ -82,11 +73,6 @@ function formatRelative(timestamp: number | null): string | null {
 
 export function ApiKeysSection() {
 	const [createOpen, setCreateOpen] = useState(false)
-	const [newName, setNewName] = useState("")
-	const [newDescription, setNewDescription] = useState("")
-	const [isCreating, setIsCreating] = useState(false)
-	const [newSecret, setNewSecret] = useState<string | null>(null)
-	const [secretCopied, setSecretCopied] = useState(false)
 	const [revokeOpen, setRevokeOpen] = useState(false)
 	const [revokingKeyId, setRevokingKeyId] = useState<ApiKeyId | null>(null)
 	const [isRevoking, setIsRevoking] = useState(false)
@@ -95,9 +81,6 @@ export function ApiKeysSection() {
 	const listResult = useAtomValue(listQueryAtom)
 	const refreshKeys = useAtomRefresh(listQueryAtom)
 
-	const createMutation = useAtomSet(MapleApiAtomClient.mutation("apiKeys", "create"), {
-		mode: "promiseExit",
-	})
 	const revokeMutation = useAtomSet(MapleApiAtomClient.mutation("apiKeys", "revoke"), {
 		mode: "promiseExit",
 	})
@@ -105,48 +88,6 @@ export function ApiKeysSection() {
 	const keys = Result.builder(listResult)
 		.onSuccess((response) => response.keys)
 		.orElse(() => [])
-
-	async function handleCreate() {
-		if (!newName.trim()) return
-		setIsCreating(true)
-		const result = await createMutation({
-			payload: new CreateApiKeyRequest({
-				name: newName.trim(),
-				description: newDescription.trim() || undefined,
-			}),
-		})
-		if (Exit.isSuccess(result)) {
-			setNewSecret(result.value.secret)
-			refreshKeys()
-		} else {
-			toast.error("Failed to create API key")
-		}
-		setIsCreating(false)
-	}
-
-	function handleCreateDialogClose(open: boolean) {
-		if (open) {
-			setCreateOpen(true)
-			return
-		}
-		setCreateOpen(false)
-		setNewName("")
-		setNewDescription("")
-		setNewSecret(null)
-		setSecretCopied(false)
-	}
-
-	async function handleCopySecret() {
-		if (!newSecret) return
-		try {
-			await navigator.clipboard.writeText(newSecret)
-			setSecretCopied(true)
-			toast.success("API key copied to clipboard")
-			setTimeout(() => setSecretCopied(false), 2000)
-		} catch {
-			toast.error("Failed to copy API key")
-		}
-	}
 
 	function openRevokeDialog(keyId: ApiKeyId) {
 		setRevokingKeyId(keyId)
@@ -193,9 +134,9 @@ export function ApiKeysSection() {
 							</CardDescription>
 							{activeKeys.length > 0 && (
 								<div className="text-muted-foreground/80 flex items-center gap-2 pt-1 font-mono text-[11px] uppercase tracking-wider">
-									<span>{standardCount} standard</span>
+									<span className="text-success-foreground">{standardCount} standard</span>
 									<MetaDot />
-									<span className="text-severity-info">{mcpCount} mcp</span>
+									<span className="text-info-foreground">{mcpCount} mcp</span>
 									{revokedKeys.length > 0 && (
 										<>
 											<MetaDot />
@@ -236,7 +177,7 @@ export function ApiKeysSection() {
 					) : (
 						<div className="space-y-4">
 							{activeKeys.length > 0 && (
-								<div className="space-y-1.5">
+								<div className="divide-y">
 									{activeKeys.map((key) => (
 										<ApiKeyListItem
 											key={key.id}
@@ -247,17 +188,19 @@ export function ApiKeysSection() {
 								</div>
 							)}
 							{revokedKeys.length > 0 && (
-								<div className="space-y-1.5 pt-2">
-									<div className="flex items-center gap-2">
+								<div className="pt-2">
+									<div className="flex items-center gap-2 pb-1">
 										<span className="bg-border h-px flex-1" />
 										<span className="text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.15em]">
 											Revoked · {revokedKeys.length}
 										</span>
 										<span className="bg-border h-px flex-1" />
 									</div>
-									{revokedKeys.map((key) => (
-										<ApiKeyListItem key={key.id} apiKey={key} />
-									))}
+									<div className="divide-y">
+										{revokedKeys.map((key) => (
+											<ApiKeyListItem key={key.id} apiKey={key} />
+										))}
+									</div>
 								</div>
 							)}
 						</div>
@@ -265,95 +208,11 @@ export function ApiKeysSection() {
 				</CardContent>
 			</Card>
 
-			<Dialog open={createOpen} onOpenChange={handleCreateDialogClose}>
-				<DialogContent>
-					{newSecret ? (
-						<>
-							<DialogHeader>
-								<DialogTitle>API key created</DialogTitle>
-								<DialogDescription>
-									Copy your API key now. You won't be able to see it again.
-								</DialogDescription>
-							</DialogHeader>
-							<DialogPanel className="space-y-3">
-								<InputGroup>
-									<InputGroupInput
-										readOnly
-										value={newSecret}
-										className="font-mono text-xs tracking-wide select-all"
-									/>
-									<InputGroupAddon align="inline-end">
-										<InputGroupButton
-											onClick={handleCopySecret}
-											aria-label="Copy API key"
-											title={secretCopied ? "Copied!" : "Copy"}
-										>
-											{secretCopied ? (
-												<CheckIcon size={14} className="text-severity-info" />
-											) : (
-												<CopyIcon size={14} />
-											)}
-										</InputGroupButton>
-									</InputGroupAddon>
-								</InputGroup>
-								<p className="text-muted-foreground text-xs">
-									Store this key in a secure location. It will not be shown again.
-								</p>
-							</DialogPanel>
-							<DialogFooter>
-								<Button variant="outline" onClick={() => handleCreateDialogClose(false)}>
-									Close
-								</Button>
-							</DialogFooter>
-						</>
-					) : (
-						<>
-							<DialogHeader>
-								<DialogTitle>Create API key</DialogTitle>
-								<DialogDescription>
-									API keys are used to authenticate with the Maple API and MCP server.
-								</DialogDescription>
-							</DialogHeader>
-							<DialogPanel className="space-y-3">
-								<div className="space-y-1.5">
-									<Label htmlFor="api-key-name">Name</Label>
-									<Input
-										id="api-key-name"
-										placeholder="e.g. CI/CD Pipeline"
-										value={newName}
-										onChange={(e) => setNewName(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter" && newName.trim()) {
-												void handleCreate()
-											}
-										}}
-									/>
-								</div>
-								<div className="space-y-1.5">
-									<Label htmlFor="api-key-description">
-										Description{" "}
-										<span className="text-muted-foreground font-normal">(optional)</span>
-									</Label>
-									<Input
-										id="api-key-description"
-										placeholder="What is this key used for?"
-										value={newDescription}
-										onChange={(e) => setNewDescription(e.target.value)}
-									/>
-								</div>
-							</DialogPanel>
-							<DialogFooter>
-								<Button variant="outline" onClick={() => handleCreateDialogClose(false)}>
-									Cancel
-								</Button>
-								<Button onClick={handleCreate} disabled={!newName.trim() || isCreating}>
-									{isCreating ? "Creating..." : "Create"}
-								</Button>
-							</DialogFooter>
-						</>
-					)}
-				</DialogContent>
-			</Dialog>
+			<CreateApiKeyDialog
+				open={createOpen}
+				onOpenChange={setCreateOpen}
+				onCreated={() => refreshKeys()}
+			/>
 
 			<AlertDialog open={revokeOpen} onOpenChange={setRevokeOpen}>
 				<AlertDialogContent>
@@ -385,28 +244,34 @@ function ApiKeyListItem({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: () =>
 	const relativeLastUsed = formatRelative(apiKey.lastUsedAt)
 	const expiresInPast = apiKey.expiresAt !== null && apiKey.expiresAt < Date.now()
 
+	// Type-coded icon tile: emerald for standard keys (live credential), blue for MCP
+	// (agent/machine type). Revoked keys desaturate to neutral so dead keys read as dead.
+	const tileClass = apiKey.revoked
+		? "bg-muted/40 text-muted-foreground border-border"
+		: isMcp
+			? "bg-info/10 text-info border-info/30"
+			: "bg-success/10 text-success border-success/30"
+
+	async function handleCopyPrefix() {
+		try {
+			await navigator.clipboard.writeText(apiKey.keyPrefix)
+			toast.success("Key prefix copied to clipboard")
+		} catch {
+			toast.error("Failed to copy key prefix")
+		}
+	}
+
 	return (
 		<div
 			className={cn(
-				"group relative flex items-start gap-3 border px-3 py-2.5 transition-colors",
-				apiKey.revoked
-					? "bg-muted/10 opacity-60"
-					: "bg-muted/20 hover:bg-muted/40 hover:border-foreground/20",
+				"flex items-start gap-3 px-2 py-3 transition-colors",
+				apiKey.revoked ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
-			{!apiKey.revoked && isMcp && (
-				<span
-					aria-hidden="true"
-					className="bg-severity-info/70 absolute inset-y-0 left-0 w-px"
-				/>
-			)}
-
 			<div
 				className={cn(
 					"flex h-9 w-9 shrink-0 items-center justify-center border",
-					isMcp
-						? "bg-severity-info/10 text-severity-info border-severity-info/30"
-						: "bg-background/60 text-foreground/70 border-border",
+					tileClass,
 				)}
 			>
 				<Icon size={14} />
@@ -418,17 +283,17 @@ function ApiKeyListItem({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: () =>
 						{apiKey.name}
 					</span>
 					{isMcp && (
-						<span className="text-severity-info bg-severity-info/10 border-severity-info/25 inline-flex h-4 items-center gap-1 border px-1.5 font-mono text-[9px] uppercase tracking-[0.12em]">
+						<Badge variant="info" size="sm">
 							MCP
-						</span>
+						</Badge>
 					)}
 					{apiKey.revoked && (
-						<Badge variant="destructive" className="h-4 px-1.5 text-[10px] uppercase tracking-wider">
+						<Badge variant="error" size="sm">
 							Revoked
 						</Badge>
 					)}
 					{expiresInPast && !apiKey.revoked && (
-						<Badge variant="outline" className="text-foreground/60 border-foreground/30 h-4 px-1.5 text-[10px] uppercase tracking-wider">
+						<Badge variant="outline" size="sm">
 							Expired
 						</Badge>
 					)}
@@ -455,10 +320,7 @@ function ApiKeyListItem({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: () =>
 					{apiKey.lastUsedAt && (
 						<>
 							<MetaDot />
-							<MetaSpan
-								label="Last used"
-								title={formatDate(apiKey.lastUsedAt)}
-							>
+							<MetaSpan label="Last used" title={formatDate(apiKey.lastUsedAt)}>
 								{relativeLastUsed ?? formatDate(apiKey.lastUsedAt)}
 							</MetaSpan>
 						</>
@@ -474,29 +336,28 @@ function ApiKeyListItem({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: () =>
 				</div>
 			</div>
 
-			<div className="flex shrink-0 items-center gap-2 pt-1">
-				{!apiKey.revoked && (
-					<span
-						className="bg-severity-info/15 inline-flex h-5 items-center gap-1.5 px-1.5 font-mono text-[10px] uppercase tracking-wider"
-						aria-label="Active"
-					>
-						<span className="bg-severity-info relative h-1.5 w-1.5 rounded-full">
-							<span className="bg-severity-info/60 absolute inset-0 animate-ping rounded-full" />
-						</span>
-						<span className="text-severity-info">Active</span>
-					</span>
-				)}
-				{!apiKey.revoked && onRevoke && (
-					<Button
-						variant="ghost"
-						size="xs"
-						onClick={onRevoke}
-						className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-					>
-						Revoke
-					</Button>
-				)}
-			</div>
+			{!apiKey.revoked && onRevoke && (
+				<div className="flex shrink-0 items-center">
+					<DropdownMenu>
+						<DropdownMenuTrigger
+							render={<Button variant="ghost" size="icon" className="size-7" />}
+							aria-label={`Actions for ${apiKey.name}`}
+						>
+							<DotsVerticalIcon size={14} />
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem onClick={handleCopyPrefix}>
+								<CopyIcon size={14} />
+								Copy key prefix
+							</DropdownMenuItem>
+							<DropdownMenuItem variant="destructive" onClick={onRevoke}>
+								<TrashIcon size={14} />
+								Revoke key
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
+			)}
 		</div>
 	)
 }
