@@ -24,7 +24,6 @@ import {
 	type DestinationFormState,
 	signalLabels,
 	comparatorLabels,
-	destinationTypeLabels,
 	formatSignalValue,
 	formatAlertDateTime,
 	formatAlertTime,
@@ -276,14 +275,19 @@ function MonitorTab({
 				</div>
 			)}
 
-			{/* Recent Activity — compact Table */}
+			{/* Recent Activity — compact, rule-centric preview of the full delivery log */}
 			{deliveryEvents.length > 0 && (
 				<div className="space-y-3">
-					<h2 className="text-lg font-semibold">Recent activity</h2>
+					<div>
+						<h2 className="text-lg font-semibold">Recent activity</h2>
+						<p className="text-muted-foreground text-sm">
+							Latest notification attempts. Full history in the Settings tab.
+						</p>
+					</div>
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead className="w-[110px]">Event</TableHead>
+								<TableHead className="w-[120px]">Event</TableHead>
 								<TableHead>Rule</TableHead>
 								<TableHead>Destination</TableHead>
 								<TableHead className="w-[140px]">When</TableHead>
@@ -307,12 +311,12 @@ function MonitorTab({
 												{ev.label}
 											</span>
 										</TableCell>
-										<TableCell className="truncate">
+										<TableCell className="max-w-0">
 											{rule ? (
 												<Link
 													to="/alerts/$ruleId"
 													params={{ ruleId: rule.id }}
-													className="hover:underline"
+													className="block truncate font-medium hover:underline"
 												>
 													{rule.name}
 												</Link>
@@ -320,14 +324,41 @@ function MonitorTab({
 												<span className="text-muted-foreground">–</span>
 											)}
 										</TableCell>
-										<TableCell className="text-muted-foreground">
-											{event.destinationName}
-											<span className="ml-1 text-xs">
-												· {destinationTypeLabels[event.destinationType]}
+										<TableCell>
+											<span className="flex min-w-0 items-center gap-2">
+												<ProviderLogo
+													type={event.destinationType}
+													size={32}
+													bare
+													className="flex shrink-0 items-center"
+												/>
+												<span className="truncate text-muted-foreground">
+													{event.destinationName}
+												</span>
+												{event.status === "failed" ? (
+													<span className="shrink-0 text-destructive text-xs font-medium">
+														Failed
+													</span>
+												) : event.status === "queued" || event.status === "processing" ? (
+													<span className="shrink-0 text-muted-foreground/70 text-xs">
+														Pending
+													</span>
+												) : null}
 											</span>
 										</TableCell>
 										<TableCell className="text-muted-foreground tabular-nums">
-											{event.scheduledAt ? formatRelativeTime(event.scheduledAt) : "—"}
+											{event.scheduledAt ? (
+												<Tooltip>
+													<TooltipTrigger render={<span />} className="cursor-default">
+														{formatRelativeTime(event.scheduledAt)}
+													</TooltipTrigger>
+													<TooltipContent>
+														{formatAlertDateTime(event.scheduledAt)}
+													</TooltipContent>
+												</Tooltip>
+											) : (
+												"—"
+											)}
 										</TableCell>
 									</TableRow>
 								)
