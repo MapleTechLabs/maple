@@ -16,7 +16,6 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@ai-sdk/react": "^3.0.198",
 		"@base-ui/react": "catalog:ui",
 		"@clerk/clerk-react": "^5.61.3",
 		"@clerk/themes": "^2.4.57",
@@ -53,7 +52,6 @@
 		"date-fns": "^4.1.0",
 		"effect": "catalog:effect",
 		"motion": "^12.38.0",
-		"nanoid": "^5.1.7",
 		"react": "catalog:react",
 		"react-day-picker": "^9.14.0",
 		"react-dom": "catalog:react",

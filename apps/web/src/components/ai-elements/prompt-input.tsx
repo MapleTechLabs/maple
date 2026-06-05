@@ -42,7 +42,6 @@ import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { CornerDownLeftIcon, ImageIcon, PlusIcon, SquareIcon, XmarkIcon } from "@/components/icons"
-import { nanoid } from "nanoid"
 import { Children, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 
 // ============================================================================
@@ -150,7 +149,7 @@ export const PromptInputProvider = ({
 			...prev,
 			...incoming.map((file) => ({
 				filename: file.name,
-				id: nanoid(),
+				id: crypto.randomUUID(),
 				mediaType: file.type,
 				type: "file" as const,
 				url: URL.createObjectURL(file),
@@ -424,7 +423,7 @@ export const PromptInput = ({
 				for (const file of capped) {
 					next.push({
 						filename: file.name,
-						id: nanoid(),
+						id: crypto.randomUUID(),
 						mediaType: file.type,
 						type: "file",
 						url: URL.createObjectURL(file),
@@ -628,7 +627,7 @@ export const PromptInput = ({
 		() => ({
 			add: (incoming: SourceDocumentUIPart[] | SourceDocumentUIPart) => {
 				const array = Array.isArray(incoming) ? incoming : [incoming]
-				setReferencedSources((prev) => [...prev, ...array.map((s) => ({ ...s, id: nanoid() }))])
+				setReferencedSources((prev) => [...prev, ...array.map((s) => ({ ...s, id: crypto.randomUUID() }))])
 			},
 			clear: clearReferencedSources,
 			remove: (id: string) => {
