@@ -1,6 +1,5 @@
 import type { AlertDestinationDocument } from "@maple/domain/http"
 import { PROVIDERS, ProviderLogo } from "@/components/alerts/destination-provider"
-import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import {
 	AlertWarningIcon,
 	CheckIcon,
@@ -44,7 +43,6 @@ export function DestinationCard({
 	onDelete,
 }: DestinationCardProps) {
 	const provider = PROVIDERS[destination.type]
-	const isHealthy = destination.enabled && !destination.lastTestError
 
 	return (
 		<Card
@@ -57,7 +55,12 @@ export function DestinationCard({
 			/>
 
 			<div className="relative flex flex-col gap-4 p-5 lg:flex-row lg:items-start lg:justify-between">
-				<div className="flex min-w-0 items-start gap-4">
+				<div
+					className={cn(
+						"flex min-w-0 items-start gap-4 transition-opacity",
+						!destination.enabled && "opacity-60",
+					)}
+				>
 					<ProviderLogo type={destination.type} size={44} />
 
 					<div className="min-w-0 space-y-1.5">
@@ -75,31 +78,31 @@ export function DestinationCard({
 							>
 								{provider.label}
 							</span>
-							<AlertStatusBadge
-								state={destination.enabled ? "ok" : "disabled"}
-								label={destination.enabled ? "Enabled" : "Disabled"}
-							/>
-							{isHealthy && destination.lastTestedAt && (
-								<span className="relative inline-flex items-center" aria-hidden>
-									<span className="absolute inline-flex size-1.5 animate-ping rounded-full bg-success opacity-75" />
-									<span className="relative inline-flex size-1.5 rounded-full bg-success" />
-								</span>
-							)}
 						</div>
 
-						<div className="truncate font-mono text-[13px] text-muted-foreground">
-							{destination.summary}
-						</div>
-
-						<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground/80">
-							<span>
-								Last tested{" "}
-								<span className="text-foreground/70">
-									{destination.lastTestedAt
-										? formatRelativeTime(destination.lastTestedAt)
-										: "never"}
-								</span>
+						<div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+							<span className="truncate font-mono text-[13px] text-foreground/70">
+								{destination.summary}
 							</span>
+							<span aria-hidden className="text-muted-foreground/50">
+								·
+							</span>
+							<span>
+								tested{" "}
+								{destination.lastTestedAt
+									? formatRelativeTime(destination.lastTestedAt)
+									: "never"}
+							</span>
+							{!destination.enabled && (
+								<>
+									<span aria-hidden className="text-muted-foreground/50">
+										·
+									</span>
+									<span className="font-medium uppercase tracking-wide text-muted-foreground/80">
+										Disabled
+									</span>
+								</>
+							)}
 						</div>
 
 						{destination.lastTestError && (
