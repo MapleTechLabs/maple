@@ -4,7 +4,7 @@
 	"ignore": ["**/routeTree.gen.ts", ".context/**", ".deepsec/**", "**/sst-env.d.ts"],
 	"workspaces": {
 		".": {
-			"entry": ["alchemy.run.ts", "scripts/**/*.ts"]
+			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "otel/**/*.ts"]
 		},
 		"apps/web": {
 			"entry": ["src/routes/**/*.tsx", "src/worker.ts", "alchemy.run.ts"]

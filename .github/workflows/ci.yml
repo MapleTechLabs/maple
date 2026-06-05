@@ -64,6 +64,13 @@ jobs:
 
             - run: bun install --frozen-lockfile
 
+            # The perf dev server (vite) resolves @maple-dev/browser and
+            # @maple-dev/effect-sdk from their built dist/ (gitignored), so build
+            # web's workspace deps before booting it — otherwise vite fails to
+            # resolve those imports and the bench page never signals ready.
+            - name: Build web workspace deps
+              run: bun turbo build --filter=@maple/web^...
+
             # Headless Chromium + its system libs for the rendering benchmark.
             - name: Install Playwright Chromium
               run: bunx playwright install --with-deps chromium
