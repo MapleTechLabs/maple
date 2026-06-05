@@ -610,6 +610,43 @@ export const serviceOverviewSpans = defineDatasource("service_overview_spans", {
 export type ServiceOverviewSpansRow = InferRow<typeof serviceOverviewSpans>
 
 /**
+ * Compact service-health rollup for adaptive anomaly alerts.
+ *
+ * Unlike `traces_aggregates_hourly`, this intentionally omits SpanName,
+ * SpanKind, StatusCode, and IsEntryPoint dimensions. Anomaly detection asks
+ * "is this service/env unusual compared with its own history?", so each row is
+ * one hourly service-health aggregate. This keeps the alerting hot path small
+ * and aligned with the `(OrgId, Hour, ServiceName, DeploymentEnv)` sort key.
+ */
+export const serviceHealthHourly = defineDatasource("service_health_hourly", {
+	description:
+		"Compact hourly service-health rollup for adaptive anomaly alerts. One row per org/hour/service/environment with sampling-weighted RED/APDEX aggregates.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		ServiceName: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
+		WeightedCount: t.simpleAggregateFunction("sum", t.float64()),
+		WeightedErrorCount: t.simpleAggregateFunction("sum", t.float64()),
+		WeightedDurationSum: t.simpleAggregateFunction("sum", t.float64()),
+		DurationQuantiles: t.aggregateFunction(
+			"quantilesTDigestWeighted(0.5, 0.95, 0.99), UInt64",
+			t.uint32(),
+		),
+		ApdexSatisfiedCount: t.simpleAggregateFunction("sum", t.float64()),
+		ApdexToleratingCount: t.simpleAggregateFunction("sum", t.float64()),
+	},
+	engine: engine.aggregatingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: ["OrgId", "Hour", "ServiceName", "DeploymentEnv"],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
+
+export type ServiceHealthHourlyRow = InferRow<typeof serviceHealthHourly>
+
+/**
  * Pre-materialized error spans for the errors page.
  * Pre-filters to StatusCode='Error' and pre-extracts deployment.environment
  * so error queries avoid scanning the full traces table and Map columns.
@@ -1179,6 +1216,14 @@ export const alertChecks = defineDatasource("alert_checks", {
 		ConsecutiveHealthy: t.uint16(),
 		IncidentId: t.string().nullable(),
 		IncidentTransition: t.string().lowCardinality(),
+		ThresholdMode: t.string().lowCardinality().default("static"),
+		BaselineMedian: t.float64().nullable(),
+		BaselineLower: t.float64().nullable(),
+		BaselineUpper: t.float64().nullable(),
+		BaselineBucketCount: t.uint16().default(0),
+		AnomalyScore: t.float64().nullable(),
+		EffectiveThreshold: t.float64().nullable(),
+		InvestigationId: t.string().nullable(),
 		EvaluationDurationMs: t.uint32(),
 	},
 	engine: engine.mergeTree({

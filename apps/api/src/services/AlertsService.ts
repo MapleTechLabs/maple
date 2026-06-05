@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import {
 	CompiledAlertQueryPlan,
+	parseWarehouseDateTime,
 	QueryEngineAlertReducer,
 	type QueryEngineNoDataBehavior,
 	type QueryEngineSampleCountStrategy,
@@ -9,6 +10,7 @@ import {
 import * as CH from "@maple/query-engine/ch"
 import { buildTimeseriesQuerySpec, resolveGroupBy } from "@maple/query-engine/query-builder"
 import {
+	ActorId as ActorIdSchema,
 	AlertComparator as AlertComparatorSchema,
 	AlertDeliveryError,
 	AlertDeliveryEventDocument,
@@ -27,10 +29,12 @@ import {
 	AlertChecksListResponse,
 	AlertEvaluationStatus as AlertEvaluationStatusSchema,
 	AlertIncidentDocument,
+	AlertIncidentIssueLinkDocument,
 	AlertIncidentsListResponse,
 	AlertIncidentStatus,
 	AlertIncidentTransition,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
+	AlertAnomalyConfig,
 	AlertMetricAggregation as AlertMetricAggregationSchema,
 	AlertMetricType as AlertMetricTypeSchema,
 	AlertNotFoundError,
@@ -40,7 +44,10 @@ import {
 	AlertRulesListResponse,
 	AlertSeverity as AlertSeveritySchema,
 	AlertSignalType as AlertSignalTypeSchema,
+	AlertThresholdMode as AlertThresholdModeSchema,
 	AlertValidationError,
+	ErrorIssueEventId as ErrorIssueEventIdSchema,
+	ErrorIssueId as ErrorIssueIdSchema,
 	QueryBuilderQueryDraftSchema,
 	AlertNotificationTemplate,
 	type AlertComparator,
@@ -55,7 +62,9 @@ import {
 	type QueryBuilderQueryDraftPayload,
 	type AlertSeverity,
 	type AlertSignalType,
+	type AlertThresholdMode,
 	type AlertGroupBy,
+	type ActorId,
 	type OrgId,
 	type AlertRuleId,
 	type AlertDestinationId,
@@ -73,11 +82,17 @@ import {
 	type AlertDeliveryEventRow,
 	alertDestinations,
 	type AlertDestinationRow,
+	alertIncidentEvents,
+	alertIncidentIssueLinks,
+	type AlertIncidentIssueLinkRow,
 	alertIncidents,
 	type AlertIncidentRow,
 	alertRules,
 	type AlertRuleRow,
 	alertRuleStates,
+	actors,
+	errorIssues,
+	errorIssueEvents,
 } from "@maple/db"
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import {
@@ -128,6 +143,9 @@ interface NormalizedRule {
 	readonly notificationTemplate: AlertNotificationTemplate | null
 	readonly enabled: boolean
 	readonly severity: AlertSeverity
+	readonly thresholdMode: AlertThresholdMode
+	readonly anomalyConfig: NormalizedAnomalyConfig | null
+	readonly storedAnomalyConfig: Schema.Schema.Type<typeof AlertAnomalyConfig> | null
 	readonly serviceName: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly excludeServiceNames: ReadonlyArray<string>
@@ -141,6 +159,7 @@ interface NormalizedRule {
 	readonly consecutiveBreachesRequired: number
 	readonly consecutiveHealthyRequired: number
 	readonly renotifyIntervalMinutes: number
+	readonly evaluationIntervalMinutes: number
 	readonly metricName: string | null
 	readonly metricType: AlertMetricType | null
 	readonly metricAggregation: AlertMetricAggregationValue | null
@@ -162,7 +181,59 @@ interface EvaluatedRule {
 	readonly thresholdUpper: number | null
 	readonly comparator: AlertComparator
 	readonly reason: string
+	readonly thresholdMode: AlertThresholdMode
+	readonly baselineMedian: number | null
+	readonly baselineLower: number | null
+	readonly baselineUpper: number | null
+	readonly baselineBucketCount: number
+	readonly anomalyScore: number | null
+	readonly effectiveThreshold: number | null
+	readonly highConfidence: boolean
 }
+
+interface EvaluatedGroup {
+	readonly evaluation: EvaluatedRule
+	readonly groupKey: string
+	readonly serviceName?: string
+	readonly deploymentEnv?: string
+}
+
+const completeEvaluation = (
+	fields: Omit<
+		EvaluatedRule,
+		| "thresholdMode"
+		| "baselineMedian"
+		| "baselineLower"
+		| "baselineUpper"
+		| "baselineBucketCount"
+		| "anomalyScore"
+		| "effectiveThreshold"
+		| "highConfidence"
+	> &
+		Partial<
+			Pick<
+				EvaluatedRule,
+				| "thresholdMode"
+				| "baselineMedian"
+				| "baselineLower"
+				| "baselineUpper"
+				| "baselineBucketCount"
+				| "anomalyScore"
+				| "effectiveThreshold"
+				| "highConfidence"
+			>
+		>,
+): EvaluatedRule => ({
+	...fields,
+	thresholdMode: fields.thresholdMode ?? "static",
+	baselineMedian: fields.baselineMedian ?? null,
+	baselineLower: fields.baselineLower ?? null,
+	baselineUpper: fields.baselineUpper ?? null,
+	baselineBucketCount: fields.baselineBucketCount ?? 0,
+	anomalyScore: fields.anomalyScore ?? null,
+	effectiveThreshold: fields.effectiveThreshold ?? null,
+	highConfidence: fields.highConfidence ?? false,
+})
 
 interface DispatchContext {
 	readonly deliveryKey: string
@@ -267,11 +338,15 @@ const DeliveryPayloadFromJson = Schema.fromJsonString(StoredDeliveryPayloadSchem
 const StringArrayFromJson = Schema.fromJsonString(StringArraySchema)
 const DestinationIdArrayFromJson = Schema.fromJsonString(DestinationIdArraySchema)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
+const AlertAnomalyConfigFromJson = Schema.fromJsonString(AlertAnomalyConfig)
 
 const decodeAlertDestinationIdSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.id)
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.id)
 const decodeAlertDeliveryEventIdSync = Schema.decodeUnknownSync(AlertDeliveryEventDocument.fields.id)
+const decodeActorIdSync = Schema.decodeUnknownSync(ActorIdSchema)
+const decodeErrorIssueIdSync = Schema.decodeUnknownSync(ErrorIssueIdSchema)
+const decodeErrorIssueEventIdSync = Schema.decodeUnknownSync(ErrorIssueEventIdSchema)
 const decodeQuerySpecSync = Schema.decodeUnknownSync(QuerySpec)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
@@ -282,6 +357,7 @@ const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema
 const decodeAlertComparatorSync = Schema.decodeUnknownSync(AlertComparatorSchema)
 const decodeAlertEvaluationStatusSync = Schema.decodeUnknownSync(AlertEvaluationStatusSchema)
 const decodeAlertIncidentTransitionSync = Schema.decodeUnknownSync(AlertIncidentTransitionSchema)
+const decodeAlertThresholdModeSync = Schema.decodeUnknownSync(AlertThresholdModeSchema)
 const decodeAlertMetricTypeSync = Schema.decodeUnknownSync(AlertMetricTypeSchema)
 const decodeAlertMetricAggregationSync = Schema.decodeUnknownSync(AlertMetricAggregationSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
@@ -302,7 +378,7 @@ const resolveServiceLinkName = (
 ): string | null => {
 	if (rule.serviceNames.length === 1) return rule.serviceNames[0] ?? null
 	if (groupKey != null && groupKey !== "all" && isServiceGroupBy(rule.groupBy)) {
-		return groupKey
+		return groupKey.split(" env:")[0] ?? groupKey
 	}
 	return null
 }
@@ -322,6 +398,42 @@ const parseStoredNotificationTemplate = (raw: string | null): AlertNotificationT
 	if (raw == null) return null
 	return Option.getOrElse(Schema.decodeUnknownOption(NotificationTemplateFromJson)(raw), () => null)
 }
+
+const parseStoredAnomalyConfig = (
+	raw: string | null,
+): Schema.Schema.Type<typeof AlertAnomalyConfig> | null => {
+	if (raw == null) return null
+	return Option.getOrElse(Schema.decodeUnknownOption(AlertAnomalyConfigFromJson)(raw), () => null)
+}
+
+interface NormalizedAnomalyConfig {
+	readonly baselineLookbackDays: number
+	readonly currentWindowMinutes: number
+	readonly minBaselineBuckets: number
+	readonly warningScore: number
+	readonly criticalScore: number
+	readonly autoInvestigate: boolean
+}
+
+const DEFAULT_ANOMALY_CONFIG: NormalizedAnomalyConfig = {
+	baselineLookbackDays: 28,
+	currentWindowMinutes: 15,
+	minBaselineBuckets: 48,
+	warningScore: 3,
+	criticalScore: 5,
+	autoInvestigate: true,
+}
+
+const normalizeAnomalyConfig = (
+	config: Schema.Schema.Type<typeof AlertAnomalyConfig> | null | undefined,
+): NormalizedAnomalyConfig => ({
+	baselineLookbackDays: config?.baselineLookbackDays ?? DEFAULT_ANOMALY_CONFIG.baselineLookbackDays,
+	currentWindowMinutes: config?.currentWindowMinutes ?? DEFAULT_ANOMALY_CONFIG.currentWindowMinutes,
+	minBaselineBuckets: config?.minBaselineBuckets ?? DEFAULT_ANOMALY_CONFIG.minBaselineBuckets,
+	warningScore: config?.warningScore ?? DEFAULT_ANOMALY_CONFIG.warningScore,
+	criticalScore: config?.criticalScore ?? DEFAULT_ANOMALY_CONFIG.criticalScore,
+	autoInvestigate: config?.autoInvestigate ?? DEFAULT_ANOMALY_CONFIG.autoInvestigate,
+})
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
 
@@ -372,6 +484,17 @@ const compareThreshold = (
 		),
 		Match.exhaustive,
 	)
+
+const ANOMALY_SIGNAL_TYPES: ReadonlySet<AlertSignalType> = new Set([
+	"error_rate",
+	"p95_latency",
+	"p99_latency",
+	"throughput",
+	"apdex",
+])
+
+const anomalyComparatorForSignal = (signalType: AlertSignalType): AlertComparator =>
+	signalType === "throughput" || signalType === "apdex" ? "lt" : "gt"
 
 const normalizeOptionalString = (value: string | null | undefined) => {
 	const trimmed = value?.trim()
@@ -797,6 +920,8 @@ const rowToRuleDocument = (
 		notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
 		enabled: row.enabled === 1,
 		severity: decodeAlertSeveritySync(row.severity),
+		thresholdMode: decodeAlertThresholdModeSync(row.thresholdMode ?? "static"),
+		anomalyConfig: parseStoredAnomalyConfig(row.anomalyConfigJson),
 		serviceNames: [...serviceNames],
 		excludeServiceNames: [...excludeServiceNamesFromRow(row)],
 		groupBy: parseStoredGroupBy(row.groupBy),
@@ -809,6 +934,7 @@ const rowToRuleDocument = (
 		consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 		consecutiveHealthyRequired: row.consecutiveHealthyRequired,
 		renotifyIntervalMinutes: row.renotifyIntervalMinutes,
+		evaluationIntervalMinutes: row.evaluationIntervalMinutes ?? 1,
 		metricName: row.metricName,
 		metricType: row.metricType != null ? decodeAlertMetricTypeSync(row.metricType) : null,
 		metricAggregation:
@@ -831,7 +957,10 @@ const rowToRuleDocument = (
 	})
 }
 
-const rowToIncidentDocument = (row: AlertIncidentRow) =>
+const rowToIncidentDocument = (
+	row: AlertIncidentRow,
+	issueLinks: ReadonlyArray<AlertIncidentIssueLinkRow> = [],
+) =>
 	new AlertIncidentDocument({
 		id: decodeAlertIncidentIdSync(row.id),
 		ruleId: decodeAlertRuleIdSync(row.ruleId),
@@ -843,6 +972,14 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,
 		thresholdUpper: row.thresholdUpper,
+		thresholdMode: decodeAlertThresholdModeSync(row.thresholdMode ?? "static"),
+		baselineMedian: row.baselineMedian,
+		baselineLower: row.baselineLower,
+		baselineUpper: row.baselineUpper,
+		baselineBucketCount: row.baselineBucketCount,
+		anomalyScore: row.anomalyScore,
+		effectiveThreshold: row.effectiveThreshold,
+		investigationId: row.investigationId,
 		firstTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.firstTriggeredAt).toISOString()),
 		lastTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.lastTriggeredAt).toISOString()),
 		resolvedAt: toIso(row.resolvedAt),
@@ -852,6 +989,15 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		lastDeliveredEventType:
 			row.lastDeliveredEventType != null ? decodeAlertEventTypeSync(row.lastDeliveredEventType) : null,
 		lastNotifiedAt: toIso(row.lastNotifiedAt),
+		issueLinks: issueLinks.map(
+			(link) =>
+					new AlertIncidentIssueLinkDocument({
+						errorIssueId: decodeErrorIssueIdSync(link.errorIssueId),
+						relationship: link.relationship,
+						score: link.score,
+						createdAt: decodeIsoDateTimeStringSync(new Date(link.createdAt).toISOString()),
+					}),
+		),
 	})
 
 // Formatting helpers imported from AlertDeliveryDispatch
@@ -1077,12 +1223,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			row: AlertRuleRow,
 		): Effect.fn.Return<NormalizedRule, AlertValidationError> {
 			const serviceNames = serviceNamesFromRow(row)
+			const storedAnomalyConfig = parseStoredAnomalyConfig(row.anomalyConfigJson)
+			const thresholdMode = decodeAlertThresholdModeSync(row.thresholdMode ?? "static")
 			return {
 				id: decodeAlertRuleIdSync(row.id),
 				name: row.name,
 				notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
 				enabled: row.enabled === 1,
 				severity: decodeAlertSeveritySync(row.severity),
+				thresholdMode,
+				anomalyConfig: thresholdMode === "anomaly" ? normalizeAnomalyConfig(storedAnomalyConfig) : null,
+				storedAnomalyConfig,
 				serviceName: serviceNames.length === 1 ? serviceNames[0] : null,
 				serviceNames,
 				excludeServiceNames: excludeServiceNamesFromRow(row),
@@ -1096,6 +1247,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				consecutiveBreachesRequired: row.consecutiveBreachesRequired,
 				consecutiveHealthyRequired: row.consecutiveHealthyRequired,
 				renotifyIntervalMinutes: row.renotifyIntervalMinutes,
+				evaluationIntervalMinutes: row.evaluationIntervalMinutes ?? (thresholdMode === "anomaly" ? 5 : 1),
 				metricName: row.metricName,
 				metricType: row.metricType != null ? decodeAlertMetricTypeSync(row.metricType) : null,
 				metricAggregation:
@@ -1128,6 +1280,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				: []
 			const metricName = normalizeOptionalString(request.metricName)
 			const destinationIds = request.destinationIds
+			const thresholdMode = request.thresholdMode ?? "static"
+			const storedAnomalyConfig = request.anomalyConfig ?? null
+			const anomalyConfig = normalizeAnomalyConfig(storedAnomalyConfig)
 
 			const details: string[] = []
 			if (name.length === 0) details.push("name is required")
@@ -1167,6 +1322,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					details.push("rawQuerySql must reference $__orgFilter for org scoping")
 				}
 			}
+			if (thresholdMode === "anomaly") {
+				if (!ANOMALY_SIGNAL_TYPES.has(request.signalType)) {
+					details.push("anomaly alerts support only built-in RED/APDEX trace signals")
+				}
+				if (
+					request.signalType === "apdex" &&
+					request.apdexThresholdMs != null &&
+					request.apdexThresholdMs !== 500
+				) {
+					details.push("anomaly APDEX currently supports only the default 500ms threshold")
+				}
+			}
 			const allowsMetricFields = request.signalType === "metric"
 			if (!allowsMetricFields && request.metricType) {
 				details.push("metricType is only supported for metric alerts")
@@ -1177,9 +1344,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			if (request.signalType !== "metric" && request.metricAggregation) {
 				details.push("metricAggregation is only supported for metric alerts")
 			}
-			const groupBy = request.groupBy ?? null
+			const groupBy =
+				thresholdMode === "anomaly" && (request.serviceNames?.length ?? 0) === 0
+					? (request.groupBy ?? ["service.name"])
+					: (request.groupBy ?? null)
 			if (groupBy != null && serviceNames.length > 0) {
 				details.push("groupBy is only supported when no service is specified")
+			}
+			if (thresholdMode === "anomaly" && groupBy != null && !isServiceGroupBy(groupBy)) {
+				details.push('anomaly alerts support only groupBy=["service.name"]')
 			}
 			if (excludeServiceNames.length > 0 && serviceNames.length > 0) {
 				details.push("excludeServiceNames is only supported when no specific services are selected")
@@ -1193,25 +1366,38 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			}
 
 			const nowMs = yield* now
+			const windowMinutes =
+				thresholdMode === "anomaly" ? anomalyConfig.currentWindowMinutes : request.windowMinutes
+			const comparator =
+				thresholdMode === "anomaly"
+					? anomalyComparatorForSignal(request.signalType)
+					: request.comparator
 			const normalizedBase = {
 				id: decodeAlertRuleIdSync(makeUuid()),
 				name,
 				notificationTemplate: request.notificationTemplate ?? null,
 				enabled: request.enabled ?? true,
 				severity: request.severity,
+				thresholdMode,
+				anomalyConfig: thresholdMode === "anomaly" ? anomalyConfig : null,
+				storedAnomalyConfig,
 				serviceName,
 				serviceNames,
 				excludeServiceNames,
 				groupBy,
 				signalType: request.signalType,
-				comparator: request.comparator,
+				comparator,
 				threshold: request.threshold,
 				thresholdUpper: request.thresholdUpper ?? null,
-				windowMinutes: request.windowMinutes,
-				minimumSampleCount: request.minimumSampleCount ?? 0,
-				consecutiveBreachesRequired: request.consecutiveBreachesRequired ?? 2,
+				windowMinutes,
+				minimumSampleCount:
+					request.minimumSampleCount ?? (thresholdMode === "anomaly" ? 50 : 0),
+				consecutiveBreachesRequired:
+					request.consecutiveBreachesRequired ?? 2,
 				consecutiveHealthyRequired: request.consecutiveHealthyRequired ?? 2,
 				renotifyIntervalMinutes: request.renotifyIntervalMinutes ?? 30,
+				evaluationIntervalMinutes:
+					request.evaluationIntervalMinutes ?? (thresholdMode === "anomaly" ? 5 : 1),
 				metricName,
 				metricType: request.metricType ?? null,
 				metricAggregation: request.metricAggregation ?? null,
@@ -1297,15 +1483,153 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		 * multiple dimensions are picked) becomes its own entry that is
 		 * processed and dedup'd independently downstream.
 		 */
+		const isDownwardAnomaly = (signalType: AlertSignalType) =>
+			signalType === "throughput" || signalType === "apdex"
+
+		const applyAnomalyLogic = (
+			rule: NormalizedRule,
+			row: CH.ServiceHealthAnomalyOutput,
+		): EvaluatedRule => {
+			const config = rule.anomalyConfig ?? DEFAULT_ANOMALY_CONFIG
+			const value = Number(row.currentValue)
+			const sampleCount = Math.round(Number(row.sampleCount ?? 0))
+			const baselineBucketCount = Number(row.baselineBucketCount ?? 0)
+			const baselineMedian = row.baselineMedian == null ? null : Number(row.baselineMedian)
+			const baselineLower = row.baselineLower == null ? null : Number(row.baselineLower)
+			const baselineUpper = row.baselineUpper == null ? null : Number(row.baselineUpper)
+			const robustScaleRaw = row.robustScale == null ? null : Number(row.robustScale)
+			const robustScale = robustScaleRaw != null && robustScaleRaw > 0 ? robustScaleRaw : null
+			const downward = isDownwardAnomaly(rule.signalType)
+			const effectiveThreshold = downward ? baselineLower : baselineUpper
+
+			const anomalyBase = {
+				thresholdMode: "anomaly" as const,
+				baselineMedian,
+				baselineLower,
+				baselineUpper,
+				baselineBucketCount,
+				effectiveThreshold,
+			}
+
+			if (sampleCount < rule.minimumSampleCount) {
+				return completeEvaluation({
+					status: "skipped",
+					value,
+					sampleCount,
+					threshold: effectiveThreshold ?? rule.threshold,
+					thresholdUpper: null,
+					comparator: rule.comparator,
+					reason: `Sample count ${sampleCount} is below minimum ${rule.minimumSampleCount}`,
+					...anomalyBase,
+				})
+			}
+
+			if (baselineBucketCount < config.minBaselineBuckets || baselineMedian == null || robustScale == null) {
+				return completeEvaluation({
+					status: "skipped",
+					value,
+					sampleCount,
+					threshold: effectiveThreshold ?? rule.threshold,
+					thresholdUpper: null,
+					comparator: rule.comparator,
+					reason: `Anomaly baseline warming up (${baselineBucketCount}/${config.minBaselineBuckets} buckets)`,
+					...anomalyBase,
+				})
+			}
+
+			const score = downward ? (baselineMedian - value) / robustScale : (value - baselineMedian) / robustScale
+			const materialChange =
+				effectiveThreshold == null ? false : downward ? value < effectiveThreshold : value > effectiveThreshold
+			const enoughErrorImpact =
+				rule.signalType !== "error_rate" || Number(row.currentErrorCount ?? 0) >= 3
+			const breached = score >= config.warningScore && materialChange && enoughErrorImpact
+			const highConfidence = score >= config.criticalScore && materialChange && enoughErrorImpact
+			const directionLabel = downward ? "below" : "above"
+
+			return completeEvaluation({
+				status: breached ? "breached" : "healthy",
+				value,
+				sampleCount,
+				threshold: effectiveThreshold ?? rule.threshold,
+				thresholdUpper: null,
+				comparator: rule.comparator,
+				reason: breached
+					? `${rule.signalType} is ${directionLabel} its normal band (score ${score.toFixed(2)})`
+					: `${rule.signalType} is within its normal band (score ${score.toFixed(2)})`,
+				anomalyScore: score,
+				highConfidence,
+				...anomalyBase,
+			})
+		}
+
+		const evaluateAnomalyRule = Effect.fn("AlertsService.evaluateAnomalyRule")(function* (
+			orgId: OrgId,
+			rule: NormalizedRule,
+		): Effect.fn.Return<ReadonlyArray<EvaluatedGroup>, AlertValidationError | AlertPersistenceError> {
+			const config = rule.anomalyConfig
+			if (config == null) {
+				return yield* Effect.fail(makeValidationError("Anomaly rule is missing anomalyConfig"))
+			}
+			if (!ANOMALY_SIGNAL_TYPES.has(rule.signalType)) {
+				return yield* Effect.fail(
+					makeValidationError("Anomaly alerts support only built-in RED/APDEX trace signals"),
+				)
+			}
+
+			const endMs = yield* now
+			const startMs = endMs - config.currentWindowMinutes * 60_000
+			const baselineEndMs = endMs - 2 * 60 * 60_000
+			const baselineStartMs = endMs - config.baselineLookbackDays * 24 * 60 * 60_000
+			const compiled = CH.serviceHealthAnomalyQuery({
+				orgId,
+				startTime: toTinybirdDateTime(startMs),
+				endTime: toTinybirdDateTime(endMs),
+				baselineStartTime: toTinybirdDateTime(baselineStartMs),
+				baselineEndTime: toTinybirdDateTime(baselineEndMs),
+				currentHourUtc: new Date(endMs).getUTCHours(),
+				currentWindowMinutes: config.currentWindowMinutes,
+				signalType: rule.signalType as CH.ServiceHealthAnomalySignal,
+				serviceNames: rule.serviceNames,
+				excludeServiceNames: rule.excludeServiceNames,
+				apdexThresholdMs: rule.apdexThresholdMs ?? 500,
+			})
+
+			const rows = yield* warehouse
+				.compiledQuery(systemTenant(orgId), compiled, {
+					profile: "aggregation",
+					context: "serviceHealthAnomaly",
+				})
+				.pipe(
+					Effect.mapError(
+						(error) =>
+							new AlertPersistenceError({
+								message: `Failed to evaluate anomaly alert: ${error.message}`,
+							}),
+					),
+				)
+
+			return rows.map((row) => ({
+				evaluation: applyAnomalyLogic(rule, row),
+				groupKey: row.groupKey,
+				serviceName: row.serviceName,
+				deploymentEnv: row.deploymentEnv,
+			}))
+		})
+
 		const evaluateRule = Effect.fn("AlertsService.evaluateRule")(function* (
 			orgId: OrgId,
 			rule: NormalizedRule,
 		): Effect.fn.Return<
-			ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
+			ReadonlyArray<EvaluatedGroup>,
 			| AlertValidationError
 			| AlertDeliveryError
+			| AlertPersistenceError
 			| WarehouseError
 		> {
+			if (rule.thresholdMode === "anomaly") {
+				return yield* evaluateAnomalyRule(orgId, rule)
+			}
+
 			const endMs = yield* now
 			const startMs = endMs - rule.windowMinutes * 60_000
 			const plan = rule.compiledPlan
@@ -1353,7 +1677,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			const value = obs.hasData ? obs.value : noDataBehavior === "zero" ? 0 : null
 
 			if (!obs.hasData && noDataBehavior === "skip") {
-				return {
+				return completeEvaluation({
 					status: "skipped",
 					value: null,
 					sampleCount,
@@ -1364,11 +1688,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						rule.signalType === "metric"
 							? "No metric data in the selected window"
 							: "No data in the selected window",
-				}
+				})
 			}
 
 			if (sampleCount < rule.minimumSampleCount) {
-				return {
+				return completeEvaluation({
 					status: "skipped",
 					value,
 					sampleCount,
@@ -1376,11 +1700,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					thresholdUpper: rule.thresholdUpper,
 					comparator: rule.comparator,
 					reason: `Sample count ${sampleCount} is below minimum ${rule.minimumSampleCount}`,
-				}
+				})
 			}
 
 			if (value == null) {
-				return {
+				return completeEvaluation({
 					status: "skipped",
 					value: null,
 					sampleCount,
@@ -1388,10 +1712,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					thresholdUpper: rule.thresholdUpper,
 					comparator: rule.comparator,
 					reason: "Alert evaluation did not return a scalar value",
-				}
+				})
 			}
 
-			return {
+			return completeEvaluation({
 				status: compareThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
 					? "breached"
 					: "healthy",
@@ -1403,7 +1727,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				reason:
 					reasonOverride ??
 					`${rule.signalType} ${formatComparator(rule.comparator, rule.threshold, rule.thresholdUpper)}`,
-			}
+			})
 		}
 
 		const buildDeliveryKey = (
@@ -1638,8 +1962,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						signalType: rule.signalType,
 						severity: rule.severity,
 						comparator: rule.comparator,
-						threshold: rule.threshold,
-						thresholdUpper: rule.thresholdUpper,
+						threshold: evaluation.threshold,
+						thresholdUpper: evaluation.thresholdUpper,
 						windowMinutes: rule.windowMinutes,
 						value: evaluation.value,
 						sampleCount: evaluation.sampleCount,
@@ -2122,6 +2446,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						: null,
 				enabled: normalized.enabled ? 1 : 0,
 				severity: normalized.severity,
+				thresholdMode: normalized.thresholdMode,
+				anomalyConfigJson:
+					normalized.storedAnomalyConfig != null
+						? JSON.stringify(normalized.storedAnomalyConfig)
+						: null,
 				serviceNamesJson:
 					normalized.serviceNames.length > 0 ? JSON.stringify(normalized.serviceNames) : null,
 				excludeServiceNamesJson:
@@ -2138,6 +2467,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
 				consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
 				renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
+				evaluationIntervalMinutes: normalized.evaluationIntervalMinutes,
 				metricName: normalized.metricName,
 				metricType: normalized.metricType,
 				metricAggregation: normalized.metricAggregation,
@@ -2307,10 +2637,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
 				const allResults = yield* evaluateRule(orgId, normalized)
 				const excludeSet = new Set(normalized.excludeServiceNames)
-				const results = allResults.filter((r) => !excludeSet.has(r.groupKey))
+				const results = allResults.filter(
+					(r) => !excludeSet.has(r.serviceName ?? r.groupKey.split(" env:")[0] ?? r.groupKey),
+				)
 				const breached = results.find((r) => r.evaluation.status === "breached")
 				evaluation = breached?.evaluation ??
-					results[0]?.evaluation ?? {
+					results[0]?.evaluation ?? completeEvaluation({
 						status: "skipped" as const,
 						value: null,
 						sampleCount: 0,
@@ -2318,7 +2650,20 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						thresholdUpper: normalized.thresholdUpper,
 						comparator: normalized.comparator,
 						reason: "No groups found",
-					}
+					})
+			} else if (normalized.thresholdMode === "anomaly") {
+				const results = yield* evaluateRule(orgId, normalized)
+				const breached = results.find((r) => r.evaluation.status === "breached")
+				evaluation = breached?.evaluation ??
+					results[0]?.evaluation ?? completeEvaluation({
+						status: "skipped" as const,
+						value: null,
+						sampleCount: 0,
+						threshold: normalized.threshold,
+						thresholdUpper: normalized.thresholdUpper,
+						comparator: normalized.comparator,
+						reason: "No data",
+					})
 			} else if (normalized.serviceNames.length > 1) {
 				const results = yield* Effect.forEach(
 					normalized.serviceNames,
@@ -2334,7 +2679,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								compiledPlan: perServicePlan,
 							})
 							return (
-								observations[0]?.evaluation ?? {
+								observations[0]?.evaluation ?? completeEvaluation({
 									status: "skipped" as const,
 									value: null,
 									sampleCount: 0,
@@ -2342,13 +2687,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									thresholdUpper: normalized.thresholdUpper,
 									comparator: normalized.comparator,
 									reason: "No data",
-								}
+								})
 							)
 						}),
 					{ concurrency: 5 },
 				)
 				evaluation = results.find((r) => r.status === "breached") ??
-					results[0] ?? {
+					results[0] ?? completeEvaluation({
 						status: "skipped" as const,
 						value: null,
 						sampleCount: 0,
@@ -2356,10 +2701,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						thresholdUpper: normalized.thresholdUpper,
 						comparator: normalized.comparator,
 						reason: "No data",
-					}
+					})
 			} else {
 				const observations = yield* evaluateRule(orgId, normalized)
-				evaluation = observations[0]?.evaluation ?? {
+				evaluation = observations[0]?.evaluation ?? completeEvaluation({
 					status: "skipped" as const,
 					value: null,
 					sampleCount: 0,
@@ -2367,7 +2712,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					thresholdUpper: normalized.thresholdUpper,
 					comparator: normalized.comparator,
 					reason: "No data",
-				}
+				})
 			}
 
 			if (sendNotification) {
@@ -2431,8 +2776,29 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					.orderBy(desc(alertIncidents.status), desc(alertIncidents.lastTriggeredAt))
 					.limit(100),
 			)
+			const incidentIds = rows.map((row) => row.id)
+			const issueLinks =
+				incidentIds.length === 0
+					? []
+					: yield* dbExecute((db) =>
+							db
+								.select()
+								.from(alertIncidentIssueLinks)
+								.where(
+									and(
+										eq(alertIncidentIssueLinks.orgId, orgId),
+										inArray(alertIncidentIssueLinks.alertIncidentId, incidentIds),
+									),
+								),
+						)
+			const issueLinksByIncident = new Map<string, AlertIncidentIssueLinkRow[]>()
+			for (const link of issueLinks) {
+				const links = issueLinksByIncident.get(link.alertIncidentId) ?? []
+				links.push(link)
+				issueLinksByIncident.set(link.alertIncidentId, links)
+			}
 			return new AlertIncidentsListResponse({
-				incidents: rows.map(rowToIncidentDocument),
+				incidents: rows.map((row) => rowToIncidentDocument(row, issueLinksByIncident.get(row.id) ?? [])),
 			})
 		})
 
@@ -2537,6 +2903,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									? null
 									: decodeAlertIncidentIdSync(String(r.incidentId)),
 							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
+							thresholdMode: decodeAlertThresholdModeSync(String(r.thresholdMode ?? "static")),
+							baselineMedian: r.baselineMedian == null ? null : Number(r.baselineMedian),
+							baselineLower: r.baselineLower == null ? null : Number(r.baselineLower),
+							baselineUpper: r.baselineUpper == null ? null : Number(r.baselineUpper),
+							baselineBucketCount: Number(r.baselineBucketCount ?? 0),
+							anomalyScore: r.anomalyScore == null ? null : Number(r.anomalyScore),
+							effectiveThreshold:
+								r.effectiveThreshold == null ? null : Number(r.effectiveThreshold),
+							investigationId:
+								r.investigationId == null || r.investigationId === ""
+									? null
+									: String(r.investigationId),
 							evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
 						})
 					}),
@@ -2914,6 +3292,293 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			}
 		})
 
+		const INVESTIGATOR_AGENT_NAME = "maple-anomaly-investigator"
+
+			const ensureInvestigatorActor = Effect.fn("AlertsService.ensureInvestigatorActor")(function* (
+				orgId: OrgId,
+				timestamp: number,
+			): Effect.fn.Return<ActorId, AlertPersistenceError> {
+			const existing = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(actors)
+					.where(
+						and(
+							eq(actors.orgId, orgId),
+							eq(actors.type, "agent"),
+							eq(actors.agentName, INVESTIGATOR_AGENT_NAME),
+						),
+					)
+					.limit(1),
+			)
+				if (existing[0]) return existing[0].id
+
+				const id = decodeActorIdSync(makeUuid())
+			yield* dbExecute((db) =>
+				db
+					.insert(actors)
+					.values({
+						id,
+						orgId,
+						type: "agent",
+						userId: null,
+						agentName: INVESTIGATOR_AGENT_NAME,
+						model: null,
+						capabilitiesJson: JSON.stringify(["anomaly-triage", "agent-note"]),
+						createdBy: null,
+						createdAt: timestamp,
+						lastActiveAt: timestamp,
+					})
+					.onConflictDoNothing(),
+			)
+			const after = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(actors)
+					.where(
+						and(
+							eq(actors.orgId, orgId),
+							eq(actors.type, "agent"),
+							eq(actors.agentName, INVESTIGATOR_AGENT_NAME),
+						),
+					)
+					.limit(1),
+			)
+				return after[0]?.id ?? id
+			})
+
+		const recordAlertIncidentEvent = Effect.fn("AlertsService.recordAlertIncidentEvent")(function* (
+				orgId: OrgId,
+				incidentId: string,
+				type: string,
+				payload: Record<string, unknown>,
+				timestamp: number,
+				actorId?: ActorId | null,
+			) {
+				yield* dbExecute((db) =>
+					db.insert(alertIncidentEvents).values({
+						id: makeUuid(),
+					orgId,
+					incidentId,
+					type,
+					actorId: actorId ?? null,
+					payloadJson: JSON.stringify(payload),
+					createdAt: timestamp,
+				}),
+			)
+		})
+
+		const ensureErrorIssueFromObservation = Effect.fn(
+			"AlertsService.ensureErrorIssueFromObservation",
+			)(function* (
+				orgId: OrgId,
+				actorId: ActorId,
+				observation: CH.ErrorIssuesOutput,
+				timestamp: number,
+			) {
+			const existing = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(errorIssues)
+					.where(
+						and(
+							eq(errorIssues.orgId, orgId),
+							eq(errorIssues.fingerprintHash, observation.fingerprintHash),
+						),
+					)
+					.limit(1),
+			)
+			if (existing[0]) return existing[0]
+
+				const issueId = decodeErrorIssueIdSync(makeUuid())
+			const firstSeenMs = parseWarehouseDateTime(String(observation.firstSeen))
+			const lastSeenMs = parseWarehouseDateTime(String(observation.lastSeen))
+			const firstSeenAt = Number.isFinite(firstSeenMs) ? firstSeenMs : timestamp
+			const lastSeenAt = Number.isFinite(lastSeenMs) ? lastSeenMs : timestamp
+			yield* dbExecute((db) =>
+				db.insert(errorIssues).values({
+					id: issueId,
+					orgId,
+					fingerprintHash: observation.fingerprintHash,
+					serviceName: observation.serviceName,
+					exceptionType: observation.exceptionType,
+					exceptionMessage: observation.exceptionMessage,
+					errorLabel: observation.errorLabel,
+					topFrame: observation.topFrame,
+					workflowState: "triage",
+					priority: 3,
+					assignedActorId: null,
+					leaseHolderActorId: null,
+					leaseExpiresAt: null,
+					claimedAt: null,
+					notes: null,
+					firstSeenAt,
+					lastSeenAt,
+					occurrenceCount: Number(observation.count ?? 0),
+					resolvedAt: null,
+					resolvedByActorId: null,
+					snoozeUntil: null,
+					archivedAt: null,
+					createdAt: timestamp,
+					updatedAt: timestamp,
+				}),
+			)
+			yield* dbExecute((db) =>
+					db.insert(errorIssueEvents).values({
+						id: decodeErrorIssueEventIdSync(makeUuid()),
+						orgId,
+						issueId,
+					actorId,
+					type: "created",
+					fromState: null,
+					toState: "triage",
+					payloadJson: JSON.stringify({
+						serviceName: observation.serviceName,
+						exceptionType: observation.exceptionType,
+						occurrenceCount: Number(observation.count ?? 0),
+						source: "anomaly-investigator",
+					}),
+					createdAt: timestamp,
+				}),
+			)
+			const after = yield* dbExecute((db) =>
+				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)).limit(1),
+			)
+			return after[0]!
+		})
+
+			const runAgentInvestigation = Effect.fn("AlertsService.runAgentInvestigation")(function* (
+				orgId: OrgId,
+				rule: NormalizedRule,
+				incidentId: string,
+				groupKey: string,
+				evaluation: EvaluatedRule,
+				investigationId: string,
+			timestamp: number,
+		) {
+			const actorId = yield* ensureInvestigatorActor(orgId, timestamp)
+			yield* recordAlertIncidentEvent(
+				orgId,
+				incidentId,
+				"investigation_started",
+				{
+					investigationId,
+					ruleId: rule.id,
+					signalType: rule.signalType,
+					groupKey,
+					anomalyScore: evaluation.anomalyScore,
+				},
+				timestamp,
+				actorId,
+			)
+
+			if (rule.signalType !== "error_rate") {
+				yield* recordAlertIncidentEvent(
+					orgId,
+					incidentId,
+					"agent_note",
+					{
+						investigationId,
+						body: `Observed ${rule.signalType} anomaly for ${groupKey}. Current value ${evaluation.value ?? "n/a"}, normal band ${evaluation.baselineLower ?? "n/a"}-${evaluation.baselineUpper ?? "n/a"}, score ${evaluation.anomalyScore?.toFixed(2) ?? "n/a"}. No error issue was linked because this signal is not error-rate based.`,
+					},
+					timestamp,
+					actorId,
+				)
+				return
+			}
+
+			const serviceName = groupKey.split(" env:")[0] ?? groupKey
+			const deploymentEnv = groupKey.includes(" env:") ? groupKey.split(" env:")[1] : undefined
+			const startMs = timestamp - rule.windowMinutes * 60_000
+			const compiled = CH.compile(
+				CH.errorIssuesQuery({
+					services: serviceName ? [serviceName] : undefined,
+					deploymentEnvs: deploymentEnv ? [deploymentEnv] : undefined,
+					limit: 3,
+				}),
+				{
+					orgId,
+					startTime: toTinybirdDateTime(startMs),
+					endTime: toTinybirdDateTime(timestamp),
+				},
+			)
+			const errorRows = yield* warehouse
+				.compiledQuery(systemTenant(orgId), compiled, {
+					profile: "list",
+					context: "anomalyErrorIssueCorrelation",
+				})
+				.pipe(Effect.mapError(makePersistenceError))
+
+			if (errorRows.length === 0) {
+				yield* recordAlertIncidentEvent(
+					orgId,
+					incidentId,
+					"agent_note",
+					{
+						investigationId,
+						body: `Error-rate anomaly opened for ${groupKey}, but no grouped error fingerprints were found in the alert window.`,
+					},
+					timestamp,
+					actorId,
+				)
+				return
+			}
+
+			for (const errorRow of errorRows) {
+				const issue = yield* ensureErrorIssueFromObservation(orgId, actorId, errorRow, timestamp)
+				const score = Number(errorRow.count ?? 0)
+				yield* dbExecute((db) =>
+					db
+						.insert(alertIncidentIssueLinks)
+						.values({
+							orgId,
+							alertIncidentId: incidentId,
+							errorIssueId: issue.id,
+							relationship: "correlated_error_spike",
+							score,
+							createdAt: timestamp,
+						})
+						.onConflictDoNothing(),
+				)
+				const body = [
+					`Maple anomaly investigator linked this issue to alert incident ${incidentId}.`,
+					`Signal: ${rule.signalType} for ${groupKey}.`,
+					`Current value: ${evaluation.value ?? "n/a"}; normal band: ${evaluation.baselineLower ?? "n/a"}-${evaluation.baselineUpper ?? "n/a"}; score: ${evaluation.anomalyScore?.toFixed(2) ?? "n/a"}.`,
+					`Fingerprint occurrences in alert window: ${Number(errorRow.count ?? 0)}.`,
+				].join("\n")
+				yield* dbExecute((db) =>
+					db.insert(errorIssueEvents).values({
+							id: decodeErrorIssueEventIdSync(makeUuid()),
+							orgId,
+							issueId: issue.id,
+						actorId,
+						type: "agent_note",
+						fromState: null,
+						toState: null,
+						payloadJson: JSON.stringify({
+							body,
+							visibility: "internal",
+							investigationId,
+							alertIncidentId: incidentId,
+						}),
+						createdAt: timestamp,
+					}),
+				)
+			}
+
+			yield* recordAlertIncidentEvent(
+				orgId,
+				incidentId,
+				"investigation_completed",
+				{
+					investigationId,
+					linkedIssueCount: errorRows.length,
+				},
+				timestamp,
+				actorId,
+			)
+		})
+
 		const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
 			row: AlertRuleRow,
 			normalized: NormalizedRule,
@@ -2934,6 +3599,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			let capturedTransition: "none" | "opened" | "continued" | "resolved" = "none"
 			let capturedConsecutiveBreaches = 0
 			let capturedConsecutiveHealthy = 0
+			let capturedInvestigationId: string | null =
+				normalized.thresholdMode === "anomaly" &&
+				normalized.anomalyConfig?.autoInvestigate === true &&
+				evaluation.status === "breached" &&
+				(evaluation.highConfidence || normalized.signalType === "error_rate")
+					? makeUuid()
+					: null
 			// Serialized per rule via the claim lock at runSchedulerTick (SCHEDULER_LOCK_TTL_MS
 			// CAS on alertRules.lastScheduledAt). All writes below are idempotent on retry:
 			// state upsert via onConflictDoUpdate, incident insert keyed on unique incidentKey,
@@ -3037,7 +3709,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				if (
 					evaluation.status === "breached" &&
 					openIncident == null &&
-					consecutiveBreaches >= normalized.consecutiveBreachesRequired
+					(consecutiveBreaches >= normalized.consecutiveBreachesRequired || evaluation.highConfidence)
 				) {
 					const incidentId = makeUuid()
 					const incident: AlertIncidentRow = {
@@ -3051,8 +3723,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						severity: normalized.severity,
 						status: "open",
 						comparator: normalized.comparator,
-						threshold: normalized.threshold,
-						thresholdUpper: normalized.thresholdUpper,
+						threshold: evaluation.threshold,
+						thresholdUpper: evaluation.thresholdUpper,
+						thresholdMode: evaluation.thresholdMode,
+						baselineMedian: evaluation.baselineMedian,
+						baselineLower: evaluation.baselineLower,
+						baselineUpper: evaluation.baselineUpper,
+						baselineBucketCount: evaluation.baselineBucketCount,
+						anomalyScore: evaluation.anomalyScore,
+						effectiveThreshold: evaluation.effectiveThreshold,
+						investigationId: capturedInvestigationId,
 						firstTriggeredAt: timestamp,
 						lastTriggeredAt: timestamp,
 						resolvedAt: null,
@@ -3089,6 +3769,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						lastObservedValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
 						lastEvaluatedAt: timestamp,
+						threshold: evaluation.threshold,
+						thresholdUpper: evaluation.thresholdUpper,
+						thresholdMode: evaluation.thresholdMode,
+						baselineMedian: evaluation.baselineMedian,
+						baselineLower: evaluation.baselineLower,
+						baselineUpper: evaluation.baselineUpper,
+						baselineBucketCount: evaluation.baselineBucketCount,
+						anomalyScore: evaluation.anomalyScore,
+						effectiveThreshold: evaluation.effectiveThreshold,
 						updatedAt: timestamp,
 					}
 
@@ -3099,6 +3788,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
 							lastEvaluatedAt: timestamp,
+							threshold: evaluation.threshold,
+							thresholdUpper: evaluation.thresholdUpper,
+							thresholdMode: evaluation.thresholdMode,
+							baselineMedian: evaluation.baselineMedian,
+							baselineLower: evaluation.baselineLower,
+							baselineUpper: evaluation.baselineUpper,
+							baselineBucketCount: evaluation.baselineBucketCount,
+							anomalyScore: evaluation.anomalyScore,
+							effectiveThreshold: evaluation.effectiveThreshold,
 							updatedAt: timestamp,
 						})
 						.where(eq(alertIncidents.id, openIncident.id))
@@ -3134,6 +3832,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						lastObservedValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
 						lastEvaluatedAt: timestamp,
+						threshold: evaluation.threshold,
+						thresholdUpper: evaluation.thresholdUpper,
+						thresholdMode: evaluation.thresholdMode,
+						baselineMedian: evaluation.baselineMedian,
+						baselineLower: evaluation.baselineLower,
+						baselineUpper: evaluation.baselineUpper,
+						baselineBucketCount: evaluation.baselineBucketCount,
+						anomalyScore: evaluation.anomalyScore,
+						effectiveThreshold: evaluation.effectiveThreshold,
 						updatedAt: timestamp,
 					}
 
@@ -3145,6 +3852,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
 							lastEvaluatedAt: timestamp,
+							threshold: evaluation.threshold,
+							thresholdUpper: evaluation.thresholdUpper,
+							thresholdMode: evaluation.thresholdMode,
+							baselineMedian: evaluation.baselineMedian,
+							baselineLower: evaluation.baselineLower,
+							baselineUpper: evaluation.baselineUpper,
+							baselineBucketCount: evaluation.baselineBucketCount,
+							anomalyScore: evaluation.anomalyScore,
+							effectiveThreshold: evaluation.effectiveThreshold,
 							updatedAt: timestamp,
 						})
 						.where(eq(alertIncidents.id, openIncident.id))
@@ -3163,8 +3879,33 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					capturedTransition = "resolved"
 				}
 			})
+			if (incidentAction !== "opened") {
+				capturedInvestigationId = null
+			}
 			if (incidentAction === "opened") yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
 			if (incidentAction === "resolved") yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+			if (incidentAction === "opened" && capturedIncidentId != null && capturedInvestigationId != null) {
+				yield* runAgentInvestigation(
+					row.orgId as OrgId,
+					normalized,
+					capturedIncidentId,
+					groupKey,
+					evaluation,
+					capturedInvestigationId,
+					timestamp,
+				).pipe(
+					Effect.catch((error: unknown) =>
+						Effect.logWarning("Anomaly investigation failed").pipe(
+							Effect.annotateLogs({
+								ruleId: row.id,
+								orgId: row.orgId,
+								incidentId: capturedIncidentId,
+								errorMessage: error instanceof Error ? error.message : String(error),
+							}),
+						),
+					),
+				)
+			}
 
 			// Record one audit row per evaluation to the Tinybird alert_checks datasource.
 			// Tinybird DateTime64(3) wire format: "YYYY-MM-DD HH:MM:SS.SSS" (UTC, no timezone).
@@ -3182,7 +3923,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				Status: evaluation.status,
 				SignalType: normalized.signalType,
 				Comparator: normalized.comparator,
-				Threshold: normalized.threshold,
+				Threshold: evaluation.threshold,
 				ObservedValue: evaluation.value,
 				SampleCount: evaluation.sampleCount,
 				WindowMinutes: normalized.windowMinutes,
@@ -3192,6 +3933,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				ConsecutiveHealthy: capturedConsecutiveHealthy,
 				IncidentId: capturedIncidentId,
 				IncidentTransition: capturedTransition,
+				ThresholdMode: evaluation.thresholdMode,
+				BaselineMedian: evaluation.baselineMedian,
+				BaselineLower: evaluation.baselineLower,
+				BaselineUpper: evaluation.baselineUpper,
+				BaselineBucketCount: evaluation.baselineBucketCount,
+				AnomalyScore: evaluation.anomalyScore,
+				EffectiveThreshold: evaluation.effectiveThreshold,
+				InvestigationId: capturedInvestigationId,
 				EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
 			}
 			// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
@@ -3234,6 +3983,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		const ruleStructureChanged = (oldRule: NormalizedRule, newRule: NormalizedRule): boolean => {
 			if (!groupByEqual(oldRule.groupBy, newRule.groupBy)) return true
 			if (oldRule.signalType !== newRule.signalType) return true
+			if (oldRule.thresholdMode !== newRule.thresholdMode) return true
 			const mode = (r: NormalizedRule) =>
 				r.groupBy != null ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
 			return mode(oldRule) !== mode(newRule)
@@ -3242,7 +3992,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		const makeSyntheticResolveEvaluation = (
 			normalized: NormalizedRule,
 			reason: string,
-		): EvaluatedRule => ({
+		): EvaluatedRule => completeEvaluation({
 			status: "healthy",
 			value: null,
 			sampleCount: 0,
@@ -3490,6 +4240,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				(row) =>
 					Effect.gen(function* () {
 						const timestamp = yield* now
+						const intervalMinutes = Math.max(1, row.evaluationIntervalMinutes ?? 1)
+						if (
+							row.lastScheduledAt != null &&
+							row.lastScheduledAt + intervalMinutes * 60_000 > timestamp
+						) {
+							return
+						}
 						const brandedRuleId = decodeAlertRuleIdSync(row.id)
 						const claimed = yield* claimRule(brandedRuleId, timestamp)
 						if (claimed.rowsAffected === 0) return
@@ -3503,7 +4260,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 								const eligible = Arr.filter(
 									results,
-									(r) => !HashSet.has(excludeSet, r.groupKey),
+									(r) =>
+										!HashSet.has(
+											excludeSet,
+											r.serviceName ?? r.groupKey.split(" env:")[0] ?? r.groupKey,
+										),
 								)
 
 								yield* Effect.forEach(eligible, ({ evaluation, groupKey }) =>
@@ -3528,6 +4289,36 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									normalized.id,
 									normalized,
 									evaluatedGroups,
+									timestamp,
+								)
+								yield* Metric.update(
+									AlertingMetrics.ruleEvaluationDurationMs,
+									(yield* now) - ruleStart,
+								)
+								return
+							}
+
+							if (normalized.thresholdMode === "anomaly") {
+								const results = yield* evaluateRule(row.orgId as OrgId, normalized)
+								yield* Effect.forEach(results, ({ evaluation, groupKey }) =>
+									Effect.gen(function* () {
+										yield* recordEvaluationStatus(evaluation)
+										yield* processEvaluation(
+											row,
+											normalized,
+											evaluation,
+											groupKey,
+											timestamp,
+											pendingChecks,
+										)
+									}),
+								)
+
+								yield* resolveOrphanedGroupIncidents(
+									row.orgId as OrgId,
+									normalized.id,
+									normalized,
+									HashSet.fromIterable(Arr.map(results, (r) => r.groupKey)),
 									timestamp,
 								)
 								yield* Metric.update(

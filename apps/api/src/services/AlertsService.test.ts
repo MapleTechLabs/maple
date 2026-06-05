@@ -3,6 +3,7 @@ import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Sc
 import {
 	AlertDestinationInUseError,
 	AlertForbiddenError,
+	AlertAnomalyConfig,
 	type AlertDestinationId,
 	AlertRuleUpsertRequest,
 	OrgId,
@@ -75,6 +76,8 @@ function makeWarehouseStub(state: {
 	logsAggregateRows?: ReadonlyArray<Record<string, unknown>>
 	logsAggregateByServiceRows?: ReadonlyArray<Record<string, unknown>>
 	rawQueryRows?: ReadonlyArray<Record<string, unknown>>
+	serviceHealthAnomalyRows?: ReadonlyArray<Record<string, unknown>>
+	errorIssueRows?: ReadonlyArray<Record<string, unknown>>
 }): WarehouseQueryServiceShape {
 	const succeedRows = (rows: ReadonlyArray<Record<string, unknown>>) => Effect.succeed(rows as never)
 
@@ -89,14 +92,27 @@ function makeWarehouseStub(state: {
 		if (state.logsAggregateRows?.length) return succeedRows(state.logsAggregateRows)
 		return succeedRows(emptyWarehouseRows)
 	}
+	const compiledRows = (sql: string) => {
+		if (state.serviceHealthAnomalyRows && sql.includes("service_health_hourly")) {
+			return succeedRows(state.serviceHealthAnomalyRows)
+		}
+		if (state.errorIssueRows && sql.includes("error_events_by_time")) {
+			return succeedRows(state.errorIssueRows)
+		}
+		return sqlQueryStub()
+	}
 
 	return {
 		query: (_tenant, payload) => Effect.fail(new Error(`Unexpected pipe ${payload.pipe}`)) as never,
 		sqlQuery: sqlQueryStub,
 		compiledQuery: (_tenant, compiled) =>
-			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie))),
+			compiledRows(compiled.sql).pipe(
+				Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie)),
+			),
 		compiledQueryFirst: (_tenant, compiled) =>
-			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie))),
+			compiledRows(compiled.sql).pipe(
+				Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie)),
+			),
 		ingest: () => Effect.void,
 	}
 }
@@ -219,6 +235,53 @@ const createErrorRateRule = (
 		}),
 	)
 
+const createAnomalyRule = (
+	alerts: AlertsServiceShape,
+	orgId: ReturnType<typeof asOrgId>,
+	userId: ReturnType<typeof asUserId>,
+	destinationId: AlertDestinationId,
+	overrides: Partial<Schema.Schema.Type<typeof AlertRuleUpsertRequest>> = {},
+) => {
+	const { anomalyConfig: overrideAnomalyConfig, ...rest } = overrides
+	const anomalyConfig =
+		overrideAnomalyConfig instanceof AlertAnomalyConfig
+			? overrideAnomalyConfig
+			: new AlertAnomalyConfig(
+					overrideAnomalyConfig ?? {
+						baselineLookbackDays: 28,
+						currentWindowMinutes: 15,
+						minBaselineBuckets: 48,
+						warningScore: 3,
+						criticalScore: 5,
+						autoInvestigate: false,
+					},
+				)
+	return alerts.createRule(
+		orgId,
+		userId,
+		adminRoles,
+		new AlertRuleUpsertRequest({
+			name: "Checkout anomaly",
+			severity: "critical",
+			enabled: true,
+			thresholdMode: "anomaly",
+			anomalyConfig,
+			serviceNames: ["checkout"],
+			signalType: "p95_latency",
+			comparator: "gt",
+			threshold: 1000,
+			windowMinutes: 15,
+			minimumSampleCount: 50,
+			consecutiveBreachesRequired: 2,
+			consecutiveHealthyRequired: 2,
+			renotifyIntervalMinutes: 30,
+			evaluationIntervalMinutes: 5,
+			destinationIds: [destinationId],
+			...rest,
+		}),
+	)
+}
+
 const makeUuidSequence = (...values: string[]): Pick<AlertRuntimeShape, "makeUuid"> => {
 	let index = 0
 	return {
@@ -292,6 +355,164 @@ const insertDeliveryEventRow = async (
 }
 
 describe("AlertsService", () => {
+	itEffect("keeps a slow-but-stable service healthy for anomaly alerts", () => {
+		const { url } = createTempDbUrl()
+		const clock = makeManualClock()
+		const state = {
+			serviceHealthAnomalyRows: [
+				{
+					groupKey: "checkout",
+					serviceName: "checkout",
+					deploymentEnv: "",
+					currentValue: 1000,
+					sampleCount: 120,
+					currentErrorCount: 0,
+					baselineMedian: 1000,
+					baselineLower: 900,
+					baselineUpper: 1100,
+					baselineQ25: 950,
+					baselineQ75: 1050,
+					baselineBucketCount: 96,
+					robustScale: 100,
+				},
+			],
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_anomaly_stable")
+			const userId = asUserId("user_anomaly_stable")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createAnomalyRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+			const incidents = yield* alerts.listIncidents(orgId)
+
+			expect(incidents.incidents).toHaveLength(0)
+		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+	})
+
+	itEffect("opens an anomaly incident on a high-confidence service spike", () => {
+		const { url } = createTempDbUrl()
+		const clock = makeManualClock()
+		const state = {
+			serviceHealthAnomalyRows: [
+				{
+					groupKey: "checkout",
+					serviceName: "checkout",
+					deploymentEnv: "",
+					currentValue: 1700,
+					sampleCount: 120,
+					currentErrorCount: 0,
+					baselineMedian: 200,
+					baselineLower: 150,
+					baselineUpper: 300,
+					baselineQ25: 175,
+					baselineQ75: 225,
+					baselineBucketCount: 96,
+					robustScale: 100,
+				},
+			],
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_anomaly_spike")
+			const userId = asUserId("user_anomaly_spike")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createAnomalyRule(alerts, orgId, userId, destination.id)
+
+			yield* alerts.runSchedulerTick()
+			const incidents = yield* alerts.listIncidents(orgId)
+
+			expect(incidents.incidents).toHaveLength(1)
+			expect(incidents.incidents[0]?.thresholdMode).toBe("anomaly")
+			expect(incidents.incidents[0]?.baselineMedian).toBe(200)
+			expect(incidents.incidents[0]?.baselineUpper).toBe(300)
+			expect(incidents.incidents[0]?.effectiveThreshold).toBe(300)
+			expect(incidents.incidents[0]?.anomalyScore).toBeGreaterThanOrEqual(5)
+		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+	})
+
+	itEffect("links matching error issues and writes an agent note for error-rate anomalies", () => {
+		const { url, dbPath } = createTempDbUrl()
+		const clock = makeManualClock()
+		const state = {
+			serviceHealthAnomalyRows: [
+				{
+					groupKey: "checkout env:production",
+					serviceName: "checkout",
+					deploymentEnv: "production",
+					currentValue: 0.25,
+					sampleCount: 200,
+					currentErrorCount: 50,
+					baselineMedian: 0.01,
+					baselineLower: 0,
+					baselineUpper: 0.05,
+					baselineQ25: 0.005,
+					baselineQ75: 0.015,
+					baselineBucketCount: 96,
+					robustScale: 0.01,
+				},
+			],
+			errorIssueRows: [
+				{
+					fingerprintHash: "123456",
+					serviceName: "checkout",
+					exceptionType: "StripeTimeout",
+					exceptionMessage: "Stripe request timed out",
+					errorLabel: "StripeTimeout",
+					topFrame: "charge.ts:42",
+					count: 50,
+					affectedServicesCount: 1,
+					firstSeen: "2026-06-05 12:00:00",
+					lastSeen: "2026-06-05 12:10:00",
+				},
+			],
+		}
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_anomaly_error_link")
+			const userId = asUserId("user_anomaly_error_link")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			yield* createAnomalyRule(alerts, orgId, userId, destination.id, {
+				name: "Checkout error spike",
+				signalType: "error_rate",
+				comparator: "gt",
+				threshold: 5,
+				anomalyConfig: {
+					baselineLookbackDays: 28,
+					currentWindowMinutes: 15,
+					minBaselineBuckets: 48,
+					warningScore: 3,
+					criticalScore: 5,
+					autoInvestigate: true,
+				},
+			})
+
+			yield* alerts.runSchedulerTick()
+			const incidents = yield* alerts.listIncidents(orgId)
+			const linkCount = yield* Effect.promise(() =>
+				queryFirstRow<{ c: number }>(
+					dbPath,
+					"select count(*) as c from alert_incident_issue_links",
+				),
+			)
+			const noteCount = yield* Effect.promise(() =>
+				queryFirstRow<{ c: number }>(
+					dbPath,
+					"select count(*) as c from error_issue_events where type = 'agent_note'",
+				),
+			)
+
+			expect(incidents.incidents).toHaveLength(1)
+			expect(incidents.incidents[0]?.issueLinks).toHaveLength(1)
+			expect(Number(linkCount?.c ?? 0)).toBe(1)
+			expect(Number(noteCount?.c ?? 0)).toBe(1)
+		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+	})
+
 	itEffect("opens an incident after consecutive breaches and delivers the webhook notification", () => {
 		const { url } = createTempDbUrl()
 		const state = {
@@ -524,10 +745,10 @@ describe("AlertsService", () => {
         from alert_rules
         limit 1
       `,
-				),
-			)
+		),
+	)
 
-			expect(row).toBeTruthy()
+				expect(row).toBeTruthy()
 			expect(row?.reducer).toBe("identity")
 			expect(row?.sampleCountStrategy).toBe("trace_count")
 			expect(row?.noDataBehavior).toBe("skip")

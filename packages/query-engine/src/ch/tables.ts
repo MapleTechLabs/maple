@@ -107,6 +107,19 @@ export const ServiceOverviewSpans = table("service_overview_spans", {
 	SampleRate: T.float64,
 })
 
+export const ServiceHealthHourly = table("service_health_hourly", {
+	OrgId: T.string,
+	Hour: T.dateTime,
+	ServiceName: T.string,
+	DeploymentEnv: T.string,
+	WeightedCount: T.float64,
+	WeightedErrorCount: T.float64,
+	WeightedDurationSum: T.float64,
+	DurationQuantiles: T.uint64,
+	ApdexSatisfiedCount: T.float64,
+	ApdexToleratingCount: T.float64,
+})
+
 export const ErrorSpans = table("error_spans", {
 	OrgId: T.string,
 	Timestamp: T.dateTime,
@@ -384,6 +397,14 @@ export const AlertChecks = table("alert_checks", {
 	ConsecutiveHealthy: T.uint16,
 	IncidentId: T.nullable(T.string),
 	IncidentTransition: T.string,
+	ThresholdMode: T.string,
+	BaselineMedian: T.nullable(T.float64),
+	BaselineLower: T.nullable(T.float64),
+	BaselineUpper: T.nullable(T.float64),
+	BaselineBucketCount: T.uint16,
+	AnomalyScore: T.nullable(T.float64),
+	EffectiveThreshold: T.nullable(T.float64),
+	InvestigationId: T.nullable(T.string),
 	EvaluationDurationMs: T.uint32,
 })
 

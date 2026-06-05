@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Exit, Schema } from "effect"
@@ -15,9 +15,12 @@ import { IssueSidebar } from "@/components/errors/issue-sidebar"
 import { IssueTimeline } from "@/components/errors/issue-timeline"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Button } from "@maple/ui/components/ui/button"
+import { Card, CardContent } from "@maple/ui/components/ui/card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { ErrorIssueId, type WorkflowState } from "@maple/domain/http"
+import { ErrorIssueId, type LinkedAlertIncidentDocument, type WorkflowState } from "@maple/domain/http"
+import { formatAlertDateTimeFull, formatSignalValue, signalLabels } from "@/lib/alerts/form-utils"
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 
@@ -200,7 +203,7 @@ function IssueDetailPage() {
 			</DashboardLayout>
 		))
 		.onSuccess((detail) => {
-			const { issue, timeseries, sampleTraces, incidents } = detail
+			const { issue, timeseries, sampleTraces, incidents, linkedAlertIncidents } = detail
 			const totalInWindow = timeseries.reduce((sum, b) => sum + b.count, 0)
 			const events = Result.isSuccess(eventsResult) ? eventsResult.value.events : []
 
@@ -257,6 +260,11 @@ function IssueDetailPage() {
 							<IssueIncidentsTable incidents={incidents} />
 						</section>
 
+						<section aria-labelledby="linked-alerts-heading">
+							<SectionHeader id="linked-alerts-heading" label="Linked anomaly alerts" />
+							<LinkedAlertIncidentsSection incidents={linkedAlertIncidents} />
+						</section>
+
 						<section aria-labelledby="occurrences-heading">
 							<SectionHeader id="occurrences-heading" label="Latest occurrences" />
 							<IssueOccurrencesTable traces={sampleTraces} />
@@ -266,4 +274,68 @@ function IssueDetailPage() {
 			)
 		})
 		.render()
+}
+
+function LinkedAlertIncidentsSection({
+	incidents,
+}: {
+	incidents: ReadonlyArray<LinkedAlertIncidentDocument>
+}) {
+	if (incidents.length === 0) {
+		return (
+			<p className="text-sm text-muted-foreground">
+				No alert incidents are linked to this issue yet.
+			</p>
+		)
+	}
+
+	return (
+		<div className="space-y-2">
+			{incidents.map((incident) => (
+				<Card key={incident.id}>
+					<CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+						<div className="min-w-0 space-y-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<Badge variant="outline" className="capitalize">
+									{incident.status}
+								</Badge>
+								<Badge variant="secondary">{incident.severity}</Badge>
+								<span className="truncate text-sm font-medium">{incident.ruleName}</span>
+							</div>
+							<div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+								<span>{signalLabels[incident.signalType]}</span>
+								{incident.groupKey && <span className="font-mono">{incident.groupKey}</span>}
+								<span>{formatAlertDateTimeFull(incident.createdAt)}</span>
+							</div>
+						</div>
+						<div className="flex shrink-0 flex-wrap items-center gap-2">
+							{incident.anomalyScore != null && (
+								<Badge variant="secondary" className="font-mono">
+									score {incident.anomalyScore.toFixed(2)}
+								</Badge>
+							)}
+							{incident.lastObservedValue != null && (
+								<Badge variant="secondary" className="font-mono">
+									{formatSignalValue(incident.signalType, incident.lastObservedValue)}
+								</Badge>
+							)}
+							<Button
+								variant="outline"
+								size="sm"
+								render={
+									<Link
+										to="/alerts/$ruleId"
+										params={{ ruleId: incident.ruleId }}
+										search={{ tab: "history" }}
+									/>
+								}
+							>
+								View alert
+							</Button>
+						</div>
+					</CardContent>
+				</Card>
+			))}
+		</div>
+	)
 }

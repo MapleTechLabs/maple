@@ -36,6 +36,8 @@ export const alertRules = sqliteTable(
 		notificationTemplateJson: text("notification_template_json"),
 		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
 		severity: text("severity").notNull(),
+		thresholdMode: text("threshold_mode").notNull().default("static"),
+		anomalyConfigJson: text("anomaly_config_json"),
 		serviceNamesJson: text("service_names_json"),
 		excludeServiceNamesJson: text("exclude_service_names_json"),
 		signalType: text("signal_type").notNull(),
@@ -55,6 +57,11 @@ export const alertRules = sqliteTable(
 		})
 			.notNull()
 			.default(30),
+		evaluationIntervalMinutes: integer("evaluation_interval_minutes", {
+			mode: "number",
+		})
+			.notNull()
+			.default(1),
 		metricName: text("metric_name"),
 		metricType: text("metric_type"),
 		metricAggregation: text("metric_aggregation"),
@@ -116,6 +123,14 @@ export const alertIncidents = sqliteTable(
 		comparator: text("comparator").notNull(),
 		threshold: real("threshold").notNull(),
 		thresholdUpper: real("threshold_upper"),
+		thresholdMode: text("threshold_mode").notNull().default("static"),
+		baselineMedian: real("baseline_median"),
+		baselineLower: real("baseline_lower"),
+		baselineUpper: real("baseline_upper"),
+		baselineBucketCount: integer("baseline_bucket_count", { mode: "number" }),
+		anomalyScore: real("anomaly_score"),
+		effectiveThreshold: real("effective_threshold"),
+		investigationId: text("investigation_id"),
 		firstTriggeredAt: integer("first_triggered_at", { mode: "number" }).notNull(),
 		lastTriggeredAt: integer("last_triggered_at", { mode: "number" }).notNull(),
 		resolvedAt: integer("resolved_at", { mode: "number" }),
@@ -133,6 +148,40 @@ export const alertIncidents = sqliteTable(
 		index("alert_incidents_org_status_idx").on(table.orgId, table.status),
 		index("alert_incidents_org_rule_idx").on(table.orgId, table.ruleId),
 		uniqueIndex("alert_incidents_incident_key_idx").on(table.incidentKey),
+	],
+)
+
+export const alertIncidentEvents = sqliteTable(
+	"alert_incident_events",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").notNull(),
+		incidentId: text("incident_id").notNull(),
+		type: text("type").notNull(),
+		actorId: text("actor_id"),
+		payloadJson: text("payload_json").notNull().default("{}"),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		index("alert_incident_events_incident_idx").on(table.orgId, table.incidentId, table.createdAt),
+		index("alert_incident_events_type_idx").on(table.orgId, table.type, table.createdAt),
+	],
+)
+
+export const alertIncidentIssueLinks = sqliteTable(
+	"alert_incident_issue_links",
+	{
+		orgId: text("org_id").notNull(),
+		alertIncidentId: text("alert_incident_id").notNull(),
+		errorIssueId: text("error_issue_id").notNull(),
+		relationship: text("relationship").notNull(),
+		score: real("score").notNull().default(0),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.orgId, table.alertIncidentId, table.errorIssueId] }),
+		index("alert_incident_issue_links_issue_idx").on(table.orgId, table.errorIssueId),
+		index("alert_incident_issue_links_incident_idx").on(table.orgId, table.alertIncidentId),
 	],
 )
 
@@ -174,4 +223,6 @@ export type AlertDestinationRow = typeof alertDestinations.$inferSelect
 export type AlertRuleRow = typeof alertRules.$inferSelect
 export type AlertRuleStateRow = typeof alertRuleStates.$inferSelect
 export type AlertIncidentRow = typeof alertIncidents.$inferSelect
+export type AlertIncidentEventRow = typeof alertIncidentEvents.$inferSelect
+export type AlertIncidentIssueLinkRow = typeof alertIncidentIssueLinks.$inferSelect
 export type AlertDeliveryEventRow = typeof alertDeliveryEvents.$inferSelect

@@ -35,6 +35,14 @@ export interface ListRuleChecksOutput {
 	readonly consecutiveHealthy: number
 	readonly incidentId: string | null
 	readonly incidentTransition: string
+	readonly thresholdMode: string
+	readonly baselineMedian: number | null
+	readonly baselineLower: number | null
+	readonly baselineUpper: number | null
+	readonly baselineBucketCount: number
+	readonly anomalyScore: number | null
+	readonly effectiveThreshold: number | null
+	readonly investigationId: string | null
 	readonly evaluationDurationMs: number
 }
 
@@ -56,6 +64,14 @@ export function listRuleChecksQuery(opts: ListRuleChecksOpts) {
 			consecutiveHealthy: $.ConsecutiveHealthy,
 			incidentId: $.IncidentId,
 			incidentTransition: $.IncidentTransition,
+			thresholdMode: $.ThresholdMode,
+			baselineMedian: $.BaselineMedian,
+			baselineLower: $.BaselineLower,
+			baselineUpper: $.BaselineUpper,
+			baselineBucketCount: $.BaselineBucketCount,
+			anomalyScore: $.AnomalyScore,
+			effectiveThreshold: $.EffectiveThreshold,
+			investigationId: $.InvestigationId,
 			evaluationDurationMs: $.EvaluationDurationMs,
 		}))
 		.where(($) => [

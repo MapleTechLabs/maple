@@ -6,9 +6,15 @@ import {
 	type ReactNode,
 	type SetStateAction,
 } from "react"
-import type { AlertComparator, AlertSeverity, AlertSignalType } from "@maple/domain/http"
+import type {
+	AlertComparator,
+	AlertSeverity,
+	AlertSignalType,
+	AlertThresholdMode,
+} from "@maple/domain/http"
 
 import { Card } from "@maple/ui/components/ui/card"
+import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import {
@@ -35,6 +41,7 @@ import {
 } from "@/components/icons"
 import type { AutocompleteValuesContextType } from "@/hooks/use-autocomplete-values"
 import {
+	anomalyComparatorForSignal,
 	comparatorLabels,
 	isRangeComparator,
 	RAW_QUERY_REDUCER_LABELS,
@@ -89,6 +96,15 @@ const SIGNAL_KIND_OPTIONS: ReadonlyArray<{
 	{ value: "builtin", label: "Built-in", icon: <BoltIcon className="size-3" /> },
 	{ value: "builder_query", label: "Query", icon: <SlidersIcon className="size-3" /> },
 	{ value: "raw_query", label: "Raw SQL", icon: <BracketsCurlyIcon className="size-3" /> },
+]
+
+const THRESHOLD_MODE_OPTIONS: ReadonlyArray<{
+	value: AlertThresholdMode
+	label: string
+	icon: ReactNode
+}> = [
+	{ value: "static", label: "Static", icon: <BoltIcon className="size-3" /> },
+	{ value: "anomaly", label: "Adaptive", icon: <PulseIcon className="size-3" /> },
 ]
 
 /* The "built-in" tier-2 row: 5 small chips with icons. Icons are deliberately
@@ -178,7 +194,8 @@ export function SignalAndThresholdSection({
 	onChange,
 	autocompleteValues,
 }: SignalAndThresholdSectionProps) {
-	const rangeMode = isRangeComparator(form.comparator)
+	const anomalyMode = form.thresholdMode === "anomaly"
+	const rangeMode = !anomalyMode && isRangeComparator(form.comparator)
 	// error_rate thresholds are entered as a percent (the form↔domain helpers in
 	// form-utils convert to/from the stored 0–1 ratio).
 	const isErrorRate = form.signalType === "error_rate"
@@ -193,11 +210,28 @@ export function SignalAndThresholdSection({
 		if (next === kind) return
 		onChange((c) => ({
 			...c,
+			thresholdMode: next === "builtin" ? c.thresholdMode : "static",
 			signalType:
-				next === "builtin"
-					? "error_rate"
-					: (next as Exclude<SignalKind, "builtin"> &
-							AlertSignalType),
+				next === "builtin" ? "error_rate" : (next as Exclude<SignalKind, "builtin"> & AlertSignalType),
+			comparator:
+				next === "builtin" && c.thresholdMode === "anomaly"
+					? anomalyComparatorForSignal("error_rate")
+					: c.comparator,
+		}))
+	}
+
+	function setThresholdMode(next: AlertThresholdMode) {
+		onChange((current) => ({
+			...current,
+			thresholdMode: next,
+			comparator:
+				next === "anomaly" ? anomalyComparatorForSignal(current.signalType) : current.comparator,
+			evaluationIntervalMinutes:
+				next === "anomaly" && current.evaluationIntervalMinutes === "1"
+					? "5"
+					: next === "static" && current.evaluationIntervalMinutes === "5"
+						? "1"
+						: current.evaluationIntervalMinutes,
 		}))
 	}
 
@@ -220,7 +254,14 @@ export function SignalAndThresholdSection({
 				{kind === "builtin" && (
 					<BuiltinSignalChips
 						value={form.signalType}
-						onChange={(value) => onChange((c) => ({ ...c, signalType: value }))}
+						onChange={(value) =>
+							onChange((c) => ({
+								...c,
+								signalType: value,
+								comparator:
+									c.thresholdMode === "anomaly" ? anomalyComparatorForSignal(value) : c.comparator,
+							}))
+						}
 					/>
 				)}
 
@@ -230,75 +271,115 @@ export function SignalAndThresholdSection({
 					autocompleteValues={autocompleteValues}
 				/>
 
+				{kind === "builtin" && (
+					<div className="space-y-1.5">
+						<Label className="text-xs">Alert mode</Label>
+						<AlertSegmentedSelect<AlertThresholdMode>
+							options={THRESHOLD_MODE_OPTIONS}
+							value={form.thresholdMode}
+							onChange={setThresholdMode}
+							aria-label="Alert mode"
+							size="sm"
+							className="[&_[data-slot=toggle]]:gap-1.5"
+						/>
+					</div>
+				)}
+
 				{/* Threshold row — comparator + value(s). Upper threshold stays mounted but
 				    disabled outside range mode so the grid never reflows. The
 				    `min-w-0` on every grid child overrides the Select's baked-in
 				    `min-w-36` so a narrow Condition column doesn't push its
 				    chevron into the next field. */}
-				<div className="grid gap-3 sm:grid-cols-[140px_1fr_1fr]">
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-comparator" className="text-xs">
-							Condition
-						</Label>
-						<Select
-							items={comparatorLabels}
-							value={form.comparator}
-							onValueChange={(value) =>
-								onChange((c) => ({ ...c, comparator: value as AlertComparator }))
-							}
-						>
-							<SelectTrigger id="rule-comparator" className="w-full min-w-0">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{COMPARATOR_OPTIONS.map((opt) => (
-									<SelectItem key={opt.value} value={opt.value}>
-										{opt.label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label htmlFor="rule-threshold" className="text-xs">
-							{rangeMode ? "Lower" : "Threshold"}
-							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
-						</Label>
-						<Input
-							id="rule-threshold"
-							type="number"
-							inputMode="decimal"
-							value={form.threshold}
-							onChange={(e) => onChange((c) => ({ ...c, threshold: e.target.value }))}
-							className={NUMERIC_INPUT_CLASS}
-							placeholder="0"
+				{anomalyMode ? (
+					<div className="grid gap-3 sm:grid-cols-3">
+						<NumericField
+							id="rule-warning-score"
+							label="Warning score"
+							value={form.warningScore}
+							onChange={(value) => onChange((c) => ({ ...c, warningScore: value }))}
 						/>
-					</div>
-					<div className="min-w-0 space-y-1.5">
-						<Label
-							htmlFor="rule-threshold-upper"
-							className={cn(
-								"text-xs",
-								!rangeMode && "text-muted-foreground/60",
-							)}
-						>
-							Upper
-							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
-						</Label>
-						<Input
-							id="rule-threshold-upper"
-							type="number"
-							inputMode="decimal"
-							value={form.thresholdUpper}
-							onChange={(e) =>
-								onChange((c) => ({ ...c, thresholdUpper: e.target.value }))
-							}
-							disabled={!rangeMode}
-							className={NUMERIC_INPUT_CLASS}
-							placeholder={rangeMode ? "0" : "—"}
+						<NumericField
+							id="rule-critical-score"
+							label="Critical score"
+							value={form.criticalScore}
+							onChange={(value) => onChange((c) => ({ ...c, criticalScore: value }))}
 						/>
+						<div className="space-y-1">
+							<Label className="text-xs">Investigator</Label>
+							<label className="flex h-9 items-center gap-2 rounded-md border px-2.5 text-xs">
+								<Checkbox
+									checked={form.autoInvestigate}
+									onCheckedChange={(checked) =>
+										onChange((c) => ({ ...c, autoInvestigate: checked === true }))
+									}
+								/>
+								<span>Run on open</span>
+							</label>
+						</div>
 					</div>
-				</div>
+				) : (
+					<div className="grid gap-3 sm:grid-cols-[140px_1fr_1fr]">
+						<div className="min-w-0 space-y-1.5">
+							<Label htmlFor="rule-comparator" className="text-xs">
+								Condition
+							</Label>
+							<Select
+								items={comparatorLabels}
+								value={form.comparator}
+								onValueChange={(value) =>
+									onChange((c) => ({ ...c, comparator: value as AlertComparator }))
+								}
+							>
+								<SelectTrigger id="rule-comparator" className="w-full min-w-0">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{COMPARATOR_OPTIONS.map((opt) => (
+										<SelectItem key={opt.value} value={opt.value}>
+											{opt.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<div className="min-w-0 space-y-1.5">
+							<Label htmlFor="rule-threshold" className="text-xs">
+								{rangeMode ? "Lower" : "Threshold"}
+								{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
+							</Label>
+							<Input
+								id="rule-threshold"
+								type="number"
+								inputMode="decimal"
+								value={form.threshold}
+								onChange={(e) => onChange((c) => ({ ...c, threshold: e.target.value }))}
+								className={NUMERIC_INPUT_CLASS}
+								placeholder="0"
+							/>
+						</div>
+						<div className="min-w-0 space-y-1.5">
+							<Label
+								htmlFor="rule-threshold-upper"
+								className={cn("text-xs", !rangeMode && "text-muted-foreground/60")}
+							>
+								Upper
+								{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
+							</Label>
+							<Input
+								id="rule-threshold-upper"
+								type="number"
+								inputMode="decimal"
+								value={form.thresholdUpper}
+								onChange={(e) =>
+									onChange((c) => ({ ...c, thresholdUpper: e.target.value }))
+								}
+								disabled={!rangeMode}
+								className={NUMERIC_INPUT_CLASS}
+								placeholder={rangeMode ? "0" : "—"}
+							/>
+						</div>
+					</div>
+				)}
 
 				{/* Severity inline — branded pills, not neutral toggle. */}
 				<div className="flex items-center justify-between gap-3">
@@ -323,7 +404,7 @@ export function SignalAndThresholdSection({
 						<span className="flex items-center gap-1.5">
 							<span className="font-mono">
 								{form.windowMinutes}min · {form.consecutiveBreachesRequired}× ·
-								renotify {form.renotifyIntervalMinutes}min
+								every {form.evaluationIntervalMinutes}min
 							</span>
 							<ChevronDownIcon
 								size={12}
@@ -338,11 +419,24 @@ export function SignalAndThresholdSection({
 						<div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 							<NumericField
 								id="rule-window-minutes"
-								label="Window (min)"
+								label={anomalyMode ? "Current window" : "Window (min)"}
 								hint="Aggregate window each check."
-								value={form.windowMinutes}
+								value={anomalyMode ? form.currentWindowMinutes : form.windowMinutes}
 								onChange={(value) =>
-									onChange((c) => ({ ...c, windowMinutes: value }))
+									onChange((c) =>
+										anomalyMode
+											? { ...c, currentWindowMinutes: value }
+											: { ...c, windowMinutes: value },
+									)
+								}
+							/>
+							<NumericField
+								id="rule-evaluation-interval"
+								label="Every (min)"
+								hint="Scheduler cadence."
+								value={form.evaluationIntervalMinutes}
+								onChange={(value) =>
+									onChange((c) => ({ ...c, evaluationIntervalMinutes: value }))
 								}
 							/>
 							<NumericField
@@ -378,6 +472,28 @@ export function SignalAndThresholdSection({
 									}))
 								}
 							/>
+							{anomalyMode && (
+								<>
+									<NumericField
+										id="rule-baseline-lookback"
+										label="Lookback days"
+										hint="Baseline horizon."
+										value={form.baselineLookbackDays}
+										onChange={(value) =>
+											onChange((c) => ({ ...c, baselineLookbackDays: value }))
+										}
+									/>
+									<NumericField
+										id="rule-min-baseline-buckets"
+										label="Min buckets"
+										hint="Warmup floor."
+										value={form.minBaselineBuckets}
+										onChange={(value) =>
+											onChange((c) => ({ ...c, minBaselineBuckets: value }))
+										}
+									/>
+								</>
+							)}
 						</div>
 					)}
 				</div>

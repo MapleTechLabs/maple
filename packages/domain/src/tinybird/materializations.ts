@@ -8,6 +8,7 @@ import {
 	serviceExternalEdgesHourly,
 	servicePlatformsHourly,
 	serviceOverviewSpans,
+	serviceHealthHourly,
 	errorSpans,
 	errorEvents,
 	errorEventsByTime,
@@ -287,6 +288,39 @@ export const serviceOverviewSpansMv = defineMaterializedView("service_overview_s
           SampleRate
         FROM traces
         WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
+      `,
+		}),
+	],
+})
+
+/**
+ * Materialized view populating compact hourly service health rollups for
+ * adaptive anomaly alerts. This uses the same entry-point predicate as
+ * `service_overview_spans` and stores only service/env dimensions, so anomaly
+ * checks read thousands of hourly rows instead of scanning raw traces.
+ */
+export const serviceHealthHourlyMv = defineMaterializedView("service_health_hourly_mv", {
+	description:
+		"Pre-aggregates service health hourly for adaptive anomaly alerts with sampling-weighted count, errors, latency quantiles, and default 500ms APDEX components.",
+	datasource: serviceHealthHourly,
+	nodes: [
+		node({
+			name: "service_health_hourly_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          toStartOfHour(toDateTime(Timestamp)) AS Hour,
+          ServiceName,
+          ResourceAttributes['deployment.environment'] AS DeploymentEnv,
+          sum(SampleRate) AS WeightedCount,
+          sumIf(SampleRate, StatusCode = 'Error') AS WeightedErrorCount,
+          sum(toFloat64(Duration) * SampleRate) AS WeightedDurationSum,
+          quantilesTDigestWeightedState(0.5, 0.95, 0.99)(Duration, toUInt32(SampleRate)) AS DurationQuantiles,
+          sumIf(SampleRate, Duration <= 500000000) AS ApdexSatisfiedCount,
+          sumIf(SampleRate, Duration > 500000000 AND Duration <= 2000000000) AS ApdexToleratingCount
+        FROM traces
+        WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''
+        GROUP BY OrgId, Hour, ServiceName, DeploymentEnv
       `,
 		}),
 	],

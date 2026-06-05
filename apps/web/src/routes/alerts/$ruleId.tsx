@@ -117,6 +117,10 @@ function RuleDetailPage() {
 
 	const stats = useMemo(() => computeIncidentStats(ruleIncidents), [ruleIncidents])
 	const maxContributorCount = stats.topContributors.length > 0 ? stats.topContributors[0][1] : 1
+	const latestEffectiveThreshold = useMemo(
+		() => checks.find((check) => check.effectiveThreshold != null)?.effectiveThreshold ?? null,
+		[checks],
+	)
 
 	// Timeline bar segments for sticky header
 	const timelineSegments = useMemo(() => {
@@ -185,7 +189,10 @@ function RuleDetailPage() {
 	}
 
 	const isFiring = ruleIncidents.some((i) => i.status === "open")
-	const subtitle = `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
+	const subtitle =
+		rule.thresholdMode === "anomaly"
+			? `${signalLabels[rule.signalType]} adaptive baseline over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
+			: `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} over ${rule.windowMinutes}min${rule.serviceNames?.length > 0 ? ` on ${rule.serviceNames.join(", ")}` : ""}${rule.excludeServiceNames?.length > 0 ? ` (excl. ${rule.excludeServiceNames.join(", ")})` : ""}`
 
 	const stickyContent = (
 		<div className="space-y-3">
@@ -302,7 +309,11 @@ function RuleDetailPage() {
 						</h2>
 						<AlertPreviewChart
 							data={chartData}
-							threshold={rule.threshold}
+							threshold={
+								rule.thresholdMode === "anomaly"
+									? (latestEffectiveThreshold ?? rule.threshold)
+									: rule.threshold
+							}
 							signalType={rule.signalType}
 							loading={chartLoading}
 							className="h-[300px] w-full"
@@ -324,6 +335,11 @@ function RuleDetailPage() {
 									)}
 									<ConfigRow label="Signal">
 										<span className="font-medium">{signalLabels[rule.signalType]}</span>
+									</ConfigRow>
+									<ConfigRow label="Alert mode">
+										<Badge variant="outline" className="text-xs capitalize">
+											{rule.thresholdMode === "anomaly" ? "Adaptive" : "Static"}
+										</Badge>
 									</ConfigRow>
 									<ConfigRow label="Scope">
 										<div className="flex flex-wrap gap-1 justify-end">
@@ -359,11 +375,39 @@ function RuleDetailPage() {
 									)}
 									<ConfigRow label="Condition">
 										<span className="font-mono font-medium">
-											{comparatorLabels[rule.comparator]}{" "}
-											{formatSignalValue(rule.signalType, rule.threshold)} /{" "}
-											{rule.windowMinutes}min
+											{rule.thresholdMode === "anomaly"
+												? `normal band / ${rule.windowMinutes}min`
+												: `${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, rule.threshold)} / ${rule.windowMinutes}min`}
 										</span>
 									</ConfigRow>
+									<ConfigRow label="Evaluation cadence">
+										<span className="font-medium">{rule.evaluationIntervalMinutes}min</span>
+									</ConfigRow>
+									{rule.thresholdMode === "anomaly" && rule.anomalyConfig && (
+										<>
+											<ConfigRow label="Baseline lookback">
+												<span className="font-medium tabular-nums">
+													{rule.anomalyConfig.baselineLookbackDays}d
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Warmup buckets">
+												<span className="font-medium tabular-nums">
+													{rule.anomalyConfig.minBaselineBuckets}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Scores">
+												<span className="font-mono font-medium">
+													warn {rule.anomalyConfig.warningScore} · critical{" "}
+													{rule.anomalyConfig.criticalScore}
+												</span>
+											</ConfigRow>
+											<ConfigRow label="Investigator">
+												<span className="font-medium">
+													{rule.anomalyConfig.autoInvestigate ? "Enabled" : "Disabled"}
+												</span>
+											</ConfigRow>
+										</>
+									)}
 									<ConfigRow label="Severity">
 										<AlertSeverityBadge severity={rule.severity} />
 									</ConfigRow>
@@ -550,6 +594,52 @@ function RuleDetailPage() {
 															incident.threshold,
 														)}
 													</Badge>
+													{incident.thresholdMode === "anomaly" && (
+														<>
+															<Badge variant="secondary" className="text-xs font-mono">
+																normal:{" "}
+																{formatSignalValue(
+																	rule.signalType,
+																	incident.baselineLower,
+																)}
+																{" - "}
+																{formatSignalValue(
+																	rule.signalType,
+																	incident.baselineUpper,
+																)}
+															</Badge>
+															{incident.anomalyScore != null && (
+																<Badge variant="secondary" className="text-xs font-mono">
+																	score: {incident.anomalyScore.toFixed(2)}
+																</Badge>
+															)}
+															{incident.issueLinks.length > 0 && (
+																<>
+																	{incident.issueLinks.slice(0, 2).map((link) => (
+																		<Button
+																			key={link.errorIssueId}
+																			variant="outline"
+																			size="sm"
+																			className="h-6 px-2 text-xs"
+																			render={
+																				<Link
+																					to="/errors/issues/$issueId"
+																					params={{ issueId: link.errorIssueId }}
+																				/>
+																			}
+																		>
+																			Issue
+																		</Button>
+																	))}
+																	{incident.issueLinks.length > 2 && (
+																		<Badge variant="outline" className="text-xs">
+																			+{incident.issueLinks.length - 2}
+																		</Badge>
+																	)}
+																</>
+															)}
+														</>
+													)}
 												</div>
 											</TableCell>
 											<TableCell className="text-xs">
@@ -778,7 +868,19 @@ function ChecksPanel({
 											: formatSignalValue(rule.signalType, check.observedValue)}
 									</TableCell>
 									<TableCell className="font-mono tabular-nums text-muted-foreground">
-										{formatSignalValue(rule.signalType, check.threshold)}
+										<div className="space-y-0.5">
+											<div>{formatSignalValue(rule.signalType, check.threshold)}</div>
+											{check.thresholdMode === "anomaly" && (
+												<div className="text-[10px]">
+													{formatSignalValue(rule.signalType, check.baselineLower)}
+													{" - "}
+													{formatSignalValue(rule.signalType, check.baselineUpper)}
+													{check.anomalyScore != null
+														? ` · ${check.anomalyScore.toFixed(2)}`
+														: ""}
+												</div>
+											)}
+										</div>
 									</TableCell>
 									<TableCell className="tabular-nums">{check.sampleCount}</TableCell>
 									<TableCell className="font-mono text-muted-foreground">

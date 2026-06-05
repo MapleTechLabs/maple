@@ -20,6 +20,7 @@ import {
 	type AlertRuleTestRequest as AlertRuleTestRequestType,
 	type AlertSeverity,
 	type AlertSignalType,
+	type AlertThresholdMode,
 	type QueryBuilderQueryDraftPayload,
 } from "@maple/domain/http"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
@@ -33,6 +34,7 @@ export type RuleFormState = {
 	notes: string
 	enabled: boolean
 	severity: AlertSeverity
+	thresholdMode: AlertThresholdMode
 	serviceNames: string[]
 	excludeServiceNames: string[]
 	/**
@@ -46,10 +48,17 @@ export type RuleFormState = {
 	threshold: string
 	thresholdUpper: string
 	windowMinutes: string
+	evaluationIntervalMinutes: string
 	minimumSampleCount: string
 	consecutiveBreachesRequired: string
 	consecutiveHealthyRequired: string
 	renotifyIntervalMinutes: string
+	baselineLookbackDays: string
+	currentWindowMinutes: string
+	minBaselineBuckets: string
+	warningScore: string
+	criticalScore: string
+	autoInvestigate: boolean
 	metricName: string
 	metricType: AlertMetricType
 	metricAggregation: AlertMetricAggregation
@@ -202,6 +211,10 @@ export function parseNonNegativeNumber(value: string, fallback: number): number 
 	return parsed
 }
 
+export function anomalyComparatorForSignal(signalType: AlertSignalType): AlertComparator {
+	return signalType === "throughput" || signalType === "apdex" ? "lt" : "gt"
+}
+
 export function defaultRuleForm(serviceName?: string): RuleFormState {
 	const queryBuilderDraft = createQueryDraft(0)
 	return {
@@ -209,6 +222,7 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		notes: "",
 		enabled: true,
 		severity: "warning",
+		thresholdMode: "static",
 		serviceNames: serviceName ? [serviceName] : [],
 		excludeServiceNames: [],
 		groupBy: [],
@@ -217,10 +231,17 @@ export function defaultRuleForm(serviceName?: string): RuleFormState {
 		threshold: "5",
 		thresholdUpper: "",
 		windowMinutes: "5",
+		evaluationIntervalMinutes: "1",
 		minimumSampleCount: "50",
 		consecutiveBreachesRequired: "2",
 		consecutiveHealthyRequired: "2",
 		renotifyIntervalMinutes: "30",
+		baselineLookbackDays: "28",
+		currentWindowMinutes: "15",
+		minBaselineBuckets: "48",
+		warningScore: "3",
+		criticalScore: "5",
+		autoInvestigate: true,
 		metricName: "",
 		metricType: "gauge",
 		metricAggregation: "avg",
@@ -265,6 +286,7 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		notes: rule.notes ?? "",
 		enabled: rule.enabled,
 		severity: rule.severity,
+		thresholdMode: rule.thresholdMode,
 		serviceNames: rule.serviceNames?.length > 0 ? [...rule.serviceNames] : [],
 		excludeServiceNames: rule.excludeServiceNames?.length > 0 ? [...rule.excludeServiceNames] : [],
 		groupBy: rule.groupBy ? [...rule.groupBy] : [],
@@ -274,10 +296,17 @@ export function ruleToFormState(rule: AlertRuleDocument): RuleFormState {
 		thresholdUpper:
 			rule.thresholdUpper == null ? "" : domainThresholdToForm(rule.signalType, rule.thresholdUpper),
 		windowMinutes: String(rule.windowMinutes),
+		evaluationIntervalMinutes: String(rule.evaluationIntervalMinutes),
 		minimumSampleCount: String(rule.minimumSampleCount),
 		consecutiveBreachesRequired: String(rule.consecutiveBreachesRequired),
 		consecutiveHealthyRequired: String(rule.consecutiveHealthyRequired),
 		renotifyIntervalMinutes: String(rule.renotifyIntervalMinutes),
+		baselineLookbackDays: String(rule.anomalyConfig?.baselineLookbackDays ?? 28),
+		currentWindowMinutes: String(rule.anomalyConfig?.currentWindowMinutes ?? rule.windowMinutes),
+		minBaselineBuckets: String(rule.anomalyConfig?.minBaselineBuckets ?? 48),
+		warningScore: String(rule.anomalyConfig?.warningScore ?? 3),
+		criticalScore: String(rule.anomalyConfig?.criticalScore ?? 5),
+		autoInvestigate: rule.anomalyConfig?.autoInvestigate ?? true,
 		metricName: rule.metricName ?? "",
 		metricType: rule.metricType ?? "gauge",
 		metricAggregation: rule.metricAggregation ?? "avg",
@@ -390,6 +419,7 @@ export function deriveRuleQueryIssues(form: RuleFormState): string[] {
 export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 	const signalType = form.signalType
 	const queryOwnsScope = signalType === "builder_query" || signalType === "raw_query"
+	const anomalyMode = form.thresholdMode === "anomaly"
 	const notificationTitle = form.notificationTitle.trim()
 	const notificationBody = form.notificationBody.trim()
 	const notificationTemplate =
@@ -404,24 +434,41 @@ export function buildRuleRequest(form: RuleFormState): AlertRuleUpsertRequest {
 		notes: form.notes.trim() || null,
 		enabled: form.enabled,
 		severity: form.severity,
+		thresholdMode: form.thresholdMode,
+		anomalyConfig: anomalyMode
+			? {
+					baselineLookbackDays: parsePositiveNumber(form.baselineLookbackDays, 28),
+					currentWindowMinutes: parsePositiveNumber(form.currentWindowMinutes, 15),
+					minBaselineBuckets: parsePositiveNumber(form.minBaselineBuckets, 48),
+					warningScore: parsePositiveNumber(form.warningScore, 3),
+					criticalScore: parsePositiveNumber(form.criticalScore, 5),
+					autoInvestigate: form.autoInvestigate,
+				}
+			: null,
 		serviceNames: queryOwnsScope ? [] : form.serviceNames.filter((s) => s.trim().length > 0),
 		excludeServiceNames: queryOwnsScope
 			? []
 			: form.excludeServiceNames.filter((s) => s.trim().length > 0),
 		groupBy: queryOwnsScope ? null : form.groupBy.length > 0 ? form.groupBy : null,
 		signalType,
-		comparator: form.comparator,
+		comparator: anomalyMode ? anomalyComparatorForSignal(signalType) : form.comparator,
 		threshold: formThresholdToDomain(signalType, form.threshold),
-		thresholdUpper: isRangeComparator(form.comparator)
+		thresholdUpper: !anomalyMode && isRangeComparator(form.comparator)
 			? Number.isFinite(Number(form.thresholdUpper))
 				? formThresholdToDomain(signalType, form.thresholdUpper)
 				: null
 			: null,
-		windowMinutes: parsePositiveNumber(form.windowMinutes, 5),
-		minimumSampleCount: parseNonNegativeNumber(form.minimumSampleCount, 0),
+		windowMinutes: anomalyMode
+			? parsePositiveNumber(form.currentWindowMinutes, 15)
+			: parsePositiveNumber(form.windowMinutes, 5),
+		minimumSampleCount: parseNonNegativeNumber(form.minimumSampleCount, anomalyMode ? 50 : 0),
 		consecutiveBreachesRequired: parsePositiveNumber(form.consecutiveBreachesRequired, 2),
 		consecutiveHealthyRequired: parsePositiveNumber(form.consecutiveHealthyRequired, 2),
 		renotifyIntervalMinutes: parsePositiveNumber(form.renotifyIntervalMinutes, 30),
+		evaluationIntervalMinutes: parsePositiveNumber(
+			form.evaluationIntervalMinutes,
+			anomalyMode ? 5 : 1,
+		),
 		metricName: signalType === "metric" ? form.metricName.trim() || null : null,
 		metricType: signalType === "metric" ? form.metricType : null,
 		metricAggregation: signalType === "metric" ? form.metricAggregation : null,

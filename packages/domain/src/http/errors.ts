@@ -2,7 +2,9 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import {
 	ActorId,
+	AlertIncidentId,
 	AlertDestinationId,
+	AlertRuleId,
 	ErrorIncidentId,
 	ErrorIssueEventId,
 	ErrorIssueId,
@@ -12,7 +14,7 @@ import {
 	UserId,
 } from "../primitives"
 import { Authorization } from "./current-tenant"
-import { AlertSeverity } from "./alerts"
+import { AlertSeverity, AlertThresholdMode, AlertSignalType } from "./alerts"
 
 // ---------------------------------------------------------------------------
 // Workflow state machine literals
@@ -148,6 +150,24 @@ export class ErrorIncidentDocument extends Schema.Class<ErrorIncidentDocument>("
 	occurrenceCount: Schema.Number,
 }) {}
 
+export class LinkedAlertIncidentDocument extends Schema.Class<LinkedAlertIncidentDocument>(
+	"LinkedAlertIncidentDocument",
+)({
+	id: AlertIncidentId,
+	ruleId: AlertRuleId,
+	ruleName: Schema.String,
+	groupKey: Schema.NullOr(Schema.String),
+	signalType: AlertSignalType,
+	severity: AlertSeverity,
+	status: Schema.String,
+	thresholdMode: AlertThresholdMode,
+	lastObservedValue: Schema.NullOr(Schema.Number),
+	anomalyScore: Schema.NullOr(Schema.Number),
+	relationship: Schema.String,
+	score: Schema.Number,
+	createdAt: IsoDateTimeString,
+}) {}
+
 export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailResponse>(
 	"ErrorIssueDetailResponse",
 )({
@@ -155,6 +175,7 @@ export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailRespo
 	timeseries: Schema.Array(ErrorIssueTimeseriesPoint),
 	sampleTraces: Schema.Array(ErrorIssueSampleTrace),
 	incidents: Schema.Array(ErrorIncidentDocument),
+	linkedAlertIncidents: Schema.Array(LinkedAlertIncidentDocument),
 }) {}
 
 export class ErrorIncidentsListResponse extends Schema.Class<ErrorIncidentsListResponse>(

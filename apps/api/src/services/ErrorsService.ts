@@ -7,7 +7,12 @@ import {
 	type ActorType,
 	ActorsListResponse,
 	type AlertDestinationId,
+	AlertIncidentId as AlertIncidentIdSchema,
+	AlertRuleId as AlertRuleIdSchema,
+	AlertSeverity as AlertSeveritySchema,
 	type AlertSeverity,
+	AlertSignalType as AlertSignalTypeSchema,
+	AlertThresholdMode as AlertThresholdModeSchema,
 	ErrorIncidentDocument,
 	ErrorIncidentsListResponse,
 	type ErrorIncidentReason,
@@ -23,6 +28,7 @@ import {
 	ErrorIssueNotFoundError,
 	ErrorIssueSampleTrace,
 	ErrorIssueTransitionError,
+	LinkedAlertIncidentDocument,
 	ErrorIssuesListResponse,
 	ErrorIssueTimeseriesPoint,
 	ErrorNotificationPolicyDocument,
@@ -39,6 +45,8 @@ import {
 } from "@maple/domain/http"
 import {
 	actors,
+	alertIncidentIssueLinks,
+	alertIncidents,
 	type ActorInsert,
 	type ActorRow,
 	errorIncidents,
@@ -71,6 +79,11 @@ const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const decodeTraceIdSync = Schema.decodeUnknownSync(TraceIdSchema)
 const decodeSpanIdSync = Schema.decodeUnknownSync(SpanIdSchema)
+const decodeAlertIncidentIdSync = Schema.decodeUnknownSync(AlertIncidentIdSchema)
+const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleIdSchema)
+const decodeAlertSeveritySync = Schema.decodeUnknownSync(AlertSeveritySchema)
+const decodeAlertSignalTypeSync = Schema.decodeUnknownSync(AlertSignalTypeSchema)
+const decodeAlertThresholdModeSync = Schema.decodeUnknownSync(AlertThresholdModeSchema)
 
 const DEFAULT_LIST_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -879,10 +892,42 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 						.orderBy(desc(errorIncidents.lastTriggeredAt))
 						.limit(50),
 				)
+				const linkedAlertIncidentsEffect = dbExecute((db) =>
+					db
+						.select({
+							id: alertIncidents.id,
+							ruleId: alertIncidents.ruleId,
+							ruleName: alertIncidents.ruleName,
+							groupKey: alertIncidents.groupKey,
+							signalType: alertIncidents.signalType,
+							severity: alertIncidents.severity,
+							status: alertIncidents.status,
+							thresholdMode: alertIncidents.thresholdMode,
+							lastObservedValue: alertIncidents.lastObservedValue,
+							anomalyScore: alertIncidents.anomalyScore,
+							relationship: alertIncidentIssueLinks.relationship,
+							score: alertIncidentIssueLinks.score,
+							createdAt: alertIncidentIssueLinks.createdAt,
+						})
+						.from(alertIncidentIssueLinks)
+						.innerJoin(
+							alertIncidents,
+							eq(alertIncidentIssueLinks.alertIncidentId, alertIncidents.id),
+						)
+						.where(
+							and(
+								eq(alertIncidentIssueLinks.orgId, orgId),
+								eq(alertIncidentIssueLinks.errorIssueId, issueId),
+								eq(alertIncidents.orgId, orgId),
+							),
+						)
+						.orderBy(desc(alertIncidentIssueLinks.createdAt))
+						.limit(20),
+				)
 
-				const [timeseriesRows, sampleRows, incidentRows] = yield* Effect.all(
-					[timeseriesEffect, samplesEffect, incidentsEffect],
-					{ concurrency: 3 },
+				const [timeseriesRows, sampleRows, incidentRows, linkedAlertIncidentRows] = yield* Effect.all(
+					[timeseriesEffect, samplesEffect, incidentsEffect, linkedAlertIncidentsEffect],
+					{ concurrency: 4 },
 				)
 
 				const openSet = yield* issuesWithOpenIncidents(orgId, [issueRow.id])
@@ -912,12 +957,31 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 							durationMicros: Number(row.durationMicros ?? 0),
 						}),
 				)
+				const linkedAlertIncidents = linkedAlertIncidentRows.map(
+					(row) =>
+						new LinkedAlertIncidentDocument({
+							id: decodeAlertIncidentIdSync(row.id),
+							ruleId: decodeAlertRuleIdSync(row.ruleId),
+							ruleName: row.ruleName,
+							groupKey: row.groupKey,
+							signalType: decodeAlertSignalTypeSync(row.signalType),
+							severity: decodeAlertSeveritySync(row.severity),
+							status: row.status,
+							thresholdMode: decodeAlertThresholdModeSync(row.thresholdMode ?? "static"),
+							lastObservedValue: row.lastObservedValue,
+							anomalyScore: row.anomalyScore,
+							relationship: row.relationship,
+							score: row.score,
+							createdAt: isoFromEpoch(row.createdAt),
+						}),
+				)
 
 				return new ErrorIssueDetailResponse({
 					issue: rowToIssue(issueRow, openSet.has(issueRow.id), actorMap),
 					timeseries,
 					sampleTraces,
 					incidents: incidentRows.map(rowToIncident),
+					linkedAlertIncidents,
 				})
 			},
 		)

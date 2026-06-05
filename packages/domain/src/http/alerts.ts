@@ -6,6 +6,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	ErrorIssueId,
 	IsoDateTimeString,
 	RoleName,
 } from "../primitives"
@@ -125,6 +126,12 @@ export const AlertEvaluationStatus = Schema.Literals(["breached", "healthy", "sk
 })
 export type AlertEvaluationStatus = Schema.Schema.Type<typeof AlertEvaluationStatus>
 
+export const AlertThresholdMode = Schema.Literals(["static", "anomaly"]).annotate({
+	identifier: "@maple/AlertThresholdMode",
+	title: "Alert Threshold Mode",
+})
+export type AlertThresholdMode = Schema.Schema.Type<typeof AlertThresholdMode>
+
 const ChannelLabel = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
 
 const NonEmptyString = Schema.String.pipe(Schema.check(Schema.isMinLength(1), Schema.isTrimmed()))
@@ -138,6 +145,23 @@ const PositiveInt = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGre
 const NonNegativeInt = Schema.Number.pipe(Schema.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
 
 const PositiveFloat = Schema.Number.pipe(Schema.check(Schema.isFinite(), Schema.isGreaterThan(0)))
+
+const PositiveScore = Schema.Number.pipe(Schema.check(Schema.isFinite(), Schema.isGreaterThan(0)))
+
+export class AlertAnomalyConfig extends Schema.Class<AlertAnomalyConfig>("AlertAnomalyConfig")({
+	baselineLookbackDays: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 7, maximum: 90 })),
+	),
+	currentWindowMinutes: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 5, maximum: 60 })),
+	),
+	minBaselineBuckets: Schema.optionalKey(
+		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 12, maximum: 500 })),
+	),
+	warningScore: Schema.optionalKey(PositiveScore),
+	criticalScore: Schema.optionalKey(PositiveScore),
+	autoInvestigate: Schema.optionalKey(Schema.Boolean),
+}) {}
 
 export class SlackAlertDestinationConfig extends Schema.Class<SlackAlertDestinationConfig>(
 	"SlackAlertDestinationConfig",
@@ -388,6 +412,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	notificationTemplate: Schema.NullOr(AlertNotificationTemplate),
 	enabled: Schema.Boolean,
 	severity: AlertSeverity,
+	thresholdMode: AlertThresholdMode,
+	anomalyConfig: Schema.NullOr(AlertAnomalyConfig),
 	serviceNames: Schema.Array(Schema.String),
 	excludeServiceNames: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(AlertGroupBy),
@@ -400,6 +426,7 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	consecutiveBreachesRequired: PositiveInt,
 	consecutiveHealthyRequired: PositiveInt,
 	renotifyIntervalMinutes: PositiveInt,
+	evaluationIntervalMinutes: PositiveInt,
 	metricName: Schema.NullOr(Schema.String),
 	metricType: Schema.NullOr(AlertMetricType),
 	metricAggregation: Schema.NullOr(AlertMetricAggregation),
@@ -423,6 +450,8 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	notificationTemplate: Schema.optionalKey(Schema.NullOr(AlertNotificationTemplate)),
 	enabled: Schema.optionalKey(Schema.Boolean),
 	severity: AlertSeverity,
+	thresholdMode: Schema.optionalKey(AlertThresholdMode),
+	anomalyConfig: Schema.optionalKey(Schema.NullOr(AlertAnomalyConfig)),
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
@@ -435,6 +464,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	consecutiveBreachesRequired: Schema.optionalKey(PositiveInt),
 	consecutiveHealthyRequired: Schema.optionalKey(PositiveInt),
 	renotifyIntervalMinutes: Schema.optionalKey(PositiveInt),
+	evaluationIntervalMinutes: Schema.optionalKey(PositiveInt),
 	metricName: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	metricType: Schema.optionalKey(Schema.NullOr(AlertMetricType)),
 	metricAggregation: Schema.optionalKey(Schema.NullOr(AlertMetricAggregation)),
@@ -468,6 +498,22 @@ export class AlertEvaluationResult extends Schema.Class<AlertEvaluationResult>("
 	thresholdUpper: Schema.NullOr(Schema.Number),
 	comparator: AlertComparator,
 	reason: Schema.String,
+	thresholdMode: Schema.optionalKey(AlertThresholdMode),
+	baselineMedian: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	baselineLower: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	baselineUpper: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	baselineBucketCount: Schema.optionalKey(Schema.Number),
+	anomalyScore: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	effectiveThreshold: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+}) {}
+
+export class AlertIncidentIssueLinkDocument extends Schema.Class<AlertIncidentIssueLinkDocument>(
+	"AlertIncidentIssueLinkDocument",
+)({
+	errorIssueId: ErrorIssueId,
+	relationship: Schema.String,
+	score: Schema.Number,
+	createdAt: IsoDateTimeString,
 }) {}
 
 export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("AlertIncidentDocument")({
@@ -481,6 +527,14 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	comparator: AlertComparator,
 	threshold: Schema.Number,
 	thresholdUpper: Schema.NullOr(Schema.Number),
+	thresholdMode: AlertThresholdMode,
+	baselineMedian: Schema.NullOr(Schema.Number),
+	baselineLower: Schema.NullOr(Schema.Number),
+	baselineUpper: Schema.NullOr(Schema.Number),
+	baselineBucketCount: Schema.NullOr(Schema.Number),
+	anomalyScore: Schema.NullOr(Schema.Number),
+	effectiveThreshold: Schema.NullOr(Schema.Number),
+	investigationId: Schema.NullOr(Schema.String),
 	firstTriggeredAt: IsoDateTimeString,
 	lastTriggeredAt: IsoDateTimeString,
 	resolvedAt: Schema.NullOr(IsoDateTimeString),
@@ -489,6 +543,7 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	dedupeKey: Schema.String,
 	lastDeliveredEventType: Schema.NullOr(AlertEventType),
 	lastNotifiedAt: Schema.NullOr(IsoDateTimeString),
+	issueLinks: Schema.Array(AlertIncidentIssueLinkDocument),
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(
@@ -611,6 +666,14 @@ export class AlertCheckDocument extends Schema.Class<AlertCheckDocument>("AlertC
 	consecutiveHealthy: Schema.Number,
 	incidentId: Schema.NullOr(AlertIncidentId),
 	incidentTransition: AlertIncidentTransition,
+	thresholdMode: AlertThresholdMode,
+	baselineMedian: Schema.NullOr(Schema.Number),
+	baselineLower: Schema.NullOr(Schema.Number),
+	baselineUpper: Schema.NullOr(Schema.Number),
+	baselineBucketCount: Schema.Number,
+	anomalyScore: Schema.NullOr(Schema.Number),
+	effectiveThreshold: Schema.NullOr(Schema.Number),
+	investigationId: Schema.NullOr(Schema.String),
 	evaluationDurationMs: Schema.Number,
 }) {}
 

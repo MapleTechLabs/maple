@@ -274,6 +274,14 @@ export {
 	type ServicesFacetsOutput,
 } from "./queries/services"
 
+// Queries — Service Health Anomalies
+export {
+	serviceHealthAnomalyQuery,
+	type ServiceHealthAnomalyQueryParams,
+	type ServiceHealthAnomalyOutput,
+	type ServiceHealthAnomalySignal,
+} from "./queries/service-health-anomalies"
+
 // Queries — Errors
 export {
 	errorsByTypeQuery,
