@@ -16,8 +16,7 @@
 		"@maple/api": "workspace:*",
 		"agents": "^0.14.1",
 		"ai": "^6.0.196",
-		"effect": "catalog:effect",
-		"zod": "^4.4.3"
+		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20260603.1",
