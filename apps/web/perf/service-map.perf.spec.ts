@@ -89,13 +89,30 @@ test("service map renders filter/SMIL-free and animates smoothly under heavy tra
 	test.info().annotations.push({ type: "perf-idle", description: JSON.stringify(idle) })
 	test.info().annotations.push({ type: "perf-pan", description: JSON.stringify(pan) })
 
+	// The structural assertions above (no feGaussianBlur / animateMotion, canvas
+	// drawn) are the environment-independent regression guard. The frame-timing
+	// thresholds below are tuned for a real GPU: locally the canvas impl hits
+	// ~125 fps idle / ~70 fps pan. GitHub's CI runner has NO GPU — idle is
+	// vsync-capped at ~60 and pan rendering is software-bound at ~14 fps
+	// regardless of code quality (below even the pre-fix SVG baseline), so the
+	// strict pan numbers are physically unreachable there. Under CI we keep the
+	// discriminating idle gate (post-fix ~60 fps / p95 ~17ms vs the pre-fix
+	// SVG-filter cost of ~23 fps / p95 ~50ms) plus a "pan isn't frozen" floor.
+	const ci = !!process.env.CI
+
 	// Idle is the headline, rock-stable metric — it captures the continuous
-	// SVG-filter/SMIL cost that this change removes. Pre-fix baseline: ~23 fps /
-	// p95 ~50ms; post-fix: ~125 fps / p95 ~8ms. Asserted tightly.
-	expect(idle.fps, "idle fps").toBeGreaterThan(55)
-	expect(idle.frameP95, "idle p95 frame time (ms)").toBeLessThan(20)
-	// Pan drives setViewport every frame (noisier); guard gross regressions only.
-	// Pre-fix baseline: ~17 fps / p95 ~125ms; post-fix: ~70 fps / p95 ~32ms.
-	expect(pan.fps, "pan fps").toBeGreaterThan(35)
-	expect(pan.frameP95, "pan p95 frame time (ms)").toBeLessThan(70)
+	// SVG-filter/SMIL cost that this change removes.
+	expect(idle.fps, "idle fps").toBeGreaterThan(ci ? 45 : 55)
+	expect(idle.frameP95, "idle p95 frame time (ms)").toBeLessThan(ci ? 40 : 20)
+
+	if (ci) {
+		// GPU-less runner: pan fps can't discriminate impl quality, only catch a
+		// fully-frozen animation loop.
+		expect(pan.fps, "pan fps (CI floor)").toBeGreaterThan(5)
+	} else {
+		// Pan drives setViewport every frame (noisier); guard gross regressions only.
+		// Pre-fix baseline: ~17 fps / p95 ~125ms; post-fix: ~70 fps / p95 ~32ms.
+		expect(pan.fps, "pan fps").toBeGreaterThan(35)
+		expect(pan.frameP95, "pan p95 frame time (ms)").toBeLessThan(70)
+	}
 })
