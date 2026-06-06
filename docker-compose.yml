@@ -8,9 +8,6 @@ services:
         env_file: .env
         environment:
             PORT: 3472
-        depends_on:
-            otel-collector:
-                condition: service_started
         healthcheck:
             test: ["CMD", "curl", "-f", "http://localhost:3472/health"]
             interval: 10s
