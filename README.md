@@ -1,3 +1,11 @@
+<p align="center">
+  <img src=".github/assets/maple-hero.png" alt="Maple — open-source observability for traces, logs, and metrics, built on OpenTelemetry" width="100%" />
+</p>
+
+<p align="center">
+  <strong>Open-source observability for traces, logs &amp; metrics — built on OpenTelemetry + ClickHouse.</strong>
+</p>
+
 # Maple Monorepo
 
 Maple is now organized as a monorepo with a SPA frontend and an Effect-based backend API.
