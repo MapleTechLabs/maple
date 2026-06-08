@@ -74,7 +74,7 @@ interface TbResult {
 const runTb = (
 	parent: { host: string; token: string },
 	args: string[],
-	opts?: { branch?: string },
+	opts?: { branch?: string; secret?: boolean },
 ): TbResult => {
 	const envFlag = opts?.branch ? `--branch=${opts.branch}` : "--cloud"
 	const proc = spawnSync(
@@ -89,8 +89,12 @@ const runTb = (
 	const stderr = (proc.stderr ?? "").trim()
 	// Log the env flag + subcommand only — never the auth flags/token.
 	console.log(`$ tb ${envFlag} ${args.join(" ")}`)
-	if (stdout) console.log(stdout)
-	if (stderr) console.error(stderr)
+	// `secret` suppresses the captured output entirely — `token ls` prints raw
+	// token values, which must never reach the CI log.
+	if (!opts?.secret) {
+		if (stdout) console.log(stdout)
+		if (stderr) console.error(stderr)
+	}
 	return { exitCode: proc.status ?? FAILURE, stdout, stderr }
 }
 
@@ -101,47 +105,51 @@ const isNotFound = (result: TbResult): boolean =>
 	/not found|does not exist|no branch|unknown branch/i.test(`${result.stdout}\n${result.stderr}`)
 
 /**
- * Resolve the branch's admin token name. Token names mirror the workspace, so the
- * branch carries an "admin*" token. Allow an explicit override for CLIs whose
- * `token ls` formatting the heuristic can't parse.
+ * Resolve the branch's admin token value directly from `tb token ls`, which prints
+ * `name:` / `token:` line pairs. The branch mirrors the workspace's tokens with
+ * fresh, branch-scoped values; we want the admin token (read + append).
+ *
+ * Parsing the value from `token ls` avoids `token copy`, which needs token-info
+ * permissions the workspace token may lack. `token ls` can emit a trailing
+ * "Forbidden" introspection warning yet still list the tokens and exit 0, so we
+ * parse stdout regardless of exit status and only fail if no admin token is found.
+ * `TB_BRANCH_ADMIN_TOKEN_NAME` pins an exact name if the default pick is wrong.
  */
-const resolveAdminTokenName = (parent: { host: string; token: string }, branchName: string): string => {
-	const override = process.env.TB_BRANCH_ADMIN_TOKEN_NAME?.trim()
-	if (override) return override
+const resolveBranchAdminToken = (parent: { host: string; token: string }, branchName: string): string => {
+	const preferredName = process.env.TB_BRANCH_ADMIN_TOKEN_NAME?.trim()
+	const listed = runTb(parent, ["token", "ls"], { branch: branchName, secret: true })
 
-	const listed = runTb(parent, ["token", "ls"], { branch: branchName })
-	if (listed.exitCode !== 0) {
-		fail(`Could not list tokens for branch ${branchName}. Set TB_BRANCH_ADMIN_TOKEN_NAME to pin it.`)
+	const pairs: { name: string; token: string }[] = []
+	let currentName = ""
+	for (const raw of listed.stdout.split("\n")) {
+		const line = raw.trim()
+		const nameMatch = line.match(/^name:\s*(.+)$/)
+		if (nameMatch) {
+			currentName = nameMatch[1].trim()
+			continue
+		}
+		const tokenMatch = line.match(/^token:\s*(\S+)$/)
+		if (tokenMatch) {
+			pairs.push({ name: currentName, token: tokenMatch[1] })
+			currentName = ""
+		}
 	}
-	// Token names appear in the listing; prefer the workspace admin token. Match
-	// the conventional names ("admin token", "admin <email>") case-insensitively.
-	const match = listed.stdout.match(/admin(?: token| [^\s]+@[^\s]+|[^\n]*)/i)
-	if (!match) {
+
+	if (pairs.length === 0) {
+		fail(`Could not parse any tokens from branch ${branchName} (\`tb token ls\` output unrecognized).`)
+	}
+
+	const pick =
+		(preferredName && pairs.find((p) => p.name === preferredName)) ||
+		pairs.find((p) => p.name.toLowerCase() === "workspace admin token") ||
+		pairs.find((p) => p.name.toLowerCase().includes("admin"))
+	if (!pick) {
 		fail(
-			`No admin token found in branch ${branchName} token listing. ` +
+			`No admin token found in branch ${branchName}. ` +
 				`Set TB_BRANCH_ADMIN_TOKEN_NAME to the exact token name.`,
 		)
 	}
-	return match[0].trim()
-}
-
-const copyBranchToken = (
-	parent: { host: string; token: string },
-	branchName: string,
-	tokenName: string,
-): string => {
-	const copied = runTb(parent, ["token", "copy", tokenName], { branch: branchName })
-	if (copied.exitCode !== 0 || !copied.stdout) {
-		fail(`Failed to copy token "${tokenName}" from branch ${branchName}.`)
-	}
-	// `token copy` prints the raw token value; take the last non-empty line so any
-	// preamble the CLI emits is ignored.
-	const lines = copied.stdout.split("\n").map((l) => l.trim()).filter(Boolean)
-	const value = lines.at(-1)
-	if (!value) {
-		fail(`Empty token value returned for "${tokenName}" on branch ${branchName}.`)
-	}
-	return value as string
+	return pick.token
 }
 
 const exportToGithubEnv = (vars: Record<string, string>): void => {
@@ -174,8 +182,7 @@ const up = (branchName: string): void => {
 	}
 
 	// 3. Resolve the branch's admin token (read + append scopes) for the workers.
-	const tokenName = resolveAdminTokenName(parent, branchName)
-	const branchToken = copyBranchToken(parent, branchName, tokenName)
+	const branchToken = resolveBranchAdminToken(parent, branchName)
 
 	// Mask the token in CI logs before it can appear anywhere downstream.
 	console.log(`::add-mask::${branchToken}`)
