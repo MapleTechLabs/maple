@@ -99,7 +99,9 @@ const runTb = (
 }
 
 const isAlreadyExists = (result: TbResult): boolean =>
-	/already exist|already a branch|duplicated|name is taken/i.test(`${result.stdout}\n${result.stderr}`)
+	/already (exist|being used)|already a branch|duplicated|name is taken|names should be unique|select another name/i.test(
+		`${result.stdout}\n${result.stderr}`,
+	)
 
 const isNotFound = (result: TbResult): boolean =>
 	/not found|does not exist|no branch|unknown branch/i.test(`${result.stdout}\n${result.stderr}`)
