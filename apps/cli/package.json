@@ -16,7 +16,7 @@
 		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"effect": "catalog:effect",
-		"protobufjs": "^7.4.0"
+		"protobufjs": "^8.6.1"
 	},
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",

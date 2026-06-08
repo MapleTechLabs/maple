@@ -25,6 +25,11 @@ const schemaFields = (datasource: string): Set<string> => {
 
 const hex = "0af7651916cd43dd8448eb211c80319c"
 const b64 = (h: string): string => Buffer.from(h, "hex").toString("base64")
+// Captured from an OpenTelemetry Java agent OTLP/HTTP `POST /v1/traces`
+// request. `protobufjs` 7.6.x throws `index out of range` on this payload,
+// while newer releases decode it successfully.
+const javaAgentTracePayloadB64 =
+	"CvULCqUICiUKG2RlcGxveW1lbnQuZW52aXJvbm1lbnQubmFtZRIGCgR0ZXN0ChYKCWhvc3QuYXJjaBIJCgdhYXJjaDY0CisKCWhvc3QubmFtZRIeChx6aGFvamlydWlkZU1hY0Jvb2stQWlyLmxvY2FsCiMKDm9zLmRlc2NyaXB0aW9uEhEKD01hYyBPUyBYIDI2LjQuMQoTCgdvcy50eXBlEggKBmRhcndpbgoWCgpvcy52ZXJzaW9uEggKBjI2LjQuMQqgAQoUcHJvY2Vzcy5jb21tYW5kX2FyZ3MShwEqhAEKVQpTL1VzZXJzL3poYW9qaXJ1aS9MaWJyYXJ5L0phdmEvSmF2YVZpcnR1YWxNYWNoaW5lcy9vcGVuamRrLTIzL0NvbnRlbnRzL0hvbWUvYmluL2phdmEKKwopL3RtcC9tYXBsZS1qYXZhLWFnZW50LTdLMHcvT3RlbFJlcHJvLmphdmEKcAoXcHJvY2Vzcy5leGVjdXRhYmxlLnBhdGgSVQpTL1VzZXJzL3poYW9qaXJ1aS9MaWJyYXJ5L0phdmEvSmF2YVZpcnR1YWxNYWNoaW5lcy9vcGVuamRrLTIzL0NvbnRlbnRzL0hvbWUvYmluL2phdmEKEwoLcHJvY2Vzcy5waWQSBBjtpQIKVwobcHJvY2Vzcy5ydW50aW1lLmRlc2NyaXB0aW9uEjgKNk9yYWNsZSBDb3Jwb3JhdGlvbiBPcGVuSkRLIDY0LUJpdCBTZXJ2ZXIgVk0gMjMrMzctMjM2OQo1ChRwcm9jZXNzLnJ1bnRpbWUubmFtZRIdChtPcGVuSkRLIFJ1bnRpbWUgRW52aXJvbm1lbnQKJwoXcHJvY2Vzcy5ydW50aW1lLnZlcnNpb24SDAoKMjMrMzctMjM2OQo9ChNzZXJ2aWNlLmluc3RhbmNlLmlkEiYKJGQxZTI5NjA0LTI5ODYtNDlmZC1iNWJiLWU0ZjFhN2Q0ZjkyYwohCgxzZXJ2aWNlLm5hbWUSEQoPd2lzY2hvaWNlci11c2VyCj0KFXRlbGVtZXRyeS5kaXN0cm8ubmFtZRIkCiJvcGVudGVsZW1ldHJ5LWphdmEtaW5zdHJ1bWVudGF0aW9uCiQKGHRlbGVtZXRyeS5kaXN0cm8udmVyc2lvbhIICgYyLjI4LjEKIAoWdGVsZW1ldHJ5LnNkay5sYW5ndWFnZRIGCgRqYXZhCiUKEnRlbGVtZXRyeS5zZGsubmFtZRIPCg1vcGVudGVsZW1ldHJ5CiEKFXRlbGVtZXRyeS5zZGsudmVyc2lvbhIICgYxLjYyLjAKTwoXdmNzLnJlcG9zaXRvcnkudXJsLmZ1bGwSNAoyaHR0cHM6Ly9naXRodWIuY29tL1dpc2Nob2ljZXItWGlhbi93aXNjaG9pY2VyLXVzZXISoQMKMQohaW8ub3BlbnRlbGVtZXRyeS5qYXZhLWh0dHAtY2xpZW50EgwyLjI4LjEtYWxwaGESwgIKEGmLshO9k6DTrmM7fx2w70cSCD/XzWWx87T5KgNHRVQwAzkgsMwtvzK3GEEJ4tgtvzK3GEoVCgt0aHJlYWQubmFtZRIGCgRtYWluSi0KCHVybC5mdWxsEiEKH2h0dHA6Ly8xMjcuMC4wLjE6MTgwODEvcGluZz9pPTJKEwoLc2VydmVyLnBvcnQSBBihjQFKEwoKZXJyb3IudHlwZRIFCgM0MDRKHQoOc2VydmVyLmFkZHJlc3MSCwoJMTI3LjAuMC4xSiEKGG5ldHdvcmsucHJvdG9jb2wudmVyc2lvbhIFCgMxLjFKIAoZaHR0cC5yZXNwb25zZS5zdGF0dXNfY29kZRIDGJQDShwKE2h0dHAucmVxdWVzdC5tZXRob2QSBQoDR0VUSg8KCXRocmVhZC5pZBICGAF6AhgChQEDAQAAGidodHRwczovL29wZW50ZWxlbWV0cnkuaW8vc2NoZW1hcy8xLjM3LjAaJ2h0dHBzOi8vb3BlbnRlbGVtZXRyeS5pby9zY2hlbWFzLzEuMjQuMA=="
 
 const attr = (key: string, str: string) => ({ key, value: { stringValue: str } })
 
@@ -179,5 +184,20 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 		const decoded = decodeMetricsRequest(bytes)
 		const datasources = new Set(encodeMetrics(decoded).map((b) => b.datasource))
 		expect(datasources).toEqual(new Set(["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]))
+	})
+})
+
+describe("external OTLP protobuf compatibility", () => {
+	it("decodes a Java agent OTLP/HTTP traces payload captured from the wire", () => {
+		const decoded = decodeTraceRequest(Buffer.from(javaAgentTracePayloadB64, "base64"))
+		const [batch] = encodeTraces(decoded)
+		expect(batch!.datasource).toBe("traces")
+		expect(batch!.rowCount).toBe(1)
+		const row = JSON.parse(batch!.ndjson)
+		expect(row.service_name).toBe("wischoicer-user")
+		expect(row.scope_name).toBe("io.opentelemetry.java-http-client")
+		expect(row.span_kind).toBe("Client")
+		expect(row.resource_attributes["deployment.environment.name"]).toBe("test")
+		expect(row.span_attributes["url.full"]).toBe("http://127.0.0.1:18081/ping?i=2")
 	})
 })
