@@ -63,19 +63,32 @@ interface TbResult {
 }
 
 /**
- * Run a `tb` command with the parent-workspace global flags prepended. Returns
+ * Run a `tb` command with the right environment + auth flags prepended. Returns
  * the captured output; never throws (callers decide how to treat failures).
+ *
+ * `--cloud` and `--branch` are mutually exclusive environment flags, so:
+ *  - workspace-level ops (branch create/rm) use `--cloud`;
+ *  - branch-scoped ops (deploy, token) use `--branch=<name>` instead.
+ * Auth flags (`--host`/`--token`) apply to both.
  */
-const runTb = (parent: { host: string; token: string }, args: string[]): TbResult => {
-	const globalFlags = ["--cloud", "--host", parent.host, "--token", parent.token]
-	const proc = spawnSync("tb", [...globalFlags, ...args], { encoding: "utf8" })
+const runTb = (
+	parent: { host: string; token: string },
+	args: string[],
+	opts?: { branch?: string },
+): TbResult => {
+	const envFlag = opts?.branch ? `--branch=${opts.branch}` : "--cloud"
+	const proc = spawnSync(
+		"tb",
+		[envFlag, "--host", parent.host, "--token", parent.token, ...args],
+		{ encoding: "utf8" },
+	)
 	if (proc.error) {
 		fail(`Failed to invoke \`tb\` — is the Tinybird CLI installed? (${proc.error.message})`)
 	}
 	const stdout = (proc.stdout ?? "").trim()
 	const stderr = (proc.stderr ?? "").trim()
-	// Redacted command for logs — never print the token.
-	console.log(`$ tb ${args.join(" ")}`)
+	// Log the env flag + subcommand only — never the auth flags/token.
+	console.log(`$ tb ${envFlag} ${args.join(" ")}`)
 	if (stdout) console.log(stdout)
 	if (stderr) console.error(stderr)
 	return { exitCode: proc.status ?? FAILURE, stdout, stderr }
@@ -96,7 +109,7 @@ const resolveAdminTokenName = (parent: { host: string; token: string }, branchNa
 	const override = process.env.TB_BRANCH_ADMIN_TOKEN_NAME?.trim()
 	if (override) return override
 
-	const listed = runTb(parent, ["--branch", branchName, "token", "ls"])
+	const listed = runTb(parent, ["token", "ls"], { branch: branchName })
 	if (listed.exitCode !== 0) {
 		fail(`Could not list tokens for branch ${branchName}. Set TB_BRANCH_ADMIN_TOKEN_NAME to pin it.`)
 	}
@@ -117,7 +130,7 @@ const copyBranchToken = (
 	branchName: string,
 	tokenName: string,
 ): string => {
-	const copied = runTb(parent, ["--branch", branchName, "token", "copy", tokenName])
+	const copied = runTb(parent, ["token", "copy", tokenName], { branch: branchName })
 	if (copied.exitCode !== 0 || !copied.stdout) {
 		fail(`Failed to copy token "${tokenName}" from branch ${branchName}.`)
 	}
@@ -155,7 +168,7 @@ const up = (branchName: string): void => {
 
 	// 2. Deploy this PR's datasources/MVs into the branch. The branch is ephemeral,
 	//    so destructive schema iteration is acceptable.
-	const deployed = runTb(parent, ["--branch", branchName, "deploy", "--allow-destructive-operations"])
+	const deployed = runTb(parent, ["deploy", "--allow-destructive-operations"], { branch: branchName })
 	if (deployed.exitCode !== 0) {
 		fail(`Failed to deploy project schema to Tinybird branch ${branchName}.`)
 	}
