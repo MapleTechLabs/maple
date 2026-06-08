@@ -196,12 +196,12 @@ const valueProps = [
                         Two files, one command
                     </h2>
                     <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed max-w-xl">
-                        The installer detects your OS and architecture, downloads the matching bundle from the
-                        latest GitHub release, verifies its checksum, and drops the two files —
+                        Homebrew downloads the matching bundle from the latest GitHub release, verifies its
+                        checksum, and keeps the two files —
                         <code class="text-accent font-mono text-[0.9em]">maple</code> and
-                        <code class="text-accent font-mono text-[0.9em]">libchdb</code> — into
-                        <code class="text-accent font-mono text-[0.9em]">~/.maple/bin</code>, then symlinks
-                        <code class="text-accent font-mono text-[0.9em]">maple</code> onto your PATH.
+                        <code class="text-accent font-mono text-[0.9em]">libchdb</code> — together in its
+                        Cellar, then links <code class="text-accent font-mono text-[0.9em]">maple</code> onto
+                        your PATH. Prefer a standalone script? The curl installer still works.
                     </p>
 
                     <div class="mt-7 flex flex-wrap items-center gap-3">
@@ -235,7 +235,11 @@ const valueProps = [
                     </li>
                     <li class="flex items-baseline justify-between gap-4 px-5 py-3.5">
                         <span class="text-[10px] uppercase tracking-wider text-fg-muted">Installs to</span>
-                        <span class="font-mono text-xs text-fg">~/.maple/bin</span>
+                        <span class="font-mono text-xs text-fg">Homebrew Cellar</span>
+                    </li>
+                    <li class="flex items-baseline justify-between gap-4 px-5 py-3.5">
+                        <span class="text-[10px] uppercase tracking-wider text-fg-muted">Upgrade</span>
+                        <span class="font-mono text-xs text-fg">brew upgrade maple</span>
                     </li>
                     <li class="flex items-baseline justify-between gap-4 px-5 py-3.5">
                         <span class="text-[10px] uppercase tracking-wider text-fg-muted">Data</span>
@@ -243,7 +247,7 @@ const valueProps = [
                     </li>
                     <li class="flex items-baseline justify-between gap-4 px-5 py-3.5">
                         <span class="text-[10px] uppercase tracking-wider text-fg-muted">Uninstall</span>
-                        <span class="font-mono text-xs text-fg">.../cli/uninstall | sh</span>
+                        <span class="font-mono text-xs text-fg">brew uninstall maple</span>
                     </li>
                 </ul>
             </div>

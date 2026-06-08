@@ -6,7 +6,7 @@
  * page title), so it leads with a one-line install + the real `maple start`
  * banner rather than restating the title. Reuses global.css tokens only.
  */
-const INSTALL = "curl -fsSL https://maple.dev/cli/install | sh";
+const INSTALL = "brew install Makisuo/tap/maple";
 
 // Tidied reproduction of the startup banner from apps/cli/src/commands/server.ts.
 const banner: Array<{ key?: string; value: string; tone?: "amber" | "green" | "dim" | "fg" }> = [

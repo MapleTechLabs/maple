@@ -16,12 +16,18 @@ Local mode is the fastest way to look at OpenTelemetry data — point any OTLP e
 ## Install
 
 ```bash
+brew install Makisuo/tap/maple
+```
+
+Homebrew downloads the matching release bundle, verifies its checksum, installs `maple` and `libchdb` together, and links `maple` onto your `PATH`. macOS (Apple Silicon) and Linux (x86_64 & arm64) are supported. Upgrade later with `brew upgrade maple`; Homebrew-managed installs block `maple update` so the package manager stays in charge. If Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap` once and retry the install.
+
+Prefer the standalone installer?
+
+```bash
 curl -fsSL https://maple.dev/cli/install | sh
 ```
 
-The installer detects your OS/arch, downloads the matching bundle from the latest GitHub release, verifies its checksum, installs the two files (`maple` + `libchdb`) into `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and symlinks `maple` onto your `PATH`. macOS (Apple Silicon) and Linux (x86_64 & arm64) are supported.
-
-> Prefer not to pipe to a shell? The script is [`scripts/install.sh`](https://github.com/Makisuo/maple/blob/main/scripts/install.sh) — read it first, or download a release bundle from [GitHub Releases](https://github.com/Makisuo/maple/releases) by hand. Uninstall with `curl -fsSL https://maple.dev/cli/uninstall | sh` (your `~/.maple/data` is kept).
+The script is [`scripts/install.sh`](https://github.com/Makisuo/maple/blob/main/scripts/install.sh) — read it first, or download a release bundle from [GitHub Releases](https://github.com/Makisuo/maple/releases) by hand. Uninstall Homebrew builds with `brew uninstall maple`; uninstall script builds with `curl -fsSL https://maple.dev/cli/uninstall | sh` (your `~/.maple/data` is kept). If you migrate from the script to Homebrew, remove the old PATH symlink so your shell resolves Homebrew's `maple`.
 
 ## Start the server
 

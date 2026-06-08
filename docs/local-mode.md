@@ -10,6 +10,20 @@ every compiled query filters on it.
 
 ## Install
 
+Recommended:
+
+```bash
+brew install Makisuo/tap/maple
+```
+
+Homebrew downloads the matching release bundle, verifies its checksum, installs
+`maple` and `libchdb.so` together in the Homebrew Cellar, and links `maple` onto
+your PATH. macOS Apple Silicon and Linux (x86_64 & arm64) are supported. If
+Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap`
+once and retry the install.
+
+Manual installer:
+
 ```bash
 curl -fsSL https://maple.dev/cli/install | sh
 ```
@@ -18,9 +32,10 @@ curl -fsSL https://maple.dev/cli/install | sh
 `apps/landing` — the build copies it to `public/cli/install`. The raw GitHub URL
 `https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh` works too.)
 
-The installer detects your OS/arch, downloads the matching bundle from the latest
-GitHub release, verifies its checksum, installs the two files into `~/.maple/bin`,
-clears the macOS Gatekeeper quarantine, and symlinks `maple` onto your PATH. Then:
+The manual installer detects your OS/arch, downloads the matching bundle from
+the latest GitHub release, verifies its checksum, installs the two files into
+`~/.maple/bin`, clears the macOS Gatekeeper quarantine, and symlinks `maple`
+onto your PATH. Then:
 
 ```bash
 maple start            # OTLP ingest + embedded ClickHouse on :4318; UI from local.maple.dev
@@ -40,14 +55,24 @@ Query commands accept `--format table` for an aligned table instead of JSON, and
 `--debug` to print the compiled SQL + per-query timing to stderr (stdout stays
 clean JSON). Pin the backend with `maple use local|remote` (or `auto` to clear).
 
-Env overrides: `MAPLE_VERSION` (pin a release tag), `MAPLE_INSTALL_DIR` (bundle
-location, default `~/.maple/bin`), `MAPLE_BIN_DIR` (PATH symlink location),
-`MAPLE_SKIP_CHECKSUM=1` (skip SHA-256 verification — only for air-gapped mirrors
-without the `.sha256`; not recommended).
+Manual installer env overrides: `MAPLE_VERSION` (pin a release tag),
+`MAPLE_INSTALL_DIR` (bundle location, default `~/.maple/bin`), `MAPLE_BIN_DIR`
+(PATH symlink location), `MAPLE_SKIP_CHECKSUM=1` (skip SHA-256 verification —
+only for air-gapped mirrors without the `.sha256`; not recommended).
 
 ### Updating
 
-Once installed, the binary keeps itself current:
+Update with the same tool you installed with:
+
+```bash
+brew upgrade maple
+```
+
+Homebrew installs are managed by Homebrew: the wrapper disables Maple's startup
+update check and `maple update` exits with a reminder to use `brew upgrade
+maple`.
+
+Manual-installer builds keep themselves current:
 
 - **Startup notice.** On any command, `maple` checks GitHub Releases for a newer
   version — at most **once per 24h** (the result is cached in
@@ -73,13 +98,25 @@ This is the same artifact the installer fetches, so `maple update` and re-runnin
 
 ### Uninstall
 
+Homebrew:
+
+```bash
+brew uninstall maple
+```
+
+Manual installer:
+
 ```bash
 curl -fsSL https://maple.dev/cli/uninstall | sh
 ```
 
-Removes the `maple` symlink and the `~/.maple/bin` bundle. Your data dir
-(`~/.maple/data`) is kept unless you confirm its removal when prompted. Honors
-the same `MAPLE_INSTALL_DIR` / `MAPLE_BIN_DIR` overrides as the installer.
+The manual uninstaller removes the `maple` symlink and the `~/.maple/bin`
+bundle. Your data dir (`~/.maple/data`) is kept unless you confirm its removal
+when prompted. Honors the same `MAPLE_INSTALL_DIR` / `MAPLE_BIN_DIR` overrides
+as the installer.
+
+If you migrate from the manual installer to Homebrew, run the manual uninstaller
+or remove the old PATH symlink so your shell resolves Homebrew's `maple`.
 
 ## Architecture: one Bun binary + libchdb
 

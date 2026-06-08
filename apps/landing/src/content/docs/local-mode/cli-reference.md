@@ -291,14 +291,26 @@ OTLP bodies may be protobuf (default) or JSON, optionally gzip-encoded. The `/lo
 | --- | --- | --- |
 | `MAPLE_LOCAL_URL` | `http://127.0.0.1:4318` | Base URL the CLI targets in local mode |
 | `MAPLE_LOCAL_UI_URL` | `https://local.maple.dev` | Deployed dashboard origin `maple start` links to |
-| `MAPLE_LIBCHDB` | _(auto)_ | Explicit path to `libchdb`. Otherwise resolved beside the binary, then `~/.maple/bin/libchdb.{so,dylib}` |
+| `MAPLE_LIBCHDB` | _(auto)_ | Explicit path to `libchdb`. Otherwise resolved beside the binary (Homebrew keeps it in the same `libexec` dir), then `~/.maple/bin/libchdb.{so,dylib}` |
 | `MAPLE_API_URL` | `https://api.maple.dev` | Remote API base URL |
 | `MAPLE_API_TOKEN` | | Remote bearer token (overrides the stored value) |
 | `MAPLE_ORG_ID` | | Remote org override |
 | `MAPLE_DEBUG` | | Set to `1` to enable `--debug` |
 | `MAPLE_FORMAT` | `json` | `json` or `table` — same as `--format` |
+| `MAPLE_NO_UPDATE_CHECK` | | Set to `1` to disable startup update checks (the Homebrew wrapper sets this automatically) |
 
-**Installer** (`scripts/install.sh`, env-only):
+**Homebrew**:
+
+```bash
+brew install Makisuo/tap/maple
+brew upgrade maple
+brew uninstall maple
+```
+
+Homebrew-managed installs block `maple update`; use `brew upgrade maple` so Homebrew owns the installed version and receipt.
+If Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap` once and retry the install.
+
+**Manual installer** (`scripts/install.sh`, env-only):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -311,7 +323,9 @@ The on-disk config at `~/.maple/config.json` stores `apiUrl`, `token`, `orgId`, 
 
 ## Troubleshooting
 
-**`libchdb` not found.** The binary `dlopen`s `libchdb` relative to its own path, then falls back to `~/.maple/bin`. Keep `libchdb.so`/`.dylib` beside `maple`, or set `MAPLE_LIBCHDB` to its full path. (Running from source has no sibling library — set `MAPLE_LIBCHDB` or drop one in `~/.maple/bin`.)
+**`libchdb` not found.** The binary `dlopen`s `libchdb` relative to its own path, then falls back to `~/.maple/bin`. Homebrew keeps `maple` and `libchdb` together in its Cellar; the manual installer keeps them in `~/.maple/bin`. If you move files by hand, keep `libchdb.so`/`.dylib` beside `maple`, or set `MAPLE_LIBCHDB` to its full path. (Running from source has no sibling library — set `MAPLE_LIBCHDB` or drop one in `~/.maple/bin`.)
+
+**Homebrew installed but `maple` still runs the old binary.** You probably have a manual-installer symlink earlier on `PATH`. Run `command -v maple` to confirm, then remove the old symlink or run `curl -fsSL https://maple.dev/cli/uninstall | sh` before reinstalling with Homebrew.
 
 **`maple is already running (PID …)`.** A server already owns this data dir. Stop it with `maple stop`, or start a second instance on another port and data dir: `maple start --port 4400 --data-dir ~/.maple/data-2`.
 

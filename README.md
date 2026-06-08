@@ -34,6 +34,19 @@ Maple is now organized as a monorepo with a SPA frontend and an Effect-based bac
 bun install
 ```
 
+## Try Maple Locally
+
+Run Maple as a single local binary with OTLP ingest, embedded ClickHouse, and
+the dashboard:
+
+```bash
+brew install Makisuo/tap/maple
+maple start
+```
+
+See [docs/local-mode.md](docs/local-mode.md) for Homebrew, manual installer,
+update, and uninstall details.
+
 ## Develop
 
 Run every available `dev` task in the monorepo:
