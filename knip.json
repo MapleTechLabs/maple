@@ -10,7 +10,8 @@
 			"entry": ["src/routes/**/*.tsx", "src/worker.ts", "alchemy.run.ts"]
 		},
 		"apps/api": {
-			"entry": ["alchemy.run.ts"]
+			"entry": ["alchemy.run.ts"],
+			"ignoreDependencies": ["cloudflare"]
 		},
 		"apps/alerting": {
 			"entry": ["alchemy.run.ts"]
