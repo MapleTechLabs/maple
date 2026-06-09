@@ -51,19 +51,13 @@ const createClickHouseSqlClient = (config: ClickHouseConfig): WarehouseSqlClient
 			const data = await resultSet.json<Record<string, unknown>>()
 			return { data }
 		},
-		insert: async (datasource, rows) => {
-			if (rows.length === 0) return
-			// ClickHouse inserts must frame the statement in the request BODY, not the
-			// `?query=` URL param. The official `client.insert()` puts `INSERT INTO …
-			// FORMAT JSONEachRow` in the query param (see @clickhouse/client-web
-			// web_connection: insert() adds `query` to searchParams; query()/command()
-			// send it as the body). Managed/proxied ClickHouse endpoints drop that param,
-			// so the NDJSON body gets parsed as SQL — "Syntax error at position 1 ({)" —
-			// 500-ing every write (this broke demo-seed onboarding). The read path works
-			// because `query()` already sends SQL in the body, so we mirror it: send
-			// `INSERT … FORMAT JSONEachRow\n<ndjson>` as the body via command().
-			const ndjson = rows.map((row) => JSON.stringify(row)).join("\n")
-			await client.command({ query: `INSERT INTO ${datasource} FORMAT JSONEachRow\n${ndjson}` })
+		insert: async (_datasource, _rows) => {
+			// ClickHouse is READ-ONLY for Maple: the managed CLICKHOUSE_URL endpoint is
+			// a query gateway that rejects inserts ("Only SELECT or DESCRIBE queries are
+			// supported. Got: InsertQuery"), and a BYO org override is a read concern.
+			// All ingest goes to Tinybird's Events API (see resolveIngestConfig), so this
+			// must never be reached — fail loudly instead of silently 500'ing.
+			throw new Error("ClickHouse is read-only for Maple — ingest must use Tinybird")
 		},
 	}
 }
@@ -187,20 +181,31 @@ export class WarehouseQueryService extends Context.Service<
 
 		/**
 		 * Write-path config. Inserts (demo seed, service-map rollups, alert checks)
-		 * MUST target the managed Tinybird pipeline — never a per-org BYO ClickHouse
-		 * override. The override is a READ concern: an org queries their own
-		 * warehouse, but Maple-managed ingest only writes to the managed backend.
-		 * Routing writes through the override 500'd every insert (ClickHouse parsed
-		 * the JSON body as SQL) and broke demo-seed onboarding for any org with a
-		 * BYO ClickHouse row.
+		 * ALWAYS go to the Tinybird ingest pipeline (Events API) — never ClickHouse.
+		 *
+		 * This is deliberately NOT `resolveManagedConfig()`: when `CLICKHOUSE_URL` is
+		 * set, the *managed* backend is a READ-ONLY ClickHouse query gateway that
+		 * rejects inserts ("DB::Exception: Only SELECT or DESCRIBE queries are
+		 * supported. Got: InsertQuery"). A per-org BYO ClickHouse override is also a
+		 * read concern. Tinybird is the only writable warehouse, so ingest pins to
+		 * it unconditionally (TINYBIRD_HOST/TOKEN are required env, always present).
+		 * Routing writes anywhere else broke demo-seed onboarding.
 		 */
 		const resolveIngestConfig: WarehouseExecutorDeps["resolveConfig"] = Effect.fn(
 			"WarehouseQueryService.resolveIngestConfig",
 		)(function* (tenant, _label) {
 			yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 			yield* Effect.annotateCurrentSpan("clientSource", "managed")
-			yield* Effect.annotateCurrentSpan("ingest.routing", "managed")
-			return yield* resolveManagedConfig()
+			yield* Effect.annotateCurrentSpan("ingest.routing", "tinybird")
+			yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+			return {
+				config: {
+					_tag: "tinybird" as const,
+					host: env.TINYBIRD_HOST,
+					token: Redacted.value(env.TINYBIRD_TOKEN),
+				},
+				source: "managed" as const,
+			}
 		})
 
 		return makeWarehouseExecutor({
