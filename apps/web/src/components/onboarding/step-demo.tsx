@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
-import { motion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 import { toast } from "sonner"
 import { Exit } from "effect"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
@@ -259,6 +259,33 @@ export function StepDemo({
 	)
 }
 
+// Telemetry-flavored loading indicator for the demo seed. A row of bars rises
+// and falls in a staggered wave — reads as live spans streaming in, echoing the
+// trace-waterfall preview above it. Replaces a spinning PulseIcon (a non-radial
+// icon that just looked broken when rotated).
+const SEEDING_BARS = [0, 1, 2, 3] as const
+
+function SeedingBars() {
+	const reduceMotion = useReducedMotion()
+	return (
+		<span aria-hidden className="inline-flex h-3.5 items-end gap-px">
+			{SEEDING_BARS.map((i) => (
+				<motion.span
+					key={i}
+					className="h-full w-0.5 origin-bottom rounded-full bg-current"
+					initial={{ scaleY: 0.35 }}
+					animate={reduceMotion ? { scaleY: 0.6 } : { scaleY: [0.35, 1, 0.35] }}
+					transition={
+						reduceMotion
+							? { duration: 0 }
+							: { duration: 0.9, repeat: Infinity, ease: "easeInOut", delay: i * 0.14 }
+					}
+				/>
+			))}
+		</span>
+	)
+}
+
 const PREVIEW_SPANS: { label: string; offset: number; width: number; tone: "root" | "ok" | "slow" }[] = [
 	{ label: "GET /checkout", offset: 0, width: 97, tone: "root" },
 	{ label: "auth.verify", offset: 5, width: 19, tone: "ok" },
@@ -395,7 +422,7 @@ function DemoOption({
 					disabled={disabled}
 					className="gap-2 w-full"
 				>
-					{loading ? <PulseIcon size={14} className="animate-spin" /> : null}
+					{loading ? <SeedingBars /> : null}
 					{actionLabel}
 					{!loading && <ActionIcon size={14} />}
 				</Button>
