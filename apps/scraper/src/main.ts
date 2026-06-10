@@ -14,9 +14,9 @@ import { Maple } from "@maple-dev/effect-sdk/server"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { ApiClient } from "./ApiClient"
+import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv } from "./Env"
 import { ScrapeScheduler } from "./ScrapeScheduler"
-import { TinybirdIngest } from "./TinybirdIngest"
 
 const TelemetryLayer = Maple.layer({
 	serviceName: "scraper",
@@ -25,7 +25,7 @@ const TelemetryLayer = Maple.layer({
 })
 
 const MainLayer = ScrapeScheduler.layer.pipe(
-	Layer.provide(Layer.mergeAll(ApiClient.layer, TinybirdIngest.layer)),
+	Layer.provide(Layer.mergeAll(ApiClient.layer, OtlpIngest.layer)),
 	Layer.provideMerge(ScraperEnv.layer),
 	Layer.provide(FetchHttpClient.layer),
 )

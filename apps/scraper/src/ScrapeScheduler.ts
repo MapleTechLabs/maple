@@ -1,10 +1,10 @@
 import { Cause, Clock, Context, Duration, Effect, Fiber, Layer, Ref, Schedule, Semaphore } from "effect"
 import { ScrapeResultReport, type InternalScrapeTarget } from "@maple/domain/http"
 import { ApiClient, ApiRequestError } from "./ApiClient"
-import { convertFamiliesToRows } from "./prometheus/convert"
+import { convertFamiliesToOtlp } from "./prometheus/otlp"
 import { parsePrometheusText } from "./prometheus/parser"
+import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv } from "./Env"
-import { TinybirdIngest } from "./TinybirdIngest"
 
 export interface SchedulerStats {
 	readonly activeTargets: number
@@ -42,6 +42,7 @@ const targetFingerprint = (target: InternalScrapeTarget): string =>
 		target.name,
 		target.serviceName,
 		target.orgId,
+		target.ingestKey,
 		Object.entries(target.labels).sort(([a], [b]) => (a < b ? -1 : 1)),
 	])
 
@@ -56,7 +57,7 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 		make: Effect.gen(function* () {
 			const env = yield* ScraperEnv
 			const api = yield* ApiClient
-			const tinybird = yield* TinybirdIngest
+			const otlp = yield* OtlpIngest
 
 			const semaphore = yield* Semaphore.make(env.SCRAPER_CONCURRENCY)
 			const resultsRef = yield* Ref.make<ReadonlyArray<ScrapeResultReport>>([])
@@ -88,8 +89,7 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 							}
 
 							const parsed = parsePrometheusText(response.body)
-							const rows = convertFamiliesToRows(parsed.families, {
-								orgId: target.orgId,
+							const converted = convertFamiliesToOtlp(parsed.families, {
 								targetId: target.id,
 								targetName: target.name,
 								serviceName: target.serviceName ?? target.name,
@@ -98,17 +98,21 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 								scrapeTimeMs,
 							})
 
+							// One OTLP export per scrape, through the ingest gateway with
+							// the org's public key: this is what bills the data (Autumn
+							// byte metering + limit enforcement) and routes it to the
+							// org's warehouse (Tinybird or self-managed ClickHouse).
 							// Ingest failures count as scrape failures: lastScrapeAt must
 							// not advance when the data never landed.
-							yield* tinybird.ingest("metrics_sum", rows.sum)
-							yield* tinybird.ingest("metrics_gauge", rows.gauge)
-							yield* tinybird.ingest("metrics_histogram", rows.histogram)
+							if (converted.request !== null) {
+								yield* otlp.send(target.ingestKey, converted.request)
+							}
 
 							yield* Effect.annotateCurrentSpan({
-								sumRows: rows.sum.length,
-								gaugeRows: rows.gauge.length,
-								histogramRows: rows.histogram.length,
-								droppedSeries: rows.droppedSeriesCount,
+								sumDataPoints: converted.dataPointCounts.sum,
+								gaugeDataPoints: converted.dataPointCounts.gauge,
+								histogramDataPoints: converted.dataPointCounts.histogram,
+								droppedSeries: converted.droppedSeriesCount,
 								skippedLines: parsed.skippedLineCount,
 							})
 							return null

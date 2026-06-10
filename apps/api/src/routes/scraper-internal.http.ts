@@ -2,16 +2,23 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { Effect, Option, Redacted, Schema } from "effect"
 import {
 	InternalScrapeTarget,
+	OrgId,
 	ScrapeIntervalSeconds,
 	ScrapeResultReportList,
 	ScrapeTargetId,
+	UserId,
 } from "@maple/domain/http"
 import { Env } from "../lib/Env"
 import { isValidInternalBearer } from "../lib/internal-auth"
+import { OrgIngestKeysService } from "../services/OrgIngestKeysService"
 import { ScrapeTargetsService } from "../services/ScrapeTargetsService"
 
 const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)
+const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+
+/** Audit identity for lazily-created ingest keys (org_ingest_keys.created_by). */
+const SCRAPER_SYSTEM_USER = Schema.decodeUnknownSync(UserId)("system-prometheus-scraper")
 const decodeScrapeResultsEffect = Schema.decodeUnknownEffect(ScrapeResultReportList)
 const decodeLabelsEffect = Schema.decodeUnknownEffect(
 	Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
@@ -40,6 +47,7 @@ export interface ScrapeTargetRowLike {
  */
 export const toInternalScrapeTarget = (
 	row: ScrapeTargetRowLike,
+	ingestKey: string,
 ): Effect.Effect<Option.Option<InternalScrapeTarget>> =>
 	Effect.gen(function* () {
 		const labels = row.labelsJson
@@ -57,6 +65,7 @@ export const toInternalScrapeTarget = (
 					url: row.url,
 					scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 					labels,
+					ingestKey,
 				}),
 			catch: () => new Error("invalid scrape target row"),
 		}).pipe(Effect.option)
@@ -73,6 +82,7 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
 		const service = yield* ScrapeTargetsService
+		const ingestKeys = yield* OrgIngestKeysService
 		const internalToken = Option.match(env.SD_INTERNAL_TOKEN, {
 			onNone: () => undefined,
 			onSome: Redacted.value,
@@ -95,14 +105,36 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 					.listAllEnabled()
 					.pipe(Effect.catch(() => Effect.succeed([])))
 
+				// One public ingest key per org (lazily created on first use, like
+				// onboarding does). The scraper ingests with this key so scraped
+				// metrics are billed and warehouse-routed identically to the org's
+				// own OTLP traffic.
+				const keyByOrg = new Map<string, string | null>()
+				const ingestKeyForOrg = (orgId: string) =>
+					Effect.gen(function* () {
+						const cached = keyByOrg.get(orgId)
+						if (cached !== undefined) return cached
+						const key: string | null = yield* ingestKeys
+							.getOrCreate(decodeOrgIdSync(orgId), SCRAPER_SYSTEM_USER)
+							.pipe(
+								Effect.map((keys): string | null => keys.publicKey),
+								Effect.catch(() => Effect.succeed(null)),
+							)
+						keyByOrg.set(orgId, key)
+						return key
+					})
+
 				const targets: Array<InternalScrapeTarget> = []
 				for (const row of rows) {
-					const target = yield* toInternalScrapeTarget(row)
+					const ingestKey = yield* ingestKeyForOrg(row.orgId)
+					const target = ingestKey === null
+						? Option.none<InternalScrapeTarget>()
+						: yield* toInternalScrapeTarget(row, ingestKey)
 					if (Option.isSome(target)) {
 						targets.push(target.value)
 					} else {
-						yield* Effect.logWarning("Skipping invalid scrape target row").pipe(
-							Effect.annotateLogs({ scrapeTargetId: row.id }),
+						yield* Effect.logWarning("Skipping scrape target (invalid row or no ingest key)").pipe(
+							Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
 						)
 					}
 				}

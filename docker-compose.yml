@@ -64,10 +64,13 @@ services:
         environment:
             PORT: 3475
             MAPLE_API_URL: http://api:3472
+            MAPLE_INGEST_URL: http://ingest:3474
             SD_INTERNAL_TOKEN: ${SD_INTERNAL_TOKEN:-maple-sd-dev-token}
         depends_on:
             api:
                 condition: service_healthy
+            ingest:
+                condition: service_started
 
     otel-collector:
         build:

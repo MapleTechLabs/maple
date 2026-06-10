@@ -1,21 +1,25 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Layer, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import {
-	InternalScrapeTarget,
-	type ScrapeResultReport,
-} from "@maple/domain/http"
+import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient, ApiRequestError, type ApiClientShape, type ScrapeProxyResponse } from "./ApiClient"
+import { OtlpIngest, OtlpIngestError, type OtlpIngestShape } from "./OtlpIngest"
 import { ScrapeScheduler } from "./ScrapeScheduler"
 import { ScraperEnv, type ScraperEnvShape } from "./Env"
-import { TinybirdIngest, TinybirdIngestError, type TinybirdIngestShape } from "./TinybirdIngest"
+import type { OtlpExportRequest } from "./prometheus/otlp"
 
 const decodeTarget = Schema.decodeUnknownSync(InternalScrapeTarget)
 
 const mkTarget = (
 	id: string,
 	intervalSeconds: number,
-	overrides: Partial<{ name: string; serviceName: string | null; url: string; labels: Record<string, string> }> = {},
+	overrides: Partial<{
+		name: string
+		serviceName: string | null
+		url: string
+		labels: Record<string, string>
+		ingestKey: string
+	}> = {},
 ): InternalScrapeTarget =>
 	decodeTarget({
 		id,
@@ -25,6 +29,7 @@ const mkTarget = (
 		url: overrides.url ?? "https://example.com/metrics",
 		scrapeIntervalSeconds: intervalSeconds,
 		labels: overrides.labels ?? {},
+		ingestKey: overrides.ingestKey ?? `maple_pk_${id.slice(0, 4)}`,
 	})
 
 const TARGET_A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -35,8 +40,7 @@ const GAUGE_BODY = "# TYPE up gauge\nup 1\n"
 const testEnv: ScraperEnvShape = {
 	MAPLE_API_URL: "http://api.test",
 	SD_INTERNAL_TOKEN: Redacted.make("token"),
-	TINYBIRD_HOST: "http://tb.test",
-	TINYBIRD_TOKEN: Redacted.make("tb-token"),
+	MAPLE_INGEST_URL: "http://ingest.test",
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	PORT: 0,
@@ -46,24 +50,21 @@ interface Harness {
 	/** Mutable target list returned by the stubbed listTargets. */
 	targets: Array<InternalScrapeTarget>
 	scrapeCalls: Array<string>
-	ingestCalls: Array<{ datasource: string; rows: ReadonlyArray<Record<string, unknown>> }>
+	ingestCalls: Array<{ ingestKey: string; request: OtlpExportRequest }>
 	reportedResults: Array<ScrapeResultReport>
 	/** Per-target scrape behaviour override. */
 	scrapeImpl: (targetId: string) => Effect.Effect<ScrapeProxyResponse, ApiRequestError>
-	ingestImpl: (datasource: string, rows: ReadonlyArray<Record<string, unknown>>) => Effect.Effect<void, TinybirdIngestError>
+	ingestImpl: (ingestKey: string, request: OtlpExportRequest) => Effect.Effect<void, OtlpIngestError>
 }
 
-const makeHarness = (targets: Array<InternalScrapeTarget>): Harness => {
-	const harness: Harness = {
-		targets,
-		scrapeCalls: [],
-		ingestCalls: [],
-		reportedResults: [],
-		scrapeImpl: () => Effect.succeed({ status: 200, body: GAUGE_BODY }),
-		ingestImpl: () => Effect.void,
-	}
-	return harness
-}
+const makeHarness = (targets: Array<InternalScrapeTarget>): Harness => ({
+	targets,
+	scrapeCalls: [],
+	ingestCalls: [],
+	reportedResults: [],
+	scrapeImpl: () => Effect.succeed({ status: 200, body: GAUGE_BODY }),
+	ingestImpl: () => Effect.void,
+})
 
 const harnessLayer = (harness: Harness, env: ScraperEnvShape = testEnv) => {
 	const api: ApiClientShape = {
@@ -78,18 +79,18 @@ const harnessLayer = (harness: Harness, env: ScraperEnvShape = testEnv) => {
 				harness.reportedResults.push(...results)
 			}),
 	}
-	const tinybird: TinybirdIngestShape = {
-		ingest: (datasource, rows) =>
+	const otlp: OtlpIngestShape = {
+		send: (ingestKey, request) =>
 			Effect.suspend(() => {
-				if (rows.length > 0) harness.ingestCalls.push({ datasource, rows })
-				return harness.ingestImpl(datasource, rows)
+				harness.ingestCalls.push({ ingestKey, request })
+				return harness.ingestImpl(ingestKey, request)
 			}),
 	}
 	return ScrapeScheduler.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				Layer.succeed(ApiClient, api),
-				Layer.succeed(TinybirdIngest, tinybird),
+				Layer.succeed(OtlpIngest, otlp),
 				Layer.succeed(ScraperEnv, env),
 			),
 		),
@@ -120,21 +121,43 @@ describe("ScrapeScheduler", () => {
 		}),
 	)
 
-	it.effect("ingests converted rows and reports success results", () =>
+	it.effect("sends one OTLP export per scrape with the target org's ingest key", () =>
 		Effect.gen(function* () {
-			const harness = makeHarness([mkTarget(TARGET_A, 60)])
+			const harness = makeHarness([mkTarget(TARGET_A, 60, { ingestKey: "maple_pk_org_a" })])
 			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
 
 			// One scrape happened; flush loop fires at t=10s.
 			yield* TestClock.adjust(Duration.seconds(10))
 
 			expect(harness.ingestCalls).toHaveLength(1)
-			expect(harness.ingestCalls[0]?.datasource).toBe("metrics_gauge")
-			const row = harness.ingestCalls[0]?.rows[0] as { resource_attributes: Record<string, string> }
-			expect(row.resource_attributes.maple_org_id).toBe("org_test")
+			expect(harness.ingestCalls[0]?.ingestKey).toBe("maple_pk_org_a")
+
+			const resource = harness.ingestCalls[0]!.request.resourceMetrics[0]!
+			const resourceAttrs = Object.fromEntries(
+				resource.resource.attributes.map((attr) => [attr.key, attr.value.stringValue]),
+			)
+			// Org attribution comes from the ingest key at the gateway — the
+			// scraper must not claim it client-side.
+			expect(resourceAttrs).not.toHaveProperty("maple_org_id")
+			expect(resourceAttrs.maple_scrape_target_id).toBe(TARGET_A)
+			expect(resource.scopeMetrics[0]!.metrics[0]!.name).toBe("up")
 
 			expect(harness.reportedResults).toHaveLength(1)
 			expect(harness.reportedResults[0]?.targetId).toBe(TARGET_A)
+			expect(harness.reportedResults[0]?.error).toBeNull()
+		}),
+	)
+
+	it.effect("skips the export entirely when a scrape yields no data points", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness([mkTarget(TARGET_A, 60)])
+			harness.scrapeImpl = () => Effect.succeed({ status: 200, body: "# only comments\n" })
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+
+			yield* TestClock.adjust(Duration.seconds(10))
+
+			expect(harness.ingestCalls).toEqual([])
+			// The scrape itself succeeded.
 			expect(harness.reportedResults[0]?.error).toBeNull()
 		}),
 	)
@@ -153,17 +176,22 @@ describe("ScrapeScheduler", () => {
 		}),
 	)
 
-	it.effect("treats a Tinybird ingest failure as a scrape failure", () =>
+	it.effect("treats a gateway rejection (e.g. billing 402) as a scrape failure", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness([mkTarget(TARGET_A, 60)])
 			harness.ingestImpl = () =>
-				Effect.fail(new TinybirdIngestError({ message: "Tinybird ingest returned HTTP 500", status: 500 }))
+				Effect.fail(
+					new OtlpIngestError({
+						message: "ingest gateway rejected metrics: billing limit reached (HTTP 402)",
+						status: 402,
+					}),
+				)
 			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
 			expect(harness.reportedResults).toHaveLength(1)
-			expect(harness.reportedResults[0]?.error).toContain("Tinybird ingest")
+			expect(harness.reportedResults[0]?.error).toContain("billing limit")
 		}),
 	)
 
@@ -211,11 +239,11 @@ describe("ScrapeScheduler", () => {
 			expect(harness.scrapeCalls.filter((id) => id === TARGET_A).length).toBe(aCallsAfterSwap)
 			expect(harness.scrapeCalls.filter((id) => id === TARGET_B).length).toBeGreaterThanOrEqual(3)
 
-			// Change B's URL → fingerprint change → loop restarted with new config.
-			harness.targets = [mkTarget(TARGET_B, 10, { url: "https://other.example.com/metrics" })]
-			const bCallsBeforeRestart = harness.scrapeCalls.filter((id) => id === TARGET_B).length
+			// A rotated ingest key → fingerprint change → loop restarted with the new key.
+			harness.targets = [mkTarget(TARGET_B, 10, { ingestKey: "maple_pk_rotated" })]
 			yield* TestClock.adjust(Duration.seconds(60))
-			expect(harness.scrapeCalls.filter((id) => id === TARGET_B).length).toBeGreaterThan(bCallsBeforeRestart)
+			yield* TestClock.adjust(Duration.seconds(10))
+			expect(harness.ingestCalls.at(-1)?.ingestKey).toBe("maple_pk_rotated")
 		}),
 	)
 
@@ -243,7 +271,7 @@ describe("ScrapeScheduler", () => {
 				Layer.provide(
 					Layer.mergeAll(
 						Layer.succeed(ApiClient, api),
-						Layer.succeed(TinybirdIngest, { ingest: () => Effect.void }),
+						Layer.succeed(OtlpIngest, { send: () => Effect.void }),
 						Layer.succeed(ScraperEnv, testEnv),
 					),
 				),
@@ -285,7 +313,7 @@ describe("ScrapeScheduler", () => {
 				Layer.provide(
 					Layer.mergeAll(
 						Layer.succeed(ApiClient, api),
-						Layer.succeed(TinybirdIngest, { ingest: () => Effect.void }),
+						Layer.succeed(OtlpIngest, { send: () => Effect.void }),
 						Layer.succeed(ScraperEnv, testEnv),
 					),
 				),

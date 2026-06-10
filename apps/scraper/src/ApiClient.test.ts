@@ -7,8 +7,7 @@ import { ScraperEnv, type ScraperEnvShape } from "./Env"
 const testEnv: ScraperEnvShape = {
 	MAPLE_API_URL: "http://api.test",
 	SD_INTERNAL_TOKEN: Redacted.make("internal-token"),
-	TINYBIRD_HOST: "http://tb.test",
-	TINYBIRD_TOKEN: Redacted.make("tb-token"),
+	MAPLE_INGEST_URL: "http://ingest.test",
 	SCRAPER_CONCURRENCY: 10,
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: 60,
 	PORT: 0,
@@ -57,6 +56,7 @@ const VALID_TARGET = {
 	url: "https://node.example.com/metrics",
 	scrapeIntervalSeconds: 15,
 	labels: { env: "prod" },
+	ingestKey: "maple_pk_org_1_key",
 }
 
 describe("ApiClient", () => {
@@ -78,6 +78,7 @@ describe("ApiClient", () => {
 			expect(targets).toHaveLength(1)
 			expect(targets[0]?.id).toBe(VALID_TARGET.id)
 			expect(targets[0]?.labels).toEqual({ env: "prod" })
+			expect(targets[0]?.ingestKey).toBe("maple_pk_org_1_key")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 

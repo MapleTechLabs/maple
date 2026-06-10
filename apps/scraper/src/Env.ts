@@ -5,8 +5,12 @@ export interface ScraperEnvShape {
 	readonly MAPLE_API_URL: string
 	/** Shared internal bearer for the `/api/internal/*` scraper endpoints. */
 	readonly SD_INTERNAL_TOKEN: Redacted.Redacted<string>
-	readonly TINYBIRD_HOST: string
-	readonly TINYBIRD_TOKEN: Redacted.Redacted<string>
+	/**
+	 * Base URL of the Maple ingest gateway, e.g. `https://ingest.maple.dev`.
+	 * Scraped metrics are sent here as OTLP/JSON with each org's public
+	 * ingest key so they get billed and warehouse-routed per org.
+	 */
+	readonly MAPLE_INGEST_URL: string
 	/** Max concurrent scrapes across all targets. */
 	readonly SCRAPER_CONCURRENCY: number
 	/** How often the target list is refreshed, in seconds. */
@@ -18,8 +22,7 @@ export interface ScraperEnvShape {
 const envConfig = Config.all({
 	MAPLE_API_URL: Config.string("MAPLE_API_URL"),
 	SD_INTERNAL_TOKEN: Config.redacted("SD_INTERNAL_TOKEN"),
-	TINYBIRD_HOST: Config.string("TINYBIRD_HOST"),
-	TINYBIRD_TOKEN: Config.redacted("TINYBIRD_TOKEN"),
+	MAPLE_INGEST_URL: Config.string("MAPLE_INGEST_URL"),
 	SCRAPER_CONCURRENCY: Config.number("SCRAPER_CONCURRENCY").pipe(Config.withDefault(10)),
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: Config.number("SCRAPER_RECONCILE_INTERVAL_SECONDS").pipe(
 		Config.withDefault(60),
@@ -31,7 +34,7 @@ export class ScraperEnv extends Context.Service<ScraperEnv, ScraperEnvShape>()("
 	make: Effect.map(envConfig, (env) => ({
 		...env,
 		MAPLE_API_URL: env.MAPLE_API_URL.replace(/\/$/, ""),
-		TINYBIRD_HOST: env.TINYBIRD_HOST.replace(/\/$/, ""),
+		MAPLE_INGEST_URL: env.MAPLE_INGEST_URL.replace(/\/$/, ""),
 	})),
 }) {
 	static readonly layer = Layer.effect(this, this.make)

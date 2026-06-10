@@ -16,6 +16,13 @@ export class InternalScrapeTarget extends Schema.Class<InternalScrapeTarget>("In
 	scrapeIntervalSeconds: ScrapeIntervalSeconds,
 	/** Parsed `labelsJson` — extra metric attributes configured on the target. */
 	labels: Schema.Record(Schema.String, Schema.String),
+	/**
+	 * The org's public ingest key (`maple_pk_*`). The scraper sends converted
+	 * metrics through the ingest gateway with this key so the data is billed
+	 * and routed (Tinybird vs self-managed ClickHouse) exactly like customer
+	 * OTLP traffic.
+	 */
+	ingestKey: Schema.String,
 }) {}
 
 export const InternalScrapeTargetList = Schema.Array(InternalScrapeTarget)

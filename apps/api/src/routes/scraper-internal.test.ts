@@ -24,8 +24,10 @@ describe("toInternalScrapeTarget", () => {
 		labelsJson: JSON.stringify({ env: "prod" }),
 	}
 
-	it("marshals a row with parsed labels", async () => {
-		const result = await Effect.runPromise(toInternalScrapeTarget(baseRow))
+	const INGEST_KEY = "maple_pk_test_key"
+
+	it("marshals a row with parsed labels and the org's ingest key", async () => {
+		const result = await Effect.runPromise(toInternalScrapeTarget(baseRow, INGEST_KEY))
 		expect(Option.isSome(result)).toBe(true)
 		if (Option.isNone(result)) return
 		expect(result.value.id).toBe(baseRow.id)
@@ -33,11 +35,12 @@ describe("toInternalScrapeTarget", () => {
 		expect(result.value.serviceName).toBe("node")
 		expect(result.value.scrapeIntervalSeconds).toBe(15)
 		expect(result.value.labels).toEqual({ env: "prod" })
+		expect(result.value.ingestKey).toBe(INGEST_KEY)
 	})
 
 	it("degrades unparseable labelsJson to an empty record", async () => {
 		const result = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, labelsJson: "{not json" }),
+			toInternalScrapeTarget({ ...baseRow, labelsJson: "{not json" }, INGEST_KEY),
 		)
 		expect(Option.isSome(result)).toBe(true)
 		if (Option.isNone(result)) return
@@ -46,7 +49,7 @@ describe("toInternalScrapeTarget", () => {
 
 	it("handles null labelsJson and null serviceName", async () => {
 		const result = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, labelsJson: null, serviceName: null }),
+			toInternalScrapeTarget({ ...baseRow, labelsJson: null, serviceName: null }, INGEST_KEY),
 		)
 		expect(Option.isSome(result)).toBe(true)
 		if (Option.isNone(result)) return
@@ -56,7 +59,7 @@ describe("toInternalScrapeTarget", () => {
 
 	it("drops rows that violate the schema brands instead of failing the list", async () => {
 		const outOfRange = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, scrapeIntervalSeconds: 2 }),
+			toInternalScrapeTarget({ ...baseRow, scrapeIntervalSeconds: 2 }, INGEST_KEY),
 		)
 		expect(Option.isNone(outOfRange)).toBe(true)
 	})
