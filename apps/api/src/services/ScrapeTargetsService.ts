@@ -69,6 +69,13 @@ export interface ScrapeTargetsServiceShape {
 		ScrapeTargetProxyResponse,
 		ScrapeTargetNotFoundError | ScrapeTargetPersistenceError | ScrapeTargetEncryptionError
 	>
+	readonly recordScrapeResults: (
+		results: ReadonlyArray<{
+			readonly targetId: ScrapeTargetId
+			readonly scrapedAt: number
+			readonly error: string | null
+		}>,
+	) => Effect.Effect<void, ScrapeTargetPersistenceError>
 	readonly probe: (
 		orgId: OrgId,
 		targetId: ScrapeTargetId,
@@ -612,6 +619,38 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				})
 			})
 
+			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (
+				results: ReadonlyArray<{
+					readonly targetId: ScrapeTargetId
+					readonly scrapedAt: number
+					readonly error: string | null
+				}>,
+			) {
+				for (const result of results) {
+					yield* database
+						.execute((db) =>
+							db
+								.update(scrapeTargets)
+								.set(
+									result.error === null
+										? {
+												lastScrapeAt: result.scrapedAt,
+												lastScrapeError: null,
+												updatedAt: result.scrapedAt,
+											}
+										: // Failure keeps lastScrapeAt at the last good scrape so data
+											// gaps stay visible alongside the error.
+											{
+												lastScrapeError: result.error,
+												updatedAt: result.scrapedAt,
+											},
+								)
+								.where(eq(scrapeTargets.id, result.targetId)),
+						)
+						.pipe(Effect.mapError(toPersistenceError))
+				}
+			})
+
 			const probe = Effect.fn("ScrapeTargetsService.probe")(function* (
 				orgId: OrgId,
 				targetId: ScrapeTargetId,
@@ -640,28 +679,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					catch: (error) => (error instanceof Error ? error : new Error("Connection failed")),
 				}).pipe(Effect.exit)
 
-				if (Exit.isSuccess(requestExit)) {
-					yield* database
-						.execute((db) =>
-							db
-								.update(scrapeTargets)
-								.set({ lastScrapeAt: now, lastScrapeError: null, updatedAt: now })
-								.where(eq(scrapeTargets.id, targetId)),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-				} else {
-					yield* database
-						.execute((db) =>
-							db
-								.update(scrapeTargets)
-								.set({
-									lastScrapeError: Cause.pretty(requestExit.cause),
-									updatedAt: now,
-								})
-								.where(eq(scrapeTargets.id, targetId)),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-				}
+				yield* recordScrapeResults([
+					{
+						targetId,
+						scrapedAt: now,
+						error: Exit.isSuccess(requestExit) ? null : Cause.pretty(requestExit.cause),
+					},
+				])
 
 				const updatedRows = yield* database
 					.execute((db) =>
@@ -695,6 +719,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				delete: remove,
 				listAllEnabled,
 				scrapeForCollector,
+				recordScrapeResults,
 				probe,
 			} satisfies ScrapeTargetsServiceShape
 		}),

@@ -3,7 +3,7 @@ import { Effect, Option, Redacted, Schema } from "effect"
 import { ScrapeTargetId } from "@maple/domain/http"
 import { Env } from "../lib/Env"
 import { ScrapeTargetsService } from "../services/ScrapeTargetsService"
-import { isValidInternalBearer } from "./sd.http"
+import { isValidInternalBearer } from "../lib/internal-auth"
 
 const decodeScrapeTargetIdEffect = Schema.decodeUnknownEffect(ScrapeTargetId)
 

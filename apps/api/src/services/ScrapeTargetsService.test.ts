@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
-import { CreateScrapeTargetRequest, OrgId, ScrapeIntervalSeconds } from "@maple/domain/http"
+import { CreateScrapeTargetRequest, OrgId, ScrapeIntervalSeconds, ScrapeTargetId } from "@maple/domain/http"
 import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
 import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
@@ -81,6 +81,89 @@ describe("ScrapeTargetsService", () => {
 			expect(response.contentType).toBe("text/plain; version=0.0.4")
 			expect(calls.some((call) => call.url === "https://metrics.example.com/metrics")).toBe(true)
 			expect(calls.every((call) => call.authorization === "Bearer stored-token")).toBe(true)
+		}).pipe(Effect.provide(makeLayer(url)))
+	})
+
+	it.effect("recordScrapeResults updates lastScrapeAt on success and clears the error", () => {
+		const { url } = createTempDbUrl()
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			const scrapedAt = 1750000000000
+			yield* service.recordScrapeResults([{ targetId: target.id, scrapedAt, error: null }])
+
+			const updated = yield* service.get(orgId, target.id)
+			expect(updated.lastScrapeAt).toBe(new Date(scrapedAt).toISOString())
+			expect(updated.lastScrapeError).toBeNull()
+		}).pipe(Effect.provide(makeLayer(url)))
+	})
+
+	it.effect("recordScrapeResults keeps lastScrapeAt at the last good scrape on failure", () => {
+		const { url } = createTempDbUrl()
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			const goodScrapeAt = 1750000000000
+			yield* service.recordScrapeResults([{ targetId: target.id, scrapedAt: goodScrapeAt, error: null }])
+			yield* service.recordScrapeResults([
+				{ targetId: target.id, scrapedAt: goodScrapeAt + 15_000, error: "HTTP 503" },
+			])
+
+			const updated = yield* service.get(orgId, target.id)
+			expect(updated.lastScrapeAt).toBe(new Date(goodScrapeAt).toISOString())
+			expect(updated.lastScrapeError).toBe("HTTP 503")
+
+			// A later success clears the error again.
+			yield* service.recordScrapeResults([
+				{ targetId: target.id, scrapedAt: goodScrapeAt + 30_000, error: null },
+			])
+			const recovered = yield* service.get(orgId, target.id)
+			expect(recovered.lastScrapeAt).toBe(new Date(goodScrapeAt + 30_000).toISOString())
+			expect(recovered.lastScrapeError).toBeNull()
+		}).pipe(Effect.provide(makeLayer(url)))
+	})
+
+	it.effect("recordScrapeResults tolerates unknown target ids and processes batches", () => {
+		const { url } = createTempDbUrl()
+		return Effect.gen(function* () {
+			const service = yield* ScrapeTargetsService
+			const orgId = asOrgId("org_1")
+			const target = yield* service.create(
+				orgId,
+				new CreateScrapeTargetRequest({
+					name: "Node Exporter",
+					url: "https://metrics.example.com/metrics",
+					scrapeIntervalSeconds: asScrapeIntervalSeconds(15),
+				}),
+			)
+
+			const unknownId = Schema.decodeUnknownSync(ScrapeTargetId)("99999999-9999-4999-8999-999999999999")
+			const scrapedAt = 1750000000000
+			yield* service.recordScrapeResults([
+				{ targetId: unknownId, scrapedAt, error: null },
+				{ targetId: target.id, scrapedAt, error: null },
+			])
+
+			const updated = yield* service.get(orgId, target.id)
+			expect(updated.lastScrapeAt).toBe(new Date(scrapedAt).toISOString())
 		}).pipe(Effect.provide(makeLayer(url)))
 	})
 })

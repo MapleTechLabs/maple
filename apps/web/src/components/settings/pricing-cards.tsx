@@ -167,7 +167,18 @@ interface CheckoutPreview {
 }
 
 export function PricingCards() {
-	const { data: plans, isLoading, error } = useListPlans()
+	// autumn-js's AutumnProvider hard-configures its QueryClient with `retry: false`,
+	// so a single transient 401 (Clerk token still settling during onboarding → the
+	// fetch interceptor sends listPlans unauthenticated) sticks for the 60s stale
+	// window and shows "Unable to load pricing plans." Retry through the gap: by the
+	// first backoff the token has settled and the request succeeds *with* customerId,
+	// preserving per-customer `customerEligibility`.
+	const { data: plans, isLoading, error } = useListPlans({
+		queryOptions: {
+			retry: 3,
+			retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
+		},
+	})
 	const { attach, previewAttach, refetch } = useCustomer()
 	const { isTrialing, daysRemaining } = useTrialStatus()
 	const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null)

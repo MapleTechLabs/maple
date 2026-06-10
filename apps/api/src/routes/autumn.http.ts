@@ -26,21 +26,30 @@ export const AutumnRouter = HttpRouter.use((router) =>
 		// stay off hot paths and only run when someone is genuinely paying.
 		const ENRICHED_ROUTES = new Set(["attach", "multiAttach", "setupPayment", "updateSubscription"])
 
+		// The plan catalog is global, not customer-specific (autumn-js marks
+		// listPlans' customerId optional). Resolve the tenant optionally for it so a
+		// transient onboarding token gap serves the catalog instead of a 401 —
+		// authenticated callers still pass customerId and get per-customer eligibility.
+		const PUBLIC_ROUTES = new Set(["listPlans"])
+
 		const handle = (route: string) => (req: HttpServerRequest.HttpServerRequest) =>
 			Effect.gen(function* () {
-				const tenant = yield* authService.resolveTenant(req.headers as Record<string, string>)
+				const headers = req.headers as Record<string, string>
+				const tenant = PUBLIC_ROUTES.has(route)
+					? yield* Effect.option(authService.resolveTenant(headers))
+					: Option.some(yield* authService.resolveTenant(headers))
 
 				const body = yield* req.json
 
 				let customerData: CustomerData | undefined
-				if (ENRICHED_ROUTES.has(route)) {
-					const { email, orgName } = yield* authService.getCustomerData(tenant)
+				if (ENRICHED_ROUTES.has(route) && Option.isSome(tenant)) {
+					const { email, orgName } = yield* authService.getCustomerData(tenant.value)
 					if (email || orgName) {
 						customerData = {
 							email,
 							name: orgName,
-							fingerprint: tenant.orgId,
-							metadata: { maple_user_id: String(tenant.userId), maple_user_email: email },
+							fingerprint: tenant.value.orgId,
+							metadata: { maple_user_id: String(tenant.value.userId), maple_user_email: email },
 						}
 					}
 				}
@@ -49,7 +58,7 @@ export const AutumnRouter = HttpRouter.use((router) =>
 					try: () =>
 						autumnHandler({
 							request: { url: req.url, method: req.method, body },
-							customerId: tenant.orgId,
+							customerId: Option.getOrUndefined(tenant)?.orgId,
 							customerData,
 							clientOptions: { secretKey },
 						}),

@@ -58,7 +58,6 @@ export const createAlertingWorker = async ({ stage, mapleDb }: CreateAlertingWor
 			...optionalPlain("CLERK_PUBLISHABLE_KEY"),
 			...optionalSecret("CLERK_JWT_KEY"),
 			...optionalSecret("AUTUMN_SECRET_KEY"),
-			...optionalSecret("SD_INTERNAL_TOKEN"),
 			...optionalSecret("INTERNAL_SERVICE_TOKEN"),
 			...optionalSecret("RESEND_API_KEY"),
 		},

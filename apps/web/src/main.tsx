@@ -86,7 +86,16 @@ function useAutumnFetchAuth() {
 		window.fetch = async (input, init) => {
 			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 			if (url.includes("/api/autumn/")) {
-				const token = await getTokenRef.current()
+				// getToken() can transiently return null (token still settling right
+				// after sign-in / org creation) or reject; either way, don't reject the
+				// autumn fetch — fall through unauthenticated. React Query retries the
+				// listPlans query, and the backend serves the plan catalog tenant-less.
+				let token: string | null = null
+				try {
+					token = await getTokenRef.current()
+				} catch {
+					token = null
+				}
 				if (token) {
 					const headers = new Headers(init?.headers)
 					headers.set("Authorization", `Bearer ${token}`)

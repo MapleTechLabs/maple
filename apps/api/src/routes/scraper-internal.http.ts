@@ -1,0 +1,138 @@
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { Effect, Option, Redacted, Schema } from "effect"
+import {
+	InternalScrapeTarget,
+	ScrapeIntervalSeconds,
+	ScrapeResultReportList,
+	ScrapeTargetId,
+} from "@maple/domain/http"
+import { Env } from "../lib/Env"
+import { isValidInternalBearer } from "../lib/internal-auth"
+import { ScrapeTargetsService } from "../services/ScrapeTargetsService"
+
+const decodeTargetIdSync = Schema.decodeUnknownSync(ScrapeTargetId)
+const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalSeconds)
+const decodeScrapeResultsEffect = Schema.decodeUnknownEffect(ScrapeResultReportList)
+const decodeLabelsEffect = Schema.decodeUnknownEffect(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
+)
+
+const errorText = (message: string, status: number) =>
+	HttpServerResponse.text(message, {
+		status,
+		headers: { "content-type": "text/plain; charset=utf-8" },
+	})
+
+export interface ScrapeTargetRowLike {
+	readonly id: string
+	readonly orgId: string
+	readonly name: string
+	readonly serviceName: string | null
+	readonly url: string
+	readonly scrapeIntervalSeconds: number
+	readonly labelsJson: string | null
+}
+
+/**
+ * Marshal a DB row into the internal wire shape. Unparseable labels degrade
+ * to `{}`; a row that fails the schema brands (interval out of range, bad id)
+ * yields `none` so one corrupt row cannot break the whole list.
+ */
+export const toInternalScrapeTarget = (
+	row: ScrapeTargetRowLike,
+): Effect.Effect<Option.Option<InternalScrapeTarget>> =>
+	Effect.gen(function* () {
+		const labels = row.labelsJson
+			? yield* decodeLabelsEffect(row.labelsJson).pipe(
+					Effect.orElseSucceed(() => ({}) as Record<string, string>),
+				)
+			: {}
+		return yield* Effect.try({
+			try: () =>
+				new InternalScrapeTarget({
+					id: decodeTargetIdSync(row.id),
+					orgId: row.orgId,
+					name: row.name,
+					serviceName: row.serviceName ?? null,
+					url: row.url,
+					scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
+					labels,
+				}),
+			catch: () => new Error("invalid scrape target row"),
+		}).pipe(Effect.option)
+	})
+
+/**
+ * Internal endpoints backing the standalone Prometheus scraper
+ * (apps/scraper). The scraper polls `/api/internal/scrape-targets` for the
+ * enabled target list, fetches each target's exposition text through
+ * `/api/internal/prometheus-scrape` (credentials stay server-side), and
+ * reports outcomes to `/api/internal/scrape-results`.
+ */
+export const ScraperInternalRouter = HttpRouter.use((router) =>
+	Effect.gen(function* () {
+		const env = yield* Env
+		const service = yield* ScrapeTargetsService
+		const internalToken = Option.match(env.SD_INTERNAL_TOKEN, {
+			onNone: () => undefined,
+			onSome: Redacted.value,
+		})
+
+		const unauthorized = (req: HttpServerRequest.HttpServerRequest) => {
+			if (!internalToken) return errorText("Scraper internal endpoints are not configured", 401)
+			if (!isValidInternalBearer(req.headers.authorization, internalToken)) {
+				return errorText("Unauthorized", 401)
+			}
+			return undefined
+		}
+
+		const listTargets = (req: HttpServerRequest.HttpServerRequest) =>
+			Effect.gen(function* () {
+				const denied = unauthorized(req)
+				if (denied) return denied
+
+				const rows = yield* service
+					.listAllEnabled()
+					.pipe(Effect.catch(() => Effect.succeed([])))
+
+				const targets: Array<InternalScrapeTarget> = []
+				for (const row of rows) {
+					const target = yield* toInternalScrapeTarget(row)
+					if (Option.isSome(target)) {
+						targets.push(target.value)
+					} else {
+						yield* Effect.logWarning("Skipping invalid scrape target row").pipe(
+							Effect.annotateLogs({ scrapeTargetId: row.id }),
+						)
+					}
+				}
+
+				return yield* HttpServerResponse.json(targets)
+			}).pipe(Effect.withSpan("ScraperInternal.listTargets"))
+
+		const recordResults = (req: HttpServerRequest.HttpServerRequest) =>
+			Effect.gen(function* () {
+				const denied = unauthorized(req)
+				if (denied) return denied
+
+				const body = yield* req.json.pipe(Effect.option)
+				if (Option.isNone(body)) return errorText("Invalid JSON body", 400)
+
+				const results = yield* decodeScrapeResultsEffect(body.value).pipe(Effect.option)
+				if (Option.isNone(results)) return errorText("Invalid scrape results payload", 400)
+
+				yield* service.recordScrapeResults(results.value).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Failed to persist scrape results").pipe(
+							Effect.annotateLogs({ error: error.message }),
+						),
+					),
+				)
+
+				return yield* HttpServerResponse.json({ recorded: results.value.length })
+			}).pipe(Effect.withSpan("ScraperInternal.recordResults"))
+
+		yield* router.add("GET", "/api/internal/scrape-targets", listTargets)
+		yield* router.add("POST", "/api/internal/scrape-results", recordResults)
+	}),
+)

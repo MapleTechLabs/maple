@@ -54,6 +54,21 @@ services:
             ingest:
                 condition: service_started
 
+    scraper:
+        build:
+            context: .
+            dockerfile: apps/scraper/Dockerfile
+        ports:
+            - "3475:3475"
+        env_file: .env
+        environment:
+            PORT: 3475
+            MAPLE_API_URL: http://api:3472
+            SD_INTERNAL_TOKEN: ${SD_INTERNAL_TOKEN:-maple-sd-dev-token}
+        depends_on:
+            api:
+                condition: service_healthy
+
     otel-collector:
         build:
             context: .
@@ -63,10 +78,6 @@ services:
             - "4318:4318"
             - "13133:13133"
         env_file: .env
-        environment:
-            SD_API_HOST: api
-            SD_API_PORT: 3472
-            SD_INTERNAL_TOKEN: ${SD_INTERNAL_TOKEN:-maple-sd-dev-token}
         volumes:
             - otel-queue-data:/var/lib/otelcol/file_storage
         depends_on:
