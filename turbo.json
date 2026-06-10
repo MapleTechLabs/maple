@@ -1,5 +1,6 @@
 {
 	"$schema": "https://turborepo.com/schema.json",
+	"ui": "tui",
 	"globalPassThroughEnv": ["*"],
 	"tasks": {
 		"build": {
@@ -19,8 +20,7 @@
 		},
 		"dev": {
 			"cache": false,
-			"persistent": true,
-			"interactive": true
+			"persistent": true
 		},
 		"tinybird:dev": {
 			"cache": false

@@ -8,7 +8,7 @@
 	],
 	"scripts": {
 		"build": "turbo build",
-		"dev": "turbo dev --ui=tui",
+		"dev": "turbo dev",
 		"docker:build": "COMPOSE_PARALLEL_LIMIT=1 docker compose build",
 		"docker:up": "COMPOSE_PARALLEL_LIMIT=1 docker compose up --build",
 		"dev:alerting": "bun --filter=@maple/alerting dev",
