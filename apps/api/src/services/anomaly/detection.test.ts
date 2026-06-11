@@ -160,6 +160,24 @@ describe("evaluateGoldenSignals — throughput", () => {
 		)
 		expect(byKey(evals, "throughput").status).toBe("skipped")
 	})
+
+	it("stays fireable on high-variance series (threshold never goes negative)", () => {
+		// MAD comparable to the median: m - k*sigma is deeply negative, so without
+		// the clamp the drop signal could never fire and a negative threshold
+		// would be persisted. A full outage must still breach via the 0.1m floor.
+		const noisy = Array.from({ length: 21 }, (_, i) => ({
+			requestCount: i % 2 === 0 ? 600 : 12000,
+			errorCount: 0,
+			p95Ms: 200,
+		}))
+		const evals = evaluateGoldenSignals(
+			goldenSeries({ requestCount: 0, errorCount: 0, p95Ms: 0 }, noisy),
+			{ sensitivity: SENSITIVITY.low, elapsedMinutes: 20 }, // k=6 worst case
+		)
+		const e = byKey(evals, "throughput")
+		expect(e.threshold).toBeGreaterThan(0)
+		expect(e.status).toBe("breached")
+	})
 })
 
 describe("evaluateLogVolume", () => {

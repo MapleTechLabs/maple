@@ -254,7 +254,11 @@ export function evaluateGoldenSignals(
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, ratePerMin, currentCount))
 			} else {
 				const sigma = robustSigma(rates, m, 0.5, 0.1)
-				const threshold = Math.min(m - k * sigma, m * 0.5)
+				// Clamp into [0.1m, 0.5m]: when MAD is large relative to the median,
+				// `m - k*sigma` goes negative and a bare min() would make the drop
+				// signal permanently un-fireable (ratePerMin >= 0 always). The 0.1m
+				// floor keeps severe outages detectable on high-variance series.
+				const threshold = Math.max(Math.min(m - k * sigma, m * 0.5), m * 0.1)
 				const breached = ratePerMin < threshold
 				evaluations.push(
 					makeEval(signal, ratePerMin, m, sigma, threshold, breached, "warning", currentCount),

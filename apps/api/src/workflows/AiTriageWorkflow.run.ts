@@ -13,7 +13,7 @@
  *                       array through the 1 MiB step-output cap for no benefit)
  *   3. persist        — run row + issue timeline + usage tracking
  */
-import { randomUUID } from "node:crypto"
+import { createHash } from "node:crypto"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
 import { generateText, hasToolCall, stepCountIs, type ToolSet } from "ai"
 import { aiTriageRuns, aiTriageSettings, anomalyIncidents, errorIssueEvents } from "@maple/db"
@@ -55,6 +55,22 @@ const decodeRunId = Schema.decodeUnknownSync(AiTriageRunId)
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const decodeAnomalyIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
+
+/**
+ * UUIDv5-style id derived from the runId, so the timeline-event insert in the
+ * retryable persist step is idempotent: a retry regenerates the SAME id and the
+ * primary key (+ onConflictDoNothing) absorbs the duplicate.
+ */
+const deterministicEventId = (runId: string): string => {
+	const hex = createHash("sha256").update(`ai-triage-event:${runId}`).digest("hex")
+	return [
+		hex.slice(0, 8),
+		hex.slice(8, 12),
+		`5${hex.slice(13, 16)}`,
+		`${((Number.parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}`,
+		hex.slice(20, 32),
+	].join("-")
+}
 
 const DEFAULT_TRIAGE_MODEL = "moonshotai/kimi-k2.5:nitro"
 const MAX_AGENT_STEPS = 12
@@ -106,16 +122,22 @@ export async function runAiTriage(
 			await db
 				.update(aiTriageRuns)
 				.set({ status: "failed", error, completedAt: now, updatedAt: now })
-				.where(eq(aiTriageRuns.id, runId))
+				.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 			if (incidentKind === "anomaly") {
 				await db
 					.update(anomalyIncidents)
 					.set({ triageStatus: "skipped", updatedAt: now })
-					.where(eq(anomalyIncidents.id, decodeAnomalyIncidentId(incidentId)))
+					.where(
+						and(
+							eq(anomalyIncidents.orgId, decodeOrgId(orgId)),
+							eq(anomalyIncidents.id, decodeAnomalyIncidentId(incidentId)),
+						),
+					)
 			}
 		} catch (cause) {
-			// The run row may stay queued/running forever if this write is lost —
-			// surface why in the Workers logs instead of swallowing it.
+			// If this write is lost the row stays queued/running until the enqueue
+			// path reclaims it as stranded (STALE_RUN_RECLAIM_MS) — surface why in
+			// the Workers logs instead of swallowing it.
 			console.error("ai-triage: failed to mark run failed", {
 				runId,
 				orgId,
@@ -262,26 +284,31 @@ export async function runAiTriage(
 				completedAt: now,
 				updatedAt: now,
 			})
-			.where(eq(aiTriageRuns.id, runId))
+			.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 
 		if (incidentKind === "error" && issueId) {
 			// Surfaces the triage on the existing issue timeline UI. actorId stays
-			// null — the run row itself is the authoritative record.
+			// null — the run row itself is the authoritative record. The event id is
+			// derived from runId (and inserted with onConflictDoNothing) so a retried
+			// persist step cannot duplicate the timeline entry.
 			const result = decodeTriageResult(JSON.parse(agentResult.resultJson))
-			await db.insert(errorIssueEvents).values({
-				id: decodeEventId(randomUUID()),
-				orgId: decodeOrgId(orgId),
-				issueId: decodeIssueId(issueId),
-				actorId: null,
-				type: "ai_triage",
-				payloadJson: JSON.stringify({
-					runId,
-					summary: result.summary,
-					severityAssessment: result.severityAssessment,
-					confidence: result.confidence,
-				}),
-				createdAt: now,
-			})
+			await db
+				.insert(errorIssueEvents)
+				.values({
+					id: decodeEventId(deterministicEventId(runId)),
+					orgId: decodeOrgId(orgId),
+					issueId: decodeIssueId(issueId),
+					actorId: null,
+					type: "ai_triage",
+					payloadJson: JSON.stringify({
+						runId,
+						summary: result.summary,
+						severityAssessment: result.severityAssessment,
+						confidence: result.confidence,
+					}),
+					createdAt: now,
+				})
+				.onConflictDoNothing()
 		}
 
 		if (incidentKind === "anomaly") {

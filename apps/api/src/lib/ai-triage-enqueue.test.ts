@@ -155,6 +155,55 @@ describe("maybeEnqueueTriage", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("reclaims a stranded non-terminal run instead of reporting duplicate", () =>
+		Effect.gen(function* () {
+			yield* enableSettings
+			const database = yield* Database
+			const nowMs = yield* Clock.currentTimeMillis
+			const { binding, created } = fakeBinding()
+
+			// First enqueue claims the slot, then we simulate a dead workflow: the
+			// row stays `running` and stops making progress for >15 minutes.
+			const first = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
+			assert.isTrue(first.enqueued)
+			yield* database.execute((db) =>
+				db
+					.update(aiTriageRuns)
+					.set({ status: "running", updatedAt: nowMs - 16 * 60 * 1000 })
+					.where(eq(aiTriageRuns.orgId, ORG)),
+			)
+
+			const second = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
+			assert.isTrue(second.enqueued)
+			assert.lengthOf(created, 2)
+
+			const rows = yield* database.execute((db) =>
+				db.select().from(aiTriageRuns).where(eq(aiTriageRuns.orgId, ORG)),
+			)
+			assert.lengthOf(rows, 1)
+			assert.strictEqual(rows[0]?.id, second.runId)
+			assert.strictEqual(rows[0]?.status, "queued")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("does not reclaim a fresh non-terminal run", () =>
+		Effect.gen(function* () {
+			yield* enableSettings
+			const database = yield* Database
+			const { binding, created } = fakeBinding()
+
+			const first = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
+			assert.isTrue(first.enqueued)
+			yield* database.execute((db) =>
+				db.update(aiTriageRuns).set({ status: "running" }).where(eq(aiTriageRuns.orgId, ORG)),
+			)
+
+			const second = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
+			assert.deepStrictEqual(second, { enqueued: false, reason: "duplicate" })
+			assert.lengthOf(created, 1)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("force bypasses the enabled flag but still requires a binding", () =>
 		Effect.gen(function* () {
 			const { binding, created } = fakeBinding()

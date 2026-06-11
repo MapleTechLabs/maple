@@ -134,6 +134,30 @@ describe("runAiTriage", () => {
 		expect(JSON.parse(events[0]?.payloadJson ?? "{}").runId).toBe(harness.runId)
 	})
 
+	it("does not duplicate the timeline event when persist re-runs", async () => {
+		const deps = {
+			db: harness.db,
+			resolveApiKey: async () => "test-key",
+			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
+		}
+		await runAiTriage(env, { payload: harness.payload }, fakeStep, deps)
+		// Simulate a replayed/retried execution reaching persist again for the
+		// same run: the deterministic event id + onConflictDoNothing must absorb
+		// the second insert.
+		await harness.db
+			.update(aiTriageRuns)
+			.set({ status: "queued" })
+			.where(eq(aiTriageRuns.id, harness.runId as never))
+		await runAiTriage(env, { payload: harness.payload }, fakeStep, deps)
+
+		const events = await harness.db
+			.select()
+			.from(errorIssueEvents)
+			.where(eq(errorIssueEvents.issueId, harness.issueId as never))
+		expect(events).toHaveLength(1)
+	})
+
 	it("is a no-op replay when the run already progressed", async () => {
 		await harness.db
 			.update(aiTriageRuns)

@@ -34,6 +34,13 @@ const decodeRunIdSync = Schema.decodeUnknownSync(AiTriageRunId)
 
 export const newAiTriageRunId = () => decodeRunIdSync(randomUUID())
 
+/**
+ * A run stuck in `queued`/`running` longer than this is treated as stranded
+ * (workflow instance died, or its terminal write was lost) and its dedup slot
+ * is reclaimable. Generous vs the workflow's 10-minute agent-step timeout.
+ */
+export const STALE_RUN_RECLAIM_MS = 15 * 60 * 1000
+
 export const startOfUtcDay = (nowMs: number): number => {
 	const date = new Date(nowMs)
 	return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
@@ -128,7 +135,64 @@ export const maybeEnqueueTriage: (
 				.onConflictDoNothing(),
 		)
 		if ((inserted as { rowsAffected?: number }).rowsAffected === 0) {
-			return { enqueued: false, reason: "duplicate" as const }
+			// The unique (orgId, incidentKind, incidentId) slot is taken. Terminal
+			// rows are genuine duplicates; a non-terminal row that stopped making
+			// progress is a stranded run (dead workflow instance / lost terminal
+			// write) — without reclaiming it, the incident could never be triaged
+			// again. Mark it failed and retry the insert once.
+			const existingRows = yield* database.execute((db) =>
+				db
+					.select()
+					.from(aiTriageRuns)
+					.where(
+						and(
+							eq(aiTriageRuns.orgId, input.orgId),
+							eq(aiTriageRuns.incidentKind, input.incidentKind),
+							eq(aiTriageRuns.incidentId, input.incidentId),
+						),
+					)
+					.limit(1),
+			)
+			const existing = existingRows[0]
+			const stranded =
+				existing !== undefined &&
+				(existing.status === "queued" || existing.status === "running") &&
+				existing.updatedAt < nowMs - STALE_RUN_RECLAIM_MS
+			if (!stranded) {
+				return { enqueued: false, reason: "duplicate" as const }
+			}
+			yield* Effect.logWarning("Reclaiming stranded AI triage run").pipe(
+				Effect.annotateLogs({
+					orgId: input.orgId,
+					incidentId: input.incidentId,
+					strandedRunId: existing.id,
+					strandedStatus: existing.status,
+				}),
+			)
+			yield* database.execute((db) =>
+				db
+					.delete(aiTriageRuns)
+					.where(and(eq(aiTriageRuns.orgId, input.orgId), eq(aiTriageRuns.id, existing.id))),
+			)
+			const reinserted = yield* database.execute((db) =>
+				db
+					.insert(aiTriageRuns)
+					.values({
+						id: runId,
+						orgId: input.orgId,
+						incidentKind: input.incidentKind,
+						incidentId: input.incidentId,
+						issueId: input.issueId ?? null,
+						status: "queued",
+						contextJson: JSON.stringify(input.context),
+						createdAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.onConflictDoNothing(),
+			)
+			if ((reinserted as { rowsAffected?: number }).rowsAffected === 0) {
+				return { enqueued: false, reason: "duplicate" as const }
+			}
 		}
 
 		const binding = input.workflowBinding
