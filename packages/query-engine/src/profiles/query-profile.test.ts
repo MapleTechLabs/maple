@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { appendSettings, detectQuotaSetting, QueryProfile, resolveSettings } from "./query-profile"
+import {
+	appendSettings,
+	detectQuotaSetting,
+	LOGS_BODY_SEARCH_SETTINGS,
+	QueryProfile,
+	resolveSettings,
+	stripTinybirdRestrictedSettings,
+} from "./query-profile"
 
 describe("appendSettings", () => {
 	it("returns sql unchanged when settings are undefined", () => {
@@ -40,6 +47,33 @@ describe("appendSettings", () => {
 				maxThreads: 2,
 			}),
 		).toBe("SELECT 1 SETTINGS max_threads=2")
+	})
+
+	it("appends max_block_size", () => {
+		expect(appendSettings("SELECT 1", { maxBlockSize: 512 })).toBe(
+			"SELECT 1 SETTINGS max_block_size=512",
+		)
+	})
+})
+
+describe("stripTinybirdRestrictedSettings", () => {
+	it("passes through undefined", () => {
+		expect(stripTinybirdRestrictedSettings(undefined)).toBeUndefined()
+	})
+
+	it("returns the same object when nothing is restricted", () => {
+		const settings = { maxExecutionTime: 15, maxThreads: 4 }
+		expect(stripTinybirdRestrictedSettings(settings)).toBe(settings)
+	})
+
+	it("drops maxBlockSize and keeps the rest", () => {
+		expect(
+			stripTinybirdRestrictedSettings({ maxExecutionTime: 15, maxBlockSize: 512 }),
+		).toEqual({ maxExecutionTime: 15 })
+	})
+
+	it("strips the body-search settings down to profile-safe values", () => {
+		expect(stripTinybirdRestrictedSettings({ ...LOGS_BODY_SEARCH_SETTINGS })).toEqual({})
 	})
 })
 

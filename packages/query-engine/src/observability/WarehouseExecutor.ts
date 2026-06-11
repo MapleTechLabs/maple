@@ -12,14 +12,17 @@ import type { CompiledQuery } from "../ch"
 export type WarehouseExecutorError = WarehouseError
 
 /**
- * Subset of ClickHouse settings that Tinybird allows on `/v0/sql`.
- * Row/byte caps (`max_rows_to_read`, `max_result_rows`, `max_bytes_to_read`)
- * are restricted by Tinybird and intentionally absent.
+ * ClickHouse settings a call site may request. Row/byte caps
+ * (`max_rows_to_read`, `max_result_rows`, `max_bytes_to_read`) are restricted
+ * by Tinybird and intentionally absent. `maxBlockSize` is ClickHouse-only —
+ * the executor strips it when the resolved backend is Tinybird (see
+ * `WarehouseQuerySettings.maxBlockSize` in `../profiles` for the rationale).
  */
 export type ExecutorQuerySettings = {
 	maxExecutionTime?: number
 	maxMemoryUsage?: number
 	maxThreads?: number
+	maxBlockSize?: number
 }
 
 export type ExecutorQueryProfile = "discovery" | "list" | "aggregation" | "explain" | "unbounded"

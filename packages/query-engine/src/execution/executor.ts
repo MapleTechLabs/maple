@@ -9,7 +9,7 @@ import {
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
 import { compilePipeQuery, type CompiledQuery } from "../ch"
 import type { ExecutorQueryOptions, WarehouseExecutorShape } from "../observability"
-import { appendSettings, resolveSettings } from "../profiles"
+import { appendSettings, resolveSettings, stripTinybirdRestrictedSettings } from "../profiles"
 import { mapWarehouseError, toWarehouseQueryError, type WarehouseSqlError } from "./errors"
 import {
 	SQL_LOG_MAX,
@@ -106,7 +106,13 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
 		yield* Effect.annotateCurrentSpan("db.system", peerService)
 		yield* Effect.annotateCurrentSpan("peer.service", peerService)
-		const settings = resolveSettings(options)
+		// Tinybird rejects some settings outright (e.g. max_block_size) — drop
+		// them there so a call site can request them for ClickHouse backends
+		// without branching on the resolved config.
+		const settings =
+			resolved.config._tag === "clickhouse"
+				? resolveSettings(options)
+				: stripTinybirdRestrictedSettings(resolveSettings(options))
 		const sqlForClient =
 			resolved.config._tag === "clickhouse" ? normalizeSqlForClickHouseClient(sql) : sql
 		const finalSql = appendSettings(sqlForClient, settings)
@@ -315,7 +321,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			params: Record<string, unknown>,
 			options?: ExecutorQueryOptions,
 		) =>
-			query(tenant, { pipe, params }, options).pipe(
+			query(tenant, { pipe, params }, { ...options, context: `pipe:${pipe}` }).pipe(
 				Effect.map((response) => ({ data: response.data as unknown as ReadonlyArray<T> })),
 				Effect.withSpan("WarehouseExecutor.query", {
 					attributes: { pipe, orgId: tenant.orgId, "query.profile": options?.profile },

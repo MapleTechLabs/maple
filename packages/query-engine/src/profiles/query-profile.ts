@@ -1,19 +1,39 @@
 /**
- * ClickHouse query settings forwarded to Tinybird via inline `SETTINGS` clause.
+ * ClickHouse query settings forwarded via inline `SETTINGS` clause.
  *
- * Only settings Tinybird allows on `/v0/sql` are exposed:
+ * Tinybird allows only a subset on `/v0/sql`:
  * - `maxExecutionTime` (seconds)
  * - `maxMemoryUsage` (bytes)
  * - `maxThreads`
  *
  * Tinybird restricts row/byte caps (`max_rows_to_read`, `max_result_rows`,
- * `max_bytes_to_read`) — they error with "restricted" if used.
+ * `max_bytes_to_read`) — they error with "restricted" if used. `maxBlockSize`
+ * is also Tinybird-restricted; the executor strips it on the Tinybird backend
+ * (see `stripTinybirdRestrictedSettings`).
  */
 export type WarehouseQuerySettings = {
 	maxExecutionTime?: number
 	maxMemoryUsage?: number
 	maxThreads?: number
+	/**
+	 * Rows per read block (`max_block_size`). The MergeTree reader merges
+	 * granules up to this many rows into a single allocation per thread, so on
+	 * tables with very wide string columns (a busy org's `logs.Body` averages
+	 * ~100KB) the default 65536 produces ~256MB chunks × 9 read threads — an
+	 * instant `max_memory_usage` breach for any query whose filter has to read
+	 * the column (`Body ILIKE '%…%'`). Capping rows-per-block bounds peak
+	 * memory while keeping full read parallelism: benchmarked on the superwall
+	 * cluster, `512` turned both OOMing log-search shapes into sub-2s queries
+	 * at ~260-420MB peak. ClickHouse-only — stripped for Tinybird.
+	 */
+	maxBlockSize?: number
 }
+
+/**
+ * Per-query settings for log queries that filter on `Body` (full-text
+ * search). See `WarehouseQuerySettings.maxBlockSize` for the rationale.
+ */
+export const LOGS_BODY_SEARCH_SETTINGS: WarehouseQuerySettings = { maxBlockSize: 512 }
 
 export type QueryProfileName = "discovery" | "list" | "aggregation" | "explain" | "unbounded"
 
@@ -47,6 +67,24 @@ const settingToCh: Record<keyof WarehouseQuerySettings, string> = {
 	maxExecutionTime: "max_execution_time",
 	maxMemoryUsage: "max_memory_usage",
 	maxThreads: "max_threads",
+	maxBlockSize: "max_block_size",
+}
+
+/**
+ * Settings Tinybird's `/v0/sql` rejects with "Usage of setting '…' is
+ * restricted". The executor drops them when the resolved backend is Tinybird
+ * so the same call site works against both backends.
+ */
+const TINYBIRD_RESTRICTED_SETTINGS: ReadonlyArray<keyof WarehouseQuerySettings> = ["maxBlockSize"]
+
+export const stripTinybirdRestrictedSettings = (
+	settings: WarehouseQuerySettings | undefined,
+): WarehouseQuerySettings | undefined => {
+	if (!settings) return undefined
+	if (!TINYBIRD_RESTRICTED_SETTINGS.some((key) => settings[key] !== undefined)) return settings
+	const stripped = { ...settings }
+	for (const key of TINYBIRD_RESTRICTED_SETTINGS) delete stripped[key]
+	return stripped
 }
 
 /**

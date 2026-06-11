@@ -26,7 +26,7 @@ import {
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
-import type { QueryProfileName } from "../profiles"
+import { LOGS_BODY_SEARCH_SETTINGS, type QueryProfileName, type WarehouseQuerySettings } from "../profiles"
 import { makeExpandMacros } from "./raw-sql"
 import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
 
@@ -45,12 +45,20 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 	readonly sqlQuery: (
 		tenant: T,
 		sql: string,
-		options?: { readonly profile?: QueryProfileName; readonly context?: string },
+		options?: {
+			readonly profile?: QueryProfileName
+			readonly context?: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, WarehouseError>
 	readonly compiledQuery: <Output>(
 		tenant: T,
 		compiled: CH.CompiledQuery<Output>,
-		options?: { readonly profile?: QueryProfileName; readonly context?: string },
+		options?: {
+			readonly profile?: QueryProfileName
+			readonly context?: string
+			readonly settings?: WarehouseQuerySettings
+		},
 	) => Effect.Effect<ReadonlyArray<Output>, WarehouseError>
 }
 
@@ -648,9 +656,13 @@ const executeCHQuery = Effect.fnUntraced(function* <
 	params: Params,
 	context: string,
 	profile: QueryProfileName = "aggregation",
+	settings?: WarehouseQuerySettings,
 ) {
 	const compiled = CH.compile(query, params)
-	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, { profile, context }), context)
+	return yield* annotateWarehouseError(
+		warehouse.compiledQuery(tenant, compiled, { profile, context, settings }),
+		context,
+	)
 })
 
 /** Same as executeCHQuery but for union queries. */
@@ -1506,6 +1518,9 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				"logsCount",
 				"discovery",
+				// Body search reads the wide Body column for the ILIKE filter —
+				// cap the read block size (see WarehouseQuerySettings.maxBlockSize).
+				filters?.search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
 			)
 			return new QueryEngineExecuteResponse({
 				result: {
