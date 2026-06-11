@@ -15,7 +15,7 @@
  */
 import { randomUUID } from "node:crypto"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
-import { generateText, hasToolCall, stepCountIs } from "ai"
+import { generateText, hasToolCall, stepCountIs, type ToolSet } from "ai"
 import { aiTriageRuns, aiTriageSettings, anomalyIncidents, errorIssueEvents } from "@maple/db"
 import { createMapleD1Client, type CloudflareD1Database, type MapleD1Client } from "@maple/db/client"
 import {
@@ -80,6 +80,12 @@ export interface AiTriageRunDeps {
 	readonly db?: MapleD1Client
 	readonly generate?: typeof generateText
 	readonly resolveApiKey?: typeof resolveOrgOpenrouterKey
+	/**
+	 * Test seam: skip `getMapleAgentSetup` (which dynamic-imports the whole app
+	 * graph — too slow for the vitest budget on CI runners) and supply the
+	 * ToolSet directly. Production always builds from the registry.
+	 */
+	readonly buildTools?: () => Promise<ToolSet>
 }
 
 export async function runAiTriage(
@@ -164,12 +170,13 @@ export async function runAiTriage(
 			const apiKey = await resolveApiKey(env, orgId)
 			if (apiKey === undefined) throw new Error("no_openrouter_key")
 
-			const setup = await getMapleAgentSetup(env)
-			const tools = buildTriageToolSet({
-				setup,
-				orgId,
-				internalServiceToken: String(env.INTERNAL_SERVICE_TOKEN ?? ""),
-			})
+			const tools = deps.buildTools
+				? await deps.buildTools()
+				: buildTriageToolSet({
+						setup: await getMapleAgentSetup(env),
+						orgId,
+						internalServiceToken: String(env.INTERNAL_SERVICE_TOKEN ?? ""),
+					})
 
 			const modelId = gate.modelOverride ?? DEFAULT_TRIAGE_MODEL
 			const openrouter = createOpenAICompatible({

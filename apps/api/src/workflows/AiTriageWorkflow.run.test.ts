@@ -115,6 +115,7 @@ describe("runAiTriage", () => {
 			db: harness.db,
 			resolveApiKey: async () => "test-key",
 			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
 		})
 		expect(result.status).toBe("completed")
 
@@ -143,6 +144,7 @@ describe("runAiTriage", () => {
 			db: harness.db,
 			resolveApiKey: async () => "test-key",
 			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
 		})
 		expect(result.status).toBe("skipped")
 	})
@@ -152,6 +154,7 @@ describe("runAiTriage", () => {
 			db: harness.db,
 			resolveApiKey: async () => "test-key",
 			generate: fakeGenerate([{ toolName: "diagnose_service", input: {} }]),
+			buildTools: async () => ({}),
 		})
 		expect(result.status).toBe("failed")
 		const run = await loadRun()
@@ -164,6 +167,7 @@ describe("runAiTriage", () => {
 			db: harness.db,
 			resolveApiKey: async () => undefined,
 			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
 		})
 		expect(result.status).toBe("failed")
 		const run = await loadRun()
