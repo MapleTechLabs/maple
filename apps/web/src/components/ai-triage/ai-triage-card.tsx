@@ -45,9 +45,13 @@ export interface AiTriageCardProps {
 }
 
 export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCardProps) {
+	const reactivityKeys = ["aiTriageRuns", `aiTriage:${incidentKind}:${incidentId ?? issueId ?? ""}`]
 	const runsQueryAtom = MapleApiAtomClient.query("aiTriage", "listRuns", {
-		query: issueId !== undefined ? { issueId, limit: 1 } : { incidentKind, incidentId: incidentId ?? "", limit: 1 },
-		reactivityKeys: ["aiTriageRuns", `aiTriage:${incidentKind}:${incidentId ?? issueId ?? ""}`],
+		query:
+			issueId !== undefined
+				? { issueId, limit: 1 }
+				: { incidentKind, incidentId: incidentId ?? "", limit: 1 },
+		reactivityKeys,
 	})
 	const runsResult = useAtomValue(runsQueryAtom)
 	const refreshRuns = useAtomRefresh(runsQueryAtom)
@@ -57,6 +61,7 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 	})
 	const [isStarting, setIsStarting] = useState(false)
 
+	const runsFailed = Result.isFailure(runsResult)
 	const run: AiTriageRunDocument | null = Result.builder(runsResult)
 		.onSuccess((value) => value.runs[0] ?? null)
 		.orElse(() => null)
@@ -80,10 +85,10 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 				incidentId,
 				...(issueId !== undefined ? { issueId } : {}),
 			}),
+			reactivityKeys,
 		})
 		setIsStarting(false)
 		if (Exit.isSuccess(result)) {
-			refreshRuns()
 			toast.success("AI triage started")
 		} else {
 			toast.error("Failed to start AI triage")
@@ -105,30 +110,42 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 								>
 									{run.result.severityAssessment}
 								</Badge>
-								<Badge variant="outline" className={cn(CONFIDENCE_TONE[run.result.confidence])}>
+								<Badge
+									variant="outline"
+									className={cn(CONFIDENCE_TONE[run.result.confidence])}
+								>
 									{run.result.confidence} confidence
 								</Badge>
 							</>
 						) : null}
 					</CardTitle>
 					<CardDescription>
-						{run === null
-							? "No investigation has run for this incident yet."
-							: runActive
-								? "The agent is investigating this incident…"
-								: run.status === "failed"
-									? (FAILURE_HINTS[run.error ?? ""] ?? `Triage failed: ${run.error ?? "unknown error"}`)
-									: `Investigated ${formatRelativeTime(run.completedAt ?? run.createdAt)}${run.model ? ` · ${run.model}` : ""}`}
+						{runsFailed
+							? "Couldn't load triage runs for this incident."
+							: run === null
+								? "No investigation has run for this incident yet."
+								: runActive
+									? "The agent is investigating this incident…"
+									: run.status === "failed"
+										? (FAILURE_HINTS[run.error ?? ""] ??
+											`Triage failed: ${run.error ?? "unknown error"}`)
+										: `Investigated ${formatRelativeTime(run.completedAt ?? run.createdAt)}${run.model ? ` · ${run.model}` : ""}`}
 					</CardDescription>
 				</div>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={startRun}
-					disabled={incidentId === null || runActive || isStarting}
-				>
-					{run === null ? "Run triage" : "Re-run"}
-				</Button>
+				{runsFailed ? (
+					<Button size="sm" variant="outline" onClick={() => refreshRuns()}>
+						Retry
+					</Button>
+				) : (
+					<Button
+						size="sm"
+						variant="outline"
+						onClick={startRun}
+						disabled={incidentId === null || runActive || isStarting}
+					>
+						{run === null ? "Run triage" : "Re-run"}
+					</Button>
+				)}
 			</CardHeader>
 			{run?.status === "completed" && run.result ? (
 				<CardContent className="space-y-4 text-sm">
@@ -155,7 +172,9 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 							</div>
 							{run.result.evidence.map((item, index) => (
 								<div key={index} className="rounded-md border border-border/60 p-3">
-									{item.note ? <p className="mb-2 text-muted-foreground">{item.note}</p> : null}
+									{item.note ? (
+										<p className="mb-2 text-muted-foreground">{item.note}</p>
+									) : null}
 									<div className="flex flex-wrap gap-1.5">
 										{item.traceIds.map((traceId) => (
 											<Link

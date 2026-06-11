@@ -18,8 +18,12 @@ interface AiTriageSettingsSectionProps {
 	hasEntitlement: boolean
 }
 
+const SETTINGS_REACTIVITY_KEYS = ["aiTriageSettings"]
+
 export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSettingsSectionProps) {
-	const settingsQueryAtom = MapleApiAtomClient.query("aiTriage", "getSettings", {})
+	const settingsQueryAtom = MapleApiAtomClient.query("aiTriage", "getSettings", {
+		reactivityKeys: SETTINGS_REACTIVITY_KEYS,
+	})
 	const settingsResult = useAtomValue(settingsQueryAtom)
 	const refreshSettings = useAtomRefresh(settingsQueryAtom)
 
@@ -41,10 +45,12 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 
 	const save = async (request: AiTriageSettingsUpdateRequest, successMessage: string) => {
 		setIsSaving(true)
-		const result = await updateMutation({ payload: request })
+		const result = await updateMutation({
+			payload: request,
+			reactivityKeys: SETTINGS_REACTIVITY_KEYS,
+		})
 		setIsSaving(false)
 		if (Exit.isSuccess(result)) {
-			refreshSettings()
 			toast.success(successMessage)
 		} else {
 			toast.error(
@@ -65,100 +71,118 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 					) : null}
 				</CardTitle>
 				<CardDescription>
-					When a new error or anomaly incident opens, an AI agent automatically investigates it
-					with read-only tools and attaches a triage summary. Runs use your organization's
-					OpenRouter credits.
+					When a new error or anomaly incident opens, an AI agent automatically investigates it with
+					read-only tools and attaches a triage summary. Runs use your organization's OpenRouter
+					credits.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
-				{settings === null ? (
-					<Skeleton className="h-24 w-full" />
-				) : (
-					<>
-						<div className="flex items-center justify-between gap-4">
-							<div className="space-y-0.5">
-								<Label htmlFor="ai-triage-enabled">Auto-triage new incidents</Label>
-								<p className="text-xs text-muted-foreground">
-									Requires an OpenRouter API key (configured above).
-								</p>
-							</div>
-							<Switch
-								id="ai-triage-enabled"
-								checked={settings.enabled}
-								disabled={isSaving}
-								onCheckedChange={(checked) =>
-									save(
-										new AiTriageSettingsUpdateRequest({ enabled: checked }),
-										checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
-									)
-								}
-							/>
-						</div>
-
-						<div className="grid gap-4 sm:grid-cols-2">
-							<div className="space-y-2">
-								<Label htmlFor="ai-triage-max-runs">Max runs per day</Label>
-								<Input
-									id="ai-triage-max-runs"
-									type="number"
-									min={1}
-									max={500}
-									value={maxRunsDraft ?? String(settings.maxRunsPerDay)}
-									onChange={(event) => setMaxRunsDraft(event.target.value)}
-									onBlur={() => {
-										if (maxRunsDraft === null) return
-										const parsed = Number.parseInt(maxRunsDraft, 10)
-										setMaxRunsDraft(null)
-										if (
-											Number.isFinite(parsed) &&
-											parsed >= 1 &&
-											parsed <= 500 &&
-											parsed !== settings.maxRunsPerDay
-										) {
-											save(
-												new AiTriageSettingsUpdateRequest({ maxRunsPerDay: parsed }),
-												"Daily run cap updated",
-											)
-										}
-									}}
-								/>
-								<p className="text-xs text-muted-foreground">
-									Bounds LLM spend — additional incidents skip triage once reached.
-								</p>
-							</div>
-							<div className="space-y-2">
-								<Label htmlFor="ai-triage-model">Model override</Label>
-								<Input
-									id="ai-triage-model"
-									placeholder="moonshotai/kimi-k2.5:nitro (default)"
-									value={modelDraft ?? settings.modelOverride ?? ""}
-									onChange={(event) => setModelDraft(event.target.value)}
-									onBlur={() => {
-										if (modelDraft === null) return
-										const trimmed = modelDraft.trim()
-										setModelDraft(null)
-										const next = trimmed.length > 0 ? trimmed : null
-										if (next !== settings.modelOverride) {
-											save(
-												new AiTriageSettingsUpdateRequest({ modelOverride: next }),
-												"Triage model updated",
-											)
-										}
-									}}
-								/>
-								<p className="text-xs text-muted-foreground">
-									Any OpenRouter model id. Leave empty for the default.
-								</p>
-							</div>
-						</div>
-
-						<div className="flex justify-end">
-							<Button size="sm" variant="ghost" disabled={isSaving} onClick={() => refreshSettings()}>
-								Refresh
+				{Result.builder(settingsResult)
+					.onInitial(() => <Skeleton className="h-24 w-full" />)
+					.onError(() => (
+						<div className="flex items-center justify-between gap-4 py-2 text-sm text-muted-foreground">
+							<span>Failed to load AI triage settings.</span>
+							<Button size="sm" variant="outline" onClick={() => refreshSettings()}>
+								Retry
 							</Button>
 						</div>
-					</>
-				)}
+					))
+					.onSuccess((current) => (
+						<>
+							<div className="flex items-center justify-between gap-4">
+								<div className="space-y-0.5">
+									<Label htmlFor="ai-triage-enabled">Auto-triage new incidents</Label>
+									<p className="text-xs text-muted-foreground">
+										Requires an OpenRouter API key (configured above).
+									</p>
+								</div>
+								<Switch
+									id="ai-triage-enabled"
+									checked={current.enabled}
+									disabled={isSaving}
+									onCheckedChange={(checked) =>
+										save(
+											new AiTriageSettingsUpdateRequest({ enabled: checked }),
+											checked ? "AI auto-triage enabled" : "AI auto-triage disabled",
+										)
+									}
+								/>
+							</div>
+
+							<div className="grid gap-4 sm:grid-cols-2">
+								<div className="space-y-2">
+									<Label htmlFor="ai-triage-max-runs">Max runs per day</Label>
+									<Input
+										id="ai-triage-max-runs"
+										type="number"
+										min={1}
+										max={500}
+										value={maxRunsDraft ?? String(current.maxRunsPerDay)}
+										onChange={(event) => setMaxRunsDraft(event.target.value)}
+										onBlur={() => {
+											if (maxRunsDraft === null) return
+											const parsed = Number.parseInt(maxRunsDraft, 10)
+											setMaxRunsDraft(null)
+											if (
+												Number.isFinite(parsed) &&
+												parsed >= 1 &&
+												parsed <= 500 &&
+												parsed !== current.maxRunsPerDay
+											) {
+												save(
+													new AiTriageSettingsUpdateRequest({
+														maxRunsPerDay: parsed,
+													}),
+													"Daily run cap updated",
+												)
+											}
+										}}
+									/>
+									<p className="text-xs text-muted-foreground">
+										Bounds LLM spend — additional incidents skip triage once reached.
+									</p>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="ai-triage-model">Model override</Label>
+									<Input
+										id="ai-triage-model"
+										placeholder="moonshotai/kimi-k2.5:nitro (default)"
+										value={modelDraft ?? current.modelOverride ?? ""}
+										onChange={(event) => setModelDraft(event.target.value)}
+										onBlur={() => {
+											if (modelDraft === null) return
+											const trimmed = modelDraft.trim()
+											setModelDraft(null)
+											const next = trimmed.length > 0 ? trimmed : null
+											if (next !== current.modelOverride) {
+												save(
+													new AiTriageSettingsUpdateRequest({
+														modelOverride: next,
+													}),
+													"Triage model updated",
+												)
+											}
+										}}
+									/>
+									<p className="text-xs text-muted-foreground">
+										Any OpenRouter model id. Leave empty for the default.
+									</p>
+								</div>
+							</div>
+
+							<div className="flex justify-end">
+								<Button
+									size="sm"
+									variant="ghost"
+									disabled={isSaving}
+									onClick={() => refreshSettings()}
+								>
+									Refresh
+								</Button>
+							</div>
+						</>
+					))
+					.render()}
 			</CardContent>
 		</Card>
 	)

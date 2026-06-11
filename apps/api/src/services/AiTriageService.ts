@@ -63,9 +63,7 @@ const makePersistenceError = (error: unknown): AiTriagePersistenceError => {
 }
 
 export interface AiTriageServiceShape {
-	readonly getSettings: (
-		orgId: OrgId,
-	) => Effect.Effect<AiTriageSettingsDocument, AiTriagePersistenceError>
+	readonly getSettings: (orgId: OrgId) => Effect.Effect<AiTriageSettingsDocument, AiTriagePersistenceError>
 	readonly updateSettings: (
 		orgId: OrgId,
 		userId: UserId,
@@ -127,18 +125,14 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					completedAt: row.completedAt ? isoFromEpoch(row.completedAt) : null,
 				})
 
-			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (
-				orgId: OrgId,
-			) {
+			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
 					db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, orgId)).limit(1),
 				)
 				return rows[0]
 			})
 
-			const settingsToDocument = (
-				row: AiTriageSettingsRow | undefined,
-			): AiTriageSettingsDocument =>
+			const settingsToDocument = (row: AiTriageSettingsRow | undefined): AiTriageSettingsDocument =>
 				new AiTriageSettingsDocument({
 					enabled: row?.enabled === 1,
 					modelOverride: row?.modelOverride ?? null,
@@ -147,16 +141,14 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					updatedBy: row?.updatedBy ?? null,
 				})
 
-			const getSettings: AiTriageServiceShape["getSettings"] = Effect.fn(
-				"AiTriageService.getSettings",
-			)(function* (orgId) {
-				yield* Effect.annotateCurrentSpan({ orgId })
-				return settingsToDocument(yield* loadSettingsRow(orgId))
-			})
+			const getSettings: AiTriageServiceShape["getSettings"] = Effect.fn("AiTriageService.getSettings")(
+				function* (orgId) {
+					yield* Effect.annotateCurrentSpan({ orgId })
+					return settingsToDocument(yield* loadSettingsRow(orgId))
+				},
+			)
 
-			const hasOpenRouterKey = Effect.fn("AiTriageService.hasOpenRouterKey")(function* (
-				orgId: OrgId,
-			) {
+			const hasOpenRouterKey = Effect.fn("AiTriageService.hasOpenRouterKey")(function* (orgId: OrgId) {
 				const rows = yield* dbExecute((db) =>
 					db
 						.select({ orgId: orgOpenrouterSettings.orgId })
@@ -242,7 +234,10 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 									.select()
 									.from(anomalyIncidents)
 									.where(
-										and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId)),
+										and(
+											eq(anomalyIncidents.orgId, orgId),
+											eq(anomalyIncidents.id, incidentId),
+										),
 									)
 									.limit(1),
 							)
@@ -281,7 +276,12 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 							db
 								.select()
 								.from(errorIncidents)
-								.where(and(eq(errorIncidents.orgId, orgId), eq(errorIncidents.id, errorIncidentId)))
+								.where(
+									and(
+										eq(errorIncidents.orgId, orgId),
+										eq(errorIncidents.id, errorIncidentId),
+									),
+								)
 								.limit(1),
 						)
 					: []
@@ -373,13 +373,23 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 						onSome: (e) => e[AI_TRIAGE_WORKFLOW_BINDING],
 					})
 					if (!isAiTriageWorkflowBinding(binding)) {
+						yield* Effect.logWarning(
+							"AI triage workflow binding unavailable; marking run failed",
+						).pipe(Effect.annotateLogs({ orgId, runId }))
 						yield* dbExecute((db) =>
 							db
 								.update(aiTriageRuns)
-								.set({ status: "failed", error: "workflow_binding_unavailable", updatedAt: nowMs })
+								.set({
+									status: "failed",
+									error: "workflow_binding_unavailable",
+									updatedAt: nowMs,
+								})
 								.where(eq(aiTriageRuns.id, runId)),
 						)
 					} else {
+						// Mirror the automatic enqueue path: a create failure must mark the
+						// run failed, or the row stays "queued" and its dedupe index blocks
+						// all future triage for this incident.
 						yield* Effect.tryPromise({
 							try: () =>
 								binding.create({
@@ -392,11 +402,27 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 										runId,
 									},
 								}),
-							catch: (error) =>
-								new AiTriagePersistenceError({
-									message: `Failed to start AI triage workflow: ${error instanceof Error ? error.message : String(error)}`,
-								}),
-						})
+							catch: (error) => {
+								const message = `Failed to start AI triage workflow: ${error instanceof Error ? error.message : String(error)}`
+								const cause = describeCause(error)
+								return cause === undefined
+									? new AiTriagePersistenceError({ message })
+									: new AiTriagePersistenceError({ message, cause })
+							},
+						}).pipe(
+							Effect.tapError((error) =>
+								dbExecute((db) =>
+									db
+										.update(aiTriageRuns)
+										.set({
+											status: "failed",
+											error: `workflow_create_failed: ${error.message}`,
+											updatedAt: nowMs,
+										})
+										.where(eq(aiTriageRuns.id, runId)),
+								).pipe(Effect.ignore),
+							),
+						)
 					}
 
 					const rows = yield* dbExecute((db) =>

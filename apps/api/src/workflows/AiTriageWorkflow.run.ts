@@ -102,17 +102,25 @@ export async function runAiTriage(
 
 	const markFailed = async (error: string) => {
 		const now = Date.now()
-		await db
-			.update(aiTriageRuns)
-			.set({ status: "failed", error, completedAt: now, updatedAt: now })
-			.where(eq(aiTriageRuns.id, runId))
-			.catch(() => undefined)
-		if (incidentKind === "anomaly") {
+		try {
 			await db
-				.update(anomalyIncidents)
-				.set({ triageStatus: "skipped", updatedAt: now })
-				.where(eq(anomalyIncidents.id, decodeAnomalyIncidentId(incidentId)))
-				.catch(() => undefined)
+				.update(aiTriageRuns)
+				.set({ status: "failed", error, completedAt: now, updatedAt: now })
+				.where(eq(aiTriageRuns.id, runId))
+			if (incidentKind === "anomaly") {
+				await db
+					.update(anomalyIncidents)
+					.set({ triageStatus: "skipped", updatedAt: now })
+					.where(eq(anomalyIncidents.id, decodeAnomalyIncidentId(incidentId)))
+			}
+		} catch (cause) {
+			// The run row may stay queued/running forever if this write is lost —
+			// surface why in the Workers logs instead of swallowing it.
+			console.error("ai-triage: failed to mark run failed", {
+				runId,
+				orgId,
+				error: String(cause),
+			})
 		}
 	}
 
@@ -156,6 +164,11 @@ export async function runAiTriage(
 
 	if (!gate.proceed) {
 		if ("failure" in gate && gate.failure) {
+			console.error("ai-triage: run failed before agent start", {
+				runId,
+				orgId,
+				reason: gate.failure,
+			})
 			await markFailed(gate.failure)
 			return { status: "failed" }
 		}
@@ -230,6 +243,7 @@ export async function runAiTriage(
 		})
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
+		console.error("ai-triage: agent run failed", { runId, orgId, error: message })
 		await markFailed(message.slice(0, 2000))
 		return { status: "failed" }
 	}
@@ -253,11 +267,7 @@ export async function runAiTriage(
 		if (incidentKind === "error" && issueId) {
 			// Surfaces the triage on the existing issue timeline UI. actorId stays
 			// null — the run row itself is the authoritative record.
-			const result = JSON.parse(agentResult.resultJson) as {
-				summary?: string
-				severityAssessment?: string
-				confidence?: string
-			}
+			const result = decodeTriageResult(JSON.parse(agentResult.resultJson))
 			await db.insert(errorIssueEvents).values({
 				id: decodeEventId(randomUUID()),
 				orgId: decodeOrgId(orgId),

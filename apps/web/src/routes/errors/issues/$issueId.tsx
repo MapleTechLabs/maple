@@ -203,7 +203,6 @@ function IssueDetailPage() {
 		.onSuccess((detail) => {
 			const { issue, timeseries, sampleTraces, incidents } = detail
 			const totalInWindow = timeseries.reduce((sum, b) => sum + b.count, 0)
-			const events = Result.isSuccess(eventsResult) ? eventsResult.value.events : []
 
 			return (
 				<DashboardLayout
@@ -251,7 +250,16 @@ function IssueDetailPage() {
 
 						<section aria-labelledby="activity-heading">
 							<SectionHeader id="activity-heading" label="Activity" />
-							<IssueTimeline events={events} />
+							{Result.builder(eventsResult)
+								.onError(() => (
+									<div className="py-6 text-center text-sm text-destructive">
+										Failed to load the activity timeline.
+									</div>
+								))
+								.onSuccess((value) => <IssueTimeline events={value.events} />)
+								.orElse(() => (
+									<Skeleton className="h-20 w-full" />
+								))}
 							<IssueCommentComposer
 								value={commentDraft}
 								onChange={setCommentDraft}

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { aiTriageRuns, aiTriageSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
@@ -55,12 +55,13 @@ const fakeBinding = () => {
 
 const enableSettings = Effect.gen(function* () {
 	const database = yield* Database
+	const nowMs = yield* Clock.currentTimeMillis
 	yield* database.execute((db) =>
 		db.insert(aiTriageSettings).values({
 			orgId: ORG,
 			enabled: 1,
 			maxRunsPerDay: 2,
-			updatedAt: Date.now(),
+			updatedAt: nowMs,
 		}),
 	)
 })
@@ -78,8 +79,8 @@ describe("maybeEnqueueTriage", () => {
 		Effect.gen(function* () {
 			const { binding, created } = fakeBinding()
 			const result = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
-			expect(result).toEqual({ enqueued: false, reason: "disabled" })
-			expect(created).toHaveLength(0)
+			assert.deepStrictEqual(result, { enqueued: false, reason: "disabled" })
+			assert.lengthOf(created, 0)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -89,13 +90,13 @@ describe("maybeEnqueueTriage", () => {
 			const { binding, created } = fakeBinding()
 
 			const first = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
-			expect(first.enqueued).toBe(true)
-			expect(created).toHaveLength(1)
-			expect(created[0]?.id).toBe(first.runId)
+			assert.isTrue(first.enqueued)
+			assert.lengthOf(created, 1)
+			assert.strictEqual(created[0]?.id, first.runId)
 
 			const second = yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))
-			expect(second).toEqual({ enqueued: false, reason: "duplicate" })
-			expect(created).toHaveLength(1)
+			assert.deepStrictEqual(second, { enqueued: false, reason: "duplicate" })
+			assert.lengthOf(created, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -104,10 +105,10 @@ describe("maybeEnqueueTriage", () => {
 			yield* enableSettings
 			const { binding } = fakeBinding()
 
-			expect((yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))).enqueued).toBe(true)
-			expect((yield* maybeEnqueueTriage(baseInput(binding, "incident-2"))).enqueued).toBe(true)
+			assert.isTrue((yield* maybeEnqueueTriage(baseInput(binding, "incident-1"))).enqueued)
+			assert.isTrue((yield* maybeEnqueueTriage(baseInput(binding, "incident-2"))).enqueued)
 			const third = yield* maybeEnqueueTriage(baseInput(binding, "incident-3"))
-			expect(third).toEqual({ enqueued: false, reason: "daily_cap" })
+			assert.deepStrictEqual(third, { enqueued: false, reason: "daily_cap" })
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -120,15 +121,37 @@ describe("maybeEnqueueTriage", () => {
 				...baseInput(undefined, "incident-1"),
 				workflowBinding: undefined,
 			})
-			expect(result.enqueued).toBe(false)
-			expect(result.reason).toBe("no_binding")
+			assert.isFalse(result.enqueued)
+			assert.strictEqual(result.reason, "no_binding")
 
 			const rows = yield* database.execute((db) =>
 				db.select().from(aiTriageRuns).where(eq(aiTriageRuns.orgId, ORG)),
 			)
-			expect(rows).toHaveLength(1)
-			expect(rows[0]?.status).toBe("failed")
-			expect(rows[0]?.error).toBe("workflow_binding_unavailable")
+			assert.lengthOf(rows, 1)
+			assert.strictEqual(rows[0]?.status, "failed")
+			assert.strictEqual(rows[0]?.error, "workflow_binding_unavailable")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("marks the run failed and reports `error` when workflow creation fails", () =>
+		Effect.gen(function* () {
+			yield* enableSettings
+			const database = yield* Database
+			const failingBinding = {
+				create: async () => {
+					throw new Error("workflow boom")
+				},
+			}
+
+			const result = yield* maybeEnqueueTriage(baseInput(failingBinding, "incident-1"))
+			assert.deepStrictEqual(result, { enqueued: false, reason: "error" })
+
+			const rows = yield* database.execute((db) =>
+				db.select().from(aiTriageRuns).where(eq(aiTriageRuns.orgId, ORG)),
+			)
+			assert.lengthOf(rows, 1)
+			assert.strictEqual(rows[0]?.status, "failed")
+			assert.strictEqual(rows[0]?.error, "workflow_create_failed: workflow boom")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -139,8 +162,8 @@ describe("maybeEnqueueTriage", () => {
 				...baseInput(binding, "incident-1"),
 				force: true,
 			})
-			expect(result.enqueued).toBe(true)
-			expect(created).toHaveLength(1)
+			assert.isTrue(result.enqueued)
+			assert.lengthOf(created, 1)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

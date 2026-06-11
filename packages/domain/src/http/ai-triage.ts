@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
-import { AiTriageRunId, AnomalyIncidentId, ErrorIssueId, IsoDateTimeString, UserId } from "../primitives"
+import { AiTriageRunId, ErrorIssueId, IsoDateTimeString, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 
 // ---------------------------------------------------------------------------
@@ -139,7 +139,6 @@ const RunsListQuery = Schema.Struct({
 	issueId: Schema.optional(ErrorIssueId),
 	incidentId: Schema.optional(Schema.String),
 	incidentKind: Schema.optional(AiTriageIncidentKind),
-	anomalyIncidentId: Schema.optional(AnomalyIncidentId),
 	limit: Schema.optional(
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 100 })),
 	),
@@ -174,11 +173,7 @@ export class AiTriageApiGroup extends HttpApiGroup.make("aiTriage")
 		HttpApiEndpoint.post("createRun", "/runs", {
 			payload: AiTriageRunCreateRequest,
 			success: AiTriageRunDocument,
-			error: [
-				AiTriagePersistenceError,
-				AiTriageValidationError,
-				AiTriageNotFoundError,
-			],
+			error: [AiTriagePersistenceError, AiTriageValidationError, AiTriageNotFoundError],
 		}),
 	)
 	.prefix("/api/ai-triage")

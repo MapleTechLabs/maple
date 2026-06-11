@@ -9,7 +9,7 @@ import {
 	type AnomalyIncidentStatus,
 	AnomalyPersistenceError,
 	type AnomalySensitivity,
-	type AnomalySignalType,
+	AnomalySignalType,
 	type OrgId,
 	RoleName,
 	type UserId,
@@ -28,7 +28,7 @@ import {
 import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/query-engine/caching"
-import { Cause, Clock, Context, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schedule, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
 import { AI_TRIAGE_WORKFLOW_BINDING, maybeEnqueueTriage } from "../lib/ai-triage-enqueue"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
@@ -51,6 +51,7 @@ import {
 } from "./anomaly/state-machine"
 
 const decodeIncidentIdSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.id)
+const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
 const decodeIsoSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.firstTriggeredAt)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
@@ -99,9 +100,7 @@ const isBusyDatabaseError = (error: DatabaseError): boolean => {
 	return inner !== undefined && BUSY_ERROR_PATTERN.test(inner)
 }
 
-const BUSY_RETRY_SCHEDULE = Schedule.exponential("50 millis", 2.0).pipe(
-	Schedule.both(Schedule.recurs(3)),
-)
+const BUSY_RETRY_SCHEDULE = Schedule.exponential("50 millis", 2.0).pipe(Schedule.both(Schedule.recurs(3)))
 
 interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly fingerprintHash: string
@@ -198,14 +197,7 @@ export class AnomalyDetectionService extends Context.Service<
 			try {
 				const parsed = JSON.parse(raw)
 				if (!Array.isArray(parsed)) return []
-				return parsed.filter(
-					(v): v is AnomalySignalType =>
-						v === "error_rate" ||
-						v === "latency_p95" ||
-						v === "throughput" ||
-						v === "error_spike" ||
-						v === "log_volume",
-				)
+				return Arr.filterMap(parsed, (value) => decodeMutedSignalResult(value))
 			} catch {
 				return []
 			}
@@ -277,8 +269,7 @@ export class AnomalyDetectionService extends Context.Service<
 			const nowMs = yield* Clock.currentTimeMillis
 			const existing = yield* ensureSettingsRow(orgId, nowMs)
 			const next = {
-				enabled:
-					request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0,
+				enabled: request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0,
 				sensitivity: (request.sensitivity ?? existing.sensitivity) as AnomalySensitivity,
 				mutedSignalsJson:
 					request.mutedSignals === undefined
@@ -695,147 +686,150 @@ export class AnomalyDetectionService extends Context.Service<
 					if (a.evaluation.severity !== b.evaluation.severity) {
 						return a.evaluation.severity === "critical" ? -1 : 1
 					}
-					const ratioA = a.evaluation.threshold > 0 ? a.evaluation.value / a.evaluation.threshold : 0
-					const ratioB = b.evaluation.threshold > 0 ? b.evaluation.value / b.evaluation.threshold : 0
+					const ratioA =
+						a.evaluation.threshold > 0 ? a.evaluation.value / a.evaluation.threshold : 0
+					const ratioB =
+						b.evaluation.threshold > 0 ? b.evaluation.value / b.evaluation.threshold : 0
 					return ratioB - ratioA
 				})
 			const allowedOpens = new Set(openDecisions.slice(0, MAX_OPENS_PER_TICK))
 
-			for (const decision of decisions) {
-				const { evaluation } = decision
-				const transition =
-					decision.transition === "open" && !allowedOpens.has(decision)
-						? "noop"
-						: decision.transition
+			yield* Effect.forEach(
+				decisions,
+				Effect.fnUntraced(function* (decision) {
+					const { evaluation } = decision
+					const transition =
+						decision.transition === "open" && !allowedOpens.has(decision)
+							? "noop"
+							: decision.transition
 
-				let openIncidentId = decision.state?.openIncidentId ?? null
-				let lastResolvedAt = decision.state?.lastResolvedAt ?? null
+					let openIncidentId = decision.state?.openIncidentId ?? null
+					let lastResolvedAt = decision.state?.lastResolvedAt ?? null
 
-				if (transition === "open") {
-					const incidentId = newIncidentId()
-					const errorIssueId =
-						evaluation.fingerprintHash !== null
-							? (issueIdByFingerprint.get(evaluation.fingerprintHash) ?? null)
-							: null
-					yield* dbExecute((db) =>
-						db.insert(anomalyIncidents).values({
-							id: incidentId,
+					if (transition === "open") {
+						const incidentId = newIncidentId()
+						const errorIssueId =
+							evaluation.fingerprintHash !== null
+								? (issueIdByFingerprint.get(evaluation.fingerprintHash) ?? null)
+								: null
+						yield* dbExecute((db) =>
+							db.insert(anomalyIncidents).values({
+								id: incidentId,
+								orgId,
+								detectorKey: evaluation.detectorKey,
+								signalType: evaluation.signalType,
+								serviceName: evaluation.serviceName,
+								deploymentEnv: evaluation.deploymentEnv,
+								fingerprintHash: evaluation.fingerprintHash,
+								errorIssueId,
+								status: "open",
+								severity: evaluation.severity,
+								openedValue: evaluation.value,
+								baselineMedian: evaluation.baselineMedian,
+								baselineSigma: evaluation.baselineSigma,
+								thresholdValue: evaluation.threshold,
+								lastObservedValue: evaluation.value,
+								lastSampleCount: evaluation.sampleCount,
+								firstTriggeredAt: nowMs,
+								lastTriggeredAt: nowMs,
+								triageStatus: "none",
+								dedupeKey: `${orgId}:${evaluation.detectorKey}`,
+								createdAt: nowMs,
+								updatedAt: nowMs,
+							}),
+						)
+						openIncidentId = incidentId
+						stats.incidentsOpened += 1
+
+						// AI auto-triage (org opt-in). Never fails — a triage problem can't
+						// take down the detector tick.
+						const triage = yield* maybeEnqueueTriage({
 							orgId,
-							detectorKey: evaluation.detectorKey,
-							signalType: evaluation.signalType,
-							serviceName: evaluation.serviceName,
-							deploymentEnv: evaluation.deploymentEnv,
-							fingerprintHash: evaluation.fingerprintHash,
-							errorIssueId,
-							status: "open",
-							severity: evaluation.severity,
-							openedValue: evaluation.value,
-							baselineMedian: evaluation.baselineMedian,
-							baselineSigma: evaluation.baselineSigma,
-							thresholdValue: evaluation.threshold,
-							lastObservedValue: evaluation.value,
-							lastSampleCount: evaluation.sampleCount,
-							firstTriggeredAt: nowMs,
-							lastTriggeredAt: nowMs,
-							triageStatus: "none",
-							dedupeKey: `${orgId}:${evaluation.detectorKey}`,
-							createdAt: nowMs,
-							updatedAt: nowMs,
-						}),
-					)
-					openIncidentId = incidentId
-					stats.incidentsOpened += 1
-
-					// AI auto-triage (org opt-in). Never fails — a triage problem can't
-					// take down the detector tick.
-					const triage = yield* maybeEnqueueTriage({
-						orgId,
-						incidentKind: "anomaly",
-						incidentId,
-						issueId: errorIssueId ?? undefined,
-						context: {
-							kind: "anomaly",
-							signalType: evaluation.signalType,
-							serviceName: evaluation.serviceName,
-							deploymentEnv: evaluation.deploymentEnv,
-							fingerprintHash: evaluation.fingerprintHash,
-							severity: evaluation.severity,
-							observedValue: evaluation.value,
-							baselineMedian: evaluation.baselineMedian,
-							baselineSigma: evaluation.baselineSigma,
-							thresholdValue: evaluation.threshold,
-							sampleCount: evaluation.sampleCount,
-							detectedAt: new Date(nowMs).toISOString(),
-						},
-						workflowBinding: aiTriageWorkflowBinding,
-					}).pipe(Effect.provideService(Database, database))
-					if (triage.enqueued) {
+							incidentKind: "anomaly",
+							incidentId,
+							issueId: errorIssueId ?? undefined,
+							context: {
+								kind: "anomaly",
+								signalType: evaluation.signalType,
+								serviceName: evaluation.serviceName,
+								deploymentEnv: evaluation.deploymentEnv,
+								fingerprintHash: evaluation.fingerprintHash,
+								severity: evaluation.severity,
+								observedValue: evaluation.value,
+								baselineMedian: evaluation.baselineMedian,
+								baselineSigma: evaluation.baselineSigma,
+								thresholdValue: evaluation.threshold,
+								sampleCount: evaluation.sampleCount,
+								detectedAt: new Date(nowMs).toISOString(),
+							},
+							workflowBinding: aiTriageWorkflowBinding,
+						}).pipe(Effect.provideService(Database, database))
+						if (triage.enqueued) {
+							yield* dbExecute((db) =>
+								db
+									.update(anomalyIncidents)
+									.set({ triageStatus: "pending", updatedAt: nowMs })
+									.where(
+										and(
+											eq(anomalyIncidents.orgId, orgId),
+											eq(anomalyIncidents.id, incidentId),
+										),
+									),
+							)
+						}
+					} else if (transition === "continue" && openIncidentId !== null) {
+						const incidentId = openIncidentId
 						yield* dbExecute((db) =>
 							db
 								.update(anomalyIncidents)
-								.set({ triageStatus: "pending", updatedAt: nowMs })
+								.set({
+									lastObservedValue: evaluation.value,
+									lastSampleCount: evaluation.sampleCount,
+									severity: evaluation.severity,
+									lastTriggeredAt: nowMs,
+									updatedAt: nowMs,
+								})
 								.where(
-									and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId)),
+									and(
+										eq(anomalyIncidents.orgId, orgId),
+										eq(anomalyIncidents.id, incidentId),
+									),
 								),
 						)
+						stats.incidentsContinued += 1
+					} else if (transition === "resolve" && openIncidentId !== null) {
+						const incidentId = openIncidentId
+						yield* dbExecute((db) =>
+							db
+								.update(anomalyIncidents)
+								.set({
+									status: "resolved",
+									resolveReason: "returned_to_baseline",
+									resolvedAt: nowMs,
+									updatedAt: nowMs,
+								})
+								.where(
+									and(
+										eq(anomalyIncidents.orgId, orgId),
+										eq(anomalyIncidents.id, incidentId),
+									),
+								),
+						)
+						openIncidentId = null
+						lastResolvedAt = nowMs
+						stats.incidentsResolved += 1
 					}
-				} else if (transition === "continue" && openIncidentId !== null) {
-					const incidentId = openIncidentId
-					yield* dbExecute((db) =>
-						db
-							.update(anomalyIncidents)
-							.set({
-								lastObservedValue: evaluation.value,
-								lastSampleCount: evaluation.sampleCount,
-								severity: evaluation.severity,
-								lastTriggeredAt: nowMs,
-								updatedAt: nowMs,
-							})
-							.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId))),
-					)
-					stats.incidentsContinued += 1
-				} else if (transition === "resolve" && openIncidentId !== null) {
-					const incidentId = openIncidentId
-					yield* dbExecute((db) =>
-						db
-							.update(anomalyIncidents)
-							.set({
-								status: "resolved",
-								resolveReason: "returned_to_baseline",
-								resolvedAt: nowMs,
-								updatedAt: nowMs,
-							})
-							.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId))),
-					)
-					openIncidentId = null
-					lastResolvedAt = nowMs
-					stats.incidentsResolved += 1
-				}
 
-				yield* dbExecute((db) =>
-					db
-						.insert(anomalyDetectorStates)
-						.values({
-							orgId,
-							detectorKey: evaluation.detectorKey,
-							signalType: evaluation.signalType,
-							serviceName: evaluation.serviceName,
-							deploymentEnv: evaluation.deploymentEnv,
-							fingerprintHash: evaluation.fingerprintHash,
-							consecutiveBreaches: decision.consecutiveBreaches,
-							consecutiveHealthy: decision.consecutiveHealthy,
-							lastStatus: evaluation.status,
-							lastValue: evaluation.value,
-							baselineMedian: evaluation.baselineMedian,
-							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: nowMs,
-							openIncidentId,
-							lastResolvedAt,
-							updatedAt: nowMs,
-						})
-						.onConflictDoUpdate({
-							target: [anomalyDetectorStates.orgId, anomalyDetectorStates.detectorKey],
-							set: {
+					yield* dbExecute((db) =>
+						db
+							.insert(anomalyDetectorStates)
+							.values({
+								orgId,
+								detectorKey: evaluation.detectorKey,
+								signalType: evaluation.signalType,
+								serviceName: evaluation.serviceName,
+								deploymentEnv: evaluation.deploymentEnv,
+								fingerprintHash: evaluation.fingerprintHash,
 								consecutiveBreaches: decision.consecutiveBreaches,
 								consecutiveHealthy: decision.consecutiveHealthy,
 								lastStatus: evaluation.status,
@@ -846,10 +840,26 @@ export class AnomalyDetectionService extends Context.Service<
 								openIncidentId,
 								lastResolvedAt,
 								updatedAt: nowMs,
-							},
-						}),
-				)
-			}
+							})
+							.onConflictDoUpdate({
+								target: [anomalyDetectorStates.orgId, anomalyDetectorStates.detectorKey],
+								set: {
+									consecutiveBreaches: decision.consecutiveBreaches,
+									consecutiveHealthy: decision.consecutiveHealthy,
+									lastStatus: evaluation.status,
+									lastValue: evaluation.value,
+									baselineMedian: evaluation.baselineMedian,
+									lastSampleCount: evaluation.sampleCount,
+									lastEvaluatedAt: nowMs,
+									openIncidentId,
+									lastResolvedAt,
+									updatedAt: nowMs,
+								},
+							}),
+					)
+				}),
+				{ discard: true },
+			)
 
 			// No-data sweep: open incidents whose series stopped reporting entirely
 			// resolve after an hour of silence (mirrors ErrorsService auto-resolve).
@@ -865,37 +875,43 @@ export class AnomalyDetectionService extends Context.Service<
 						),
 					),
 			)
-			for (const incident of staleIncidents) {
-				yield* dbExecute((db) =>
-					db
-						.update(anomalyIncidents)
-						.set({
-							status: "resolved",
-							resolveReason: "no_data",
-							resolvedAt: nowMs,
-							updatedAt: nowMs,
-						})
-						.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incident.id))),
-				)
-				yield* dbExecute((db) =>
-					db
-						.update(anomalyDetectorStates)
-						.set({
-							openIncidentId: null,
-							lastResolvedAt: nowMs,
-							consecutiveBreaches: 0,
-							consecutiveHealthy: 0,
-							updatedAt: nowMs,
-						})
-						.where(
-							and(
-								eq(anomalyDetectorStates.orgId, orgId),
-								eq(anomalyDetectorStates.detectorKey, incident.detectorKey),
+			yield* Effect.forEach(
+				staleIncidents,
+				Effect.fnUntraced(function* (incident) {
+					yield* dbExecute((db) =>
+						db
+							.update(anomalyIncidents)
+							.set({
+								status: "resolved",
+								resolveReason: "no_data",
+								resolvedAt: nowMs,
+								updatedAt: nowMs,
+							})
+							.where(
+								and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incident.id)),
 							),
-						),
-				)
-				stats.incidentsResolved += 1
-			}
+					)
+					yield* dbExecute((db) =>
+						db
+							.update(anomalyDetectorStates)
+							.set({
+								openIncidentId: null,
+								lastResolvedAt: nowMs,
+								consecutiveBreaches: 0,
+								consecutiveHealthy: 0,
+								updatedAt: nowMs,
+							})
+							.where(
+								and(
+									eq(anomalyDetectorStates.orgId, orgId),
+									eq(anomalyDetectorStates.detectorKey, incident.detectorKey),
+								),
+							),
+					)
+					stats.incidentsResolved += 1
+				}),
+				{ discard: true },
+			)
 
 			if (runRetention) {
 				yield* dbExecute((db) =>
@@ -913,62 +929,61 @@ export class AnomalyDetectionService extends Context.Service<
 			return stats
 		})
 
-		const runTick: AnomalyDetectionServiceShape["runTick"] = Effect.fn(
-			"AnomalyDetectionService.runTick",
-		)(function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			const runRetention =
-				Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
+		const runTick: AnomalyDetectionServiceShape["runTick"] = Effect.fn("AnomalyDetectionService.runTick")(
+			function* () {
+				const nowMs = yield* Clock.currentTimeMillis
+				const runRetention = Math.floor(nowMs / TICK_CADENCE_MS) % RETENTION_PHASE_EVERY_N_TICKS === 0
 
-			const ingestOrgs = yield* dbExecute((db) =>
-				db.selectDistinct({ orgId: orgIngestKeys.orgId }).from(orgIngestKeys),
-			)
-			const settingsOrgs = yield* dbExecute((db) =>
-				db.selectDistinct({ orgId: anomalyDetectorSettings.orgId }).from(anomalyDetectorSettings),
-			)
-			const knownOrgs = new Set<string>([
-				...ingestOrgs.map((r) => r.orgId),
-				...settingsOrgs.map((r) => r.orgId),
-			])
+				const ingestOrgs = yield* dbExecute((db) =>
+					db.selectDistinct({ orgId: orgIngestKeys.orgId }).from(orgIngestKeys),
+				)
+				const settingsOrgs = yield* dbExecute((db) =>
+					db.selectDistinct({ orgId: anomalyDetectorSettings.orgId }).from(anomalyDetectorSettings),
+				)
+				const knownOrgs = new Set<string>([
+					...ingestOrgs.map((r) => r.orgId),
+					...settingsOrgs.map((r) => r.orgId),
+				])
 
-			let orgFailures = 0
-			const emptyStats = {
-				seriesEvaluated: 0,
-				incidentsOpened: 0,
-				incidentsContinued: 0,
-				incidentsResolved: 0,
-			}
-			const results = yield* Effect.forEach(
-				[...knownOrgs],
-				(org) =>
-					processOrg(org as OrgId, nowMs, runRetention).pipe(
-						Effect.catchCause((cause) =>
-							Effect.gen(function* () {
-								yield* Effect.logError("Anomaly tick failed for org").pipe(
-									Effect.annotateLogs({ orgId: org, error: Cause.pretty(cause) }),
-								)
-								orgFailures += 1
-								return emptyStats
-							}),
+				let orgFailures = 0
+				const emptyStats = {
+					seriesEvaluated: 0,
+					incidentsOpened: 0,
+					incidentsContinued: 0,
+					incidentsResolved: 0,
+				}
+				const results = yield* Effect.forEach(
+					[...knownOrgs],
+					(org) =>
+						processOrg(org as OrgId, nowMs, runRetention).pipe(
+							Effect.catchCause((cause) =>
+								Effect.gen(function* () {
+									yield* Effect.logError("Anomaly tick failed for org").pipe(
+										Effect.annotateLogs({ orgId: org, error: Cause.pretty(cause) }),
+									)
+									orgFailures += 1
+									return emptyStats
+								}),
+							),
 						),
-					),
-				{ concurrency: 4 },
-			)
+					{ concurrency: 4 },
+				)
 
-			const totals = results.reduce(
-				(acc, r) => ({
-					seriesEvaluated: acc.seriesEvaluated + r.seriesEvaluated,
-					incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
-					incidentsContinued: acc.incidentsContinued + r.incidentsContinued,
-					incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
-				}),
-				emptyStats,
-			)
+				const totals = results.reduce(
+					(acc, r) => ({
+						seriesEvaluated: acc.seriesEvaluated + r.seriesEvaluated,
+						incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
+						incidentsContinued: acc.incidentsContinued + r.incidentsContinued,
+						incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
+					}),
+					emptyStats,
+				)
 
-			yield* Effect.annotateCurrentSpan({ orgsKnown: knownOrgs.size, orgFailures, ...totals })
+				yield* Effect.annotateCurrentSpan({ orgsKnown: knownOrgs.size, orgFailures, ...totals })
 
-			return { orgsProcessed: knownOrgs.size, orgFailures, ...totals }
-		})
+				return { orgsProcessed: knownOrgs.size, orgFailures, ...totals }
+			},
+		)
 
 		return {
 			runTick,

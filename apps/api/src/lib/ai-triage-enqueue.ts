@@ -3,7 +3,7 @@ import type { AiTriageIncidentKind, ErrorIssueId, OrgId } from "@maple/domain/ht
 import { AiTriageRunId } from "@maple/domain/primitives"
 import { aiTriageRuns, aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
 import { and, eq, gte, sql } from "drizzle-orm"
-import { Cause, Clock, Effect, Schema } from "effect"
+import { Cause, Clock, Data, Effect, Schema } from "effect"
 import { Database } from "./DatabaseLive"
 
 // Cloudflare Workflow binding that runs the headless triage agent. Hosted by
@@ -59,13 +59,13 @@ export interface MaybeEnqueueTriageInput {
 export interface MaybeEnqueueTriageResult {
 	readonly enqueued: boolean
 	readonly runId?: AiTriageRunId
-	readonly reason?:
-		| "disabled"
-		| "daily_cap"
-		| "duplicate"
-		| "no_binding"
-		| "error"
+	readonly reason?: "disabled" | "daily_cap" | "duplicate" | "no_binding" | "error"
 }
+
+class AiTriageWorkflowCreateError extends Data.TaggedError("AiTriageWorkflowCreateError")<{
+	readonly message: string
+	readonly cause: unknown
+}> {}
 
 /**
  * Gate, record, and kick off an AI triage run for a freshly opened incident.
@@ -76,10 +76,10 @@ export interface MaybeEnqueueTriageResult {
  * (orgId, incidentKind, incidentId) index on ai_triage_runs plus the
  * workflow-instance id.
  */
-export const maybeEnqueueTriage = (
+export const maybeEnqueueTriage: (
 	input: MaybeEnqueueTriageInput,
-): Effect.Effect<MaybeEnqueueTriageResult, never, Database> =>
-	Effect.gen(function* () {
+) => Effect.Effect<MaybeEnqueueTriageResult, never, Database> = Effect.fn("maybeEnqueueTriage")(
+	function* (input: MaybeEnqueueTriageInput) {
 		const database = yield* Database
 		const nowMs = yield* Clock.currentTimeMillis
 
@@ -97,7 +97,10 @@ export const maybeEnqueueTriage = (
 				.select({ count: sql<number>`count(*)` })
 				.from(aiTriageRuns)
 				.where(
-					and(eq(aiTriageRuns.orgId, input.orgId), gte(aiTriageRuns.createdAt, startOfUtcDay(nowMs))),
+					and(
+						eq(aiTriageRuns.orgId, input.orgId),
+						gte(aiTriageRuns.createdAt, startOfUtcDay(nowMs)),
+					),
 				),
 		)
 		if ((todayCount[0]?.count ?? 0) >= maxRunsPerDay) {
@@ -154,14 +157,22 @@ export const maybeEnqueueTriage = (
 						runId,
 					},
 				}),
-			catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+			catch: (error) =>
+				new AiTriageWorkflowCreateError({
+					message: error instanceof Error ? error.message : String(error),
+					cause: error,
+				}),
 		}).pipe(
 			Effect.tapError((error) =>
 				database
 					.execute((db) =>
 						db
 							.update(aiTriageRuns)
-							.set({ status: "failed", error: `workflow_create_failed: ${error.message}`, updatedAt: nowMs })
+							.set({
+								status: "failed",
+								error: `workflow_create_failed: ${error.message}`,
+								updatedAt: nowMs,
+							})
 							.where(eq(aiTriageRuns.id, runId)),
 					)
 					.pipe(Effect.ignore),
@@ -169,8 +180,9 @@ export const maybeEnqueueTriage = (
 		)
 
 		return { enqueued: true, runId }
-	}).pipe(
-		Effect.catchCause((cause) =>
+	},
+	(effect, input) =>
+		Effect.catchCause(effect, (cause) =>
 			Effect.gen(function* () {
 				yield* Effect.logError("AI triage enqueue failed").pipe(
 					Effect.annotateLogs({
@@ -183,4 +195,4 @@ export const maybeEnqueueTriage = (
 				return { enqueued: false, reason: "error" as const }
 			}),
 		),
-	)
+)
