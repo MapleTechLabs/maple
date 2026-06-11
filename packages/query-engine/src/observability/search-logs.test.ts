@@ -9,7 +9,11 @@ import { compilePipeQuery } from "../ch/pipe-dispatch"
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 
 interface CapturedCalls {
-	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
+	pipeCalls: Array<{
+		pipe: string
+		params: Record<string, unknown>
+		options?: { settings?: { maxBlockSize?: number } }
+	}>
 }
 
 const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorShape => ({
@@ -17,8 +21,12 @@ const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorShape => ({
 	sqlQuery: () => Effect.succeed([] as ReadonlyArray<never>),
 	compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
-	query: (pipe: string, params: Record<string, unknown>) => {
-		captured.pipeCalls.push({ pipe, params })
+	query: (
+		pipe: string,
+		params: Record<string, unknown>,
+		options?: { settings?: { maxBlockSize?: number } },
+	) => {
+		captured.pipeCalls.push({ pipe, params, options })
 		return Effect.succeed({ data: [] as ReadonlyArray<never> })
 	},
 })
@@ -50,6 +58,11 @@ describe("searchLogs", () => {
 				assert.isUndefined(list!.params.body_search)
 				assert.strictEqual(count!.params.search, "boom")
 				assert.isUndefined(count!.params.body_search)
+
+				// Body search reads the wide Body column — both calls must carry the
+				// block-size guardrail (see WarehouseQuerySettings.maxBlockSize).
+				assert.strictEqual(list!.options?.settings?.maxBlockSize, 512)
+				assert.strictEqual(count!.options?.settings?.maxBlockSize, 512)
 			}),
 	)
 
@@ -81,6 +94,7 @@ describe("searchLogs", () => {
 			for (const call of captured.pipeCalls) {
 				assert.isUndefined(call.params.search)
 				assert.isUndefined(call.params.body_search)
+				assert.isUndefined(call.options?.settings)
 				const compiled = compilePipeQuery(call.pipe, { ...call.params, org_id: asOrgId("org_test") })
 				assert.notInclude(compiled!.sql, "Body ILIKE")
 			}
