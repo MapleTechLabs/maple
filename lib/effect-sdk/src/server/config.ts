@@ -50,6 +50,43 @@ export const environment = Config.string("MAPLE_ENVIRONMENT").pipe(
 export const otelServiceName = Config.option(Config.string("OTEL_SERVICE_NAME"))
 
 /**
+ * Resolve the canonical repository URL for `vcs.repository.url.full` from a
+ * generic string lookup (env vars or Worker bindings).
+ *
+ * Priority: MAPLE_REPOSITORY_URL > GitHub Actions (GITHUB_SERVER_URL +
+ * GITHUB_REPOSITORY) > Vercel git metadata (VERCEL_GIT_REPO_OWNER/SLUG).
+ * Returns the canonical https URL — never an SSH remote or local path.
+ */
+export const resolveRepositoryUrl = (get: (key: string) => string | undefined): string | undefined => {
+	const explicit = get("MAPLE_REPOSITORY_URL")
+	if (explicit) return explicit
+	const githubRepo = get("GITHUB_REPOSITORY")
+	if (githubRepo) return `${get("GITHUB_SERVER_URL") ?? "https://github.com"}/${githubRepo}`
+	const vercelOwner = get("VERCEL_GIT_REPO_OWNER")
+	const vercelSlug = get("VERCEL_GIT_REPO_SLUG")
+	if (vercelOwner && vercelSlug) return `https://github.com/${vercelOwner}/${vercelSlug}`
+	return undefined
+}
+
+const REPOSITORY_URL_ENV_KEYS = [
+	"MAPLE_REPOSITORY_URL",
+	"GITHUB_REPOSITORY",
+	"GITHUB_SERVER_URL",
+	"VERCEL_GIT_REPO_OWNER",
+	"VERCEL_GIT_REPO_SLUG",
+] as const
+
+/** Resolve the repository URL via the ConfigProvider (see resolveRepositoryUrl). */
+export const repositoryUrl = Effect.gen(function* () {
+	const values = new Map<string, string>()
+	for (const key of REPOSITORY_URL_ENV_KEYS) {
+		const value = yield* Config.option(Config.string(key))
+		if (Option.isSome(value)) values.set(key, value.value)
+	}
+	return resolveRepositoryUrl((key) => values.get(key))
+})
+
+/**
  * Parse the OTel-standard `OTEL_RESOURCE_ATTRIBUTES` env var.
  *
  * Format per the OTel spec: comma-separated `key=value` pairs, values may be

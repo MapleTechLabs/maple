@@ -41,6 +41,7 @@ const WorkerPlatformLive = Layer.mergeAll(
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "maple-api",
 	serviceNamespace: "backend",
+	repositoryUrl: "https://github.com/Makisuo/maple",
 	dropSpanNames: ["McpServer/Notifications."],
 })
 

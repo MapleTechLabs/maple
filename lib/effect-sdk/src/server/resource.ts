@@ -49,7 +49,21 @@ export interface ResourceConfigInput {
 	readonly ingestKey?: string | undefined
 	readonly attributes?: Record<string, unknown> | undefined
 	readonly sdkType?: "server" | "cloudflare" | "client" | undefined
+	/**
+	 * Canonical https URL of the source repository, emitted as the OTel
+	 * `vcs.repository.url.full` resource attribute. When omitted, falls back to
+	 * `MAPLE_REPOSITORY_URL`, then GitHub Actions / Vercel git env metadata.
+	 */
+	readonly repositoryUrl?: string | undefined
 }
+
+/**
+ * Best-effort guard for `vcs.ref.head.revision`: only stamp values that look
+ * like a git commit SHA — `serviceVersion` may legitimately be a semver
+ * release string, which belongs in `service.version` but not in `vcs.*`.
+ */
+const isCommitSha = (value: string | undefined): value is string =>
+	value !== undefined && /^[0-9a-f]{7,40}$/i.test(value)
 
 export interface ResolvedResource {
 	readonly endpoint: string | undefined
@@ -92,6 +106,12 @@ export const resolveResource = (config: ResourceConfigInput): Effect.Effect<Reso
 		const envServiceVersion = yield* EnvConfig.serviceVersion
 		const serviceVersion = config.serviceVersion ?? Option.getOrUndefined(envServiceVersion)
 
+		const envRepositoryUrl = yield* EnvConfig.repositoryUrl
+		const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
+		// Prefer the platform-provided commit SHA; fall back to serviceVersion only
+		// when it is itself SHA-shaped. Never shell out to git at runtime.
+		const headRevision = Option.getOrUndefined(envServiceVersion) ?? (isCommitSha(serviceVersion) ? serviceVersion : undefined)
+
 		const envEnvironment = yield* EnvConfig.environment
 		const environment = config.environment ?? envEnvironment
 
@@ -114,6 +134,8 @@ export const resolveResource = (config: ResourceConfigInput): Effect.Effect<Reso
 			attributes["deployment.environment.name"] = environment
 		}
 		if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
+		if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
+		if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 		if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 		Object.assign(attributes, envResourceAttributes)
 		if (config.attributes) Object.assign(attributes, config.attributes)
@@ -154,13 +176,19 @@ export const resolveResourceFromEnv = (
 			? Redacted.make(rawIngestKey)
 			: undefined
 
-	const serviceVersion =
-		config.serviceVersion ??
+	const envCommitSha =
 		stringOrUndefined(env.COMMIT_SHA) ??
 		stringOrUndefined(env.RAILWAY_GIT_COMMIT_SHA) ??
 		stringOrUndefined(env.VERCEL_GIT_COMMIT_SHA) ??
 		stringOrUndefined(env.CF_PAGES_COMMIT_SHA) ??
 		stringOrUndefined(env.RENDER_GIT_COMMIT)
+	const serviceVersion = config.serviceVersion ?? envCommitSha
+
+	const repositoryUrl =
+		config.repositoryUrl ?? EnvConfig.resolveRepositoryUrl((key) => stringOrUndefined(env[key]))
+	// Prefer the platform-provided commit SHA; fall back to serviceVersion only
+	// when it is itself SHA-shaped. Never shell out to git at runtime.
+	const headRevision = envCommitSha ?? (isCommitSha(serviceVersion) ? serviceVersion : undefined)
 
 	const environment =
 		config.environment ??
@@ -186,6 +214,8 @@ export const resolveResourceFromEnv = (
 		attributes["deployment.environment.name"] = environment
 	}
 	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
+	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
+	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	Object.assign(attributes, envResourceAttributes)
 	if (config.attributes) Object.assign(attributes, config.attributes)

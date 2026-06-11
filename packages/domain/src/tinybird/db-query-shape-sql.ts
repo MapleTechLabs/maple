@@ -98,7 +98,7 @@ export const DB_QUERY_LABEL_SQL = `coalesce(
 
 /**
  * The grouping key (a string), by precedence:
- *   1. db.statement.fingerprint                 — when instrumentation provides it
+ *   1. db.query.fingerprint (legacy: db.statement.fingerprint) — when instrumentation provides it
  *   2. cityHash64(normalize(statement text))    — literal-normalized shape hash
  *   3. cityHash64(label)                         — already-low-cardinality fallback
  *
@@ -106,6 +106,7 @@ export const DB_QUERY_LABEL_SQL = `coalesce(
  * separate shapes when only inlined-literal statement text is available.
  */
 export const DB_QUERY_KEY_SQL = `coalesce(
+  nullIf(SpanAttributes['db.query.fingerprint'], ''),
   nullIf(SpanAttributes['db.statement.fingerprint'], ''),
   nullIf(if(${DB_STATEMENT_SQL} != '', toString(cityHash64(${normalizeStatementSql(DB_STATEMENT_SQL)})), ''), ''),
   toString(cityHash64(${DB_QUERY_LABEL_SQL}))

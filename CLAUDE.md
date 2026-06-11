@@ -119,7 +119,7 @@ Pattern (see `apps/api/src/routes/query-engine.http.ts` and `apps/api/src/servic
 
 Never use raw `fetch()` calls to `/v0/sql` — always go through `warehouse.sqlQuery()` with a DSL-compiled query.
 
-**Trace annotations on `WarehouseQueryService.executeSql`:** every SQL execution leaves a span carrying `db.statement` (full SQL up to 16 KB), `db.statement.length`, `db.statement.fingerprint` (stable hash with literals normalized), `db.statement.truncated`, `db.duration_ms`, `db.system`, `result.rowCount`, `orgId`, `tenant.userId`, `query.context`, and `query.profile`. When debugging slow queries, pull a trace and filter on these.
+**Trace annotations on `WarehouseQueryService.executeSql`:** every SQL execution leaves a span carrying `db.query.text` (full SQL up to 16 KB), `db.query.length`, `db.query.fingerprint` (stable hash with literals normalized), `db.query.truncated`, `db.duration_ms`, `db.system.name`, `result.rowCount`, `orgId`, `tenant.userId`, `query.context`, and `query.profile`. When debugging slow queries, pull a trace and filter on these. (Spans recorded before 2026-06 carry the legacy `db.statement*`/`db.system` spellings; warehouse read paths coalesce both.)
 
 ## Environment Variables
 

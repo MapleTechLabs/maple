@@ -23,9 +23,11 @@ import { Traces } from "../tables"
  * can re-run verbatim, plus the perf shape (count, p50/p95/p99) we observed
  * in production for that fingerprint.
  *
- * Reads the attributes that `WarehouseQueryService.executeSql` emits:
- *   db.statement              — full SQL (truncated to 16KB upstream)
- *   db.statement.fingerprint  — FNV-1a hash with literals/numbers normalized
+ * Reads the attributes that `WarehouseQueryService.executeSql` emits
+ * (canonical `db.query.*` keys, with the legacy `db.statement*` spellings
+ * coalesced in for spans recorded before the rename):
+ *   db.query.text             — full SQL (truncated to 16KB upstream)
+ *   db.query.fingerprint      — FNV-1a hash with literals/numbers normalized
  *   query.context             — semantic label (`errorsByType`, etc.)
  *   query.profile             — `discovery` | `list` | `aggregation` | …
  *
@@ -53,12 +55,17 @@ export interface DbStatementSamplesOutput {
 export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 	return from(Traces)
 		.select(($) => ({
-			fingerprint: $.SpanAttributes.get("db.statement.fingerprint"),
+			fingerprint: CH.coalesce(
+				CH.nullIf($.SpanAttributes.get("db.query.fingerprint"), ""),
+				$.SpanAttributes.get("db.statement.fingerprint"),
+			),
 			context: CH.any_($.SpanAttributes.get("query.context")),
 			profile: CH.any_($.SpanAttributes.get("query.profile")),
 			// Pick any representative SQL for this fingerprint — they're
 			// equivalent modulo literals by construction.
-			sampleSql: CH.any_($.SpanAttributes.get("db.statement")),
+			sampleSql: CH.any_(
+				CH.coalesce(CH.nullIf($.SpanAttributes.get("db.query.text"), ""), $.SpanAttributes.get("db.statement")),
+			),
 			sampleCount: CH.count(),
 			// Duration is microseconds (uint64) — convert to ms for display.
 			p50DurationMs: CH.quantile(0.5)($.Duration).div(1000000),
@@ -74,7 +81,10 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 			// Spans without a fingerprint pre-date this attribute or come from
 			// the in-process `EXPLAIN` calls the bench itself makes — neither
 			// is interesting for ranking.
-			$.SpanAttributes.get("db.statement.fingerprint").neq(""),
+			CH.coalesce(
+				CH.nullIf($.SpanAttributes.get("db.query.fingerprint"), ""),
+				$.SpanAttributes.get("db.statement.fingerprint"),
+			).neq(""),
 			opts.contextFilter
 				? $.SpanAttributes.get("query.context").eq(opts.contextFilter)
 				: undefined,

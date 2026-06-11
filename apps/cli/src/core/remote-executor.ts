@@ -65,7 +65,7 @@ export const makeRemoteWarehouseExecutorShape = (
 					kind: "client",
 					attributes: {
 						"peer.service": "maple-api",
-						"db.system": "clickhouse",
+						"db.system.name": "clickhouse",
 						"query.context": pipe,
 					},
 				}),

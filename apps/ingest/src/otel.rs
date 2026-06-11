@@ -33,8 +33,26 @@ pub fn build_resource(cfg: ResourceConfig) -> Resource {
         KeyValue::new("maple.sdk.type", "server"),
         KeyValue::new("maple_org_id", cfg.internal_org_id),
     ];
+    // vcs.* semconv: link telemetry back to source. URL is overridable for
+    // forks; revision is best-effort from the deploy platform's env (never
+    // shells out to git at runtime).
+    attrs.push(KeyValue::new(
+        "vcs.repository.url.full",
+        env::var("VCS_REPOSITORY_URL").unwrap_or_else(|_| "https://github.com/Makisuo/maple".to_string()),
+    ));
+    if let Some(revision) = detect_head_revision() {
+        attrs.push(KeyValue::new("vcs.ref.head.revision", revision));
+    }
     attrs.extend(detect_platform());
     Resource::builder().with_attributes(attrs).build()
+}
+
+/// Commit SHA of the running build, from the deploy platform's env vars —
+/// mirrors lib/effect-sdk/src/server/resource.ts (`COMMIT_SHA` chain).
+fn detect_head_revision() -> Option<String> {
+    ["COMMIT_SHA", "RAILWAY_GIT_COMMIT_SHA", "RENDER_GIT_COMMIT", "GITHUB_SHA"]
+        .iter()
+        .find_map(|key| env::var(key).ok().filter(|v| !v.is_empty()))
 }
 
 /// Mirrors lib/effect-sdk/src/server/platform.ts platform detection — first

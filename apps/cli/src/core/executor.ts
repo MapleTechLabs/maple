@@ -27,9 +27,9 @@ const toWarehouseError = (pipe: string) => (error: unknown) =>
 		pipe,
 	})
 
-// Cap `db.statement` at 16 KB to match apps/api's WarehouseQueryService span.
-const MAX_DB_STATEMENT = 16 * 1024
-const truncateSql = (sql: string) => (sql.length > MAX_DB_STATEMENT ? sql.slice(0, MAX_DB_STATEMENT) : sql)
+// Cap `db.query.text` at 16 KB to match apps/api's WarehouseQueryService span.
+const MAX_DB_QUERY_TEXT = 16 * 1024
+const truncateSql = (sql: string) => (sql.length > MAX_DB_QUERY_TEXT ? sql.slice(0, MAX_DB_QUERY_TEXT) : sql)
 
 /**
  * A `WarehouseExecutor` shape backed by the local Maple binary's `/local/query`
@@ -72,10 +72,10 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 				Effect.withSpan("warehouse.sqlQuery", {
 					kind: "client",
 					attributes: {
-						"db.system": "clickhouse",
+						"db.system.name": "clickhouse",
 						"peer.service": "chdb",
-						"db.statement": truncateSql(sql),
-						"db.statement.length": sql.length,
+						"db.query.text": truncateSql(sql),
+						"db.query.length": sql.length,
 						"query.context": "sqlQuery",
 						...(options?.profile ? { "query.profile": options.profile } : {}),
 					},
@@ -106,10 +106,10 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 				Effect.withSpan("warehouse.compiledQuery", {
 					kind: "client",
 					attributes: {
-						"db.system": "clickhouse",
+						"db.system.name": "clickhouse",
 						"peer.service": "chdb",
-						"db.statement": truncateSql(compiled.sql),
-						"db.statement.length": compiled.sql.length,
+						"db.query.text": truncateSql(compiled.sql),
+						"db.query.length": compiled.sql.length,
 						"query.context": "compiledQuery",
 						...(options?.profile ? { "query.profile": options.profile } : {}),
 					},
@@ -140,10 +140,10 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 				Effect.withSpan("warehouse.compiledQueryFirst", {
 					kind: "client",
 					attributes: {
-						"db.system": "clickhouse",
+						"db.system.name": "clickhouse",
 						"peer.service": "chdb",
-						"db.statement": truncateSql(compiled.sql),
-						"db.statement.length": compiled.sql.length,
+						"db.query.text": truncateSql(compiled.sql),
+						"db.query.length": compiled.sql.length,
 						"query.context": "compiledQueryFirst",
 						...(options?.profile ? { "query.profile": options.profile } : {}),
 					},
@@ -159,8 +159,8 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 					})
 				}
 				yield* Effect.annotateCurrentSpan({
-					"db.statement": truncateSql(compiled.sql),
-					"db.statement.length": compiled.sql.length,
+					"db.query.text": truncateSql(compiled.sql),
+					"db.query.length": compiled.sql.length,
 				})
 				const started = performance.now()
 				const rows = yield* Effect.tryPromise({
@@ -187,7 +187,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 				Effect.withSpan("warehouse.query", {
 					kind: "client",
 					attributes: {
-						"db.system": "clickhouse",
+						"db.system.name": "clickhouse",
 						"peer.service": "chdb",
 						"query.context": pipe,
 					},

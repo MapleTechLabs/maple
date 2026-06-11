@@ -20,8 +20,8 @@ const executeQuery = Effect.fn("MyService.executeQuery")(function* (
     // Span attributes — annotate the current span (created by Effect.fn).
     yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
     yield* Effect.annotateCurrentSpan("tenant.userId", tenant.userId)
-    yield* Effect.annotateCurrentSpan("db.system", "clickhouse")
-    yield* Effect.annotateCurrentSpan("db.statement", sql.slice(0, 16_384))
+    yield* Effect.annotateCurrentSpan("db.system.name", "clickhouse")
+    yield* Effect.annotateCurrentSpan("db.query.text", sql.slice(0, 16_384))
     yield* Effect.annotateCurrentSpan("query.context", "myQuery")
 
     const result = yield* runQuery(sql)
@@ -147,8 +147,8 @@ def execute_query(tenant, sql: str):
         # Same attribute keys as TS / Rust — do not invent Python-specific ones.
         span.set_attribute("orgId", tenant.org_id)
         span.set_attribute("tenant.userId", tenant.user_id)
-        span.set_attribute("db.system", "clickhouse")
-        span.set_attribute("db.statement", sql[:16_384])
+        span.set_attribute("db.system.name", "clickhouse")
+        span.set_attribute("db.query.text", sql[:16_384])
         span.set_attribute("query.context", "myQuery")
 
         try:
@@ -179,9 +179,9 @@ The same logical attribute must use the same key in every language. Watch out fo
 |---|---|---|---|---|
 | Customer org ID (on span) | `orgId` | `maple.org_id` | `orgId` (or `maple.org_id` if mirroring ingest) | TS/Rust mismatch is intentional — preserved for dashboard filter compatibility |
 | User ID | `tenant.userId` | `tenant.user_id` is **wrong** — use `tenant.userId` | `tenant.userId` | Dotted-camelCase is canonical |
-| SQL statement | `db.statement` | `db.statement` | `db.statement` | Same key everywhere |
+| SQL statement | `db.query.text` | `db.query.text` | `db.query.text` | Same key everywhere (legacy spans: `db.statement`) |
 | SQL duration | `db.duration_ms` | `db.duration_ms` | `db.duration_ms` | Same key everywhere |
-| OTel HTTP method | use `http.method` only for legacy email path; new code `http.request.method` | `http.request.method` | `http.request.method` | New code uses semconv 1.20+ keys |
+| OTel HTTP method | `http.request.method` | `http.request.method` | `http.request.method` | Semconv 1.20+ keys everywhere (the legacy email-path exception is gone) |
 | OTel status code | (managed by Effect tracer) | `otel.status_code` field on `tracing` span | `span.set_status(Status(...))` | Title Case strings on the wire |
 
 When in doubt, grep the existing codebase for the key name. If it's used in TS and you're writing Rust, use the same spelling.

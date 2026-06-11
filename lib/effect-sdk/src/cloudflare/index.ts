@@ -51,6 +51,12 @@ export interface Config {
 	readonly serviceName?: string | undefined
 	readonly serviceVersion?: string | undefined
 	/**
+	 * Canonical https URL of the source repository, emitted as
+	 * `vcs.repository.url.full`. Falls back to `env.MAPLE_REPOSITORY_URL`, then
+	 * GitHub Actions / Vercel git env metadata.
+	 */
+	readonly repositoryUrl?: string | undefined
+	/**
 	 * Logical group this service belongs to, emitted as the OTel
 	 * `service.namespace` resource attribute. Optional — only stamped when set.
 	 */

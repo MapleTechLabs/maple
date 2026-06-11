@@ -15,6 +15,7 @@
  */
 import { createHash } from "node:crypto"
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { generateText, hasToolCall, stepCountIs, type ToolSet } from "ai"
 import { aiTriageRuns, aiTriageSettings, anomalyIncidents, errorIssueEvents } from "@maple/db"
 import { createMapleD1Client, type CloudflareD1Database, type MapleD1Client } from "@maple/db/client"
@@ -26,7 +27,7 @@ import {
 	OrgId,
 } from "@maple/domain/primitives"
 import { and, eq } from "drizzle-orm"
-import { Schema } from "effect"
+import { Cause, Effect, Exit, Schema } from "effect"
 import { getMapleAgentSetup, resolveOrgOpenrouterKey } from "../agent"
 import { trackTokenUsage } from "../lib/autumn-tracker"
 import { buildTriageContextMessage, TRIAGE_SYSTEM_PROMPT } from "./triage-prompt"
@@ -71,6 +72,19 @@ const deterministicEventId = (runId: string): string => {
 		hex.slice(20, 32),
 	].join("-")
 }
+
+/**
+ * Tracer for the triage LLM loop's `gen_ai.*` span. The workflow entrypoint
+ * has no ambient tracer (the worker's telemetry layer lives in the HTTP
+ * handler's runtime), so this module owns its own SDK instance and flushes it
+ * explicitly after the agent step. Module scope is safe here — this file is
+ * only ever dynamically imported inside `run()`, off the startup-CPU path.
+ */
+const triageTelemetry = MapleCloudflareSDK.make({
+	serviceName: "maple-api",
+	serviceNamespace: "backend",
+	repositoryUrl: "https://github.com/Makisuo/maple",
+})
 
 const DEFAULT_TRIAGE_MODEL = "moonshotai/kimi-k2.5:nitro"
 const MAX_AGENT_STEPS = 12
@@ -228,25 +242,55 @@ export async function runAiTriage(
 				context = {}
 			}
 
-			const result = await generate({
-				model: openrouter.chatModel(modelId),
-				system: TRIAGE_SYSTEM_PROMPT,
-				prompt: buildTriageContextMessage(incidentKind, context),
-				tools,
-				stopWhen: [hasToolCall(SUBMIT_TRIAGE_TOOL_NAME), stepCountIs(MAX_AGENT_STEPS)],
-				maxOutputTokens: MAX_OUTPUT_TOKENS,
-				providerOptions: {
-					openrouter: {
-						trace: {
-							trace_id: runId,
-							trace_name: "Maple AI Triage",
-							generation_name: "Triage Investigation",
+			// gen_ai.* semconv span around the LLM loop (no cost math — Maple's
+			// central pricing layer derives cost from the token counts).
+			const generateExit = await Effect.runPromiseExit(
+				Effect.tryPromise({
+					try: () =>
+						generate({
+							model: openrouter.chatModel(modelId),
+							system: TRIAGE_SYSTEM_PROMPT,
+							prompt: buildTriageContextMessage(incidentKind, context),
+							tools,
+							stopWhen: [hasToolCall(SUBMIT_TRIAGE_TOOL_NAME), stepCountIs(MAX_AGENT_STEPS)],
+							maxOutputTokens: MAX_OUTPUT_TOKENS,
+							providerOptions: {
+								openrouter: {
+									trace: {
+										trace_id: runId,
+										trace_name: "Maple AI Triage",
+										generation_name: "Triage Investigation",
+										orgId,
+										operation: "auto_triage",
+									},
+								},
+							},
+						}),
+					catch: (error) => error,
+				}).pipe(
+					Effect.tap((r) =>
+						Effect.annotateCurrentSpan({
+							"gen_ai.usage.input_tokens": r.totalUsage.inputTokens ?? 0,
+							"gen_ai.usage.output_tokens": r.totalUsage.outputTokens ?? 0,
+						}),
+					),
+					Effect.withSpan("ai_triage.generate", {
+						kind: "client",
+						attributes: {
+							"gen_ai.operation.name": "chat",
+							"gen_ai.provider.name": "openrouter",
+							"gen_ai.request.model": modelId,
 							orgId,
-							operation: "auto_triage",
 						},
-					},
-				},
-			})
+					}),
+					Effect.provide(triageTelemetry.layer),
+				),
+			)
+			await triageTelemetry.flush(env)
+			// Re-throw the original error so the step's failure handling (and the
+			// message persisted by markFailed) is unchanged by the span wrapper.
+			if (Exit.isFailure(generateExit)) throw Cause.squash(generateExit.cause)
+			const result = generateExit.value
 
 			const submitCall = result.steps
 				.flatMap((s) => s.toolCalls ?? [])

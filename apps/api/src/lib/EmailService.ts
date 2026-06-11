@@ -34,10 +34,9 @@ export class EmailService extends Context.Service<EmailService, EmailServiceShap
 			html: string,
 			replyTo?: string,
 		) {
-			yield* Effect.annotateCurrentSpan("email.to", to)
+			// PII: never stamp recipient/reply-to addresses on spans or logs
 			yield* Effect.annotateCurrentSpan("email.subject", subject)
 			yield* Effect.annotateCurrentSpan("email.provider", "resend")
-			if (replyTo) yield* Effect.annotateCurrentSpan("email.reply_to", replyTo)
 
 			if (Option.isNone(apiKey)) {
 				return yield* Effect.fail(
@@ -79,7 +78,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceShap
 				}),
 			)
 
-			yield* Effect.annotateCurrentSpan("http.status_code", response.status)
+			yield* Effect.annotateCurrentSpan("http.response.status_code", response.status)
 
 			if (!response.ok) {
 				const body = yield* Effect.tryPromise({
@@ -90,7 +89,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceShap
 						}),
 				})
 				yield* Effect.logError("Email delivery failed").pipe(
-					Effect.annotateLogs({ to, subject, status: response.status, body }),
+					Effect.annotateLogs({ subject, status: response.status, body }),
 				)
 				return yield* Effect.fail(
 					new EmailDeliveryError({
@@ -99,7 +98,7 @@ export class EmailService extends Context.Service<EmailService, EmailServiceShap
 				)
 			}
 
-			yield* Effect.logInfo("Email sent successfully").pipe(Effect.annotateLogs({ to, subject }))
+			yield* Effect.logInfo("Email sent successfully").pipe(Effect.annotateLogs({ subject }))
 		})
 
 		return { isConfigured, send } satisfies EmailServiceShape

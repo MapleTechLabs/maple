@@ -30,7 +30,11 @@ import { Cause, Effect, Layer } from "effect"
 // Module-scope construction; `flush(env)` resolves env on first call. The
 // in-isolate buffers coalesce concurrent scheduled ticks into one POST per
 // signal.
-const telemetry = MapleCloudflareSDK.make({ serviceName: "alerting", serviceNamespace: "backend" })
+const telemetry = MapleCloudflareSDK.make({
+	serviceName: "alerting",
+	serviceNamespace: "backend",
+	repositoryUrl: "https://github.com/Makisuo/maple",
+})
 
 const buildLayer = (_env: Record<string, unknown>) => {
 	const ConfigLive = WorkerConfigProviderLayer

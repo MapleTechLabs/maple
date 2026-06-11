@@ -3,7 +3,7 @@
 // bench-queries.ts — ClickHouse query benchmarking CLI (Effect)
 //
 // Replays production SQL (captured on `WarehouseQueryService.executeSql` spans
-// as `db.statement`) against a target ClickHouse and reports wall-time +
+// as `db.query.text`) against a target ClickHouse and reports wall-time +
 // ClickHouse server-side stats + EXPLAIN plans.
 //
 //   bun run scripts/bench-queries.ts fetch    [flags]   # mine traces → JSON
@@ -340,7 +340,7 @@ export class ClickHouse extends Context.Service<ClickHouse, ClickHouseShape>()("
 }
 
 // ---------------------------------------------------------------------------
-// Tinybird client — source for mining db.statement spans
+// Tinybird client — source for mining db.query.text spans
 // ---------------------------------------------------------------------------
 
 interface TinybirdShape {
@@ -364,7 +364,7 @@ export class Tinybird extends Context.Service<Tinybird, TinybirdShape>()("bench/
 					new MissingConfigError({
 						what: "TINYBIRD_HOST/TINYBIRD_TOKEN",
 						message:
-							"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.statement spans " +
+							"TINYBIRD_HOST and TINYBIRD_TOKEN are required to mine recent db.query.text spans " +
 							"from production traces.",
 					}),
 				),
@@ -581,7 +581,7 @@ const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 		{ orgId, startTime, endTime },
 	)
 
-	yield* Console.log(`Mining db.statement spans from ${host}`)
+	yield* Console.log(`Mining db.query.text spans from ${host}`)
 	yield* Console.log(`  org: ${orgId}   window: ${startTime} → ${endTime} (${config.since})   top: ${topN}`)
 
 	const rows = yield* tinybird.query(compiled.sql)
@@ -921,7 +921,7 @@ const fetchCommand = Command.make(
 		org: Flag.string("org").pipe(Flag.withDescription("Source org (default: internal)"), Flag.optional),
 	},
 	fetchHandler,
-).pipe(Command.withDescription("Mine recent db.statement spans from production traces into a JSON file"))
+).pipe(Command.withDescription("Mine recent db.query.text spans from production traces into a JSON file"))
 
 const runCommand = Command.make(
 	"run",

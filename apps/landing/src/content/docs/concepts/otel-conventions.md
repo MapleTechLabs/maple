@@ -177,10 +177,10 @@ If you put `peer.service` on a `Server` span, or leave it off entirely, no edge 
 
 ### 2. Database nodes
 
-Pair `db.system` with `peer.service` on the same `Client` span — both are required. The map aggregates by `db.system`, so multiple services calling the same database land on a single shared node.
+Pair `db.system.name` with `peer.service` on the same `Client` span — both are required. The map aggregates by `db.system.name`, so multiple services calling the same database land on a single shared node. (The legacy `db.system` spelling is also accepted as a fallback.)
 
 ```
-SELECT * FROM users  (span.kind=Client, db.system=postgresql, peer.service=postgresql)
+SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, peer.service=postgresql)
                             └──> draws an edge api → postgresql DB node
 ```
 
@@ -194,9 +194,9 @@ In addition to powering the service map, these drive the chip strip and the AI e
 
 | Attribute      | What Maple does with it                                                                                          |
 | -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `db.system`    | Scored 70 in the chip strip; pairs with `peer.service` for service map DB nodes; toned `info` in log chips.      |
-| `db.statement` | Scored 70; rendered in span detail; included as context in the error-debug prompt.                               |
-| `db.operation` | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                         |
+| `db.system.name` (legacy `db.system`)    | Scored 70 in the chip strip; pairs with `peer.service` for service map DB nodes; toned `info` in log chips.      |
+| `db.query.text` (legacy `db.statement`)  | Scored 70; rendered in span detail; included as context in the error-debug prompt.                               |
+| `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                      |
 
 ## Caching
 
@@ -356,7 +356,7 @@ The chip strip on each log/span row shows the top 4 attributes by score. Higher 
 | 95    | `http.status_code`, `http.response.status_code`                                  |
 | 90    | `rpc.grpc.status_code`                                                           |
 | 80    | `http.method`, `http.request.method`                                             |
-| 70    | `db.system`, `db.statement`, `db.operation`                                      |
+| 70    | `db.system.name`, `db.system`, `db.query.text`, `db.statement`, `db.operation.name`, `db.operation` |
 | 68    | `rpc.service`, `rpc.method`                                                      |
 | 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                            |
 | 60    | `duration_ms`, `latency_ms`, `http.duration`                                     |

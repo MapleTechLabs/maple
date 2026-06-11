@@ -51,7 +51,15 @@ function scoreKey(key: string): number {
 	if (key === "http.status_code" || key === "http.response.status_code") return 95
 	if (key === "rpc.grpc.status_code") return 90
 	if (key === "http.method" || key === "http.request.method") return 80
-	if (key === "db.system" || key === "db.statement" || key === "db.operation") return 70
+	if (
+		key === "db.system" ||
+		key === "db.system.name" ||
+		key === "db.statement" ||
+		key === "db.query.text" ||
+		key === "db.operation" ||
+		key === "db.operation.name"
+	)
+		return 70
 	if (key === "rpc.service" || key === "rpc.method") return 68
 	if (key === "user.id" || key === "enduser.id" || key === "customer_id" || key === "customer.id") return 66
 	if (key === "duration_ms" || key === "latency_ms" || key === "http.duration") return 60
@@ -97,7 +105,7 @@ export function getChipTone(key: string, value: string, severityText: string): C
 	}
 
 	if (key === "http.method" || key === "http.request.method") return "info"
-	if (key === "db.system" || key === "rpc.service" || key === "rpc.method") return "info"
+	if (key === "db.system" || key === "db.system.name" || key === "rpc.service" || key === "rpc.method") return "info"
 
 	if (rowIsError) return "muted"
 	return "muted"

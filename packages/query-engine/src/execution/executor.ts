@@ -104,7 +104,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 
 		const resolved = yield* deps.resolveConfig(tenant, pipe)
 		const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
-		yield* Effect.annotateCurrentSpan("db.system", peerService)
+		yield* Effect.annotateCurrentSpan("db.system.name", peerService)
 		yield* Effect.annotateCurrentSpan("peer.service", peerService)
 		// Tinybird rejects some settings outright (e.g. max_block_size) — drop
 		// them there so a call site can request them for ClickHouse backends
@@ -118,10 +118,10 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		const finalSql = appendSettings(sqlForClient, settings)
 		const sqlLength = finalSql.length
 		const sqlTruncated = sqlLength > SQL_TRACE_MAX
-		yield* Effect.annotateCurrentSpan("db.statement", truncateSql(finalSql, SQL_TRACE_MAX))
-		yield* Effect.annotateCurrentSpan("db.statement.length", sqlLength)
-		yield* Effect.annotateCurrentSpan("db.statement.truncated", sqlTruncated)
-		yield* Effect.annotateCurrentSpan("db.statement.fingerprint", fingerprintSql(finalSql))
+		yield* Effect.annotateCurrentSpan("db.query.text", truncateSql(finalSql, SQL_TRACE_MAX))
+		yield* Effect.annotateCurrentSpan("db.query.length", sqlLength)
+		yield* Effect.annotateCurrentSpan("db.query.truncated", sqlTruncated)
+		yield* Effect.annotateCurrentSpan("db.query.fingerprint", fingerprintSql(finalSql))
 		yield* Effect.annotateCurrentSpan("query.pipe", pipe)
 		if (options?.context) yield* Effect.annotateCurrentSpan("query.context", options.context)
 		if (options?.profile) yield* Effect.annotateCurrentSpan("query.profile", options.profile)

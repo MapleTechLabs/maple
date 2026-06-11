@@ -23,11 +23,11 @@ Source: `apps/api/src/services/WarehouseQueryService.ts:441-510`
 | `tenant.authMode` | string | `WarehouseQueryService.ts:450` | `"api_key"` / `"user_login"` / etc. |
 | `clientSource` | string | `WarehouseQueryService.ts:373, 387` | `"org_override"` or `"managed"` (which config resolved) |
 | `db.client` | string | `WarehouseQueryService.ts:374, 389, 405` | `"clickhouse"` or `"tinybird-sdk"` |
-| `db.system` | string | `WarehouseQueryService.ts:462` | `"clickhouse"` or `"tinybird"` |
-| `db.statement` | string | `WarehouseQueryService.ts:471` | Full compiled SQL, truncated to 16 KB |
-| `db.statement.length` | int | `WarehouseQueryService.ts:472` | Pre-truncation byte length |
-| `db.statement.truncated` | bool | `WarehouseQueryService.ts:473` | Whether SQL was capped at 16 KB |
-| `db.statement.fingerprint` | string | `WarehouseQueryService.ts:474` | 32-bit FNV-1a hash with literals + numbers normalized |
+| `db.system.name` | string | `WarehouseQueryService.ts:462` | `"clickhouse"` or `"tinybird"` (legacy spans: `db.system`) |
+| `db.query.text` | string | `WarehouseQueryService.ts:471` | Full compiled SQL, truncated to 16 KB (legacy spans: `db.statement`) |
+| `db.query.length` | int | `WarehouseQueryService.ts:472` | Pre-truncation byte length (legacy: `db.statement.length`) |
+| `db.query.truncated` | bool | `WarehouseQueryService.ts:473` | Whether SQL was capped at 16 KB (legacy: `db.statement.truncated`) |
+| `db.query.fingerprint` | string | `WarehouseQueryService.ts:474` | 32-bit FNV-1a hash with literals + numbers normalized (legacy: `db.statement.fingerprint`) |
 | `db.duration_ms` | int | `WarehouseQueryService.ts:489, 508` | Execution time in ms (emitted on both success and error tap) |
 | `query.pipe` | string | `WarehouseQueryService.ts:475` | Original pipe name passed to `sqlQuery()` |
 | `query.context` | string | `WarehouseQueryService.ts:476` | Semantic call-site label (e.g. `"errorsByType"`, `"spanHierarchy"`). Set via `SqlQueryOptions.context`. |
@@ -41,7 +41,7 @@ Source: `apps/api/src/services/WarehouseQueryService.ts:441-510`
 
 ## `db.*` group (general)
 
-Beyond `executeSql`, the same `db.system` / `db.duration_ms` keys appear wherever Maple talks to a warehouse. Add any new DB-related attrs under `db.*` — never under `database.*` or `clickhouse.*`.
+Beyond `executeSql`, the same `db.system.name` / `db.duration_ms` keys appear wherever Maple talks to a warehouse. Add any new DB-related attrs under `db.*` — never under `database.*` or `clickhouse.*`.
 
 ---
 

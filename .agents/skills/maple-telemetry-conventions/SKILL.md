@@ -1,6 +1,6 @@
 ---
 name: maple-telemetry-conventions
-description: Maple's OpenTelemetry conventions — custom span attribute keys (`maple.*` vendor namespace, `query.context`, `db.statement.*`, `result.*`, `cache.*`, `tenant.*`), Title Case status codes (`Ok`/`Error`/`Unset`), resource attribute dual-emit (`deployment.environment` + `deployment.environment.name`), span kinds, Tinybird MV pre-extracted columns, loop-prevention filters, and sampling. Use whenever writing or reviewing instrumentation code in any language (TypeScript, Rust, Python) in this repo — adding `setAttribute`/`setAttributes`/`record`/`#[instrument(fields(...))]` calls, setting span status, configuring an OTLP exporter, defining a new resource attribute, or wiring a new query through `WarehouseQueryService.sqlQuery()`.
+description: Maple's OpenTelemetry conventions — custom span attribute keys (`maple.*` vendor namespace, `query.context`, `db.query.*`, `result.*`, `cache.*`, `tenant.*`), Title Case status codes (`Ok`/`Error`/`Unset`), resource attribute dual-emit (`deployment.environment` + `deployment.environment.name`), span kinds, Tinybird MV pre-extracted columns, loop-prevention filters, and sampling. Use whenever writing or reviewing instrumentation code in any language (TypeScript, Rust, Python) in this repo — adding `setAttribute`/`setAttributes`/`record`/`#[instrument(fields(...))]` calls, setting span status, configuring an OTLP exporter, defining a new resource attribute, or wiring a new query through `WarehouseQueryService.sqlQuery()`.
 version: "1.0.0"
 ---
 
@@ -33,11 +33,11 @@ Reference for the **language-agnostic** OpenTelemetry conventions Maple uses acr
 |---|---|
 | Status codes | Always Title Case: `"Ok"`, `"Error"`, `"Unset"`. Never `OK`, `ERROR`, `SUCCESS`, `FAILED`. |
 | Vendor namespace | Custom attributes go under `maple.*`. Sub-namespaces: `maple.ingest.*`, `maple.cloudflare.*`. |
-| Standard semconv | Use OTel semconv keys verbatim: `service.name`, `http.request.method`, `db.system`, `error.type`. |
+| Standard semconv | Use OTel semconv keys verbatim: `service.name`, `http.request.method`, `db.system.name`, `error.type`. |
 | Org identity | `orgId` (camelCase) in TypeScript spans, `maple.org_id` (dotted) in Rust spans. Don't unify until MVs migrate. |
 | Deployment env | Dual-emit `deployment.environment` + `deployment.environment.name`. Keep both until MV `coalesce()` migration lands. |
-| Warehouse SQL spans | Every span from `WarehouseQueryService.executeSql` carries `db.system`, `peer.service`, `db.statement`, `db.statement.fingerprint`, `db.duration_ms`, `result.rowCount`, `orgId`, `query.context`, `query.profile`. |
-| Service map | Outbound spans need `peer.service` (HTTP/RPC) or `db.system` (DB) on a `Client`/`Producer` span. Resource attrs need `process.runtime.name`, `cloud.platform`, `maple.sdk.type` for runtime icon + platform badge. See `rules/service-map-attribution.md`. |
+| Warehouse SQL spans | Every span from `WarehouseQueryService.executeSql` carries `db.system.name`, `peer.service`, `db.query.text`, `db.query.fingerprint`, `db.duration_ms`, `result.rowCount`, `orgId`, `query.context`, `query.profile`. Legacy spans (pre 2026-06) use `db.statement*`/`db.system`; warehouse readers coalesce both. |
+| Service map | Outbound spans need `peer.service` (HTTP/RPC) or `db.system.name` (DB) on a `Client`/`Producer` span. Resource attrs need `process.runtime.name`, `cloud.platform`, `maple.sdk.type` for runtime icon + platform badge. See `rules/service-map-attribution.md`. |
 | Loop prevention | Never remove `HttpMiddleware.TracerDisabledWhen` (apps/api/src/app.ts:169-175) or the ingest loopback guard (apps/ingest/src/main.rs:499-514). |
 
 ## Canonical references (do not modify from this skill)

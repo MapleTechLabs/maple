@@ -3,7 +3,7 @@
 A small CLI for measuring the real cost of our dashboard queries.
 
 It replays the exact SQL we already ran in production (captured on every
-`WarehouseQueryService.executeSql` span as `db.statement`), records wall-time
+`WarehouseQueryService.executeSql` span as `db.query.text`), records wall-time
 + server-side stats + EXPLAIN plans, and lets you diff two runs so you can
 prove whether a DSL change actually moved the number.
 
@@ -12,7 +12,7 @@ prove whether a DSL change actually moved the number.
 ```
 bun bench:fetch    [--context name] [--profile name] [--since 24h]
                    [--top 20] [--out path] [--org id]
-                   # mine recent db.statement spans from prod traces → JSON
+                   # mine recent db.query.text spans from prod traces → JSON
 
 bun bench:run      <file> [--runs 5] [--warmup 1] [--out path]
                    # replay each query N times and report aggregated stats

@@ -29,6 +29,7 @@ const buildSetup = async (env: Record<string, unknown>): Promise<MapleAgentSetup
 	const telemetry = MapleCloudflareSDK.make({
 		serviceName: "maple-agent",
 		serviceNamespace: "backend",
+		repositoryUrl: "https://github.com/Makisuo/maple",
 		dropSpanNames: ["McpServer/Notifications."],
 	})
 

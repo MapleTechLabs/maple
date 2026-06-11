@@ -27,6 +27,7 @@ export const TelemetryLayer = Maple.layer({
 	serviceName: "maple-cli",
 	serviceNamespace: "backend",
 	serviceVersion: MAPLE_VERSION,
+	repositoryUrl: "https://github.com/Makisuo/maple",
 	ingestKey: process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY,
 	shutdownTimeout: "3 seconds",
 })

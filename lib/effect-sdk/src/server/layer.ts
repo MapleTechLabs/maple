@@ -13,6 +13,12 @@ export interface MapleConfig {
 	/** Override auto-detected service version (commit SHA). */
 	readonly serviceVersion?: string | undefined
 	/**
+	 * Canonical https URL of the source repository, emitted as
+	 * `vcs.repository.url.full`. Falls back to `MAPLE_REPOSITORY_URL`, then
+	 * GitHub Actions / Vercel git env metadata.
+	 */
+	readonly repositoryUrl?: string | undefined
+	/**
 	 * Logical group this service belongs to, emitted as the OTel
 	 * `service.namespace` resource attribute. Optional — only stamped when set.
 	 */

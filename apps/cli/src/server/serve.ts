@@ -188,9 +188,9 @@ function serveAsset(assets: AssetResolver, pathname: string): Response {
 	return text("UI not built", 404)
 }
 
-// Cap `db.statement` at 16 KB to match apps/api's WarehouseQueryService span.
-const MAX_DB_STATEMENT = 16 * 1024
-const truncateSql = (sql: string) => (sql.length > MAX_DB_STATEMENT ? sql.slice(0, MAX_DB_STATEMENT) : sql)
+// Cap `db.query.text` at 16 KB to match apps/api's WarehouseQueryService span.
+const MAX_DB_QUERY_TEXT = 16 * 1024
+const truncateSql = (sql: string) => (sql.length > MAX_DB_QUERY_TEXT ? sql.slice(0, MAX_DB_QUERY_TEXT) : sql)
 
 /** Runs a request's span effect on the server's tracing runtime (see
  *  `startServer`). The effect always succeeds with a `Response`. */
@@ -261,11 +261,11 @@ const querySpan = (runSpan: SpanRunner, db: Chdb, req: Request): Promise<Respons
 			Effect.gen(function* () {
 				const { response, rowCount, durationMs, sql } = yield* Effect.promise(() => handleQuery(db, req))
 				yield* Effect.annotateCurrentSpan({
-					"db.system": "clickhouse",
+					"db.system.name": "clickhouse",
 					"db.duration_ms": durationMs,
 					"result.rowCount": rowCount,
 					"http.response.status_code": response.status,
-					...(sql ? { "db.statement": truncateSql(sql), "db.statement.length": sql.length } : {}),
+					...(sql ? { "db.query.text": truncateSql(sql), "db.query.length": sql.length } : {}),
 				})
 				return yield* failIfError(response)
 			}).pipe(
