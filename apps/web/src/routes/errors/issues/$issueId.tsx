@@ -5,6 +5,7 @@ import { Exit, Schema } from "effect"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueHero } from "@/components/errors/issue-hero"
@@ -239,6 +240,13 @@ function IssueDetailPage() {
 						<section className="space-y-4">
 							<IssueHero issue={issue} />
 							<IssueOccurrenceSparkline data={timeseries} />
+							<AiTriageCard
+								incidentKind="error"
+								incidentId={
+									(incidents.find((i) => i.status === "open") ?? incidents[0])?.id ?? null
+								}
+								issueId={issueId}
+							/>
 						</section>
 
 						<section aria-labelledby="activity-heading">

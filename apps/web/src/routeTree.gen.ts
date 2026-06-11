@@ -25,6 +25,7 @@ import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as DeveloperRouteImport } from './routes/developer'
 import { Route as ConnectorsRouteImport } from './routes/connectors'
 import { Route as ChatRouteImport } from './routes/chat'
+import { Route as AnomaliesRouteImport } from './routes/anomalies'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
@@ -134,6 +135,11 @@ const ConnectorsRoute = ConnectorsRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnomaliesRoute = AnomaliesRouteImport.update({
+  id: '/anomalies',
+  path: '/anomalies',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -297,6 +303,7 @@ const InfraKubernetesWorkloadsKindWorkloadNameRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -345,6 +352,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -394,6 +402,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -444,6 +453,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -492,6 +502,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -540,6 +551,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -589,6 +601,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AnomaliesRoute: typeof AnomaliesRoute
   ChatRoute: typeof ChatRoute
   ConnectorsRoute: typeof ConnectorsRoute
   DeveloperRoute: typeof DeveloperRoute
@@ -748,6 +761,13 @@ declare module '@tanstack/react-router' {
       path: '/chat'
       fullPath: '/chat'
       preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anomalies': {
+      id: '/anomalies'
+      path: '/anomalies'
+      fullPath: '/anomalies'
+      preLoaderRoute: typeof AnomaliesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -965,6 +985,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AnomaliesRoute: AnomaliesRoute,
   ChatRoute: ChatRoute,
   ConnectorsRoute: ConnectorsRoute,
   DeveloperRoute: DeveloperRoute,

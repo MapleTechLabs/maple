@@ -1,4 +1,6 @@
 import { HttpApi, OpenApi } from "effect/unstable/httpapi"
+import { AiTriageApiGroup } from "./ai-triage"
+import { AnomaliesApiGroup } from "./anomalies"
 import { ApiKeysApiGroup } from "./api-keys"
 import { AlertsApiGroup } from "./alerts"
 import { AuthApiGroup, AuthPublicApiGroup } from "./auth"
@@ -23,6 +25,8 @@ import { WarehouseApiGroup } from "./warehouse"
 export class MapleApi extends HttpApi.make("MapleApi")
 	.add(AuthPublicApiGroup)
 	.add(AuthApiGroup)
+	.add(AiTriageApiGroup)
+	.add(AnomaliesApiGroup)
 	.add(ApiKeysApiGroup)
 	.add(AlertsApiGroup)
 	.add(CloudflareLogpushApiGroup)

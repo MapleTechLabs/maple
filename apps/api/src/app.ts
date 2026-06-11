@@ -4,7 +4,9 @@ import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { McpLive } from "./mcp/app"
 import { AutumnRouter } from "./routes/autumn.http"
+import { HttpAiTriageLive } from "./routes/ai-triage.http"
 import { HttpAlertsLive } from "./routes/alerts.http"
+import { HttpAnomaliesLive } from "./routes/anomalies.http"
 import { HttpErrorsLive } from "./routes/errors.http"
 import { HttpApiKeysLive } from "./routes/api-keys.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "./routes/auth.http"
@@ -28,7 +30,9 @@ import { HttpRecommendationIssuesLive } from "./routes/recommendation-issues.htt
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
 import { HttpSessionReplaysLive } from "./routes/session-replay.http"
 import { HttpWarehouseLive } from "./routes/warehouse.http"
+import { AiTriageService } from "./services/AiTriageService"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
+import { AnomalyDetectionService } from "./services/AnomalyDetectionService"
 import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/caching"
 import { CacheBackendLive } from "./lib/CacheBackendLive"
 import { ErrorsService } from "./services/ErrorsService"
@@ -134,6 +138,14 @@ export const RecommendationIssueServiceLive = RecommendationIssueService.layer.p
 	Layer.provideMerge(WarehouseQueryServiceLive),
 )
 
+export const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
+	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, EdgeCacheServiceLive)),
+)
+
+export const AiTriageServiceLive = AiTriageService.layer.pipe(
+	Layer.provideMerge(CoreServicesLive),
+)
+
 export const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
 export const DigestServiceLive = DigestService.layer.pipe(
@@ -145,6 +157,8 @@ export const MainLive = Layer.mergeAll(
 	WarehouseQueryServiceLive,
 	QueryEngineServiceLive,
 	AlertsServiceLive,
+	AnomalyDetectionServiceLive,
+	AiTriageServiceLive,
 	ErrorsServiceLive,
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
@@ -155,6 +169,7 @@ export const MainLive = Layer.mergeAll(
 export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
+	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive)),
 	Layer.provide(HttpApiKeysLive),
 	Layer.provide(HttpAlertsLive),
 	Layer.provide(HttpErrorsLive),

@@ -55,8 +55,10 @@ import {
 } from "@maple/db"
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query-engine"
-import { Array as Arr, Cause, Clock, Context, Effect, Layer, Schedule, Schema } from "effect"
+import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schedule, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
+import { AI_TRIAGE_WORKFLOW_BINDING, maybeEnqueueTriage } from "../lib/ai-triage-enqueue"
+import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 import { NotificationDispatcher } from "./NotificationDispatcher"
@@ -305,6 +307,13 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 		const warehouse = yield* WarehouseQueryService
 		const env = yield* Env
 		const dispatcher = yield* NotificationDispatcher
+		// Optional: present only inside a Worker isolate. Used to kick off the
+		// AI triage Workflow when an incident opens (org opt-in).
+		const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+		const aiTriageWorkflowBinding = Option.match(workerEnv, {
+			onNone: () => undefined,
+			onSome: (e) => e[AI_TRIAGE_WORKFLOW_BINDING],
+		})
 
 		const newErrorIssueId = () => decodeErrorIssueIdSync(randomUUID())
 		const newErrorIncidentId = () => decodeErrorIncidentIdSync(randomUUID())
@@ -1949,6 +1958,30 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 							exceptionType: row.exceptionType,
 							count: row.count,
 						})
+
+						// AI auto-triage (org opt-in). maybeEnqueueTriage never fails, so a
+						// triage problem can't take down the error tick.
+						yield* maybeEnqueueTriage({
+							orgId,
+							incidentKind: "error",
+							incidentId,
+							issueId,
+							context: {
+								kind: "error",
+								reason,
+								serviceName: row.serviceName,
+								exceptionType: row.exceptionType,
+								exceptionMessage: row.exceptionMessage,
+								errorLabel: row.errorLabel,
+								topFrame: row.topFrame,
+								fingerprintHash: row.fingerprintHash,
+								occurrenceCount: row.count,
+								firstSeen: row.firstSeen,
+								lastSeen: row.lastSeen,
+								issueId,
+							},
+							workflowBinding: aiTriageWorkflowBinding,
+						}).pipe(Effect.provideService(Database, database))
 
 						return { touched: 1, opened: 1 }
 					} else {

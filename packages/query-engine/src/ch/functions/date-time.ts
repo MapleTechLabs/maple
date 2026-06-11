@@ -26,6 +26,15 @@ export function toStartOfHour(col: Expr<string>): Expr<string> {
 }
 
 /**
+ * `toHour(expr)` — extract the hour-of-day (0–23) from a DateTime. Used by the
+ * anomaly detector's seasonal-naive baseline to select "matched hours" (same
+ * hour-of-day ±1) across the trailing week without storing baselines anywhere.
+ */
+export function toHour(col: Expr<string>): Expr<number> {
+	return makeExpr<number>(raw(`toHour(${compile(col.toFragment())})`))
+}
+
+/**
  * `toUnixTimestamp(expr)` — convert a DateTime/DateTime64 to a UInt32 of
  * seconds since epoch. Useful for stable JSON-numeric keys (e.g. the rollup's
  * "have we already sealed this hour" check) without forcing the consumer to

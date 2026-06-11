@@ -51,6 +51,7 @@ export const ErrorIssueEventType = Schema.Literals([
 	"regression",
 	"snooze",
 	"unsnooze",
+	"ai_triage",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",

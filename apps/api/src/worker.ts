@@ -206,6 +206,7 @@ const handle = async (
 // The class is a thin shell that dynamic-imports its heavy logic inside run(),
 // so this static export keeps module-scope evaluation light (startup-CPU budget).
 export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
+export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>

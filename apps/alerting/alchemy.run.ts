@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { Worker, type D1Database } from "alchemy/cloudflare"
+import { Worker, Workflow, type D1Database } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -29,6 +29,20 @@ export interface CreateAlertingWorkerOptions {
 }
 
 export const createAlertingWorker = async ({ stage, mapleDb }: CreateAlertingWorkerOptions) => {
+	// Cross-script binding to the AI triage Workflow hosted by the api worker —
+	// the error/anomaly ticks enqueue triage runs when incidents open.
+	const aiTriageWorkflow = Workflow<{
+		orgId: string
+		incidentKind: string
+		incidentId: string
+		issueId?: string
+		runId: string
+	}>("ai-triage-workflow", {
+		workflowName: resolveWorkerName("ai-triage", stage),
+		className: "AiTriageWorkflow",
+		scriptName: resolveWorkerName("api", stage),
+	})
+
 	const worker = await Worker("alerting", {
 		name: resolveWorkerName("alerting", stage),
 		cwd: import.meta.dirname,
@@ -36,9 +50,10 @@ export const createAlertingWorker = async ({ stage, mapleDb }: CreateAlertingWor
 		compatibility: "node",
 		compatibilityDate: "2026-04-08",
 		adopt: true,
-		crons: ["* * * * *", "*/15 * * * *", "0 9 * * *"],
+		crons: ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 9 * * *"],
 		bindings: {
 			MAPLE_DB: mapleDb,
+			AI_TRIAGE_WORKFLOW: aiTriageWorkflow,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			MAPLE_AUTH_MODE: process.env.MAPLE_AUTH_MODE?.trim() || "self_hosted",

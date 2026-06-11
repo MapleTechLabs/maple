@@ -311,6 +311,20 @@ export {
 	type ErrorIssueSampleTracesOutput,
 } from "./queries/errors"
 
+// Queries — Anomaly detector
+export {
+	anomalyTraceSignalsQuery,
+	anomalyLogVolumeQuery,
+	anomalyErrorSpikeCurrentQuery,
+	anomalyErrorSpikeBaselineQuery,
+	matchedHoursOfDay,
+	type AnomalyTraceSignalsOpts,
+	type AnomalyTraceSignalsOutput,
+	type AnomalyLogVolumeOutput,
+	type AnomalyErrorSpikeCurrentOutput,
+	type AnomalyErrorSpikeBaselineOutput,
+} from "./queries/anomaly"
+
 // Queries — Service Map
 export {
 	serviceDependenciesSQL,

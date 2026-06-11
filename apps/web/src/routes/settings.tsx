@@ -11,6 +11,7 @@ import { IngestionSection } from "@/components/settings/ingestion-section"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { NotificationsSection } from "@/components/settings/notifications-section"
+import { AiTriageSettingsSection } from "@/components/settings/ai-triage-settings-section"
 import { OrgOpenRouterSettingsSection } from "@/components/settings/org-openrouter-settings-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
 import { OrganizationSection } from "@/components/settings/organization-section"
@@ -100,7 +101,10 @@ export function SettingsPage() {
 			{activeTab === "mcp" && <McpSection />}
 			{activeTab === "notifications" && <NotificationsSection />}
 			{activeTab === "ai" && (
-				<OrgOpenRouterSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
+				<div className="space-y-6">
+					<OrgOpenRouterSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
+					<AiTriageSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />
+				</div>
 			)}
 			{activeTab === "billing" && <BillingSection />}
 			{activeTab === "data-platform" && (

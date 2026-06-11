@@ -114,6 +114,12 @@ export type ActorId = Schema.Schema.Type<typeof ActorId>
 export const ErrorIssueEventId = MapleUuidId("@maple/ErrorIssueEventId", "Error Issue Event ID")
 export type ErrorIssueEventId = Schema.Schema.Type<typeof ErrorIssueEventId>
 
+export const AnomalyIncidentId = MapleUuidId("@maple/AnomalyIncidentId", "Anomaly Incident ID")
+export type AnomalyIncidentId = Schema.Schema.Type<typeof AnomalyIncidentId>
+
+export const AiTriageRunId = MapleUuidId("@maple/AiTriageRunId", "AI Triage Run ID")
+export type AiTriageRunId = Schema.Schema.Type<typeof AiTriageRunId>
+
 export const AuthMode = Schema.Literals(["clerk", "self_hosted"]).annotate({
 	identifier: "@maple/AuthMode",
 	title: "Auth Mode",

@@ -1,6 +1,7 @@
 import {
 	AlertRuntime,
 	AlertsService,
+	AnomalyDetectionService,
 	BucketCacheService,
 	CacheBackendLive,
 	DatabaseD1Live,
@@ -75,8 +76,23 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		Layer.provide(Layer.mergeAll(BaseLive, HazelOAuthServiceLive)),
 	)
 
+	// WorkerEnvironment is merged in so the incident-open AI-triage hook can see
+	// the cross-script AI_TRIAGE_WORKFLOW binding (absent → triage marked failed).
 	const ErrorsServiceLive = ErrorsService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, NotificationDispatcherLive)),
+		Layer.provide(
+			Layer.mergeAll(
+				BaseLive,
+				WarehouseQueryServiceLive,
+				NotificationDispatcherLive,
+				WorkerEnvironment.layer,
+			),
+		),
+	)
+
+	const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
+		Layer.provide(
+			Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EdgeCacheServiceLive, WorkerEnvironment.layer),
+		),
 	)
 
 	const EmailServiceLive = EmailService.layer.pipe(Layer.provide(EnvLive))
@@ -104,6 +120,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 
 	return Layer.mergeAll(
 		AlertsServiceLive,
+		AnomalyDetectionServiceLive,
 		DigestServiceLive,
 		OnboardingEmailServiceLive,
 		ErrorsServiceLive,
@@ -213,6 +230,28 @@ const serviceMapRollupTick = Effect.gen(function* () {
 	),
 )
 
+const anomalyTick = Effect.gen(function* () {
+	const anomalies = yield* AnomalyDetectionService
+	const result = yield* anomalies.runTick()
+	yield* Effect.logInfo("Anomaly detection tick complete").pipe(
+		Effect.annotateLogs({
+			orgsProcessed: result.orgsProcessed,
+			seriesEvaluated: result.seriesEvaluated,
+			incidentsOpened: result.incidentsOpened,
+			incidentsContinued: result.incidentsContinued,
+			incidentsResolved: result.incidentsResolved,
+			orgFailures: result.orgFailures,
+		}),
+	)
+}).pipe(
+	Effect.withSpan("alerting.anomaly_tick"),
+	Effect.catchCause((cause) =>
+		Effect.logError("Anomaly detection tick failed").pipe(
+			Effect.annotateLogs({ error: Cause.pretty(cause) }),
+		),
+	),
+)
+
 interface ScheduledEventLike {
 	readonly cron: string
 }
@@ -228,13 +267,15 @@ export default {
 		ctx: ExecutionContextLike,
 	): Promise<void> {
 		const program =
-			event.cron === "*/15 * * * *"
-				? digestTick
-				: event.cron === "0 * * * *"
-					? serviceMapRollupTick
-					: event.cron === "0 9 * * *"
-						? onboardingTick
-						: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
+			event.cron === "*/5 * * * *"
+				? anomalyTick
+				: event.cron === "*/15 * * * *"
+					? digestTick
+					: event.cron === "0 * * * *"
+						? serviceMapRollupTick
+						: event.cron === "0 9 * * *"
+							? onboardingTick
+							: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
 		try {
 			await runScheduledEffect(buildLayer(env), program, ctx)
 		} finally {

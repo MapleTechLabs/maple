@@ -16,6 +16,7 @@ const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 	regression: "Regression",
 	snooze: "Snoozed",
 	unsnooze: "Unsnoozed",
+	ai_triage: "AI triage",
 }
 
 const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
@@ -31,6 +32,7 @@ const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	regression: "bg-destructive",
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
+	ai_triage: "bg-violet-500 shadow-[0_0_0_3px_oklch(0.65_0.16_290/0.25)]",
 }
 
 function payloadString(value: unknown): string | null {
@@ -62,6 +64,9 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 		}
 		case "state_change": {
 			return payloadString(p.note)
+		}
+		case "ai_triage": {
+			return payloadString(p.summary)
 		}
 		default:
 			return null

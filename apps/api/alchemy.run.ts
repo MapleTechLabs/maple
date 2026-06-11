@@ -48,6 +48,20 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		className: "ClickHouseSchemaApplyWorkflow",
 	})
 
+	// Headless AI triage agent: investigates freshly opened incidents (error or
+	// anomaly) with read-only tools and writes a structured summary back to the
+	// run row. Class is exported from src/worker.ts.
+	const aiTriageWorkflow = Workflow<{
+		orgId: string
+		incidentKind: string
+		incidentId: string
+		issueId?: string
+		runId: string
+	}>("ai-triage-workflow", {
+		workflowName: resolveWorkerName("ai-triage", stage),
+		className: "AiTriageWorkflow",
+	})
+
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -61,6 +75,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			MAPLE_DB: mapleDb,
 			MCP_SESSIONS: mcpSessions,
 			CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: schemaApplyWorkflow,
+			AI_TRIAGE_WORKFLOW: aiTriageWorkflow,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			...optionalPlain("CLICKHOUSE_URL"),

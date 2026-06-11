@@ -1,5 +1,6 @@
 import {
 	BellIcon,
+	ChartBarTrendUpIcon,
 	ChartLineIcon,
 	ChatBubbleSparkleIcon,
 	CircleWarningIcon,
@@ -89,6 +90,11 @@ export const investigateNavItems: NavItem[] = [
 		title: "Errors",
 		href: "/errors",
 		icon: CircleWarningIcon,
+	},
+	{
+		title: "Anomalies",
+		href: "/anomalies",
+		icon: ChartBarTrendUpIcon,
 	},
 	{
 		title: "Alerts",

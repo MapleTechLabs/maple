@@ -29,5 +29,10 @@
 			"binding": "CLICKHOUSE_SCHEMA_APPLY_WORKFLOW",
 			"class_name": "ClickHouseSchemaApplyWorkflow",
 		},
+		{
+			"name": "ai-triage-workflow",
+			"binding": "AI_TRIAGE_WORKFLOW",
+			"class_name": "AiTriageWorkflow",
+		},
 	],
 }

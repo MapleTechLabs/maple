@@ -1,4 +1,6 @@
+export * from "./ai-triage"
 export * from "./alerts"
+export * from "./anomalies"
 export * from "./api-keys"
 export * from "./cloudflare-logpush-connectors"
 export * from "./dashboards"

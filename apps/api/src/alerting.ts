@@ -1,4 +1,5 @@
 export { AlertRuntime, AlertsService } from "./services/AlertsService"
+export { AnomalyDetectionService } from "./services/AnomalyDetectionService"
 export { BucketCacheService } from "@maple/query-engine/caching"
 export { CacheBackendLive } from "./lib/CacheBackendLive"
 export { ErrorsService } from "./services/ErrorsService"

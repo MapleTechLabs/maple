@@ -7,6 +7,7 @@ import type { Expr } from "../expr"
 
 export const toString_ = defineFn<[Expr<any>], string>("toString")
 export const length_ = defineFn<[Expr<string>], number>("length")
+export const lower_ = defineFn<[Expr<string>], string>("lower")
 export const positionCaseInsensitive = defineFn<[Expr<string>, Expr<string>], number>(
 	"positionCaseInsensitive",
 )

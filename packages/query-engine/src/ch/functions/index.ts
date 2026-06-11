@@ -25,6 +25,7 @@ export {
 	position_,
 	left_,
 	length_,
+	lower_,
 	replaceOne,
 	extract_,
 	concat,
@@ -44,6 +45,7 @@ export {
 export {
 	toStartOfInterval,
 	toStartOfHour,
+	toHour,
 	toUnixTimestamp,
 	intervalSub,
 	formatDateTime,
