@@ -1,5 +1,5 @@
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
-import { Effect, Layer } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
+import { Layer } from "effect"
 import { apiBaseUrl } from "./api-base-url"
 import { getMapleAuthHeaders } from "./auth-headers"
 
@@ -30,18 +30,6 @@ const mapleFetch: typeof globalThis.fetch = async (input, init) => {
 	})
 }
 
-const BaseFetchHttpClientLive = FetchHttpClient.layer.pipe(
+export const MapleFetchHttpClientLive = FetchHttpClient.layer.pipe(
 	Layer.provideMerge(Layer.succeed(FetchHttpClient.Fetch, mapleFetch)),
 )
-
-export const MapleFetchHttpClientLive = Layer.effect(
-	HttpClient.HttpClient,
-	Effect.map(HttpClient.HttpClient, (client) =>
-		// `peer.service` on the outbound `http.client` span is what draws the
-		// maple-web → maple-api edge on the service map (the span is created
-		// inside the client, so annotate the spans the wrapped effect creates).
-		HttpClient.transform(client, (effect, request) =>
-			request.url.startsWith(apiBaseUrl) ? Effect.annotateSpans(effect, "peer.service", "maple-api") : effect,
-		),
-	),
-).pipe(Layer.provide(BaseFetchHttpClientLive))
