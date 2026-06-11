@@ -12,6 +12,7 @@ import { registerFindSlowTracesTool } from "./find-slow-traces"
 import { registerGetAlertRuleTool } from "./get-alert-rule"
 import { registerGetDashboardTool } from "./get-dashboard"
 import { registerGetIncidentTimelineTool } from "./get-incident-timeline"
+import { registerGetInstrumentationRecommendationsTool } from "./get-instrumentation-recommendations"
 import { registerGetServiceTopOperationsTool } from "./get-service-top-operations"
 import { registerInspectChartDataTool } from "./inspect-chart-data"
 import { registerInspectTraceTool } from "./inspect-trace"
@@ -117,6 +118,7 @@ export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition
 	registerExploreAttributesTool(registrar)
 	registerListServicesTool(registrar)
 	registerGetServiceTopOperationsTool(registrar)
+	registerGetInstrumentationRecommendationsTool(registrar)
 	registerListErrorIssuesTool(registrar)
 	registerTransitionErrorIssueTool(registrar)
 	registerClaimErrorIssueTool(registrar)

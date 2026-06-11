@@ -820,6 +820,41 @@ export interface GetSessionTracesData {
 	}>
 }
 
+export interface InstrumentationRecommendationRow {
+	id: string
+	number: number
+	recommendationKey: string
+	kind: "rename" | "double-emission" | "naming"
+	severity: "warn" | "info"
+	sourceKey: string
+	canonicalKey: string | null
+	status: string
+	usageCount: number
+	/** Only rename issues can be fixed by accepting an ingest attribute mapping. */
+	applyableAsMapping: boolean
+	openedAt: string
+	updatedAt: string
+}
+
+export interface InstrumentationCoverageGap {
+	/** Check id from the maple-audit skill checklist (e.g. RES-03). */
+	checkId: string
+	attribute: string
+	severity: "warn"
+	reason: string
+}
+
+export interface GetInstrumentationRecommendationsData {
+	issues: InstrumentationRecommendationRow[]
+	coverage: {
+		available: boolean
+		included: boolean
+		timeRange: { start: string; end: string }
+		gaps: ReadonlyArray<InstrumentationCoverageGap>
+	}
+	total: number
+}
+
 export type StructuredToolOutput =
 	| { tool: "search_sessions"; data: SearchSessionsData }
 	| { tool: "get_session_transcript"; data: GetSessionTranscriptData }
@@ -854,6 +889,10 @@ export type StructuredToolOutput =
 	| { tool: "explore_attributes"; data: ExploreAttributesData }
 	| { tool: "list_services"; data: ListServicesData }
 	| { tool: "get_service_top_operations"; data: GetServiceTopOperationsData }
+	| {
+			tool: "get_instrumentation_recommendations"
+			data: GetInstrumentationRecommendationsData
+	  }
 	| { tool: "get_incident_timeline"; data: GetIncidentTimelineData }
 	| { tool: "inspect_chart_data"; data: InspectChartDataData }
 	| { tool: "list_error_issues"; data: ListErrorIssuesData }

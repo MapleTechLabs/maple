@@ -4,6 +4,8 @@ Maple stores every OTel attribute you send verbatim, but a curated set get speci
 
 Most of these follow the [OTel semantic conventions](https://opentelemetry.io/docs/specs/semconv/) — if your SDK emits standard attributes you usually don't need to do anything extra.
 
+The [`maple-audit` skill](../skills/maple-audit/SKILL.md) encodes this registry as an auditable checklist (`checks.md`) — keep the two in sync when adding attributes here.
+
 ## Service identity
 
 The bare minimum every span needs. `service.name` is the primary axis Maple groups by — without it spans go to a synthetic `unknown_service` bucket.
