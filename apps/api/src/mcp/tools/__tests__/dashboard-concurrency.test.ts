@@ -19,27 +19,21 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { Env } from "@/lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(trackedDbs))
 
-const createTempDbUrl = () => makeTempDb("maple-dashboard-concurrency-", createdTempDirs).url
-
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -48,11 +42,11 @@ const testConfig = (url: string) =>
 		}),
 	)
 
-const makeLayer = (url: string) =>
+const makeLayer = (testDb: TestDb) =>
 	DashboardPersistenceService.layer.pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(testConfig(url)),
+		Layer.provide(testConfig()),
 	)
 
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
@@ -93,8 +87,8 @@ const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 
 describe("dashboard concurrency", () => {
 	it.effect("two concurrent `mutate` calls both land via retry — no lost update", () => {
-		const dbUrl = createTempDbUrl()
-		const layer = makeLayer(dbUrl)
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(ORG, USER, seed())
@@ -121,8 +115,8 @@ describe("dashboard concurrency", () => {
 	})
 
 	it.effect("`upsert` rejects a stale write with DashboardConcurrencyError", () => {
-		const dbUrl = createTempDbUrl()
-		const layer = makeLayer(dbUrl)
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			// Establish baseline at version=1.
@@ -186,8 +180,8 @@ describe("dashboard concurrency", () => {
 	})
 
 	it.effect("after an upsert conflict, a refetch+retry resolves", () => {
-		const dbUrl = createTempDbUrl()
-		const layer = makeLayer(dbUrl)
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(ORG, USER, seed({ name: "Initial" }))

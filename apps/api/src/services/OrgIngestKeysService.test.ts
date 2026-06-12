@@ -2,22 +2,20 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { IngestKeyEncryptionError, IngestKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
 import { hashIngestKey } from "@maple/db"
-import { Database, DatabaseError, type DatabaseShape } from "../lib/DatabaseLive"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
+import { Database, DatabaseError } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 import { OrgIngestKeysService } from "./OrgIngestKeysService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "../lib/test-pglite"
 
 // A Database layer that builds successfully (so migrations are never attempted)
 // but fails every query, exercising the service's `mapError(toPersistenceError)`
-// path. Pointing the real libsql client at an unreachable URL instead fails
-// during migration in layer construction, surfacing a raw DatabaseError that
-// never reaches the service's mapping — which is exactly the regression the
-// previous `String(failure).toContain("DatabaseError")` escape hatch hid.
+// path. Pointing a real client at an unreachable URL instead fails during
+// migration in layer construction, surfacing a raw DatabaseError that never
+// reaches the service's mapping — which is exactly the regression the previous
+// `String(failure).toContain("DatabaseError")` escape hatch hid.
 const failingDatabaseLayer = Layer.succeed(
 	Database,
 	Database.of({
-		client: undefined as unknown as DatabaseShape["client"],
 		execute: () =>
 			Effect.fail(
 				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
@@ -25,11 +23,9 @@ const failingDatabaseLayer = Layer.succeed(
 	}),
 )
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
@@ -40,18 +36,13 @@ const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	return Cause.squash(exit.cause)
 }
 
-const createTempDbUrl = () => {
-	return makeTempDb("maple-ingest-keys-", createdTempDirs)
-}
-
-const makeConfig = (url: string, encryptionKey?: string) =>
+const makeConfig = (encryptionKey?: string) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -60,11 +51,11 @@ const makeConfig = (url: string, encryptionKey?: string) =>
 		}),
 	)
 
-const makeLayer = (url: string, encryptionKey = Buffer.alloc(32, 7).toString("base64")) =>
+const makeLayer = (testDb: TestDb, encryptionKey = Buffer.alloc(32, 7).toString("base64")) =>
 	OrgIngestKeysService.layer.pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(makeConfig(url, encryptionKey)),
+		Layer.provide(makeConfig(encryptionKey)),
 	)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -72,7 +63,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 
 describe("OrgIngestKeysService", () => {
 	it.effect("lazily creates keys for a new org", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const result = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -81,22 +72,22 @@ describe("OrgIngestKeysService", () => {
 			assert.isTrue(result.privateKey.startsWith("maple_sk_"))
 			assert.isFalse(Number.isNaN(Date.parse(result.publicRotatedAt)))
 			assert.isFalse(Number.isNaN(Date.parse(result.privateRotatedAt)))
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("returns stable keys when called repeatedly without reroll", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 			const second = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
 
 			assert.deepStrictEqual(second, first)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("rerolls only the public key", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -106,11 +97,11 @@ describe("OrgIngestKeysService", () => {
 			assert.strictEqual(rerolled.privateKey, first.privateKey)
 			assert.isTrue(Date.parse(rerolled.publicRotatedAt) >= Date.parse(first.publicRotatedAt))
 			assert.strictEqual(rerolled.privateRotatedAt, first.privateRotatedAt)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("rerolls only the private key", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -120,11 +111,11 @@ describe("OrgIngestKeysService", () => {
 			assert.notStrictEqual(rerolled.privateKey, first.privateKey)
 			assert.strictEqual(rerolled.publicRotatedAt, first.publicRotatedAt)
 			assert.isTrue(Date.parse(rerolled.privateRotatedAt) >= Date.parse(first.privateRotatedAt))
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("keeps keys isolated by org", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const orgA = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -132,11 +123,11 @@ describe("OrgIngestKeysService", () => {
 
 			assert.notStrictEqual(orgA.publicKey, orgB.publicKey)
 			assert.notStrictEqual(orgA.privateKey, orgB.privateKey)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("stores private key encrypted at rest", () => {
-		const { url, dbPath } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const created = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -147,8 +138,8 @@ describe("OrgIngestKeysService", () => {
 					private_key_iv: string
 					private_key_tag: string
 				}>(
-					dbPath,
-					"SELECT private_key_ciphertext, private_key_iv, private_key_tag FROM org_ingest_keys WHERE org_id = ?",
+					testDb,
+					"SELECT private_key_ciphertext, private_key_iv, private_key_tag FROM org_ingest_keys WHERE org_id = $1",
 					["org_a"],
 				),
 			)
@@ -158,11 +149,11 @@ describe("OrgIngestKeysService", () => {
 			assert.isTrue(Boolean(row?.private_key_iv))
 			assert.isTrue(Boolean(row?.private_key_tag))
 			assert.notStrictEqual(row?.private_key_ciphertext, created.privateKey)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("stores deterministic HMAC hashes for public/private keys", () => {
-		const { url, dbPath } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		const lookupHmacKey = "maple-test-lookup-secret"
 
 		return Effect.gen(function* () {
@@ -172,7 +163,7 @@ describe("OrgIngestKeysService", () => {
 				queryFirstRow<{
 					public_key_hash: string
 					private_key_hash: string
-				}>(dbPath, "SELECT public_key_hash, private_key_hash FROM org_ingest_keys WHERE org_id = ?", [
+				}>(testDb, "SELECT public_key_hash, private_key_hash FROM org_ingest_keys WHERE org_id = $1", [
 					"org_a",
 				]),
 			)
@@ -180,11 +171,11 @@ describe("OrgIngestKeysService", () => {
 			assert.isDefined(row)
 			assert.strictEqual(row?.public_key_hash, hashIngestKey(created.publicKey, lookupHmacKey))
 			assert.strictEqual(row?.private_key_hash, hashIngestKey(created.privateKey, lookupHmacKey))
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("resolves keys by hash and key type", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const created = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -203,11 +194,11 @@ describe("OrgIngestKeysService", () => {
 				assert.strictEqual(privateResolved.value.keyType, "private")
 			}
 			assert.deepStrictEqual(invalidResolved, Option.none())
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("reroll invalidates previous key hashes immediately", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const first = yield* OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a"))
@@ -236,13 +227,13 @@ describe("OrgIngestKeysService", () => {
 				assert.strictEqual(newPrivate.value.orgId, asOrgId("org_a"))
 				assert.strictEqual(newPrivate.value.keyType, "private")
 			}
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("fails fast on invalid encryption key configuration", () =>
 		Effect.gen(function* () {
-			const { url } = createTempDbUrl()
-			const layer = makeLayer(url, "invalid-base64-key")
+			const testDb = createTestDb(trackedDbs)
+			const layer = makeLayer(testDb, "invalid-base64-key")
 
 			const exit = yield* Effect.exit(
 				OrgIngestKeysService.getOrCreate(asOrgId("org_a"), asUserId("user_a")).pipe(
@@ -258,11 +249,11 @@ describe("OrgIngestKeysService", () => {
 
 	it.effect("fails when encryption key config is missing", () =>
 		Effect.gen(function* () {
-			const { url } = createTempDbUrl()
+			const testDb = createTestDb(trackedDbs)
 			const layer = OrgIngestKeysService.layer.pipe(
-				Layer.provide(DatabaseLibsqlLive),
+				Layer.provide(testDb.layer),
 				Layer.provide(Env.layer),
-				Layer.provide(makeConfig(url)),
+				Layer.provide(makeConfig()),
 			)
 
 			const exit = yield* Effect.exit(
@@ -277,11 +268,10 @@ describe("OrgIngestKeysService", () => {
 
 	it.effect("maps database errors to IngestKeyPersistenceError", () =>
 		Effect.gen(function* () {
-			const { url } = createTempDbUrl()
 			const layer = OrgIngestKeysService.layer.pipe(
 				Layer.provide(failingDatabaseLayer),
 				Layer.provide(Env.layer),
-				Layer.provide(makeConfig(url, Buffer.alloc(32, 3).toString("base64"))),
+				Layer.provide(makeConfig(Buffer.alloc(32, 3).toString("base64"))),
 			)
 
 			const exit = yield* Effect.exit(

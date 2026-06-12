@@ -3,26 +3,22 @@ import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId } from "@maple/domain/http"
 import { aiTriageRuns, aiTriageSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Database } from "@/lib/DatabaseLive"
 import { Env } from "@/lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { maybeEnqueueTriage } from "./ai-triage-enqueue"
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -33,8 +29,8 @@ const testConfig = (url: string) =>
 	)
 
 const makeLayer = () => {
-	const { url } = makeTempDb("maple-ai-triage-enqueue-", createdTempDirs)
-	return DatabaseLibsqlLive.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig(url)))
+	const testDb = createTestDb(createdDbs)
+	return testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -59,9 +55,9 @@ const enableSettings = Effect.gen(function* () {
 	yield* database.execute((db) =>
 		db.insert(aiTriageSettings).values({
 			orgId: ORG,
-			enabled: 1,
+			enabled: true,
 			maxRunsPerDay: 2,
-			updatedAt: nowMs,
+			updatedAt: new Date(nowMs),
 		}),
 	)
 })
@@ -169,7 +165,7 @@ describe("maybeEnqueueTriage", () => {
 			yield* database.execute((db) =>
 				db
 					.update(aiTriageRuns)
-					.set({ status: "running", updatedAt: nowMs - 16 * 60 * 1000 })
+					.set({ status: "running", updatedAt: new Date(nowMs - 16 * 60 * 1000) })
 					.where(eq(aiTriageRuns.orgId, ORG)),
 			)
 

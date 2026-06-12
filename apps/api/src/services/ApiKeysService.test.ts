@@ -1,28 +1,21 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
-import { Database } from "../lib/DatabaseLive"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
 import { ApiKeysService } from "./ApiKeysService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../lib/test-pglite"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(trackedDbs))
 
-const createTempDbUrl = () => makeTempDb("maple-api-keys-", createdTempDirs)
-
-const makeConfig = (url: string) =>
+const makeConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -31,11 +24,11 @@ const makeConfig = (url: string) =>
 		}),
 	)
 
-const makeLayer = (url: string) =>
+const makeLayer = (testDb: TestDb) =>
 	ApiKeysService.layer.pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(makeConfig(url)),
+		Layer.provide(makeConfig()),
 	)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -43,7 +36,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 
 describe("ApiKeysService.roll", () => {
 	it.effect("revokes the old key and issues a new active key inheriting name/kind", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const svc = yield* ApiKeysService
@@ -87,11 +80,11 @@ describe("ApiKeysService.roll", () => {
 				assert.strictEqual(resolvedNew.value.keyId, rolled.id)
 			}
 			assert.deepStrictEqual(resolvedOld, Option.none())
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("fails to roll an already-revoked key", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const svc = yield* ApiKeysService
@@ -105,6 +98,6 @@ describe("ApiKeysService.roll", () => {
 			assert.isTrue(Exit.isFailure(exit))
 			const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
 			assert.instanceOf(failure, ApiKeyNotFoundError)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })
