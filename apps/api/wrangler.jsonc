@@ -35,4 +35,20 @@
 			"class_name": "AiTriageWorkflow",
 		},
 	],
+	// Declaring both a producer binding and a consumer on the same queue name
+	// makes miniflare run the VCS sync queue end-to-end in-process under
+	// `wrangler dev` — no remote queue, no deploy. (Mirrored in alchemy.run.ts
+	// for deploy.) DLQ is omitted locally so miniflare doesn't warn about an
+	// undeclared dead-letter queue.
+	"queues": {
+		"producers": [{ "binding": "VCS_SYNC_QUEUE", "queue": "maple-vcs-sync-local" }],
+		"consumers": [
+			{
+				"queue": "maple-vcs-sync-local",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+			},
+		],
+	},
 }

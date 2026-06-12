@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, KVNamespace, Worker, Workflow } from "alchemy/cloudflare"
+import { D1Database, KVNamespace, Queue, Worker, Workflow } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveD1Name, resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -62,6 +62,19 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		className: "AiTriageWorkflow",
 	})
 
+	// Vendor-agnostic VCS sync queue (commit backfill + webhook deltas). The same
+	// `api` worker is both producer (binding) and consumer (eventSources). Local
+	// dev is wired separately in wrangler.jsonc so miniflare runs it in-process.
+	const vcsSyncDlq = await Queue("vcs-sync-dlq", {
+		name: resolveWorkerName("vcs-sync-dlq", stage),
+		adopt: true,
+	})
+	const vcsSyncQueue = await Queue("vcs-sync", {
+		name: resolveWorkerName("vcs-sync", stage),
+		adopt: true,
+		dlq: vcsSyncDlq,
+	})
+
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -71,9 +84,22 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,
+		eventSources: [
+			{
+				queue: vcsSyncQueue,
+				settings: {
+					batchSize: 10,
+					maxConcurrency: 2,
+					maxRetries: 3,
+					maxWaitTimeMs: 5000,
+					deadLetterQueue: vcsSyncDlq,
+				},
+			},
+		],
 		bindings: {
 			MAPLE_DB: mapleDb,
 			MCP_SESSIONS: mcpSessions,
+			VCS_SYNC_QUEUE: vcsSyncQueue,
 			CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: schemaApplyWorkflow,
 			AI_TRIAGE_WORKFLOW: aiTriageWorkflow,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
@@ -112,6 +138,12 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 			...optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 			...optionalPlain("HAZEL_OAUTH_SCOPES"),
+			...optionalPlain("GITHUB_APP_ID"),
+			...optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+			...optionalPlain("GITHUB_APP_CLIENT_ID"),
+			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),
+			...optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
+			...optionalPlain("GITHUB_API_BASE_URL"),
 		},
 	})
 

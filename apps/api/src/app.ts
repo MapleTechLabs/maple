@@ -25,6 +25,7 @@ import { HttpOrgClickHouseSettingsLive } from "./routes/org-clickhouse-settings.
 import { HttpOrganizationsLive } from "./routes/organizations.http"
 import { PrometheusScrapeProxyRouter } from "./routes/prometheus-scrape-proxy.http"
 import { ScraperInternalRouter } from "./routes/scraper-internal.http"
+import { VcsWebhookRouter } from "./routes/vcs-webhook.http"
 import { HttpQueryEngineLive } from "./routes/query-engine.http"
 import { HttpRecommendationIssuesLive } from "./routes/recommendation-issues.http"
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
@@ -59,6 +60,12 @@ import { RawSqlChartService } from "@maple/query-engine/runtime"
 import { PlanetScaleDiscoveryService } from "./services/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
+import { OAuthStateRepository } from "./services/OAuthStateRepository"
+import { GithubAppClient } from "./services/github/GithubAppClient"
+import { GithubProvider } from "./services/github/GithubProvider"
+import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
+import { VcsRepository } from "./services/vcs/VcsRepository"
+import { VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
 
 export const HealthRouter = HttpRouter.use((router) =>
 	router.add("GET", "/health", HttpServerResponse.text("OK")),
@@ -152,6 +159,20 @@ export const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
 
+// Vendor-agnostic VCS services for the fetch path: the webhook router needs the
+// provider registry + sync queue; the repo + state repo are ready for the
+// Step-2 settings endpoints. The sync orchestrator (VcsSyncService) lives only
+// in the queue-consumer runtime (vcs-sync-runtime.ts), not here. Database /
+// WorkerEnvironment are satisfied at worker scope (like CoreServicesLive).
+const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClient.layer))
+
+export const VcsServicesLive = Layer.mergeAll(
+	VcsRepository.layer,
+	OAuthStateRepository.layer,
+	VcsSyncQueue.layer,
+	VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive)),
+).pipe(Layer.provideMerge(InfraLive))
+
 export const MainLive = Layer.mergeAll(
 	CoreServicesLive,
 	WarehouseQueryServiceLive,
@@ -163,6 +184,7 @@ export const MainLive = Layer.mergeAll(
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
+	VcsServicesLive,
 	RawSqlChartService.layer,
 )
 
@@ -203,6 +225,7 @@ export const AllRoutes = Layer.mergeAll(
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,
 	ScraperInternalRouter,
+	VcsWebhookRouter,
 	McpLive,
 	HealthRouter,
 	McpGetFallback,
