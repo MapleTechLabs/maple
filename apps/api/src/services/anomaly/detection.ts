@@ -146,6 +146,17 @@ const skipped = (
 const GOLDEN_MIN_VOLUME = 50
 /** Throughput needs ≥10 elapsed minutes before its per-minute rate is stable. */
 const RATE_MIN_ELAPSED_MINUTES = 10
+/**
+ * Minimum expected requests (baseline rate × elapsed minutes) before a
+ * throughput drop is evaluable: until that many requests were expected, an
+ * observed zero is indistinguishable from a normal quiet stretch.
+ */
+const THROUGHPUT_MIN_EXPECTED = 30
+/**
+ * In the clamp regime (see below) a drop only fires when observed volume is
+ * under this fraction of expected — i.e. a near-total outage.
+ */
+const THROUGHPUT_OUTAGE_FRACTION = 0.05
 
 export function evaluateGoldenSignals(
 	series: GoldenSignalSeries,
@@ -249,8 +260,9 @@ export function evaluateGoldenSignals(
 		} else {
 			const rates = baseline.map((b) => b.requestCount / 60)
 			const m = median(rates)
-			if (m < 1) {
-				// Near-idle services: a drop to zero is indistinguishable from quiet.
+			if (m * config.elapsedMinutes < THROUGHPUT_MIN_EXPECTED) {
+				// Too few expected requests so far: an observed zero is
+				// indistinguishable from a normal quiet stretch.
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, ratePerMin, currentCount))
 			} else {
 				const sigma = robustSigma(rates, m, 0.5, 0.1)
@@ -259,7 +271,13 @@ export function evaluateGoldenSignals(
 				// signal permanently un-fireable (ratePerMin >= 0 always). The 0.1m
 				// floor keeps severe outages detectable on high-variance series.
 				const threshold = Math.max(Math.min(m - k * sigma, m * 0.5), m * 0.1)
-				const breached = ratePerMin < threshold
+				// Clamp regime: the statistical bound is vacuous (m - k*sigma <= 0),
+				// so the floor is doing the work and any quiet stretch would breach.
+				// There, only a near-total outage counts.
+				const outageOnly = m - k * sigma <= 0
+				const outageCeiling = Math.max(1, THROUGHPUT_OUTAGE_FRACTION * m * config.elapsedMinutes)
+				const breached =
+					ratePerMin < threshold && (!outageOnly || currentCount < outageCeiling)
 				evaluations.push(
 					makeEval(signal, ratePerMin, m, sigma, threshold, breached, "warning", currentCount),
 				)

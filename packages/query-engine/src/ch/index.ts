@@ -320,6 +320,7 @@ export {
 	anomalyTraceSignalTimeseriesQuery,
 	anomalyLogVolumeTimeseriesQuery,
 	anomalyErrorSpikeTimeseriesQuery,
+	anomalyErrorSpikeServiceTimeseriesQuery,
 	matchedHoursOfDay,
 	type AnomalyTraceSignalsOpts,
 	type AnomalyTraceSignalsOutput,

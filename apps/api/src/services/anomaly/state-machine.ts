@@ -8,6 +8,8 @@
 // need, but a zero-config detector does).
 // ---------------------------------------------------------------------------
 
+import type { AnomalySignalType } from "@maple/domain/http"
+
 import type { AnomalyEvaluation } from "./detection"
 
 export interface DetectorStateSnapshot {
@@ -31,6 +33,22 @@ export const DEFAULT_STATE_MACHINE_CONFIG: StateMachineConfig = {
 	healthyToResolve: 3,
 	cooldownMs: 60 * 60 * 1000,
 }
+
+/**
+ * Per-signal overrides. Throughput drops need an extra breaching tick (15 min
+ * sustained) — short quiet stretches on bursty services self-heal within two
+ * ticks and shouldn't page.
+ */
+export const STATE_MACHINE_CONFIG_OVERRIDES: Partial<
+	Record<AnomalySignalType, Partial<StateMachineConfig>>
+> = {
+	throughput: { breachesToOpen: 3 },
+}
+
+export const stateMachineConfigFor = (signalType: AnomalySignalType): StateMachineConfig => ({
+	...DEFAULT_STATE_MACHINE_CONFIG,
+	...STATE_MACHINE_CONFIG_OVERRIDES[signalType],
+})
 
 export type AnomalyTransition = "open" | "continue" | "resolve" | "noop"
 

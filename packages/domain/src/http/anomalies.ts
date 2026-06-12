@@ -57,6 +57,23 @@ export type AnomalyTriageStatus = Schema.Schema.Type<typeof AnomalyTriageStatus>
 // Documents
 // ---------------------------------------------------------------------------
 
+/**
+ * One fingerprint participating in a (possibly consolidated) error-spike
+ * incident. Co-onset fingerprints on the same service+env share one incident
+ * instead of opening duplicates.
+ */
+export class AnomalyIncidentFingerprint extends Schema.Class<AnomalyIncidentFingerprint>(
+	"AnomalyIncidentFingerprint",
+)({
+	fingerprintHash: Schema.String,
+	errorIssueId: Schema.NullOr(ErrorIssueId),
+	openedValue: Schema.Number,
+	lastValue: Schema.Number,
+	severity: AnomalyIncidentSeverity,
+	attachedAt: IsoDateTimeString,
+	resolvedAt: Schema.NullOr(IsoDateTimeString),
+}) {}
+
 export class AnomalyIncidentDocument extends Schema.Class<AnomalyIncidentDocument>(
 	"AnomalyIncidentDocument",
 )({
@@ -80,6 +97,10 @@ export class AnomalyIncidentDocument extends Schema.Class<AnomalyIncidentDocumen
 	resolvedAt: Schema.NullOr(IsoDateTimeString),
 	resolveReason: Schema.NullOr(AnomalyResolveReason),
 	triageStatus: AnomalyTriageStatus,
+	/** All fingerprints sharing this incident; empty for golden-signal incidents. */
+	fingerprints: Schema.Array(AnomalyIncidentFingerprint),
+	reopenCount: Schema.Number,
+	lastReopenedAt: Schema.NullOr(IsoDateTimeString),
 }) {}
 
 export class AnomalyIncidentsListResponse extends Schema.Class<AnomalyIncidentsListResponse>(

@@ -252,8 +252,12 @@ function AnomalyDetailBody({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Resolve this anomaly?</AlertDialogTitle>
 						<AlertDialogDescription>
-							The incident is marked resolved manually. If the signal keeps deviating, the
-							detector waits out a one-hour cooldown before re-opening it.
+							The incident is marked resolved manually
+							{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
+								? ", including every error fingerprint grouped into it"
+								: ""}
+							. If the signal keeps deviating, the detector waits out a one-hour cooldown
+							before re-opening it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

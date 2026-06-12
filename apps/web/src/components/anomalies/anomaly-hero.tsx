@@ -40,7 +40,7 @@ export function AnomalyHero({
 				<span className={cn("font-mono font-medium", incident.status === "open" ? tone.text : "text-foreground")}>
 					{dev.label}
 				</span>
-				{dev.sigma !== null ? " above median" : ""}, threshold{" "}
+				{dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : ""}, threshold{" "}
 				<span className="font-mono text-foreground">{threshold}</span>.
 			</p>
 		</div>

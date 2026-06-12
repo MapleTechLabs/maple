@@ -242,6 +242,8 @@ const anomalyTick = Effect.gen(function* () {
 			orgsProcessed: result.orgsProcessed,
 			seriesEvaluated: result.seriesEvaluated,
 			incidentsOpened: result.incidentsOpened,
+			incidentsAttached: result.incidentsAttached,
+			incidentsReopened: result.incidentsReopened,
 			incidentsContinued: result.incidentsContinued,
 			incidentsResolved: result.incidentsResolved,
 			orgFailures: result.orgFailures,

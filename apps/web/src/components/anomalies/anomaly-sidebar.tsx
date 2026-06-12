@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
@@ -10,6 +11,7 @@ import {
 	deviation,
 	formatSignalValue,
 	RESOLVE_REASON_LABEL,
+	SEVERITY_TONE,
 	SIGNAL_LABEL,
 	severityToneFor,
 	TRIAGE_STATUS_CHIP,
@@ -125,12 +127,64 @@ export function AnomalySidebar({
 				</Row>
 			</SidebarGroup>
 
+			{incident.fingerprints.length > 1 ? (
+				<SidebarGroup label={`Grouped errors · ${incident.fingerprints.length}`}>
+					{incident.fingerprints.map((fingerprint) => (
+						<div
+							key={fingerprint.fingerprintHash}
+							className="grid min-h-7 grid-cols-[1fr_auto] items-center gap-x-2 py-0.5"
+							title={fingerprint.fingerprintHash}
+						>
+							<span className="flex min-w-0 items-center gap-1.5">
+								<span
+									aria-hidden
+									className={cn(
+										"size-1.5 shrink-0 rounded-full",
+										fingerprint.resolvedAt !== null
+											? "bg-border"
+											: fingerprint.severity === "critical"
+												? SEVERITY_TONE.critical.accent
+												: SEVERITY_TONE.warning.accent,
+									)}
+								/>
+								{fingerprint.errorIssueId !== null ? (
+									<Link
+										to="/errors/issues/$issueId"
+										params={{ issueId: fingerprint.errorIssueId }}
+										className="truncate font-mono text-xs text-muted-foreground hover:text-foreground"
+									>
+										{shortIssueId(fingerprint.errorIssueId)}
+									</Link>
+								) : (
+									<code className="truncate font-mono text-xs text-muted-foreground">
+										{fingerprint.fingerprintHash.slice(0, 10)}
+									</code>
+								)}
+							</span>
+							<span className="font-mono text-xs tabular-nums text-muted-foreground">
+								{fingerprint.resolvedAt !== null
+									? "resolved"
+									: fmt(fingerprint.lastValue)}
+							</span>
+						</div>
+					))}
+				</SidebarGroup>
+			) : null}
+
 			<SidebarGroup label="Timing">
 				<Row label="First triggered" title={new Date(incident.firstTriggeredAt).toLocaleString()}>
 					<span className="text-right text-sm tabular-nums text-foreground">
 						{formatRelativeTime(incident.firstTriggeredAt)}
 					</span>
 				</Row>
+				{incident.reopenCount > 0 && incident.lastReopenedAt !== null ? (
+					<Row label="Reopened" title={new Date(incident.lastReopenedAt).toLocaleString()}>
+						<span className="text-right text-sm tabular-nums text-muted-foreground">
+							{formatRelativeTime(incident.lastReopenedAt)}
+							{incident.reopenCount > 1 ? ` (×${incident.reopenCount})` : ""}
+						</span>
+					</Row>
+				) : null}
 				<Row label="Last triggered" title={new Date(incident.lastTriggeredAt).toLocaleString()}>
 					<span className="text-right text-sm tabular-nums text-foreground">
 						{formatRelativeTime(incident.lastTriggeredAt)}

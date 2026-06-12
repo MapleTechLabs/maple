@@ -271,3 +271,29 @@ export function anomalyErrorSpikeTimeseriesQuery() {
 		.limit(400)
 		.format("JSON")
 }
+
+/**
+ * Occurrence buckets for ALL error events on one (service, env) — the chart
+ * series for a consolidated spike incident, where several fingerprints share
+ * the incident and a single-fingerprint series would under-represent it.
+ * (The CH param builder has no array params, so this filters by service
+ * rather than a fingerprint IN-list.)
+ */
+export function anomalyErrorSpikeServiceTimeseriesQuery() {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			count: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.DeploymentEnv.eq(param.string("deploymentEnv")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(400)
+		.format("JSON")
+}

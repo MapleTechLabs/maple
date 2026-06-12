@@ -49,6 +49,8 @@ export const anomalyDetectorStates = sqliteTable(
 		lastEvaluatedAt: integer("last_evaluated_at", { mode: "number" }),
 		openIncidentId: text("open_incident_id").$type<AnomalyIncidentId>(),
 		lastResolvedAt: integer("last_resolved_at", { mode: "number" }),
+		/** Most recent incident this series opened or fed — reopen target after a resolve. */
+		lastIncidentId: text("last_incident_id").$type<AnomalyIncidentId>(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
@@ -89,6 +91,14 @@ export const anomalyIncidents = sqliteTable(
 		resolveReason: text("resolve_reason").$type<AnomalyResolveReason>(),
 		triageStatus: text("triage_status").$type<AnomalyTriageStatus>().notNull().default("none"),
 		dedupeKey: text("dedupe_key").notNull(),
+		/**
+		 * Error-spike consolidation: all fingerprints sharing this incident
+		 * (JSON array of IncidentFingerprintEntry; empty for golden signals).
+		 */
+		fingerprintsJson: text("fingerprints_json").notNull().default("[]"),
+		/** Times this incident re-breached and reopened within the reopen window. */
+		reopenCount: integer("reopen_count", { mode: "number" }).notNull().default(0),
+		lastReopenedAt: integer("last_reopened_at", { mode: "number" }),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},

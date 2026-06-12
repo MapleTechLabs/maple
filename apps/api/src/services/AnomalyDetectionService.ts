@@ -3,6 +3,7 @@ import {
 	AnomalyDetectorSettingsDocument,
 	type AnomalyDetectorSettingsUpdateRequest,
 	AnomalyIncidentDocument,
+	AnomalyIncidentFingerprint,
 	AnomalyIncidentNotFoundError,
 	AnomalyIncidentsListResponse,
 	AnomalyIncidentTimeseriesResponse,
@@ -15,6 +16,7 @@ import {
 	AnomalySignalType,
 	type AnomalyTimeseriesUnit,
 	type ErrorIssueId,
+	ErrorIssueId as ErrorIssueIdSchema,
 	type OrgId,
 	RoleName,
 	type UserId,
@@ -30,7 +32,7 @@ import {
 	errorIssues,
 	orgIngestKeys,
 } from "@maple/db"
-import { and, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, like, lt, lte, ne, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/query-engine/caching"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schedule, Schema } from "effect"
@@ -51,14 +53,27 @@ import {
 } from "./anomaly/detection"
 import {
 	decideTransition,
-	DEFAULT_STATE_MACHINE_CONFIG,
+	stateMachineConfigFor,
 	type DetectorStateSnapshot,
 } from "./anomaly/state-machine"
+import {
+	attachKeyFor,
+	canAttach,
+	headlineSeverity,
+	markFingerprintResolved,
+	parseFingerprints,
+	REOPEN_WINDOW_MS,
+	serializeFingerprints,
+	shouldReopen,
+	upsertFingerprintEntry,
+	type IncidentFingerprintEntry,
+} from "./anomaly/consolidation"
 
 const decodeIncidentIdSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.id)
 const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
 const decodeIsoSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.firstTriggeredAt)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
+const decodeIssueIdSync = Schema.decodeUnknownSync(ErrorIssueIdSchema)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 
 const HOUR_MS = 60 * 60 * 1000
@@ -118,6 +133,8 @@ export interface AnomalyTickResult {
 	readonly orgsProcessed: number
 	readonly seriesEvaluated: number
 	readonly incidentsOpened: number
+	readonly incidentsAttached: number
+	readonly incidentsReopened: number
 	readonly incidentsContinued: number
 	readonly incidentsResolved: number
 	readonly orgFailures: number
@@ -339,6 +356,23 @@ export class AnomalyDetectionService extends Context.Service<
 				resolvedAt: row.resolvedAt ? isoFromEpoch(row.resolvedAt) : null,
 				resolveReason: row.resolveReason ?? null,
 				triageStatus: row.triageStatus,
+				fingerprints: row.fingerprintHash === null
+					? []
+					: parseFingerprints(row).map(
+							(entry) =>
+								new AnomalyIncidentFingerprint({
+									fingerprintHash: entry.fingerprintHash,
+									errorIssueId:
+										entry.errorIssueId === null ? null : decodeIssueIdSync(entry.errorIssueId),
+									openedValue: entry.openedValue,
+									lastValue: entry.lastValue,
+									severity: entry.severity,
+									attachedAt: isoFromEpoch(entry.attachedAt),
+									resolvedAt: entry.resolvedAt === null ? null : isoFromEpoch(entry.resolvedAt),
+								}),
+						),
+				reopenCount: row.reopenCount,
+				lastReopenedAt: row.lastReopenedAt ? isoFromEpoch(row.lastReopenedAt) : null,
 			})
 
 		const listIncidents: AnomalyDetectionServiceShape["listIncidents"] = Effect.fn(
@@ -351,7 +385,14 @@ export class AnomalyDetectionService extends Context.Service<
 				opts.signalType ? eq(anomalyIncidents.signalType, opts.signalType) : undefined,
 				opts.service ? eq(anomalyIncidents.serviceName, opts.service) : undefined,
 				opts.deploymentEnv ? eq(anomalyIncidents.deploymentEnv, opts.deploymentEnv) : undefined,
-				opts.errorIssueId ? eq(anomalyIncidents.errorIssueId, opts.errorIssueId) : undefined,
+				// Consolidated incidents carry secondary issue links inside
+				// fingerprintsJson; the issue page should surface those too.
+				opts.errorIssueId
+					? or(
+							eq(anomalyIncidents.errorIssueId, opts.errorIssueId),
+							like(anomalyIncidents.fingerprintsJson, `%"${opts.errorIssueId}"%`),
+						)
+					: undefined,
 				opts.startTime
 					? gte(anomalyIncidents.lastTriggeredAt, Date.parse(opts.startTime))
 					: undefined,
@@ -430,14 +471,16 @@ export class AnomalyDetectionService extends Context.Service<
 			)
 			// Detector-state consistency: clear the open pointer and start the
 			// cooldown so the next tick doesn't immediately re-open the series.
-			// Guarded on openIncidentId so a newer incident's state is never
-			// clobbered.
+			// Matched on openIncidentId (not detectorKey) so every series feeding
+			// a consolidated incident is cleared, and a newer incident's state is
+			// never clobbered.
 			yield* dbExecute((db) =>
 				db
 					.update(anomalyDetectorStates)
 					.set({
 						openIncidentId: null,
 						lastResolvedAt: nowMs,
+						lastIncidentId: incidentId,
 						consecutiveBreaches: 0,
 						consecutiveHealthy: 0,
 						updatedAt: nowMs,
@@ -445,7 +488,6 @@ export class AnomalyDetectionService extends Context.Service<
 					.where(
 						and(
 							eq(anomalyDetectorStates.orgId, orgId),
-							eq(anomalyDetectorStates.detectorKey, row.detectorKey),
 							eq(anomalyDetectorStates.openIncidentId, incidentId),
 						),
 					),
@@ -535,12 +577,24 @@ export class AnomalyDetectionService extends Context.Service<
 			if (row.signalType === "error_spike") {
 				unit = "count_per_30m"
 				bucketSeconds = SPIKE_WINDOW_MS / 1000
-				const compiled = CH.compile(CH.anomalyErrorSpikeTimeseriesQuery(), {
-					...queryWindow,
-					fingerprintHash: row.fingerprintHash ?? "",
-					deploymentEnv: row.deploymentEnv,
-					bucketSeconds,
-				})
+				// Consolidated incidents (several co-onset fingerprints) chart the
+				// service's full error-event series; a single-fingerprint series
+				// would under-represent the event.
+				const activeFingerprints = parseFingerprints(row).filter((e) => e.resolvedAt === null)
+				const compiled =
+					activeFingerprints.length > 1
+						? CH.compile(CH.anomalyErrorSpikeServiceTimeseriesQuery(), {
+								...queryWindow,
+								serviceName: row.serviceName,
+								deploymentEnv: row.deploymentEnv,
+								bucketSeconds,
+							})
+						: CH.compile(CH.anomalyErrorSpikeTimeseriesQuery(), {
+								...queryWindow,
+								fingerprintHash: row.fingerprintHash ?? "",
+								deploymentEnv: row.deploymentEnv,
+								bucketSeconds,
+							})
 				const rows = yield* warehouse
 					.compiledQuery(tenant, compiled, {
 						profile: "list",
@@ -837,6 +891,8 @@ export class AnomalyDetectionService extends Context.Service<
 		interface OrgTickStats {
 			seriesEvaluated: number
 			incidentsOpened: number
+			incidentsAttached: number
+			incidentsReopened: number
 			incidentsContinued: number
 			incidentsResolved: number
 		}
@@ -850,6 +906,8 @@ export class AnomalyDetectionService extends Context.Service<
 			const stats: OrgTickStats = {
 				seriesEvaluated: 0,
 				incidentsOpened: 0,
+				incidentsAttached: 0,
+				incidentsReopened: 0,
 				incidentsContinued: 0,
 				incidentsResolved: 0,
 			}
@@ -929,6 +987,34 @@ export class AnomalyDetectionService extends Context.Service<
 				stateRows.map((r) => [r.detectorKey, r]),
 			)
 
+			// Open incidents, kept current in memory through the (sequential) loop
+			// so same-tick attaches and severity recomputes see each other.
+			interface IncidentRuntime {
+				row: AnomalyIncidentRow
+				entries: IncidentFingerprintEntry[]
+			}
+			const openIncidentRows = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(anomalyIncidents)
+					.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.status, "open"))),
+			)
+			const incidentById = new Map<string, IncidentRuntime>(
+				openIncidentRows.map((r) => [r.id, { row: r, entries: parseFingerprints(r) }]),
+			)
+			const incidentOnset = (row: AnomalyIncidentRow) =>
+				Math.max(row.firstTriggeredAt, row.lastReopenedAt ?? 0)
+			// Attach target per service+env: the most recently onset open spike incident.
+			const openSpikeByServiceEnv = new Map<string, IncidentRuntime>()
+			for (const runtime of incidentById.values()) {
+				if (runtime.row.signalType !== "error_spike") continue
+				const key = attachKeyFor(runtime.row.serviceName, runtime.row.deploymentEnv)
+				const existing = openSpikeByServiceEnv.get(key)
+				if (existing === undefined || incidentOnset(runtime.row) > incidentOnset(existing.row)) {
+					openSpikeByServiceEnv.set(key, runtime)
+				}
+			}
+
 			interface PendingDecision {
 				readonly evaluation: AnomalyEvaluation
 				readonly state: AnomalyDetectorStateRow | undefined
@@ -945,12 +1031,20 @@ export class AnomalyDetectionService extends Context.Service<
 					openIncidentId: state?.openIncidentId ?? null,
 					lastResolvedAt: state?.lastResolvedAt ?? null,
 				}
-				const decision = decideTransition(snapshot, evaluation, DEFAULT_STATE_MACHINE_CONFIG, nowMs)
+				const decision = decideTransition(
+					snapshot,
+					evaluation,
+					stateMachineConfigFor(evaluation.signalType),
+					nowMs,
+				)
 				return { evaluation, state, ...decision }
 			})
 
-			// Page-storm guard: cap newly opened incidents per tick; the rest keep
-			// their breach counters and open on a later tick if still anomalous.
+			// Opens run first (strongest deviation first) so the lead fingerprint
+			// creates the incident and co-onset fingerprints attach to it within
+			// the same tick. Page-storm guard: new/reopened incidents draw from a
+			// per-tick budget; attaches are free. Capped-out series keep their
+			// breach counters and open on a later tick if still anomalous.
 			const openDecisions = decisions
 				.filter((d) => d.transition === "open")
 				.sort((a, b) => {
@@ -963,28 +1057,179 @@ export class AnomalyDetectionService extends Context.Service<
 						b.evaluation.threshold > 0 ? b.evaluation.value / b.evaluation.threshold : 0
 					return ratioB - ratioA
 				})
-			const allowedOpens = new Set(openDecisions.slice(0, MAX_OPENS_PER_TICK))
+			const orderedDecisions = [...openDecisions, ...decisions.filter((d) => d.transition !== "open")]
+			let openBudget = MAX_OPENS_PER_TICK
 
 			yield* Effect.forEach(
-				decisions,
+				orderedDecisions,
 				Effect.fnUntraced(function* (decision) {
 					const { evaluation } = decision
-					const transition =
-						decision.transition === "open" && !allowedOpens.has(decision)
-							? "noop"
-							: decision.transition
+					const transition = decision.transition
 
 					let openIncidentId = decision.state?.openIncidentId ?? null
 					let lastResolvedAt = decision.state?.lastResolvedAt ?? null
+					let lastIncidentId = decision.state?.lastIncidentId ?? null
 
 					if (transition === "open") {
-						const incidentId = newIncidentId()
 						const errorIssueId =
 							evaluation.fingerprintHash !== null
 								? (issueIdByFingerprint.get(evaluation.fingerprintHash) ?? null)
 								: null
-						yield* dbExecute((db) =>
-							db.insert(anomalyIncidents).values({
+						let handled = false
+
+						// 1) Attach: a co-onset error spike on a service that already has
+						// an open spike incident is the same underlying event — fold it in
+						// instead of opening (and triaging) a duplicate.
+						if (evaluation.signalType === "error_spike" && evaluation.fingerprintHash !== null) {
+							const attachKey = attachKeyFor(evaluation.serviceName, evaluation.deploymentEnv)
+							const target = openSpikeByServiceEnv.get(attachKey)
+							if (target !== undefined && canAttach(target.row, nowMs)) {
+								target.entries = upsertFingerprintEntry(target.entries, {
+									fingerprintHash: evaluation.fingerprintHash,
+									errorIssueId,
+									detectorKey: evaluation.detectorKey,
+									openedValue: evaluation.value,
+									lastValue: evaluation.value,
+									severity: evaluation.severity,
+									attachedAt: nowMs,
+									resolvedAt: null,
+								})
+								const severity = headlineSeverity(target.entries, target.row.severity)
+								const fingerprintsJson = serializeFingerprints(target.entries)
+								const updated = yield* dbExecute((db) =>
+									db
+										.update(anomalyIncidents)
+										.set({ fingerprintsJson, severity, lastTriggeredAt: nowMs, updatedAt: nowMs })
+										.where(
+											and(
+												eq(anomalyIncidents.orgId, orgId),
+												eq(anomalyIncidents.id, target.row.id),
+												// A manual resolve may race the tick; never attach to
+												// a resolved incident.
+												eq(anomalyIncidents.status, "open"),
+											),
+										),
+								)
+								if ((updated as { rowsAffected?: number }).rowsAffected === 0) {
+									incidentById.delete(target.row.id)
+									openSpikeByServiceEnv.delete(attachKey)
+								} else {
+									target.row = { ...target.row, fingerprintsJson, severity, lastTriggeredAt: nowMs }
+									openIncidentId = target.row.id
+									lastIncidentId = target.row.id
+									stats.incidentsAttached += 1
+									handled = true
+								}
+							}
+						}
+
+						// 2) Reopen: a re-breach shortly after an auto-resolve is the same
+						// event flapping — reopen the prior incident (keeping its triage
+						// result) instead of inserting a duplicate row.
+						if (
+							!handled &&
+							openBudget > 0 &&
+							lastIncidentId !== null &&
+							lastResolvedAt !== null &&
+							nowMs - lastResolvedAt <= REOPEN_WINDOW_MS
+						) {
+							const reopenTargetId = lastIncidentId
+							const priorRows = yield* dbExecute((db) =>
+								db
+									.select()
+									.from(anomalyIncidents)
+									.where(
+										and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, reopenTargetId)),
+									)
+									.limit(1),
+							)
+							const prior = priorRows[0]
+							if (prior !== undefined && shouldReopen(prior, lastResolvedAt, nowMs)) {
+								let entries = parseFingerprints(prior)
+								if (evaluation.fingerprintHash !== null) {
+									const existing = entries.find(
+										(e) => e.fingerprintHash === evaluation.fingerprintHash,
+									)
+									entries = upsertFingerprintEntry(entries, {
+										fingerprintHash: evaluation.fingerprintHash,
+										errorIssueId: existing?.errorIssueId ?? errorIssueId,
+										detectorKey: evaluation.detectorKey,
+										openedValue: existing?.openedValue ?? evaluation.value,
+										lastValue: evaluation.value,
+										severity: evaluation.severity,
+										attachedAt: existing?.attachedAt ?? nowMs,
+										resolvedAt: null,
+									})
+								}
+								const severity = headlineSeverity(entries, evaluation.severity)
+								const fingerprintsJson = serializeFingerprints(entries)
+								// The reopening series becomes the incident's primary — a
+								// consolidated incident may be reopened by any of its
+								// fingerprints, and `detectorKey` must point at a live one.
+								const reopenSet = {
+									status: "open" as const,
+									resolveReason: null,
+									resolvedAt: null,
+									reopenCount: prior.reopenCount + 1,
+									lastReopenedAt: nowMs,
+									severity,
+									lastObservedValue: evaluation.value,
+									lastSampleCount: evaluation.sampleCount,
+									lastTriggeredAt: nowMs,
+									detectorKey: evaluation.detectorKey,
+									fingerprintHash: evaluation.fingerprintHash,
+									fingerprintsJson,
+									updatedAt: nowMs,
+								}
+								const updated = yield* dbExecute((db) =>
+									db
+										.update(anomalyIncidents)
+										.set(reopenSet)
+										.where(
+											and(
+												eq(anomalyIncidents.orgId, orgId),
+												eq(anomalyIncidents.id, prior.id),
+												eq(anomalyIncidents.status, "resolved"),
+											),
+										),
+								)
+								if ((updated as { rowsAffected?: number }).rowsAffected !== 0) {
+									const runtime: IncidentRuntime = { row: { ...prior, ...reopenSet }, entries }
+									incidentById.set(prior.id, runtime)
+									if (prior.signalType === "error_spike") {
+										openSpikeByServiceEnv.set(
+											attachKeyFor(prior.serviceName, prior.deploymentEnv),
+											runtime,
+										)
+									}
+									openIncidentId = prior.id
+									lastIncidentId = prior.id
+									openBudget -= 1
+									stats.incidentsReopened += 1
+									handled = true
+								}
+							}
+						}
+
+						// 3) New incident.
+						if (!handled && openBudget > 0) {
+							const incidentId = newIncidentId()
+							const entries: IncidentFingerprintEntry[] =
+								evaluation.fingerprintHash !== null
+									? [
+											{
+												fingerprintHash: evaluation.fingerprintHash,
+												errorIssueId,
+												detectorKey: evaluation.detectorKey,
+												openedValue: evaluation.value,
+												lastValue: evaluation.value,
+												severity: evaluation.severity,
+												attachedAt: nowMs,
+												resolvedAt: null,
+											},
+										]
+									: []
+							const insertValues = {
 								id: incidentId,
 								orgId,
 								detectorKey: evaluation.detectorKey,
@@ -993,7 +1238,7 @@ export class AnomalyDetectionService extends Context.Service<
 								deploymentEnv: evaluation.deploymentEnv,
 								fingerprintHash: evaluation.fingerprintHash,
 								errorIssueId,
-								status: "open",
+								status: "open" as const,
 								severity: evaluation.severity,
 								openedValue: evaluation.value,
 								baselineMedian: evaluation.baselineMedian,
@@ -1003,63 +1248,120 @@ export class AnomalyDetectionService extends Context.Service<
 								lastSampleCount: evaluation.sampleCount,
 								firstTriggeredAt: nowMs,
 								lastTriggeredAt: nowMs,
-								triageStatus: "none",
+								triageStatus: "none" as const,
 								dedupeKey: `${orgId}:${evaluation.detectorKey}`,
+								fingerprintsJson: serializeFingerprints(entries),
+								reopenCount: 0,
+								lastReopenedAt: null,
 								createdAt: nowMs,
 								updatedAt: nowMs,
-							}),
-						)
-						openIncidentId = incidentId
-						stats.incidentsOpened += 1
+							}
+							yield* dbExecute((db) => db.insert(anomalyIncidents).values(insertValues))
+							const runtime: IncidentRuntime = {
+								row: { ...insertValues, resolvedAt: null, resolveReason: null },
+								entries,
+							}
+							incidentById.set(incidentId, runtime)
+							if (evaluation.signalType === "error_spike") {
+								openSpikeByServiceEnv.set(
+									attachKeyFor(evaluation.serviceName, evaluation.deploymentEnv),
+									runtime,
+								)
+							}
+							openIncidentId = incidentId
+							lastIncidentId = incidentId
+							openBudget -= 1
+							stats.incidentsOpened += 1
 
-						// AI auto-triage (org opt-in). Never fails — a triage problem can't
-						// take down the detector tick.
-						const triage = yield* maybeEnqueueTriage({
-							orgId,
-							incidentKind: "anomaly",
-							incidentId,
-							issueId: errorIssueId ?? undefined,
-							context: {
-								kind: "anomaly",
-								signalType: evaluation.signalType,
-								serviceName: evaluation.serviceName,
-								deploymentEnv: evaluation.deploymentEnv,
-								fingerprintHash: evaluation.fingerprintHash,
-								severity: evaluation.severity,
-								observedValue: evaluation.value,
-								baselineMedian: evaluation.baselineMedian,
-								baselineSigma: evaluation.baselineSigma,
-								thresholdValue: evaluation.threshold,
-								sampleCount: evaluation.sampleCount,
-								detectedAt: new Date(nowMs).toISOString(),
-							},
-							workflowBinding: aiTriageWorkflowBinding,
-						}).pipe(Effect.provideService(Database, database))
-						if (triage.enqueued) {
-							yield* dbExecute((db) =>
-								db
-									.update(anomalyIncidents)
-									.set({ triageStatus: "pending", updatedAt: nowMs })
-									.where(
-										and(
-											eq(anomalyIncidents.orgId, orgId),
-											eq(anomalyIncidents.id, incidentId),
+							// AI auto-triage (org opt-in). Never fails — a triage problem can't
+							// take down the detector tick. Attaches and reopens never enqueue:
+							// the event was (or is being) triaged under its incident already.
+							const triage = yield* maybeEnqueueTriage({
+								orgId,
+								incidentKind: "anomaly",
+								incidentId,
+								issueId: errorIssueId ?? undefined,
+								context: {
+									kind: "anomaly",
+									signalType: evaluation.signalType,
+									serviceName: evaluation.serviceName,
+									deploymentEnv: evaluation.deploymentEnv,
+									fingerprintHash: evaluation.fingerprintHash,
+									severity: evaluation.severity,
+									observedValue: evaluation.value,
+									baselineMedian: evaluation.baselineMedian,
+									baselineSigma: evaluation.baselineSigma,
+									thresholdValue: evaluation.threshold,
+									sampleCount: evaluation.sampleCount,
+									detectedAt: new Date(nowMs).toISOString(),
+								},
+								workflowBinding: aiTriageWorkflowBinding,
+							}).pipe(Effect.provideService(Database, database))
+							if (triage.enqueued) {
+								yield* dbExecute((db) =>
+									db
+										.update(anomalyIncidents)
+										.set({ triageStatus: "pending", updatedAt: nowMs })
+										.where(
+											and(
+												eq(anomalyIncidents.orgId, orgId),
+												eq(anomalyIncidents.id, incidentId),
+											),
 										),
-									),
-							)
+								)
+							}
 						}
 					} else if (transition === "continue" && openIncidentId !== null) {
 						const incidentId = openIncidentId
+						const runtime = incidentById.get(incidentId)
+						if (runtime !== undefined && evaluation.fingerprintHash !== null) {
+							const existing = runtime.entries.find(
+								(e) => e.fingerprintHash === evaluation.fingerprintHash,
+							)
+							runtime.entries = upsertFingerprintEntry(runtime.entries, {
+								fingerprintHash: evaluation.fingerprintHash,
+								errorIssueId:
+									existing?.errorIssueId ??
+									issueIdByFingerprint.get(evaluation.fingerprintHash) ??
+									null,
+								detectorKey: evaluation.detectorKey,
+								openedValue: existing?.openedValue ?? evaluation.value,
+								lastValue: evaluation.value,
+								severity: evaluation.severity,
+								attachedAt: existing?.attachedAt ?? nowMs,
+								resolvedAt: null,
+							})
+						}
+						const severity =
+							runtime !== undefined && runtime.entries.length > 0
+								? headlineSeverity(runtime.entries, evaluation.severity)
+								: evaluation.severity
+						const fingerprintsJson =
+							runtime !== undefined ? serializeFingerprints(runtime.entries) : undefined
+						// Only the primary series moves the headline value; an attached
+						// fingerprint still bumps lastTriggeredAt (and severity) so the
+						// no-data sweep can't resolve a still-firing shared incident.
+						const isPrimary =
+							runtime === undefined || runtime.row.detectorKey === evaluation.detectorKey
+						const continueSet = isPrimary
+							? {
+									lastObservedValue: evaluation.value,
+									lastSampleCount: evaluation.sampleCount,
+									severity,
+									lastTriggeredAt: nowMs,
+									updatedAt: nowMs,
+									...(fingerprintsJson !== undefined ? { fingerprintsJson } : {}),
+								}
+							: {
+									severity,
+									lastTriggeredAt: nowMs,
+									updatedAt: nowMs,
+									...(fingerprintsJson !== undefined ? { fingerprintsJson } : {}),
+								}
 						const updated = yield* dbExecute((db) =>
 							db
 								.update(anomalyIncidents)
-								.set({
-									lastObservedValue: evaluation.value,
-									lastSampleCount: evaluation.sampleCount,
-									severity: evaluation.severity,
-									lastTriggeredAt: nowMs,
-									updatedAt: nowMs,
-								})
+								.set(continueSet)
 								.where(
 									and(
 										eq(anomalyIncidents.orgId, orgId),
@@ -1077,30 +1379,109 @@ export class AnomalyDetectionService extends Context.Service<
 							// below doesn't re-point at the resolved incident.
 							openIncidentId = null
 							lastResolvedAt = nowMs
+							lastIncidentId = incidentId
+							incidentById.delete(incidentId)
 						} else {
+							if (runtime !== undefined) {
+								runtime.row = { ...runtime.row, ...continueSet }
+							}
+							lastIncidentId = incidentId
 							stats.incidentsContinued += 1
 						}
 					} else if (transition === "resolve" && openIncidentId !== null) {
 						const incidentId = openIncidentId
-						yield* dbExecute((db) =>
+						const runtime = incidentById.get(incidentId)
+						if (runtime !== undefined && evaluation.fingerprintHash !== null) {
+							runtime.entries = markFingerprintResolved(
+								runtime.entries,
+								evaluation.fingerprintHash,
+								nowMs,
+							)
+						}
+						// Refcount: a consolidated incident only resolves once no other
+						// series still points at it.
+						const otherStates = yield* dbExecute((db) =>
 							db
-								.update(anomalyIncidents)
-								.set({
-									status: "resolved",
-									resolveReason: "returned_to_baseline",
-									resolvedAt: nowMs,
-									updatedAt: nowMs,
+								.select({
+									detectorKey: anomalyDetectorStates.detectorKey,
+									fingerprintHash: anomalyDetectorStates.fingerprintHash,
 								})
+								.from(anomalyDetectorStates)
 								.where(
 									and(
-										eq(anomalyIncidents.orgId, orgId),
-										eq(anomalyIncidents.id, incidentId),
+										eq(anomalyDetectorStates.orgId, orgId),
+										eq(anomalyDetectorStates.openIncidentId, incidentId),
+										ne(anomalyDetectorStates.detectorKey, evaluation.detectorKey),
 									),
-								),
+								)
+								.limit(1),
 						)
+						if (otherStates.length === 0) {
+							yield* dbExecute((db) =>
+								db
+									.update(anomalyIncidents)
+									.set({
+										status: "resolved",
+										resolveReason: "returned_to_baseline",
+										resolvedAt: nowMs,
+										updatedAt: nowMs,
+										...(runtime !== undefined && runtime.entries.length > 0
+											? { fingerprintsJson: serializeFingerprints(runtime.entries) }
+											: {}),
+									})
+									.where(
+										and(
+											eq(anomalyIncidents.orgId, orgId),
+											eq(anomalyIncidents.id, incidentId),
+										),
+									),
+							)
+							incidentById.delete(incidentId)
+							if (runtime !== undefined && runtime.row.signalType === "error_spike") {
+								const attachKey = attachKeyFor(runtime.row.serviceName, runtime.row.deploymentEnv)
+								if (openSpikeByServiceEnv.get(attachKey) === runtime) {
+									openSpikeByServiceEnv.delete(attachKey)
+								}
+							}
+							stats.incidentsResolved += 1
+						} else {
+							// Other fingerprints are still firing: the incident stays open.
+							// If the departing series was the primary, promote a remaining
+							// one — `detectorKey` must always point at a live series for the
+							// continue branch and manual resolve to find it.
+							const next = otherStates[0]!
+							const isPrimary =
+								runtime === undefined || runtime.row.detectorKey === evaluation.detectorKey
+							const detachSet = {
+								updatedAt: nowMs,
+								...(runtime !== undefined && runtime.entries.length > 0
+									? {
+											fingerprintsJson: serializeFingerprints(runtime.entries),
+											severity: headlineSeverity(runtime.entries, runtime.row.severity),
+										}
+									: {}),
+								...(isPrimary
+									? { detectorKey: next.detectorKey, fingerprintHash: next.fingerprintHash }
+									: {}),
+							}
+							yield* dbExecute((db) =>
+								db
+									.update(anomalyIncidents)
+									.set(detachSet)
+									.where(
+										and(
+											eq(anomalyIncidents.orgId, orgId),
+											eq(anomalyIncidents.id, incidentId),
+										),
+									),
+							)
+							if (runtime !== undefined) {
+								runtime.row = { ...runtime.row, ...detachSet }
+							}
+						}
 						openIncidentId = null
 						lastResolvedAt = nowMs
-						stats.incidentsResolved += 1
+						lastIncidentId = incidentId
 					}
 
 					yield* dbExecute((db) =>
@@ -1122,6 +1503,7 @@ export class AnomalyDetectionService extends Context.Service<
 								lastEvaluatedAt: nowMs,
 								openIncidentId,
 								lastResolvedAt,
+								lastIncidentId,
 								updatedAt: nowMs,
 							})
 							.onConflictDoUpdate({
@@ -1136,6 +1518,7 @@ export class AnomalyDetectionService extends Context.Service<
 									lastEvaluatedAt: nowMs,
 									openIncidentId,
 									lastResolvedAt,
+									lastIncidentId,
 									updatedAt: nowMs,
 								},
 							}),
@@ -1174,12 +1557,15 @@ export class AnomalyDetectionService extends Context.Service<
 								and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incident.id)),
 							),
 					)
+					// Matched on openIncidentId so every series feeding a consolidated
+					// incident is cleared, not just the primary.
 					yield* dbExecute((db) =>
 						db
 							.update(anomalyDetectorStates)
 							.set({
 								openIncidentId: null,
 								lastResolvedAt: nowMs,
+								lastIncidentId: incident.id,
 								consecutiveBreaches: 0,
 								consecutiveHealthy: 0,
 								updatedAt: nowMs,
@@ -1187,7 +1573,7 @@ export class AnomalyDetectionService extends Context.Service<
 							.where(
 								and(
 									eq(anomalyDetectorStates.orgId, orgId),
-									eq(anomalyDetectorStates.detectorKey, incident.detectorKey),
+									eq(anomalyDetectorStates.openIncidentId, incident.id),
 								),
 							),
 					)
@@ -1232,6 +1618,8 @@ export class AnomalyDetectionService extends Context.Service<
 				const emptyStats = {
 					seriesEvaluated: 0,
 					incidentsOpened: 0,
+					incidentsAttached: 0,
+					incidentsReopened: 0,
 					incidentsContinued: 0,
 					incidentsResolved: 0,
 				}
@@ -1256,6 +1644,8 @@ export class AnomalyDetectionService extends Context.Service<
 					(acc, r) => ({
 						seriesEvaluated: acc.seriesEvaluated + r.seriesEvaluated,
 						incidentsOpened: acc.incidentsOpened + r.incidentsOpened,
+						incidentsAttached: acc.incidentsAttached + r.incidentsAttached,
+						incidentsReopened: acc.incidentsReopened + r.incidentsReopened,
 						incidentsContinued: acc.incidentsContinued + r.incidentsContinued,
 						incidentsResolved: acc.incidentsResolved + r.incidentsResolved,
 					}),

@@ -30,6 +30,7 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 	const SignalIcon = SIGNAL_ICON[incident.signalType]
 	const triageChip = TRIAGE_STATUS_CHIP[incident.triageStatus]
 	const compact = variant === "compact"
+	const activeFingerprints = incident.fingerprints.filter((f) => f.resolvedAt === null).length
 
 	return (
 		<div
@@ -108,6 +109,24 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 			</span>
 
 			<span className="relative z-0 min-w-0 flex-1" />
+
+			{activeFingerprints > 1 ? (
+				<span
+					className="relative z-10 hidden h-5 shrink-0 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground sm:inline-flex"
+					title={`${activeFingerprints} error fingerprints grouped into this incident`}
+				>
+					{activeFingerprints} errors
+				</span>
+			) : null}
+
+			{incident.reopenCount > 0 ? (
+				<span
+					className="relative z-10 hidden h-5 shrink-0 items-center rounded-full border border-border/70 bg-background px-2 text-[11px] text-muted-foreground sm:inline-flex"
+					title="This anomaly re-breached and reopened after resolving"
+				>
+					reopened{incident.reopenCount > 1 ? ` ×${incident.reopenCount}` : ""}
+				</span>
+			) : null}
 
 			{triageChip ? (
 				<span
