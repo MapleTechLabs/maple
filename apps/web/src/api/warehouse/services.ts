@@ -6,6 +6,7 @@ import {
 	ServiceApdexRequest,
 	ServiceName,
 	ServiceNamespace,
+	ServiceHealthBaselineRequest,
 	ServiceOverviewRequest,
 	ServiceReleasesRequest,
 } from "@maple/domain/http"
@@ -49,6 +50,7 @@ export interface ServiceOverview {
 	tracedThroughput: number
 	hasSampling: boolean
 	samplingWeight: number
+	spanCount: number
 }
 
 export interface ServiceOverviewResponse {
@@ -161,6 +163,7 @@ function aggregateByServiceEnvironment(
 			tracedThroughput: sampling.traced,
 			hasSampling: sampling.hasSampling,
 			samplingWeight: sampling.weight,
+			spanCount: totalSpans,
 		})
 	}
 
@@ -230,6 +233,85 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 	return {
 		data: aggregateByServiceEnvironment(coercedRows, durationSeconds, metricsByService),
 	}
+})
+
+// ---------------------------------------------------------------------------
+// Service latency baseline (baseline-relative health)
+// ---------------------------------------------------------------------------
+
+export interface ServiceLatencyBaseline {
+	serviceName: string
+	serviceNamespace: string
+	environment: string
+	baselineP95LatencyMs: number
+	baselineSpanCount: number
+}
+
+export interface ServiceHealthBaselineResult {
+	data: ServiceLatencyBaseline[]
+}
+
+const GetServiceHealthBaselineInput = Schema.Struct({
+	// Start of the range being judged; the baseline window is the trailing 7
+	// days BEFORE this point so an ongoing regression can't inflate its own
+	// baseline. Optional — defaults to "now".
+	rangeStartTime: Schema.optional(dateTimeString),
+	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+})
+
+export type GetServiceHealthBaselineInput = (typeof GetServiceHealthBaselineInput)["Encoded"]
+
+const BASELINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+// Snap a "YYYY-MM-DD HH:mm:ss" datetime down to the hour so the request
+// payload — and therefore the API-side cache key and the web atom key — stays
+// stable for up to an hour regardless of small range changes.
+const floorToHour = (dateTime: string) => `${dateTime.slice(0, 13)}:00:00`
+
+const warehouseDateTimeToMs = (dateTime: string) => new Date(`${dateTime.replace(" ", "T")}Z`).getTime()
+
+const msToWarehouseDateTime = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+
+export function getServiceHealthBaseline({ data }: { data: GetServiceHealthBaselineInput }) {
+	return getServiceHealthBaselineEffect({ data })
+}
+
+const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBaseline")(function* ({
+	data,
+}: {
+	data: GetServiceHealthBaselineInput
+}) {
+	const input = yield* decodeInput(GetServiceHealthBaselineInput, data ?? {}, "getServiceHealthBaseline")
+	const nowDateTime = msToWarehouseDateTime(yield* Clock.currentTimeMillis)
+
+	const endTime = floorToHour(input.rangeStartTime ?? nowDateTime)
+	const startTime = msToWarehouseDateTime(warehouseDateTimeToMs(endTime) - BASELINE_WINDOW_MS)
+
+	const response = yield* runWarehouseQuery("serviceHealthBaseline", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceHealthBaseline({
+				payload: new ServiceHealthBaselineRequest({
+					startTime,
+					endTime,
+					environments: input.environments,
+					namespaces: input.namespaces,
+				}),
+			})
+		}),
+	)
+
+	const result: ServiceHealthBaselineResult = {
+		data: response.data.map((row) => ({
+			serviceName: String(row.serviceName),
+			serviceNamespace: row.serviceNamespace,
+			environment: row.environment,
+			baselineP95LatencyMs: row.baselineP95LatencyMs,
+			baselineSpanCount: row.baselineSpanCount,
+		})),
+	}
+	return result
 })
 
 // Service overview time series types

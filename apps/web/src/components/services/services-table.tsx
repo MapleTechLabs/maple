@@ -5,7 +5,13 @@ import { Link, useNavigate } from "@tanstack/react-router"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { listIncidentsAtom } from "@/lib/services/atoms/alerts-atoms"
-import { deriveServiceHealth, incidentMatchesService } from "@/components/dashboard/service-health"
+import {
+	baselineKey,
+	buildBaselineMap,
+	deriveServiceHealth,
+	incidentMatchesService,
+	type LatencyBaselineSignal,
+} from "@/components/dashboard/service-health"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -16,6 +22,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { type ServiceOverview, type CommitBreakdown } from "@/api/warehouse/services"
 import {
 	getCustomChartServiceSparklinesResultAtom,
+	getServiceHealthBaselineResultAtom,
 	getServiceOverviewResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { ServicesSearchParams } from "@/routes/services/index"
@@ -221,6 +228,18 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 		}),
 	)
 
+	// Trailing-7d latency baseline so the health filter agrees with the
+	// dashboard badges. Deliberately outside the Result.all loading gate —
+	// failure/loading degrades to absolute thresholds.
+	const baselineResult = useAtomValue(
+		getServiceHealthBaselineResultAtom({
+			data: { rangeStartTime: effectiveStartTime, environments: filters?.environments },
+		}),
+	)
+	const baselineMap = Result.builder(baselineResult)
+		.onSuccess((response) => buildBaselineMap(response.data))
+		.orElse(() => new Map<string, LatencyBaselineSignal>())
+
 	const healthFilter = filters?.health
 	const incidentsResult = useAtomValue(listIncidentsAtom)
 	const openIncidents = Result.builder(incidentsResult)
@@ -237,7 +256,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 						const hasOpenIncident = openIncidents.some((incident) =>
 							incidentMatchesService(incident, service.serviceName),
 						)
-						return deriveServiceHealth(service, hasOpenIncident) === healthFilter
+						const baseline = baselineMap.get(
+							baselineKey(service.serviceName, service.serviceNamespace, service.environment),
+						)
+						return deriveServiceHealth({ ...service, baseline }, hasOpenIncident) === healthFilter
 					})
 				: overviewResponse.data
 

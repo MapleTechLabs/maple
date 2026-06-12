@@ -68,6 +68,52 @@ export function serviceOverviewQuery(opts: ServiceOverviewOpts) {
 }
 
 // ---------------------------------------------------------------------------
+// Service health baseline
+// ---------------------------------------------------------------------------
+
+export interface ServiceHealthBaselineOpts {
+	environments?: readonly string[]
+	namespaces?: readonly string[]
+}
+
+export interface ServiceHealthBaselineOutput {
+	readonly serviceName: string
+	readonly serviceNamespace: string
+	readonly environment: string
+	readonly baselineP95LatencyMs: number
+	readonly baselineSpanCount: number
+}
+
+/**
+ * Per-service latency baseline backing the dashboard's baseline-relative
+ * health badges. Same source MV as {@link serviceOverviewQuery} but grouped
+ * without `CommitSha` and meant to be compiled with a trailing multi-day
+ * window ending at the start of the range being judged, so a service is only
+ * flagged when it's slow relative to its own history.
+ */
+export function serviceHealthBaselineQuery(opts: ServiceHealthBaselineOpts) {
+	return from(ServiceOverviewSpans)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			serviceNamespace: $.ServiceNamespace,
+			environment: $.DeploymentEnv,
+			baselineP95LatencyMs: CH.quantile(0.95)($.Duration).div(1000000),
+			baselineSpanCount: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+			opts.environments?.length ? CH.inList($.DeploymentEnv, opts.environments) : undefined,
+			opts.namespaces?.length ? CH.inList($.ServiceNamespace, opts.namespaces) : undefined,
+		])
+		.groupBy("serviceName", "serviceNamespace", "environment")
+		.orderBy(["baselineSpanCount", "desc"])
+		.limit(200)
+		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
 // Service releases timeline
 // ---------------------------------------------------------------------------
 

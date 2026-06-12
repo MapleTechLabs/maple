@@ -149,6 +149,7 @@ function generateBenchGraph(params: BenchParams): BenchGraph {
 			tracedThroughput: throughput,
 			hasSampling,
 			samplingWeight,
+			spanCount: Math.round(throughput * 3600),
 		}
 	})
 

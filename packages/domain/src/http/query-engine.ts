@@ -196,6 +196,29 @@ export class ServiceOverviewResponse extends Schema.Class<ServiceOverviewRespons
 	},
 ) {}
 
+export class ServiceHealthBaselineRequest extends Schema.Class<ServiceHealthBaselineRequest>(
+	"ServiceHealthBaselineRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	environments: OptionalDeploymentEnvs,
+	namespaces: OptionalServiceNamespaces,
+}) {}
+
+export class ServiceHealthBaselineResponse extends Schema.Class<ServiceHealthBaselineResponse>(
+	"ServiceHealthBaselineResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			serviceName: ServiceName,
+			serviceNamespace: Schema.String,
+			environment: Schema.String,
+			baselineP95LatencyMs: Schema.Number,
+			baselineSpanCount: Schema.Number,
+		}),
+	),
+}) {}
+
 export class ServiceApdexRequest extends Schema.Class<ServiceApdexRequest>("ServiceApdexRequest")({
 	startTime: TinybirdDateTime,
 	endTime: TinybirdDateTime,
@@ -1190,6 +1213,13 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceOverview", "/service-overview", {
 			payload: ServiceOverviewRequest,
 			success: ServiceOverviewResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceHealthBaseline", "/service-health-baseline", {
+			payload: ServiceHealthBaselineRequest,
+			success: ServiceHealthBaselineResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

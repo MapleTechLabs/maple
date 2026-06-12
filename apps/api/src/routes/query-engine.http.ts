@@ -15,6 +15,7 @@ import {
 	ErrorDetailTracesResponse,
 	ErrorRateByServiceResponse,
 	ServiceOverviewResponse,
+	ServiceHealthBaselineResponse,
 	ServiceApdexResponse,
 	ServiceReleasesResponse,
 	ServiceDependenciesResponse,
@@ -362,6 +363,39 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 					return new ServiceOverviewResponse({ data: rows })
 				}),
 			)
+				.handle("serviceHealthBaseline", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const compiled = CH.compile(
+							CH.serviceHealthBaselineQuery({
+								environments: payload.environments,
+								namespaces: payload.namespaces,
+							}),
+							{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+						)
+						const rows = yield* queryEngine.cachedDirect(
+							tenant,
+							"serviceHealthBaseline",
+							payload,
+							mapExecError(
+								warehouse.compiledQuery(tenant, compiled, {
+									profile: "aggregation",
+									context: "serviceHealthBaseline",
+								}),
+								"serviceHealthBaseline query failed",
+							),
+						)
+						return new ServiceHealthBaselineResponse({
+							data: rows.map((row) => ({
+								serviceName: decodeServiceName(String(row.serviceName ?? "")),
+								serviceNamespace: String(row.serviceNamespace ?? ""),
+								environment: String(row.environment ?? "unknown"),
+								baselineP95LatencyMs: Number(row.baselineP95LatencyMs ?? 0),
+								baselineSpanCount: Number(row.baselineSpanCount ?? 0),
+							})),
+						})
+					}),
+				)
 			.handle("serviceApdex", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context

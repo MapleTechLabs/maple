@@ -256,6 +256,7 @@ export {
 // Queries — Services
 export {
 	serviceOverviewQuery,
+	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
@@ -263,6 +264,8 @@ export {
 	servicesFacetsQuery,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
+	type ServiceHealthBaselineOpts,
+	type ServiceHealthBaselineOutput,
 	type ServiceReleasesTimelineOpts,
 	type ServiceReleasesTimelineOutput,
 	type ServiceApdexTimeseriesOpts,

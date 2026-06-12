@@ -59,6 +59,7 @@ import { getServiceExternalEdges } from "@/api/warehouse/service-external-edges"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
 import {
 	getServiceApdexTimeSeries,
+	getServiceHealthBaseline,
 	getServiceOverview,
 	getServiceReleasesTimeline,
 	getServicesFacets,
@@ -158,6 +159,12 @@ export const getServicesFacetsResultAtom = makeQueryAtomFamily(getServicesFacets
 
 export const getServiceOverviewResultAtom = makeQueryAtomFamily(getServiceOverview, {
 	staleTime: 30_000,
+})
+
+export const getServiceHealthBaselineResultAtom = makeQueryAtomFamily(getServiceHealthBaseline, {
+	// The trailing-7d latency baseline moves slowly and the request payload is
+	// hour-snapped, so keep it warm far longer than the live overview.
+	staleTime: 30 * 60_000,
 })
 
 export const getCustomChartServiceSparklinesResultAtom = makeQueryAtomFamily(

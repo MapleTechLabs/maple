@@ -3,14 +3,17 @@ import { Link } from "@tanstack/react-router"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	getServiceHealthBaselineResultAtom,
+	getServiceOverviewResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { listIncidentsAtom, listRulesAtom } from "@/lib/services/atoms/alerts-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { AlertFiringHero } from "@/components/alerts/alert-stat-card"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
 import { ArrowRightIcon } from "@/components/icons"
-import type { ServiceOverview } from "@/api/warehouse/services"
+import type { ServiceHealthBaselineResult, ServiceOverview } from "@/api/warehouse/services"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 
 import { Card } from "@maple/ui/components/ui/card"
@@ -20,11 +23,14 @@ import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/utils"
 
 import {
+	baselineKey,
+	buildBaselineMap,
 	deriveServiceHealth,
 	errorRateTone,
 	healthRank,
 	incidentMatchesService,
 	latencyTone,
+	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "./service-health"
 
@@ -54,6 +60,7 @@ interface EnrichedService {
 	service: ServiceOverview
 	health: ServiceHealth
 	hasOpenIncident: boolean
+	baseline?: LatencyBaselineSignal
 }
 
 const HEALTH_DOT_COLOR: Record<ServiceHealth, string> = {
@@ -74,6 +81,21 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 			: disabledResultAtom<{ data: ServiceOverview[] }, unknown>(),
 	)
 
+	// Trailing-7d latency baseline behind the baseline-relative health badges.
+	// Failure or loading degrades to absolute thresholds — never blocks render.
+	const baselineResult = useAtomValue(
+		facetsReady
+			? getServiceHealthBaselineResultAtom({ data: { rangeStartTime: startTime, environments } })
+			: disabledResultAtom<ServiceHealthBaselineResult, unknown>(),
+	)
+	const baselineMap = useMemo(
+		() =>
+			Result.builder(baselineResult)
+				.onSuccess((response) => buildBaselineMap(response.data))
+				.orElse(() => new Map<string, LatencyBaselineSignal>()),
+		[baselineResult],
+	)
+
 	const incidentsResult = useAtomValue(listIncidentsAtom)
 	const rulesResult = useAtomValue(listRulesAtom)
 
@@ -90,19 +112,28 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 		[rulesResult],
 	)
 
-	return { overviewResult, openIncidents, rules }
+	return { overviewResult, baselineMap, openIncidents, rules }
 }
 
 function enrichServices(
 	services: readonly ServiceOverview[],
 	openIncidents: ReadonlyArray<AlertIncidentDocument>,
+	baselineMap: ReadonlyMap<string, LatencyBaselineSignal>,
 ): EnrichedService[] {
 	return services
 		.map((service) => {
 			const hasOpenIncident = openIncidents.some((incident) =>
 				incidentMatchesService(incident, service.serviceName),
 			)
-			return { service, hasOpenIncident, health: deriveServiceHealth(service, hasOpenIncident) }
+			const baseline = baselineMap.get(
+				baselineKey(service.serviceName, service.serviceNamespace, service.environment),
+			)
+			return {
+				service,
+				hasOpenIncident,
+				baseline,
+				health: deriveServiceHealth({ ...service, baseline }, hasOpenIncident),
+			}
 		})
 		.sort(
 			(a, b) =>
@@ -125,7 +156,7 @@ function countByHealth(services: readonly EnrichedService[]): Record<ServiceHeal
 /* -------------------------------------------------------------------------- */
 
 export function ServiceHealthOverview(props: ServiceHealthProps) {
-	const { overviewResult, openIncidents, rules } = useServiceHealthData(props)
+	const { overviewResult, baselineMap, openIncidents, rules } = useServiceHealthData(props)
 
 	const criticalCount = openIncidents.filter((incident) => incident.severity === "critical").length
 	const warningCount = openIncidents.filter((incident) => incident.severity === "warning").length
@@ -164,7 +195,7 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 		))
 		.onError(() => <section className="mb-4 space-y-3">{banner}</section>)
 		.onSuccess((response, result) => {
-			const counts = countByHealth(enrichServices(response.data, openIncidents))
+			const counts = countByHealth(enrichServices(response.data, openIncidents, baselineMap))
 			return (
 				<section
 					className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
@@ -210,7 +241,7 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 /* -------------------------------------------------------------------------- */
 
 export function ServiceHealthList(props: ServiceHealthProps) {
-	const { overviewResult, openIncidents } = useServiceHealthData(props)
+	const { overviewResult, baselineMap, openIncidents } = useServiceHealthData(props)
 
 	const header = (
 		<div className="flex items-center justify-between">
@@ -247,7 +278,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 			</section>
 		))
 		.onSuccess((response, result) => {
-			const rows = enrichServices(response.data, openIncidents).slice(0, MAX_ROWS)
+			const rows = enrichServices(response.data, openIncidents, baselineMap).slice(0, MAX_ROWS)
 			return (
 				<section
 					className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
@@ -260,12 +291,13 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 							</div>
 						) : (
 							<ul className="divide-y divide-border">
-								{rows.map(({ service, health, hasOpenIncident }) => (
+								{rows.map(({ service, health, hasOpenIncident, baseline }) => (
 									<ServiceHealthRow
 										key={`${service.serviceName}:${service.environment}`}
 										service={service}
 										health={health}
 										hasOpenIncident={hasOpenIncident}
+										baseline={baseline}
 									/>
 								))}
 							</ul>
@@ -277,7 +309,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 		.render()
 }
 
-function ServiceHealthRow({ service, health, hasOpenIncident }: EnrichedService) {
+function ServiceHealthRow({ service, health, hasOpenIncident, baseline }: EnrichedService) {
 	return (
 		<li className="flex items-center gap-3 px-4 py-2.5">
 			<span
@@ -305,7 +337,7 @@ function ServiceHealthRow({ service, health, hasOpenIncident }: EnrichedService)
 				<Metric
 					label="p95"
 					value={formatLatency(service.p95LatencyMs)}
-					tone={latencyTone(service.p95LatencyMs)}
+					tone={latencyTone(service.p95LatencyMs, service.spanCount, baseline)}
 				/>
 				<Metric
 					label="rps"
