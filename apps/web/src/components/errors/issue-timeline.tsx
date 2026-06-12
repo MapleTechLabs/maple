@@ -17,6 +17,7 @@ const EVENT_LABEL: Record<ErrorIssueEventDocument["type"], string> = {
 	snooze: "Snoozed",
 	unsnooze: "Unsnoozed",
 	ai_triage: "AI triage",
+	anomaly_linked: "Anomaly",
 }
 
 const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
@@ -33,6 +34,7 @@ const DOT_CLASS: Record<ErrorIssueEventDocument["type"], string> = {
 	snooze: "bg-muted-foreground/70",
 	unsnooze: "bg-muted-foreground/70",
 	ai_triage: "bg-violet-500 shadow-[0_0_0_3px_oklch(0.65_0.16_290/0.25)]",
+	anomaly_linked: "bg-amber-500",
 }
 
 function payloadString(value: unknown): string | null {
@@ -67,6 +69,12 @@ function renderPayload(event: ErrorIssueEventDocument): string | null {
 		}
 		case "ai_triage": {
 			return payloadString(p.summary)
+		}
+		case "anomaly_linked": {
+			const action = payloadString(p.action) === "unlinked" ? "Unlinked from" : "Linked to"
+			const signal = payloadString(p.signalType)
+			const service = payloadString(p.serviceName)
+			return signal && service ? `${action} a ${signal} anomaly on ${service}` : null
 		}
 		default:
 			return null

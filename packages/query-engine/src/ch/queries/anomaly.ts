@@ -181,3 +181,93 @@ export function anomalyErrorSpikeBaselineQuery(opts: { limit?: number }) {
 		.limit(opts.limit ?? 5000)
 		.format("JSON")
 }
+
+// ---------------------------------------------------------------------------
+// Incident timeseries — continuous window for ONE detector series, backing the
+// observed-vs-baseline chart on the anomaly detail page. Unlike the detector
+// queries above there is no matched-hours filter: the chart wants every bucket
+// in the window for a single (service, env) or (fingerprint, env) series.
+// ---------------------------------------------------------------------------
+
+export interface AnomalyTraceSignalTimeseriesOutput {
+	readonly hour: string
+	readonly requestCount: number
+	readonly errorCount: number
+	readonly p95Ms: number
+}
+
+/** Hourly golden-signal buckets for one (service, env) — covers error_rate, latency_p95, throughput. */
+export function anomalyTraceSignalTimeseriesQuery() {
+	return from(TracesAggregatesHourly)
+		.select(($) => ({
+			hour: $.Hour,
+			requestCount: CH.rawExpr<number>("sum(WeightedCount)"),
+			errorCount: CH.rawExpr<number>("sum(WeightedErrorCount)"),
+			p95Ms: CH.rawExpr<number>(
+				"arrayElement(quantilesTDigestWeightedMerge(0.95)(DurationQuantiles), 1) / 1000000",
+			),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			// Must match the detector's series definition (entry-point spans only).
+			$.IsEntryPoint.eq(1),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.DeploymentEnv.eq(param.string("deploymentEnv")),
+			$.Hour.gte(param.dateTime("startTime")),
+			$.Hour.lte(param.dateTime("endTime")),
+		])
+		.groupBy("hour")
+		.orderBy(["hour", "asc"])
+		.limit(200)
+		.format("JSON")
+}
+
+export interface AnomalyLogVolumeTimeseriesOutput {
+	readonly hour: string
+	readonly errorLogCount: number
+}
+
+/** Hourly error-log volume for one (service, env). */
+export function anomalyLogVolumeTimeseriesQuery() {
+	return from(LogsAggregatesHourly)
+		.select(($) => ({
+			hour: $.Hour,
+			errorLogCount: CH.sumIf($.Count, CH.lower_($.SeverityText).in_(...ERROR_SEVERITIES)),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.ServiceName.eq(param.string("serviceName")),
+			$.DeploymentEnv.eq(param.string("deploymentEnv")),
+			$.Hour.gte(param.dateTime("startTime")),
+			$.Hour.lte(param.dateTime("endTime")),
+		])
+		.groupBy("hour")
+		.orderBy(["hour", "asc"])
+		.limit(200)
+		.format("JSON")
+}
+
+export interface AnomalyErrorSpikeTimeseriesOutput {
+	readonly bucket: string
+	readonly count: number
+}
+
+/** Occurrence buckets for one (fingerprint, env) — pass bucketSeconds=1800 to match the spike window. */
+export function anomalyErrorSpikeTimeseriesQuery() {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			count: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			CH.toString_($.FingerprintHash).eq(param.string("fingerprintHash")),
+			$.DeploymentEnv.eq(param.string("deploymentEnv")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(400)
+		.format("JSON")
+}

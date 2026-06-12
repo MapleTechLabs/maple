@@ -25,7 +25,6 @@ import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as DeveloperRouteImport } from './routes/developer'
 import { Route as ConnectorsRouteImport } from './routes/connectors'
 import { Route as ChatRouteImport } from './routes/chat'
-import { Route as AnomaliesRouteImport } from './routes/anomalies'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TracesIndexRouteImport } from './routes/traces/index'
 import { Route as ServicesIndexRouteImport } from './routes/services/index'
@@ -34,6 +33,7 @@ import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as InfraIndexRouteImport } from './routes/infra/index'
 import { Route as ErrorsIndexRouteImport } from './routes/errors/index'
 import { Route as DashboardsIndexRouteImport } from './routes/dashboards/index'
+import { Route as AnomaliesIndexRouteImport } from './routes/anomalies/index'
 import { Route as AlertsIndexRouteImport } from './routes/alerts/index'
 import { Route as TracesTraceIdRouteImport } from './routes/traces/$traceId'
 import { Route as ServicesServiceNameRouteImport } from './routes/services/$serviceName'
@@ -45,6 +45,7 @@ import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
 import { Route as ErrorsErrorTypeRouteImport } from './routes/errors/$errorType'
 import { Route as DashboardsTemplatesRouteImport } from './routes/dashboards/templates'
 import { Route as DashboardsDashboardIdRouteImport } from './routes/dashboards/$dashboardId'
+import { Route as AnomaliesIncidentIdRouteImport } from './routes/anomalies/$incidentId'
 import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
 import { Route as AlertsRuleIdRouteImport } from './routes/alerts/$ruleId'
 import { Route as ErrorsIssuesIndexRouteImport } from './routes/errors/issues/index'
@@ -137,11 +138,6 @@ const ChatRoute = ChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AnomaliesRoute = AnomaliesRouteImport.update({
-  id: '/anomalies',
-  path: '/anomalies',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -180,6 +176,11 @@ const ErrorsIndexRoute = ErrorsIndexRouteImport.update({
 const DashboardsIndexRoute = DashboardsIndexRouteImport.update({
   id: '/dashboards/',
   path: '/dashboards/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnomaliesIndexRoute = AnomaliesIndexRouteImport.update({
+  id: '/anomalies/',
+  path: '/anomalies/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsIndexRoute = AlertsIndexRouteImport.update({
@@ -236,6 +237,11 @@ const DashboardsTemplatesRoute = DashboardsTemplatesRouteImport.update({
 const DashboardsDashboardIdRoute = DashboardsDashboardIdRouteImport.update({
   id: '/dashboards/$dashboardId',
   path: '/dashboards/$dashboardId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnomaliesIncidentIdRoute = AnomaliesIncidentIdRouteImport.update({
+  id: '/anomalies/$incidentId',
+  path: '/anomalies/$incidentId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AlertsCreateRoute = AlertsCreateRouteImport.update({
@@ -303,7 +309,6 @@ const InfraKubernetesWorkloadsKindWorkloadNameRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -322,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/widget-lab': typeof WidgetLabRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
+  '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
@@ -333,6 +339,7 @@ export interface FileRoutesByFullPath {
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
+  '/anomalies/': typeof AnomaliesIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -352,7 +359,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -371,6 +377,7 @@ export interface FileRoutesByTo {
   '/widget-lab': typeof WidgetLabRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
+  '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
@@ -382,6 +389,7 @@ export interface FileRoutesByTo {
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts': typeof AlertsIndexRoute
+  '/anomalies': typeof AnomaliesIndexRoute
   '/dashboards': typeof DashboardsIndexRoute
   '/errors': typeof ErrorsIndexRoute
   '/infra': typeof InfraIndexRoute
@@ -402,7 +410,6 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/anomalies': typeof AnomaliesRoute
   '/chat': typeof ChatRoute
   '/connectors': typeof ConnectorsRoute
   '/developer': typeof DeveloperRoute
@@ -421,6 +428,7 @@ export interface FileRoutesById {
   '/widget-lab': typeof WidgetLabRoute
   '/alerts/$ruleId': typeof AlertsRuleIdRoute
   '/alerts/create': typeof AlertsCreateRoute
+  '/anomalies/$incidentId': typeof AnomaliesIncidentIdRoute
   '/dashboards/$dashboardId': typeof DashboardsDashboardIdRoute
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
@@ -432,6 +440,7 @@ export interface FileRoutesById {
   '/services/$serviceName': typeof ServicesServiceNameRoute
   '/traces/$traceId': typeof TracesTraceIdRoute
   '/alerts/': typeof AlertsIndexRoute
+  '/anomalies/': typeof AnomaliesIndexRoute
   '/dashboards/': typeof DashboardsIndexRoute
   '/errors/': typeof ErrorsIndexRoute
   '/infra/': typeof InfraIndexRoute
@@ -453,7 +462,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -472,6 +480,7 @@ export interface FileRouteTypes {
     | '/widget-lab'
     | '/alerts/$ruleId'
     | '/alerts/create'
+    | '/anomalies/$incidentId'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/errors/$errorType'
@@ -483,6 +492,7 @@ export interface FileRouteTypes {
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
+    | '/anomalies/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -502,7 +512,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -521,6 +530,7 @@ export interface FileRouteTypes {
     | '/widget-lab'
     | '/alerts/$ruleId'
     | '/alerts/create'
+    | '/anomalies/$incidentId'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/errors/$errorType'
@@ -532,6 +542,7 @@ export interface FileRouteTypes {
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts'
+    | '/anomalies'
     | '/dashboards'
     | '/errors'
     | '/infra'
@@ -551,7 +562,6 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
-    | '/anomalies'
     | '/chat'
     | '/connectors'
     | '/developer'
@@ -570,6 +580,7 @@ export interface FileRouteTypes {
     | '/widget-lab'
     | '/alerts/$ruleId'
     | '/alerts/create'
+    | '/anomalies/$incidentId'
     | '/dashboards/$dashboardId'
     | '/dashboards/templates'
     | '/errors/$errorType'
@@ -581,6 +592,7 @@ export interface FileRouteTypes {
     | '/services/$serviceName'
     | '/traces/$traceId'
     | '/alerts/'
+    | '/anomalies/'
     | '/dashboards/'
     | '/errors/'
     | '/infra/'
@@ -601,7 +613,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AnomaliesRoute: typeof AnomaliesRoute
   ChatRoute: typeof ChatRoute
   ConnectorsRoute: typeof ConnectorsRoute
   DeveloperRoute: typeof DeveloperRoute
@@ -620,6 +631,7 @@ export interface RootRouteChildren {
   WidgetLabRoute: typeof WidgetLabRoute
   AlertsRuleIdRoute: typeof AlertsRuleIdRoute
   AlertsCreateRoute: typeof AlertsCreateRoute
+  AnomaliesIncidentIdRoute: typeof AnomaliesIncidentIdRoute
   DashboardsDashboardIdRoute: typeof DashboardsDashboardIdRoute
   DashboardsTemplatesRoute: typeof DashboardsTemplatesRoute
   ErrorsErrorTypeRoute: typeof ErrorsErrorTypeRoute
@@ -631,6 +643,7 @@ export interface RootRouteChildren {
   ServicesServiceNameRoute: typeof ServicesServiceNameRoute
   TracesTraceIdRoute: typeof TracesTraceIdRoute
   AlertsIndexRoute: typeof AlertsIndexRoute
+  AnomaliesIndexRoute: typeof AnomaliesIndexRoute
   DashboardsIndexRoute: typeof DashboardsIndexRoute
   ErrorsIndexRoute: typeof ErrorsIndexRoute
   InfraIndexRoute: typeof InfraIndexRoute
@@ -763,13 +776,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/anomalies': {
-      id: '/anomalies'
-      path: '/anomalies'
-      fullPath: '/anomalies'
-      preLoaderRoute: typeof AnomaliesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -824,6 +830,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboards'
       fullPath: '/dashboards/'
       preLoaderRoute: typeof DashboardsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anomalies/': {
+      id: '/anomalies/'
+      path: '/anomalies'
+      fullPath: '/anomalies/'
+      preLoaderRoute: typeof AnomaliesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts/': {
@@ -901,6 +914,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboards/$dashboardId'
       fullPath: '/dashboards/$dashboardId'
       preLoaderRoute: typeof DashboardsDashboardIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/anomalies/$incidentId': {
+      id: '/anomalies/$incidentId'
+      path: '/anomalies/$incidentId'
+      fullPath: '/anomalies/$incidentId'
+      preLoaderRoute: typeof AnomaliesIncidentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/alerts/create': {
@@ -985,7 +1005,6 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AnomaliesRoute: AnomaliesRoute,
   ChatRoute: ChatRoute,
   ConnectorsRoute: ConnectorsRoute,
   DeveloperRoute: DeveloperRoute,
@@ -1004,6 +1023,7 @@ const rootRouteChildren: RootRouteChildren = {
   WidgetLabRoute: WidgetLabRoute,
   AlertsRuleIdRoute: AlertsRuleIdRoute,
   AlertsCreateRoute: AlertsCreateRoute,
+  AnomaliesIncidentIdRoute: AnomaliesIncidentIdRoute,
   DashboardsDashboardIdRoute: DashboardsDashboardIdRoute,
   DashboardsTemplatesRoute: DashboardsTemplatesRoute,
   ErrorsErrorTypeRoute: ErrorsErrorTypeRoute,
@@ -1015,6 +1035,7 @@ const rootRouteChildren: RootRouteChildren = {
   ServicesServiceNameRoute: ServicesServiceNameRoute,
   TracesTraceIdRoute: TracesTraceIdRoute,
   AlertsIndexRoute: AlertsIndexRoute,
+  AnomaliesIndexRoute: AnomaliesIndexRoute,
   DashboardsIndexRoute: DashboardsIndexRoute,
   ErrorsIndexRoute: ErrorsIndexRoute,
   InfraIndexRoute: InfraIndexRoute,

@@ -105,6 +105,43 @@ describe("decideTransition", () => {
 		expect(d.transition).toBe("open")
 	})
 
+	it("a manual resolve suppresses re-open for the cooldown, then allows it", () => {
+		// resolveIncidentManually leaves exactly this snapshot behind: pointer
+		// cleared, counters zeroed, lastResolvedAt stamped.
+		const afterManualResolve = state({
+			openIncidentId: null,
+			consecutiveBreaches: 0,
+			consecutiveHealthy: 0,
+			lastResolvedAt: nowMs,
+		})
+
+		// Still breaching right after the manual resolve: counters rebuild but
+		// the cooldown blocks a re-open.
+		const first = decideTransition(
+			afterManualResolve,
+			evaluation("breached"),
+			DEFAULT_STATE_MACHINE_CONFIG,
+			nowMs + 5 * 60 * 1000,
+		)
+		expect(first.transition).toBe("noop")
+		const second = decideTransition(
+			state({ ...afterManualResolve, consecutiveBreaches: first.consecutiveBreaches }),
+			evaluation("breached"),
+			DEFAULT_STATE_MACHINE_CONFIG,
+			nowMs + 10 * 60 * 1000,
+		)
+		expect(second.transition).toBe("noop")
+
+		// Once the cooldown has elapsed a persistent breach opens again.
+		const afterCooldown = decideTransition(
+			state({ ...afterManualResolve, consecutiveBreaches: second.consecutiveBreaches }),
+			evaluation("breached"),
+			DEFAULT_STATE_MACHINE_CONFIG,
+			nowMs + DEFAULT_STATE_MACHINE_CONFIG.cooldownMs + 5 * 60 * 1000,
+		)
+		expect(afterCooldown.transition).toBe("open")
+	})
+
 	it("skipped evaluations leave counters untouched", () => {
 		const d = decideTransition(
 			state({ consecutiveBreaches: 1, consecutiveHealthy: 0 }),

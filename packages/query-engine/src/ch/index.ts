@@ -317,12 +317,18 @@ export {
 	anomalyLogVolumeQuery,
 	anomalyErrorSpikeCurrentQuery,
 	anomalyErrorSpikeBaselineQuery,
+	anomalyTraceSignalTimeseriesQuery,
+	anomalyLogVolumeTimeseriesQuery,
+	anomalyErrorSpikeTimeseriesQuery,
 	matchedHoursOfDay,
 	type AnomalyTraceSignalsOpts,
 	type AnomalyTraceSignalsOutput,
 	type AnomalyLogVolumeOutput,
 	type AnomalyErrorSpikeCurrentOutput,
 	type AnomalyErrorSpikeBaselineOutput,
+	type AnomalyTraceSignalTimeseriesOutput,
+	type AnomalyLogVolumeTimeseriesOutput,
+	type AnomalyErrorSpikeTimeseriesOutput,
 } from "./queries/anomaly"
 
 // Queries — Service Map

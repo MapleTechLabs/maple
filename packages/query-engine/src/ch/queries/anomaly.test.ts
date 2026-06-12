@@ -3,8 +3,11 @@ import { compileCH } from "../compile"
 import {
 	anomalyErrorSpikeBaselineQuery,
 	anomalyErrorSpikeCurrentQuery,
+	anomalyErrorSpikeTimeseriesQuery,
 	anomalyLogVolumeQuery,
+	anomalyLogVolumeTimeseriesQuery,
 	anomalyTraceSignalsQuery,
+	anomalyTraceSignalTimeseriesQuery,
 	matchedHoursOfDay,
 } from "./anomaly"
 
@@ -79,5 +82,63 @@ describe("anomalyErrorSpikeBaselineQuery", () => {
 		expect(sql).toContain("GROUP BY fingerprintHash, deploymentEnv")
 		expect(sql).toContain("LIMIT 5000")
 		expect(sql).toContain("OrgId = 'org_1'")
+	})
+})
+
+const seriesParams = {
+	...baseParams,
+	serviceName: "checkout",
+	deploymentEnv: "prod",
+}
+
+describe("anomalyTraceSignalTimeseriesQuery", () => {
+	it("returns a continuous hourly window for one service/env series", () => {
+		const q = anomalyTraceSignalTimeseriesQuery()
+		const { sql } = compileCH(q, seriesParams)
+		expect(sql).toContain("FROM traces_aggregates_hourly")
+		expect(sql).toContain("IsEntryPoint = 1")
+		expect(sql).toContain("ServiceName = 'checkout'")
+		expect(sql).toContain("DeploymentEnv = 'prod'")
+		expect(sql).toContain("sum(WeightedCount) AS requestCount")
+		expect(sql).toContain("quantilesTDigestWeightedMerge(0.95)(DurationQuantiles)")
+		expect(sql).toContain("OrgId = 'org_1'")
+		// No matched-hours filter — the chart wants every bucket in the window.
+		expect(sql).not.toContain("toHour(Hour)")
+		expect(sql).toContain("GROUP BY hour")
+		expect(sql).toContain("ORDER BY hour ASC")
+		expect(sql).toContain("LIMIT 200")
+	})
+})
+
+describe("anomalyLogVolumeTimeseriesQuery", () => {
+	it("returns hourly error-log volume for one service/env series", () => {
+		const q = anomalyLogVolumeTimeseriesQuery()
+		const { sql } = compileCH(q, seriesParams)
+		expect(sql).toContain("FROM logs_aggregates_hourly")
+		expect(sql).toContain("sumIf(Count, lower(SeverityText) IN ('error', 'fatal', 'critical'))")
+		expect(sql).toContain("ServiceName = 'checkout'")
+		expect(sql).toContain("DeploymentEnv = 'prod'")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).not.toContain("toHour(Hour)")
+		expect(sql).toContain("ORDER BY hour ASC")
+	})
+})
+
+describe("anomalyErrorSpikeTimeseriesQuery", () => {
+	it("buckets one fingerprint/env series by interval", () => {
+		const q = anomalyErrorSpikeTimeseriesQuery()
+		const { sql } = compileCH(q, {
+			...baseParams,
+			fingerprintHash: "12345",
+			deploymentEnv: "prod",
+			bucketSeconds: 1800,
+		})
+		expect(sql).toContain("FROM error_events_by_time")
+		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 1800 SECOND)")
+		expect(sql).toContain("toString(FingerprintHash) = '12345'")
+		expect(sql).toContain("DeploymentEnv = 'prod'")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("GROUP BY bucket")
+		expect(sql).toContain("ORDER BY bucket ASC")
 	})
 })

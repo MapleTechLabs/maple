@@ -6,6 +6,10 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
+import {
+	OpenAnomalyBadge,
+	RelatedAnomaliesSection,
+} from "@/components/anomalies/related-anomalies-section"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueHero } from "@/components/errors/issue-hero"
@@ -14,6 +18,8 @@ import { IssueOccurrenceSparkline } from "@/components/errors/issue-occurrence-s
 import { IssueOccurrencesTable } from "@/components/errors/issue-occurrences-table"
 import { IssueSidebar } from "@/components/errors/issue-sidebar"
 import { IssueTimeline } from "@/components/errors/issue-timeline"
+import { SectionHeader } from "@/components/layout/section-header"
+import { WorkflowBadge } from "@/components/errors/workflow-badge"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -25,45 +31,6 @@ const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 export const Route = effectRoute(createFileRoute("/errors/issues/$issueId"))({
 	component: IssueDetailPage,
 })
-
-const WORKFLOW_BADGE: Record<WorkflowState, { label: string; tone: string }> = {
-	triage: {
-		label: "Triage",
-		tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	},
-	todo: { label: "Todo", tone: "bg-muted text-muted-foreground" },
-	in_progress: {
-		label: "In progress",
-		tone: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-	},
-	in_review: {
-		label: "In review",
-		tone: "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-	},
-	done: { label: "Done", tone: "bg-success/10 text-success" },
-	cancelled: { label: "Cancelled", tone: "bg-muted text-muted-foreground" },
-	wontfix: { label: "Wontfix", tone: "bg-muted text-muted-foreground" },
-}
-
-function WorkflowBadge({ state }: { state: WorkflowState }) {
-	const { label, tone } = WORKFLOW_BADGE[state]
-	return (
-		<Badge variant="outline" className={tone}>
-			{label}
-		</Badge>
-	)
-}
-
-function SectionHeader({ id, label }: { id: string; label: string }) {
-	return (
-		<h2
-			id={id}
-			className="mb-3 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
-		>
-			{label}
-		</h2>
-	)
-}
 
 function IssueDetailPage() {
 	const { issueId: rawIssueId } = Route.useParams()
@@ -221,6 +188,7 @@ function IssueDetailPage() {
 									Incident open
 								</Badge>
 							) : null}
+							<OpenAnomalyBadge issueId={issueId} />
 						</div>
 					}
 					rightSidebar={
@@ -272,6 +240,8 @@ function IssueDetailPage() {
 							<SectionHeader id="incidents-heading" label="Incidents" />
 							<IssueIncidentsTable incidents={incidents} />
 						</section>
+
+						<RelatedAnomaliesSection issueId={issueId} />
 
 						<section aria-labelledby="occurrences-heading">
 							<SectionHeader id="occurrences-heading" label="Latest occurrences" />

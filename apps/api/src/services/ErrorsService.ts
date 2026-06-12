@@ -270,6 +270,18 @@ export interface ErrorsServiceShape {
 		orgId: OrgId,
 		userId: UserId,
 	) => Effect.Effect<ActorDocument, ErrorPersistenceError>
+	readonly recordAnomalyLinkEvent: (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		actorId: ActorId,
+		payload: {
+			readonly action: "linked" | "unlinked"
+			readonly incidentId: string
+			readonly signalType: string
+			readonly serviceName: string
+			readonly deploymentEnv: string
+		},
+	) => Effect.Effect<void, ErrorPersistenceError>
 	readonly listIssueIncidents: (
 		orgId: OrgId,
 		issueId: ErrorIssueId,
@@ -770,6 +782,13 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				}
 				return yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
 			})
+
+		const recordAnomalyLinkEvent: ErrorsServiceShape["recordAnomalyLinkEvent"] = Effect.fn(
+			"ErrorsService.recordAnomalyLinkEvent",
+		)(function* (orgId, issueId, actorId, payload) {
+			yield* Effect.annotateCurrentSpan({ orgId, issueId, action: payload.action })
+			yield* recordEvent(orgId, issueId, actorId, "anomaly_linked", { payload: { ...payload } })
+		})
 
 		const listIssueEvents: ErrorsServiceShape["listIssueEvents"] = Effect.fn(
 			"ErrorsService.listIssueEvents",
@@ -2285,6 +2304,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			commentOnIssue,
 			proposeFix,
 			listIssueEvents,
+			recordAnomalyLinkEvent,
 			registerAgent,
 			listAgents,
 			lookupActor,

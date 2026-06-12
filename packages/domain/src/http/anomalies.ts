@@ -88,6 +88,44 @@ export class AnomalyIncidentsListResponse extends Schema.Class<AnomalyIncidentsL
 	incidents: Schema.Array(AnomalyIncidentDocument),
 }) {}
 
+export class AnomalyIncidentLinkIssueRequest extends Schema.Class<AnomalyIncidentLinkIssueRequest>(
+	"AnomalyIncidentLinkIssueRequest",
+)({
+	/** Issue to link the incident to; null clears an existing link. */
+	issueId: Schema.NullOr(ErrorIssueId),
+}) {}
+
+export const AnomalyTimeseriesUnit = Schema.Literals([
+	"ratio",
+	"milliseconds",
+	"per_minute",
+	"count_per_30m",
+]).annotate({
+	identifier: "@maple/AnomalyTimeseriesUnit",
+	title: "Anomaly Timeseries Unit",
+})
+export type AnomalyTimeseriesUnit = Schema.Schema.Type<typeof AnomalyTimeseriesUnit>
+
+export class AnomalyTimeseriesBucket extends Schema.Class<AnomalyTimeseriesBucket>(
+	"AnomalyTimeseriesBucket",
+)({
+	bucket: IsoDateTimeString,
+	value: Schema.Number,
+	/** Raw sample volume behind the bucket (requests, error logs, or spike count). */
+	sampleCount: Schema.Number,
+}) {}
+
+export class AnomalyIncidentTimeseriesResponse extends Schema.Class<AnomalyIncidentTimeseriesResponse>(
+	"AnomalyIncidentTimeseriesResponse",
+)({
+	signalType: AnomalySignalType,
+	unit: AnomalyTimeseriesUnit,
+	bucketSeconds: Schema.Number,
+	buckets: Schema.Array(AnomalyTimeseriesBucket),
+	baselineMedian: Schema.Number,
+	thresholdValue: Schema.Number,
+}) {}
+
 export class AnomalyDetectorSettingsDocument extends Schema.Class<AnomalyDetectorSettingsDocument>(
 	"AnomalyDetectorSettingsDocument",
 )({
@@ -136,6 +174,15 @@ export class AnomalyIncidentNotFoundError extends Schema.TaggedErrorClass<Anomal
 	{ httpApiStatus: 404 },
 ) {}
 
+export class AnomalyLinkedIssueNotFoundError extends Schema.TaggedErrorClass<AnomalyLinkedIssueNotFoundError>()(
+	"@maple/http/anomalies/AnomalyLinkedIssueNotFoundError",
+	{
+		message: Schema.String,
+		issueId: ErrorIssueId,
+	},
+	{ httpApiStatus: 404 },
+) {}
+
 // ---------------------------------------------------------------------------
 // Query schemas
 // ---------------------------------------------------------------------------
@@ -145,11 +192,17 @@ const IncidentListQuery = Schema.Struct({
 	signalType: Schema.optional(AnomalySignalType),
 	service: Schema.optional(Schema.String),
 	deploymentEnv: Schema.optional(Schema.String),
+	errorIssueId: Schema.optional(ErrorIssueId),
 	startTime: Schema.optional(IsoDateTimeString),
 	endTime: Schema.optional(IsoDateTimeString),
 	limit: Schema.optional(
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 500 })),
 	),
+})
+
+const IncidentTimeseriesQuery = Schema.Struct({
+	startTime: Schema.optional(IsoDateTimeString),
+	endTime: Schema.optional(IsoDateTimeString),
 })
 
 // ---------------------------------------------------------------------------
@@ -169,6 +222,29 @@ export class AnomaliesApiGroup extends HttpApiGroup.make("anomalies")
 			params: { incidentId: AnomalyIncidentId },
 			success: AnomalyIncidentDocument,
 			error: [AnomalyPersistenceError, AnomalyIncidentNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getIncidentTimeseries", "/incidents/:incidentId/timeseries", {
+			params: { incidentId: AnomalyIncidentId },
+			query: IncidentTimeseriesQuery,
+			success: AnomalyIncidentTimeseriesResponse,
+			error: [AnomalyPersistenceError, AnomalyIncidentNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("resolveIncident", "/incidents/:incidentId/resolve", {
+			params: { incidentId: AnomalyIncidentId },
+			success: AnomalyIncidentDocument,
+			error: [AnomalyPersistenceError, AnomalyIncidentNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("setIncidentIssue", "/incidents/:incidentId/issue", {
+			params: { incidentId: AnomalyIncidentId },
+			payload: AnomalyIncidentLinkIssueRequest,
+			success: AnomalyIncidentDocument,
+			error: [AnomalyPersistenceError, AnomalyIncidentNotFoundError, AnomalyLinkedIssueNotFoundError],
 		}),
 	)
 	.add(

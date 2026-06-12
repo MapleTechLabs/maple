@@ -5,11 +5,16 @@ import {
 	AnomalyIncidentDocument,
 	AnomalyIncidentNotFoundError,
 	AnomalyIncidentsListResponse,
+	AnomalyIncidentTimeseriesResponse,
+	AnomalyLinkedIssueNotFoundError,
+	AnomalyTimeseriesBucket,
 	type AnomalyIncidentId,
 	type AnomalyIncidentStatus,
 	AnomalyPersistenceError,
 	type AnomalySensitivity,
 	AnomalySignalType,
+	type AnomalyTimeseriesUnit,
+	type ErrorIssueId,
 	type OrgId,
 	RoleName,
 	type UserId,
@@ -127,6 +132,7 @@ export interface AnomalyDetectionServiceShape {
 			readonly signalType?: AnomalySignalType
 			readonly service?: string
 			readonly deploymentEnv?: string
+			readonly errorIssueId?: ErrorIssueId
 			readonly startTime?: string
 			readonly endTime?: string
 			readonly limit?: number
@@ -136,6 +142,26 @@ export interface AnomalyDetectionServiceShape {
 		orgId: OrgId,
 		incidentId: AnomalyIncidentId,
 	) => Effect.Effect<AnomalyIncidentDocument, AnomalyPersistenceError | AnomalyIncidentNotFoundError>
+	readonly resolveIncidentManually: (
+		orgId: OrgId,
+		incidentId: AnomalyIncidentId,
+	) => Effect.Effect<AnomalyIncidentDocument, AnomalyPersistenceError | AnomalyIncidentNotFoundError>
+	readonly setIncidentIssue: (
+		orgId: OrgId,
+		incidentId: AnomalyIncidentId,
+		issueId: ErrorIssueId | null,
+	) => Effect.Effect<
+		{ readonly incident: AnomalyIncidentDocument; readonly previousIssueId: ErrorIssueId | null },
+		AnomalyPersistenceError | AnomalyIncidentNotFoundError | AnomalyLinkedIssueNotFoundError
+	>
+	readonly getIncidentTimeseries: (
+		tenant: TenantContext,
+		incidentId: AnomalyIncidentId,
+		opts: { readonly startTime?: string; readonly endTime?: string },
+	) => Effect.Effect<
+		AnomalyIncidentTimeseriesResponse,
+		AnomalyPersistenceError | AnomalyIncidentNotFoundError
+	>
 	readonly getSettings: (
 		orgId: OrgId,
 	) => Effect.Effect<AnomalyDetectorSettingsDocument, AnomalyPersistenceError>
@@ -325,6 +351,7 @@ export class AnomalyDetectionService extends Context.Service<
 				opts.signalType ? eq(anomalyIncidents.signalType, opts.signalType) : undefined,
 				opts.service ? eq(anomalyIncidents.serviceName, opts.service) : undefined,
 				opts.deploymentEnv ? eq(anomalyIncidents.deploymentEnv, opts.deploymentEnv) : undefined,
+				opts.errorIssueId ? eq(anomalyIncidents.errorIssueId, opts.errorIssueId) : undefined,
 				opts.startTime
 					? gte(anomalyIncidents.lastTriggeredAt, Date.parse(opts.startTime))
 					: undefined,
@@ -341,10 +368,10 @@ export class AnomalyDetectionService extends Context.Service<
 			return new AnomalyIncidentsListResponse({ incidents: rows.map(incidentToDocument) })
 		})
 
-		const getIncident: AnomalyDetectionServiceShape["getIncident"] = Effect.fn(
-			"AnomalyDetectionService.getIncident",
-		)(function* (orgId, incidentId) {
-			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+		const requireIncidentRow = Effect.fn("AnomalyDetectionService.requireIncidentRow")(function* (
+			orgId: OrgId,
+			incidentId: AnomalyIncidentId,
+		) {
 			const rows = yield* dbExecute((db) =>
 				db
 					.select()
@@ -361,7 +388,245 @@ export class AnomalyDetectionService extends Context.Service<
 					}),
 				)
 			}
+			return row
+		})
+
+		const getIncident: AnomalyDetectionServiceShape["getIncident"] = Effect.fn(
+			"AnomalyDetectionService.getIncident",
+		)(function* (orgId, incidentId) {
+			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+			const row = yield* requireIncidentRow(orgId, incidentId)
 			return incidentToDocument(row)
+		})
+
+		// -----------------------------------------------------------------
+		// Incident mutations
+		// -----------------------------------------------------------------
+
+		const resolveIncidentManually: AnomalyDetectionServiceShape["resolveIncidentManually"] = Effect.fn(
+			"AnomalyDetectionService.resolveIncidentManually",
+		)(function* (orgId, incidentId) {
+			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+			const row = yield* requireIncidentRow(orgId, incidentId)
+			if (row.status === "resolved") return incidentToDocument(row)
+			const nowMs = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db
+					.update(anomalyIncidents)
+					.set({
+						status: "resolved",
+						resolveReason: "manual",
+						resolvedAt: nowMs,
+						updatedAt: nowMs,
+					})
+					.where(
+						and(
+							eq(anomalyIncidents.orgId, orgId),
+							eq(anomalyIncidents.id, incidentId),
+							// Guard against a concurrent tick resolving first.
+							eq(anomalyIncidents.status, "open"),
+						),
+					),
+			)
+			// Detector-state consistency: clear the open pointer and start the
+			// cooldown so the next tick doesn't immediately re-open the series.
+			// Guarded on openIncidentId so a newer incident's state is never
+			// clobbered.
+			yield* dbExecute((db) =>
+				db
+					.update(anomalyDetectorStates)
+					.set({
+						openIncidentId: null,
+						lastResolvedAt: nowMs,
+						consecutiveBreaches: 0,
+						consecutiveHealthy: 0,
+						updatedAt: nowMs,
+					})
+					.where(
+						and(
+							eq(anomalyDetectorStates.orgId, orgId),
+							eq(anomalyDetectorStates.detectorKey, row.detectorKey),
+							eq(anomalyDetectorStates.openIncidentId, incidentId),
+						),
+					),
+			)
+			const refreshed = yield* requireIncidentRow(orgId, incidentId)
+			return incidentToDocument(refreshed)
+		})
+
+		const setIncidentIssue: AnomalyDetectionServiceShape["setIncidentIssue"] = Effect.fn(
+			"AnomalyDetectionService.setIncidentIssue",
+		)(function* (orgId, incidentId, issueId) {
+			yield* Effect.annotateCurrentSpan({ orgId, incidentId, issueId: issueId ?? "(none)" })
+			const row = yield* requireIncidentRow(orgId, incidentId)
+			if (issueId !== null) {
+				const issueRows = yield* dbExecute((db) =>
+					db
+						.select({ id: errorIssues.id })
+						.from(errorIssues)
+						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId)))
+						.limit(1),
+				)
+				if (issueRows.length === 0) {
+					return yield* Effect.fail(
+						new AnomalyLinkedIssueNotFoundError({
+							message: `No such error issue: '${issueId}'`,
+							issueId,
+						}),
+					)
+				}
+			}
+			const nowMs = yield* Clock.currentTimeMillis
+			yield* dbExecute((db) =>
+				db
+					.update(anomalyIncidents)
+					.set({ errorIssueId: issueId, updatedAt: nowMs })
+					.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId))),
+			)
+			const refreshed = yield* requireIncidentRow(orgId, incidentId)
+			return {
+				incident: incidentToDocument(refreshed),
+				previousIssueId: row.errorIssueId ?? null,
+			}
+		})
+
+		// -----------------------------------------------------------------
+		// Incident timeseries — observed-vs-baseline chart data
+		// -----------------------------------------------------------------
+
+		/** Max chart window; matches the detector's own baseline horizon. */
+		const TIMESERIES_MAX_WINDOW_MS = BASELINE_WINDOW_MS
+
+		const getIncidentTimeseries: AnomalyDetectionServiceShape["getIncidentTimeseries"] = Effect.fn(
+			"AnomalyDetectionService.getIncidentTimeseries",
+		)(function* (tenant, incidentId, opts) {
+			const orgId = tenant.orgId
+			yield* Effect.annotateCurrentSpan({ orgId, incidentId })
+			const row = yield* requireIncidentRow(orgId, incidentId)
+			const nowMs = yield* Clock.currentTimeMillis
+
+			const defaultStart = row.firstTriggeredAt - 24 * HOUR_MS
+			const defaultEnd = Math.min(nowMs, (row.resolvedAt ?? nowMs) + 2 * HOUR_MS)
+			const requestedStart = opts.startTime !== undefined ? Date.parse(opts.startTime) : defaultStart
+			const requestedEnd = opts.endTime !== undefined ? Date.parse(opts.endTime) : defaultEnd
+			const endMs = Math.min(Number.isFinite(requestedEnd) ? requestedEnd : defaultEnd, nowMs)
+			const startUnclamped = Number.isFinite(requestedStart) ? requestedStart : defaultStart
+			const startMs = Math.max(
+				startUnclamped < endMs ? startUnclamped : defaultStart,
+				endMs - TIMESERIES_MAX_WINDOW_MS,
+			)
+
+			const currentHourStartMs = Math.floor(nowMs / HOUR_MS) * HOUR_MS
+			const trailingMinutes = Math.max(1, Math.floor((nowMs - currentHourStartMs) / 60_000))
+			/** Per-minute rate matching evaluateGoldenSignals: sealed hours divide by 60, the in-progress hour by elapsed minutes. */
+			const perMinute = (count: number, bucketStartMs: number) =>
+				count / (bucketStartMs >= currentHourStartMs ? trailingMinutes : 60)
+
+			const queryWindow = {
+				orgId,
+				startTime: toTinybirdDateTime(startMs),
+				endTime: toTinybirdDateTime(endMs),
+			}
+
+			let unit: AnomalyTimeseriesUnit
+			let bucketSeconds: number
+			let buckets: AnomalyTimeseriesBucket[]
+
+			if (row.signalType === "error_spike") {
+				unit = "count_per_30m"
+				bucketSeconds = SPIKE_WINDOW_MS / 1000
+				const compiled = CH.compile(CH.anomalyErrorSpikeTimeseriesQuery(), {
+					...queryWindow,
+					fingerprintHash: row.fingerprintHash ?? "",
+					deploymentEnv: row.deploymentEnv,
+					bucketSeconds,
+				})
+				const rows = yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "anomalyIncidentTimeseries",
+					})
+					.pipe(Effect.mapError(makePersistenceError))
+				buckets = rows.map((r) => {
+					const count = Number(r.count ?? 0)
+					return new AnomalyTimeseriesBucket({
+						bucket: isoFromEpoch(parseWarehouseDateTime(String(r.bucket ?? ""))),
+						value: count,
+						sampleCount: count,
+					})
+				})
+			} else if (row.signalType === "log_volume") {
+				unit = "per_minute"
+				bucketSeconds = 3600
+				const compiled = CH.compile(CH.anomalyLogVolumeTimeseriesQuery(), {
+					...queryWindow,
+					serviceName: row.serviceName,
+					deploymentEnv: row.deploymentEnv,
+				})
+				const rows = yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "anomalyIncidentTimeseries",
+					})
+					.pipe(Effect.mapError(makePersistenceError))
+				buckets = rows.map((r) => {
+					const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
+					const errorLogCount = Number(r.errorLogCount ?? 0)
+					return new AnomalyTimeseriesBucket({
+						bucket: isoFromEpoch(hourMs),
+						value: perMinute(errorLogCount, hourMs),
+						sampleCount: errorLogCount,
+					})
+				})
+			} else {
+				bucketSeconds = 3600
+				const compiled = CH.compile(CH.anomalyTraceSignalTimeseriesQuery(), {
+					...queryWindow,
+					serviceName: row.serviceName,
+					deploymentEnv: row.deploymentEnv,
+				})
+				const rows = yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "anomalyIncidentTimeseries",
+					})
+					.pipe(Effect.mapError(makePersistenceError))
+				const signalType = row.signalType
+				unit =
+					signalType === "error_rate"
+						? "ratio"
+						: signalType === "latency_p95"
+							? "milliseconds"
+							: "per_minute"
+				buckets = rows.map((r) => {
+					const hourMs = parseWarehouseDateTime(String(r.hour ?? ""))
+					const requestCount = Number(r.requestCount ?? 0)
+					const errorCount = Number(r.errorCount ?? 0)
+					const p95Ms = Number(r.p95Ms ?? 0)
+					const value =
+						signalType === "error_rate"
+							? requestCount > 0
+								? errorCount / requestCount
+								: 0
+							: signalType === "latency_p95"
+								? p95Ms
+								: perMinute(requestCount, hourMs)
+					return new AnomalyTimeseriesBucket({
+						bucket: isoFromEpoch(hourMs),
+						value,
+						sampleCount: requestCount,
+					})
+				})
+			}
+
+			return new AnomalyIncidentTimeseriesResponse({
+				signalType: row.signalType,
+				unit,
+				bucketSeconds,
+				buckets,
+				baselineMedian: row.baselineMedian,
+				thresholdValue: row.thresholdValue,
+			})
 		})
 
 		// -----------------------------------------------------------------
@@ -785,7 +1050,7 @@ export class AnomalyDetectionService extends Context.Service<
 						}
 					} else if (transition === "continue" && openIncidentId !== null) {
 						const incidentId = openIncidentId
-						yield* dbExecute((db) =>
+						const updated = yield* dbExecute((db) =>
 							db
 								.update(anomalyIncidents)
 								.set({
@@ -799,10 +1064,22 @@ export class AnomalyDetectionService extends Context.Service<
 									and(
 										eq(anomalyIncidents.orgId, orgId),
 										eq(anomalyIncidents.id, incidentId),
+										// Guard against a manual resolve landing between the
+										// state read and this update — never "continue" a
+										// resolved incident.
+										eq(anomalyIncidents.status, "open"),
 									),
 								),
 						)
-						stats.incidentsContinued += 1
+						if ((updated as { rowsAffected?: number }).rowsAffected === 0) {
+							// Externally resolved (manual resolve raced the tick): drop the
+							// pointer and start the cooldown locally so the state upsert
+							// below doesn't re-point at the resolved incident.
+							openIncidentId = null
+							lastResolvedAt = nowMs
+						} else {
+							stats.incidentsContinued += 1
+						}
 					} else if (transition === "resolve" && openIncidentId !== null) {
 						const incidentId = openIncidentId
 						yield* dbExecute((db) =>
@@ -995,6 +1272,9 @@ export class AnomalyDetectionService extends Context.Service<
 			runTick,
 			listIncidents,
 			getIncident,
+			resolveIncidentManually,
+			setIncidentIssue,
+			getIncidentTimeseries,
 			getSettings,
 			updateSettings,
 		} satisfies AnomalyDetectionServiceShape

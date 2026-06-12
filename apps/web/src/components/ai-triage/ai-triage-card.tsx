@@ -1,8 +1,10 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
+
+import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -68,13 +70,8 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 
 	const runActive = run?.status === "queued" || run?.status === "running"
 
-	// Poll the background run while it's active (same pattern as the
-	// ClickHouse schema-apply section).
-	useEffect(() => {
-		if (!runActive) return
-		const id = setInterval(() => refreshRuns(), 3000)
-		return () => clearInterval(id)
-	}, [runActive, refreshRuns])
+	// Poll the background run while it's active.
+	useIntervalRefresh(refreshRuns, { intervalMs: 3000, enabled: runActive })
 
 	const startRun = async () => {
 		if (incidentId === null) return
