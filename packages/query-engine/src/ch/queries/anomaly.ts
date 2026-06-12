@@ -261,7 +261,7 @@ export function anomalyErrorSpikeTimeseriesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(param.string("fingerprintHash")),
+			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),

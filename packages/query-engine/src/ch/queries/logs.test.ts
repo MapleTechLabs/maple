@@ -162,11 +162,14 @@ describe("logsTimeseriesQuery MV routing", () => {
 // ---------------------------------------------------------------------------
 
 describe("logsBreakdownQuery", () => {
-	it("compiles breakdown by service", () => {
+	it("uses the hourly aggregate for full interior hours when grouping by service", () => {
 		const q = logsBreakdownQuery({ groupBy: "service" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("UNION ALL")
+		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("FROM logs")
 		expect(sql).toContain("ServiceName AS name")
+		expect(sql).toContain("sum(Count) AS count")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("GROUP BY name")
 		expect(sql).toContain("ORDER BY count DESC")
@@ -177,6 +180,7 @@ describe("logsBreakdownQuery", () => {
 	it("compiles breakdown by severity", () => {
 		const q = logsBreakdownQuery({ groupBy: "severity" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("SeverityText AS name")
 	})
 
@@ -185,6 +189,18 @@ describe("logsBreakdownQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("SeverityText = 'ERROR'")
+	})
+
+	it("falls back to raw logs for contains-mode environment match", () => {
+		const q = logsBreakdownQuery({
+			groupBy: "service",
+			environments: ["prod"],
+			matchModes: { deploymentEnv: "contains" },
+		})
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM logs")
+		expect(sql).not.toContain("logs_aggregates_hourly")
+		expect(sql).toContain("positionCaseInsensitive(ResourceAttributes['deployment.environment'], 'prod')")
 	})
 
 	it("applies custom limit", () => {
@@ -199,11 +215,19 @@ describe("logsBreakdownQuery", () => {
 // ---------------------------------------------------------------------------
 
 describe("logsCountQuery", () => {
-	it("compiles basic count", () => {
+	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = logsCountQuery({})
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("UNION ALL")
+		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("FROM logs")
+		expect(sql).toContain("sum(Count) AS total")
 		expect(sql).toContain("count() AS total")
+		expect(sql).toContain("sum(total) AS total")
+		expect(sql).toContain("Hour >= if(")
+		expect(sql).toContain("Hour < toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
+		expect(sql).toContain("TimestampTime < if(")
+		expect(sql).toContain("TimestampTime >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 		expect(sql).toContain("FORMAT JSON")
 		expect(sql).not.toContain("GROUP BY")
 		expect(sql).not.toContain("ORDER BY")
@@ -212,18 +236,24 @@ describe("logsCountQuery", () => {
 	it("applies search filter", () => {
 		const q = logsCountQuery({ search: "exception" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM logs")
+		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain("Body ILIKE '%exception%'")
 	})
 
 	it("applies traceId filter", () => {
 		const q = logsCountQuery({ traceId: "abc123" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM logs")
+		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain("TraceId = 'abc123'")
 	})
 
 	it("applies all filters simultaneously", () => {
 		const q = logsCountQuery({ serviceName: "api", severity: "ERROR", search: "timeout" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM logs")
+		expect(sql).not.toContain("logs_aggregates_hourly")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("SeverityText = 'ERROR'")
 		expect(sql).toContain("Body ILIKE '%timeout%'")
@@ -365,15 +395,20 @@ describe("getLogByKeyQuery", () => {
 // ---------------------------------------------------------------------------
 
 describe("errorRateByServiceQuery", () => {
-	it("compiles error rate by service", () => {
+	it("uses the hourly aggregate for full interior hours and raw logs for exact edges", () => {
 		const q = errorRateByServiceQuery()
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("UNION ALL")
+		expect(sql).toContain("FROM logs_aggregates_hourly")
 		expect(sql).toContain("FROM logs")
-		expect(sql).toContain("ServiceName AS serviceName")
-		expect(sql).toContain("count() AS totalLogs")
+		expect(sql).toContain("sum(Count) AS bucketTotalLogs")
+		expect(sql).toContain("sumIf(Count, SeverityText IN ('ERROR', 'FATAL')) AS bucketErrorLogs")
+		expect(sql).toContain("sum(bucketTotalLogs) AS totalLogs")
+		expect(sql).toContain("sum(bucketErrorLogs) AS errorLogs")
+		expect(sql).toContain("count() AS bucketTotalLogs")
 		expect(sql).toContain("countIf(")
 		expect(sql).toContain("IN ('ERROR', 'FATAL')")
-		expect(sql).toContain("AS errorLogs")
+		expect(sql).toContain("AS bucketErrorLogs")
 		expect(sql).toContain("round(")
 		expect(sql).toContain("AS errorRate")
 		expect(sql).toContain("GROUP BY serviceName")

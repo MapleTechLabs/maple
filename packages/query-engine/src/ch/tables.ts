@@ -228,6 +228,19 @@ export const MetricCatalog = table("metric_catalog", {
 	LastSeen: T.dateTime,
 })
 
+export const SpanMetricsCallsHourly = table("span_metrics_calls_hourly", {
+	OrgId: T.string,
+	Hour: T.dateTime,
+	ServiceName: T.string,
+	MetricName: T.string,
+	SpanKind: T.string,
+	AttrFingerprint: T.uint64,
+	ResourceFingerprint: T.uint64,
+	StartTimeUnix: T.dateTime64,
+	// The aggregate state column is typed by its finalized scalar value.
+	LastValue: T.float64,
+})
+
 export const AttributeKeysHourly = table("attribute_keys_hourly", {
 	OrgId: T.string,
 	Hour: T.dateTime,

@@ -186,6 +186,11 @@ export function inList(expr: Expr<string>, values: readonly string[]): Condition
 	return makeCond(raw(`${compile(expr.toFragment())} IN (${escaped})`))
 }
 
+export function inExprList<T>(expr: Expr<T>, values: readonly Expr<T>[]): Condition {
+	const escaped = values.map((v) => compile(v.toFragment())).join(", ")
+	return makeCond(raw(`${compile(expr.toFragment())} IN (${escaped})`))
+}
+
 export function notInList(expr: Expr<string>, values: readonly string[]): Condition {
 	const escaped = values.map((v) => compile(str(v))).join(", ")
 	return makeCond(raw(`${compile(expr.toFragment())} NOT IN (${escaped})`))

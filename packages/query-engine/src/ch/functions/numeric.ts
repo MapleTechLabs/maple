@@ -7,7 +7,7 @@ import type { Expr } from "../expr"
 
 export const toFloat64OrZero = defineFn<[Expr<string>], number>("toFloat64OrZero")
 export const toUInt16OrZero = defineFn<[Expr<string>], number>("toUInt16OrZero")
-export const toUInt64 = defineFn<[Expr<number>], number>("toUInt64")
+export const toUInt64 = defineFn<[Expr<number> | Expr<string>], number>("toUInt64")
 export const toInt64 = defineFn<[Expr<number>], number>("toInt64")
 
 // ---------------------------------------------------------------------------

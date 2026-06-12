@@ -9,9 +9,9 @@ import type { MetricType } from "../../query-engine"
 import * as CH from "../expr"
 import * as T from "../types"
 import { param } from "../param"
-import { from } from "../query"
+import { from, type CHQuery } from "../query"
 import { table } from "../table"
-import { MetricsSum, MetricCatalog } from "../tables"
+import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
 import { compileCH } from "../compile"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 
@@ -79,6 +79,8 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 // ---------------------------------------------------------------------------
 
 export interface MetricsRateTimeseriesOpts {
+	metricName?: string
+	bucketSeconds?: number
 	serviceName?: string
 	groupByAttributeKey?: string
 	attributeKey?: string
@@ -94,7 +96,122 @@ export interface MetricsRateTimeseriesOutput {
 	readonly dataPointCount: number
 }
 
-export function metricsTimeseriesRateQuery(opts: MetricsRateTimeseriesOpts) {
+const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls"])
+
+function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
+	return (
+		opts.metricName !== undefined &&
+		SPAN_METRICS_CALLS_NAMES.has(opts.metricName) &&
+		opts.bucketSeconds !== undefined &&
+		opts.bucketSeconds >= 3600 &&
+		opts.bucketSeconds % 3600 === 0 &&
+		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
+		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind")
+	)
+}
+
+function metricsTimeseriesRateFromSpanMetricsCallsHourly(
+	opts: MetricsRateTimeseriesOpts,
+): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+	const bucket = CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), param.int("bucketSeconds"))
+	const previousBucket = CH.intervalSub(bucket, param.int("bucketSeconds"))
+	const endBucket = CH.toStartOfInterval(CH.toDateTime(param.dateTime("endTime")), param.int("bucketSeconds"))
+
+	const hourlySql = compileCH(
+		from(SpanMetricsCallsHourly)
+			.select(($) => ({
+				Hour: $.Hour,
+				ServiceName: $.ServiceName,
+				MetricName: $.MetricName,
+				SpanKind: $.SpanKind,
+				AttrFingerprint: $.AttrFingerprint,
+				ResourceFingerprint: $.ResourceFingerprint,
+				StartTimeUnix: $.StartTimeUnix,
+				Value: CH.rawExpr<number>("argMaxMerge(LastValue)"),
+			}))
+			.where(($) => [
+				$.OrgId.eq(param.string("orgId")),
+				$.MetricName.eq(param.string("metricName")),
+				$.Hour.gte(previousBucket),
+				$.Hour.lte(endBucket),
+				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+				CH.when(opts.attributeKey === "span.kind" ? opts.attributeValue : undefined, (v: string) =>
+					$.SpanKind.eq(v),
+				),
+			])
+			.groupBy(
+				"Hour",
+				"ServiceName",
+				"MetricName",
+				"SpanKind",
+				"AttrFingerprint",
+				"ResourceFingerprint",
+				"StartTimeUnix",
+			),
+		{},
+		{ skipFormat: true },
+	).sql
+
+	const hourlyValues = table("hourly_values", {
+		Hour: T.dateTime,
+		ServiceName: T.string,
+		MetricName: T.string,
+		SpanKind: T.string,
+		AttrFingerprint: T.uint64,
+		ResourceFingerprint: T.uint64,
+		StartTimeUnix: T.dateTime64,
+		Value: T.float64,
+	})
+
+	const PARTITION =
+		"PARTITION BY ServiceName, MetricName, SpanKind, AttrFingerprint, ResourceFingerprint, StartTimeUnix"
+	const FRAME = `${PARTITION} ORDER BY Hour ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW`
+	const deltasSql = compileCH(
+		from(hourlyValues)
+			.select(($) => ({
+				Hour: $.Hour,
+				ServiceName: $.ServiceName,
+				SpanKind: $.SpanKind,
+				delta: CH.rawExpr<number>(`Value - lagInFrame(Value, 1, Value) OVER (${FRAME})`),
+			}))
+			.where(($) => [$.Hour.gte(bucket)]),
+		{},
+		{ skipFormat: true },
+	).sql
+
+	const deltas = table("with_deltas", {
+		Hour: T.dateTime,
+		ServiceName: T.string,
+		SpanKind: T.string,
+		delta: T.float64,
+	})
+
+	const q = from(deltas)
+		.withCTE("hourly_values", hourlySql)
+		.withCTE("with_deltas", deltasSql)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+			serviceName: $.ServiceName,
+			attributeValue: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : CH.lit(""),
+			rateValue: CH.sumIf($.delta.div(param.int("bucketSeconds")), $.delta.gte(0)),
+			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
+			dataPointCount: CH.count(),
+		}))
+		.where(($) => [$.Hour.gte(bucket), $.Hour.lte(endBucket)])
+
+	return (opts.groupByAttributeKey === "span.kind"
+		? q.groupBy("bucket", "serviceName", "attributeValue")
+		: q.groupBy("bucket", "serviceName")
+	)
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+export function metricsTimeseriesRateQuery(
+	opts: MetricsRateTimeseriesOpts,
+): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
+
 	// CTE: compute deltas using window functions.
 	//
 	// The PARTITION BY must isolate each emitting process: a cumulative counter
@@ -118,6 +235,7 @@ export function metricsTimeseriesRateQuery(opts: MetricsRateTimeseriesOpts) {
 		"cityHash64(mapKeys(Attributes), mapValues(Attributes)), " +
 		"cityHash64(mapKeys(ResourceAttributes), mapValues(ResourceAttributes)), " +
 		"StartTimeUnix"
+	const ONE_PRECEDING_FRAME = `${PARTITION} ORDER BY TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW`
 	const cteSql = compileCH(
 		from(MetricsSum)
 			.select(($) => ({
@@ -126,10 +244,10 @@ export function metricsTimeseriesRateQuery(opts: MetricsRateTimeseriesOpts) {
 				Attributes: $.Attributes,
 				Value: $.Value,
 				delta: CH.rawExpr<number>(
-					`Value - lagInFrame(Value, 1, Value) OVER (${PARTITION} ORDER BY TimeUnix ASC)`,
+					`Value - lagInFrame(Value, 1, Value) OVER (${ONE_PRECEDING_FRAME})`,
 				),
 				time_delta: CH.rawExpr<number>(
-					`toFloat64(toUnixTimestamp64Nano(TimeUnix) - toUnixTimestamp64Nano(lagInFrame(TimeUnix, 1, TimeUnix) OVER (${PARTITION} ORDER BY TimeUnix ASC))) / 1000000000.0`,
+					`toFloat64(toUnixTimestamp64Nano(TimeUnix) - toUnixTimestamp64Nano(lagInFrame(TimeUnix, 1, TimeUnix) OVER (${ONE_PRECEDING_FRAME}))) / 1000000000.0`,
 				),
 			}))
 			.where(($) => [

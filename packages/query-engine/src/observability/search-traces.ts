@@ -18,10 +18,12 @@ const MAX_OFFSET = 1_000_000
 /**
  * Search for spans matching the given criteria.
  *
- * When `spanName` is provided (and `rootOnly` is not true), queries the raw
- * `traces` table (via the `span_search` pipe) to find matching spans. This
- * avoids the unreliable EXISTS subquery in the `list_traces` pipe and returns
- * the **matched span** data instead of root span summaries.
+ * When `spanName` is provided (and `rootOnly` is not true), queries the
+ * `span_search` pipe to find matching spans. Broad searches use `traces`; a
+ * concrete trace-id search uses `trace_detail_spans`, which is sorted for that
+ * lookup pattern. This avoids the unreliable EXISTS subquery in the
+ * `list_traces` pipe and returns the **matched span** data instead of root
+ * span summaries.
  *
  * When searching by root-level fields only (service, error, duration), falls
  * back to the `list_traces` pipe for fast MV-backed queries.
@@ -67,9 +69,9 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 
 /**
  * Span-level filtering via the `span_search` pipe. Returns matched span data,
- * not root span summaries. The pipe compiles to a raw `traces` scan with the
- * supplied filters (span name exact/contains, service, error, duration bounds,
- * http method, trace id, and arbitrary attribute filters).
+ * not root span summaries. The pipe applies span name exact/contains, service,
+ * error, duration bounds, http method, trace id, and arbitrary attribute
+ * filters; trace-id searches compile to the TraceId-sorted detail table.
  */
 const spanLevelSearch = (
 	executor: WarehouseExecutorShape,

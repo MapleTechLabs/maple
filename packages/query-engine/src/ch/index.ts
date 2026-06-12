@@ -43,6 +43,7 @@ export {
 	when,
 	whenTrue,
 	inList,
+	inExprList,
 	exists,
 	inSubquery,
 	outerRef,

@@ -20,6 +20,20 @@ import {
 } from "../tables"
 import { buildProjectedMapExpr } from "./query-helpers"
 
+function errorEventsTableForRecentScan(opts: {
+	fingerprintHashes?: readonly string[]
+}): typeof ErrorEvents | typeof ErrorEventsByTime {
+	// Fingerprint-filtered lookups align with error_events' key
+	// (OrgId, FingerprintHash, Timestamp). Broad recent-window scans align with
+	// error_events_by_time's key (OrgId, Timestamp, FingerprintHash).
+	return opts.fingerprintHashes?.length ? ErrorEvents : ErrorEventsByTime
+}
+
+const fingerprintHashLiteral = (hash: string) => CH.toUInt64(CH.lit(hash))
+const fingerprintHashEq = (expr: CH.Expr<number>, hash: string) => expr.eq(fingerprintHashLiteral(hash))
+const fingerprintHashIn = (expr: CH.Expr<number>, hashes: readonly string[]) =>
+	CH.inExprList(expr, hashes.map(fingerprintHashLiteral))
+
 // ---------------------------------------------------------------------------
 // Errors by type
 //
@@ -49,7 +63,7 @@ export interface ErrorsByTypeOutput {
 }
 
 export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
-	return from(ErrorEvents)
+	return from(errorEventsTableForRecentScan(opts))
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			errorLabel: CH.any_($.ErrorLabel),
@@ -67,7 +81,7 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 			opts.fingerprintHashes?.length
-				? CH.inList(CH.toString_($.FingerprintHash), opts.fingerprintHashes)
+				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 		])
 		.groupBy("fingerprintHash")
@@ -98,7 +112,7 @@ export function errorsTimeseriesQuery(opts: ErrorsTimeseriesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(opts.fingerprintHash),
+			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
@@ -542,7 +556,8 @@ export interface ErrorsFacetsOutput {
 }
 
 export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFacetsOutput> {
-	const baseWhere = ($: ColumnAccessor<typeof ErrorEvents.columns>): Array<CH.Condition | undefined> => [
+	const table = errorEventsTableForRecentScan(opts)
+	const baseWhere = ($: ColumnAccessor<typeof table.columns>): Array<CH.Condition | undefined> => [
 		$.OrgId.eq(param.string("orgId")),
 		$.Timestamp.gte(param.dateTime("startTime")),
 		$.Timestamp.lte(param.dateTime("endTime")),
@@ -550,11 +565,11 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 		opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 		opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 		opts.fingerprintHashes?.length
-			? CH.inList(CH.toString_($.FingerprintHash), opts.fingerprintHashes)
+			? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 			: undefined,
 	]
 
-	const serviceQuery = from(ErrorEvents)
+	const serviceQuery = from(table)
 		.select(($) => ({
 			name: $.ServiceName,
 			count: CH.count(),
@@ -565,7 +580,7 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 		.orderBy(["count", "desc"])
 		.limit(100)
 
-	const envQuery = from(ErrorEvents)
+	const envQuery = from(table)
 		.select(($) => ({
 			name: $.DeploymentEnv,
 			count: CH.count(),
@@ -577,7 +592,7 @@ export function errorsFacetsQuery(opts: ErrorsFacetsOpts): CHUnionQuery<ErrorsFa
 		.limit(100)
 
 	// error_type facet groups by the human-readable ErrorLabel (display facet).
-	const errorTypeQuery = from(ErrorEvents)
+	const errorTypeQuery = from(table)
 		.select(($) => ({
 			name: $.ErrorLabel,
 			count: CH.count(),
@@ -611,7 +626,7 @@ export interface ErrorsSummaryOutput {
 }
 
 export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
-	const errorSub = from(ErrorEvents)
+	const errorSub = from(errorEventsTableForRecentScan(opts))
 		.select(($) => ({
 			totalErrors: CH.count(),
 			affectedServicesCount: CH.uniq($.ServiceName),
@@ -625,7 +640,7 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 			opts.fingerprintHashes?.length
-				? CH.inList(CH.toString_($.FingerprintHash), opts.fingerprintHashes)
+				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 		])
 
@@ -720,12 +735,10 @@ export interface ErrorIssuesOutput {
 }
 
 export function errorIssuesQuery(opts: ErrorIssuesOpts) {
-	// Reads the time-ordered sibling (sorted OrgId, Timestamp, FingerprintHash): this is a
-	// recent-window scan grouped across fingerprints, so a Timestamp-leading sort key lets
-	// ClickHouse prune to the window instead of scanning the org's whole day-partition.
-	// Per-fingerprint occurrence lookups use errorIssueTimeseriesQuery / *SampleTracesQuery,
-	// which stay on the FingerprintHash-ordered `error_events`.
-	return from(ErrorEventsByTime)
+	// Broad issue scans use the time-ordered sibling so ClickHouse prunes by
+	// (OrgId, Timestamp). When the caller narrows to known fingerprints, switch
+	// back to the FingerprintHash-ordered table.
+	return from(errorEventsTableForRecentScan(opts))
 		.select(($) => ({
 			fingerprintHash: CH.toString_($.FingerprintHash),
 			serviceName: CH.any_($.ServiceName),
@@ -745,7 +758,7 @@ export function errorIssuesQuery(opts: ErrorIssuesOpts) {
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
 			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 			opts.fingerprintHashes?.length
-				? CH.inList(CH.toString_($.FingerprintHash), opts.fingerprintHashes)
+				? fingerprintHashIn($.FingerprintHash, opts.fingerprintHashes)
 				: undefined,
 			opts.exceptionTypes?.length ? CH.inList($.ExceptionType, opts.exceptionTypes) : undefined,
 		])
@@ -772,7 +785,7 @@ export function errorIssueTimeseriesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(param.string("fingerprintHash")),
+			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])
@@ -806,7 +819,7 @@ export function errorIssueSampleTracesQuery(opts: { limit?: number }) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(param.string("fingerprintHash")),
+			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])
@@ -850,7 +863,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(opts.fingerprintHash),
+			fingerprintHashEq($.FingerprintHash, opts.fingerprintHash),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
@@ -860,9 +873,13 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		.orderBy(["lastErrorSeen", "desc"])
 		.limit(limit)
 
-	// Outer query: join traces with error subquery
-	return from(Traces)
-		.innerJoinQuery(errorSub, "e", (main, e) => main.TraceId.eq(e.TraceId))
+	const errorSubSql = compileCH(errorSub, {}, { skipFormat: true }).sql
+
+	// Outer query: fetch all spans for the matching traces. Use an IN-filtered
+	// small subquery instead of an INNER JOIN so ClickHouse can apply the
+	// trace-detail projection's (OrgId, TraceId, SpanId) sort key while reading
+	// `trace_detail_spans`.
+	return from(TraceDetailSpans)
 		.select(($) => ({
 			traceId: $.TraceId,
 			startTime: CH.min_($.Timestamp),
@@ -874,6 +891,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
+			CH.inSubquery($.TraceId, `SELECT TraceId FROM (${errorSubSql})`),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])
