@@ -313,12 +313,11 @@ describe("EscalationService.runEscalationTick", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("counts a dying processOne as failed and leaves the row queued", () => {
-		// Pins the current defect semantics: catchCause converts the defect into
-		// a "failed" tick outcome, but the row is never finalized — it stays
-		// "queued" with attempts bumped by the optimistic claim, so the next
-		// tick picks it up again (MAX_ATTEMPTS only gates the delivery-failed
-		// branch, not the defect path).
+	it.effect("a dispatch defect counts as failed but never re-delivers (at-most-once)", () => {
+		// The row is flipped to "sent" BEFORE dispatch, so a defect mid-dispatch
+		// (or a lost finalize) drops the escalation instead of re-paging on the
+		// next tick: catchCause counts the defect as "failed", the row stays
+		// "sent", and a second tick finds nothing to claim.
 		const { calls, layer } = makeHarness({ delivered: 1, failed: 0 }, { dieOnDispatch: true })
 		return Effect.gen(function* () {
 			const issueId = asIssueId(randomUUID())
@@ -332,9 +331,12 @@ describe("EscalationService.runEscalationTick", () => {
 			assert.deepStrictEqual(result, { processed: 1, sent: 0, skipped: 0, failed: 1, retried: 0 })
 			assert.lengthOf(calls, 1)
 			const rows = yield* loadEscalations
-			assert.strictEqual(rows[0]?.status, "queued")
+			assert.strictEqual(rows[0]?.status, "sent")
 			assert.strictEqual(rows[0]?.attempts, 1)
-			assert.isNull(rows[0]?.processedAt)
+
+			const second = yield* service.runEscalationTick()
+			assert.deepStrictEqual(second, { processed: 0, sent: 0, skipped: 0, failed: 0, retried: 0 })
+			assert.lengthOf(calls, 1)
 		}).pipe(Effect.provide(layer))
 	})
 

@@ -172,7 +172,9 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 
 			const linkUrl = `${env.MAPLE_APP_BASE_URL}/errors/issues/${issue.id}`
 			const request: NotificationRequest = {
-				deliveryKey: `escalation:${row.id}:${row.attempts + 1}`,
+				// Stable across retries (no attempt suffix) so any downstream
+				// consumer that dedupes on the key absorbs a re-send.
+				deliveryKey: `escalation:${row.id}`,
 				ruleId: typeof sourceRef?.ruleId === "string" ? sourceRef.ruleId : issue.id,
 				ruleName: issue.exceptionType || "Issue escalation",
 				groupKey: null,
@@ -207,10 +209,17 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 				},
 			}
 
+			// At-most-once: flip to "sent" BEFORE dispatching. With the old
+			// dispatch-then-finalize order, a finalize failure after a successful
+			// delivery left the row queued and the next tick re-paged everyone.
+			// Now the failure window drops the escalation instead — the design
+			// explicitly prefers a rare drop over a duplicate page. The row being
+			// "sent" also keeps a concurrent tick's claim CAS (status = queued)
+			// from picking it up mid-dispatch.
+			yield* finalize(row, "sent", timestamp)
 			const result = yield* dispatcher.dispatch(row.orgId, rule.destinationIds, request)
 
 			if (result.delivered > 0) {
-				yield* finalize(row, "sent", timestamp)
 				return "sent" as const
 			}
 			if (result.failed === 0) {
@@ -222,7 +231,9 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 				yield* finalize(row, "failed", timestamp, "delivery_failed")
 				return "failed" as const
 			}
-			// Leave queued; next tick retries (attempts already bumped).
+			// Genuine delivery failure (dispatch reported it, nothing was sent):
+			// surrender the early "sent" and requeue; next tick retries with the
+			// already-bumped attempts counter.
 			yield* finalize(row, "queued", timestamp, "delivery_failed_will_retry")
 			return "retried" as const
 		})
@@ -240,9 +251,11 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 			)
 
 			const policyCache = new Map<OrgId, IssueEscalationPolicyRow | null>()
-			// catchCause swallows defects too: a dying processOne is logged,
-			// counted as "failed", and the row stays queued with its attempts
-			// already bumped (never finalized) — the next tick retries it.
+			// catchCause swallows defects too: a dying processOne is logged and
+			// counted as "failed", and the row keeps whatever state it reached —
+			// still "queued" (attempts bumped) before the pre-dispatch sent-flip,
+			// so the next tick retries it; "sent" after the flip, so it is never
+			// re-delivered (at-most-once).
 			const outcomes = yield* Effect.forEach(rows, (row) =>
 				processOne(row, policyCache).pipe(
 					Effect.catchCause((cause) =>

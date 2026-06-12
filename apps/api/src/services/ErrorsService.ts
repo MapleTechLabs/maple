@@ -53,6 +53,7 @@ import {
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
+	alertDestinations,
 	alertIncidents,
 	errorIssueStates,
 	errorNotificationPolicies,
@@ -1776,6 +1777,41 @@ const make: Effect.Effect<
 					)
 				}
 				seen.add(rule.severity)
+			}
+
+			// Reject destination IDs that don't belong to this org at write time.
+			// Dispatch re-filters by org anyway (no cross-org leak), but a typo'd
+			// or foreign ID would otherwise only surface much later as a silently
+			// "skipped" escalation with reason no_enabled_destinations.
+			const referencedIds = Array.from(
+				new Set(request.rules.flatMap((rule) => rule.destinationIds)),
+			)
+			if (referencedIds.length > 0) {
+				const ownedRows = yield* Effect.forEach(
+					Arr.chunksOf(referencedIds, D1_INARRAY_CHUNK_SIZE),
+					(chunk) =>
+						dbExecute((db) =>
+							db
+								.select({ id: alertDestinations.id })
+								.from(alertDestinations)
+								.where(
+									and(
+										eq(alertDestinations.orgId, orgId),
+										inArray(alertDestinations.id, chunk),
+									),
+								),
+						),
+				)
+				const owned = new Set(ownedRows.flatMap((rows) => rows.map((r) => r.id)))
+				const unknown = referencedIds.filter((id) => !owned.has(id))
+				if (unknown.length > 0) {
+					return yield* Effect.fail(
+						new ErrorValidationError({
+							message: "Escalation policy references unknown destinations",
+							details: unknown,
+						}),
+					)
+				}
 			}
 		}
 

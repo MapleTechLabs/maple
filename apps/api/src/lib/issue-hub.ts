@@ -219,7 +219,7 @@ export const upsertAlertIssue: (
 						sourceRefJson,
 						updatedAt: input.timestamp,
 					})
-					.where(eq(errorIssues.id, prior.id)),
+					.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id))),
 			)
 			// Backfill the detector severity only while severity is still unset
 			// (precedence: manual > ai > detector).
@@ -231,7 +231,11 @@ export const upsertAlertIssue: (
 						severitySource: "detector",
 					})
 					.where(
-						and(eq(errorIssues.id, prior.id), sql`${errorIssues.severity} IS NULL`),
+						and(
+							eq(errorIssues.orgId, input.orgId),
+							eq(errorIssues.id, prior.id),
+							sql`${errorIssues.severity} IS NULL`,
+						),
 					),
 			)
 
@@ -251,7 +255,7 @@ export const upsertAlertIssue: (
 							snoozeUntil: null,
 							updatedAt: input.timestamp,
 						})
-						.where(eq(errorIssues.id, prior.id)),
+						.where(and(eq(errorIssues.orgId, input.orgId), eq(errorIssues.id, prior.id))),
 				)
 				const actorId = yield* ensureSystemAlertsActor(input.orgId)
 				yield* recordIssueEvent(input.orgId, issueId, actorId, "state_change", {

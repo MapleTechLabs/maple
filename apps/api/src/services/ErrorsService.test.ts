@@ -2,9 +2,21 @@ import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, expect, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
-import { ErrorPersistenceError, OrgId, UserId } from "@maple/domain/http"
-import { ErrorIncidentId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
 import {
+	ErrorPersistenceError,
+	IssueEscalationPolicyRule,
+	IssueEscalationPolicyUpsertRequest,
+	OrgId,
+	UserId,
+} from "@maple/domain/http"
+import {
+	AlertDestinationId,
+	ErrorIncidentId,
+	ErrorIssueEventId,
+	ErrorIssueId,
+} from "@maple/domain/primitives"
+import {
+	alertDestinations,
 	errorIncidents,
 	errorIssues,
 	errorIssueEvents,
@@ -157,6 +169,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 const asEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
+const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
 
 const ORG = asOrgId("org_errors_service_test")
 const USER = asUserId("user_errors_service_test")
@@ -255,6 +268,66 @@ describe("ErrorsService.setSeverity", () => {
 			)
 			// Only the initial "medium" set escalates; clearing routes nothing.
 			assert.lengthOf(escalations, 1)
+		}).pipe(Effect.provide(makeErrorsLayer())),
+	)
+
+	it.effect("upsertEscalationPolicy rejects destination IDs the org does not own", () =>
+		Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			const database = yield* Database
+			const now = yield* Clock.currentTimeMillis
+			const ownedId = asDestinationId(randomUUID())
+			const foreignId = asDestinationId(randomUUID())
+			yield* database.execute((db) =>
+				db.insert(alertDestinations).values({
+					id: ownedId,
+					orgId: ORG,
+					name: "Primary webhook",
+					type: "webhook",
+					enabled: 1,
+					configJson: "{}",
+					secretCiphertext: "x",
+					secretIv: "x",
+					secretTag: "x",
+					createdAt: now,
+					updatedAt: now,
+					createdBy: USER,
+					updatedBy: USER,
+				}),
+			)
+
+			const rejected = yield* errors
+				.upsertEscalationPolicy(
+					ORG,
+					USER,
+					new IssueEscalationPolicyUpsertRequest({
+						enabled: true,
+						rules: [
+							new IssueEscalationPolicyRule({
+								severity: "critical",
+								destinationIds: [ownedId, foreignId],
+							}),
+						],
+					}),
+				)
+				.pipe(Effect.flip)
+			assert.strictEqual(rejected._tag, "@maple/http/errors/ErrorValidationError")
+			if (rejected._tag === "@maple/http/errors/ErrorValidationError") {
+				assert.include(rejected.details, foreignId)
+				assert.notInclude(rejected.details, ownedId)
+			}
+
+			const accepted = yield* errors.upsertEscalationPolicy(
+				ORG,
+				USER,
+				new IssueEscalationPolicyUpsertRequest({
+					enabled: true,
+					rules: [
+						new IssueEscalationPolicyRule({ severity: "critical", destinationIds: [ownedId] }),
+					],
+				}),
+			)
+			assert.strictEqual(accepted.rules[0]?.destinationIds[0], ownedId)
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
