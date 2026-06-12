@@ -9,6 +9,7 @@ import type {
 } from "@maple/domain/primitives"
 import type {
 	ActorType,
+	AlertSeverity,
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
@@ -195,7 +196,7 @@ export const errorNotificationPolicies = sqliteTable("error_notification_policie
 		.default(0),
 	notifyOnClaim: integer("notify_on_claim", { mode: "number" }).notNull().default(0),
 	minOccurrenceCount: integer("min_occurrence_count", { mode: "number" }).notNull().default(1),
-	severity: text("severity").notNull().default("warning"),
+	severity: text("severity").$type<AlertSeverity>().notNull().default("warning"),
 	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	updatedBy: text("updated_by").notNull(),
 })

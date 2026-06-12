@@ -98,6 +98,9 @@ function makeWarehouseStub(state: {
 		compiledQueryFirst: (_tenant, compiled) =>
 			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie))),
 		ingest: () => Effect.void,
+		asExecutor: () => {
+			throw new Error("asExecutor is not supported by this test stub")
+		},
 	}
 }
 

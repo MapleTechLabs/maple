@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { AiTriageResult } from "@maple/domain/http"
+import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import { actors, errorIssues, errorIssueEvents, issueEscalations, runMigrations } from "@maple/db"
 import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
 import { eq } from "drizzle-orm"
+import { Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
 import {
 	applyTriageSeverity,
@@ -17,21 +20,25 @@ afterEach(() => {
 	cleanupTempDirs(createdTempDirs)
 })
 
-const ORG = "org_severity_test"
+const asOrgId = Schema.decodeUnknownSync(OrgId)
+const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
+const decodeTriageResult = Schema.decodeUnknownSync(AiTriageResult)
+
+const ORG = asOrgId("org_severity_test")
 
 let db: MapleD1Client
-let issueId: string
+let issueId: ErrorIssueId
 
 beforeEach(async () => {
 	const { url } = createTempDbUrl("maple-issue-severity-", createdTempDirs)
 	await runMigrations({ url })
 	// Same shared drizzle query-builder surface as the D1 client.
 	db = createMapleLibsqlClient({ url }) as unknown as MapleD1Client
-	issueId = randomUUID()
+	issueId = asIssueId(randomUUID())
 	const now = Date.now()
 	await db.insert(errorIssues).values({
-		id: issueId as never,
-		orgId: ORG as never,
+		id: issueId,
+		orgId: ORG,
 		fingerprintHash: "12345678901234567890",
 		serviceName: "checkout-api",
 		exceptionType: "TimeoutError",
@@ -45,8 +52,8 @@ beforeEach(async () => {
 })
 
 const baseInput = (overrides: Partial<Parameters<typeof applyTriageSeverity>[1]> = {}) => ({
-	orgId: ORG as never,
-	issueId: issueId as never,
+	orgId: ORG,
+	issueId,
 	runId: "run-1",
 	severity: "high" as const,
 	confidence: "medium" as const,
@@ -58,7 +65,7 @@ const loadIssue = async () => {
 	const rows = await db
 		.select()
 		.from(errorIssues)
-		.where(eq(errorIssues.id, issueId as never))
+		.where(eq(errorIssues.id, issueId))
 	return rows[0]
 }
 
@@ -91,7 +98,7 @@ describe("applyTriageSeverity", () => {
 		const events = await db
 			.select()
 			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, issueId as never))
+			.where(eq(errorIssueEvents.issueId, issueId))
 		expect(events).toHaveLength(1)
 		expect(events[0]?.type).toBe("severity_change")
 		const payload = JSON.parse(events[0]?.payloadJson ?? "{}")
@@ -102,14 +109,24 @@ describe("applyTriageSeverity", () => {
 		const escalations = await db
 			.select()
 			.from(issueEscalations)
-			.where(eq(issueEscalations.issueId, issueId as never))
+			.where(eq(issueEscalations.issueId, issueId))
 		expect(escalations).toHaveLength(1)
 		expect(escalations[0]?.reason).toBe("severity_set")
 		expect(escalations[0]?.status).toBe("queued")
 
-		const agentRows = await db.select().from(actors).where(eq(actors.orgId, ORG as never))
+		const agentRows = await db.select().from(actors).where(eq(actors.orgId, ORG))
 		expect(agentRows).toHaveLength(1)
 		expect(agentRows[0]?.agentName).toBe(TRIAGE_AGENT_NAME)
+	})
+
+	it("stamps the triage agent actor with the input timestamp, not wall clock", async () => {
+		const timestamp = 1_765_432_100_000
+		await applyTriageSeverity(db, baseInput({ timestamp }))
+
+		const agentRows = await db.select().from(actors).where(eq(actors.orgId, ORG))
+		expect(agentRows).toHaveLength(1)
+		expect(agentRows[0]?.createdAt).toBe(timestamp)
+		expect(agentRows[0]?.lastActiveAt).toBe(timestamp)
 	})
 
 	it("is idempotent across persist retries", async () => {
@@ -119,12 +136,12 @@ describe("applyTriageSeverity", () => {
 		const events = await db
 			.select()
 			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, issueId as never))
+			.where(eq(errorIssueEvents.issueId, issueId))
 		expect(events).toHaveLength(1)
 		const escalations = await db
 			.select()
 			.from(issueEscalations)
-			.where(eq(issueEscalations.issueId, issueId as never))
+			.where(eq(issueEscalations.issueId, issueId))
 		expect(escalations).toHaveLength(1)
 	})
 
@@ -132,7 +149,7 @@ describe("applyTriageSeverity", () => {
 		await db
 			.update(errorIssues)
 			.set({ severity: "low", severitySource: "manual" })
-			.where(eq(errorIssues.id, issueId as never))
+			.where(eq(errorIssues.id, issueId))
 
 		const outcome = await applyTriageSeverity(db, baseInput())
 		expect(outcome.applied).toBe(false)
@@ -144,7 +161,7 @@ describe("applyTriageSeverity", () => {
 		const escalations = await db
 			.select()
 			.from(issueEscalations)
-			.where(eq(issueEscalations.issueId, issueId as never))
+			.where(eq(issueEscalations.issueId, issueId))
 		expect(escalations).toHaveLength(0)
 	})
 
@@ -152,7 +169,7 @@ describe("applyTriageSeverity", () => {
 		await db
 			.update(errorIssues)
 			.set({ severity: "critical", severitySource: "detector" })
-			.where(eq(errorIssues.id, issueId as never))
+			.where(eq(errorIssues.id, issueId))
 
 		const outcome = await applyTriageSeverity(db, baseInput({ severity: "medium" }))
 		expect(outcome.applied).toBe(true)
@@ -164,12 +181,72 @@ describe("applyTriageSeverity", () => {
 		const escalations = await db
 			.select()
 			.from(issueEscalations)
-			.where(eq(issueEscalations.issueId, issueId as never))
+			.where(eq(issueEscalations.issueId, issueId))
 		expect(escalations).toHaveLength(0)
 	})
 
+	it("flips the source detector->ai without a severity_change event when severity is unchanged", async () => {
+		await db
+			.update(errorIssues)
+			.set({ severity: "high", severitySource: "detector" })
+			.where(eq(errorIssues.id, issueId))
+
+		const outcome = await applyTriageSeverity(db, baseInput({ severity: "high" }))
+		expect(outcome.applied).toBe(true)
+
+		const issue = await loadIssue()
+		expect(issue?.severity).toBe("high")
+		expect(issue?.severitySource).toBe("ai")
+
+		const events = await db
+			.select()
+			.from(errorIssueEvents)
+			.where(eq(errorIssueEvents.issueId, issueId))
+		expect(events.some((e) => e.type === "severity_change")).toBe(false)
+
+		// Same-level confirmation: no escalation either (upward-only rule).
+		const escalations = await db
+			.select()
+			.from(issueEscalations)
+			.where(eq(issueEscalations.issueId, issueId))
+		expect(escalations).toHaveLength(0)
+	})
+
+	it("snapshots the full triage result into the escalation payload", async () => {
+		const plainResult = {
+			summary: "Error rate spike caused by a bad deploy.",
+			suspectedCause: "Regression in payment-service v2.3.1.",
+			severityAssessment: "high",
+			affectedScope: "checkout-api, ~10% of requests",
+			evidence: [
+				{
+					traceIds: ["0af7651916cd43dd8448eb211c80319c"],
+					logPatterns: ["timeout after <num>ms"],
+					relatedServices: ["payment-service"],
+					note: "Consistent failure span.",
+				},
+			],
+			suggestedActions: ["Roll back payment-service."],
+			confidence: "medium",
+		}
+		const outcome = await applyTriageSeverity(
+			db,
+			baseInput({ result: decodeTriageResult(plainResult) }),
+		)
+		expect(outcome.applied).toBe(true)
+
+		const escalations = await db
+			.select()
+			.from(issueEscalations)
+			.where(eq(issueEscalations.issueId, issueId))
+		expect(escalations).toHaveLength(1)
+		const payload = JSON.parse(escalations[0]?.payloadJson ?? "{}")
+		expect(payload.confidence).toBe("medium")
+		expect(payload.triage).toEqual(plainResult)
+	})
+
 	it("returns applied=false when the issue does not exist", async () => {
-		const outcome = await applyTriageSeverity(db, baseInput({ issueId: randomUUID() as never }))
+		const outcome = await applyTriageSeverity(db, baseInput({ issueId: asIssueId(randomUUID()) }))
 		expect(outcome.applied).toBe(false)
 		expect(outcome.actorId).toBeNull()
 	})

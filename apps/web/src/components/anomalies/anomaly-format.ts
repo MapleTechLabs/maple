@@ -4,13 +4,7 @@ import type {
 	AnomalySignalType,
 	AnomalyTriageStatus,
 } from "@maple/domain/http"
-import {
-	BoltIcon,
-	ChartLineIcon,
-	CircleWarningIcon,
-	FileIcon,
-	PulseIcon,
-} from "@/components/icons"
+import { BoltIcon, ChartLineIcon, CircleWarningIcon, FileIcon, PulseIcon } from "@/components/icons"
 
 export const SIGNAL_LABEL: Record<AnomalySignalType, string> = {
 	error_rate: "Error rate",
@@ -86,8 +80,8 @@ export function deviation(
 			const ratio = incident.lastObservedValue / incident.baselineMedian
 			return { kind: "ratio", sigma, ratio, label: ratioLabel(ratio) }
 		}
-		const sign = sigma >= 0 ? "+" : ""
-		return { kind: "sigma", sigma, ratio: null, label: `${sign}${sigma.toFixed(1)}σ` }
+		const sign = sigma >= 0 ? "+" : "−"
+		return { kind: "sigma", sigma, ratio: null, label: `${sign}${Math.abs(sigma).toFixed(1)}σ` }
 	}
 	if (incident.baselineMedian > 0) {
 		const ratio = incident.lastObservedValue / incident.baselineMedian
@@ -136,10 +130,7 @@ export const RESOLVE_REASON_LABEL: Record<AnomalyResolveReason, string> = {
 	manual: "Resolved manually",
 }
 
-export const TRIAGE_STATUS_CHIP: Record<
-	AnomalyTriageStatus,
-	{ label: string; tone: string } | null
-> = {
+export const TRIAGE_STATUS_CHIP: Record<AnomalyTriageStatus, { label: string; tone: string } | null> = {
 	none: null,
 	pending: { label: "triaging…", tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
 	completed: { label: "triaged", tone: "bg-success/10 text-success" },

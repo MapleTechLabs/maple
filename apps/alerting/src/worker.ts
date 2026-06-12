@@ -1,5 +1,4 @@
 import {
-	AlertRuntime,
 	AlertsService,
 	AnomalyDetectionService,
 	BucketCacheService,
@@ -26,7 +25,7 @@ import {
 	WorkerConfigProviderLayer,
 	WorkerEnvironment,
 } from "@maple/effect-cloudflare"
-import { Cause, Effect, Layer } from "effect"
+import { Cause, Effect, Layer, Match } from "effect"
 
 // Module-scope construction; `flush(env)` resolves env on first call. The
 // in-isolate buffers coalesce concurrent scheduled ticks into one POST per
@@ -67,13 +66,13 @@ const buildLayer = (_env: Record<string, unknown>) => {
 
 	// WorkerEnvironment is merged in so the incident-open issue-hub hook can see
 	// the cross-script AI_TRIAGE_WORKFLOW binding (absent → triage marked failed).
+	// AlertRuntime is a Context.Reference with defaults, so it needs no wiring here.
 	const AlertsServiceLive = AlertsService.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
 				BaseLive,
 				QueryEngineServiceLive,
 				WarehouseQueryServiceLive,
-				AlertRuntime.layer,
 				HazelOAuthServiceLive,
 				WorkerEnvironment.layer,
 			),
@@ -304,19 +303,18 @@ export default {
 		env: Record<string, unknown>,
 		ctx: ExecutionContextLike,
 	): Promise<void> {
-		const program =
-			event.cron === "*/5 * * * *"
-				? anomalyTick
-				: event.cron === "*/15 * * * *"
-					? digestTick
-					: event.cron === "0 * * * *"
-						? serviceMapRollupTick
-						: event.cron === "0 9 * * *"
-							? onboardingTick
-							: Effect.all([alertTick, errorTick, escalationTick], {
-									concurrency: 2,
-									discard: true,
-								})
+		const program = Match.value(event.cron).pipe(
+			Match.when("*/5 * * * *", () => anomalyTick),
+			Match.when("*/15 * * * *", () => digestTick),
+			Match.when("0 * * * *", () => serviceMapRollupTick),
+			Match.when("0 9 * * *", () => onboardingTick),
+			Match.orElse(() =>
+				Effect.all([alertTick, errorTick, escalationTick], {
+					concurrency: 2,
+					discard: true,
+				}),
+			),
+		)
 		try {
 			await runScheduledEffect(buildLayer(env), program, ctx)
 		} finally {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
-import { deviation } from "./anomaly-format"
+import { deviation, formatSignalValue, SEVERITY_TONE, severityToneFor } from "./anomaly-format"
 
 const incident = (
 	overrides: Partial<
@@ -17,13 +17,23 @@ const incident = (
 describe("deviation", () => {
 	it("labels throughput as a percent of baseline", () => {
 		const full = deviation(
-			incident({ signalType: "throughput", lastObservedValue: 0, baselineMedian: 1.2, baselineSigma: 1 }),
+			incident({
+				signalType: "throughput",
+				lastObservedValue: 0,
+				baselineMedian: 1.2,
+				baselineSigma: 1,
+			}),
 		)
 		expect(full.kind).toBe("percent")
 		expect(full.label).toBe("−100%")
 
 		const partial = deviation(
-			incident({ signalType: "throughput", lastObservedValue: 8.5, baselineMedian: 49.7, baselineSigma: 70 }),
+			incident({
+				signalType: "throughput",
+				lastObservedValue: 8.5,
+				baselineMedian: 49.7,
+				baselineSigma: 70,
+			}),
 		)
 		expect(partial.label).toBe("−83%")
 	})
@@ -58,9 +68,7 @@ describe("deviation", () => {
 	})
 
 	it("caps absurd ratios", () => {
-		const dev = deviation(
-			incident({ lastObservedValue: 100_000, baselineMedian: 1, baselineSigma: 1 }),
-		)
+		const dev = deviation(incident({ lastObservedValue: 100_000, baselineMedian: 1, baselineSigma: 1 }))
 		expect(dev.label).toBe("999× baseline")
 	})
 
@@ -68,5 +76,62 @@ describe("deviation", () => {
 		const dev = deviation(incident({ lastObservedValue: 50 }))
 		expect(dev.kind).toBe("new")
 		expect(dev.label).toBe("new signal")
+	})
+
+	it("falls back to a ratio when σ is zero but a baseline exists", () => {
+		const dev = deviation(incident({ lastObservedValue: 5, baselineMedian: 2.5, baselineSigma: 0 }))
+		expect(dev.kind).toBe("ratio")
+		expect(dev.sigma).toBeNull()
+		expect(dev.ratio).toBe(2)
+		expect(dev.label).toBe("2.0× baseline")
+	})
+
+	it("renders negative σ with the U+2212 minus sign", () => {
+		const dev = deviation(
+			incident({ lastObservedValue: 0.002, baselineMedian: 0.01, baselineSigma: 0.002 }),
+		)
+		expect(dev.kind).toBe("sigma")
+		expect(dev.sigma).toBeCloseTo(-4)
+		// U+2212 minus, matching the percent branch — not the ASCII hyphen.
+		expect(dev.label).toBe("−4.0σ")
+		expect(dev.label).not.toContain("-")
+	})
+})
+
+describe("formatSignalValue", () => {
+	it("formats error rate as a percent", () => {
+		expect(formatSignalValue("error_rate", 0.123)).toBe("12.3%")
+		expect(formatSignalValue("error_rate", 0)).toBe("0.0%")
+	})
+
+	it("formats latency in ms below one second and switches to seconds at 1000ms", () => {
+		expect(formatSignalValue("latency_p95", 850)).toBe("850ms")
+		expect(formatSignalValue("latency_p95", 999.4)).toBe("999ms")
+		expect(formatSignalValue("latency_p95", 1000)).toBe("1.00s")
+		expect(formatSignalValue("latency_p95", 2500)).toBe("2.50s")
+	})
+
+	it("formats throughput as a per-minute rate", () => {
+		expect(formatSignalValue("throughput", 12.34)).toBe("12.3/min")
+	})
+
+	it("formats log volume as a per-minute rate", () => {
+		expect(formatSignalValue("log_volume", 0)).toBe("0.0/min")
+	})
+
+	it("formats error spikes as a 30-minute count", () => {
+		expect(formatSignalValue("error_spike", 41.6)).toBe("42 in 30m")
+	})
+})
+
+describe("severityToneFor", () => {
+	it("uses the severity tone for open incidents", () => {
+		expect(severityToneFor({ status: "open", severity: "critical" })).toBe(SEVERITY_TONE.critical)
+		expect(severityToneFor({ status: "open", severity: "warning" })).toBe(SEVERITY_TONE.warning)
+	})
+
+	it("uses the resolved tone for non-open incidents regardless of severity", () => {
+		expect(severityToneFor({ status: "resolved", severity: "critical" })).toBe(SEVERITY_TONE.resolved)
+		expect(severityToneFor({ status: "resolved", severity: "warning" })).toBe(SEVERITY_TONE.resolved)
 	})
 })

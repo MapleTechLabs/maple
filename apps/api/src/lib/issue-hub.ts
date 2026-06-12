@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto"
 import type { AlertSeverity, IssueSeverity, OrgId, WorkflowState } from "@maple/domain/http"
-import { ActorId, ErrorIssueEventId, ErrorIssueId } from "@maple/domain/primitives"
+import {
+	ActorId,
+	type AlertIncidentId,
+	type AlertRuleId,
+	ErrorIssueEventId,
+	ErrorIssueId,
+} from "@maple/domain/primitives"
 import { actors, alertIncidents, errorIssues, errorIssueEvents, type ErrorIssueRow } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
 import { Cause, Clock, Effect, Schema } from "effect"
@@ -34,7 +40,7 @@ export const detectorSeverityFor = (severity: AlertSeverity): IssueSeverity =>
 
 export interface UpsertAlertIssueInput {
 	readonly orgId: OrgId
-	readonly ruleId: string
+	readonly ruleId: AlertRuleId
 	readonly ruleName: string
 	readonly groupKey: string
 	readonly signalType: string
@@ -45,7 +51,7 @@ export interface UpsertAlertIssueInput {
 	readonly windowMinutes: number
 	readonly observedValue: number | null
 	readonly sampleCount: number
-	readonly incidentId: string
+	readonly incidentId: AlertIncidentId
 	readonly serviceName: string
 	readonly timestamp: number
 	/** Raw AI_TRIAGE_WORKFLOW binding off the worker env (may be undefined). */

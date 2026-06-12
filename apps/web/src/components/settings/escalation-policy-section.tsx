@@ -10,7 +10,6 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import {
 	IssueEscalationPolicyRule,
 	IssueEscalationPolicyUpsertRequest,
-	type AlertDestinationDocument,
 	type EscalationConfidence,
 	type IssueSeverity,
 } from "@maple/domain/http"
@@ -20,13 +19,7 @@ const decodeDestinationIds = Schema.decodeUnknownSync(Schema.Array(AlertDestinat
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
 
@@ -66,10 +59,9 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 	const policyResult = useAtomValue(policyQueryAtom)
 	const refreshPolicy = useAtomRefresh(policyQueryAtom)
 
-	const destinationsResult = useAtomValue(MapleApiAtomClient.query("alerts", "listDestinations", {}))
-	const destinations = Result.builder(destinationsResult)
-		.onSuccess((response) => [...response.destinations] as AlertDestinationDocument[])
-		.orElse(() => [] as AlertDestinationDocument[])
+	const destinationsQueryAtom = MapleApiAtomClient.query("alerts", "listDestinations", {})
+	const destinationsResult = useAtomValue(destinationsQueryAtom)
+	const refreshDestinations = useAtomRefresh(destinationsQueryAtom)
 
 	const upsertMutation = useAtomSet(MapleApiAtomClient.mutation("errors", "upsertEscalationPolicy"), {
 		mode: "promiseExit",
@@ -94,16 +86,12 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 			}
 			setRules(draft)
 			setInitialized(true)
-		} else if (!Result.isInitial(policyResult)) {
-			setInitialized(true)
 		}
 	}, [policyResult, initialized])
 
 	const save = async () => {
 		setIsSaving(true)
-		const ruleList = SEVERITY_ORDER.filter(
-			(severity) => rules[severity].destinationIds.length > 0,
-		).map(
+		const ruleList = SEVERITY_ORDER.filter((severity) => rules[severity].destinationIds.length > 0).map(
 			(severity) =>
 				new IssueEscalationPolicyRule({
 					severity,
@@ -119,31 +107,34 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 		})
 		setIsSaving(false)
 		if (Exit.isSuccess(result)) {
-			refreshPolicy()
 			toast.success("Escalation policy saved")
 		} else {
 			toast.error("Failed to save escalation policy")
 		}
 	}
 
+	// Never render the editable form off a failed (or pending) policy load —
+	// saving a default draft would silently overwrite the real policy.
 	if (!initialized) {
 		return (
 			<div className="max-w-2xl">
-				<Skeleton className="h-40 w-full rounded-lg" />
+				{Result.builder(policyResult)
+					.onError(() => (
+						<Card className="flex flex-row items-center justify-between gap-4 p-4">
+							<p className="text-muted-foreground text-sm">
+								Failed to load the escalation policy.
+							</p>
+							<Button size="sm" variant="outline" onClick={() => refreshPolicy()}>
+								Retry
+							</Button>
+						</Card>
+					))
+					.orElse(() => (
+						<Skeleton className="h-40 w-full rounded-lg" />
+					))}
 			</div>
 		)
 	}
-
-	const destinationOptions = destinations.map((d) => ({
-		value: d.id as unknown as string,
-		icon: <ProviderLogo type={d.type} size={24} bare />,
-		label: (
-			<span className="flex items-center gap-2">
-				<span className="font-medium">{d.name}</span>
-				<span className="text-muted-foreground text-xs">{destinationTypeLabels[d.type]}</span>
-			</span>
-		),
-	})) satisfies AlertSegmentedOption<string>[]
 
 	return (
 		<div className="max-w-2xl space-y-4">
@@ -159,70 +150,104 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 					<Switch checked={enabled} onCheckedChange={setEnabled} disabled={!isAdmin} />
 				</div>
 
-				{destinations.length === 0 ? (
-					<p className="text-muted-foreground text-sm">
-						No destinations yet.{" "}
-						<Link
-							to="/alerts"
-							search={{ tab: "settings" }}
-							className="underline underline-offset-4 hover:text-foreground"
-						>
-							Create one in Alerts settings
-						</Link>{" "}
-						first.
-					</p>
-				) : (
-					<div className="space-y-4">
-						{SEVERITY_ORDER.map((severity) => (
-							<div key={severity} className="space-y-2 border-t border-border/60 pt-3">
-								<div className="flex items-center justify-between gap-3">
-									<SeverityBadge severity={severity} />
-									<div className="flex items-center gap-2">
-										<span className="text-muted-foreground text-[11px]">
-											Min. AI confidence
-										</span>
-										<Select
-											value={rules[severity].minConfidence}
-											disabled={!isAdmin}
-											onValueChange={(value) =>
+				{Result.builder(destinationsResult)
+					.onInitial(() => <Skeleton className="h-24 w-full" />)
+					.onError(() => (
+						<div className="flex items-center justify-between gap-4 py-2 text-sm text-muted-foreground">
+							<span>Failed to load alert destinations.</span>
+							<Button size="sm" variant="outline" onClick={() => refreshDestinations()}>
+								Retry
+							</Button>
+						</div>
+					))
+					.onSuccess((response) => {
+						if (response.destinations.length === 0) {
+							return (
+								<p className="text-muted-foreground text-sm">
+									No destinations yet.{" "}
+									<Link
+										to="/alerts"
+										search={{ tab: "settings" }}
+										className="underline underline-offset-4 hover:text-foreground"
+									>
+										Create one in Alerts settings
+									</Link>{" "}
+									first.
+								</p>
+							)
+						}
+						const destinationOptions = response.destinations.map((d) => ({
+							value: d.id,
+							icon: <ProviderLogo type={d.type} size={24} bare />,
+							label: (
+								<span className="flex items-center gap-2">
+									<span className="font-medium">{d.name}</span>
+									<span className="text-muted-foreground text-xs">
+										{destinationTypeLabels[d.type]}
+									</span>
+								</span>
+							),
+						})) satisfies AlertSegmentedOption<string>[]
+						return (
+							<div className="space-y-4">
+								{SEVERITY_ORDER.map((severity) => (
+									<div key={severity} className="space-y-2 border-t border-border/60 pt-3">
+										<div className="flex items-center justify-between gap-3">
+											<SeverityBadge severity={severity} />
+											<div className="flex items-center gap-2">
+												<span className="text-muted-foreground text-[11px]">
+													Min. AI confidence
+												</span>
+												<Select
+													value={rules[severity].minConfidence}
+													disabled={!isAdmin}
+													onValueChange={(value) =>
+														setRules((current) => ({
+															...current,
+															[severity]: {
+																...current[severity],
+																minConfidence:
+																	value as SeverityRuleDraft["minConfidence"],
+															},
+														}))
+													}
+												>
+													<SelectTrigger
+														size="sm"
+														className="h-7 w-[100px] text-xs"
+													>
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent>
+														<SelectItem value={CONFIDENCE_ANY}>Any</SelectItem>
+														<SelectItem value="low">Low</SelectItem>
+														<SelectItem value="medium">Medium</SelectItem>
+														<SelectItem value="high">High</SelectItem>
+													</SelectContent>
+												</Select>
+											</div>
+										</div>
+										<AlertMultiSegmentedSelect<string>
+											options={destinationOptions}
+											value={rules[severity].destinationIds}
+											onChange={(values) =>
 												setRules((current) => ({
 													...current,
 													[severity]: {
 														...current[severity],
-														minConfidence:
-															value as SeverityRuleDraft["minConfidence"],
+														destinationIds: values,
 													},
 												}))
 											}
-										>
-											<SelectTrigger size="sm" className="h-7 w-[100px] text-xs">
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value={CONFIDENCE_ANY}>Any</SelectItem>
-												<SelectItem value="low">Low</SelectItem>
-												<SelectItem value="medium">Medium</SelectItem>
-												<SelectItem value="high">High</SelectItem>
-											</SelectContent>
-										</Select>
+											aria-label={`Destinations for ${severity} severity`}
+											size="sm"
+										/>
 									</div>
-								</div>
-								<AlertMultiSegmentedSelect<string>
-									options={destinationOptions}
-									value={rules[severity].destinationIds}
-									onChange={(values) =>
-										setRules((current) => ({
-											...current,
-											[severity]: { ...current[severity], destinationIds: values },
-										}))
-									}
-									aria-label={`Destinations for ${severity} severity`}
-									size="sm"
-								/>
+								))}
 							</div>
-						))}
-					</div>
-				)}
+						)
+					})
+					.render()}
 
 				<div className="flex justify-end border-t border-border/60 pt-3">
 					<Button size="sm" onClick={save} disabled={!isAdmin || isSaving}>

@@ -56,7 +56,7 @@ import {
 	type AlertSeverity,
 	type AlertSignalType,
 	type AlertGroupBy,
-	type OrgId,
+	OrgId,
 	type AlertRuleId,
 	type AlertDestinationId,
 	type AlertIncidentId,
@@ -82,6 +82,7 @@ import {
 import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import {
 	Array as Arr,
+	Cause,
 	Clock,
 	Effect,
 	HashSet,
@@ -111,6 +112,7 @@ import {
 	formatSignalMetric,
 } from "./AlertDeliveryDispatch"
 import { Env } from "../lib/Env"
+import { describeCause } from "./ErrorsService"
 import { HazelOAuthService } from "./HazelOAuthService"
 import { QueryEngineService } from "./QueryEngineService"
 import type { GroupedAlertObservation } from "@maple/query-engine/runtime"
@@ -296,6 +298,7 @@ const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fi
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
 const decodeAlertGroupBySync = Schema.decodeUnknownSync(AlertGroupBySchema)
 const decodeAlertGroupByFromJsonSync = Schema.decodeUnknownSync(AlertGroupByFromJson)
+const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 
 const parseStoredGroupBy = (raw: string | null): AlertGroupBy | null =>
 	raw == null ? null : decodeAlertGroupByFromJsonSync(raw)
@@ -342,15 +345,17 @@ export interface AlertRuntimeShape {
 	readonly deliveryTimeoutMs: () => number
 }
 
-export class AlertRuntime extends Context.Service<AlertRuntime, AlertRuntimeShape>()("@maple/api/services/AlertRuntime", {
-	make: Effect.succeed({
-			now: Clock.currentTimeMillis,
-			makeUuid: () => randomUUID(),
-			fetch: globalThis.fetch as typeof fetch,
-			deliveryTimeoutMs: () => DELIVERY_TIMEOUT_MS_DEFAULT,
-		} satisfies AlertRuntimeShape),
+export class AlertRuntime extends Context.Reference<AlertRuntimeShape>("@maple/api/services/AlertRuntime", {
+	defaultValue: (): AlertRuntimeShape => ({
+		now: Clock.currentTimeMillis,
+		makeUuid: () => randomUUID(),
+		fetch: globalThis.fetch,
+		deliveryTimeoutMs: () => DELIVERY_TIMEOUT_MS_DEFAULT,
+	}),
 }) {
-	static readonly layer = Layer.effect(this, this.make)
+	// Reference defaults make explicit wiring optional; kept for hosts that
+	// still merge it into their layer stack.
+	static readonly layer = Layer.succeed(this, this.defaultValue())
 }
 
 const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
@@ -385,10 +390,13 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 	return trimmed && trimmed.length > 0 ? trimmed : null
 }
 
-const makePersistenceError = (error: unknown) =>
-	new AlertPersistenceError({
+const makePersistenceError = (error: unknown) => {
+	const cause = describeCause(error instanceof Error ? error.cause : error)
+	return new AlertPersistenceError({
 		message: error instanceof Error ? error.message : "Alert persistence failed",
+		...(cause === undefined ? {} : { cause }),
 	})
+}
 
 const makeValidationError = (
 	message: string,
@@ -557,7 +565,7 @@ const safeParseStringArray = (value: string): ReadonlyArray<string> =>
 		() => [] as ReadonlyArray<string>,
 	)
 
-const compileRulePlan = (rule: {
+const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (rule: {
 	readonly signalType: AlertSignalType
 	readonly serviceName: string | null
 	readonly metricName: string | null
@@ -570,161 +578,160 @@ const compileRulePlan = (rule: {
 	readonly comparator: AlertComparator
 	readonly windowMinutes: number
 	readonly groupBy: AlertGroupBy | null
-}): Effect.Effect<Schema.Schema.Type<typeof CompiledAlertQueryPlan>, AlertValidationError> =>
-	Effect.gen(function* () {
-		const bucketSeconds = Math.max(rule.windowMinutes * 60, 60)
-		const baseTraceFilters = rule.serviceName == null ? undefined : { serviceName: rule.serviceName }
+}): Effect.fn.Return<Schema.Schema.Type<typeof CompiledAlertQueryPlan>, AlertValidationError> {
+	const bucketSeconds = Math.max(rule.windowMinutes * 60, 60)
+	const baseTraceFilters = rule.serviceName == null ? undefined : { serviceName: rule.serviceName }
 
-		const noDataBehavior: QueryEngineNoDataBehavior =
-			rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator) ? "zero" : "skip"
+	const noDataBehavior: QueryEngineNoDataBehavior =
+		rule.signalType === "throughput" && ["lt", "lte"].includes(rule.comparator) ? "zero" : "skip"
 
-		const traceSignalMetrics: Record<string, string> = {
-			error_rate: "error_rate",
-			p95_latency: "p95_duration",
-			p99_latency: "p99_duration",
-			throughput: "count",
-			apdex: "apdex",
+	const traceSignalMetrics: Record<string, string> = {
+		error_rate: "error_rate",
+		p95_latency: "p95_duration",
+		p99_latency: "p99_duration",
+		throughput: "count",
+		apdex: "apdex",
+	}
+
+	/**
+	 * Resolve the rule's user-facing group_by tokens (e.g. ["service.name",
+	 * "attr.http.route"]) into the internal QuerySpec representation. Returns
+	 * null when there is no grouping (the spec then uses ["none"]).
+	 */
+	const resolveRuleGroupBy = (
+		source: "traces" | "logs" | "metrics",
+	): Effect.Effect<
+		{ tokens: ReadonlyArray<string>; attributeKeys: ReadonlyArray<string> } | null,
+		AlertValidationError
+	> => {
+		if (rule.groupBy == null || rule.groupBy.length === 0) return Effect.succeed(null)
+		const resolved = resolveGroupBy(source, rule.groupBy)
+		if (resolved.warnings.length > 0) {
+			return Effect.fail(
+				makeValidationError(`Invalid groupBy for ${source} alert`, [...resolved.warnings]),
+			)
 		}
-
-		/**
-		 * Resolve the rule's user-facing group_by tokens (e.g. ["service.name",
-		 * "attr.http.route"]) into the internal QuerySpec representation. Returns
-		 * null when there is no grouping (the spec then uses ["none"]).
-		 */
-		const resolveRuleGroupBy = (
-			source: "traces" | "logs" | "metrics",
-		): Effect.Effect<
-			{ tokens: ReadonlyArray<string>; attributeKeys: ReadonlyArray<string> } | null,
-			AlertValidationError
-		> => {
-			if (rule.groupBy == null || rule.groupBy.length === 0) return Effect.succeed(null)
-			const resolved = resolveGroupBy(source, rule.groupBy)
-			if (resolved.warnings.length > 0) {
-				return Effect.fail(
-					makeValidationError(`Invalid groupBy for ${source} alert`, [...resolved.warnings]),
-				)
-			}
-			if (resolved.tokens.length === 0) {
-				return Effect.fail(
-					makeValidationError(`groupBy did not resolve to any usable dimension for ${source}`),
-				)
-			}
-			if (source === "metrics" && resolved.attributeKeys.length > 1) {
-				return Effect.fail(
-					makeValidationError(
-						"Metrics alerts support at most one attr.* groupBy dimension",
-						resolved.attributeKeys.map(
-							(key) => `Unsupported additional metrics groupBy attribute: ${key}`,
-						),
+		if (resolved.tokens.length === 0) {
+			return Effect.fail(
+				makeValidationError(`groupBy did not resolve to any usable dimension for ${source}`),
+			)
+		}
+		if (source === "metrics" && resolved.attributeKeys.length > 1) {
+			return Effect.fail(
+				makeValidationError(
+					"Metrics alerts support at most one attr.* groupBy dimension",
+					resolved.attributeKeys.map(
+						(key) => `Unsupported additional metrics groupBy attribute: ${key}`,
 					),
-				)
-			}
-			return Effect.succeed({ tokens: resolved.tokens, attributeKeys: resolved.attributeKeys })
+				),
+			)
 		}
+		return Effect.succeed({ tokens: resolved.tokens, attributeKeys: resolved.attributeKeys })
+	}
 
-		let query: QuerySpec
-		let sampleCountStrategy: QueryEngineSampleCountStrategy
+	let query: QuerySpec
+	let sampleCountStrategy: QueryEngineSampleCountStrategy
 
-		const traceMetric = traceSignalMetrics[rule.signalType]
-		if (traceMetric) {
-			const groupResolved = yield* resolveRuleGroupBy("traces")
-			const filters: Record<string, unknown> = { ...baseTraceFilters, rootSpansOnly: true }
-			if (groupResolved && groupResolved.attributeKeys.length > 0) {
-				filters.groupByAttributeKeys = [...groupResolved.attributeKeys]
-			}
-			query = decodeQuerySpecSync({
-				kind: "timeseries",
-				source: "traces",
-				metric: traceMetric,
-				groupBy: groupResolved ? [...groupResolved.tokens] : ["none"],
-				bucketSeconds,
-				...(rule.signalType === "apdex" ? { apdexThresholdMs: rule.apdexThresholdMs ?? 500 } : {}),
-				filters,
-			})
-			sampleCountStrategy = "trace_count"
-		} else if (rule.signalType === "metric") {
-			if (rule.metricName == null || rule.metricType == null || rule.metricAggregation == null) {
-				return yield* Effect.fail(
-					makeValidationError(
-						"metric alerts require metricName, metricType, and metricAggregation",
-					),
-				)
-			}
-			const groupResolved = yield* resolveRuleGroupBy("metrics")
-			const filters: Record<string, unknown> = {
-				metricName: rule.metricName,
-				metricType: rule.metricType,
-				...(rule.serviceName == null ? {} : { serviceName: rule.serviceName }),
-			}
-			if (groupResolved && groupResolved.attributeKeys.length > 0) {
-				// Metrics group-by-attribute is single-key today; pick the first.
-				filters.groupByAttributeKey = groupResolved.attributeKeys[0]
-			}
-			query = decodeQuerySpecSync({
-				kind: "timeseries",
-				source: "metrics",
-				metric: rule.metricAggregation,
-				groupBy: groupResolved ? [...groupResolved.tokens] : ["none"],
-				bucketSeconds,
-				filters,
-			})
-			sampleCountStrategy = "metric_data_points"
-		} else if (rule.signalType === "builder_query") {
-			// Reuse the exact compiler that dashboard query-builder charts use, so
-			// an alert and a chart built from the same draft evaluate identically.
-			if (rule.queryBuilderDraft == null) {
-				return yield* Effect.fail(
-					makeValidationError("builder_query alerts require a queryBuilderDraft"),
-				)
-			}
-			const built = buildTimeseriesQuerySpec(rule.queryBuilderDraft)
-			if (built.error != null || built.query == null) {
-				return yield* Effect.fail(
-					makeValidationError(built.error ?? "Failed to build query builder spec", [
-						...built.warnings,
-					]),
-				)
-			}
-			// Force the evaluation window's bucket size; the draft's stepInterval is
-			// a chart-rendering concern and irrelevant to threshold evaluation.
-			query = decodeQuerySpecSync({ ...built.query, bucketSeconds })
-			sampleCountStrategy =
-				rule.queryBuilderDraft.dataSource === "logs"
-					? "log_count"
-					: rule.queryBuilderDraft.dataSource === "metrics"
-						? "metric_data_points"
-						: "trace_count"
-		} else if (rule.signalType === "raw_query") {
-			const sql = rule.rawQuerySql?.trim() ?? ""
-			if (sql.length === 0) {
-				return yield* Effect.fail(makeValidationError("raw_query alerts require rawQuerySql"))
-			}
-			if (!sql.includes("$__orgFilter")) {
-				return yield* Effect.fail(
-					makeValidationError("raw_query SQL must reference $__orgFilter for org scoping"),
-				)
-			}
-			return new CompiledAlertQueryPlan({
-				kind: "raw_sql",
-				query: null,
-				rawSql: sql,
-				reducer: rule.rawQueryReducer ?? "identity",
-				sampleCountStrategy: null,
-				noDataBehavior,
-			})
-		} else {
-			return yield* Effect.fail(makeValidationError(`Unsupported signal type: ${rule.signalType}`))
+	const traceMetric = traceSignalMetrics[rule.signalType]
+	if (traceMetric) {
+		const groupResolved = yield* resolveRuleGroupBy("traces")
+		const filters: Record<string, unknown> = { ...baseTraceFilters, rootSpansOnly: true }
+		if (groupResolved && groupResolved.attributeKeys.length > 0) {
+			filters.groupByAttributeKeys = [...groupResolved.attributeKeys]
 		}
-
+		query = decodeQuerySpecSync({
+			kind: "timeseries",
+			source: "traces",
+			metric: traceMetric,
+			groupBy: groupResolved ? [...groupResolved.tokens] : ["none"],
+			bucketSeconds,
+			...(rule.signalType === "apdex" ? { apdexThresholdMs: rule.apdexThresholdMs ?? 500 } : {}),
+			filters,
+		})
+		sampleCountStrategy = "trace_count"
+	} else if (rule.signalType === "metric") {
+		if (rule.metricName == null || rule.metricType == null || rule.metricAggregation == null) {
+			return yield* Effect.fail(
+				makeValidationError(
+					"metric alerts require metricName, metricType, and metricAggregation",
+				),
+			)
+		}
+		const groupResolved = yield* resolveRuleGroupBy("metrics")
+		const filters: Record<string, unknown> = {
+			metricName: rule.metricName,
+			metricType: rule.metricType,
+			...(rule.serviceName == null ? {} : { serviceName: rule.serviceName }),
+		}
+		if (groupResolved && groupResolved.attributeKeys.length > 0) {
+			// Metrics group-by-attribute is single-key today; pick the first.
+			filters.groupByAttributeKey = groupResolved.attributeKeys[0]
+		}
+		query = decodeQuerySpecSync({
+			kind: "timeseries",
+			source: "metrics",
+			metric: rule.metricAggregation,
+			groupBy: groupResolved ? [...groupResolved.tokens] : ["none"],
+			bucketSeconds,
+			filters,
+		})
+		sampleCountStrategy = "metric_data_points"
+	} else if (rule.signalType === "builder_query") {
+		// Reuse the exact compiler that dashboard query-builder charts use, so
+		// an alert and a chart built from the same draft evaluate identically.
+		if (rule.queryBuilderDraft == null) {
+			return yield* Effect.fail(
+				makeValidationError("builder_query alerts require a queryBuilderDraft"),
+			)
+		}
+		const built = buildTimeseriesQuerySpec(rule.queryBuilderDraft)
+		if (built.error != null || built.query == null) {
+			return yield* Effect.fail(
+				makeValidationError(built.error ?? "Failed to build query builder spec", [
+					...built.warnings,
+				]),
+			)
+		}
+		// Force the evaluation window's bucket size; the draft's stepInterval is
+		// a chart-rendering concern and irrelevant to threshold evaluation.
+		query = decodeQuerySpecSync({ ...built.query, bucketSeconds })
+		sampleCountStrategy =
+			rule.queryBuilderDraft.dataSource === "logs"
+				? "log_count"
+				: rule.queryBuilderDraft.dataSource === "metrics"
+					? "metric_data_points"
+					: "trace_count"
+	} else if (rule.signalType === "raw_query") {
+		const sql = rule.rawQuerySql?.trim() ?? ""
+		if (sql.length === 0) {
+			return yield* Effect.fail(makeValidationError("raw_query alerts require rawQuerySql"))
+		}
+		if (!sql.includes("$__orgFilter")) {
+			return yield* Effect.fail(
+				makeValidationError("raw_query SQL must reference $__orgFilter for org scoping"),
+			)
+		}
 		return new CompiledAlertQueryPlan({
-			kind: "spec",
-			query,
-			rawSql: null,
-			reducer: "identity",
-			sampleCountStrategy,
+			kind: "raw_sql",
+			query: null,
+			rawSql: sql,
+			reducer: rule.rawQueryReducer ?? "identity",
+			sampleCountStrategy: null,
 			noDataBehavior,
 		})
+	} else {
+		return yield* Effect.fail(makeValidationError(`Unsupported signal type: ${rule.signalType}`))
+	}
+
+	return new CompiledAlertQueryPlan({
+		kind: "spec",
+		query,
+		rawSql: null,
+		reducer: "identity",
+		sampleCountStrategy,
+		noDataBehavior,
 	})
+})
 
 const QuerySpecFromJson = Schema.fromJsonString(QuerySpec)
 
@@ -1001,7 +1008,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		const workerId = makeUuid()
 
 		const dbExecute = <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-			database.execute(fn).pipe(Effect.mapError(makePersistenceError))
+			database.execute(fn).pipe(
+				Effect.tapError((error) =>
+					Effect.logError("AlertsService dbExecute failed").pipe(
+						Effect.annotateLogs({
+							message: error.message,
+							cause: describeCause(error.cause) ?? "(none)",
+						}),
+					),
+				),
+				Effect.mapError(makePersistenceError),
+			)
 
 		const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (
 			roles: ReadonlyArray<RoleName>,
@@ -1446,7 +1463,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			db
 				.insert(alertDeliveryEvents)
 				.values({
-					id: makeUuid(),
+					id: decodeAlertDeliveryEventIdSync(makeUuid()),
 					orgId,
 					incidentId,
 					ruleId,
@@ -1573,34 +1590,31 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				| AlertDeliveryError
 				| AlertNotFoundError
 				| AlertPersistenceError,
-		): DeliveryAttemptFailure => {
-			switch (error._tag) {
-				case "@maple/http/errors/AlertValidationError":
-					return {
-						message: error.message,
-						kind: "payload",
+		): DeliveryAttemptFailure =>
+			Match.value(error).pipe(
+				Match.discriminatorsExhaustive("_tag")({
+					"@maple/http/errors/AlertValidationError": (e) => ({
+						message: e.message,
+						kind: "payload" as const,
 						retryable: false,
-					}
-				case "@maple/http/errors/AlertDeliveryError":
-					return {
-						message: error.message,
-						kind: error.message.includes("timed out") ? "timeout" : "transport",
+					}),
+					"@maple/http/errors/AlertDeliveryError": (e) => ({
+						message: e.message,
+						kind: e.message.includes("timed out") ? ("timeout" as const) : ("transport" as const),
 						retryable: true,
-					}
-				case "@maple/http/errors/AlertNotFoundError":
-					return {
-						message: error.message,
-						kind: "destination",
+					}),
+					"@maple/http/errors/AlertNotFoundError": (e) => ({
+						message: e.message,
+						kind: "destination" as const,
 						retryable: false,
-					}
-				default:
-					return {
-						message: error.message,
-						kind: "unknown",
+					}),
+					"@maple/http/errors/AlertPersistenceError": (e) => ({
+						message: e.message,
+						kind: "unknown" as const,
 						retryable: false,
-					}
-			}
-		}
+					}),
+				}),
+			)
 
 		const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
 			destinationRow: AlertDestinationRow,
@@ -1619,61 +1633,63 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			return yield* dispatchDelivery(fullContext, payloadJson)
 		})
 
-		const queueIncidentNotificationsOnDb = (
-			db: DatabaseExecutor,
+		const queueIncidentNotifications = Effect.fn("AlertsService.queueIncidentNotifications")(function* (
 			orgId: OrgId,
 			rule: NormalizedRule,
 			incident: AlertIncidentRow,
 			evaluation: EvaluatedRule,
 			eventType: AlertEventTypeValue,
 			scheduledAt: number,
-		) => {
-			if (rule.destinationIds.length === 0) return Promise.resolve()
+		) {
+			if (rule.destinationIds.length === 0) return
 
-			return db
-				.select({
-					id: alertDestinations.id,
-					enabled: alertDestinations.enabled,
-				})
-				.from(alertDestinations)
-				.where(
-					and(
-						eq(alertDestinations.orgId, orgId),
-						inArray(alertDestinations.id, [...rule.destinationIds]),
-					),
-				)
-				.then(async (rows) => {
-					const destinations = new Map(rows.map((row) => [row.id, row]))
-					const brandedIncidentId = decodeAlertIncidentIdSync(incident.id)
-					const payload = buildPayload({
-						eventType,
-						incidentId: brandedIncidentId,
-						incidentStatus: decodeAlertIncidentStatusSync(incident.status),
-						dedupeKey: incident.dedupeKey,
-						ruleId: rule.id,
-						ruleName: rule.name,
-						groupKey: incident.groupKey,
-						signalType: rule.signalType,
-						severity: rule.severity,
-						comparator: rule.comparator,
-						threshold: rule.threshold,
-						thresholdUpper: rule.thresholdUpper,
-						windowMinutes: rule.windowMinutes,
-						value: evaluation.value,
-						sampleCount: evaluation.sampleCount,
-						template: rule.notificationTemplate,
-						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
-						sentAtMs: scheduledAt,
+			const rows = yield* dbExecute((db) =>
+				db
+					.select({
+						id: alertDestinations.id,
+						enabled: alertDestinations.enabled,
 					})
+					.from(alertDestinations)
+					.where(
+						and(
+							eq(alertDestinations.orgId, orgId),
+							inArray(alertDestinations.id, [...rule.destinationIds]),
+						),
+					),
+			)
 
-					for (const destinationId of rule.destinationIds) {
-						const destination = destinations.get(destinationId)
-						if (!destination || destination.enabled !== 1) continue
+			const destinations = new Map(rows.map((row) => [row.id, row]))
+			const payload = buildPayload({
+				eventType,
+				incidentId: incident.id,
+				incidentStatus: decodeAlertIncidentStatusSync(incident.status),
+				dedupeKey: incident.dedupeKey,
+				ruleId: rule.id,
+				ruleName: rule.name,
+				groupKey: incident.groupKey,
+				signalType: rule.signalType,
+				severity: rule.severity,
+				comparator: rule.comparator,
+				threshold: rule.threshold,
+				thresholdUpper: rule.thresholdUpper,
+				windowMinutes: rule.windowMinutes,
+				value: evaluation.value,
+				sampleCount: evaluation.sampleCount,
+				template: rule.notificationTemplate,
+				linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
+				sentAtMs: scheduledAt,
+			})
 
-						await insertDeliveryEventRecord(
+			yield* Effect.forEach(
+				rule.destinationIds,
+				(destinationId) => {
+					const destination = destinations.get(destinationId)
+					if (!destination || destination.enabled !== 1) return Effect.void
+					return dbExecute((db) =>
+						insertDeliveryEventRecord(
 							db,
 							orgId,
-							brandedIncidentId,
+							incident.id,
 							rule.id,
 							destinationId,
 							eventType,
@@ -1681,10 +1697,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							scheduledAt,
 							buildDeliveryKey(incident.id, destinationId, eventType, scheduledAt),
 							1,
-						)
-					}
-				})
-		}
+						),
+					)
+				},
+				{ discard: true },
+			)
+		})
 
 		// Exponential backoff up to 15 min, plus 0–999 ms jitter sourced from
 		// Effect's `Random` service so tests can fix the seed deterministically.
@@ -1728,7 +1746,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			} else if (request.type === "discord") {
 				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
 			}
-			const destinationId = makeUuid()
+			const destinationId = decodeAlertDestinationIdSync(makeUuid())
 			const publicConfig = buildPublicConfig(request)
 			const secretConfig: DestinationSecretConfig =
 				request.type === "hazel-oauth"
@@ -2196,7 +2214,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				)
 			}
 
-			const row = yield* requireRuleRow(orgId, decodeAlertRuleIdSync(ruleId))
+			const row = yield* requireRuleRow(orgId, ruleId)
 			const destinationIds = safeParseStringArray(row.destinationIdsJson)
 			return rowToRuleDocument(row, destinationIds)
 		})
@@ -2630,7 +2648,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				),
 			)
 
-		const claimDeliveryEvent = (deliveryEventId: string, currentTime: number) =>
+		const claimDeliveryEvent = (deliveryEventId: AlertDeliveryEventRow["id"], currentTime: number) =>
 			dbExecute((db) =>
 				db
 					.update(alertDeliveryEvents)
@@ -2647,7 +2665,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			)
 
 		const finalizeClaimedDelivery = (
-			deliveryEventId: string,
+			deliveryEventId: AlertDeliveryEventRow["id"],
 			currentTime: number,
 			fields: Partial<AlertDeliveryEventRow> & {
 				readonly status: "success" | "failed"
@@ -2672,28 +2690,27 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					),
 			)
 
-		const recordDeliveryFailure = (
+		const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
 			row: AlertDeliveryEventRow,
 			currentTime: number,
 			failure: DeliveryAttemptFailure,
-		) =>
-			Effect.gen(function* () {
-				yield* finalizeClaimedDelivery(row.id, currentTime, {
-					status: "failed",
-					attemptedAt: currentTime,
-					errorMessage: failure.message,
-				})
-				yield* Effect.logWarning("Alert delivery attempt failed").pipe(
-					Effect.annotateLogs({
-						workerId,
-						deliveryKey: row.deliveryKey,
-						attemptNumber: row.attemptNumber,
-						destinationId: row.destinationId,
-						failureKind: failure.kind,
-						errorMessage: failure.message,
-					}),
-				)
+		) {
+			yield* finalizeClaimedDelivery(row.id, currentTime, {
+				status: "failed",
+				attemptedAt: currentTime,
+				errorMessage: failure.message,
 			})
+			yield* Effect.logWarning("Alert delivery attempt failed").pipe(
+				Effect.annotateLogs({
+					workerId,
+					deliveryKey: row.deliveryKey,
+					attemptNumber: row.attemptNumber,
+					destinationId: row.destinationId,
+					failureKind: failure.kind,
+					errorMessage: failure.message,
+				}),
+			)
+		})
 
 		const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
 			const currentTime = yield* now
@@ -2888,10 +2905,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						Effect.orElseSucceed(() => ({})),
 					)) as Record<string, unknown>
 					yield* insertDeliveryEvent(
-						row.orgId as OrgId,
-						row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
-						decodeAlertRuleIdSync(row.ruleId),
-						decodeAlertDestinationIdSync(row.destinationId),
+						row.orgId,
+						row.incidentId,
+						row.ruleId,
+						row.destinationId,
 						decodeAlertEventTypeSync(row.eventType),
 						retryPayload,
 						currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
@@ -2947,22 +2964,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				typeof alertRuleStates.groupKey,
 			] = [alertRuleStates.orgId, alertRuleStates.ruleId, alertRuleStates.groupKey]
 
-			let incidentAction = "none" as string
-			// Captured from inside dbExecute for the Tinybird check-history row
-			let capturedIncidentId: string | null = null
-			let capturedTransition: "none" | "opened" | "continued" | "resolved" = "none"
-			let capturedConsecutiveBreaches = 0
-			let capturedConsecutiveHealthy = 0
 			// Serialized per rule via the claim lock at runSchedulerTick (SCHEDULER_LOCK_TTL_MS
-			// CAS on alertRules.lastScheduledAt). All writes below are idempotent on retry:
-			// state upsert via onConflictDoUpdate, incident insert keyed on unique incidentKey,
-			// delivery events via onConflictDoNothing on deliveryKey.
-			// Returns the freshly opened incident id (null otherwise) — returned
-			// rather than captured because TS narrowing can't see closure writes.
-			const openedIncidentId: string | null = yield* dbExecute(async (db) => {
+			// CAS on alertRules.lastScheduledAt). The statements below are separate
+			// sequential writes (no transaction) and stay idempotent on retry: state
+			// upsert via onConflictDoUpdate, incident insert keyed on unique
+			// incidentKey, delivery events via onConflictDoNothing on deliveryKey.
+			const outcome = yield* Effect.gen(function* () {
 				const state =
-					(
-						await db
+					(yield* dbExecute((db) =>
+						db
 							.select()
 							.from(alertRuleStates)
 							.where(
@@ -2972,16 +2982,16 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									eq(alertRuleStates.groupKey, groupKey),
 								),
 							)
-							.limit(1)
-					)[0] ?? null
+							.limit(1),
+					))[0] ?? null
 
 				// Look up the open incident for this group via the unique
 				// (orgId, ruleId, status, groupKey) combination. The legacy
 				// serviceName-based filter is gone — composite group keys make
 				// serviceName ambiguous, and we now persist groupKey directly.
 				const openIncident =
-					(
-						await db
+					(yield* dbExecute((db) =>
+						db
 							.select()
 							.from(alertIncidents)
 							.where(
@@ -2992,12 +3002,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									eq(alertIncidents.groupKey, groupKey),
 								),
 							)
-							.limit(1)
-					)[0] ?? null
+							.limit(1),
+					))[0] ?? null
 
 				// Default for check-history ingest: carry open-incident linkage (if any),
 				// transition remains "none" unless a branch below overrides it.
-				capturedIncidentId = openIncident?.id ?? null
+				const carriedIncidentId = openIncident?.id ?? null
 
 				const upsertState = (fields: {
 					consecutiveBreaches: number
@@ -3006,48 +3016,54 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					lastValue: number | null
 					lastSampleCount: number
 				}) =>
-					db
-						.insert(alertRuleStates)
-						.values({
-							orgId: row.orgId,
-							ruleId: row.id,
-							groupKey,
-							...fields,
-							lastEvaluatedAt: timestamp,
-							lastError: null,
-							updatedAt: timestamp,
-						})
-						.onConflictDoUpdate({
-							target: stateConflictTarget,
-							set: {
+					dbExecute((db) =>
+						db
+							.insert(alertRuleStates)
+							.values({
+								orgId: row.orgId,
+								ruleId: row.id,
+								groupKey,
 								...fields,
 								lastEvaluatedAt: timestamp,
 								lastError: null,
 								updatedAt: timestamp,
-							},
-						})
+							})
+							.onConflictDoUpdate({
+								target: stateConflictTarget,
+								set: {
+									...fields,
+									lastEvaluatedAt: timestamp,
+									lastError: null,
+									updatedAt: timestamp,
+								},
+							}),
+					)
 
 				if (evaluation.status === "skipped") {
-					capturedConsecutiveBreaches = state?.consecutiveBreaches ?? 0
-					capturedConsecutiveHealthy = state?.consecutiveHealthy ?? 0
-					await upsertState({
-						consecutiveBreaches: capturedConsecutiveBreaches,
-						consecutiveHealthy: capturedConsecutiveHealthy,
+					const consecutiveBreaches = state?.consecutiveBreaches ?? 0
+					const consecutiveHealthy = state?.consecutiveHealthy ?? 0
+					yield* upsertState({
+						consecutiveBreaches,
+						consecutiveHealthy,
 						lastStatus: evaluation.status,
 						lastValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
 					})
-					return null
+					return {
+						transition: "none" as const,
+						incidentId: carriedIncidentId,
+						openedIncidentId: null,
+						consecutiveBreaches,
+						consecutiveHealthy,
+					}
 				}
 
 				const consecutiveBreaches =
 					evaluation.status === "breached" ? (state?.consecutiveBreaches ?? 0) + 1 : 0
 				const consecutiveHealthy =
 					evaluation.status === "healthy" ? (state?.consecutiveHealthy ?? 0) + 1 : 0
-				capturedConsecutiveBreaches = consecutiveBreaches
-				capturedConsecutiveHealthy = consecutiveHealthy
 
-				await upsertState({
+				yield* upsertState({
 					consecutiveBreaches,
 					consecutiveHealthy,
 					lastStatus: evaluation.status,
@@ -3060,7 +3076,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					openIncident == null &&
 					consecutiveBreaches >= normalized.consecutiveBreachesRequired
 				) {
-					const incidentId = makeUuid()
+					const incidentId = decodeAlertIncidentIdSync(makeUuid())
 					const incident: AlertIncidentRow = {
 						id: incidentId,
 						orgId: row.orgId,
@@ -3088,20 +3104,22 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						updatedAt: timestamp,
 					}
 
-					await db.insert(alertIncidents).values(incident)
-					await queueIncidentNotificationsOnDb(
-						db,
-						row.orgId as OrgId,
+					yield* dbExecute((db) => db.insert(alertIncidents).values(incident))
+					yield* queueIncidentNotifications(
+						row.orgId,
 						normalized,
 						incident,
 						evaluation,
 						"trigger",
 						timestamp,
 					)
-					incidentAction = "opened"
-					capturedIncidentId = incidentId
-					capturedTransition = "opened"
-					return incidentId
+					return {
+						transition: "opened" as const,
+						incidentId,
+						openedIncidentId: incidentId,
+						consecutiveBreaches,
+						consecutiveHealthy,
+					}
 				}
 
 				if (evaluation.status === "breached" && openIncident != null) {
@@ -3114,24 +3132,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						updatedAt: timestamp,
 					}
 
-					await db
-						.update(alertIncidents)
-						.set({
-							lastTriggeredAt: timestamp,
-							lastObservedValue: evaluation.value,
-							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: timestamp,
-							updatedAt: timestamp,
-						})
-						.where(eq(alertIncidents.id, openIncident.id))
+					yield* dbExecute((db) =>
+						db
+							.update(alertIncidents)
+							.set({
+								lastTriggeredAt: timestamp,
+								lastObservedValue: evaluation.value,
+								lastSampleCount: evaluation.sampleCount,
+								lastEvaluatedAt: timestamp,
+								updatedAt: timestamp,
+							})
+							.where(eq(alertIncidents.id, openIncident.id)),
+					)
 
 					const renotifyDueAt =
 						(openIncident.lastNotifiedAt ?? openIncident.firstTriggeredAt) +
 						normalized.renotifyIntervalMinutes * 60_000
 					if (renotifyDueAt <= timestamp) {
-						await queueIncidentNotificationsOnDb(
-							db,
-							row.orgId as OrgId,
+						yield* queueIncidentNotifications(
+							row.orgId,
 							normalized,
 							refreshedIncident,
 							evaluation,
@@ -3139,9 +3158,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							timestamp,
 						)
 					}
-					capturedIncidentId = openIncident.id
-					capturedTransition = "continued"
-					return null
+					return {
+						transition: "continued" as const,
+						incidentId: openIncident.id,
+						openedIncidentId: null,
+						consecutiveBreaches,
+						consecutiveHealthy,
+					}
 				}
 
 				if (
@@ -3159,48 +3182,65 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						updatedAt: timestamp,
 					}
 
-					await db
-						.update(alertIncidents)
-						.set({
-							status: "resolved",
-							resolvedAt: timestamp,
-							lastObservedValue: evaluation.value,
-							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: timestamp,
-							updatedAt: timestamp,
-						})
-						.where(eq(alertIncidents.id, openIncident.id))
+					yield* dbExecute((db) =>
+						db
+							.update(alertIncidents)
+							.set({
+								status: "resolved",
+								resolvedAt: timestamp,
+								lastObservedValue: evaluation.value,
+								lastSampleCount: evaluation.sampleCount,
+								lastEvaluatedAt: timestamp,
+								updatedAt: timestamp,
+							})
+							.where(eq(alertIncidents.id, openIncident.id)),
+					)
 
-					await queueIncidentNotificationsOnDb(
-						db,
-						row.orgId as OrgId,
+					yield* queueIncidentNotifications(
+						row.orgId,
 						normalized,
 						resolvedIncident,
 						evaluation,
 						"resolve",
 						timestamp,
 					)
-					incidentAction = "resolved"
-					capturedIncidentId = openIncident.id
-					capturedTransition = "resolved"
+					return {
+						transition: "resolved" as const,
+						incidentId: openIncident.id,
+						openedIncidentId: null,
+						consecutiveBreaches,
+						consecutiveHealthy,
+					}
 				}
-				return null
+
+				return {
+					transition: "none" as const,
+					incidentId: carriedIncidentId,
+					openedIncidentId: null,
+					consecutiveBreaches,
+					consecutiveHealthy,
+				}
 			})
-			if (incidentAction === "opened") yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
-			if (incidentAction === "resolved") yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+
+			if (outcome.transition === "opened") {
+				yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
+			}
+			if (outcome.transition === "resolved") {
+				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+			}
 
 			// Issue-hub: a freshly opened incident creates/refreshes its issue
 			// (kind="alert") so it lands in the unified triage queue. Budgeted per
 			// tick as a storm fuse for pathological group-by rules; upsertAlertIssue
 			// never fails, so the scheduler tick is isolated from issue problems.
-			if (openedIncidentId != null) {
-				const incidentId = openedIncidentId
+			if (outcome.openedIncidentId != null) {
+				const incidentId = outcome.openedIncidentId
 				const allowed = yield* Ref.modify(issueBudget, (remaining): [boolean, number] =>
 					remaining > 0 ? [true, remaining - 1] : [false, remaining],
 				)
 				if (allowed) {
 					yield* upsertAlertIssue({
-						orgId: row.orgId as OrgId,
+						orgId: row.orgId,
 						ruleId: row.id,
 						ruleName: row.name,
 						groupKey,
@@ -3249,10 +3289,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				WindowMinutes: normalized.windowMinutes,
 				WindowStart: toIngestDateTime64(timestamp - normalized.windowMinutes * 60_000),
 				WindowEnd: toIngestDateTime64(timestamp),
-				ConsecutiveBreaches: capturedConsecutiveBreaches,
-				ConsecutiveHealthy: capturedConsecutiveHealthy,
-				IncidentId: capturedIncidentId,
-				IncidentTransition: capturedTransition,
+				ConsecutiveBreaches: outcome.consecutiveBreaches,
+				ConsecutiveHealthy: outcome.consecutiveHealthy,
+				IncidentId: outcome.incidentId,
+				IncidentTransition: outcome.transition,
 				EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
 			}
 			// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
@@ -3355,8 +3395,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			// Serialized per rule via the claim lock + idempotent writes
 			// (incident status update converges; delivery events onConflictDoNothing).
-			yield* dbExecute(async (db) => {
-				for (const incident of toResolve) {
+			yield* Effect.forEach(toResolve, (incident) =>
+				Effect.gen(function* () {
 					const resolvedIncident = {
 						...incident,
 						status: "resolved" as const,
@@ -3364,17 +3404,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						updatedAt: timestamp,
 					}
 
-					await db
-						.update(alertIncidents)
-						.set({
-							status: "resolved",
-							resolvedAt: timestamp,
-							updatedAt: timestamp,
-						})
-						.where(eq(alertIncidents.id, incident.id))
+					yield* dbExecute((db) =>
+						db
+							.update(alertIncidents)
+							.set({
+								status: "resolved",
+								resolvedAt: timestamp,
+								updatedAt: timestamp,
+							})
+							.where(eq(alertIncidents.id, incident.id)),
+					)
 
-					await queueIncidentNotificationsOnDb(
-						db,
+					yield* queueIncidentNotifications(
 						orgId,
 						normalized,
 						resolvedIncident,
@@ -3382,14 +3423,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						"resolve",
 						timestamp,
 					)
-				}
+				}),
+			)
 
-				if (opts.resolveAll) {
-					await db
+			if (opts.resolveAll) {
+				yield* dbExecute((db) =>
+					db
 						.delete(alertRuleStates)
-						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
-				} else if (staleGroupKeys.length > 0) {
-					await db
+						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId))),
+				)
+			} else if (staleGroupKeys.length > 0) {
+				yield* dbExecute((db) =>
+					db
 						.delete(alertRuleStates)
 						.where(
 							and(
@@ -3397,9 +3442,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								eq(alertRuleStates.ruleId, ruleId),
 								inArray(alertRuleStates.groupKey, staleGroupKeys),
 							),
-						)
-				}
-			})
+						),
+				)
+			}
 
 			yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, toResolve.length)
 			yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, toResolve.length)
@@ -3441,18 +3486,19 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				// Serialized per rule via claim lock + idempotent writes.
 				yield* Effect.forEach(orphaned, (incident) => {
 					const groupKey = incident.groupKey ?? "__total__"
-					return dbExecute(async (db) => {
-						await db
-							.update(alertIncidents)
-							.set({
-								status: "resolved",
-								resolvedAt: timestamp,
-								updatedAt: timestamp,
-							})
-							.where(eq(alertIncidents.id, incident.id))
+					return Effect.gen(function* () {
+						yield* dbExecute((db) =>
+							db
+								.update(alertIncidents)
+								.set({
+									status: "resolved",
+									resolvedAt: timestamp,
+									updatedAt: timestamp,
+								})
+								.where(eq(alertIncidents.id, incident.id)),
+						)
 
-						await queueIncidentNotificationsOnDb(
-							db,
+						yield* queueIncidentNotifications(
 							orgId,
 							normalized,
 							{ ...incident, status: "resolved", resolvedAt: timestamp, updatedAt: timestamp },
@@ -3461,15 +3507,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							timestamp,
 						)
 
-						await db
-							.delete(alertRuleStates)
-							.where(
-								and(
-									eq(alertRuleStates.orgId, orgId),
-									eq(alertRuleStates.ruleId, ruleId),
-									eq(alertRuleStates.groupKey, groupKey),
+						yield* dbExecute((db) =>
+							db
+								.delete(alertRuleStates)
+								.where(
+									and(
+										eq(alertRuleStates.orgId, orgId),
+										eq(alertRuleStates.ruleId, ruleId),
+										eq(alertRuleStates.groupKey, groupKey),
+									),
 								),
-							)
+						)
 					})
 				})
 
@@ -3512,7 +3560,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			)
 			yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
 
-			let evaluationFailureCount = 0
+			// Incremented from fibers running under the concurrent per-rule forEach
+			// below, so it must be a Ref rather than a mutable closure variable.
+			const evaluationFailureCount = yield* Ref.make(0)
 			const pendingChecks = yield* Ref.make<AlertChecksRow[]>([])
 			const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
 
@@ -3531,7 +3581,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					readonly pipe?: string
 				},
 			) {
-				evaluationFailureCount += 1
+				yield* Ref.update(evaluationFailureCount, (count) => count + 1)
 				yield* Metric.update(AlertingMetrics.evaluationFailuresTotal, 1)
 				yield* Effect.logError("Alert rule evaluation failed").pipe(
 					Effect.annotateLogs({
@@ -3552,8 +3602,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				(row) =>
 					Effect.gen(function* () {
 						const timestamp = yield* now
-						const brandedRuleId = decodeAlertRuleIdSync(row.id)
-						const claimed = yield* claimRule(brandedRuleId, timestamp)
+						const claimed = yield* claimRule(row.id, timestamp)
 						if (claimed.rowsAffected === 0) return
 
 						yield* Effect.gen(function* () {
@@ -3561,7 +3610,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							const normalized = yield* normalizeRuleRow(row)
 
 							if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
-								const results = yield* evaluateRule(row.orgId as OrgId, normalized)
+								const results = yield* evaluateRule(row.orgId, normalized)
 								const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
 								const eligible = Arr.filter(
 									results,
@@ -3587,7 +3636,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									Arr.map(eligible, (r) => r.groupKey),
 								)
 								yield* resolveOrphanedGroupIncidents(
-									row.orgId as OrgId,
+									row.orgId,
 									normalized.id,
 									normalized,
 									evaluatedGroups,
@@ -3613,7 +3662,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 											compiledPlan: perServicePlan,
 										}
 										const observations = yield* evaluateRule(
-											row.orgId as OrgId,
+											row.orgId,
 											perService,
 										)
 										const evaluation = observations[0]?.evaluation
@@ -3632,7 +3681,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								)
 
 								yield* resolveOrphanedGroupIncidents(
-									row.orgId as OrgId,
+									row.orgId,
 									normalized.id,
 									normalized,
 									HashSet.fromIterable(normalized.serviceNames),
@@ -3645,7 +3694,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								return
 							}
 
-							const observations = yield* evaluateRule(row.orgId as OrgId, normalized)
+							const observations = yield* evaluateRule(row.orgId, normalized)
 							const evaluation = observations[0]?.evaluation
 							if (evaluation != null) {
 								yield* recordEvaluationStatus(evaluation)
@@ -3714,7 +3763,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					))[0]
 					if (!ruleRow) return
 					const normalized = yield* normalizeRuleRow(ruleRow)
-					yield* resolveStaleIncidents(orgId as OrgId, normalized.id, normalized, {
+					yield* resolveStaleIncidents(orgId, normalized.id, normalized, {
 						resolveAll: true,
 					})
 				}),
@@ -3722,8 +3771,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			// Flush accumulated alert_check audit rows to Tinybird, one POST per
 			// orgId. Awaited so the Cloudflare Worker isolate stays alive until
-			// the writes complete; errors are swallowed because the authoritative
-			// state already lives in Postgres above.
+			// the writes complete; errors are logged then swallowed because the
+			// authoritative state already lives in Postgres above.
 			const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, [])
 			if (accumulatedChecks.length > 0) {
 				const byOrg = new Map<string, AlertChecksRow[]>()
@@ -3735,9 +3784,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				yield* Effect.forEach(
 					Array.from(byOrg.entries()),
 					([orgId, checks]) =>
-						warehouse
-							.ingest(systemTenant(orgId as OrgId), "alert_checks", checks)
-							.pipe(Effect.ignore),
+						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks).pipe(
+							Effect.tapCause((cause) =>
+								Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
+									Effect.annotateLogs({ orgId, rowCount: checks.length, cause: Cause.pretty(cause) }),
+								),
+							),
+							Effect.ignore,
+						),
 					{ concurrency: "unbounded" },
 				)
 			}
@@ -3748,11 +3802,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			return {
 				evaluatedCount: rows.length,
 				processedCount: deliveryResult.processedCount,
-				evaluationFailureCount,
+				evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
 				deliveryFailureCount: deliveryResult.failureCount,
 			}
 		})
 
+		// `AlertsService.of(...)` can't be used here — referencing the class inside
+		// its own `make` is a TS2506 circular base-expression error.
 		return {
 			listDestinations,
 			createDestination,

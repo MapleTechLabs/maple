@@ -14,7 +14,12 @@
 // incident reopens (keeping its triage result) instead of inserting a row.
 // ---------------------------------------------------------------------------
 
-import type { AnomalyIncidentSeverity, AnomalyIncidentStatus, AnomalyResolveReason } from "@maple/domain/http"
+import {
+	AnomalyIncidentSeverity,
+	type AnomalyIncidentStatus,
+	type AnomalyResolveReason,
+} from "@maple/domain/http"
+import { Array as Arr, Option, Schema } from "effect"
 
 /**
  * Attach only when the new fingerprint's breach onset falls within this span
@@ -29,16 +34,24 @@ export const REOPEN_WINDOW_MS = 6 * 60 * 60 * 1000
 /** Entry-list cap; later fingerprints still share the incident untracked. */
 export const MAX_FINGERPRINT_ENTRIES = 50
 
-export interface IncidentFingerprintEntry {
-	fingerprintHash: string
-	errorIssueId: string | null
-	detectorKey: string
-	openedValue: number
-	lastValue: number
-	severity: AnomalyIncidentSeverity
-	attachedAt: number
-	resolvedAt: number | null
-}
+/**
+ * One persisted entry of an incident's `fingerprintsJson` column — the
+ * epoch-ms storage variant of the HTTP `AnomalyIncidentFingerprint` document.
+ * The document converts `attachedAt`/`resolvedAt` to ISO strings and brands
+ * `errorIssueId` at read time; the stored shape additionally carries the
+ * `detectorKey` the document does not expose.
+ */
+export const IncidentFingerprintEntry = Schema.Struct({
+	fingerprintHash: Schema.String,
+	errorIssueId: Schema.NullOr(Schema.String),
+	detectorKey: Schema.String,
+	openedValue: Schema.Number,
+	lastValue: Schema.Number,
+	severity: AnomalyIncidentSeverity,
+	attachedAt: Schema.Number,
+	resolvedAt: Schema.NullOr(Schema.Number),
+})
+export type IncidentFingerprintEntry = Schema.Schema.Type<typeof IncidentFingerprintEntry>
 
 /** The incident columns the fingerprint helpers need. */
 export interface IncidentFingerprintSource {
@@ -52,26 +65,19 @@ export interface IncidentFingerprintSource {
 	readonly fingerprintsJson: string
 }
 
-const isEntry = (value: unknown): value is IncidentFingerprintEntry =>
-	typeof value === "object" &&
-	value !== null &&
-	typeof (value as { fingerprintHash?: unknown }).fingerprintHash === "string" &&
-	typeof (value as { detectorKey?: unknown }).detectorKey === "string"
+const decodeStoredEntryList = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
+const decodeEntryResult = Schema.decodeUnknownResult(IncidentFingerprintEntry)
 
 /**
- * Parse an incident's fingerprint entries. Incidents created before
- * consolidation (or by older code) have an empty list; seed it from the
- * incident's own primary-fingerprint columns so they behave as one-entry
- * consolidated incidents.
+ * Parse an incident's fingerprint entries. Malformed JSON (or a non-array)
+ * yields no entries; invalid elements inside a valid array are skipped.
+ * Incidents created before consolidation (or by older code) have an empty
+ * list; seed it from the incident's own primary-fingerprint columns so they
+ * behave as one-entry consolidated incidents.
  */
 export function parseFingerprints(row: IncidentFingerprintSource): IncidentFingerprintEntry[] {
-	let parsed: unknown
-	try {
-		parsed = JSON.parse(row.fingerprintsJson)
-	} catch {
-		parsed = []
-	}
-	const entries = Array.isArray(parsed) ? parsed.filter(isEntry) : []
+	const stored = Option.getOrElse(decodeStoredEntryList(row.fingerprintsJson), () => [])
+	const entries = Arr.filterMap(stored, (value) => decodeEntryResult(value))
 	if (entries.length === 0 && row.fingerprintHash !== null) {
 		return [
 			{

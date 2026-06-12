@@ -1,8 +1,10 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { OrgId } from "@maple/domain/http"
+import { AlertIncidentId, AlertRuleId } from "@maple/domain/primitives"
 import { alertIncidents, errorIssues, errorIssueEvents } from "@maple/db"
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Database } from "@/lib/DatabaseLive"
 import { Env } from "@/lib/Env"
@@ -40,9 +42,19 @@ const makeLayer = () => {
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_issue_hub_test")
 
+// Rule/incident ids are UUID-branded end to end, so fixtures must be real UUIDs.
+const RULE_1 = Schema.decodeUnknownSync(AlertRuleId)("11111111-1111-4111-8111-111111111111")
+const INCIDENT_1 = Schema.decodeUnknownSync(AlertIncidentId)("22222222-2222-4222-8222-222222222222")
+const INCIDENT_2 = Schema.decodeUnknownSync(AlertIncidentId)("33333333-3333-4333-8333-333333333333")
+
+// Single time base for the whole file: seeded rows, upsert input timestamps,
+// and the service's own Clock reads (via TestClock.setTime) all derive from T0
+// instead of mixing literal epochs with wall-clock time.
+const T0 = 1_750_000_000_000
+
 const baseInput = (overrides: Partial<Parameters<typeof upsertAlertIssue>[0]> = {}) => ({
 	orgId: ORG,
-	ruleId: "rule-1",
+	ruleId: RULE_1,
 	ruleName: "High p95 latency",
 	groupKey: "checkout",
 	signalType: "p95_latency",
@@ -53,9 +65,9 @@ const baseInput = (overrides: Partial<Parameters<typeof upsertAlertIssue>[0]> = 
 	windowMinutes: 5,
 	observedValue: 1240,
 	sampleCount: 412,
-	incidentId: "incident-1",
+	incidentId: INCIDENT_1,
 	serviceName: "checkout",
-	timestamp: 1_750_000_000_000,
+	timestamp: T0,
 	workflowBinding: undefined,
 	...overrides,
 })
@@ -69,7 +81,7 @@ const loadIssue = Effect.gen(function* () {
 			.where(
 				and(
 					eq(errorIssues.orgId, ORG),
-					eq(errorIssues.fingerprintHash, alertIssueFingerprint("rule-1", "checkout")),
+					eq(errorIssues.fingerprintHash, alertIssueFingerprint(RULE_1, "checkout")),
 				),
 			),
 	)
@@ -86,13 +98,14 @@ describe("detectorSeverityFor", () => {
 describe("upsertAlertIssue", () => {
 	it.effect("creates an alert-kind issue with detector severity and links the incident", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			yield* database.execute((db) =>
 				db.insert(alertIncidents).values({
-					id: "incident-1",
+					id: INCIDENT_1,
 					orgId: ORG,
-					ruleId: "rule-1",
-					incidentKey: "incident-1",
+					ruleId: RULE_1,
+					incidentKey: INCIDENT_1,
 					ruleName: "High p95 latency",
 					groupKey: "checkout",
 					signalType: "p95_latency",
@@ -100,11 +113,11 @@ describe("upsertAlertIssue", () => {
 					status: "open",
 					comparator: "gte",
 					threshold: 800,
-					firstTriggeredAt: 1_750_000_000_000,
-					lastTriggeredAt: 1_750_000_000_000,
-					dedupeKey: `${ORG}:rule-1:checkout`,
-					createdAt: 1_750_000_000_000,
-					updatedAt: 1_750_000_000_000,
+					firstTriggeredAt: T0,
+					lastTriggeredAt: T0,
+					dedupeKey: `${ORG}:${RULE_1}:checkout`,
+					createdAt: T0,
+					updatedAt: T0,
 				}),
 			)
 
@@ -122,11 +135,11 @@ describe("upsertAlertIssue", () => {
 			assert.strictEqual(issue.exceptionType, "High p95 latency")
 			assert.strictEqual(issue.serviceName, "checkout")
 			const sourceRef = JSON.parse(issue.sourceRefJson ?? "{}")
-			assert.strictEqual(sourceRef.ruleId, "rule-1")
-			assert.strictEqual(sourceRef.latestIncidentId, "incident-1")
+			assert.strictEqual(sourceRef.ruleId, RULE_1)
+			assert.strictEqual(sourceRef.latestIncidentId, INCIDENT_1)
 
 			const incidents = yield* database.execute((db) =>
-				db.select().from(alertIncidents).where(eq(alertIncidents.id, "incident-1")),
+				db.select().from(alertIncidents).where(eq(alertIncidents.id, INCIDENT_1)),
 			)
 			assert.strictEqual(incidents[0]?.errorIssueId, issue.id)
 
@@ -140,9 +153,10 @@ describe("upsertAlertIssue", () => {
 
 	it.effect("re-fires refresh the same issue instead of creating a new one", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const first = yield* upsertAlertIssue(baseInput())
 			const second = yield* upsertAlertIssue(
-				baseInput({ incidentId: "incident-2", timestamp: 1_750_000_100_000 }),
+				baseInput({ incidentId: INCIDENT_2, timestamp: T0 + 100_000 }),
 			)
 			assert.strictEqual(second.action, "refreshed")
 			assert.strictEqual(second.issueId, first.issueId)
@@ -151,12 +165,13 @@ describe("upsertAlertIssue", () => {
 			assert.lengthOf(issues, 1)
 			assert.strictEqual(issues[0]?.occurrenceCount, 2)
 			const sourceRef = JSON.parse(issues[0]?.sourceRefJson ?? "{}")
-			assert.strictEqual(sourceRef.latestIncidentId, "incident-2")
+			assert.strictEqual(sourceRef.latestIncidentId, INCIDENT_2)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
 	it.effect("does not clobber an existing severity on re-fire", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
@@ -166,7 +181,9 @@ describe("upsertAlertIssue", () => {
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
-			yield* upsertAlertIssue(baseInput({ incidentId: "incident-2", severity: "critical" }))
+			yield* upsertAlertIssue(
+				baseInput({ incidentId: INCIDENT_2, severity: "critical", timestamp: T0 + 100_000 }),
+			)
 
 			const issues = yield* loadIssue
 			assert.strictEqual(issues[0]?.severity, "low")
@@ -174,19 +191,44 @@ describe("upsertAlertIssue", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	it.effect("backfills the detector severity on re-fire when severity was cleared", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			const database = yield* Database
+			const first = yield* upsertAlertIssue(baseInput())
+			// Simulate a triager clearing the severity back to "untriaged".
+			yield* database.execute((db) =>
+				db
+					.update(errorIssues)
+					.set({ severity: null, severitySource: null })
+					.where(eq(errorIssues.id, first.issueId!)),
+			)
+
+			const second = yield* upsertAlertIssue(
+				baseInput({ incidentId: INCIDENT_2, severity: "critical", timestamp: T0 + 100_000 }),
+			)
+			assert.strictEqual(second.action, "refreshed")
+
+			const issues = yield* loadIssue
+			assert.strictEqual(issues[0]?.severity, "critical")
+			assert.strictEqual(issues[0]?.severitySource, "detector")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("reopens a done issue to triage with regression events", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "done", resolvedAt: 1_750_000_050_000 })
+					.set({ workflowState: "done", resolvedAt: T0 + 50_000 })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
 			const second = yield* upsertAlertIssue(
-				baseInput({ incidentId: "incident-2", timestamp: 1_750_000_100_000 }),
+				baseInput({ incidentId: INCIDENT_2, timestamp: T0 + 100_000 }),
 			)
 			assert.strictEqual(second.action, "reopened")
 
@@ -205,17 +247,18 @@ describe("upsertAlertIssue", () => {
 
 	it.effect("skips a wontfix issue while its snooze is active", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: 1_750_000_999_000 })
+					.set({ workflowState: "wontfix", snoozeUntil: T0 + 999_000 })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
 			const second = yield* upsertAlertIssue(
-				baseInput({ incidentId: "incident-2", timestamp: 1_750_000_100_000 }),
+				baseInput({ incidentId: INCIDENT_2, timestamp: T0 + 100_000 }),
 			)
 			assert.strictEqual(second.action, "skipped")
 
@@ -225,25 +268,66 @@ describe("upsertAlertIssue", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("reopens a wontfix issue once its snooze has expired", () =>
+	it.effect("skips a wontfix issue with an indefinite snooze (snoozeUntil null)", () =>
 		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
 			const database = yield* Database
 			const first = yield* upsertAlertIssue(baseInput())
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: 1_750_000_050_000 })
+					.set({ workflowState: "wontfix", snoozeUntil: null })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
 			const second = yield* upsertAlertIssue(
-				baseInput({ incidentId: "incident-2", timestamp: 1_750_000_100_000 }),
+				baseInput({ incidentId: INCIDENT_2, timestamp: T0 + 100_000 }),
+			)
+			assert.strictEqual(second.action, "skipped")
+			assert.strictEqual(second.issueId, first.issueId)
+
+			const issues = yield* loadIssue
+			// Indefinitely snoozed means left alone entirely: no reopen, no refresh.
+			assert.strictEqual(issues[0]?.workflowState, "wontfix")
+			assert.strictEqual(issues[0]?.occurrenceCount, 1)
+			assert.isNull(issues[0]?.snoozeUntil)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("reopens a wontfix issue once its snooze has expired", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			const database = yield* Database
+			const first = yield* upsertAlertIssue(baseInput())
+			yield* database.execute((db) =>
+				db
+					.update(errorIssues)
+					.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+					.where(eq(errorIssues.id, first.issueId!)),
+			)
+
+			const second = yield* upsertAlertIssue(
+				baseInput({ incidentId: INCIDENT_2, timestamp: T0 + 100_000 }),
 			)
 			assert.strictEqual(second.action, "reopened")
 
 			const issues = yield* loadIssue
 			assert.strictEqual(issues[0]?.workflowState, "triage")
 			assert.isNull(issues[0]?.snoozeUntil)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("reports { issueId: null, action: 'error' } instead of failing when the DB breaks", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(T0)
+			const database = yield* Database
+			// Sabotage the schema so the very first select inside the upsert fails;
+			// the catchCause wrapper must swallow it and report `action: "error"`.
+			yield* database.execute((db) => db.run(sql`DROP TABLE error_issues`))
+
+			const result = yield* upsertAlertIssue(baseInput())
+			assert.isNull(result.issueId)
+			assert.strictEqual(result.action, "error")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

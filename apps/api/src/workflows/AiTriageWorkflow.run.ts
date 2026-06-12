@@ -19,6 +19,7 @@ import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { generateText, hasToolCall, stepCountIs, type ToolSet } from "ai"
 import { aiTriageRuns, aiTriageSettings, anomalyIncidents, errorIssueEvents } from "@maple/db"
 import { createMapleD1Client, type CloudflareD1Database, type MapleD1Client } from "@maple/db/client"
+import { AiTriageResult } from "@maple/domain/http"
 import {
 	AiTriageRunId,
 	AnomalyIncidentId,
@@ -27,7 +28,7 @@ import {
 	OrgId,
 } from "@maple/domain/primitives"
 import { and, eq } from "drizzle-orm"
-import { Cause, Effect, Exit, Schema } from "effect"
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect"
 import { getMapleAgentSetup, resolveOrgOpenrouterKey } from "../agent"
 import { trackTokenUsage } from "../lib/autumn-tracker"
 import { applyTriageSeverity } from "../lib/issue-severity"
@@ -57,6 +58,27 @@ const decodeRunId = Schema.decodeUnknownSync(AiTriageRunId)
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const decodeAnomalyIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
+
+/** Lenient decode for the contextJson text column; failures fall back to {}. */
+const decodeContextJson = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+/**
+ * One decode from the persisted resultJson string straight to AiTriageResult —
+ * composing `fromJsonString` means a malformed string and a shape mismatch
+ * both fail through the schema error channel instead of a bare JSON.parse
+ * throw in front of the decode.
+ */
+const decodeTriageResultJson = Schema.decodeUnknownSync(Schema.fromJsonString(AiTriageResult))
+
+/**
+ * Typed wrapper for the LLM call's rejection so the Effect error channel is
+ * not `unknown`. Unwrapped (`.cause`) at the squash-and-rethrow boundary so
+ * the value thrown to the workflow runtime stays the original error.
+ */
+class TriageGenerateError extends Data.TaggedError("TriageGenerateError")<{
+	readonly cause: unknown
+}> {}
 
 /**
  * UUIDv5-style id derived from the runId, so the timeline-event insert in the
@@ -117,6 +139,8 @@ export interface AiTriageRunDeps {
 	 * ToolSet directly. Production always builds from the registry.
 	 */
 	readonly buildTools?: () => Promise<ToolSet>
+	/** Test seam: fixed clock for timestamp assertions. Production uses Date.now. */
+	readonly now?: () => number
 }
 
 export async function runAiTriage(
@@ -130,9 +154,27 @@ export async function runAiTriage(
 	const db = deps.db ?? createMapleD1Client(env.MAPLE_DB as CloudflareD1Database)
 	const generate = deps.generate ?? generateText
 	const resolveApiKey = deps.resolveApiKey ?? resolveOrgOpenrouterKey
+	const clock = deps.now ?? Date.now
+
+	/**
+	 * Failure-path structured log, routed through the module's OTLP telemetry
+	 * (console.error alone never reaches the log pipeline). Defensive: a
+	 * telemetry problem must never mask the original failure path, so anything
+	 * thrown here is caught and demoted to console.error.
+	 */
+	const logFailure = async (message: string, fields: Record<string, unknown>): Promise<void> => {
+		try {
+			await Effect.runPromise(
+				Effect.logError(message, fields).pipe(Effect.provide(triageTelemetry.layer)),
+			)
+			await triageTelemetry.flush(env)
+		} catch (cause) {
+			console.error("ai-triage: failed to emit structured failure log", { error: String(cause) })
+		}
+	}
 
 	const markFailed = async (error: string) => {
-		const now = Date.now()
+		const now = clock()
 		try {
 			await db
 				.update(aiTriageRuns)
@@ -154,6 +196,11 @@ export async function runAiTriage(
 			// path reclaims it as stranded (STALE_RUN_RECLAIM_MS) — surface why in
 			// the Workers logs instead of swallowing it.
 			console.error("ai-triage: failed to mark run failed", {
+				runId,
+				orgId,
+				error: String(cause),
+			})
+			await logFailure("ai-triage: failed to mark run failed", {
 				runId,
 				orgId,
 				error: String(cause),
@@ -186,7 +233,7 @@ export async function runAiTriage(
 			.where(eq(aiTriageSettings.orgId, run.orgId))
 			.limit(1)
 
-		const now = Date.now()
+		const now = clock()
 		await db
 			.update(aiTriageRuns)
 			.set({ status: "running", startedAt: now, updatedAt: now })
@@ -202,6 +249,11 @@ export async function runAiTriage(
 	if (!gate.proceed) {
 		if ("failure" in gate && gate.failure) {
 			console.error("ai-triage: run failed before agent start", {
+				runId,
+				orgId,
+				reason: gate.failure,
+			})
+			await logFailure("ai-triage: run failed before agent start", {
 				runId,
 				orgId,
 				reason: gate.failure,
@@ -236,12 +288,10 @@ export async function runAiTriage(
 				headers: { "X-OpenRouter-Title": "Maple AI Triage" },
 			})
 
-			let context: Record<string, unknown>
-			try {
-				context = JSON.parse(gate.contextJson) as Record<string, unknown>
-			} catch {
-				context = {}
-			}
+			const context: Record<string, unknown> = Option.getOrElse(
+				decodeContextJson(gate.contextJson),
+				() => ({}),
+			)
 
 			// gen_ai.* semconv span around the LLM loop (no cost math — Maple's
 			// central pricing layer derives cost from the token counts).
@@ -267,7 +317,7 @@ export async function runAiTriage(
 								},
 							},
 						}),
-					catch: (error) => error,
+					catch: (error) => new TriageGenerateError({ cause: error }),
 				}).pipe(
 					Effect.tap((r) =>
 						Effect.annotateCurrentSpan({
@@ -289,8 +339,13 @@ export async function runAiTriage(
 			)
 			await triageTelemetry.flush(env)
 			// Re-throw the original error so the step's failure handling (and the
-			// message persisted by markFailed) is unchanged by the span wrapper.
-			if (Exit.isFailure(generateExit)) throw Cause.squash(generateExit.cause)
+			// message persisted by markFailed) is unchanged by the span wrapper:
+			// unwrap the TriageGenerateError envelope back to its cause; defects
+			// (non-generate failures) are squashed and thrown as before.
+			if (Exit.isFailure(generateExit)) {
+				const squashed = Cause.squash(generateExit.cause)
+				throw squashed instanceof TriageGenerateError ? squashed.cause : squashed
+			}
 			const result = generateExit.value
 
 			const submitCall = result.steps
@@ -311,12 +366,13 @@ export async function runAiTriage(
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error)
 		console.error("ai-triage: agent run failed", { runId, orgId, error: message })
+		await logFailure("ai-triage: agent run failed", { runId, orgId, error: message })
 		await markFailed(message.slice(0, 2000))
 		return { status: "failed" }
 	}
 
 	await step.do("persist", PERSIST_STEP, async () => {
-		const now = Date.now()
+		const now = clock()
 		await db
 			.update(aiTriageRuns)
 			.set({
@@ -337,7 +393,7 @@ export async function runAiTriage(
 			// override) + timeline events + escalation outbox. All writes are
 			// idempotent via runId-derived deterministic ids, so a retried persist
 			// step cannot duplicate them.
-			const result = decodeTriageResult(JSON.parse(agentResult.resultJson))
+			const result = decodeTriageResultJson(agentResult.resultJson)
 			const applied = await applyTriageSeverity(db, {
 				orgId: decodeOrgId(orgId),
 				issueId: decodeIssueId(issueId),

@@ -62,7 +62,11 @@ export const escalationReasonFor = (
 	return severityRank(to) > severityRank(from) ? "severity_escalated" : null
 }
 
-const ensureTriageAgentActor = async (db: MapleD1Client, orgId: OrgId): Promise<ActorId> => {
+const ensureTriageAgentActor = async (
+	db: MapleD1Client,
+	orgId: OrgId,
+	timestamp: number,
+): Promise<ActorId> => {
 	const select = () =>
 		db
 			.select()
@@ -73,7 +77,6 @@ const ensureTriageAgentActor = async (db: MapleD1Client, orgId: OrgId): Promise<
 			.limit(1)
 	const existing = await select()
 	if (existing[0]) return existing[0].id
-	const now = Date.now()
 	await db
 		.insert(actors)
 		.values({
@@ -85,8 +88,8 @@ const ensureTriageAgentActor = async (db: MapleD1Client, orgId: OrgId): Promise<
 			model: null,
 			capabilitiesJson: JSON.stringify(["auto-triage"]),
 			createdBy: null,
-			createdAt: now,
-			lastActiveAt: now,
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
 		})
 		.onConflictDoNothing()
 	const after = await select()
@@ -128,7 +131,7 @@ export const applyTriageSeverity = async (
 	const issue = issueRows[0]
 	if (!issue) return { applied: false, actorId: null }
 
-	const actorId = await ensureTriageAgentActor(db, input.orgId)
+	const actorId = await ensureTriageAgentActor(db, input.orgId, input.timestamp)
 	const from = issue.severity ?? null
 
 	if (issue.severitySource === "manual") {
