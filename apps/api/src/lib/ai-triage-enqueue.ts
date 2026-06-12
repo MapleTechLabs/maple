@@ -94,19 +94,19 @@ export const maybeEnqueueTriage: (
 			db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, input.orgId)).limit(1),
 		)
 		const settings: AiTriageSettingsRow | undefined = settingsRows[0]
-		if (!input.force && (settings === undefined || settings.enabled !== 1)) {
+		if (!input.force && (settings === undefined || !settings.enabled)) {
 			return { enqueued: false, reason: "disabled" as const }
 		}
 
 		const maxRunsPerDay = settings?.maxRunsPerDay ?? 20
 		const todayCount = yield* database.execute((db) =>
 			db
-				.select({ count: sql<number>`count(*)` })
+				.select({ count: sql<number>`count(*)::int` })
 				.from(aiTriageRuns)
 				.where(
 					and(
 						eq(aiTriageRuns.orgId, input.orgId),
-						gte(aiTriageRuns.createdAt, startOfUtcDay(nowMs)),
+						gte(aiTriageRuns.createdAt, new Date(startOfUtcDay(nowMs))),
 					),
 				),
 		)
@@ -128,13 +128,14 @@ export const maybeEnqueueTriage: (
 					incidentId: input.incidentId,
 					issueId: input.issueId ?? null,
 					status: "queued",
-					contextJson: JSON.stringify(input.context),
-					createdAt: nowMs,
-					updatedAt: nowMs,
+					contextJson: input.context,
+					createdAt: new Date(nowMs),
+					updatedAt: new Date(nowMs),
 				})
-				.onConflictDoNothing(),
+				.onConflictDoNothing()
+				.returning({ id: aiTriageRuns.id }),
 		)
-		if ((inserted as { rowsAffected?: number }).rowsAffected === 0) {
+		if (inserted.length === 0) {
 			// The unique (orgId, incidentKind, incidentId) slot is taken. Terminal
 			// rows are genuine duplicates; a non-terminal row that stopped making
 			// progress is a stranded run (dead workflow instance / lost terminal
@@ -157,7 +158,7 @@ export const maybeEnqueueTriage: (
 			const stranded =
 				existing !== undefined &&
 				(existing.status === "queued" || existing.status === "running") &&
-				existing.updatedAt < nowMs - STALE_RUN_RECLAIM_MS
+				existing.updatedAt.getTime() < nowMs - STALE_RUN_RECLAIM_MS
 			if (!stranded) {
 				return { enqueued: false, reason: "duplicate" as const }
 			}
@@ -184,13 +185,14 @@ export const maybeEnqueueTriage: (
 						incidentId: input.incidentId,
 						issueId: input.issueId ?? null,
 						status: "queued",
-						contextJson: JSON.stringify(input.context),
-						createdAt: nowMs,
-						updatedAt: nowMs,
+						contextJson: input.context,
+						createdAt: new Date(nowMs),
+						updatedAt: new Date(nowMs),
 					})
-					.onConflictDoNothing(),
+					.onConflictDoNothing()
+					.returning({ id: aiTriageRuns.id }),
 			)
-			if ((reinserted as { rowsAffected?: number }).rowsAffected === 0) {
+			if (reinserted.length === 0) {
 				return { enqueued: false, reason: "duplicate" as const }
 			}
 		}
@@ -203,7 +205,7 @@ export const maybeEnqueueTriage: (
 			yield* database.execute((db) =>
 				db
 					.update(aiTriageRuns)
-					.set({ status: "failed", error: "workflow_binding_unavailable", updatedAt: nowMs })
+					.set({ status: "failed", error: "workflow_binding_unavailable", updatedAt: new Date(nowMs) })
 					.where(eq(aiTriageRuns.id, runId)),
 			)
 			return { enqueued: false, runId, reason: "no_binding" as const }
@@ -235,7 +237,7 @@ export const maybeEnqueueTriage: (
 							.set({
 								status: "failed",
 								error: `workflow_create_failed: ${error.message}`,
-								updatedAt: nowMs,
+								updatedAt: new Date(nowMs),
 							})
 							.where(eq(aiTriageRuns.id, runId)),
 					)

@@ -64,14 +64,14 @@ const passThroughMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) => httpAp
 // under the far larger per-request CPU budget.
 const buildHandler = async () => {
 	const { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } = await import("./app")
-	const { DatabaseD1Live } = await import("./lib/DatabaseD1Live")
+	const { DatabasePgLive } = await import("./lib/DatabasePgLive")
 	return HttpRouter.toWebHandler(
 		AllRoutes.pipe(
 			Layer.provideMerge(MainLive),
 			Layer.provideMerge(ApiAuthLive),
 			Layer.provideMerge(ApiObservabilityLive),
 			Layer.provideMerge(WorkerPlatformLive),
-			Layer.provideMerge(DatabaseD1Live),
+			Layer.provideMerge(DatabasePgLive),
 			Layer.provideMerge(WorkerEnvironment.layer),
 			Layer.provideMerge(telemetry.layer),
 			Layer.provideMerge(WorkerConfigProviderLayer),

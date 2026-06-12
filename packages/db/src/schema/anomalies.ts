@@ -1,4 +1,14 @@
-import { index, integer, primaryKey, real, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import {
+	boolean,
+	doublePrecision,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
+} from "drizzle-orm/pg-core"
 import type { AnomalyIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	AnomalyIncidentSeverity,
@@ -14,14 +24,14 @@ import type {
  * detector tick (CAS on lastTickAt, mirroring alert_rules.lastScheduledAt).
  * The detector is zero-config: a missing row means defaults (enabled).
  */
-export const anomalyDetectorSettings = sqliteTable("anomaly_detector_settings", {
+export const anomalyDetectorSettings = pgTable("anomaly_detector_settings", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
-	enabled: integer("enabled", { mode: "number" }).notNull().default(1),
+	enabled: boolean("enabled").notNull().default(true),
 	sensitivity: text("sensitivity").$type<AnomalySensitivity>().notNull().default("normal"),
-	mutedSignalsJson: text("muted_signals_json").notNull().default("[]"),
-	lastTickAt: integer("last_tick_at", { mode: "number" }),
-	createdAt: integer("created_at", { mode: "number" }).notNull(),
-	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	mutedSignalsJson: jsonb("muted_signals_json").$type<ReadonlyArray<string>>().notNull().default([]),
+	lastTickAt: timestamp("last_tick_at", { withTimezone: true, mode: "date" }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedBy: text("updated_by").$type<UserId>(),
 })
 
@@ -31,7 +41,7 @@ export const anomalyDetectorSettings = sqliteTable("anomaly_detector_settings", 
  * detectorKey = `${signalType}:${deploymentEnv}:${serviceName}` or
  * `error_spike:${deploymentEnv}:${fingerprintHash}`.
  */
-export const anomalyDetectorStates = sqliteTable(
+export const anomalyDetectorStates = pgTable(
 	"anomaly_detector_states",
 	{
 		orgId: text("org_id").$type<OrgId>().notNull(),
@@ -40,18 +50,18 @@ export const anomalyDetectorStates = sqliteTable(
 		serviceName: text("service_name").notNull(),
 		deploymentEnv: text("deployment_env").notNull().default(""),
 		fingerprintHash: text("fingerprint_hash"),
-		consecutiveBreaches: integer("consecutive_breaches", { mode: "number" }).notNull().default(0),
-		consecutiveHealthy: integer("consecutive_healthy", { mode: "number" }).notNull().default(0),
+		consecutiveBreaches: integer("consecutive_breaches").notNull().default(0),
+		consecutiveHealthy: integer("consecutive_healthy").notNull().default(0),
 		lastStatus: text("last_status"),
-		lastValue: real("last_value"),
-		baselineMedian: real("baseline_median"),
-		lastSampleCount: integer("last_sample_count", { mode: "number" }),
-		lastEvaluatedAt: integer("last_evaluated_at", { mode: "number" }),
+		lastValue: doublePrecision("last_value"),
+		baselineMedian: doublePrecision("baseline_median"),
+		lastSampleCount: integer("last_sample_count"),
+		lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true, mode: "date" }),
 		openIncidentId: text("open_incident_id").$type<AnomalyIncidentId>(),
-		lastResolvedAt: integer("last_resolved_at", { mode: "number" }),
+		lastResolvedAt: timestamp("last_resolved_at", { withTimezone: true, mode: "date" }),
 		/** Most recent incident this series opened or fed — reopen target after a resolve. */
 		lastIncidentId: text("last_incident_id").$type<AnomalyIncidentId>(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		primaryKey({ columns: [table.orgId, table.detectorKey] }),
@@ -66,7 +76,7 @@ export const anomalyDetectorStates = sqliteTable(
  * observed value, baseline stats, and threshold at open time so the UI and
  * the AI triage prompt can describe the deviation without re-querying.
  */
-export const anomalyIncidents = sqliteTable(
+export const anomalyIncidents = pgTable(
 	"anomaly_incidents",
 	{
 		id: text("id").$type<AnomalyIncidentId>().notNull().primaryKey(),
@@ -79,15 +89,15 @@ export const anomalyIncidents = sqliteTable(
 		errorIssueId: text("error_issue_id").$type<ErrorIssueId>(),
 		status: text("status").$type<AnomalyIncidentStatus>().notNull(),
 		severity: text("severity").$type<AnomalyIncidentSeverity>().notNull(),
-		openedValue: real("opened_value").notNull(),
-		baselineMedian: real("baseline_median").notNull(),
-		baselineSigma: real("baseline_sigma").notNull(),
-		thresholdValue: real("threshold_value").notNull(),
-		lastObservedValue: real("last_observed_value").notNull(),
-		lastSampleCount: integer("last_sample_count", { mode: "number" }).notNull().default(0),
-		firstTriggeredAt: integer("first_triggered_at", { mode: "number" }).notNull(),
-		lastTriggeredAt: integer("last_triggered_at", { mode: "number" }).notNull(),
-		resolvedAt: integer("resolved_at", { mode: "number" }),
+		openedValue: doublePrecision("opened_value").notNull(),
+		baselineMedian: doublePrecision("baseline_median").notNull(),
+		baselineSigma: doublePrecision("baseline_sigma").notNull(),
+		thresholdValue: doublePrecision("threshold_value").notNull(),
+		lastObservedValue: doublePrecision("last_observed_value").notNull(),
+		lastSampleCount: integer("last_sample_count").notNull().default(0),
+		firstTriggeredAt: timestamp("first_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
 		resolveReason: text("resolve_reason").$type<AnomalyResolveReason>(),
 		triageStatus: text("triage_status").$type<AnomalyTriageStatus>().notNull().default("none"),
 		dedupeKey: text("dedupe_key").notNull(),
@@ -95,12 +105,12 @@ export const anomalyIncidents = sqliteTable(
 		 * Error-spike consolidation: all fingerprints sharing this incident
 		 * (JSON array of IncidentFingerprintEntry; empty for golden signals).
 		 */
-		fingerprintsJson: text("fingerprints_json").notNull().default("[]"),
+		fingerprintsJson: jsonb("fingerprints_json").$type<ReadonlyArray<unknown>>().notNull().default([]),
 		/** Times this incident re-breached and reopened within the reopen window. */
-		reopenCount: integer("reopen_count", { mode: "number" }).notNull().default(0),
-		lastReopenedAt: integer("last_reopened_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		reopenCount: integer("reopen_count").notNull().default(0),
+		lastReopenedAt: timestamp("last_reopened_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("anomaly_incidents_org_status_idx").on(table.orgId, table.status),

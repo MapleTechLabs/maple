@@ -40,6 +40,7 @@ import {
 } from "../lib/Crypto"
 import { Database } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
+import { dateToMs } from "../lib/time"
 import { validateExternalUrl } from "../lib/url-validator"
 
 /**
@@ -334,8 +335,8 @@ const normalizeHttpUrl = (raw: string): Effect.Effect<string, OrgClickHouseSetti
 const isOrgAdmin = (roles: ReadonlyArray<RoleName>) =>
 	roles.includes(ROOT_ROLE) || roles.includes(ORG_ADMIN_ROLE)
 
-const isIsoDateTime = (value: number | null | undefined) =>
-	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
+const isIsoDateTime = (value: Date | null | undefined) =>
+	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
 
 const decodeStatus = (raw: string | null | undefined): "connected" | "error" | null => {
 	if (raw === "connected" || raw === "error") return raw
@@ -749,15 +750,15 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							chPasswordTag: encryptedPassword?.tag ?? null,
 							chDatabase: dbName,
 							syncStatus: "connected",
-							lastSyncAt: now,
+							lastSyncAt: new Date(now),
 							lastSyncError: null,
 							// schemaVersion is preserved across re-saves — credentials
 							// changing doesn't invalidate the schema apply state.
 							schemaVersion: Option.isSome(existingRow)
 								? existingRow.value.schemaVersion
 								: null,
-							createdAt: Option.isSome(existingRow) ? existingRow.value.createdAt : now,
-							updatedAt: now,
+							createdAt: Option.isSome(existingRow) ? existingRow.value.createdAt : new Date(now),
+							updatedAt: new Date(now),
 							createdBy: Option.isSome(existingRow) ? existingRow.value.createdBy : userId,
 							updatedBy: userId,
 						})
@@ -771,9 +772,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 								chPasswordTag: encryptedPassword?.tag ?? null,
 								chDatabase: dbName,
 								syncStatus: "connected",
-								lastSyncAt: now,
+								lastSyncAt: new Date(now),
 								lastSyncError: null,
-								updatedAt: now,
+								updatedAt: new Date(now),
 								updatedBy: userId,
 							},
 						}),
@@ -869,8 +870,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							errorMessage: null,
 							startedAt: null,
 							finishedAt: null,
-							createdAt: now,
-							updatedAt: now,
+							createdAt: new Date(now),
+							updatedAt: new Date(now),
 						})
 						.onConflictDoUpdate({
 							target: orgClickHouseSchemaApplyRuns.orgId,
@@ -885,7 +886,7 @@ export class OrgClickHouseSettingsService extends Context.Service<
 								errorMessage: null,
 								startedAt: null,
 								finishedAt: null,
-								updatedAt: now,
+								updatedAt: new Date(now),
 							},
 						}),
 				)
@@ -943,13 +944,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				})
 			}
 			let appliedVersions: ReadonlyArray<number> = []
-			if (row.appliedVersions) {
-				try {
-					const parsed = JSON.parse(row.appliedVersions) as unknown
-					if (Array.isArray(parsed)) appliedVersions = parsed.map((v) => Number(v))
-				} catch {
-					appliedVersions = []
-				}
+			if (Array.isArray(row.appliedVersions)) {
+				appliedVersions = row.appliedVersions.map((v) => Number(v))
 			}
 			const status =
 				row.status === "queued" ||
@@ -966,8 +962,8 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				stepsDone: row.stepsDone ?? null,
 				appliedVersions,
 				errorMessage: row.errorMessage ?? null,
-				startedAt: row.startedAt ?? null,
-				finishedAt: row.finishedAt ?? null,
+				startedAt: dateToMs(row.startedAt),
+				finishedAt: dateToMs(row.finishedAt),
 			})
 		})
 

@@ -18,10 +18,12 @@
 		"db:studio": "drizzle-kit studio --config ./drizzle.config.ts"
 	},
 	"dependencies": {
+		"@electric-sql/pglite": "^0.5.2",
 		"@libsql/client": "0.15.15",
 		"@maple/domain": "workspace:*",
 		"drizzle-orm": "^0.45.1",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"postgres": "^3.4.9"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20260603.1",

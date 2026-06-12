@@ -213,7 +213,7 @@ const make: Effect.Effect<NotificationDispatcherShape, NotificationDispatchError
 					),
 				)
 
-			const enabled = rows.filter((row) => row.enabled === 1)
+			const enabled = rows.filter((row) => row.enabled)
 
 			const results = yield* Effect.forEach(
 				enabled,

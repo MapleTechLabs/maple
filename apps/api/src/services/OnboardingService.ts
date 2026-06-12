@@ -5,6 +5,7 @@ import type { OrgId } from "@maple/domain/http"
 import { and, eq, isNull } from "drizzle-orm"
 import { Clock, Context, Effect, Layer } from "effect"
 import { Database } from "../lib/DatabaseLive"
+import { dateToMs } from "../lib/time"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
@@ -30,12 +31,12 @@ export interface OnboardingUpdateInput {
 function rowToResponse(row: OrgOnboardingStateRow): OnboardingStateResponse {
 	return new OnboardingStateResponse({
 		role: row.role ?? null,
-		demoDataRequested: row.demoDataRequested === 1,
-		onboardingCompletedAt: row.onboardingCompletedAt ?? null,
-		checklistDismissedAt: row.checklistDismissedAt ?? null,
-		firstDataReceivedAt: row.firstDataReceivedAt ?? null,
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
+		demoDataRequested: row.demoDataRequested,
+		onboardingCompletedAt: dateToMs(row.onboardingCompletedAt),
+		checklistDismissedAt: dateToMs(row.checklistDismissedAt),
+		firstDataReceivedAt: dateToMs(row.firstDataReceivedAt),
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
 	})
 }
 
@@ -75,9 +76,9 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 							orgId,
 							userId: userId ?? null,
 							email: email ?? null,
-							demoDataRequested: 0,
-							createdAt: opts?.createdAt ?? now,
-							updatedAt: now,
+							demoDataRequested: false,
+							createdAt: new Date(opts?.createdAt ?? now),
+							updatedAt: new Date(now),
 						})
 						.onConflictDoNothing(),
 				)
@@ -119,13 +120,13 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 						.set({
 							...(input.role != null ? { role: input.role } : {}),
 							...(input.demoDataRequested != null
-								? { demoDataRequested: input.demoDataRequested ? 1 : 0 }
+								? { demoDataRequested: input.demoDataRequested }
 								: {}),
-							...(input.markOnboardingComplete ? { onboardingCompletedAt: now } : {}),
-							...(input.markChecklistDismissed ? { checklistDismissedAt: now } : {}),
+							...(input.markOnboardingComplete ? { onboardingCompletedAt: new Date(now) } : {}),
+							...(input.markChecklistDismissed ? { checklistDismissedAt: new Date(now) } : {}),
 							...(userId != null ? { userId } : {}),
 							...(email != null ? { email } : {}),
-							updatedAt: now,
+							updatedAt: new Date(now),
 						})
 						.where(eq(orgOnboardingState.orgId, orgId)),
 				)
@@ -148,16 +149,17 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 					.execute((db) =>
 						db
 							.update(orgOnboardingState)
-							.set({ firstDataReceivedAt: now, updatedAt: now })
+							.set({ firstDataReceivedAt: new Date(now), updatedAt: new Date(now) })
 							.where(
 								and(
 									eq(orgOnboardingState.orgId, orgId),
 									isNull(orgOnboardingState.firstDataReceivedAt),
 								),
-							),
+							)
+							.returning({ id: orgOnboardingState.orgId }),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
-				return result.rowsAffected > 0
+				return result.length > 0
 			},
 		)
 
@@ -166,11 +168,11 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 			field: OnboardingEmailField,
 		) {
 			const now = yield* Clock.currentTimeMillis
-			const set: Partial<typeof orgOnboardingState.$inferInsert> = { updatedAt: now }
-			if (field === "welcomeEmailSentAt") set.welcomeEmailSentAt = now
-			else if (field === "connectNudgeEmailSentAt") set.connectNudgeEmailSentAt = now
-			else if (field === "stalledEmailSentAt") set.stalledEmailSentAt = now
-			else set.activationEmailSentAt = now
+			const set: Partial<typeof orgOnboardingState.$inferInsert> = { updatedAt: new Date(now) }
+			if (field === "welcomeEmailSentAt") set.welcomeEmailSentAt = new Date(now)
+			else if (field === "connectNudgeEmailSentAt") set.connectNudgeEmailSentAt = new Date(now)
+			else if (field === "stalledEmailSentAt") set.stalledEmailSentAt = new Date(now)
+			else set.activationEmailSentAt = new Date(now)
 
 			yield* database
 				.execute((db) =>
@@ -199,12 +201,12 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 						db
 							.update(orgOnboardingState)
 							.set({
-								welcomeEmailSentAt: now,
-								connectNudgeEmailSentAt: now,
-								stalledEmailSentAt: now,
-								activationEmailSentAt: now,
-								onboardingCompletedAt: now,
-								updatedAt: now,
+								welcomeEmailSentAt: new Date(now),
+								connectNudgeEmailSentAt: new Date(now),
+								stalledEmailSentAt: new Date(now),
+								activationEmailSentAt: new Date(now),
+								onboardingCompletedAt: new Date(now),
+								updatedAt: new Date(now),
 							})
 							.where(
 								and(

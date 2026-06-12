@@ -2,7 +2,10 @@
 	"name": "@maple/api",
 	"private": true,
 	"type": "module",
-	"portless": { "name": "api", "script": "dev:app" },
+	"portless": {
+		"name": "api",
+		"script": "dev:app"
+	},
 	"exports": {
 		".": "./src/index.ts",
 		"./agent": "./src/agent.ts",
@@ -50,6 +53,7 @@
 		"@ai-sdk/openai-compatible": "^2.0.48",
 		"@cloudflare/workers-types": "^4.20260603.1",
 		"@effect/language-service": "catalog:effect",
+		"@electric-sql/pglite": "^0.5.2",
 		"@types/node": "catalog:tooling",
 		"ai": "^6.0.196",
 		"atmn": "^1.0.1",

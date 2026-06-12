@@ -19,7 +19,7 @@ const setupCache = new WeakMap<object, Promise<MapleAgentSetup>>()
 const buildSetup = async (env: Record<string, unknown>): Promise<MapleAgentSetup> => {
 	const [appMod, dbMod, envMod, registryMod] = await Promise.all([
 		import("./app"),
-		import("./lib/DatabaseD1Live"),
+		import("./lib/DatabasePgLive"),
 		import("./lib/WorkerEnvironment"),
 		import("./mcp/tools/registry"),
 	])
@@ -34,7 +34,7 @@ const buildSetup = async (env: Record<string, unknown>): Promise<MapleAgentSetup
 	})
 
 	const layer = appMod.MainLive.pipe(
-		Layer.provideMerge(dbMod.DatabaseD1Live),
+		Layer.provideMerge(dbMod.DatabasePgLive),
 		Layer.provideMerge(workerEnvLive),
 		Layer.provideMerge(telemetry.layer),
 		Layer.provideMerge(configLive),

@@ -153,8 +153,7 @@ const decryptSecret = (
 
 const generateSecret = () => `maple_cf_${randomBytes(24).toString("base64url")}`
 
-const toIsoString = (value: number | null | undefined) =>
-	value == null ? null : new Date(value).toISOString()
+const toIsoString = (value: Date | null | undefined) => (value == null ? null : value.toISOString())
 
 const normalizeIngestPublicUrl = (raw: string): string => {
 	const trimmed = raw.trim()
@@ -214,15 +213,15 @@ export class CloudflareLogpushService extends Context.Service<
 				zoneName: row.zoneName,
 				serviceName: row.serviceName,
 				dataset: row.dataset,
-				enabled: row.enabled === 1,
+				enabled: row.enabled,
 				lastReceivedAt:
 					row.lastReceivedAt == null
 						? null
 						: decodeIsoDateTimeStringSync(toIsoString(row.lastReceivedAt)),
 				lastError: row.lastError,
-				secretRotatedAt: decodeIsoDateTimeStringSync(new Date(row.secretRotatedAt).toISOString()),
-				createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-				updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+				secretRotatedAt: decodeIsoDateTimeStringSync(row.secretRotatedAt.toISOString()),
+				createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+				updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 			})
 
 		const buildSetup = Effect.fn("CloudflareLogpushService.buildSetup")(function* (
@@ -346,12 +345,12 @@ export class CloudflareLogpushService extends Context.Service<
 						secretIv: encryptedSecret.iv,
 						secretTag: encryptedSecret.tag,
 						secretHash,
-						enabled: request.enabled === false ? 0 : 1,
+						enabled: request.enabled !== false,
 						lastReceivedAt: null,
 						lastError: null,
-						secretRotatedAt: now,
-						createdAt: now,
-						updatedAt: now,
+						secretRotatedAt: new Date(now),
+						createdAt: new Date(now),
+						updatedAt: new Date(now),
 						createdBy: userId,
 						updatedBy: userId,
 					}),
@@ -374,7 +373,7 @@ export class CloudflareLogpushService extends Context.Service<
 		) {
 			const existing = yield* requireConnector(orgId, connectorId)
 			const updates: Record<string, unknown> = {
-				updatedAt: (yield* Clock.currentTimeMillis),
+				updatedAt: new Date(yield* Clock.currentTimeMillis),
 				updatedBy: userId,
 			}
 
@@ -393,7 +392,7 @@ export class CloudflareLogpushService extends Context.Service<
 				updates.serviceName = yield* cleanOptionalServiceName(request.serviceName, zoneName)
 			}
 			if (request.enabled !== undefined) {
-				updates.enabled = request.enabled ? 1 : 0
+				updates.enabled = request.enabled
 			}
 
 			yield* database
@@ -474,8 +473,8 @@ export class CloudflareLogpushService extends Context.Service<
 							secretIv: encryptedSecret.iv,
 							secretTag: encryptedSecret.tag,
 							secretHash,
-							secretRotatedAt: now,
-							updatedAt: now,
+							secretRotatedAt: new Date(now),
+							updatedAt: new Date(now),
 							updatedBy: userId,
 						})
 						.where(

@@ -1,5 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
-import { sql } from "drizzle-orm"
+import { index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
 // Durable, numbered attribute-recommendation issues (PlanetScale-style). Recommendations are
 // detected from live telemetry on each reconcile and upserted here, so each gets a stable per-org
@@ -10,7 +9,7 @@ import { sql } from "drizzle-orm"
 //   dismissed — user dismissed it (reopenable)
 //   applied   — user created the mapping; the key is no longer detected
 //   resolved  — no longer detected (fixed at the SDK), and no mapping covers it
-export const orgRecommendationIssues = sqliteTable(
+export const orgRecommendationIssues = pgTable(
 	"org_recommendation_issues",
 	{
 		id: text("id").notNull().primaryKey(),
@@ -24,13 +23,9 @@ export const orgRecommendationIssues = sqliteTable(
 		canonicalKey: text("canonical_key"),
 		status: text("status").notNull().default("open"),
 		usageCount: integer("usage_count").notNull().default(0),
-		openedAt: integer("opened_at")
-			.notNull()
-			.default(sql`(unixepoch('subsec') * 1000)`),
-		updatedAt: integer("updated_at")
-			.notNull()
-			.default(sql`(unixepoch('subsec') * 1000)`),
-		resolvedAt: integer("resolved_at"),
+		openedAt: timestamp("opened_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
 	},
 	(table) => [
 		index("org_recommendation_issues_org_idx").on(table.orgId),

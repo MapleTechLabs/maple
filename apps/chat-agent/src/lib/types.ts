@@ -2,7 +2,7 @@ import type { ChatAgent } from "../index"
 
 export interface Env {
 	ChatAgent: DurableObjectNamespace<ChatAgent>
-	MAPLE_DB: D1Database
+	MAPLE_DB: Hyperdrive
 	MAPLE_API_URL: string
 	TINYBIRD_HOST: string
 	TINYBIRD_TOKEN: string

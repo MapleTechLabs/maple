@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-export const apiKeys = sqliteTable(
+export const apiKeys = pgTable(
 	"api_keys",
 	{
 		id: text("id").primaryKey(),
@@ -9,13 +9,13 @@ export const apiKeys = sqliteTable(
 		description: text("description"),
 		keyHash: text("key_hash").notNull(),
 		keyPrefix: text("key_prefix").notNull(),
-		revoked: integer("revoked", { mode: "boolean" }).notNull().default(false),
-		revokedAt: integer("revoked_at", { mode: "number" }),
-		lastUsedAt: integer("last_used_at", { mode: "number" }),
-		expiresAt: integer("expires_at", { mode: "number" }),
-		metadataJson: text("metadata_json"),
+		revoked: boolean("revoked").notNull().default(false),
+		revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+		lastUsedAt: timestamp("last_used_at", { withTimezone: true, mode: "date" }),
+		expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+		metadataJson: jsonb("metadata_json").$type<unknown>(),
 		kind: text("kind", { enum: ["standard", "mcp"] }).notNull().default("standard"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		createdByEmail: text("created_by_email"),
 	},

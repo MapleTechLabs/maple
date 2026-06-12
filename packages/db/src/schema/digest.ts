@@ -1,19 +1,19 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-export const digestSubscriptions = sqliteTable(
+export const digestSubscriptions = pgTable(
 	"digest_subscriptions",
 	{
 		id: text("id").notNull().primaryKey(),
 		orgId: text("org_id").notNull(),
 		userId: text("user_id").notNull(),
 		email: text("email").notNull(),
-		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
-		dayOfWeek: integer("day_of_week", { mode: "number" }).notNull().default(1),
+		enabled: boolean("enabled").notNull().default(true),
+		dayOfWeek: integer("day_of_week").notNull().default(1),
 		timezone: text("timezone").notNull().default("UTC"),
-		lastSentAt: integer("last_sent_at", { mode: "number" }),
-		lastAttemptedAt: integer("last_attempted_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		lastSentAt: timestamp("last_sent_at", { withTimezone: true, mode: "date" }),
+		lastAttemptedAt: timestamp("last_attempted_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("digest_subscriptions_org_user_idx").on(table.orgId, table.userId),

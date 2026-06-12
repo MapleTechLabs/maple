@@ -1,25 +1,17 @@
-import { createClient } from "@libsql/client"
-import { drizzle } from "drizzle-orm/libsql"
-import { migrate } from "drizzle-orm/libsql/migrator"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { MapleDbConfig } from "./config"
-import { reshapeDashboardWidgets } from "./migrations/0012-dashboard-widget-reshape"
-import { migrateAlertQuerySignalTypes } from "./migrations/0013-alert-query-signal-types"
+import type { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import * as schema from "./schema"
 
-export { reshapeDashboardWidgets } from "./migrations/0012-dashboard-widget-reshape"
-export { migrateAlertQuerySignalTypes } from "./migrations/0013-alert-query-signal-types"
-
-export const runMigrations = async (config: MapleDbConfig): Promise<void> => {
+/**
+ * Applies the bundled drizzle migrations to an embedded PGlite instance.
+ * Local-dev and test path only — deployed stages run `drizzle-kit migrate`
+ * against the real Postgres in CI before `alchemy deploy`.
+ */
+export const runMigrations = async (pglite: PGlite): Promise<void> => {
 	const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle")
-	const client = createClient({
-		url: config.url,
-		authToken: config.authToken,
-	})
-	const db = drizzle(client, { schema })
+	const db = drizzle(pglite, { schema })
 	await migrate(db, { migrationsFolder })
-	await reshapeDashboardWidgets(db)
-	await migrateAlertQuerySignalTypes(db)
-	client.close()
 }

@@ -80,7 +80,7 @@ const toResponse = (row: ActiveRow | null | undefined): OrgOpenrouterSettingsRes
 	new OrgOpenrouterSettingsResponse({
 		configured: row != null,
 		last4: row?.apiKeyLast4 ?? null,
-		updatedAt: row == null ? null : decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		updatedAt: row == null ? null : decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 	})
 
 export interface OrgOpenRouterSettingsServiceShape {
@@ -190,8 +190,8 @@ export class OrgOpenRouterSettingsService extends Context.Service<
 							apiKeyIv: encrypted.iv,
 							apiKeyTag: encrypted.tag,
 							apiKeyLast4: last4,
-							createdAt: Option.isSome(existing) ? existing.value.createdAt : now,
-							updatedAt: now,
+							createdAt: Option.isSome(existing) ? existing.value.createdAt : new Date(now),
+							updatedAt: new Date(now),
 							createdBy: Option.isSome(existing) ? existing.value.createdBy : userId,
 							updatedBy: userId,
 						})
@@ -202,7 +202,7 @@ export class OrgOpenRouterSettingsService extends Context.Service<
 								apiKeyIv: encrypted.iv,
 								apiKeyTag: encrypted.tag,
 								apiKeyLast4: last4,
-								updatedAt: now,
+								updatedAt: new Date(now),
 								updatedBy: userId,
 							},
 						}),

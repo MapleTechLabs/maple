@@ -1,6 +1,6 @@
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
 
-export const orgClickHouseSettings = sqliteTable(
+export const orgClickHouseSettings = pgTable(
 	"org_clickhouse_settings",
 	{
 		orgId: text("org_id").notNull(),
@@ -14,13 +14,13 @@ export const orgClickHouseSettings = sqliteTable(
 		// the cluster, "error" if the most recent introspection or apply failed.
 		// Schema drift is tracked separately by the diff endpoint.
 		syncStatus: text("sync_status").notNull(),
-		lastSyncAt: integer("last_sync_at", { mode: "number" }),
+		lastSyncAt: timestamp("last_sync_at", { withTimezone: true, mode: "date" }),
 		lastSyncError: text("last_sync_error"),
 		// Hash of the bundled CH snapshot (`clickHouseProjectRevision`) at the
 		// time of the last successful schema apply, or null before first apply.
 		schemaVersion: text("schema_version"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		updatedBy: text("updated_by").notNull(),
 	},

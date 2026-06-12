@@ -18,6 +18,7 @@ import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
 import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Ref, Context } from "effect"
 import { WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
 import { Database } from "../lib/DatabaseLive"
+import { dateToMs } from "../lib/time"
 import { EmailService } from "../lib/EmailService"
 import { Env } from "../lib/Env"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
@@ -131,20 +132,20 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							orgId,
 							userId,
 							email: input.email,
-							enabled: input.enabled === false ? 0 : 1,
+							enabled: input.enabled !== false,
 							dayOfWeek: input.dayOfWeek ?? 1,
 							timezone: input.timezone ?? "UTC",
-							createdAt: now,
-							updatedAt: now,
+							createdAt: new Date(now),
+							updatedAt: new Date(now),
 						})
 						.onConflictDoUpdate({
 							target: [digestSubscriptions.orgId, digestSubscriptions.userId],
 							set: {
 								email: input.email,
-								enabled: input.enabled === false ? 0 : 1,
+								enabled: input.enabled !== false,
 								...(input.dayOfWeek != null ? { dayOfWeek: input.dayOfWeek } : {}),
 								...(input.timezone != null ? { timezone: input.timezone } : {}),
-								updatedAt: now,
+								updatedAt: new Date(now),
 							},
 						}),
 				)
@@ -477,18 +478,18 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 									orgId: m.orgId,
 									userId: m.userId,
 									email: m.email,
-									enabled: 1,
+									enabled: true,
 									dayOfWeek: 1,
 									timezone: "UTC",
-									createdAt: now,
-									updatedAt: now,
+									createdAt: new Date(now),
+									updatedAt: new Date(now),
 								})
 								.onConflictDoUpdate({
 									target: [digestSubscriptions.orgId, digestSubscriptions.userId],
 									set: {
 										email: m.email,
-										enabled: 1,
-										updatedAt: now,
+										enabled: true,
+										updatedAt: new Date(now),
 									},
 								}),
 						)
@@ -531,7 +532,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							.execute((db) =>
 								db
 									.update(digestSubscriptions)
-									.set({ enabled: 0, updatedAt: now })
+									.set({ enabled: false, updatedAt: new Date(now) })
 									.where(inArray(digestSubscriptions.id, chunk)),
 							)
 							.pipe(Effect.mapError(toPersistenceError)),
@@ -588,13 +589,14 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// Find subscriptions due for sending
 			const subs = yield* database
 				.execute((db) =>
-					db.select().from(digestSubscriptions).where(eq(digestSubscriptions.enabled, 1)),
+					db.select().from(digestSubscriptions).where(eq(digestSubscriptions.enabled, true)),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
 			const dueSubs = subs.filter(
 				(s) =>
-					s.dayOfWeek === currentDayOfWeek && (s.lastSentAt == null || s.lastSentAt < sevenDaysAgo),
+					s.dayOfWeek === currentDayOfWeek &&
+					(s.lastSentAt == null || s.lastSentAt.getTime() < sevenDaysAgo),
 			)
 
 			if (dueSubs.length === 0) {
@@ -615,20 +617,21 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							.execute((db) =>
 								db
 									.update(digestSubscriptions)
-									.set({ lastAttemptedAt: now })
+									.set({ lastAttemptedAt: new Date(now) })
 									.where(
 										and(
 											inArray(digestSubscriptions.id, orgSubIds),
 											or(
 												isNull(digestSubscriptions.lastAttemptedAt),
-												lt(digestSubscriptions.lastAttemptedAt, todayStartMs),
+												lt(digestSubscriptions.lastAttemptedAt, new Date(todayStartMs)),
 											),
 										),
-									),
+									)
+									.returning({ id: digestSubscriptions.id }),
 							)
 							.pipe(Effect.mapError(toPersistenceError))
 
-						if (claim.rowsAffected === 0) {
+						if (claim.length === 0) {
 							yield* Effect.logInfo("Skipping digest org already attempted today").pipe(
 								Effect.annotateLogs({
 									orgId: rawOrgId,
@@ -667,7 +670,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 												yield* database.execute((db) =>
 													db
 														.update(digestSubscriptions)
-														.set({ lastSentAt })
+														.set({ lastSentAt: new Date(lastSentAt) })
 														.where(eq(digestSubscriptions.id, sub.id)),
 												)
 											}),
@@ -722,12 +725,12 @@ function rowToResponse(row: typeof digestSubscriptions.$inferSelect): DigestSubs
 	return new DigestSubscriptionResponse({
 		id: DigestSubscriptionId.make(row.id),
 		email: row.email,
-		enabled: row.enabled === 1,
+		enabled: row.enabled,
 		dayOfWeek: row.dayOfWeek,
 		timezone: row.timezone,
-		lastSentAt: row.lastSentAt ?? null,
-		createdAt: row.createdAt,
-		updatedAt: row.updatedAt,
+		lastSentAt: dateToMs(row.lastSentAt),
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
 	})
 }
 

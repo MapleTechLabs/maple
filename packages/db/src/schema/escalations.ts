@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type { ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import type { IssueSeverity } from "@maple/domain/http"
 
@@ -8,12 +8,12 @@ import type { IssueSeverity } from "@maple/domain/http"
  * never detector-initial severity (detection noise is already covered by alert
  * rule destinations and the error notification policy).
  */
-export const issueEscalationPolicies = sqliteTable("issue_escalation_policies", {
+export const issueEscalationPolicies = pgTable("issue_escalation_policies", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
-	enabled: integer("enabled", { mode: "number" }).notNull().default(0),
+	enabled: boolean("enabled").notNull().default(false),
 	// Array<{ severity: IssueSeverity; destinationIds: string[]; minConfidence?: "low"|"medium"|"high" }>
-	rulesJson: text("rules_json").notNull().default("[]"),
-	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	rulesJson: jsonb("rules_json").$type<ReadonlyArray<unknown>>().notNull().default([]),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedBy: text("updated_by").notNull(),
 })
 
@@ -26,7 +26,7 @@ export type IssueEscalationPolicyRow = typeof issueEscalationPolicies.$inferSele
  * (`esc:{orgId}:{issueId}:{severity}`) makes escalation at-most-once per
  * issue+level, and upward-only semantics live in the writers.
  */
-export const issueEscalations = sqliteTable(
+export const issueEscalations = pgTable(
 	"issue_escalations",
 	{
 		id: text("id").notNull().primaryKey(),
@@ -38,13 +38,13 @@ export const issueEscalations = sqliteTable(
 		runId: text("run_id"),
 		// Triage snapshot captured at enqueue (summary, suspectedCause, …) so the
 		// dispatch payload survives later runs overwriting the run row.
-		payloadJson: text("payload_json").notNull().default("{}"),
+		payloadJson: jsonb("payload_json").$type<unknown>().notNull().default({}),
 		status: text("status").$type<"queued" | "sent" | "skipped" | "failed">().notNull().default("queued"),
-		attempts: integer("attempts", { mode: "number" }).notNull().default(0),
+		attempts: integer("attempts").notNull().default(0),
 		dedupeKey: text("dedupe_key").notNull(),
 		error: text("error"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		processedAt: integer("processed_at", { mode: "number" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		processedAt: timestamp("processed_at", { withTimezone: true, mode: "date" }),
 	},
 	(table) => [
 		uniqueIndex("issue_escalations_dedupe_idx").on(table.dedupeKey),

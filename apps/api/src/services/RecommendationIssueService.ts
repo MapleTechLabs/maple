@@ -59,11 +59,9 @@ const rowToIssue = (row: IssueRow): RecommendationIssue =>
 		...(row.canonicalKey != null ? { canonicalKey: row.canonicalKey } : {}),
 		status: decodeStatusSync(row.status),
 		usageCount: row.usageCount,
-		openedAt: decodeIsoSync(new Date(row.openedAt).toISOString()),
-		updatedAt: decodeIsoSync(new Date(row.updatedAt).toISOString()),
-		...(row.resolvedAt != null
-			? { resolvedAt: decodeIsoSync(new Date(row.resolvedAt).toISOString()) }
-			: {}),
+		openedAt: decodeIsoSync(row.openedAt.toISOString()),
+		updatedAt: decodeIsoSync(row.updatedAt.toISOString()),
+		...(row.resolvedAt != null ? { resolvedAt: decodeIsoSync(row.resolvedAt.toISOString()) } : {}),
 	})
 
 const fmtWarehouseTime = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
@@ -195,8 +193,8 @@ export class RecommendationIssueService extends Context.Service<
 					canonicalKey: insert.canonicalKey,
 					status: "open" as const,
 					usageCount: insert.usageCount,
-					openedAt: now,
-					updatedAt: now,
+					openedAt: new Date(now),
+					updatedAt: new Date(now),
 					resolvedAt: null,
 				}))
 				// Cloudflare D1 caps bound parameters at 100 per statement. Each row binds 12
@@ -215,11 +213,11 @@ export class RecommendationIssueService extends Context.Service<
 			yield* Effect.forEach(
 				plan.updates,
 				(update) => {
-					const fields: Record<string, unknown> = { updatedAt: now }
+					const fields: Record<string, unknown> = { updatedAt: new Date(now) }
 					if (update.usageCount !== undefined) fields.usageCount = update.usageCount
 					if (update.nextStatus !== undefined) {
 						fields.status = update.nextStatus
-						fields.resolvedAt = update.nextStatus === "open" ? null : now
+						fields.resolvedAt = update.nextStatus === "open" ? null : new Date(now)
 					}
 					return runDb(
 						"update",
@@ -271,7 +269,7 @@ export class RecommendationIssueService extends Context.Service<
 				database.execute((db) =>
 					db
 						.update(orgRecommendationIssues)
-						.set({ ...fields, updatedAt: now })
+						.set({ ...fields, updatedAt: new Date(now) })
 						.where(and(eq(orgRecommendationIssues.orgId, orgId), eq(orgRecommendationIssues.id, id))),
 				),
 			)

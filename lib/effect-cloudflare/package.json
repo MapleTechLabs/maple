@@ -5,7 +5,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./worker-environment": "./src/worker-environment.ts",
-		"./d1-connection": "./src/d1-connection.ts",
+		"./hyperdrive-connection": "./src/hyperdrive-connection.ts",
 		"./workers-cache": "./src/workers-cache.ts"
 	},
 	"scripts": {
