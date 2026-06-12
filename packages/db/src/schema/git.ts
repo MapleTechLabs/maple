@@ -1,9 +1,11 @@
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
-export const githubInstallations = sqliteTable(
-	"github_installations",
+export const gitInstallations = sqliteTable(
+	"git_installations",
 	{
 		id: text("id").notNull().primaryKey(),
+
+		// The ID of the organisation this installation is scoped to. 
 		orgId: text("org_id").notNull(),
 		installationId: integer("installation_id", { mode: "number" }).notNull(),
 		appSlug: text("app_slug").notNull(),
@@ -15,25 +17,28 @@ export const githubInstallations = sqliteTable(
 		repositorySelection: text("repository_selection").notNull(),
 		permissionsJson: text("permissions_json").notNull().default("{}"),
 		eventsJson: text("events_json").notNull().default("[]"),
-		suspendedAt: integer("suspended_at", { mode: "number" }),
 		installedByUserId: text("installed_by_user_id").notNull(),
+
+		// Users can suspend an installation in the dashboard. This will stop all data syncing.
+		suspendedAt: integer("suspended_at", { mode: "number" }),
+
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("github_installations_org_installation_idx").on(table.orgId, table.installationId),
-		index("github_installations_org_idx").on(table.orgId),
-		index("github_installations_installation_idx").on(table.installationId),
+		uniqueIndex("git_installations_org_installation_idx").on(table.orgId, table.installationId),
+		index("git_installations_org_idx").on(table.orgId),
+		index("git_installations_installation_idx").on(table.installationId),
 	],
 )
 
-export const githubRepositories = sqliteTable(
-	"github_repositories",
+export const gitRepositories = sqliteTable(
+	"git_repositories",
 	{
 		id: text("id").notNull().primaryKey(),
 		orgId: text("org_id").notNull(),
 		installationId: text("installation_id").notNull(),
-		githubRepoId: integer("github_repo_id", { mode: "number" }).notNull(),
+		gitRepoId: integer("git_repo_id", { mode: "number" }).notNull(),
 		owner: text("owner").notNull(),
 		name: text("name").notNull(),
 		defaultBranch: text("default_branch").notNull(),
@@ -48,13 +53,13 @@ export const githubRepositories = sqliteTable(
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("github_repositories_org_repo_idx").on(table.orgId, table.githubRepoId),
-		index("github_repositories_org_installation_idx").on(table.orgId, table.installationId),
+		uniqueIndex("git_repositories_org_repo_idx").on(table.orgId, table.gitRepoId),
+		index("git_repositories_org_installation_idx").on(table.orgId, table.installationId),
 	],
 )
 
-export const githubCommits = sqliteTable(
-	"github_commits",
+export const gitCommits = sqliteTable(
+	"git_commits",
 	{
 		id: text("id").notNull().primaryKey(),
 		orgId: text("org_id").notNull(),
@@ -79,41 +84,14 @@ export const githubCommits = sqliteTable(
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("github_commits_org_sha_idx").on(table.orgId, table.sha),
-		index("github_commits_org_repo_idx").on(table.orgId, table.repoId),
-		index("github_commits_org_committed_idx").on(table.orgId, table.committedAt),
+		uniqueIndex("git_commits_org_sha_idx").on(table.orgId, table.sha),
+		index("git_commits_org_repo_idx").on(table.orgId, table.repoId),
+		index("git_commits_org_committed_idx").on(table.orgId, table.committedAt),
 	],
 )
 
-export const githubReleases = sqliteTable(
-	"github_releases",
-	{
-		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
-		repoId: text("repo_id").notNull(),
-		githubReleaseId: integer("github_release_id", { mode: "number" }).notNull(),
-		tagName: text("tag_name").notNull(),
-		name: text("name"),
-		body: text("body"),
-		draft: integer("draft", { mode: "boolean" }).notNull().default(false),
-		prerelease: integer("prerelease", { mode: "boolean" }).notNull().default(false),
-		targetCommitSha: text("target_commit_sha"),
-		htmlUrl: text("html_url").notNull(),
-		authorLogin: text("author_login"),
-		authorAvatarUrl: text("author_avatar_url"),
-		publishedAt: integer("published_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		syncedAt: integer("synced_at", { mode: "number" }).notNull(),
-	},
-	(table) => [
-		uniqueIndex("github_releases_org_release_idx").on(table.orgId, table.githubReleaseId),
-		index("github_releases_org_target_sha_idx").on(table.orgId, table.targetCommitSha),
-		index("github_releases_org_repo_published_idx").on(table.orgId, table.repoId, table.publishedAt),
-	],
-)
-
-export const githubUnresolvedShas = sqliteTable(
-	"github_unresolved_shas",
+export const gitUnresolvedShas = sqliteTable(
+	"git_unresolved_shas",
 	{
 		id: text("id").notNull().primaryKey(),
 		orgId: text("org_id").notNull(),
@@ -125,18 +103,16 @@ export const githubUnresolvedShas = sqliteTable(
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("github_unresolved_shas_org_sha_idx").on(table.orgId, table.sha),
-		index("github_unresolved_shas_attempt_idx").on(table.lastAttemptAt),
+		uniqueIndex("git_unresolved_shas_org_sha_idx").on(table.orgId, table.sha),
+		index("git_unresolved_shas_attempt_idx").on(table.lastAttemptAt),
 	],
 )
 
-export type GithubInstallationRow = typeof githubInstallations.$inferSelect
-export type GithubInstallationInsert = typeof githubInstallations.$inferInsert
-export type GithubRepositoryRow = typeof githubRepositories.$inferSelect
-export type GithubRepositoryInsert = typeof githubRepositories.$inferInsert
-export type GithubCommitRow = typeof githubCommits.$inferSelect
-export type GithubCommitInsert = typeof githubCommits.$inferInsert
-export type GithubReleaseRow = typeof githubReleases.$inferSelect
-export type GithubReleaseInsert = typeof githubReleases.$inferInsert
-export type GithubUnresolvedShaRow = typeof githubUnresolvedShas.$inferSelect
-export type GithubUnresolvedShaInsert = typeof githubUnresolvedShas.$inferInsert
+export type GitInstallationRow = typeof gitInstallations.$inferSelect
+export type GitInstallationInsert = typeof gitInstallations.$inferInsert
+export type GitRepositoryRow = typeof gitRepositories.$inferSelect
+export type GitRepositoryInsert = typeof gitRepositories.$inferInsert
+export type GitCommitRow = typeof gitCommits.$inferSelect
+export type GitCommitInsert = typeof gitCommits.$inferInsert
+export type GitUnresolvedShaRow = typeof gitUnresolvedShas.$inferSelect
+export type GitUnresolvedShaInsert = typeof gitUnresolvedShas.$inferInsert

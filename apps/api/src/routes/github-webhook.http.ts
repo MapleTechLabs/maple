@@ -137,8 +137,11 @@ export const GithubWebhookRouter = HttpRouter.use((router) =>
 					event,
 					"schema.error": baseResult.failure,
 				})
+
+				// This is an issue on our side, not GitHubs, so we acknowledge with a 200.
 				return HttpServerResponse.text("invalid payload", { status: 200 })
 			}
+			
 			const base = baseResult.success
 			const installations = yield* installationRepo.findByInstallationId(base.installation.id)
 			if (installations.length === 0) {

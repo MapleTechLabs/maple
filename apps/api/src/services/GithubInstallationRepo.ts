@@ -13,16 +13,6 @@ import { and, eq, isNull, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database, type DatabaseClient } from "./DatabaseLive"
 
-// Single-table repository for `github_installations`. Owns reads, writes, and
-// the per-installation update/delete operations — but NOT the multi-table
-// disconnect cascade, which is orchestrated in `GithubAppService` across
-// `GithubRepositoryRepo` and `GithubCommitRepo` (releases + commits live on
-// those repos).
-
-// `accountType` and `repositorySelection` are stored as plain `text` columns
-// but the domain treats them as typed literals. Decoding here means consumers
-// never have to do defensive enum coercion and corrupt rows fail loud with a
-// typed GithubPersistenceError instead of silently masking values.
 export type DecodedGithubInstallationRow = Omit<
 	GithubInstallationRow,
 	"accountType" | "repositorySelection"
