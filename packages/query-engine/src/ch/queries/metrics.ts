@@ -105,6 +105,7 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 		opts.bucketSeconds !== undefined &&
 		opts.bucketSeconds >= 3600 &&
 		opts.bucketSeconds % 3600 === 0 &&
+		(opts.attributeValue === undefined || opts.attributeKey !== undefined) &&
 		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
 		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind")
 	)
