@@ -6,6 +6,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	ErrorIssueId,
 	HazelChannelId,
 	HazelOrganizationId,
 	IsoDateTimeString,
@@ -492,6 +493,7 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	dedupeKey: Schema.String,
 	lastDeliveredEventType: Schema.NullOr(AlertEventType),
 	lastNotifiedAt: Schema.NullOr(IsoDateTimeString),
+	errorIssueId: Schema.NullOr(ErrorIssueId),
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(

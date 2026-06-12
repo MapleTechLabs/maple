@@ -96,6 +96,9 @@ import {
 	Context,
 } from "effect"
 import * as AlertingMetrics from "../lib/AlertingMetrics"
+import { AI_TRIAGE_WORKFLOW_BINDING } from "../lib/ai-triage-enqueue"
+import { upsertAlertIssue } from "../lib/issue-hub"
+import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import type { TenantContext } from "./AuthService"
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
 import { Database, type DatabaseClient } from "../lib/DatabaseLive"
@@ -223,6 +226,9 @@ interface DeliveryAttemptFailure {
 }
 
 const MAX_DELIVERY_ATTEMPTS = 5
+// Storm fuse: cap issue-hub upserts per scheduler tick so a pathological
+// group-by rule opening hundreds of incidents can't stall the per-minute tick.
+const ISSUE_UPSERTS_PER_TICK = 50
 const DELIVERY_TIMEOUT_MS_DEFAULT = 15_000
 const DELIVERY_LEASE_TTL_MS = 30_000
 
@@ -286,6 +292,7 @@ const decodeAlertMetricTypeSync = Schema.decodeUnknownSync(AlertMetricTypeSchema
 const decodeAlertMetricAggregationSync = Schema.decodeUnknownSync(AlertMetricAggregationSchema)
 const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStatus)
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
+const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
 const decodeAlertGroupBySync = Schema.decodeUnknownSync(AlertGroupBySchema)
 const decodeAlertGroupByFromJsonSync = Schema.decodeUnknownSync(AlertGroupByFromJson)
@@ -852,6 +859,7 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		lastDeliveredEventType:
 			row.lastDeliveredEventType != null ? decodeAlertEventTypeSync(row.lastDeliveredEventType) : null,
 		lastNotifiedAt: toIso(row.lastNotifiedAt),
+		errorIssueId: row.errorIssueId != null ? decodeErrorIssueIdSync(row.errorIssueId) : null,
 	})
 
 // Formatting helpers imported from AlertDeliveryDispatch
@@ -980,6 +988,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 		const runtime = yield* AlertRuntime
 		const hazelOAuth = yield* HazelOAuthService
 		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
+		// Optional: present only inside a Worker isolate. Used to kick off the
+		// AI triage Workflow for issues created from freshly opened incidents.
+		const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+		const aiTriageWorkflowBinding = Option.match(workerEnv, {
+			onNone: () => undefined,
+			onSome: (e) => e[AI_TRIAGE_WORKFLOW_BINDING],
+		})
 		const now = runtime.now
 		const makeUuid = () => runtime.makeUuid()
 		const deliveryTimeoutMs = () => runtime.deliveryTimeoutMs()
@@ -2924,6 +2939,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			groupKey: string,
 			timestamp: number,
 			pendingChecks: Ref.Ref<AlertChecksRow[]>,
+			issueBudget: Ref.Ref<number>,
 		) {
 			const stateConflictTarget: [
 				typeof alertRuleStates.orgId,
@@ -2941,7 +2957,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			// CAS on alertRules.lastScheduledAt). All writes below are idempotent on retry:
 			// state upsert via onConflictDoUpdate, incident insert keyed on unique incidentKey,
 			// delivery events via onConflictDoNothing on deliveryKey.
-			yield* dbExecute(async (db) => {
+			// Returns the freshly opened incident id (null otherwise) — returned
+			// rather than captured because TS narrowing can't see closure writes.
+			const openedIncidentId: string | null = yield* dbExecute(async (db) => {
 				const state =
 					(
 						await db
@@ -3019,7 +3037,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						lastValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
 					})
-					return
+					return null
 				}
 
 				const consecutiveBreaches =
@@ -3065,6 +3083,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						dedupeKey: `${row.orgId}:${row.id}:${groupKey}`,
 						lastDeliveredEventType: null,
 						lastNotifiedAt: null,
+						errorIssueId: null,
 						createdAt: timestamp,
 						updatedAt: timestamp,
 					}
@@ -3082,7 +3101,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					incidentAction = "opened"
 					capturedIncidentId = incidentId
 					capturedTransition = "opened"
-					return
+					return incidentId
 				}
 
 				if (evaluation.status === "breached" && openIncident != null) {
@@ -3122,7 +3141,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					}
 					capturedIncidentId = openIncident.id
 					capturedTransition = "continued"
-					return
+					return null
 				}
 
 				if (
@@ -3165,9 +3184,48 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					capturedIncidentId = openIncident.id
 					capturedTransition = "resolved"
 				}
+				return null
 			})
 			if (incidentAction === "opened") yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
 			if (incidentAction === "resolved") yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+
+			// Issue-hub: a freshly opened incident creates/refreshes its issue
+			// (kind="alert") so it lands in the unified triage queue. Budgeted per
+			// tick as a storm fuse for pathological group-by rules; upsertAlertIssue
+			// never fails, so the scheduler tick is isolated from issue problems.
+			if (openedIncidentId != null) {
+				const incidentId = openedIncidentId
+				const allowed = yield* Ref.modify(issueBudget, (remaining): [boolean, number] =>
+					remaining > 0 ? [true, remaining - 1] : [false, remaining],
+				)
+				if (allowed) {
+					yield* upsertAlertIssue({
+						orgId: row.orgId as OrgId,
+						ruleId: row.id,
+						ruleName: row.name,
+						groupKey,
+						signalType: normalized.signalType,
+						severity: normalized.severity,
+						comparator: normalized.comparator,
+						threshold: normalized.threshold,
+						thresholdUpper: normalized.thresholdUpper,
+						windowMinutes: normalized.windowMinutes,
+						observedValue: evaluation.value,
+						sampleCount: evaluation.sampleCount,
+						incidentId,
+						serviceName:
+							normalized.groupBy?.[0] === "service.name"
+								? groupKey
+								: (normalized.serviceNames[0] ?? ""),
+						timestamp,
+						workflowBinding: aiTriageWorkflowBinding,
+					}).pipe(Effect.provideService(Database, database))
+				} else {
+					yield* Effect.logWarning("Alert issue upsert budget exhausted; skipping issue link").pipe(
+						Effect.annotateLogs({ ruleId: row.id, incidentId, groupKey }),
+					)
+				}
+			}
 
 			// Record one audit row per evaluation to the Tinybird alert_checks datasource.
 			// Tinybird DateTime64(3) wire format: "YYYY-MM-DD HH:MM:SS.SSS" (UTC, no timezone).
@@ -3456,6 +3514,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 			let evaluationFailureCount = 0
 			const pendingChecks = yield* Ref.make<AlertChecksRow[]>([])
+			const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
 
 			const recordEvaluationFailure = Effect.fnUntraced(function* (
 				row: AlertRuleRow,
@@ -3519,6 +3578,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 											groupKey,
 											timestamp,
 											pendingChecks,
+											issueBudget,
 										)
 									}),
 								)
@@ -3566,6 +3626,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 											svcName,
 											timestamp,
 											pendingChecks,
+											issueBudget,
 										)
 									}),
 								)
@@ -3595,6 +3656,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									"__total__",
 									timestamp,
 									pendingChecks,
+									issueBudget,
 								)
 							}
 							yield* Metric.update(AlertingMetrics.ruleEvaluationDurationMs, (yield* now) - ruleStart)

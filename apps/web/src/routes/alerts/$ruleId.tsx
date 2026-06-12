@@ -531,6 +531,7 @@ function RuleDetailPage() {
 									<TableHead>Labels</TableHead>
 									<TableHead className="w-[180px]">Triggered at</TableHead>
 									<TableHead className="w-[110px]">Duration</TableHead>
+									<TableHead className="w-[70px]">Issue</TableHead>
 									<TableHead className="w-[50px]" />
 								</TableRow>
 							</TableHeader>
@@ -580,6 +581,19 @@ function RuleDetailPage() {
 														incident.resolvedAt,
 													)}
 												</span>
+											</TableCell>
+											<TableCell>
+												{incident.errorIssueId != null ? (
+													<Link
+														to="/errors/issues/$issueId"
+														params={{ issueId: incident.errorIssueId }}
+														className="text-xs text-primary underline-offset-4 hover:underline"
+													>
+														View
+													</Link>
+												) : (
+													<span className="text-xs text-muted-foreground/60">—</span>
+												)}
 											</TableCell>
 											<TableCell>
 												<DropdownMenu>

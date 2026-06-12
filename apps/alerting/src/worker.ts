@@ -10,6 +10,7 @@ import {
 	EmailService,
 	Env,
 	ErrorsService,
+	EscalationService,
 	HazelOAuthService,
 	NotificationDispatcher,
 	OnboardingEmailService,
@@ -64,6 +65,8 @@ const buildLayer = (_env: Record<string, unknown>) => {
 
 	const HazelOAuthServiceLive = HazelOAuthService.layer.pipe(Layer.provide(BaseLive))
 
+	// WorkerEnvironment is merged in so the incident-open issue-hub hook can see
+	// the cross-script AI_TRIAGE_WORKFLOW binding (absent → triage marked failed).
 	const AlertsServiceLive = AlertsService.layer.pipe(
 		Layer.provide(
 			Layer.mergeAll(
@@ -72,12 +75,17 @@ const buildLayer = (_env: Record<string, unknown>) => {
 				WarehouseQueryServiceLive,
 				AlertRuntime.layer,
 				HazelOAuthServiceLive,
+				WorkerEnvironment.layer,
 			),
 		),
 	)
 
 	const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
 		Layer.provide(Layer.mergeAll(BaseLive, HazelOAuthServiceLive)),
+	)
+
+	const EscalationServiceLive = EscalationService.layer.pipe(
+		Layer.provide(Layer.mergeAll(BaseLive, NotificationDispatcherLive)),
 	)
 
 	// WorkerEnvironment is merged in so the incident-open AI-triage hook can see
@@ -128,6 +136,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		DigestServiceLive,
 		OnboardingEmailServiceLive,
 		ErrorsServiceLive,
+		EscalationServiceLive,
 		ServiceMapRollupServiceLive,
 	).pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
 }
@@ -171,6 +180,29 @@ const errorTick = Effect.gen(function* () {
 	Effect.withSpan("alerting.error_tick"),
 	Effect.catchCause((cause) =>
 		Effect.logError("Errors worker tick failed").pipe(
+			Effect.annotateLogs({ error: Cause.pretty(cause) }),
+		),
+	),
+)
+
+const escalationTick = Effect.gen(function* () {
+	const escalations = yield* EscalationService
+	const result = yield* escalations.runEscalationTick()
+	if (result.processed > 0) {
+		yield* Effect.logInfo("Escalation tick complete").pipe(
+			Effect.annotateLogs({
+				processed: result.processed,
+				sent: result.sent,
+				skipped: result.skipped,
+				failed: result.failed,
+				retried: result.retried,
+			}),
+		)
+	}
+}).pipe(
+	Effect.withSpan("alerting.escalation_tick"),
+	Effect.catchCause((cause) =>
+		Effect.logError("Escalation tick failed").pipe(
 			Effect.annotateLogs({ error: Cause.pretty(cause) }),
 		),
 	),
@@ -281,7 +313,10 @@ export default {
 						? serviceMapRollupTick
 						: event.cron === "0 9 * * *"
 							? onboardingTick
-							: Effect.all([alertTick, errorTick], { concurrency: 2, discard: true })
+							: Effect.all([alertTick, errorTick, escalationTick], {
+									concurrency: 2,
+									discard: true,
+								})
 		try {
 			await runScheduledEffect(buildLayer(env), program, ctx)
 		} finally {

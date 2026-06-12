@@ -2,12 +2,13 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { AiTriageRunId, ErrorIssueId, IsoDateTimeString, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
+import { IssueSeverity } from "./errors"
 
 // ---------------------------------------------------------------------------
 // Literals
 // ---------------------------------------------------------------------------
 
-export const AiTriageIncidentKind = Schema.Literals(["error", "anomaly"]).annotate({
+export const AiTriageIncidentKind = Schema.Literals(["error", "anomaly", "alert"]).annotate({
 	identifier: "@maple/AiTriageIncidentKind",
 	title: "AI Triage Incident Kind",
 })
@@ -33,7 +34,9 @@ export class AiTriageEvidence extends Schema.Class<AiTriageEvidence>("AiTriageEv
 export class AiTriageResult extends Schema.Class<AiTriageResult>("AiTriageResult")({
 	summary: Schema.String,
 	suspectedCause: Schema.String,
-	severityAssessment: Schema.Literals(["critical", "high", "medium", "low"]),
+	// Shares the canonical IssueSeverity literal so the agent's assessment can
+	// be applied to issues verbatim without a mapping layer.
+	severityAssessment: IssueSeverity,
 	affectedScope: Schema.String,
 	evidence: Schema.Array(AiTriageEvidence),
 	suggestedActions: Schema.Array(Schema.String),

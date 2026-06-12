@@ -30,6 +30,7 @@ import { and, eq } from "drizzle-orm"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { getMapleAgentSetup, resolveOrgOpenrouterKey } from "../agent"
 import { trackTokenUsage } from "../lib/autumn-tracker"
+import { applyTriageSeverity } from "../lib/issue-severity"
 import { buildTriageContextMessage, TRIAGE_SYSTEM_PROMPT } from "./triage-prompt"
 import { buildTriageToolSet, decodeTriageResult, SUBMIT_TRIAGE_TOOL_NAME } from "./triage-tools"
 import type { WorkflowEventLike, WorkflowStepLike } from "./ClickHouseSchemaApplyWorkflow.run"
@@ -41,7 +42,7 @@ export interface AiTriageWorkflowEnv extends Record<string, unknown> {
 
 export interface AiTriageWorkflowPayload {
 	readonly orgId: string
-	readonly incidentKind: "error" | "anomaly"
+	readonly incidentKind: "error" | "anomaly" | "alert"
 	readonly incidentId: string
 	readonly issueId?: string
 	readonly runId: string
@@ -330,25 +331,36 @@ export async function runAiTriage(
 			})
 			.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 
-		if (incidentKind === "error" && issueId) {
-			// Surfaces the triage on the existing issue timeline UI. actorId stays
-			// null — the run row itself is the authoritative record. The event id is
-			// derived from runId (and inserted with onConflictDoNothing) so a retried
-			// persist step cannot duplicate the timeline entry.
+		if (issueId) {
+			// Any linked issue (error fingerprint, alert-backed, or anomaly-linked)
+			// gets the triage outcome applied: severity (respecting manual
+			// override) + timeline events + escalation outbox. All writes are
+			// idempotent via runId-derived deterministic ids, so a retried persist
+			// step cannot duplicate them.
 			const result = decodeTriageResult(JSON.parse(agentResult.resultJson))
+			const applied = await applyTriageSeverity(db, {
+				orgId: decodeOrgId(orgId),
+				issueId: decodeIssueId(issueId),
+				runId,
+				severity: result.severityAssessment,
+				confidence: result.confidence,
+				timestamp: now,
+				result,
+			})
 			await db
 				.insert(errorIssueEvents)
 				.values({
 					id: decodeEventId(deterministicEventId(runId)),
 					orgId: decodeOrgId(orgId),
 					issueId: decodeIssueId(issueId),
-					actorId: null,
+					actorId: applied.actorId,
 					type: "ai_triage",
 					payloadJson: JSON.stringify({
 						runId,
 						summary: result.summary,
 						severityAssessment: result.severityAssessment,
 						confidence: result.confidence,
+						applied: applied.applied,
 					}),
 					createdAt: now,
 				})

@@ -57,6 +57,13 @@ export interface NotificationRequest {
 	readonly value: number | null
 	readonly sampleCount: number | null
 	readonly linkUrl: string
+	/**
+	 * Triage-escalation extension: merged into the outbound JSON payload (and
+	 * flips its eventType to "escalation") so a customer's agent/webhook gets
+	 * the full triage context — severity, summary, suspected cause, evidence.
+	 * Chat-style destinations still render from the alert-shaped fields above.
+	 */
+	readonly escalation?: Record<string, unknown>
 }
 
 export interface NotificationDispatcherShape {
@@ -125,7 +132,8 @@ export class NotificationDispatcher extends Context.Service<
 					thresholdUpper: request.thresholdUpper ?? null,
 				})
 				const payloadJson = JSON.stringify({
-					eventType: request.eventType,
+					eventType: request.escalation ? "escalation" : request.eventType,
+					...(request.escalation ? { escalation: request.escalation } : {}),
 					incidentId: request.incidentId,
 					incidentStatus: request.incidentStatus,
 					dedupeKey: request.dedupeKey,

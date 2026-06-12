@@ -29,6 +29,12 @@ import {
 	type ErrorNotificationPolicyUpsertRequest,
 	ErrorPersistenceError,
 	ErrorValidationError,
+	IssueEscalationPolicyDocument,
+	IssueEscalationPolicyRule,
+	type IssueEscalationPolicyUpsertRequest,
+	type IssueKind,
+	type IssueSeverity,
+	type IssueSeveritySource,
 	type OrgId,
 	RoleName,
 	SpanId as SpanIdSchema,
@@ -48,9 +54,13 @@ import {
 	type ErrorIssueEventInsert,
 	type ErrorIssueEventRow,
 	type ErrorIssueRow,
+	alertIncidents,
 	errorIssueStates,
 	errorNotificationPolicies,
 	type ErrorNotificationPolicyRow,
+	issueEscalationPolicies,
+	type IssueEscalationPolicyRow,
+	issueEscalations,
 	orgIngestKeys,
 } from "@maple/db"
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
@@ -58,6 +68,7 @@ import { CH, parseWarehouseDateTime, warehouseDateTimeToIso } from "@maple/query
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Schedule, Schema } from "effect"
 import type { TenantContext } from "./AuthService"
 import { AI_TRIAGE_WORKFLOW_BINDING, maybeEnqueueTriage } from "../lib/ai-triage-enqueue"
+import { escalationDedupeKey, escalationReasonFor } from "../lib/issue-severity"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
@@ -154,6 +165,8 @@ export interface ErrorsServiceShape {
 		orgId: OrgId,
 		opts: {
 			readonly workflowState?: WorkflowState
+			readonly severity?: IssueSeverity | "unset"
+			readonly kind?: IssueKind
 			readonly service?: string
 			readonly deploymentEnv?: string
 			readonly assignedActorId?: ActorId
@@ -224,6 +237,13 @@ export interface ErrorsServiceShape {
 		ErrorIssueDocument,
 		ErrorPersistenceError | ErrorIssueNotFoundError | ActorNotFoundError
 	>
+	readonly setSeverity: (
+		orgId: OrgId,
+		actorId: ActorId,
+		issueId: ErrorIssueId,
+		severity: IssueSeverity | null,
+		opts?: { readonly note?: string; readonly source?: "ai" | "manual" },
+	) => Effect.Effect<ErrorIssueDocument, ErrorPersistenceError | ErrorIssueNotFoundError>
 	readonly commentOnIssue: (
 		orgId: OrgId,
 		actorId: ActorId,
@@ -297,6 +317,14 @@ export interface ErrorsServiceShape {
 		userId: UserId,
 		request: ErrorNotificationPolicyUpsertRequest,
 	) => Effect.Effect<ErrorNotificationPolicyDocument, ErrorPersistenceError | ErrorValidationError>
+	readonly getEscalationPolicy: (
+		orgId: OrgId,
+	) => Effect.Effect<IssueEscalationPolicyDocument, ErrorPersistenceError>
+	readonly upsertEscalationPolicy: (
+		orgId: OrgId,
+		userId: UserId,
+		request: IssueEscalationPolicyUpsertRequest,
+	) => Effect.Effect<IssueEscalationPolicyDocument, ErrorPersistenceError | ErrorValidationError>
 	readonly runTick: () => Effect.Effect<
 		{
 			readonly orgsProcessed: number
@@ -631,6 +659,18 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			)
 		}
 
+		const parseSourceRef = (json: string | null): Record<string, unknown> | null => {
+			if (json == null) return null
+			try {
+				const parsed = JSON.parse(json)
+				return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+					? (parsed as Record<string, unknown>)
+					: null
+			} catch {
+				return null
+			}
+		}
+
 		const rowToIssue = (
 			row: ErrorIssueRow,
 			hasOpenIncident: boolean,
@@ -638,6 +678,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 		) =>
 			new ErrorIssueDocument({
 				id: row.id,
+				kind: row.kind,
 				fingerprintHash: row.fingerprintHash,
 				serviceName: row.serviceName,
 				exceptionType: row.exceptionType,
@@ -646,6 +687,9 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				topFrame: row.topFrame,
 				workflowState: row.workflowState,
 				priority: row.priority,
+				severity: row.severity ?? null,
+				severitySource: row.severitySource ?? null,
+				sourceRef: parseSourceRef(row.sourceRefJson),
 				assignedActor:
 					row.assignedActorId == null ? null : (actorMap.get(row.assignedActorId) ?? null),
 				leaseHolder:
@@ -723,20 +767,49 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 
 		const issuesWithOpenIncidents = (orgId: OrgId, issueIds: ReadonlyArray<ErrorIssueId>) => {
 			if (issueIds.length === 0) return Effect.succeed(new Set<ErrorIssueId>())
+			// Two sources of "open incident": error_incidents for fingerprint
+			// issues, and open alert_incidents linked via errorIssueId for
+			// alert-backed issues. An issue id only ever appears in one of them.
 			return Effect.forEach(Arr.chunksOf(issueIds, D1_INARRAY_CHUNK_SIZE), (chunk) =>
-				dbExecute((db) =>
-					db
-						.select({ issueId: errorIncidents.issueId })
-						.from(errorIncidents)
-						.where(
-							and(
-								eq(errorIncidents.orgId, orgId),
-								eq(errorIncidents.status, "open"),
-								inArray(errorIncidents.issueId, chunk),
+				Effect.all([
+					dbExecute((db) =>
+						db
+							.select({ issueId: errorIncidents.issueId })
+							.from(errorIncidents)
+							.where(
+								and(
+									eq(errorIncidents.orgId, orgId),
+									eq(errorIncidents.status, "open"),
+									inArray(errorIncidents.issueId, chunk),
+								),
 							),
+					),
+					dbExecute((db) =>
+						db
+							.select({ issueId: alertIncidents.errorIssueId })
+							.from(alertIncidents)
+							.where(
+								and(
+									eq(alertIncidents.orgId, orgId),
+									eq(alertIncidents.status, "open"),
+									inArray(alertIncidents.errorIssueId, chunk),
+								),
+							),
+					),
+				]),
+			).pipe(
+				Effect.map(
+					(groups) =>
+						new Set(
+							groups.flatMap(([errorRows, alertRows]) => [
+								...errorRows.map((r) => r.issueId),
+								...alertRows.flatMap((r) =>
+									r.issueId == null ? [] : [r.issueId as ErrorIssueId],
+								),
+							]),
 						),
 				),
-			).pipe(Effect.map((groups) => new Set(groups.flatMap((rows) => rows.map((r) => r.issueId)))))
+			)
 		}
 
 		const hydrateIssue = Effect.fn("ErrorsService.hydrateIssue")(function* (
@@ -826,6 +899,9 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 				})
 				const conditions = [eq(errorIssues.orgId, orgId)]
 				if (opts.workflowState) conditions.push(eq(errorIssues.workflowState, opts.workflowState))
+				if (opts.severity === "unset") conditions.push(isNull(errorIssues.severity))
+				else if (opts.severity) conditions.push(eq(errorIssues.severity, opts.severity))
+				if (opts.kind) conditions.push(eq(errorIssues.kind, opts.kind))
 				if (opts.service) conditions.push(eq(errorIssues.serviceName, opts.service))
 				if (opts.assignedActorId)
 					conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
@@ -874,6 +950,11 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 
 				const tenant = systemTenant(orgId)
 
+				// Non-error issues carry synthetic fingerprints (`alert:{ruleId}:…`)
+				// that can never match warehouse rows — skip both queries instead of
+				// paying two guaranteed-empty warehouse round trips.
+				const isErrorKind = issueRow.kind === "error"
+
 				const timeseriesCompiled = CH.compile(CH.errorIssueTimeseriesQuery(), {
 					orgId,
 					fingerprintHash: issueRow.fingerprintHash,
@@ -881,11 +962,13 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 					endTime: toTinybirdDateTime(endMs),
 					bucketSeconds,
 				})
-				const timeseriesEffect = warehouse
-					.compiledQuery(tenant, timeseriesCompiled, { context: "errorIssueTimeseries" })
-					.pipe(
-						Effect.mapError((e) => makePersistenceError(e)),
-					)
+				const timeseriesEffect = isErrorKind
+					? warehouse
+							.compiledQuery(tenant, timeseriesCompiled, { context: "errorIssueTimeseries" })
+							.pipe(
+								Effect.mapError((e) => makePersistenceError(e)),
+							)
+					: Effect.succeed([])
 
 				const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
 					orgId,
@@ -893,11 +976,13 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 					startTime: toTinybirdDateTime(startMs),
 					endTime: toTinybirdDateTime(endMs),
 				})
-				const samplesEffect = warehouse
-					.compiledQuery(tenant, samplesCompiled, { context: "errorIssueSampleTraces" })
-					.pipe(
-						Effect.mapError((e) => makePersistenceError(e)),
-					)
+				const samplesEffect = isErrorKind
+					? warehouse
+							.compiledQuery(tenant, samplesCompiled, { context: "errorIssueSampleTraces" })
+							.pipe(
+								Effect.mapError((e) => makePersistenceError(e)),
+							)
+					: Effect.succeed([])
 
 				const incidentsEffect = dbExecute((db) =>
 					db
@@ -1304,6 +1389,93 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			},
 		)
 
+		// Inserts an escalation-outbox row when severity is newly set or strictly
+		// escalates; the alerting worker's escalation tick drains the outbox.
+		// Detector-initial severity never escalates — only triage outcomes do.
+		const enqueueSeverityEscalation = Effect.fn("ErrorsService.enqueueSeverityEscalation")(
+			function* (
+				orgId: OrgId,
+				issueId: ErrorIssueId,
+				from: IssueSeverity | null,
+				to: IssueSeverity,
+				source: "ai" | "manual",
+			) {
+				const reason = escalationReasonFor(from, to)
+				if (reason === null) return
+				const timestamp = yield* Clock.currentTimeMillis
+				yield* dbExecute((db) =>
+					db
+						.insert(issueEscalations)
+						.values({
+							id: randomUUID(),
+							orgId,
+							issueId,
+							severity: to,
+							source,
+							reason,
+							runId: null,
+							payloadJson: "{}",
+							status: "queued",
+							attempts: 0,
+							dedupeKey: escalationDedupeKey(orgId, issueId, to),
+							error: null,
+							createdAt: timestamp,
+							processedAt: null,
+						})
+						.onConflictDoNothing(),
+				)
+			},
+		)
+
+		const setSeverity: ErrorsServiceShape["setSeverity"] = Effect.fn("ErrorsService.setSeverity")(
+			function* (orgId, actorId, issueId, severity, opts) {
+				const timestamp = yield* Clock.currentTimeMillis
+				const source = opts?.source ?? "manual"
+				yield* Effect.annotateCurrentSpan({ orgId, issueId, severity: severity ?? "null", source })
+				const current = yield* requireIssue(orgId, issueId)
+
+				// Precedence: manual > ai. An AI write never clobbers a manual
+				// severity; the human's call stands until a human changes it.
+				if (source === "ai" && current.severitySource === "manual") {
+					return yield* hydrateIssue(orgId, current)
+				}
+
+				const nextSource: IssueSeveritySource | null = severity === null ? null : source
+				const changed = current.severity !== severity || current.severitySource !== nextSource
+				if (!changed) {
+					return yield* hydrateIssue(orgId, current)
+				}
+
+				yield* dbExecute((db) =>
+					db
+						.update(errorIssues)
+						.set({ severity, severitySource: nextSource, updatedAt: timestamp })
+						.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId))),
+				)
+
+				if (current.severity !== severity) {
+					const payload: Record<string, unknown> = {
+						from: current.severity,
+						to: severity,
+						source,
+					}
+					if (opts?.note) payload.note = opts.note
+					yield* recordEvent(orgId, issueId, actorId, "severity_change", {
+						payload,
+						timestamp,
+					})
+				}
+
+				if (severity !== null) {
+					yield* enqueueSeverityEscalation(orgId, issueId, current.severity, severity, source)
+				}
+
+				yield* touchActor(orgId, actorId, timestamp)
+				const next = yield* requireIssue(orgId, issueId)
+				return yield* hydrateIssue(orgId, next)
+			},
+		)
+
 		const commentOnIssue: ErrorsServiceShape["commentOnIssue"] = Effect.fn(
 			"ErrorsService.commentOnIssue",
 		)(function* (orgId, actorId, issueId, body, opts) {
@@ -1545,6 +1717,92 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			)
 
 			return rowToPolicy(merged)
+		})
+
+		// ---------------------------------------------------------------
+		// Escalation policy (per-org severity → destination routing).
+		// ---------------------------------------------------------------
+
+		const decodeEscalationRules = Schema.decodeUnknownOption(
+			Schema.fromJsonString(Schema.Array(IssueEscalationPolicyRule)),
+		)
+
+		const escalationRowToDocument = (row: IssueEscalationPolicyRow | null) =>
+			new IssueEscalationPolicyDocument({
+				enabled: row?.enabled === 1,
+				rules: row == null ? [] : Option.getOrElse(decodeEscalationRules(row.rulesJson), () => []),
+				updatedAt: row == null ? null : isoFromEpoch(row.updatedAt),
+				updatedBy: row == null || row.updatedBy === "system" ? null : decodeUserIdSync(row.updatedBy),
+			})
+
+		const loadEscalationPolicyRow = Effect.fn("ErrorsService.loadEscalationPolicyRow")(function* (
+			orgId: OrgId,
+		) {
+			const rows = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(issueEscalationPolicies)
+					.where(eq(issueEscalationPolicies.orgId, orgId))
+					.limit(1),
+			)
+			return rows[0] ?? null
+		})
+
+		const getEscalationPolicy: ErrorsServiceShape["getEscalationPolicy"] = Effect.fn(
+			"ErrorsService.getEscalationPolicy",
+		)(function* (orgId) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			return escalationRowToDocument(yield* loadEscalationPolicyRow(orgId))
+		})
+
+		const upsertEscalationPolicy: ErrorsServiceShape["upsertEscalationPolicy"] = Effect.fn(
+			"ErrorsService.upsertEscalationPolicy",
+		)(function* (orgId, userId, request) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			const existing = yield* loadEscalationPolicyRow(orgId)
+			const timestamp = yield* Clock.currentTimeMillis
+
+			if (request.rules !== undefined) {
+				const seen = new Set<string>()
+				for (const rule of request.rules) {
+					if (seen.has(rule.severity)) {
+						return yield* Effect.fail(
+							new ErrorValidationError({
+								message: "Escalation policy has duplicate severity rules",
+								details: [rule.severity],
+							}),
+						)
+					}
+					seen.add(rule.severity)
+				}
+			}
+
+			const merged: IssueEscalationPolicyRow = {
+				orgId,
+				enabled:
+					request.enabled !== undefined ? (request.enabled ? 1 : 0) : (existing?.enabled ?? 0),
+				rulesJson:
+					request.rules !== undefined ? JSON.stringify(request.rules) : (existing?.rulesJson ?? "[]"),
+				updatedAt: timestamp,
+				updatedBy: userId,
+			}
+
+			yield* dbExecute((db) =>
+				db
+					.insert(issueEscalationPolicies)
+					.values(merged)
+					.onConflictDoUpdate({
+						target: issueEscalationPolicies.orgId,
+						set: {
+							enabled: merged.enabled,
+							rulesJson: merged.rulesJson,
+							updatedAt: merged.updatedAt,
+							updatedBy: merged.updatedBy,
+						},
+					}),
+			)
+
+			return escalationRowToDocument(merged)
 		})
 
 		const issueLinkUrl = (issueId: string) =>
@@ -2301,6 +2559,7 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			heartbeatIssue,
 			releaseIssue,
 			assignIssue,
+			setSeverity,
 			commentOnIssue,
 			proposeFix,
 			listIssueEvents,
@@ -2313,6 +2572,8 @@ export class ErrorsService extends Context.Service<ErrorsService, ErrorsServiceS
 			listOpenIncidents,
 			getNotificationPolicy,
 			upsertNotificationPolicy,
+			getEscalationPolicy,
+			upsertEscalationPolicy,
 			runTick,
 		} satisfies ErrorsServiceShape
 	}),

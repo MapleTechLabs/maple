@@ -162,6 +162,20 @@
       "when": 1781271173908,
       "tag": "0022_yellow_proteus",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1781272544424,
+      "tag": "0023_giant_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1781273583822,
+      "tag": "0024_previous_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

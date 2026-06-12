@@ -29,6 +29,7 @@ import { registerListErrorIssuesTool } from "./list-error-issues"
 import { registerProposeFixTool } from "./propose-fix"
 import { registerRegisterAgentTool } from "./register-agent"
 import { registerReleaseErrorIssueTool } from "./release-error-issue"
+import { registerSetIssueSeverityTool } from "./set-issue-severity"
 import { registerTransitionErrorIssueTool } from "./transition-error-issue"
 import { registerUpdateErrorNotificationPolicyTool } from "./update-error-notification-policy"
 import { registerListDashboardsTool } from "./list-dashboards"
@@ -121,6 +122,7 @@ export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition
 	registerGetInstrumentationRecommendationsTool(registrar)
 	registerListErrorIssuesTool(registrar)
 	registerTransitionErrorIssueTool(registrar)
+	registerSetIssueSeverityTool(registrar)
 	registerClaimErrorIssueTool(registrar)
 	registerReleaseErrorIssueTool(registrar)
 	registerHeartbeatErrorIssueTool(registrar)

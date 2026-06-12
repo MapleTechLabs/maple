@@ -16,6 +16,7 @@ import {
 	GridIcon,
 	KeyIcon,
 	ServerIcon,
+	ShieldIcon,
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
@@ -28,6 +29,7 @@ export const settingsTabValues = [
 	"api-keys",
 	"mcp",
 	"notifications",
+	"escalations",
 	"ai",
 	"billing",
 	"data-platform",
@@ -41,6 +43,7 @@ export const settingsTabLabels: Record<SettingsTab, string> = {
 	"api-keys": "API Keys",
 	mcp: "MCP",
 	notifications: "Notifications",
+	escalations: "Escalations",
 	ai: "AI",
 	billing: "Billing",
 	"data-platform": "Data Platform",
@@ -92,6 +95,7 @@ const navSections: SettingsNavSection[] = [
 		title: "Behavior",
 		items: [
 			{ id: "notifications", label: "Notifications", icon: BellIcon },
+			{ id: "escalations", label: "Escalations", icon: ShieldIcon },
 			{ id: "ai", label: "AI", icon: ChatBubbleSparkleIcon },
 		],
 	},

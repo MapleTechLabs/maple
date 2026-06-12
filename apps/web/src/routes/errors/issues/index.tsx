@@ -9,10 +9,12 @@ import { useListNavigation } from "@/hooks/use-list-navigation"
 import { IssueGroup } from "@/components/errors/issue-group"
 import { IssuesBulkBar } from "@/components/errors/issues-bulk-bar"
 import { IssuesToolbar } from "@/components/errors/issues-toolbar"
+import { severityRank } from "@/components/errors/severity-badge"
 import { useIssueMutations } from "@/components/errors/use-issue-mutations"
 import type { SelectToggleEvent } from "@/components/errors/issue-row"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import type { ErrorIssueDocument, ErrorIssueId, WorkflowState } from "@maple/domain/http"
 
@@ -57,6 +59,18 @@ const GROUP_ORDER: ReadonlyArray<WorkflowState> = [
 
 const ISSUES_PAGE_LIMIT = 100
 
+const SEVERITY_FILTER_VALUES = ["all", "critical", "high", "medium", "low", "unset"] as const
+type SeverityFilterValue = (typeof SEVERITY_FILTER_VALUES)[number]
+
+const SEVERITY_FILTER_LABEL: Record<SeverityFilterValue, string> = {
+	all: "All severities",
+	critical: "Critical",
+	high: "High",
+	medium: "Medium",
+	low: "Low",
+	unset: "Unset",
+}
+
 const searchSchema = Schema.Struct({
 	workflowState: Schema.optional(
 		Schema.Literals([
@@ -70,6 +84,8 @@ const searchSchema = Schema.Struct({
 			"wontfix",
 		]),
 	),
+	severity: Schema.optional(Schema.Literals(SEVERITY_FILTER_VALUES)),
+	kind: Schema.optional(Schema.Literals(["error", "alert"])),
 })
 
 export const Route = effectRoute(createFileRoute("/errors/issues/"))({
@@ -81,12 +97,16 @@ function IssuesPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const activeFilter: FilterValue = search.workflowState ?? "triage"
+	const severityFilter: SeverityFilterValue = search.severity ?? "all"
+	const kindFilter = search.kind ?? "all"
 
 	const issuesQueryAtom = MapleApiAtomClient.query("errors", "listIssues", {
-		query:
-			activeFilter === "all"
-				? { limit: ISSUES_PAGE_LIMIT }
-				: { workflowState: activeFilter, limit: ISSUES_PAGE_LIMIT },
+		query: {
+			...(activeFilter === "all" ? {} : { workflowState: activeFilter }),
+			...(severityFilter === "all" ? {} : { severity: severityFilter }),
+			...(kindFilter === "all" ? {} : { kind: kindFilter }),
+			limit: ISSUES_PAGE_LIMIT,
+		},
 		reactivityKeys: ["errorIssues"],
 	})
 	const issuesResult = useAtomValue(issuesQueryAtom)
@@ -111,6 +131,57 @@ function IssuesPage() {
 					}),
 				})
 			}}
+			trailing={
+				<>
+					<Select
+						value={kindFilter}
+						onValueChange={(value) => {
+							setSelectedIds(new Set())
+							navigate({
+								search: (prev) => ({
+									...prev,
+									kind: value === "all" ? undefined : (value as "error" | "alert"),
+								}),
+							})
+						}}
+					>
+						<SelectTrigger size="sm" className="h-7 w-[110px] text-xs">
+							<SelectValue placeholder="Kind" />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="all">All kinds</SelectItem>
+							<SelectItem value="error">Errors</SelectItem>
+							<SelectItem value="alert">Alerts</SelectItem>
+						</SelectContent>
+					</Select>
+					<Select
+						value={severityFilter}
+						onValueChange={(value) => {
+							setSelectedIds(new Set())
+							navigate({
+								search: (prev) => ({
+									...prev,
+									severity:
+										value === "all"
+											? undefined
+											: (value as Exclude<SeverityFilterValue, "all">),
+								}),
+							})
+						}}
+					>
+						<SelectTrigger size="sm" className="h-7 w-[120px] text-xs">
+							<SelectValue placeholder="Severity" />
+						</SelectTrigger>
+						<SelectContent>
+							{SEVERITY_FILTER_VALUES.map((value) => (
+								<SelectItem key={value} value={value}>
+									{SEVERITY_FILTER_LABEL[value]}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</>
+			}
 		/>
 	)
 
@@ -202,6 +273,8 @@ function IssuesPageBody({
 		}
 		for (const bucket of map.values()) {
 			bucket.sort((a, b) => {
+				const severityDiff = severityRank(a.severity) - severityRank(b.severity)
+				if (severityDiff !== 0) return severityDiff
 				if (a.priority !== b.priority) return a.priority - b.priority
 				return b.lastSeenAt.localeCompare(a.lastSeenAt)
 			})

@@ -125,6 +125,9 @@ export const alertIncidents = sqliteTable(
 		dedupeKey: text("dedupe_key").notNull(),
 		lastDeliveredEventType: text("last_delivered_event_type"),
 		lastNotifiedAt: integer("last_notified_at", { mode: "number" }),
+		// Issue-hub link: the error_issues row (kind="alert") this incident
+		// feeds, mirroring anomalyIncidents.errorIssueId.
+		errorIssueId: text("error_issue_id"),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
@@ -132,6 +135,7 @@ export const alertIncidents = sqliteTable(
 		index("alert_incidents_org_idx").on(table.orgId),
 		index("alert_incidents_org_status_idx").on(table.orgId, table.status),
 		index("alert_incidents_org_rule_idx").on(table.orgId, table.ruleId),
+		index("alert_incidents_org_issue_idx").on(table.orgId, table.errorIssueId),
 		uniqueIndex("alert_incidents_incident_key_idx").on(table.incidentKey),
 	],
 )

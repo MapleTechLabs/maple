@@ -19,13 +19,7 @@ import {
 	type AiTriageRunDocument,
 	type ErrorIssueId,
 } from "@maple/domain/http"
-
-const SEVERITY_TONE: Record<string, string> = {
-	critical: "bg-destructive/10 text-destructive",
-	high: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-	medium: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	low: "bg-muted text-muted-foreground",
-}
+import { SEVERITY_TONE } from "@/components/errors/severity-badge"
 
 const CONFIDENCE_TONE: Record<string, string> = {
 	high: "bg-success/10 text-success",

@@ -5,8 +5,10 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import {
 	ErrorIssueClaimRequest,
 	ErrorIssueReleaseRequest,
+	ErrorIssueSetSeverityRequest,
 	ErrorIssueTransitionRequest,
 	type ErrorIssueId,
+	type IssueSeverity,
 	type WorkflowState,
 } from "@maple/domain/http"
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
@@ -32,6 +34,9 @@ export function useIssueMutations() {
 	})
 	const claim = useAtomSet(MapleApiAtomClient.mutation("errors", "claimIssue"), { mode: "promiseExit" })
 	const release = useAtomSet(MapleApiAtomClient.mutation("errors", "releaseIssue"), { mode: "promiseExit" })
+	const severity = useAtomSet(MapleApiAtomClient.mutation("errors", "setIssueSeverity"), {
+		mode: "promiseExit",
+	})
 
 	const transitionTo = async (issueId: ErrorIssueId, toState: WorkflowState) => {
 		const result = await transition({
@@ -107,7 +112,22 @@ export function useIssueMutations() {
 		return result
 	}
 
-	return { transitionTo, transitionMany, claimIssue, releaseIssue }
+	const setSeverity = async (issueId: ErrorIssueId, value: IssueSeverity | null) => {
+		const result = await severity({
+			params: { issueId },
+			payload: new ErrorIssueSetSeverityRequest({ severity: value }),
+			reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
+		})
+		if (Exit.isSuccess(result)) {
+			toast.success(value === null ? "Severity cleared" : `Severity set to ${value}`)
+		} else {
+			logFailure("setSeverity", result)
+			toast.error("Severity change failed", { description: describeFailure(result) })
+		}
+		return result
+	}
+
+	return { transitionTo, transitionMany, claimIssue, releaseIssue, setSeverity }
 }
 
 export type IssueMutations = ReturnType<typeof useIssueMutations>

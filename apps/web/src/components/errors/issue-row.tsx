@@ -5,6 +5,8 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { ActorAvatar } from "./actor-chip"
 import { IssueContextMenu } from "./issue-context-menu"
+import { IssueKindBadge } from "./kind-badge"
+import { SeverityBadge } from "./severity-badge"
 import { WorkflowStatePopover } from "./workflow-state-popover"
 import type { IssueMutations } from "./use-issue-mutations"
 import { clampPriority, shortIssueId } from "./issue-id"
@@ -112,6 +114,16 @@ export function IssueRow({ issue, mutations, selected, focused, onSelectToggle, 
 					<PriorityBarsIcon level={priority} size={14} />
 				</span>
 
+				<span
+					className="relative z-10 flex w-[60px] shrink-0 items-center"
+					title={issue.severity ? `Severity: ${issue.severity}` : "Severity not set"}
+				>
+					<SeverityBadge
+						severity={issue.severity}
+						className="h-5 max-w-full truncate px-1.5 text-[10px]"
+					/>
+				</span>
+
 				<span className="relative z-10 w-[72px] shrink-0 truncate font-mono text-xs tabular-nums text-muted-foreground">
 					{id}
 				</span>
@@ -134,6 +146,12 @@ export function IssueRow({ issue, mutations, selected, focused, onSelectToggle, 
 						<span className="ml-2 text-muted-foreground">{issue.exceptionMessage}</span>
 					) : null}
 				</span>
+
+				{issue.kind !== "error" ? (
+					<span className="relative z-10 shrink-0">
+						<IssueKindBadge kind={issue.kind} className="h-5 px-1.5 text-[11px]" />
+					</span>
+				) : null}
 
 				{issue.hasOpenIncident ? (
 					<span

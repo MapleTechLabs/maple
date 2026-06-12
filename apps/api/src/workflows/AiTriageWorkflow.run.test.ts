@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { generateText } from "ai"
-import { aiTriageRuns, aiTriageSettings, errorIssueEvents, runMigrations } from "@maple/db"
+import {
+	aiTriageRuns,
+	aiTriageSettings,
+	errorIssues,
+	errorIssueEvents,
+	issueEscalations,
+	runMigrations,
+} from "@maple/db"
 import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
 import { eq } from "drizzle-orm"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
@@ -171,6 +178,120 @@ describe("runAiTriage", () => {
 			buildTools: async () => ({}),
 		})
 		expect(result.status).toBe("skipped")
+	})
+
+	it("applies the assessed severity to a real issue and queues an escalation", async () => {
+		const now = Date.now()
+		await harness.db.insert(errorIssues).values({
+			id: harness.issueId as never,
+			orgId: ORG as never,
+			fingerprintHash: "98765432109876543210",
+			serviceName: "checkout-api",
+			exceptionType: "TimeoutError",
+			exceptionMessage: "upstream timed out",
+			topFrame: "",
+			firstSeenAt: now,
+			lastSeenAt: now,
+			createdAt: now,
+			updatedAt: now,
+		})
+
+		await runAiTriage(env, { payload: harness.payload }, fakeStep, {
+			db: harness.db,
+			resolveApiKey: async () => "test-key",
+			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
+		})
+
+		const issues = await harness.db
+			.select()
+			.from(errorIssues)
+			.where(eq(errorIssues.id, harness.issueId as never))
+		expect(issues[0]?.severity).toBe("high")
+		expect(issues[0]?.severitySource).toBe("ai")
+
+		const events = await harness.db
+			.select()
+			.from(errorIssueEvents)
+			.where(eq(errorIssueEvents.issueId, harness.issueId as never))
+		const triageEvent = events.find((e) => e.type === "ai_triage")
+		expect(JSON.parse(triageEvent?.payloadJson ?? "{}").applied).toBe(true)
+		expect(events.some((e) => e.type === "severity_change")).toBe(true)
+
+		const escalations = await harness.db
+			.select()
+			.from(issueEscalations)
+			.where(eq(issueEscalations.issueId, harness.issueId as never))
+		expect(escalations).toHaveLength(1)
+		expect(escalations[0]?.severity).toBe("high")
+		expect(escalations[0]?.source).toBe("ai")
+	})
+
+	it("does not clobber a manual severity and records applied=false", async () => {
+		const now = Date.now()
+		await harness.db.insert(errorIssues).values({
+			id: harness.issueId as never,
+			orgId: ORG as never,
+			fingerprintHash: "98765432109876543210",
+			serviceName: "checkout-api",
+			exceptionType: "TimeoutError",
+			exceptionMessage: "upstream timed out",
+			topFrame: "",
+			severity: "low" as never,
+			severitySource: "manual" as never,
+			firstSeenAt: now,
+			lastSeenAt: now,
+			createdAt: now,
+			updatedAt: now,
+		})
+
+		await runAiTriage(env, { payload: harness.payload }, fakeStep, {
+			db: harness.db,
+			resolveApiKey: async () => "test-key",
+			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+			buildTools: async () => ({}),
+		})
+
+		const issues = await harness.db
+			.select()
+			.from(errorIssues)
+			.where(eq(errorIssues.id, harness.issueId as never))
+		expect(issues[0]?.severity).toBe("low")
+		expect(issues[0]?.severitySource).toBe("manual")
+
+		const events = await harness.db
+			.select()
+			.from(errorIssueEvents)
+			.where(eq(errorIssueEvents.issueId, harness.issueId as never))
+		const triageEvent = events.find((e) => e.type === "ai_triage")
+		expect(JSON.parse(triageEvent?.payloadJson ?? "{}").applied).toBe(false)
+		expect(events.some((e) => e.type === "severity_change")).toBe(false)
+	})
+
+	it("writes the timeline event for alert-kind runs too", async () => {
+		await harness.db
+			.update(aiTriageRuns)
+			.set({ incidentKind: "alert" })
+			.where(eq(aiTriageRuns.id, harness.runId as never))
+
+		const result = await runAiTriage(
+			env,
+			{ payload: { ...harness.payload, incidentKind: "alert" } },
+			fakeStep,
+			{
+				db: harness.db,
+				resolveApiKey: async () => "test-key",
+				generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
+				buildTools: async () => ({}),
+			},
+		)
+		expect(result.status).toBe("completed")
+
+		const events = await harness.db
+			.select()
+			.from(errorIssueEvents)
+			.where(eq(errorIssueEvents.issueId, harness.issueId as never))
+		expect(events.some((e) => e.type === "ai_triage")).toBe(true)
 	})
 
 	it("fails the run when the agent never calls submit_triage", async () => {

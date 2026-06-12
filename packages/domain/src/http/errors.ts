@@ -38,6 +38,39 @@ export const ActorType = Schema.Literals(["user", "agent"]).annotate({
 })
 export type ActorType = Schema.Schema.Type<typeof ActorType>
 
+/**
+ * Canonical triage severity for issues of every kind. The same literal backs
+ * the AI triage agent's `severityAssessment` (see ai-triage.ts) so the two can
+ * never drift apart.
+ */
+export const IssueSeverity = Schema.Literals(["critical", "high", "medium", "low"]).annotate({
+	identifier: "@maple/IssueSeverity",
+	title: "Issue Severity",
+})
+export type IssueSeverity = Schema.Schema.Type<typeof IssueSeverity>
+
+/**
+ * Who set the issue's current severity. Precedence is manual > ai > detector:
+ * AI triage only writes when the source is not "manual", and the detector
+ * mapping only applies while severity is still unset.
+ */
+export const IssueSeveritySource = Schema.Literals(["detector", "ai", "manual"]).annotate({
+	identifier: "@maple/IssueSeveritySource",
+	title: "Issue Severity Source",
+})
+export type IssueSeveritySource = Schema.Schema.Type<typeof IssueSeveritySource>
+
+/**
+ * What kind of signal backs the issue. "error" issues are fingerprint groups
+ * from the errors tick; "alert" issues are created when an alert incident
+ * opens (their fingerprintHash is the synthetic `alert:{ruleId}:{groupKey}`).
+ */
+export const IssueKind = Schema.Literals(["error", "alert"]).annotate({
+	identifier: "@maple/IssueKind",
+	title: "Issue Kind",
+})
+export type IssueKind = Schema.Schema.Type<typeof IssueKind>
+
 export const ErrorIssueEventType = Schema.Literals([
 	"created",
 	"state_change",
@@ -53,6 +86,7 @@ export const ErrorIssueEventType = Schema.Literals([
 	"unsnooze",
 	"ai_triage",
 	"anomaly_linked",
+	"severity_change",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",
@@ -95,6 +129,7 @@ export class ActorsListResponse extends Schema.Class<ActorsListResponse>("Actors
 
 export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorIssueDocument")({
 	id: ErrorIssueId,
+	kind: IssueKind,
 	fingerprintHash: Schema.String,
 	serviceName: Schema.String,
 	exceptionType: Schema.String,
@@ -103,6 +138,9 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	topFrame: Schema.String,
 	workflowState: WorkflowState,
 	priority: Schema.Number,
+	severity: Schema.NullOr(IssueSeverity),
+	severitySource: Schema.NullOr(IssueSeveritySource),
+	sourceRef: Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown)),
 	assignedActor: Schema.NullOr(ActorDocument),
 	leaseHolder: Schema.NullOr(ActorDocument),
 	leaseExpiresAt: Schema.NullOr(IsoDateTimeString),
@@ -231,6 +269,13 @@ export class ErrorIssueProposeFixRequest extends Schema.Class<ErrorIssueProposeF
 	artifacts: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
+export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeverityRequest>(
+	"ErrorIssueSetSeverityRequest",
+)({
+	severity: Schema.NullOr(IssueSeverity),
+	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
+}) {}
+
 export class RegisterAgentRequest extends Schema.Class<RegisterAgentRequest>("RegisterAgentRequest")({
 	name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
 	model: Schema.optionalKey(Schema.String),
@@ -276,11 +321,48 @@ export class ErrorNotificationPolicyUpsertRequest extends Schema.Class<ErrorNoti
 }) {}
 
 // ---------------------------------------------------------------------------
+// Escalation policy (severity → destination routing for triage outcomes)
+// ---------------------------------------------------------------------------
+
+export const EscalationConfidence = Schema.Literals(["low", "medium", "high"]).annotate({
+	identifier: "@maple/EscalationConfidence",
+	title: "Escalation Confidence",
+})
+export type EscalationConfidence = Schema.Schema.Type<typeof EscalationConfidence>
+
+export class IssueEscalationPolicyRule extends Schema.Class<IssueEscalationPolicyRule>(
+	"IssueEscalationPolicyRule",
+)({
+	severity: IssueSeverity,
+	destinationIds: Schema.Array(AlertDestinationId),
+	/** Gates AI escalations only; manual severity changes always route. */
+	minConfidence: Schema.optionalKey(EscalationConfidence),
+}) {}
+
+export class IssueEscalationPolicyDocument extends Schema.Class<IssueEscalationPolicyDocument>(
+	"IssueEscalationPolicyDocument",
+)({
+	enabled: Schema.Boolean,
+	rules: Schema.Array(IssueEscalationPolicyRule),
+	updatedAt: Schema.NullOr(IsoDateTimeString),
+	updatedBy: Schema.NullOr(UserId),
+}) {}
+
+export class IssueEscalationPolicyUpsertRequest extends Schema.Class<IssueEscalationPolicyUpsertRequest>(
+	"IssueEscalationPolicyUpsertRequest",
+)({
+	enabled: Schema.optionalKey(Schema.Boolean),
+	rules: Schema.optionalKey(Schema.Array(IssueEscalationPolicyRule)),
+}) {}
+
+// ---------------------------------------------------------------------------
 // Query schemas
 // ---------------------------------------------------------------------------
 
 const IssueListQuery = Schema.Struct({
 	workflowState: Schema.optional(WorkflowState),
+	severity: Schema.optional(Schema.Union([IssueSeverity, Schema.Literal("unset")])),
+	kind: Schema.optional(IssueKind),
 	service: Schema.optional(Schema.String),
 	deploymentEnv: Schema.optional(Schema.String),
 	assignedActorId: Schema.optional(ActorId),
@@ -479,6 +561,14 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		}),
 	)
 	.add(
+		HttpApiEndpoint.put("setIssueSeverity", "/issues/:issueId/severity", {
+			params: { issueId: ErrorIssueId },
+			payload: ErrorIssueSetSeverityRequest,
+			success: ErrorIssueDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}),
+	)
+	.add(
 		HttpApiEndpoint.get("listIssueEvents", "/issues/:issueId/events", {
 			params: { issueId: ErrorIssueId },
 			query: IssueEventsQuery,
@@ -522,6 +612,19 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 		HttpApiEndpoint.put("upsertNotificationPolicy", "/policy", {
 			payload: ErrorNotificationPolicyUpsertRequest,
 			success: ErrorNotificationPolicyDocument,
+			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("getEscalationPolicy", "/escalation-policy", {
+			success: IssueEscalationPolicyDocument,
+			error: ErrorPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.put("upsertEscalationPolicy", "/escalation-policy", {
+			payload: IssueEscalationPolicyUpsertRequest,
+			success: IssueEscalationPolicyDocument,
 			error: [ErrorForbiddenError, ErrorPersistenceError, ErrorValidationError],
 		}),
 	)

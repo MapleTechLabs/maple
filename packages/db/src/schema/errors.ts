@@ -12,6 +12,9 @@ import type {
 	ErrorIncidentReason,
 	ErrorIncidentStatus,
 	ErrorIssueEventType,
+	IssueKind,
+	IssueSeverity,
+	IssueSeveritySource,
 	WorkflowState,
 } from "@maple/domain/http"
 
@@ -52,6 +55,12 @@ export const errorIssues = sqliteTable(
 	{
 		id: text("id").$type<ErrorIssueId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
+		// "alert" issues reuse the error-shaped columns with title/detail
+		// semantics: fingerprintHash = `alert:{ruleId}:{groupKey}` (real error
+		// fingerprints are decimal UInt64 strings, so the prefix cannot collide),
+		// exceptionType = rule name, exceptionMessage = human summary, topFrame = "".
+		kind: text("kind").$type<IssueKind>().notNull().default("error"),
+		sourceRefJson: text("source_ref_json"),
 		fingerprintHash: text("fingerprint_hash").notNull(),
 		serviceName: text("service_name").notNull(),
 		exceptionType: text("exception_type").notNull(),
@@ -60,6 +69,10 @@ export const errorIssues = sqliteTable(
 		topFrame: text("top_frame").notNull(),
 		workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("triage"),
 		priority: integer("priority", { mode: "number" }).notNull().default(3),
+		// null = untriaged. Write precedence: manual > ai > detector — see
+		// IssueSeveritySource in @maple/domain/http.
+		severity: text("severity").$type<IssueSeverity>(),
+		severitySource: text("severity_source").$type<IssueSeveritySource>(),
 		assignedActorId: text("assigned_actor_id").$type<ActorId>(),
 		leaseHolderActorId: text("lease_holder_actor_id").$type<ActorId>(),
 		leaseExpiresAt: integer("lease_expires_at", { mode: "number" }),
@@ -78,6 +91,7 @@ export const errorIssues = sqliteTable(
 	(table) => [
 		uniqueIndex("error_issues_org_fp_idx").on(table.orgId, table.fingerprintHash),
 		index("error_issues_org_workflow_idx").on(table.orgId, table.workflowState),
+		index("error_issues_org_severity_idx").on(table.orgId, table.severity),
 		index("error_issues_org_last_seen_idx").on(table.orgId, table.lastSeenAt),
 		index("error_issues_org_assignee_idx").on(table.orgId, table.assignedActorId),
 		index("error_issues_lease_expiry_idx").on(table.leaseExpiresAt),
