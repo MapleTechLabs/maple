@@ -13,6 +13,22 @@ import { Env } from "./Env"
  * each layer build gets a fresh database — or a directory for persistence)
  * and applies the bundled drizzle migrations on startup.
  */
+/**
+ * Wrap an already-migrated PGlite instance as the Database service (no
+ * migration). The test harness pre-migrates via a cached SQL exec and uses
+ * this directly; `makeFromInstance` runs the canonical drizzle migrator first.
+ */
+export const databaseFromInstance = (pglite: PGlite): DatabaseShape => {
+	const client = createMaplePgliteClient(pglite) as unknown as DatabaseClient
+	return Database.of({
+		execute: <T>(fn: (db: DatabaseClient) => Promise<T>) =>
+			Effect.tryPromise({
+				try: () => fn(client),
+				catch: toDatabaseError,
+			}),
+	} satisfies DatabaseShape)
+}
+
 const makeFromInstance = (pglite: PGlite) =>
 	Effect.gen(function* () {
 		yield* Effect.tryPromise({
@@ -23,15 +39,7 @@ const makeFromInstance = (pglite: PGlite) =>
 			Effect.orDie,
 		)
 
-		const client = createMaplePgliteClient(pglite) as unknown as DatabaseClient
-
-		return Database.of({
-			execute: <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-				Effect.tryPromise({
-					try: () => fn(client),
-					catch: toDatabaseError,
-				}),
-		} satisfies DatabaseShape)
+		return databaseFromInstance(pglite)
 	})
 
 const makePgliteDatabase = Effect.gen(function* () {
@@ -48,10 +56,3 @@ const makePgliteDatabase = Effect.gen(function* () {
 })
 
 export const DatabasePgliteLive = Layer.effect(Database, makePgliteDatabase)
-
-/**
- * Database layer over a caller-owned PGlite instance (no Env requirement).
- * Test harness path: the same instance backs both the layer and the raw-SQL
- * helpers in test-pglite.ts, since PGlite is single-connection.
- */
-export const DatabasePgliteInstanceLive = (pglite: PGlite) => Layer.effect(Database, makeFromInstance(pglite))
