@@ -25,6 +25,9 @@
 		"packages/domain": {
 			"entry": ["scripts/**/*.ts"]
 		},
+		"packages/db": {
+			"entry": ["scripts/**/*.ts"]
+		},
 		"packages/email": {
 			"entry": ["src/render-preview.tsx"]
 		},
