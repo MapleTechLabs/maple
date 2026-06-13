@@ -1,6 +1,9 @@
 .tinyb
 .tinybird-generated
 .tinybird-entities-*.mjs
+# D1→Postgres migration dumps — contain prod data, never commit
+.migration
+**/.migration
 .terraform
 .DS_Store
 .claude

@@ -9,11 +9,9 @@
  * `up` creates (or reuses) an ephemeral PlanetScale branch `pr-<n>` (branches
  * are fully isolated Postgres databases, created EMPTY — exact parity with the
  * old per-PR empty D1), waits until it is ready, mints a branch credential,
- * and exports to $GITHUB_ENV:
- *   MAPLE_PG_HOST / MAPLE_PG_DATABASE / MAPLE_PG_USER / MAPLE_PG_PASSWORD
- *     — consumed by alchemy.run.ts to create the pr Hyperdrive config
- *   MAPLE_PG_MIGRATE_URL
- *     — consumed by the `drizzle-kit migrate` workflow step (direct 5432)
+ * and exports `MAPLE_PG_URL` (one connection string, direct 5432) to $GITHUB_ENV
+ * — alchemy.run.ts parses it into the pr Hyperdrive origin, and the
+ * `drizzle-kit migrate` workflow step uses it as-is.
  *
  * `down` deletes the branch (called on PR close, after `alchemy:destroy:pr`,
  * which removes the Hyperdrive config). Branch deletion also revokes its
@@ -22,7 +20,7 @@
  *
  * Auth: PLANETSCALE_SERVICE_TOKEN_ID / PLANETSCALE_SERVICE_TOKEN (the pscale
  * CLI reads both from the environment) + PLANETSCALE_ORG. The database name
- * comes from PLANETSCALE_DATABASE (default "maple-api").
+ * comes from PLANETSCALE_DATABASE (default "maple").
  */
 import { spawnSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
@@ -41,21 +39,15 @@ const fail = (message: string): never => {
 const parseArgs = (): { subcommand: Subcommand; branchName: string } => {
 	const [, , rawSubcommand, rawPr] = process.argv
 	if (rawSubcommand !== "up" && rawSubcommand !== "down") {
-		fail(`Usage: bun scripts/planetscale-pr-branch.ts <up|down> <pr-number> (got "${rawSubcommand ?? ""}")`)
+		fail(
+			`Usage: bun scripts/planetscale-pr-branch.ts <up|down> <pr-number> (got "${rawSubcommand ?? ""}")`,
+		)
 	}
 	const prNumber = (rawPr ?? "").trim()
 	if (!/^\d+$/.test(prNumber)) {
 		fail(`Expected a numeric PR number, got "${rawPr ?? ""}"`)
 	}
 	return { subcommand: rawSubcommand as Subcommand, branchName: `pr-${prNumber}` }
-}
-
-const requireEnv = (key: string): string => {
-	const value = process.env[key]?.trim()
-	if (!value) {
-		fail(`Missing required env: ${key}`)
-	}
-	return value as string
 }
 
 interface CliResult {
@@ -65,8 +57,10 @@ interface CliResult {
 }
 
 const runPscale = (args: string[], opts?: { secret?: boolean }): CliResult => {
-	const org = requireEnv("PLANETSCALE_ORG")
-	const proc = spawnSync("pscale", [...args, "--org", org], { encoding: "utf8" })
+	// `--org` only when set; otherwise use the CLI's configured org (`pscale org switch`).
+	const org = process.env.PLANETSCALE_ORG?.trim()
+	const orgArgs = org ? ["--org", org] : []
+	const proc = spawnSync("pscale", [...args, ...orgArgs], { encoding: "utf8" })
 	if (proc.error) {
 		fail(`Failed to invoke \`pscale\` — is the PlanetScale CLI installed? (${proc.error.message})`)
 	}
@@ -116,42 +110,62 @@ interface BranchCredential {
 	readonly host: string
 	readonly username: string
 	readonly password: string
+	/** Ready-made connection URL (connect dbname is `postgres`, not the PS resource name). */
+	readonly url: string
 }
 
 /**
- * Mint a Postgres credential for the branch. `pscale password create` (and the
- * Postgres `role create` variant) emit JSON; field names have drifted across
- * CLI releases, so accept the known spellings for each part.
+ * Mint a Postgres ROLE for the preview branch (`pscale password` is Vitess-only).
+ * The CI credential runs migrations (DDL) AND backs the preview app, so it
+ * inherits `postgres`. The branch is deleted on PR close, which revokes the
+ * role — but a TTL is a safety net in case `down` never runs. JSON field names
+ * have drifted across CLI releases, so accept the known spellings.
  */
 const createCredential = (database: string, branchName: string): BranchCredential => {
-	const attempts: string[][] = [
-		["password", "create", database, branchName, `ci-${branchName}`, "--format", "json"],
-		["role", "create", database, branchName, "--name", `ci-${branchName}`, "--format", "json"],
-	]
-	for (const args of attempts) {
-		const result = runPscale(args, { secret: true })
-		if (result.exitCode !== 0) continue
-		try {
-			const parsed = JSON.parse(result.stdout) as Record<string, unknown>
-			const pick = (...keys: string[]): string | undefined => {
-				for (const key of keys) {
-					const value = parsed[key]
-					if (typeof value === "string" && value.length > 0) return value
-				}
-				return undefined
-			}
-			const host = pick("access_host_url", "host", "hostname")
-			const username = pick("username", "user", "name", "id")
-			const password = pick("plain_text", "password", "plaintext")
-			if (host && username && password) {
-				return { host, username, password }
-			}
-			console.error(`… credential JSON missing fields (got keys: ${Object.keys(parsed).join(", ")})`)
-		} catch {
-			console.error("… could not parse credential JSON; trying next command form")
-		}
+	const result = runPscale(
+		[
+			"role",
+			"create",
+			database,
+			branchName,
+			`ci-${branchName}`,
+			"--inherited-roles",
+			"postgres",
+			"--ttl",
+			"24h",
+			"--format",
+			"json",
+		],
+		{ secret: true },
+	)
+	if (result.exitCode !== 0) {
+		fail(`Could not mint a role for branch ${branchName}`)
 	}
-	return fail(`Could not mint a credential for branch ${branchName}`)
+	let parsed: Record<string, unknown>
+	try {
+		parsed = JSON.parse(result.stdout) as Record<string, unknown>
+	} catch {
+		return fail("Could not parse `pscale role create --format json` output")
+	}
+	const pick = (...keys: string[]): string | undefined => {
+		for (const key of keys) {
+			const value = parsed[key]
+			if (typeof value === "string" && value.length > 0) return value
+		}
+		return undefined
+	}
+	const host = pick("access_host_url", "host", "hostname")
+	const username = pick("username", "user", "name")
+	const password = pick("plain_text", "password", "plaintext")
+	if (!host || !username || !password) {
+		return fail(`role JSON missing connection fields (got keys: ${Object.keys(parsed).join(", ")})`)
+	}
+	// Connect-time dbname is `postgres` (cluster default), NOT the PS resource
+	// name — prefer the URL the CLI returns, else build one with dbname=postgres.
+	const url =
+		pick("database_url", "connection_string") ??
+		`postgres://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:5432/postgres?sslmode=verify-full`
+	return { host, username, password, url }
 }
 
 const maskAndExport = (entries: Record<string, string>, secrets: ReadonlyArray<string>) => {
@@ -171,7 +185,7 @@ const maskAndExport = (entries: Record<string, string>, secrets: ReadonlyArray<s
 
 const main = async () => {
 	const { subcommand, branchName } = parseArgs()
-	const database = process.env.PLANETSCALE_DATABASE?.trim() || "maple-api"
+	const database = process.env.PLANETSCALE_DATABASE?.trim() || "maple"
 
 	if (subcommand === "up") {
 		const create = runPscale(["branch", "create", database, branchName, "--wait"])
@@ -181,16 +195,9 @@ const main = async () => {
 		await waitUntilReady(database, branchName)
 
 		const credential = createCredential(database, branchName)
-		maskAndExport(
-			{
-				MAPLE_PG_HOST: credential.host,
-				MAPLE_PG_DATABASE: database,
-				MAPLE_PG_USER: credential.username,
-				MAPLE_PG_PASSWORD: credential.password,
-				MAPLE_PG_MIGRATE_URL: `postgres://${encodeURIComponent(credential.username)}:${encodeURIComponent(credential.password)}@${credential.host}:5432/${database}?sslmode=require`,
-			},
-			[credential.password],
-		)
+		// One connection string — alchemy.run.ts parses it into the Hyperdrive
+		// origin, the migrate step + scripts use it as-is.
+		maskAndExport({ MAPLE_PG_URL: credential.url }, [credential.password])
 		return
 	}
 

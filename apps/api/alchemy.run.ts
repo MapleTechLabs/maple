@@ -46,17 +46,23 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		})
 	}
 
-	// Schema migrations run in CI (`drizzle-kit migrate` against the PlanetScale
-	// branch, direct port 5432) before `alchemy deploy` — never at worker boot.
+	// Single source of truth: MAPLE_PG_URL (a standard Postgres connection
+	// string — direct port 5432). Cloudflare Hyperdrive needs a STRUCTURED origin
+	// (discrete host/user/…), not a URL, so we parse it here. The same env var
+	// drives the CI `drizzle-kit migrate` step and the import scripts. Schema
+	// migrations run in CI before `alchemy deploy` — never at worker boot.
+	const pgUrl = new URL(requireEnv("MAPLE_PG_URL"))
 	const mapleDb = await Hyperdrive("maple-db", {
 		name: resolveHyperdriveName(stage),
 		adopt: true,
 		origin: {
-			host: requireEnv("MAPLE_PG_HOST"),
-			database: requireEnv("MAPLE_PG_DATABASE"),
-			user: requireEnv("MAPLE_PG_USER"),
-			password: alchemy.secret(requireEnv("MAPLE_PG_PASSWORD")),
-			port: Number(process.env.MAPLE_PG_PORT?.trim() || "5432"),
+			host: pgUrl.hostname,
+			port: Number(pgUrl.port || "5432"),
+			// Connect-time db (`postgres`, the PlanetScale cluster default), not the
+			// PS resource name.
+			database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+			user: decodeURIComponent(pgUrl.username),
+			password: alchemy.secret(decodeURIComponent(pgUrl.password)),
 		},
 		// Read-after-write everywhere (alert state CAS, dashboard versioning) —
 		// revisit caching once read paths that tolerate staleness are identified.
