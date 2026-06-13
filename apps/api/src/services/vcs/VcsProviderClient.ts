@@ -45,11 +45,13 @@ export interface VcsProviderClient {
 	>
 
 	/**
-	 * Commits on a repo's default branch authored since `sinceMs`, normalized,
+	 * Commits on a repo's default branch *committed* since `sinceMs`, normalized,
 	 * plus the branch head SHA (the provider knows its own ordering — see
-	 * `VcsCommitFetch`). The provider classifies failures: `VcsInstallationGoneError`
-	 * (disconnect), `VcsRepoUnavailableError` (repo-scoped), else `VcsProviderError`
-	 * (transient / retryable).
+	 * `VcsCommitFetch`). The `sinceMs` filter is keyed on committer date; the exact
+	 * basis and ordering are provider-defined and never assumed by callers. The
+	 * provider classifies failures: `VcsInstallationGoneError` (disconnect),
+	 * `VcsRepoUnavailableError` (repo-scoped), else `VcsProviderError` (transient /
+	 * retryable).
 	 */
 	readonly fetchCommits: (
 		installation: VcsInstallation,

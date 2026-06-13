@@ -1,6 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { createHmac, randomUUID } from "node:crypto"
 import {
+	GitCommitSha,
 	OrgId,
 	UserId,
 	VcsInstallationGoneError,
@@ -71,12 +72,11 @@ const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 describe("VcsSyncJob", () => {
 	it("round-trips through encode/decode", () => {
 		const job: VcsSyncJob = {
-			kind: "push-delta",
+			kind: "push",
 			provider: "github",
 			externalInstallationId: "42",
 			externalRepoId: "7",
 			branch: "main",
-			headSha: SHA,
 			commits: [
 				{
 					sha: SHA,
@@ -114,7 +114,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		],
 	})
 
-	it.effect("maps a validly-signed push to a push-delta job", () =>
+	it.effect("maps a validly-signed push to a push job (no head SHA — push never moves the cursor)", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const jobs = yield* provider.webhookToJobs({
@@ -123,15 +123,16 @@ describe("GithubProvider.webhookToJobs", () => {
 			})
 			assert.strictEqual(jobs.length, 1)
 			const job = jobs[0]!
-			assert.strictEqual(job.kind, "push-delta")
-			if (job.kind !== "push-delta") return
+			assert.strictEqual(job.kind, "push")
+			if (job.kind !== "push") return
 			assert.strictEqual(job.externalInstallationId, "42")
 			assert.strictEqual(job.externalRepoId, "7")
 			assert.strictEqual(job.branch, "main")
-			assert.strictEqual(job.headSha, SHA) // from the push payload's `after`
 			assert.strictEqual(job.commits.length, 1)
 			assert.strictEqual(job.commits[0]!.sha, SHA)
 			assert.strictEqual(job.commits[0]!.authorLogin, "octocat")
+			// A push carries no headSha — the payload's `after` is intentionally ignored.
+			assert.ok(!("headSha" in job))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -211,7 +212,6 @@ describe("VcsRepository", () => {
 
 			const commit = yield* repo.findCommitBySha(orgId, SHA as never)
 			assert.ok(Option.isSome(commit))
-			assert.strictEqual(commit.value.shortSha, SHA.slice(0, 7))
 			assert.strictEqual(commit.value.authorLogin, "octocat")
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
@@ -323,12 +323,11 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			const job: VcsSyncJob = {
-				kind: "push-delta",
+				kind: "push",
 				provider: "github",
 				externalInstallationId: "999", // never seeded
 				externalRepoId: "7",
 				branch: "main",
-				headSha: SHA_A,
 				commits: [commit(SHA_A, 1)],
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)) // must not fail
@@ -338,7 +337,7 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
-	it.effect("push-delta upserts every commit", () => {
+	it.effect("push upserts every commit and never moves the repo sync cursor", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-push-", dirs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
@@ -346,19 +345,24 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId) // a freshly-discovered repo (pending, no cursor)
 			const job: VcsSyncJob = {
-				kind: "push-delta",
+				kind: "push",
 				provider: "github",
 				externalInstallationId: "42",
 				externalRepoId: "7",
 				branch: "main",
-				headSha: SHA_B,
 				commits: [commit(SHA_A, 1), commit(SHA_B, 2)],
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
 			assert.ok(Option.isSome(a) && Option.isSome(b))
+			// B2: a push is pure enrichment — the cursor/status stay exactly as the
+			// backfill left them (here: untouched since no backfill has run).
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored[0]!.lastSyncCursor, null)
+			assert.strictEqual(stored[0]!.syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
@@ -533,11 +537,89 @@ describe("VcsSyncService orchestrator", () => {
 			),
 		)
 	})
+
+	// C1: the processability gate. A non-active installation must process nothing.
+	it.effect("a suspended installation is skipped — no data processed, no failure", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-suspended-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* repo.markInstallationStatus("github", "42", "suspended")
+			const job: VcsSyncJob = {
+				kind: "push",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				branch: "main",
+				commits: [commit(SHA_A, 1)],
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)) // gated → must not fail
+			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
+			assert.ok(Option.isNone(a)) // gate short-circuits before the upsert
+			const inst = yield* repo.getInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "suspended") // status untouched
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits: [commit(SHA_A, 1)] })))
+	})
+
+	// C1: unsuspend must flip the installation back to active and resume syncing.
+	it.effect("unsuspend reactivates a suspended installation and re-syncs its repos", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-unsuspend-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const repos = [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate: true,
+				isArchived: false,
+			},
+		]
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* repo.markInstallationStatus("github", "42", "suspended")
+			const job: VcsSyncJob = {
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "unsuspend",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+			const inst = yield* repo.getInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "active") // reactivated
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored.length, 1) // re-sync ran
+			assert.strictEqual(sent.length, 1)
+			assert.strictEqual(sent[0]!.kind, "backfill-repo")
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
+	})
 })
 
 // The SHA-shape regex lives only in the GitCommitSha brand; these assert that
 // validation fires at both the webhook decode boundary and on persistence.
 describe("git SHA validation (branded type)", () => {
+	it("GitCommitSha accepts mixed-case input and normalizes it to lowercase", () => {
+		const decode = Schema.decodeUnknownSync(GitCommitSha)
+		// All-uppercase 40-hex is accepted and lowercased.
+		assert.strictEqual(decode("A".repeat(40)), "a".repeat(40))
+		// Mixed case round-trips to its lowercase form (so case never splits a row).
+		const mixed = "AbCdEf0123456789aBcDeF0123456789AbCdEf01"
+		assert.strictEqual(decode(mixed), mixed.toLowerCase())
+		// Non-hex / wrong length are still rejected (after lowercasing).
+		assert.throws(() => decode("Z".repeat(40)))
+		assert.throws(() => decode("abc"))
+	})
+
 	it.effect("webhook decode rejects a malformed commit SHA with VcsWebhookParseError", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -567,7 +649,7 @@ describe("git SHA validation (branded type)", () => {
 			const exit = yield* repo
 				.upsertCommits(orgId, "github", "7", [
 					{
-						sha: "ABC", // not 40-char lowercase hex
+						sha: "ABC", // not 40-char hex (case-insensitive, but still invalid)
 						message: "bad",
 						authorName: null,
 						authorEmail: null,

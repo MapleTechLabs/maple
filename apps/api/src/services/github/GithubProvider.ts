@@ -46,7 +46,6 @@ const PushPayload = Schema.Struct({
 		}),
 	}),
 	installation: Schema.Struct({ id: Schema.Number }),
-	after: GitCommitSha, // the ref's new head SHA — authoritative, no ordering inference
 	commits: Schema.optionalKey(Schema.Array(PushCommit)),
 })
 
@@ -201,13 +200,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}
 					})
 					if (commits.length === 0) return []
+					// A push is best-effort enrichment, not a cursor advance: it carries
+					// no head SHA (the cursor only tracks the default-branch backfill).
 					const job: VcsSyncJob = {
-						kind: "push-delta",
+						kind: "push",
 						provider: PROVIDER,
 						externalInstallationId: String(payload.installation.id),
 						externalRepoId: String(payload.repository.id),
 						branch,
-						headSha: payload.after,
 						commits,
 					}
 					return [job]
@@ -288,6 +288,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
+					// GitHub's `since` filters by *committer* date (matching the port's
+					// "committed since" contract). The newest-first ordering and the
+					// committer-date basis are both GitHub specifics that stay in here.
 					const commits = yield* client
 						.listCommits(installation.externalInstallationId, repo.owner, repo.name, {
 							sha: repo.defaultBranch,

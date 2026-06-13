@@ -4,7 +4,6 @@ CREATE TABLE `vcs_commits` (
 	`provider` text NOT NULL,
 	`external_repo_id` text NOT NULL,
 	`sha` text NOT NULL,
-	`short_sha` text NOT NULL,
 	`message` text NOT NULL,
 	`author_name` text,
 	`author_email` text,
@@ -19,7 +18,6 @@ CREATE TABLE `vcs_commits` (
 --> statement-breakpoint
 CREATE UNIQUE INDEX `vcs_commits_org_repo_sha_idx` ON `vcs_commits` (`org_id`,`provider`,`external_repo_id`,`sha`);--> statement-breakpoint
 CREATE INDEX `vcs_commits_org_sha_idx` ON `vcs_commits` (`org_id`,`sha`);--> statement-breakpoint
-CREATE INDEX `vcs_commits_org_short_sha_idx` ON `vcs_commits` (`org_id`,`short_sha`);--> statement-breakpoint
 CREATE TABLE `vcs_installations` (
 	`id` text PRIMARY KEY NOT NULL,
 	`org_id` text NOT NULL,

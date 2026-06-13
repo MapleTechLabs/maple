@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "228d5a21-bac3-4115-8a05-bf1c7095686e",
+  "id": "52f05d7c-c339-4714-804b-929419ba1dbd",
   "prevId": "31c9a36a-d77e-4e0f-a535-c71e671856bc",
   "tables": {
     "ai_triage_runs": {
@@ -4191,13 +4191,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "short_sha": {
-          "name": "short_sha",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "message": {
           "name": "message",
           "type": "text",
@@ -4285,14 +4278,6 @@
           "columns": [
             "org_id",
             "sha"
-          ],
-          "isUnique": false
-        },
-        "vcs_commits_org_short_sha_idx": {
-          "name": "vcs_commits_org_short_sha_idx",
-          "columns": [
-            "org_id",
-            "short_sha"
           ],
           "isUnique": false
         }

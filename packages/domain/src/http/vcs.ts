@@ -42,10 +42,13 @@ export type VcsCommitRowId = Schema.Schema.Type<typeof VcsCommitRowId>
  * (40 hex = git's SHA-1 object format; git's experimental SHA-256 object format
  * — 64 hex — is a known, currently-unused limitation across every git host.)
  */
-export const GitCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).pipe(
+const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).pipe(
 	Schema.brand("@maple/GitCommitSha"),
-	// Lowercase on the way in so `aBc…` and `ABC…` resolve to the same row/lookup.
-	Schema.encode({
+)
+export const GitCommitSha = Schema.String.pipe(
+	// Lowercase on the way in (before the pattern check) so `aBc…` and `ABC…`
+	// resolve to the same branded value, hence the same row and the same lookup.
+	Schema.decodeTo(GitCommitShaBrand, {
 		decode: SchemaGetter.transform((s: string) => s.toLowerCase()),
 		encode: SchemaGetter.passthrough<string>(),
 	}),
@@ -104,6 +107,16 @@ export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallat
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
+
+/**
+ * The single, vendor-agnostic answer to "should the sync engine act on this
+ * installation's data?". Only `active` installations are processed — `suspended`
+ * (provider temporarily disabled it) and `disconnected` (uninstalled / access
+ * revoked) are both skipped. Every data-processing path gates on this so the
+ * rule lives in exactly one place.
+ */
+export const isInstallationProcessable = (installation: VcsInstallation): boolean =>
+	installation.status === "active"
 
 export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	id: VcsRepositoryId,
@@ -229,20 +242,23 @@ export const BackfillRepoJob = Schema.Struct({
 })
 export type BackfillRepoJob = Schema.Schema.Type<typeof BackfillRepoJob>
 
-export const PushDeltaJob = Schema.Struct({
-	kind: Schema.Literal("push-delta"),
+// A push event's commits, applied incrementally. NOT a cursor-advancing sync:
+// the cursor only ever tracks the default-branch commit *list* (see
+// `BackfillRepoJob`), so a push carries no head SHA and never moves it. A push
+// payload may also be incomplete (GitHub caps `commits` at 2048 per delivery and
+// sends one delivery per push, not many) — the authoritative fill-in is the
+// default-branch backfill, so a push is purely best-effort enrichment.
+export const PushJob = Schema.Struct({
+	kind: Schema.Literal("push"),
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	externalRepoId: Schema.String,
 	branch: Schema.String,
-	// The branch head after the push, as reported by the provider (e.g. GitHub's
-	// `after`). The generic layer never infers the head from commit order.
-	headSha: GitCommitSha,
 	commits: Schema.Array(CommitUpsertInput),
 })
-export type PushDeltaJob = Schema.Schema.Type<typeof PushDeltaJob>
+export type PushJob = Schema.Schema.Type<typeof PushJob>
 
-export const VcsSyncJob = Schema.Union([InstallationSyncJob, BackfillRepoJob, PushDeltaJob])
+export const VcsSyncJob = Schema.Union([InstallationSyncJob, BackfillRepoJob, PushJob])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 
 // ---- Tagged errors --------------------------------------------------------

@@ -23,7 +23,9 @@ export class GithubAppError extends Data.TaggedError("GithubAppError")<{
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
 const PER_PAGE = 100
-const MAX_PAGES = 20 // safety cap (≤2000 items)
+// Paginate effectively to the end (up to 100k items) while still bounding a
+// pathological loop. Hitting this cap is logged — truncation is never silent.
+const MAX_PAGES = 1000
 
 // ---- REST response schemas ------------------------------------------------
 
@@ -235,7 +237,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const config = yield* resolveConfig
 					const token = yield* mintInstallationToken(externalInstallationId)
 					const repos: Array<GithubApiRepo> = []
-					for (let page = 1; page <= MAX_PAGES; page++) {
+					let page = 1
+					for (; page <= MAX_PAGES; page++) {
 						const response = yield* authedGet(
 							config,
 							token,
@@ -255,6 +258,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						repos.push(...decoded.repositories)
 						if (decoded.repositories.length < PER_PAGE) break
 					}
+					// Exhausted the page cap without a short final page → likely truncated.
+					if (page > MAX_PAGES) {
+						yield* Effect.logWarning("GitHub installation repositories truncated at page cap").pipe(
+							Effect.annotateLogs({ externalInstallationId, maxPages: MAX_PAGES, fetched: repos.length }),
+						)
+					}
 					return repos
 				},
 			)
@@ -269,13 +278,17 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`
 				const commits: Array<GithubApiCommit> = []
-				for (let page = 1; page <= MAX_PAGES; page++) {
+				let page = 1
+				for (; page <= MAX_PAGES; page++) {
 					const query = new URLSearchParams({ per_page: String(PER_PAGE), page: String(page) })
 					if (params.sha) query.set("sha", params.sha)
 					if (params.sinceIso) query.set("since", params.sinceIso)
 					const response = yield* authedGet(config, token, `${base}?${query.toString()}`)
-					// 409 = empty repository, 404 = not found/no access → no commits.
-					if (response.status === 404 || response.status === 409) break
+					// 409 = empty repository → genuinely no commits, not an error.
+					if (response.status === 409) break
+					// Anything else non-2xx (incl. 404 = repo deleted / access lost) is
+					// surfaced as a repository-scoped failure so the orchestrator can mark
+					// the repo unavailable rather than mistaking it for an empty repo.
 					if (!response.ok) return yield* failure(response, "List commits", "repository")
 					const json = yield* parseJson(response, "List commits")
 					const decoded = yield* decodeCommitList(json).pipe(
@@ -285,6 +298,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					)
 					commits.push(...decoded)
 					if (decoded.length < PER_PAGE) break
+				}
+				// Exhausted the page cap without a short final page → likely truncated.
+				if (page > MAX_PAGES) {
+					yield* Effect.logWarning("GitHub commit list truncated at page cap").pipe(
+						Effect.annotateLogs({ owner, repo, maxPages: MAX_PAGES, fetched: commits.length }),
+					)
 				}
 				return commits
 			})

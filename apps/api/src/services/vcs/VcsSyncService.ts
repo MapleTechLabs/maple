@@ -1,5 +1,6 @@
 import {
 	type CommitUpsertInput,
+	isInstallationProcessable,
 	type UnknownVcsProviderError,
 	type VcsInstallation,
 	type VcsInstallationSyncReason,
@@ -153,24 +154,47 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Effect.withSpan("VcsSyncService.backfillRepo"),
 				)
 
-			const applyPushDelta = Effect.fn("VcsSyncService.applyPushDelta")(function* (
+			const applyPush = Effect.fn("VcsSyncService.applyPush")(function* (
 				installation: VcsInstallation,
-				job: { externalRepoId: string; headSha: string; commits: ReadonlyArray<CommitUpsertInput> },
+				job: { externalRepoId: string; commits: ReadonlyArray<CommitUpsertInput> },
 			) {
-					const now = yield* Clock.currentTimeMillis
+					// A push is incremental enrichment only: upsert the pushed commits and
+					// deliberately leave the sync cursor untouched. The cursor exclusively
+					// tracks the default-branch commit *list* backfill, which is the only
+					// path that resumes from it — a push can't authoritatively advance it
+					// (it may target any branch and its payload may be truncated), so there
+					// is nothing to gain by moving it here.
 					yield* repo.upsertCommits(
 						installation.orgId,
 						installation.provider,
 						job.externalRepoId,
 						job.commits,
 					)
-					// The provider already told us the head (the push's `after`).
-					yield* repo.updateRepoSyncCursor(installation.orgId, installation.provider, job.externalRepoId, {
-						status: "ready",
-						cursorSha: job.headSha,
-						error: null,
-						syncedAt: now,
+				})
+
+			// THE gate: the single, vendor-agnostic answer to "should the sync engine
+			// act on this installation's data?" (rule lives in isInstallationProcessable).
+			// Every data-processing path runs through here; the decision is annotated on
+			// the current span (`vcs.installation.processable`) so it's traceable, and a
+			// skip is logged. Suspended / disconnected installations are skipped.
+			const ensureProcessable = (installation: VcsInstallation, kind: VcsSyncJob["kind"]) =>
+				Effect.gen(function* () {
+					const processable = isInstallationProcessable(installation)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.installation.status": installation.status,
+						"vcs.installation.processable": processable,
 					})
+					if (!processable) {
+						yield* Effect.logInfo("Skipping VCS job: installation not processable").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalInstallationId: installation.externalInstallationId,
+								status: installation.status,
+								kind,
+							}),
+						)
+					}
+					return processable
 				})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
@@ -191,17 +215,21 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"vcs.installation.external_id": job.externalInstallationId,
 				})
 
-				// suspend/delete only flip status — no installation lookup needed.
-				if (
-					job.kind === "installation-sync" &&
-					(job.reason === "suspend" || job.reason === "deleted")
-				) {
-					yield* repo.markInstallationStatus(
-						job.provider,
-						job.externalInstallationId,
-						job.reason === "suspend" ? "suspended" : "disconnected",
-					)
-					return
+				// Status-transition events change the gate's answer for subsequent jobs
+				// rather than processing data themselves — handled before any lookup.
+				if (job.kind === "installation-sync") {
+					if (job.reason === "suspend" || job.reason === "deleted") {
+						const status = job.reason === "suspend" ? "suspended" : "disconnected"
+						yield* repo.markInstallationStatus(job.provider, job.externalInstallationId, status)
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
+						return
+					}
+					if (job.reason === "unsuspend") {
+						// The provider re-enabled the installation → restore it to active
+						// before re-syncing, so the processability gate lets the sync proceed.
+						yield* repo.markInstallationStatus(job.provider, job.externalInstallationId, "active")
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
+					}
 				}
 
 				const installationOpt = yield* repo.getInstallation(job.provider, job.externalInstallationId)
@@ -216,20 +244,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					return
 				}
 				const installation = installationOpt.value
-				if (installation.status === "disconnected") {
-					yield* Effect.logInfo("Dropping VCS job for disconnected installation").pipe(
-						Effect.annotateLogs({ externalInstallationId: job.externalInstallationId, kind: job.kind }),
-					)
-					return
-				}
+
+				// The single agnostic gate — covers backfill, installation-sync, and push.
+				if (!(yield* ensureProcessable(installation, job.kind))) return
 
 				const provider = yield* registry.resolve(job.provider)
-
 
 				const run = Match.value(job).pipe(
 					Match.discriminator("kind")("backfill-repo", (job) => backfillRepo(provider, installation, job)),
 					Match.discriminator("kind")("installation-sync", (job) => syncInstallation(provider, installation, job.reason)),
-					Match.discriminator("kind")("push-delta", (job) => applyPushDelta(installation, job)),
+					Match.discriminator("kind")("push", (job) => applyPush(installation, job)),
 					Match.exhaustive
 				)
 
