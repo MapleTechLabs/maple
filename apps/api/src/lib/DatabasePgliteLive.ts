@@ -7,13 +7,6 @@ import { Database, type DatabaseClient, type DatabaseShape, toDatabaseError } fr
 import { Env } from "./Env"
 
 /**
- * Embedded-Postgres Database layer for everything that is not a deployed
- * Worker: vitest, MCP evals, and local non-wrangler entrypoints. Resolves the
- * PGlite data dir from MAPLE_DB_URL (`memory://` for ephemeral instances —
- * each layer build gets a fresh database — or a directory for persistence)
- * and applies the bundled drizzle migrations on startup.
- */
-/**
  * Wrap an already-migrated PGlite instance as the Database service (no
  * migration). The test harness pre-migrates via a cached SQL exec and uses
  * this directly; `makeFromInstance` runs the canonical drizzle migrator first.
@@ -42,6 +35,13 @@ const makeFromInstance = (pglite: PGlite) =>
 		return databaseFromInstance(pglite)
 	})
 
+/**
+ * Embedded-Postgres Database layer for everything that is not a deployed
+ * Worker: vitest, MCP evals, and local non-wrangler entrypoints. Resolves the
+ * PGlite data dir from MAPLE_DB_URL (`memory://` for ephemeral instances —
+ * each layer build gets a fresh database — or a directory for persistence)
+ * and applies the bundled drizzle migrations on startup.
+ */
 const makePgliteDatabase = Effect.gen(function* () {
 	const env = yield* Env
 
