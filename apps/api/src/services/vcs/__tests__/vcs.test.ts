@@ -184,6 +184,8 @@ describe("VcsRepository", () => {
 			const found = yield* repo.getInstallation("github", "42")
 			assert.ok(Option.isSome(found))
 			assert.strictEqual(found.value.externalInstallationId, "42")
+			// status is not passed to upsertInstallation — it comes from the schema default.
+			assert.strictEqual(found.value.status, "active")
 
 			const count = yield* repo.upsertCommits(orgId, "github", "7", [
 				{

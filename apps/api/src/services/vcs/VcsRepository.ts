@@ -112,6 +112,10 @@ const rowToCommit = (row: VcsCommitRow): VcsCommit =>
 		createdAt: row.createdAt,
 	})
 
+// Note: `status` is intentionally not part of the upsert input. A new row gets
+// the schema column default ("active"); all status transitions (suspend /
+// disconnect / unsuspend) go through `markInstallationStatus`, so a reconciling
+// upsert never touches an existing installation's status.
 export interface UpsertInstallationInput {
 	readonly orgId: OrgId
 	readonly provider: VcsProviderId
@@ -121,7 +125,6 @@ export interface UpsertInstallationInput {
 	readonly externalAccountId: string
 	readonly accountAvatarUrl: string | null
 	readonly repositorySelection: VcsRepoSelection
-	readonly status?: VcsInstallStatus
 	readonly installedByUserId: UserId
 }
 
@@ -179,6 +182,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) =>
 					db
 						.insert(vcsInstallations)
+						// `status`/`suspended_at` are omitted: a new row takes the schema
+						// default ("active"), and on conflict they are left untouched so a
+						// reconcile can't un-suspend. Status is owned by markInstallationStatus.
 						.values({
 							id: randomUUID() as VcsInstallation["id"],
 							orgId: input.orgId,
@@ -189,24 +195,21 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							externalAccountId: input.externalAccountId,
 							accountAvatarUrl: input.accountAvatarUrl,
 							repositorySelection: input.repositorySelection,
-							status: input.status ?? "active",
-							suspendedAt: null,
 							installedByUserId: input.installedByUserId,
 							createdAt: now,
 							updatedAt: now,
 						})
 						.onConflictDoUpdate({
 							target: [vcsInstallations.provider, vcsInstallations.externalInstallationId],
-							// Ownership columns (org_id, installed_by_user_id, created_at) are
-							// immutable on conflict — only mutable provider metadata is refreshed.
+							// Ownership columns (org_id, installed_by_user_id, created_at) and
+							// status/suspended_at are immutable on conflict — only mutable
+							// provider metadata is refreshed.
 							set: {
 								accountLogin: sql`excluded.account_login`,
 								accountType: sql`excluded.account_type`,
 								externalAccountId: sql`excluded.external_account_id`,
 								accountAvatarUrl: sql`excluded.account_avatar_url`,
 								repositorySelection: sql`excluded.repository_selection`,
-								status: sql`excluded.status`,
-								suspendedAt: sql`excluded.suspended_at`,
 								updatedAt: sql`excluded.updated_at`,
 							},
 						}),
