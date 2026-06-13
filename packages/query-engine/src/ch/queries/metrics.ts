@@ -128,7 +128,7 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 				AttrFingerprint: $.AttrFingerprint,
 				ResourceFingerprint: $.ResourceFingerprint,
 				StartTimeUnix: $.StartTimeUnix,
-				Value: CH.rawExpr<number>("argMaxMerge(LastValue)"),
+				Value: CH.argMaxMerge($.LastValue),
 			}))
 			.where(($) => [
 				$.OrgId.eq(param.string("orgId")),
@@ -164,17 +164,29 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		Value: T.float64,
 	})
 
-	const PARTITION =
-		"PARTITION BY ServiceName, MetricName, SpanKind, AttrFingerprint, ResourceFingerprint, StartTimeUnix"
-	const FRAME = `${PARTITION} ORDER BY Hour ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW`
 	const deltasSql = compileCH(
 		from(hourlyValues)
-			.select(($) => ({
-				Hour: $.Hour,
-				ServiceName: $.ServiceName,
-				SpanKind: $.SpanKind,
-				delta: CH.rawExpr<number>(`Value - lagInFrame(Value, 1, Value) OVER (${FRAME})`),
-			}))
+			.select(($) => {
+				const onePrecedingFrame = CH.windowSpec({
+					partitionBy: [
+						$.ServiceName,
+						$.MetricName,
+						$.SpanKind,
+						$.AttrFingerprint,
+						$.ResourceFingerprint,
+						$.StartTimeUnix,
+					],
+					orderBy: [[$.Hour, "asc"]],
+					frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+				})
+
+				return {
+					Hour: $.Hour,
+					ServiceName: $.ServiceName,
+					SpanKind: $.SpanKind,
+					delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)),
+				}
+			})
 			.where(($) => [$.Hour.gte(bucket)]),
 		{},
 		{ skipFormat: true },
@@ -231,26 +243,34 @@ export function metricsTimeseriesRateQuery(
 	// row dominates the query cost (raw `metrics_sum` scans of span.metrics.calls
 	// ran ~7s p95). Hashing keeps per-series identity — points of one series share
 	// one exporter, so map key order is stable — at a ~2^-64 collision risk.
-	const PARTITION =
-		"PARTITION BY ServiceName, MetricName, " +
-		"cityHash64(mapKeys(Attributes), mapValues(Attributes)), " +
-		"cityHash64(mapKeys(ResourceAttributes), mapValues(ResourceAttributes)), " +
-		"StartTimeUnix"
-	const ONE_PRECEDING_FRAME = `${PARTITION} ORDER BY TimeUnix ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW`
 	const cteSql = compileCH(
 		from(MetricsSum)
-			.select(($) => ({
-				TimeUnix: $.TimeUnix,
-				ServiceName: $.ServiceName,
-				Attributes: $.Attributes,
-				Value: $.Value,
-				delta: CH.rawExpr<number>(
-					`Value - lagInFrame(Value, 1, Value) OVER (${ONE_PRECEDING_FRAME})`,
-				),
-				time_delta: CH.rawExpr<number>(
-					`toFloat64(toUnixTimestamp64Nano(TimeUnix) - toUnixTimestamp64Nano(lagInFrame(TimeUnix, 1, TimeUnix) OVER (${ONE_PRECEDING_FRAME}))) / 1000000000.0`,
-				),
-			}))
+			.select(($) => {
+				const onePrecedingFrame = CH.windowSpec({
+					partitionBy: [
+						$.ServiceName,
+						$.MetricName,
+						CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
+						CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
+						$.StartTimeUnix,
+					],
+					orderBy: [[$.TimeUnix, "asc"]],
+					frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+				})
+				const previousValue = CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)
+				const previousTimeUnix = CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), onePrecedingFrame)
+
+				return {
+					TimeUnix: $.TimeUnix,
+					ServiceName: $.ServiceName,
+					Attributes: $.Attributes,
+					Value: $.Value,
+					delta: $.Value.sub(previousValue),
+					time_delta: CH.toFloat64(
+						CH.toUnixTimestamp64Nano($.TimeUnix).sub(CH.toUnixTimestamp64Nano(previousTimeUnix)),
+					).div(1000000000),
+				}
+			})
 			.where(($) => [
 				$.MetricName.eq(param.string("metricName")),
 				$.OrgId.eq(param.string("orgId")),

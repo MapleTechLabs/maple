@@ -134,6 +134,27 @@ describe("CH.from / select / where / compile", () => {
 		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket")
 	})
 
+	it("compiles window frame helpers", () => {
+		const q = CH.from(TestTable).select(($) => {
+			const frame = CH.windowSpec({
+				partitionBy: [$.Name, CH.cityHash64(CH.mapKeys($.Attrs), CH.mapValues($.Attrs))],
+				orderBy: [[$.Value, "asc"]],
+				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+			})
+
+			return {
+				delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), frame)),
+			}
+		})
+
+		const { sql } = compileCH(q, {})
+		expect(sql).toContain(
+			"Value - lagInFrame(Value, 1, Value) OVER (PARTITION BY Name, " +
+				"cityHash64(mapKeys(Attrs), mapValues(Attrs)) ORDER BY Value ASC " +
+				"ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS delta",
+		)
+	})
+
 	it("compiles if_ expressions", () => {
 		const q = CH.from(TestTable).select(($) => ({
 			errorRate: CH.if_(CH.count().gt(0), CH.countIf($.Name.eq("Error")), CH.lit(0)),

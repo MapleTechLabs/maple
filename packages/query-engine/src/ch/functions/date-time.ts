@@ -44,6 +44,14 @@ export function toUnixTimestamp(col: Expr<string>): Expr<number> {
 	return makeExpr<number>(raw(`toUnixTimestamp(${compile(col.toFragment())})`))
 }
 
+/**
+ * `toUnixTimestamp64Nano(expr)` — convert DateTime64 to a nanosecond epoch.
+ * Used for counter-rate delta windows where sub-second scrape spacing matters.
+ */
+export function toUnixTimestamp64Nano(col: Expr<string>): Expr<number> {
+	return makeExpr<number>(raw(`toUnixTimestamp64Nano(${compile(col.toFragment())})`))
+}
+
 export function intervalSub(col: Expr<string>, seconds: number | Expr<number>): Expr<string> {
 	const secStr =
 		typeof seconds === "number"
