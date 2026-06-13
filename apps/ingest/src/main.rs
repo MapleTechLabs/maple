@@ -143,11 +143,18 @@ enum KeyStoreBackend {
     Static {
         org_id: String,
     },
-    // Cloudflare D1 REST backend used in multi-tenant / production deploys.
+    // Cloudflare D1 REST backend (legacy — pre-PlanetScale-Postgres). Kept for
+    // the rollback window; new deploys use Postgres.
     D1 {
         cf_account_id: String,
         d1_database_id: String,
         d1_api_token: String,
+    },
+    // PlanetScale Postgres backend used in multi-tenant / production deploys.
+    // `url` is the standard pg connection string (PSBouncer port 6432, sslmode
+    // require); the API service writes ingest-key rows to the same database.
+    Postgres {
+        url: String,
     },
 }
 
@@ -367,9 +374,10 @@ impl AppConfig {
     }
 }
 
-// Pick a KeyStore backend from env. `INGEST_KEY_STORE_BACKEND` (static|d1) wins
-// when set; otherwise `MAPLE_SELF_HOSTED_MODE=single_tenant` implies static; in
-// all other cases we require the three CF env vars and use D1.
+// Pick a KeyStore backend from env. `INGEST_KEY_STORE_BACKEND`
+// (static|postgres|d1) wins when set; otherwise `MAPLE_SELF_HOSTED_MODE=
+// single_tenant` implies static; in all other cases we use Postgres (the
+// production backend post-cutover; D1 stays selectable for the rollback window).
 fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
     let backend_override = std::env::var("INGEST_KEY_STORE_BACKEND")
         .ok()
@@ -381,18 +389,32 @@ fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
         .map(|v| v.trim().to_ascii_lowercase())
         .filter(|v| !v.is_empty());
 
-    let want_static = match backend_override.as_deref() {
-        Some("static") => true,
-        Some("d1") => false,
+    #[derive(PartialEq)]
+    enum Want {
+        Static,
+        Postgres,
+        D1,
+    }
+
+    let want = match backend_override.as_deref() {
+        Some("static") => Want::Static,
+        Some("postgres") | Some("pg") => Want::Postgres,
+        Some("d1") => Want::D1,
         Some(other) => {
             return Err(format!(
-                "INGEST_KEY_STORE_BACKEND must be `static` or `d1`, got `{other}`"
+                "INGEST_KEY_STORE_BACKEND must be `static`, `postgres`, or `d1`, got `{other}`"
             ));
         }
-        None => self_hosted_mode.as_deref() == Some("single_tenant"),
+        None => {
+            if self_hosted_mode.as_deref() == Some("single_tenant") {
+                Want::Static
+            } else {
+                Want::Postgres
+            }
+        }
     };
 
-    if want_static {
+    if want == Want::Static {
         let org_id = std::env::var("MAPLE_ORG_ID_OVERRIDE")
             .map_err(|_| {
                 "MAPLE_ORG_ID_OVERRIDE is required for the static key store backend".to_string()
@@ -405,6 +427,17 @@ fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
             );
         }
         return Ok(KeyStoreBackend::Static { org_id });
+    }
+
+    if want == Want::Postgres {
+        let url = std::env::var("MAPLE_PG_URL")
+            .map_err(|_| "MAPLE_PG_URL is required for the postgres key store backend".to_string())?
+            .trim()
+            .to_string();
+        if url.is_empty() {
+            return Err("MAPLE_PG_URL is required for the postgres key store backend".to_string());
+        }
+        return Ok(KeyStoreBackend::Postgres { url });
     }
 
     let cf_account_id = std::env::var("CLOUDFLARE_ACCOUNT_ID")
@@ -3488,6 +3521,221 @@ impl KeyStore for D1KeyStore {
     }
 }
 
+/// PlanetScale Postgres-backed KeyStore. A pooled direct connection (PSBouncer
+/// 6432, no Hyperdrive — Railway dials PlanetScale). Same queries as the legacy
+/// D1KeyStore, ported to Postgres: `$N` placeholders, native booleans (no
+/// `CASE WHEN ... THEN 1`), and `to_timestamp()` for the epoch-ms connector
+/// timestamps (those columns are now `timestamptz`). The 60s in-process cache
+/// and HMAC fingerprinting upstream are unchanged — only the transport differs.
+struct PostgresKeyStore {
+    pool: deadpool_postgres::Pool,
+}
+
+impl PostgresKeyStore {
+    fn new(url: &str) -> Result<Self, String> {
+        let pg_config = url
+            .parse::<tokio_postgres::Config>()
+            .map_err(|error| format!("invalid MAPLE_PG_URL: {error}"))?;
+
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let provider = std::sync::Arc::new(rustls::crypto::ring::default_provider());
+        let tls_config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_safe_default_protocol_versions()
+            .map_err(|error| format!("rustls config failed: {error}"))?
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
+
+        let mgr = deadpool_postgres::Manager::from_config(
+            pg_config,
+            tls,
+            deadpool_postgres::ManagerConfig {
+                recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+            },
+        );
+        let pool = deadpool_postgres::Pool::builder(mgr)
+            .max_size(8)
+            .build()
+            .map_err(|error| format!("postgres pool build failed: {error}"))?;
+
+        Ok(Self { pool })
+    }
+
+    async fn client(&self) -> Result<deadpool_postgres::Object, String> {
+        self.pool
+            .get()
+            .await
+            .map_err(|error| format!("postgres pool checkout failed: {error}"))
+    }
+
+    /// Startup gate, mirroring D1KeyStore::probe — runs the production lookup
+    /// query with a stub hash so any auth/schema/network/TLS issue exits the
+    /// process instead of 503'ing every request.
+    async fn probe(&self) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .query(
+                "SELECT k.org_id, \
+                        COALESCE(s.sync_status = 'connected', false) AS self_managed \
+                 FROM org_ingest_keys k \
+                 LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+                 WHERE k.private_key_hash = $1 LIMIT 1",
+                &[&"__ingest_probe_no_match__"],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres probe query failed: {error}"))
+    }
+}
+
+#[async_trait::async_trait]
+impl KeyStore for PostgresKeyStore {
+    async fn fetch_ingest_key(
+        &self,
+        key_hash: &str,
+        hash_column: &'static str,
+    ) -> Result<Option<KeyRow>, String> {
+        // hash_column is a compile-time constant chosen by the resolver, never
+        // user input — safe to interpolate.
+        let sql = format!(
+            "SELECT k.org_id, \
+                    COALESCE(s.sync_status = 'connected', false) AS self_managed \
+             FROM org_ingest_keys k \
+             LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             WHERE k.{hash_column} = $1 LIMIT 1"
+        );
+        let client = self.client().await?;
+        let rows = client
+            .query(&sql, &[&key_hash])
+            .await
+            .map_err(|error| format!("postgres fetch_ingest_key failed: {error}"))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(KeyRow {
+            org_id: row.get("org_id"),
+            self_managed: row.get("self_managed"),
+        }))
+    }
+
+    async fn fetch_connector(
+        &self,
+        connector_id: &str,
+        secret_hash: &str,
+    ) -> Result<Option<ConnectorRow>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
+                        COALESCE(s.sync_status = 'connected', false) AS self_managed \
+                 FROM cloudflare_logpush_connectors c \
+                 LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+                 WHERE c.id = $1 AND c.secret_hash = $2 AND c.enabled = true LIMIT 1",
+                &[&connector_id, &secret_hash],
+            )
+            .await
+            .map_err(|error| format!("postgres fetch_connector failed: {error}"))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(ConnectorRow {
+            org_id: row.get("org_id"),
+            service_name: row.get("service_name"),
+            zone_name: row.get("zone_name"),
+            dataset: row.get("dataset"),
+            self_managed: row.get("self_managed"),
+        }))
+    }
+
+    async fn fetch_sampling_policy(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<SamplingPolicyRow>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms \
+                 FROM org_ingest_sampling_policies WHERE org_id = $1 LIMIT 1",
+                &[&org_id],
+            )
+            .await
+            .map_err(|error| format!("postgres fetch_sampling_policy failed: {error}"))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        let slow_ms: Option<i32> = row.get("always_keep_slow_spans_ms");
+        Ok(Some(SamplingPolicyRow {
+            trace_sample_ratio: row.get("trace_sample_ratio"),
+            always_keep_error_spans: row.get("always_keep_error_spans"),
+            always_keep_slow_spans_ms: slow_ms.and_then(|v| u64::try_from(v).ok()),
+        }))
+    }
+
+    async fn fetch_attribute_mappings(
+        &self,
+        org_id: &str,
+    ) -> Result<Vec<AttributeMappingRow>, String> {
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT source_context, source_key, target_key, operation \
+                 FROM org_ingest_attribute_mappings WHERE org_id = $1 AND enabled = true",
+                &[&org_id],
+            )
+            .await
+            .map_err(|error| format!("postgres fetch_attribute_mappings failed: {error}"))?;
+        Ok(rows
+            .into_iter()
+            .map(|row| AttributeMappingRow {
+                source_context: row.get("source_context"),
+                source_key: row.get("source_key"),
+                target_key: row.get("target_key"),
+                operation: row.get("operation"),
+            })
+            .collect())
+    }
+
+    async fn record_connector_success(
+        &self,
+        connector_id: &str,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE cloudflare_logpush_connectors \
+                 SET last_received_at = to_timestamp($1::bigint / 1000.0), \
+                     last_error = NULL, \
+                     updated_at = to_timestamp($1::bigint / 1000.0) \
+                 WHERE id = $2",
+                &[&now_ms, &connector_id],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("postgres record_connector_success failed: {error}"))
+    }
+
+    async fn record_connector_failure(
+        &self,
+        connector_id: &str,
+        error: &str,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let client = self.client().await?;
+        client
+            .execute(
+                "UPDATE cloudflare_logpush_connectors \
+                 SET last_error = $1, updated_at = to_timestamp($2::bigint / 1000.0) \
+                 WHERE id = $3",
+                &[&error, &now_ms, &connector_id],
+            )
+            .await
+            .map(|_| ())
+            .map_err(|err| format!("postgres record_connector_failure failed: {err}"))
+    }
+}
+
 // Local-dev / single-tenant KeyStore: every well-formed ingest key resolves to
 // the configured org. No DB, no network. Connector flows are no-ops since
 // Cloudflare Logpush is a production-only integration.
@@ -3618,6 +3866,16 @@ async fn build_key_store(
                 .await
                 .map_err(|error| format!("D1 startup probe failed: {error}"))?;
             info!("D1 startup probe succeeded");
+            Ok(Arc::new(store))
+        }
+        KeyStoreBackend::Postgres { url } => {
+            info!(backend = "planetscale-postgres", "Key store backend selected");
+            let store = PostgresKeyStore::new(url)?;
+            store
+                .probe()
+                .await
+                .map_err(|error| format!("Postgres startup probe failed: {error}"))?;
+            info!("Postgres startup probe succeeded");
             Ok(Arc::new(store))
         }
     }
