@@ -777,10 +777,10 @@ describe("ErrorsService.runTick", () => {
 			const purgeCandidate = asIssueId(randomUUID())
 			yield* seedIssue(purgeCandidate, {
 				workflowState: "done",
-				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
-				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				resolvedAt: new Date(RETENTION_TICK_MS - 120 * DAY_MS),
+				archivedAt: new Date(RETENTION_TICK_MS - 91 * DAY_MS),
 			})
-			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
+			const seededAt = new Date(RETENTION_TICK_MS - 120 * DAY_MS)
 			yield* database.execute((db) =>
 				db.insert(errorIssueEvents).values({
 					id: asEventId(randomUUID()),
@@ -788,7 +788,7 @@ describe("ErrorsService.runTick", () => {
 					issueId: purgeCandidate,
 					actorId: null,
 					type: "created",
-					payloadJson: "{}",
+					payloadJson: {},
 					createdAt: seededAt,
 				}),
 			)
@@ -827,7 +827,7 @@ describe("ErrorsService.runTick", () => {
 				db.select().from(errorIssues).where(eq(errorIssues.id, archiveCandidate)),
 			)
 			assert.lengthOf(archivedRows, 1)
-			assert.strictEqual(archivedRows[0]?.archivedAt, RETENTION_TICK_MS)
+			assert.strictEqual(archivedRows[0]?.archivedAt?.getTime(), RETENTION_TICK_MS)
 
 			const purgedIssues = yield* database.execute((db) =>
 				db.select().from(errorIssues).where(eq(errorIssues.id, purgeCandidate)),

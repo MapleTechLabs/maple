@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run",
+		"test": "vitest run --passWithNoTests",
 		"db:generate": "drizzle-kit generate --config ./drizzle.config.ts",
 		"db:migrate": "drizzle-kit migrate --config ./drizzle.config.ts",
 		"db:push": "drizzle-kit push --config ./drizzle.config.ts",
@@ -19,7 +19,6 @@
 	},
 	"dependencies": {
 		"@electric-sql/pglite": "^0.5.2",
-		"@libsql/client": "0.15.15",
 		"@maple/domain": "workspace:*",
 		"drizzle-orm": "^0.45.1",
 		"effect": "catalog:effect",

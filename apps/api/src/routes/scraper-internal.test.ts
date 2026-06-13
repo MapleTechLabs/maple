@@ -22,7 +22,7 @@ describe("toInternalScrapeTarget", () => {
 		serviceName: "node",
 		url: "https://node.example.com:9100/metrics",
 		scrapeIntervalSeconds: 15,
-		labelsJson: JSON.stringify({ env: "prod" }),
+		labelsJson: { env: "prod" },
 	}
 
 	const INGEST_KEY = "maple_pk_test_key"
@@ -39,9 +39,16 @@ describe("toInternalScrapeTarget", () => {
 		expect(result.value.ingestKey).toBe(INGEST_KEY)
 	})
 
-	it("degrades unparseable labelsJson to an empty record", async () => {
+	it("degrades invalid labelsJson to an empty record", async () => {
+		// jsonb drift: the column should hold Record<string, string>, but a row
+		// written by an older deploy (or by hand) may not — the decode guard must
+		// degrade it to {} instead of failing the list.
+		const driftedLabels: unknown = { env: 123 }
 		const result = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, labelsJson: "{not json" }, INGEST_KEY),
+			toInternalScrapeTarget(
+				{ ...baseRow, labelsJson: driftedLabels as Record<string, string> },
+				INGEST_KEY,
+			),
 		)
 		expect(Option.isSome(result)).toBe(true)
 		if (Option.isNone(result)) return

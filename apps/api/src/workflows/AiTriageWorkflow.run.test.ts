@@ -10,7 +10,7 @@ import {
 	issueEscalations,
 	runMigrations,
 } from "@maple/db"
-import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
+import { createMaplePgliteClient, type MaplePgClient } from "@maple/db/client"
 import {
 	AiTriageRunId,
 	AnomalyIncidentId,
@@ -19,14 +19,14 @@ import {
 } from "@maple/domain/primitives"
 import { eq } from "drizzle-orm"
 import { Schema } from "effect"
-import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { runAiTriage, type AiTriageWorkflowPayload } from "./AiTriageWorkflow.run"
 import type { WorkflowStepLike } from "./ClickHouseSchemaApplyWorkflow.run"
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
+afterEach(async () => {
+	await cleanupTestDbs(createdDbs)
 	vi.unstubAllGlobals()
 })
 
@@ -69,7 +69,7 @@ const fakeGenerate = (toolCalls: ReadonlyArray<{ toolName: string; input: unknow
 	})) as unknown as typeof generateText
 
 interface Harness {
-	readonly db: MapleD1Client
+	readonly db: MaplePgClient
 	readonly runId: AiTriageRunId
 	readonly issueId: ErrorIssueId
 	readonly incidentId: AnomalyIncidentId
@@ -79,19 +79,19 @@ interface Harness {
 let harness: Harness
 
 beforeEach(async () => {
-	const { url } = createTempDbUrl("maple-ai-triage-run-", createdTempDirs)
-	await runMigrations({ url })
+	const testDb = createTestDb(createdDbs)
+	await runMigrations(testDb.pglite)
 	// The workflow only uses the shared drizzle query-builder surface, which the
-	// libsql and D1 clients implement identically.
-	const db = createMapleLibsqlClient({ url }) as unknown as MapleD1Client
+	// PGlite and postgres.js clients implement identically.
+	const db = createMaplePgliteClient(testDb.pglite) as unknown as MaplePgClient
 	const runId = asRunId(randomUUID())
 	const issueId = asIssueId(randomUUID())
 	const incidentId = asAnomalyIncidentId(randomUUID())
-	const now = Date.now()
+	const now = new Date()
 
 	await db.insert(aiTriageSettings).values({
 		orgId: ORG,
-		enabled: 1,
+		enabled: true,
 		maxRunsPerDay: 20,
 		updatedAt: now,
 	})
@@ -102,7 +102,7 @@ beforeEach(async () => {
 		incidentId,
 		issueId,
 		status: "queued",
-		contextJson: JSON.stringify({ kind: "error", serviceName: "checkout-api" }),
+		contextJson: { kind: "error", serviceName: "checkout-api" },
 		createdAt: now,
 		updatedAt: now,
 	})
@@ -134,7 +134,7 @@ const loadRun = async () => {
 }
 
 const insertAnomalyIncident = async () => {
-	const now = Date.now()
+	const now = new Date()
 	await harness.db.insert(anomalyIncidents).values({
 		id: harness.incidentId,
 		orgId: ORG,
@@ -180,7 +180,7 @@ describe("runAiTriage", () => {
 		expect(run?.status).toBe("completed")
 		expect(run?.inputTokens).toBe(120)
 		expect(run?.outputTokens).toBe(60)
-		expect(JSON.parse(run?.resultJson ?? "{}").summary).toContain("bad deploy")
+		expect(run?.resultJson).toMatchObject({ summary: expect.stringContaining("bad deploy") })
 
 		const events = await harness.db
 			.select()
@@ -188,7 +188,7 @@ describe("runAiTriage", () => {
 			.where(eq(errorIssueEvents.issueId, harness.issueId))
 		expect(events).toHaveLength(1)
 		expect(events[0]?.type).toBe("ai_triage")
-		expect(JSON.parse(events[0]?.payloadJson ?? "{}").runId).toBe(harness.runId)
+		expect(events[0]?.payloadJson).toMatchObject({ runId: harness.runId })
 	})
 
 	it("does not duplicate the timeline event when persist re-runs", async () => {
@@ -231,7 +231,7 @@ describe("runAiTriage", () => {
 	})
 
 	it("applies the assessed severity to a real issue and queues an escalation", async () => {
-		const now = Date.now()
+		const now = new Date()
 		await harness.db.insert(errorIssues).values({
 			id: harness.issueId,
 			orgId: ORG,
@@ -265,7 +265,7 @@ describe("runAiTriage", () => {
 			.from(errorIssueEvents)
 			.where(eq(errorIssueEvents.issueId, harness.issueId))
 		const triageEvent = events.find((e) => e.type === "ai_triage")
-		expect(JSON.parse(triageEvent?.payloadJson ?? "{}").applied).toBe(true)
+		expect(triageEvent?.payloadJson).toMatchObject({ applied: true })
 		expect(events.some((e) => e.type === "severity_change")).toBe(true)
 
 		const escalations = await harness.db
@@ -278,7 +278,7 @@ describe("runAiTriage", () => {
 	})
 
 	it("does not clobber a manual severity and records applied=false", async () => {
-		const now = Date.now()
+		const now = new Date()
 		await harness.db.insert(errorIssues).values({
 			id: harness.issueId,
 			orgId: ORG,
@@ -314,7 +314,7 @@ describe("runAiTriage", () => {
 			.from(errorIssueEvents)
 			.where(eq(errorIssueEvents.issueId, harness.issueId))
 		const triageEvent = events.find((e) => e.type === "ai_triage")
-		expect(JSON.parse(triageEvent?.payloadJson ?? "{}").applied).toBe(false)
+		expect(triageEvent?.payloadJson).toMatchObject({ applied: false })
 		expect(events.some((e) => e.type === "severity_change")).toBe(false)
 	})
 
@@ -367,12 +367,12 @@ describe("runAiTriage", () => {
 
 		const run = await loadRun()
 		expect(run?.status).toBe("failed")
-		expect(run?.completedAt).toBe(FIXED_NOW)
-		expect(run?.updatedAt).toBe(FIXED_NOW)
+		expect(run?.completedAt?.getTime()).toBe(FIXED_NOW)
+		expect(run?.updatedAt.getTime()).toBe(FIXED_NOW)
 
 		const incident = await loadAnomalyIncident()
 		expect(incident?.triageStatus).toBe("skipped")
-		expect(incident?.updatedAt).toBe(FIXED_NOW)
+		expect(incident?.updatedAt.getTime()).toBe(FIXED_NOW)
 	})
 
 	it("marks the anomaly incident triage-completed when persist succeeds", async () => {
@@ -398,11 +398,11 @@ describe("runAiTriage", () => {
 
 		const run = await loadRun()
 		expect(run?.status).toBe("completed")
-		expect(run?.completedAt).toBe(FIXED_NOW)
+		expect(run?.completedAt?.getTime()).toBe(FIXED_NOW)
 
 		const incident = await loadAnomalyIncident()
 		expect(incident?.triageStatus).toBe("completed")
-		expect(incident?.updatedAt).toBe(FIXED_NOW)
+		expect(incident?.updatedAt.getTime()).toBe(FIXED_NOW)
 	})
 
 	it("tracks token usage against Autumn with run-scoped idempotency keys", async () => {

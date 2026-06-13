@@ -1020,8 +1020,9 @@ describe("AlertsService", () => {
 					status: "queued",
 					scheduledAt: fixedTime - 2,
 					// jsonb can only hold valid JSON, so "corrupted" now means a stored
-					// payload that fails the delivery-payload schema decode.
-					payloadJson: JSON.stringify({ corrupted: true }),
+					// payload that fails the delivery-payload schema decode (every field
+					// is optional, so it must be present-but-mistyped).
+					payloadJson: JSON.stringify({ eventType: 123 }),
 				}),
 			)
 			yield* Effect.promise(() =>
