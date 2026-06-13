@@ -1,8 +1,13 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, KVNamespace, Worker, Workflow } from "alchemy/cloudflare"
+import { D1Database, Hyperdrive, KVNamespace, Worker, Workflow } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveD1Name, resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	resolveD1Name,
+	resolveDeploymentEnvironment,
+	resolveHyperdriveName,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 
 const requireEnv = (key: string): string => {
 	const value = process.env[key]?.trim()
@@ -28,11 +33,43 @@ export interface CreateMapleApiOptions {
 }
 
 export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) => {
-	const mapleDb = await D1Database("MAPLE_DB", {
-		name: resolveD1Name(stage),
+	// Legacy D1 — unbound rollback snapshot for the Postgres cutover. Kept with
+	// `delete: false` so removing this block later no-ops the API delete; the
+	// resource id MUST stay "MAPLE_DB" (renaming would orphan-delete the
+	// database). migrationsDir is gone: packages/db/drizzle now holds Postgres
+	// SQL. Remove this whole block after the post-cutover rollback window.
+	if (stage.kind === "prd" || stage.kind === "stg") {
+		await D1Database("MAPLE_DB", {
+			name: resolveD1Name(stage),
+			adopt: true,
+			delete: false,
+		})
+	}
+
+	// Schema migrations run in CI (`drizzle-kit migrate` against the PlanetScale
+	// branch, direct port 5432) before `alchemy deploy` — never at worker boot.
+	const mapleDb = await Hyperdrive("maple-db", {
+		name: resolveHyperdriveName(stage),
 		adopt: true,
-		migrationsDir: path.resolve(import.meta.dirname, "../../packages/db/drizzle"),
-		migrationsTable: "drizzle_migrations",
+		origin: {
+			host: requireEnv("MAPLE_PG_HOST"),
+			database: requireEnv("MAPLE_PG_DATABASE"),
+			user: requireEnv("MAPLE_PG_USER"),
+			password: alchemy.secret(requireEnv("MAPLE_PG_PASSWORD")),
+			port: Number(process.env.MAPLE_PG_PORT?.trim() || "5432"),
+		},
+		// Read-after-write everywhere (alert state CAS, dashboard versioning) —
+		// revisit caching once read paths that tolerate staleness are identified.
+		caching: { disabled: true },
+		dev: {
+			origin: {
+				host: "localhost",
+				port: 5499,
+				database: "maple",
+				user: "maple",
+				password: "maple",
+			},
+		},
 	})
 
 	const mcpSessions = await KVNamespace("MCP_SESSIONS", {

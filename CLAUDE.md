@@ -29,6 +29,11 @@ bun --filter=@maple/web dev:app
 # First-time setup (once per machine): install portless's local CA into your system trust store
 npx portless trust
 
+# Database (PlanetScale Postgres in prod; docker Postgres for wrangler dev)
+bun db:up              # Start the dev Postgres (docker, port 5499) used by wrangler dev
+bun db:migrate:local   # Apply drizzle migrations to the dev Postgres
+                       # vitest needs neither — tests run embedded in-memory PGlite
+
 # Testing
 bun test             # Run Vitest tests
 
@@ -127,6 +132,16 @@ Never use raw `fetch()` calls to `/v0/sql` — always go through `warehouse.sqlQ
 TINYBIRD_HOST=http://localhost:7181   # Local dev or cloud endpoint
 TINYBIRD_TOKEN=<token>                # Tinybird API token
 ```
+
+## Application Database (PlanetScale Postgres)
+
+Relational app state (issues, alert rules, dashboards, org config, API keys, …) lives in **PlanetScale Postgres**, one branch per stage (`main`=prd, `stg`, `pr-<n>`). Workers reach it through a **Cloudflare Hyperdrive** binding named `MAPLE_DB` (created in `apps/api/alchemy.run.ts`, bound to api/alerting/chat-agent). The schema is Drizzle (`packages/db/src/schema/`, `pgTable`, timestamptz/jsonb/boolean), with a single re-baselined migration history in `packages/db/drizzle/`.
+
+- **Conventions:** app code keeps epoch-ms numbers and converts at the drizzle boundary (`new Date(ms)` on writes/wheres, `.getTime()`/`.toISOString()` on reads; `msToDate`/`dateToMs` in `apps/api/src/lib/time.ts` for nullables). Domain/HTTP contracts are unchanged (ms numbers / ISO strings). Never read driver write-result shapes — use `.returning()` + length. `count(*)`-style bigint aggregates need `::int` casts (postgres.js returns bigint as string).
+- **Layers:** `DatabasePgLive` (Workers; per-`execute` short-lived postgres.js client — Workers TCP sockets are request-bound, Hyperdrive owns the warm pool) and `DatabasePgliteLive` (embedded PGlite for tests/evals/local non-worker code). Tests use `apps/api/src/lib/test-pglite.ts` (`createTestDb()` → in-memory PGlite + layer; raw SQL helpers take `$1` placeholders).
+- **Migrations:** generated via `bun run --cwd packages/db db:generate`; applied by CI (`drizzle-kit migrate` against the branch's DIRECT port 5432, never a pooler) before `alchemy deploy`. Local wrangler-dev DB: `bun db:up && bun db:migrate:local`. PGlite applies them automatically at layer build.
+- **PR previews:** `scripts/planetscale-pr-branch.ts up|down <n>` (mirrors the Tinybird branch script) creates/deletes the `pr-<n>` branch and exports `MAPLE_PG_*` creds; wired into `deploy-pr-preview.yml`. Branch deletion on PR close is mandatory (PS-DEV billing + Hyperdrive config cap).
+- **Ingest gateway** resolves ingest keys from the same Postgres (PSBouncer port 6432, no Hyperdrive) via `INGEST_KEY_STORE_BACKEND=postgres`.
 
 ## Key Conventions
 

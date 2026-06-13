@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { DurableObjectNamespace, Worker, type D1Database } from "alchemy/cloudflare"
+import { DurableObjectNamespace, Worker, type Hyperdrive } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -26,7 +26,7 @@ export interface CreateChatAgentWorkerOptions {
 	stage: MapleStage
 	domains: MapleDomains
 	mapleApiUrl: string
-	mapleDb: D1Database
+	mapleDb: Hyperdrive
 }
 
 export const createChatAgentWorker = async ({
