@@ -9,9 +9,6 @@ import { Database, type DatabaseError } from "../lib/DatabaseLive"
 // the short-lived CSRF nonce store for any OAuth / App-install redirect flow.
 // Callers supply `provider` in the insert row and verify it on read, so this
 // repo is reusable across integrations (GitHub install, Hazel OAuth, …).
-//
-// Extracted from the inline state CRUD in HazelOAuthService so the GitHub
-// install service (Step 2) can depend on it and swap it out.
 // ---------------------------------------------------------------------------
 
 const toPersistenceError = (error: DatabaseError) =>

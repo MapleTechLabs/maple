@@ -178,7 +178,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			input: UpsertInstallationInput,
 		) {
 			const now = yield* Clock.currentTimeMillis
-			yield* database
+			const rows = yield* database
 				.execute((db) =>
 					db
 						.insert(vcsInstallations)
@@ -212,14 +212,16 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 								repositorySelection: sql`excluded.repository_selection`,
 								updatedAt: sql`excluded.updated_at`,
 							},
-						}),
+						})
+						.returning(),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-			const rows = yield* selectInstallationRow(input.provider, input.externalInstallationId)
+			// `.returning()` hands back the upserted row in the same statement — one
+			// round-trip, and no read-after-write race with a concurrent status change.
 			const row = Option.fromNullishOr(rows[0])
 			if (Option.isNone(row)) {
-				return yield* new VcsRepoPersistenceError({ message: "Installation vanished after upsert" })
+				return yield* new VcsRepoPersistenceError({ message: "Installation upsert returned no row" })
 			}
 			return yield* decodeOne("vcs_installations", row.value, rowToInstallation)
 		})
@@ -371,6 +373,31 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
+		// Flag a single repo's sync as errored without touching its cursor /
+		// last-synced time (a failed fetch must not wipe prior progress).
+		const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
+			orgId: OrgId,
+			provider: VcsProviderId,
+			externalRepoId: string,
+			message: string,
+		) {
+			const now = yield* Clock.currentTimeMillis
+			yield* database
+				.execute((db) =>
+					db
+						.update(vcsRepositories)
+						.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
+						.where(
+							and(
+								eq(vcsRepositories.orgId, orgId),
+								eq(vcsRepositories.provider, provider),
+								eq(vcsRepositories.externalRepoId, externalRepoId),
+							),
+						),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+		})
+
 		// ---- Commits ------------------------------------------------------
 
 		const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
@@ -475,6 +502,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			upsertRepositories,
 			removeRepository,
 			updateRepoSyncCursor,
+			markRepoSyncError,
 			upsertCommits,
 			findCommitBySha,
 		}

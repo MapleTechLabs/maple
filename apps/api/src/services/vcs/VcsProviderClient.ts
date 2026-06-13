@@ -1,11 +1,13 @@
 import type { Effect } from "effect"
 import type {
-	CommitUpsertInput,
 	RepoUpsertInput,
+	VcsCommitFetch,
 	VcsInstallation,
+	VcsInstallationGoneError,
 	VcsProviderError,
 	VcsProviderId,
 	VcsRepositoryRef,
+	VcsRepoUnavailableError,
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
@@ -37,12 +39,24 @@ export interface VcsProviderClient {
 	/** All repositories visible to an installation, normalized. */
 	readonly fetchRepositories: (
 		installation: VcsInstallation,
-	) => Effect.Effect<ReadonlyArray<RepoUpsertInput>, VcsProviderError>
+	) => Effect.Effect<
+		ReadonlyArray<RepoUpsertInput>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
+	>
 
-	/** Commits on a repo's default branch authored since `sinceMs`, normalized. */
+	/**
+	 * Commits on a repo's default branch authored since `sinceMs`, normalized,
+	 * plus the branch head SHA (the provider knows its own ordering — see
+	 * `VcsCommitFetch`). The provider classifies failures: `VcsInstallationGoneError`
+	 * (disconnect), `VcsRepoUnavailableError` (repo-scoped), else `VcsProviderError`
+	 * (transient / retryable).
+	 */
 	readonly fetchCommits: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		opts: { readonly sinceMs: number },
-	) => Effect.Effect<ReadonlyArray<CommitUpsertInput>, VcsProviderError>
+	) => Effect.Effect<
+		VcsCommitFetch,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
+	>
 }

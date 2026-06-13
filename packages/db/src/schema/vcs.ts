@@ -2,7 +2,6 @@ import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqli
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
-	ShortCommitSha,
 	VcsAccountType,
 	VcsCommitRowId,
 	VcsInstallStatus,
@@ -91,7 +90,6 @@ export const vcsCommits = sqliteTable(
 		provider: text("provider").$type<VcsProviderId>().notNull(),
 		externalRepoId: text("external_repo_id").notNull(),
 		sha: text("sha").$type<GitCommitSha>().notNull(),
-		shortSha: text("short_sha").$type<ShortCommitSha>().notNull(),
 		message: text("message").notNull(),
 		authorName: text("author_name"),
 		authorEmail: text("author_email"),
@@ -106,7 +104,6 @@ export const vcsCommits = sqliteTable(
 	(table) => [
 		uniqueIndex("vcs_commits_org_repo_sha_idx").on(table.orgId, table.provider, table.externalRepoId, table.sha),
 		index("vcs_commits_org_sha_idx").on(table.orgId, table.sha),
-		index("vcs_commits_org_short_sha_idx").on(table.orgId, table.shortSha),
 	],
 )
 

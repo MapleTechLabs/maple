@@ -22,12 +22,12 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 	{
 		make: Effect.gen(function* () {
 			const workerEnv = yield* WorkerEnvironment
-			const queue = (workerEnv as Record<string, unknown>)[QUEUE_BINDING] as Queue<unknown> | undefined
-
-			const missing = new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
+			const queue = workerEnv[QUEUE_BINDING] as Queue<unknown> | undefined
 
 			const send = Effect.fn("VcsSyncQueue.send")(function* (job: VcsSyncJob) {
-				if (!queue) return yield* missing
+				if (!queue) {
+					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
+				}
 				const body = encodeJob(job)
 				yield* Effect.tryPromise({
 					try: () => queue.send(body),
@@ -42,7 +42,9 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 				jobs: ReadonlyArray<VcsSyncJob>,
 			) {
 				if (jobs.length === 0) return
-				if (!queue) return yield* missing
+				if (!queue) {
+					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
+				}
 				const messages = jobs.map((job) => ({ body: encodeJob(job) }))
 				yield* Effect.tryPromise({
 					try: () => queue.sendBatch(messages),

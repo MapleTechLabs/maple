@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Schema, SchemaGetter } from "effect"
 import { OrgId, UserId } from "../primitives"
 
 // ---------------------------------------------------------------------------
@@ -31,24 +31,27 @@ export const VcsCommitRowId = Schema.String.check(Schema.isUUID()).pipe(
 export type VcsCommitRowId = Schema.Schema.Type<typeof VcsCommitRowId>
 
 /**
- * A full 40-char, lowercase-hex git commit SHA. Strict — unlike the permissive
- * telemetry `CommitSha` brand (which must not throw on arbitrary OTel data) —
- * so the SHA-shape regex lives in exactly this one declarative type. Decoding a
- * value through it (at the webhook/REST boundary and on persistence) is the only
- * SHA validation in the codebase.
+ * A full 40-char git commit SHA. Case-insensitive on input and normalized to
+ * lowercase during decode, so the same commit is identified regardless of the
+ * case a provider — or an OTel `deployment.commit_sha` attribute — emits it in.
+ * Strict — unlike the permissive telemetry `CommitSha` brand (which must not
+ * throw on arbitrary OTel data) — so the SHA-shape regex lives in exactly this
+ * one declarative type. Decoding a value through it (at the webhook/REST
+ * boundary and on persistence) is the only SHA validation in the codebase.
+ *
+ * (40 hex = git's SHA-1 object format; git's experimental SHA-256 object format
+ * — 64 hex — is a known, currently-unused limitation across every git host.)
  */
 export const GitCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)).pipe(
 	Schema.brand("@maple/GitCommitSha"),
+	// Lowercase on the way in so `aBc…` and `ABC…` resolve to the same row/lookup.
+	Schema.encode({
+		decode: SchemaGetter.transform((s: string) => s.toLowerCase()),
+		encode: SchemaGetter.passthrough<string>(),
+	}),
 	Schema.annotate({ identifier: "@maple/GitCommitSha", title: "Git Commit SHA" }),
 )
 export type GitCommitSha = Schema.Schema.Type<typeof GitCommitSha>
-
-/** First 7 hex chars of a commit SHA (display + abbreviated-input lookup). */
-export const ShortCommitSha = Schema.String.check(Schema.isPattern(/^[0-9a-f]{7}$/)).pipe(
-	Schema.brand("@maple/ShortCommitSha"),
-	Schema.annotate({ identifier: "@maple/ShortCommitSha", title: "Short Commit SHA" }),
-)
-export type ShortCommitSha = Schema.Schema.Type<typeof ShortCommitSha>
 
 // ---- Provider + normalized enums ------------------------------------------
 
@@ -129,7 +132,6 @@ export class VcsCommit extends Schema.Class<VcsCommit>("VcsCommit")({
 	provider: VcsProviderId,
 	externalRepoId: Schema.String,
 	sha: GitCommitSha,
-	shortSha: ShortCommitSha,
 	message: Schema.String,
 	authorName: Schema.NullOr(Schema.String),
 	authorEmail: Schema.NullOr(Schema.String),
@@ -171,6 +173,17 @@ export const CommitUpsertInput = Schema.Struct({
 	branch: Schema.NullOr(Schema.String),
 })
 export type CommitUpsertInput = Schema.Schema.Type<typeof CommitUpsertInput>
+
+/**
+ * Result of a provider commit fetch: the commits plus the current head SHA of
+ * the fetched ref. The provider determines `headSha` (it alone knows its own
+ * response ordering / the authoritative tip); callers must never infer the head
+ * from commit array position. `null` when the ref has no commits.
+ */
+export interface VcsCommitFetch {
+	readonly commits: ReadonlyArray<CommitUpsertInput>
+	readonly headSha: string | null
+}
 
 /** Minimal repo identity a provider needs to fetch commits. */
 export const VcsRepositoryRef = Schema.Struct({
@@ -222,6 +235,9 @@ export const PushDeltaJob = Schema.Struct({
 	externalInstallationId: Schema.String,
 	externalRepoId: Schema.String,
 	branch: Schema.String,
+	// The branch head after the push, as reported by the provider (e.g. GitHub's
+	// `after`). The generic layer never infers the head from commit order.
+	headSha: GitCommitSha,
 	commits: Schema.Array(CommitUpsertInput),
 })
 export type PushDeltaJob = Schema.Schema.Type<typeof PushDeltaJob>
@@ -257,6 +273,29 @@ export class VcsProviderError extends Schema.TaggedErrorClass<VcsProviderError>(
 		cause: Schema.optionalKey(Schema.Defect),
 	},
 	{ httpApiStatus: 502 },
+) {}
+
+/**
+ * The provider is certain the installation no longer exists / access is
+ * permanently revoked at the installation level (e.g. GitHub's installation
+ * token endpoint returning gone). The ONLY error the sync orchestrator treats
+ * as a disconnect — raw HTTP status never drives that decision. Providers must
+ * only raise this when the signal is unambiguous.
+ */
+export class VcsInstallationGoneError extends Schema.TaggedErrorClass<VcsInstallationGoneError>()(
+	"@maple/http/errors/VcsInstallationGoneError",
+	{ message: Schema.String },
+	{ httpApiStatus: 410 },
+) {}
+
+/**
+ * The provider is certain a specific repository is permanently inaccessible
+ * (deleted / renamed / access lost). Scoped to the repo — never the installation.
+ */
+export class VcsRepoUnavailableError extends Schema.TaggedErrorClass<VcsRepoUnavailableError>()(
+	"@maple/http/errors/VcsRepoUnavailableError",
+	{ message: Schema.String },
+	{ httpApiStatus: 404 },
 ) {}
 
 export class VcsWebhookSignatureError extends Schema.TaggedErrorClass<VcsWebhookSignatureError>()(

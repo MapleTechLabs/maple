@@ -14,6 +14,9 @@ import { Env } from "../../lib/Env"
 export class GithubAppError extends Data.TaggedError("GithubAppError")<{
 	message: string
 	status?: number
+	// Which resource the failing call addressed, so the provider can tell an
+	// installation-auth failure (the gone/suspended signal) from a repo-level one.
+	scope?: "installation" | "repository"
 	cause?: unknown
 }> {}
 
@@ -154,16 +157,22 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// ---- HTTP helpers ---------------------------------------------
 
-			const failure = (response: Response, context: string) =>
+			const failure = (
+				response: Response,
+				context: string,
+				scope?: "installation" | "repository",
+			) =>
 				Effect.gen(function* () {
 					const body = yield* Effect.tryPromise({
 						try: () => response.text(),
-						catch: () => new GithubAppError({ message: `${context} failed`, status: response.status }),
+						catch: () =>
+							new GithubAppError({ message: `${context} failed`, status: response.status, scope }),
 					})
 					return yield* Effect.fail(
 						new GithubAppError({
 							message: `${context} failed: ${response.status} ${body.slice(0, 300)}`,
 							status: response.status,
+							scope,
 						}),
 					)
 				})
@@ -194,7 +203,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					catch: (cause) =>
 						new GithubAppError({ message: "Installation token request failed", cause }),
 				})
-				if (!response.ok) return yield* failure(response, "Installation token request")
+				// A failure here is the installation auth gate — the authoritative
+				// "installation gone / suspended" signal.
+				if (!response.ok) return yield* failure(response, "Installation token request", "installation")
 				const json = yield* parseJson(response, "Installation token request")
 				const decoded = yield* decodeInstallationToken(json).pipe(
 					Effect.mapError(
@@ -265,7 +276,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const response = yield* authedGet(config, token, `${base}?${query.toString()}`)
 					// 409 = empty repository, 404 = not found/no access → no commits.
 					if (response.status === 404 || response.status === 409) break
-					if (!response.ok) return yield* failure(response, "List commits")
+					if (!response.ok) return yield* failure(response, "List commits", "repository")
 					const json = yield* parseJson(response, "List commits")
 					const decoded = yield* decodeCommitList(json).pipe(
 						Effect.mapError(
@@ -291,7 +302,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					token,
 					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${sha}`,
 				)
-				if (!response.ok) return yield* failure(response, "Get commit")
+				if (!response.ok) return yield* failure(response, "Get commit", "repository")
 				const json = yield* parseJson(response, "Get commit")
 				return yield* decodeCommit(json).pipe(
 					Effect.mapError(

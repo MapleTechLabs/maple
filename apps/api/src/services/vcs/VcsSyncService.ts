@@ -7,9 +7,10 @@ import {
 	type VcsQueueError,
 	type VcsRepoDecodeError,
 	type VcsRepoPersistenceError,
+	type VcsRepoUnavailableError,
 	VcsSyncJob,
 } from "@maple/domain/http"
-import { Clock, Effect, Context, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
@@ -27,10 +28,14 @@ const DAY_MS = 86_400_000
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
+// VcsInstallationGoneError is handled internally (→ disconnect) and never
+// surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
+// propagate so the queue retries.
 type SyncError =
 	| VcsRepoPersistenceError
 	| VcsRepoDecodeError
 	| VcsProviderError
+	| VcsRepoUnavailableError
 	| VcsQueueError
 	| UnknownVcsProviderError
 
@@ -78,7 +83,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					const sinceMs = now - BACKFILL_DAYS * DAY_MS
 					yield* queue.sendBatch(
 						repos.map((r) => ({
-							kind: "backfill-repo" as const,
+							kind: "backfill-repo",
 							provider: installation.provider,
 							externalInstallationId: installation.externalInstallationId,
 							externalRepoId: r.externalRepoId,
@@ -97,7 +102,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
-					const commits = yield* provider.fetchCommits(
+					const { commits, headSha } = yield* provider.fetchCommits(
 						installation,
 						{
 							externalRepoId: job.externalRepoId,
@@ -113,44 +118,44 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						job.externalRepoId,
 						commits,
 					)
-					// GitHub returns newest-first; the first commit is the branch head.
+					// The provider supplies the head; the orchestrator never infers it.
 					yield* repo.updateRepoSyncCursor(installation.orgId, installation.provider, job.externalRepoId, {
 						status: "ready",
-						cursorSha: commits[0]?.sha ?? null,
+						cursorSha: headSha,
 						error: null,
 						syncedAt: now,
 					})
 				}).pipe(
-					// App uninstalled / repo gone → stop retrying, mark the installation disconnected.
-					Effect.catchTag(
-						"@maple/http/errors/VcsProviderError",
-						(error): Effect.Effect<void, VcsProviderError | VcsRepoPersistenceError> =>
-							error.status === 404 || error.status === 410
-								? repo
-										.markInstallationStatus(
-											installation.provider,
-											installation.externalInstallationId,
-											"disconnected",
-										)
-										.pipe(
-											Effect.flatMap(() =>
-												Effect.logWarning("VCS installation no longer accessible").pipe(
-													Effect.annotateLogs({
-														provider: installation.provider,
-														externalInstallationId: installation.externalInstallationId,
-														status: error.status,
-													}),
-												),
-											),
-										)
-								: Effect.fail(error),
+					// The provider classifies failures; the orchestrator dispatches on the
+					// semantic outcome, never on HTTP status:
+					//  - VcsRepoUnavailableError (repo gone) → record on the repo and drain.
+					//  - VcsInstallationGoneError → propagates to processMessage (disconnect).
+					//  - VcsProviderError (transient) → propagates so the queue retries.
+					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", (error) =>
+						repo
+							.markRepoSyncError(
+								installation.orgId,
+								installation.provider,
+								job.externalRepoId,
+								error.message,
+							)
+							.pipe(
+								Effect.flatMap(() =>
+									Effect.logWarning("Repository unavailable — backfill skipped").pipe(
+										Effect.annotateLogs({
+											provider: installation.provider,
+											externalRepoId: job.externalRepoId,
+										}),
+									),
+								),
+							),
 					),
 					Effect.withSpan("VcsSyncService.backfillRepo"),
 				)
 
 			const applyPushDelta = Effect.fn("VcsSyncService.applyPushDelta")(function* (
 				installation: VcsInstallation,
-				job: { externalRepoId: string; commits: ReadonlyArray<CommitUpsertInput> },
+				job: { externalRepoId: string; headSha: string; commits: ReadonlyArray<CommitUpsertInput> },
 			) {
 					const now = yield* Clock.currentTimeMillis
 					yield* repo.upsertCommits(
@@ -159,11 +164,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						job.externalRepoId,
 						job.commits,
 					)
-					// Push commits are oldest→newest; the last is the new branch head.
-					const head = job.commits.length > 0 ? job.commits[job.commits.length - 1] : undefined
+					// The provider already told us the head (the push's `after`).
 					yield* repo.updateRepoSyncCursor(installation.orgId, installation.provider, job.externalRepoId, {
 						status: "ready",
-						cursorSha: head?.sha ?? null,
+						cursorSha: job.headSha,
 						error: null,
 						syncedAt: now,
 					})
@@ -221,14 +225,38 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 				const provider = yield* registry.resolve(job.provider)
 
-				switch (job.kind) {
-					case "installation-sync":
-						return yield* syncInstallation(provider, installation, job.reason)
-					case "backfill-repo":
-						return yield* backfillRepo(provider, installation, job)
-					case "push-delta":
-						return yield* applyPushDelta(installation, job)
-				}
+
+				const run = Match.value(job).pipe(
+					Match.discriminator("kind")("backfill-repo", (job) => backfillRepo(provider, installation, job)),
+					Match.discriminator("kind")("installation-sync", (job) => syncInstallation(provider, installation, job.reason)),
+					Match.discriminator("kind")("push-delta", (job) => applyPushDelta(installation, job)),
+					Match.exhaustive
+				)
+
+				// The ONE place an installation is disconnected, and only on the
+				// provider's authoritative gone signal — never on a raw HTTP status.
+				return yield* run.pipe(
+					Effect.catchTag("@maple/http/errors/VcsInstallationGoneError", () =>
+						repo
+							.markInstallationStatus(
+								installation.provider,
+								installation.externalInstallationId,
+								"disconnected",
+							)
+							.pipe(
+								Effect.flatMap(() =>
+									Effect.logWarning(
+										"VCS installation reported gone by provider — marked disconnected",
+									).pipe(
+										Effect.annotateLogs({
+											provider: installation.provider,
+											externalInstallationId: installation.externalInstallationId,
+										}),
+									),
+								),
+							),
+					),
+				)
 			})
 
 			return { processMessage } satisfies VcsSyncServiceShape

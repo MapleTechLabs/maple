@@ -3,7 +3,10 @@ import { createHmac, randomUUID } from "node:crypto"
 import {
 	OrgId,
 	UserId,
+	VcsInstallationGoneError,
+	VcsProviderError,
 	VcsRepoDecodeError,
+	VcsRepoUnavailableError,
 	VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
@@ -73,6 +76,7 @@ describe("VcsSyncJob", () => {
 			externalInstallationId: "42",
 			externalRepoId: "7",
 			branch: "main",
+			headSha: SHA,
 			commits: [
 				{
 					sha: SHA,
@@ -98,6 +102,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		ref: "refs/heads/main",
 		repository: { id: 7, owner: { login: "octo" } },
 		installation: { id: 42 },
+		after: SHA,
 		commits: [
 			{
 				id: SHA,
@@ -123,6 +128,7 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.externalInstallationId, "42")
 			assert.strictEqual(job.externalRepoId, "7")
 			assert.strictEqual(job.branch, "main")
+			assert.strictEqual(job.headSha, SHA) // from the push payload's `after`
 			assert.strictEqual(job.commits.length, 1)
 			assert.strictEqual(job.commits[0]!.sha, SHA)
 			assert.strictEqual(job.commits[0]!.authorLogin, "octocat")
@@ -262,6 +268,11 @@ describe("VcsSyncService orchestrator", () => {
 			isArchived: boolean
 		}>
 		readonly commits?: ReadonlyArray<ReturnType<typeof commit>>
+		readonly headSha?: string | null
+		readonly fetchCommitsError?:
+			| VcsProviderError
+			| VcsInstallationGoneError
+			| VcsRepoUnavailableError
 	}
 
 	// Real VcsRepository (temp D1) + stubbed provider/queue ports, so dispatch,
@@ -271,7 +282,10 @@ describe("VcsSyncService orchestrator", () => {
 			id: "github",
 			webhookToJobs: () => Effect.succeed([]),
 			fetchRepositories: () => Effect.succeed(opts.repos ?? []),
-			fetchCommits: () => Effect.succeed(opts.commits ?? []),
+			fetchCommits: () =>
+				opts.fetchCommitsError
+					? Effect.fail(opts.fetchCommitsError)
+					: Effect.succeed({ commits: opts.commits ?? [], headSha: opts.headSha ?? null }),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
@@ -314,6 +328,7 @@ describe("VcsSyncService orchestrator", () => {
 				externalInstallationId: "999", // never seeded
 				externalRepoId: "7",
 				branch: "main",
+				headSha: SHA_A,
 				commits: [commit(SHA_A, 1)],
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)) // must not fail
@@ -337,6 +352,7 @@ describe("VcsSyncService orchestrator", () => {
 				externalInstallationId: "42",
 				externalRepoId: "7",
 				branch: "main",
+				headSha: SHA_B,
 				commits: [commit(SHA_A, 1), commit(SHA_B, 2)],
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
@@ -381,11 +397,12 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
-	it.effect("backfill sets the cursor to the head (first/newest) commit", () => {
+	it.effect("backfill sets the cursor to the provider's head, not commit array order", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-backfill-", dirs)
 		const sent: Array<VcsSyncJob> = []
-		// GitHub returns newest-first; fetchCommits[0] is the head.
-		const commits = [commit(SHA_B, 2), commit(SHA_A, 1)]
+		// commits[0] is deliberately NOT the head — the cursor must come from the
+		// provider-supplied headSha, proving no array-order inference.
+		const commits = [commit(SHA_A, 1), commit(SHA_B, 2)]
 		return Effect.gen(function* () {
 			const svc = yield* VcsSyncService
 			const repo = yield* VcsRepository
@@ -417,7 +434,104 @@ describe("VcsSyncService orchestrator", () => {
 			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
 			assert.strictEqual(stored[0]!.syncStatus, "ready")
 			assert.strictEqual(stored[0]!.lastSyncCursor, SHA_B)
-		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits })))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits, headSha: SHA_B })))
+	})
+
+	const seedRepo = (repo: VcsRepository, orgId: ReturnType<typeof asOrgId>) =>
+		repo.upsertRepositories(orgId, "github", "42", [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate: true,
+				isArchived: false,
+			},
+		])
+
+	const backfillJob: VcsSyncJob = {
+		kind: "backfill-repo",
+		provider: "github",
+		externalInstallationId: "42",
+		externalRepoId: "7",
+		owner: "octo",
+		name: "repo",
+		defaultBranch: "main",
+		sinceMs: 0,
+	}
+
+	it.effect("VcsRepoUnavailableError marks the repo errored and leaves the installation active", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-repo-gone-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			// A repo-scoped error must NOT fail the job (it drains).
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
+			const inst = yield* repo.getInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "active") // never disconnected
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored[0]!.syncStatus, "error")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchCommitsError: new VcsRepoUnavailableError({ message: "repo gone" }),
+				}),
+			),
+		)
+	})
+
+	it.effect("VcsInstallationGoneError disconnects the installation and drains the job", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-inst-gone-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			// The provider's authoritative gone signal → disconnect, no failure.
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
+			const inst = yield* repo.getInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "disconnected")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchCommitsError: new VcsInstallationGoneError({ message: "installation gone" }),
+				}),
+			),
+		)
+	})
+
+	it.effect("transient VcsProviderError fails the job so the queue retries, installation untouched", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-transient-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)).pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit)) // transient → propagated so the queue retries
+			const inst = yield* repo.getInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "active")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchCommitsError: new VcsProviderError({ message: "upstream unavailable", status: 503 }),
+				}),
+			),
+		)
 	})
 })
 
@@ -431,6 +545,7 @@ describe("git SHA validation (branded type)", () => {
 				ref: "refs/heads/main",
 				repository: { id: 7, owner: { login: "octo" } },
 				installation: { id: 42 },
+				after: SHA, // valid head, so the parse failure is specifically the commit id
 				commits: [{ id: "not-a-real-sha", message: "x", url: "https://example.com" }],
 			})
 			const exit = yield* provider

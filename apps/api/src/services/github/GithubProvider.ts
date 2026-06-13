@@ -3,10 +3,12 @@ import {
 	GitCommitSha,
 	type RepoUpsertInput,
 	type VcsInstallation,
+	VcsInstallationGoneError,
 	type VcsInstallationSyncReason,
 	VcsProviderError,
 	type VcsProviderId,
 	type VcsRepositoryRef,
+	VcsRepoUnavailableError,
 	type VcsSyncJob,
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
@@ -44,6 +46,7 @@ const PushPayload = Schema.Struct({
 		}),
 	}),
 	installation: Schema.Struct({ id: Schema.Number }),
+	after: GitCommitSha, // the ref's new head SHA — authoritative, no ordering inference
 	commits: Schema.optionalKey(Schema.Array(PushCommit)),
 })
 
@@ -69,12 +72,26 @@ const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 		Effect.mapError(() => parseError(`Invalid ${event} payload`)),
 	)
 
-const toProviderError = (error: GithubAppError) =>
-	new VcsProviderError({
+// Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
+// knowledge lives here, in the provider — the orchestrator only ever sees the
+// semantic outcome. A gone/410 on the installation-auth call is the
+// authoritative disconnect signal; on a repo call it means the repo is gone;
+// everything else (incl. 401/403/429/5xx) is transient and retryable.
+const isGone = (status?: number) => status === 404 || status === 410
+
+const toVcsError = (
+	error: GithubAppError,
+): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError => {
+	if (isGone(error.status)) {
+		if (error.scope === "installation") return new VcsInstallationGoneError({ message: error.message })
+		if (error.scope === "repository") return new VcsRepoUnavailableError({ message: error.message })
+	}
+	return new VcsProviderError({
 		message: error.message,
 		...(error.status === undefined ? {} : { status: error.status }),
 		...(error.cause === undefined ? {} : { cause: error.cause }),
 	})
+}
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
 
@@ -190,6 +207,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						externalInstallationId: String(payload.installation.id),
 						externalRepoId: String(payload.repository.id),
 						branch,
+						headSha: payload.after,
 						commits,
 					}
 					return [job]
@@ -260,7 +278,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							isArchived: r.archived ?? false,
 						})),
 					),
-					Effect.mapError(toProviderError),
+					Effect.mapError(toVcsError),
 				)
 
 			const fetchCommits = (
@@ -275,8 +293,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							sha: repo.defaultBranch,
 							sinceIso: new Date(opts.sinceMs).toISOString(),
 						})
-						.pipe(Effect.mapError(toProviderError))
-					return commits.map((c) => normalizeFetchedCommit(c, repo.defaultBranch, now))
+						.pipe(Effect.mapError(toVcsError))
+					const normalized = commits.map((c) => normalizeFetchedCommit(c, repo.defaultBranch, now))
+					// GitHub's /commits endpoint returns newest-first, so the first row is
+					// the branch head. This ordering knowledge stays inside the provider.
+					return { commits: normalized, headSha: normalized[0]?.sha ?? null }
 				})
 
 			return {
