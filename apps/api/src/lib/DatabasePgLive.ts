@@ -28,7 +28,9 @@ const makePgDatabase = Effect.gen(function* () {
 					try {
 						return await fn(db)
 					} finally {
-						await end()
+						// Never let a socket-teardown error shadow the real DB error
+						// from fn(db) (mirrors ClickHouseSchemaApplyWorkflow.run.ts).
+						await end().catch(() => undefined)
 					}
 				},
 				catch: toDatabaseError,
