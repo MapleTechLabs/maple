@@ -78,7 +78,8 @@ const runPscale = (args: string[], opts?: { secret?: boolean }): CliResult => {
 }
 
 const isAlreadyExists = (result: CliResult): boolean =>
-	/already exists|name is taken|duplicate/i.test(`${result.stdout}\n${result.stderr}`)
+	// PlanetScale's message is "Name has already been taken"; also tolerate other phrasings.
+	/already exists|already been taken|name is taken|duplicate/i.test(`${result.stdout}\n${result.stderr}`)
 
 const isNotFound = (result: CliResult): boolean =>
 	/not found|does not exist/i.test(`${result.stdout}\n${result.stderr}`)
@@ -122,13 +123,17 @@ interface BranchCredential {
  * have drifted across CLI releases, so accept the known spellings.
  */
 const createCredential = (database: string, branchName: string): BranchCredential => {
+	// Unique per run — the branch is reused across PR pushes, so a fixed role
+	// name would collide on the second synchronize. Roles carry a 24h TTL and
+	// are revoked when the branch is deleted on PR close.
+	const roleName = `ci-${branchName}-${process.pid}-${Date.now()}`
 	const result = runPscale(
 		[
 			"role",
 			"create",
 			database,
 			branchName,
-			`ci-${branchName}`,
+			roleName,
 			"--inherited-roles",
 			"postgres",
 			"--ttl",
