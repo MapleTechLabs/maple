@@ -1,8 +1,16 @@
-# Browser SDK
+---
+title: "Browser SDK"
+description: "Instrument a website with OpenTelemetry tracing and rrweb session replay using the @maple-dev/browser SDK."
+group: "Session Replay"
+order: 1
+---
 
 `@maple-dev/browser` instruments a website with OpenTelemetry tracing **and** rrweb session replay in a single package. Every span and every replay event is tagged with the same `session.id`, so a trace can link straight to the replay that produced it — and vice versa — with no clock-skew guessing.
 
-> Session Replay is currently in **Beta**.
+<div class="flex flex-wrap gap-2 mb-8 not-prose">
+    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Browsers</span>
+    <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Beta</span>
+</div>
 
 ## Install
 
@@ -70,51 +78,35 @@ MapleBrowser.init({
 
 ## Sessions
 
-Every span and replay event the SDK emits is tagged with one **`session.id`** (a
-`crypto.randomUUID()` v4), minted on the first `MapleBrowser.init` call. That shared id is
-what lets a trace jump to the replay that produced it, and vice versa.
+Every span and replay event the SDK emits is tagged with one **`session.id`** (a `crypto.randomUUID()` v4), minted on the first `MapleBrowser.init` call. That shared id is what lets a trace jump to the replay that produced it, and vice versa.
 
 ### Storage & continuity
 
-The session is persisted in `sessionStorage` under the key `maple.session`, so it **survives
-reloads within a tab**. Because `sessionStorage` is per-tab, **each tab or window gets its own
-session** — sessions are never shared across them. When `sessionStorage` is unavailable (e.g.
-some private-browsing modes), the SDK falls back to an in-memory record for the life of the
-page.
+The session is persisted in `sessionStorage` under the key `maple.session`, so it **survives reloads within a tab**. Because `sessionStorage` is per-tab, **each tab or window gets its own session** — sessions are never shared across them. When `sessionStorage` is unavailable (e.g. some private-browsing modes), the SDK falls back to an in-memory record for the life of the page.
 
-SPA route changes do **not** start a new session — the SDK tracks no router events, so
-client-side navigation stays within the same session. Session boundaries are purely
-time-based (see below).
+SPA route changes do **not** start a new session — the SDK tracks no router events, so client-side navigation stays within the same session. Session boundaries are purely time-based (see below).
 
 ### Rotation
 
 A fresh `session.id` is minted when either limit is crossed, whichever comes first:
 
-- **30 minutes idle** — no recorded activity for half an hour rotates the session (the same
-  activity-window model PostHog uses).
-- **24 hours old** — a hard cap on a single session's lifetime regardless of activity, so a
-  tab left open for days doesn't collapse into one giant replay.
+- **30 minutes idle** — no recorded activity for half an hour rotates the session (the same activity-window model PostHog uses).
+- **24 hours old** — a hard cap on a single session's lifetime regardless of activity, so a tab left open for days doesn't collapse into one giant replay.
 
-While replay is recording, each flushed chunk marks the session active, pushing back the idle
-deadline — so a continuously-recording session stays whole.
+While replay is recording, each flushed chunk marks the session active, pushing back the idle deadline — so a continuously-recording session stays whole.
 
 ### Start & end metadata
 
 The SDK writes a small session-metadata row at two points:
 
 - an **`active`** row when recording starts (and again on each reload), and
-- an **`ended`** row on page hide / unload — fired on `visibilitychange → hidden` (the
-  reliable "leaving" signal on mobile) and `pagehide` (desktop tab close / navigation).
+- an **`ended`** row on page hide / unload — fired on `visibilitychange → hidden` (the reliable "leaving" signal on mobile) and `pagehide` (desktop tab close / navigation).
 
-The `ended` row carries the session duration, the click count, and the **trace ids observed
-during the session**, which is what powers trace↔replay correlation and the user/session
-columns in Maple's session list and detail views. The unload write uses `keepalive`, so it
-survives the page going away.
+The `ended` row carries the session duration, the click count, and the **trace ids observed during the session**, which is what powers trace↔replay correlation and the user/session columns in Maple's session list and detail views. The unload write uses `keepalive`, so it survives the page going away.
 
 ### Accessing the session id
 
-`init()` returns a handle whose `sessionId` is the active session's id — useful for
-correlating Maple sessions with your own backend logs:
+`init()` returns a handle whose `sessionId` is the active session's id — useful for correlating Maple sessions with your own backend logs:
 
 ```ts
 const { sessionId } = MapleBrowser.init({
@@ -126,14 +118,11 @@ const { sessionId } = MapleBrowser.init({
 fetch("/api/checkout", { headers: { "x-maple-session": sessionId } })
 ```
 
-`init()` is idempotent — calling it again returns the same live handle. On the server (SSR /
-no `window`) it returns a no-op handle with an empty `sessionId`.
+`init()` is idempotent — calling it again returns the same live handle. On the server (SSR / no `window`) it returns a no-op handle with an empty `sessionId`.
 
 ### Teardown
 
-Call `shutdown()` to flush the final replay chunk and tear down tracing + replay. After it
-resolves, telemetry is fully stopped and a later `init()` may start a new session — handy when
-a single-page app unmounts its telemetry client:
+Call `shutdown()` to flush the final replay chunk and tear down tracing + replay. After it resolves, telemetry is fully stopped and a later `init()` may start a new session — handy when a single-page app unmounts its telemetry client:
 
 ```ts
 const maple = MapleBrowser.init({ ingestKey: "maple_pk_...", serviceName: "acme-web" })

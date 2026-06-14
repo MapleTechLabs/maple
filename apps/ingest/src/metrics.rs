@@ -100,7 +100,7 @@ static FORWARD_RESPONSES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
 static NATIVE_ROWS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_native_rows_total")
-        .with_description("Rows accepted by the native Tinybird pipeline")
+        .with_description("Rows accepted by the native warehouse pipeline")
         .build()
 });
 
@@ -129,6 +129,27 @@ static TINYBIRD_EXPORT_RETRIES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| 
     METER
         .u64_counter("ingest_tinybird_export_retries_total")
         .with_description("Retry attempts while exporting to Tinybird")
+        .build()
+});
+
+static CLICKHOUSE_EXPORT_ROWS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_clickhouse_export_rows_total")
+        .with_description("Rows successfully exported to self-managed ClickHouse")
+        .build()
+});
+
+static CLICKHOUSE_EXPORT_DROPPED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_clickhouse_export_dropped_total")
+        .with_description("Rows dropped while exporting to self-managed ClickHouse")
+        .build()
+});
+
+static CLICKHOUSE_EXPORT_RETRIES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_clickhouse_export_retries_total")
+        .with_description("Retry attempts while exporting to self-managed ClickHouse")
         .build()
 });
 
@@ -257,7 +278,7 @@ static NATIVE_ACCEPT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(
     METER
         .f64_histogram("ingest_native_accept_duration_seconds")
         .with_unit("s")
-        .with_description("Native Tinybird pipeline accept latency")
+        .with_description("Native warehouse pipeline accept latency")
         .build()
 });
 
@@ -266,6 +287,14 @@ static TINYBIRD_EXPORT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::ne
         .f64_histogram("ingest_tinybird_export_duration_seconds")
         .with_unit("s")
         .with_description("Tinybird export request latency")
+        .build()
+});
+
+static CLICKHOUSE_EXPORT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_clickhouse_export_duration_seconds")
+        .with_unit("s")
+        .with_description("Self-managed ClickHouse export request latency")
         .build()
 });
 
@@ -400,7 +429,8 @@ pub fn org_queue_bytes(org_id: &str, bytes: u64) {
 
 /// Latency and exported-byte size of a completed WAL export batch.
 pub fn export_batch_completed(shard: usize, signal: &str, duration_secs: f64, exported_bytes: u64) {
-    EXPORT_BATCH_DURATION_SECONDS.record(duration_secs, &[KeyValue::new("shard", shard.to_string())]);
+    EXPORT_BATCH_DURATION_SECONDS
+        .record(duration_secs, &[KeyValue::new("shard", shard.to_string())]);
     WAL_EXPORTED_BYTES.record(
         exported_bytes,
         &[
@@ -433,12 +463,15 @@ pub fn forward_duration(signal: &str, upstream_pool: &str, duration_secs: f64) {
     );
 }
 
-/// Native Tinybird pipeline accept latency.
+/// Native warehouse pipeline accept latency.
 pub fn native_accept_duration(signal: &str, duration_secs: f64) {
-    NATIVE_ACCEPT_DURATION_SECONDS.record(duration_secs, &[KeyValue::new("signal", signal.to_string())]);
+    NATIVE_ACCEPT_DURATION_SECONDS.record(
+        duration_secs,
+        &[KeyValue::new("signal", signal.to_string())],
+    );
 }
 
-/// Rows accepted by the native Tinybird pipeline.
+/// Rows accepted by the native warehouse pipeline.
 pub fn native_rows(signal: &str, count: u64) {
     NATIVE_ROWS_TOTAL.add(count, &[KeyValue::new("signal", signal.to_string())]);
 }
@@ -474,6 +507,38 @@ pub fn tinybird_export_dropped(datasource: &str, status: &str, rows: u64) {
 /// A Tinybird export attempt was retried (`status` is an HTTP code or `transport`).
 pub fn tinybird_export_retry(datasource: &str, status: &str) {
     TINYBIRD_EXPORT_RETRIES_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("datasource", datasource.to_string()),
+            KeyValue::new("status", status.to_string()),
+        ],
+    );
+}
+
+/// A successful ClickHouse export: latency and exported row count.
+pub fn clickhouse_export_succeeded(datasource: &str, status: &str, duration_secs: f64, rows: u64) {
+    let attrs = [
+        KeyValue::new("datasource", datasource.to_string()),
+        KeyValue::new("status", status.to_string()),
+    ];
+    CLICKHOUSE_EXPORT_DURATION_SECONDS.record(duration_secs, &attrs);
+    CLICKHOUSE_EXPORT_ROWS_TOTAL.add(rows, &attrs);
+}
+
+/// Rows dropped while exporting to ClickHouse (`status` is a bucket or internal reason).
+pub fn clickhouse_export_dropped(datasource: &str, status: &str, rows: u64) {
+    CLICKHOUSE_EXPORT_DROPPED_TOTAL.add(
+        rows,
+        &[
+            KeyValue::new("datasource", datasource.to_string()),
+            KeyValue::new("status", status.to_string()),
+        ],
+    );
+}
+
+/// A ClickHouse export attempt was retried (`status` is a bucket or internal reason).
+pub fn clickhouse_export_retry(datasource: &str, status: &str) {
+    CLICKHOUSE_EXPORT_RETRIES_TOTAL.add(
         1,
         &[
             KeyValue::new("datasource", datasource.to_string()),

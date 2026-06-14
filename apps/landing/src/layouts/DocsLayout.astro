@@ -4,6 +4,7 @@ import DocsSidebar from "../components/docs/DocsSidebar.astro";
 import DocsTableOfContents from "../components/docs/DocsTableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
+import DocsCategoryNav from "../components/docs/DocsCategoryNav.astro";
 import AvailableSdks from "../components/docs/AvailableSdks.astro";
 import DocsSearch from "../components/docs/DocsSearch.tsx";
 
@@ -39,8 +40,8 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
     </head>
     <body class="min-h-screen antialiased bg-bg text-fg font-sans">
         <!-- Docs header -->
-        <header class="fixed top-0 left-0 right-0 z-50 h-12 border-b border-border bg-bg/95 backdrop-blur-md">
-            <div class="h-full flex items-center justify-between px-5">
+        <header class="fixed top-0 left-0 right-0 z-50 border-b border-border bg-bg/95 backdrop-blur-md">
+            <div class="h-12 flex items-center justify-between px-5">
                 <div class="flex items-center gap-3">
                     <a href="/" class="flex items-center gap-2.5 text-fg-muted hover:text-fg transition-colors">
                         <div class="w-5 h-5 bg-accent flex items-center justify-center">
@@ -76,11 +77,12 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
                     </a>
                 </div>
             </div>
+            <DocsCategoryNav currentSlug={currentSlug} />
         </header>
 
-        <div class="pt-12 min-h-screen flex">
+        <div class="pt-[5.75rem] min-h-screen flex">
             <!-- Sidebar -->
-            <aside class="hidden lg:block w-60 shrink-0 fixed top-12 left-0 bottom-0 overflow-y-auto border-r border-border py-6 px-5">
+            <aside class="hidden lg:block w-60 shrink-0 fixed top-[5.75rem] left-0 bottom-0 overflow-y-auto border-r border-border py-6 px-5">
                 <DocsSidebar currentSlug={currentSlug} />
             </aside>
 
@@ -94,7 +96,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
             </main>
 
             <!-- Table of Contents -->
-            <aside class="hidden xl:block w-52 shrink-0 fixed top-12 right-0 bottom-0 overflow-y-auto py-6 px-5 border-l border-border">
+            <aside class="hidden xl:block w-52 shrink-0 fixed top-[5.75rem] right-0 bottom-0 overflow-y-auto py-6 px-5 border-l border-border">
                 <DocsTableOfContents headings={headings} />
                 <AvailableSdks />
             </aside>

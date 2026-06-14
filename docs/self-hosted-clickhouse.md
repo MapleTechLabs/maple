@@ -22,7 +22,7 @@ Self-managed Maple is a **per-org BYO** feature. Each org configures their own b
 - `backend = "tinybird"` — the existing path. Maple deploys its Tinybird project into the org's workspace via the sync workflow; queries route to that workspace.
 - `backend = "clickhouse"` — new. The org points Maple at a vanilla ClickHouse server they operate themselves. There is no sync workflow — schema lives in their CH instance and is applied via the CLI below.
 
-The Maple deployment itself still uses the env-level `TINYBIRD_HOST` / `TINYBIRD_TOKEN` for any org without a BYO row. None of the env vars need to change for ClickHouse-BYO to work.
+The Maple deployment itself still uses the env-level `TINYBIRD_HOST` / `TINYBIRD_TOKEN` for any org without a BYO row. API query routing does not require new env vars for ClickHouse-BYO; D1-backed direct ingest does require `MAPLE_INGEST_KEY_ENCRYPTION_KEY` so the ingest gateway can decrypt stored ClickHouse passwords.
 
 ### Routing precedence
 
@@ -95,7 +95,19 @@ Every table is partitioned by date and carries a 90-day TTL (365 days on metrics
 
 ## Ingest options
 
-The maintained path is **Option A: Maple's prebuilt OTel Collector image** (`mapleexporter` baked in). Three escape hatches stay supported for advanced setups.
+The maintained standalone path is **Option A: Maple's prebuilt OTel Collector image** (`mapleexporter` baked in). Hosted/self-hosted Maple deployments can also use the Rust ingest gateway's direct ClickHouse path once an org is marked ready. Three escape hatches stay supported for advanced setups.
+
+### Maple ingest gateway direct ClickHouse path
+
+For orgs whose `org_clickhouse_settings` row has `sync_status = 'connected'` and `schema_version` equal to the running Maple ClickHouse schema revision, the Rust ingest gateway routes accepted native-ingest frames directly to that org's ClickHouse HTTP endpoint. Non-ready orgs continue using the managed Tinybird path.
+
+D1-backed ingest deployments must set `MAPLE_INGEST_KEY_ENCRYPTION_KEY` before rolling out this mode; the gateway exits at startup without it because ClickHouse passwords are encrypted at rest with the same AES-256-GCM key format as private ingest keys.
+
+Operational caveats:
+
+- ClickHouse-routed frames never fall back to Tinybird. After the configured export retry budget is exhausted, the batch is dropped, the WAL cursor advances, and `ingest_clickhouse_export_dropped_total` records the datasource and final drop reason. Alert on any non-zero increase in that counter.
+- Password-authenticated ClickHouse endpoints must use `https://`; the gateway drops passworded `http://` targets before attaching `X-ClickHouse-Key`.
+- Direct ClickHouse routing writes WAL v3 frames. Do not roll back to a pre-direct-ClickHouse ingest binary while v3 frames may remain in the queue; first drain the WAL, or accept that clearing the queue directory is a data-loss recovery step.
 
 ### Option A — Maple OTel Collector (recommended)
 
