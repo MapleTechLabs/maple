@@ -140,6 +140,14 @@ impl WriteMode {
     }
 }
 
+fn uses_native_pipeline_for(write_mode: WriteMode, destination: ExportDestination) -> bool {
+    write_mode.uses_tinybird() || destination == ExportDestination::ClickHouse
+}
+
+fn uses_forward_path_for(write_mode: WriteMode, destination: ExportDestination) -> bool {
+    write_mode.uses_forward() && destination != ExportDestination::ClickHouse
+}
+
 #[derive(Clone)]
 enum KeyStoreBackend {
     // No-DB local backend: every well-formed ingest key resolves to a single
@@ -1022,26 +1030,27 @@ async fn main() {
         }
     };
 
+    let direct_clickhouse_possible = matches!(config.key_store_backend, KeyStoreBackend::D1 { .. });
     let clickhouse_target_provider: Option<Arc<dyn ClickHouseTargetProvider>> =
-        if config.write_mode.uses_tinybird() {
-            let resolver = ClickHouseTargetResolver {
+        if direct_clickhouse_possible {
+            Some(Arc::new(ClickHouseTargetResolver {
                 store: Arc::clone(&store),
                 encryption_key: config.clickhouse_encryption_key,
                 cache: Cache::builder()
                     .time_to_live(Duration::from_secs(60))
                     .max_capacity(10_000)
                     .build(),
-            };
-            Some(Arc::new(resolver))
+            }) as Arc<dyn ClickHouseTargetProvider>)
         } else {
             None
         };
 
-    let telemetry_pipeline = if config.write_mode.uses_tinybird() {
-        match TelemetryPipeline::new_with_clickhouse(
+    let telemetry_pipeline = if config.write_mode.uses_tinybird() || direct_clickhouse_possible {
+        match TelemetryPipeline::new_with_clickhouse_validation(
             config.tinybird.clone(),
             http_client.clone(),
             clickhouse_target_provider,
+            config.write_mode.uses_tinybird(),
         )
         .await
         {
@@ -1565,10 +1574,11 @@ async fn handle_replay_meta_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session replay storage is not configured",
+    )?;
 
     // NDJSON: one session-metadata object per line. The org_id is always taken
     // from the authenticated key, never from the client-supplied body.
@@ -1687,10 +1697,11 @@ async fn handle_session_events_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session event storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session event storage is not configured",
+    )?;
 
     // NDJSON: one distilled session-event object per line. As with replay
     // metadata, org_id is taken from the authenticated key, never the body.
@@ -1786,10 +1797,11 @@ async fn handle_replay_blob_inner(
     let destination = native_destination_for(&resolved_key);
     Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session replay storage is not configured",
+    )?;
 
     let session_id = replay_header(headers, "x-maple-session-id")
         .ok_or_else(|| ApiError::bad_request("missing x-maple-session-id header"))?;
@@ -2949,6 +2961,20 @@ fn native_destination_for(resolved_key: &ResolvedIngestKey) -> ExportDestination
     }
 }
 
+fn native_rows_pipeline_for<'a>(
+    state: &'a AppState,
+    destination: ExportDestination,
+    unavailable_message: &'static str,
+) -> Result<&'a TelemetryPipeline, ApiError> {
+    if destination == ExportDestination::Tinybird && !state.config.write_mode.uses_tinybird() {
+        return Err(ApiError::service_unavailable(unavailable_message));
+    }
+    state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable(unavailable_message))
+}
+
 async fn forward_to_collector(
     state: &AppState,
     signal: Signal,
@@ -3075,75 +3101,17 @@ async fn process_decoded_payload(
     decoded: &DecodedPayload,
     resolved_key: &ResolvedIngestKey,
 ) -> Result<Response, ApiError> {
-    if state.config.write_mode.uses_tinybird() {
-        let destination = native_destination_for(resolved_key);
-        Span::current().record("maple.ingest.destination", destination.as_str());
-        let pipeline = state
-            .telemetry_pipeline
-            .as_ref()
-            .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
-        let native_start = Instant::now();
-        let stats = match decoded {
-            DecodedPayload::Traces(request) => {
-                let policy = state
-                    .sampling_resolver
-                    .resolve_policy(&resolved_key.org_id)
-                    .await;
-                let attribute_mappings = state
-                    .attribute_mapping_resolver
-                    .resolve_mappings(&resolved_key.org_id)
-                    .await;
-                pipeline
-                    .accept_traces_to(
-                        &resolved_key.org_id,
-                        request,
-                        &policy,
-                        attribute_mappings.as_slice(),
-                        destination,
-                    )
-                    .await
-            }
-            DecodedPayload::Logs(request) => {
-                pipeline
-                    .accept_logs_to(&resolved_key.org_id, request, destination)
-                    .await
-            }
-            DecodedPayload::Metrics(request) => {
-                pipeline
-                    .accept_metrics_to(&resolved_key.org_id, request, destination)
-                    .await
-            }
+    let destination = native_destination_for(resolved_key);
+    Span::current().record("maple.ingest.destination", destination.as_str());
+
+    if uses_native_pipeline_for(state.config.write_mode, destination) {
+        accept_native_decoded_payload(state, signal, decoded, resolved_key, destination).await?;
+        if destination == ExportDestination::ClickHouse {
+            return Ok(StatusCode::OK.into_response());
         }
-        .map_err(|error| {
-            let api_error = match &error {
-                PipelineError::Throttled(_) => {
-                    ApiError::too_many_requests("Per-org ingest queue limit exceeded")
-                }
-                PipelineError::Backpressure(_) => {
-                    ApiError::service_unavailable("Telemetry backend unavailable")
-                }
-                PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
-                    ApiError::service_unavailable("Telemetry backend unavailable")
-                }
-            };
-            error!(
-                error = %error,
-                signal = signal.path(),
-                org_id = %resolved_key.org_id,
-                "Native telemetry pipeline rejected payload"
-            );
-            api_error
-        })?;
-        metrics::native_accept_duration(signal.path(), native_start.elapsed().as_secs_f64());
-        metrics::native_rows(signal.path(), stats.rows as u64);
-        if stats.dropped > 0 {
-            metrics::native_sampled_dropped(signal.path(), stats.dropped as u64);
-        }
-        Span::current().record("maple.ingest.native_rows", stats.rows as u64);
-        Span::current().record("maple.ingest.sampled_dropped", stats.dropped as u64);
     }
 
-    if state.config.write_mode.uses_forward() {
+    if uses_forward_path_for(state.config.write_mode, destination) {
         let outbound_payload = decoded.encode(payload_format)?;
         let outbound_body = encode_payload(&outbound_payload, content_encoding)?;
         let outbound_bytes = outbound_body.len();
@@ -3161,6 +3129,79 @@ async fn process_decoded_payload(
     }
 
     Ok(StatusCode::OK.into_response())
+}
+
+async fn accept_native_decoded_payload(
+    state: &AppState,
+    signal: Signal,
+    decoded: &DecodedPayload,
+    resolved_key: &ResolvedIngestKey,
+    destination: ExportDestination,
+) -> Result<(), ApiError> {
+    let pipeline = state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
+    let native_start = Instant::now();
+    let stats = match decoded {
+        DecodedPayload::Traces(request) => {
+            let policy = state
+                .sampling_resolver
+                .resolve_policy(&resolved_key.org_id)
+                .await;
+            let attribute_mappings = state
+                .attribute_mapping_resolver
+                .resolve_mappings(&resolved_key.org_id)
+                .await;
+            pipeline
+                .accept_traces_to(
+                    &resolved_key.org_id,
+                    request,
+                    &policy,
+                    attribute_mappings.as_slice(),
+                    destination,
+                )
+                .await
+        }
+        DecodedPayload::Logs(request) => {
+            pipeline
+                .accept_logs_to(&resolved_key.org_id, request, destination)
+                .await
+        }
+        DecodedPayload::Metrics(request) => {
+            pipeline
+                .accept_metrics_to(&resolved_key.org_id, request, destination)
+                .await
+        }
+    }
+    .map_err(|error| {
+        let api_error = match &error {
+            PipelineError::Throttled(_) => {
+                ApiError::too_many_requests("Per-org ingest queue limit exceeded")
+            }
+            PipelineError::Backpressure(_) => {
+                ApiError::service_unavailable("Telemetry backend unavailable")
+            }
+            PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
+                ApiError::service_unavailable("Telemetry backend unavailable")
+            }
+        };
+        error!(
+            error = %error,
+            signal = signal.path(),
+            org_id = %resolved_key.org_id,
+            "Native telemetry pipeline rejected payload"
+        );
+        api_error
+    })?;
+    metrics::native_accept_duration(signal.path(), native_start.elapsed().as_secs_f64());
+    metrics::native_rows(signal.path(), stats.rows as u64);
+    if stats.dropped > 0 {
+        metrics::native_sampled_dropped(signal.path(), stats.dropped as u64);
+    }
+    Span::current().record("maple.ingest.native_rows", stats.rows as u64);
+    Span::current().record("maple.ingest.sampled_dropped", stats.dropped as u64);
+    Ok(())
 }
 
 impl IngestKeyResolver {
@@ -4254,6 +4295,42 @@ mod tests {
         let (endpoint, pool) = select_forward_endpoint("http://shared:4318", None, true);
         assert_eq!(endpoint, "http://shared:4318");
         assert_eq!(pool, "shared");
+    }
+
+    #[test]
+    fn clickhouse_destination_uses_native_pipeline_even_in_forward_mode() {
+        assert!(uses_native_pipeline_for(
+            WriteMode::Forward,
+            ExportDestination::ClickHouse
+        ));
+        assert!(!uses_forward_path_for(
+            WriteMode::Forward,
+            ExportDestination::ClickHouse
+        ));
+    }
+
+    #[test]
+    fn tinybird_destination_keeps_forward_mode_on_forward_path() {
+        assert!(!uses_native_pipeline_for(
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+        assert!(uses_forward_path_for(
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+    }
+
+    #[test]
+    fn clickhouse_destination_is_terminal_in_dual_mode() {
+        assert!(uses_native_pipeline_for(
+            WriteMode::Dual,
+            ExportDestination::ClickHouse
+        ));
+        assert!(!uses_forward_path_for(
+            WriteMode::Dual,
+            ExportDestination::ClickHouse
+        ));
     }
 
     /// In-memory KeyStore used to exercise the resolver's behavior (caching,
