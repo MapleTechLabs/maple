@@ -7,11 +7,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use crate::clickhouse_insert_mappings::{self, InsertMapping};
+use crate::metrics;
 use crc32fast::Hasher as Crc32;
 use dashmap::DashMap;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use crate::metrics;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -31,6 +32,38 @@ use tracing::{error, info, warn};
 const WAL_MAGIC: &[u8; 4] = b"MTW1";
 const WAL_V1_HEADER_LEN: usize = 20;
 const WAL_V2_HEADER_LEN: usize = 22;
+const WAL_V3_HEADER_LEN: usize = 23;
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum ExportDestination {
+    Tinybird,
+    ClickHouse,
+}
+
+impl ExportDestination {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tinybird => "tinybird",
+            Self::ClickHouse => "clickhouse",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ClickHouseTarget {
+    pub endpoint: String,
+    pub user: String,
+    pub password: String,
+    pub database: String,
+}
+
+#[async_trait::async_trait]
+pub trait ClickHouseTargetProvider: Send + Sync {
+    async fn resolve_clickhouse_target(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<ClickHouseTarget>, String>;
+}
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TelemetrySignal {
@@ -277,6 +310,7 @@ struct QueuedFrame {
     org_id: String,
     queued_bytes: u64,
     signal: TelemetrySignal,
+    destination: ExportDestination,
     datasource: String,
     row_count: usize,
     payload: Vec<u8>,
@@ -287,6 +321,7 @@ struct EncodedFrame {
     routing_key: u64,
     org_id: String,
     signal: TelemetrySignal,
+    destination: ExportDestination,
     datasource: String,
     row_count: usize,
     payload: Vec<u8>,
@@ -294,6 +329,14 @@ struct EncodedFrame {
 
 impl TelemetryPipeline {
     pub async fn new(cfg: TinybirdConfig, http: Client) -> Result<Self, String> {
+        Self::new_with_clickhouse(cfg, http, None).await
+    }
+
+    pub async fn new_with_clickhouse(
+        cfg: TinybirdConfig,
+        http: Client,
+        clickhouse_targets: Option<Arc<dyn ClickHouseTargetProvider>>,
+    ) -> Result<Self, String> {
         cfg.validate()?;
         std::fs::create_dir_all(&cfg.queue_dir)
             .map_err(|error| format!("create ingest WAL dir: {error}"))?;
@@ -310,6 +353,7 @@ impl TelemetryPipeline {
                 cfg: Arc::clone(&cfg),
                 wal: Arc::clone(&wal),
                 org_queue_bytes: Arc::clone(&org_queue_bytes),
+                clickhouse_targets: clickhouse_targets.clone(),
                 http: http.clone(),
                 receiver,
             };
@@ -335,6 +379,24 @@ impl TelemetryPipeline {
         sampling_policy: &SamplingPolicy,
         attribute_mappings: &[AttributeMappingRule],
     ) -> Result<AcceptStats, PipelineError> {
+        self.accept_traces_to(
+            org_id,
+            request,
+            sampling_policy,
+            attribute_mappings,
+            ExportDestination::Tinybird,
+        )
+        .await
+    }
+
+    pub async fn accept_traces_to(
+        &self,
+        org_id: &str,
+        request: &ExportTraceServiceRequest,
+        sampling_policy: &SamplingPolicy,
+        attribute_mappings: &[AttributeMappingRule],
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = encode_traces(
             &self.inner.cfg.datasources,
             org_id,
@@ -342,7 +404,7 @@ impl TelemetryPipeline {
             sampling_policy,
             attribute_mappings,
         )?;
-        self.commit_frames(frames).await?;
+        self.commit_frames(frames, destination).await?;
         Ok(stats)
     }
 
@@ -351,8 +413,18 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportLogsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
+        self.accept_logs_to(org_id, request, ExportDestination::Tinybird)
+            .await
+    }
+
+    pub async fn accept_logs_to(
+        &self,
+        org_id: &str,
+        request: &ExportLogsServiceRequest,
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = encode_logs(&self.inner.cfg.datasources, org_id, request)?;
-        self.commit_frames(frames).await?;
+        self.commit_frames(frames, destination).await?;
         Ok(stats)
     }
 
@@ -361,8 +433,18 @@ impl TelemetryPipeline {
         org_id: &str,
         request: &ExportMetricsServiceRequest,
     ) -> Result<AcceptStats, PipelineError> {
+        self.accept_metrics_to(org_id, request, ExportDestination::Tinybird)
+            .await
+    }
+
+    pub async fn accept_metrics_to(
+        &self,
+        org_id: &str,
+        request: &ExportMetricsServiceRequest,
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, PipelineError> {
         let (frames, stats) = encode_metrics(&self.inner.cfg.datasources, org_id, request)?;
-        self.commit_frames(frames).await?;
+        self.commit_frames(frames, destination).await?;
         Ok(stats)
     }
 
@@ -376,6 +458,17 @@ impl TelemetryPipeline {
         datasource: String,
         rows: Vec<Vec<u8>>,
     ) -> Result<AcceptStats, PipelineError> {
+        self.accept_rows_to(org_id, datasource, rows, ExportDestination::Tinybird)
+            .await
+    }
+
+    pub async fn accept_rows_to(
+        &self,
+        org_id: &str,
+        datasource: String,
+        rows: Vec<Vec<u8>>,
+        destination: ExportDestination,
+    ) -> Result<AcceptStats, PipelineError> {
         let stats = AcceptStats {
             rows: rows.len(),
             dropped: 0,
@@ -387,16 +480,21 @@ impl TelemetryPipeline {
             datasource,
             rows,
         );
-        self.commit_frames(frames).await?;
+        self.commit_frames(frames, destination).await?;
         Ok(stats)
     }
 
-    async fn commit_frames(&self, frames: Vec<EncodedFrame>) -> Result<(), PipelineError> {
+    async fn commit_frames(
+        &self,
+        frames: Vec<EncodedFrame>,
+        destination: ExportDestination,
+    ) -> Result<(), PipelineError> {
         if frames.is_empty() {
             return Ok(());
         }
 
-        for frame in frames {
+        for mut frame in frames {
+            frame.destination = destination;
             let shard = (frame.routing_key as usize) % self.inner.shard_senders.len();
             let sender = self.inner.shard_senders[shard].clone();
             let permit = sender
@@ -420,6 +518,7 @@ impl TelemetryPipeline {
                 org_id: frame.org_id,
                 queued_bytes,
                 signal: frame.signal,
+                destination: frame.destination,
                 datasource: frame.datasource,
                 row_count: frame.row_count,
                 payload: frame.payload,
@@ -653,6 +752,7 @@ fn replay_shard(shard: usize, shard_ref: &WalShard) -> Result<Vec<QueuedFrame>, 
             org_id: frame.org_id,
             queued_bytes: frame.payload.len() as u64,
             signal: frame.signal,
+            destination: frame.destination,
             datasource: frame.datasource,
             row_count: frame.row_count,
             payload: frame.payload,
@@ -676,17 +776,19 @@ fn encode_wal_frame(frame: &EncodedFrame) -> Result<Vec<u8>, String> {
     }
     let mut crc = Crc32::new();
     crc.update(&[signal_tag(frame.signal)]);
+    crc.update(&[destination_tag(frame.destination)]);
     crc.update(org_id);
     crc.update(datasource);
     crc.update(&frame.payload);
     let checksum = crc.finalize();
 
     let mut out = Vec::with_capacity(
-        WAL_V2_HEADER_LEN + org_id.len() + datasource.len() + frame.payload.len(),
+        WAL_V3_HEADER_LEN + org_id.len() + datasource.len() + frame.payload.len(),
     );
     out.extend_from_slice(WAL_MAGIC);
-    out.push(2);
+    out.push(3);
     out.push(signal_tag(frame.signal));
+    out.push(destination_tag(frame.destination));
     out.extend_from_slice(&(datasource.len() as u16).to_le_bytes());
     out.extend_from_slice(&(org_id.len() as u16).to_le_bytes());
     out.extend_from_slice(&(frame.payload.len() as u32).to_le_bytes());
@@ -702,6 +804,7 @@ struct DecodedWalFrame {
     end: u64,
     org_id: String,
     signal: TelemetrySignal,
+    destination: ExportDestination,
     datasource: String,
     row_count: usize,
     payload: Vec<u8>,
@@ -726,39 +829,59 @@ fn read_wal_frame(file: &mut File, start: u64) -> Result<Option<DecodedWalFrame>
     let signal = signal_from_tag(prefix[5])
         .ok_or_else(|| format!("invalid WAL signal tag {} at offset {start}", prefix[5]))?;
 
-    let (org_id_len, datasource_len, payload_len, row_count, checksum, header_len) = match version {
-        1 => {
-            let mut rest = [0u8; WAL_V1_HEADER_LEN - 6];
-            file.read_exact(&mut rest)
-                .map_err(|error| format!("read WAL v1 header: {error}"))?;
-            (
-                0usize,
-                u16::from_le_bytes([rest[0], rest[1]]) as usize,
-                u32::from_le_bytes([rest[2], rest[3], rest[4], rest[5]]) as usize,
-                u32::from_le_bytes([rest[6], rest[7], rest[8], rest[9]]) as usize,
-                u32::from_le_bytes([rest[10], rest[11], rest[12], rest[13]]),
-                WAL_V1_HEADER_LEN,
-            )
-        }
-        2 => {
-            let mut rest = [0u8; WAL_V2_HEADER_LEN - 6];
-            file.read_exact(&mut rest)
-                .map_err(|error| format!("read WAL v2 header: {error}"))?;
-            (
-                u16::from_le_bytes([rest[2], rest[3]]) as usize,
-                u16::from_le_bytes([rest[0], rest[1]]) as usize,
-                u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize,
-                u32::from_le_bytes([rest[8], rest[9], rest[10], rest[11]]) as usize,
-                u32::from_le_bytes([rest[12], rest[13], rest[14], rest[15]]),
-                WAL_V2_HEADER_LEN,
-            )
-        }
-        _ => {
-            return Err(format!(
-                "unsupported WAL version {version} at offset {start}"
-            ))
-        }
-    };
+    let (destination, org_id_len, datasource_len, payload_len, row_count, checksum, header_len) =
+        match version {
+            1 => {
+                let mut rest = [0u8; WAL_V1_HEADER_LEN - 6];
+                file.read_exact(&mut rest)
+                    .map_err(|error| format!("read WAL v1 header: {error}"))?;
+                (
+                    ExportDestination::Tinybird,
+                    0usize,
+                    u16::from_le_bytes([rest[0], rest[1]]) as usize,
+                    u32::from_le_bytes([rest[2], rest[3], rest[4], rest[5]]) as usize,
+                    u32::from_le_bytes([rest[6], rest[7], rest[8], rest[9]]) as usize,
+                    u32::from_le_bytes([rest[10], rest[11], rest[12], rest[13]]),
+                    WAL_V1_HEADER_LEN,
+                )
+            }
+            2 => {
+                let mut rest = [0u8; WAL_V2_HEADER_LEN - 6];
+                file.read_exact(&mut rest)
+                    .map_err(|error| format!("read WAL v2 header: {error}"))?;
+                (
+                    ExportDestination::Tinybird,
+                    u16::from_le_bytes([rest[2], rest[3]]) as usize,
+                    u16::from_le_bytes([rest[0], rest[1]]) as usize,
+                    u32::from_le_bytes([rest[4], rest[5], rest[6], rest[7]]) as usize,
+                    u32::from_le_bytes([rest[8], rest[9], rest[10], rest[11]]) as usize,
+                    u32::from_le_bytes([rest[12], rest[13], rest[14], rest[15]]),
+                    WAL_V2_HEADER_LEN,
+                )
+            }
+            3 => {
+                let mut rest = [0u8; WAL_V3_HEADER_LEN - 6];
+                file.read_exact(&mut rest)
+                    .map_err(|error| format!("read WAL v3 header: {error}"))?;
+                let destination = destination_from_tag(rest[0]).ok_or_else(|| {
+                    format!("invalid WAL destination tag {} at offset {start}", rest[0])
+                })?;
+                (
+                    destination,
+                    u16::from_le_bytes([rest[3], rest[4]]) as usize,
+                    u16::from_le_bytes([rest[1], rest[2]]) as usize,
+                    u32::from_le_bytes([rest[5], rest[6], rest[7], rest[8]]) as usize,
+                    u32::from_le_bytes([rest[9], rest[10], rest[11], rest[12]]) as usize,
+                    u32::from_le_bytes([rest[13], rest[14], rest[15], rest[16]]),
+                    WAL_V3_HEADER_LEN,
+                )
+            }
+            _ => {
+                return Err(format!(
+                    "unsupported WAL version {version} at offset {start}"
+                ))
+            }
+        };
 
     let mut org_id = vec![0u8; org_id_len];
     if org_id_len > 0 {
@@ -775,6 +898,9 @@ fn read_wal_frame(file: &mut File, start: u64) -> Result<Option<DecodedWalFrame>
 
     let mut crc = Crc32::new();
     crc.update(&[signal_tag(signal)]);
+    if version >= 3 {
+        crc.update(&[destination_tag(destination)]);
+    }
     if version >= 2 {
         crc.update(&org_id);
     }
@@ -794,6 +920,7 @@ fn read_wal_frame(file: &mut File, start: u64) -> Result<Option<DecodedWalFrame>
         end,
         org_id,
         signal,
+        destination,
         datasource,
         row_count: row_count.max(1),
         payload,
@@ -815,6 +942,21 @@ fn signal_from_tag(tag: u8) -> Option<TelemetrySignal> {
         2 => Some(TelemetrySignal::Logs),
         3 => Some(TelemetrySignal::Metrics),
         4 => Some(TelemetrySignal::SessionReplays),
+        _ => None,
+    }
+}
+
+fn destination_tag(destination: ExportDestination) -> u8 {
+    match destination {
+        ExportDestination::Tinybird => 1,
+        ExportDestination::ClickHouse => 2,
+    }
+}
+
+fn destination_from_tag(tag: u8) -> Option<ExportDestination> {
+    match tag {
+        1 => Some(ExportDestination::Tinybird),
+        2 => Some(ExportDestination::ClickHouse),
         _ => None,
     }
 }
@@ -859,6 +1001,7 @@ struct ExportWorker {
     cfg: Arc<TinybirdConfig>,
     wal: Arc<ShardedWal>,
     org_queue_bytes: Arc<DashMap<String, Arc<AtomicU64>>>,
+    clickhouse_targets: Option<Arc<dyn ClickHouseTargetProvider>>,
     http: Client,
     receiver: mpsc::Receiver<QueuedFrame>,
 }
@@ -884,7 +1027,7 @@ impl ExportWorker {
 
             let frames = std::mem::take(&mut buffer);
             if let Err(error) = self.export_and_mark(frames).await {
-                error!(shard = self.shard, error = %error, "Tinybird export worker failed batch");
+                error!(shard = self.shard, error = %error, "Telemetry export worker failed batch");
             }
         }
     }
@@ -893,28 +1036,36 @@ impl ExportWorker {
         if frames.is_empty() {
             return Ok(());
         }
-        let mut by_datasource: BTreeMap<String, Vec<&QueuedFrame>> = BTreeMap::new();
+        let mut by_tinybird: BTreeMap<String, Vec<&QueuedFrame>> = BTreeMap::new();
+        let mut by_clickhouse: BTreeMap<(String, String), Vec<&QueuedFrame>> = BTreeMap::new();
         for frame in &frames {
-            by_datasource
-                .entry(frame.datasource.clone())
-                .or_default()
-                .push(frame);
+            match frame.destination {
+                ExportDestination::Tinybird => {
+                    by_tinybird
+                        .entry(frame.datasource.clone())
+                        .or_default()
+                        .push(frame);
+                }
+                ExportDestination::ClickHouse => {
+                    by_clickhouse
+                        .entry((frame.org_id.clone(), frame.datasource.clone()))
+                        .or_default()
+                        .push(frame);
+                }
+            }
         }
 
         let start = Instant::now();
         let first_signal = frames[0].signal;
         let first_offset = frames[0].start;
-        for (datasource, frames) in by_datasource {
-            let mut body = Vec::new();
-            let mut rows = 0usize;
-            for frame in frames {
-                body.extend_from_slice(&frame.payload);
-                if !body.ends_with(b"\n") {
-                    body.push(b'\n');
-                }
-                rows += frame.row_count;
-            }
+        for (datasource, frames) in by_tinybird {
+            let (body, rows) = combine_frames(frames);
             self.post_tinybird(&datasource, body, rows).await?;
+        }
+        for ((org_id, datasource), frames) in by_clickhouse {
+            let (body, rows) = combine_frames(frames);
+            self.post_clickhouse(&org_id, &datasource, body, rows)
+                .await?;
         }
 
         let end = frames.iter().map(|frame| frame.end).max().unwrap_or(0);
@@ -1003,12 +1154,267 @@ impl ExportWorker {
             sleep(Duration::from_millis(backoff_ms.min(30_000))).await;
         }
     }
+
+    async fn post_clickhouse(
+        &self,
+        org_id: &str,
+        datasource: &str,
+        body: Vec<u8>,
+        rows: usize,
+    ) -> Result<(), String> {
+        let Some(mapping) = clickhouse_insert_mappings::mapping_for(datasource) else {
+            metrics::clickhouse_export_dropped(datasource, "mapping_missing", rows as u64);
+            error!(
+                datasource,
+                rows, "Dropping ClickHouse batch because no insert mapping exists"
+            );
+            return Ok(());
+        };
+
+        let compressed = bytes::Bytes::from(gzip(body)?);
+        let max_attempts = self.cfg.export_max_attempts;
+        let mut attempt = 0u32;
+
+        loop {
+            let started = Instant::now();
+            let target = match self.resolve_clickhouse_target(org_id).await {
+                Ok(Some(target)) => target,
+                Ok(None) => {
+                    metrics::clickhouse_export_retry(datasource, "target_unavailable");
+                    warn!(
+                        org_id,
+                        datasource,
+                        attempt,
+                        "Retrying ClickHouse batch because no ready target resolved"
+                    );
+                    attempt = attempt.saturating_add(1);
+                    if attempt >= max_attempts {
+                        metrics::clickhouse_export_dropped(
+                            datasource,
+                            "target_unavailable",
+                            rows as u64,
+                        );
+                        error!(
+                            org_id,
+                            datasource,
+                            rows,
+                            attempts = attempt,
+                            "Dropping ClickHouse batch after target resolution stayed unavailable"
+                        );
+                        return Ok(());
+                    }
+                    backoff(attempt).await;
+                    continue;
+                }
+                Err(error) => {
+                    metrics::clickhouse_export_retry(datasource, "target_error");
+                    warn!(
+                        org_id,
+                        datasource,
+                        attempt,
+                        error = %error,
+                        "Retrying ClickHouse batch after target resolution error"
+                    );
+                    attempt = attempt.saturating_add(1);
+                    if attempt >= max_attempts {
+                        metrics::clickhouse_export_dropped(datasource, "target_error", rows as u64);
+                        error!(
+                            org_id,
+                            datasource,
+                            rows,
+                            attempts = attempt,
+                            error = %error,
+                            "Dropping ClickHouse batch after target resolution errors"
+                        );
+                        return Ok(());
+                    }
+                    backoff(attempt).await;
+                    continue;
+                }
+            };
+
+            let sql = build_clickhouse_insert_sql(mapping, org_id);
+            let endpoint_url = target.endpoint.trim_end_matches('/').to_string();
+            let mut request_url = match url::Url::parse(&endpoint_url) {
+                Ok(url) => url,
+                Err(error) => {
+                    metrics::clickhouse_export_dropped(datasource, "invalid_url", rows as u64);
+                    error!(
+                        org_id,
+                        datasource,
+                        endpoint = %endpoint_url,
+                        error = %error,
+                        rows,
+                        "Dropping ClickHouse batch because endpoint URL is invalid"
+                    );
+                    return Ok(());
+                }
+            };
+            {
+                let mut query = request_url.query_pairs_mut();
+                query
+                    .append_pair("database", target.database.as_str())
+                    .append_pair("async_insert", "1")
+                    .append_pair("wait_for_async_insert", "1")
+                    .append_pair("input_format_skip_unknown_fields", "1")
+                    .append_pair("date_time_input_format", "best_effort")
+                    .append_pair("query", sql.as_str());
+            }
+            let mut request = self
+                .http
+                .post(request_url)
+                .header("X-ClickHouse-User", target.user.as_str())
+                .header("X-ClickHouse-Database", target.database.as_str())
+                .header(reqwest::header::CONTENT_TYPE, "application/x-ndjson")
+                .header(reqwest::header::CONTENT_ENCODING, "gzip")
+                .body(compressed.clone());
+            if !target.password.is_empty() {
+                request = request.header("X-ClickHouse-Key", target.password.as_str());
+            }
+
+            let response = request.send().await;
+            let retry_status = match response {
+                Ok(response) if response.status().is_success() => {
+                    let bucket = status_bucket(response.status().as_u16());
+                    metrics::clickhouse_export_succeeded(
+                        datasource,
+                        bucket,
+                        started.elapsed().as_secs_f64(),
+                        rows as u64,
+                    );
+                    return Ok(());
+                }
+                Ok(response) => {
+                    let status = response.status();
+                    let status_code = status.as_u16();
+                    let bucket = status_bucket(status_code);
+                    let body = response.text().await.unwrap_or_default();
+                    if !is_retryable_clickhouse_status(status_code) {
+                        metrics::clickhouse_export_dropped(datasource, bucket, rows as u64);
+                        warn!(
+                            org_id,
+                            datasource,
+                            status = status_code,
+                            body = %body,
+                            rows,
+                            "Dropping non-retryable ClickHouse batch"
+                        );
+                        return Ok(());
+                    }
+                    metrics::clickhouse_export_retry(datasource, bucket);
+                    warn!(
+                        org_id,
+                        datasource,
+                        status = status_code,
+                        attempt,
+                        body = %body,
+                        "Retrying ClickHouse batch"
+                    );
+                    bucket.to_string()
+                }
+                Err(error) => {
+                    metrics::clickhouse_export_retry(datasource, "transport");
+                    warn!(
+                        org_id,
+                        datasource,
+                        attempt,
+                        error = %error,
+                        "Retrying ClickHouse batch after transport error"
+                    );
+                    "transport".to_string()
+                }
+            };
+
+            attempt = attempt.saturating_add(1);
+            if attempt >= max_attempts {
+                metrics::clickhouse_export_dropped(datasource, "retries_exhausted", rows as u64);
+                error!(
+                    org_id,
+                    datasource,
+                    rows,
+                    attempts = attempt,
+                    last_status = %retry_status,
+                    "Dropping ClickHouse batch after exhausting retry budget"
+                );
+                return Ok(());
+            }
+            backoff(attempt).await;
+        }
+    }
+
+    async fn resolve_clickhouse_target(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<ClickHouseTarget>, String> {
+        let Some(provider) = &self.clickhouse_targets else {
+            return Ok(None);
+        };
+        provider.resolve_clickhouse_target(org_id).await
+    }
+}
+
+fn combine_frames(frames: Vec<&QueuedFrame>) -> (Vec<u8>, usize) {
+    let mut body = Vec::new();
+    let mut rows = 0usize;
+    for frame in frames {
+        body.extend_from_slice(&frame.payload);
+        if !body.ends_with(b"\n") {
+            body.push(b'\n');
+        }
+        rows += frame.row_count;
+    }
+    (body, rows)
 }
 
 fn batch_full(cfg: &TinybirdConfig, frames: &[QueuedFrame]) -> bool {
     let rows: usize = frames.iter().map(|frame| frame.row_count).sum();
     let bytes: usize = frames.iter().map(|frame| frame.payload.len()).sum();
     rows >= cfg.batch_max_rows || bytes >= cfg.batch_max_bytes
+}
+
+fn status_bucket(status: u16) -> &'static str {
+    match status {
+        200..=299 => "2xx",
+        400..=499 => "4xx",
+        500..=599 => "5xx",
+        _ => "other",
+    }
+}
+
+fn is_retryable_clickhouse_status(status: u16) -> bool {
+    status == 408 || status == 429 || status >= 500
+}
+
+async fn backoff(attempt: u32) {
+    let backoff_ms = 250u64.saturating_mul(2u64.saturating_pow(attempt.min(6)));
+    sleep(Duration::from_millis(backoff_ms.min(30_000))).await;
+}
+
+fn build_clickhouse_insert_sql(mapping: &InsertMapping, org_id: &str) -> String {
+    let org_literal = format!("'{}'", escape_clickhouse_sql_literal(org_id));
+    let selects = mapping
+        .selects
+        .iter()
+        .map(|select| {
+            if *select == clickhouse_insert_mappings::ORG_PLACEHOLDER {
+                org_literal.clone()
+            } else {
+                (*select).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "INSERT INTO {} ({}) SELECT {} FROM input('{}') FORMAT JSONEachRow",
+        mapping.table,
+        mapping.columns.join(", "),
+        selects,
+        escape_clickhouse_sql_literal(mapping.input_schema)
+    )
+}
+
+fn escape_clickhouse_sql_literal(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 fn gzip(body: Vec<u8>) -> Result<Vec<u8>, String> {
@@ -1574,6 +1980,7 @@ fn rows_to_frames(
         routing_key,
         org_id: org_id.to_string(),
         signal,
+        destination: ExportDestination::Tinybird,
         datasource,
         row_count: rows.len(),
         payload,
@@ -1745,7 +2152,7 @@ mod tests {
     use super::*;
     use axum::body::Bytes;
     use axum::extract::{Query, State};
-    use axum::http::header::{AUTHORIZATION, CONTENT_ENCODING};
+    use axum::http::header::{AUTHORIZATION, CONTENT_ENCODING, CONTENT_TYPE};
     use axum::http::{HeaderMap, StatusCode};
     use axum::routing::post;
     use axum::Router;
@@ -1765,6 +2172,32 @@ mod tests {
         authorization: String,
         content_encoding: String,
         body: String,
+    }
+
+    #[derive(Debug)]
+    struct FakeClickHouseImport {
+        query: String,
+        database: String,
+        user: String,
+        key: String,
+        content_type: String,
+        content_encoding: String,
+        body: String,
+    }
+
+    #[derive(Clone)]
+    struct StaticClickHouseTargetProvider {
+        target: ClickHouseTarget,
+    }
+
+    #[async_trait::async_trait]
+    impl ClickHouseTargetProvider for StaticClickHouseTargetProvider {
+        async fn resolve_clickhouse_target(
+            &self,
+            _org_id: &str,
+        ) -> Result<Option<ClickHouseTarget>, String> {
+            Ok(Some(self.target.clone()))
+        }
     }
 
     fn test_cfg() -> TinybirdConfig {
@@ -1818,6 +2251,46 @@ mod tests {
             datasource: query.get("name").cloned().unwrap_or_default(),
             authorization: headers
                 .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            content_encoding: headers
+                .get(CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            body: decoded,
+        });
+
+        StatusCode::OK
+    }
+
+    async fn fake_clickhouse_import(
+        State(tx): State<mpsc::UnboundedSender<FakeClickHouseImport>>,
+        Query(query): Query<HashMap<String, String>>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> StatusCode {
+        let mut decoded = String::new();
+        GzDecoder::new(&body[..])
+            .read_to_string(&mut decoded)
+            .expect("fake ClickHouse should receive gzip NDJSON");
+
+        let _ = tx.send(FakeClickHouseImport {
+            query: query.get("query").cloned().unwrap_or_default(),
+            database: query.get("database").cloned().unwrap_or_default(),
+            user: headers
+                .get("x-clickhouse-user")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            key: headers
+                .get("x-clickhouse-key")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            content_type: headers
+                .get(CONTENT_TYPE)
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or_default()
                 .to_string(),
@@ -1927,6 +2400,7 @@ mod tests {
             routing_key: 1,
             org_id: "org_1".to_string(),
             signal: TelemetrySignal::Traces,
+            destination: ExportDestination::ClickHouse,
             datasource: "traces".to_string(),
             row_count: 1,
             payload: br#"{"a":1}"#.to_vec(),
@@ -1937,6 +2411,7 @@ mod tests {
         let mut file = File::open(&path).unwrap();
         let decoded = read_wal_frame(&mut file, 0).unwrap().unwrap();
         assert_eq!(decoded.signal, TelemetrySignal::Traces);
+        assert_eq!(decoded.destination, ExportDestination::ClickHouse);
         assert_eq!(decoded.org_id, "org_1");
         assert_eq!(decoded.datasource, "traces");
         assert_eq!(decoded.payload, br#"{"a":1}"#);
@@ -1984,8 +2459,14 @@ mod tests {
             }],
         };
 
-        let (frames, stats) =
-            encode_traces(&test_cfg().datasources, "org_1", &request, &SamplingPolicy::default(), &[]).unwrap();
+        let (frames, stats) = encode_traces(
+            &test_cfg().datasources,
+            "org_1",
+            &request,
+            &SamplingPolicy::default(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(stats.rows, 1);
         assert_eq!(stats.dropped, 0);
         assert_eq!(frames.len(), 1);
@@ -2008,14 +2489,13 @@ mod tests {
 
     #[test]
     fn apply_attribute_mappings_rewrites_span_attributes() {
-        let rule = |source_context, source_key: &str, target_key: &str, operation| {
-            AttributeMappingRule {
+        let rule =
+            |source_context, source_key: &str, target_key: &str, operation| AttributeMappingRule {
                 source_context,
                 source_key: source_key.to_string(),
                 target_key: target_key.to_string(),
                 operation,
-            }
-        };
+            };
 
         // span -> span copy keeps the source key.
         let mut span_attrs = Map::new();
@@ -2239,6 +2719,141 @@ mod tests {
         assert_eq!(row["span_id"], "dddddddddddddddd");
 
         wait_for_export_drain(queue_dir.clone(), 0).await;
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[tokio::test]
+    async fn pipeline_exports_ready_org_to_clickhouse_without_tinybird_calls() {
+        let (ch_tx, mut ch_rx) = mpsc::unbounded_channel();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(fake_clickhouse_import))
+            .with_state(ch_tx);
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let (tb_tx, mut tb_rx) = mpsc::unbounded_channel();
+        let tb_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let tb_addr = tb_listener.local_addr().unwrap();
+        let tb_app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tb_tx);
+        tokio::spawn(async move {
+            axum::serve(tb_listener, tb_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("fake-clickhouse");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{tb_addr}");
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.export_max_attempts = 1;
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_string(),
+                password: "secret".to_string(),
+                database: "maple".to_string(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_traces_to(
+                "org_ready",
+                &populated_trace_request(),
+                &SamplingPolicy::default(),
+                &[],
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        pipeline
+            .accept_logs_to(
+                "org_ready",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        pipeline
+            .accept_metrics_to(
+                "org_ready",
+                &one_of_each_metric_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+
+        let mut imports = Vec::new();
+        for _ in 0..6 {
+            let import = tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+                .await
+                .expect("fake ClickHouse should receive an import")
+                .expect("fake ClickHouse channel should stay open");
+            imports.push(import);
+        }
+
+        let datasources: std::collections::BTreeSet<_> = imports
+            .iter()
+            .filter_map(|import| {
+                clickhouse_insert_mappings::DATASOURCES
+                    .iter()
+                    .find(|mapping| {
+                        import
+                            .query
+                            .starts_with(&format!("INSERT INTO {}", mapping.table))
+                    })
+                    .map(|mapping| mapping.datasource)
+            })
+            .collect();
+        assert_eq!(
+            datasources,
+            std::collections::BTreeSet::from([
+                "logs",
+                "metrics_exponential_histogram",
+                "metrics_gauge",
+                "metrics_histogram",
+                "metrics_sum",
+                "traces",
+            ])
+        );
+        for import in &imports {
+            assert_eq!(import.database, "maple");
+            assert_eq!(import.user, "ingest");
+            assert_eq!(import.key, "secret");
+            assert_eq!(import.content_type, "application/x-ndjson");
+            assert_eq!(import.content_encoding, "gzip");
+            assert!(import.query.contains(" FROM input('"));
+            assert!(import.query.ends_with(" FORMAT JSONEachRow"));
+            assert!(import.query.contains("'org_ready'"));
+            assert!(!import.body.trim().is_empty());
+            assert!(!import.query.contains(import.body.trim()));
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            tb_rx.try_recv().is_err(),
+            "ready org should not export native frames to Tinybird"
+        );
+
         let _ = std::fs::remove_dir_all(queue_dir);
     }
 
@@ -2727,7 +3342,12 @@ mod tests {
 
     #[test]
     fn logs_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
-        let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &populated_log_request()).unwrap();
+        let (frames, _) = encode_logs(
+            &test_cfg().datasources,
+            "org_contract",
+            &populated_log_request(),
+        )
+        .unwrap();
         let row = frame_row(&frames[0]);
         assert_row_keys_match(&row, schema_contract::LOGS, "logs");
         // Spot-check the resource_attributes carry the org id, since OrgId's
@@ -2737,9 +3357,14 @@ mod tests {
 
     #[test]
     fn traces_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
-        let (frames, _) =
-            encode_traces(&test_cfg().datasources, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
-                .unwrap();
+        let (frames, _) = encode_traces(
+            &test_cfg().datasources,
+            "org_contract",
+            &populated_trace_request(),
+            &SamplingPolicy::default(),
+            &[],
+        )
+        .unwrap();
         let row = frame_row(&frames[0]);
         assert_row_keys_match(&row, schema_contract::TRACES, "traces");
         assert_eq!(row["resource_attributes"]["maple_org_id"], "org_contract");
@@ -2747,10 +3372,23 @@ mod tests {
 
     #[test]
     fn metrics_emit_exactly_the_jsonpaths_declared_in_datasources_ts() {
-        let (frames, _) = encode_metrics(&test_cfg().datasources, "org_contract", &one_of_each_metric_request()).unwrap();
+        let (frames, _) = encode_metrics(
+            &test_cfg().datasources,
+            "org_contract",
+            &one_of_each_metric_request(),
+        )
+        .unwrap();
         let rows = frame_rows_by_datasource(frames);
-        assert_row_keys_match(&rows["metrics_sum"], &schema_contract::metrics_sum(), "metrics_sum");
-        assert_row_keys_match(&rows["metrics_gauge"], &schema_contract::metrics_gauge(), "metrics_gauge");
+        assert_row_keys_match(
+            &rows["metrics_sum"],
+            &schema_contract::metrics_sum(),
+            "metrics_sum",
+        );
+        assert_row_keys_match(
+            &rows["metrics_gauge"],
+            &schema_contract::metrics_gauge(),
+            "metrics_gauge",
+        );
         assert_row_keys_match(
             &rows["metrics_histogram"],
             &schema_contract::metrics_histogram(),
@@ -2784,21 +3422,34 @@ mod tests {
                 && s[20..].chars().all(|c| c.is_ascii_digit())
         };
 
-        let (log_frames, _) =
-            encode_logs(&test_cfg().datasources, "org_contract", &populated_log_request()).unwrap();
+        let (log_frames, _) = encode_logs(
+            &test_cfg().datasources,
+            "org_contract",
+            &populated_log_request(),
+        )
+        .unwrap();
         let log_row = frame_row(&log_frames[0]);
         let ts = log_row["timestamp"].as_str().unwrap();
         assert!(pattern(ts), "logs.timestamp not DateTime64(9): {ts:?}");
 
-        let (trace_frames, _) =
-            encode_traces(&test_cfg().datasources, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
-                .unwrap();
+        let (trace_frames, _) = encode_traces(
+            &test_cfg().datasources,
+            "org_contract",
+            &populated_trace_request(),
+            &SamplingPolicy::default(),
+            &[],
+        )
+        .unwrap();
         let trace_row = frame_row(&trace_frames[0]);
         let ts = trace_row["start_time"].as_str().unwrap();
         assert!(pattern(ts), "traces.start_time not DateTime64(9): {ts:?}");
 
-        let (metric_frames, _) =
-            encode_metrics(&test_cfg().datasources, "org_contract", &one_of_each_metric_request()).unwrap();
+        let (metric_frames, _) = encode_metrics(
+            &test_cfg().datasources,
+            "org_contract",
+            &one_of_each_metric_request(),
+        )
+        .unwrap();
         for frame in &metric_frames {
             let row = frame_row(frame);
             let start_ts = row["start_timestamp"].as_str().unwrap();
@@ -2831,22 +3482,74 @@ mod tests {
             metrics_exponential_histogram: "tenant_exp_v2".into(),
         };
 
-        let (log_frames, _) = encode_logs(&names, "org_contract", &populated_log_request()).unwrap();
+        let (log_frames, _) =
+            encode_logs(&names, "org_contract", &populated_log_request()).unwrap();
         assert_eq!(log_frames[0].datasource, "tenant_logs_v2");
 
-        let (trace_frames, _) =
-            encode_traces(&names, "org_contract", &populated_trace_request(), &SamplingPolicy::default(), &[])
-                .unwrap();
+        let (trace_frames, _) = encode_traces(
+            &names,
+            "org_contract",
+            &populated_trace_request(),
+            &SamplingPolicy::default(),
+            &[],
+        )
+        .unwrap();
         assert_eq!(trace_frames[0].datasource, "tenant_traces_v2");
 
         let (metric_frames, _) =
             encode_metrics(&names, "org_contract", &one_of_each_metric_request()).unwrap();
-        let emitted: std::collections::BTreeSet<_> =
-            metric_frames.iter().map(|f| f.datasource.as_str()).collect();
+        let emitted: std::collections::BTreeSet<_> = metric_frames
+            .iter()
+            .map(|f| f.datasource.as_str())
+            .collect();
         assert!(emitted.contains("tenant_sum_v2"));
         assert!(emitted.contains("tenant_gauge_v2"));
         assert!(emitted.contains("tenant_hist_v2"));
         assert!(emitted.contains("tenant_exp_v2"));
+    }
+
+    #[test]
+    fn clickhouse_insert_mappings_cover_otlp_and_session_datasources() {
+        for datasource in [
+            "traces",
+            "logs",
+            "metrics_sum",
+            "metrics_gauge",
+            "metrics_histogram",
+            "metrics_exponential_histogram",
+            "session_replays",
+            "session_replay_events",
+            "session_events",
+        ] {
+            let mapping = clickhouse_insert_mappings::mapping_for(datasource)
+                .unwrap_or_else(|| panic!("missing ClickHouse mapping for {datasource}"));
+            assert_eq!(mapping.datasource, datasource);
+            assert!(
+                mapping.columns.contains(&"OrgId"),
+                "{datasource} mapping must pin OrgId"
+            );
+            assert!(
+                mapping
+                    .selects
+                    .contains(&clickhouse_insert_mappings::ORG_PLACEHOLDER),
+                "{datasource} mapping must replace OrgId with authenticated org"
+            );
+            assert!(
+                !mapping.input_schema.contains("OrgId"),
+                "{datasource} input schema should read snake_case JSON, not PascalCase OrgId"
+            );
+        }
+    }
+
+    #[test]
+    fn clickhouse_insert_sql_uses_input_table_function() {
+        let mapping = clickhouse_insert_mappings::mapping_for("logs").expect("logs mapping");
+        let sql = build_clickhouse_insert_sql(mapping, "org_'one");
+        assert!(sql.starts_with("INSERT INTO logs (OrgId, Timestamp"));
+        assert!(sql.contains("SELECT 'org_\\'one', timestamp, timestamp"));
+        assert!(sql.contains("FROM input('timestamp DateTime64(9)"));
+        assert!(sql.ends_with("FORMAT JSONEachRow"));
+        assert!(!sql.contains("payment failed"));
     }
 
     #[test]
@@ -2855,7 +3558,9 @@ mod tests {
         // SDK left only a numeric severity; the encoder maps the OTLP severity
         // number to the canonical text label.
         let mut request = populated_log_request();
-        request.resource_logs[0].scope_logs[0].log_records[0].severity_text.clear();
+        request.resource_logs[0].scope_logs[0].log_records[0]
+            .severity_text
+            .clear();
         request.resource_logs[0].scope_logs[0].log_records[0].severity_number = 9; // INFO
         let (frames, _) = encode_logs(&test_cfg().datasources, "org_contract", &request).unwrap();
         let row = frame_row(&frames[0]);
@@ -2881,7 +3586,9 @@ mod tests {
         // The encoder does not support Summary metrics (no Tinybird datasource);
         // dropping silently is intentional but worth pinning so an accidental
         // schema addition is noticed.
-        use opentelemetry_proto::tonic::metrics::v1::{summary_data_point, Summary, SummaryDataPoint};
+        use opentelemetry_proto::tonic::metrics::v1::{
+            summary_data_point, Summary, SummaryDataPoint,
+        };
         let request = ExportMetricsServiceRequest {
             resource_metrics: vec![opentelemetry_proto::tonic::metrics::v1::ResourceMetrics {
                 resource: Some(Resource {
@@ -2921,8 +3628,12 @@ mod tests {
                 schema_url: String::new(),
             }],
         };
-        let (frames, stats) = encode_metrics(&test_cfg().datasources, "org_contract", &request).unwrap();
-        assert!(frames.is_empty(), "summary metrics should not produce frames");
+        let (frames, stats) =
+            encode_metrics(&test_cfg().datasources, "org_contract", &request).unwrap();
+        assert!(
+            frames.is_empty(),
+            "summary metrics should not produce frames"
+        );
         assert_eq!(stats.rows, 0);
     }
 
@@ -3070,6 +3781,7 @@ mod tests {
             routing_key: 0,
             org_id: "org_contract".to_string(),
             signal: TelemetrySignal::Traces,
+            destination: ExportDestination::Tinybird,
             datasource: "traces".to_string(),
             row_count: 1,
             payload: vec![0u8; 200],
@@ -3133,6 +3845,7 @@ mod tests {
             routing_key: 0,
             org_id: "org_contract".to_string(),
             signal: TelemetrySignal::Traces,
+            destination: ExportDestination::Tinybird,
             datasource: "traces".to_string(),
             row_count: 1,
             payload: vec![0u8; 100],
@@ -3179,7 +3892,10 @@ mod tests {
             frames
                 .into_iter()
                 .map(|frame| {
-                    let payload = std::str::from_utf8(&frame.payload).unwrap().trim().to_string();
+                    let payload = std::str::from_utf8(&frame.payload)
+                        .unwrap()
+                        .trim()
+                        .to_string();
                     let rows = payload
                         .lines()
                         .map(|line| serde_json::from_str(line).unwrap())
@@ -3202,7 +3918,9 @@ mod tests {
             // resolved ingest key — mirror that here so the row assertions
             // match what production emits.
             for resource_metric in &mut request.resource_metrics {
-                let resource = resource_metric.resource.get_or_insert_with(Resource::default);
+                let resource = resource_metric
+                    .resource
+                    .get_or_insert_with(Resource::default);
                 resource.attributes.push(KeyValue {
                     key: "maple_org_id".to_string(),
                     value: Some(AnyValue {
@@ -3237,7 +3955,10 @@ mod tests {
             assert_eq!(counter["timestamp"], "2025-06-15 15:06:40.000000000");
             assert_eq!(counter["start_timestamp"], "1970-01-01 00:00:00.000000000");
             // org attribution comes from the gateway, never the scraper.
-            assert_eq!(counter["resource_attributes"]["maple_org_id"], "org_scraper");
+            assert_eq!(
+                counter["resource_attributes"]["maple_org_id"],
+                "org_scraper"
+            );
             assert_eq!(
                 counter["resource_attributes"]["maple_scrape_target_id"],
                 "11111111-1111-4111-8111-111111111111"
