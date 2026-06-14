@@ -5,7 +5,7 @@ mod autumn;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -93,7 +93,6 @@ struct AppConfig {
     port: u16,
     otlp_grpc_port: Option<u16>,
     forward_endpoint: String,
-    forward_self_managed_endpoint: Option<String>,
     forward_timeout: Duration,
     write_mode: WriteMode,
     tinybird: TinybirdConfig,
@@ -190,14 +189,6 @@ impl AppConfig {
         if forward_endpoint.is_empty() {
             return Err("INGEST_FORWARD_OTLP_ENDPOINT is required".to_string());
         }
-
-        // Optional: endpoint for the self-managed collector pool. When unset, self-managed
-        // orgs fall back to the shared pool so a missing env var degrades to "current
-        // behavior" rather than dropping traffic.
-        let forward_self_managed_endpoint = std::env::var("INGEST_FORWARD_SELF_MANAGED_ENDPOINT")
-            .ok()
-            .map(|value| value.trim().trim_end_matches('/').to_string())
-            .filter(|value| !value.is_empty());
 
         let forward_timeout_ms = parse_u64(
             "INGEST_FORWARD_TIMEOUT_MS",
@@ -305,17 +296,6 @@ impl AppConfig {
             );
         }
 
-        if require_tls {
-            if let Some(endpoint) = forward_self_managed_endpoint.as_ref() {
-                if !endpoint.starts_with("https://") {
-                    return Err(
-                        "INGEST_REQUIRE_TLS=true requires an https INGEST_FORWARD_SELF_MANAGED_ENDPOINT"
-                            .to_string(),
-                    );
-                }
-            }
-        }
-
         let key_store_backend = resolve_key_store_backend()?;
         let clickhouse_encryption_key = match &key_store_backend {
             KeyStoreBackend::D1 { .. } => {
@@ -384,7 +364,6 @@ impl AppConfig {
             port,
             otlp_grpc_port,
             forward_endpoint,
-            forward_self_managed_endpoint,
             forward_timeout: Duration::from_millis(forward_timeout_ms),
             write_mode,
             tinybird,
@@ -493,6 +472,7 @@ struct CloudflareConnectorResolver {
 struct OrgRoutingResolver {
     store: Arc<dyn KeyStore>,
     cache: Cache<String, OrgRouting>,
+    last_known: DashMap<String, OrgRouting>,
 }
 
 struct SamplingPolicyResolver {
@@ -1200,6 +1180,7 @@ async fn main() {
     let org_routing_resolver = Arc::new(OrgRoutingResolver {
         store: Arc::clone(&store),
         cache: org_routing_cache,
+        last_known: DashMap::new(),
     });
 
     let state = Arc::new(AppState {
@@ -1297,10 +1278,6 @@ async fn main() {
         info!(
             port = config.port,
             forward_endpoint = %config.forward_endpoint,
-            forward_self_managed_endpoint = %config
-                .forward_self_managed_endpoint
-                .as_deref()
-                .unwrap_or("<unset>"),
             require_tls = config.require_tls,
             max_body_bytes = config.max_request_body_bytes,
             hmac_fingerprint = %hmac_fingerprint,
@@ -3038,23 +3015,6 @@ fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &st
     });
 }
 
-/// Pick the upstream collector endpoint + pool label for a resolved ingest key.
-///
-/// Direct ClickHouse is terminal before this function is called. Any frame that
-/// still needs forwarding is on the managed Tinybird path, including orgs whose
-/// ClickHouse settings exist but are not yet schema-ready.
-fn select_forward_endpoint<'a>(
-    shared: &'a str,
-    self_managed: Option<&'a str>,
-    org_is_self_managed: bool,
-    destination: ExportDestination,
-) -> (&'a str, &'static str) {
-    match (destination, org_is_self_managed, self_managed) {
-        (ExportDestination::ClickHouse, true, Some(url)) => (url, "self_managed"),
-        _ => (shared, "shared"),
-    }
-}
-
 fn native_destination_for(resolved_key: &ResolvedIngestKey) -> ExportDestination {
     if resolved_key.clickhouse_ready {
         ExportDestination::ClickHouse
@@ -3084,14 +3044,9 @@ async fn forward_to_collector(
     content_encoding: Option<&str>,
     body: Vec<u8>,
     resolved_key: &ResolvedIngestKey,
-    destination: ExportDestination,
 ) -> Result<Response, ApiError> {
-    let (endpoint, upstream_pool) = select_forward_endpoint(
-        state.config.forward_endpoint.as_str(),
-        state.config.forward_self_managed_endpoint.as_deref(),
-        resolved_key.self_managed,
-        destination,
-    );
+    let endpoint = state.config.forward_endpoint.as_str();
+    let upstream_pool = "shared";
 
     let url = format!("{endpoint}/v1/{}", signal.path());
     let outbound_bytes = body.len();
@@ -3227,7 +3182,6 @@ async fn process_decoded_payload(
             content_encoding,
             outbound_body,
             resolved_key,
-            destination,
         )
         .instrument(forward_span)
         .await;
@@ -3315,16 +3269,34 @@ impl OrgRoutingResolver {
             return Ok(cached);
         }
 
-        let routing = self
-            .store
-            .fetch_org_routing(org_id)
-            .await?
-            .unwrap_or_default();
-        self.cache.insert(org_id.to_string(), routing.clone()).await;
-        Ok(routing)
+        match self.store.fetch_org_routing(org_id).await {
+            Ok(row) => {
+                let routing = row.unwrap_or_default();
+                self.remember_org_routing(org_id, routing.clone()).await;
+                Ok(routing)
+            }
+            Err(error) => {
+                if let Some(stale) = self.last_known.get(org_id) {
+                    warn!(
+                        org_id,
+                        error = %error,
+                        "Org routing refresh failed; serving last-known routing"
+                    );
+                    Ok(stale.clone())
+                } else {
+                    warn!(
+                        org_id,
+                        error = %error,
+                        "Org routing refresh failed with no last-known routing; using managed Tinybird path"
+                    );
+                    Ok(OrgRouting::default())
+                }
+            }
+        }
     }
 
     async fn remember_org_routing(&self, org_id: &str, routing: OrgRouting) {
+        self.last_known.insert(org_id.to_string(), routing.clone());
         self.cache.insert(org_id.to_string(), routing).await;
     }
 }
@@ -4428,45 +4400,6 @@ mod tests {
     }
 
     #[test]
-    fn non_self_managed_goes_to_shared_pool() {
-        let (endpoint, pool) = select_forward_endpoint(
-            "http://shared:4318",
-            Some("http://self-managed:4318"),
-            false,
-            ExportDestination::Tinybird,
-        );
-        assert_eq!(endpoint, "http://shared:4318");
-        assert_eq!(pool, "shared");
-    }
-
-    #[test]
-    fn tinybird_fallback_uses_shared_pool_even_for_clickhouse_configured_org() {
-        let (endpoint, pool) = select_forward_endpoint(
-            "http://shared:4318",
-            Some("http://self-managed:4318"),
-            true,
-            ExportDestination::Tinybird,
-        );
-        assert_eq!(endpoint, "http://shared:4318");
-        assert_eq!(pool, "shared");
-    }
-
-    #[test]
-    fn self_managed_degrades_to_shared_when_endpoint_unset() {
-        // Missing INGEST_FORWARD_SELF_MANAGED_ENDPOINT should never drop traffic
-        // — self-managed orgs degrade back to the shared pool until the
-        // operator wires the second collector in.
-        let (endpoint, pool) = select_forward_endpoint(
-            "http://shared:4318",
-            None,
-            true,
-            ExportDestination::ClickHouse,
-        );
-        assert_eq!(endpoint, "http://shared:4318");
-        assert_eq!(pool, "shared");
-    }
-
-    #[test]
     fn clickhouse_destination_uses_native_pipeline_even_in_forward_mode() {
         assert!(uses_native_pipeline_for(
             WriteMode::Forward,
@@ -4514,6 +4447,7 @@ mod tests {
         ingest_key_fetches: AtomicU64,
         connector_fetches: AtomicU64,
         routing_fetches: AtomicU64,
+        routing_errors: AtomicBool,
     }
 
     impl FakeKeyStore {
@@ -4607,6 +4541,9 @@ mod tests {
         }
         async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
             self.routing_fetches.fetch_add(1, Ordering::Relaxed);
+            if self.routing_errors.load(Ordering::Relaxed) {
+                return Err("simulated routing store outage".to_string());
+            }
             Ok(self.routings.lock().unwrap().get(org_id).cloned())
         }
         async fn record_connector_success(
@@ -4631,6 +4568,7 @@ mod tests {
         Arc::new(OrgRoutingResolver {
             store,
             cache: Cache::builder().time_to_live(ttl).max_capacity(16).build(),
+            last_known: DashMap::new(),
         })
     }
 
@@ -4835,7 +4773,6 @@ mod tests {
                 port: 0,
                 otlp_grpc_port: None,
                 forward_endpoint,
-                forward_self_managed_endpoint: None,
                 forward_timeout: Duration::from_secs(5),
                 write_mode: WriteMode::Forward,
                 tinybird,
@@ -5016,6 +4953,65 @@ mod tests {
             "auth identity should stay cached while routing refreshes"
         );
         assert_eq!(store.routing_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_ingest_key_serves_last_known_routing_when_refresh_fails() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_d1_blip",
+            KeyRow {
+                org_id: "org_d1_blip".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+
+        let resolver = make_resolver_with_routing_ttl(Arc::clone(&store), Duration::from_millis(5));
+        let first = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("initial resolve should succeed")
+            .expect("key should be found");
+        assert!(!first.clickhouse_ready);
+
+        store.set_org_routing(
+            "org_d1_blip",
+            OrgRouting {
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let ready = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("routing refresh should succeed")
+            .expect("key should be found");
+        assert!(ready.clickhouse_ready);
+
+        store.routing_errors.store(true, Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let stale = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("warm key should not 503 when routing refresh fails")
+            .expect("key should be found");
+        assert!(
+            stale.clickhouse_ready,
+            "last-known ready routing should be served during a routing-store outage"
+        );
+        assert_eq!(
+            store.ingest_key_fetches.load(Ordering::Relaxed),
+            1,
+            "auth identity should stay cached through the routing-store outage"
+        );
+        assert!(
+            store.routing_fetches.load(Ordering::Relaxed) >= 2,
+            "routing refresh should have been attempted before falling back to stale"
+        );
     }
 
     #[tokio::test]
