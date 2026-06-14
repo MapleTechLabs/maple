@@ -56,10 +56,12 @@ export interface VcsProviderClient {
 	 * committer date; the exact basis and ordering are provider-defined and never
 	 * assumed by callers.
 	 *
-	 * A rate limit is NOT an error here: the provider returns what it fetched plus
-	 * `VcsCommitFetch.next` (resume cursor + delay). Failures are classified as
-	 * `VcsInstallationGoneError` (disconnect), `VcsRepoUnavailableError` (repo-scoped),
-	 * else `VcsProviderError` (transient / retryable).
+	 * Being cut short is NOT an error here: on a rate limit, OR after a bounded
+	 * number of pages (so one invocation's wall-clock stays under the queue limit),
+	 * the provider returns what it fetched plus `VcsCommitFetch.next` (resume cursor
+	 * + delay + reason). Failures are classified as `VcsInstallationGoneError`
+	 * (disconnect), `VcsRepoUnavailableError` (repo-scoped), else `VcsProviderError`
+	 * (transient / retryable).
 	 */
 	readonly fetchCommits: (
 		installation: VcsInstallation,

@@ -358,15 +358,21 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						normalizeFetchedCommit(c, repo.defaultBranch, now),
 					)
 					if (result.complete) return { commits: normalized }
-					// Rate-limited mid-walk: resume from the oldest committer-date we got
-					// (a stable watermark — re-fetching only the boundary, idempotently).
+					// Cut short mid-walk (throttled, or at the per-invocation page budget):
+					// resume from the oldest committer-date we got (a stable watermark —
+					// re-fetching only the boundary, idempotently). A page-budget stop
+					// continues immediately (no wait); a rate limit waits out its reset.
 					const oldestMs =
 						normalized.length > 0
 							? normalized.reduce((min, c) => Math.min(min, c.committedAt), Number.POSITIVE_INFINITY)
 							: (opts.untilMs ?? now)
 					return {
 						commits: normalized,
-						next: { untilMs: oldestMs, retryAfterSeconds: result.retryAfterSeconds ?? 60 },
+						next: {
+							untilMs: oldestMs,
+							reason: result.reason,
+							retryAfterSeconds: result.reason === "rate-limited" ? result.retryAfterSeconds : 0,
+						},
 					}
 				})
 

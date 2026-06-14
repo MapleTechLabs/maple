@@ -30,6 +30,14 @@ const PER_PAGE = 100
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
+// Commit pages walked per consumer invocation before yielding a continuation.
+// Each page is a sequential GitHub round-trip; a single backfill can span an
+// unbounded history, so we cap the work per invocation to keep its wall-clock
+// far under Cloudflare Queues' 15-min consumer limit. The remainder resumes from
+// a committer-date watermark in a follow-up job, so a full history is walked
+// across many short invocations — there is no per-invocation history cap here
+// (unlike `MAX_PAGES`); the walk simply continues rather than truncating.
+const COMMIT_PAGES_PER_INVOCATION = 25
 // Ride out short rate limits inline; anything longer is surfaced so the caller
 // can defer (backfill requeues from a cursor; other jobs get a delayed retry).
 const INLINE_BACKOFF_CAP_S = 30
@@ -351,10 +359,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				},
 			)
 
-			// Returns commits page-by-page until the window is exhausted. A rate limit
-			// too far out to ride inline (from the token mint OR any page) is caught at
-			// the outer level and reported as a *partial* result with the commits already
-			// fetched, so the caller can checkpoint + requeue rather than refetch them.
+			// Returns commits page-by-page until the window is exhausted OR the
+			// per-invocation page budget is hit. Two ways a walk is cut short, both
+			// reported as a *partial* result (commits kept, never refetched) so the
+			// caller can checkpoint + requeue:
+			//  - `"rate-limited"`: a rate limit too far out to ride inline (from the
+			//    token mint OR any page), caught at the outer level.
+			//  - `"page-budget"`: `COMMIT_PAGES_PER_INVOCATION` full pages fetched with
+			//    more to come — yield so one invocation stays under the queue's limit.
 			const listCommits = Effect.fn("GithubAppClient.listCommits")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -366,8 +378,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					const config = yield* resolveConfig
 					const token = yield* mintInstallationToken(externalInstallationId)
 					const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits`
-					let page = 1
-					for (; page <= MAX_PAGES; page++) {
+					for (let page = 1; page <= COMMIT_PAGES_PER_INVOCATION; page++) {
 						const query = new URLSearchParams({ per_page: String(PER_PAGE), page: String(page) })
 						if (params.sha) query.set("sha", params.sha)
 						if (params.sinceIso) query.set("since", params.sinceIso)
@@ -388,24 +399,31 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						commits.push(...decoded)
 						if (decoded.length < PER_PAGE) return { complete: true as const }
 					}
-					// Exhausted the page cap without a short final page → likely truncated.
-					yield* Effect.logWarning("GitHub commit list truncated at page cap").pipe(
-						Effect.annotateLogs({ owner, repo, maxPages: MAX_PAGES, fetched: commits.length }),
-					)
-					return { complete: true as const }
+					// Hit the per-invocation page budget with a full final page → more
+					// remain. Yield a continuation (NOT a truncation): the caller resumes
+					// from a committer-date watermark in a follow-up job, keeping each
+					// invocation's wall-clock far under the Queues 15-min consumer limit.
+					return { complete: false as const, reason: "page-budget" as const }
 				}).pipe(
 					Effect.catch((error) =>
 						error.retryAfterSeconds === undefined
 							? Effect.fail(error)
 							: Effect.succeed({
 									complete: false as const,
+									reason: "rate-limited" as const,
 									retryAfterSeconds: error.retryAfterSeconds,
 								}),
 					),
 				)
-				return outcome.complete
-					? { commits, complete: true as const }
-					: { commits, complete: false as const, retryAfterSeconds: outcome.retryAfterSeconds }
+				if (outcome.complete) return { commits, complete: true as const }
+				return outcome.reason === "rate-limited"
+					? {
+							commits,
+							complete: false as const,
+							reason: "rate-limited" as const,
+							retryAfterSeconds: outcome.retryAfterSeconds,
+						}
+					: { commits, complete: false as const, reason: "page-budget" as const }
 			})
 
 			const getCommit = Effect.fn("GithubAppClient.getCommit")(function* (

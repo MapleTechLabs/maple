@@ -192,13 +192,22 @@ export type CommitUpsertInput = Schema.Schema.Type<typeof CommitUpsertInput>
  * derives its watermark from `max(committed_at)` of the persisted commits, so no
  * provider has to claim a head and no caller infers one from array position.
  *
- * `next` is present iff a rate limit cut the walk short before the requested
- * window was fully fetched: resume the backfill from `untilMs` (a committer-date
- * watermark) after waiting `retryAfterSeconds`. Absent ⇒ the window is complete.
+ * `next` is present iff the walk was cut short before the requested window was
+ * fully fetched, for one of two reasons:
+ *  - `"rate-limited"`: the provider throttled us — resume after `retryAfterSeconds`.
+ *  - `"page-budget"`: the provider voluntarily yielded after a bounded number of
+ *    pages, to keep a single consumer invocation's wall-clock under the queue's
+ *    limit — resume immediately (`retryAfterSeconds` is 0).
+ * Either way, resume the backfill from `untilMs` (a committer-date watermark).
+ * Absent ⇒ the window is complete.
  */
 export interface VcsCommitFetch {
 	readonly commits: ReadonlyArray<CommitUpsertInput>
-	readonly next?: { readonly untilMs: number; readonly retryAfterSeconds: number }
+	readonly next?: {
+		readonly untilMs: number
+		readonly retryAfterSeconds: number
+		readonly reason: "rate-limited" | "page-budget"
+	}
 }
 
 /** Minimal repo identity a provider needs to fetch commits. */

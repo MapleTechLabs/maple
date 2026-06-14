@@ -381,7 +381,11 @@ describe("VcsSyncService orchestrator", () => {
 			isArchived: boolean
 		}>
 		readonly commits?: ReadonlyArray<ReturnType<typeof commit>>
-		readonly commitFetchNext?: { untilMs: number; retryAfterSeconds: number }
+		readonly commitFetchNext?: {
+			untilMs: number
+			retryAfterSeconds: number
+			reason: "rate-limited" | "page-budget"
+		}
 		readonly fetchCommitsError?:
 			| VcsProviderError
 			| VcsInstallationGoneError
@@ -758,7 +762,45 @@ describe("VcsSyncService orchestrator", () => {
 					sent,
 					sentDelays,
 					commits: [commit(SHA_A, 1)],
-					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600 },
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600, reason: "rate-limited" },
+				}),
+			),
+		)
+	})
+
+	// A page-budget continuation (the walk yielded to stay under the queue's 15-min
+	// limit, NOT throttled) checkpoints and requeues to continue *immediately*.
+	it.effect("a page-budget backfill requeues a continuation with no delay", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-backfill-budget-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const sentDelays: Array<number | undefined> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)) // must not fail
+			// The fetched page was persisted and the repo marked backfilling…
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
+			// …and a continuation was requeued from the watermark with NO delay…
+			assert.strictEqual(sent.length, 1)
+			const continuation = sent[0]!
+			assert.strictEqual(continuation.kind, "backfill-repo")
+			if (continuation.kind !== "backfill-repo") return
+			assert.strictEqual(continuation.untilMs, 5000)
+			assert.strictEqual(sentDelays[0], 0)
+			// …and it never counts against the stall cap (it made progress).
+			assert.strictEqual(continuation.staleAttempts, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					sentDelays,
+					commits: [commit(SHA_A, 1)],
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 0, reason: "page-budget" },
 				}),
 			),
 		)
@@ -792,7 +834,7 @@ describe("VcsSyncService orchestrator", () => {
 				orchestratorLayer(url, {
 					sent,
 					commits: [], // zero progress on every run
-					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600 },
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600, reason: "rate-limited" },
 				}),
 			),
 		)
@@ -969,6 +1011,27 @@ describe("GithubProvider rate-limit handling", () => {
 		}).pipe(
 			// token → page 1 (429 retry-after 0, repeated past the inline cap)
 			Effect.provide(stubbedProviderLayer([tokenResponse, () => rateLimited(0)])),
+		),
+	)
+
+	// Not throttled — the walk voluntarily yields after the per-invocation page
+	// budget so one consumer invocation can't approach the Queues 15-min limit.
+	it.effect("yields a page-budget continuation when the per-invocation page cap is hit", () =>
+		Effect.gen(function* () {
+			// Mirrors COMMIT_PAGES_PER_INVOCATION in GithubAppClient: every page comes
+			// back full (100), so the pager never sees a short page and stops only at
+			// the budget, handing back a continuation instead of walking everything.
+			const COMMIT_PAGES_PER_INVOCATION = 25
+			const provider = yield* GithubProvider
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			assert.strictEqual(result.commits.length, COMMIT_PAGES_PER_INVOCATION * 100)
+			assert.ok(result.next !== undefined)
+			assert.strictEqual(result.next?.reason, "page-budget")
+			assert.strictEqual(result.next?.retryAfterSeconds, 0) // continue immediately, no wait
+		}).pipe(
+			// token → full page on every fetch (the last responder repeats for all
+			// subsequent pages), so the only stop condition is the page budget.
+			Effect.provide(stubbedProviderLayer([tokenResponse, () => commitsResponse(hexShas(100))])),
 		),
 	)
 })

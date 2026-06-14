@@ -181,9 +181,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						return
 					}
 
-					// Rate-limited mid-walk → checkpoint status + requeue a continuation
-					// that resumes from the watermark once the budget is back. A fresh job
-					// (not a queue retry) keeps the retry budget for genuine failures.
+					// Cut short mid-walk → checkpoint status + requeue a continuation that
+					// resumes from the watermark. Either the provider throttled us (wait
+					// out `retryAfterSeconds`) or we hit the per-invocation page budget
+					// (delay 0 → continue now); both bound each invocation's wall-clock
+					// under the Queues 15-min limit. A fresh job (not a queue retry) keeps
+					// the retry budget for genuine failures.
 					yield* repo.updateRepoSyncStatus(installation.orgId, installation.provider, job.externalRepoId, {
 						status: "backfilling",
 						error: null,
@@ -197,11 +200,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						},
 						{ delaySeconds: next.retryAfterSeconds },
 					)
-					yield* Effect.logInfo("VCS backfill rate-limited — requeued continuation").pipe(
+					yield* Effect.logInfo(
+						next.reason === "page-budget"
+							? "VCS backfill page budget reached — requeued continuation"
+							: "VCS backfill rate-limited — requeued continuation",
+					).pipe(
 						Effect.annotateLogs({
 							provider: installation.provider,
 							externalRepoId: job.externalRepoId,
 							untilMs: next.untilMs,
+							reason: next.reason,
 							delaySeconds: next.retryAfterSeconds,
 							staleAttempts,
 						}),
