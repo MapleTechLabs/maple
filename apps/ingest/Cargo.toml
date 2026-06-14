@@ -6,6 +6,7 @@ default-run = "maple-ingest"
 
 [dependencies]
 axum = "0.8.8"
+aes-gcm = "0.10"
 async-trait = "0.1"
 tikv-jemallocator = "0.6"
 base64 = "0.22.1"
