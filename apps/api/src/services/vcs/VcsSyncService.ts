@@ -1,4 +1,5 @@
 import {
+	type BackfillRepoJob,
 	type CommitUpsertInput,
 	isInstallationProcessable,
 	type UnknownVcsProviderError,
@@ -6,6 +7,7 @@ import {
 	type VcsInstallationSyncReason,
 	type VcsProviderError,
 	type VcsQueueError,
+	type VcsRateLimitedError,
 	type VcsRepoDecodeError,
 	type VcsRepoPersistenceError,
 	type VcsRepoUnavailableError,
@@ -26,17 +28,24 @@ import { VcsSyncQueue } from "./VcsSyncQueue"
 
 const BACKFILL_DAYS = 90
 const DAY_MS = 86_400_000
+// How many consecutive continuations may fetch zero commits (rate-limited before
+// any progress) before we give up. Bounds a permanently throttled installation:
+// a transient limit clears long before this, but a wedged one stops requeuing.
+const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
 // VcsInstallationGoneError is handled internally (→ disconnect) and never
 // surfaces here. VcsProviderError / VcsRepoUnavailableError that aren't caught
-// propagate so the queue retries.
+// propagate so the queue retries. VcsRateLimitedError propagates from a
+// rate-limited fetchRepositories so the consumer redelivers after the delay
+// (backfill handles its own rate limits via the resume cursor, not this error).
 type SyncError =
 	| VcsRepoPersistenceError
 	| VcsRepoDecodeError
 	| VcsProviderError
 	| VcsRepoUnavailableError
+	| VcsRateLimitedError
 	| VcsQueueError
 	| UnknownVcsProviderError
 
@@ -99,11 +108,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const backfillRepo = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
-				job: { externalRepoId: string; owner: string; name: string; defaultBranch: string; sinceMs: number },
+				job: BackfillRepoJob,
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
-					const { commits, headSha } = yield* provider.fetchCommits(
+					const { commits, next } = yield* provider.fetchCommits(
 						installation,
 						{
 							externalRepoId: job.externalRepoId,
@@ -111,7 +120,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							name: job.name,
 							defaultBranch: job.defaultBranch,
 						},
-						{ sinceMs: job.sinceMs },
+						{ sinceMs: job.sinceMs, ...(job.untilMs === undefined ? {} : { untilMs: job.untilMs }) },
 					)
 					yield* repo.upsertCommits(
 						installation.orgId,
@@ -119,13 +128,84 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						job.externalRepoId,
 						commits,
 					)
-					// The provider supplies the head; the orchestrator never infers it.
-					yield* repo.updateRepoSyncCursor(installation.orgId, installation.provider, job.externalRepoId, {
-						status: "ready",
-						cursorSha: headSha,
+
+					if (!next) {
+						// Window fully walked → done.
+						yield* repo.updateRepoSyncStatus(installation.orgId, installation.provider, job.externalRepoId, {
+							status: "ready",
+							error: null,
+							syncedAt: now,
+						})
+						return
+					}
+
+					// No-progress guard: a resume run that fetched commits but didn't move
+					// the watermark below the boundary (e.g. >100 commits sharing the exact
+					// committer-second) would requeue itself forever. Stop and flag instead.
+					if (job.untilMs !== undefined && commits.length > 0 && next.untilMs >= job.untilMs) {
+						yield* repo.markRepoSyncError(
+							installation.orgId,
+							installation.provider,
+							job.externalRepoId,
+							"backfill stalled: commit-date watermark did not advance",
+						)
+						yield* Effect.logError("VCS backfill stalled — watermark did not advance").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalRepoId: job.externalRepoId,
+								untilMs: job.untilMs,
+							}),
+						)
+						return
+					}
+
+					// Stall guard: a run that fetched no commits made no progress (rate-limited
+					// before page 1 / at the token mint). Count consecutive such runs and stop
+					// once they exceed the cap, so a permanently throttled installation can't
+					// requeue forever. Any productive run resets the counter.
+					const staleAttempts = commits.length > 0 ? 0 : (job.staleAttempts ?? 0) + 1
+					if (staleAttempts > MAX_BACKFILL_STALL_RETRIES) {
+						yield* repo.markRepoSyncError(
+							installation.orgId,
+							installation.provider,
+							job.externalRepoId,
+							"backfill stalled: rate-limited before making progress",
+						)
+						yield* Effect.logError("VCS backfill stalled — rate-limited before any progress").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalRepoId: job.externalRepoId,
+								staleAttempts,
+							}),
+						)
+						return
+					}
+
+					// Rate-limited mid-walk → checkpoint status + requeue a continuation
+					// that resumes from the watermark once the budget is back. A fresh job
+					// (not a queue retry) keeps the retry budget for genuine failures.
+					yield* repo.updateRepoSyncStatus(installation.orgId, installation.provider, job.externalRepoId, {
+						status: "backfilling",
 						error: null,
 						syncedAt: now,
 					})
+					yield* queue.send(
+						{
+							...job,
+							untilMs: next.untilMs,
+							staleAttempts,
+						},
+						{ delaySeconds: next.retryAfterSeconds },
+					)
+					yield* Effect.logInfo("VCS backfill rate-limited — requeued continuation").pipe(
+						Effect.annotateLogs({
+							provider: installation.provider,
+							externalRepoId: job.externalRepoId,
+							untilMs: next.untilMs,
+							delaySeconds: next.retryAfterSeconds,
+							staleAttempts,
+						}),
+					)
 				}).pipe(
 					// The provider classifies failures; the orchestrator dispatches on the
 					// semantic outcome, never on HTTP status:
@@ -159,11 +239,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				job: { externalRepoId: string; commits: ReadonlyArray<CommitUpsertInput> },
 			) {
 					// A push is incremental enrichment only: upsert the pushed commits and
-					// deliberately leave the sync cursor untouched. The cursor exclusively
-					// tracks the default-branch commit *list* backfill, which is the only
-					// path that resumes from it — a push can't authoritatively advance it
-					// (it may target any branch and its payload may be truncated), so there
-					// is nothing to gain by moving it here.
+					// deliberately leave the repo's sync state untouched. A push may target
+					// any branch and its payload may be truncated, so it is never treated as
+					// an authoritative sync — the default-branch backfill owns that.
 					yield* repo.upsertCommits(
 						installation.orgId,
 						installation.provider,

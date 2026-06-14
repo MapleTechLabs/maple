@@ -47,7 +47,7 @@ export const vcsInstallations = sqliteTable(
 	],
 )
 
-/** Repositories accessible to an installation, plus a per-repo sync cursor. */
+/** Repositories accessible to an installation, plus per-repo sync state. */
 export const vcsRepositories = sqliteTable(
 	"vcs_repositories",
 	{
@@ -65,7 +65,6 @@ export const vcsRepositories = sqliteTable(
 		isArchived: integer("is_archived", { mode: "number" }).notNull().default(0),
 		syncStatus: text("sync_status").$type<VcsRepoSyncStatus>().notNull().default("pending"),
 		lastSyncedAt: integer("last_synced_at", { mode: "number" }),
-		lastSyncCursor: text("last_sync_cursor"),
 		lastSyncError: text("last_sync_error"),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),

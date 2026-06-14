@@ -1,14 +1,15 @@
 import type { MessageBatch } from "@cloudflare/workers-types"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Cause, Effect, Layer } from "effect"
+import { Cause, Effect, Layer, Option } from "effect"
 import { DatabaseD1Live } from "./lib/DatabaseD1Live"
 import { Env } from "./lib/Env"
 import { GithubAppClient } from "./services/github/GithubAppClient"
+import { GithubHttp } from "./services/github/GithubHttp"
 import { GithubProvider } from "./services/github/GithubProvider"
 import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "./services/vcs/VcsRepository"
-import { VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
+import { clampQueueDelaySeconds, VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
 import { VcsSyncService } from "./services/vcs/VcsSyncService"
 
 // ---------------------------------------------------------------------------
@@ -30,7 +31,9 @@ export const buildVcsSyncLayer = (_env: Record<string, unknown>) => {
 	const Base = Layer.mergeAll(EnvLive, DatabaseLive, WorkerEnvironment.layer)
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(EnvLive))
+	const GithubAppClientLive = GithubAppClient.layer.pipe(
+		Layer.provide(Layer.mergeAll(EnvLive, GithubHttp.layer)),
+	)
 	const GithubProviderLive = GithubProvider.layer.pipe(
 		Layer.provide(Layer.mergeAll(EnvLive, GithubAppClientLive)),
 	)
@@ -56,11 +59,31 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 			(message) =>
 				service.processMessage(message.body).pipe(
 					Effect.matchCauseEffect({
-						onFailure: (cause) =>
-							Effect.logError("VCS sync message failed").pipe(
-								Effect.annotateLogs({ error: Cause.pretty(cause) }),
-								Effect.flatMap(() => Effect.sync(() => message.retry())),
-							),
+						onFailure: (cause) => {
+							// A rate limit too far out to ride inline → redeliver this message
+							// only once the VCS's budget is back, instead of an immediate retry.
+							const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
+
+							const delaySeconds =
+								failure?._tag === "@maple/http/errors/VcsRateLimitedError"
+									? clampQueueDelaySeconds(failure.retryAfterSeconds)
+									: undefined
+							const isDelaySecondsSet = delaySeconds !== undefined
+
+							return Effect.logError("VCS sync message failed").pipe(
+								Effect.annotateLogs({
+									error: Cause.pretty(cause),
+									...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : {}),
+								}),
+								Effect.flatMap(() =>
+									Effect.sync(() =>
+										isDelaySecondsSet
+											? message.retry({ delaySeconds })
+											: message.retry(),
+									),
+								),
+							)
+						},
 						onSuccess: () => Effect.sync(() => message.ack()),
 					}),
 				),

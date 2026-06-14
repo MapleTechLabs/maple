@@ -1,11 +1,13 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { createHmac, randomUUID } from "node:crypto"
+import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto"
 import {
 	GitCommitSha,
 	OrgId,
 	UserId,
+	VcsInstallation,
 	VcsInstallationGoneError,
 	VcsProviderError,
+	VcsRateLimitedError,
 	VcsRepoDecodeError,
 	VcsRepoUnavailableError,
 	VcsSyncJob,
@@ -17,6 +19,7 @@ import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Env } from "@/lib/Env"
 import { cleanupTempDirs, createTempDbUrl, executeSql } from "@/lib/test-sqlite"
 import { GithubAppClient } from "@/services/github/GithubAppClient"
+import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
 import { GithubProvider } from "@/services/github/GithubProvider"
 import type { VcsProviderClient } from "@/services/vcs/VcsProviderClient"
 import { VcsProviderRegistry, type VcsProviderRegistryShape } from "@/services/vcs/VcsProviderRegistry"
@@ -53,10 +56,78 @@ const repoLayer = (url: string) =>
 
 const providerLayer = () => {
 	const env = envLayer("")
-	return GithubProvider.layer.pipe(
-		Layer.provide(Layer.mergeAll(env, GithubAppClient.layer.pipe(Layer.provide(env)))),
-	)
+	const client = GithubAppClient.layer.pipe(Layer.provide(Layer.mergeAll(env, GithubHttp.layer)))
+	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
+
+// A real RSA key so mintAppJwt's crypto.subtle.importKey succeeds; the App's REST
+// calls are stubbed at the GithubHttp seam below.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+	modulusLength: 2048,
+	publicKeyEncoding: { type: "spki", format: "pem" },
+	privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey
+
+const appConfig = ConfigProvider.layer(
+	ConfigProvider.fromUnknown({
+		PORT: "3472",
+		TINYBIRD_HOST: "https://api.tinybird.co",
+		TINYBIRD_TOKEN: "test-token",
+		MAPLE_DB_URL: "",
+		MAPLE_AUTH_MODE: "self_hosted",
+		MAPLE_ROOT_PASSWORD: "test-root-password",
+		MAPLE_DEFAULT_ORG_ID: "default",
+		MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+		GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET,
+		GITHUB_APP_ID: "123456",
+		GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
+	}),
+)
+
+// Build a GithubProvider whose HTTP responses are scripted in call order. The
+// first call is always the installation-token mint.
+const stubbedProviderLayer = (responders: ReadonlyArray<() => Response>) => {
+	let i = 0
+	const http = Layer.succeed(GithubHttp, {
+		fetch: async () => {
+			const make = responders[Math.min(i, responders.length - 1)]!
+			i += 1
+			return make()
+		},
+	} satisfies GithubHttpShape)
+	const env = Env.layer.pipe(Layer.provide(appConfig))
+	const client = GithubAppClient.layer.pipe(Layer.provide(Layer.mergeAll(env, http)))
+	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
+}
+
+const jsonResponse = (body: unknown, init?: { status?: number; headers?: Record<string, string> }) =>
+	new Response(JSON.stringify(body), {
+		status: init?.status ?? 200,
+		headers: { "content-type": "application/json", ...init?.headers },
+	})
+
+const tokenResponse = () => jsonResponse({ token: "ghs_test", expires_at: "2099-01-01T00:00:00Z" })
+
+const commitJson = (sha: string) => ({
+	sha,
+	html_url: `https://github.com/octo/repo/commit/${sha}`,
+	commit: {
+		message: "m",
+		author: { name: "A", email: "a@x.io", date: "2026-01-01T00:00:00Z" },
+		committer: { date: "2026-01-01T00:00:00Z" },
+	},
+	author: { login: "octo" },
+})
+
+const commitsResponse = (shas: ReadonlyArray<string>) => jsonResponse(shas.map(commitJson))
+
+// 429 carrying retry-after (seconds): 0 ⇒ ride out inline; large ⇒ defer.
+const rateLimited = (retryAfterSeconds: number) =>
+	new Response("rate limited", { status: 429, headers: { "retry-after": String(retryAfterSeconds) } })
+
+const hexShas = (count: number) =>
+	Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -114,7 +185,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		],
 	})
 
-	it.effect("maps a validly-signed push to a push job (no head SHA — push never moves the cursor)", () =>
+	it.effect("maps a validly-signed push to a push job", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const jobs = yield* provider.webhookToJobs({
@@ -131,8 +202,6 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.commits.length, 1)
 			assert.strictEqual(job.commits[0]!.sha, SHA)
 			assert.strictEqual(job.commits[0]!.authorLogin, "octocat")
-			// A push carries no headSha — the payload's `after` is intentionally ignored.
-			assert.ok(!("headSha" in job))
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -147,6 +216,49 @@ describe("GithubProvider.webhookToJobs", () => {
 				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// A Cloudflare Queue message caps at 128 KB and commit messages are unbounded,
+	// so a large push must split into multiple jobs packed by *byte size* — each
+	// independently enqueueable — rather than relying on a fixed commit count.
+	it.effect("splits a large push into multiple jobs that each stay under the 128 KB queue cap", () =>
+		Effect.gen(function* () {
+			const QUEUE_MESSAGE_LIMIT = 128 * 1024
+			const provider = yield* GithubProvider
+			const shas = hexShas(400)
+			const message = "x".repeat(1024) // ~1 KB messages ⇒ ~440 KB total ⇒ several jobs
+			const body = JSON.stringify({
+				ref: "refs/heads/main",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				commits: shas.map((sha) => ({
+					id: sha,
+					message,
+					timestamp: "2026-01-01T00:00:00Z",
+					url: `https://github.com/octo/repo/commit/${sha}`,
+					author: { name: "Octo Cat", email: "octo@x.io", username: "octocat" },
+				})),
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.ok(jobs.length > 1) // the push was split across multiple jobs
+			for (const job of jobs) {
+				assert.strictEqual(job.kind, "push")
+				if (job.kind !== "push") return
+				// Every job is independently enqueueable, regardless of the (count-blind) split.
+				const wireBytes = Buffer.byteLength(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
+				assert.ok(wireBytes < QUEUE_MESSAGE_LIMIT)
+				// All slices share the same provider/installation/repo/branch.
+				assert.strictEqual(job.externalInstallationId, "42")
+				assert.strictEqual(job.externalRepoId, "7")
+				assert.strictEqual(job.branch, "main")
+			}
+			// Every commit is preserved across the slices, in order — none dropped.
+			const splitShas = jobs.flatMap((job) => (job.kind === "push" ? job.commits.map((c) => c.sha) : []))
+			assert.deepStrictEqual(splitShas, shas)
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
@@ -257,6 +369,7 @@ describe("VcsSyncService orchestrator", () => {
 
 	interface StubOpts {
 		readonly sent: Array<VcsSyncJob>
+		readonly sentDelays?: Array<number | undefined>
 		readonly repos?: ReadonlyArray<{
 			externalRepoId: string
 			owner: string
@@ -268,11 +381,12 @@ describe("VcsSyncService orchestrator", () => {
 			isArchived: boolean
 		}>
 		readonly commits?: ReadonlyArray<ReturnType<typeof commit>>
-		readonly headSha?: string | null
+		readonly commitFetchNext?: { untilMs: number; retryAfterSeconds: number }
 		readonly fetchCommitsError?:
 			| VcsProviderError
 			| VcsInstallationGoneError
 			| VcsRepoUnavailableError
+		readonly fetchReposError?: VcsRateLimitedError | VcsProviderError | VcsInstallationGoneError
 	}
 
 	// Real VcsRepository (temp D1) + stubbed provider/queue ports, so dispatch,
@@ -281,18 +395,28 @@ describe("VcsSyncService orchestrator", () => {
 		const fakeProvider: VcsProviderClient = {
 			id: "github",
 			webhookToJobs: () => Effect.succeed([]),
-			fetchRepositories: () => Effect.succeed(opts.repos ?? []),
+			fetchRepositories: () =>
+				opts.fetchReposError
+					? Effect.fail(opts.fetchReposError)
+					: Effect.succeed(opts.repos ?? []),
 			fetchCommits: () =>
 				opts.fetchCommitsError
 					? Effect.fail(opts.fetchCommitsError)
-					: Effect.succeed({ commits: opts.commits ?? [], headSha: opts.headSha ?? null }),
+					: Effect.succeed({
+							commits: opts.commits ?? [],
+							...(opts.commitFetchNext ? { next: opts.commitFetchNext } : {}),
+						}),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
 			ids: ["github"],
 			resolve: () => Effect.succeed(fakeProvider),
 		} satisfies VcsProviderRegistryShape)
 		const queue = Layer.succeed(VcsSyncQueue, {
-			send: (job) => Effect.sync(() => void opts.sent.push(job)),
+			send: (job, options) =>
+				Effect.sync(() => {
+					opts.sent.push(job)
+					opts.sentDelays?.push(options?.delaySeconds)
+				}),
 			sendBatch: (jobs) => Effect.sync(() => void opts.sent.push(...jobs)),
 		} satisfies VcsSyncQueueShape)
 		const repoLive = VcsRepository.layer.pipe(
@@ -337,7 +461,7 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
-	it.effect("push upserts every commit and never moves the repo sync cursor", () => {
+	it.effect("push upserts every commit and never changes repo sync state", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-push-", dirs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
@@ -358,10 +482,9 @@ describe("VcsSyncService orchestrator", () => {
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
 			assert.ok(Option.isSome(a) && Option.isSome(b))
-			// B2: a push is pure enrichment — the cursor/status stay exactly as the
-			// backfill left them (here: untouched since no backfill has run).
+			// B2: a push is pure enrichment — the sync status stays exactly as the
+			// backfill left it (here: untouched since no backfill has run).
 			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
-			assert.strictEqual(stored[0]!.lastSyncCursor, null)
 			assert.strictEqual(stored[0]!.syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
@@ -401,11 +524,9 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
-	it.effect("backfill sets the cursor to the provider's head, not commit array order", () => {
+	it.effect("backfill persists fetched commits and marks the repo ready", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-backfill-", dirs)
 		const sent: Array<VcsSyncJob> = []
-		// commits[0] is deliberately NOT the head — the cursor must come from the
-		// provider-supplied headSha, proving no array-order inference.
 		const commits = [commit(SHA_A, 1), commit(SHA_B, 2)]
 		return Effect.gen(function* () {
 			const svc = yield* VcsSyncService
@@ -435,10 +556,12 @@ describe("VcsSyncService orchestrator", () => {
 				sinceMs: 0,
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
+			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
+			assert.ok(Option.isSome(a) && Option.isSome(b))
 			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
 			assert.strictEqual(stored[0]!.syncStatus, "ready")
-			assert.strictEqual(stored[0]!.lastSyncCursor, SHA_B)
-		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits, headSha: SHA_B })))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits })))
 	})
 
 	const seedRepo = (repo: VcsRepository, orgId: ReturnType<typeof asOrgId>) =>
@@ -603,6 +726,108 @@ describe("VcsSyncService orchestrator", () => {
 			assert.strictEqual(sent[0]!.kind, "backfill-repo")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
+
+	// A rate-limited backfill checkpoints + requeues a delayed continuation rather
+	// than failing — no retry budget spent, finished pages not refetched.
+	it.effect("a rate-limited backfill requeues a continuation with a cursor + delay", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-backfill-rl-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const sentDelays: Array<number | undefined> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)) // must not fail
+			// The fetched commit was persisted…
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+			// …the repo is marked backfilling (in progress, not ready)…
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
+			// …and a continuation was requeued from the watermark, delayed until reset.
+			assert.strictEqual(sent.length, 1)
+			const continuation = sent[0]!
+			assert.strictEqual(continuation.kind, "backfill-repo")
+			if (continuation.kind !== "backfill-repo") return
+			assert.strictEqual(continuation.untilMs, 5000)
+			assert.strictEqual(sentDelays[0], 600)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					sentDelays,
+					commits: [commit(SHA_A, 1)],
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600 },
+				}),
+			),
+		)
+	})
+
+	// A backfill that keeps getting rate-limited *before any commit* must not
+	// requeue forever — after the stall cap it errors the repo instead.
+	it.effect("a backfill with no progress stops after the stall cap", () => {
+		const STALL_CAP = 10 // mirrors MAX_BACKFILL_STALL_RETRIES in VcsSyncService
+		const { url } = createTempDbUrl("maple-vcs-orch-stall-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			// Drive the continuation back through the consumer; every run fetches zero
+			// commits (still throttled), so the watermark never moves.
+			let job: VcsSyncJob = backfillJob
+			for (let i = 0; i <= STALL_CAP; i++) {
+				yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+				if (sent.length > 0) job = sent[sent.length - 1]!
+			}
+			// It requeued exactly the cap's worth of continuations, then gave up.
+			assert.strictEqual(sent.length, STALL_CAP)
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			assert.strictEqual(stored[0]!.syncStatus, "error")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					commits: [], // zero progress on every run
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600 },
+				}),
+			),
+		)
+	})
+
+	// A rate-limited installation-sync isn't resumable — it propagates so the
+	// consumer redelivers the whole (small) job after the delay.
+	it.effect("a rate-limited installation-sync propagates VcsRateLimitedError", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-inst-rl-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			const job: VcsSyncJob = {
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "created",
+			}
+			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)).pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			const error = findError(exit)
+			assert.ok(error instanceof VcsRateLimitedError)
+			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchReposError: new VcsRateLimitedError({ message: "rate limited", retryAfterSeconds: 600 }),
+				}),
+			),
+		)
+	})
 })
 
 // The SHA-shape regex lives only in the GitCommitSha brand; these assert that
@@ -666,4 +891,84 @@ describe("git SHA validation (branded type)", () => {
 			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
+})
+
+// The centralized GitHub fetch detects 429s and decides: ride out short waits
+// inline; surface long ones (backfill → partial `next`; repos → VcsRateLimitedError).
+describe("GithubProvider rate-limit handling", () => {
+	const REPO = { externalRepoId: "7", owner: "octo", name: "repo", defaultBranch: "main" }
+	const installation = Schema.decodeUnknownSync(VcsInstallation)({
+		id: randomUUID(),
+		orgId: "org_test",
+		provider: "github",
+		externalInstallationId: "123456",
+		accountLogin: "octo",
+		accountType: "organization",
+		externalAccountId: "1",
+		accountAvatarUrl: null,
+		repositorySelection: "all",
+		status: "active",
+		suspendedAt: null,
+		installedByUserId: "user_1",
+		createdAt: 0,
+		updatedAt: 0,
+	})
+
+	it.effect("rides out a short rate limit inline, then completes", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			assert.strictEqual(result.commits.length, 1)
+			assert.strictEqual(result.next, undefined) // retried past the 429 → window complete
+		}).pipe(
+			// token mint → page 1 (429, retry-after 0 → inline retry) → page 1 (commits)
+			Effect.provide(
+				stubbedProviderLayer([tokenResponse, () => rateLimited(0), () => commitsResponse(["a".repeat(40)])]),
+			),
+		),
+	)
+
+	it.effect("surfaces a long rate limit mid-walk as a partial result with `next`", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			assert.strictEqual(result.commits.length, 100) // page 1 kept, not thrown away
+			assert.ok(result.next !== undefined)
+			assert.strictEqual(result.next?.retryAfterSeconds, 600)
+		}).pipe(
+			// token → page 1 (full) → page 2 (429, retry-after 600 → defer)
+			Effect.provide(
+				stubbedProviderLayer([tokenResponse, () => commitsResponse(hexShas(100)), () => rateLimited(600)]),
+			),
+		),
+	)
+
+	it.effect("a long rate limit on fetchRepositories raises VcsRateLimitedError", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* provider.fetchRepositories(installation).pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			const error = findError(exit)
+			assert.ok(error instanceof VcsRateLimitedError)
+			assert.strictEqual((error as VcsRateLimitedError).retryAfterSeconds, 600)
+		}).pipe(
+			// token → repos page 1 (429, retry-after 600 → surfaced, not resumable)
+			Effect.provide(stubbedProviderLayer([tokenResponse, () => rateLimited(600)])),
+		),
+	)
+
+	it.effect("stops riding out a rate limit after the inline-retry cap and defers", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			// Every page replies with a 0s-wait 429; without a retry cap this would spin
+			// forever. The cap surfaces it as a deferral instead, floored off 0.
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			assert.strictEqual(result.commits.length, 0)
+			assert.ok(result.next !== undefined)
+			assert.strictEqual(result.next?.retryAfterSeconds, 60)
+		}).pipe(
+			// token → page 1 (429 retry-after 0, repeated past the inline cap)
+			Effect.provide(stubbedProviderLayer([tokenResponse, () => rateLimited(0)])),
+		),
+	)
 })

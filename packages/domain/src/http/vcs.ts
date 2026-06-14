@@ -133,7 +133,6 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	isArchived: Schema.Boolean,
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
-	lastSyncCursor: Schema.NullOr(Schema.String),
 	lastSyncError: Schema.NullOr(Schema.String),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
@@ -188,14 +187,18 @@ export const CommitUpsertInput = Schema.Struct({
 export type CommitUpsertInput = Schema.Schema.Type<typeof CommitUpsertInput>
 
 /**
- * Result of a provider commit fetch: the commits plus the current head SHA of
- * the fetched ref. The provider determines `headSha` (it alone knows its own
- * response ordering / the authoritative tip); callers must never infer the head
- * from commit array position. `null` when the ref has no commits.
+ * Result of a provider commit fetch: the normalized commits, plus an optional
+ * resume cursor. The branch head is deliberately NOT reported — incremental sync
+ * derives its watermark from `max(committed_at)` of the persisted commits, so no
+ * provider has to claim a head and no caller infers one from array position.
+ *
+ * `next` is present iff a rate limit cut the walk short before the requested
+ * window was fully fetched: resume the backfill from `untilMs` (a committer-date
+ * watermark) after waiting `retryAfterSeconds`. Absent ⇒ the window is complete.
  */
 export interface VcsCommitFetch {
 	readonly commits: ReadonlyArray<CommitUpsertInput>
-	readonly headSha: string | null
+	readonly next?: { readonly untilMs: number; readonly retryAfterSeconds: number }
 }
 
 /** Minimal repo identity a provider needs to fetch commits. */
@@ -239,15 +242,22 @@ export const BackfillRepoJob = Schema.Struct({
 	name: Schema.String,
 	defaultBranch: Schema.String,
 	sinceMs: Schema.Number,
+	// Resume cursor for a continuation requeued after a rate limit: fetch commits
+	// committed at-or-before `untilMs` (a committer-date watermark). Absent on a
+	// fresh backfill.
+	untilMs: Schema.optionalKey(Schema.Number),
+	// Count of consecutive continuations that fetched zero commits (rate-limited
+	// before any progress). Reset to 0 whenever a run makes progress; bounded so a
+	// permanently throttled installation can't requeue forever. Absent ⇒ 0.
+	staleAttempts: Schema.optionalKey(Schema.Number),
 })
 export type BackfillRepoJob = Schema.Schema.Type<typeof BackfillRepoJob>
 
-// A push event's commits, applied incrementally. NOT a cursor-advancing sync:
-// the cursor only ever tracks the default-branch commit *list* (see
-// `BackfillRepoJob`), so a push carries no head SHA and never moves it. A push
-// payload may also be incomplete (GitHub caps `commits` at 2048 per delivery and
-// sends one delivery per push, not many) — the authoritative fill-in is the
-// default-branch backfill, so a push is purely best-effort enrichment.
+// A push event's commits, applied incrementally — purely best-effort enrichment.
+// A push may target any branch and its payload may be incomplete (GitHub caps
+// `commits` at 2048 per delivery and sends one delivery per push, not many), so
+// it is never treated as an authoritative sync: the default-branch backfill is
+// the source of truth and re-fetches the full history regardless.
 export const PushJob = Schema.Struct({
 	kind: Schema.Literal("push"),
 	provider: VcsProviderId,
@@ -312,6 +322,18 @@ export class VcsRepoUnavailableError extends Schema.TaggedErrorClass<VcsRepoUnav
 	"@maple/http/errors/VcsRepoUnavailableError",
 	{ message: Schema.String },
 	{ httpApiStatus: 404 },
+) {}
+
+/**
+ * A provider rate limit too far out to wait through inline. `retryAfterSeconds`
+ * is when the budget is available again (from `retry-after` / the rate-limit
+ * reset). The sync consumer redelivers the failed job with this delay; backfill
+ * instead catches it earlier and requeues from a cursor (see `VcsCommitFetch.next`).
+ */
+export class VcsRateLimitedError extends Schema.TaggedErrorClass<VcsRateLimitedError>()(
+	"@maple/http/errors/VcsRateLimitedError",
+	{ message: Schema.String, retryAfterSeconds: Schema.Number },
+	{ httpApiStatus: 429 },
 ) {}
 
 export class VcsWebhookSignatureError extends Schema.TaggedErrorClass<VcsWebhookSignatureError>()(

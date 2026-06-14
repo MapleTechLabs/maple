@@ -6,6 +6,7 @@ import type {
 	VcsInstallationGoneError,
 	VcsProviderError,
 	VcsProviderId,
+	VcsRateLimitedError,
 	VcsRepositoryRef,
 	VcsRepoUnavailableError,
 	VcsSyncJob,
@@ -36,27 +37,34 @@ export interface VcsProviderClient {
 		input: VcsWebhookRequest,
 	) => Effect.Effect<ReadonlyArray<VcsSyncJob>, VcsWebhookSignatureError | VcsWebhookParseError>
 
-	/** All repositories visible to an installation, normalized. */
+	/**
+	 * All repositories visible to an installation, normalized. A rate limit too far
+	 * out to ride inline surfaces as `VcsRateLimitedError` (the caller redelivers the
+	 * whole job after the delay — repo lists are small, so refetch is cheap).
+	 */
 	readonly fetchRepositories: (
 		installation: VcsInstallation,
 	) => Effect.Effect<
 		ReadonlyArray<RepoUpsertInput>,
-		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRateLimitedError
 	>
 
 	/**
-	 * Commits on a repo's default branch *committed* since `sinceMs`, normalized,
-	 * plus the branch head SHA (the provider knows its own ordering — see
-	 * `VcsCommitFetch`). The `sinceMs` filter is keyed on committer date; the exact
-	 * basis and ordering are provider-defined and never assumed by callers. The
-	 * provider classifies failures: `VcsInstallationGoneError` (disconnect),
-	 * `VcsRepoUnavailableError` (repo-scoped), else `VcsProviderError` (transient /
-	 * retryable).
+	 * Commits on a repo's default branch *committed* in `(sinceMs, untilMs]`,
+	 * normalized. `untilMs` resumes a rate-limited backfill from a watermark; omit
+	 * it for a fresh walk from the tip. The `sinceMs`/`untilMs` filter is keyed on
+	 * committer date; the exact basis and ordering are provider-defined and never
+	 * assumed by callers.
+	 *
+	 * A rate limit is NOT an error here: the provider returns what it fetched plus
+	 * `VcsCommitFetch.next` (resume cursor + delay). Failures are classified as
+	 * `VcsInstallationGoneError` (disconnect), `VcsRepoUnavailableError` (repo-scoped),
+	 * else `VcsProviderError` (transient / retryable).
 	 */
 	readonly fetchCommits: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly sinceMs: number },
+		opts: { readonly sinceMs: number; readonly untilMs?: number },
 	) => Effect.Effect<
 		VcsCommitFetch,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError

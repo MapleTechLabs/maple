@@ -62,6 +62,7 @@ import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
 import { OAuthStateRepository } from "./services/OAuthStateRepository"
 import { GithubAppClient } from "./services/github/GithubAppClient"
+import { GithubHttp } from "./services/github/GithubHttp"
 import { GithubProvider } from "./services/github/GithubProvider"
 import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "./services/vcs/VcsRepository"
@@ -164,7 +165,9 @@ export const DigestServiceLive = DigestService.layer.pipe(
 // Step-2 settings endpoints. The sync orchestrator (VcsSyncService) lives only
 // in the queue-consumer runtime (vcs-sync-runtime.ts), not here. Database /
 // WorkerEnvironment are satisfied at worker scope (like CoreServicesLive).
-const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClient.layer))
+const GithubProviderLive = GithubProvider.layer.pipe(
+	Layer.provide(GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))),
+)
 
 export const VcsServicesLive = Layer.mergeAll(
 	VcsRepository.layer,

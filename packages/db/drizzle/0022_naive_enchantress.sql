@@ -52,7 +52,6 @@ CREATE TABLE `vcs_repositories` (
 	`is_archived` integer DEFAULT 0 NOT NULL,
 	`sync_status` text DEFAULT 'pending' NOT NULL,
 	`last_synced_at` integer,
-	`last_sync_cursor` text,
 	`last_sync_error` text,
 	`created_at` integer NOT NULL,
 	`updated_at` integer NOT NULL

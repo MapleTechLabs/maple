@@ -4518,13 +4518,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "last_sync_cursor": {
-          "name": "last_sync_cursor",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "last_sync_error": {
           "name": "last_sync_error",
           "type": "text",

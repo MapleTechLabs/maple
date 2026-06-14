@@ -7,6 +7,7 @@ import {
 	type VcsInstallationSyncReason,
 	VcsProviderError,
 	type VcsProviderId,
+	VcsRateLimitedError,
 	type VcsRepositoryRef,
 	VcsRepoUnavailableError,
 	type VcsSyncJob,
@@ -16,9 +17,20 @@ import {
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Env } from "../../lib/Env"
 import type { VcsProviderClient, VcsWebhookRequest } from "../vcs/VcsProviderClient"
+import { QUEUE_MESSAGE_LIMIT_BYTES } from "../vcs/VcsSyncQueue"
 import { type GithubApiCommit, GithubAppClient, GithubAppError } from "./GithubAppClient"
 
 const PROVIDER: VcsProviderId = "github"
+
+// GitHub allows up to 2048 commits per push delivery and commit messages are
+// unbounded, so neither a single inline job nor a fixed commit *count* can
+// guarantee staying under the queue's message cap (a squash/merge commit alone
+// can carry a multi-KB message). So commits are packed into jobs by encoded byte
+// size, reserving headroom below the cap (QUEUE_MESSAGE_LIMIT_BYTES, owned by the
+// queue layer) for the job envelope and the queue's own serialization. Pushes are
+// independent and idempotent (commits upsert by unique index), so splitting across
+// jobs is safe and order-independent.
+const PUSH_JOB_MAX_BYTES = QUEUE_MESSAGE_LIMIT_BYTES - 16 * 1024 // 16 KB reserve ⇒ 112 KB target
 
 // ---- Webhook payload schemas (minimal, permissive) ------------------------
 
@@ -73,14 +85,21 @@ const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 
 // Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
 // knowledge lives here, in the provider — the orchestrator only ever sees the
-// semantic outcome. A gone/410 on the installation-auth call is the
+// semantic outcome. A rate limit (carrying `retryAfterSeconds`) becomes a
+// VcsRateLimitedError; a gone/410 on the installation-auth call is the
 // authoritative disconnect signal; on a repo call it means the repo is gone;
-// everything else (incl. 401/403/429/5xx) is transient and retryable.
+// everything else (incl. 401/403/5xx) is transient and retryable.
 const isGone = (status?: number) => status === 404 || status === 410
 
 const toVcsError = (
 	error: GithubAppError,
-): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError => {
+): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRateLimitedError => {
+	if (error.retryAfterSeconds !== undefined) {
+		return new VcsRateLimitedError({
+			message: error.message,
+			retryAfterSeconds: error.retryAfterSeconds,
+		})
+	}
 	if (isGone(error.status)) {
 		if (error.scope === "installation") return new VcsInstallationGoneError({ message: error.message })
 		if (error.scope === "repository") return new VcsRepoUnavailableError({ message: error.message })
@@ -90,6 +109,18 @@ const toVcsError = (
 		...(error.status === undefined ? {} : { status: error.status }),
 		...(error.cause === undefined ? {} : { cause: error.cause }),
 	})
+}
+
+// Commit fetches fold rate limits into a partial result (see `VcsCommitFetch.next`),
+// so a rate-limit error never reaches this path. Narrow the mapper accordingly so
+// `fetchCommits` keeps the port's 3-way error channel (no VcsRateLimitedError).
+const toVcsCommitError = (
+	error: GithubAppError,
+): VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError => {
+	const mapped = toVcsError(error)
+	return mapped._tag === "@maple/http/errors/VcsRateLimitedError"
+		? new VcsProviderError({ message: mapped.message })
+		: mapped
 }
 
 const finiteOrNull = (value: number) => (Number.isFinite(value) ? value : null)
@@ -200,17 +231,41 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}
 					})
 					if (commits.length === 0) return []
-					// A push is best-effort enrichment, not a cursor advance: it carries
-					// no head SHA (the cursor only tracks the default-branch backfill).
-					const job: VcsSyncJob = {
+					// A push is best-effort enrichment only — the default-branch backfill
+					// remains the authoritative source for a repo's commit history.
+					const externalInstallationId = String(payload.installation.id)
+					const externalRepoId = String(payload.repository.id)
+					const makeJob = (slice: ReadonlyArray<CommitUpsertInput>): VcsSyncJob => ({
 						kind: "push",
 						provider: PROVIDER,
-						externalInstallationId: String(payload.installation.id),
-						externalRepoId: String(payload.repository.id),
+						externalInstallationId,
+						externalRepoId,
 						branch,
-						commits,
+						commits: slice,
+					})
+					// Greedily pack commits into jobs that each stay under the queue cap.
+					// `JSON.stringify` byte length is a conservative proxy for the wire size
+					// (CommitUpsertInput encodes 1:1, and the queue's v8 serialization is no
+					// larger for this string-heavy shape). Each commit is always placed in a
+					// job (guaranteed progress), so a lone commit bigger than the budget — a
+					// pathologically huge message, which the default-branch backfill re-fetches
+					// in full anyway — gets its own job rather than stalling the loop.
+					const envelopeBytes = Buffer.byteLength(JSON.stringify(makeJob([])))
+					const jobs: VcsSyncJob[] = []
+					let slice: CommitUpsertInput[] = []
+					let sliceBytes = envelopeBytes
+					for (const c of commits) {
+						const commitBytes = Buffer.byteLength(JSON.stringify(c)) + 1 // +1: array comma
+						if (slice.length > 0 && sliceBytes + commitBytes > PUSH_JOB_MAX_BYTES) {
+							jobs.push(makeJob(slice))
+							slice = []
+							sliceBytes = envelopeBytes
+						}
+						slice.push(c)
+						sliceBytes += commitBytes
 					}
-					return [job]
+					jobs.push(makeJob(slice))
+					return jobs
 				})
 
 			const mapInstallationEvent =
@@ -284,23 +339,35 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const fetchCommits = (
 				installation: VcsInstallation,
 				repo: VcsRepositoryRef,
-				opts: { readonly sinceMs: number },
+				opts: { readonly sinceMs: number; readonly untilMs?: number },
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
-					// GitHub's `since` filters by *committer* date (matching the port's
-					// "committed since" contract). The newest-first ordering and the
-					// committer-date basis are both GitHub specifics that stay in here.
-					const commits = yield* client
+					// GitHub's `since`/`until` filter by *committer* date (matching the
+					// port's "committed since" contract) — a GitHub specific that stays here.
+					const result = yield* client
 						.listCommits(installation.externalInstallationId, repo.owner, repo.name, {
 							sha: repo.defaultBranch,
 							sinceIso: new Date(opts.sinceMs).toISOString(),
+							...(opts.untilMs === undefined
+								? {}
+								: { untilIso: new Date(opts.untilMs).toISOString() }),
 						})
-						.pipe(Effect.mapError(toVcsError))
-					const normalized = commits.map((c) => normalizeFetchedCommit(c, repo.defaultBranch, now))
-					// GitHub's /commits endpoint returns newest-first, so the first row is
-					// the branch head. This ordering knowledge stays inside the provider.
-					return { commits: normalized, headSha: normalized[0]?.sha ?? null }
+						.pipe(Effect.mapError(toVcsCommitError))
+					const normalized = result.commits.map((c) =>
+						normalizeFetchedCommit(c, repo.defaultBranch, now),
+					)
+					if (result.complete) return { commits: normalized }
+					// Rate-limited mid-walk: resume from the oldest committer-date we got
+					// (a stable watermark — re-fetching only the boundary, idempotently).
+					const oldestMs =
+						normalized.length > 0
+							? normalized.reduce((min, c) => Math.min(min, c.committedAt), Number.POSITIVE_INFINITY)
+							: (opts.untilMs ?? now)
+					return {
+						commits: normalized,
+						next: { untilMs: oldestMs, retryAfterSeconds: result.retryAfterSeconds ?? 60 },
+					}
 				})
 
 			return {

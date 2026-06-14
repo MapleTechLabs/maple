@@ -86,7 +86,6 @@ const rowToRepo = (row: VcsRepositoryRow): VcsRepo =>
 		isArchived: row.isArchived === 1,
 		syncStatus: row.syncStatus,
 		lastSyncedAt: row.lastSyncedAt ?? null,
-		lastSyncCursor: row.lastSyncCursor ?? null,
 		lastSyncError: row.lastSyncError ?? null,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
@@ -127,9 +126,8 @@ export interface UpsertInstallationInput {
 	readonly installedByUserId: UserId
 }
 
-export interface RepoSyncCursor {
+export interface RepoSyncStatusUpdate {
 	readonly status: VcsRepoSyncStatus
-	readonly cursorSha?: string | null
 	readonly error?: string | null
 	readonly syncedAt?: number | null
 }
@@ -343,11 +341,11 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
-		const updateRepoSyncCursor = Effect.fn("VcsRepository.updateRepoSyncCursor")(function* (
+		const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
 			orgId: OrgId,
 			provider: VcsProviderId,
 			externalRepoId: string,
-			cursor: RepoSyncCursor,
+			update: RepoSyncStatusUpdate,
 		) {
 			const now = yield* Clock.currentTimeMillis
 			yield* database
@@ -355,10 +353,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db
 						.update(vcsRepositories)
 						.set({
-							syncStatus: cursor.status,
-							lastSyncCursor: cursor.cursorSha ?? null,
-							lastSyncError: cursor.error ?? null,
-							lastSyncedAt: cursor.syncedAt ?? now,
+							syncStatus: update.status,
+							lastSyncError: update.error ?? null,
+							lastSyncedAt: update.syncedAt ?? now,
 							updatedAt: now,
 						})
 						.where(
@@ -499,7 +496,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			listRepositoriesByInstallation,
 			upsertRepositories,
 			removeRepository,
-			updateRepoSyncCursor,
+			updateRepoSyncStatus,
 			markRepoSyncError,
 			upsertCommits,
 			findCommitBySha,
