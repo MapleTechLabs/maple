@@ -3388,6 +3388,14 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
         if target.endpoint.is_empty() || target.user.is_empty() || target.database.is_empty() {
             return Err("ClickHouse target is missing url, user, or database".to_string());
         }
+        let endpoint_url = url::Url::parse(&target.endpoint)
+            .map_err(|error| format!("ClickHouse target endpoint URL is invalid: {error}"))?;
+        if !target.password.is_empty() && endpoint_url.scheme() != "https" {
+            return Err(
+                "ClickHouse target endpoint must use https when a password is configured"
+                    .to_string(),
+            );
+        }
         self.cache.insert(org_id.to_string(), target.clone()).await;
         Ok(Some(target))
     }
@@ -4494,6 +4502,41 @@ mod tests {
         assert_eq!(target.user, "ingest");
         assert_eq!(target.password, "ch-secret-123");
         assert_eq!(target.database, "maple");
+    }
+
+    #[tokio::test]
+    async fn clickhouse_target_resolver_rejects_password_over_http() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_clickhouse_target(
+            "org_insecure",
+            ClickHouseTargetRow {
+                ch_url: "http://clickhouse.example/".to_string(),
+                ch_user: "ingest".to_string(),
+                ch_password_ciphertext: Some("vDjK0A+Vv5bHlJ2a3A==".to_string()),
+                ch_password_iv: Some("AQIDBAUGBwgJCgsM".to_string()),
+                ch_password_tag: Some("b7D1umrvI8557NFvR9nJ/A==".to_string()),
+                ch_database: "maple".to_string(),
+                schema_version: CLICKHOUSE_PROJECT_REVISION.to_string(),
+            },
+        );
+
+        let resolver = ClickHouseTargetResolver {
+            store,
+            encryption_key: Some(
+                parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
+                    .unwrap(),
+            ),
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+        };
+
+        let error = resolver
+            .resolve_clickhouse_target("org_insecure")
+            .await
+            .expect_err("password-authenticated http endpoint should be rejected");
+        assert!(error.contains("https"));
     }
 
     #[tokio::test]

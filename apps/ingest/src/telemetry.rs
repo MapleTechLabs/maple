@@ -65,6 +65,12 @@ pub trait ClickHouseTargetProvider: Send + Sync {
     ) -> Result<Option<ClickHouseTarget>, String>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ClickHouseExportOutcome {
+    Delivered,
+    Dropped,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TelemetrySignal {
     Traces,
@@ -1064,8 +1070,18 @@ impl ExportWorker {
         }
         for ((org_id, datasource), frames) in by_clickhouse {
             let (body, rows) = combine_frames(frames);
-            self.post_clickhouse(&org_id, &datasource, body, rows)
+            let outcome = self
+                .post_clickhouse(&org_id, &datasource, body, rows)
                 .await?;
+            if outcome == ClickHouseExportOutcome::Dropped {
+                // Direct ClickHouse ingest is fail-closed to the chosen destination:
+                // after the retry budget, a ClickHouse-routed batch is metered and
+                // intentionally dropped rather than replayed forever or sent to Tinybird.
+                warn!(
+                    org_id,
+                    datasource, rows, "Advancing WAL cursor after terminal ClickHouse export drop"
+                );
+            }
         }
 
         let end = frames.iter().map(|frame| frame.end).max().unwrap_or(0);
@@ -1161,14 +1177,14 @@ impl ExportWorker {
         datasource: &str,
         body: Vec<u8>,
         rows: usize,
-    ) -> Result<(), String> {
+    ) -> Result<ClickHouseExportOutcome, String> {
         let Some(mapping) = clickhouse_insert_mappings::mapping_for(datasource) else {
             metrics::clickhouse_export_dropped(datasource, "mapping_missing", rows as u64);
             error!(
                 datasource,
                 rows, "Dropping ClickHouse batch because no insert mapping exists"
             );
-            return Ok(());
+            return Ok(ClickHouseExportOutcome::Dropped);
         };
 
         let compressed = bytes::Bytes::from(gzip(body)?);
@@ -1191,7 +1207,7 @@ impl ExportWorker {
                     if attempt >= max_attempts {
                         metrics::clickhouse_export_dropped(
                             datasource,
-                            "target_unavailable",
+                            "target_unavailable_exhausted",
                             rows as u64,
                         );
                         error!(
@@ -1201,7 +1217,7 @@ impl ExportWorker {
                             attempts = attempt,
                             "Dropping ClickHouse batch after target resolution stayed unavailable"
                         );
-                        return Ok(());
+                        return Ok(ClickHouseExportOutcome::Dropped);
                     }
                     backoff(attempt).await;
                     continue;
@@ -1217,7 +1233,11 @@ impl ExportWorker {
                     );
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
-                        metrics::clickhouse_export_dropped(datasource, "target_error", rows as u64);
+                        metrics::clickhouse_export_dropped(
+                            datasource,
+                            "target_error_exhausted",
+                            rows as u64,
+                        );
                         error!(
                             org_id,
                             datasource,
@@ -1226,7 +1246,7 @@ impl ExportWorker {
                             error = %error,
                             "Dropping ClickHouse batch after target resolution errors"
                         );
-                        return Ok(());
+                        return Ok(ClickHouseExportOutcome::Dropped);
                     }
                     backoff(attempt).await;
                     continue;
@@ -1247,9 +1267,20 @@ impl ExportWorker {
                         rows,
                         "Dropping ClickHouse batch because endpoint URL is invalid"
                     );
-                    return Ok(());
+                    return Ok(ClickHouseExportOutcome::Dropped);
                 }
             };
+            if !target.password.is_empty() && request_url.scheme() != "https" {
+                metrics::clickhouse_export_dropped(datasource, "insecure_endpoint", rows as u64);
+                error!(
+                    org_id,
+                    datasource,
+                    endpoint = %endpoint_url,
+                    rows,
+                    "Dropping ClickHouse batch because password-authenticated endpoints must use https"
+                );
+                return Ok(ClickHouseExportOutcome::Dropped);
+            }
             {
                 let mut query = request_url.query_pairs_mut();
                 query
@@ -1282,7 +1313,7 @@ impl ExportWorker {
                         started.elapsed().as_secs_f64(),
                         rows as u64,
                     );
-                    return Ok(());
+                    return Ok(ClickHouseExportOutcome::Delivered);
                 }
                 Ok(response) => {
                     let status = response.status();
@@ -1299,7 +1330,7 @@ impl ExportWorker {
                             rows,
                             "Dropping non-retryable ClickHouse batch"
                         );
-                        return Ok(());
+                        return Ok(ClickHouseExportOutcome::Dropped);
                     }
                     metrics::clickhouse_export_retry(datasource, bucket);
                     warn!(
@@ -1336,7 +1367,7 @@ impl ExportWorker {
                     last_status = %retry_status,
                     "Dropping ClickHouse batch after exhausting retry budget"
                 );
-                return Ok(());
+                return Ok(ClickHouseExportOutcome::Dropped);
             }
             backoff(attempt).await;
         }
@@ -2760,7 +2791,7 @@ mod tests {
             target: ClickHouseTarget {
                 endpoint: format!("http://{ch_addr}"),
                 user: "ingest".to_string(),
-                password: "secret".to_string(),
+                password: String::new(),
                 database: "maple".to_string(),
             },
         });
@@ -2838,7 +2869,7 @@ mod tests {
         for import in &imports {
             assert_eq!(import.database, "maple");
             assert_eq!(import.user, "ingest");
-            assert_eq!(import.key, "secret");
+            assert_eq!(import.key, "");
             assert_eq!(import.content_type, "application/x-ndjson");
             assert_eq!(import.content_encoding, "gzip");
             assert!(import.query.contains(" FROM input('"));
@@ -2852,6 +2883,81 @@ mod tests {
         assert!(
             tb_rx.try_recv().is_err(),
             "ready org should not export native frames to Tinybird"
+        );
+
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[tokio::test]
+    async fn clickhouse_export_drops_passworded_non_https_endpoint_without_sending() {
+        let (ch_tx, mut ch_rx) = mpsc::unbounded_channel();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(fake_clickhouse_import))
+            .with_state(ch_tx);
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let (tb_tx, mut tb_rx) = mpsc::unbounded_channel();
+        let tb_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let tb_addr = tb_listener.local_addr().unwrap();
+        let tb_app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tb_tx);
+        tokio::spawn(async move {
+            axum::serve(tb_listener, tb_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("fake-clickhouse-insecure");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{tb_addr}");
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        cfg.export_max_attempts = 1;
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_string(),
+                password: "secret".to_string(),
+                database: "maple".to_string(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_ready",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+
+        wait_for_export_drain(queue_dir.clone(), 0).await;
+        assert!(
+            ch_rx.try_recv().is_err(),
+            "passworded http ClickHouse target should be dropped before sending"
+        );
+        assert!(
+            tb_rx.try_recv().is_err(),
+            "ClickHouse-routed frames should not fall back to Tinybird"
         );
 
         let _ = std::fs::remove_dir_all(queue_dir);
