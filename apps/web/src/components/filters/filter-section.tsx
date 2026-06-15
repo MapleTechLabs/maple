@@ -25,6 +25,8 @@ interface FilterSectionBaseProps {
 	defaultOpen?: boolean
 	maxVisible?: number
 	colorMap?: Record<string, string>
+	/** Map an option's stable value (`option.name`) to a human-readable display label. */
+	labelMap?: Record<string, string>
 }
 
 interface FilterSectionProps extends FilterSectionBaseProps {}
@@ -40,15 +42,18 @@ function FilterSectionBase({
 	maxVisible = 5,
 	searchable,
 	colorMap,
+	labelMap,
 }: FilterSectionBaseProps & { searchable: boolean }) {
 	const [isOpen, setIsOpen] = React.useState(defaultOpen)
 	const [showAll, setShowAll] = React.useState(false)
 	const [searchText, setSearchText] = React.useState("")
 	const inputRef = React.useRef<HTMLInputElement>(null)
 
+	const labelFor = (name: string) => labelMap?.[name] ?? name
+
 	const filteredOptions =
 		searchable && searchText
-			? options.filter((o) => o.name.toLowerCase().includes(searchText.toLowerCase()))
+			? options.filter((o) => labelFor(o.name).toLowerCase().includes(searchText.toLowerCase()))
 			: options
 
 	const visibleOptions = showAll || searchText ? filteredOptions : filteredOptions.slice(0, maxVisible)
@@ -125,7 +130,7 @@ function FilterSectionBase({
 								<Label
 									htmlFor={`${title}-${option.name}`}
 									className="flex-1 min-w-0 flex items-center gap-1.5 cursor-pointer text-xs text-foreground font-normal"
-									title={option.name}
+									title={labelFor(option.name)}
 								>
 									{colorMap?.[option.name] && (
 										<span
@@ -133,7 +138,7 @@ function FilterSectionBase({
 											style={{ backgroundColor: colorMap[option.name] }}
 										/>
 									)}
-									<span className="truncate">{option.name}</span>
+									<span className="truncate">{labelFor(option.name)}</span>
 								</Label>
 								<span className="text-xs text-muted-foreground tabular-nums">
 									{option.count.toLocaleString()}

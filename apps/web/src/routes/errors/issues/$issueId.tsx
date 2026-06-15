@@ -169,7 +169,6 @@ function IssueDetailPage() {
 
 	const breadcrumbsLoading = [
 		{ label: "Errors", href: "/errors" },
-		{ label: "Issues", href: "/errors/issues" },
 		{ label: "…" },
 	] as const
 
@@ -203,7 +202,6 @@ function IssueDetailPage() {
 				<DashboardLayout
 					breadcrumbs={[
 						{ label: "Errors", href: "/errors" },
-						{ label: "Issues", href: "/errors/issues" },
 						{ label: issue.exceptionType || "Unknown error" },
 					]}
 					title={issue.exceptionType || "Unknown error"}

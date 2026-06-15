@@ -9,13 +9,6 @@ import {
 	getOverviewTimeSeries,
 } from "@/api/warehouse/custom-charts"
 import {
-	getErrorDetailTraces,
-	getErrorsByType,
-	getErrorsFacets,
-	getErrorsSummary,
-	getErrorsTimeseries,
-} from "@/api/warehouse/errors"
-import {
 	getLog,
 	getLogAttributeKeys,
 	getLogAttributeValues,
@@ -230,26 +223,6 @@ export const getLogResultAtom = makeQueryAtomFamily(getLog, {
 })
 
 export const getLogsFacetsResultAtom = makeQueryAtomFamily(getLogsFacets, {
-	staleTime: 30_000,
-})
-
-export const getErrorsByTypeResultAtom = makeQueryAtomFamily(getErrorsByType, {
-	staleTime: 60_000,
-})
-
-export const getErrorDetailTracesResultAtom = makeQueryAtomFamily(getErrorDetailTraces, {
-	staleTime: 120_000,
-})
-
-export const getErrorsFacetsResultAtom = makeQueryAtomFamily(getErrorsFacets, {
-	staleTime: 60_000,
-})
-
-export const getErrorsSummaryResultAtom = makeQueryAtomFamily(getErrorsSummary, {
-	staleTime: 60_000,
-})
-
-export const getErrorsTimeseriesResultAtom = makeQueryAtomFamily(getErrorsTimeseries, {
 	staleTime: 30_000,
 })
 
