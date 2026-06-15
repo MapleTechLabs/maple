@@ -17,7 +17,7 @@ vi.mock("@/api/warehouse/metrics", () => ({
 	listMetrics: (...args: unknown[]) => listMetricsMock(...args),
 }))
 
-import { getCustomChartServiceDetail } from "@/api/warehouse/custom-charts"
+import { fillServiceDetailPoints, getCustomChartServiceDetail } from "@/api/warehouse/custom-charts"
 import { setActiveOrgId } from "@/lib/services/common/auth-headers"
 
 describe("querySpanMetricsCalls", () => {
@@ -172,4 +172,34 @@ describe("querySpanMetricsCalls", () => {
 			assert.strictEqual(spanMetricsCalls.length, 0)
 		}),
 	)
+})
+
+describe("fillServiceDetailPoints", () => {
+	it("builds a contiguous, evenly-spaced timeline and flags the in-progress tail", () => {
+		const start = "2026-02-01 00:00:00"
+		const end = "2026-02-01 01:00:00"
+		const nowMs = Date.parse("2026-02-01T01:00:00Z")
+
+		const result = fillServiceDetailPoints([], start, end, 120, nowMs)
+
+		// Non-empty, evenly spaced 120s buckets (no empty/flat fallthrough).
+		expect(result.length).toBeGreaterThan(1)
+		const deltas = result.slice(1).map((p, i) => Date.parse(p.bucket) - Date.parse(result[i].bucket))
+		expect([...new Set(deltas)]).toEqual([120_000])
+
+		// The final bucket ends at ~now → still settling → flagged; an early bucket isn't.
+		expect(result[result.length - 1].partial).toBe(true)
+		expect(result[0].partial).toBe(false)
+	})
+
+	it("flags nothing partial for a historical window ending well before now", () => {
+		const start = "2026-02-01 00:00:00"
+		const end = "2026-02-01 01:00:00"
+		const nowMs = Date.parse("2026-02-02T00:00:00Z") // a full day after the window
+
+		const result = fillServiceDetailPoints([], start, end, 120, nowMs)
+
+		expect(result.length).toBeGreaterThan(1)
+		expect(result.every((p) => p.partial === false)).toBe(true)
+	})
 })

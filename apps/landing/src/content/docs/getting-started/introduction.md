@@ -62,5 +62,6 @@ Follow our language-specific guides:
 - [Java Instrumentation](/docs/guides/instrumentation-java) -- zero-code with the Java agent
 - [C# / .NET Instrumentation](/docs/guides/instrumentation-csharp)
 - [Kotlin Instrumentation](/docs/guides/instrumentation-kotlin) -- Ktor and Spring Boot
+- [Laravel Instrumentation](/docs/guides/instrumentation-laravel) -- Eloquent, queues, HTTP client
 
 For details on required attributes and data conventions, see [OpenTelemetry Conventions](/docs/concepts/otel-conventions).

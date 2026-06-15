@@ -13,7 +13,13 @@ export {
 	type EngineFlavor,
 	type ResourceContent,
 } from "./ddl-emitter"
-export { migrations, type ClickHouseMigration, type MigrationStatement } from "./migrations"
+export {
+	migrations,
+	latestMigrationVersion,
+	clickHouseSchemaVersion,
+	type ClickHouseMigration,
+	type MigrationStatement,
+} from "./migrations"
 export {
 	type BackfillSpec,
 	isBackfill,

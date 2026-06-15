@@ -2,7 +2,7 @@
 import { getCollection } from "astro:content";
 import SdkSelector from "./SdkSelector.astro";
 import DocsCategoryIcon from "./DocsCategoryIcon.astro";
-import { SDK_GROUP_ORDER, UNIVERSAL_GROUP_ORDER, hasCategoryIcon } from "../../lib/docs-nav";
+import { SDK_GROUP_ORDER, UNIVERSAL_GROUP_ORDER, SDK_HIDDEN_UNIVERSAL_GROUPS, hasCategoryIcon } from "../../lib/docs-nav";
 
 interface Props {
     currentSlug: string;
@@ -16,7 +16,9 @@ const currentDoc = allDocs.find((d) => d.id === currentSlug);
 const activeSdk: string | null = currentDoc?.data.sdk ?? null;
 
 const sdkScopedDocs = activeSdk ? allDocs.filter((d) => d.data.sdk === activeSdk) : [];
-const universalDocs = allDocs.filter((d) => !d.data.sdk);
+const universalDocs = allDocs.filter(
+    (d) => !d.data.sdk && !(activeSdk && SDK_HIDDEN_UNIVERSAL_GROUPS.has(d.data.group)),
+);
 
 const groupBy = (docs: typeof allDocs) => {
     const groups = new Map<string, typeof allDocs>();
@@ -81,7 +83,14 @@ const universalGroups = orderGroups(groupBy(universalDocs), [...UNIVERSAL_GROUP_
     )}
 
     {sdkGroups.length > 0 && universalGroups.length > 0 && (
-        <div class="my-5 border-t border-border/60"></div>
+        <div class="mt-12 mb-4 px-2 pt-6 border-t border-border/60">
+            <p class="text-[10px] uppercase tracking-wider font-semibold text-fg-muted/80">
+                General
+            </p>
+            <p class="text-[10px] text-fg-muted/55 leading-snug mt-0.5">
+                Not language-specific — applies to all SDKs
+            </p>
+        </div>
     )}
 
     {universalGroups.map(([groupName, items]) => (

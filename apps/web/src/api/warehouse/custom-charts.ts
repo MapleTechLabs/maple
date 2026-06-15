@@ -178,15 +178,35 @@ function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
 	return rows.toSorted((left, right) => left.bucket.localeCompare(right.bucket))
 }
 
-function fillServiceDetailPoints(
+/**
+ * How recent a bucket can be before it's treated as still-settling. A bucket
+ * whose window ends within this budget of "now" is under-filled (OTLP batch
+ * export + collector + MV materialization lag), so it's flagged `partial` and
+ * rendered as the dashed in-progress segment instead of a solid end-of-chart
+ * crater. Only ranges ending near "now" are affected — historical windows end
+ * well before `now - budget`, so nothing is flagged.
+ */
+const INGESTION_LAG_MS = 120_000
+
+export function fillServiceDetailPoints(
 	points: ServiceDetailTimeSeriesPoint[],
 	startTime: string | undefined,
 	endTime: string | undefined,
 	bucketSeconds: number,
+	nowMs: number,
 ): ServiceDetailTimeSeriesPoint[] {
+	const bucketMs = bucketSeconds * 1000
+	const partialFromMs = nowMs - INGESTION_LAG_MS
+	const isPartial = (bucketIso: string): boolean => {
+		const bucketStartMs = Date.parse(bucketIso)
+		return Number.isNaN(bucketStartMs) ? false : bucketStartMs + bucketMs > partialFromMs
+	}
+
 	const timeline = buildBucketTimeline(startTime, endTime, bucketSeconds)
 	if (timeline.length === 0) {
-		return sortByBucket(points)
+		return sortByBucket(
+			points.map((point) => ({ ...point, partial: isPartial(toIsoBucket(point.bucket)) })),
+		)
 	}
 
 	const byBucket = new Map<string, ServiceDetailTimeSeriesPoint>()
@@ -194,10 +214,10 @@ function fillServiceDetailPoints(
 		byBucket.set(toIsoBucket(point.bucket), point)
 	}
 
-	const filled = timeline.map((bucket) => {
+	const filled = timeline.map((bucket): ServiceDetailTimeSeriesPoint => {
 		const existing = byBucket.get(bucket)
 		if (existing) {
-			return existing
+			return { ...existing, partial: isPartial(bucket) }
 		}
 
 		return {
@@ -212,6 +232,7 @@ function fillServiceDetailPoints(
 			p99LatencyMs: 0,
 			apdexScore: 0,
 			totalCount: 0,
+			partial: isPartial(bucket),
 		}
 	})
 
@@ -851,11 +872,13 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 			p99LatencyMs: m?.p99 ?? 0,
 			apdexScore: m?.apdexScore ?? 0,
 			totalCount: rawCount,
+			partial: false,
 		}
 	})
 
+	const nowMs = yield* Clock.currentTimeMillis
 	return {
-		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds),
+		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds, nowMs),
 	}
 })
 
@@ -931,11 +954,13 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 			p99LatencyMs: m?.p99 ?? 0,
 			apdexScore: m?.apdexScore ?? 0,
 			totalCount: rawCount,
+			partial: false,
 		}
 	})
 
+	const nowMs = yield* Clock.currentTimeMillis
 	return {
-		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds),
+		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds, nowMs),
 	}
 })
 

@@ -122,6 +122,28 @@ describe("markIncompleteSegments", () => {
 		expect(result.incompleteKeys).toEqual([])
 	})
 
+	it("prefers an explicit per-row `partial` flag over the wall-clock heuristic", () => {
+		// Timestamps are far in the past (heuristic would mark nothing), but the
+		// pipeline flagged the trailing buckets as still-settling.
+		const data: Array<Record<string, unknown>> = [
+			{ bucket: "2020-01-01T00:00:00Z", throughput: 10 },
+			{ bucket: "2020-01-01T00:05:00Z", throughput: 20, partial: true },
+			{ bucket: "2020-01-01T00:10:00Z", throughput: 5, partial: true },
+		]
+
+		const result = markIncompleteSegments(data, ["throughput"])
+
+		expect(result.hasIncomplete).toBe(true)
+		// Index 0 complete; the bridge duplicates its value into the incomplete key.
+		expect(result.data[0].throughput).toBe(10)
+		expect(result.data[0].throughput_incomplete).toBe(10)
+		// First flagged bucket onward moves to the dashed (incomplete) series.
+		expect(result.data[1].throughput).toBeNull()
+		expect(result.data[1].throughput_incomplete).toBe(20)
+		expect(result.data[2].throughput).toBeNull()
+		expect(result.data[2].throughput_incomplete).toBe(5)
+	})
+
 	it("handles multiple value keys", () => {
 		const now = Date.now()
 		const data = [

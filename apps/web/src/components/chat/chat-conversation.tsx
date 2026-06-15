@@ -38,7 +38,7 @@ import {
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { ThinkingIndicator } from "@/components/ai-elements/thinking-indicator"
-import { Tool } from "@/components/ai-elements/tool"
+import { Tool, ToolRow, toolLabel } from "@/components/ai-elements/tool"
 import { ToolGroup } from "@/components/ai-elements/tool-group"
 import { ApprovalCard } from "./approval-card"
 import type { UIMessage } from "ai"
@@ -101,6 +101,8 @@ interface ChatConversationProps {
 	mode?: "alert" | "widget-fix"
 	alertContext?: AlertContext
 	widgetFixContext?: WidgetFixContext
+	/** Read-only shared view: render the conversation with no composer. */
+	readOnly?: boolean
 }
 
 export function ChatConversation({
@@ -111,10 +113,11 @@ export function ChatConversation({
 	mode,
 	alertContext,
 	widgetFixContext,
+	readOnly = false,
 }: ChatConversationProps) {
 	const { orgId, getToken } = useAuth()
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
-	useTypeAnywhereFocus(textareaRef, isActive)
+	useTypeAnywhereFocus(textareaRef, isActive && !readOnly)
 
 	const referrerPath = useMemo(() => readChatReferrer(), [tabId])
 	const derivedContexts = useMemo<AutoContext[]>(
@@ -254,6 +257,7 @@ export function ChatConversation({
 
 	const widgetFixAutoSentRef = useRef<string | null>(null)
 	useEffect(() => {
+		if (readOnly) return
 		if (!isWidgetFixMode || !isActive) return
 		if (!hasSettled || isLoading) return
 		if (messages.length > 0) return
@@ -272,7 +276,17 @@ export function ChatConversation({
 					{!hasSettled && messages.length === 0 ? (
 						<ConversationLoadingSkeleton />
 					) : messages.length === 0 ? (
-						isAlertMode ? (
+						readOnly ? (
+							<div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
+									Shared conversation
+								</p>
+								<p className="max-w-sm text-sm text-muted-foreground">
+									This shared conversation is unavailable or empty. It may have been deleted, or
+									belong to a different workspace than the one you're signed in to.
+								</p>
+							</div>
+						) : isAlertMode ? (
 							<div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
 								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
 									Ready to investigate
@@ -351,16 +365,24 @@ export function ChatConversation({
 													const errorCount = buf.filter(
 														(t) => deriveToolStatus(t.state) === "error",
 													).length
+													const lastRunning = [...buf]
+														.reverse()
+														.find((t) => deriveToolStatus(t.state) === "running")
 													nodes.push(
 														<ToolGroup
 															key={`group-${buf[0]!.toolCallId ?? nodes.length}`}
 															count={buf.length}
 															runningCount={runningCount}
 															errorCount={errorCount}
-															defaultOpen={runningCount > 0}
+															completedCount={buf.length - runningCount}
+															currentLabel={
+																lastRunning
+																	? toolLabel(toolNameFor(lastRunning))
+																	: undefined
+															}
 														>
 															{buf.map((t) => (
-																<Tool
+																<ToolRow
 																	key={t.toolCallId}
 																	toolName={toolNameFor(t)}
 																	toolCallId={t.toolCallId}
@@ -435,37 +457,39 @@ export function ChatConversation({
 				<ConversationScrollButton />
 			</Conversation>
 
-			<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-				{(messages.length > 0 || isAlertMode || isWidgetFixMode) && (
-					<Suggestions className="mb-3">
-						{suggestions.map((s) => (
-							<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
-						))}
-					</Suggestions>
-				)}
-				{!isWidgetFixMode && (
-					<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
-				)}
-				<PromptInput
-					onSubmit={({ text }) => handleSend(text)}
-					className="rounded-lg border shadow-sm"
-				>
-					<PromptInputTextarea
-						ref={textareaRef}
-						placeholder={
-							isAlertMode
-								? "Ask about this alert..."
-								: isWidgetFixMode
-									? "Ask about this widget..."
-									: "Ask about your system..."
-						}
-						disabled={isLoading}
-					/>
-					<PromptInputFooter>
-						<PromptInputSubmit status={status} disabled={isLoading && status !== "streaming"} />
-					</PromptInputFooter>
-				</PromptInput>
-			</div>
+			{!readOnly && (
+				<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+					{messages.length === 0 && (isAlertMode || isWidgetFixMode) && (
+						<Suggestions className="mb-3">
+							{suggestions.map((s) => (
+								<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
+							))}
+						</Suggestions>
+					)}
+					{!isWidgetFixMode && (
+						<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
+					)}
+					<PromptInput
+						onSubmit={({ text }) => handleSend(text)}
+						className="rounded-lg border shadow-sm"
+					>
+						<PromptInputTextarea
+							ref={textareaRef}
+							placeholder={
+								isAlertMode
+									? "Ask about this alert..."
+									: isWidgetFixMode
+										? "Ask about this widget..."
+										: "Ask about your system..."
+							}
+							disabled={isLoading}
+						/>
+						<PromptInputFooter>
+							<PromptInputSubmit status={status} disabled={isLoading && status !== "streaming"} />
+						</PromptInputFooter>
+					</PromptInput>
+				</div>
+			)}
 		</div>
 	)
 }

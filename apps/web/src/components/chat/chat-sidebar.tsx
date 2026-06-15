@@ -12,6 +12,7 @@ import {
 	BellIcon,
 	ChartLineIcon,
 	DotsIcon,
+	LinkIcon,
 	PencilIcon,
 	PlusIcon,
 	TrashIcon,
@@ -26,6 +27,10 @@ interface ChatSidebarProps {
 	onClose: (id: string) => void
 	onCreate: () => void
 	onRename: (id: string, title: string) => void
+	/** Copy a read-only share link for the conversation to the clipboard. */
+	onShare?: (tab: ChatTab) => void
+	/** Layout overrides — desktop passes the fixed-width rail, the mobile sheet passes full width. */
+	className?: string
 }
 
 interface TabGroup {
@@ -83,6 +88,8 @@ export function ChatSidebar({
 	onClose,
 	onCreate,
 	onRename,
+	onShare,
+	className,
 }: ChatSidebarProps) {
 	const groups = useMemo(() => groupTabs(tabs, Date.now()), [tabs])
 	const canDelete = tabs.length > 1
@@ -90,10 +97,13 @@ export function ChatSidebar({
 
 	return (
 		<aside
-			className="flex w-[260px] shrink-0 flex-col overflow-hidden border-r bg-sidebar text-sidebar-foreground"
+			className={cn(
+				"flex h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground",
+				className,
+			)}
 			aria-label="Chat conversations"
 		>
-			<div className="flex w-[260px] flex-1 flex-col">
+			<div className="flex w-full flex-1 flex-col">
 				<div className="p-3">
 					<Button onClick={onCreate} size="sm" className="w-full justify-start gap-2 font-medium">
 						<PlusIcon size={14} />
@@ -126,6 +136,7 @@ export function ChatSidebar({
 												onRename(id, title)
 												setRenamingId(null)
 											}}
+											onShare={onShare}
 											onStartRename={() => setRenamingId(tab.id)}
 											onCancelRename={() => setRenamingId(null)}
 										/>
@@ -149,6 +160,7 @@ interface ChatSidebarRowProps {
 	onSelect: (id: string) => void
 	onClose: (id: string) => void
 	onRename: (id: string, title: string) => void
+	onShare?: (tab: ChatTab) => void
 	onStartRename: () => void
 	onCancelRename: () => void
 }
@@ -162,6 +174,7 @@ function ChatSidebarRow({
 	onSelect,
 	onClose,
 	onRename,
+	onShare,
 	onStartRename,
 	onCancelRename,
 }: ChatSidebarRowProps) {
@@ -220,7 +233,7 @@ function ChatSidebarRow({
 				onDoubleClick={isRenaming ? undefined : onStartRename}
 				onKeyDown={handleRowKey}
 				className={cn(
-					"group relative flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors",
+					"group relative flex h-8 items-center gap-2 rounded-md px-2 text-sm transition-colors max-md:h-10",
 					!isRenaming && "cursor-pointer",
 					isActive
 						? "bg-sidebar-accent text-sidebar-accent-foreground"
@@ -263,10 +276,10 @@ function ChatSidebarRow({
 								<button
 									type="button"
 									className={cn(
-										"shrink-0 rounded-sm p-0.5 transition-opacity hover:bg-foreground/10",
+										"shrink-0 rounded-sm p-1 transition-opacity hover:bg-foreground/10 max-md:p-1.5",
 										isActive
 											? "opacity-60 hover:opacity-100"
-											: "opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+											: "opacity-0 group-hover:opacity-60 hover:!opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 max-md:opacity-60",
 									)}
 									aria-label={`Actions for ${tab.title}`}
 									onClick={(e) => e.stopPropagation()}
@@ -280,6 +293,12 @@ function ChatSidebarRow({
 								<PencilIcon size={14} />
 								Rename
 							</DropdownMenuItem>
+							{onShare && (
+								<DropdownMenuItem onClick={() => onShare(tab)}>
+									<LinkIcon size={14} />
+									Copy link
+								</DropdownMenuItem>
+							)}
 							<DropdownMenuItem
 								disabled={!canDelete}
 								variant="destructive"

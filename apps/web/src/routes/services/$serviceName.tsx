@@ -140,32 +140,38 @@ function ServiceDetailContent() {
 					    perspective toggle, not a navigation bar. Sized to match the time
 					    picker buttons (h-7) and tucked left of them so the visual order is:
 					    "what view → what window → what action". */}
-					<Tabs value={activeTab} onValueChange={handleTabChange}>
-						<TabsList variant="default" className="h-7 p-0.5 gap-0">
+					<Tabs value={activeTab} onValueChange={handleTabChange} className="w-full sm:w-auto">
+						<TabsList variant="default" className="h-7 w-full gap-0 p-0.5 sm:w-auto">
 							<TabsTrigger
 								value="overview"
-								className="h-6 px-2.5 text-xs sm:text-xs sm:h-6 font-medium"
+								className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
 							>
 								Overview
 							</TabsTrigger>
 							<TabsTrigger
 								value="dependencies"
-								className="h-6 px-2.5 text-xs sm:text-xs sm:h-6 font-medium"
+								className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
 							>
 								Dependencies
 							</TabsTrigger>
 						</TabsList>
 					</Tabs>
-					<TimeRangeHeaderControls
-						startTime={search.startTime}
-						endTime={search.endTime}
-						presetValue={search.timePreset ?? "12h"}
-						onTimeChange={handleTimeChange}
-					/>
-					<Button variant="outline" render={<Link to="/alerts/create" search={{ serviceName }} />}>
-						<BellIcon size={14} />
-						Create Alert
-					</Button>
+					<div className="flex items-center gap-2">
+						<TimeRangeHeaderControls
+							startTime={search.startTime}
+							endTime={search.endTime}
+							presetValue={search.timePreset ?? "12h"}
+							onTimeChange={handleTimeChange}
+						/>
+						<Button
+							variant="outline"
+							aria-label="Create Alert"
+							render={<Link to="/alerts/create" search={{ serviceName }} />}
+						>
+							<BellIcon size={14} />
+							<span className="hidden sm:inline">Create Alert</span>
+						</Button>
+					</div>
 				</div>
 			}
 		>

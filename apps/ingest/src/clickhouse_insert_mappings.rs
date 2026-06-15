@@ -2,6 +2,11 @@
 // Do not edit manually.
 
 pub const PROJECT_REVISION: &str = "019c3db4cf690e3748b302098cae4c9213d18c55355db9fc68ea44982c7a980a";
+// Gate for BYO-ClickHouse ingest readiness — the migration version, NOT the
+// Tinybird-coupled PROJECT_REVISION. Compared against
+// org_clickhouse_settings.schema_version. See @maple/domain/clickhouse
+// clickHouseSchemaVersion.
+pub const SCHEMA_VERSION: &str = "4";
 pub const ORG_PLACEHOLDER: &str = "__ORG__";
 
 #[derive(Debug)]

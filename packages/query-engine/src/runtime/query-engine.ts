@@ -27,8 +27,14 @@ import {
 import type { OrgId } from "@maple/domain"
 import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
 import { LOGS_BODY_SEARCH_SETTINGS, type QueryProfileName, type WarehouseQuerySettings } from "../profiles"
+import { computeBucketSeconds } from "../datetime"
 import { makeExpandMacros } from "./raw-sql"
 import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
+
+// Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
+// `computeBucketSeconds` from here; the implementation now lives in the pure
+// `../datetime` module so the web app and the engine share one definition.
+export { computeBucketSeconds } from "../datetime"
 
 /** Minimal tenant surface the lowering needs — only the org scope. */
 export interface QueryTenant {
@@ -247,18 +253,6 @@ function normalizeDirectCacheValue(value: unknown, parentKey?: string): unknown 
 
 export function buildDirectRouteCacheKey(orgId: string, routeName: string, payload: unknown): string {
 	return `direct:${orgId}:${routeName}:${JSON.stringify(normalizeDirectCacheValue(payload))}`
-}
-
-export const computeBucketSeconds = (startMs: number, endMs: number): number => {
-	const targetPoints = 40
-	const rangeSeconds = Math.max((endMs - startMs) / 1000, 1)
-	const raw = Math.ceil(rangeSeconds / targetPoints)
-	if (raw <= 60) return 60
-	if (raw <= 300) return 300
-	if (raw <= 900) return 900
-	if (raw <= 3600) return 3600
-	if (raw <= 14400) return 14400
-	return 86400
 }
 
 const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
@@ -1052,6 +1046,8 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			if (isRateOrIncrease) {
 				const compiled = CH.compile(
 					CH.metricsTimeseriesRateQuery({
+						metricName: request.query.filters.metricName,
+						bucketSeconds: bucketSeconds!,
 						serviceName: request.query.filters.serviceName,
 						groupByAttributeKey,
 						attributeKey: attributeFilter?.key,

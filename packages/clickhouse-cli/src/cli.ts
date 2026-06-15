@@ -24,7 +24,7 @@
 
 import { applyMigrations, bundledMigrations, dryRun, listApplied, pendingMigrations } from "./apply"
 import { ClickHouseError, ping, type ClickHouseConfig } from "./client"
-import { clickHouseProjectRevision } from "@maple/domain/clickhouse"
+import { clickHouseProjectRevision, clickHouseSchemaVersion } from "@maple/domain/clickhouse"
 
 const HELP = `@maple/clickhouse-cli — apply Maple's ClickHouse schema
 
@@ -59,7 +59,13 @@ async function main(argv: ReadonlyArray<string>): Promise<number> {
 
 	if (command === "version") {
 		process.stdout.write(
-			`bundled migrations: ${bundledMigrations.length}\nproject revision:   ${clickHouseProjectRevision}\n`,
+			`bundled migrations: ${bundledMigrations.length}\n` +
+				`schema version:     ${clickHouseSchemaVersion}\n` +
+				`project revision:   ${clickHouseProjectRevision}\n` +
+				`\nNote: this CLI applies the ClickHouse schema but does NOT mark the org\n` +
+				`ready in Maple (it never writes Maple's D1). After applying, open\n` +
+				`Settings → BYO Backend → ClickHouse (or call the schemaDiff endpoint) so\n` +
+				`Maple records schema version ${clickHouseSchemaVersion} and the ingest gateway routes here.\n`,
 		)
 		return 0
 	}

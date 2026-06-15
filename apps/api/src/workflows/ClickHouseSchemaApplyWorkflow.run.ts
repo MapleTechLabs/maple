@@ -14,7 +14,7 @@ import { createDecipheriv } from "node:crypto"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { createMaplePgClient, type MaplePgClient } from "@maple/db/client"
 import {
-	clickHouseProjectRevision,
+	clickHouseSchemaVersion,
 	computeSchemaDiff,
 	expandMigrationToSteps,
 	extractColumnDefinition,
@@ -337,7 +337,7 @@ async function runWithDb(
 					lastSyncAt: new Date(finishedAt),
 					lastSyncError: null,
 					syncStatus: "connected",
-					schemaVersion: clickHouseProjectRevision,
+					schemaVersion: clickHouseSchemaVersion,
 					updatedAt: new Date(finishedAt),
 				})
 				.where(eq(orgClickHouseSettings.orgId, orgId))

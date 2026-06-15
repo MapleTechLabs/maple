@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { emitJsonPathSpec } from "../packages/domain/src/clickhouse/ddl-emitter"
+import { clickHouseSchemaVersion } from "../packages/domain/src/clickhouse/migrations"
 import { projectRevision as clickHouseProjectRevision } from "../packages/domain/src/generated/clickhouse-schema"
 import { buildTinybirdProjectManifest } from "../packages/domain/src/tinybird/project-manifest"
 
@@ -169,6 +170,11 @@ function renderRustMappings(revision: string, datasources: Record<string, Dataso
 		"// Do not edit manually.",
 		"",
 		`pub const PROJECT_REVISION: &str = ${rustString(revision)};`,
+		`// Gate for BYO-ClickHouse ingest readiness — the migration version, NOT the`,
+		`// Tinybird-coupled PROJECT_REVISION. Compared against`,
+		`// org_clickhouse_settings.schema_version. See @maple/domain/clickhouse`,
+		`// clickHouseSchemaVersion.`,
+		`pub const SCHEMA_VERSION: &str = ${rustString(clickHouseSchemaVersion)};`,
 		`pub const ORG_PLACEHOLDER: &str = ${rustString(ORG_PLACEHOLDER)};`,
 		"",
 		"#[derive(Debug)]",

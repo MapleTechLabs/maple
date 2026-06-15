@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
 	buildFlowElements,
+	computeFlatPositions,
+	computeNodePositions,
 	dbNodeId,
 	getHealthColor,
 	getPlatformColor,
@@ -117,6 +119,84 @@ describe("buildFlowElements", () => {
 
 		const dbEdges = result.edges.filter((e) => e.target === dbNodeId("clickhouse"))
 		expect(dbEdges).toHaveLength(2)
+	})
+})
+
+describe("buildFlowElements namespace", () => {
+	it("attaches namespace to service nodes but not db nodes", () => {
+		const result = buildFlowElements({
+			edges: [baseEdge()],
+			dbEdges: [baseDbEdge({ dbSystem: "postgresql" })],
+			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "backend" })],
+			durationSeconds: 60,
+		})
+		const apiNode = result.nodes.find((n) => n.id === "api")
+		const dbNode = result.nodes.find((n) => n.id === dbNodeId("postgresql"))
+		expect((apiNode!.data as ServiceNodeData).namespace).toBe("backend")
+		expect((dbNode!.data as ServiceNodeData).namespace).toBeUndefined()
+	})
+
+	it("treats an empty namespace string as no namespace", () => {
+		const result = buildFlowElements({
+			edges: [baseEdge()],
+			serviceOverviews: [baseOverview({ serviceName: "api", serviceNamespace: "" })],
+			durationSeconds: 60,
+		})
+		const apiNode = result.nodes.find((n) => n.id === "api")
+		expect((apiNode!.data as ServiceNodeData).namespace).toBeUndefined()
+	})
+})
+
+describe("computeNodePositions namespace clustering", () => {
+	it("matches the flat layout when no namespace is defined", () => {
+		const { nodes, edges } = buildFlowElements({
+			edges: [baseEdge({ sourceService: "api", targetService: "auth" })],
+			serviceOverviews: [],
+			durationSeconds: 3600,
+		})
+		expect(computeNodePositions(nodes, edges)).toEqual(computeFlatPositions(nodes, edges))
+	})
+
+	it("places each namespace's services in disjoint vertical bands", () => {
+		const { nodes, edges } = buildFlowElements({
+			edges: [
+				baseEdge({ sourceService: "api", targetService: "auth" }),
+				baseEdge({ sourceService: "web", targetService: "cart" }),
+			],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "auth", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "web", serviceNamespace: "frontend" }),
+				baseOverview({ serviceName: "cart", serviceNamespace: "frontend" }),
+			],
+			durationSeconds: 3600,
+		})
+		const pos = computeNodePositions(nodes, edges)
+		const bandOf = (ids: string[]) => {
+			const ys = ids.map((id) => pos.get(id)!.y)
+			return { min: Math.min(...ys), max: Math.max(...ys) }
+		}
+		const backend = bandOf(["api", "auth"])
+		const frontend = bandOf(["web", "cart"])
+		const NODE_H = 70
+		const disjoint = backend.max + NODE_H <= frontend.min || frontend.max + NODE_H <= backend.min
+		expect(disjoint).toBe(true)
+	})
+
+	it("lays out databases below the namespaced clusters", () => {
+		const { nodes, edges } = buildFlowElements({
+			edges: [baseEdge({ sourceService: "api", targetService: "auth" })],
+			dbEdges: [baseDbEdge({ sourceService: "api", dbSystem: "postgresql" })],
+			serviceOverviews: [
+				baseOverview({ serviceName: "api", serviceNamespace: "backend" }),
+				baseOverview({ serviceName: "auth", serviceNamespace: "backend" }),
+			],
+			durationSeconds: 3600,
+		})
+		const pos = computeNodePositions(nodes, edges)
+		const dbY = pos.get(dbNodeId("postgresql"))!.y
+		const maxServiceY = Math.max(pos.get("api")!.y, pos.get("auth")!.y)
+		expect(dbY).toBeGreaterThan(maxServiceY)
 	})
 })
 

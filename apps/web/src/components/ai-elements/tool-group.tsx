@@ -12,37 +12,70 @@ interface ToolGroupProps {
 	count: number
 	runningCount: number
 	errorCount: number
-	defaultOpen?: boolean
+	/** Label of the tool currently running, shown in the live header. */
+	currentLabel?: string
+	/** How many calls in the group have finished, for the `done/total` counter. */
+	completedCount: number
 	children: ReactNode
 }
 
-export function ToolGroup({ count, runningCount, errorCount, defaultOpen = false, children }: ToolGroupProps) {
-	const [open, setOpen] = useState(defaultOpen)
-	const completed = runningCount === 0
+export function ToolGroup({
+	count,
+	runningCount,
+	errorCount,
+	currentLabel,
+	completedCount,
+	children,
+}: ToolGroupProps) {
+	// Collapsed by default — even mid-burst. The header carries live progress so a
+	// 30-call run stays a single line instead of a wall of cards.
+	const [open, setOpen] = useState(false)
+	const running = runningCount > 0
 
 	return (
-		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/30 text-xs">
+		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/20 text-xs">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
+				className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-muted/40"
 				onClick={() => setOpen((v) => !v)}
 			>
+				{running ? (
+					<LoaderIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+				) : errorCount > 0 ? (
+					<CircleXmarkIcon className="size-3.5 shrink-0 text-destructive" />
+				) : (
+					<CircleCheckIcon className="size-3.5 shrink-0 text-severity-info" />
+				)}
 				<CodeIcon className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="font-medium">
-					{completed ? `Used ${count} tools` : `Using ${count} tools`}
-				</span>
-				<span className="ml-auto flex items-center gap-1.5">
-					{runningCount > 0 && <LoaderIcon className="size-3 animate-spin text-muted-foreground" />}
-					{completed && errorCount > 0 && <CircleXmarkIcon className="size-3.5 text-destructive" />}
-					{completed && errorCount === 0 && <CircleCheckIcon className="size-3.5 text-severity-info" />}
-					{open ? (
-						<ChevronDownIcon className="size-3 text-muted-foreground" />
-					) : (
-						<ChevronRightIcon className="size-3 text-muted-foreground" />
-					)}
-				</span>
+				{running ? (
+					<span className="min-w-0 flex-1 truncate font-medium">
+						Running…
+						{currentLabel ? (
+							<span className="ml-1 text-muted-foreground">{currentLabel}</span>
+						) : null}
+						<span className="ml-1 text-muted-foreground/60 tabular-nums">
+							· {completedCount}/{count}
+						</span>
+					</span>
+				) : (
+					<span className="min-w-0 flex-1 truncate font-medium">
+						Used {count} tools
+						{errorCount > 0 ? (
+							<span className="ml-1 text-destructive tabular-nums">· {errorCount} failed</span>
+						) : null}
+					</span>
+				)}
+				{open ? (
+					<ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+				) : (
+					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
+				)}
 			</button>
-			{open && <div className="space-y-0 border-t border-border/50 p-1.5">{children}</div>}
+			{open && (
+				<div className="max-h-[55vh] divide-y divide-border/30 overflow-y-auto border-t border-border/50">
+					{children}
+				</div>
+			)}
 		</div>
 	)
 }

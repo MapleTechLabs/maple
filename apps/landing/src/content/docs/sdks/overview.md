@@ -8,7 +8,7 @@ sdk: "effect"
 
 Maple SDKs are official, hand-built libraries that wrap OpenTelemetry with sensible defaults for the runtimes and platforms we support. They auto-detect commit SHAs, deployment environments, and runtime metadata so you can ship traces, logs, and metrics with a single `layer()` call.
 
-If your language doesn't have an official SDK yet, see the [Language guides](#language-guides) below — they walk through standard OpenTelemetry setup pointed at Maple's ingest endpoint for Node.js, Next.js, Python, Go, Rust, Java, C#, and Kotlin.
+If your language doesn't have an official SDK yet, see the [Language guides](#language-guides) below — they walk through standard OpenTelemetry setup pointed at Maple's ingest endpoint for Node.js, Next.js, Python, Go, Rust, Java, C#, Kotlin, and Laravel.
 
 ## Official SDKs
 
@@ -47,5 +47,6 @@ Effect is the only language with a dedicated Maple SDK today. For everything els
 | [Java](/docs/guides/instrumentation-java)                      | OpenTelemetry Java agent (zero-code) or manual SDK                  |
 | [C# / .NET](/docs/guides/instrumentation-csharp)               | `OpenTelemetry.Extensions.Hosting` + ASP.NET Core instrumentation   |
 | [Kotlin](/docs/guides/instrumentation-kotlin)                  | Java agent, manual SDK, or the Ktor OpenTelemetry plugin            |
+| [Laravel](/docs/guides/instrumentation-laravel)               | `keepsuit/laravel-opentelemetry` — Eloquent, queues, HTTP client    |
 
 A dedicated SDK for any of these can come later -- the guide path is identical to what an SDK would do under the hood, so you can switch in place.

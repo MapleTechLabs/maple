@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback } from "react"
+import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import {
 	ReactFlow,
 	Controls,
@@ -6,6 +6,7 @@ import {
 	Background,
 	BackgroundVariant,
 	applyNodeChanges,
+	type Edge,
 	type Node,
 	type NodeChange,
 	type NodePositionChange,
@@ -22,7 +23,7 @@ import { formatBackendError } from "@/lib/error-messages"
 import { Bar, BarChart, CartesianGrid, Line, XAxis, YAxis } from "recharts"
 
 import { cn } from "@maple/ui/utils"
-import { getServiceLegendColor } from "@maple/ui/colors"
+import { getServiceLegendColor, getValueHue } from "@maple/ui/colors"
 import {
 	ChartContainer,
 	ChartTooltip,
@@ -57,6 +58,8 @@ import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { ServiceMapNode } from "./service-map-node"
 import { ServiceMapEdge } from "./service-map-edge"
+import { NamespaceGroupNode, type NamespaceGroupData } from "./service-map-namespace-group"
+import { layoutServiceMapWithElk, type ElkLayoutResult } from "./service-map-elk"
 import {
 	createParticleRegistry,
 	ParticleRegistryProvider,
@@ -72,7 +75,11 @@ import {
 	getServiceMapNodeColor,
 	topologyKey,
 	DEFAULT_LAYOUT_CONFIG,
+	NS_LABEL_HEIGHT,
+	NS_PADDING_X,
+	NS_PADDING_Y,
 	type LayoutConfig,
+	type ServiceEdgeData,
 	type ServiceMapColorMode,
 	type ServiceNodeData,
 } from "./service-map-utils"
@@ -80,7 +87,16 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 const nodeTypes = {
 	serviceNode: ServiceMapNode,
+	namespaceGroup: NamespaceGroupNode,
 }
+
+const NAMESPACE_GROUP_PREFIX = "nsgroup:"
+const nsGroupId = (namespace: string) => `${NAMESPACE_GROUP_PREFIX}${encodeURIComponent(namespace)}`
+
+// Fallback node dimensions used before ReactFlow has measured a node, so the
+// dotted boxes appear on first paint and refine once real sizes arrive.
+const FALLBACK_NODE_WIDTH = 220
+const FALLBACK_NODE_HEIGHT = 70
 
 // Custom MiniMap node that renders with the service's legend color
 function ServiceMiniMapNode({
@@ -1065,6 +1081,50 @@ function LayoutDebugPanel({
 	)
 }
 
+/**
+ * Run ELK's async layout whenever the topology/namespace/config key changes,
+ * returning the result once it resolves for the CURRENT key (null while pending
+ * or when disabled, so callers fall back to the synchronous layout). One effect:
+ * this is genuine synchronization with an external, imperative async layout
+ * engine — not derivable render state. Reads live nodes/edges through refs so the
+ * effect only re-fires on the stable string key, not on array identity churn.
+ */
+function useElkLayout(
+	rawNodes: Node<ServiceNodeData>[],
+	flowEdges: Edge<ServiceEdgeData>[],
+	enabled: boolean,
+	config: LayoutConfig,
+	key: string,
+): ElkLayoutResult | null {
+	const [state, setState] = useState<{ key: string; layout: ElkLayoutResult } | null>(null)
+	const nodesRef = useRef(rawNodes)
+	nodesRef.current = rawNodes
+	const edgesRef = useRef(flowEdges)
+	edgesRef.current = flowEdges
+	const configRef = useRef(config)
+	configRef.current = config
+
+	useEffect(() => {
+		if (!enabled) {
+			setState(null)
+			return
+		}
+		let cancelled = false
+		layoutServiceMapWithElk(nodesRef.current, edgesRef.current, configRef.current)
+			.then((layout) => {
+				if (!cancelled) setState({ key, layout })
+			})
+			.catch((error) => {
+				if (!cancelled) console.error("Service map ELK layout failed", error)
+			})
+		return () => {
+			cancelled = true
+		}
+	}, [enabled, key])
+
+	return state?.key === key ? state.layout : null
+}
+
 export function ServiceMapCanvas({
 	edges: serviceEdges,
 	dbEdges,
@@ -1128,17 +1188,60 @@ export function ServiceMapCanvas({
 	// identities, same shape) don't re-run barycenter sweeps. The memo body runs
 	// each render but short-circuits on an unchanged key.
 	const topoKey = useMemo(() => topologyKey(rawNodes, flowEdges), [rawNodes, flowEdges])
+	// Namespace assignment is part of node DATA, not topology, so it isn't covered
+	// by topoKey. Fold a namespace signature into the cache key so re-bucketing
+	// happens when a service's namespace changes even if the shape is unchanged.
+	const nsKey = useMemo(
+		() =>
+			rawNodes
+				.map((n) => (n.data.namespace ? `${n.id}=${n.data.namespace}` : ""))
+				.filter(Boolean)
+				.sort()
+				.join(","),
+		[rawNodes],
+	)
+	const layoutSignature = `${topoKey}|${nsKey}|${JSON.stringify(layoutConfig)}`
+
+	// When namespaces are defined, ELK's layered/compound layout (async) produces
+	// the final node positions + node-avoiding edge routes. Until it resolves we
+	// fall back to the synchronous swimlane layout below so first paint is instant;
+	// without namespaces ELK is skipped entirely (identical to today, perf bench
+	// unaffected).
+	const hasNamespaces = useMemo(() => rawNodes.some((n) => Boolean(n.data.namespace)), [rawNodes])
+	const elk = useElkLayout(rawNodes, flowEdges, hasNamespaces, layoutConfig, layoutSignature)
+
 	const layoutCacheRef = useRef<{ key: string; positions: Map<string, { x: number; y: number }> } | null>(
 		null,
 	)
 	const layoutedNodes = useMemo(() => {
-		const key = `${topoKey}|${JSON.stringify(layoutConfig)}`
-		if (layoutCacheRef.current?.key !== key) {
-			layoutCacheRef.current = { key, positions: computeNodePositions(rawNodes, flowEdges, layoutConfig) }
+		if (layoutCacheRef.current?.key !== layoutSignature) {
+			layoutCacheRef.current = {
+				key: layoutSignature,
+				positions: computeNodePositions(rawNodes, flowEdges, layoutConfig),
+			}
 		}
-		const positions = layoutCacheRef.current.positions
+		const positions = elk?.positions ?? layoutCacheRef.current.positions
 		return rawNodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }))
-	}, [rawNodes, flowEdges, layoutConfig, topoKey])
+	}, [rawNodes, flowEdges, layoutConfig, layoutSignature, elk])
+
+	// Inject ELK's routed paths into the edges so they render node-avoiding
+	// orthogonal routes instead of straight smooth-steps (no-op without ELK).
+	// An ELK route is computed for ELK's node positions, so if the user has dragged
+	// either endpoint the route is stale — fall back to smooth-step there so the
+	// edge keeps following its node.
+	const routedEdges = useMemo(() => {
+		const routes = elk?.routes
+		if (!routes || routes.size === 0) return flowEdges
+		const dragged = layout.positions
+		return flowEdges.map((edge) => {
+			const route = routes.get(edge.id)
+			if (!route || dragged[edge.source] || dragged[edge.target]) return edge
+			return {
+				...edge,
+				data: { ...edge.data, elkPath: route.path, elkLabelX: route.labelX, elkLabelY: route.labelY },
+			}
+		})
+	}, [flowEdges, elk, layout.positions])
 
 	// Merge layout positions with selection + color-mode state. Persisted drag
 	// positions (keyed by node id) override the deterministic auto-layout.
@@ -1181,6 +1284,20 @@ export function ServiceMapCanvas({
 	// Skip auto-fit entirely when a saved viewport exists so the restored camera survives.
 	const rfInstance = useRef<ReactFlowInstance | null>(null)
 	const hasFitView = useRef(layout.viewport != null)
+
+	// ELK repositions every node when it resolves (positions, not dimensions, so
+	// onNodesChange's measure-based fit won't fire). Refit once per ELK result —
+	// unless the user has a saved camera — after the new positions paint.
+	const elkFitKeyRef = useRef<string | null>(null)
+	useEffect(() => {
+		if (!elk || layout.viewport != null) return
+		if (elkFitKeyRef.current === layoutSignature) return
+		elkFitKeyRef.current = layoutSignature
+		const raf = requestAnimationFrame(() =>
+			requestAnimationFrame(() => rfInstance.current?.fitView({ duration: 300 })),
+		)
+		return () => cancelAnimationFrame(raf)
+	}, [elk, layoutSignature, layout.viewport])
 
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => {
@@ -1228,13 +1345,76 @@ export function ServiceMapCanvas({
 		[setLayout],
 	)
 
-	const handleNodeClick = useCallback((_: React.MouseEvent, node: Node<ServiceNodeData>) => {
+	const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
+		// Namespace boxes are non-selectable, but guard anyway so a stray click
+		// never selects a synthetic group node.
+		if (node.type === "namespaceGroup") return
 		setSelectedServiceId((prev) => (prev === node.id ? null : node.id))
 	}, [])
 
 	const handlePaneClick = useCallback(() => {
 		setSelectedServiceId(null)
 	}, [])
+
+	// Derive a dotted box per namespace from the LIVE node positions/sizes, so the
+	// boxes follow drags and resize in real time. Only service nodes carrying a
+	// namespace participate; databases and namespace-less services stay unboxed.
+	const namespaceGroupNodes = useMemo<Node<NamespaceGroupData>[]>(() => {
+		const extents = new Map<string, { minX: number; minY: number; maxX: number; maxY: number }>()
+		for (const node of nodes) {
+			if (node.id.startsWith(DB_NODE_PREFIX)) continue
+			const ns = (node.data as ServiceNodeData).namespace
+			if (!ns) continue
+			const w = node.measured?.width ?? node.width ?? FALLBACK_NODE_WIDTH
+			const h = node.measured?.height ?? node.height ?? FALLBACK_NODE_HEIGHT
+			const { x, y } = node.position
+			const ext = extents.get(ns)
+			if (ext) {
+				ext.minX = Math.min(ext.minX, x)
+				ext.minY = Math.min(ext.minY, y)
+				ext.maxX = Math.max(ext.maxX, x + w)
+				ext.maxY = Math.max(ext.maxY, y + h)
+			} else {
+				extents.set(ns, { minX: x, minY: y, maxX: x + w, maxY: y + h })
+			}
+		}
+		const boxes: Node<NamespaceGroupData>[] = []
+		for (const [ns, ext] of extents) {
+			const width = ext.maxX - ext.minX + NS_PADDING_X * 2
+			const height = ext.maxY - ext.minY + NS_LABEL_HEIGHT + NS_PADDING_Y * 2
+			boxes.push({
+				id: nsGroupId(ns),
+				type: "namespaceGroup",
+				position: { x: ext.minX - NS_PADDING_X, y: ext.minY - (NS_LABEL_HEIGHT + NS_PADDING_Y) },
+				data: { label: ns, hue: getValueHue(ns) ?? 0 },
+				draggable: false,
+				selectable: false,
+				focusable: false,
+				// z 0 (same layer as service nodes) keeps the box above the pane/edges
+				// so the dashed border + label paint; ordering it first in the nodes
+				// array (below) keeps it behind the service cards.
+				zIndex: 0,
+				// These boxes are derived each render and never live in the controlled
+				// `nodes` state, so ReactFlow's measured dims never round-trip back —
+				// supply width/height/measured explicitly or it keeps them
+				// `visibility: hidden` (unmeasured) forever.
+				width,
+				height,
+				measured: { width, height },
+				// pointerEvents:none on the WRAPPER (ReactFlow applies node.style to it)
+				// so drags/clicks over empty box interior pass through to the pane
+				// (panning) and to the service cards beneath.
+				style: { width, height, pointerEvents: "none" },
+			})
+		}
+		return boxes
+	}, [nodes])
+
+	// Boxes first so they paint behind the service nodes.
+	const renderedNodes = useMemo(
+		() => [...namespaceGroupNodes, ...nodes],
+		[namespaceGroupNodes, nodes],
+	)
 
 	if (nodes.length === 0) {
 		return (
@@ -1279,8 +1459,8 @@ export function ServiceMapCanvas({
 							</div>
 							<ParticleRegistryProvider value={registry}>
 								<ReactFlow
-									nodes={nodes}
-									edges={flowEdges}
+									nodes={renderedNodes}
+									edges={routedEdges}
 									onNodesChange={onNodesChange}
 									onNodeClick={handleNodeClick}
 									onPaneClick={handlePaneClick}
@@ -1303,6 +1483,7 @@ export function ServiceMapCanvas({
 									<Controls showInteractive={false} />
 								<MiniMap
 									nodeColor={(node: Node) => {
+										if (node.type === "namespaceGroup") return "transparent"
 										const data = node.data as ServiceNodeData
 										return getServiceMapNodeColor(data, data.services, colorMode)
 									}}

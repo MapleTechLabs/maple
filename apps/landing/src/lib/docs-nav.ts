@@ -18,6 +18,13 @@ export const UNIVERSAL_GROUP_ORDER = [
 /** Order of SDK-scoped groups (Effect SDK pages). */
 export const SDK_GROUP_ORDER = ["Effect SDK", "Platforms", "Instrumentation"] as const;
 
+/**
+ * Universal groups omitted from the sidebar's "General" section when a language
+ * (SDK) is selected — e.g. "Getting Started" is redundant on a language page.
+ * They remain reachable via the header category bar and on non-SDK pages.
+ */
+export const SDK_HIDDEN_UNIVERSAL_GROUPS = new Set<string>(["Getting Started"]);
+
 export type HeaderNavItem = {
 	/** Display label (also the icon id for `kind: "group"`). */
 	key: string;

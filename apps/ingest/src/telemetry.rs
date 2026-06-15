@@ -152,15 +152,23 @@ pub struct TinybirdConfig {
 
 impl TinybirdConfig {
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_for_pipeline(true)
+    }
+
+    pub fn validate_for_pipeline(&self, require_tinybird_credentials: bool) -> Result<(), String> {
         if self.endpoint.is_empty() {
-            return Err(
-                "TINYBIRD_HOST is required when INGEST_WRITE_MODE uses tinybird".to_string(),
-            );
+            if require_tinybird_credentials {
+                return Err(
+                    "TINYBIRD_HOST is required when INGEST_WRITE_MODE uses tinybird".to_string(),
+                );
+            }
         }
         if self.token.is_empty() {
-            return Err(
-                "TINYBIRD_TOKEN is required when INGEST_WRITE_MODE uses tinybird".to_string(),
-            );
+            if require_tinybird_credentials {
+                return Err(
+                    "TINYBIRD_TOKEN is required when INGEST_WRITE_MODE uses tinybird".to_string(),
+                );
+            }
         }
         if self.wal_shards == 0 {
             return Err("INGEST_WAL_SHARDS must be greater than 0".to_string());
@@ -343,7 +351,16 @@ impl TelemetryPipeline {
         http: Client,
         clickhouse_targets: Option<Arc<dyn ClickHouseTargetProvider>>,
     ) -> Result<Self, String> {
-        cfg.validate()?;
+        Self::new_with_clickhouse_validation(cfg, http, clickhouse_targets, true).await
+    }
+
+    pub async fn new_with_clickhouse_validation(
+        cfg: TinybirdConfig,
+        http: Client,
+        clickhouse_targets: Option<Arc<dyn ClickHouseTargetProvider>>,
+        require_tinybird_credentials: bool,
+    ) -> Result<Self, String> {
+        cfg.validate_for_pipeline(require_tinybird_credentials)?;
         std::fs::create_dir_all(&cfg.queue_dir)
             .map_err(|error| format!("create ingest WAL dir: {error}"))?;
         let cfg = Arc::new(cfg);
@@ -2250,6 +2267,35 @@ mod tests {
             datasource_session_replay_events: "session_replay_events".to_string(),
             datasource_session_events: "session_events".to_string(),
         }
+    }
+
+    #[tokio::test]
+    async fn pipeline_can_start_for_clickhouse_only_without_tinybird_credentials() {
+        let queue_dir = unique_test_dir("clickhouse-only-pipeline");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: "http://127.0.0.1:1".to_string(),
+                user: "ingest".to_string(),
+                password: String::new(),
+                database: "maple".to_string(),
+            },
+        });
+
+        TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::new(),
+            Some(provider),
+            false,
+        )
+        .await
+        .expect("ClickHouse-only pipeline should not require Tinybird credentials");
+
+        let _ = std::fs::remove_dir_all(queue_dir);
     }
 
     fn unique_test_dir(name: &str) -> PathBuf {

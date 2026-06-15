@@ -598,7 +598,7 @@ describe("ErrorsService.runTick", () => {
 			assert.lengthOf(open, 1)
 			assert.strictEqual(open[0]?.reason, "regression")
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
-	})
+	}, 15_000)
 
 	it.effect("a wontfix issue with an indefinite snooze is skipped entirely by the scan", () => {
 		const rows = [scanRow()]

@@ -506,6 +506,12 @@ export interface ServiceDetailTimeSeriesPoint {
 	p99LatencyMs: number
 	apdexScore: number
 	totalCount: number
+	/**
+	 * The bucket is still settling — its window ends within the ingestion-lag
+	 * budget of "now", so it's under-filled. Charts render flagged buckets as the
+	 * dashed "in progress" segment instead of a solid crater.
+	 */
+	partial: boolean
 }
 
 export interface ServiceDetailTimeSeriesResponse {

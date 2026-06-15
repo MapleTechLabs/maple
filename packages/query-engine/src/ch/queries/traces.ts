@@ -9,7 +9,8 @@ import { compileCH } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
 import { from, type CHQuery, type ColumnAccessor } from "../query"
-import { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
+import type { Table } from "../table"
+import { ServiceOverviewSpans, TraceDetailSpans, TraceListMv, Traces, TracesAggregatesHourly } from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "../types"
 import {
@@ -213,6 +214,20 @@ function buildBreakdownGroupExpr(
 	}
 }
 
+function buildMvBreakdownGroupExpr(
+	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	groupBy: string,
+): CH.Expr<string> {
+	switch (groupBy) {
+		case "status_code":
+			return $.StatusCode
+		case "service":
+		case "none":
+		default:
+			return $.ServiceName
+	}
+}
+
 // ---------------------------------------------------------------------------
 // WHERE clause builders
 // ---------------------------------------------------------------------------
@@ -373,7 +388,30 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 	const limit = opts.limit ?? 10
 
-	return from(Traces)
+	if (canUseServiceOverviewMv(opts, [opts.groupBy])) {
+		const mv = from(ServiceOverviewSpans)
+			.select(($) => {
+				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
+					$,
+					opts.metric,
+					apdexThresholdMs,
+					false,
+					opts.allMetrics,
+				)
+				return {
+					name: buildMvBreakdownGroupExpr($, opts.groupBy),
+					...metrics,
+				}
+			})
+			.where(($) => serviceOverviewWhereConditions($, opts))
+			.groupBy("name")
+			.orderBy(["count", "desc"])
+			.limit(limit)
+			.format("JSON")
+		return mv as unknown as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	}
+
+	const raw = from(Traces)
 		.select(($) => {
 			const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
 				$,
@@ -392,6 +430,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
+	return raw as unknown as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
 }
 
 // ---------------------------------------------------------------------------
@@ -539,7 +578,7 @@ export interface SlowTracesOutput {
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
-	return from(Traces)
+	return from(TraceListMv)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanName: $.SpanName,
@@ -552,11 +591,8 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			$.ParentSpanId.eq(""),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.environment, (v: string) =>
-				$.ResourceAttributes.get("deployment.environment").eq(v),
-			),
+			CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
 		])
 		.orderBy(["durationMs", "desc"])
 		.limit(opts.limit ?? 10)
@@ -566,11 +602,13 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 // ---------------------------------------------------------------------------
 // Span-level search query
 //
-// DSL port of the raw `traces` scan in `observability/search-traces.ts`
+// DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
-// error, duration bounds, attribute filters, and trace id. OrgId-scoped via
-// `tracesBaseWhereConditions`.
+// error, duration bounds, attribute filters, and trace id. When a trace id is
+// present, it reads `trace_detail_spans`, whose sort key starts with
+// (OrgId, TraceId); otherwise it uses the raw `traces` search path.
+// OrgId-scoped via `tracesBaseWhereConditions`.
 // ---------------------------------------------------------------------------
 
 export interface SpanSearchOpts extends TracesQueryOpts {
@@ -592,11 +630,30 @@ export interface SpanSearchOutput {
 	readonly timestamp: string
 }
 
-export function spanSearchQuery(opts: SpanSearchOpts) {
-	const limit = opts.limit ?? 20
-	const offset = opts.offset ?? 0
+type SpanSearchColumns = Pick<
+	typeof Traces.columns,
+	| "OrgId"
+	| "Timestamp"
+	| "TraceId"
+	| "SpanId"
+	| "ParentSpanId"
+	| "SpanName"
+	| "SpanKind"
+	| "ServiceName"
+	| "Duration"
+	| "StatusCode"
+	| "StatusMessage"
+	| "SpanAttributes"
+	| "ResourceAttributes"
+>
 
-	let q = from(Traces)
+function spanSearchFrom<Name extends string>(
+	source: Table<Name, SpanSearchColumns>,
+	opts: SpanSearchOpts,
+	limit: number,
+	offset: number,
+) {
+	const q = from(source)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -609,16 +666,26 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 			resourceAttributes: $.ResourceAttributes,
 			timestamp: CH.toString_($.Timestamp),
 		}))
-		.where(($) => [...buildWhereConditions($, opts), CH.when(opts.traceId, (v: string) => $.TraceId.eq(v))])
+		.where(($) => [
+			...tracesBaseWhereConditions($, opts),
+			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+		])
 		.orderBy(["timestamp", "desc"])
 		.limit(limit)
 		.format("JSON")
 
-	if (offset > 0) {
-		q = q.offset(offset)
+	return offset > 0 ? q.offset(offset) : q
+}
+
+export function spanSearchQuery(opts: SpanSearchOpts) {
+	const limit = opts.limit ?? 20
+	const offset = opts.offset ?? 0
+
+	if (opts.traceId) {
+		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
 	}
 
-	return q
+	return spanSearchFrom(Traces, opts, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
