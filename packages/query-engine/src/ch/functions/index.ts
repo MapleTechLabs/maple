@@ -17,6 +17,7 @@ export {
 	avgIf,
 	maxIf,
 	groupUniqArray,
+	argMaxMerge,
 } from "./aggregate"
 
 export {
@@ -35,11 +36,13 @@ export {
 	round_,
 	intDiv,
 	toFloat64OrZero,
+	toFloat64,
 	toUInt16OrZero,
 	toUInt64,
 	toInt64,
 	least_,
 	greatest_,
+	cityHash64,
 } from "./numeric"
 
 export {
@@ -47,6 +50,7 @@ export {
 	toStartOfHour,
 	toHour,
 	toUnixTimestamp,
+	toUnixTimestamp64Nano,
 	intervalSub,
 	formatDateTime,
 	toDateTime,
@@ -56,6 +60,23 @@ export { if_, multiIf, coalesce, nullIf } from "./conditional"
 
 export { arrayOf, arrayStringConcat, arrayFilter } from "./array"
 
-export { mapContains, mapGet, mapLiteral } from "./map"
+export { mapContains, mapGet, mapKeys, mapValues, mapLiteral } from "./map"
 
 export { toJSONString } from "./json"
+
+export {
+	currentRow,
+	unboundedPreceding,
+	unboundedFollowing,
+	preceding,
+	following,
+	rowsBetween,
+	windowSpec,
+	over,
+	lagInFrame,
+	type CompiledWindowSpec,
+	type WindowFrameBound,
+	type WindowOrderDirection,
+	type WindowRowsFrame,
+	type WindowSpec,
+} from "./window"

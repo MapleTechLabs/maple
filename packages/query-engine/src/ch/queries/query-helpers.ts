@@ -115,6 +115,20 @@ export interface TracesBaseWhereOpts {
 	excludedNamespaces?: readonly string[]
 }
 
+type TracesBaseWhereColumns = Pick<
+	typeof Traces.columns,
+	| "OrgId"
+	| "Timestamp"
+	| "ServiceName"
+	| "SpanName"
+	| "SpanKind"
+	| "ParentSpanId"
+	| "StatusCode"
+	| "Duration"
+	| "ResourceAttributes"
+	| "SpanAttributes"
+>
+
 /**
  * Build the WHERE conditions shared between traces queries and alert queries:
  * OrgId, Timestamp range, serviceName, spanName, rootOnly, errorsOnly,
@@ -124,7 +138,7 @@ export interface TracesBaseWhereOpts {
  * Alert queries omit matchModes and duration filters — they just don't pass them.
  */
 export function tracesBaseWhereConditions(
-	$: ColumnAccessor<typeof Traces.columns>,
+	$: ColumnAccessor<TracesBaseWhereColumns>,
 	opts: TracesBaseWhereOpts,
 ): Array<CH.Condition | undefined> {
 	const mm = opts.matchModes

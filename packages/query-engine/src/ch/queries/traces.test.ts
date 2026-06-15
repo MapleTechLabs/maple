@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { compileCH } from "../compile"
-import { tracesListQuery, tracesRootListQuery } from "./traces"
+import { slowTracesQuery, spanSearchQuery, tracesListQuery, tracesRootListQuery } from "./traces"
 
 const baseParams = {
 	orgId: "org_1",
@@ -217,5 +217,50 @@ describe("tracesRootListQuery", () => {
 		// `StatusCode = 'Error'` shows up in the WHERE of both stages (errorsOnly)
 		// plus once in the outer SELECT's `hasError` expression — 3 total.
 		expect(sql.match(/StatusCode = 'Error'/g)).toHaveLength(3)
+	})
+})
+
+// ---------------------------------------------------------------------------
+// slowTracesQuery
+// ---------------------------------------------------------------------------
+
+describe("slowTracesQuery", () => {
+	it("reads slow root spans from the pre-extracted trace list MV", () => {
+		const q = slowTracesQuery({ service: "api", environment: "prod", limit: 5 })
+		const { sql } = compileCH(q, baseParams)
+
+		expect(sql).toContain("FROM trace_list_mv")
+		expect(sql).toContain("ServiceName = 'api'")
+		expect(sql).toContain("DeploymentEnv = 'prod'")
+		expect(sql).toContain("ORDER BY durationMs DESC")
+		expect(sql).toContain("LIMIT 5")
+		expect(sql).not.toContain("ParentSpanId")
+		expect(sql).not.toContain("ResourceAttributes")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// spanSearchQuery
+// ---------------------------------------------------------------------------
+
+describe("spanSearchQuery", () => {
+	it("uses the trace-detail table when a trace id is provided", () => {
+		const q = spanSearchQuery({ traceId: "trace_123", spanName: "GET /users", limit: 50, offset: 10 })
+		const { sql } = compileCH(q, baseParams)
+
+		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("TraceId = 'trace_123'")
+		expect(sql).toContain("SpanName = 'GET /users'")
+		expect(sql).toContain("LIMIT 50")
+		expect(sql).toContain("OFFSET 10")
+	})
+
+	it("keeps broad span searches on the raw traces table", () => {
+		const q = spanSearchQuery({ spanName: "GET /users", limit: 20 })
+		const { sql } = compileCH(q, baseParams)
+
+		expect(sql).toContain("FROM traces")
+		expect(sql).not.toContain("FROM trace_detail_spans")
+		expect(sql).toContain("SpanName = 'GET /users'")
 	})
 })

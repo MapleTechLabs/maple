@@ -6,8 +6,9 @@ import type { Expr } from "../expr"
 // ---------------------------------------------------------------------------
 
 export const toFloat64OrZero = defineFn<[Expr<string>], number>("toFloat64OrZero")
+export const toFloat64 = defineFn<[Expr<number>], number>("toFloat64")
 export const toUInt16OrZero = defineFn<[Expr<string>], number>("toUInt16OrZero")
-export const toUInt64 = defineFn<[Expr<number>], number>("toUInt64")
+export const toUInt64 = defineFn<[Expr<number> | Expr<string>], number>("toUInt64")
 export const toInt64 = defineFn<[Expr<number>], number>("toInt64")
 
 // ---------------------------------------------------------------------------
@@ -34,4 +35,8 @@ export function least_(...exprs: Expr<number>[]): Expr<number> {
 
 export function greatest_(...exprs: Expr<number>[]): Expr<number> {
 	return compileFnCall<number>("greatest", ...exprs)
+}
+
+export function cityHash64(...exprs: Expr<any>[]): Expr<number> {
+	return compileFnCall<number>("cityHash64", ...exprs)
 }

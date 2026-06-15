@@ -14,6 +14,14 @@ export function mapGet(mapExpr: Expr<Record<string, string>>, key: string): Expr
 	return makeExpr<string>(raw(`${compile(mapExpr.toFragment())}[${compile(str(key))}]`))
 }
 
+export function mapKeys(mapExpr: Expr<Record<string, string>>): Expr<ReadonlyArray<string>> {
+	return makeExpr<ReadonlyArray<string>>(raw(`mapKeys(${compile(mapExpr.toFragment())})`))
+}
+
+export function mapValues(mapExpr: Expr<Record<string, string>>): Expr<ReadonlyArray<string>> {
+	return makeExpr<ReadonlyArray<string>>(raw(`mapValues(${compile(mapExpr.toFragment())})`))
+}
+
 export function mapLiteral(...pairs: Array<[string, Expr<string>]>): Expr<Record<string, string>> {
 	if (pairs.length === 0) return makeExpr<Record<string, string>>(raw("map()"))
 	const args = pairs.map(([k, v]) => `${compile(str(k))}, ${compile(v.toFragment())}`).join(", ")

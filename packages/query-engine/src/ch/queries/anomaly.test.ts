@@ -135,7 +135,7 @@ describe("anomalyErrorSpikeTimeseriesQuery", () => {
 		})
 		expect(sql).toContain("FROM error_events_by_time")
 		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 1800 SECOND)")
-		expect(sql).toContain("toString(FingerprintHash) = '12345'")
+		expect(sql).toContain("FingerprintHash = toUInt64('12345')")
 		expect(sql).toContain("DeploymentEnv = 'prod'")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("GROUP BY bucket")

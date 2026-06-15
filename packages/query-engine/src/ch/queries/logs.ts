@@ -7,7 +7,7 @@
 import { compileCH } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
-import { from, type CHQuery, type ColumnAccessor } from "../query"
+import { from, fromUnion, type CHQuery, type ColumnAccessor } from "../query"
 import type { ColumnDefs } from "../types"
 import { unionAll, type CHUnionQuery } from "../union"
 import { Logs, LogsAggregatesHourly } from "../tables"
@@ -52,6 +52,36 @@ function namespaceCondition(
 		return CH.positionCaseInsensitive(nsAttr, CH.lit(opts.namespaces[0]!)).gt(0)
 	}
 	return CH.inList(nsAttr, opts.namespaces)
+}
+
+const START_DT = "toDateTime(__PARAM_startTime__)"
+const END_DT = "toDateTime(__PARAM_endTime__)"
+const START_HOUR = `toStartOfHour(${START_DT})`
+const END_HOUR = `toStartOfHour(${END_DT})`
+const FIRST_FULL_HOUR = `if(${START_DT} = ${START_HOUR}, ${START_HOUR}, ${START_HOUR} + INTERVAL 1 HOUR)`
+
+function rawLogsTimeRange($: ColumnAccessor<typeof Logs.columns>): Array<CH.Condition | undefined> {
+	return [
+		// TimestampTime is the partition/index key; this filter unlocks
+		// partition pruning. Timestamp filter retained for sub-second accuracy.
+		$.TimestampTime.gte(param.dateTime("startTime")),
+		$.TimestampTime.lte(param.dateTime("endTime")),
+		$.Timestamp.gte(param.dateTime("startTime")),
+		$.Timestamp.lte(param.dateTime("endTime")),
+	]
+}
+
+function rawLogEdgeCondition(): CH.Condition {
+	return CH.rawCond(`(TimestampTime < ${FIRST_FULL_HOUR} OR TimestampTime >= ${END_HOUR})`)
+}
+
+function canUseLogsAggregateInterior(opts: LogsQueryOpts): boolean {
+	if (opts.traceId) return false
+	if (opts.spanId) return false
+	if (opts.search) return false
+	if (opts.matchModes?.deploymentEnv === "contains") return false
+	if (opts.matchModes?.serviceNamespace === "contains") return false
+	return true
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +132,7 @@ export function canUseLogsAggregatesHourly(
 
 function mvEnvironmentCondition(
 	$: ColumnAccessor<typeof LogsAggregatesHourly.columns>,
-	opts: LogsTimeseriesOpts,
+	opts: LogsQueryOpts,
 ): CH.Condition | undefined {
 	if (!opts.environments?.length) return undefined
 	return CH.inList($.DeploymentEnv, opts.environments)
@@ -213,27 +243,77 @@ export interface LogsBreakdownOutput {
 	readonly count: number
 }
 
-export function logsBreakdownQuery(opts: LogsBreakdownOpts) {
-	return from(Logs)
+function logsBreakdownName(
+	$: { ServiceName: CH.Expr<string>; SeverityText: CH.Expr<string> },
+	groupBy: LogsBreakdownOpts["groupBy"],
+): CH.Expr<string> {
+	return groupBy === "severity" ? $.SeverityText : $.ServiceName
+}
+
+export function logsBreakdownQuery(opts: LogsBreakdownOpts): CHQuery<ColumnDefs, LogsBreakdownOutput, {}> {
+	if (!canUseLogsAggregateInterior(opts)) {
+		const raw = from(Logs)
+			.select(($) => ({
+				name: logsBreakdownName($, opts.groupBy),
+				count: CH.count(),
+			}))
+			.where(($) => [
+				$.OrgId.eq(param.string("orgId")),
+				...rawLogsTimeRange($),
+				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+				CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+				environmentCondition($, opts),
+				namespaceCondition($, opts),
+			])
+			.groupBy("name")
+			.orderBy(["count", "desc"])
+			.limit(opts.limit ?? 10)
+			.format("JSON")
+		return raw as unknown as CHQuery<ColumnDefs, LogsBreakdownOutput, {}>
+	}
+
+	const rawEdges = from(Logs)
 		.select(($) => ({
-			name: opts.groupBy === "severity" ? $.SeverityText : $.ServiceName,
+			name: logsBreakdownName($, opts.groupBy),
 			count: CH.count(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTime("startTime")),
-			$.TimestampTime.lte(param.dateTime("endTime")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
+			...rawLogsTimeRange($),
+			rawLogEdgeCondition(),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
 			environmentCondition($, opts),
 			namespaceCondition($, opts),
 		])
 		.groupBy("name")
+
+	const mvInterior = from(LogsAggregatesHourly)
+		.select(($) => ({
+			name: logsBreakdownName($, opts.groupBy),
+			count: CH.sum($.Count),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(CH.rawExpr<string>(FIRST_FULL_HOUR)),
+			$.Hour.lt(CH.rawExpr<string>(END_HOUR)),
+			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+			mvEnvironmentCondition($, opts),
+			mvNamespaceCondition($, opts),
+		])
+		.groupBy("name")
+
+	const combined = fromUnion(unionAll(rawEdges, mvInterior), "breakdown")
+		.select(($) => ({
+			name: $.name,
+			count: CH.sum($.count),
+		}))
+		.groupBy("name")
 		.orderBy(["count", "desc"])
 		.limit(opts.limit ?? 10)
 		.format("JSON")
+	return combined as unknown as CHQuery<ColumnDefs, LogsBreakdownOutput, {}>
 }
 
 // ---------------------------------------------------------------------------
@@ -244,26 +324,61 @@ export interface LogsCountOutput {
 	readonly total: number
 }
 
-export function logsCountQuery(opts: LogsQueryOpts) {
-	return from(Logs)
+export function logsCountQuery(opts: LogsQueryOpts): CHQuery<ColumnDefs, LogsCountOutput, {}> {
+	if (!canUseLogsAggregateInterior(opts)) {
+		const raw = from(Logs)
+			.select(() => ({
+				total: CH.count(),
+			}))
+			.where(($) => [
+				$.OrgId.eq(param.string("orgId")),
+				...rawLogsTimeRange($),
+				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+				CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+				CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+				CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
+				CH.when(opts.search, (v: string) => $.Body.ilike(`%${v}%`)),
+				environmentCondition($, opts),
+				namespaceCondition($, opts),
+			])
+			.format("JSON")
+		return raw as unknown as CHQuery<ColumnDefs, LogsCountOutput, {}>
+	}
+
+	const rawEdges = from(Logs)
 		.select(() => ({
 			total: CH.count(),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTime("startTime")),
-			$.TimestampTime.lte(param.dateTime("endTime")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
+			...rawLogsTimeRange($),
+			rawLogEdgeCondition(),
 			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
 			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
-			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
-			CH.when(opts.spanId, (v: string) => $.SpanId.eq(v)),
-			CH.when(opts.search, (v: string) => $.Body.ilike(`%${v}%`)),
 			environmentCondition($, opts),
 			namespaceCondition($, opts),
 		])
+
+	const mvInterior = from(LogsAggregatesHourly)
+		.select(($) => ({
+			total: CH.sum($.Count),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(CH.rawExpr<string>(FIRST_FULL_HOUR)),
+			$.Hour.lt(CH.rawExpr<string>(END_HOUR)),
+			CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+			CH.when(opts.severity, (v: string) => $.SeverityText.eq(v)),
+			mvEnvironmentCondition($, opts),
+			mvNamespaceCondition($, opts),
+		])
+
+	const combined = fromUnion(unionAll(rawEdges, mvInterior), "counts")
+		.select(($) => ({
+			total: CH.sum($.total),
+		}))
 		.format("JSON")
+	return combined as unknown as CHQuery<ColumnDefs, LogsCountOutput, {}>
 }
 
 // ---------------------------------------------------------------------------
@@ -406,23 +521,41 @@ export interface ErrorRateByServiceOutput {
 }
 
 export function errorRateByServiceQuery() {
-	return from(Logs)
+	const rawEdges = from(Logs)
 		.select(($) => ({
 			serviceName: $.ServiceName,
-			totalLogs: CH.count(),
-			errorLogs: CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])),
-			errorRate: CH.round_(
-				CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])).div(CH.count()),
-				6,
-			),
+			bucketTotalLogs: CH.count(),
+			bucketErrorLogs: CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])),
+			errorRate: CH.lit(0),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.TimestampTime.gte(param.dateTime("startTime")),
-			$.TimestampTime.lte(param.dateTime("endTime")),
-			$.Timestamp.gte(param.dateTime("startTime")),
-			$.Timestamp.lte(param.dateTime("endTime")),
+			...rawLogsTimeRange($),
+			rawLogEdgeCondition(),
 		])
+		.groupBy("serviceName")
+
+	const mvInterior = from(LogsAggregatesHourly)
+		.select(($) => ({
+			serviceName: $.ServiceName,
+			bucketTotalLogs: CH.sum($.Count),
+			bucketErrorLogs: CH.sumIf($.Count, CH.inList($.SeverityText, ["ERROR", "FATAL"])),
+			errorRate: CH.lit(0),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Hour.gte(CH.rawExpr<string>(FIRST_FULL_HOUR)),
+			$.Hour.lt(CH.rawExpr<string>(END_HOUR)),
+		])
+		.groupBy("serviceName")
+
+	return fromUnion(unionAll(rawEdges, mvInterior), "rates")
+		.select(($) => ({
+			serviceName: $.serviceName,
+			totalLogs: CH.sum($.bucketTotalLogs),
+			errorLogs: CH.sum($.bucketErrorLogs),
+			errorRate: CH.round_(CH.sum($.bucketErrorLogs).div(CH.sum($.bucketTotalLogs)), 6),
+		}))
 		.groupBy("serviceName")
 		.orderBy(["errorRate", "desc"])
 		.format("JSON")

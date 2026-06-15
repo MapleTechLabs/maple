@@ -134,6 +134,27 @@ describe("CH.from / select / where / compile", () => {
 		expect(sql).toContain("toStartOfInterval(Timestamp, INTERVAL 3600 SECOND) AS bucket")
 	})
 
+	it("compiles window frame helpers", () => {
+		const q = CH.from(TestTable).select(($) => {
+			const frame = CH.windowSpec({
+				partitionBy: [$.Name, CH.cityHash64(CH.mapKeys($.Attrs), CH.mapValues($.Attrs))],
+				orderBy: [[$.Value, "asc"]],
+				frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+			})
+
+			return {
+				delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), frame)),
+			}
+		})
+
+		const { sql } = compileCH(q, {})
+		expect(sql).toContain(
+			"Value - lagInFrame(Value, 1, Value) OVER (PARTITION BY Name, " +
+				"cityHash64(mapKeys(Attrs), mapValues(Attrs)) ORDER BY Value ASC " +
+				"ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS delta",
+		)
+	})
+
 	it("compiles if_ expressions", () => {
 		const q = CH.from(TestTable).select(($) => ({
 			errorRate: CH.if_(CH.count().gt(0), CH.countIf($.Name.eq("Error")), CH.lit(0)),
@@ -549,6 +570,8 @@ describe("tracesBreakdownQuery", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "service" })
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("SELECT")
+		expect(sql).toContain("FROM service_overview_spans")
+		expect(sql).not.toContain("FROM traces")
 		expect(sql).toContain("ServiceName AS name")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("GROUP BY name")
@@ -560,18 +583,23 @@ describe("tracesBreakdownQuery", () => {
 	it("groups by span_name", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "span_name" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).not.toContain("FROM service_overview_spans")
 		expect(sql).toContain("SpanName AS name")
 	})
 
 	it("groups by status_code", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "status_code" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("StatusCode AS name")
 	})
 
 	it("groups by http_method", () => {
 		const q = tracesBreakdownQuery({ metric: "count", groupBy: "http_method" })
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).not.toContain("FROM service_overview_spans")
 		expect(sql).toContain("SpanAttributes['http.method'] AS name")
 	})
 
@@ -582,6 +610,8 @@ describe("tracesBreakdownQuery", () => {
 			groupByAttributeKey: "rpc.service",
 		})
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).not.toContain("FROM service_overview_spans")
 		expect(sql).toContain("SpanAttributes['rpc.service'] AS name")
 	})
 
@@ -620,8 +650,33 @@ describe("tracesBreakdownQuery", () => {
 			errorsOnly: true,
 		})
 		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("StatusCode = 'Error'")
+	})
+
+	it("uses pre-extracted deployment env on the service overview branch", () => {
+		const q = tracesBreakdownQuery({
+			metric: "count",
+			groupBy: "service",
+			environments: ["prod"],
+		})
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
+		expect(sql).toContain("DeploymentEnv IN ('prod')")
+		expect(sql).not.toContain("ResourceAttributes")
+	})
+
+	it("falls back to raw traces for resource attribute filters", () => {
+		const q = tracesBreakdownQuery({
+			metric: "count",
+			groupBy: "service",
+			resourceAttributeFilters: [{ key: "host.name", value: "server-1", mode: "equals" }],
+		})
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM traces")
+		expect(sql).not.toContain("FROM service_overview_spans")
+		expect(sql).toContain("ResourceAttributes['host.name'] = 'server-1'")
 	})
 })
 
