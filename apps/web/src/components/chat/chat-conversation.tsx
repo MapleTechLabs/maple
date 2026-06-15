@@ -436,7 +436,7 @@ export function ChatConversation({
 			</Conversation>
 
 			<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-				{(messages.length > 0 || isAlertMode || isWidgetFixMode) && (
+				{messages.length === 0 && (isAlertMode || isWidgetFixMode) && (
 					<Suggestions className="mb-3">
 						{suggestions.map((s) => (
 							<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
