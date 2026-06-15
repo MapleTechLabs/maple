@@ -1,0 +1,1 @@
+ALTER TABLE `vcs_repositories` ADD `status` text DEFAULT 'active' NOT NULL;

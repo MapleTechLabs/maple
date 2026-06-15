@@ -75,17 +75,26 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						repos,
 					)
 
-					// Reconcile removals: drop local repos no longer visible upstream.
+					// Reconcile removals: soft-delete local repos no longer visible
+					// upstream. The row and its synced commits are kept (a re-grant
+					// reactivates via upsertRepositories); the "removed" status pauses
+					// any further event processing for them. A user must explicitly
+					// purge to drop the data.
 					if (reason === "repositories_removed") {
 						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
 						const local = yield* repo.listRepositoriesByInstallation(
 							installation.provider,
 							installation.externalInstallationId,
+							"active",
 						)
 						yield* Effect.forEach(
 							local.filter((r) => !remoteIds.has(r.externalRepoId)),
 							(r) =>
-								repo.removeRepository(installation.orgId, installation.provider, r.externalRepoId),
+								repo.markRepositoryRemoved(
+									installation.orgId,
+									installation.provider,
+									r.externalRepoId,
+								),
 							{ discard: true },
 						)
 					}
@@ -333,6 +342,68 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 				// The single agnostic gate — covers backfill, installation-sync, and push.
 				if (!(yield* ensureProcessable(installation, job.kind))) return
+
+				// A newly-created installation gives the org a clean single-installation
+				// slate: hard-delete every *other* installation (and its repos/commits)
+				// for the same org + provider. A user can remove the old GitHub
+				// installation on GitHub's side without Maple ever receiving the
+				// `installation.deleted` webhook (delivery isn't guaranteed), stranding a
+				// stale "active" row — which would otherwise leave the org with several
+				// active installations, a state the dashboard (one active installation per
+				// org) does not support. Purge (not just suspend) so nothing lingers.
+				// Idempotent: a duplicate "created" — the GitHub webhook and the dashboard
+				// callback each enqueue one — finds no siblings left to purge.
+				if (job.kind === "installation-sync" && job.reason === "created") {
+					const superseded = (yield* repo.listInstallationsByOrg(installation.orgId)).filter(
+						(other) =>
+							other.provider === installation.provider &&
+							other.externalInstallationId !== installation.externalInstallationId,
+					)
+					if (superseded.length > 0) {
+						yield* Effect.forEach(
+							superseded,
+							(other) =>
+								repo.purgeInstallation(
+									installation.orgId,
+									installation.provider,
+									other.externalInstallationId,
+								),
+							{ discard: true },
+						)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.installation.superseded": superseded.length,
+						})
+						yield* Effect.logInfo("Purged superseded VCS installations after new install").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalInstallationId: installation.externalInstallationId,
+								orgId: installation.orgId,
+								superseded: superseded.length,
+							}),
+						)
+					}
+				}
+
+				// Per-repo access gate for data jobs: a soft-removed repo is paused —
+				// we stop processing its events until access is re-granted. (An absent
+				// repo row needs no gate here: upsertCommits already drops commits for
+				// an unknown repo, so a backfill racing a user's "delete from Maple"
+				// can't resurrect them — and the gone/transient error paths must still
+				// run even before a repo row exists.)
+				if (job.kind === "push" || job.kind === "backfill-repo") {
+					const repoOpt = yield* repo.getRepository(installation.orgId, job.provider, job.externalRepoId)
+					if (Option.isSome(repoOpt) && repoOpt.value.status === "removed") {
+						yield* Effect.annotateCurrentSpan({ "vcs.repository.skipped": true })
+						yield* Effect.logInfo("Skipping VCS job: repository removed").pipe(
+							Effect.annotateLogs({
+								provider: job.provider,
+								externalRepoId: job.externalRepoId,
+								kind: job.kind,
+							}),
+						)
+						return
+					}
+				}
 
 				const provider = yield* registry.resolve(job.provider)
 

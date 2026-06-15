@@ -8,6 +8,7 @@ import type {
 	VcsInstallationId,
 	VcsProviderId,
 	VcsRepoSelection,
+	VcsRepoStatus,
 	VcsRepoSyncStatus,
 	VcsRepositoryId,
 } from "@maple/domain/http"
@@ -63,6 +64,10 @@ export const vcsRepositories = sqliteTable(
 		htmlUrl: text("html_url").notNull(),
 		isPrivate: integer("is_private", { mode: "number" }).notNull().default(1),
 		isArchived: integer("is_archived", { mode: "number" }).notNull().default(0),
+		// Access lifecycle, distinct from sync_status: "active" (visible to the
+		// installation) or "removed" (provider revoked access → soft-deleted; row +
+		// commits kept, events ignored until re-granted). Hard delete is user-only.
+		status: text("status").$type<VcsRepoStatus>().notNull().default("active"),
 		syncStatus: text("sync_status").$type<VcsRepoSyncStatus>().notNull().default("pending"),
 		lastSyncedAt: integer("last_synced_at", { mode: "number" }),
 		lastSyncError: text("last_sync_error"),
@@ -77,9 +82,12 @@ export const vcsRepositories = sqliteTable(
 )
 
 /**
- * Resolved commits. The dashboard resolver matches a trace's full 40-char SHA
- * by `(org_id, sha)` — provider-agnostic. The row is self-contained
- * (`html_url` + author fields) so the resolver needs no join.
+ * Resolved commits. Each commit belongs to exactly one `vcs_repositories` row
+ * (`repository_id`) — a commit without a repo is not meaningful, and that link
+ * is what a repo/installation purge cascades on. The dashboard resolver still
+ * matches a trace's full 40-char SHA by `(org_id, sha)` — provider-agnostic, no
+ * join — so `org_id` stays denormalized here. The row is self-contained
+ * (`html_url` + author fields).
  */
 export const vcsCommits = sqliteTable(
 	"vcs_commits",
@@ -87,7 +95,11 @@ export const vcsCommits = sqliteTable(
 		id: text("id").$type<VcsCommitRowId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		provider: text("provider").$type<VcsProviderId>().notNull(),
-		externalRepoId: text("external_repo_id").notNull(),
+		// The owning repository row. `vcs_repositories` ids are globally unique, so
+		// this alone identifies the repo (no org/provider needed in the link). A
+		// purge deletes commits by this id; the app refuses to write a commit whose
+		// repo row is absent.
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
 		sha: text("sha").$type<GitCommitSha>().notNull(),
 		message: text("message").notNull(),
 		authorName: text("author_name"),
@@ -101,7 +113,9 @@ export const vcsCommits = sqliteTable(
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("vcs_commits_org_repo_sha_idx").on(table.orgId, table.provider, table.externalRepoId, table.sha),
+		// One row per (repo, sha). repository_id is the leftmost column, so this
+		// index also serves the cascade delete's `WHERE repository_id IN (…)`.
+		uniqueIndex("vcs_commits_repo_sha_idx").on(table.repositoryId, table.sha),
 		index("vcs_commits_org_sha_idx").on(table.orgId, table.sha),
 	],
 )

@@ -81,6 +81,23 @@ const GithubInstallationTokenResponse = Schema.Struct({
 	expires_at: Schema.String,
 })
 
+// `GET /app/installations/{id}` (App-JWT auth): the installed account + which
+// repositories the installation can see. Used by the dashboard connect flow to
+// populate the installation row without needing a user OAuth token.
+const GithubInstallationDetailSchema = Schema.Struct({
+	id: Schema.Number,
+	account: Schema.NullOr(
+		Schema.Struct({
+			login: Schema.String,
+			id: Schema.Number,
+			type: Schema.String, // "User" | "Organization"
+			avatar_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		}),
+	),
+	repository_selection: Schema.optionalKey(Schema.String), // "all" | "selected"
+})
+export type GithubInstallationDetail = Schema.Schema.Type<typeof GithubInstallationDetailSchema>
+
 const GithubApiRepoSchema = Schema.Struct({
 	id: Schema.Number,
 	name: Schema.String,
@@ -124,6 +141,7 @@ export type GithubApiCommit = Schema.Schema.Type<typeof GithubApiCommitSchema>
 const GithubApiCommitList = Schema.Array(GithubApiCommitSchema)
 
 const decodeInstallationToken = Schema.decodeUnknownEffect(GithubInstallationTokenResponse)
+const decodeInstallationDetail = Schema.decodeUnknownEffect(GithubInstallationDetailSchema)
 const decodeInstallationRepos = Schema.decodeUnknownEffect(GithubInstallationReposResponse)
 const decodeCommitList = Schema.decodeUnknownEffect(GithubApiCommitList)
 const decodeCommit = Schema.decodeUnknownEffect(GithubApiCommitSchema)
@@ -448,7 +466,44 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			return { mintInstallationToken, listInstallationRepositories, listCommits, getCommit }
+			// App-JWT lookup of a single installation (account + repository_selection).
+			// The dashboard connect flow uses this to populate the installation row.
+			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
+				externalInstallationId: string,
+			) {
+				const config = yield* resolveConfig
+				const jwt = yield* mintAppJwt(config)
+				const response = yield* rateLimitedFetch(
+					Effect.tryPromise({
+						try: () =>
+							http.fetch(`${config.apiBaseUrl}/app/installations/${externalInstallationId}`, {
+								headers: {
+									authorization: `Bearer ${jwt}`,
+									accept: "application/vnd.github+json",
+									"x-github-api-version": GITHUB_API_VERSION,
+									"user-agent": USER_AGENT,
+								},
+							}),
+						catch: (cause) =>
+							new GithubAppError({ message: "Get installation request failed", cause }),
+					}),
+				)
+				if (!response.ok) return yield* failure(response, "Get installation", "installation")
+				const json = yield* parseJson(response, "Get installation")
+				return yield* decodeInstallationDetail(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected installation payload", cause }),
+					),
+				)
+			})
+
+			return {
+				mintInstallationToken,
+				listInstallationRepositories,
+				listCommits,
+				getCommit,
+				getInstallation,
+			}
 		}),
 	},
 ) {

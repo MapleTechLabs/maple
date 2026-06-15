@@ -306,6 +306,22 @@ describe("VcsRepository", () => {
 			// status is not passed to upsertInstallation — it comes from the schema default.
 			assert.strictEqual(found.value.status, "active")
 
+			// A commit requires its repo row to exist first (it references it by id).
+			yield* repo.upsertRepositories(orgId, "github", "42", [
+				{
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+					fullName: "octo/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/octo/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
+			const repoRow = yield* repo.getRepository(orgId, "github", "7")
+			assert.ok(Option.isSome(repoRow))
+
 			const count = yield* repo.upsertCommits(orgId, "github", "7", [
 				{
 					sha: SHA,
@@ -325,6 +341,8 @@ describe("VcsRepository", () => {
 			const commit = yield* repo.findCommitBySha(orgId, SHA as never)
 			assert.ok(Option.isSome(commit))
 			assert.strictEqual(commit.value.authorLogin, "octocat")
+			// The commit is linked to its repo row by internal id.
+			assert.strictEqual(commit.value.repositoryId, repoRow.value.id)
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 
@@ -346,6 +364,73 @@ describe("VcsRepository", () => {
 			const exit = yield* repo.getInstallation("github", "55").pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	it.effect("purgeInstallation deletes the installation with its repos + commits, leaving other installations intact", () => {
+		const { url } = createTempDbUrl("maple-vcs-purge-", dirs)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_purge")
+			const repoFixture = (externalRepoId: string, fullName: string) => ({
+				externalRepoId,
+				owner: fullName.split("/")[0]!,
+				name: fullName.split("/")[1]!,
+				fullName,
+				defaultBranch: "main",
+				htmlUrl: `https://github.com/${fullName}`,
+				isPrivate: true,
+				isArchived: false,
+			})
+			const commitFixture = (sha: string) => ({
+				sha,
+				message: "m",
+				authorName: null,
+				authorEmail: null,
+				authorLogin: null,
+				authorAvatarUrl: null,
+				authoredAt: null,
+				committedAt: 1,
+				htmlUrl: `https://github.com/octo/repo/commit/${sha}`,
+				branch: "main",
+			})
+			const seed = (externalInstallationId: string, accountLogin: string, externalAccountId: string) =>
+				repo.upsertInstallation({
+					orgId,
+					provider: "github",
+					externalInstallationId,
+					accountLogin,
+					accountType: "organization",
+					externalAccountId,
+					accountAvatarUrl: null,
+					repositorySelection: "all",
+					installedByUserId: asUserId("user_1"),
+				})
+
+			// Two installations in the same org, each with a repo + a commit.
+			yield* seed("42", "octo", "100")
+			yield* seed("99", "other", "200")
+			yield* repo.upsertRepositories(orgId, "github", "42", [repoFixture("7", "octo/repo")])
+			yield* repo.upsertRepositories(orgId, "github", "99", [repoFixture("8", "other/repo")])
+			const SHA_42 = "a".repeat(40)
+			const SHA_99 = "b".repeat(40)
+			yield* repo.upsertCommits(orgId, "github", "7", [commitFixture(SHA_42)])
+			yield* repo.upsertCommits(orgId, "github", "8", [commitFixture(SHA_99)])
+
+			yield* repo.purgeInstallation(orgId, "github", "42")
+
+			// Installation 42 is fully gone — row, repositories, and commits.
+			assert.ok(Option.isNone(yield* repo.getInstallation("github", "42")))
+			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "42", "all")).length, 0)
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_42 as never)))
+
+			// Installation 99 is untouched — the commit delete was scoped to 42's repo ids.
+			assert.ok(Option.isSome(yield* repo.getInstallation("github", "99")))
+			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "99", "all")).length, 1)
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_99 as never)))
+
+			// Idempotent: purging again is a no-op, not an error.
+			yield* repo.purgeInstallation(orgId, "github", "42")
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 })
@@ -488,7 +573,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isSome(a) && Option.isSome(b))
 			// B2: a push is pure enrichment — the sync status stays exactly as the
 			// backfill left it (here: untouched since no backfill has run).
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
@@ -520,11 +605,88 @@ describe("VcsSyncService orchestrator", () => {
 				reason: "created",
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored.length, 1)
 			assert.strictEqual(stored[0]!.externalRepoId, "7")
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent[0]!.kind, "backfill-repo")
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
+	})
+
+	// A new installation supersedes any prior one for the org: if the user removed
+	// the old GitHub installation without Maple receiving the `installation.deleted`
+	// webhook, the stale (still "active") row — and its repos/commits — is purged,
+	// so the org is never left with multiple active installations.
+	it.effect("a 'created' installation-sync purges any prior installation for the org", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-supersede-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const repos = [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate: true,
+				isArchived: false,
+			},
+		]
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+
+			// A stale prior installation ("11"), still active in Maple because the
+			// GitHub uninstall webhook never arrived, with a repo + commit of its own.
+			yield* repo.upsertInstallation({
+				orgId,
+				provider: "github",
+				externalInstallationId: "11",
+				accountLogin: "old",
+				accountType: "organization",
+				externalAccountId: "1",
+				accountAvatarUrl: null,
+				repositorySelection: "all",
+				installedByUserId: asUserId("user_1"),
+			})
+			yield* repo.upsertRepositories(orgId, "github", "11", [
+				{
+					externalRepoId: "70",
+					owner: "old",
+					name: "repo",
+					fullName: "old/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/old/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
+			const STALE_SHA = "c".repeat(40)
+			yield* repo.upsertCommits(orgId, "github", "70", [commit(STALE_SHA, 1)])
+
+			// The freshly-connected installation ("42") exists; its created sync job runs.
+			yield* seedInstallation(repo, orgId)
+			const job: VcsSyncJob = {
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "created",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			// The prior installation, its repos, and its commits are all hard-deleted…
+			assert.ok(Option.isNone(yield* repo.getInstallation("github", "11")))
+			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "11", "all")).length, 0)
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, STALE_SHA as never)))
+
+			// …leaving exactly the new installation, which synced its own repo.
+			const remaining = (yield* repo.listInstallationsByOrg(orgId)).filter((i) => i.provider === "github")
+			assert.strictEqual(remaining.length, 1)
+			assert.strictEqual(remaining[0]!.externalInstallationId, "42")
+			const newRepos = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			assert.strictEqual(newRepos.length, 1)
+			assert.strictEqual(newRepos[0]!.externalRepoId, "7")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -563,7 +725,7 @@ describe("VcsSyncService orchestrator", () => {
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
 			assert.ok(Option.isSome(a) && Option.isSome(b))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "ready")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits })))
 	})
@@ -607,7 +769,7 @@ describe("VcsSyncService orchestrator", () => {
 			const inst = yield* repo.getInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active") // never disconnected
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")
 		}).pipe(
 			Effect.provide(
@@ -627,6 +789,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId) // backfill is gated on the repo row existing
 			// The provider's authoritative gone signal → disconnect, no failure.
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
 			const inst = yield* repo.getInstallation("github", "42")
@@ -650,6 +813,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId) // backfill is gated on the repo row existing
 			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit)) // transient → propagated so the queue retries
 			const inst = yield* repo.getInstallation("github", "42")
@@ -724,7 +888,7 @@ describe("VcsSyncService orchestrator", () => {
 			const inst = yield* repo.getInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active") // reactivated
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored.length, 1) // re-sync ran
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent[0]!.kind, "backfill-repo")
@@ -747,7 +911,7 @@ describe("VcsSyncService orchestrator", () => {
 			// The fetched commit was persisted…
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 			// …the repo is marked backfilling (in progress, not ready)…
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark, delayed until reset.
 			assert.strictEqual(sent.length, 1)
@@ -783,7 +947,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)) // must not fail
 			// The fetched page was persisted and the repo marked backfilling…
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark with NO delay…
 			assert.strictEqual(sent.length, 1)
@@ -827,7 +991,7 @@ describe("VcsSyncService orchestrator", () => {
 			}
 			// It requeued exactly the cap's worth of continuations, then gave up.
 			assert.strictEqual(sent.length, STALL_CAP)
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42")
+			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")
 		}).pipe(
 			Effect.provide(
@@ -869,6 +1033,105 @@ describe("VcsSyncService orchestrator", () => {
 				}),
 			),
 		)
+	})
+
+	// A repositories_removed sync soft-deletes repos no longer visible upstream:
+	// the row + its commits are kept (status → "removed", excluded from "active"),
+	// so history survives and a later re-grant can reactivate it.
+	it.effect("repositories_removed soft-deletes a vanished repo and keeps its commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-soft-del-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId) // repo "7", active
+			yield* repo.upsertCommits(orgId, "github", "7", [commit(SHA_A, 1)])
+
+			// Upstream no longer lists repo "7" (fetchRepositories stubbed to []).
+			const job: VcsSyncJob = {
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "repositories_removed",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			// Row kept but marked removed: excluded from "active", present in "all".
+			const active = yield* repo.listRepositoriesByInstallation("github", "42", "active")
+			assert.strictEqual(active.length, 0)
+			const all = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			assert.strictEqual(all.length, 1)
+			assert.strictEqual(all[0]!.status, "removed")
+			// Its commits are retained (soft delete, not a purge).
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: [] })))
+	})
+
+	// Re-granting access (the repo reappears in a later sync) reactivates the
+	// soft-deleted row via upsertRepositories.
+	it.effect("a re-added repo is reactivated (status back to active)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-reactivate-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const repos = [
+			{
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				fullName: "octo/repo",
+				defaultBranch: "main",
+				htmlUrl: "https://github.com/octo/repo",
+				isPrivate: true,
+				isArchived: false,
+			},
+		]
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			yield* repo.markRepositoryRemoved(orgId, "github", "7") // provider had removed it
+
+			const job: VcsSyncJob = {
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "repositories_added",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			const all = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			assert.strictEqual(all.length, 1)
+			assert.strictEqual(all[0]!.status, "active") // reactivated
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
+	})
+
+	// A push to a soft-removed repo is paused — the commit is not written, even
+	// though the repo row still exists.
+	it.effect("a push to a removed repo is skipped", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-removed-push-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo, orgId)
+			yield* repo.markRepositoryRemoved(orgId, "github", "7")
+
+			const job: VcsSyncJob = {
+				kind: "push",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				branch: "main",
+				commits: [commit(SHA_A, 1)],
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)) // must not fail
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 })
 
@@ -913,6 +1176,20 @@ describe("git SHA validation (branded type)", () => {
 		return Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_sha")
+			// Seed the repo so upsertCommits reaches SHA validation (a commit for an
+			// unknown repo is skipped before decoding).
+			yield* repo.upsertRepositories(orgId, "github", "42", [
+				{
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+					fullName: "octo/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/octo/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
 			const exit = yield* repo
 				.upsertCommits(orgId, "github", "7", [
 					{

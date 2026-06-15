@@ -89,6 +89,20 @@ export const VcsRepoSyncStatus = Schema.Literals(["pending", "backfilling", "rea
 })
 export type VcsRepoSyncStatus = Schema.Schema.Type<typeof VcsRepoSyncStatus>
 
+/**
+ * A repository's lifecycle (access) state — orthogonal to its `syncStatus`.
+ * `active`: the installation can currently see the repo. `removed`: the provider
+ * revoked access (a GitHub `installation_repositories` removed event), so the
+ * repo is soft-deleted — its row and synced commits are kept, but no further
+ * events are processed for it until access is re-granted (which flips it back to
+ * `active`). A hard delete is user-initiated only.
+ */
+export const VcsRepoStatus = Schema.Literals(["active", "removed"]).annotate({
+	identifier: "@maple/VcsRepoStatus",
+	title: "VCS Repository Status",
+})
+export type VcsRepoStatus = Schema.Schema.Type<typeof VcsRepoStatus>
+
 // ---- Row → domain models (validated reads) --------------------------------
 
 export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallation")({
@@ -131,6 +145,7 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	htmlUrl: Schema.String,
 	isPrivate: Schema.Boolean,
 	isArchived: Schema.Boolean,
+	status: VcsRepoStatus,
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
 	lastSyncError: Schema.NullOr(Schema.String),
@@ -142,7 +157,8 @@ export class VcsCommit extends Schema.Class<VcsCommit>("VcsCommit")({
 	id: VcsCommitRowId,
 	orgId: OrgId,
 	provider: VcsProviderId,
-	externalRepoId: Schema.String,
+	/** The owning `vcs_repositories` row — a commit always belongs to one repo. */
+	repositoryId: VcsRepositoryId,
 	sha: GitCommitSha,
 	message: Schema.String,
 	authorName: Schema.NullOr(Schema.String),

@@ -2,6 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { ExternalUserId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
+import { VcsAccountType, VcsRepoSelection, VcsRepoStatus, VcsRepoSyncStatus, VcsRepositoryId } from "./vcs"
 
 export class HazelIntegrationStatus extends Schema.Class<HazelIntegrationStatus>("HazelIntegrationStatus")({
 	connected: Schema.Boolean,
@@ -63,6 +64,58 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 		disconnected: Schema.Boolean,
 	},
 ) {}
+
+// ---- GitHub (VCS App installation) ----------------------------------------
+
+/** One synced repository, surfaced read-only so the dashboard can watch backfill. */
+export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRepoSummary")({
+	// Maple's own repository id (the `vcs_repositories` row) — the stable handle the
+	// dashboard passes back to delete-from-Maple. The provider's `externalRepoId`
+	// stays an internal sync detail and is deliberately not surfaced here.
+	id: VcsRepositoryId,
+	fullName: Schema.String,
+	htmlUrl: Schema.String,
+	isPrivate: Schema.Boolean,
+	// Access lifecycle: "active" or "removed" (provider revoked access — the
+	// dashboard prompts the user to re-enable in GitHub, or delete from Maple).
+	status: VcsRepoStatus,
+	syncStatus: VcsRepoSyncStatus,
+	lastSyncedAt: Schema.NullOr(Schema.Number),
+	lastSyncError: Schema.NullOr(Schema.String),
+}) {}
+
+export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")({
+	connected: Schema.Boolean,
+	accountLogin: Schema.NullOr(Schema.String),
+	accountType: Schema.NullOr(VcsAccountType),
+	repositorySelection: Schema.NullOr(VcsRepoSelection),
+	repositories: Schema.Array(GithubRepoSummary),
+}) {}
+
+export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRequest>(
+	"GithubStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(Schema.String),
+}) {}
+
+export class GithubStartConnectResponse extends Schema.Class<GithubStartConnectResponse>(
+	"GithubStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class GithubDisconnectResponse extends Schema.Class<GithubDisconnectResponse>(
+	"GithubDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
+export class GithubDeleteRepositoryResponse extends Schema.Class<GithubDeleteRepositoryResponse>(
+	"GithubDeleteRepositoryResponse",
+)({
+	deleted: Schema.Boolean,
+}) {}
 
 export class IntegrationsForbiddenError extends Schema.TaggedErrorClass<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
@@ -164,6 +217,45 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
 			success: HazelDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("githubStatus", "/github/status", {
+			success: GithubIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("githubStart", "/github/start", {
+			payload: GithubStartConnectRequest,
+			success: GithubStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("githubDisconnect", "/github", {
+			success: GithubDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("githubDeleteRepository", "/github/repositories/:repositoryId", {
+			params: {
+				repositoryId: VcsRepositoryId,
+			},
+			success: GithubDeleteRepositoryResponse,
+			// Validation: a repo can only be deleted once its provider access was
+			// removed (status "removed"); deleting an active repo is rejected (400).
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsPersistenceError,
+			],
 		}),
 	)
 	.prefix("/api/integrations")

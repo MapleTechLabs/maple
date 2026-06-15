@@ -162,6 +162,20 @@
       "when": 1781357626183,
       "tag": "0022_naive_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1781478981456,
+      "tag": "0023_vcs_repository_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1781479508715,
+      "tag": "0024_vcs_commits_repository_id",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
 	CloudflareIcon,
+	GithubIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -11,9 +12,16 @@ import {
 } from "@/components/icons"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { GITHUB_ACCENT } from "./github-integration-card"
 import { HAZEL_ACCENT } from "./hazel-integration-card"
 
-export type IntegrationId = "cloudflare" | "prometheus" | "planetscale" | "warpstream" | "hazel"
+export type IntegrationId =
+	| "cloudflare"
+	| "prometheus"
+	| "planetscale"
+	| "warpstream"
+	| "hazel"
+	| "github"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -69,6 +77,14 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: HazelIcon,
 		accent: HAZEL_ACCENT,
 	},
+	{
+		id: "github",
+		name: "GitHub",
+		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
+		icon: GithubIcon,
+		accent: GITHUB_ACCENT,
+		docsUrl: "https://maple.dev/docs/integrations/github",
+	},
 ]
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry =>
@@ -91,6 +107,11 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const hazelResult = useAtomValue(
 		MapleApiAtomClient.query("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
+		}),
+	)
+	const githubResult = useAtomValue(
+		MapleApiAtomClient.query("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
 
@@ -129,6 +150,19 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		)
 		.orElse(() => (Result.isInitial(hazelResult) ? null : NOT_CONNECTED))
 
+	const github: CardStatus | null = Result.builder(githubResult)
+		.onSuccess((status): CardStatus => {
+			if (!status.connected) return NOT_CONNECTED
+			// Count only active repos; provider-removed ones are shown in the card
+			// with a re-enable/delete affordance, not as live synced repos.
+			const count = status.repositories.filter((r) => r.status === "active").length
+			return {
+				label: count > 0 ? `${count} repo${count === 1 ? "" : "s"}` : "Connected",
+				variant: "success",
+			}
+		})
+		.orElse(() => (Result.isInitial(githubResult) ? null : NOT_CONNECTED))
+
 	return {
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
@@ -136,6 +170,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
+		github,
 	}
 }
 
