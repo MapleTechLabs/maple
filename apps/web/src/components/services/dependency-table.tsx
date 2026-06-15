@@ -1,14 +1,7 @@
 import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { cn } from "@maple/ui/utils"
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@maple/ui/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { ChevronDownIcon, ChevronUpIcon, ChevronExpandYIcon } from "@/components/icons"
 import { formatLatency } from "@/lib/format"
@@ -60,13 +53,7 @@ function errorTone(rate: number): "error" | "warn" | "default" {
 	return "default"
 }
 
-export function DependencyTable({
-	serviceName,
-	rows,
-	startTime,
-	endTime,
-	timePreset,
-}: DependencyTableProps) {
+export function DependencyTable({ serviceName, rows, startTime, endTime, timePreset }: DependencyTableProps) {
 	const navigate = useNavigate()
 	const [sortKey, setSortKey] = useState<SortKey>("calls")
 	const [sortDir, setSortDir] = useState<SortDir>("desc")
@@ -88,17 +75,9 @@ export function DependencyTable({
 		const out = [...rows]
 		out.sort((a, b) => {
 			const aV =
-				sortKey === "calls"
-					? a.callsPerSec
-					: sortKey === "errorRate"
-						? a.errorRate
-						: a.p95DurationMs
+				sortKey === "calls" ? a.callsPerSec : sortKey === "errorRate" ? a.errorRate : a.p95DurationMs
 			const bV =
-				sortKey === "calls"
-					? b.callsPerSec
-					: sortKey === "errorRate"
-						? b.errorRate
-						: b.p95DurationMs
+				sortKey === "calls" ? b.callsPerSec : sortKey === "errorRate" ? b.errorRate : b.p95DurationMs
 			return sortDir === "desc" ? bV - aV : aV - bV
 		})
 		return out
@@ -127,137 +106,244 @@ export function DependencyTable({
 	}
 
 	return (
-		<div className="rounded-lg border bg-card overflow-hidden">
-			<Table>
-				<TableHeader>
-					<TableRow className="hover:bg-transparent border-b">
-						<TableHead className="h-8 pl-3 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-							Target
-						</TableHead>
-						<SortableHead
-							label="Calls /s"
-							align="right"
-							active={sortKey === "calls"}
-							dir={sortDir}
-							onClick={() => toggleSort("calls")}
-						/>
-						<SortableHead
-							label="Errors"
-							align="right"
-							active={sortKey === "errorRate"}
-							dir={sortDir}
-							onClick={() => toggleSort("errorRate")}
-						/>
-						<TableHead className="h-8 text-right text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
-							Avg
-						</TableHead>
-						<SortableHead
-							label="p95"
-							align="right"
-							active={sortKey === "p95"}
-							dir={sortDir}
-							onClick={() => toggleSort("p95")}
-						/>
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{sorted.length === 0 ? (
-						<TableRow>
-							<TableCell colSpan={5} className="py-12 text-center text-xs text-muted-foreground">
-								No downstream dependencies in this window.
-							</TableCell>
+		<>
+			{/* Desktop: dense sortable table with inline distribution bars. */}
+			<div className="hidden overflow-hidden rounded-lg border bg-card md:block">
+				<Table>
+					<TableHeader>
+						<TableRow className="hover:bg-transparent border-b">
+							<TableHead className="h-8 pl-3 text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
+								Target
+							</TableHead>
+							<SortableHead
+								label="Calls /s"
+								align="right"
+								active={sortKey === "calls"}
+								dir={sortDir}
+								onClick={() => toggleSort("calls")}
+							/>
+							<SortableHead
+								label="Errors"
+								align="right"
+								active={sortKey === "errorRate"}
+								dir={sortDir}
+								onClick={() => toggleSort("errorRate")}
+							/>
+							<TableHead className="h-8 text-right text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium">
+								Avg
+							</TableHead>
+							<SortableHead
+								label="p95"
+								align="right"
+								active={sortKey === "p95"}
+								dir={sortDir}
+								onClick={() => toggleSort("p95")}
+							/>
 						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{sorted.length === 0 ? (
+							<TableRow>
+								<TableCell
+									colSpan={5}
+									className="py-12 text-center text-xs text-muted-foreground"
+								>
+									No downstream dependencies in this window.
+								</TableCell>
+							</TableRow>
+						) : (
+							sorted.map((row) => {
+								const tone = errorTone(row.errorRate)
+								return (
+									<TableRow
+										key={row.id}
+										onClick={() => handleRowClick(row)}
+										className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40"
+									>
+										<TableCell className="py-2 pl-3 align-middle">
+											<div className="flex items-center gap-2.5 min-w-0">
+												<DependencyTypeBadge kind={row.kind} />
+												<div className="flex min-w-0 flex-col leading-tight">
+													<span className="truncate text-[12.5px] text-foreground">
+														{row.name}
+													</span>
+													{row.subtitle ? (
+														<span className="truncate text-[10px] text-muted-foreground/60">
+															{row.subtitle}
+														</span>
+													) : null}
+												</div>
+											</div>
+										</TableCell>
+										<BarCell
+											value={row.callsPerSec}
+											max={maxima.calls}
+											tone="calls"
+											align="right"
+										>
+											{row.hasSampling ? (
+												<Tooltip>
+													<TooltipTrigger
+														render={<span />}
+														className="cursor-help tabular-nums font-mono text-[12.5px] text-foreground"
+													>
+														~{formatRate(row.callsPerSec)}
+													</TooltipTrigger>
+													<TooltipContent>
+														Estimated ×{row.samplingWeight.toFixed(0)} from{" "}
+														{formatRate(row.tracedCallsPerSec)} traced req/s
+													</TooltipContent>
+												</Tooltip>
+											) : (
+												<span className="tabular-nums font-mono text-[12.5px] text-foreground">
+													{formatRate(row.callsPerSec)}
+												</span>
+											)}
+										</BarCell>
+										<BarCell
+											value={row.errorRate > 0 ? row.errorRate : 0}
+											// Errors get a fixed "severity scale" (5% = full bar) rather
+											// than column-relative, so a 0.2% sliver looks small even
+											// when it happens to be the worst in the table.
+											max={0.05}
+											tone="errors"
+											align="right"
+										>
+											<span
+												className={cn(
+													"tabular-nums font-mono text-[12.5px]",
+													tone === "error" && "text-severity-error",
+													tone === "warn" && "text-severity-warn",
+													tone === "default" && "text-muted-foreground/80",
+												)}
+											>
+												{formatErrorRate(row.errorRate)}
+											</span>
+										</BarCell>
+										<TableCell className="py-2 text-right align-middle">
+											<span className="tabular-nums font-mono text-[12.5px] text-muted-foreground/80">
+												{formatLatency(row.avgDurationMs)}
+											</span>
+										</TableCell>
+										<BarCell
+											value={row.p95DurationMs}
+											max={maxima.p95}
+											tone="latency"
+											align="right"
+										>
+											<span className="tabular-nums font-mono text-[12.5px] text-foreground">
+												{formatLatency(row.p95DurationMs)}
+											</span>
+										</BarCell>
+									</TableRow>
+								)
+							})
+						)}
+					</TableBody>
+				</Table>
+			</div>
+
+			{/* Mobile: tap-to-trace list with a compact sort control. The 5-column
+			    table clips below md, so each row collapses to name + a mono metric line. */}
+			<div className="space-y-2 md:hidden">
+				<div className="flex items-center gap-1.5 text-[11px]">
+					<span className="uppercase tracking-wider text-muted-foreground/60">Sort</span>
+					{(
+						[
+							["calls", "Calls"],
+							["errorRate", "Errors"],
+							["p95", "p95"],
+						] as const
+					).map(([key, label]) => {
+						const active = sortKey === key
+						const Icon = active
+							? sortDir === "desc"
+								? ChevronDownIcon
+								: ChevronUpIcon
+							: ChevronExpandYIcon
+						return (
+							<button
+								key={key}
+								type="button"
+								onClick={() => toggleSort(key)}
+								className={cn(
+									"inline-flex items-center gap-1 rounded-md border px-2 py-1 font-mono transition-colors",
+									active
+										? "border-border bg-muted text-foreground"
+										: "border-transparent text-muted-foreground hover:text-foreground",
+								)}
+							>
+								{label}
+								<Icon
+									size={11}
+									className={active ? "text-foreground" : "text-muted-foreground/40"}
+								/>
+							</button>
+						)
+					})}
+				</div>
+				<div className="overflow-hidden rounded-lg border bg-card">
+					{sorted.length === 0 ? (
+						<div className="py-12 text-center text-xs text-muted-foreground">
+							No downstream dependencies in this window.
+						</div>
 					) : (
 						sorted.map((row) => {
 							const tone = errorTone(row.errorRate)
 							return (
-								<TableRow
+								<button
 									key={row.id}
+									type="button"
 									onClick={() => handleRowClick(row)}
-									className="cursor-pointer group/row border-b last:border-b-0 hover:bg-muted/40"
+									className="flex w-full flex-col gap-1 border-b px-3 py-2.5 text-left last:border-b-0 hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 								>
-									<TableCell className="py-2 pl-3 align-middle">
-										<div className="flex items-center gap-2.5 min-w-0">
-											<DependencyTypeBadge kind={row.kind} />
-											<div className="flex min-w-0 flex-col leading-tight">
-												<span className="truncate text-[12.5px] text-foreground">
-													{row.name}
+									<div className="flex min-w-0 items-center gap-2.5">
+										<DependencyTypeBadge kind={row.kind} />
+										<div className="flex min-w-0 flex-col leading-tight">
+											<span className="truncate text-[13px] text-foreground">
+												{row.name}
+											</span>
+											{row.subtitle ? (
+												<span className="truncate text-[10px] text-muted-foreground/60">
+													{row.subtitle}
 												</span>
-												{row.subtitle ? (
-													<span className="truncate text-[10px] text-muted-foreground/60">
-														{row.subtitle}
-													</span>
-												) : null}
-											</div>
+											) : null}
 										</div>
-									</TableCell>
-									<BarCell
-										value={row.callsPerSec}
-										max={maxima.calls}
-										tone="calls"
-										align="right"
-									>
-										{row.hasSampling ? (
-											<Tooltip>
-												<TooltipTrigger
-													render={<span />}
-													className="cursor-help tabular-nums font-mono text-[12.5px] text-foreground"
-												>
-													~{formatRate(row.callsPerSec)}
-												</TooltipTrigger>
-												<TooltipContent>
-													Estimated ×{row.samplingWeight.toFixed(0)} from{" "}
-													{formatRate(row.tracedCallsPerSec)} traced req/s
-												</TooltipContent>
-											</Tooltip>
-										) : (
-											<span className="tabular-nums font-mono text-[12.5px] text-foreground">
+									</div>
+									<div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+										<span>
+											<span className="text-muted-foreground/60">calls </span>
+											<span className="text-foreground">
+												{row.hasSampling ? "~" : ""}
 												{formatRate(row.callsPerSec)}
 											</span>
-										)}
-									</BarCell>
-									<BarCell
-										value={row.errorRate > 0 ? row.errorRate : 0}
-										// Errors get a fixed "severity scale" (5% = full bar) rather
-										// than column-relative, so a 0.2% sliver looks small even
-										// when it happens to be the worst in the table.
-										max={0.05}
-										tone="errors"
-										align="right"
-									>
-										<span
-											className={cn(
-												"tabular-nums font-mono text-[12.5px]",
-												tone === "error" && "text-severity-error",
-												tone === "warn" && "text-severity-warn",
-												tone === "default" && "text-muted-foreground/80",
-											)}
-										>
-											{formatErrorRate(row.errorRate)}
 										</span>
-									</BarCell>
-									<TableCell className="py-2 text-right align-middle">
-										<span className="tabular-nums font-mono text-[12.5px] text-muted-foreground/80">
-											{formatLatency(row.avgDurationMs)}
+										<span>
+											<span className="text-muted-foreground/60">err </span>
+											<span
+												className={cn(
+													tone === "error" && "text-severity-error",
+													tone === "warn" && "text-severity-warn",
+													tone === "default" && "text-muted-foreground/80",
+												)}
+											>
+												{formatErrorRate(row.errorRate)}
+											</span>
 										</span>
-									</TableCell>
-									<BarCell
-										value={row.p95DurationMs}
-										max={maxima.p95}
-										tone="latency"
-										align="right"
-									>
-										<span className="tabular-nums font-mono text-[12.5px] text-foreground">
-											{formatLatency(row.p95DurationMs)}
+										<span>
+											<span className="text-muted-foreground/60">p95 </span>
+											<span className="text-foreground">
+												{formatLatency(row.p95DurationMs)}
+											</span>
 										</span>
-									</BarCell>
-								</TableRow>
+									</div>
+								</button>
 							)
 						})
 					)}
-				</TableBody>
-			</Table>
-		</div>
+				</div>
+			</div>
+		</>
 	)
 }
 
@@ -320,17 +406,9 @@ function SortableHead({ label, align = "left", active, dir, onClick }: SortableH
 				align === "right" && "text-right",
 			)}
 		>
-			<span
-				className={cn(
-					"inline-flex items-center gap-1",
-					align === "right" && "justify-end w-full",
-				)}
-			>
+			<span className={cn("inline-flex items-center gap-1", align === "right" && "justify-end w-full")}>
 				{label}
-				<Icon
-					size={11}
-					className={active ? "text-foreground" : "text-muted-foreground/30"}
-				/>
+				<Icon size={11} className={active ? "text-foreground" : "text-muted-foreground/30"} />
 			</span>
 		</TableHead>
 	)
