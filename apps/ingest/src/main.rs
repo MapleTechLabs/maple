@@ -4010,7 +4010,7 @@ impl KeyStore for PostgresKeyStore {
     ) -> Result<Option<KeyRow>, String> {
         // hash_column is a compile-time constant chosen by the resolver, never
         // user input — safe to interpolate.
-        let revision = CLICKHOUSE_PROJECT_REVISION;
+        let revision = CLICKHOUSE_SCHEMA_VERSION;
         let sql = format!(
             "SELECT k.org_id, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
@@ -4039,7 +4039,7 @@ impl KeyStore for PostgresKeyStore {
         connector_id: &str,
         secret_hash: &str,
     ) -> Result<Option<ConnectorRow>, String> {
-        let revision = CLICKHOUSE_PROJECT_REVISION;
+        let revision = CLICKHOUSE_SCHEMA_VERSION;
         let client = self.client().await?;
         let rows = client
             .query(
@@ -4118,7 +4118,7 @@ impl KeyStore for PostgresKeyStore {
         &self,
         org_id: &str,
     ) -> Result<Option<ClickHouseTargetRow>, String> {
-        let revision = CLICKHOUSE_PROJECT_REVISION;
+        let revision = CLICKHOUSE_SCHEMA_VERSION;
         let client = self.client().await?;
         let rows = client
             .query(
@@ -4141,6 +4141,27 @@ impl KeyStore for PostgresKeyStore {
             ch_password_tag: row.get("ch_password_tag"),
             ch_database: row.get("ch_database"),
             schema_version: row.get("schema_version"),
+        }))
+    }
+
+    async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
+        let revision = CLICKHOUSE_SCHEMA_VERSION;
+        let client = self.client().await?;
+        let rows = client
+            .query(
+                "SELECT COALESCE(sync_status = 'connected', false) AS self_managed, \
+                        COALESCE(sync_status = 'connected' AND schema_version = $1, false) AS clickhouse_ready \
+                 FROM org_clickhouse_settings WHERE org_id = $2 LIMIT 1",
+                &[&revision, &org_id],
+            )
+            .await
+            .map_err(|error| format!("postgres fetch_org_routing failed: {error}"))?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(OrgRouting {
+            self_managed: row.get("self_managed"),
+            clickhouse_ready: row.get("clickhouse_ready"),
         }))
     }
 

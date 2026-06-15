@@ -861,9 +861,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							.set({
 								schemaVersion: clickHouseSchemaVersion,
 								syncStatus: "connected",
-								lastSyncAt: now,
+								lastSyncAt: new Date(now),
 								lastSyncError: null,
-								updatedAt: now,
+								updatedAt: new Date(now),
 							})
 							.where(eq(orgClickHouseSettings.orgId, orgId)),
 					)
