@@ -12,6 +12,7 @@ export const UNIVERSAL_GROUP_ORDER = [
 	"Session Replay",
 	"Infrastructure",
 	"Integrations",
+	"Alerting",
 	"Local Mode",
 ] as const;
 
@@ -44,6 +45,7 @@ export const HEADER_NAV: HeaderNavItem[] = [
 	{ key: "Session Replay", icon: "Session Replay", kind: "group" },
 	{ key: "Infrastructure", icon: "Infrastructure", kind: "group" },
 	{ key: "Integrations", icon: "Integrations", kind: "group" },
+	{ key: "Alerting", icon: "Alerting", kind: "group" },
 	{ key: "Local Mode", icon: "Local Mode", kind: "group" },
 ];
 
@@ -54,6 +56,7 @@ const CATEGORY_ICON_KEYS = new Set<string>([
 	"Session Replay",
 	"Infrastructure",
 	"Integrations",
+	"Alerting",
 	"Local Mode",
 	"sdks",
 ]);

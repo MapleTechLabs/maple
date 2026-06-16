@@ -551,6 +551,18 @@ export function DestinationDialog({
 										}
 										className="font-mono text-xs"
 									/>
+									<p className="text-[11px] text-muted-foreground">
+										Use an{" "}
+										<a
+											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
+											target="_blank"
+											rel="noreferrer"
+											className="underline-offset-2 hover:text-foreground hover:underline"
+										>
+											Events API v2 integration key
+										</a>{" "}
+										(32 characters) — a REST API token won't work.
+									</p>
 								</div>
 							)}
 
