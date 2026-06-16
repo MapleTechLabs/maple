@@ -1,12 +1,7 @@
 import { cn } from "@maple/ui/lib/utils"
 import { deriveHostStatus, type HostStatus } from "./format"
 import { SeverityDot } from "./primitives/severity-dot"
-
-const STATUS_LABEL: Record<HostStatus, string> = {
-	active: "Active",
-	idle: "Idle",
-	down: "Down",
-}
+import { statusLabel } from "./severity-tokens"
 
 const STATUS_TEXT: Record<HostStatus, string> = {
 	active: "text-[var(--severity-info)]",
@@ -36,7 +31,7 @@ export function HostStatusBadge({ lastSeen, referenceTime, className }: HostStat
 			)}
 		>
 			<SeverityDot status={status} />
-			{STATUS_LABEL[status]}
+			{statusLabel(status)}
 		</span>
 	)
 }

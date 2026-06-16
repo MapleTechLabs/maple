@@ -11,12 +11,15 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { GridIcon } from "@/components/icons"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { WorkloadDetailChart } from "@/components/infra/k8s-detail-chart"
-import { PodTable, type PodRow } from "@/components/infra/pod-table"
+import { PodTable } from "@/components/infra/pod-table"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
 import {
 	listPodsResultAtom,
 	workloadDetailSummaryResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
+import { formatPercent, severityLevel } from "@/components/infra/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import type { WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
 
@@ -40,39 +43,11 @@ export const Route = createFileRoute("/infra/kubernetes/workloads/$kind/$workloa
 	},
 })
 
-const TIME_PRESETS = [
-	{ value: "15m", label: "Last 15 minutes" },
-	{ value: "1h", label: "Last hour" },
-	{ value: "6h", label: "Last 6 hours" },
-	{ value: "12h", label: "Last 12 hours" },
-	{ value: "24h", label: "Last 24 hours" },
-	{ value: "7d", label: "Last 7 days" },
-]
-
 const METRIC_TABS = [
 	{ value: "cpu_limit", label: "CPU / limit" },
 	{ value: "memory_limit", label: "Mem / limit" },
 	{ value: "cpu_usage", label: "CPU cores" },
 ] as const
-
-function bucketSecondsFor(preset: string): number {
-	switch (preset) {
-		case "15m":
-			return 15
-		case "1h":
-			return 60
-		case "6h":
-			return 300
-		case "12h":
-			return 600
-		case "24h":
-			return 900
-		case "7d":
-			return 3600
-		default:
-			return 60
-	}
-}
 
 const KIND_LABEL: Record<WorkloadKind, string> = {
 	deployment: "Deployment",
@@ -86,14 +61,9 @@ function WorkloadDetailPage() {
 	return <WorkloadDetailContent />
 }
 
-function formatPercent(v: number): string {
-	if (!Number.isFinite(v)) return "—"
-	return `${(v * 100).toFixed(0)}%`
-}
-
 function WorkloadDetailContent() {
-	const params = Route.useParams() as { kind: WorkloadKind; workloadName: string }
-	const search = Route.useSearch() as { namespace?: string }
+	const params = Route.useParams()
+	const search = Route.useSearch()
 	const namespace = search.namespace
 	const [preset, setPreset] = useState("1h")
 	const [metric, setMetric] = useState<WorkloadInfraMetric>("cpu_limit")
@@ -190,17 +160,26 @@ function WorkloadDetailContent() {
 				/>
 
 				{summary ? (
-					<div className="grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card lg:grid-cols-4 lg:divide-y-0">
-						<Kpi label="Pods" value={String(summary.podCount)} />
-						<Kpi label="Avg CPU vs limit" value={formatPercent(summary.avgCpuLimitPct)} />
-						<Kpi label="Avg memory vs limit" value={formatPercent(summary.avgMemoryLimitPct)} />
-						<Kpi
-							label="Avg CPU cores"
-							value={
-								Number.isFinite(summary.avgCpuUsage) ? summary.avgCpuUsage.toFixed(3) : "—"
-							}
+					<StatRail>
+						<StatRailItem eyebrow="Pods" value={String(summary.podCount)} compact />
+						<StatRailItem
+							eyebrow="Avg CPU vs limit"
+							value={formatPercent(summary.avgCpuLimitPct)}
+							tone={severityLevel(summary.avgCpuLimitPct)}
+							compact
 						/>
-					</div>
+						<StatRailItem
+							eyebrow="Avg memory vs limit"
+							value={formatPercent(summary.avgMemoryLimitPct)}
+							tone={severityLevel(summary.avgMemoryLimitPct)}
+							compact
+						/>
+						<StatRailItem
+							eyebrow="Avg CPU cores"
+							value={Number.isFinite(summary.avgCpuUsage) ? summary.avgCpuUsage.toFixed(3) : "—"}
+							compact
+						/>
+					</StatRail>
 				) : (
 					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
 						No metrics arrived for this workload in the selected window.
@@ -256,7 +235,7 @@ function WorkloadDetailContent() {
 					<h3 className="text-sm font-medium">Pods</h3>
 					{Result.builder(podsResult)
 						.onSuccess((r) => {
-							const pods = r.data as ReadonlyArray<PodRow>
+							const pods = r.data
 							if (pods.length === 0) {
 								return (
 									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
@@ -270,20 +249,6 @@ function WorkloadDetailContent() {
 				</div>
 			</div>
 		</DashboardLayout>
-	)
-}
-
-function Kpi({ label, value }: { label: string; value: string }) {
-	return (
-		<div className="px-5 py-4">
-			<div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-			<div
-				className="mt-2 font-mono text-[26px] font-semibold tabular-nums leading-none tracking-[-0.01em] text-foreground"
-				style={{ fontFeatureSettings: "'tnum' 1" }}
-			>
-				{value}
-			</div>
-		</div>
 	)
 }
 

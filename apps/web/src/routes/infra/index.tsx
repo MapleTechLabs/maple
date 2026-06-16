@@ -89,7 +89,7 @@ function InfraPageContent() {
 					))
 					.onError((err) => <QueryErrorState error={err} />)
 					.onSuccess((response, result) => {
-						const hosts = response.data as ReadonlyArray<HostRow>
+						const hosts = response.data
 
 						if (hosts.length === 0 && !search.trim()) {
 							return (
@@ -174,69 +174,71 @@ function FleetView({
 	const showFleetGrid = hosts.length >= FLEET_GRID_THRESHOLD
 
 	return (
-		<div className={cn("space-y-6 transition-opacity", waiting && "opacity-60")}>
-			<HostSummaryCards hosts={hosts} startTime={startTime} endTime={endTime} />
-
-			{showFleetGrid && <FleetGrid hosts={hosts} />}
-
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<InputGroup className="w-64">
-					<InputGroupAddon>
-						<MagnifierIcon />
-					</InputGroupAddon>
-					<InputGroupInput
-						size="sm"
-						placeholder="Search hosts…"
-						value={search}
-						onChange={(e) => onSearchChange(e.target.value)}
-					/>
-					{search && (
-						<InputGroupAddon align="inline-end">
-							<InputGroupButton aria-label="Clear search" onClick={() => onSearchChange("")}>
-								<XmarkIcon />
-							</InputGroupButton>
-						</InputGroupAddon>
-					)}
-				</InputGroup>
-				<div
-					role="tablist"
-					aria-label="Filter hosts by status"
-					className="flex items-center gap-0.5 rounded-md border bg-background p-0.5"
-				>
-					{STATUS_FILTERS.map((opt) => {
-						const count =
-							opt.value === "all" ? hosts.length : (counts[opt.value as HostStatus] ?? 0)
-						const active = statusFilter === opt.value
-						return (
-							<button
-								key={opt.value}
-								type="button"
-								role="tab"
-								aria-selected={active}
-								onClick={() => onStatusFilterChange(opt.value)}
-								className={cn(
-									"inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] font-medium transition-colors",
-									active
-										? "bg-foreground text-background"
-										: "text-muted-foreground hover:text-foreground",
-								)}
-							>
-								{opt.label}
-								<span
-									className={cn(
-										"tabular-nums",
-										active ? "text-background/70" : "text-foreground/40",
-									)}
-								>
-									{count}
-								</span>
-							</button>
-						)
-					})}
-				</div>
+		<div className={cn("transition-opacity", waiting && "opacity-60")}>
+			<div className="space-y-4">
+				<HostSummaryCards hosts={hosts} startTime={startTime} endTime={endTime} />
+				{showFleetGrid && <FleetGrid hosts={hosts} />}
 			</div>
 
-			<HostTable hosts={filtered} waiting={waiting} />
+			<div className="mt-8 space-y-3">
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<InputGroup className="w-64">
+						<InputGroupAddon>
+							<MagnifierIcon />
+						</InputGroupAddon>
+						<InputGroupInput
+							size="sm"
+							placeholder="Search hosts…"
+							value={search}
+							onChange={(e) => onSearchChange(e.target.value)}
+						/>
+						{search && (
+							<InputGroupAddon align="inline-end">
+								<InputGroupButton aria-label="Clear search" onClick={() => onSearchChange("")}>
+									<XmarkIcon />
+								</InputGroupButton>
+							</InputGroupAddon>
+						)}
+					</InputGroup>
+					<div
+						role="tablist"
+						aria-label="Filter hosts by status"
+						className="flex items-center gap-0.5 rounded-md border bg-background p-0.5"
+					>
+						{STATUS_FILTERS.map((opt) => {
+							const count = opt.value === "all" ? hosts.length : (counts[opt.value] ?? 0)
+							const active = statusFilter === opt.value
+							return (
+								<button
+									key={opt.value}
+									type="button"
+									role="tab"
+									aria-selected={active}
+									onClick={() => onStatusFilterChange(opt.value)}
+									className={cn(
+										"inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-[11px] font-medium transition-colors",
+										active
+											? "bg-foreground text-background"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									{opt.label}
+									<span
+										className={cn(
+											"tabular-nums",
+											active ? "text-background/70" : "text-foreground/40",
+										)}
+									>
+										{count}
+									</span>
+								</button>
+							)
+						})}
+					</div>
+				</div>
+
+				<HostTable hosts={filtered} waiting={waiting} />
+			</div>
 		</div>
 	)
 }

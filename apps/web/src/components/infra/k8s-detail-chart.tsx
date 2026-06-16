@@ -18,50 +18,10 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { PodInfraMetric, NodeInfraMetric, WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
 import { formatPercent } from "./format"
+import { CHART_EMPTY_MESSAGE, CHART_GRID_DASH, COLOR_PALETTE, transformRows } from "./chart-utils"
 import { formatBackendError } from "@/lib/error-messages"
 
 const CHART_HEIGHT = 280
-
-const COLOR_PALETTE = [
-	"var(--chart-1)",
-	"var(--chart-2)",
-	"var(--chart-3)",
-	"var(--chart-4)",
-	"var(--chart-5)",
-	"var(--chart-p50)",
-]
-
-function isoToLabel(iso: string): string {
-	const d = new Date(iso)
-	return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-}
-
-interface TransformedPoint extends Record<string, string | number> {
-	bucket: string
-	time: string
-}
-
-function transformRows(rows: ReadonlyArray<{ bucket: string; attributeValue: string; value: number }>): {
-	data: TransformedPoint[]
-	series: string[]
-} {
-	const seriesSet = new Set<string>()
-	const byBucket = new Map<string, TransformedPoint>()
-	for (const row of rows) {
-		const series = row.attributeValue || "value"
-		seriesSet.add(series)
-		const existing =
-			byBucket.get(row.bucket) ??
-			({
-				bucket: row.bucket,
-				time: isoToLabel(row.bucket),
-			} as TransformedPoint)
-		existing[series] = row.value
-		byBucket.set(row.bucket, existing)
-	}
-	const data = Array.from(byBucket.values()).toSorted((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
-	return { data, series: [...seriesSet] }
-}
 
 function formatSeconds(seconds: number): string {
 	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
@@ -117,7 +77,7 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 	if (data.length === 0) {
 		return (
 			<div className="flex h-[280px] items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
-				No data for this metric in the selected window.
+				{CHART_EMPTY_MESSAGE}
 			</div>
 		)
 	}
@@ -184,7 +144,7 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 								)
 							})}
 						</defs>
-						<CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
 						<XAxis
 							dataKey="time"
 							tickLine={false}
@@ -240,7 +200,7 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 					</AreaChart>
 				) : (
 					<LineChart data={data} margin={margin} syncId={syncId} syncMethod="value">
-						<CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
 						<XAxis
 							dataKey="time"
 							tickLine={false}

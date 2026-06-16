@@ -12,7 +12,10 @@ import { FolderIcon } from "@/components/icons"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { PodDetailChart } from "@/components/infra/k8s-detail-chart"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
 import { podDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
+import { formatPercent, severityLevel } from "@/components/infra/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import type { PodInfraMetric } from "@/api/warehouse/infra"
 
@@ -25,15 +28,6 @@ export const Route = createFileRoute("/infra/kubernetes/pods/$podName")({
 	validateSearch: Schema.toStandardSchemaV1(podDetailSearchSchema),
 })
 
-const TIME_PRESETS = [
-	{ value: "15m", label: "Last 15 minutes" },
-	{ value: "1h", label: "Last hour" },
-	{ value: "6h", label: "Last 6 hours" },
-	{ value: "12h", label: "Last 12 hours" },
-	{ value: "24h", label: "Last 24 hours" },
-	{ value: "7d", label: "Last 7 days" },
-]
-
 const METRIC_TABS = [
 	{ value: "cpu_usage", label: "CPU cores" },
 	{ value: "cpu_limit", label: "CPU / limit" },
@@ -42,39 +36,15 @@ const METRIC_TABS = [
 	{ value: "memory_request", label: "Mem / request" },
 ] as const
 
-function bucketSecondsFor(preset: string): number {
-	switch (preset) {
-		case "15m":
-			return 15
-		case "1h":
-			return 60
-		case "6h":
-			return 300
-		case "12h":
-			return 600
-		case "24h":
-			return 900
-		case "7d":
-			return 3600
-		default:
-			return 60
-	}
-}
-
 function PodDetailPage() {
 	const infraEnabled = useInfraEnabled()
 	if (!infraEnabled) return <Navigate to="/" replace />
 	return <PodDetailContent />
 }
 
-function formatPercent(v: number): string {
-	if (!Number.isFinite(v)) return "—"
-	return `${(v * 100).toFixed(0)}%`
-}
-
 function PodDetailContent() {
 	const { podName } = Route.useParams()
-	const search = Route.useSearch() as { namespace?: string }
+	const search = Route.useSearch()
 	const namespace = search.namespace
 	const [preset, setPreset] = useState("1h")
 	const [metric, setMetric] = useState<PodInfraMetric>("cpu_usage")
@@ -154,12 +124,30 @@ function PodDetailContent() {
 				/>
 
 				{summary ? (
-					<div className="grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card lg:grid-cols-4 lg:divide-y-0">
-						<Kpi label="CPU vs limit" value={formatPercent(summary.cpuLimitPct)} />
-						<Kpi label="CPU vs request" value={formatPercent(summary.cpuRequestPct)} />
-						<Kpi label="Memory vs limit" value={formatPercent(summary.memoryLimitPct)} />
-						<Kpi label="Memory vs request" value={formatPercent(summary.memoryRequestPct)} />
-					</div>
+					<StatRail>
+						<StatRailItem
+							eyebrow="CPU vs limit"
+							value={formatPercent(summary.cpuLimitPct)}
+							tone={severityLevel(summary.cpuLimitPct)}
+							compact
+						/>
+						<StatRailItem
+							eyebrow="CPU vs request"
+							value={formatPercent(summary.cpuRequestPct)}
+							compact
+						/>
+						<StatRailItem
+							eyebrow="Memory vs limit"
+							value={formatPercent(summary.memoryLimitPct)}
+							tone={severityLevel(summary.memoryLimitPct)}
+							compact
+						/>
+						<StatRailItem
+							eyebrow="Memory vs request"
+							value={formatPercent(summary.memoryRequestPct)}
+							compact
+						/>
+					</StatRail>
 				) : (
 					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
 						No metrics arrived for this pod in the selected window.
@@ -198,20 +186,6 @@ function PodDetailContent() {
 				</div>
 			</div>
 		</DashboardLayout>
-	)
-}
-
-function Kpi({ label, value }: { label: string; value: string }) {
-	return (
-		<div className="px-5 py-4">
-			<div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-			<div
-				className="mt-2 font-mono text-[26px] font-semibold tabular-nums leading-none tracking-[-0.01em] text-foreground"
-				style={{ fontFeatureSettings: "'tnum' 1" }}
-			>
-				{value}
-			</div>
-		</div>
 	)
 }
 

@@ -10,9 +10,12 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { ServerIcon } from "@/components/icons"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { NodeDetailChart } from "@/components/infra/k8s-detail-chart"
-import { PodTable, type PodRow } from "@/components/infra/pod-table"
+import { PodTable } from "@/components/infra/pod-table"
 import { PageHero, HeroChip } from "@/components/infra/primitives/page-hero"
+import { StatRail, StatRailItem } from "@/components/infra/primitives/stat-rail"
 import { listPodsResultAtom, nodeDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
+import { formatUptime } from "@/components/infra/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import type { NodeInfraMetric } from "@/api/warehouse/infra"
 
@@ -20,53 +23,15 @@ export const Route = createFileRoute("/infra/kubernetes/nodes/$nodeName")({
 	component: NodeDetailPage,
 })
 
-const TIME_PRESETS = [
-	{ value: "15m", label: "Last 15 minutes" },
-	{ value: "1h", label: "Last hour" },
-	{ value: "6h", label: "Last 6 hours" },
-	{ value: "12h", label: "Last 12 hours" },
-	{ value: "24h", label: "Last 24 hours" },
-	{ value: "7d", label: "Last 7 days" },
-]
-
 const METRIC_TABS = [
 	{ value: "cpu_usage", label: "CPU cores" },
 	{ value: "uptime", label: "Uptime" },
 ] as const
 
-function bucketSecondsFor(preset: string): number {
-	switch (preset) {
-		case "15m":
-			return 15
-		case "1h":
-			return 60
-		case "6h":
-			return 300
-		case "12h":
-			return 600
-		case "24h":
-			return 900
-		case "7d":
-			return 3600
-		default:
-			return 60
-	}
-}
-
 function NodeDetailPage() {
 	const infraEnabled = useInfraEnabled()
 	if (!infraEnabled) return <Navigate to="/" replace />
 	return <NodeDetailContent />
-}
-
-function formatUptime(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
-	const m = Math.floor(seconds / 60)
-	if (m < 60) return `${m}m`
-	const h = Math.floor(m / 60)
-	if (h < 24) return `${h}h`
-	const d = Math.floor(h / 24)
-	return `${d}d ${h % 24}h`
 }
 
 function NodeDetailContent() {
@@ -155,14 +120,15 @@ function NodeDetailContent() {
 				/>
 
 				{summary ? (
-					<div className="grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:grid-cols-3 md:divide-y-0">
-						<Kpi
-							label="CPU cores"
+					<StatRail columns={3}>
+						<StatRailItem
+							eyebrow="CPU cores"
 							value={Number.isFinite(summary.cpuUsage) ? summary.cpuUsage.toFixed(2) : "—"}
+							compact
 						/>
-						<Kpi label="Uptime" value={formatUptime(summary.uptime)} />
-						<Kpi label="Kubelet" value={summary.kubeletVersion || "—"} />
-					</div>
+						<StatRailItem eyebrow="Uptime" value={formatUptime(summary.uptime)} compact />
+						<StatRailItem eyebrow="Kubelet" value={summary.kubeletVersion || "—"} compact />
+					</StatRail>
 				) : (
 					<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
 						No metrics arrived for this node in the selected window.
@@ -203,7 +169,7 @@ function NodeDetailContent() {
 					<h3 className="text-sm font-medium">Pods on this node</h3>
 					{Result.builder(podsResult)
 						.onSuccess((r) => {
-							const pods = r.data as ReadonlyArray<PodRow>
+							const pods = r.data
 							if (pods.length === 0) {
 								return (
 									<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
@@ -217,20 +183,6 @@ function NodeDetailContent() {
 				</div>
 			</div>
 		</DashboardLayout>
-	)
-}
-
-function Kpi({ label, value }: { label: string; value: string }) {
-	return (
-		<div className="px-5 py-4">
-			<div className="text-[11px] font-medium text-muted-foreground">{label}</div>
-			<div
-				className="mt-2 font-mono text-[26px] font-semibold tabular-nums leading-none tracking-[-0.01em] text-foreground"
-				style={{ fontFeatureSettings: "'tnum' 1" }}
-			>
-				{value}
-			</div>
-		</div>
 	)
 }
 

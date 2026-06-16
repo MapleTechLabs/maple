@@ -17,7 +17,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { MagnifierIcon, ServerIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
-import { NodeTable, NodeTableLoading, type NodeRow } from "@/components/infra/node-table"
+import { NodeTable, NodeTableLoading } from "@/components/infra/node-table"
 import { NodesFilterSidebarView, type NodeFilters } from "@/components/infra/k8s-filter-sidebar"
 import { listNodesResultAtom, nodeFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -149,7 +149,7 @@ function NodesPageContent() {
 						.onInitial(() => <NodeTableLoading />)
 						.onError((err) => <QueryErrorState error={err} />)
 						.onSuccess((response, result) => {
-							const nodes = response.data as ReadonlyArray<NodeRow>
+							const nodes = response.data
 							const hasAnyFilter =
 								!!search.search?.trim() ||
 								(filters.nodeNames?.length ?? 0) > 0 ||
