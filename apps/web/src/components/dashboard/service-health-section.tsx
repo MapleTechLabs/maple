@@ -57,9 +57,10 @@ function servicesLinkSearch({
 }
 
 /**
- * Search params for the per-service detail route. That route accepts only the
- * time-range slice (no `environments`/`health`), so this is narrower than
- * {@link servicesLinkSearch}.
+ * Time-range slice shared by every per-service detail link. The clicked row's
+ * environment is appended at the {@link ServiceHealthRow} link site so the
+ * detail page scopes its charts to that environment; `health` is not carried —
+ * narrower than {@link servicesLinkSearch}.
  */
 function serviceDetailSearch({ startTime, endTime, timePreset }: ServiceHealthProps) {
 	return { startTime, endTime, timePreset }
@@ -302,7 +303,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 							<ul className="divide-y divide-border">
 								{rows.map(({ service, health, hasOpenIncident, baseline }) => (
 									<ServiceHealthRow
-										key={`${service.serviceName}:${service.environment}`}
+										key={`${service.serviceName}:${service.serviceNamespace}:${service.environment}`}
 										service={service}
 										health={health}
 										hasOpenIncident={hasOpenIncident}
@@ -331,7 +332,7 @@ function ServiceHealthRow({
 			<Link
 				to="/services/$serviceName"
 				params={{ serviceName: service.serviceName }}
-				search={detailSearch}
+				search={{ ...detailSearch, environments: [service.environment] }}
 				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 			>
 				<span

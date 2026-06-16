@@ -35,6 +35,19 @@ const dateTimeString = WarehouseDateTimeString
 
 const asMetricName = Schema.decodeUnknownSync(MetricName)
 const asServiceName = Schema.decodeUnknownSync(ServiceName)
+const asDeploymentEnv = Schema.decodeUnknownSync(DeploymentEnvironment)
+
+/**
+ * Map the service list's synthetic `"unknown"` environment label back to the raw
+ * empty-string `DeploymentEnv` value the warehouse actually stores (see
+ * `coerceRow` in `services.ts`, which coerces `"" -> "unknown"` for display).
+ * Without this, scoping a detail page to an `"unknown"` row would emit
+ * `DeploymentEnv IN ('unknown')` and match nothing.
+ */
+const toEnvFilter = (
+	environments: ReadonlyArray<DeploymentEnvironment> | undefined,
+): ReadonlyArray<DeploymentEnvironment> | undefined =>
+	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
 
 // SpanMetrics connector metric names — try namespaced first, then default
 const SPANMETRICS_CALLS_CANDIDATES = ["span.metrics.calls", "calls"] as const
@@ -637,6 +650,10 @@ const GetCustomChartServiceDetailInputSchema = Schema.Struct({
 	serviceName: ServiceName,
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
+	// Scopes the detail charts to a single deployment environment. Carries the
+	// service list's display value (incl. the synthetic `"unknown"`); the
+	// `"unknown" -> ""` remap to the raw warehouse value happens in `toEnvFilter`.
+	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
 })
 
 type GetCustomChartServiceDetailInput = (typeof GetCustomChartServiceDetailInputSchema)["Encoded"]
@@ -819,12 +836,20 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 	)
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+	// When scoped to an environment, the SpanMetrics `calls` counter (a
+	// service-level, all-environment counter — `querySpanMetricsCalls` cannot
+	// filter by `DeploymentEnv`, and its hourly MV doesn't carry it) would plot
+	// all-environment volume next to the env-scoped error rate / latency. Drop it
+	// in that case and let throughput fall back to the env-scoped
+	// `estimatedSpanCount` (sum of SampleRate over the env-filtered root spans).
+	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
 		bucketSeconds,
 		serviceName: input.serviceName,
 		rootSpansOnly: true,
+		environments: toEnvFilter(input.environments),
 	}
 
 	const [allMetricsRes, metricsResult] = yield* Effect.all(
@@ -833,12 +858,14 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 				"queryEngine.serviceDetail.allMetrics",
 				makeAllMetricsTimeseriesRequest(reqOpts),
 			),
-			querySpanMetricsCalls({
-				service: input.serviceName,
-				start_time: input.startTime,
-				end_time: input.endTime,
-				bucket_seconds: bucketSeconds,
-			}),
+			envScoped
+				? Effect.succeed({ data: [] })
+				: querySpanMetricsCalls({
+						service: input.serviceName,
+						start_time: input.startTime,
+						end_time: input.endTime,
+						bucket_seconds: bucketSeconds,
+					}),
 		],
 		{ concurrency: 2 },
 	)
@@ -902,6 +929,10 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const input = yield* decodeInput(GetOverviewTimeSeriesInputSchema, data ?? {}, "getOverviewTimeSeries")
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+	// All-environment SpanMetrics `calls` can't represent an environment-scoped
+	// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
+	// `estimatedSpanCount` when an environment filter is active.
+	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -913,11 +944,13 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const [allMetricsRes, metricsResult] = yield* Effect.all(
 		[
 			executeQueryEngine("queryEngine.overview.allMetrics", makeAllMetricsTimeseriesRequest(reqOpts)),
-			querySpanMetricsCalls({
-				start_time: input.startTime,
-				end_time: input.endTime,
-				bucket_seconds: bucketSeconds,
-			}),
+			envScoped
+				? Effect.succeed({ data: [] })
+				: querySpanMetricsCalls({
+						start_time: input.startTime,
+						end_time: input.endTime,
+						bucket_seconds: bucketSeconds,
+					}),
 		],
 		{ concurrency: 2 },
 	)
@@ -986,6 +1019,10 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 		)
 
 		const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+		// All-environment SpanMetrics `calls` can't represent an environment-scoped
+		// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
+		// `estimatedSpanCount` when an environment filter is active.
+		const envScoped = (input.environments?.length ?? 0) > 0
 		const reqOpts = {
 			startTime: input.startTime,
 			endTime: input.endTime,
@@ -1002,11 +1039,13 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 					"queryEngine.sparklines.allMetrics",
 					makeAllMetricsTimeseriesRequest(reqOpts),
 				),
-				querySpanMetricsCalls({
-					start_time: input.startTime,
-					end_time: input.endTime,
-					bucket_seconds: bucketSeconds,
-				}),
+				envScoped
+					? Effect.succeed({ data: [] })
+					: querySpanMetricsCalls({
+							start_time: input.startTime,
+							end_time: input.endTime,
+							bucket_seconds: bucketSeconds,
+						}),
 			],
 			{ concurrency: 2 },
 		)

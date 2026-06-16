@@ -18,7 +18,7 @@ import {
 	trimSparseLeadingBuckets,
 } from "@/api/warehouse/timeseries-utils"
 import { summarizeSampling } from "@/lib/sampling"
-import { querySpanMetricsCalls, resolveThroughput } from "@/api/warehouse/custom-charts"
+import { resolveThroughput } from "@/api/warehouse/custom-charts"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -97,11 +97,7 @@ function coerceRow(raw: Record<string, unknown>): CoercedRow {
 	}
 }
 
-function aggregateByServiceEnvironment(
-	rows: CoercedRow[],
-	durationSeconds: number,
-	metricsByService: Map<string, number>,
-): ServiceOverview[] {
+function aggregateByServiceEnvironment(rows: CoercedRow[], durationSeconds: number): ServiceOverview[] {
 	const groups = new Map<string, CoercedRow[]>()
 
 	for (const row of rows) {
@@ -121,12 +117,15 @@ function aggregateByServiceEnvironment(
 		const totalErrors = group.reduce((sum, r) => sum + r.errorCount, 0)
 		const totalEstimated = group.reduce((sum, r) => sum + r.estimatedSpanCount, 0)
 
-		// Mirror the detail-page / overview-chart / sparkline paths: resolve
-		// throughput as SpanMetrics `calls` (pre-sampling) → sum(SampleRate) → raw
-		// count, then summarize. Without this the list shows the raw traced count
-		// while every other surface shows the extrapolated estimate.
-		const metricsCalls = metricsByService.get(group[0].serviceName)
-		const resolvedCount = resolveThroughput(totalSpans, totalEstimated, metricsCalls)
+		// Resolve throughput as sum(SampleRate) (pre-sampling estimate) → raw traced
+		// count. Each row is environment-specific, and the per-env detail page it
+		// links to resolves throughput the same way, so both agree. We deliberately
+		// do NOT use the SpanMetrics `calls` counter here: it's a service-level,
+		// ALL-environment value (it can't be filtered by `DeploymentEnv`), so on a
+		// per-environment row it would attribute the entire service's volume to each
+		// env (e.g. a tiny staging row inheriting the huge production count) and
+		// disagree with the env-scoped detail charts.
+		const resolvedCount = resolveThroughput(totalSpans, totalEstimated, undefined)
 		const sampling = summarizeSampling(resolvedCount, totalSpans, durationSeconds)
 
 		// Weighted average of latencies by span count
@@ -186,44 +185,26 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
-	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
 
-	const [result, metricsResult] = yield* Effect.all(
-		[
-			runWarehouseQuery("serviceOverview", () =>
-				Effect.gen(function* () {
-					const client = yield* MapleApiAtomClient
-					return yield* client.queryEngine.serviceOverview({
-						payload: new ServiceOverviewRequest({
-							startTime,
-							endTime,
-							environments: input.environments,
-							namespaces: input.namespaces,
-							commitShas: input.commitShas,
-						}),
-					})
+	// Throughput resolves from the env-scoped sum(SampleRate) estimate (see
+	// `aggregateByServiceEnvironment`). The SpanMetrics `calls` counter is
+	// deliberately NOT consulted here: it's service-level and all-environment (it
+	// can't be filtered by `DeploymentEnv`), so on these per-environment rows it
+	// would over-report and disagree with the env-scoped detail page.
+	const result = yield* runWarehouseQuery("serviceOverview", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceOverview({
+				payload: new ServiceOverviewRequest({
+					startTime,
+					endTime,
+					environments: input.environments,
+					namespaces: input.namespaces,
+					commitShas: input.commitShas,
 				}),
-			),
-			// SpanMetrics `calls` counter for ALL services in one grouped query
-			// (no service filter). Same source the detail page / overview chart /
-			// sparklines use; resilient to absence (returns `{ data: [] }`).
-			querySpanMetricsCalls({
-				start_time: startTime,
-				end_time: endTime,
-				bucket_seconds: bucketSeconds,
-			}),
-		],
-		{ concurrency: 2 },
+			})
+		}),
 	)
-
-	// Total SpanMetrics `calls` per service across the window (sum of per-bucket
-	// `increase`). Keyed by service only — same granularity as the list sparkline.
-	const metricsByService = new Map<string, number>()
-	for (const r of metricsResult.data) {
-		const service = String(r.serviceName)
-		if (!service) continue
-		metricsByService.set(service, (metricsByService.get(service) ?? 0) + Number(r.sumValue))
-	}
 
 	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
 	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
@@ -231,7 +212,7 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 
 	const coercedRows = result.data.map(coerceRow)
 	return {
-		data: aggregateByServiceEnvironment(coercedRows, durationSeconds, metricsByService),
+		data: aggregateByServiceEnvironment(coercedRows, durationSeconds),
 	}
 })
 
