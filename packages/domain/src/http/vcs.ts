@@ -304,8 +304,8 @@ export type InstallationSyncJob = Schema.Schema.Type<typeof InstallationSyncJob>
 // tracked branch by the sync-branches handler, on a tracked-branch change (after
 // the repo's commits are wiped), and as a reconciling re-walk after a force-push.
 // A walk cut short by a rate limit / page budget resumes via `untilMs`.
-export const SyncBranchCommitsJob = Schema.Struct({
-	kind: Schema.Literal("sync-branch-commits"),
+export const SyncCommitsJob = Schema.Struct({
+	kind: Schema.Literal("sync-commits"),
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	externalRepoId: Schema.String,
@@ -323,7 +323,7 @@ export const SyncBranchCommitsJob = Schema.Struct({
 	// permanently throttled installation can't requeue forever. Absent ⇒ 0.
 	staleAttempts: Schema.optionalKey(Schema.Number),
 })
-export type SyncBranchCommitsJob = Schema.Schema.Type<typeof SyncBranchCommitsJob>
+export type SyncCommitsJob = Schema.Schema.Type<typeof SyncCommitsJob>
 
 // A push event's commits, applied incrementally — purely best-effort enrichment.
 // A push may target any branch and its payload may be incomplete (GitHub caps
@@ -373,7 +373,7 @@ export type BranchEventJob = Schema.Schema.Type<typeof BranchEventJob>
 
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
-	SyncBranchCommitsJob,
+	SyncCommitsJob,
 	PushJob,
 	SyncBranchesJob,
 	BranchEventJob,

@@ -475,7 +475,7 @@ describe("GithubConnectService", () => {
 			const noop = yield* svc.setTrackedBranch(orgId, r.id, "main")
 			assert.strictEqual(noop.backfillQueued, false)
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
 
 			// Changing the tracked branch wipes the repo's commits and enqueues a backfill
 			// of the new branch.
@@ -485,10 +485,10 @@ describe("GithubConnectService", () => {
 			assert.ok(changed.backfillQueued)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA as never)))
 			assert.strictEqual((yield* repoFor(repo, orgId, "7")).trackedBranch, "release")
-			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(
-				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
 				"release",
 			)
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))

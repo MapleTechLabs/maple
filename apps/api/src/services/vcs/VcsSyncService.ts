@@ -3,7 +3,7 @@ import {
 	type InstallationSyncJob,
 	isInstallationProcessable,
 	type PushJob,
-	type SyncBranchCommitsJob,
+	type SyncCommitsJob,
 	type SyncBranchesJob,
 	type UnknownVcsProviderError,
 	VcsInstallation,
@@ -80,7 +80,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				branch: string,
 				sinceMs: number,
 			): VcsSyncJob => ({
-				kind: "sync-branch-commits",
+				kind: "sync-commits",
 				provider: installation.provider,
 				externalInstallationId: installation.externalInstallationId,
 				externalRepoId: repository.externalRepoId,
@@ -111,11 +111,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 				})
 
-			const syncBranchCommits = (
+			const syncCommits = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				repository: VcsRepo,
-				job: SyncBranchCommitsJob,
+				job: SyncCommitsJob,
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
@@ -238,7 +238,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							),
 						),
 					),
-					Effect.withSpan("VcsSyncService.syncBranchCommits"),
+					Effect.withSpan("VcsSyncService.syncCommits"),
 				)
 
 			const applyPush = Effect.fn("VcsSyncService.applyPush")(function* (
@@ -270,7 +270,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			// enqueue a commit backfill for the repo's single tracked branch — refreshed
 			// on every installation-sync. If the tracked branch itself vanished upstream,
 			// fall back to the default (wipe + resync) instead. This handler deals in
-			// branch *names* only; sync-branch-commits walks the commits.
+			// branch *names* only; sync-commits walks the commits.
 			const syncBranches = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
@@ -378,7 +378,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			//  - soft-removed repo: paused until access is re-granted (which flips it active).
 			const resolveRepositoryForJob = (
 				installation: VcsInstallation,
-				job: PushJob | SyncBranchCommitsJob | SyncBranchesJob | BranchEventJob,
+				job: PushJob | SyncCommitsJob | SyncBranchesJob | BranchEventJob,
 			) =>
 				Effect.gen(function* () {
 					const repositoryOpt = yield* repo.resolveRepository(
@@ -505,16 +505,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 				})
 
-			const handleSyncBranchCommits = (
+			const handleSyncCommits = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
-				job: SyncBranchCommitsJob,
+				job: SyncCommitsJob,
 			) =>
 				Effect.gen(function* () {
 					if (!(yield* ensureProcessable(installation, job.kind))) return
 					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
 					if (Option.isNone(repositoryOpt)) return
-					yield* syncBranchCommits(provider, installation, repositoryOpt.value, job)
+					yield* syncCommits(provider, installation, repositoryOpt.value, job)
 				})
 
 			const handleSyncBranches = (
@@ -587,8 +587,8 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					Match.discriminator("kind")("installation-sync", (job) =>
 						handleInstallationSync(provider, installation, job),
 					),
-					Match.discriminator("kind")("sync-branch-commits", (job) =>
-						handleSyncBranchCommits(provider, installation, job),
+					Match.discriminator("kind")("sync-commits", (job) =>
+						handleSyncCommits(provider, installation, job),
 					),
 					Match.discriminator("kind")("sync-branches", (job) =>
 						handleSyncBranches(provider, installation, job),

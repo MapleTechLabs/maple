@@ -382,7 +382,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
 					yield* asPersistence(
 						queue.send({
-							kind: "sync-branch-commits",
+							kind: "sync-commits",
 							provider: GITHUB_PROVIDER,
 							externalInstallationId: installation.externalInstallationId,
 							externalRepoId: repository.externalRepoId,

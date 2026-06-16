@@ -232,7 +232,7 @@ describe("VcsSyncJob", () => {
 				branch: "feature/x",
 			},
 			{
-				kind: "sync-branch-commits",
+				kind: "sync-commits",
 				provider: "github",
 				externalInstallationId: "42",
 				externalRepoId: "7",
@@ -924,8 +924,8 @@ describe("VcsSyncService orchestrator", () => {
 			assert.deepStrictEqual(names, ["main", "release"])
 			// Exactly one commit-sync, for the single tracked branch (the default "main").
 			const synced = sent
-				.filter((j) => j.kind === "sync-branch-commits")
-				.map((j) => (j.kind === "sync-branch-commits" ? j.branch : ""))
+				.filter((j) => j.kind === "sync-commits")
+				.map((j) => (j.kind === "sync-commits" ? j.branch : ""))
 			assert.deepStrictEqual(synced, ["main"])
 		}).pipe(
 			Effect.provide(
@@ -1097,10 +1097,10 @@ describe("VcsSyncService orchestrator", () => {
 			const updated = yield* repoFor(repo, orgId, "7")
 			assert.strictEqual(updated.trackedBranch, "main")
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
-			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(
-				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
 				"main",
 			)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
@@ -1139,10 +1139,10 @@ describe("VcsSyncService orchestrator", () => {
 			const updated = yield* repoFor(repo, orgId, "7")
 			assert.strictEqual(updated.trackedBranch, "main")
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
-			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(
-				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
 				"main",
 			)
 		}).pipe(
@@ -1172,10 +1172,10 @@ describe("VcsSyncService orchestrator", () => {
 					commits: [commit(SHA_A, 1)],
 				}),
 			)
-			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
 			assert.strictEqual(
-				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : undefined,
+				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : undefined,
 				"main",
 			)
 			// Forced ⇒ the payload is discarded (we re-walk instead), so SHA_A is not stored.
@@ -1322,7 +1322,7 @@ describe("VcsSyncService orchestrator", () => {
 			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -1425,7 +1425,7 @@ describe("VcsSyncService orchestrator", () => {
 				},
 			])
 			const job: VcsSyncJob = {
-				kind: "sync-branch-commits",
+				kind: "sync-commits",
 				provider: "github",
 				externalInstallationId: "42",
 				externalRepoId: "7",
@@ -1458,7 +1458,7 @@ describe("VcsSyncService orchestrator", () => {
 		])
 
 	const backfillJob: VcsSyncJob = {
-		kind: "sync-branch-commits",
+		kind: "sync-commits",
 		provider: "github",
 		externalInstallationId: "42",
 		externalRepoId: "7",
@@ -1607,7 +1607,7 @@ describe("VcsSyncService orchestrator", () => {
 			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -1632,8 +1632,8 @@ describe("VcsSyncService orchestrator", () => {
 			// …and a continuation was requeued from the watermark, delayed until reset.
 			assert.strictEqual(sent.length, 1)
 			const continuation = sent[0]!
-			assert.strictEqual(continuation.kind, "sync-branch-commits")
-			if (continuation.kind !== "sync-branch-commits") return
+			assert.strictEqual(continuation.kind, "sync-commits")
+			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
 			assert.strictEqual(sentDelays[0], 600)
 		}).pipe(
@@ -1668,8 +1668,8 @@ describe("VcsSyncService orchestrator", () => {
 			// …and a continuation was requeued from the watermark with NO delay…
 			assert.strictEqual(sent.length, 1)
 			const continuation = sent[0]!
-			assert.strictEqual(continuation.kind, "sync-branch-commits")
-			if (continuation.kind !== "sync-branch-commits") return
+			assert.strictEqual(continuation.kind, "sync-commits")
+			if (continuation.kind !== "sync-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
 			assert.strictEqual(sentDelays[0], 0)
 			// …and it never counts against the stall cap (it made progress).
