@@ -134,6 +134,53 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 
 const sign = (body: string) => `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex")}`
 
+// The repo service now speaks our internal ids; these resolve a row the way a
+// webhook does (by GitHub external id) and hand the id-based methods the entity,
+// so the tests stay addressed by external id without re-querying everywhere.
+const expectSome = <A>(o: Option.Option<A>): A => {
+	assert.ok(Option.isSome(o), "expected Option.some, got none")
+	return o.value
+}
+const installationFor = (repo: VcsRepository, externalInstallationId: string) =>
+	repo.resolveInstallation("github", externalInstallationId).pipe(Effect.map(expectSome))
+const repoFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
+	repo.resolveRepository(orgId, "github", externalRepoId).pipe(Effect.map(expectSome))
+const upsertReposFor = (
+	repo: VcsRepository,
+	externalInstallationId: string,
+	repos: Parameters<VcsRepository["upsertRepositories"]>[1],
+) => installationFor(repo, externalInstallationId).pipe(Effect.flatMap((i) => repo.upsertRepositories(i, repos)))
+const upsertCommitsFor = (
+	repo: VcsRepository,
+	orgId: OrgId,
+	externalRepoId: string,
+	commits: Parameters<VcsRepository["upsertCommits"]>[1],
+) => repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.upsertCommits(r, commits)))
+const markRemovedFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
+	repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.markRepositoryRemoved(r.id)))
+const markInstStatusFor = (
+	repo: VcsRepository,
+	externalInstallationId: string,
+	status: Parameters<VcsRepository["markInstallationStatus"]>[1],
+) =>
+	installationFor(repo, externalInstallationId).pipe(
+		Effect.flatMap((i) => repo.markInstallationStatus(i.id, status)),
+	)
+const purgeInstallationFor = (repo: VcsRepository, orgId: OrgId, externalInstallationId: string) =>
+	repo.resolveInstallation("github", externalInstallationId).pipe(
+		Effect.flatMap(
+			Option.match({
+				onNone: () => Effect.void,
+				onSome: (i) => repo.purgeInstallation(orgId, i.id),
+			}),
+		),
+	)
+const reposOfInstallation = (repo: VcsRepository, externalInstallationId: string, scope: "active" | "all") =>
+	Effect.gen(function* () {
+		const found = yield* repo.resolveInstallation("github", externalInstallationId)
+		return Option.isNone(found) ? [] : yield* repo.listRepositoriesByInstallation(found.value.id, scope)
+	})
+
 const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	if (!Exit.isFailure(exit)) return undefined
 	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
@@ -300,14 +347,14 @@ describe("VcsRepository", () => {
 			assert.strictEqual(installation.orgId, orgId)
 			assert.strictEqual(installation.accountType, "organization")
 
-			const found = yield* repo.getInstallation("github", "42")
+			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(found))
 			assert.strictEqual(found.value.externalInstallationId, "42")
 			// status is not passed to upsertInstallation — it comes from the schema default.
 			assert.strictEqual(found.value.status, "active")
 
 			// A commit requires its repo row to exist first (it references it by id).
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -319,10 +366,10 @@ describe("VcsRepository", () => {
 					isArchived: false,
 				},
 			])
-			const repoRow = yield* repo.getRepository(orgId, "github", "7")
+			const repoRow = yield* repo.resolveRepository(orgId, "github", "7")
 			assert.ok(Option.isSome(repoRow))
 
-			const count = yield* repo.upsertCommits(orgId, "github", "7", [
+			const count = yield* upsertCommitsFor(repo, orgId, "7", [
 				{
 					sha: SHA,
 					message: "hello",
@@ -361,7 +408,7 @@ describe("VcsRepository", () => {
 					[randomUUID(), "org_x", "github", "55", "octo", "team", "1", "all", "active", "user_1", 0, 0],
 				),
 			)
-			const exit = yield* repo.getInstallation("github", "55").pipe(Effect.exit)
+			const exit = yield* repo.resolveInstallation("github", "55").pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
 		}).pipe(Effect.provide(repoLayer(url)))
@@ -410,27 +457,27 @@ describe("VcsRepository", () => {
 			// Two installations in the same org, each with a repo + a commit.
 			yield* seed("42", "octo", "100")
 			yield* seed("99", "other", "200")
-			yield* repo.upsertRepositories(orgId, "github", "42", [repoFixture("7", "octo/repo")])
-			yield* repo.upsertRepositories(orgId, "github", "99", [repoFixture("8", "other/repo")])
+			yield* upsertReposFor(repo, "42", [repoFixture("7", "octo/repo")])
+			yield* upsertReposFor(repo, "99", [repoFixture("8", "other/repo")])
 			const SHA_42 = "a".repeat(40)
 			const SHA_99 = "b".repeat(40)
-			yield* repo.upsertCommits(orgId, "github", "7", [commitFixture(SHA_42)])
-			yield* repo.upsertCommits(orgId, "github", "8", [commitFixture(SHA_99)])
+			yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
+			yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
-			yield* repo.purgeInstallation(orgId, "github", "42")
+			yield* purgeInstallationFor(repo, orgId, "42")
 
 			// Installation 42 is fully gone — row, repositories, and commits.
-			assert.ok(Option.isNone(yield* repo.getInstallation("github", "42")))
-			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "42", "all")).length, 0)
+			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
+			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_42 as never)))
 
 			// Installation 99 is untouched — the commit delete was scoped to 42's repo ids.
-			assert.ok(Option.isSome(yield* repo.getInstallation("github", "99")))
-			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "99", "all")).length, 1)
+			assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "99")))
+			assert.strictEqual((yield* reposOfInstallation(repo, "99", "all")).length, 1)
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_99 as never)))
 
 			// Idempotent: purging again is a no-op, not an error.
-			yield* repo.purgeInstallation(orgId, "github", "42")
+			yield* purgeInstallationFor(repo, orgId, "42")
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 })
@@ -558,7 +605,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId) // a freshly-discovered repo (pending, no cursor)
+			yield* seedRepo(repo) // a freshly-discovered repo (pending, no cursor)
 			const job: VcsSyncJob = {
 				kind: "push",
 				provider: "github",
@@ -573,7 +620,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isSome(a) && Option.isSome(b))
 			// B2: a push is pure enrichment — the sync status stays exactly as the
 			// backfill left it (here: untouched since no backfill has run).
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
@@ -605,7 +652,7 @@ describe("VcsSyncService orchestrator", () => {
 				reason: "created",
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored.length, 1)
 			assert.strictEqual(stored[0]!.externalRepoId, "7")
 			assert.strictEqual(sent.length, 1)
@@ -650,7 +697,7 @@ describe("VcsSyncService orchestrator", () => {
 				repositorySelection: "all",
 				installedByUserId: asUserId("user_1"),
 			})
-			yield* repo.upsertRepositories(orgId, "github", "11", [
+			yield* upsertReposFor(repo, "11", [
 				{
 					externalRepoId: "70",
 					owner: "old",
@@ -663,7 +710,7 @@ describe("VcsSyncService orchestrator", () => {
 				},
 			])
 			const STALE_SHA = "c".repeat(40)
-			yield* repo.upsertCommits(orgId, "github", "70", [commit(STALE_SHA, 1)])
+			yield* upsertCommitsFor(repo, orgId, "70", [commit(STALE_SHA, 1)])
 
 			// The freshly-connected installation ("42") exists; its created sync job runs.
 			yield* seedInstallation(repo, orgId)
@@ -676,15 +723,15 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 
 			// The prior installation, its repos, and its commits are all hard-deleted…
-			assert.ok(Option.isNone(yield* repo.getInstallation("github", "11")))
-			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "11", "all")).length, 0)
+			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "11")))
+			assert.strictEqual((yield* reposOfInstallation(repo, "11", "all")).length, 0)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, STALE_SHA as never)))
 
 			// …leaving exactly the new installation, which synced its own repo.
 			const remaining = (yield* repo.listInstallationsByOrg(orgId)).filter((i) => i.provider === "github")
 			assert.strictEqual(remaining.length, 1)
 			assert.strictEqual(remaining[0]!.externalInstallationId, "42")
-			const newRepos = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const newRepos = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(newRepos.length, 1)
 			assert.strictEqual(newRepos[0]!.externalRepoId, "7")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
@@ -699,7 +746,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -725,13 +772,13 @@ describe("VcsSyncService orchestrator", () => {
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
 			assert.ok(Option.isSome(a) && Option.isSome(b))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "ready")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits })))
 	})
 
-	const seedRepo = (repo: VcsRepository, orgId: ReturnType<typeof asOrgId>) =>
-		repo.upsertRepositories(orgId, "github", "42", [
+	const seedRepo = (repo: VcsRepository) =>
+		upsertReposFor(repo, "42", [
 			{
 				externalRepoId: "7",
 				owner: "octo",
@@ -763,13 +810,13 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
+			yield* seedRepo(repo)
 			// A repo-scoped error must NOT fail the job (it drains).
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
-			const inst = yield* repo.getInstallation("github", "42")
+			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active") // never disconnected
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")
 		}).pipe(
 			Effect.provide(
@@ -789,10 +836,10 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId) // backfill is gated on the repo row existing
+			yield* seedRepo(repo) // backfill is gated on the repo row existing
 			// The provider's authoritative gone signal → disconnect, no failure.
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
-			const inst = yield* repo.getInstallation("github", "42")
+			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "disconnected")
 		}).pipe(
@@ -813,10 +860,10 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId) // backfill is gated on the repo row existing
+			yield* seedRepo(repo) // backfill is gated on the repo row existing
 			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit)) // transient → propagated so the queue retries
-			const inst = yield* repo.getInstallation("github", "42")
+			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active")
 		}).pipe(
@@ -838,7 +885,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* repo.markInstallationStatus("github", "42", "suspended")
+			yield* markInstStatusFor(repo, "42", "suspended")
 			const job: VcsSyncJob = {
 				kind: "push",
 				provider: "github",
@@ -850,7 +897,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job)) // gated → must not fail
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			assert.ok(Option.isNone(a)) // gate short-circuits before the upsert
-			const inst = yield* repo.getInstallation("github", "42")
+			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "suspended") // status untouched
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits: [commit(SHA_A, 1)] })))
@@ -877,7 +924,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* repo.markInstallationStatus("github", "42", "suspended")
+			yield* markInstStatusFor(repo, "42", "suspended")
 			const job: VcsSyncJob = {
 				kind: "installation-sync",
 				provider: "github",
@@ -885,10 +932,10 @@ describe("VcsSyncService orchestrator", () => {
 				reason: "unsuspend",
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
-			const inst = yield* repo.getInstallation("github", "42")
+			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
 			assert.strictEqual(inst.value.status, "active") // reactivated
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored.length, 1) // re-sync ran
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent[0]!.kind, "backfill-repo")
@@ -906,12 +953,12 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
+			yield* seedRepo(repo)
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)) // must not fail
 			// The fetched commit was persisted…
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 			// …the repo is marked backfilling (in progress, not ready)…
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark, delayed until reset.
 			assert.strictEqual(sent.length, 1)
@@ -943,11 +990,11 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
+			yield* seedRepo(repo)
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)) // must not fail
 			// The fetched page was persisted and the repo marked backfilling…
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "backfilling")
 			// …and a continuation was requeued from the watermark with NO delay…
 			assert.strictEqual(sent.length, 1)
@@ -981,7 +1028,7 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
+			yield* seedRepo(repo)
 			// Drive the continuation back through the consumer; every run fetches zero
 			// commits (still throttled), so the watermark never moves.
 			let job: VcsSyncJob = backfillJob
@@ -991,7 +1038,7 @@ describe("VcsSyncService orchestrator", () => {
 			}
 			// It requeued exactly the cap's worth of continuations, then gave up.
 			assert.strictEqual(sent.length, STALL_CAP)
-			const stored = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")
 		}).pipe(
 			Effect.provide(
@@ -1046,8 +1093,8 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId) // repo "7", active
-			yield* repo.upsertCommits(orgId, "github", "7", [commit(SHA_A, 1)])
+			yield* seedRepo(repo) // repo "7", active
+			yield* upsertCommitsFor(repo, orgId, "7", [commit(SHA_A, 1)])
 
 			// Upstream no longer lists repo "7" (fetchRepositories stubbed to []).
 			const job: VcsSyncJob = {
@@ -1059,9 +1106,9 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 
 			// Row kept but marked removed: excluded from "active", present in "all".
-			const active = yield* repo.listRepositoriesByInstallation("github", "42", "active")
+			const active = yield* reposOfInstallation(repo, "42", "active")
 			assert.strictEqual(active.length, 0)
-			const all = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const all = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(all.length, 1)
 			assert.strictEqual(all[0]!.status, "removed")
 			// Its commits are retained (soft delete, not a purge).
@@ -1091,8 +1138,8 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
-			yield* repo.markRepositoryRemoved(orgId, "github", "7") // provider had removed it
+			yield* seedRepo(repo)
+			yield* markRemovedFor(repo, orgId, "7") // provider had removed it
 
 			const job: VcsSyncJob = {
 				kind: "installation-sync",
@@ -1102,7 +1149,7 @@ describe("VcsSyncService orchestrator", () => {
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 
-			const all = yield* repo.listRepositoriesByInstallation("github", "42", "all")
+			const all = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(all.length, 1)
 			assert.strictEqual(all[0]!.status, "active") // reactivated
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
@@ -1118,8 +1165,8 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
-			yield* seedRepo(repo, orgId)
-			yield* repo.markRepositoryRemoved(orgId, "github", "7")
+			yield* seedRepo(repo)
+			yield* markRemovedFor(repo, orgId, "7")
 
 			const job: VcsSyncJob = {
 				kind: "push",
@@ -1176,9 +1223,20 @@ describe("git SHA validation (branded type)", () => {
 		return Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_sha")
-			// Seed the repo so upsertCommits reaches SHA validation (a commit for an
-			// unknown repo is skipped before decoding).
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			// Seed an installation + repo so the commit attaches to a real repo entity
+			// (the repo service decodes the SHA while building the row).
+			yield* repo.upsertInstallation({
+				orgId,
+				provider: "github",
+				externalInstallationId: "42",
+				accountLogin: "octo",
+				accountType: "organization",
+				externalAccountId: "100",
+				accountAvatarUrl: null,
+				repositorySelection: "all",
+				installedByUserId: asUserId("user_1"),
+			})
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -1190,22 +1248,20 @@ describe("git SHA validation (branded type)", () => {
 					isArchived: false,
 				},
 			])
-			const exit = yield* repo
-				.upsertCommits(orgId, "github", "7", [
-					{
-						sha: "ABC", // not 40-char hex (case-insensitive, but still invalid)
-						message: "bad",
-						authorName: null,
-						authorEmail: null,
-						authorLogin: null,
-						authorAvatarUrl: null,
-						authoredAt: null,
-						committedAt: 1,
-						htmlUrl: "https://example.com",
-						branch: "main",
-					},
-				])
-				.pipe(Effect.exit)
+			const exit = yield* upsertCommitsFor(repo, orgId, "7", [
+				{
+					sha: "ABC", // not 40-char hex (case-insensitive, but still invalid)
+					message: "bad",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: "https://example.com",
+					branch: "main",
+				},
+			]).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
 			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
 		}).pipe(Effect.provide(repoLayer(url)))

@@ -176,6 +176,13 @@
       "when": 1781479508715,
       "tag": "0024_vcs_commits_repository_id",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1781479600000,
+      "tag": "0025_vcs_repositories_installation_id",
+      "breakpoints": true
     }
   ]
 }

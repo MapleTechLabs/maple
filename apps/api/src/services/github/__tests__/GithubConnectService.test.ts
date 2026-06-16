@@ -103,6 +103,36 @@ const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 	return failure ?? Cause.squash(exit.cause)
 }
 
+// The repo service now speaks our internal ids; these resolve a row by its GitHub
+// external id (the way the sync engine seeds it) and hand the id-based methods the
+// entity, so these tests can keep seeding by external id.
+const expectSome = <A>(o: Option.Option<A>): A => {
+	assert.ok(Option.isSome(o), "expected Option.some, got none")
+	return o.value
+}
+const installationFor = (repo: VcsRepository, externalInstallationId: string) =>
+	repo.resolveInstallation("github", externalInstallationId).pipe(Effect.map(expectSome))
+const repoFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
+	repo.resolveRepository(orgId, "github", externalRepoId).pipe(Effect.map(expectSome))
+const upsertReposFor = (
+	repo: VcsRepository,
+	externalInstallationId: string,
+	repos: Parameters<VcsRepository["upsertRepositories"]>[1],
+) => installationFor(repo, externalInstallationId).pipe(Effect.flatMap((i) => repo.upsertRepositories(i, repos)))
+const upsertCommitsFor = (
+	repo: VcsRepository,
+	orgId: OrgId,
+	externalRepoId: string,
+	commits: Parameters<VcsRepository["upsertCommits"]>[1],
+) => repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.upsertCommits(r, commits)))
+const markRemovedFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
+	repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.markRepositoryRemoved(r.id)))
+const reposOfInstallation = (repo: VcsRepository, externalInstallationId: string, scope: "active" | "all") =>
+	Effect.gen(function* () {
+		const found = yield* repo.resolveInstallation("github", externalInstallationId)
+		return Option.isNone(found) ? [] : yield* repo.listRepositoriesByInstallation(found.value.id, scope)
+	})
+
 describe("GithubConnectService", () => {
 	it.effect("startConnect mints a state row and returns the GitHub install URL with state", () => {
 		const { url } = createTempDbUrl("maple-gh-start-", dirs)
@@ -140,7 +170,7 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(result.orgId, orgId)
 			assert.strictEqual(result.returnTo, "https://web.localhost/integrations?integration=github")
 
-			const found = yield* repo.getInstallation("github", "42")
+			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(found))
 			assert.strictEqual(found.value.orgId, orgId)
 			assert.strictEqual(found.value.accountLogin, "octo")
@@ -174,7 +204,7 @@ describe("GithubConnectService", () => {
 			const exit = yield* svc.completeConnect("42", state).pipe(Effect.exit)
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 
-			const found = yield* repo.getInstallation("github", "42")
+			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isNone(found))
 			assert.strictEqual(sent.length, 0)
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
@@ -207,7 +237,7 @@ describe("GithubConnectService", () => {
 				callbackUrl: "https://tunnel.example/api/integrations/github/callback",
 			})
 			yield* svc.completeConnect("42", state)
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -220,7 +250,7 @@ describe("GithubConnectService", () => {
 				},
 			])
 			const SHA = "a".repeat(40)
-			yield* repo.upsertCommits(orgId, "github", "7", [
+			yield* upsertCommitsFor(repo, orgId, "7", [
 				{
 					sha: SHA,
 					message: "m",
@@ -238,8 +268,8 @@ describe("GithubConnectService", () => {
 			// Disconnect removes the installation row and all its VCS data.
 			const result = yield* svc.disconnect(orgId)
 			assert.strictEqual(result.disconnected, true)
-			assert.ok(Option.isNone(yield* repo.getInstallation("github", "42")))
-			assert.strictEqual((yield* repo.listRepositoriesByInstallation("github", "42", "all")).length, 0)
+			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
+			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA as never)))
 
 			// Status now reports disconnected, and a second disconnect is a no-op.
@@ -266,7 +296,7 @@ describe("GithubConnectService", () => {
 			yield* svc.completeConnect("42", state)
 
 			// Two repos: "7" (to delete) and "8" (kept), each with a commit.
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -291,7 +321,7 @@ describe("GithubConnectService", () => {
 			const SHA_7 = "a".repeat(40)
 			const SHA_8 = "b".repeat(40)
 			const seedCommit = (repoId: string, sha: string) =>
-				repo.upsertCommits(orgId, "github", repoId, [
+				upsertCommitsFor(repo, orgId, repoId, [
 					{
 						sha,
 						message: "m",
@@ -310,10 +340,10 @@ describe("GithubConnectService", () => {
 
 			// Resolve repo "7"'s Maple id — the dashboard's delete handle — then mark
 			// it removed so it's the provider-removed repo the user deletes.
-			const repo7 = yield* repo.getRepository(orgId, "github", "7")
+			const repo7 = yield* repo.resolveRepository(orgId, "github", "7")
 			assert.ok(Option.isSome(repo7))
 			const repo7Id = repo7.value.id
-			yield* repo.markRepositoryRemoved(orgId, "github", "7")
+			yield* markRemovedFor(repo, orgId, "7")
 			// getStatus surfaces removed repos (scope "all") by Maple id, with status.
 			const before = yield* svc.getStatus(orgId)
 			const removed = before.repositories.find((r) => r.id === repo7Id)
@@ -324,9 +354,9 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(result.deleted, true)
 
 			// "7" and its commit are gone; "8" and its commit remain.
-			assert.ok(Option.isNone(yield* repo.getRepository(orgId, "github", "7")))
+			assert.ok(Option.isNone(yield* repo.resolveRepository(orgId, "github", "7")))
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_7 as never)))
-			assert.ok(Option.isSome(yield* repo.getRepository(orgId, "github", "8")))
+			assert.ok(Option.isSome(yield* repo.resolveRepository(orgId, "github", "8")))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_8 as never)))
 
 			// Deleting the same (now-absent) id again is a no-op (idempotent).
@@ -349,7 +379,7 @@ describe("GithubConnectService", () => {
 				callbackUrl: "https://tunnel.example/cb",
 			})
 			yield* svc.completeConnect("42", state)
-			yield* repo.upsertRepositories(orgId, "github", "42", [
+			yield* upsertReposFor(repo, "42", [
 				{
 					externalRepoId: "7",
 					owner: "octo",
@@ -362,7 +392,7 @@ describe("GithubConnectService", () => {
 				},
 			])
 			const SHA = "a".repeat(40)
-			yield* repo.upsertCommits(orgId, "github", "7", [
+			yield* upsertCommitsFor(repo, orgId, "7", [
 				{
 					sha: SHA,
 					message: "m",
@@ -378,11 +408,11 @@ describe("GithubConnectService", () => {
 			])
 
 			// The repo is still active → delete is rejected; row + commit untouched.
-			const repo7 = yield* repo.getRepository(orgId, "github", "7")
+			const repo7 = yield* repo.resolveRepository(orgId, "github", "7")
 			assert.ok(Option.isSome(repo7))
 			const exit = yield* svc.deleteRepository(orgId, repo7.value.id).pipe(Effect.exit)
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
-			assert.ok(Option.isSome(yield* repo.getRepository(orgId, "github", "7")))
+			assert.ok(Option.isSome(yield* repo.resolveRepository(orgId, "github", "7")))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})

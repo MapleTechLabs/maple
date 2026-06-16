@@ -237,9 +237,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				}
 				// "all": the dashboard surfaces provider-removed repos too, with the
 				// "re-enable access / delete from Maple" affordances.
-				const repos = yield* asPersistence(
-					repo.listRepositoriesByInstallation(GITHUB_PROVIDER, active.externalInstallationId, "all"),
-				)
+				const repos = yield* asPersistence(repo.listRepositoriesByInstallation(active.id, "all"))
 				return {
 					connected: true,
 					accountLogin: active.accountLogin,
@@ -269,7 +267,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// out of the sync engine.
 				yield* Effect.forEach(
 					targets,
-					(i) => asPersistence(repo.purgeInstallation(orgId, GITHUB_PROVIDER, i.externalInstallationId)),
+					(i) => asPersistence(repo.purgeInstallation(orgId, i.id)),
 					{ discard: true },
 				)
 				return { disconnected: targets.length > 0 }

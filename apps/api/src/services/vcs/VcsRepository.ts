@@ -7,6 +7,7 @@ import {
 	type UserId,
 	VcsCommit,
 	VcsInstallation,
+	type VcsInstallationId,
 	type VcsInstallStatus,
 	type VcsProviderId,
 	VcsRepo,
@@ -81,7 +82,7 @@ const rowToRepo = (row: VcsRepositoryRow): VcsRepo =>
 		id: row.id,
 		orgId: row.orgId,
 		provider: row.provider,
-		externalInstallationId: row.externalInstallationId,
+		installationId: row.installationId,
 		externalRepoId: row.externalRepoId,
 		owner: row.owner,
 		name: row.name,
@@ -171,7 +172,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-		const getInstallation = Effect.fn("VcsRepository.getInstallation")(function* (
+		// THE external → internal resolver for installations: the one place a
+		// provider's external installation id is turned into a Maple installation
+		// (carrying our internal `id`). Every other installation method takes that
+		// internal id; callers resolve once here and pass `installation.id` onward.
+		// Returns the whole row, so there's never a resolve-then-refetch round-trip.
+		const resolveInstallation = Effect.fn("VcsRepository.resolveInstallation")(function* (
 			provider: VcsProviderId,
 			externalInstallationId: string,
 		) {
@@ -241,8 +247,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		})
 
 		const markInstallationStatus = Effect.fn("VcsRepository.markInstallationStatus")(function* (
-			provider: VcsProviderId,
-			externalInstallationId: string,
+			installationId: VcsInstallationId,
 			status: VcsInstallStatus,
 		) {
 			const now = yield* Clock.currentTimeMillis
@@ -251,12 +256,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db
 						.update(vcsInstallations)
 						.set({ status, suspendedAt: status === "suspended" ? now : null, updatedAt: now })
-						.where(
-							and(
-								eq(vcsInstallations.provider, provider),
-								eq(vcsInstallations.externalInstallationId, externalInstallationId),
-							),
-						),
+						.where(eq(vcsInstallations.id, installationId)),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -264,7 +264,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// ---- Repositories -------------------------------------------------
 
 		const listRepositoriesByInstallation = Effect.fn("VcsRepository.listRepositoriesByInstallation")(
-			function* (provider: VcsProviderId, externalInstallationId: string, scope: RepoQueryScope) {
+			function* (installationId: VcsInstallationId, scope: RepoQueryScope) {
 				const rows = yield* database
 					.execute((db) =>
 						db
@@ -272,8 +272,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							.from(vcsRepositories)
 							.where(
 								and(
-									eq(vcsRepositories.provider, provider),
-									eq(vcsRepositories.externalInstallationId, externalInstallationId),
+									eq(vcsRepositories.installationId, installationId),
 									// "all" includes provider-removed repos; "active" filters them out.
 									...(scope === "active" ? [eq(vcsRepositories.status, "active")] : []),
 								),
@@ -284,9 +283,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			},
 		)
 
-		// Look up a repo by the provider's external id — the natural key on the sync
-		// path, where jobs/webhooks only ever carry GitHub's repo id.
-		const getRepository = Effect.fn("VcsRepository.getRepository")(function* (
+		// THE external → internal resolver for repositories: turns the provider's
+		// external repo id (the only handle a webhook/queue job carries) into a
+		// Maple repo (carrying our internal `id` and `installationId`). Returns the
+		// whole row, so the sync path resolves once and passes the entity onward —
+		// no resolve-then-refetch. Org-scoped so a tenant can't read another's repo.
+		const resolveRepository = Effect.fn("VcsRepository.resolveRepository")(function* (
 			orgId: OrgId,
 			provider: VcsProviderId,
 			externalRepoId: string,
@@ -332,19 +334,20 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
 		})
 
+		// Persist the installation's repositories. Takes the resolved installation
+		// (not raw ids) so org/provider/internal-installation-id all come from one
+		// entity — the rows link to it by our internal `installationId`.
 		const upsertRepositories = Effect.fn("VcsRepository.upsertRepositories")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalInstallationId: string,
+			installation: VcsInstallation,
 			repos: ReadonlyArray<RepoUpsertInput>,
 		) {
 			if (repos.length === 0) return
 			const now = yield* Clock.currentTimeMillis
 			const values = repos.map((r) => ({
 				id: randomUUID() as VcsRepo["id"],
-				orgId,
-				provider,
-				externalInstallationId,
+				orgId: installation.orgId,
+				provider: installation.provider,
+				installationId: installation.id,
 				externalRepoId: r.externalRepoId,
 				owner: r.owner,
 				name: r.name,
@@ -375,7 +378,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 										vcsRepositories.externalRepoId,
 									],
 									set: {
-										externalInstallationId: sql`excluded.external_installation_id`,
+										// A repo can be reassigned to a different installation; refresh the link.
+										installationId: sql`excluded.installation_id`,
 										owner: sql`excluded.owner`,
 										name: sql`excluded.name`,
 										fullName: sql`excluded.full_name`,
@@ -400,9 +404,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// synced commits are kept (so history survives and a re-grant reactivates
 		// cleanly via upsertRepositories); `status` gates further event processing.
 		const markRepositoryRemoved = Effect.fn("VcsRepository.markRepositoryRemoved")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalRepoId: string,
+			repositoryId: VcsRepositoryId,
 		) {
 			const now = yield* Clock.currentTimeMillis
 			yield* database
@@ -410,13 +412,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db
 						.update(vcsRepositories)
 						.set({ status: "removed", updatedAt: now })
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalRepoId, externalRepoId),
-							),
-						),
+						.where(eq(vcsRepositories.id, repositoryId)),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -450,9 +446,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		})
 
 		const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalRepoId: string,
+			repositoryId: VcsRepositoryId,
 			update: RepoSyncStatusUpdate,
 		) {
 			const now = yield* Clock.currentTimeMillis
@@ -466,13 +460,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							lastSyncedAt: update.syncedAt ?? now,
 							updatedAt: now,
 						})
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalRepoId, externalRepoId),
-							),
-						),
+						.where(eq(vcsRepositories.id, repositoryId)),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -480,9 +468,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// Flag a single repo's sync as errored without touching its cursor /
 		// last-synced time (a failed fetch must not wipe prior progress).
 		const markRepoSyncError = Effect.fn("VcsRepository.markRepoSyncError")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalRepoId: string,
+			repositoryId: VcsRepositoryId,
 			message: string,
 		) {
 			const now = yield* Clock.currentTimeMillis
@@ -491,53 +477,24 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db
 						.update(vcsRepositories)
 						.set({ syncStatus: "error", lastSyncError: message, updatedAt: now })
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalRepoId, externalRepoId),
-							),
-						),
+						.where(eq(vcsRepositories.id, repositoryId)),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
 		// ---- Commits ------------------------------------------------------
 
+		// Persist commits for an already-resolved repository. The orchestrator
+		// resolves the repo via resolveRepository and only calls here when the row
+		// exists (a push racing ahead of repo discovery is dropped upstream), so the
+		// "unknown repo" case no longer lives at this layer. The commit row
+		// denormalizes the repo's org/provider for the dashboard's (org_id, sha)
+		// lookup, so both come straight off the entity.
 		const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
-			orgId: OrgId,
-			provider: VcsProviderId,
-			externalRepoId: string,
+			repository: VcsRepo,
 			commits: ReadonlyArray<CommitUpsertInput>,
 		) {
 			if (commits.length === 0) return 0
-			// A commit belongs to a repo row — resolve it first and skip the batch if
-			// it isn't known yet. A push can race ahead of the repo's discovery; those
-			// commits are dropped here (best-effort enrichment) and the default-branch
-			// backfill stores them once the repo exists.
-			const repoRows = yield* database
-				.execute((db) =>
-					db
-						.select({ id: vcsRepositories.id })
-						.from(vcsRepositories)
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalRepoId, externalRepoId),
-							),
-						)
-						.limit(1),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
-			const repositoryId = repoRows[0]?.id
-			if (repositoryId === undefined) {
-				yield* Effect.logInfo("Skipping commits for unknown repository").pipe(
-					Effect.annotateLogs({ provider, externalRepoId, count: commits.length }),
-				)
-				return 0
-			}
-
 			const now = yield* Clock.currentTimeMillis
 			// Decode every SHA through the branded type before writing — a bad SHA
 			// throws here and is mapped to VcsRepoDecodeError below.
@@ -547,9 +504,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						const sha = decodeGitSha(c.sha)
 						return {
 							id: randomUUID() as VcsCommit["id"],
-							orgId,
-							provider,
-							repositoryId,
+							orgId: repository.orgId,
+							provider: repository.provider,
+							repositoryId: repository.id,
 							sha,
 							message: c.message,
 							authorName: c.authorName,
@@ -630,8 +587,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// installation rows are then deleted directly.
 		const purgeInstallation = Effect.fn("VcsRepository.purgeInstallation")(function* (
 			orgId: OrgId,
-			provider: VcsProviderId,
-			externalInstallationId: string,
+			installationId: VcsInstallationId,
 		) {
 			const repoRows = yield* database
 				.execute((db) =>
@@ -641,8 +597,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.where(
 							and(
 								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalInstallationId, externalInstallationId),
+								eq(vcsRepositories.installationId, installationId),
 							),
 						),
 				)
@@ -670,36 +625,29 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.where(
 							and(
 								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.provider, provider),
-								eq(vcsRepositories.externalInstallationId, externalInstallationId),
+								eq(vcsRepositories.installationId, installationId),
 							),
 						),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-			// 3. The installation row itself.
+			// 3. The installation row itself (id is globally unique; org-scoped as a safety bound).
 			yield* database
 				.execute((db) =>
 					db
 						.delete(vcsInstallations)
-						.where(
-							and(
-								eq(vcsInstallations.orgId, orgId),
-								eq(vcsInstallations.provider, provider),
-								eq(vcsInstallations.externalInstallationId, externalInstallationId),
-							),
-						),
+						.where(and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId))),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
 		return {
-			getInstallation,
+			resolveInstallation,
 			listInstallationsByOrg,
 			upsertInstallation,
 			markInstallationStatus,
 			listRepositoriesByInstallation,
-			getRepository,
+			resolveRepository,
 			getRepositoryById,
 			upsertRepositories,
 			markRepositoryRemoved,

@@ -55,7 +55,12 @@ export const vcsRepositories = sqliteTable(
 		id: text("id").$type<VcsRepositoryId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		provider: text("provider").$type<VcsProviderId>().notNull(),
-		externalInstallationId: text("external_installation_id").notNull(),
+		// The owning vcs_installations row, by Maple's internal id (NOT the provider's
+		// external installation id). Mirrors vcs_commits.repository_id: the whole VCS
+		// tree links by internal id, and a provider's external installation id lives on
+		// exactly one row — the installation it identifies — resolved at the
+		// sync/webhook boundary into this internal handle.
+		installationId: text("installation_id").$type<VcsInstallationId>().notNull(),
 		externalRepoId: text("external_repo_id").notNull(),
 		owner: text("owner").notNull(),
 		name: text("name").notNull(),
@@ -77,7 +82,7 @@ export const vcsRepositories = sqliteTable(
 	(table) => [
 		uniqueIndex("vcs_repositories_org_repo_idx").on(table.orgId, table.provider, table.externalRepoId),
 		index("vcs_repositories_org_idx").on(table.orgId),
-		index("vcs_repositories_installation_idx").on(table.provider, table.externalInstallationId),
+		index("vcs_repositories_installation_idx").on(table.installationId),
 	],
 )
 

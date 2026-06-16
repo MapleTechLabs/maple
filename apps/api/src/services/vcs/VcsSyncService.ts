@@ -3,11 +3,12 @@ import {
 	type CommitUpsertInput,
 	isInstallationProcessable,
 	type UnknownVcsProviderError,
-	type VcsInstallation,
+	VcsInstallation,
 	type VcsInstallationSyncReason,
 	type VcsProviderError,
 	type VcsQueueError,
 	type VcsRateLimitedError,
+	type VcsRepo,
 	type VcsRepoDecodeError,
 	type VcsRepoPersistenceError,
 	type VcsRepoUnavailableError,
@@ -68,12 +69,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			) {
 					const now = yield* Clock.currentTimeMillis
 					const repos = yield* provider.fetchRepositories(installation)
-					yield* repo.upsertRepositories(
-						installation.orgId,
-						installation.provider,
-						installation.externalInstallationId,
-						repos,
-					)
+					yield* repo.upsertRepositories(installation, repos)
 
 					// Reconcile removals: soft-delete local repos no longer visible
 					// upstream. The row and its synced commits are kept (a re-grant
@@ -82,19 +78,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// purge to drop the data.
 					if (reason === "repositories_removed") {
 						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
-						const local = yield* repo.listRepositoriesByInstallation(
-							installation.provider,
-							installation.externalInstallationId,
-							"active",
-						)
+						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
 						yield* Effect.forEach(
 							local.filter((r) => !remoteIds.has(r.externalRepoId)),
-							(r) =>
-								repo.markRepositoryRemoved(
-									installation.orgId,
-									installation.provider,
-									r.externalRepoId,
-								),
+							(r) => repo.markRepositoryRemoved(r.id),
 							{ discard: true },
 						)
 					}
@@ -117,6 +104,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const backfillRepo = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
+				repositoryOpt: Option.Option<VcsRepo>,
 				job: BackfillRepoJob,
 			) =>
 				Effect.gen(function* () {
@@ -131,16 +119,29 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						},
 						{ sinceMs: job.sinceMs, ...(job.untilMs === undefined ? {} : { untilMs: job.untilMs }) },
 					)
-					yield* repo.upsertCommits(
-						installation.orgId,
-						installation.provider,
-						job.externalRepoId,
-						commits,
-					)
+
+					// The repo row may have vanished between this job being enqueued and run
+					// (a user "delete from Maple" racing the backfill). fetchCommits still ran
+					// above — so an installation-gone signal can surface and disconnect — but
+					// with no row to attach to, the fetched commits are dropped (exactly what
+					// the old upsertCommits did for an unknown repo).
+					if (Option.isNone(repositoryOpt)) {
+						yield* Effect.logInfo("Skipping backfill for unknown repository").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalRepoId: job.externalRepoId,
+								count: commits.length,
+							}),
+						)
+						return
+					}
+					const repository = repositoryOpt.value
+
+					yield* repo.upsertCommits(repository, commits)
 
 					if (!next) {
 						// Window fully walked → done.
-						yield* repo.updateRepoSyncStatus(installation.orgId, installation.provider, job.externalRepoId, {
+						yield* repo.updateRepoSyncStatus(repository.id, {
 							status: "ready",
 							error: null,
 							syncedAt: now,
@@ -153,9 +154,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// committer-second) would requeue itself forever. Stop and flag instead.
 					if (job.untilMs !== undefined && commits.length > 0 && next.untilMs >= job.untilMs) {
 						yield* repo.markRepoSyncError(
-							installation.orgId,
-							installation.provider,
-							job.externalRepoId,
+							repository.id,
 							"backfill stalled: commit-date watermark did not advance",
 						)
 						yield* Effect.logError("VCS backfill stalled — watermark did not advance").pipe(
@@ -175,9 +174,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					const staleAttempts = commits.length > 0 ? 0 : (job.staleAttempts ?? 0) + 1
 					if (staleAttempts > MAX_BACKFILL_STALL_RETRIES) {
 						yield* repo.markRepoSyncError(
-							installation.orgId,
-							installation.provider,
-							job.externalRepoId,
+							repository.id,
 							"backfill stalled: rate-limited before making progress",
 						)
 						yield* Effect.logError("VCS backfill stalled — rate-limited before any progress").pipe(
@@ -196,7 +193,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// (delay 0 → continue now); both bound each invocation's wall-clock
 					// under the Queues 15-min limit. A fresh job (not a queue retry) keeps
 					// the retry budget for genuine failures.
-					yield* repo.updateRepoSyncStatus(installation.orgId, installation.provider, job.externalRepoId, {
+					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
 						error: null,
 						syncedAt: now,
@@ -230,41 +227,36 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					//  - VcsInstallationGoneError → propagates to processMessage (disconnect).
 					//  - VcsProviderError (transient) → propagates so the queue retries.
 					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", (error) =>
-						repo
-							.markRepoSyncError(
-								installation.orgId,
-								installation.provider,
-								job.externalRepoId,
-								error.message,
-							)
-							.pipe(
-								Effect.flatMap(() =>
-									Effect.logWarning("Repository unavailable — backfill skipped").pipe(
-										Effect.annotateLogs({
-											provider: installation.provider,
-											externalRepoId: job.externalRepoId,
-										}),
+						Option.isNone(repositoryOpt)
+							? Effect.logWarning("Repository unavailable — backfill skipped (no local row)").pipe(
+									Effect.annotateLogs({
+										provider: installation.provider,
+										externalRepoId: job.externalRepoId,
+									}),
+								)
+							: repo.markRepoSyncError(repositoryOpt.value.id, error.message).pipe(
+									Effect.flatMap(() =>
+										Effect.logWarning("Repository unavailable — backfill skipped").pipe(
+											Effect.annotateLogs({
+												provider: installation.provider,
+												externalRepoId: job.externalRepoId,
+											}),
+										),
 									),
 								),
-							),
 					),
 					Effect.withSpan("VcsSyncService.backfillRepo"),
 				)
 
 			const applyPush = Effect.fn("VcsSyncService.applyPush")(function* (
-				installation: VcsInstallation,
-				job: { externalRepoId: string; commits: ReadonlyArray<CommitUpsertInput> },
+				repository: VcsRepo,
+				commits: ReadonlyArray<CommitUpsertInput>,
 			) {
 					// A push is incremental enrichment only: upsert the pushed commits and
 					// deliberately leave the repo's sync state untouched. A push may target
 					// any branch and its payload may be truncated, so it is never treated as
 					// an authoritative sync — the default-branch backfill owns that.
-					yield* repo.upsertCommits(
-						installation.orgId,
-						installation.provider,
-						job.externalRepoId,
-						job.commits,
-					)
+					yield* repo.upsertCommits(repository, commits)
 				})
 
 			// THE gate: the single, vendor-agnostic answer to "should the sync engine
@@ -310,24 +302,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"vcs.installation.external_id": job.externalInstallationId,
 				})
 
-				// Status-transition events change the gate's answer for subsequent jobs
-				// rather than processing data themselves — handled before any lookup.
-				if (job.kind === "installation-sync") {
-					if (job.reason === "suspend" || job.reason === "deleted") {
-						const status = job.reason === "suspend" ? "suspended" : "disconnected"
-						yield* repo.markInstallationStatus(job.provider, job.externalInstallationId, status)
-						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
-						return
-					}
-					if (job.reason === "unsuspend") {
-						// The provider re-enabled the installation → restore it to active
-						// before re-syncing, so the processability gate lets the sync proceed.
-						yield* repo.markInstallationStatus(job.provider, job.externalInstallationId, "active")
-						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
-					}
-				}
-
-				const installationOpt = yield* repo.getInstallation(job.provider, job.externalInstallationId)
+				// Resolve the installation once (external id → entity carrying our internal
+				// id) — the single resolve for the whole job; every repo call below addresses
+				// the installation by `installation.id`.
+				const installationOpt = yield* repo.resolveInstallation(job.provider, job.externalInstallationId)
 				if (Option.isNone(installationOpt)) {
 					yield* Effect.logInfo("Dropping VCS job for unknown installation").pipe(
 						Effect.annotateLogs({
@@ -338,36 +316,47 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 					return
 				}
-				const installation = installationOpt.value
+				let installation = installationOpt.value
+
+				// Status-transition events change the gate's answer for subsequent jobs rather
+				// than processing data themselves.
+				if (job.kind === "installation-sync") {
+					if (job.reason === "suspend" || job.reason === "deleted") {
+						const status = job.reason === "suspend" ? "suspended" : "disconnected"
+						yield* repo.markInstallationStatus(installation.id, status)
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
+						return
+					}
+					if (job.reason === "unsuspend") {
+						// The provider re-enabled the installation → restore it to active before
+						// re-syncing so the gate lets the sync proceed. Reflect the new status on the
+						// entity we already hold rather than re-reading it.
+						yield* repo.markInstallationStatus(installation.id, "active")
+						installation = new VcsInstallation({ ...installation, status: "active", suspendedAt: null })
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
+					}
+				}
 
 				// The single agnostic gate — covers backfill, installation-sync, and push.
 				if (!(yield* ensureProcessable(installation, job.kind))) return
 
 				// A newly-created installation gives the org a clean single-installation
-				// slate: hard-delete every *other* installation (and its repos/commits)
-				// for the same org + provider. A user can remove the old GitHub
-				// installation on GitHub's side without Maple ever receiving the
-				// `installation.deleted` webhook (delivery isn't guaranteed), stranding a
-				// stale "active" row — which would otherwise leave the org with several
-				// active installations, a state the dashboard (one active installation per
-				// org) does not support. Purge (not just suspend) so nothing lingers.
-				// Idempotent: a duplicate "created" — the GitHub webhook and the dashboard
-				// callback each enqueue one — finds no siblings left to purge.
+				// slate: hard-delete every *other* installation (and its repos/commits) for
+				// the same org + provider. A user can remove the old GitHub installation on
+				// GitHub's side without Maple ever receiving the `installation.deleted` webhook
+				// (delivery isn't guaranteed), stranding a stale "active" row — which would
+				// otherwise leave the org with several active installations, a state the
+				// dashboard (one active installation per org) does not support. Purge (not just
+				// suspend) so nothing lingers. Idempotent: a duplicate "created" — the GitHub
+				// webhook and the dashboard callback each enqueue one — finds no siblings left.
 				if (job.kind === "installation-sync" && job.reason === "created") {
 					const superseded = (yield* repo.listInstallationsByOrg(installation.orgId)).filter(
-						(other) =>
-							other.provider === installation.provider &&
-							other.externalInstallationId !== installation.externalInstallationId,
+						(other) => other.provider === installation.provider && other.id !== installation.id,
 					)
 					if (superseded.length > 0) {
 						yield* Effect.forEach(
 							superseded,
-							(other) =>
-								repo.purgeInstallation(
-									installation.orgId,
-									installation.provider,
-									other.externalInstallationId,
-								),
+							(other) => repo.purgeInstallation(installation.orgId, other.id),
 							{ discard: true },
 						)
 						yield* Effect.annotateCurrentSpan({
@@ -384,15 +373,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					}
 				}
 
-				// Per-repo access gate for data jobs: a soft-removed repo is paused —
-				// we stop processing its events until access is re-granted. (An absent
-				// repo row needs no gate here: upsertCommits already drops commits for
-				// an unknown repo, so a backfill racing a user's "delete from Maple"
-				// can't resurrect them — and the gone/transient error paths must still
-				// run even before a repo row exists.)
+				// Per-repo handling for data jobs: resolve the repo once (external repo id →
+				// entity) and pass it down. A soft-removed repo is paused (its events are not
+				// processed until access is re-granted). A push for an unknown repo is dropped
+				// (best-effort enrichment — the backfill stores it once the repo exists); a
+				// backfill for an unknown repo still runs (its fetch can surface an
+				// installation-gone signal) but has nothing to persist to.
+				let repositoryOpt: Option.Option<VcsRepo> = Option.none()
 				if (job.kind === "push" || job.kind === "backfill-repo") {
-					const repoOpt = yield* repo.getRepository(installation.orgId, job.provider, job.externalRepoId)
-					if (Option.isSome(repoOpt) && repoOpt.value.status === "removed") {
+					repositoryOpt = yield* repo.resolveRepository(installation.orgId, job.provider, job.externalRepoId)
+					if (Option.isSome(repositoryOpt) && repositoryOpt.value.status === "removed") {
 						yield* Effect.annotateCurrentSpan({ "vcs.repository.skipped": true })
 						yield* Effect.logInfo("Skipping VCS job: repository removed").pipe(
 							Effect.annotateLogs({
@@ -403,39 +393,44 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						)
 						return
 					}
+					if (job.kind === "push" && Option.isNone(repositoryOpt)) {
+						yield* Effect.logInfo("Dropping push for unknown repository").pipe(
+							Effect.annotateLogs({ provider: job.provider, externalRepoId: job.externalRepoId }),
+						)
+						return
+					}
 				}
 
 				const provider = yield* registry.resolve(job.provider)
 
 				const run = Match.value(job).pipe(
-					Match.discriminator("kind")("backfill-repo", (job) => backfillRepo(provider, installation, job)),
-					Match.discriminator("kind")("installation-sync", (job) => syncInstallation(provider, installation, job.reason)),
-					Match.discriminator("kind")("push", (job) => applyPush(installation, job)),
-					Match.exhaustive
+					Match.discriminator("kind")("backfill-repo", (job) =>
+						backfillRepo(provider, installation, repositoryOpt, job),
+					),
+					Match.discriminator("kind")("installation-sync", (job) =>
+						syncInstallation(provider, installation, job.reason),
+					),
+					// repositoryOpt is guaranteed Some + active here (None/removed returned above).
+					Match.discriminator("kind")("push", (job) =>
+						Option.isSome(repositoryOpt) ? applyPush(repositoryOpt.value, job.commits) : Effect.void,
+					),
+					Match.exhaustive,
 				)
 
-				// The ONE place an installation is disconnected, and only on the
-				// provider's authoritative gone signal — never on a raw HTTP status.
+				// The ONE place an installation is disconnected, and only on the provider's
+				// authoritative gone signal — never on a raw HTTP status.
 				return yield* run.pipe(
 					Effect.catchTag("@maple/http/errors/VcsInstallationGoneError", () =>
-						repo
-							.markInstallationStatus(
-								installation.provider,
-								installation.externalInstallationId,
-								"disconnected",
-							)
-							.pipe(
-								Effect.flatMap(() =>
-									Effect.logWarning(
-										"VCS installation reported gone by provider — marked disconnected",
-									).pipe(
-										Effect.annotateLogs({
-											provider: installation.provider,
-											externalInstallationId: installation.externalInstallationId,
-										}),
-									),
+						repo.markInstallationStatus(installation.id, "disconnected").pipe(
+							Effect.flatMap(() =>
+								Effect.logWarning("VCS installation reported gone by provider — marked disconnected").pipe(
+									Effect.annotateLogs({
+										provider: installation.provider,
+										externalInstallationId: installation.externalInstallationId,
+									}),
 								),
 							),
+						),
 					),
 				)
 			})

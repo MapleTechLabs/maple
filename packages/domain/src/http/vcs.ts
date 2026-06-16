@@ -136,7 +136,8 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	id: VcsRepositoryId,
 	orgId: OrgId,
 	provider: VcsProviderId,
-	externalInstallationId: Schema.String,
+	/** The owning installation, by Maple's internal id (resolved from the external id). */
+	installationId: VcsInstallationId,
 	externalRepoId: Schema.String,
 	owner: Schema.String,
 	name: Schema.String,
