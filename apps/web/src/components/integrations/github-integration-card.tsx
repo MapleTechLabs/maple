@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { Exit } from "effect"
-import { GithubStartConnectRequest, type GithubRepoSummary, type VcsRepoSyncStatus } from "@maple/domain/http"
+import {
+	GithubSetTrackedBranchRequest,
+	GithubStartConnectRequest,
+	type GithubRepoSummary,
+	type VcsRepoSyncStatus,
+} from "@maple/domain/http"
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -13,6 +18,7 @@ import {
 } from "@maple/ui/components/ui/alert-dialog"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { toast } from "sonner"
 
 import { GithubIcon, LoaderIcon } from "@/components/icons"
@@ -57,6 +63,10 @@ export function GithubIntegrationCard() {
 	})
 	const deleteRepository = useAtomSet(
 		MapleApiAtomClient.mutation("integrations", "githubDeleteRepository"),
+		{ mode: "promiseExit" },
+	)
+	const setTrackedBranch = useAtomSet(
+		MapleApiAtomClient.mutation("integrations", "githubSetTrackedBranch"),
 		{ mode: "promiseExit" },
 	)
 
@@ -177,6 +187,23 @@ export function GithubIntegrationCard() {
 			toast.success(`Deleted ${repo.fullName} from Maple`)
 		} else {
 			toast.error(`Failed to delete ${repo.fullName}`)
+		}
+	}
+
+	async function handleSetTrackedBranch(repo: GithubRepoSummary, trackedBranch: string) {
+		const result = await setTrackedBranch({
+			params: { repositoryId: repo.id },
+			payload: new GithubSetTrackedBranchRequest({ trackedBranch }),
+			reactivityKeys: ["githubIntegrationStatus"],
+		})
+		if (Exit.isSuccess(result)) {
+			if (result.value.backfillQueued) {
+				toast.success(`Now tracking ${trackedBranch} — re-syncing commits…`)
+			}
+		} else {
+			toast.error("Failed to change tracked branch")
+			// Surface failure so the selector can revert its optimistic state.
+			throw new Error("Failed to change tracked branch")
 		}
 	}
 
@@ -307,12 +334,20 @@ export function GithubIntegrationCard() {
 																</Button>
 															</>
 														) : (
-															<Badge
-																variant={SYNC_VARIANT[repo.syncStatus]}
-																size="sm"
-															>
-																{SYNC_LABEL[repo.syncStatus]}
-															</Badge>
+															<>
+																<BranchSelector
+																	repo={repo}
+																	onSelect={(branch) =>
+																		handleSetTrackedBranch(repo, branch)
+																	}
+																/>
+																<Badge
+																	variant={SYNC_VARIANT[repo.syncStatus]}
+																	size="sm"
+																>
+																	{SYNC_LABEL[repo.syncStatus]}
+																</Badge>
+															</>
 														)}
 													</div>
 												</li>
@@ -414,6 +449,166 @@ export function GithubIntegrationCard() {
 							className="bg-destructive text-white hover:bg-destructive/90"
 						>
 							Delete
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
+		</>
+	)
+}
+
+/**
+ * Per-repo tracked-branch selector. A repo tracks exactly one branch (seeded to
+ * its default); only that branch's commits are synced. Picking a different branch
+ * is destructive — it wipes the repo's stored commits and re-backfills the new
+ * branch — so it routes through a confirmation dialog. Selection is optimistic and
+ * reverts if the save fails.
+ */
+function BranchSelector({
+	repo,
+	onSelect,
+}: {
+	repo: GithubRepoSummary
+	onSelect: (trackedBranch: string) => Promise<void>
+}) {
+	const [open, setOpen] = useState(false)
+	const [query, setQuery] = useState("")
+	const [saving, setSaving] = useState(false)
+	// Optimistic view of the tracked branch; falls back to the default like the API.
+	const serverTracked =
+		repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null
+	const [tracked, setTracked] = useState<string | null>(serverTracked)
+	// The branch awaiting change confirmation (destructive: wipes + resyncs).
+	const [pending, setPending] = useState<string | null>(null)
+
+	// Re-sync local selection whenever the server state changes (after a save).
+	useEffect(() => {
+		setTracked(repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null)
+	}, [repo.trackedBranch, repo.branches])
+
+	// Nothing to offer until branches have synced.
+	if (repo.branches.length === 0) return null
+
+	const filtered = query
+		? repo.branches.filter((b) => b.name.toLowerCase().includes(query.toLowerCase()))
+		: repo.branches
+
+	async function commit(name: string) {
+		const prev = tracked
+		setTracked(name)
+		setSaving(true)
+		setOpen(false)
+		try {
+			await onSelect(name)
+		} catch {
+			setTracked(prev) // revert on failure
+		} finally {
+			setSaving(false)
+		}
+	}
+
+	function pick(name: string) {
+		if (name === tracked) {
+			setOpen(false)
+			return
+		}
+		// Defer the destructive change to an explicit confirmation.
+		setPending(name)
+	}
+
+	return (
+		<>
+			<Popover open={open} onOpenChange={setOpen}>
+				<PopoverTrigger
+					render={
+						<Button
+							size="sm"
+							variant="ghost"
+							className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+							disabled={saving}
+						>
+							{saving ? <LoaderIcon size={12} className="animate-spin" /> : null}
+							Branch: <span className="font-medium text-foreground">{tracked ?? "—"}</span>
+						</Button>
+					}
+				/>
+				<PopoverContent align="end" className="w-72">
+					<div className="flex flex-col gap-2">
+						<div>
+							<p className="text-xs font-medium text-foreground">Tracked branch</p>
+							<p className="text-[11px] text-muted-foreground">
+								Maple syncs commits from the one branch you track. Changing it re-syncs
+								this repo's commits from the new branch.
+							</p>
+						</div>
+						{repo.branches.length > 8 ? (
+							<input
+								value={query}
+								onChange={(e) => setQuery(e.target.value)}
+								placeholder="Search branches…"
+								className="rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs outline-none focus:border-border"
+							/>
+						) : null}
+						<div className="-mx-1 max-h-56 overflow-y-auto">
+							{filtered.length === 0 ? (
+								<p className="px-1 py-1.5 text-[11px] text-muted-foreground">No matches.</p>
+							) : (
+								filtered.map((b) => (
+									<button
+										type="button"
+										key={b.name}
+										onClick={() => pick(b.name)}
+										className="flex w-full cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 text-left text-xs hover:bg-muted/50"
+									>
+										<span
+											className={`size-3.5 shrink-0 rounded-full border ${
+												b.name === tracked
+													? "border-success bg-success"
+													: "border-border/60"
+											}`}
+											aria-hidden
+										/>
+										<span className="truncate">{b.name}</span>
+										{b.isDefault ? (
+											<span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+												default
+											</span>
+										) : null}
+									</button>
+								))
+							)}
+						</div>
+					</div>
+				</PopoverContent>
+			</Popover>
+
+			<AlertDialog
+				open={pending !== null}
+				onOpenChange={(o) => {
+					if (!o) setPending(null)
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Change tracked branch</AlertDialogTitle>
+						<AlertDialogDescription>
+							This switches{" "}
+							<span className="font-medium text-foreground">{repo.fullName}</span> to track{" "}
+							<span className="font-medium text-foreground">{pending}</span>. Maple deletes
+							this repo's currently synced commits and re-syncs the last 90 days from{" "}
+							<span className="font-medium text-foreground">{pending}</span>.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								const next = pending
+								setPending(null)
+								if (next) void commit(next)
+							}}
+						>
+							Track branch
 						</AlertDialogAction>
 					</AlertDialogFooter>
 				</AlertDialogContent>

@@ -11,7 +11,7 @@ import { param } from "../param"
 import type { ColumnAccessor } from "../query"
 import type { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
 import { MetricsSum, MetricsGauge, MetricsHistogram, MetricsExpHistogram } from "../tables"
-import { buildAttrFilterCondition } from "../../traces-shared"
+import { buildAttrFilterCondition, httpDisplaySpanName } from "../../traces-shared"
 
 // ---------------------------------------------------------------------------
 // APDEX expressions
@@ -137,11 +137,21 @@ export function tracesBaseWhereConditions(
 				? CH.positionCaseInsensitive($.ServiceName, CH.lit(v)).gt(0)
 				: $.ServiceName.eq(v),
 		),
-		CH.when(opts.spanName, (v: string) =>
-			mm?.spanName === "contains"
-				? CH.positionCaseInsensitive($.SpanName, CH.lit(v)).gt(0)
-				: $.SpanName.eq(v),
-		),
+		CH.when(opts.spanName, (v: string) => {
+			// The "Root Span" facet and trace_list_mv expose the *display* name
+			// ("GET /api/users"); the raw traces table stores "http.server GET".
+			// Match either spelling so a facet click actually selects rows.
+			const display = httpDisplaySpanName(
+				$.SpanName,
+				$.SpanAttributes.get("http.route"),
+				$.SpanAttributes.get("url.path"),
+			)
+			return mm?.spanName === "contains"
+				? CH.positionCaseInsensitive($.SpanName, CH.lit(v))
+						.gt(0)
+						.or(CH.positionCaseInsensitive(display, CH.lit(v)).gt(0))
+				: $.SpanName.eq(v).or(display.eq(v))
+		}),
 		CH.whenTrue(!!opts.rootOnly, () => $.SpanKind.in_("Server", "Consumer").or($.ParentSpanId.eq(""))),
 		CH.whenTrue(!!opts.errorsOnly, () => $.StatusCode.eq("Error")),
 	]
@@ -194,7 +204,20 @@ export function tracesBaseWhereConditions(
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
 	if (opts.excludedSpanNames?.length) {
-		conditions.push(CH.notInList($.SpanName, opts.excludedSpanNames))
+		// Display-name aware (see the spanName include branch above): exclude a row
+		// when either its raw or rewritten span name is in the list.
+		const display = httpDisplaySpanName(
+			$.SpanName,
+			$.SpanAttributes.get("http.route"),
+			$.SpanAttributes.get("url.path"),
+		)
+		conditions.push(
+			CH.not(
+				CH.inList($.SpanName, opts.excludedSpanNames).or(
+					CH.inList(display, opts.excludedSpanNames),
+				),
+			),
+		)
 	}
 	if (opts.excludedEnvironments?.length) {
 		conditions.push(

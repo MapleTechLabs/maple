@@ -67,6 +67,12 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 
 // ---- GitHub (VCS App installation) ----------------------------------------
 
+/** One branch a repo knows about — an option in the tracked-branch picker. */
+export class GithubBranchSummary extends Schema.Class<GithubBranchSummary>("GithubBranchSummary")({
+	name: Schema.String,
+	isDefault: Schema.Boolean,
+}) {}
+
 /** One synced repository, surfaced read-only so the dashboard can watch backfill. */
 export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRepoSummary")({
 	// Maple's own repository id (the `vcs_repositories` row) — the stable handle the
@@ -82,6 +88,11 @@ export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRe
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
 	lastSyncError: Schema.NullOr(Schema.String),
+	// The single branch this repo tracks (only its commits are synced). Falls back
+	// to the default branch for a legacy row whose tracked branch was never set.
+	trackedBranch: Schema.NullOr(Schema.String),
+	// All branches the repo knows about (names only) — the picker's options.
+	branches: Schema.Array(GithubBranchSummary),
 }) {}
 
 export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")({
@@ -115,6 +126,22 @@ export class GithubDeleteRepositoryResponse extends Schema.Class<GithubDeleteRep
 	"GithubDeleteRepositoryResponse",
 )({
 	deleted: Schema.Boolean,
+}) {}
+
+export class GithubSetTrackedBranchRequest extends Schema.Class<GithubSetTrackedBranchRequest>(
+	"GithubSetTrackedBranchRequest",
+)({
+	// The single branch to track. Must be one the repo knows about. Changing it
+	// wipes the repo's stored commits and re-backfills the new branch.
+	trackedBranch: Schema.String,
+}) {}
+
+export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTrackedBranchResponse>(
+	"GithubSetTrackedBranchResponse",
+)({
+	trackedBranch: Schema.String,
+	// True when the change enqueued a historical backfill of the new branch.
+	backfillQueued: Schema.Boolean,
 }) {}
 
 export class IntegrationsForbiddenError extends Schema.TaggedErrorClass<IntegrationsForbiddenError>()(
@@ -257,6 +284,24 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				IntegrationsPersistenceError,
 			],
 		}),
+	)
+	.add(
+		HttpApiEndpoint.put(
+			"githubSetTrackedBranch",
+			"/github/repositories/:repositoryId/tracked-branch",
+			{
+				params: {
+					repositoryId: VcsRepositoryId,
+				},
+				payload: GithubSetTrackedBranchRequest,
+				success: GithubSetTrackedBranchResponse,
+				error: [
+					IntegrationsForbiddenError,
+					IntegrationsValidationError,
+					IntegrationsPersistenceError,
+				],
+			},
+		),
 	)
 	.prefix("/api/integrations")
 	.middleware(Authorization) {}

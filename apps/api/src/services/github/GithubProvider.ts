@@ -1,4 +1,5 @@
 import {
+	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
 	type RepoUpsertInput,
@@ -58,6 +59,8 @@ const PushPayload = Schema.Struct({
 		}),
 	}),
 	installation: Schema.Struct({ id: Schema.Number }),
+	// GitHub sets `forced: true` for a force-push (rebase / history rewrite).
+	forced: Schema.optionalKey(Schema.Boolean),
 	commits: Schema.optionalKey(Schema.Array(PushCommit)),
 })
 
@@ -66,8 +69,18 @@ const InstallationPayload = Schema.Struct({
 	installation: Schema.Struct({ id: Schema.Number }),
 })
 
+// `create` / `delete` events: a branch (or tag) was created/deleted. `ref` is the
+// bare name (NOT refs/heads/…); `ref_type` distinguishes a branch from a tag.
+const RefEventPayload = Schema.Struct({
+	ref: Schema.String,
+	ref_type: Schema.String,
+	repository: Schema.Struct({ id: Schema.Number }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
 const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodeInstallationEvent = Schema.decodeUnknownEffect(InstallationPayload)
+const decodeRefEvent = Schema.decodeUnknownEffect(RefEventPayload)
 
 const parseError = (message: string) => new VcsWebhookParseError({ message })
 
@@ -149,7 +162,7 @@ const timingSafeEqual = (a: string, b: string): boolean => {
 	return mismatch === 0
 }
 
-const normalizeFetchedCommit = (commit: GithubApiCommit, branch: string, now: number): CommitUpsertInput => {
+const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
 	const authoredAt = commit.commit.author?.date ? finiteOrNull(Date.parse(commit.commit.author.date)) : null
 	const committedAt = commit.commit.committer?.date ? finiteOrNull(Date.parse(commit.commit.committer.date)) : null
 	return {
@@ -162,7 +175,6 @@ const normalizeFetchedCommit = (commit: GithubApiCommit, branch: string, now: nu
 		authoredAt,
 		committedAt: committedAt ?? authoredAt ?? now,
 		htmlUrl: commit.html_url,
-		branch,
 	}
 }
 
@@ -215,6 +227,24 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					const payload = yield* parsePayload("push", decodePush(raw))
 					if (!payload.ref.startsWith("refs/heads/")) return [] // ignore tag/other refs
 					const branch = payload.ref.slice("refs/heads/".length)
+					const externalInstallationId = String(payload.installation.id)
+					const externalRepoId = String(payload.repository.id)
+					// A force-push rewrote history; the commit payload is unreliable, so don't
+					// ship it. Emit a single marker job and let the orchestrator re-walk the
+					// branch (if it's one we sync) instead of ingesting the payload. Keeps the
+					// rewrite handling in one place and avoids splitting commits we'd discard.
+					if (payload.forced) {
+						const job: VcsSyncJob = {
+							kind: "push",
+							provider: PROVIDER,
+							externalInstallationId,
+							externalRepoId,
+							branch,
+							forced: true,
+							commits: [],
+						}
+						return [job]
+					}
 					const commits: ReadonlyArray<CommitUpsertInput> = (payload.commits ?? []).map((c) => {
 						const ts = c.timestamp ? finiteOrNull(Date.parse(c.timestamp)) : null
 						return {
@@ -227,14 +257,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							authoredAt: ts,
 							committedAt: ts ?? now,
 							htmlUrl: c.url,
-							branch,
 						}
 					})
 					if (commits.length === 0) return []
-					// A push is best-effort enrichment only — the default-branch backfill
+					// A push is best-effort enrichment only — the per-branch commit backfill
 					// remains the authoritative source for a repo's commit history.
-					const externalInstallationId = String(payload.installation.id)
-					const externalRepoId = String(payload.repository.id)
 					const makeJob = (slice: ReadonlyArray<CommitUpsertInput>): VcsSyncJob => ({
 						kind: "push",
 						provider: PROVIDER,
@@ -248,7 +275,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// (CommitUpsertInput encodes 1:1, and the queue's v8 serialization is no
 					// larger for this string-heavy shape). Each commit is always placed in a
 					// job (guaranteed progress), so a lone commit bigger than the budget — a
-					// pathologically huge message, which the default-branch backfill re-fetches
+					// pathologically huge message, which the branch's commit backfill re-fetches
 					// in full anyway — gets its own job rather than stalling the loop.
 					const envelopeBytes = Buffer.byteLength(JSON.stringify(makeJob([])))
 					const jobs: VcsSyncJob[] = []
@@ -292,6 +319,26 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						: null,
 			)
 
+			// `create`/`delete` (ref_type=branch) → one branch-event job; tags are ignored.
+			// The branch table mutates directly in the orchestrator (no GitHub call).
+			const mapRefEvent = (action: "created" | "deleted") => (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload(
+						action === "created" ? "create" : "delete",
+						decodeRefEvent(raw),
+					)
+					if (payload.ref_type !== "branch") return []
+					const job: VcsSyncJob = {
+						kind: "branch-event",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						action,
+						branch: payload.ref,
+					}
+					return [job]
+				})
+
 			const webhookToJobs = (input: VcsWebhookRequest) =>
 				Effect.gen(function* () {
 					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
@@ -307,6 +354,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							return yield* mapInstallation(parsed)
 						case "installation_repositories":
 							return yield* mapInstallationRepositories(parsed)
+						case "create":
+							return yield* mapRefEvent("created")(parsed)
+						case "delete":
+							return yield* mapRefEvent("deleted")(parsed)
 						default:
 							return [] // ping and unhandled events are accepted no-ops
 					}
@@ -339,7 +390,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const fetchCommits = (
 				installation: VcsInstallation,
 				repo: VcsRepositoryRef,
-				opts: { readonly sinceMs: number; readonly untilMs?: number },
+				opts: { readonly sinceMs: number; readonly untilMs?: number; readonly branch: string },
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
@@ -347,16 +398,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// port's "committed since" contract) — a GitHub specific that stays here.
 					const result = yield* client
 						.listCommits(installation.externalInstallationId, repo.owner, repo.name, {
-							sha: repo.defaultBranch,
+							sha: opts.branch,
 							sinceIso: new Date(opts.sinceMs).toISOString(),
 							...(opts.untilMs === undefined
 								? {}
 								: { untilIso: new Date(opts.untilMs).toISOString() }),
 						})
 						.pipe(Effect.mapError(toVcsCommitError))
-					const normalized = result.commits.map((c) =>
-						normalizeFetchedCommit(c, repo.defaultBranch, now),
-					)
+					const normalized = result.commits.map((c) => normalizeFetchedCommit(c, now))
 					if (result.complete) return { commits: normalized }
 					// Cut short mid-walk (throttled, or at the per-invocation page budget):
 					// resume from the oldest committer-date we got (a stable watermark —
@@ -376,11 +425,28 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}
 				})
 
+			const fetchBranches = (installation: VcsInstallation, repo: VcsRepositoryRef) =>
+				client.listBranches(installation.externalInstallationId, repo.owner, repo.name).pipe(
+					Effect.map(
+						(result): { branches: ReadonlyArray<BranchUpsertInput>; truncated: boolean } => ({
+							// Names + head only — which branch is "default" is the repo layer's
+							// concern (a display hint it derives from the repo's defaultBranch).
+							branches: result.branches.map((b) => ({
+								name: b.name,
+								headSha: b.commit.sha,
+							})),
+							truncated: result.truncated,
+						}),
+					),
+					Effect.mapError(toVcsError),
+				)
+
 			return {
 				id: PROVIDER,
 				webhookToJobs,
 				fetchRepositories,
 				fetchCommits,
+				fetchBranches,
 			} satisfies VcsProviderClient
 		}),
 	},

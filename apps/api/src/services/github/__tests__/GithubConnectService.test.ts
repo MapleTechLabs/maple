@@ -416,4 +416,81 @@ describe("GithubConnectService", () => {
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
+
+	it.effect("setTrackedBranch validates the branch, no-ops on the current one, and wipes+resyncs on change", () => {
+		const { url } = createTempDbUrl("maple-gh-track-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		const http = scriptedHttp([installationResponse])
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			const userId = asUserId("user_1")
+
+			const { state } = yield* svc.startConnect(orgId, userId, {
+				callbackUrl: "https://tunnel.example/cb",
+			})
+			yield* svc.completeConnect("42", state)
+			yield* upsertReposFor(repo, "42", [
+				{
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+					fullName: "octo/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/octo/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
+			const r = yield* repoFor(repo, orgId, "7")
+			// The tracked branch is seeded to the repo's default.
+			assert.strictEqual(r.trackedBranch, "main")
+			yield* repo.upsertBranches(r, [
+				{ name: "main", headSha: null },
+				{ name: "release", headSha: null },
+			])
+			const SHA = "a".repeat(40)
+			yield* upsertCommitsFor(repo, orgId, "7", [
+				{
+					sha: SHA,
+					message: "m",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: `https://github.com/octo/repo/commit/${SHA}`,
+				},
+			])
+
+			// An unknown branch is rejected; nothing changes.
+			const bad = yield* svc.setTrackedBranch(orgId, r.id, "nope").pipe(Effect.exit)
+			assert.ok(findError(bad) instanceof IntegrationsValidationError)
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
+
+			// Selecting the current branch is a no-op: no wipe, no backfill enqueued.
+			sent.length = 0
+			const noop = yield* svc.setTrackedBranch(orgId, r.id, "main")
+			assert.strictEqual(noop.backfillQueued, false)
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
+
+			// Changing the tracked branch wipes the repo's commits and enqueues a backfill
+			// of the new branch.
+			sent.length = 0
+			const changed = yield* svc.setTrackedBranch(orgId, r.id, "release")
+			assert.strictEqual(changed.trackedBranch, "release")
+			assert.ok(changed.backfillQueued)
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA as never)))
+			assert.strictEqual((yield* repoFor(repo, orgId, "7")).trackedBranch, "release")
+			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			assert.strictEqual(backfills.length, 1)
+			assert.strictEqual(
+				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				"release",
+			)
+		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+	})
 })

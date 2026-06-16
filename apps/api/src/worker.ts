@@ -46,6 +46,21 @@ const telemetry = MapleCloudflareSDK.make({
 	dropSpanNames: ["McpServer/Notifications."],
 })
 
+// Effect's `HttpMiddleware.tracer` ends the root HTTP *server* span on a
+// deferred macrotask (`scheduleTask(span.end, 0)` → `setTimeout(0)`), whereas
+// `Effect.withSpan` child spans end synchronously. `telemetry.flush` drains the
+// span buffer synchronously, so flushing the instant the response resolves
+// captures the child spans but NOT the server span — its macrotask hasn't run
+// yet. Busy routes get rescued by a later request's flush; an isolated request
+// (e.g. a GitHub webhook) freezes the isolate first, so its server span is lost
+// and the request never surfaces as a trace. Yield one macrotask so the
+// scheduled `span.end` runs before we drain — mirrors `drainScheduler` in
+// `@maple/effect-cloudflare`'s `runScheduledEffect`, which the queue path uses.
+const flushTelemetry = async (env: Record<string, unknown>): Promise<void> => {
+	await new Promise<void>((resolve) => setTimeout(resolve, 0))
+	await telemetry.flush(env)
+}
+
 // POST /mcp hangs indefinitely on Cloudflare Workers when `toWebHandler` is
 // called with no middleware (1101 in prod, miniflare "worker hung" locally).
 // Suspected Effect RpcServer / HttpRouter scope-propagation bug. Providing
@@ -188,7 +203,7 @@ const handle = async (
 					` resp_sid=${response.headers.get("mcp-session-id") ?? "-"}`,
 			)
 		}
-		ctx.waitUntil(telemetry.flush(env))
+		ctx.waitUntil(flushTelemetry(env))
 		return response
 	} catch (err) {
 		console.error("[worker] handler failed:", err)
@@ -198,7 +213,7 @@ const handle = async (
 					` dur=${Date.now() - startedAt}ms`,
 			)
 		}
-		ctx.waitUntil(telemetry.flush(env))
+		ctx.waitUntil(flushTelemetry(env))
 		const message = err instanceof Error ? err.message : String(err)
 		return new Response(`worker handler error: ${message}`, { status: 504 })
 	}

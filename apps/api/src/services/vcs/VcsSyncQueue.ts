@@ -49,6 +49,7 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 				job: VcsSyncJob,
 				options?: { readonly delaySeconds?: number },
 			) {
+				yield* Effect.annotateCurrentSpan({ "vcs.job.kind": job.kind, "vcs.provider": job.provider })
 				if (!queue) {
 					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
 				}
@@ -69,6 +70,13 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 			const sendBatch = Effect.fn("VcsSyncQueue.sendBatch")(function* (
 				jobs: ReadonlyArray<VcsSyncJob>,
 			) {
+				// Count + distinct kinds only — a fixed, low-cardinality summary. A batch can
+				// hold hundreds of jobs, so a raw kind-per-job list would be unbounded and
+				// redundant with the count.
+				yield* Effect.annotateCurrentSpan({
+					"vcs.jobs.length": jobs.length,
+					"vcs.job.kinds": [...new Set(jobs.map((j) => j.kind))].sort().join(","),
+				})
 				if (jobs.length === 0) return
 				if (!queue) {
 					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })

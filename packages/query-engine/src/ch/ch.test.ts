@@ -437,7 +437,10 @@ describe("tracesTimeseriesQuery", () => {
 			attributeFilters: [{ key: "http.status_code", value: "200", mode: "equals" }],
 		})
 		const { sql } = compileCH(q, baseParams)
-		expect(sql).toContain("SpanAttributes['http.status_code'] = '200'")
+		// Coalesces the old + new OTel semconv spellings (mirrors trace_list_mv).
+		expect(sql).toContain(
+			"if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code']) = '200'",
+		)
 	})
 
 	it("filters by attribute filters (exists)", () => {
@@ -467,7 +470,9 @@ describe("tracesTimeseriesQuery", () => {
 			attributeFilters: [{ key: "http.status_code", value: "400", mode: "gt" }],
 		})
 		const { sql } = compileCH(q, baseParams)
-		expect(sql).toContain("toFloat64OrZero(SpanAttributes['http.status_code']) > 400")
+		expect(sql).toContain(
+			"toFloat64OrZero(if(SpanAttributes['http.status_code'] != '', SpanAttributes['http.status_code'], SpanAttributes['http.response.status_code'])) > 400",
+		)
 	})
 
 	it("filters by resource attribute filters", () => {
@@ -489,7 +494,9 @@ describe("tracesTimeseriesQuery", () => {
 		})
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("FROM traces")
-		expect(sql).toContain("SpanAttributes['http.method'] = 'GET'")
+		expect(sql).toContain(
+			"if(SpanAttributes['http.method'] != '', SpanAttributes['http.method'], SpanAttributes['http.request.method']) = 'GET'",
+		)
 	})
 
 	it("falls back to raw traces when groupBy includes span_name", () => {
@@ -677,7 +684,10 @@ describe("tracesListQuery", () => {
 	it("emits NOT IN for excludedSpanNames", () => {
 		const q = tracesListQuery({ excludedSpanNames: ["GET /health"] })
 		const { sql } = compileCH(q, baseParams)
-		expect(sql).toContain("SpanName NOT IN ('GET /health')")
+		// Display-name aware: excludes rows whose raw OR rewritten span name
+		// matches, so excluding a "Root Span" facet value ("GET /route") works.
+		expect(sql).toMatch(/NOT \(\(SpanName IN \('GET \/health'\) OR /)
+		expect(sql).toContain("replaceOne(SpanName, 'http.server ', '')")
 	})
 
 	it("wraps a negated attribute filter in NOT (...)", () => {

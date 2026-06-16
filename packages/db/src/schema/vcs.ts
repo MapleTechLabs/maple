@@ -3,6 +3,7 @@ import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
 	VcsAccountType,
+	VcsBranchId,
 	VcsCommitRowId,
 	VcsInstallStatus,
 	VcsInstallationId,
@@ -66,6 +67,12 @@ export const vcsRepositories = sqliteTable(
 		name: text("name").notNull(),
 		fullName: text("full_name").notNull(),
 		defaultBranch: text("default_branch").notNull().default("main"),
+		// The single branch this repo tracks: only its commits are backfilled and
+		// ingested. Seeded to `default_branch` on discovery; user-owned thereafter
+		// (a reconcile never overwrites it). Nullable so a repo whose tracked branch
+		// was deleted can fall back lazily; in practice the sync engine keeps it
+		// pinned to a valid branch (falls back to the default on deletion).
+		trackedBranch: text("tracked_branch"),
 		htmlUrl: text("html_url").notNull(),
 		isPrivate: integer("is_private", { mode: "number" }).notNull().default(1),
 		isArchived: integer("is_archived", { mode: "number" }).notNull().default(0),
@@ -89,10 +96,11 @@ export const vcsRepositories = sqliteTable(
 /**
  * Resolved commits. Each commit belongs to exactly one `vcs_repositories` row
  * (`repository_id`) — a commit without a repo is not meaningful, and that link
- * is what a repo/installation purge cascades on. The dashboard resolver still
- * matches a trace's full 40-char SHA by `(org_id, sha)` — provider-agnostic, no
- * join — so `org_id` stays denormalized here. The row is self-contained
- * (`html_url` + author fields).
+ * is what a repo/installation purge cascades on. There is no branch link: a repo
+ * stores the commits of its single tracked branch, so "the repo's commits" is the
+ * whole set. The dashboard resolver matches a trace's full 40-char SHA by
+ * `(org_id, sha)` — provider-agnostic, no join — so `org_id` stays denormalized
+ * here. The row is self-contained (`html_url` + author fields).
  */
 export const vcsCommits = sqliteTable(
 	"vcs_commits",
@@ -114,7 +122,6 @@ export const vcsCommits = sqliteTable(
 		authoredAt: integer("authored_at", { mode: "number" }),
 		committedAt: integer("committed_at", { mode: "number" }).notNull(),
 		htmlUrl: text("html_url").notNull(),
-		branch: text("branch"),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
@@ -125,9 +132,38 @@ export const vcsCommits = sqliteTable(
 	],
 )
 
+/**
+ * Branches of a repository (names only — never the commits on them). This table
+ * is the picker's list of branches the user can choose to track; which one is
+ * tracked is named by `vcs_repositories.tracked_branch`, not a flag here.
+ * `is_default` is a display hint (and the default seed for `tracked_branch`).
+ */
+export const vcsRepositoryBranches = sqliteTable(
+	"vcs_repository_branches",
+	{
+		id: text("id").$type<VcsBranchId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		provider: text("provider").$type<VcsProviderId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		name: text("name").notNull(),
+		isDefault: integer("is_default", { mode: "number" }).notNull().default(0),
+		headSha: text("head_sha").$type<GitCommitSha>(),
+		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	},
+	(table) => [
+		// One row per (repo, branch name). repository_id leftmost ⇒ also serves the
+		// per-repo branch list and the cascade delete's `WHERE repository_id IN (…)`.
+		uniqueIndex("vcs_repository_branches_repo_name_idx").on(table.repositoryId, table.name),
+		index("vcs_repository_branches_org_idx").on(table.orgId),
+	],
+)
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
 export type VcsRepositoryInsert = typeof vcsRepositories.$inferInsert
 export type VcsCommitRow = typeof vcsCommits.$inferSelect
 export type VcsCommitInsert = typeof vcsCommits.$inferInsert
+export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
+export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert

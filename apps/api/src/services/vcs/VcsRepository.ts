@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto"
 import {
+	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
 	type OrgId,
 	type RepoUpsertInput,
 	type UserId,
+	VcsBranch,
+	type VcsBranchId,
 	VcsCommit,
 	VcsInstallation,
 	type VcsInstallationId,
@@ -22,8 +25,10 @@ import {
 	chunkRowsForInsert,
 	vcsCommits,
 	vcsInstallations,
+	vcsRepositoryBranches,
 	type VcsCommitRow,
 	type VcsInstallationRow,
+	type VcsRepositoryBranchRow,
 	vcsRepositories,
 	type VcsRepositoryRow,
 } from "@maple/db"
@@ -39,6 +44,7 @@ const D1_INARRAY_CHUNK_SIZE = 90
 const decodeInstallation = Schema.decodeUnknownSync(VcsInstallation)
 const decodeRepo = Schema.decodeUnknownSync(VcsRepo)
 const decodeCommit = Schema.decodeUnknownSync(VcsCommit)
+const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
 // a malformed SHA throws and is caught into a VcsRepoDecodeError on write.
 const decodeGitSha = Schema.decodeUnknownSync(GitCommitSha)
@@ -88,6 +94,7 @@ const rowToRepo = (row: VcsRepositoryRow): VcsRepo =>
 		name: row.name,
 		fullName: row.fullName,
 		defaultBranch: row.defaultBranch,
+		trackedBranch: row.trackedBranch ?? null,
 		htmlUrl: row.htmlUrl,
 		isPrivate: row.isPrivate === 1,
 		isArchived: row.isArchived === 1,
@@ -114,8 +121,20 @@ const rowToCommit = (row: VcsCommitRow): VcsCommit =>
 		authoredAt: row.authoredAt ?? null,
 		committedAt: row.committedAt,
 		htmlUrl: row.htmlUrl,
-		branch: row.branch ?? null,
 		createdAt: row.createdAt,
+	})
+
+const rowToBranch = (row: VcsRepositoryBranchRow): VcsBranch =>
+	decodeBranch({
+		id: row.id,
+		orgId: row.orgId,
+		provider: row.provider,
+		repositoryId: row.repositoryId,
+		name: row.name,
+		isDefault: row.isDefault === 1,
+		headSha: row.headSha ?? null,
+		createdAt: row.createdAt,
+		updatedAt: row.updatedAt,
 	})
 
 // Note: `status` is intentionally not part of the upsert input. A new row gets
@@ -192,6 +211,27 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.execute((db) => db.select().from(vcsInstallations).where(eq(vcsInstallations.orgId, orgId)))
 				.pipe(Effect.mapError(toPersistenceError))
 			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
+		})
+
+		// Look up an installation by Maple's own id — org-scoped (ids are globally
+		// unique UUIDs, so the org filter is a safety bound). Used where a caller holds
+		// a repo's internal installationId and needs the external id for a queue job.
+		const getInstallationById = Effect.fn("VcsRepository.getInstallationById")(function* (
+			orgId: OrgId,
+			installationId: VcsInstallationId,
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select()
+						.from(vcsInstallations)
+						.where(and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId)))
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			const row = Option.fromNullishOr(rows[0])
+			if (Option.isNone(row)) return Option.none<VcsInstallation>()
+			return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
 		})
 
 		const upsertInstallation = Effect.fn("VcsRepository.upsertInstallation")(function* (
@@ -353,6 +393,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				name: r.name,
 				fullName: r.fullName,
 				defaultBranch: r.defaultBranch,
+				// Seed the tracked branch to the default on first discovery. Left
+				// untouched on conflict below (the user owns it thereafter).
+				trackedBranch: r.defaultBranch,
 				htmlUrl: r.htmlUrl,
 				isPrivate: r.isPrivate ? 1 : 0,
 				isArchived: r.isArchived ? 1 : 0,
@@ -436,6 +479,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			if (repoRows[0]?.id === undefined) return false
+			// Branches, then commits, then the repo row.
+			yield* database
+				.execute((db) =>
+					db.delete(vcsRepositoryBranches).where(eq(vcsRepositoryBranches.repositoryId, repositoryId)),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
 			yield* database
 				.execute((db) => db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)))
 				.pipe(Effect.mapError(toPersistenceError))
@@ -484,12 +533,15 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 
 		// ---- Commits ------------------------------------------------------
 
-		// Persist commits for an already-resolved repository. The orchestrator
-		// resolves the repo via resolveRepository and only calls here when the row
-		// exists (a push racing ahead of repo discovery is dropped upstream), so the
-		// "unknown repo" case no longer lives at this layer. The commit row
-		// denormalizes the repo's org/provider for the dashboard's (org_id, sha)
-		// lookup, so both come straight off the entity.
+		// Persist commits for an already-resolved repository. Commits belong to the
+		// repo only — a repo stores the commits of its single tracked branch, so
+		// there is no commit↔branch link to maintain. Idempotent (upsert on
+		// (repository_id, sha)). The orchestrator resolves the repo via
+		// resolveRepository and only calls here when the row exists (a push racing
+		// ahead of repo discovery is dropped upstream), so the "unknown repo" case
+		// no longer lives at this layer. The commit row denormalizes the repo's
+		// org/provider for the dashboard's (org_id, sha) lookup, so both come
+		// straight off the entity.
 		const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
 			repository: VcsRepo,
 			commits: ReadonlyArray<CommitUpsertInput>,
@@ -516,7 +568,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 							authoredAt: c.authoredAt,
 							committedAt: c.committedAt,
 							htmlUrl: c.htmlUrl,
-							branch: c.branch,
 							createdAt: now,
 						}
 					}),
@@ -528,6 +579,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					}),
 			})
 
+			// Upsert the immutable commit rows, refreshing mutable metadata on conflict.
 			yield* Effect.forEach(
 				chunkRowsForInsert(vcsCommits, values),
 				(chunk) =>
@@ -547,7 +599,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 										authoredAt: sql`excluded.authored_at`,
 										committedAt: sql`excluded.committed_at`,
 										htmlUrl: sql`excluded.html_url`,
-										branch: sql`excluded.branch`,
 									},
 								}),
 						)
@@ -555,6 +606,18 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				{ discard: true },
 			)
 			return values.length
+		})
+
+		// Wipe every commit of a repo. Used when the tracked branch changes (user
+		// action or automatic fallback): the repo's stored history is for the old
+		// branch, so it's deleted before a fresh backfill of the new branch. Commits
+		// reference no other table now, so this is a single delete.
+		const deleteCommitsByRepository = Effect.fn("VcsRepository.deleteCommitsByRepository")(function* (
+			repositoryId: VcsRepositoryId,
+		) {
+			yield* database
+				.execute((db) => db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)))
+				.pipe(Effect.mapError(toPersistenceError))
 		})
 
 		const findCommitBySha = Effect.fn("VcsRepository.findCommitBySha")(function* (
@@ -573,6 +636,210 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const row = Option.fromNullishOr(rows[0])
 			if (Option.isNone(row)) return Option.none<VcsCommit>()
 			return Option.some(yield* decodeOne("vcs_commits", row.value, rowToCommit))
+		})
+
+		// ---- Branches -----------------------------------------------------
+
+		// Bulk upsert a repo's branches from a provider listing — just the picker's
+		// list of names. `isDefault` is a display hint derived here (the provider is
+		// oblivious to it) by matching the repo's `defaultBranch`. Which branch is
+		// tracked lives on the repo (`tracked_branch`), not here.
+		const upsertBranches = Effect.fn("VcsRepository.upsertBranches")(function* (
+			repository: VcsRepo,
+			branches: ReadonlyArray<BranchUpsertInput>,
+		) {
+			if (branches.length === 0) return
+			const now = yield* Clock.currentTimeMillis
+			const values = yield* Effect.try({
+				try: () =>
+					branches.map((b) => {
+						const isDefault = b.name === repository.defaultBranch
+						return {
+							id: randomUUID() as VcsBranch["id"],
+							orgId: repository.orgId,
+							provider: repository.provider,
+							repositoryId: repository.id,
+							name: b.name,
+							isDefault: isDefault ? 1 : 0,
+							headSha: b.headSha === null ? null : decodeGitSha(b.headSha),
+							createdAt: now,
+							updatedAt: now,
+						}
+					}),
+				catch: (err) =>
+					new VcsRepoDecodeError({
+						message: err instanceof Error ? err.message : "branch decode failed",
+						table: "vcs_repository_branches",
+						column: "head_sha",
+					}),
+			})
+			yield* Effect.forEach(
+				chunkRowsForInsert(vcsRepositoryBranches, values),
+				(chunk) =>
+					database
+						.execute((db) =>
+							db
+								.insert(vcsRepositoryBranches)
+								.values(chunk)
+								.onConflictDoUpdate({
+									target: [vcsRepositoryBranches.repositoryId, vcsRepositoryBranches.name],
+									set: {
+										isDefault: sql`excluded.is_default`,
+										headSha: sql`excluded.head_sha`,
+										updatedAt: sql`excluded.updated_at`,
+									},
+								}),
+						)
+						.pipe(Effect.mapError(toPersistenceError)),
+				{ discard: true },
+			)
+		})
+
+		// Resolve a branch by name, creating it if absent (a push can surface a branch
+		// the picker hasn't listed yet, keeping it selectable). `isDefault` is the
+		// display hint derived from the repo's default branch; `head_sha` is left
+		// untouched on an existing row.
+		const getOrCreateBranch = Effect.fn("VcsRepository.getOrCreateBranch")(function* (
+			repository: VcsRepo,
+			name: string,
+		) {
+			const now = yield* Clock.currentTimeMillis
+			const isDefault = name === repository.defaultBranch
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.insert(vcsRepositoryBranches)
+						.values({
+							id: randomUUID() as VcsBranch["id"],
+							orgId: repository.orgId,
+							provider: repository.provider,
+							repositoryId: repository.id,
+							name,
+							isDefault: isDefault ? 1 : 0,
+							headSha: null,
+							createdAt: now,
+							updatedAt: now,
+						})
+						.onConflictDoUpdate({
+							target: [vcsRepositoryBranches.repositoryId, vcsRepositoryBranches.name],
+							set: { isDefault: sql`excluded.is_default`, updatedAt: sql`excluded.updated_at` },
+						})
+						.returning(),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			const row = Option.fromNullishOr(rows[0])
+			if (Option.isNone(row)) {
+				return yield* new VcsRepoPersistenceError({ message: "Branch upsert returned no row" })
+			}
+			return yield* decodeOne("vcs_repository_branches", row.value, rowToBranch)
+		})
+
+		const listBranchesByRepository = Effect.fn("VcsRepository.listBranchesByRepository")(function* (
+			repositoryId: VcsRepositoryId,
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select()
+						.from(vcsRepositoryBranches)
+						.where(eq(vcsRepositoryBranches.repositoryId, repositoryId)),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return yield* decodeAll("vcs_repository_branches", rows, rowToBranch)
+		})
+
+		// Retarget the repo's single tracked branch: point `tracked_branch` at the new
+		// branch AND wipe the repo's stored commits (they were the old branch's
+		// history). The caller then enqueues a fresh backfill of the new branch. Used
+		// by the dashboard's branch selection and the engine's fallback to the default
+		// when the tracked branch is deleted. The two writes are paired here so the
+		// "change ⇒ wipe" invariant lives in one place; the column moves first so a
+		// failure mid-way leaves the repo pointing at the new branch with no commits
+		// (which the next backfill repopulates) rather than the reverse.
+		const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+			branch: string,
+		) {
+			const now = yield* Clock.currentTimeMillis
+			yield* database
+				.execute((db) =>
+					db
+						.update(vcsRepositories)
+						.set({ trackedBranch: branch, updatedAt: now })
+						.where(and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId))),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			yield* deleteCommitsByRepository(repositoryId)
+		})
+
+		// Drop the branch rows by id (their repo keeps its commits — a branch is just
+		// a name in the picker now).
+		const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
+			Effect.gen(function* () {
+				if (ids.length === 0) return
+				yield* Effect.forEach(
+					Arr.chunksOf(ids, D1_INARRAY_CHUNK_SIZE),
+					(chunk) =>
+						database
+							.execute((db) =>
+								db.delete(vcsRepositoryBranches).where(inArray(vcsRepositoryBranches.id, chunk)),
+							)
+							.pipe(Effect.mapError(toPersistenceError)),
+					{ discard: true },
+				)
+			})
+
+		// Reconcile branch deletions after a full re-list: hard-delete local branch
+		// rows absent from the provider's set, returning their names so the caller can
+		// detect whether the tracked branch vanished. When the listing was truncated
+		// at the page cap, skip deletion (absence isn't authoritative) and report none.
+		const reconcileBranchDeletions = Effect.fn("VcsRepository.reconcileBranchDeletions")(function* (
+			repositoryId: VcsRepositoryId,
+			remoteNames: ReadonlySet<string>,
+			options: { readonly truncated: boolean },
+		) {
+			if (options.truncated) return [] as ReadonlyArray<string>
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({
+							id: vcsRepositoryBranches.id,
+							name: vcsRepositoryBranches.name,
+						})
+						.from(vcsRepositoryBranches)
+						.where(eq(vcsRepositoryBranches.repositoryId, repositoryId)),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			const stale = rows.filter((r) => !remoteNames.has(r.name))
+			yield* deleteBranchesByIds(stale.map((r) => r.id))
+			return stale.map((r) => r.name) as ReadonlyArray<string>
+		})
+
+		// Delete a single branch by name (a `delete` webhook), returning whether a row
+		// was actually removed so the caller can react if it was the tracked branch.
+		const deleteBranch = Effect.fn("VcsRepository.deleteBranch")(function* (
+			repositoryId: VcsRepositoryId,
+			name: string,
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ id: vcsRepositoryBranches.id })
+						.from(vcsRepositoryBranches)
+						.where(
+							and(
+								eq(vcsRepositoryBranches.repositoryId, repositoryId),
+								eq(vcsRepositoryBranches.name, name),
+							),
+						)
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			const id = rows[0]?.id
+			if (id === undefined) return false
+			yield* deleteBranchesByIds([id])
+			return true
 		})
 
 		// ---- Cascade delete -----------------------------------------------
@@ -603,13 +870,21 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-			// 1. Commits for those repos (keyed by the globally-unique repository id),
-			//    chunked under D1's bind-variable cap.
+			// 1. Branches and commits for those repos (keyed by the globally-unique
+			//    repository id), chunked under D1's bind-variable cap.
+			const repoIds = repoRows.map((r) => r.id)
 			yield* Effect.forEach(
-				Arr.chunksOf(
-					repoRows.map((r) => r.id),
-					D1_INARRAY_CHUNK_SIZE,
-				),
+				Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE),
+				(chunk) =>
+					database
+						.execute((db) =>
+							db.delete(vcsRepositoryBranches).where(inArray(vcsRepositoryBranches.repositoryId, chunk)),
+						)
+						.pipe(Effect.mapError(toPersistenceError)),
+				{ discard: true },
+			)
+			yield* Effect.forEach(
+				Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE),
 				(chunk) =>
 					database
 						.execute((db) => db.delete(vcsCommits).where(inArray(vcsCommits.repositoryId, chunk)))
@@ -643,6 +918,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 
 		return {
 			resolveInstallation,
+			getInstallationById,
 			listInstallationsByOrg,
 			upsertInstallation,
 			markInstallationStatus,
@@ -656,6 +932,12 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			markRepoSyncError,
 			upsertCommits,
 			findCommitBySha,
+			upsertBranches,
+			getOrCreateBranch,
+			listBranchesByRepository,
+			changeTrackedBranch,
+			reconcileBranchDeletions,
+			deleteBranch,
 			purgeInstallation,
 		}
 	}),

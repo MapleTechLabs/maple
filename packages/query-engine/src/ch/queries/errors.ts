@@ -19,6 +19,7 @@ import {
 	Traces,
 } from "../tables"
 import { buildProjectedMapExpr } from "./query-helpers"
+import { httpDisplaySpanName } from "../../traces-shared"
 
 // ---------------------------------------------------------------------------
 // Errors by type
@@ -184,23 +185,12 @@ export interface SpanHierarchyOutput {
 export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
 	return from(TraceDetailSpans)
 		.select(($) => {
-			// HTTP span name rewriting: "http.server GET" + route → "GET /api/users"
-			const route = $.SpanAttributes.get("http.route")
-			const urlPath = $.SpanAttributes.get("url.path")
-			const httpRewriteExpr = CH.if_(
-				$.SpanName.like("http.server %")
-					.or($.SpanName.in_("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"))
-					.and(route.neq("").or(urlPath.neq(""))),
-				CH.concat(
-					CH.if_(
-						$.SpanName.like("http.server %"),
-						CH.replaceOne($.SpanName, "http.server ", ""),
-						$.SpanName,
-					),
-					CH.lit(" "),
-					CH.if_(route.neq(""), route, urlPath),
-				),
+			// HTTP span name rewriting: "http.server GET" + route → "GET /api/users".
+			// Shared with the materialized view and the trace-list span-name filter.
+			const httpRewriteExpr = httpDisplaySpanName(
 				$.SpanName,
+				$.SpanAttributes.get("http.route"),
+				$.SpanAttributes.get("url.path"),
 			)
 
 			const relationshipExpr = opts.spanId

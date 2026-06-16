@@ -30,6 +30,12 @@ export const VcsCommitRowId = Schema.String.check(Schema.isUUID()).pipe(
 )
 export type VcsCommitRowId = Schema.Schema.Type<typeof VcsCommitRowId>
 
+export const VcsBranchId = Schema.String.check(Schema.isUUID()).pipe(
+	Schema.brand("@maple/VcsBranchId"),
+	Schema.annotate({ identifier: "@maple/VcsBranchId", title: "VCS Branch ID" }),
+)
+export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
+
 /**
  * A full 40-char git commit SHA. Case-insensitive on input and normalized to
  * lowercase during decode, so the same commit is identified regardless of the
@@ -143,6 +149,13 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	name: Schema.String,
 	fullName: Schema.String,
 	defaultBranch: Schema.String,
+	/**
+	 * The single branch this repo tracks — only its commits are backfilled and
+	 * ingested. Seeded to `defaultBranch` on discovery and user-owned thereafter.
+	 * Null only for a legacy row whose tracked branch was never set; the sync
+	 * engine treats null as "fall back to `defaultBranch`".
+	 */
+	trackedBranch: Schema.NullOr(Schema.String),
 	htmlUrl: Schema.String,
 	isPrivate: Schema.Boolean,
 	isArchived: Schema.Boolean,
@@ -169,8 +182,26 @@ export class VcsCommit extends Schema.Class<VcsCommit>("VcsCommit")({
 	authoredAt: Schema.NullOr(Schema.Number),
 	committedAt: Schema.Number,
 	htmlUrl: Schema.String,
-	branch: Schema.NullOr(Schema.String),
 	createdAt: Schema.Number,
+}) {}
+
+/**
+ * A branch of a repository — just its identity (name + head). The list of these
+ * rows is the dashboard's picker of branches the user can choose to track; which
+ * one is actually tracked is named by `VcsRepo.trackedBranch`, not a flag here.
+ * `isDefault` is a display hint and the seed for a repo's initial tracked branch.
+ */
+export class VcsBranch extends Schema.Class<VcsBranch>("VcsBranch")({
+	id: VcsBranchId,
+	orgId: OrgId,
+	provider: VcsProviderId,
+	/** The owning `vcs_repositories` row — a branch always belongs to one repo. */
+	repositoryId: VcsRepositoryId,
+	name: Schema.String,
+	isDefault: Schema.Boolean,
+	headSha: Schema.NullOr(GitCommitSha),
+	createdAt: Schema.Number,
+	updatedAt: Schema.Number,
 }) {}
 
 // ---- Boundary input DTOs (provider → repo / queue) ------------------------
@@ -199,9 +230,19 @@ export const CommitUpsertInput = Schema.Struct({
 	authoredAt: Schema.NullOr(Schema.Number),
 	committedAt: Schema.Number,
 	htmlUrl: Schema.String,
-	branch: Schema.NullOr(Schema.String),
 })
 export type CommitUpsertInput = Schema.Schema.Type<typeof CommitUpsertInput>
+
+/**
+ * Normalized branch, returned by a provider's fetchBranches. Names + head only —
+ * the provider is oblivious to which branch is the default; the repo layer derives
+ * the `isDefault` display hint by comparing against the repo's `defaultBranch`.
+ */
+export const BranchUpsertInput = Schema.Struct({
+	name: Schema.String,
+	headSha: Schema.NullOr(Schema.String),
+})
+export type BranchUpsertInput = Schema.Schema.Type<typeof BranchUpsertInput>
 
 /**
  * Result of a provider commit fetch: the normalized commits, plus an optional
@@ -227,12 +268,11 @@ export interface VcsCommitFetch {
 	}
 }
 
-/** Minimal repo identity a provider needs to fetch commits. */
+/** Minimal repo identity a provider needs to fetch commits or branches. */
 export const VcsRepositoryRef = Schema.Struct({
 	externalRepoId: Schema.String,
 	owner: Schema.String,
 	name: Schema.String,
-	defaultBranch: Schema.String,
 })
 export type VcsRepositoryRef = Schema.Schema.Type<typeof VcsRepositoryRef>
 
@@ -259,30 +299,36 @@ export const InstallationSyncJob = Schema.Struct({
 })
 export type InstallationSyncJob = Schema.Schema.Type<typeof InstallationSyncJob>
 
-export const BackfillRepoJob = Schema.Struct({
-	kind: Schema.Literal("backfill-repo"),
+// Walk the repo's tracked branch over a window, upserting each commit found onto
+// the repo (commits belong to the repo, not a branch). Enqueued for the single
+// tracked branch by the sync-branches handler, on a tracked-branch change (after
+// the repo's commits are wiped), and as a reconciling re-walk after a force-push.
+// A walk cut short by a rate limit / page budget resumes via `untilMs`.
+export const SyncBranchCommitsJob = Schema.Struct({
+	kind: Schema.Literal("sync-branch-commits"),
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	externalRepoId: Schema.String,
 	owner: Schema.String,
 	name: Schema.String,
-	defaultBranch: Schema.String,
+	// The ref to walk — every commit found is linked as this branch's membership.
+	branch: Schema.String,
 	sinceMs: Schema.Number,
 	// Resume cursor for a continuation requeued after a rate limit: fetch commits
 	// committed at-or-before `untilMs` (a committer-date watermark). Absent on a
-	// fresh backfill.
+	// fresh walk.
 	untilMs: Schema.optionalKey(Schema.Number),
 	// Count of consecutive continuations that fetched zero commits (rate-limited
 	// before any progress). Reset to 0 whenever a run makes progress; bounded so a
 	// permanently throttled installation can't requeue forever. Absent ⇒ 0.
 	staleAttempts: Schema.optionalKey(Schema.Number),
 })
-export type BackfillRepoJob = Schema.Schema.Type<typeof BackfillRepoJob>
+export type SyncBranchCommitsJob = Schema.Schema.Type<typeof SyncBranchCommitsJob>
 
 // A push event's commits, applied incrementally — purely best-effort enrichment.
 // A push may target any branch and its payload may be incomplete (GitHub caps
 // `commits` at 2048 per delivery and sends one delivery per push, not many), so
-// it is never treated as an authoritative sync: the default-branch backfill is
+// it is never treated as an authoritative sync: the branch's commit backfill is
 // the source of truth and re-fetches the full history regardless.
 export const PushJob = Schema.Struct({
 	kind: Schema.Literal("push"),
@@ -290,11 +336,48 @@ export const PushJob = Schema.Struct({
 	externalInstallationId: Schema.String,
 	externalRepoId: Schema.String,
 	branch: Schema.String,
+	// GitHub `forced: true` ⇒ a force-push (rebase / history rewrite). Triggers a
+	// reconciling backfill of the branch so stale commit membership is pruned.
+	forced: Schema.optionalKey(Schema.Boolean),
 	commits: Schema.Array(CommitUpsertInput),
 })
 export type PushJob = Schema.Schema.Type<typeof PushJob>
 
-export const VcsSyncJob = Schema.Union([InstallationSyncJob, BackfillRepoJob, PushJob])
+// List + reconcile a repo's branches (names only — never the commits on them).
+// Enqueued per repo by an installation-sync; re-lists from the provider, prunes
+// vanished branches (falling back to the default if the tracked one vanished),
+// and re-enqueues a backfill of the repo's single tracked branch.
+export const SyncBranchesJob = Schema.Struct({
+	kind: Schema.Literal("sync-branches"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	owner: Schema.String,
+	name: Schema.String,
+})
+export type SyncBranchesJob = Schema.Schema.Type<typeof SyncBranchesJob>
+
+// A branch create/delete webhook (`create`/`delete`, ref_type=branch). Mutates
+// the branch table directly — no provider call. Deleting the repo's tracked
+// branch falls it back to the default (wipe + resync); other deletions just drop
+// the branch row (its commits stay — they may be referenced by past telemetry).
+export const BranchEventJob = Schema.Struct({
+	kind: Schema.Literal("branch-event"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	action: Schema.Literals(["created", "deleted"]),
+	branch: Schema.String,
+})
+export type BranchEventJob = Schema.Schema.Type<typeof BranchEventJob>
+
+export const VcsSyncJob = Schema.Union([
+	InstallationSyncJob,
+	SyncBranchCommitsJob,
+	PushJob,
+	SyncBranchesJob,
+	BranchEventJob,
+])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 
 // ---- Tagged errors --------------------------------------------------------

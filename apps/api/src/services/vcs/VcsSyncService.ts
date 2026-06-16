@@ -1,7 +1,10 @@
 import {
-	type BackfillRepoJob,
-	type CommitUpsertInput,
+	type BranchEventJob,
+	type InstallationSyncJob,
 	isInstallationProcessable,
+	type PushJob,
+	type SyncBranchCommitsJob,
+	type SyncBranchesJob,
 	type UnknownVcsProviderError,
 	VcsInstallation,
 	type VcsInstallationSyncReason,
@@ -27,8 +30,10 @@ import { VcsSyncQueue } from "./VcsSyncQueue"
 // only provider-specific surface it touches.
 // ---------------------------------------------------------------------------
 
-const BACKFILL_DAYS = 90
-const DAY_MS = 86_400_000
+// The historical window every branch commit-sync walks — each tracked branch is
+// backfilled over the same span. Exported because the dashboard's "track a branch"
+// flow (GithubConnectService) enqueues the same jobs.
+export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
 // How many consecutive continuations may fetch zero commits (rate-limited before
 // any progress) before we give up. Bounds a permanently throttled installation:
 // a transient limit clears long before this, but a wedged one stops requeuing.
@@ -62,50 +67,55 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const registry = yield* VcsProviderRegistry
 			const queue = yield* VcsSyncQueue
 
-			const syncInstallation = Effect.fn("VcsSyncService.syncInstallation")(function* (
-				provider: VcsProviderClient,
+			// The repo's single tracked branch, with the default-branch fallback for a
+			// row whose `trackedBranch` was never set (legacy) — the one place the
+			// fallback rule lives.
+			const trackedBranchOf = (repository: VcsRepo): string =>
+				repository.trackedBranch ?? repository.defaultBranch
+
+			// Build a commit-backfill job for a repo's branch over the standard window.
+			const backfillJob = (
 				installation: VcsInstallation,
-				reason: VcsInstallationSyncReason,
-			) {
-					const now = yield* Clock.currentTimeMillis
-					const repos = yield* provider.fetchRepositories(installation)
-					yield* repo.upsertRepositories(installation, repos)
-
-					// Reconcile removals: soft-delete local repos no longer visible
-					// upstream. The row and its synced commits are kept (a re-grant
-					// reactivates via upsertRepositories); the "removed" status pauses
-					// any further event processing for them. A user must explicitly
-					// purge to drop the data.
-					if (reason === "repositories_removed") {
-						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
-						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
-						yield* Effect.forEach(
-							local.filter((r) => !remoteIds.has(r.externalRepoId)),
-							(r) => repo.markRepositoryRemoved(r.id),
-							{ discard: true },
-						)
-					}
-
-					const sinceMs = now - BACKFILL_DAYS * DAY_MS
-					yield* queue.sendBatch(
-						repos.map((r) => ({
-							kind: "backfill-repo",
-							provider: installation.provider,
-							externalInstallationId: installation.externalInstallationId,
-							externalRepoId: r.externalRepoId,
-							owner: r.owner,
-							name: r.name,
-							defaultBranch: r.defaultBranch,
-							sinceMs,
-						})),
-					)
+				repository: VcsRepo,
+				branch: string,
+				sinceMs: number,
+			): VcsSyncJob => ({
+				kind: "sync-branch-commits",
+				provider: installation.provider,
+				externalInstallationId: installation.externalInstallationId,
+				externalRepoId: repository.externalRepoId,
+				owner: repository.owner,
+				name: repository.name,
+				branch,
+				sinceMs,
 			})
 
-			const backfillRepo = (
+			// Point the repo at a new tracked branch: wipe its (old-branch) commits and
+			// enqueue a fresh backfill of the new branch. Used by the engine's automatic
+			// fallback to the default when the tracked branch is deleted upstream.
+			const retargetTrackedBranch = (
+				installation: VcsInstallation,
+				repository: VcsRepo,
+				newBranch: string,
+			) =>
+				Effect.gen(function* () {
+					yield* repo.changeTrackedBranch(repository.orgId, repository.id, newBranch)
+					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
+					yield* queue.send(backfillJob(installation, repository, newBranch, sinceMs))
+					yield* Effect.logInfo("Tracked branch retargeted to default after deletion").pipe(
+						Effect.annotateLogs({
+							provider: installation.provider,
+							externalRepoId: repository.externalRepoId,
+							newBranch,
+						}),
+					)
+				})
+
+			const syncBranchCommits = (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
-				repositoryOpt: Option.Option<VcsRepo>,
-				job: BackfillRepoJob,
+				repository: VcsRepo,
+				job: SyncBranchCommitsJob,
 			) =>
 				Effect.gen(function* () {
 					const now = yield* Clock.currentTimeMillis
@@ -115,28 +125,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							externalRepoId: job.externalRepoId,
 							owner: job.owner,
 							name: job.name,
-							defaultBranch: job.defaultBranch,
 						},
-						{ sinceMs: job.sinceMs, ...(job.untilMs === undefined ? {} : { untilMs: job.untilMs }) },
+						{
+							sinceMs: job.sinceMs,
+							branch: job.branch,
+							...(job.untilMs === undefined ? {} : { untilMs: job.untilMs }),
+						},
 					)
 
-					// The repo row may have vanished between this job being enqueued and run
-					// (a user "delete from Maple" racing the backfill). fetchCommits still ran
-					// above — so an installation-gone signal can surface and disconnect — but
-					// with no row to attach to, the fetched commits are dropped (exactly what
-					// the old upsertCommits did for an unknown repo).
-					if (Option.isNone(repositoryOpt)) {
-						yield* Effect.logInfo("Skipping backfill for unknown repository").pipe(
-							Effect.annotateLogs({
-								provider: installation.provider,
-								externalRepoId: job.externalRepoId,
-								count: commits.length,
-							}),
-						)
-						return
-					}
-					const repository = repositoryOpt.value
-
+					// Commits belong to the repo (no branch link), and the repo's commit set
+					// is reset up front whenever the tracked branch changes — so a walk just
+					// upserts. A force-push re-walk also only upserts: old (rebased-away) SHAs
+					// stay for trace attribution.
 					yield* repo.upsertCommits(repository, commits)
 
 					if (!next) {
@@ -227,43 +227,130 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					//  - VcsInstallationGoneError → propagates to processMessage (disconnect).
 					//  - VcsProviderError (transient) → propagates so the queue retries.
 					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", (error) =>
-						Option.isNone(repositoryOpt)
-							? Effect.logWarning("Repository unavailable — backfill skipped (no local row)").pipe(
+						repo.markRepoSyncError(repository.id, error.message).pipe(
+							Effect.flatMap(() =>
+								Effect.logWarning("Repository unavailable — backfill skipped").pipe(
 									Effect.annotateLogs({
 										provider: installation.provider,
 										externalRepoId: job.externalRepoId,
 									}),
-								)
-							: repo.markRepoSyncError(repositoryOpt.value.id, error.message).pipe(
-									Effect.flatMap(() =>
-										Effect.logWarning("Repository unavailable — backfill skipped").pipe(
-											Effect.annotateLogs({
-												provider: installation.provider,
-												externalRepoId: job.externalRepoId,
-											}),
-										),
-									),
 								),
+							),
+						),
 					),
-					Effect.withSpan("VcsSyncService.backfillRepo"),
+					Effect.withSpan("VcsSyncService.syncBranchCommits"),
 				)
 
 			const applyPush = Effect.fn("VcsSyncService.applyPush")(function* (
+				installation: VcsInstallation,
 				repository: VcsRepo,
-				commits: ReadonlyArray<CommitUpsertInput>,
+				job: PushJob,
 			) {
-					// A push is incremental enrichment only: upsert the pushed commits and
-					// deliberately leave the repo's sync state untouched. A push may target
-					// any branch and its payload may be truncated, so it is never treated as
-					// an authoritative sync — the default-branch backfill owns that.
-					yield* repo.upsertCommits(repository, commits)
+					// Surface the pushed branch in the picker even if it's not the tracked one
+					// (so a user can switch to a freshly-pushed branch without waiting for the
+					// next installation-sync). Commit ingestion is gated on the tracked branch.
+					yield* repo.getOrCreateBranch(repository, job.branch)
+					if (job.branch !== trackedBranchOf(repository)) return
+					// The tracked branch was pushed. A normal push is best-effort enrichment:
+					// upsert its commits onto the repo (the backfill remains authoritative).
+					if (!job.forced) {
+						yield* repo.upsertCommits(repository, job.commits)
+						return
+					}
+					// A force-push rewrote history on the tracked branch. The push payload is
+					// unreliable after a rewrite, so re-walk the branch instead — old SHAs stay
+					// (kept for trace attribution), new commits are upserted.
+					const now = yield* Clock.currentTimeMillis
+					yield* queue.send(
+						backfillJob(installation, repository, job.branch, now - BACKFILL_WINDOW_MS),
+					)
+				})
+
+			// Re-list a repo's branches (the picker's list), reconcile deletions, then
+			// enqueue a commit backfill for the repo's single tracked branch — refreshed
+			// on every installation-sync. If the tracked branch itself vanished upstream,
+			// fall back to the default (wipe + resync) instead. This handler deals in
+			// branch *names* only; sync-branch-commits walks the commits.
+			const syncBranches = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				repository: VcsRepo,
+			) =>
+				Effect.gen(function* () {
+					const { branches, truncated } = yield* provider.fetchBranches(installation, {
+						externalRepoId: repository.externalRepoId,
+						owner: repository.owner,
+						name: repository.name,
+					})
+					yield* repo.upsertBranches(repository, branches)
+					const remoteNames = new Set(branches.map((b) => b.name))
+					const deletedNames = yield* repo.reconcileBranchDeletions(repository.id, remoteNames, {
+						truncated,
+					})
+					const tracked = trackedBranchOf(repository)
+					// The tracked branch vanished (confirmed by a non-truncated re-list that
+					// deleted it): retarget to the default and resync. Never when the tracked
+					// branch IS the default — there's nothing better to fall back to.
+					const trackedDeleted =
+						deletedNames.includes(tracked) && tracked !== repository.defaultBranch
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider": installation.provider,
+						"vcs.repository.external_id": repository.externalRepoId,
+						"vcs.branches.listed": branches.length,
+						"vcs.branches.truncated": truncated,
+						"vcs.branches.tracked": tracked,
+						"vcs.branches.tracked_deleted": trackedDeleted,
+					})
+					if (trackedDeleted) {
+						yield* retargetTrackedBranch(installation, repository, repository.defaultBranch)
+						return
+					}
+					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
+					yield* queue.send(backfillJob(installation, repository, tracked, sinceMs))
+				}).pipe(
+					// A repo-scoped fetch failure drains here (branch sync owns no sync_status —
+					// that belongs to the commit backfill). Installation-gone propagates to the
+					// disconnect handler in processMessage.
+					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", () =>
+						Effect.logWarning("Repository unavailable — branch sync skipped").pipe(
+							Effect.annotateLogs({
+								provider: installation.provider,
+								externalRepoId: repository.externalRepoId,
+							}),
+						),
+					),
+					Effect.withSpan("VcsSyncService.syncBranches"),
+				)
+
+			// A branch create/delete webhook: mutate the branch table directly (no provider
+			// call). Creating a branch just surfaces it in the picker. Deleting one drops
+			// its picker row; if it was the repo's tracked branch, fall back to the default
+			// (wipe + resync) — unless the tracked branch IS the default, which GitHub
+			// renames rather than deletes (the next installation-sync reconciles that).
+			const applyBranchEvent = Effect.fn("VcsSyncService.applyBranchEvent")(function* (
+				installation: VcsInstallation,
+				repository: VcsRepo,
+				job: BranchEventJob,
+			) {
+					if (job.action === "created") {
+						yield* repo.getOrCreateBranch(repository, job.branch)
+						return
+					}
+					const deleted = yield* repo.deleteBranch(repository.id, job.branch)
+					if (
+						deleted &&
+						job.branch === trackedBranchOf(repository) &&
+						job.branch !== repository.defaultBranch
+					) {
+						yield* retargetTrackedBranch(installation, repository, repository.defaultBranch)
+					}
 				})
 
 			// THE gate: the single, vendor-agnostic answer to "should the sync engine
 			// act on this installation's data?" (rule lives in isInstallationProcessable).
-			// Every data-processing path runs through here; the decision is annotated on
-			// the current span (`vcs.installation.processable`) so it's traceable, and a
-			// skip is logged. Suspended / disconnected installations are skipped.
+			// Every per-kind handler runs through here; the decision is annotated on the
+			// current span (`vcs.installation.processable`) so it's traceable, and a skip
+			// is logged. Suspended / disconnected installations are skipped.
 			const ensureProcessable = (installation: VcsInstallation, kind: VcsSyncJob["kind"]) =>
 				Effect.gen(function* () {
 					const processable = isInstallationProcessable(installation)
@@ -284,6 +371,180 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					return processable
 				})
 
+			// Resolve the repo a data job targets (external repo id → entity), applying the
+			// two drop rules every data job shares — logging + annotating each so the drop is
+			// traceable. A `None` result means "drop this job":
+			//  - unknown repo (no local row): nothing to attach to.
+			//  - soft-removed repo: paused until access is re-granted (which flips it active).
+			const resolveRepositoryForJob = (
+				installation: VcsInstallation,
+				job: PushJob | SyncBranchCommitsJob | SyncBranchesJob | BranchEventJob,
+			) =>
+				Effect.gen(function* () {
+					const repositoryOpt = yield* repo.resolveRepository(
+						installation.orgId,
+						job.provider,
+						job.externalRepoId,
+					)
+					if (Option.isNone(repositoryOpt)) {
+						yield* Effect.logInfo("Dropping VCS job for unknown repository").pipe(
+							Effect.annotateLogs({
+								provider: job.provider,
+								externalRepoId: job.externalRepoId,
+								kind: job.kind,
+							}),
+						)
+						return Option.none<VcsRepo>()
+					}
+					if (repositoryOpt.value.status === "removed") {
+						yield* Effect.annotateCurrentSpan({ "vcs.repository.skipped": true })
+						yield* Effect.logInfo("Skipping VCS job: repository removed").pipe(
+							Effect.annotateLogs({
+								provider: job.provider,
+								externalRepoId: job.externalRepoId,
+								kind: job.kind,
+							}),
+						)
+						return Option.none<VcsRepo>()
+					}
+					return repositoryOpt
+				})
+
+			// ---- One handler per job kind ----------------------------------------
+			// Each owns its own decision-making (the gate, repo resolution, and any
+			// reason-specific branching); processMessage only resolves the installation
+			// and dispatches by kind.
+
+			const handleInstallationSync = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: InstallationSyncJob,
+			) =>
+				Effect.gen(function* () {
+					// Status-transition reasons change the gate's answer for subsequent jobs
+					// rather than processing data themselves.
+					if (job.reason === "suspend" || job.reason === "deleted") {
+						const status = job.reason === "suspend" ? "suspended" : "disconnected"
+						yield* repo.markInstallationStatus(installation.id, status)
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
+						return
+					}
+					let active = installation
+					if (job.reason === "unsuspend") {
+						// The provider re-enabled the installation → restore it to active before
+						// re-syncing so the gate lets the sync proceed. Reflect the new status on the
+						// entity we already hold rather than re-reading it.
+						yield* repo.markInstallationStatus(installation.id, "active")
+						active = new VcsInstallation({ ...installation, status: "active", suspendedAt: null })
+						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
+					}
+
+					if (!(yield* ensureProcessable(active, job.kind))) return
+
+					// A newly-created installation gives the org a clean single-installation
+					// slate: hard-delete every *other* installation (and its repos/commits) for
+					// the same org + provider. A user can remove the old GitHub installation on
+					// GitHub's side without Maple ever receiving the `installation.deleted` webhook
+					// (delivery isn't guaranteed), stranding a stale "active" row — which would
+					// otherwise leave the org with several active installations, a state the
+					// dashboard (one active installation per org) does not support. Purge (not just
+					// suspend) so nothing lingers. Idempotent: a duplicate "created" — the GitHub
+					// webhook and the dashboard callback each enqueue one — finds no siblings left.
+					if (job.reason === "created") {
+						const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
+							(other) => other.provider === active.provider && other.id !== active.id,
+						)
+						if (superseded.length > 0) {
+							yield* Effect.forEach(superseded, (other) => repo.purgeInstallation(active.orgId, other.id), {
+								discard: true,
+							})
+							yield* Effect.annotateCurrentSpan({
+								"vcs.installation.superseded": superseded.length,
+							})
+							yield* Effect.logInfo("Purged superseded VCS installations after new install").pipe(
+								Effect.annotateLogs({
+									provider: active.provider,
+									externalInstallationId: active.externalInstallationId,
+									orgId: active.orgId,
+									superseded: superseded.length,
+								}),
+							)
+						}
+					}
+
+					const repos = yield* provider.fetchRepositories(installation)
+					yield* repo.upsertRepositories(installation, repos)
+
+					// Reconcile removals: soft-delete local repos no longer visible
+					// upstream. The row and its synced commits are kept (a re-grant
+					// reactivates via upsertRepositories); the "removed" status pauses
+					// any further event processing for them. A user must explicitly
+					// purge to drop the data.
+					if (job.reason === "repositories_removed") {
+						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
+						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
+						yield* Effect.forEach(
+							local.filter((r) => !remoteIds.has(r.externalRepoId)),
+							(r) => repo.markRepositoryRemoved(r.id),
+							{ discard: true },
+						)
+					}
+
+					// Per repo: sync its branch list (names only). The sync-branches handler
+					// then enqueues the commit backfills for every tracked branch (the default
+					// among them), so all commit-sync enqueuing lives in one place.
+					yield* queue.sendBatch(
+						repos.map((r): VcsSyncJob => ({
+							kind: "sync-branches",
+							provider: installation.provider,
+							externalInstallationId: installation.externalInstallationId,
+							externalRepoId: r.externalRepoId,
+							owner: r.owner,
+							name: r.name,
+						})),
+					)
+				})
+
+			const handleSyncBranchCommits = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: SyncBranchCommitsJob,
+			) =>
+				Effect.gen(function* () {
+					if (!(yield* ensureProcessable(installation, job.kind))) return
+					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+					if (Option.isNone(repositoryOpt)) return
+					yield* syncBranchCommits(provider, installation, repositoryOpt.value, job)
+				})
+
+			const handleSyncBranches = (
+				provider: VcsProviderClient,
+				installation: VcsInstallation,
+				job: SyncBranchesJob,
+			) =>
+				Effect.gen(function* () {
+					if (!(yield* ensureProcessable(installation, job.kind))) return
+					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+					if (Option.isNone(repositoryOpt)) return
+					yield* syncBranches(provider, installation, repositoryOpt.value)
+				})
+
+			const handlePush = (installation: VcsInstallation, job: PushJob) =>
+				Effect.gen(function* () {
+					if (!(yield* ensureProcessable(installation, job.kind))) return
+					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+					if (Option.isNone(repositoryOpt)) return
+					yield* applyPush(installation, repositoryOpt.value, job)
+				})
+
+			const handleBranchEvent = (installation: VcsInstallation, job: BranchEventJob) =>
+				Effect.gen(function* () {
+					if (!(yield* ensureProcessable(installation, job.kind))) return
+					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+					if (Option.isNone(repositoryOpt)) return
+					yield* applyBranchEvent(installation, repositoryOpt.value, job)
+				})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -298,13 +559,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const job = jobOpt.value
 				yield* Effect.annotateCurrentSpan({
 					"vcs.provider": job.provider,
-					"vcs.job_kind": job.kind,
+					"vcs.job.kind": job.kind,
 					"vcs.installation.external_id": job.externalInstallationId,
 				})
 
 				// Resolve the installation once (external id → entity carrying our internal
-				// id) — the single resolve for the whole job; every repo call below addresses
-				// the installation by `installation.id`.
+				// id) — the single resolve for the whole job; every handler addresses the
+				// installation by `installation.id`.
 				const installationOpt = yield* repo.resolveInstallation(job.provider, job.externalInstallationId)
 				if (Option.isNone(installationOpt)) {
 					yield* Effect.logInfo("Dropping VCS job for unknown installation").pipe(
@@ -316,104 +577,24 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 					return
 				}
-				let installation = installationOpt.value
-
-				// Status-transition events change the gate's answer for subsequent jobs rather
-				// than processing data themselves.
-				if (job.kind === "installation-sync") {
-					if (job.reason === "suspend" || job.reason === "deleted") {
-						const status = job.reason === "suspend" ? "suspended" : "disconnected"
-						yield* repo.markInstallationStatus(installation.id, status)
-						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
-						return
-					}
-					if (job.reason === "unsuspend") {
-						// The provider re-enabled the installation → restore it to active before
-						// re-syncing so the gate lets the sync proceed. Reflect the new status on the
-						// entity we already hold rather than re-reading it.
-						yield* repo.markInstallationStatus(installation.id, "active")
-						installation = new VcsInstallation({ ...installation, status: "active", suspendedAt: null })
-						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
-					}
-				}
-
-				// The single agnostic gate — covers backfill, installation-sync, and push.
-				if (!(yield* ensureProcessable(installation, job.kind))) return
-
-				// A newly-created installation gives the org a clean single-installation
-				// slate: hard-delete every *other* installation (and its repos/commits) for
-				// the same org + provider. A user can remove the old GitHub installation on
-				// GitHub's side without Maple ever receiving the `installation.deleted` webhook
-				// (delivery isn't guaranteed), stranding a stale "active" row — which would
-				// otherwise leave the org with several active installations, a state the
-				// dashboard (one active installation per org) does not support. Purge (not just
-				// suspend) so nothing lingers. Idempotent: a duplicate "created" — the GitHub
-				// webhook and the dashboard callback each enqueue one — finds no siblings left.
-				if (job.kind === "installation-sync" && job.reason === "created") {
-					const superseded = (yield* repo.listInstallationsByOrg(installation.orgId)).filter(
-						(other) => other.provider === installation.provider && other.id !== installation.id,
-					)
-					if (superseded.length > 0) {
-						yield* Effect.forEach(
-							superseded,
-							(other) => repo.purgeInstallation(installation.orgId, other.id),
-							{ discard: true },
-						)
-						yield* Effect.annotateCurrentSpan({
-							"vcs.installation.superseded": superseded.length,
-						})
-						yield* Effect.logInfo("Purged superseded VCS installations after new install").pipe(
-							Effect.annotateLogs({
-								provider: installation.provider,
-								externalInstallationId: installation.externalInstallationId,
-								orgId: installation.orgId,
-								superseded: superseded.length,
-							}),
-						)
-					}
-				}
-
-				// Per-repo handling for data jobs: resolve the repo once (external repo id →
-				// entity) and pass it down. A soft-removed repo is paused (its events are not
-				// processed until access is re-granted). A push for an unknown repo is dropped
-				// (best-effort enrichment — the backfill stores it once the repo exists); a
-				// backfill for an unknown repo still runs (its fetch can surface an
-				// installation-gone signal) but has nothing to persist to.
-				let repositoryOpt: Option.Option<VcsRepo> = Option.none()
-				if (job.kind === "push" || job.kind === "backfill-repo") {
-					repositoryOpt = yield* repo.resolveRepository(installation.orgId, job.provider, job.externalRepoId)
-					if (Option.isSome(repositoryOpt) && repositoryOpt.value.status === "removed") {
-						yield* Effect.annotateCurrentSpan({ "vcs.repository.skipped": true })
-						yield* Effect.logInfo("Skipping VCS job: repository removed").pipe(
-							Effect.annotateLogs({
-								provider: job.provider,
-								externalRepoId: job.externalRepoId,
-								kind: job.kind,
-							}),
-						)
-						return
-					}
-					if (job.kind === "push" && Option.isNone(repositoryOpt)) {
-						yield* Effect.logInfo("Dropping push for unknown repository").pipe(
-							Effect.annotateLogs({ provider: job.provider, externalRepoId: job.externalRepoId }),
-						)
-						return
-					}
-				}
+				const installation = installationOpt.value
 
 				const provider = yield* registry.resolve(job.provider)
 
+				// Dispatch by kind — each handler owns the gate, repo resolution, and all
+				// decision-making for its job. No kind-specific branching lives here.
 				const run = Match.value(job).pipe(
-					Match.discriminator("kind")("backfill-repo", (job) =>
-						backfillRepo(provider, installation, repositoryOpt, job),
-					),
 					Match.discriminator("kind")("installation-sync", (job) =>
-						syncInstallation(provider, installation, job.reason),
+						handleInstallationSync(provider, installation, job),
 					),
-					// repositoryOpt is guaranteed Some + active here (None/removed returned above).
-					Match.discriminator("kind")("push", (job) =>
-						Option.isSome(repositoryOpt) ? applyPush(repositoryOpt.value, job.commits) : Effect.void,
+					Match.discriminator("kind")("sync-branch-commits", (job) =>
+						handleSyncBranchCommits(provider, installation, job),
 					),
+					Match.discriminator("kind")("sync-branches", (job) =>
+						handleSyncBranches(provider, installation, job),
+					),
+					Match.discriminator("kind")("push", (job) => handlePush(installation, job)),
+					Match.discriminator("kind")("branch-event", (job) => handleBranchEvent(installation, job)),
 					Match.exhaustive,
 				)
 

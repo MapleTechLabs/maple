@@ -206,12 +206,46 @@ describe("VcsSyncJob", () => {
 					authoredAt: 1,
 					committedAt: 2,
 					htmlUrl: "https://github.com/o/r/commit/x",
-					branch: "main",
 				},
 			],
 		}
 		const wire = JSON.parse(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
 		assert.deepStrictEqual(Schema.decodeUnknownSync(VcsSyncJob)(wire), job)
+	})
+
+	it("round-trips sync-branches, branch-event, and a branch backfill job", () => {
+		const jobs: VcsSyncJob[] = [
+			{
+				kind: "sync-branches",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+			},
+			{
+				kind: "branch-event",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				action: "created",
+				branch: "feature/x",
+			},
+			{
+				kind: "sync-branch-commits",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+				branch: "release/2",
+				sinceMs: 100,
+			},
+		]
+		for (const job of jobs) {
+			const wire = JSON.parse(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
+			assert.deepStrictEqual(Schema.decodeUnknownSync(VcsSyncJob)(wire), job)
+		}
 	})
 })
 
@@ -309,6 +343,41 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	// A force-push rewrote history, so the commit payload is unreliable: the provider
+	// discards it and emits a single marker job (no commits, no splitting). The
+	// orchestrator re-walks the branch rather than trusting the payload.
+	it.effect("a forced push emits a single empty marker job (no commits, no split)", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const shas = hexShas(400)
+			const message = "x".repeat(1024) // ~1 KB messages ⇒ several jobs
+			const body = JSON.stringify({
+				ref: "refs/heads/main",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				forced: true,
+				commits: shas.map((sha) => ({
+					id: sha,
+					message,
+					timestamp: "2026-01-01T00:00:00Z",
+					url: `https://github.com/octo/repo/commit/${sha}`,
+					author: { name: "Octo Cat", email: "octo@x.io", username: "octocat" },
+				})),
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 1) // forced ⇒ one marker job, never split
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "push")
+			if (job.kind !== "push") return
+			assert.strictEqual(job.forced, true)
+			assert.deepStrictEqual(job.commits, []) // payload discarded; the orchestrator re-walks
+			assert.strictEqual(job.branch, "main")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("maps an installation 'created' event to an installation-sync job", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -325,9 +394,229 @@ describe("GithubProvider.webhookToJobs", () => {
 			assert.strictEqual(job.externalInstallationId, "99")
 		}).pipe(Effect.provide(providerLayer())),
 	)
+
+	it.effect("maps a branch 'create' event to a branch-event created job", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "feature/x",
+				ref_type: "branch",
+				repository: { id: 7 },
+				installation: { id: 42 },
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "create", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "branch-event")
+			if (job.kind !== "branch-event") return
+			assert.strictEqual(job.action, "created")
+			assert.strictEqual(job.branch, "feature/x")
+			assert.strictEqual(job.externalRepoId, "7")
+			assert.strictEqual(job.externalInstallationId, "42")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("maps a branch 'delete' event to a branch-event deleted job", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "feature/x",
+				ref_type: "branch",
+				repository: { id: 7 },
+				installation: { id: 42 },
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "delete", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "branch-event")
+			if (job.kind !== "branch-event") return
+			assert.strictEqual(job.action, "deleted")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("ignores a tag create/delete (ref_type=tag)", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "v1.0.0",
+				ref_type: "tag",
+				repository: { id: 7 },
+				installation: { id: 42 },
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "create", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("carries the force-push flag onto the push job", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "refs/heads/main",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				forced: true,
+				commits: [
+					{
+						id: SHA,
+						message: "m",
+						timestamp: "2026-01-01T00:00:00Z",
+						url: `https://github.com/octo/repo/commit/${SHA}`,
+					},
+				],
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "push")
+			if (job.kind !== "push") return
+			assert.strictEqual(job.forced, true)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+})
+
+describe("GithubProvider.fetchBranches", () => {
+	it.effect("lists branch names + heads and reports not-truncated", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			// fetchBranches only reads externalInstallationId off the installation.
+			const installation = { externalInstallationId: "42" } as unknown as VcsInstallation
+			const result = yield* provider.fetchBranches(installation, {
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+			})
+			assert.strictEqual(result.truncated, false)
+			// The provider is oblivious to which branch is the default (the repo layer
+			// derives that display hint) — it returns names + heads only.
+			assert.deepStrictEqual(
+				[...result.branches].sort((a, b) => a.name.localeCompare(b.name)),
+				[
+					{ name: "feature", headSha: "b".repeat(40) },
+					{ name: "main", headSha: "a".repeat(40) },
+				],
+			)
+		}).pipe(
+			Effect.provide(
+				stubbedProviderLayer([
+					tokenResponse,
+					() =>
+						jsonResponse([
+							{ name: "main", commit: { sha: "a".repeat(40) } },
+							{ name: "feature", commit: { sha: "b".repeat(40) } },
+						]),
+				]),
+			),
+		),
+	)
 })
 
 describe("VcsRepository", () => {
+	it.effect("branches: upsert list, tracked-branch change wipes commits, reconcile, delete", () => {
+		const { url } = createTempDbUrl("maple-vcs-branch-life-", dirs)
+		const SHA_X = "a".repeat(40)
+		const SHA_Y = "b".repeat(40)
+		const mk = (sha: string, committedAt: number) => ({
+			sha,
+			message: "m",
+			authorName: null,
+			authorEmail: null,
+			authorLogin: null,
+			authorAvatarUrl: null,
+			authoredAt: null,
+			committedAt,
+			htmlUrl: `https://github.com/o/r/commit/${sha}`,
+		})
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_branch")
+			yield* repo.upsertInstallation({
+				orgId,
+				provider: "github",
+				externalInstallationId: "42",
+				accountLogin: "octo",
+				accountType: "organization",
+				externalAccountId: "100",
+				accountAvatarUrl: null,
+				repositorySelection: "all",
+				installedByUserId: asUserId("user_1"),
+			})
+			yield* upsertReposFor(repo, "42", [
+				{
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+					fullName: "octo/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/octo/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
+			let r = yield* repoFor(repo, orgId, "7")
+			// The tracked branch is seeded to the repo's default on discovery.
+			assert.strictEqual(r.trackedBranch, "main")
+
+			yield* repo.upsertBranches(r, [
+				{ name: "main", headSha: null },
+				{ name: "feature", headSha: null },
+				{ name: "stale", headSha: null },
+			])
+			const branches = yield* repo.listBranchesByRepository(r.id)
+			assert.strictEqual(branches.length, 3)
+			// isDefault is a display hint derived from the repo's defaultBranch ("main");
+			// the branch table no longer carries a per-branch tracked flag.
+			assert.ok(branches.find((b) => b.name === "main")!.isDefault)
+			assert.ok(branches.filter((b) => b.name !== "main").every((b) => !b.isDefault))
+
+			// Seed commits on the repo (its current tracked branch is "main").
+			yield* repo.upsertCommits(r, [mk(SHA_X, 100), mk(SHA_Y, 200)])
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_X as never)))
+
+			// Changing the tracked branch wipes the repo's stored (old-branch) commits.
+			yield* repo.changeTrackedBranch(orgId, r.id, "feature")
+			r = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(r.trackedBranch, "feature")
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_X as never)))
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_Y as never)))
+
+			// Reconcile: remote lacks "stale" → deleted; its name is returned.
+			const deleted = yield* repo.reconcileBranchDeletions(r.id, new Set(["main", "feature"]), {
+				truncated: false,
+			})
+			assert.deepStrictEqual([...deleted], ["stale"])
+			assert.deepStrictEqual(
+				(yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort(),
+				["feature", "main"],
+			)
+			// A truncated listing is never authoritative → no deletions, empty result.
+			const none = yield* repo.reconcileBranchDeletions(r.id, new Set(["main"]), { truncated: true })
+			assert.strictEqual(none.length, 0)
+			assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 2)
+
+			// Delete "feature": branch row gone, deleteBranch reports it removed.
+			assert.ok(yield* repo.deleteBranch(r.id, "feature"))
+			assert.deepStrictEqual(
+				(yield* repo.listBranchesByRepository(r.id)).map((b) => b.name),
+				["main"],
+			)
+			// Deleting an absent branch is a reported no-op.
+			assert.ok(!(yield* repo.deleteBranch(r.id, "feature")))
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
 	it.effect("upserts + reads an installation and commits (validated)", () => {
 		const { url } = createTempDbUrl("maple-vcs-repo-", dirs)
 		return Effect.gen(function* () {
@@ -523,6 +812,13 @@ describe("VcsSyncService orchestrator", () => {
 			| VcsInstallationGoneError
 			| VcsRepoUnavailableError
 		readonly fetchReposError?: VcsRateLimitedError | VcsProviderError | VcsInstallationGoneError
+		readonly branches?: ReadonlyArray<{ name: string; headSha: string | null }>
+		readonly branchesTruncated?: boolean
+		readonly fetchBranchesError?:
+			| VcsProviderError
+			| VcsInstallationGoneError
+			| VcsRepoUnavailableError
+			| VcsRateLimitedError
 	}
 
 	// Real VcsRepository (temp D1) + stubbed provider/queue ports, so dispatch,
@@ -541,6 +837,13 @@ describe("VcsSyncService orchestrator", () => {
 					: Effect.succeed({
 							commits: opts.commits ?? [],
 							...(opts.commitFetchNext ? { next: opts.commitFetchNext } : {}),
+						}),
+			fetchBranches: () =>
+				opts.fetchBranchesError
+					? Effect.fail(opts.fetchBranchesError)
+					: Effect.succeed({
+							branches: opts.branches ?? [],
+							truncated: opts.branchesTruncated ?? false,
 						}),
 		}
 		const registry = Layer.succeed(VcsProviderRegistry, {
@@ -575,6 +878,311 @@ describe("VcsSyncService orchestrator", () => {
 			installedByUserId: asUserId("user_1"),
 		})
 
+	const oneRepo = [
+		{
+			externalRepoId: "7",
+			owner: "octo",
+			name: "repo",
+			fullName: "octo/repo",
+			defaultBranch: "main",
+			htmlUrl: "https://github.com/octo/repo",
+			isPrivate: true,
+			isArchived: false,
+		},
+	]
+
+	it.effect("sync-branches reconciles branches and backfills only the single tracked branch", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-syncbranches-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			// The repo's tracked branch is the seeded default "main". Pre-seed a local
+			// "stale" branch (absent upstream) plus "release" (present upstream).
+			assert.strictEqual(r.trackedBranch, "main")
+			yield* repo.upsertBranches(r, [
+				{ name: "release", headSha: null },
+				{ name: "stale", headSha: null },
+			])
+
+			const job: VcsSyncJob = {
+				kind: "sync-branches",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			// Remote = {main, release}: "stale" reconciled away, "main" added.
+			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			assert.deepStrictEqual(names, ["main", "release"])
+			// Exactly one commit-sync, for the single tracked branch (the default "main").
+			const synced = sent
+				.filter((j) => j.kind === "sync-branch-commits")
+				.map((j) => (j.kind === "sync-branch-commits" ? j.branch : ""))
+			assert.deepStrictEqual(synced, ["main"])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					branches: [
+						{ name: "main", headSha: null },
+						{ name: "release", headSha: null },
+					],
+				}),
+			),
+		)
+	})
+
+	it.effect("sync-branches keeps local branches when the provider listing was truncated", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-trunc-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			// A local branch that is absent from the (capped) remote listing.
+			yield* repo.upsertBranches(r, [{ name: "kept", headSha: null }])
+
+			const job: VcsSyncJob = {
+				kind: "sync-branches",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+			}
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			// Truncated ⇒ absence isn't authoritative ⇒ the reconcile is skipped and
+			// "kept" survives (a regression that dropped `truncated` would delete it).
+			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			assert.deepStrictEqual(names, ["kept", "main"])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					branches: [{ name: "main", headSha: null }],
+					branchesTruncated: true,
+				}),
+			),
+		)
+	})
+
+	it.effect("sync-branches drains a repo-unavailable fetch without failing or enqueuing", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-branchfail-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			// A branch that WOULD be re-listed if the sync ran to completion.
+			yield* repo.upsertBranches(r, [{ name: "release", headSha: null }])
+
+			const job: VcsSyncJob = {
+				kind: "sync-branches",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				owner: "octo",
+				name: "repo",
+			}
+			// fetchBranches fails repo-unavailable: the handler logs + drains, so
+			// processMessage succeeds (no queue-retry storm). Reaching the assertions
+			// below at all proves the error did not propagate.
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
+
+			// Nothing reconciled and no backfill enqueued — the tracked branch is intact.
+			assert.strictEqual(sent.length, 0)
+			const names = (yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort()
+			assert.deepStrictEqual(names, ["release"])
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchBranchesError: new VcsRepoUnavailableError({ message: "repo gone" }),
+				}),
+			),
+		)
+	})
+
+	it.effect("branch-event creates then deletes a branch (no queue work), keeping commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-be-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "branch-event",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					action: "created",
+					branch: "feature/x",
+				}),
+			)
+			assert.ok(
+				(yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"),
+			)
+
+			// Put a commit on the repo, then delete the branch — the commit row survives
+			// (commits belong to the repo, not the deleted branch).
+			yield* repo.upsertCommits(r, [commit(SHA_A, 1)])
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "branch-event",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					action: "deleted",
+					branch: "feature/x",
+				}),
+			)
+			assert.ok(!(yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"))
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+			assert.strictEqual(sent.length, 0) // branch events make no GitHub/queue calls
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+	})
+
+	it.effect("deleting the tracked branch falls back to the default: wipes commits + resyncs", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-be-fallback-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			// Track a non-default branch and store a commit for it.
+			yield* repo.upsertBranches(r, [
+				{ name: "main", headSha: null },
+				{ name: "release", headSha: null },
+			])
+			yield* repo.changeTrackedBranch(orgId, r.id, "release")
+			yield* repo.upsertCommits(r, [commit(SHA_A, 1)])
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "branch-event",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					action: "deleted",
+					branch: "release",
+				}),
+			)
+
+			// Tracked branch retargeted to the default, the old-branch commits wiped, and a
+			// backfill of the default enqueued.
+			const updated = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(updated.trackedBranch, "main")
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			assert.strictEqual(backfills.length, 1)
+			assert.strictEqual(
+				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				"main",
+			)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+	})
+
+	it.effect("sync-branches retargets to the default when the tracked branch vanished upstream", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-syncbranches-fallback-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			yield* repo.upsertBranches(r, [
+				{ name: "main", headSha: null },
+				{ name: "release", headSha: null },
+			])
+			yield* repo.changeTrackedBranch(orgId, r.id, "release")
+			yield* repo.upsertCommits(r, [commit(SHA_A, 1)])
+
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "sync-branches",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+				}),
+			)
+
+			// Remote = {main} only ⇒ "release" (the tracked branch) reconciled away ⇒
+			// retarget to "main": commits wiped, exactly one backfill, for "main".
+			const updated = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(updated.trackedBranch, "main")
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			assert.strictEqual(backfills.length, 1)
+			assert.strictEqual(
+				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : "",
+				"main",
+			)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, { sent, repos: oneRepo, branches: [{ name: "main", headSha: null }] }),
+			)
+		)
+	})
+
+	it.effect("a forced push to the default branch enqueues a reconciling backfill", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-forced-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "main",
+					forced: true,
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			const backfills = sent.filter((j) => j.kind === "sync-branch-commits")
+			assert.strictEqual(backfills.length, 1)
+			assert.strictEqual(
+				backfills[0]!.kind === "sync-branch-commits" ? backfills[0]!.branch : undefined,
+				"main",
+			)
+			// Forced ⇒ the payload is discarded (we re-walk instead), so SHA_A is not stored.
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+	})
+
 	it.effect("drops a job for an unknown installation without persisting or failing", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-unknown-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -594,6 +1202,61 @@ describe("VcsSyncService orchestrator", () => {
 			const found = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			assert.ok(Option.isNone(found))
 			assert.strictEqual(sent.length, 0)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
+	})
+
+	it.effect("push to an untracked non-default branch keeps the branch row but stores no commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-push-untracked-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			const r = yield* repoFor(repo, orgId, "7")
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "feature/x",
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			// The branch is visible (so it can be tracked later) but is not the tracked one…
+			const branches = yield* repo.listBranchesByRepository(r.id)
+			assert.ok(branches.some((b) => b.name === "feature/x"))
+			// …and its commits are NOT stored — only the tracked branch's commits are.
+			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
+	})
+
+	it.effect("push to a tracked non-default branch stores its commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-push-tracked-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			const r = yield* repoFor(repo, orgId, "7")
+			yield* repo.upsertBranches(r, [{ name: "release", headSha: null }])
+			// Make "release" the repo's single tracked branch.
+			yield* repo.changeTrackedBranch(orgId, r.id, "release")
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "release",
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
@@ -625,7 +1288,7 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
-	it.effect("installation-sync upserts the provider's repos and enqueues a backfill per repo", () => {
+	it.effect("installation-sync upserts the provider's repos and enqueues a branch-sync per repo", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-inst-", dirs)
 		const sent: Array<VcsSyncJob> = []
 		const repos = [
@@ -655,8 +1318,11 @@ describe("VcsSyncService orchestrator", () => {
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored.length, 1)
 			assert.strictEqual(stored[0]!.externalRepoId, "7")
+			// Per repo: only a branch-list sync. The commit backfills (default + tracked)
+			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
-			assert.strictEqual(sent[0]!.kind, "backfill-repo")
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -759,13 +1425,13 @@ describe("VcsSyncService orchestrator", () => {
 				},
 			])
 			const job: VcsSyncJob = {
-				kind: "backfill-repo",
+				kind: "sync-branch-commits",
 				provider: "github",
 				externalInstallationId: "42",
 				externalRepoId: "7",
 				owner: "octo",
 				name: "repo",
-				defaultBranch: "main",
+				branch: "main",
 				sinceMs: 0,
 			}
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
@@ -792,13 +1458,13 @@ describe("VcsSyncService orchestrator", () => {
 		])
 
 	const backfillJob: VcsSyncJob = {
-		kind: "backfill-repo",
+		kind: "sync-branch-commits",
 		provider: "github",
 		externalInstallationId: "42",
 		externalRepoId: "7",
 		owner: "octo",
 		name: "repo",
-		defaultBranch: "main",
+		branch: "main",
 		sinceMs: 0,
 	}
 
@@ -937,8 +1603,11 @@ describe("VcsSyncService orchestrator", () => {
 			assert.strictEqual(inst.value.status, "active") // reactivated
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored.length, 1) // re-sync ran
+			// Per repo: only a branch-list sync. The commit backfills (default + tracked)
+			// are enqueued later, when that sync-branches job is itself processed.
 			assert.strictEqual(sent.length, 1)
-			assert.strictEqual(sent[0]!.kind, "backfill-repo")
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
+			assert.strictEqual(sent.filter((j) => j.kind === "sync-branch-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -963,8 +1632,8 @@ describe("VcsSyncService orchestrator", () => {
 			// …and a continuation was requeued from the watermark, delayed until reset.
 			assert.strictEqual(sent.length, 1)
 			const continuation = sent[0]!
-			assert.strictEqual(continuation.kind, "backfill-repo")
-			if (continuation.kind !== "backfill-repo") return
+			assert.strictEqual(continuation.kind, "sync-branch-commits")
+			if (continuation.kind !== "sync-branch-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
 			assert.strictEqual(sentDelays[0], 600)
 		}).pipe(
@@ -999,8 +1668,8 @@ describe("VcsSyncService orchestrator", () => {
 			// …and a continuation was requeued from the watermark with NO delay…
 			assert.strictEqual(sent.length, 1)
 			const continuation = sent[0]!
-			assert.strictEqual(continuation.kind, "backfill-repo")
-			if (continuation.kind !== "backfill-repo") return
+			assert.strictEqual(continuation.kind, "sync-branch-commits")
+			if (continuation.kind !== "sync-branch-commits") return
 			assert.strictEqual(continuation.untilMs, 5000)
 			assert.strictEqual(sentDelays[0], 0)
 			// …and it never counts against the stall cap (it made progress).
@@ -1271,7 +1940,7 @@ describe("git SHA validation (branded type)", () => {
 // The centralized GitHub fetch detects 429s and decides: ride out short waits
 // inline; surface long ones (backfill → partial `next`; repos → VcsRateLimitedError).
 describe("GithubProvider rate-limit handling", () => {
-	const REPO = { externalRepoId: "7", owner: "octo", name: "repo", defaultBranch: "main" }
+	const REPO = { externalRepoId: "7", owner: "octo", name: "repo" }
 	const installation = Schema.decodeUnknownSync(VcsInstallation)({
 		id: randomUUID(),
 		orgId: "org_test",
@@ -1292,7 +1961,7 @@ describe("GithubProvider rate-limit handling", () => {
 	it.effect("rides out a short rate limit inline, then completes", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
 			assert.strictEqual(result.commits.length, 1)
 			assert.strictEqual(result.next, undefined) // retried past the 429 → window complete
 		}).pipe(
@@ -1306,7 +1975,7 @@ describe("GithubProvider rate-limit handling", () => {
 	it.effect("surfaces a long rate limit mid-walk as a partial result with `next`", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
 			assert.strictEqual(result.commits.length, 100) // page 1 kept, not thrown away
 			assert.ok(result.next !== undefined)
 			assert.strictEqual(result.next?.retryAfterSeconds, 600)
@@ -1337,7 +2006,7 @@ describe("GithubProvider rate-limit handling", () => {
 			const provider = yield* GithubProvider
 			// Every page replies with a 0s-wait 429; without a retry cap this would spin
 			// forever. The cap surfaces it as a deferral instead, floored off 0.
-			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
 			assert.strictEqual(result.commits.length, 0)
 			assert.ok(result.next !== undefined)
 			assert.strictEqual(result.next?.retryAfterSeconds, 60)
@@ -1356,7 +2025,7 @@ describe("GithubProvider rate-limit handling", () => {
 			// the budget, handing back a continuation instead of walking everything.
 			const COMMIT_PAGES_PER_INVOCATION = 25
 			const provider = yield* GithubProvider
-			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0 })
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
 			assert.strictEqual(result.commits.length, COMMIT_PAGES_PER_INVOCATION * 100)
 			assert.ok(result.next !== undefined)
 			assert.strictEqual(result.next?.reason, "page-budget")

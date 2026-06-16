@@ -1,5 +1,6 @@
 import type { Effect } from "effect"
 import type {
+	BranchUpsertInput,
 	RepoUpsertInput,
 	VcsCommitFetch,
 	VcsInstallation,
@@ -50,11 +51,12 @@ export interface VcsProviderClient {
 	>
 
 	/**
-	 * Commits on a repo's default branch *committed* in `(sinceMs, untilMs]`,
-	 * normalized. `untilMs` resumes a rate-limited backfill from a watermark; omit
-	 * it for a fresh walk from the tip. The `sinceMs`/`untilMs` filter is keyed on
-	 * committer date; the exact basis and ordering are provider-defined and never
-	 * assumed by callers.
+	 * Commits on `branch` *committed* in `(sinceMs, untilMs]`, normalized. `branch`
+	 * is always explicit — the caller decides which ref to walk (there is no implicit
+	 * default-branch fallback). `untilMs` resumes a rate-limited backfill from a
+	 * watermark; omit it for a fresh walk from the tip. The `sinceMs`/`untilMs` filter
+	 * is keyed on committer date; the exact basis and ordering are provider-defined
+	 * and never assumed by callers.
 	 *
 	 * Being cut short is NOT an error here: on a rate limit, OR after a bounded
 	 * number of pages (so one invocation's wall-clock stays under the queue limit),
@@ -66,9 +68,23 @@ export interface VcsProviderClient {
 	readonly fetchCommits: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		opts: { readonly sinceMs: number; readonly untilMs?: number },
+		opts: { readonly sinceMs: number; readonly untilMs?: number; readonly branch: string },
 	) => Effect.Effect<
 		VcsCommitFetch,
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
+	>
+
+	/**
+	 * All branch names of a repo (never the commits on them), normalized. `truncated`
+	 * is true when the provider's listing hit its page cap — the caller then skips
+	 * delete-reconciliation (absence isn't authoritative). A rate limit too far out
+	 * surfaces as `VcsRateLimitedError` (the caller redelivers; branch lists are small).
+	 */
+	readonly fetchBranches: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+	) => Effect.Effect<
+		{ readonly branches: ReadonlyArray<BranchUpsertInput>; readonly truncated: boolean },
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRateLimitedError
 	>
 }

@@ -10,11 +10,13 @@ import {
 	type VcsRepositoryId,
 	type VcsRepoStatus,
 	type VcsRepoSyncStatus,
+	type VcsSyncJob,
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option } from "effect"
 import { Env } from "../../lib/Env"
 import { OAuthStateRepository } from "../OAuthStateRepository"
 import { VcsRepository } from "../vcs/VcsRepository"
+import { BACKFILL_WINDOW_MS } from "../vcs/VcsSyncService"
 import { VcsSyncQueue } from "../vcs/VcsSyncQueue"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 
@@ -37,6 +39,11 @@ const STATE_TTL_MS = 10 * 60_000 // 10 minutes
 
 // ---- Service shape --------------------------------------------------------
 
+export interface GithubBranchStatus {
+	readonly name: string
+	readonly isDefault: boolean
+}
+
 export interface GithubRepoStatus {
 	readonly id: VcsRepositoryId
 	readonly fullName: string
@@ -46,6 +53,10 @@ export interface GithubRepoStatus {
 	readonly syncStatus: VcsRepoSyncStatus
 	readonly lastSyncedAt: number | null
 	readonly lastSyncError: string | null
+	/** The single branch this repo tracks (falls back to its default branch). */
+	readonly trackedBranch: string | null
+	/** All branch names the user can choose to track, for the picker. */
+	readonly branches: ReadonlyArray<GithubBranchStatus>
 }
 
 export interface GithubConnectStatus {
@@ -88,6 +99,21 @@ export interface GithubConnectServiceShape {
 		repositoryId: VcsRepositoryId,
 	) => Effect.Effect<
 		{ readonly deleted: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
+	/**
+	 * Set the single branch a repo tracks. Changing it is destructive by design:
+	 * the repo's stored commits (the old branch's history) are wiped and a fresh
+	 * 90-day backfill of the new branch is enqueued, so the stored set always
+	 * reflects exactly the current tracked branch. A no-op (same branch) neither
+	 * wipes nor resyncs.
+	 */
+	readonly setTrackedBranch: (
+		orgId: OrgId,
+		repositoryId: VcsRepositoryId,
+		trackedBranch: string,
+	) => Effect.Effect<
+		{ readonly trackedBranch: string; readonly backfillQueued: boolean },
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
 }
@@ -238,21 +264,35 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// "all": the dashboard surfaces provider-removed repos too, with the
 				// "re-enable access / delete from Maple" affordances.
 				const repos = yield* asPersistence(repo.listRepositoriesByInstallation(active.id, "all"))
+				// One branch query per repo — fine at current scale (tens of repos).
+				const repositories = yield* Effect.forEach(repos, (r) =>
+					Effect.gen(function* () {
+						const branches = yield* asPersistence(repo.listBranchesByRepository(r.id))
+						return {
+							id: r.id,
+							fullName: r.fullName,
+							htmlUrl: r.htmlUrl,
+							isPrivate: r.isPrivate,
+							status: r.status,
+							syncStatus: r.syncStatus,
+							lastSyncedAt: r.lastSyncedAt,
+							lastSyncError: r.lastSyncError,
+							// Fall back to the default for a legacy row whose tracked branch
+							// was never set, mirroring the sync engine's resolution.
+							trackedBranch: r.trackedBranch ?? r.defaultBranch,
+							branches: branches.map((b) => ({
+								name: b.name,
+								isDefault: b.isDefault,
+							})),
+						}
+					}),
+				)
 				return {
 					connected: true,
 					accountLogin: active.accountLogin,
 					accountType: active.accountType,
 					repositorySelection: active.repositorySelection,
-					repositories: repos.map((r) => ({
-						id: r.id,
-						fullName: r.fullName,
-						htmlUrl: r.htmlUrl,
-						isPrivate: r.isPrivate,
-						status: r.status,
-						syncStatus: r.syncStatus,
-						lastSyncedAt: r.lastSyncedAt,
-						lastSyncError: r.lastSyncError,
-					})),
+					repositories,
 				} satisfies GithubConnectStatus
 			})
 
@@ -296,12 +336,96 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { deleted }
 			})
 
+			const setTrackedBranch = Effect.fn("GithubConnectService.setTrackedBranch")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				trackedBranch: string,
+			) {
+				const existing = yield* asPersistence(repo.getRepositoryById(orgId, repositoryId))
+				if (Option.isNone(existing)) {
+					return yield* new IntegrationsValidationError({ message: "Repository not found" })
+				}
+				const repository = existing.value
+				// The chosen branch must be one the repo actually knows about (the picker's
+				// list), so we don't point the tracker at a non-existent ref. The default
+				// branch always qualifies (it's listed and is the seeded default).
+				const branches = yield* asPersistence(repo.listBranchesByRepository(repositoryId))
+				if (!branches.some((b) => b.name === trackedBranch)) {
+					return yield* new IntegrationsValidationError({
+						message: `Branch "${trackedBranch}" is not a known branch of this repository.`,
+					})
+				}
+
+				const current = repository.trackedBranch ?? repository.defaultBranch
+				// No-op when unchanged: don't wipe + resync for a redundant selection.
+				if (trackedBranch === current) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.branches.tracked": trackedBranch,
+						"vcs.branches.changed": false,
+					})
+					return { trackedBranch, backfillQueued: false }
+				}
+
+				// Change is destructive: point the tracker at the new branch AND wipe the
+				// repo's stored (old-branch) commits, then backfill the new branch so the
+				// stored set reflects exactly the current tracked branch.
+				yield* asPersistence(repo.changeTrackedBranch(orgId, repositoryId, trackedBranch))
+
+				let backfillQueued = false
+				const installationOpt = yield* asPersistence(
+					repo.getInstallationById(orgId, repository.installationId),
+				)
+				if (Option.isSome(installationOpt)) {
+					const installation = installationOpt.value
+					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
+					yield* asPersistence(
+						queue.send({
+							kind: "sync-branch-commits",
+							provider: GITHUB_PROVIDER,
+							externalInstallationId: installation.externalInstallationId,
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+							branch: trackedBranch,
+							sinceMs,
+						} satisfies VcsSyncJob),
+					)
+					backfillQueued = true
+				} else {
+					// The repo's installation row is missing — an invariant violation (a
+					// cascade delete should remove repos with their installation). The tracked
+					// branch is set and commits wiped, but without the external id we can't
+					// enqueue a backfill; report the truth (nothing queued) rather than claim it.
+					yield* Effect.logWarning(
+						"Tracked branch changed but installation missing — backfill not enqueued",
+					).pipe(
+						Effect.annotateLogs({
+							orgId,
+							repositoryId,
+							installationId: repository.installationId,
+							trackedBranch,
+						}),
+					)
+				}
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.id": repositoryId,
+					"vcs.branches.tracked": trackedBranch,
+					"vcs.branches.changed": true,
+					"vcs.branches.backfill_queued": backfillQueued,
+				})
+				return { trackedBranch, backfillQueued }
+			})
+
 			return {
 				startConnect,
 				completeConnect,
 				getStatus,
 				disconnect,
 				deleteRepository,
+				setTrackedBranch,
 			} satisfies GithubConnectServiceShape
 		}),
 	},

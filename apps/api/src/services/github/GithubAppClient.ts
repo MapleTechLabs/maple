@@ -140,11 +140,19 @@ export type GithubApiCommit = Schema.Schema.Type<typeof GithubApiCommitSchema>
 
 const GithubApiCommitList = Schema.Array(GithubApiCommitSchema)
 
+const GithubApiBranchSchema = Schema.Struct({
+	name: Schema.String,
+	commit: Schema.Struct({ sha: GitCommitSha }), // 40-hex validated by the brand
+})
+export type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
+const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
+
 const decodeInstallationToken = Schema.decodeUnknownEffect(GithubInstallationTokenResponse)
 const decodeInstallationDetail = Schema.decodeUnknownEffect(GithubInstallationDetailSchema)
 const decodeInstallationRepos = Schema.decodeUnknownEffect(GithubInstallationReposResponse)
 const decodeCommitList = Schema.decodeUnknownEffect(GithubApiCommitList)
 const decodeCommit = Schema.decodeUnknownEffect(GithubApiCommitSchema)
+const decodeBranchList = Schema.decodeUnknownEffect(GithubApiBranchList)
 
 // ---- JWT (RS256 via Web Crypto) -------------------------------------------
 
@@ -377,6 +385,40 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				},
 			)
 
+			// All branch names of a repo (paginated). Returns `truncated` when the page
+			// cap is hit so the caller can skip delete-reconciliation. Scoped to the
+			// repository so a 404 maps to "repo unavailable", not "no branches".
+			const listBranches = Effect.fn("GithubAppClient.listBranches")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`
+				const branches: Array<GithubApiBranch> = []
+				let page = 1
+				for (; page <= MAX_PAGES; page++) {
+					const response = yield* authedGet(config, token, `${base}?per_page=${PER_PAGE}&page=${page}`)
+					if (!response.ok) return yield* failure(response, "List branches", "repository")
+					const json = yield* parseJson(response, "List branches")
+					const decoded = yield* decodeBranchList(json).pipe(
+						Effect.mapError(
+							(cause) => new GithubAppError({ message: "Unexpected branches payload", cause }),
+						),
+					)
+					branches.push(...decoded)
+					if (decoded.length < PER_PAGE) break
+				}
+				const truncated = page > MAX_PAGES
+				if (truncated) {
+					yield* Effect.logWarning("GitHub branches truncated at page cap").pipe(
+						Effect.annotateLogs({ owner, repo, maxPages: MAX_PAGES, fetched: branches.length }),
+					)
+				}
+				return { branches, truncated }
+			})
+
 			// Returns commits page-by-page until the window is exhausted OR the
 			// per-invocation page budget is hit. Two ways a walk is cut short, both
 			// reported as a *partial* result (commits kept, never refetched) so the
@@ -500,6 +542,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			return {
 				mintInstallationToken,
 				listInstallationRepositories,
+				listBranches,
 				listCommits,
 				getCommit,
 				getInstallation,

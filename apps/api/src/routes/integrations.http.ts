@@ -6,6 +6,7 @@ import {
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
 	HazelDisconnectResponse,
@@ -174,6 +175,18 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 					yield* requireAdmin(tenant.roles)
 					const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
 					return new GithubDeleteRepositoryResponse(result)
+				}),
+			)
+			.handle("githubSetTrackedBranch", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* requireAdmin(tenant.roles)
+					const result = yield* github.setTrackedBranch(
+						tenant.orgId,
+						params.repositoryId,
+						payload.trackedBranch,
+					)
+					return new GithubSetTrackedBranchResponse(result)
 				}),
 			)
 	}),
