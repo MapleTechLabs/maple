@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Exit } from "effect"
 import { GithubStartConnectRequest, type GithubRepoSummary, type VcsRepoSyncStatus } from "@maple/domain/http"
 import {
@@ -36,6 +36,11 @@ const SYNC_VARIANT: Record<VcsRepoSyncStatus, "success" | "info" | "outline" | "
 	error: "error",
 }
 
+/** How often to re-fetch status while the connect flow / background sync is active. */
+const POLL_INTERVAL_MS = 3_000
+/** Keep polling for a bit after the connect popup closes — the install lands server-side just after. */
+const POST_CLOSE_GRACE_MS = 10_000
+
 export function GithubIntegrationCard() {
 	// Assigned once so the refresh hook targets the same memoized query atom.
 	const statusQuery = MapleApiAtomClient.query("integrations", "githubStatus", {
@@ -60,6 +65,11 @@ export function GithubIntegrationCard() {
 	// row shows a spinner). Keyed by Maple's repository id.
 	const [repoToDelete, setRepoToDelete] = useState<GithubRepoSummary | null>(null)
 	const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
+	// The connect popup handle, whether we're actively watching it, and its post-close
+	// grace window — these (plus in-progress sync) drive status polling.
+	const popupRef = useRef<Window | null>(null)
+	const [popupOpen, setPopupOpen] = useState(false)
+	const [inGrace, setInGrace] = useState(false)
 
 	useEffect(() => {
 		function onMessage(event: MessageEvent) {
@@ -80,8 +90,47 @@ export function GithubIntegrationCard() {
 		.onSuccess((s) => s)
 		.orElse(() => null)
 
+	// Repos backfill in the VcsSyncQueue worker after connect, so status keeps changing
+	// server-side with no push channel. Poll while the connect popup is open, for a grace
+	// window after it closes, and while any repo is still syncing (self-terminating).
+	const syncing =
+		status?.connected === true &&
+		status.repositories.some(
+			(r) => r.syncStatus === "pending" || r.syncStatus === "backfilling",
+		)
+	const shouldPoll = popupOpen || inGrace || syncing
+
+	useEffect(() => {
+		if (!shouldPoll) return
+		const id = setInterval(() => refreshStatus(), POLL_INTERVAL_MS)
+		return () => clearInterval(id)
+	}, [shouldPoll, refreshStatus])
+
+	// Cross-origin popups fire no "closed" event, so poll the handle. When it closes,
+	// open the grace window and refresh immediately rather than waiting a poll tick.
+	useEffect(() => {
+		if (!popupOpen) return
+		const id = setInterval(() => {
+			if (popupRef.current?.closed ?? true) {
+				popupRef.current = null
+				setPopupOpen(false)
+				setInGrace(true)
+				refreshStatus()
+			}
+		}, 500)
+		return () => clearInterval(id)
+	}, [popupOpen, refreshStatus])
+
+	useEffect(() => {
+		if (!inGrace) return
+		const id = setTimeout(() => setInGrace(false), POST_CLOSE_GRACE_MS)
+		return () => clearTimeout(id)
+	}, [inGrace])
+
 	async function handleConnect() {
 		const popup = window.open("", "maple-github-connect", "popup,width=600,height=720")
+		popupRef.current = popup
+		if (popup) setPopupOpen(true)
 		setBusy("connect")
 		const result = await startConnect({
 			payload: new GithubStartConnectRequest({ returnTo: window.location.href }),
@@ -90,10 +139,17 @@ export function GithubIntegrationCard() {
 		setBusy(null)
 		if (Exit.isSuccess(result)) {
 			const url = result.value.redirectUrl
-			if (popup) popup.location.href = url
-			else window.open(url, "maple-github-connect", "popup,width=600,height=720")
+			if (popup && !popup.closed) {
+				popup.location.href = url
+			} else {
+				const reopened = window.open(url, "maple-github-connect", "popup,width=600,height=720")
+				popupRef.current = reopened
+				if (reopened) setPopupOpen(true)
+			}
 		} else {
 			popup?.close()
+			popupRef.current = null
+			setPopupOpen(false)
 			toast.error("Failed to start GitHub connect flow")
 		}
 	}
