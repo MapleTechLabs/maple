@@ -18,6 +18,7 @@ import { LayoutLeftIcon } from "@/components/icons"
 import { ConnectButton } from "@/components/header/connect-button"
 import { QuotaBanner } from "@/components/billing/quota-banner"
 import { Link, defaultParseSearch } from "@tanstack/react-router"
+import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 export interface BreadcrumbItem {
 	label: string
@@ -129,7 +130,7 @@ export function DashboardLayout({
 							{breadcrumbActions}
 						</div>
 					</header>
-					<QuotaBanner />
+					{isClerkAuthEnabled && <QuotaBanner />}
 					<PageLayout.Body>
 						{filterSidebar && (
 							<PageLayout.FilterSidebar>{filterSidebar}</PageLayout.FilterSidebar>
