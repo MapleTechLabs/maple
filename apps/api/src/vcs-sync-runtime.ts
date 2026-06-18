@@ -103,6 +103,12 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
+// Mirrors the consumer's `max_retries` in wrangler.jsonc (and alchemy.run.ts). A
+// message is delivered up to `max_retries + 1` times; on that final failing
+// delivery there's no further retry (and no dead-letter queue), so we persist a
+// terminal status instead of dropping the work silently.
+const VCS_SYNC_MAX_RETRIES = 3
+
 export const processBatch = (batch: MessageBatch<unknown>) =>
 	Effect.gen(function* () {
 		const service = yield* VcsSyncService
@@ -121,18 +127,28 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 									? clampQueueDelaySeconds(failure.retryAfterSeconds)
 									: undefined
 							const isDelaySecondsSet = delaySeconds !== undefined
+							// This delivery already used the last retry → no point requeuing.
+							// Record a terminal status (so a repo can't stay stuck "backfilling")
+							// and ack to drop the message.
+							const isFinalAttempt = message.attempts > VCS_SYNC_MAX_RETRIES
 
 							return Effect.logError("VCS sync message failed").pipe(
 								Effect.annotateLogs({
 									error: Cause.pretty(cause),
+									attempt: message.attempts,
+									...(isFinalAttempt ? { exhausted: true } : {}),
 									...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : {}),
 								}),
 								Effect.flatMap(() =>
-									Effect.sync(() =>
-										isDelaySecondsSet
-											? message.retry({ delaySeconds })
-											: message.retry(),
-									),
+									isFinalAttempt
+										? service
+												.recordExhaustedFailure(message.body)
+												.pipe(Effect.flatMap(() => Effect.sync(() => message.ack())))
+										: Effect.sync(() =>
+												isDelaySecondsSet
+													? message.retry({ delaySeconds })
+													: message.retry(),
+											),
 								),
 							)
 						},

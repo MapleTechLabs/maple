@@ -17,7 +17,7 @@ import {
 	type VcsRepoUnavailableError,
 	VcsSyncJob,
 } from "@maple/domain/http"
-import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
+import { Cause, Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
@@ -37,7 +37,7 @@ export const BACKFILL_WINDOW_MS = 90 * 86_400_000 // 90 days
 // How many consecutive continuations may fetch zero commits (rate-limited before
 // any progress) before we give up. Bounds a permanently throttled installation:
 // a transient limit clears long before this, but a wedged one stops requeuing.
-const MAX_BACKFILL_STALL_RETRIES = 10
+export const MAX_BACKFILL_STALL_RETRIES = 10
 
 const decodeJob = Schema.decodeUnknownEffect(VcsSyncJob)
 
@@ -57,6 +57,9 @@ type SyncError =
 
 export interface VcsSyncServiceShape {
 	readonly processMessage: (raw: unknown) => Effect.Effect<void, SyncError>
+	// Last-resort terminal write for a message that has exhausted its queue retries.
+	// Total (never fails) so the consumer can call it as a final step without risk.
+	readonly recordExhaustedFailure: (raw: unknown) => Effect.Effect<void>
 }
 
 export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServiceShape>()(
@@ -118,6 +121,15 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				job: SyncCommitsJob,
 			) =>
 				Effect.gen(function* () {
+					// Mark the backfill in progress before the first provider call — the
+					// execution path owns every sync_status transition, so this is what the
+					// dashboard sees the moment a (re)sync actually starts (e.g. after a
+					// tracked-branch change), rather than the enqueue side pre-writing it.
+					// Clears any prior error; leaves last_synced_at (last *successful* sync).
+					yield* repo.updateRepoSyncStatus(repository.id, {
+						status: "backfilling",
+						error: null,
+					})
 					const now = yield* Clock.currentTimeMillis
 					const { commits, next } = yield* provider.fetchCommits(
 						installation,
@@ -196,7 +208,6 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* repo.updateRepoSyncStatus(repository.id, {
 						status: "backfilling",
 						error: null,
-						syncedAt: now,
 					})
 					yield* queue.send(
 						{
@@ -617,7 +628,48 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				)
 			})
 
-			return { processMessage } satisfies VcsSyncServiceShape
+			// Called by the queue consumer when a message has run out of retries (about
+			// to be dropped — there is no dead-letter queue). For a commit-sync job this
+			// records a terminal `error` status so a repo can never get stuck showing
+			// "backfilling" after the engine has given up; the periodic installation-sync
+			// will later attempt a fresh backfill. Other job kinds own no `sync_status`,
+			// so they're a no-op. Total + best-effort: every internal failure is swallowed
+			// and logged, since this runs as the consumer's very last step.
+			const recordExhaustedFailure = (raw: unknown) =>
+				Effect.gen(function* () {
+					const jobOpt = yield* decodeJob(raw).pipe(
+						Effect.map(Option.some),
+						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
+					)
+					if (Option.isNone(jobOpt) || jobOpt.value.kind !== "sync-commits") return
+					const job = jobOpt.value
+					const installationOpt = yield* repo.resolveInstallation(
+						job.provider,
+						job.externalInstallationId,
+					)
+					if (Option.isNone(installationOpt)) return
+					const repositoryOpt = yield* resolveRepositoryForJob(installationOpt.value, job)
+					if (Option.isNone(repositoryOpt)) return
+					yield* repo.markRepoSyncError(
+						repositoryOpt.value.id,
+						"backfill failed: exhausted queue retries",
+					)
+					yield* Effect.logError("VCS commit sync exhausted retries — marked repo errored").pipe(
+						Effect.annotateLogs({
+							provider: job.provider,
+							externalRepoId: job.externalRepoId,
+						}),
+					)
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("Failed to record exhausted VCS sync failure").pipe(
+							Effect.annotateLogs({ error: Cause.pretty(cause) }),
+						),
+					),
+					Effect.withSpan("VcsSyncService.recordExhaustedFailure"),
+				)
+
+			return { processMessage, recordExhaustedFailure } satisfies VcsSyncServiceShape
 		}),
 	},
 ) {

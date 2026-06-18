@@ -506,6 +506,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return true
 		})
 
+		// Write a sync-status transition. `last_synced_at` is touched ONLY when the
+		// caller passes `syncedAt` (i.e. a sync actually completed) — so marking a repo
+		// "backfilling" at the start of / mid a run never stamps a misleading sync time;
+		// it stays whatever the last *successful* sync left.
 		const updateRepoSyncStatus = Effect.fn("VcsRepository.updateRepoSyncStatus")(function* (
 			repositoryId: VcsRepositoryId,
 			update: RepoSyncStatusUpdate,
@@ -518,7 +522,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.set({
 							syncStatus: update.status,
 							lastSyncError: update.error ?? null,
-							lastSyncedAt: update.syncedAt ?? now,
+							...("syncedAt" in update ? { lastSyncedAt: update.syncedAt ?? null } : {}),
 							updatedAt: now,
 						})
 						.where(eq(vcsRepositories.id, repositoryId)),
@@ -761,8 +765,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		})
 
 		// Retarget the repo's single tracked branch: point `tracked_branch` at the new
-		// branch AND wipe the repo's stored commits (they were the old branch's
-		// history). The caller then enqueues a fresh backfill of the new branch. Used
+		// branch AND wipe the repo's stored commits (they were the old branch's history).
+		// The caller then enqueues a fresh backfill of the new branch; the sync engine
+		// owns every `sync_status` transition for that backfill (start → terminal), so
+		// this write deliberately leaves `sync_status` / `last_synced_at` untouched. Used
 		// by the dashboard's branch selection and the engine's fallback to the default
 		// when the tracked branch is deleted. The two writes are paired here so the
 		// "change ⇒ wipe" invariant lives in one place; the column moves first so a
