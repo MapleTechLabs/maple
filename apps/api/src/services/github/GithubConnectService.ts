@@ -363,7 +363,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						kind: "installation-sync",
 						provider: GITHUB_PROVIDER,
 						externalInstallationId: installationId,
-						reason: "created",
+						// "updated" if this org already had the install, else "created".
+						reason: isSameOrgReconnect ? "updated" : "created",
 					}),
 				)
 

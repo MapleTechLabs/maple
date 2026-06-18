@@ -585,7 +585,8 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				// dashboard (one active installation per org) does not support. Purge (not just
 				// suspend) so nothing lingers. Idempotent: a duplicate "created" — the GitHub
 				// webhook and the dashboard callback each enqueue one — finds no siblings left.
-				if (job.reason === "created") {
+				// "updated" (a reconnect) runs the same purge; it just finds nothing to remove.
+				if (job.reason === "created" || job.reason === "updated") {
 					const superseded = (yield* repo.listInstallationsByOrg(active.orgId)).filter(
 						(other) => other.provider === active.provider && other.id !== active.id,
 					)

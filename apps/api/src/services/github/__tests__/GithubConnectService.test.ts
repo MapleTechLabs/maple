@@ -220,6 +220,10 @@ describe("GithubConnectService", () => {
 			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(found))
 			assert.strictEqual(found.value.orgId, orgId)
+
+			// First connect enqueues "created"; the reconnect enqueues "updated".
+			const reasons = sent.flatMap((j) => (j.kind === "installation-sync" ? [j.reason] : []))
+			assert.deepStrictEqual(reasons, ["created", "updated"])
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 

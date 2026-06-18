@@ -280,6 +280,7 @@ export type VcsRepositoryRef = Schema.Schema.Type<typeof VcsRepositoryRef>
 
 export const VcsInstallationSyncReason = Schema.Literals([
 	"created",
+	"updated",
 	"unsuspend",
 	"repositories_added",
 	"repositories_removed",
