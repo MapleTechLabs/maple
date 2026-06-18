@@ -349,9 +349,13 @@ export const serviceMapChildrenMv = defineMaterializedView("service_map_children
 
 /**
  * Materialized view pre-aggregating service-to-database edges per hour.
- * Aggregates Client/Producer spans with `db.system.name` set into hourly
+ * Aggregates Client/Producer spans with a database system set into hourly
  * buckets at write time so the database-node query reads pre-aggregated rows
  * instead of scanning raw span attributes.
+ *
+ * `DbSystem` uses the `db.system.name` → `db.system` coalesce (`DB_SYSTEM_ATTR_SQL`),
+ * matching `service_map_db_query_shapes_hourly_mv`, so spans that emit only the
+ * legacy `db.system` attribute are captured here too.
  */
 export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_edges_hourly_mv", {
 	description:
@@ -365,7 +369,7 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
           OrgId,
           toStartOfHour(toDateTime(Timestamp)) AS Hour,
           ServiceName,
-          SpanAttributes['db.system.name'] AS DbSystem,
+          ${DB_SYSTEM_ATTR_SQL} AS DbSystem,
           ResourceAttributes['deployment.environment'] AS DeploymentEnv,
           count() AS CallCount,
           countIf(StatusCode = 'Error') AS ErrorCount,
@@ -376,7 +380,7 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
           sum(SampleRate) AS SampleRateSum
         FROM traces
         WHERE SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] != ''
+          AND ${DB_SYSTEM_ATTR_SQL} != ''
           AND ServiceName != ''
         GROUP BY OrgId, Hour, ServiceName, DbSystem, DeploymentEnv
       `,
@@ -392,9 +396,8 @@ export const serviceMapDbEdgesHourlyMv = defineMaterializedView("service_map_db_
  * and rolls up call/error/sample counts plus a sample-weighted t-digest of
  * duration.
  *
- * NOTE: `DbSystem` uses the `db.system.name` → `db.system` coalesce (unlike the
- * older `service_map_db_edges_hourly_mv`, which keys on `db.system.name` only
- * and silently misses spans that set just the legacy `db.system`).
+ * NOTE: `DbSystem` uses the `db.system.name` → `db.system` coalesce
+ * (`DB_SYSTEM_ATTR_SQL`), the same as `service_map_db_edges_hourly_mv`.
  */
 export const serviceMapDbQueryShapesHourlyMv = defineMaterializedView(
 	"service_map_db_query_shapes_hourly_mv",

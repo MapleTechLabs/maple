@@ -371,6 +371,12 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 		UnsampledSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
 	},
+	// The 90d rollup TTL outlives the 30d `traces` source, so a deploy that
+	// re-points the MV can't reconstruct the full window from `traces`. Carry
+	// existing rows forward (non-destructive) instead — same pattern as the other
+	// hourly rollups (`service_map_db_query_shapes_hourly`, `logs_aggregates_hourly`,
+	// `service_platforms_hourly`).
+	forwardQuery: `SELECT *`,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "Hour", "DeploymentEnv", "ServiceName", "DbSystem"],
