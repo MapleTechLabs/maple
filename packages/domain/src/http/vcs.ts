@@ -285,6 +285,11 @@ export const VcsInstallationSyncReason = Schema.Literals([
 	"repositories_removed",
 	"suspend",
 	"deleted",
+	// A periodic (cron) reconcile: re-list repos (reconciling both additions and
+	// removals), refresh each repo's branches, and backfill each tracked branch —
+	// the backstop for webhook deliveries that were missed. Carries no status
+	// transition and no sibling purge; it is a pure data refresh.
+	"scheduled",
 ]).annotate({ identifier: "@maple/VcsInstallationSyncReason", title: "VCS Installation Sync Reason" })
 export type VcsInstallationSyncReason = Schema.Schema.Type<typeof VcsInstallationSyncReason>
 

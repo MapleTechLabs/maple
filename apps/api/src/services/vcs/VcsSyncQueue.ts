@@ -18,12 +18,22 @@ const encodeJob = Schema.encodeSync(VcsSyncJob)
 // the platform's magic numbers.
 export const QUEUE_MESSAGE_LIMIT_BYTES = 128 * 1024 // max serialized message size
 export const QUEUE_MAX_DELAY_SECONDS = 86_400 // max visibility delay (24h)
+// A single `sendBatch` call accepts at most 100 messages OR 256 KB of payload,
+// whichever comes first. `sendBatch` packs jobs into chunks under BOTH bounds so
+// callers can hand it an arbitrarily long list without pre-chunking.
+export const QUEUE_BATCH_MAX_MESSAGES = 100
+export const QUEUE_BATCH_MAX_BYTES = 256 * 1024
 
 // Coerce a requested delay into the range Cloudflare accepts: a whole number of
 // seconds in [0, 86_400]. Out-of-range/fractional values would otherwise make
 // the binding reject the send/retry outright.
 export const clampQueueDelaySeconds = (seconds: number): number =>
 	Math.min(Math.max(0, Math.floor(seconds)), QUEUE_MAX_DELAY_SECONDS)
+
+// Serialized byte size of a message body — the basis for Cloudflare's per-batch
+// byte cap. Measured as UTF-8
+const textEncoder = new TextEncoder()
+const jsonByteLength = (body: unknown): number => textEncoder.encode(JSON.stringify(body)).length
 
 export interface VcsSyncQueueShape {
 	/**
@@ -81,14 +91,48 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 				if (!queue) {
 					return yield* new VcsQueueError({ message: `Missing queue binding: ${QUEUE_BINDING}` })
 				}
-				const messages = jobs.map((job) => ({ body: encodeJob(job) }))
-				yield* Effect.tryPromise({
-					try: () => queue.sendBatch(messages),
-					catch: (cause) =>
-						new VcsQueueError({
-							message: cause instanceof Error ? cause.message : "queue sendBatch failed",
-						}),
+
+				// Encode once, then greedily pack into chunks bounded by BOTH the message
+				// count and the cumulative serialized size Cloudflare accepts per
+				// `sendBatch`. `encodeJob` yields the structured body (an object, not a
+				// string), so size is measured against its JSON byte length — the basis
+				// for the platform's limit. A single job over the per-message cap is sent
+				// on its own (Cloudflare rejects it, surfacing as a VcsQueueError) rather
+				// than silently dropped.
+				const sized = jobs.map((job) => {
+					const body = encodeJob(job)
+					return { message: { body }, size: jsonByteLength(body) }
 				})
+				const chunks: Array<Array<{ body: unknown }>> = []
+				let current: Array<{ body: unknown }> = []
+				let currentBytes = 0
+				for (const { message, size } of sized) {
+					const wouldOverflow =
+						current.length >= QUEUE_BATCH_MAX_MESSAGES ||
+						(current.length > 0 && currentBytes + size > QUEUE_BATCH_MAX_BYTES)
+					if (wouldOverflow) {
+						chunks.push(current)
+						current = []
+						currentBytes = 0
+					}
+					current.push(message)
+					currentBytes += size
+				}
+				if (current.length > 0) chunks.push(current)
+
+				yield* Effect.annotateCurrentSpan({ "vcs.jobs.batches": chunks.length })
+				yield* Effect.forEach(
+					chunks,
+					(chunk) =>
+						Effect.tryPromise({
+							try: () => queue.sendBatch(chunk),
+							catch: (cause) =>
+								new VcsQueueError({
+									message: cause instanceof Error ? cause.message : "queue sendBatch failed",
+								}),
+						}),
+					{ discard: true },
+				)
 			})
 
 			return { send, sendBatch } satisfies VcsSyncQueueShape

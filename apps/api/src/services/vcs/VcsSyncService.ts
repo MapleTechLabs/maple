@@ -479,8 +479,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// upstream. The row and its synced commits are kept (a re-grant
 					// reactivates via upsertRepositories); the "removed" status pauses
 					// any further event processing for them. A user must explicitly
-					// purge to drop the data.
-					if (job.reason === "repositories_removed") {
+					// purge to drop the data. The periodic "scheduled" reconcile runs
+					// this too, so it catches a `repositories_removed` webhook we missed.
+					if (job.reason === "repositories_removed" || job.reason === "scheduled") {
 						const remoteIds = new Set(repos.map((r) => r.externalRepoId))
 						const local = yield* repo.listRepositoriesByInstallation(installation.id, "active")
 						yield* Effect.forEach(

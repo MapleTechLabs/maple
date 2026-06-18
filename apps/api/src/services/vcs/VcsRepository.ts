@@ -213,6 +213,18 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 		})
 
+		// Every installation across every org — the cross-org listing the periodic
+		// sync scheduler walks to enqueue a refresh per installation. Status is not
+		// filtered here (the caller applies the `isInstallationProcessable` gate, the
+		// single place that rule lives); this returns the raw set so callers can also
+		// observe suspended/disconnected installs if they need to.
+		const listAllInstallations = Effect.fn("VcsRepository.listAllInstallations")(function* () {
+			const rows = yield* database
+				.execute((db) => db.select().from(vcsInstallations))
+				.pipe(Effect.mapError(toPersistenceError))
+			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
+		})
+
 		// Look up an installation by Maple's own id — org-scoped (ids are globally
 		// unique UUIDs, so the org filter is a safety bound). Used where a caller holds
 		// a repo's internal installationId and needs the external id for a queue job.
@@ -920,6 +932,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			resolveInstallation,
 			getInstallationById,
 			listInstallationsByOrg,
+			listAllInstallations,
 			upsertInstallation,
 			markInstallationStatus,
 			listRepositoriesByInstallation,

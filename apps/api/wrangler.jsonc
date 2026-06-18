@@ -7,6 +7,13 @@
 	"dev": {
 		"port": 3472,
 	},
+	// Periodic VCS sync backstop: every 12h, enqueue an installation-sync per
+	// connected installation (refresh repos + branches, backfill tracked-branch
+	// commits) for webhook deliveries that were missed. Handler: worker.ts
+	// `scheduled`. (Mirrored in alchemy.run.ts for deploy.)
+	"triggers": {
+		"crons": ["0 */12 * * *"],
+	},
 	"d1_databases": [
 		{
 			"binding": "MAPLE_DB",

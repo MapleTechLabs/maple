@@ -9,6 +9,7 @@ import { GithubHttp } from "./services/github/GithubHttp"
 import { GithubProvider } from "./services/github/GithubProvider"
 import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "./services/vcs/VcsRepository"
+import { VcsScheduledSyncService } from "./services/vcs/VcsScheduledSyncService"
 import { clampQueueDelaySeconds, VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
 import { VcsSyncService } from "./services/vcs/VcsSyncService"
 
@@ -49,7 +50,57 @@ export const buildVcsSyncLayer = (_env: Record<string, unknown>) => {
 	)
 }
 
+// The periodic (cron) producer's layer graph. Deliberately lighter than the
+// consumer's: enqueuing installation-sync jobs needs only storage + the queue —
+// NOT the provider registry (the consumer does all provider work).
+export const buildVcsScheduledLayer = (_env: Record<string, unknown>) => {
+	const ConfigLive = WorkerConfigProviderLayer
+	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
+	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironment.layer))
+	const Base = Layer.mergeAll(EnvLive, DatabaseLive, WorkerEnvironment.layer)
+
+	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
+	const VcsSyncQueueLive = VcsSyncQueue.layer.pipe(Layer.provide(WorkerEnvironment.layer))
+	const VcsScheduledSyncServiceLive = VcsScheduledSyncService.layer.pipe(
+		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsSyncQueueLive)),
+	)
+
+	return VcsScheduledSyncServiceLive.pipe(
+		Layer.provideMerge(telemetry.layer),
+		Layer.provideMerge(ConfigLive),
+	)
+}
+
 export const flushVcsTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
+
+// The cron program: enqueue a periodic refresh per processable installation. Any
+// failure is logged (not rethrown) so a scheduled tick never surfaces as an
+// unhandled rejection — the next tick (12h later) retries from a clean slate.
+export const runScheduledSync = Effect.gen(function* () {
+	const scheduler = yield* VcsScheduledSyncService
+	const result = yield* scheduler.runScheduledSync()
+	// Mirror the counts onto the tick span (the service method annotates its own
+	// child span) so cron-level traces are filterable without drilling in.
+	yield* Effect.annotateCurrentSpan({
+		"vcs.scheduled.installations_total": result.installationsTotal,
+		"vcs.scheduled.enqueued": result.enqueued,
+		"vcs.scheduled.skipped": result.skipped,
+	})
+	yield* Effect.logInfo("VCS scheduled sync tick complete").pipe(
+		Effect.annotateLogs({
+			installationsTotal: result.installationsTotal,
+			enqueued: result.enqueued,
+			skipped: result.skipped,
+		}),
+	)
+}).pipe(
+	Effect.withSpan("VcsScheduledSync.tick"),
+	Effect.catchCause((cause) =>
+		Effect.logError("VCS scheduled sync tick failed").pipe(
+			Effect.annotateLogs({ error: Cause.pretty(cause) }),
+		),
+	),
+)
 
 export const processBatch = (batch: MessageBatch<unknown>) =>
 	Effect.gen(function* () {
