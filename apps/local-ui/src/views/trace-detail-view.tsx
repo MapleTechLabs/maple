@@ -6,6 +6,7 @@ import { ArrowLeftIcon } from "@maple/ui/components/icons"
 import type { SpanNode } from "@maple/ui/types"
 import { useLocalTraceDetail } from "../hooks/use-local-trace-detail"
 import { SpanDetailPanel } from "../components/span-detail-panel"
+import { RefreshButton } from "../components/toolbar"
 
 interface TraceDetailViewProps {
 	traceId: string
@@ -26,6 +27,7 @@ export function TraceDetailView({ traceId, onBack }: TraceDetailViewProps) {
 				<span className="truncate font-mono text-xs text-muted-foreground" title={traceId}>
 					{traceId}
 				</span>
+				<RefreshButton className="ml-auto" />
 			</div>
 
 			<div className="min-h-0 flex-1">

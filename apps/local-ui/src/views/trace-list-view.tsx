@@ -30,7 +30,8 @@ import {
 	FilterSidebarHeader,
 } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
-import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
+import { parseAttributes } from "@maple/ui/lib/span-tree"
+import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
 
 interface TraceListViewProps {
@@ -167,6 +168,7 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 			stats={
 				<>
 					<ToolbarStat value={rows.length} label={hasNextPage ? "traces+" : "traces"} />
+					<RefreshButton />
 					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
 				</>
 			}
@@ -216,11 +218,7 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 											<HttpSpanLabel
 												spanName={row.rootSpanName}
 												spanKind={row.rootSpanKind}
-												spanAttributes={{
-													"http.method": row.rootHttpMethod,
-													"http.route": row.rootHttpRoute,
-													"http.status_code": row.rootHttpStatusCode,
-												}}
+												spanAttributes={parseAttributes(row.rootSpanAttributes)}
 												className="min-w-0"
 											/>
 										</div>

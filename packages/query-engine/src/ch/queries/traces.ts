@@ -715,8 +715,33 @@ export interface TracesRootListOutput {
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
+	/**
+	 * Projected HTTP attribute map (JSON string) for the root span. Carries the
+	 * URL/host keys `rootHttp*` omits so `getHttpInfo` can render a client
+	 * destination (`host/path`) instead of falling back to `http.client GET`.
+	 */
+	readonly rootSpanAttributes: string
 	readonly hasError: number
 }
+
+/**
+ * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
+ * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
+ * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
+ */
+const ROOT_SPAN_ATTR_KEYS = [
+	"http.method",
+	"http.request.method",
+	"http.route",
+	"http.target",
+	"http.status_code",
+	"http.response.status_code",
+	"http.url",
+	"url.full",
+	"url.path",
+	"server.address",
+	"net.peer.name",
+] as const
 
 /**
  * Two-stage root-trace list query. Same OOM avoidance as `tracesListQuery`:
@@ -768,6 +793,9 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootHttpMethod: $.SpanAttributes.get("http.method"),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
 			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootSpanAttributes: CH.toJSONString(
+				buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes"),
+			),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])

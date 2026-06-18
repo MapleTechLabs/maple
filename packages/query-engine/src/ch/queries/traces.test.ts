@@ -149,10 +149,21 @@ describe("tracesRootListQuery", () => {
 		expect(sql).toContain("'http.method'")
 		expect(sql).toContain("'http.route'")
 		expect(sql).toContain("'http.status_code'")
+		expect(sql).toContain("AS rootSpanAttributes")
 		expect(sql).toContain("AS hasError")
 		expect(sql).toContain("ORDER BY startTime DESC")
 		expect(sql).toContain("LIMIT 25")
 		expect(sql).toContain("FORMAT JSON")
+	})
+
+	it("projects the URL/host keys into rootSpanAttributes for client-span labels", () => {
+		const q = tracesRootListQuery({})
+		const { sql } = compileCH(q, baseParams)
+		// These keys (omitted by the flat rootHttp* columns) let getHttpInfo build
+		// a client destination instead of falling back to "http.client GET".
+		expect(sql).toContain("'url.full'")
+		expect(sql).toContain("'server.address'")
+		expect(sql).toContain("'url.path'")
 	})
 
 	it("applies rootOnly filter (SpanKind in Server/Consumer OR ParentSpanId='')", () => {

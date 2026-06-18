@@ -19,7 +19,7 @@ import {
 	FilterSidebarHeader,
 } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
-import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
+import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
 
 const ROW_HEIGHT = 36
@@ -111,6 +111,7 @@ export function LogsView() {
 			stats={
 				<>
 					<ToolbarStat value={rows.length} label={hasNextPage ? "logs+" : "logs"} />
+					<RefreshButton />
 					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
 				</>
 			}

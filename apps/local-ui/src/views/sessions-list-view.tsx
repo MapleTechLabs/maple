@@ -28,7 +28,7 @@ import {
 	FilterSidebarHeader,
 } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
-import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
+import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
 
 interface SessionsListViewProps {
@@ -129,6 +129,7 @@ export function SessionsListView({ onSelectSession }: SessionsListViewProps) {
 						dot
 					/>
 					<ToolbarStat value={facetData?.errorCount ?? 0} label="with errors" danger />
+					<RefreshButton />
 					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
 				</>
 			}

@@ -24,6 +24,7 @@ import {
 import { formatRelativeTime } from "../lib/time"
 import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "../lib/replay-format"
 import { ErrorState } from "../components/view-states"
+import { RefreshButton } from "../components/toolbar"
 
 interface SessionDetailViewProps {
 	sessionId: string
@@ -52,6 +53,7 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 				<span className="truncate font-mono text-xs text-muted-foreground" title={sessionId}>
 					{sessionId}
 				</span>
+				<RefreshButton className="ml-auto" />
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-auto">
