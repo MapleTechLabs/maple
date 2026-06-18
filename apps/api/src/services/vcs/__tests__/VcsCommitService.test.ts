@@ -1,9 +1,12 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { generateKeyPairSync } from "node:crypto"
-import { OrgId, UserId } from "@maple/domain/http"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import {
+	IntegrationsNotConnectedError,
+	type OrgId,
+	VcsCommitNotFoundError,
+	VcsCommitShaInvalidError,
+} from "@maple/domain/http"
+import { Effect, Layer } from "effect"
 import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
-import { Env } from "@/lib/Env"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
 import { GithubAppClient } from "@/services/github/GithubAppClient"
 import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
@@ -11,44 +14,19 @@ import { GithubProvider } from "@/services/github/GithubProvider"
 import { VcsCommitService } from "@/services/vcs/VcsCommitService"
 import { VcsProviderRegistry } from "@/services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
+import {
+	asOrgId,
+	asUserId,
+	expectSome,
+	findError,
+	GITHUB_APP_CONFIG,
+	jsonResponse,
+	testEnv,
+	type VcsRepo,
+} from "./harness"
 
 const dirs: string[] = []
 afterEach(() => cleanupTempDirs(dirs))
-
-const asOrgId = Schema.decodeUnknownSync(OrgId)
-const asUserId = Schema.decodeUnknownSync(UserId)
-
-// A real RSA key so the App-JWT mint (crypto.subtle.importKey) succeeds; the
-// access-token mint + commit GET are stubbed at the GithubHttp seam below.
-const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
-	modulusLength: 2048,
-	publicKeyEncoding: { type: "spki", format: "pem" },
-	privateKeyEncoding: { type: "pkcs8", format: "pem" },
-}).privateKey
-
-const config = (url: string) =>
-	ConfigProvider.layer(
-		ConfigProvider.fromUnknown({
-			PORT: "3472",
-			TINYBIRD_HOST: "https://api.tinybird.co",
-			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
-			MAPLE_AUTH_MODE: "self_hosted",
-			MAPLE_ROOT_PASSWORD: "test-root-password",
-			MAPLE_DEFAULT_ORG_ID: "default",
-			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
-			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-			GITHUB_APP_SLUG: "maple-test-app",
-			GITHUB_APP_ID: "123456",
-			GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
-		}),
-	)
-
-const jsonResponse = (body: unknown, init?: { status?: number }) =>
-	new Response(JSON.stringify(body), {
-		status: init?.status ?? 200,
-		headers: { "content-type": "application/json" },
-	})
 
 const commitBody = (sha: string) => ({
 	sha,
@@ -92,7 +70,7 @@ const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 // registry backed by the stubbed GithubHttp. `data` is referenced both inside the
 // service and in the returned merge, so Effect memoizes one shared repo instance.
 const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
-	const env = Env.layer.pipe(Layer.provide(config(url)))
+	const env = testEnv(url, GITHUB_APP_CONFIG)
 	const database = DatabaseLibsqlLive.pipe(Layer.provide(env))
 	const data = VcsRepository.layer.pipe(Layer.provide(database), Layer.provide(env))
 	const githubAppClient = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
@@ -102,20 +80,9 @@ const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
 	return Layer.mergeAll(service, data)
 }
 
-const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
-	if (!Exit.isFailure(exit)) return undefined
-	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-	return failure ?? Cause.squash(exit.cause)
-}
-
-const expectSome = <A>(o: Option.Option<A>): A => {
-	assert.ok(Option.isSome(o), "expected Option.some, got none")
-	return o.value
-}
-
 // Seed an active installation ("42") and its repos directly via the repo layer.
 const seed = (
-	repo: VcsRepository,
+	repo: VcsRepo,
 	orgId: OrgId,
 	repos: ReadonlyArray<{ externalRepoId: string; name: string }>,
 ) =>
@@ -253,14 +220,13 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
 
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			const err = findError(exit) as { _tag?: string }
-			assert.strictEqual(err?._tag, "@maple/http/errors/VcsCommitNotFoundError")
+			assert.ok(findError(exit) instanceof VcsCommitNotFoundError)
 			const afterFirst = calls.commitGets
 			assert.ok(afterFirst >= 1)
 
 			// Second lookup is served from the negative cache — no new provider probe.
 			const exit2 = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.strictEqual((findError(exit2) as { _tag?: string })?._tag, "@maple/http/errors/VcsCommitNotFoundError")
+			assert.ok(findError(exit2) instanceof VcsCommitNotFoundError)
 			assert.strictEqual(calls.commitGets, afterFirst)
 		}).pipe(Effect.provide(commitLayer(url, layer)))
 	})
@@ -276,9 +242,8 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 
 			for (const bad of ["abc1234", "not-a-sha", "g".repeat(40), "a".repeat(39)]) {
 				const exit = yield* svc.resolveCommitDetail(orgId, bad).pipe(Effect.exit)
-				assert.strictEqual(
-					(findError(exit) as { _tag?: string })?._tag,
-					"@maple/http/errors/VcsCommitShaInvalidError",
+				assert.ok(
+					findError(exit) instanceof VcsCommitShaInvalidError,
 					`expected invalid-sha error for "${bad}"`,
 				)
 			}
@@ -294,10 +259,7 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const svc = yield* VcsCommitService
 			const orgId = asOrgId("org_test")
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
-			assert.strictEqual(
-				(findError(exit) as { _tag?: string })?._tag,
-				"@maple/http/errors/IntegrationsNotConnectedError",
-			)
+			assert.ok(findError(exit) instanceof IntegrationsNotConnectedError)
 		}).pipe(Effect.provide(commitLayer(url, layer)))
 	})
 })

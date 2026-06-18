@@ -1,62 +1,42 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { OrgId, UserId, VcsQueueError, type VcsSyncJob } from "@maple/domain/http"
-import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
-import { Env } from "@/lib/Env"
+import { VcsQueueError, type OrgId, type VcsSyncJob } from "@maple/domain/http"
+import { Effect, Exit, Layer } from "effect"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "@/services/vcs/VcsScheduledSyncService"
-import { VcsSyncQueue, type VcsSyncQueueShape } from "@/services/vcs/VcsSyncQueue"
+import {
+	asOrgId,
+	asUserId,
+	expectSome,
+	findError,
+	recordingQueueLayer,
+	testRepoLayer,
+	type VcsRepo,
+} from "./harness"
 
 const dirs: string[] = []
 afterEach(() => cleanupTempDirs(dirs))
 
-const asOrgId = Schema.decodeUnknownSync(OrgId)
-const asUserId = Schema.decodeUnknownSync(UserId)
-
-const config = (url: string) =>
-	ConfigProvider.layer(
-		ConfigProvider.fromUnknown({
-			PORT: "3472",
-			TINYBIRD_HOST: "https://api.tinybird.co",
-			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
-			MAPLE_AUTH_MODE: "self_hosted",
-			MAPLE_ROOT_PASSWORD: "test-root-password",
-			MAPLE_DEFAULT_ORG_ID: "default",
-			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
-			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-		}),
-	)
-
-const expectSome = <A>(o: Option.Option<A>): A => {
-	assert.ok(Option.isSome(o), "expected Option.some, got none")
-	return o.value
-}
-
 // Wire VcsScheduledSyncService over a temp sqlite (real repo) and a recording
-// VcsSyncQueue (Layer.succeed) that captures every enqueued job. When `failQueue`
-// is set, `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
+// VcsSyncQueue that captures every enqueued job. When `failQueue` is set,
+// `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
 const schedulerLayer = (
 	url: string,
 	sent: Array<VcsSyncJob>,
 	opts?: { readonly failQueue?: boolean },
 ) => {
-	const env = Env.layer.pipe(Layer.provide(config(url)))
-	const data = VcsRepository.layer.pipe(Layer.provide(DatabaseLibsqlLive), Layer.provide(env))
-	const queue = Layer.succeed(VcsSyncQueue, {
-		send: (job) => Effect.sync(() => void sent.push(job)),
-		sendBatch: (jobs) =>
-			opts?.failQueue
-				? Effect.fail(new VcsQueueError({ message: "simulated queue outage" }))
-				: Effect.sync(() => void sent.push(...jobs)),
-	} satisfies VcsSyncQueueShape)
+	const data = testRepoLayer(url)
+	const queue = recordingQueueLayer(sent, {
+		...(opts?.failQueue
+			? { failBatch: () => new VcsQueueError({ message: "simulated queue outage" }) }
+			: {}),
+	})
 	const service = VcsScheduledSyncService.layer.pipe(Layer.provide(Layer.mergeAll(data, queue)))
 	return Layer.mergeAll(service, data)
 }
 
 // Seed one installation for an org with a given external id; returns the entity.
-const seedInstallation = (repo: VcsRepository, orgId: OrgId, externalInstallationId: string) =>
+const seedInstallation = (repo: VcsRepo, orgId: OrgId, externalInstallationId: string) =>
 	Effect.gen(function* () {
 		yield* repo.upsertInstallation({
 			orgId,
@@ -142,8 +122,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			yield* seedInstallation(repo, asOrgId("org_a"), "1")
 			const exit = yield* Effect.exit(svc.runScheduledSync())
 			assert.ok(Exit.isFailure(exit), "the tick surfaces the queue failure")
-			const error = Option.getOrUndefined(Exit.findErrorOption(exit))
-			assert.strictEqual(error?._tag, "@maple/http/errors/VcsQueueError")
+			assert.ok(findError(exit) instanceof VcsQueueError)
 		}).pipe(Effect.provide(schedulerLayer(url, sent, { failQueue: true })))
 	})
 })

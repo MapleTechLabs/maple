@@ -1,9 +1,8 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { createHmac, generateKeyPairSync, randomUUID } from "node:crypto"
+import { randomUUID } from "node:crypto"
 import {
 	GitCommitSha,
-	OrgId,
-	UserId,
+	type OrgId,
 	VcsInstallation,
 	VcsInstallationGoneError,
 	VcsProviderError,
@@ -14,98 +13,62 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
-import { Env } from "@/lib/Env"
+import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl, executeSql } from "@/lib/test-sqlite"
-import { GithubAppClient } from "@/services/github/GithubAppClient"
-import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
+import { COMMIT_PAGES_PER_INVOCATION, GithubAppClient } from "@/services/github/GithubAppClient"
+import { GithubHttp } from "@/services/github/GithubHttp"
 import { GithubProvider } from "@/services/github/GithubProvider"
 import type { VcsProviderClient } from "@/services/vcs/VcsProviderClient"
 import { VcsProviderRegistry, type VcsProviderRegistryShape } from "@/services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
-import { VcsSyncQueue, type VcsSyncQueueShape } from "@/services/vcs/VcsSyncQueue"
-import { VcsSyncService } from "@/services/vcs/VcsSyncService"
+import { MAX_BACKFILL_STALL_RETRIES, VcsSyncService } from "@/services/vcs/VcsSyncService"
+import {
+	asOrgId,
+	asUserId,
+	expectSome,
+	findError,
+	GITHUB_APP_CONFIG,
+	installationFor,
+	jsonResponse,
+	markInstStatusFor,
+	markRemovedFor,
+	purgeInstallationFor,
+	recordingQueueLayer,
+	repoFor,
+	reposOfInstallation,
+	scriptedHttp,
+	sign,
+	testEnv,
+	testRepoLayer,
+	upsertCommitsFor,
+	upsertReposFor,
+	type VcsRepo,
+	WEBHOOK_SECRET,
+} from "./harness"
 
 const dirs: string[] = []
 afterEach(() => cleanupTempDirs(dirs))
 
-const WEBHOOK_SECRET = "testsecret"
 const SHA = "abc1230000000000000000000000000000000def"
 
-const config = (url: string) =>
-	ConfigProvider.layer(
-		ConfigProvider.fromUnknown({
-			PORT: "3472",
-			TINYBIRD_HOST: "https://api.tinybird.co",
-			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
-			MAPLE_AUTH_MODE: "self_hosted",
-			MAPLE_ROOT_PASSWORD: "test-root-password",
-			MAPLE_DEFAULT_ORG_ID: "default",
-			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
-			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-			GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET,
-		}),
-	)
+const repoLayer = (url: string) => testRepoLayer(url)
 
-const envLayer = (url: string) => Env.layer.pipe(Layer.provide(config(url)))
-
-const repoLayer = (url: string) =>
-	VcsRepository.layer.pipe(Layer.provide(DatabaseLibsqlLive), Layer.provide(envLayer(url)))
-
+// GithubProvider over the real GithubHttp; only the webhook-parse path (no HTTP)
+// is exercised through it, so the live fetch layer is never actually invoked.
 const providerLayer = () => {
-	const env = envLayer("")
+	const env = testEnv("", { GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET })
 	const client = GithubAppClient.layer.pipe(Layer.provide(Layer.mergeAll(env, GithubHttp.layer)))
 	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
 
-// A real RSA key so mintAppJwt's crypto.subtle.importKey succeeds; the App's REST
-// calls are stubbed at the GithubHttp seam below.
-const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
-	modulusLength: 2048,
-	publicKeyEncoding: { type: "spki", format: "pem" },
-	privateKeyEncoding: { type: "pkcs8", format: "pem" },
-}).privateKey
-
-const appConfig = ConfigProvider.layer(
-	ConfigProvider.fromUnknown({
-		PORT: "3472",
-		TINYBIRD_HOST: "https://api.tinybird.co",
-		TINYBIRD_TOKEN: "test-token",
-		MAPLE_DB_URL: "",
-		MAPLE_AUTH_MODE: "self_hosted",
-		MAPLE_ROOT_PASSWORD: "test-root-password",
-		MAPLE_DEFAULT_ORG_ID: "default",
-		MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
-		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-		GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET,
-		GITHUB_APP_ID: "123456",
-		GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
-	}),
-)
-
 // Build a GithubProvider whose HTTP responses are scripted in call order. The
 // first call is always the installation-token mint.
 const stubbedProviderLayer = (responders: ReadonlyArray<() => Response>) => {
-	let i = 0
-	const http = Layer.succeed(GithubHttp, {
-		fetch: async () => {
-			const make = responders[Math.min(i, responders.length - 1)]!
-			i += 1
-			return make()
-		},
-	} satisfies GithubHttpShape)
-	const env = Env.layer.pipe(Layer.provide(appConfig))
+	const http = scriptedHttp(responders)
+	const env = testEnv("", { ...GITHUB_APP_CONFIG, GITHUB_APP_WEBHOOK_SECRET: WEBHOOK_SECRET })
 	const client = GithubAppClient.layer.pipe(Layer.provide(Layer.mergeAll(env, http)))
 	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
-
-const jsonResponse = (body: unknown, init?: { status?: number; headers?: Record<string, string> }) =>
-	new Response(JSON.stringify(body), {
-		status: init?.status ?? 200,
-		headers: { "content-type": "application/json", ...init?.headers },
-	})
 
 const tokenResponse = () => jsonResponse({ token: "ghs_test", expires_at: "2099-01-01T00:00:00Z" })
 
@@ -128,64 +91,6 @@ const rateLimited = (retryAfterSeconds: number) =>
 
 const hexShas = (count: number) =>
 	Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
-
-const asOrgId = Schema.decodeUnknownSync(OrgId)
-const asUserId = Schema.decodeUnknownSync(UserId)
-
-const sign = (body: string) => `sha256=${createHmac("sha256", WEBHOOK_SECRET).update(body).digest("hex")}`
-
-// The repo service now speaks our internal ids; these resolve a row the way a
-// webhook does (by GitHub external id) and hand the id-based methods the entity,
-// so the tests stay addressed by external id without re-querying everywhere.
-const expectSome = <A>(o: Option.Option<A>): A => {
-	assert.ok(Option.isSome(o), "expected Option.some, got none")
-	return o.value
-}
-const installationFor = (repo: VcsRepository, externalInstallationId: string) =>
-	repo.resolveInstallation("github", externalInstallationId).pipe(Effect.map(expectSome))
-const repoFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
-	repo.resolveRepository(orgId, "github", externalRepoId).pipe(Effect.map(expectSome))
-const upsertReposFor = (
-	repo: VcsRepository,
-	externalInstallationId: string,
-	repos: Parameters<VcsRepository["upsertRepositories"]>[1],
-) => installationFor(repo, externalInstallationId).pipe(Effect.flatMap((i) => repo.upsertRepositories(i, repos)))
-const upsertCommitsFor = (
-	repo: VcsRepository,
-	orgId: OrgId,
-	externalRepoId: string,
-	commits: Parameters<VcsRepository["upsertCommits"]>[1],
-) => repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.upsertCommits(r, commits)))
-const markRemovedFor = (repo: VcsRepository, orgId: OrgId, externalRepoId: string) =>
-	repoFor(repo, orgId, externalRepoId).pipe(Effect.flatMap((r) => repo.markRepositoryRemoved(r.id)))
-const markInstStatusFor = (
-	repo: VcsRepository,
-	externalInstallationId: string,
-	status: Parameters<VcsRepository["markInstallationStatus"]>[1],
-) =>
-	installationFor(repo, externalInstallationId).pipe(
-		Effect.flatMap((i) => repo.markInstallationStatus(i.id, status)),
-	)
-const purgeInstallationFor = (repo: VcsRepository, orgId: OrgId, externalInstallationId: string) =>
-	repo.resolveInstallation("github", externalInstallationId).pipe(
-		Effect.flatMap(
-			Option.match({
-				onNone: () => Effect.void,
-				onSome: (i) => repo.purgeInstallation(orgId, i.id),
-			}),
-		),
-	)
-const reposOfInstallation = (repo: VcsRepository, externalInstallationId: string, scope: "active" | "all") =>
-	Effect.gen(function* () {
-		const found = yield* repo.resolveInstallation("github", externalInstallationId)
-		return Option.isNone(found) ? [] : yield* repo.listRepositoriesByInstallation(found.value.id, scope)
-	})
-
-const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
-	if (!Exit.isFailure(exit)) return undefined
-	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-	return failure ?? Cause.squash(exit.cause)
-}
 
 describe("VcsSyncJob", () => {
 	it("round-trips through encode/decode", () => {
@@ -457,32 +362,64 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
-	it.effect("carries the force-push flag onto the push job", () =>
+	// installation events: every recognized action maps to its sync reason; an
+	// unrecognized action is ignored (no job). The "created" case is covered above.
+	it.effect("maps installation lifecycle actions to their sync reasons (ignoring unknown ones)", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
-			const body = JSON.stringify({
-				ref: "refs/heads/main",
-				repository: { id: 7, owner: { login: "octo" } },
-				installation: { id: 42 },
-				forced: true,
-				commits: [
-					{
-						id: SHA,
-						message: "m",
-						timestamp: "2026-01-01T00:00:00Z",
-						url: `https://github.com/octo/repo/commit/${SHA}`,
+			const cases = [
+				{ action: "unsuspend", reason: "unsuspend" },
+				{ action: "suspend", reason: "suspend" },
+				{ action: "deleted", reason: "deleted" },
+			] as const
+			for (const { action, reason } of cases) {
+				const body = JSON.stringify({ action, installation: { id: 99 } })
+				const jobs = yield* provider.webhookToJobs({
+					headers: { "x-github-event": "installation", "x-hub-signature-256": sign(body) },
+					rawBody: body,
+				})
+				assert.strictEqual(jobs.length, 1, `${action} → one job`)
+				const job = jobs[0]!
+				assert.strictEqual(job.kind, "installation-sync")
+				if (job.kind !== "installation-sync") return
+				assert.strictEqual(job.reason, reason)
+				assert.strictEqual(job.externalInstallationId, "99")
+			}
+			// An action we don't act on (e.g. new_permissions_accepted) is dropped.
+			const ignoredBody = JSON.stringify({ action: "new_permissions_accepted", installation: { id: 99 } })
+			const ignored = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "installation", "x-hub-signature-256": sign(ignoredBody) },
+				rawBody: ignoredBody,
+			})
+			assert.strictEqual(ignored.length, 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// installation_repositories events: added/removed map to the repositories_*
+	// sync reasons so the orchestrator reconciles the repo set.
+	it.effect("maps installation_repositories added/removed to repositories_added/removed jobs", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const cases = [
+				{ action: "added", reason: "repositories_added" },
+				{ action: "removed", reason: "repositories_removed" },
+			] as const
+			for (const { action, reason } of cases) {
+				const body = JSON.stringify({ action, installation: { id: 99 } })
+				const jobs = yield* provider.webhookToJobs({
+					headers: {
+						"x-github-event": "installation_repositories",
+						"x-hub-signature-256": sign(body),
 					},
-				],
-			})
-			const jobs = yield* provider.webhookToJobs({
-				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
-				rawBody: body,
-			})
-			assert.strictEqual(jobs.length, 1)
-			const job = jobs[0]!
-			assert.strictEqual(job.kind, "push")
-			if (job.kind !== "push") return
-			assert.strictEqual(job.forced, true)
+					rawBody: body,
+				})
+				assert.strictEqual(jobs.length, 1, `${action} → one job`)
+				const job = jobs[0]!
+				assert.strictEqual(job.kind, "installation-sync")
+				if (job.kind !== "installation-sync") return
+				assert.strictEqual(job.reason, reason)
+				assert.strictEqual(job.externalInstallationId, "99")
+			}
 		}).pipe(Effect.provide(providerLayer())),
 	)
 })
@@ -850,22 +787,12 @@ describe("VcsSyncService orchestrator", () => {
 			ids: ["github"],
 			resolve: () => Effect.succeed(fakeProvider),
 		} satisfies VcsProviderRegistryShape)
-		const queue = Layer.succeed(VcsSyncQueue, {
-			send: (job, options) =>
-				Effect.sync(() => {
-					opts.sent.push(job)
-					opts.sentDelays?.push(options?.delaySeconds)
-				}),
-			sendBatch: (jobs) => Effect.sync(() => void opts.sent.push(...jobs)),
-		} satisfies VcsSyncQueueShape)
-		const repoLive = VcsRepository.layer.pipe(
-			Layer.provide(DatabaseLibsqlLive),
-			Layer.provide(envLayer(url)),
-		)
+		const queue = recordingQueueLayer(opts.sent, { sentDelays: opts.sentDelays })
+		const repoLive = testRepoLayer(url)
 		return VcsSyncService.layer.pipe(Layer.provideMerge(Layer.mergeAll(repoLive, registry, queue)))
 	}
 
-	const seedInstallation = (repo: VcsRepository, orgId: ReturnType<typeof asOrgId>) =>
+	const seedInstallation = (repo: VcsRepo, orgId: ReturnType<typeof asOrgId>) =>
 		repo.upsertInstallation({
 			orgId,
 			provider: "github",
@@ -1443,7 +1370,7 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits })))
 	})
 
-	const seedRepo = (repo: VcsRepository) =>
+	const seedRepo = (repo: VcsRepo) =>
 		upsertReposFor(repo, "42", [
 			{
 				externalRepoId: "7",
@@ -1689,7 +1616,7 @@ describe("VcsSyncService orchestrator", () => {
 	// A backfill that keeps getting rate-limited *before any commit* must not
 	// requeue forever — after the stall cap it errors the repo instead.
 	it.effect("a backfill with no progress stops after the stall cap", () => {
-		const STALL_CAP = 10 // mirrors MAX_BACKFILL_STALL_RETRIES in VcsSyncService
+		const STALL_CAP = MAX_BACKFILL_STALL_RETRIES
 		const { url } = createTempDbUrl("maple-vcs-orch-stall-", dirs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
@@ -2020,10 +1947,9 @@ describe("GithubProvider rate-limit handling", () => {
 	// budget so one consumer invocation can't approach the Queues 15-min limit.
 	it.effect("yields a page-budget continuation when the per-invocation page cap is hit", () =>
 		Effect.gen(function* () {
-			// Mirrors COMMIT_PAGES_PER_INVOCATION in GithubAppClient: every page comes
-			// back full (100), so the pager never sees a short page and stops only at
-			// the budget, handing back a continuation instead of walking everything.
-			const COMMIT_PAGES_PER_INVOCATION = 25
+			// Every page comes back full (100), so the pager never sees a short page and
+			// stops only at COMMIT_PAGES_PER_INVOCATION, handing back a continuation
+			// instead of walking everything.
 			const provider = yield* GithubProvider
 			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
 			assert.strictEqual(result.commits.length, COMMIT_PAGES_PER_INVOCATION * 100)

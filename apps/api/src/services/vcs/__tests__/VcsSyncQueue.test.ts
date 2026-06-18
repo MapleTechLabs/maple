@@ -1,12 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
-import type { VcsSyncJob } from "@maple/domain/http"
+import { VcsQueueError, type VcsSyncJob } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import {
 	QUEUE_BATCH_MAX_BYTES,
 	QUEUE_BATCH_MAX_MESSAGES,
 	VcsSyncQueue,
 } from "@/services/vcs/VcsSyncQueue"
+import { findError } from "./harness"
 
 type CapturedMessage = { readonly body: unknown }
 
@@ -169,9 +170,9 @@ describe("VcsSyncQueue error paths", () => {
 			const queue = yield* VcsSyncQueue
 			const exit = yield* Effect.exit(queue.sendBatch([installSyncJob(1)]))
 			assert.ok(Exit.isFailure(exit), "sendBatch fails without a binding")
-			const error = Option.getOrUndefined(Exit.findErrorOption(exit))
-			assert.strictEqual(error?._tag, "@maple/http/errors/VcsQueueError")
-			assert.match(error?.message ?? "", /Missing queue binding/)
+			const error = findError(exit)
+			assert.ok(error instanceof VcsQueueError)
+			assert.match(error.message, /Missing queue binding/)
 		}).pipe(provideQueue(noBindingEnv()))
 	})
 
@@ -181,9 +182,9 @@ describe("VcsSyncQueue error paths", () => {
 			const queue = yield* VcsSyncQueue
 			const exit = yield* Effect.exit(queue.sendBatch([installSyncJob(1)]))
 			assert.ok(Exit.isFailure(exit), "sendBatch surfaces the rejection")
-			const error = Option.getOrUndefined(Exit.findErrorOption(exit))
-			assert.strictEqual(error?._tag, "@maple/http/errors/VcsQueueError")
-			assert.match(error?.message ?? "", /simulated queue outage/)
+			const error = findError(exit)
+			assert.ok(error instanceof VcsQueueError)
+			assert.match(error.message, /simulated queue outage/)
 		}).pipe(provideQueue(layer))
 	})
 })

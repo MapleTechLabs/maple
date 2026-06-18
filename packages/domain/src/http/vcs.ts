@@ -395,7 +395,7 @@ export class VcsRepoPersistenceError extends Schema.TaggedErrorClass<VcsRepoPers
 
 export class VcsRepoDecodeError extends Schema.TaggedErrorClass<VcsRepoDecodeError>()(
 	"@maple/http/errors/VcsRepoDecodeError",
-	{ message: Schema.String, table: Schema.String, column: Schema.optional(Schema.String) },
+	{ message: Schema.String, table: Schema.String, column: Schema.optionalKey(Schema.String) },
 	{ httpApiStatus: 500 },
 ) {}
 
@@ -409,7 +409,7 @@ export class VcsProviderError extends Schema.TaggedErrorClass<VcsProviderError>(
 	"@maple/http/errors/VcsProviderError",
 	{
 		message: Schema.String,
-		status: Schema.optional(Schema.Number),
+		status: Schema.optionalKey(Schema.Number),
 		cause: Schema.optionalKey(Schema.Defect),
 	},
 	{ httpApiStatus: 502 },

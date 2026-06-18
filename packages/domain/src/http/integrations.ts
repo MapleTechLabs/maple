@@ -213,7 +213,7 @@ export class IntegrationsUpstreamError extends Schema.TaggedErrorClass<Integrati
 	"@maple/http/errors/IntegrationsUpstreamError",
 	{
 		message: Schema.String,
-		status: Schema.optional(Schema.Number),
+		status: Schema.optionalKey(Schema.Number),
 		cause: Schema.optionalKey(Schema.Defect),
 	},
 	{ httpApiStatus: 502 },

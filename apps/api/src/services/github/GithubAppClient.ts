@@ -37,7 +37,7 @@ const MAX_PAGES = 1000
 // a committer-date watermark in a follow-up job, so a full history is walked
 // across many short invocations — there is no per-invocation history cap here
 // (unlike `MAX_PAGES`); the walk simply continues rather than truncating.
-const COMMIT_PAGES_PER_INVOCATION = 25
+export const COMMIT_PAGES_PER_INVOCATION = 25
 // Ride out short rate limits inline; anything longer is surfaced so the caller
 // can defer (backfill requeues from a cursor; other jobs get a delayed retry).
 const INLINE_BACKOFF_CAP_S = 30
