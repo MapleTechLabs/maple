@@ -39,17 +39,14 @@ const NEGATIVE_TTL_MS = 60_000
 const NEGATIVE_CACHE_MAX = 1000
 const NEGATIVE_CACHE_TARGET = 900
 
-// Evict in place to keep `cache` at most `NEGATIVE_CACHE_TARGET` entries once it
-// reaches `NEGATIVE_CACHE_MAX`. `now` is the Effect-Clock millis from the caller,
-// so eviction is deterministic under a test clock.
+// Once the cache hits MAX, trim it back down to TARGET so it can't grow forever.
 const evictNegativeCache = (cache: Map<string, number>, now: number): void => {
 	if (cache.size < NEGATIVE_CACHE_MAX) return
-	// Pass 1: drop everything already past its TTL (expiry ≤ now).
+	// First drop anything expired.
 	for (const [key, expiry] of cache) {
 		if (expiry <= now) cache.delete(key)
 	}
-	// Pass 2: still over target → drop oldest-inserted first (Map iteration order)
-	// until down to `NEGATIVE_CACHE_TARGET`.
+	// Still too big? Drop the oldest entries (Maps iterate in insertion order).
 	if (cache.size > NEGATIVE_CACHE_TARGET) {
 		for (const key of cache.keys()) {
 			if (cache.size <= NEGATIVE_CACHE_TARGET) break
@@ -136,11 +133,8 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 		make: Effect.gen(function* () {
 			const repo = yield* VcsRepository
 			const registry = yield* VcsProviderRegistry
-			// Per-isolate negative cache (orgId:sha → expiry ms). Best-effort; not
-			// shared across isolates, which is fine — it only suppresses redundant
-			// provider probes within a single hover session. Bounded by
-			// `evictNegativeCache` (see above) so distinct unresolvable SHAs can't
-			// grow it for the isolate's lifetime.
+			// Remembers SHAs no repo has (orgId:sha → expiry ms) so we don't re-probe on
+			// every hover. Per-isolate and size-capped by evictNegativeCache.
 			const negativeCache = new Map<string, number>()
 
 			// Check if a commit exists upstream in any of the installed installations.
@@ -307,8 +301,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 					return detailFromInput(normalized, repository, sha)
 				}
 
-				// Clean miss across every repo — cache it briefly. Sweep first so a
-				// stream of distinct unresolvable SHAs can't grow the map unbounded.
+				// No repo had it — remember that briefly. Trim first to stay bounded.
 				evictNegativeCache(negativeCache, now)
 				negativeCache.set(cacheKey, now + NEGATIVE_TTL_MS)
 				yield* Effect.annotateCurrentSpan({

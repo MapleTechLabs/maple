@@ -48,9 +48,8 @@ const INLINE_BACKOFF_CAP_S = 30
 // a past reset timestamp from clock skew) can't spin the consumer forever; once
 // hit, we defer like any other long wait rather than looping.
 const MAX_INLINE_RATE_LIMIT_RETRIES = 5
-// Treat a cached installation token as unusable this many ms before its real
-// expiry, so a token never expires mid-request after we hand it out. GitHub
-// installation tokens live ~1h, so a generous skew costs at most one extra mint.
+// Retire a cached token this early so it never expires mid-request. Tokens last
+// ~1h, so the extra minute just costs an occasional re-mint.
 const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
@@ -105,9 +104,8 @@ const GithubInstallationDetailSchema = Schema.Struct({
 })
 export type GithubInstallationDetail = Schema.Schema.Type<typeof GithubInstallationDetailSchema>
 
-// `POST https://github.com/login/oauth/access_token`: GitHub returns either a
-// success body carrying `access_token`, or a 200 with an `error` field (the OAuth
-// error convention). Decode permissively and branch on which key is present.
+// Response from the OAuth token exchange. GitHub returns either `access_token` or,
+// even on a 200, an `error` field — so both are optional and we check which we got.
 const GithubOAuthTokenResponse = Schema.Struct({
 	access_token: Schema.optionalKey(Schema.String),
 	token_type: Schema.optionalKey(Schema.String),
@@ -116,10 +114,8 @@ const GithubOAuthTokenResponse = Schema.Struct({
 	error_description: Schema.optionalKey(Schema.String),
 })
 
-// `GET /user/installations` (user-token auth): the installations the authenticated
-// user can administer. The connect flow uses this to bind the callback's
-// `installation_id` to the user who just authorized, closing the confused-deputy
-// gap where any valid state could claim any (enumerable) installation id.
+// `GET /user/installations` — the installations this user can manage. We use it to
+// confirm they actually own the one they're connecting.
 const GithubUserInstallationsResponse = Schema.Struct({
 	total_count: Schema.Number,
 	installations: Schema.Array(Schema.Struct({ id: Schema.Number })),
@@ -210,12 +206,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const env = yield* Env
 			const http = yield* GithubHttp
 
-			// Per-isolate cache of minted installation tokens (externalInstallationId →
-			// token + absolute expiry ms). Installation tokens are installation-scoped
-			// and valid ~1h, so a single mint is reusable across every repo of that
-			// installation. This collapses the N RSA-sign + POST .../access_tokens round
-			// trips that the commit hover-card probe would otherwise do (one per repo in
-			// the installation) down to one. Best-effort, not shared across isolates.
+			// Reuse one token per installation instead of minting a fresh one per repo.
+			// Tokens last ~1h; cache is per-isolate (externalInstallationId → token + expiry).
 			const installationTokens = new Map<string, { token: string; expiresAtMs: number }>()
 
 			// Run a request, riding out short rate limits inline and surfacing longer
@@ -337,8 +329,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const mintInstallationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
 				externalInstallationId: string,
 			) {
-				// Serve a still-valid cached token (skewed early) before minting, so a
-				// single probe over an installation's repos doesn't re-sign + POST per repo.
+				// Return a cached token if it's still good, so we don't re-mint per repo.
 				const now = yield* Clock.currentTimeMillis
 				const cached = installationTokens.get(externalInstallationId)
 				if (cached !== undefined && cached.expiresAtMs - INSTALLATION_TOKEN_EXPIRY_SKEW_MS > now) {
@@ -380,9 +371,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							new GithubAppError({ message: "Unexpected installation token payload", cause }),
 					),
 				)
-				// Cache for reuse across this installation's repos. An unparseable
-				// `expires_at` just skips caching (the next call mints fresh) rather than
-				// risking a token treated as eternally valid.
+				// Cache it. If we can't read the expiry, skip caching rather than risk
+				// reusing a token forever.
 				const expiresAtMs = Date.parse(decoded.expires_at)
 				if (Number.isFinite(expiresAtMs)) {
 					installationTokens.set(externalInstallationId, { token: decoded.token, expiresAtMs })
@@ -608,15 +598,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			// ---- User OAuth leg (confused-deputy guard) -------------------
-			//
-			// These two calls only run when the install callback carries an OAuth
-			// `code`, which requires "Request user authorization (OAuth) during
-			// installation" to be enabled in the GitHub App settings. They bind the
-			// callback's `installation_id` to the user who just authorized, so a
-			// stolen/guessed installation id cannot be claimed by another org.
+			// ---- User OAuth leg ----
+			// The two calls below prove the user owns the installation they're connecting.
 
-			// Exchange the install-callback `code` for a short-lived user access token.
+			// Trade the callback `code` for a short-lived user token.
 			const exchangeUserOAuthCode = Effect.fn("GithubAppClient.exchangeUserOAuthCode")(function* (
 				code: string,
 			) {
@@ -666,7 +651,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return decoded.access_token
 			})
 
-			// The set of installation ids the OAuth-authenticated user can administer.
+			// The installation ids this user can manage.
 			const listUserInstallationIds = Effect.fn("GithubAppClient.listUserInstallationIds")(function* (
 				userAccessToken: string,
 			) {

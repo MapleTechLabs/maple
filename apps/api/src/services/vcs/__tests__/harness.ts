@@ -38,8 +38,7 @@ export const GITHUB_APP_CONFIG = {
 	GITHUB_APP_SLUG: "maple-test-app",
 	GITHUB_APP_ID: "123456",
 	GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
-	// The user-OAuth leg of the connect flow (confused-deputy guard) needs these
-	// configured; without them completeConnect refuses a new installation binding.
+	// Needed for the connect flow's OAuth check; without them a new connect is refused.
 	GITHUB_APP_CLIENT_ID: "Iv1.testclientid",
 	GITHUB_APP_CLIENT_SECRET: "test-client-secret",
 } as const

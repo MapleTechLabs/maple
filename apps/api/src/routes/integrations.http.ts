@@ -232,12 +232,9 @@ const escapeJsonInHtml = (json: string) =>
 		.split(PARAGRAPH_SEPARATOR)
 		.join("\\u2029")
 
-// The dashboard origin the connect popup posts its result back to. `postMessage`'s
-// targetOrigin must equal the opener's `location.origin` *exactly* (scheme + host +
-// port, no path/trailing slash), or the browser silently drops the message — so we
-// normalize `MAPLE_APP_BASE_URL` (a bare base URL) down to its origin. Falling back
-// to "*" only if the env value can't be parsed keeps the popup flow from breaking on
-// a misconfiguration while still using a locked origin in every normal case.
+// The origin we send the popup's result to. It must match the dashboard's origin
+// exactly or the browser drops the message, so we reduce MAPLE_APP_BASE_URL to just
+// its origin. Falls back to "*" only if that URL can't be parsed.
 const resolveDashboardTargetOrigin = (appBaseUrl: string): string =>
 	Option.match(Option.liftThrowable(() => new URL(appBaseUrl))(), {
 		onNone: () => "*",
@@ -250,7 +247,7 @@ const renderCallbackPage = (params: {
 	returnTo: string | null
 	messageType: string
 	label: string
-	/** Locked-down targetOrigin for the postMessage to the opener (the dashboard). */
+	/** Origin the postMessage is sent to (the dashboard). */
 	targetOrigin: string
 }) => {
 	const safeMessage = escapeHtml(params.message)
@@ -262,9 +259,7 @@ const renderCallbackPage = (params: {
 			message: params.message,
 		}),
 	)
-	// JSON.stringify yields a safely-quoted JS string literal; pass it through the
-	// same `<script>`-escaping as the payload so the origin can't break out of the
-	// inline script either.
+	// Quote + escape it so the origin can't break out of the inline <script>.
 	const targetOrigin = escapeJsonInHtml(JSON.stringify(params.targetOrigin))
 	return `<!doctype html>
 <html lang="en">
@@ -315,9 +310,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const github = yield* GithubConnectService
 		const env = yield* Env
 
-		// Lock the popup→opener postMessage to the dashboard's own origin, derived
-		// from MAPLE_APP_BASE_URL (the canonical dashboard base URL the connect popup
-		// is opened from). Resolved once and threaded into every callback page below.
+		// Where the callback pages post their result. Computed once, reused below.
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
 		const hazelCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
 			renderCallbackPage({
@@ -421,9 +414,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				const installationId = url.searchParams.get("installation_id")
 				const setupAction = url.searchParams.get("setup_action")
 				const state = url.searchParams.get("state")
-				// GitHub appends `code` only when the App has "Request user authorization
-				// (OAuth) during installation" enabled; completeConnect uses it to bind the
-				// installation_id to the authorizing user (confused-deputy guard).
+				// Present only with OAuth-on-install enabled; proves the user owns the install.
 				const code = url.searchParams.get("code") ?? undefined
 				const oauthError = url.searchParams.get("error")
 				const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError

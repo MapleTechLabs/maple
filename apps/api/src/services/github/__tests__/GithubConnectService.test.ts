@@ -41,21 +41,18 @@ const installationResponse = () =>
 		repository_selection: "all",
 	})
 
-// The OAuth `code` the callback carries when "Request user authorization during
-// installation" is enabled. completeConnect now requires it for a *new* binding.
+// completeConnect needs this `code` to connect a new installation.
 const TEST_CODE = "test-oauth-code"
 
-// Responders for the user-OAuth leg, replayed in call order by scriptedHttp:
-// POST /login/oauth/access_token → user token, then GET /user/installations.
+// The OAuth calls a connect makes, in order: token exchange, then the user's installs.
 const oauthTokenResponse = () => jsonResponse({ access_token: "user-token", token_type: "bearer" })
 const userInstallationsResponse =
 	(ids: ReadonlyArray<number> = [42]) =>
 	() =>
 		jsonResponse({ total_count: ids.length, installations: ids.map((id) => ({ id })) })
 
-// A successful connect makes three ordered HTTP calls: OAuth token exchange, the
-// user's administrable installations (must include 42), then the App-JWT
-// installation detail. `rest` appends any responders the test needs afterward.
+// The 3 calls a successful connect makes: OAuth token, user's installs (incl. 42),
+// then the installation detail. `rest` adds any responders the test needs after.
 const connectResponders = (...rest: Array<() => Response>) => [
 	oauthTokenResponse,
 	userInstallationsResponse([42]),
@@ -157,9 +154,7 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// Fail-closed: creating a *new* installation binding requires proof of
-	// ownership (the OAuth `code`). Without it, the confused-deputy guard refuses
-	// to claim the (enumerable) installation_id and connects nothing.
+	// No `code` to prove ownership → a new installation isn't connected.
 	it.effect("completeConnect refuses a new binding when no OAuth code is supplied", () => {
 		const { url } = createTempDbUrl("maple-gh-no-code-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -179,8 +174,7 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// The OAuth code is valid but the authorizing user does NOT administer the
-	// supplied installation_id (it isn't in their /user/installations) — reject.
+	// Valid code, but the user doesn't manage installation 42 → reject.
 	it.effect("completeConnect rejects when the user cannot administer the installation", () => {
 		const { url } = createTempDbUrl("maple-gh-not-admin-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -200,9 +194,7 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// A same-org reconnect/reconfigure of an installation this org already owns is
-	// allowed without a fresh `code` (e.g. setup_action=update, which need not
-	// carry one) — the existing row proves ownership, so we don't fail closed.
+	// Reconnecting an install this org already owns works without a code.
 	it.effect("completeConnect allows a same-org reconnect without an OAuth code", () => {
 		const { url } = createTempDbUrl("maple-gh-reconnect-", dirs)
 		const sent: Array<VcsSyncJob> = []

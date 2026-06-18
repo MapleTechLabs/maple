@@ -502,10 +502,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			if (repoRows[0]?.id === undefined) return false
-			// Branches, then commits, then the repo row — one atomic D1 batch so a
-			// mid-sequence failure can't orphan child rows under a deleted repo. All
-			// three are single-statement deletes by a single id, so the batch is a
-			// fixed three statements (never near D1's per-batch cap).
+			// Delete branches, commits, then the repo in one atomic batch, so a failure
+			// part-way can't leave child rows behind a deleted repo.
 			yield* database
 				.execute((db) =>
 					db.batch([
@@ -772,11 +770,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// owns every `sync_status` transition for that backfill (start → terminal), so
 		// this write deliberately leaves `sync_status` / `last_synced_at` untouched. Used
 		// by the dashboard's branch selection and the engine's fallback to the default
-		// when the tracked branch is deleted. The two writes are paired here so the
-		// "change ⇒ wipe" invariant lives in one place, and run as one atomic D1 batch
-		// so the repo can never end up pointing at the new branch while still holding
-		// the old branch's commits (or vice versa). Two fixed statements (the tracked-
-		// branch update + the single repo-scoped commit delete), well under D1's cap.
+		// when the tracked branch is deleted. The update + commit-wipe run as one atomic
+		// batch so we never point at the new branch while still holding old commits.
 		const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
 			orgId: OrgId,
 			repositoryId: VcsRepositoryId,
@@ -898,10 +893,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 
 			const repoIds = repoRows.map((r) => r.id)
-			// Order within the batch is children → parents: branches and commits
-			// (chunked under D1's per-statement bind-variable cap), then the repos,
-			// then the installation row. D1 applies the batch as a single implicit
-			// transaction, so all statements commit together or none do.
+			// One atomic batch, children before parents: branches + commits (chunked to
+			// stay under D1's bind-variable cap), then the repos, then the installation.
 			yield* database
 				.execute((db) => {
 					const statements: Array<BatchItem<"sqlite">> = [
@@ -930,8 +923,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 								),
 							),
 					]
-					// The repos + installation deletes are always present, so `statements`
-					// is never empty; the cast satisfies `batch`'s non-empty tuple type.
+					// Always has the repo + installation deletes, so it's never empty; the
+					// cast satisfies batch's non-empty-tuple type.
 					return db.batch(statements as [BatchItem<"sqlite">, ...Array<BatchItem<"sqlite">>])
 				})
 				.pipe(Effect.mapError(toPersistenceError))
