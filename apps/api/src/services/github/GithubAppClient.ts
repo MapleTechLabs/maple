@@ -26,6 +26,9 @@ export class GithubAppError extends Data.TaggedError("GithubAppError")<{
 
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
+// The user-facing OAuth host (NOT the REST API host): the App's web OAuth leg
+// exchanges the install-callback `code` for a user access token here.
+const GITHUB_OAUTH_BASE_URL = "https://github.com"
 const PER_PAGE = 100
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
@@ -45,6 +48,10 @@ const INLINE_BACKOFF_CAP_S = 30
 // a past reset timestamp from clock skew) can't spin the consumer forever; once
 // hit, we defer like any other long wait rather than looping.
 const MAX_INLINE_RATE_LIMIT_RETRIES = 5
+// Treat a cached installation token as unusable this many ms before its real
+// expiry, so a token never expires mid-request after we hand it out. GitHub
+// installation tokens live ~1h, so a generous skew costs at most one extra mint.
+const INSTALLATION_TOKEN_EXPIRY_SKEW_MS = 60_000
 
 // A GitHub rate-limit response is a 429, or a 403 that carries `retry-after` /
 // reports zero remaining (the secondary-limit shape). Plain 403s (permissions)
@@ -98,6 +105,26 @@ const GithubInstallationDetailSchema = Schema.Struct({
 })
 export type GithubInstallationDetail = Schema.Schema.Type<typeof GithubInstallationDetailSchema>
 
+// `POST https://github.com/login/oauth/access_token`: GitHub returns either a
+// success body carrying `access_token`, or a 200 with an `error` field (the OAuth
+// error convention). Decode permissively and branch on which key is present.
+const GithubOAuthTokenResponse = Schema.Struct({
+	access_token: Schema.optionalKey(Schema.String),
+	token_type: Schema.optionalKey(Schema.String),
+	scope: Schema.optionalKey(Schema.String),
+	error: Schema.optionalKey(Schema.String),
+	error_description: Schema.optionalKey(Schema.String),
+})
+
+// `GET /user/installations` (user-token auth): the installations the authenticated
+// user can administer. The connect flow uses this to bind the callback's
+// `installation_id` to the user who just authorized, closing the confused-deputy
+// gap where any valid state could claim any (enumerable) installation id.
+const GithubUserInstallationsResponse = Schema.Struct({
+	total_count: Schema.Number,
+	installations: Schema.Array(Schema.Struct({ id: Schema.Number })),
+})
+
 const GithubApiRepoSchema = Schema.Struct({
 	id: Schema.Number,
 	name: Schema.String,
@@ -147,6 +174,8 @@ const GithubApiBranchSchema = Schema.Struct({
 export type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
+const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)
+const decodeUserInstallations = Schema.decodeUnknownEffect(GithubUserInstallationsResponse)
 const decodeInstallationToken = Schema.decodeUnknownEffect(GithubInstallationTokenResponse)
 const decodeInstallationDetail = Schema.decodeUnknownEffect(GithubInstallationDetailSchema)
 const decodeInstallationRepos = Schema.decodeUnknownEffect(GithubInstallationReposResponse)
@@ -180,6 +209,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 		make: Effect.gen(function* () {
 			const env = yield* Env
 			const http = yield* GithubHttp
+
+			// Per-isolate cache of minted installation tokens (externalInstallationId →
+			// token + absolute expiry ms). Installation tokens are installation-scoped
+			// and valid ~1h, so a single mint is reusable across every repo of that
+			// installation. This collapses the N RSA-sign + POST .../access_tokens round
+			// trips that the commit hover-card probe would otherwise do (one per repo in
+			// the installation) down to one. Best-effort, not shared across isolates.
+			const installationTokens = new Map<string, { token: string; expiresAtMs: number }>()
 
 			// Run a request, riding out short rate limits inline and surfacing longer
 			// ones as a GithubAppError carrying `retryAfterSeconds`. The single place
@@ -226,7 +263,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const privateKey = Option.getOrUndefined(env.GITHUB_APP_PRIVATE_KEY)
 				if (!appId || !privateKey) {
 					return yield* new GithubAppError({
-						message: "GitHub App is not configured (set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)",
+						message:
+							"GitHub App is not configured (set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY)",
 					})
 				}
 				return {
@@ -261,11 +299,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const key = yield* importSigningKey(config.privateKeyPem)
 				const signature = yield* Effect.tryPromise({
 					try: () =>
-						crypto.subtle.sign(
-							"RSASSA-PKCS1-v1_5",
-							key,
-							new TextEncoder().encode(signingInput),
-						),
+						crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(signingInput)),
 					catch: (cause) => new GithubAppError({ message: "JWT signing failed", cause }),
 				})
 				return `${signingInput}.${base64UrlBytes(signature)}`
@@ -273,16 +307,16 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 
 			// ---- HTTP helpers ---------------------------------------------
 
-			const failure = (
-				response: Response,
-				context: string,
-				scope?: "installation" | "repository",
-			) =>
+			const failure = (response: Response, context: string, scope?: "installation" | "repository") =>
 				Effect.gen(function* () {
 					const body = yield* Effect.tryPromise({
 						try: () => response.text(),
 						catch: () =>
-							new GithubAppError({ message: `${context} failed`, status: response.status, scope }),
+							new GithubAppError({
+								message: `${context} failed`,
+								status: response.status,
+								scope,
+							}),
 					})
 					return yield* Effect.fail(
 						new GithubAppError({
@@ -303,6 +337,16 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const mintInstallationToken = Effect.fn("GithubAppClient.mintInstallationToken")(function* (
 				externalInstallationId: string,
 			) {
+				// Serve a still-valid cached token (skewed early) before minting, so a
+				// single probe over an installation's repos doesn't re-sign + POST per repo.
+				const now = yield* Clock.currentTimeMillis
+				const cached = installationTokens.get(externalInstallationId)
+				if (cached !== undefined && cached.expiresAtMs - INSTALLATION_TOKEN_EXPIRY_SKEW_MS > now) {
+					yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "hit" })
+					return cached.token
+				}
+				yield* Effect.annotateCurrentSpan({ "vcs.provider.token_cache": "miss" })
+
 				const config = yield* resolveConfig
 				const jwt = yield* mintAppJwt(config)
 				const response = yield* rateLimitedFetch(
@@ -327,7 +371,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				// A non-rate-limit failure here is the installation auth gate — the
 				// authoritative "installation gone / suspended" signal (rate limits were
 				// already split off by rateLimitedFetch above).
-				if (!response.ok) return yield* failure(response, "Installation token request", "installation")
+				if (!response.ok)
+					return yield* failure(response, "Installation token request", "installation")
 				const json = yield* parseJson(response, "Installation token request")
 				const decoded = yield* decodeInstallationToken(json).pipe(
 					Effect.mapError(
@@ -335,6 +380,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							new GithubAppError({ message: "Unexpected installation token payload", cause }),
 					),
 				)
+				// Cache for reuse across this installation's repos. An unparseable
+				// `expires_at` just skips caching (the next call mints fresh) rather than
+				// risking a token treated as eternally valid.
+				const expiresAtMs = Date.parse(decoded.expires_at)
+				if (Number.isFinite(expiresAtMs)) {
+					installationTokens.set(externalInstallationId, { token: decoded.token, expiresAtMs })
+				}
 				return decoded.token
 			})
 
@@ -383,8 +435,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					}
 					// Exhausted the page cap without a short final page → likely truncated.
 					if (page > MAX_PAGES) {
-						yield* Effect.logWarning("[GitHub] Installation repositories truncated at page cap").pipe(
-							Effect.annotateLogs({ externalInstallationId, maxPages: MAX_PAGES, fetched: repos.length }),
+						yield* Effect.logWarning(
+							"[GitHub] Installation repositories truncated at page cap",
+						).pipe(
+							Effect.annotateLogs({
+								externalInstallationId,
+								maxPages: MAX_PAGES,
+								fetched: repos.length,
+							}),
 						)
 					}
 					return repos
@@ -405,7 +463,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				const branches: Array<GithubApiBranch> = []
 				let page = 1
 				for (; page <= MAX_PAGES; page++) {
-					const response = yield* authedGet(config, token, `${base}?per_page=${PER_PAGE}&page=${page}`)
+					const response = yield* authedGet(
+						config,
+						token,
+						`${base}?per_page=${PER_PAGE}&page=${page}`,
+					)
 					if (!response.ok) return yield* failure(response, "List branches", "repository")
 					const json = yield* parseJson(response, "List branches")
 					const decoded = yield* decodeBranchList(json).pipe(
@@ -459,7 +521,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						const json = yield* parseJson(response, "List commits")
 						const decoded = yield* decodeCommitList(json).pipe(
 							Effect.mapError(
-								(cause) => new GithubAppError({ message: "Unexpected commits payload", cause }),
+								(cause) =>
+									new GithubAppError({ message: "Unexpected commits payload", cause }),
 							),
 						)
 						commits.push(...decoded)
@@ -545,6 +608,93 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			// ---- User OAuth leg (confused-deputy guard) -------------------
+			//
+			// These two calls only run when the install callback carries an OAuth
+			// `code`, which requires "Request user authorization (OAuth) during
+			// installation" to be enabled in the GitHub App settings. They bind the
+			// callback's `installation_id` to the user who just authorized, so a
+			// stolen/guessed installation id cannot be claimed by another org.
+
+			// Exchange the install-callback `code` for a short-lived user access token.
+			const exchangeUserOAuthCode = Effect.fn("GithubAppClient.exchangeUserOAuthCode")(function* (
+				code: string,
+			) {
+				const clientId = Option.getOrUndefined(env.GITHUB_APP_CLIENT_ID)
+				const clientSecret = Option.getOrUndefined(env.GITHUB_APP_CLIENT_SECRET)
+				if (!clientId || !clientSecret) {
+					return yield* new GithubAppError({
+						message:
+							"GitHub App OAuth is not configured (set GITHUB_APP_CLIENT_ID and GITHUB_APP_CLIENT_SECRET)",
+					})
+				}
+				const body = new URLSearchParams({
+					client_id: clientId,
+					client_secret: Redacted.value(clientSecret),
+					code,
+				})
+				const response = yield* rateLimitedFetch(
+					Effect.tryPromise({
+						try: () =>
+							http.fetch(`${GITHUB_OAUTH_BASE_URL}/login/oauth/access_token`, {
+								method: "POST",
+								headers: {
+									accept: "application/json",
+									"content-type": "application/x-www-form-urlencoded",
+									"user-agent": USER_AGENT,
+								},
+								body: body.toString(),
+							}),
+						catch: (cause) =>
+							new GithubAppError({ message: "GitHub OAuth code exchange failed", cause }),
+					}),
+				)
+				if (!response.ok) return yield* failure(response, "GitHub OAuth code exchange")
+				const json = yield* parseJson(response, "GitHub OAuth code exchange")
+				const decoded = yield* decodeOAuthToken(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected OAuth token payload", cause }),
+					),
+				)
+				// GitHub reports OAuth errors as a 200 with an `error` field, not an HTTP error.
+				if (!decoded.access_token) {
+					return yield* new GithubAppError({
+						message: `GitHub OAuth code exchange rejected: ${decoded.error_description ?? decoded.error ?? "no access_token"}`,
+						status: 401,
+					})
+				}
+				return decoded.access_token
+			})
+
+			// The set of installation ids the OAuth-authenticated user can administer.
+			const listUserInstallationIds = Effect.fn("GithubAppClient.listUserInstallationIds")(function* (
+				userAccessToken: string,
+			) {
+				const config = yield* resolveConfig
+				const ids = new Set<string>()
+				for (let page = 1; page <= MAX_PAGES; page++) {
+					const response = yield* authedGet(
+						config,
+						userAccessToken,
+						`${config.apiBaseUrl}/user/installations?per_page=${PER_PAGE}&page=${page}`,
+					)
+					if (!response.ok) return yield* failure(response, "List user installations")
+					const json = yield* parseJson(response, "List user installations")
+					const decoded = yield* decodeUserInstallations(json).pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({
+									message: "Unexpected user installations payload",
+									cause,
+								}),
+						),
+					)
+					for (const installation of decoded.installations) ids.add(String(installation.id))
+					if (decoded.installations.length < PER_PAGE) break
+				}
+				return ids
+			})
+
 			return {
 				mintInstallationToken,
 				listInstallationRepositories,
@@ -552,6 +702,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listCommits,
 				getCommit,
 				getInstallation,
+				exchangeUserOAuthCode,
+				listUserInstallationIds,
 			}
 		}),
 	},

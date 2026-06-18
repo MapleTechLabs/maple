@@ -33,6 +33,7 @@ import {
 	type VcsRepositoryRow,
 } from "@maple/db"
 import { and, eq, inArray, sql } from "drizzle-orm"
+import type { BatchItem } from "drizzle-orm/batch"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "../../lib/DatabaseLive"
 
@@ -55,14 +56,20 @@ const decodeAll = <Row, A>(table: string, rows: ReadonlyArray<Row>, f: (row: Row
 	Effect.try({
 		try: () => rows.map(f),
 		catch: (err) =>
-			new VcsRepoDecodeError({ message: err instanceof Error ? err.message : "row decode failed", table }),
+			new VcsRepoDecodeError({
+				message: err instanceof Error ? err.message : "row decode failed",
+				table,
+			}),
 	})
 
 const decodeOne = <Row, A>(table: string, row: Row, f: (row: Row) => A) =>
 	Effect.try({
 		try: () => f(row),
 		catch: (err) =>
-			new VcsRepoDecodeError({ message: err instanceof Error ? err.message : "row decode failed", table }),
+			new VcsRepoDecodeError({
+				message: err instanceof Error ? err.message : "row decode failed",
+				table,
+			}),
 	})
 
 const rowToInstallation = (row: VcsInstallationRow): VcsInstallation =>
@@ -206,7 +213,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return Option.some(yield* decodeOne("vcs_installations", row.value, rowToInstallation))
 		})
 
-		const listInstallationsByOrg = Effect.fn("VcsRepository.listInstallationsByOrg")(function* (orgId: OrgId) {
+		const listInstallationsByOrg = Effect.fn("VcsRepository.listInstallationsByOrg")(function* (
+			orgId: OrgId,
+		) {
 			const rows = yield* database
 				.execute((db) => db.select().from(vcsInstallations).where(eq(vcsInstallations.orgId, orgId)))
 				.pipe(Effect.mapError(toPersistenceError))
@@ -237,7 +246,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					db
 						.select()
 						.from(vcsInstallations)
-						.where(and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId)))
+						.where(
+							and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId)),
+						)
 						.limit(1),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
@@ -491,17 +502,20 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 			if (repoRows[0]?.id === undefined) return false
-			// Branches, then commits, then the repo row.
+			// Branches, then commits, then the repo row — one atomic D1 batch so a
+			// mid-sequence failure can't orphan child rows under a deleted repo. All
+			// three are single-statement deletes by a single id, so the batch is a
+			// fixed three statements (never near D1's per-batch cap).
 			yield* database
 				.execute((db) =>
-					db.delete(vcsRepositoryBranches).where(eq(vcsRepositoryBranches.repositoryId, repositoryId)),
+					db.batch([
+						db
+							.delete(vcsRepositoryBranches)
+							.where(eq(vcsRepositoryBranches.repositoryId, repositoryId)),
+						db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)),
+						db.delete(vcsRepositories).where(eq(vcsRepositories.id, repositoryId)),
+					]),
 				)
-				.pipe(Effect.mapError(toPersistenceError))
-			yield* database
-				.execute((db) => db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)))
-				.pipe(Effect.mapError(toPersistenceError))
-			yield* database
-				.execute((db) => db.delete(vcsRepositories).where(eq(vcsRepositories.id, repositoryId)))
 				.pipe(Effect.mapError(toPersistenceError))
 			return true
 		})
@@ -622,18 +636,6 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				{ discard: true },
 			)
 			return values.length
-		})
-
-		// Wipe every commit of a repo. Used when the tracked branch changes (user
-		// action or automatic fallback): the repo's stored history is for the old
-		// branch, so it's deleted before a fresh backfill of the new branch. Commits
-		// reference no other table now, so this is a single delete.
-		const deleteCommitsByRepository = Effect.fn("VcsRepository.deleteCommitsByRepository")(function* (
-			repositoryId: VcsRepositoryId,
-		) {
-			yield* database
-				.execute((db) => db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)))
-				.pipe(Effect.mapError(toPersistenceError))
 		})
 
 		const findCommitBySha = Effect.fn("VcsRepository.findCommitBySha")(function* (
@@ -771,9 +773,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// this write deliberately leaves `sync_status` / `last_synced_at` untouched. Used
 		// by the dashboard's branch selection and the engine's fallback to the default
 		// when the tracked branch is deleted. The two writes are paired here so the
-		// "change ⇒ wipe" invariant lives in one place; the column moves first so a
-		// failure mid-way leaves the repo pointing at the new branch with no commits
-		// (which the next backfill repopulates) rather than the reverse.
+		// "change ⇒ wipe" invariant lives in one place, and run as one atomic D1 batch
+		// so the repo can never end up pointing at the new branch while still holding
+		// the old branch's commits (or vice versa). Two fixed statements (the tracked-
+		// branch update + the single repo-scoped commit delete), well under D1's cap.
 		const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
 			orgId: OrgId,
 			repositoryId: VcsRepositoryId,
@@ -782,13 +785,17 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = yield* Clock.currentTimeMillis
 			yield* database
 				.execute((db) =>
-					db
-						.update(vcsRepositories)
-						.set({ trackedBranch: branch, updatedAt: now })
-						.where(and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId))),
+					db.batch([
+						db
+							.update(vcsRepositories)
+							.set({ trackedBranch: branch, updatedAt: now })
+							.where(
+								and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId)),
+							),
+						db.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId)),
+					]),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
-			yield* deleteCommitsByRepository(repositoryId)
 		})
 
 		// Drop the branch rows by id (their repo keeps its commits — a branch is just
@@ -801,7 +808,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					(chunk) =>
 						database
 							.execute((db) =>
-								db.delete(vcsRepositoryBranches).where(inArray(vcsRepositoryBranches.id, chunk)),
+								db
+									.delete(vcsRepositoryBranches)
+									.where(inArray(vcsRepositoryBranches.id, chunk)),
 							)
 							.pipe(Effect.mapError(toPersistenceError)),
 					{ discard: true },
@@ -869,7 +878,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		//
 		// Commits reference their repo by internal id, so the installation's repo
 		// ids are resolved first and used to delete the commits; the repo and
-		// installation rows are then deleted directly.
+		// installation rows are then deleted in the SAME atomic batch.
 		const purgeInstallation = Effect.fn("VcsRepository.purgeInstallation")(function* (
 			orgId: OrgId,
 			installationId: VcsInstallationId,
@@ -888,49 +897,43 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-			// 1. Branches and commits for those repos (keyed by the globally-unique
-			//    repository id), chunked under D1's bind-variable cap.
 			const repoIds = repoRows.map((r) => r.id)
-			yield* Effect.forEach(
-				Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE),
-				(chunk) =>
-					database
-						.execute((db) =>
-							db.delete(vcsRepositoryBranches).where(inArray(vcsRepositoryBranches.repositoryId, chunk)),
-						)
-						.pipe(Effect.mapError(toPersistenceError)),
-				{ discard: true },
-			)
-			yield* Effect.forEach(
-				Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE),
-				(chunk) =>
-					database
-						.execute((db) => db.delete(vcsCommits).where(inArray(vcsCommits.repositoryId, chunk)))
-						.pipe(Effect.mapError(toPersistenceError)),
-				{ discard: true },
-			)
-
-			// 2. The installation's repositories.
+			// Order within the batch is children → parents: branches and commits
+			// (chunked under D1's per-statement bind-variable cap), then the repos,
+			// then the installation row. D1 applies the batch as a single implicit
+			// transaction, so all statements commit together or none do.
 			yield* database
-				.execute((db) =>
-					db
-						.delete(vcsRepositories)
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.installationId, installationId),
-							),
+				.execute((db) => {
+					const statements: Array<BatchItem<"sqlite">> = [
+						...Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE).map((chunk) =>
+							db
+								.delete(vcsRepositoryBranches)
+								.where(inArray(vcsRepositoryBranches.repositoryId, chunk)),
 						),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
-
-			// 3. The installation row itself (id is globally unique; org-scoped as a safety bound).
-			yield* database
-				.execute((db) =>
-					db
-						.delete(vcsInstallations)
-						.where(and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId))),
-				)
+						...Arr.chunksOf(repoIds, D1_INARRAY_CHUNK_SIZE).map((chunk) =>
+							db.delete(vcsCommits).where(inArray(vcsCommits.repositoryId, chunk)),
+						),
+						db
+							.delete(vcsRepositories)
+							.where(
+								and(
+									eq(vcsRepositories.orgId, orgId),
+									eq(vcsRepositories.installationId, installationId),
+								),
+							),
+						db
+							.delete(vcsInstallations)
+							.where(
+								and(
+									eq(vcsInstallations.orgId, orgId),
+									eq(vcsInstallations.id, installationId),
+								),
+							),
+					]
+					// The repos + installation deletes are always present, so `statements`
+					// is never empty; the cast satisfies `batch`'s non-empty tuple type.
+					return db.batch(statements as [BatchItem<"sqlite">, ...Array<BatchItem<"sqlite">>])
+				})
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 

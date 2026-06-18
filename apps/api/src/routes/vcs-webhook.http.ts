@@ -20,9 +20,7 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 		const queue = yield* VcsSyncQueue
 
 		const makeHandler =
-			(provider: VcsProviderClient) =>
-			(route: string) =>
-			(req: HttpServerRequest.HttpServerRequest) => {
+			(provider: VcsProviderClient, route: string) => (req: HttpServerRequest.HttpServerRequest) => {
 				// Used so we can return a clean HTTP 500 response (non-errored exit)
 				// while still using the fail channel of the effects inside of the span
 				// tracer.
@@ -56,7 +54,7 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 
 					return yield* provider.webhookToJobs({ headers, rawBody: bodyOpt.value }).pipe(
 						Effect.flatMap((jobs) =>
-							Effect.forEach(jobs, (job) => queue.send(job), { discard: true }).pipe(
+							queue.sendBatch(jobs).pipe(
 								Effect.flatMap(() =>
 									Effect.annotateCurrentSpan({
 										"http.response.status_code": 202,
@@ -120,18 +118,16 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 		yield* Effect.forEach(
 			registry.ids,
 			(id) =>
-				registry
-					.resolve(id)
-					.pipe(
-						Effect.orDie,
-						Effect.flatMap((provider) =>
-							router.add(
-								"POST",
-								`/api/integrations/${id}/webhook`,
-								makeHandler(provider)(`/api/integrations/${id}/webhook`),
-							),
+				registry.resolve(id).pipe(
+					Effect.orDie,
+					Effect.flatMap((provider) =>
+						router.add(
+							"POST",
+							`/api/integrations/${id}/webhook`,
+							makeHandler(provider, `/api/integrations/${id}/webhook`),
 						),
 					),
+				),
 			{ discard: true },
 		)
 	}),

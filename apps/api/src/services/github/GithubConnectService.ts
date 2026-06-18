@@ -29,9 +29,13 @@ import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 // Flow: the dashboard opens the GitHub App install URL (carrying our `state`).
 // After install GitHub redirects to the callback with `installation_id` and the
 // `state` echoed back in the query; the callback validates `state` (→ org) and
-// finishes here. No OAuth `code` exchange is needed — account metadata comes from
-// the App JWT (`GET /app/installations/{id}`); sync later mints its own
-// installation tokens.
+// finishes here. Account metadata comes from the App JWT
+// (`GET /app/installations/{id}`); sync later mints its own installation tokens.
+//
+// Security: anyone can guess an `installation_id` (it's a small number), so before
+// we sync someone's private repos we prove they own it. Two checks: (1) the OAuth
+// `code` must show the user can manage that installation, and (2) we never bind an
+// installation that already belongs to a different org.
 // ---------------------------------------------------------------------------
 
 const GITHUB_PROVIDER = "github" as const
@@ -81,6 +85,11 @@ export interface GithubConnectServiceShape {
 	readonly completeConnect: (
 		installationId: string,
 		state: string,
+		/**
+		 * OAuth `code` from the callback. We exchange it to confirm the user can
+		 * manage `installationId`. Required to connect a new installation.
+		 */
+		code?: string,
 	) => Effect.Effect<
 		{ readonly orgId: OrgId; readonly returnTo: string | null },
 		IntegrationsValidationError | IntegrationsUpstreamError | IntegrationsPersistenceError
@@ -131,7 +140,8 @@ const asPersistence = <A, E extends { readonly message: string }>(
 const fromGithubError = (error: GithubAppError) =>
 	error.status === 404 || error.status === 410
 		? new IntegrationsValidationError({
-				message: "GitHub installation not found — it may have been removed. Restart the connect flow.",
+				message:
+					"GitHub installation not found — it may have been removed. Restart the connect flow.",
 			})
 		: new IntegrationsUpstreamError({
 				message: error.message,
@@ -195,6 +205,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			const completeConnect = Effect.fn("GithubConnectService.completeConnect")(function* (
 				installationId: string,
 				state: string,
+				code?: string,
 			) {
 				const now = yield* Clock.currentTimeMillis
 				const stateRowOpt = yield* asPersistence(states.findByState(state))
@@ -231,6 +242,79 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					})
 				}
 
+				// Don't let one org claim an installation another org already owns.
+				// (Same org is fine — that's just reconnecting your own.)
+				const existingInstallation = yield* asPersistence(
+					repo.resolveInstallation(GITHUB_PROVIDER, installationId),
+				)
+				if (
+					Option.isSome(existingInstallation) &&
+					existingInstallation.value.orgId !== stateRow.orgId
+				) {
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "installation_cross_org_rejected",
+						"vcs.connect.reason": "installation_id already belongs to a different org",
+					})
+					return yield* new IntegrationsValidationError({
+						message:
+							"This GitHub installation is already connected to another Maple organization.",
+					})
+				}
+
+				// Connecting a brand-new installation? Require the OAuth `code` and check
+				// the user can actually manage it. No code → reject (don't guess-and-trust).
+				// Reconnecting one this org already owns is allowed without a code.
+				const isSameOrgReconnect = Option.isSome(existingInstallation)
+				const hasCode = code !== undefined && code.length > 0
+				if (hasCode) {
+					const userToken = yield* githubApp.exchangeUserOAuthCode(code).pipe(
+						Effect.tapError(() =>
+							Effect.annotateCurrentSpan({
+								orgId: stateRow.orgId,
+								"vcs.connect.outcome": "oauth_exchange_failed",
+								"vcs.connect.reason": "could not exchange OAuth code for a user token",
+							}),
+						),
+						Effect.mapError(fromGithubError),
+					)
+					const adminInstallationIds = yield* githubApp.listUserInstallationIds(userToken).pipe(
+						Effect.tapError(() =>
+							Effect.annotateCurrentSpan({
+								orgId: stateRow.orgId,
+								"vcs.connect.outcome": "oauth_installations_failed",
+								"vcs.connect.reason": "could not list the user's installations",
+							}),
+						),
+						Effect.mapError(fromGithubError),
+					)
+					if (!adminInstallationIds.has(installationId)) {
+						yield* Effect.annotateCurrentSpan({
+							orgId: stateRow.orgId,
+							"vcs.connect.outcome": "installation_not_administrable",
+							"vcs.connect.reason":
+								"authenticated user cannot administer the supplied installation_id",
+						})
+						return yield* new IntegrationsValidationError({
+							message:
+								"You are not authorized to connect this GitHub installation — restart the connect flow.",
+						})
+					}
+				} else if (!isSameOrgReconnect) {
+					// New installation, no `code` to prove ownership — refuse. (Needs the
+					// App's OAuth-on-install setting enabled; see docs/github-app-setup.md.)
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "oauth_code_required",
+						"vcs.connect.reason":
+							"new installation binding requires an OAuth code to prove ownership",
+					})
+					return yield* new IntegrationsValidationError({
+						message:
+							"Could not verify you own this GitHub installation. Restart the connect flow from Maple, and ensure the GitHub App has user authorization during installation enabled.",
+					})
+				}
+
 				const detail = yield* githubApp.getInstallation(installationId).pipe(
 					Effect.tapError((error) =>
 						Effect.annotateCurrentSpan({
@@ -240,9 +324,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 								error.status === 404 || error.status === 410
 									? "installation gone/missing"
 									: "github upstream failure",
-							...(error.status === undefined
-								? {}
-								: { "vcs.github.status": error.status }),
+							...(error.status === undefined ? {} : { "vcs.github.status": error.status }),
 						}),
 					),
 					Effect.mapError(fromGithubError),
@@ -258,8 +340,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					})
 				}
 				const account = detail.account
-				const accountType: VcsAccountType =
-					account.type === "Organization" ? "organization" : "user"
+				const accountType: VcsAccountType = account.type === "Organization" ? "organization" : "user"
 				const repositorySelection: VcsRepoSelection =
 					detail.repository_selection === "selected" ? "selected" : "all"
 
@@ -366,11 +447,9 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// re-sync cleanly: upsertInstallation never resets status on conflict, so
 				// a lingering "disconnected" row would gate the reconnected installation
 				// out of the sync engine.
-				yield* Effect.forEach(
-					targets,
-					(i) => asPersistence(repo.purgeInstallation(orgId, i.id)),
-					{ discard: true },
-				)
+				yield* Effect.forEach(targets, (i) => asPersistence(repo.purgeInstallation(orgId, i.id)), {
+					discard: true,
+				})
 				const disconnected = targets.length > 0
 				yield* Effect.annotateCurrentSpan({
 					orgId,
@@ -442,7 +521,23 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const installationOpt = yield* asPersistence(
 					repo.getInstallationById(orgId, repository.installationId),
 				)
-				if (Option.isSome(installationOpt) && !isInstallationProcessable(installationOpt.value)) {
+				// Check the installation exists BEFORE wiping commits. If it's gone we
+				// can't re-sync the new branch, so we'd leave the repo empty — reject instead.
+				if (Option.isNone(installationOpt)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.set_tracked_branch.outcome": "installation_missing",
+						"vcs.set_tracked_branch.reason":
+							"installation row absent — refusing destructive branch change",
+					})
+					return yield* new IntegrationsValidationError({
+						message:
+							"This repository's GitHub installation is no longer connected. Reconnect GitHub before changing the tracked branch.",
+					})
+				}
+				const installation = installationOpt.value
+				if (!isInstallationProcessable(installation)) {
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.repository.id": repositoryId,
@@ -464,7 +559,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						orgId,
 						"vcs.repository.id": repositoryId,
 						"vcs.set_tracked_branch.outcome": "unknown_branch",
-						"vcs.set_tracked_branch.reason": "requested branch not in repository's known branches",
+						"vcs.set_tracked_branch.reason":
+							"requested branch not in repository's known branches",
 					})
 					return yield* new IntegrationsValidationError({
 						message: `Branch "${trackedBranch}" is not a known branch of this repository.`,
@@ -490,52 +586,31 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// stored set reflects exactly the current tracked branch.
 				yield* asPersistence(repo.changeTrackedBranch(orgId, repositoryId, trackedBranch))
 
-				let backfillQueued = false
-				if (Option.isSome(installationOpt)) {
-					const installation = installationOpt.value
-					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
-					yield* asPersistence(
-						queue.send({
-							kind: "sync-commits",
-							provider: GITHUB_PROVIDER,
-							externalInstallationId: installation.externalInstallationId,
-							externalRepoId: repository.externalRepoId,
-							owner: repository.owner,
-							name: repository.name,
-							branch: trackedBranch,
-							sinceMs,
-						} satisfies VcsSyncJob),
-					)
-					backfillQueued = true
-				} else {
-					// The repo's installation row is missing — an invariant violation (a
-					// cascade delete should remove repos with their installation). The tracked
-					// branch is set and commits wiped, but without the external id we can't
-					// enqueue a backfill; report the truth (nothing queued) rather than claim it.
-					yield* Effect.logWarning(
-						"[GitHub] Tracked branch changed but installation missing — backfill not enqueued",
-					).pipe(
-						Effect.annotateLogs({
-							orgId,
-							repositoryId,
-							installationId: repository.installationId,
-							trackedBranch,
-						}),
-					)
-				}
+				// Installation is present (checked above), so the wipe always pairs with a backfill.
+				const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
+				yield* asPersistence(
+					queue.send({
+						kind: "sync-commits",
+						provider: GITHUB_PROVIDER,
+						externalInstallationId: installation.externalInstallationId,
+						externalRepoId: repository.externalRepoId,
+						owner: repository.owner,
+						name: repository.name,
+						branch: trackedBranch,
+						sinceMs,
+					} satisfies VcsSyncJob),
+				)
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"vcs.repository.id": repositoryId,
 					"vcs.set_tracked_branch.outcome": "changed",
-					"vcs.set_tracked_branch.reason": backfillQueued
-						? "branch changed; backfill enqueued"
-						: "branch changed; installation missing — backfill not enqueued",
-					"vcs.set_tracked_branch.installation_missing": !backfillQueued,
+					"vcs.set_tracked_branch.reason": "branch changed; backfill enqueued",
+					"vcs.set_tracked_branch.installation_missing": false,
 					"vcs.branches.tracked": trackedBranch,
 					"vcs.branches.changed": true,
-					"vcs.branches.backfill_queued": backfillQueued,
+					"vcs.branches.backfill_queued": true,
 				})
-				return { trackedBranch, backfillQueued }
+				return { trackedBranch, backfillQueued: true }
 			})
 
 			return {

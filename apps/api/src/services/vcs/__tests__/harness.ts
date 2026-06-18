@@ -38,6 +38,10 @@ export const GITHUB_APP_CONFIG = {
 	GITHUB_APP_SLUG: "maple-test-app",
 	GITHUB_APP_ID: "123456",
 	GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
+	// The user-OAuth leg of the connect flow (confused-deputy guard) needs these
+	// configured; without them completeConnect refuses a new installation binding.
+	GITHUB_APP_CLIENT_ID: "Iv1.testclientid",
+	GITHUB_APP_CLIENT_SECRET: "test-client-secret",
 } as const
 
 const baseConfigValues = {
@@ -54,9 +58,7 @@ const baseConfigValues = {
 // ConfigProvider layer wired to a temp DB url; `extra` adds (or overrides) keys
 // such as the GitHub App config or the webhook secret.
 export const testConfig = (url: string, extra?: Record<string, unknown>) =>
-	ConfigProvider.layer(
-		ConfigProvider.fromUnknown({ ...baseConfigValues, MAPLE_DB_URL: url, ...extra }),
-	)
+	ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfigValues, MAPLE_DB_URL: url, ...extra }))
 
 export const testEnv = (url: string, extra?: Record<string, unknown>) =>
 	Env.layer.pipe(Layer.provide(testConfig(url, extra)))
@@ -65,10 +67,7 @@ export const testEnv = (url: string, extra?: Record<string, unknown>) =>
 export const testRepoLayer = (url: string, extra?: Record<string, unknown>) =>
 	VcsRepository.layer.pipe(Layer.provide(DatabaseLibsqlLive), Layer.provide(testEnv(url, extra)))
 
-export const jsonResponse = (
-	body: unknown,
-	init?: { status?: number; headers?: Record<string, string> },
-) =>
+export const jsonResponse = (body: unknown, init?: { status?: number; headers?: Record<string, string> }) =>
 	new Response(JSON.stringify(body), {
 		status: init?.status ?? 200,
 		headers: { "content-type": "application/json", ...init?.headers },
@@ -99,9 +98,7 @@ export const recordingQueue = (
 			opts?.sentDelays?.push(options?.delaySeconds)
 		}),
 	sendBatch: (jobs) =>
-		opts?.failBatch
-			? Effect.fail(opts.failBatch() as never)
-			: Effect.sync(() => void sent.push(...jobs)),
+		opts?.failBatch ? Effect.fail(opts.failBatch() as never) : Effect.sync(() => void sent.push(...jobs)),
 })
 
 export const recordingQueueLayer = (
@@ -141,7 +138,10 @@ export const upsertReposFor = (
 	repo: VcsRepo,
 	externalInstallationId: string,
 	repos: Parameters<VcsRepo["upsertRepositories"]>[1],
-) => installationFor(repo, externalInstallationId).pipe(Effect.flatMap((i) => repo.upsertRepositories(i, repos)))
+) =>
+	installationFor(repo, externalInstallationId).pipe(
+		Effect.flatMap((i) => repo.upsertRepositories(i, repos)),
+	)
 
 export const upsertCommitsFor = (
 	repo: VcsRepo,
@@ -172,11 +172,7 @@ export const purgeInstallationFor = (repo: VcsRepo, orgId: OrgId, externalInstal
 		),
 	)
 
-export const reposOfInstallation = (
-	repo: VcsRepo,
-	externalInstallationId: string,
-	scope: "active" | "all",
-) =>
+export const reposOfInstallation = (repo: VcsRepo, externalInstallationId: string, scope: "active" | "all") =>
 	Effect.gen(function* () {
 		const found = yield* repo.resolveInstallation("github", externalInstallationId)
 		return Option.isNone(found) ? [] : yield* repo.listRepositoriesByInstallation(found.value.id, scope)

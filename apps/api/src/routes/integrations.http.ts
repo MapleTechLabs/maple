@@ -20,6 +20,7 @@ import {
 	VcsCommitDetailResponse,
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
+import { Env } from "../lib/Env"
 import { GithubConnectService } from "../services/github/GithubConnectService"
 import { VcsCommitService } from "../services/vcs/VcsCommitService"
 import { HazelOAuthService } from "../services/HazelOAuthService"
@@ -68,139 +69,141 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
 
-		return handlers
-			.handle("hazelStatus", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const status = yield* hazel.getStatus(tenant.orgId)
-					if (!status.connected) {
+		return (
+			handlers
+				.handle("hazelStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* hazel.getStatus(tenant.orgId)
+						if (!status.connected) {
+							return new HazelIntegrationStatus({
+								connected: false,
+								externalUserId: null,
+								externalUserEmail: null,
+								connectedByUserId: null,
+								scope: null,
+							})
+						}
 						return new HazelIntegrationStatus({
-							connected: false,
-							externalUserId: null,
-							externalUserEmail: null,
-							connectedByUserId: null,
-							scope: null,
+							connected: true,
+							externalUserId: asExternalUserId(status.externalUserId),
+							externalUserEmail: status.externalUserEmail,
+							connectedByUserId: asUserId(status.connectedByUserId),
+							scope: status.scope,
 						})
-					}
-					return new HazelIntegrationStatus({
-						connected: true,
-						externalUserId: asExternalUserId(status.externalUserId),
-						externalUserEmail: status.externalUserEmail,
-						connectedByUserId: asUserId(status.connectedByUserId),
-						scope: status.scope,
-					})
-				}),
-			)
-			.handle("hazelStart", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const req = yield* HttpServerRequest.HttpServerRequest
-					const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
-						callbackUrl: resolveCallbackUrl(req),
-						returnTo: payload.returnTo,
-					})
-					return new HazelStartConnectResponse(result)
-				}),
-			)
-			.handle("hazelOrganizations", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const organizations = yield* hazel.listOrganizations(tenant.orgId)
-					return new HazelOrganizationsListResponse({
-						organizations: organizations.map((o) => ({
-							id: o.id,
-							name: o.name,
-							slug: o.slug,
-							logoUrl: o.logoUrl,
-						})),
-					})
-				}),
-			)
-			.handle("hazelChannels", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const channels = yield* hazel.listChannels(tenant.orgId, params.organizationId)
-					return new HazelChannelsListResponse({
-						channels: channels.map((c) => ({
-							id: c.id,
-							name: c.name,
-							type: c.type,
-							organizationId: c.organizationId,
-						})),
-					})
-				}),
-			)
-			.handle("hazelDisconnect", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const result = yield* hazel.disconnect(tenant.orgId)
-					return new HazelDisconnectResponse(result)
-				}),
-			)
-			.handle("githubStatus", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const status = yield* github.getStatus(tenant.orgId)
-					return new GithubIntegrationStatus({
-						connected: status.connected,
-						accountLogin: status.accountLogin,
-						accountType: status.accountType,
-						repositorySelection: status.repositorySelection,
-						repositories: status.repositories,
-					})
-				}),
-			)
-			.handle("githubStart", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const req = yield* HttpServerRequest.HttpServerRequest
-					const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
-						callbackUrl: resolveGithubCallbackUrl(req),
-						returnTo: payload.returnTo,
-					})
-					return new GithubStartConnectResponse(result)
-				}),
-			)
-			.handle("githubDisconnect", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const result = yield* github.disconnect(tenant.orgId)
-					return new GithubDisconnectResponse(result)
-				}),
-			)
-			.handle("githubDeleteRepository", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
-					return new GithubDeleteRepositoryResponse(result)
-				}),
-			)
-			.handle("githubSetTrackedBranch", ({ params, payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles)
-					const result = yield* github.setTrackedBranch(
-						tenant.orgId,
-						params.repositoryId,
-						payload.trackedBranch,
-					)
-					return new GithubSetTrackedBranchResponse(result)
-				}),
-			)
-			// Read-only commit hover card: no admin gate — any org member viewing the
-			// dashboard resolves SHAs. Vendor-agnostic via VcsCommitService.
-			.handle("vcsCommitDetail", ({ params }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const detail = yield* vcsCommits.resolveCommitDetail(tenant.orgId, params.sha)
-					return new VcsCommitDetailResponse(detail)
-				}),
-			)
+					}),
+				)
+				.handle("hazelStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const result = yield* hazel.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl: resolveCallbackUrl(req),
+							returnTo: payload.returnTo,
+						})
+						return new HazelStartConnectResponse(result)
+					}),
+				)
+				.handle("hazelOrganizations", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const organizations = yield* hazel.listOrganizations(tenant.orgId)
+						return new HazelOrganizationsListResponse({
+							organizations: organizations.map((o) => ({
+								id: o.id,
+								name: o.name,
+								slug: o.slug,
+								logoUrl: o.logoUrl,
+							})),
+						})
+					}),
+				)
+				.handle("hazelChannels", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const channels = yield* hazel.listChannels(tenant.orgId, params.organizationId)
+						return new HazelChannelsListResponse({
+							channels: channels.map((c) => ({
+								id: c.id,
+								name: c.name,
+								type: c.type,
+								organizationId: c.organizationId,
+							})),
+						})
+					}),
+				)
+				.handle("hazelDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* hazel.disconnect(tenant.orgId)
+						return new HazelDisconnectResponse(result)
+					}),
+				)
+				.handle("githubStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* github.getStatus(tenant.orgId)
+						return new GithubIntegrationStatus({
+							connected: status.connected,
+							accountLogin: status.accountLogin,
+							accountType: status.accountType,
+							repositorySelection: status.repositorySelection,
+							repositories: status.repositories,
+						})
+					}),
+				)
+				.handle("githubStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const result = yield* github.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl: resolveGithubCallbackUrl(req),
+							returnTo: payload.returnTo,
+						})
+						return new GithubStartConnectResponse(result)
+					}),
+				)
+				.handle("githubDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.disconnect(tenant.orgId)
+						return new GithubDisconnectResponse(result)
+					}),
+				)
+				.handle("githubDeleteRepository", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.deleteRepository(tenant.orgId, params.repositoryId)
+						return new GithubDeleteRepositoryResponse(result)
+					}),
+				)
+				.handle("githubSetTrackedBranch", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setTrackedBranch(
+							tenant.orgId,
+							params.repositoryId,
+							payload.trackedBranch,
+						)
+						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				// Read-only commit hover card: no admin gate — any org member viewing the
+				// dashboard resolves SHAs. Vendor-agnostic via VcsCommitService.
+				.handle("vcsCommitDetail", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const detail = yield* vcsCommits.resolveCommitDetail(tenant.orgId, params.sha)
+						return new VcsCommitDetailResponse(detail)
+					}),
+				)
+		)
 	}),
 )
 
@@ -229,12 +232,26 @@ const escapeJsonInHtml = (json: string) =>
 		.split(PARAGRAPH_SEPARATOR)
 		.join("\\u2029")
 
+// The dashboard origin the connect popup posts its result back to. `postMessage`'s
+// targetOrigin must equal the opener's `location.origin` *exactly* (scheme + host +
+// port, no path/trailing slash), or the browser silently drops the message — so we
+// normalize `MAPLE_APP_BASE_URL` (a bare base URL) down to its origin. Falling back
+// to "*" only if the env value can't be parsed keeps the popup flow from breaking on
+// a misconfiguration while still using a locked origin in every normal case.
+const resolveDashboardTargetOrigin = (appBaseUrl: string): string =>
+	Option.match(Option.liftThrowable(() => new URL(appBaseUrl))(), {
+		onNone: () => "*",
+		onSome: (parsed) => parsed.origin,
+	})
+
 const renderCallbackPage = (params: {
 	status: "success" | "error"
 	message: string
 	returnTo: string | null
 	messageType: string
 	label: string
+	/** Locked-down targetOrigin for the postMessage to the opener (the dashboard). */
+	targetOrigin: string
 }) => {
 	const safeMessage = escapeHtml(params.message)
 	const safeReturn = params.returnTo ? escapeHtml(params.returnTo) : null
@@ -245,6 +262,10 @@ const renderCallbackPage = (params: {
 			message: params.message,
 		}),
 	)
+	// JSON.stringify yields a safely-quoted JS string literal; pass it through the
+	// same `<script>`-escaping as the payload so the origin can't break out of the
+	// inline script either.
+	const targetOrigin = escapeJsonInHtml(JSON.stringify(params.targetOrigin))
 	return `<!doctype html>
 <html lang="en">
   <head>
@@ -267,7 +288,7 @@ const renderCallbackPage = (params: {
     <script>
       try {
         if (window.opener) {
-          window.opener.postMessage(${payload}, "*");
+          window.opener.postMessage(${payload}, ${targetOrigin});
           setTimeout(function () { window.close(); }, 600);
         }
       } catch (_) {}
@@ -281,18 +302,37 @@ const htmlResponse = (body: string, status?: number) => {
 	return status === undefined ? response : HttpServerResponse.setStatus(response, status)
 }
 
-type CallbackPageParams = { status: "success" | "error"; message: string; returnTo: string | null }
-
-const hazelCallbackPage = (params: CallbackPageParams) =>
-	renderCallbackPage({ ...params, messageType: HAZEL_MESSAGE_TYPE, label: "Hazel" })
-
-const githubCallbackPage = (params: CallbackPageParams) =>
-	renderCallbackPage({ ...params, messageType: GITHUB_MESSAGE_TYPE, label: "GitHub" })
+type CallbackPageParams = {
+	status: "success" | "error"
+	message: string
+	returnTo: string | null
+	targetOrigin: string
+}
 
 export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
 		const github = yield* GithubConnectService
+		const env = yield* Env
+
+		// Lock the popup→opener postMessage to the dashboard's own origin, derived
+		// from MAPLE_APP_BASE_URL (the canonical dashboard base URL the connect popup
+		// is opened from). Resolved once and threaded into every callback page below.
+		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
+		const hazelCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
+			renderCallbackPage({
+				...params,
+				targetOrigin: dashboardTargetOrigin,
+				messageType: HAZEL_MESSAGE_TYPE,
+				label: "Hazel",
+			})
+		const githubCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
+			renderCallbackPage({
+				...params,
+				targetOrigin: dashboardTargetOrigin,
+				messageType: GITHUB_MESSAGE_TYPE,
+				label: "GitHub",
+			})
 
 		const handle = (req: HttpServerRequest.HttpServerRequest) =>
 			Effect.gen(function* () {
@@ -381,6 +421,10 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				const installationId = url.searchParams.get("installation_id")
 				const setupAction = url.searchParams.get("setup_action")
 				const state = url.searchParams.get("state")
+				// GitHub appends `code` only when the App has "Request user authorization
+				// (OAuth) during installation" enabled; completeConnect uses it to bind the
+				// installation_id to the authorizing user (confused-deputy guard).
+				const code = url.searchParams.get("code") ?? undefined
 				const oauthError = url.searchParams.get("error")
 				const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError
 
@@ -423,7 +467,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 					)
 				}
 
-				return yield* github.completeConnect(installationId, state).pipe(
+				return yield* github.completeConnect(installationId, state, code).pipe(
 					Effect.map((result) =>
 						htmlResponse(
 							githubCallbackPage({
@@ -437,7 +481,11 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						"@maple/http/errors/IntegrationsValidationError": (error) =>
 							Effect.succeed(
 								htmlResponse(
-									githubCallbackPage({ status: "error", message: error.message, returnTo: null }),
+									githubCallbackPage({
+										status: "error",
+										message: error.message,
+										returnTo: null,
+									}),
 									400,
 								),
 							),
