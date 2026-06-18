@@ -49,6 +49,7 @@ export function TraceTimeline() {
 	const containerRef = React.useRef<HTMLDivElement>(null)
 	const scrollRef = React.useRef<HTMLDivElement>(null)
 	const canvasViewportRef = React.useRef<HTMLDivElement>(null)
+	const canvasScrollRef = React.useRef<HTMLDivElement>(null)
 	const searchInputRef = React.useRef<HTMLInputElement>(null)
 	const canvasHandleRef = React.useRef<TraceTimelineCanvasHandle>(null)
 	const [scrollTop, setScrollTop] = React.useState(0)
@@ -91,16 +92,65 @@ export function TraceTimeline() {
 
 	const { cursorXRef, setCursorX } = useCanvasCrosshair(() => requestDraw("overlay"))
 
-	const { handleMouseDown, isPanning } = useTimelineGestures({
+	useTimelineGestures({
 		scrollRef: canvasViewportRef,
-		containerRef: canvasViewportRef,
 		viewport: state.viewport,
-		containerWidth: Math.max(0, containerSize.width - sidebarWidth),
 		traceStartMs,
 		traceEndMs,
 		dispatch,
-		isOnBar: (x, y) => findBarAt(x, y) !== null,
 	})
+
+	// --- Horizontal scroll model -----------------------------------------------------------
+	// The canvas renders the visible time window into its own width. To make the timeline
+	// *scrollable* (instead of squeezing the whole trace into the panel), a spacer of
+	// `contentWidthPx` gives a native horizontal scrollbar; the canvas host stays sticky over
+	// the visible area and the scrollbar position maps 1:1 to viewport.startMs. `viewport`
+	// stays the single source of truth, so the minimap, time-axis, hit-testing and zoom are
+	// untouched.
+	const canvasView = useContainerSize(canvasScrollRef)
+	const viewW = canvasView.width
+	const traceDurationMs = traceEndMs - traceStartMs
+	const visibleDurationMs = state.viewport.endMs - state.viewport.startMs
+	const pxPerMs = viewW > 0 && visibleDurationMs > 0 ? viewW / visibleDurationMs : 0
+	const contentWidthPx = pxPerMs > 0 ? Math.max(viewW, traceDurationMs * pxPerMs) : 0
+
+	const scaleRef = React.useRef({ pxPerMs: 0, visibleDurationMs: 0, traceStartMs: 0 })
+	scaleRef.current = { pxPerMs, visibleDurationMs, traceStartMs }
+
+	const handleHScroll = React.useCallback(() => {
+		const el = canvasScrollRef.current
+		if (!el) return
+		const s = scaleRef.current
+		if (s.pxPerMs <= 0) return
+		const startMs = s.traceStartMs + el.scrollLeft / s.pxPerMs
+		dispatch({ type: "SET_VIEWPORT", viewport: { startMs, endMs: startMs + s.visibleDurationMs } })
+	}, [dispatch])
+
+	// Keep the scrollbar in sync when the viewport moves from zoom / minimap / keyboard.
+	React.useEffect(() => {
+		const el = canvasScrollRef.current
+		if (!el || pxPerMs <= 0) return
+		const target = (state.viewport.startMs - traceStartMs) * pxPerMs
+		if (Math.abs(el.scrollLeft - target) > 1) el.scrollLeft = target
+	}, [state.viewport.startMs, pxPerMs, traceStartMs])
+
+	// Default to a fixed, readable scale (~TARGET_PX_PER_SEC) instead of fit-to-panel, so a
+	// long trace opens scrolled-to-start and scrollable. Traces that already fit stay fully
+	// visible. Runs once per trace, after the canvas width is known.
+	const traceScaleKey = `${rootSpans.length}:${rootSpans[0]?.spanId ?? ""}`
+	const didInitScaleRef = React.useRef<string>("")
+	React.useEffect(() => {
+		if (viewW <= 0 || didInitScaleRef.current === traceScaleKey) return
+		didInitScaleRef.current = traceScaleKey
+		const TARGET_PX_PER_SEC = 80
+		const readableWindowMs = (viewW / TARGET_PX_PER_SEC) * 1000
+		if (traceDurationMs > readableWindowMs) {
+			dispatch({
+				type: "SET_VIEWPORT",
+				viewport: { startMs: traceStartMs, endMs: traceStartMs + readableWindowMs },
+			})
+		}
+	}, [viewW, traceScaleKey, traceDurationMs, traceStartMs, dispatch])
 
 	const handleScroll = React.useCallback(() => {
 		if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop)
@@ -387,7 +437,6 @@ export function TraceTimeline() {
 
 			<TraceTimelineMinimap
 				rootSpans={rootSpans}
-				totalDurationMs={totalDurationMs}
 				traceStartMs={traceStartMs}
 				traceEndMs={traceEndMs}
 				services={services}
@@ -435,43 +484,51 @@ export function TraceTimeline() {
 				<div className="relative flex-1 min-w-0">
 					<SidebarResizeHandle onResize={handleSidebarResize} />
 					<div
-						ref={canvasViewportRef}
-						className="absolute inset-0"
-						style={{
-							cursor: isPanning.current ? "grabbing" : "crosshair",
-						}}
-						onMouseMove={handleCanvasMouseMove}
-						onMouseLeave={handleCanvasMouseLeave}
-						onMouseDown={handleMouseDown}
-						onClick={handleCanvasClick}
-						onDoubleClick={handleCanvasDoubleClick}
-						onWheel={(e) => {
-							// Forward vertical wheel to the sidebar scroller so the canvas
-							// stays in sync. Horizontal wheel is consumed by the gestures hook.
-							if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.ctrlKey && !e.metaKey) {
-								if (scrollRef.current) {
-									scrollRef.current.scrollTop += e.deltaY
-								}
-							}
-						}}
+						ref={canvasScrollRef}
+						className="absolute inset-0 overflow-x-auto overflow-y-hidden"
+						onScroll={handleHScroll}
 					>
-						<TraceTimelineCanvas
-							ref={canvasHandleRef}
-							bars={bars}
-							totalRows={totalRows}
-							parentIndexById={parentIndexById}
-							viewport={state.viewport}
-							traceStartMs={traceStartMs}
-							timeAxisTicks={timeAxisTicks}
-							scrollTop={scrollTop}
-							selectedSpanId={selectedSpanId}
-							focusedIndex={state.focusedIndex}
-							searchMatches={searchMatches}
-							isSearchActive={isSearchActive}
-							barRectsRef={barRectsRef}
-							cursorXRef={cursorXRef}
-							hoveredSpanId={hoveredSpanId}
-						/>
+						{/* Spacer establishes the scrollable width; the sticky host below keeps the
+						    canvas pinned over the visible area while you scroll horizontally. */}
+						<div style={{ width: contentWidthPx > 0 ? contentWidthPx : "100%", height: "100%" }}>
+							<div
+								ref={canvasViewportRef}
+								className="sticky left-0 top-0 h-full"
+								style={{ width: viewW > 0 ? viewW : "100%", cursor: "crosshair" }}
+								onMouseMove={handleCanvasMouseMove}
+								onMouseLeave={handleCanvasMouseLeave}
+								onClick={handleCanvasClick}
+								onDoubleClick={handleCanvasDoubleClick}
+								onWheel={(e) => {
+									// Vertical wheel scrolls the rows (via the sidebar scroller). Horizontal
+									// wheel falls through to the native horizontal scroller above; ctrl/⌘
+									// wheel is handled by the gestures hook (zoom).
+									if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && !e.ctrlKey && !e.metaKey) {
+										if (scrollRef.current) {
+											scrollRef.current.scrollTop += e.deltaY
+										}
+									}
+								}}
+							>
+								<TraceTimelineCanvas
+									ref={canvasHandleRef}
+									bars={bars}
+									totalRows={totalRows}
+									parentIndexById={parentIndexById}
+									viewport={state.viewport}
+									traceStartMs={traceStartMs}
+									timeAxisTicks={timeAxisTicks}
+									scrollTop={scrollTop}
+									selectedSpanId={selectedSpanId}
+									focusedIndex={state.focusedIndex}
+									searchMatches={searchMatches}
+									isSearchActive={isSearchActive}
+									barRectsRef={barRectsRef}
+									cursorXRef={cursorXRef}
+									hoveredSpanId={hoveredSpanId}
+								/>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>

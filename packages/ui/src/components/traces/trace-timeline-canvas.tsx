@@ -203,11 +203,17 @@ export const TraceTimelineCanvas = React.forwardRef<TraceTimelineCanvasHandle, T
 		}, [])
 
 		return (
-			<div ref={containerRef} className="absolute inset-0">
-				<canvas ref={mainCanvasRef} className="absolute inset-0 block" />
+			<div ref={containerRef} className="absolute inset-0 overflow-hidden">
+				{/* size-full (width/height:100%) makes the canvas display follow the container
+				    via pure CSS. A bare <canvas> is a replaced element, so `absolute inset-0`
+				    alone leaves width:auto and it renders at its intrinsic (dpr-scaled) size —
+				    wider than the container — which is what let the timeline overflow and scroll
+				    sideways into blank space. With size-full the display size can never diverge
+				    from the container regardless of the measured backing-store resolution. */}
+				<canvas ref={mainCanvasRef} className="absolute inset-0 size-full block" />
 				<canvas
 					ref={overlayCanvasRef}
-					className="absolute inset-0 block pointer-events-none"
+					className="absolute inset-0 size-full block pointer-events-none"
 				/>
 			</div>
 		)

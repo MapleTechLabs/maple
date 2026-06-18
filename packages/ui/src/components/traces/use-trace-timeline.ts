@@ -313,8 +313,36 @@ export function useTraceTimeline({
 	colorBy,
 	keepVisibleSpanId,
 }: UseTraceTimelineOptions): UseTraceTimelineResult {
-	const traceStartMs = React.useMemo(() => new Date(traceStartTime).getTime(), [traceStartTime])
-	const traceEndMs = traceStartMs + totalDurationMs
+	// Trace bounds must span EVERY span, not just `traceStartTime + totalDurationMs`.
+	// On synthetic-root ("Missing Span") or clock-skewed traces, totalDurationMs (the
+	// reported root duration) can be far smaller than the real extent of the children,
+	// which would clamp the viewport to a tiny window and make the rest of the timeline
+	// unreachable by pan/zoom. Derive the actual [min start, max end] from the spans and
+	// only fall back to the reported window when there are no spans.
+	const { traceStartMs, traceEndMs } = React.useMemo(() => {
+		const reportedStart = new Date(traceStartTime).getTime()
+		let minStart = Number.POSITIVE_INFINITY
+		let maxEnd = Number.NEGATIVE_INFINITY
+		const visit = (node: SpanNode) => {
+			const s = new Date(node.startTime).getTime()
+			if (Number.isFinite(s)) {
+				if (s < minStart) minStart = s
+				const e = s + node.durationMs
+				if (e > maxEnd) maxEnd = e
+			}
+			node.children.forEach(visit)
+		}
+		rootSpans.forEach(visit)
+		if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
+			return { traceStartMs: reportedStart, traceEndMs: reportedStart + totalDurationMs }
+		}
+		return {
+			traceStartMs: Math.min(reportedStart, minStart),
+			traceEndMs: Math.max(reportedStart + totalDurationMs, maxEnd),
+		}
+	}, [rootSpans, traceStartTime, totalDurationMs])
+
+	const traceDurationMs = traceEndMs - traceStartMs
 
 	// Initialize with default expanded spans (auto-collapses big subtrees on long traces).
 	const defaultExpanded = React.useMemo(
@@ -324,8 +352,8 @@ export function useTraceTimeline({
 
 	const [state, dispatch] = React.useReducer(timelineReducer, {
 		viewport: {
-			startMs: traceStartMs - totalDurationMs * 0.02,
-			endMs: traceEndMs + totalDurationMs * 0.02,
+			startMs: traceStartMs - traceDurationMs * 0.02,
+			endMs: traceEndMs + traceDurationMs * 0.02,
 		},
 		focusedIndex: null,
 		searchQuery: "",
@@ -339,8 +367,8 @@ export function useTraceTimeline({
 			type: "RESET",
 			state: {
 				viewport: {
-					startMs: traceStartMs - totalDurationMs * 0.02,
-					endMs: traceEndMs + totalDurationMs * 0.02,
+					startMs: traceStartMs - traceDurationMs * 0.02,
+					endMs: traceEndMs + traceDurationMs * 0.02,
 				},
 				focusedIndex: null,
 				searchQuery: "",

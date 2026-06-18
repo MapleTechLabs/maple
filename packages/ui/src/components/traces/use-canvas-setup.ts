@@ -18,7 +18,16 @@ export function useCanvasSetup(
 ): CanvasSize {
 	const [size, setSize] = React.useState<CanvasSize>({ width: 0, height: 0, dpr: 1 })
 
-	// Apply size to the canvas element (both intrinsic + CSS).
+	// Apply only the backing-store resolution (intrinsic width/height = cssDim * dpr).
+	// We deliberately do NOT set canvas.style.width/height: the canvas display size is
+	// pinned to the container by CSS (`size-full` → width/height:100%, see the canvas
+	// elements in trace-timeline-canvas.tsx). Setting an explicit px width here would
+	// override that and, whenever the measured size lagged the real container (stale
+	// ResizeObserver, tab/panel mount, window resize), render the canvas wider than its
+	// container — the horizontal overflow that let the whole timeline panel scroll
+	// sideways into blank space. Keeping display sizing in CSS makes that structurally
+	// impossible; a stale measurement can at worst momentarily soften resolution until
+	// the next measure re-syncs the backing store.
 	const applySize = React.useCallback(
 		(cssW: number, cssH: number, dpr: number) => {
 			const canvas = canvasRef.current
@@ -27,8 +36,6 @@ export function useCanvasSetup(
 			const intrinsicH = Math.max(1, Math.floor(cssH * dpr))
 			if (canvas.width !== intrinsicW) canvas.width = intrinsicW
 			if (canvas.height !== intrinsicH) canvas.height = intrinsicH
-			canvas.style.width = `${cssW}px`
-			canvas.style.height = `${cssH}px`
 		},
 		[canvasRef],
 	)
