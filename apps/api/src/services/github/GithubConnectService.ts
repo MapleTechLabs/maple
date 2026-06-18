@@ -3,6 +3,7 @@ import {
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
+	isInstallationProcessable,
 	type OrgId,
 	type UserId,
 	type VcsAccountType,
@@ -154,6 +155,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			) {
 				const slug = Option.getOrUndefined(env.GITHUB_APP_SLUG)
 				if (!slug) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.connect.outcome": "app_not_configured",
+						"vcs.connect.reason": "GITHUB_APP_SLUG missing",
+					})
 					return yield* new IntegrationsValidationError({
 						message: "GitHub App is not configured (set GITHUB_APP_SLUG)",
 					})
@@ -173,6 +179,10 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						expiresAt: now + STATE_TTL_MS,
 					}),
 				)
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.connect.outcome": "started",
+				})
 				// GitHub echoes `state` back to the post-install redirect; the callback
 				// reads it from the query.
 				const params = new URLSearchParams({ state })
@@ -189,6 +199,10 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				const now = yield* Clock.currentTimeMillis
 				const stateRowOpt = yield* asPersistence(states.findByState(state))
 				if (Option.isNone(stateRowOpt)) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.connect.outcome": "state_not_found",
+						"vcs.connect.reason": "no state row for supplied secret",
+					})
 					return yield* new IntegrationsValidationError({
 						message: "Connect session not recognized — restart the connect flow",
 					})
@@ -197,20 +211,48 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// Single-use: consume immediately, before any upstream call.
 				yield* asPersistence(states.deleteByState(state))
 				if (stateRow.provider !== GITHUB_PROVIDER) {
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "provider_mismatch",
+						"vcs.connect.reason": `state provider "${stateRow.provider}" != "${GITHUB_PROVIDER}"`,
+					})
 					return yield* new IntegrationsValidationError({
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
 				if (stateRow.expiresAt < now) {
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "state_expired",
+						"vcs.connect.reason": "state TTL elapsed before callback",
+					})
 					return yield* new IntegrationsValidationError({
 						message: "Connect session expired — restart the connect flow",
 					})
 				}
 
-				const detail = yield* githubApp
-					.getInstallation(installationId)
-					.pipe(Effect.mapError(fromGithubError))
+				const detail = yield* githubApp.getInstallation(installationId).pipe(
+					Effect.tapError((error) =>
+						Effect.annotateCurrentSpan({
+							orgId: stateRow.orgId,
+							"vcs.connect.outcome": "upstream_github_error",
+							"vcs.connect.reason":
+								error.status === 404 || error.status === 410
+									? "installation gone/missing"
+									: "github upstream failure",
+							...(error.status === undefined
+								? {}
+								: { "vcs.github.status": error.status }),
+						}),
+					),
+					Effect.mapError(fromGithubError),
+				)
 				if (!detail.account) {
+					yield* Effect.annotateCurrentSpan({
+						orgId: stateRow.orgId,
+						"vcs.connect.outcome": "upstream_github_error",
+						"vcs.connect.reason": "installation has no account",
+					})
 					return yield* new IntegrationsValidationError({
 						message: "GitHub installation has no account — restart the connect flow",
 					})
@@ -244,6 +286,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					}),
 				)
 
+				yield* Effect.annotateCurrentSpan({
+					orgId: stateRow.orgId,
+					"vcs.connect.outcome": "connected",
+					"vcs.account.type": accountType,
+					"vcs.repository.selection": repositorySelection,
+				})
 				return { orgId: stateRow.orgId as OrgId, returnTo: stateRow.returnTo ?? null }
 			})
 
@@ -253,6 +301,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
 				)
 				if (!active) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.status.outcome": "ok",
+						"vcs.status.connected": false,
+					})
 					return {
 						connected: false,
 						accountLogin: null,
@@ -287,6 +340,14 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						}
 					}),
 				)
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.status.outcome": "ok",
+					"vcs.status.connected": true,
+					"vcs.account.type": active.accountType,
+					"vcs.repository.selection": active.repositorySelection,
+					"vcs.repository.count": repositories.length,
+				})
 				return {
 					connected: true,
 					accountLogin: active.accountLogin,
@@ -310,7 +371,13 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					(i) => asPersistence(repo.purgeInstallation(orgId, i.id)),
 					{ discard: true },
 				)
-				return { disconnected: targets.length > 0 }
+				const disconnected = targets.length > 0
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.disconnect.outcome": disconnected ? "disconnected" : "nothing_to_disconnect",
+					"vcs.disconnect.installation_count": targets.length,
+				})
+				return { disconnected }
 			})
 
 			const deleteRepository = Effect.fn("GithubConnectService.deleteRepository")(function* (
@@ -325,14 +392,33 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// another tenant reads as absent and an absent repo is treated as
 				// already-deleted (idempotent).
 				const existing = yield* asPersistence(repo.getRepositoryById(orgId, repositoryId))
-				if (Option.isNone(existing)) return { deleted: false }
+				if (Option.isNone(existing)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.delete_repository.outcome": "not_found",
+						"vcs.delete_repository.reason": "absent for org — treated as idempotent delete",
+					})
+					return { deleted: false }
+				}
 				if (existing.value.status !== "removed") {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.delete_repository.outcome": "still_active_rejected",
+						"vcs.delete_repository.reason": `repo status "${existing.value.status}" != "removed"`,
+					})
 					return yield* new IntegrationsValidationError({
 						message:
 							"This repository is still active. Remove its access in GitHub first — only repositories whose access was removed can be deleted from Maple.",
 					})
 				}
 				const deleted = yield* asPersistence(repo.purgeRepository(orgId, repositoryId))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.id": repositoryId,
+					"vcs.delete_repository.outcome": "deleted",
+				})
 				return { deleted }
 			})
 
@@ -343,14 +429,43 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 			) {
 				const existing = yield* asPersistence(repo.getRepositoryById(orgId, repositoryId))
 				if (Option.isNone(existing)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.set_tracked_branch.outcome": "repository_not_found",
+						"vcs.set_tracked_branch.reason": "absent for org",
+					})
 					return yield* new IntegrationsValidationError({ message: "Repository not found" })
 				}
 				const repository = existing.value
+
+				const installationOpt = yield* asPersistence(
+					repo.getInstallationById(orgId, repository.installationId),
+				)
+				if (Option.isSome(installationOpt) && !isInstallationProcessable(installationOpt.value)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.set_tracked_branch.outcome": "installation_suspended",
+						"vcs.set_tracked_branch.reason": "installation not processable (suspended)",
+					})
+					return yield* new IntegrationsValidationError({
+						message:
+							"This integration is suspended. Reactivate it on GitHub before changing the tracked branch.",
+					})
+				}
+
 				// The chosen branch must be one the repo actually knows about (the picker's
 				// list), so we don't point the tracker at a non-existent ref. The default
 				// branch always qualifies (it's listed and is the seeded default).
 				const branches = yield* asPersistence(repo.listBranchesByRepository(repositoryId))
 				if (!branches.some((b) => b.name === trackedBranch)) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.id": repositoryId,
+						"vcs.set_tracked_branch.outcome": "unknown_branch",
+						"vcs.set_tracked_branch.reason": "requested branch not in repository's known branches",
+					})
 					return yield* new IntegrationsValidationError({
 						message: `Branch "${trackedBranch}" is not a known branch of this repository.`,
 					})
@@ -362,6 +477,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					yield* Effect.annotateCurrentSpan({
 						orgId,
 						"vcs.repository.id": repositoryId,
+						"vcs.set_tracked_branch.outcome": "unchanged_noop",
+						"vcs.set_tracked_branch.reason": "requested branch equals current tracked branch",
 						"vcs.branches.tracked": trackedBranch,
 						"vcs.branches.changed": false,
 					})
@@ -374,9 +491,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				yield* asPersistence(repo.changeTrackedBranch(orgId, repositoryId, trackedBranch))
 
 				let backfillQueued = false
-				const installationOpt = yield* asPersistence(
-					repo.getInstallationById(orgId, repository.installationId),
-				)
 				if (Option.isSome(installationOpt)) {
 					const installation = installationOpt.value
 					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
@@ -399,7 +513,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					// branch is set and commits wiped, but without the external id we can't
 					// enqueue a backfill; report the truth (nothing queued) rather than claim it.
 					yield* Effect.logWarning(
-						"Tracked branch changed but installation missing — backfill not enqueued",
+						"[GitHub] Tracked branch changed but installation missing — backfill not enqueued",
 					).pipe(
 						Effect.annotateLogs({
 							orgId,
@@ -412,6 +526,11 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"vcs.repository.id": repositoryId,
+					"vcs.set_tracked_branch.outcome": "changed",
+					"vcs.set_tracked_branch.reason": backfillQueued
+						? "branch changed; backfill enqueued"
+						: "branch changed; installation missing — backfill not enqueued",
+					"vcs.set_tracked_branch.installation_missing": !backfillQueued,
 					"vcs.branches.tracked": trackedBranch,
 					"vcs.branches.changed": true,
 					"vcs.branches.backfill_queued": backfillQueued,

@@ -105,7 +105,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* repo.changeTrackedBranch(repository.orgId, repository.id, newBranch)
 					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
 					yield* queue.send(backfillJob(installation, repository, newBranch, sinceMs))
-					yield* Effect.logInfo("Tracked branch retargeted to default after deletion").pipe(
+					yield* Effect.logInfo("[VCS] Tracked branch retargeted to default after deletion").pipe(
 						Effect.annotateLogs({
 							provider: installation.provider,
 							externalRepoId: repository.externalRepoId,
@@ -130,6 +130,12 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						status: "backfilling",
 						error: null,
 					})
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider": installation.provider,
+						"vcs.repository.id": repository.id,
+						"vcs.repository.external_id": job.externalRepoId,
+						"vcs.commits.branch": job.branch,
+					})
 					const now = yield* Clock.currentTimeMillis
 					const { commits, next } = yield* provider.fetchCommits(
 						installation,
@@ -150,6 +156,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					// upserts. A force-push re-walk also only upserts: old (rebased-away) SHAs
 					// stay for trace attribution.
 					yield* repo.upsertCommits(repository, commits)
+					yield* Effect.annotateCurrentSpan({ "vcs.commits.fetched": commits.length })
 
 					if (!next) {
 						// Window fully walked → done.
@@ -157,6 +164,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							status: "ready",
 							error: null,
 							syncedAt: now,
+						})
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "handled",
+							"vcs.commits.reason": "backfill_complete",
 						})
 						return
 					}
@@ -169,7 +180,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							repository.id,
 							"backfill stalled: commit-date watermark did not advance",
 						)
-						yield* Effect.logError("VCS backfill stalled — watermark did not advance").pipe(
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "stalled",
+							"vcs.commits.reason": "watermark_did_not_advance",
+						})
+						yield* Effect.logError("[VCS] VCS backfill stalled — watermark did not advance").pipe(
 							Effect.annotateLogs({
 								provider: installation.provider,
 								externalRepoId: job.externalRepoId,
@@ -189,7 +204,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							repository.id,
 							"backfill stalled: rate-limited before making progress",
 						)
-						yield* Effect.logError("VCS backfill stalled — rate-limited before any progress").pipe(
+						yield* Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "stalled",
+							"vcs.commits.reason": "rate_limited_before_progress",
+							"vcs.commits.stale_attempts": staleAttempts,
+						})
+						yield* Effect.logError(
+							"[VCS] VCS backfill stalled — rate-limited before any progress",
+						).pipe(
 							Effect.annotateLogs({
 								provider: installation.provider,
 								externalRepoId: job.externalRepoId,
@@ -217,10 +239,18 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						},
 						{ delaySeconds: next.retryAfterSeconds },
 					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.commits.outcome": "handled",
+						"vcs.commits.reason":
+							next.reason === "page-budget"
+								? "continuation_requeued_page_budget"
+								: "continuation_requeued_rate_limited",
+						"vcs.commits.stale_attempts": staleAttempts,
+					})
 					yield* Effect.logInfo(
 						next.reason === "page-budget"
-							? "VCS backfill page budget reached — requeued continuation"
-							: "VCS backfill rate-limited — requeued continuation",
+							? "[VCS] VCS backfill page budget reached — requeued continuation"
+							: "[VCS] VCS backfill rate-limited — requeued continuation",
 					).pipe(
 						Effect.annotateLogs({
 							provider: installation.provider,
@@ -238,9 +268,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					//  - VcsInstallationGoneError → propagates to processMessage (disconnect).
 					//  - VcsProviderError (transient) → propagates so the queue retries.
 					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", (error) =>
-						repo.markRepoSyncError(repository.id, error.message).pipe(
+						Effect.annotateCurrentSpan({
+							"vcs.commits.outcome": "skipped",
+							"vcs.commits.reason": "repository_unavailable",
+						}).pipe(
+							Effect.andThen(repo.markRepoSyncError(repository.id, error.message)),
 							Effect.flatMap(() =>
-								Effect.logWarning("Repository unavailable — backfill skipped").pipe(
+								Effect.logWarning("[VCS] Repository unavailable — backfill skipped").pipe(
 									Effect.annotateLogs({
 										provider: installation.provider,
 										externalRepoId: job.externalRepoId,
@@ -257,15 +291,37 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				repository: VcsRepo,
 				job: PushJob,
 			) {
+					const tracked = trackedBranchOf(repository)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider": installation.provider,
+						"vcs.repository.id": repository.id,
+						"vcs.repository.external_id": repository.externalRepoId,
+						"vcs.repository.tracked_branch": tracked,
+						"vcs.push.branch": job.branch,
+						"vcs.push.forced": job.forced,
+					})
 					// Surface the pushed branch in the picker even if it's not the tracked one
 					// (so a user can switch to a freshly-pushed branch without waiting for the
 					// next installation-sync). Commit ingestion is gated on the tracked branch.
 					yield* repo.getOrCreateBranch(repository, job.branch)
-					if (job.branch !== trackedBranchOf(repository)) return
+					if (job.branch !== tracked) {
+						// THE off-tracked-branch gate: the push landed on a branch we don't ingest
+						// commits for, so we surface it in the picker but ingest nothing.
+						yield* Effect.annotateCurrentSpan({
+							"vcs.push.outcome": "skipped",
+							"vcs.push.reason": "untracked_branch",
+						})
+						return
+					}
 					// The tracked branch was pushed. A normal push is best-effort enrichment:
 					// upsert its commits onto the repo (the backfill remains authoritative).
 					if (!job.forced) {
 						yield* repo.upsertCommits(repository, job.commits)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.push.outcome": "handled",
+							"vcs.push.reason": "stored",
+							"vcs.push.commit_count": job.commits.length,
+						})
 						return
 					}
 					// A force-push rewrote history on the tracked branch. The push payload is
@@ -275,6 +331,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* queue.send(
 						backfillJob(installation, repository, job.branch, now - BACKFILL_WINDOW_MS),
 					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.push.outcome": "handled",
+						"vcs.push.reason": "force_push_rewalk_enqueued",
+					})
 				})
 
 			// Re-list a repo's branches (the picker's list), reconcile deletions, then
@@ -313,21 +373,38 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						"vcs.branches.tracked_deleted": trackedDeleted,
 					})
 					if (trackedDeleted) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.branches.outcome": "handled",
+							"vcs.branches.reason": "tracked_branch_retargeted_to_default",
+						})
 						yield* retargetTrackedBranch(installation, repository, repository.defaultBranch)
 						return
 					}
 					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
 					yield* queue.send(backfillJob(installation, repository, tracked, sinceMs))
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.id": repository.id,
+						"vcs.branches.deleted": deletedNames.length,
+						"vcs.branches.outcome": "handled",
+						"vcs.branches.reason": "tracked_branch_sync_enqueued",
+					})
 				}).pipe(
 					// A repo-scoped fetch failure drains here (branch sync owns no sync_status —
 					// that belongs to the commit backfill). Installation-gone propagates to the
 					// disconnect handler in processMessage.
 					Effect.catchTag("@maple/http/errors/VcsRepoUnavailableError", () =>
-						Effect.logWarning("Repository unavailable — branch sync skipped").pipe(
-							Effect.annotateLogs({
-								provider: installation.provider,
-								externalRepoId: repository.externalRepoId,
-							}),
+						Effect.annotateCurrentSpan({
+							"vcs.branches.outcome": "skipped",
+							"vcs.branches.reason": "repository_unavailable",
+						}).pipe(
+							Effect.andThen(
+								Effect.logWarning("[VCS] Repository unavailable — branch sync skipped").pipe(
+									Effect.annotateLogs({
+										provider: installation.provider,
+										externalRepoId: repository.externalRepoId,
+									}),
+								),
+							),
 						),
 					),
 					Effect.withSpan("VcsSyncService.syncBranches"),
@@ -343,8 +420,19 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				repository: VcsRepo,
 				job: BranchEventJob,
 			) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider": installation.provider,
+						"vcs.repository.id": repository.id,
+						"vcs.repository.external_id": repository.externalRepoId,
+						"vcs.branch_event.action": job.action,
+						"vcs.branch_event.branch": job.branch,
+					})
 					if (job.action === "created") {
 						yield* repo.getOrCreateBranch(repository, job.branch)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.branch_event.outcome": "handled",
+							"vcs.branch_event.reason": "branch_upserted",
+						})
 						return
 					}
 					const deleted = yield* repo.deleteBranch(repository.id, job.branch)
@@ -353,8 +441,17 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						job.branch === trackedBranchOf(repository) &&
 						job.branch !== repository.defaultBranch
 					) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.branch_event.outcome": "handled",
+							"vcs.branch_event.reason": "tracked_branch_retargeted_to_default_after_deletion",
+						})
 						yield* retargetTrackedBranch(installation, repository, repository.defaultBranch)
+						return
 					}
+					yield* Effect.annotateCurrentSpan({
+						"vcs.branch_event.outcome": "handled",
+						"vcs.branch_event.reason": deleted ? "branch_deleted" : "branch_absent",
+					})
 				})
 
 			// THE gate: the single, vendor-agnostic answer to "should the sync engine
@@ -370,7 +467,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						"vcs.installation.processable": processable,
 					})
 					if (!processable) {
-						yield* Effect.logInfo("Skipping VCS job: installation not processable").pipe(
+						yield* Effect.annotateCurrentSpan({
+							"vcs.process.outcome": "skipped",
+							"vcs.process.reason": "installation_not_processable",
+						})
+						yield* Effect.logInfo("[VCS] Skipping VCS job: installation not processable").pipe(
 							Effect.annotateLogs({
 								provider: installation.provider,
 								externalInstallationId: installation.externalInstallationId,
@@ -398,7 +499,11 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						job.externalRepoId,
 					)
 					if (Option.isNone(repositoryOpt)) {
-						yield* Effect.logInfo("Dropping VCS job for unknown repository").pipe(
+						yield* Effect.annotateCurrentSpan({
+							"vcs.repository.outcome": "dropped",
+							"vcs.repository.reason": "unknown_repository",
+						})
+						yield* Effect.logInfo("[VCS] Dropping VCS job for unknown repository").pipe(
 							Effect.annotateLogs({
 								provider: job.provider,
 								externalRepoId: job.externalRepoId,
@@ -408,8 +513,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						return Option.none<VcsRepo>()
 					}
 					if (repositoryOpt.value.status === "removed") {
-						yield* Effect.annotateCurrentSpan({ "vcs.repository.skipped": true })
-						yield* Effect.logInfo("Skipping VCS job: repository removed").pipe(
+						yield* Effect.annotateCurrentSpan({
+							"vcs.repository.id": repositoryOpt.value.id,
+							"vcs.repository.skipped": true,
+							"vcs.repository.outcome": "skipped",
+							"vcs.repository.reason": "repository_removed",
+						})
+						yield* Effect.logInfo("[VCS] Skipping VCS job: repository removed").pipe(
 							Effect.annotateLogs({
 								provider: job.provider,
 								externalRepoId: job.externalRepoId,
@@ -418,6 +528,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						)
 						return Option.none<VcsRepo>()
 					}
+					yield* Effect.annotateCurrentSpan({ "vcs.repository.id": repositoryOpt.value.id })
 					return repositoryOpt
 				})
 
@@ -426,18 +537,27 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			// reason-specific branching); processMessage only resolves the installation
 			// and dispatches by kind.
 
-			const handleInstallationSync = (
+			const handleInstallationSync = Effect.fn("VcsSyncService.handleInstallationSync")(function* (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: InstallationSyncJob,
-			) =>
-				Effect.gen(function* () {
+			) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.installation.sync_reason": job.reason,
+						"vcs.installation.id": installation.id,
+						"vcs.installation.external_id": installation.externalInstallationId,
+						"vcs.provider": installation.provider,
+					})
 					// Status-transition reasons change the gate's answer for subsequent jobs
 					// rather than processing data themselves.
 					if (job.reason === "suspend" || job.reason === "deleted") {
 						const status = job.reason === "suspend" ? "suspended" : "disconnected"
 						yield* repo.markInstallationStatus(installation.id, status)
-						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": status })
+						yield* Effect.annotateCurrentSpan({
+							"vcs.installation.transition": status,
+							"vcs.installation_sync.outcome": "handled",
+							"vcs.installation_sync.reason": job.reason,
+						})
 						return
 					}
 					let active = installation
@@ -450,7 +570,13 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })
 					}
 
-					if (!(yield* ensureProcessable(active, job.kind))) return
+					if (!(yield* ensureProcessable(active, job.kind))) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.installation_sync.outcome": "skipped",
+							"vcs.installation_sync.reason": "installation_not_processable",
+						})
+						return
+					}
 
 					// A newly-created installation gives the org a clean single-installation
 					// slate: hard-delete every *other* installation (and its repos/commits) for
@@ -472,7 +598,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							yield* Effect.annotateCurrentSpan({
 								"vcs.installation.superseded": superseded.length,
 							})
-							yield* Effect.logInfo("Purged superseded VCS installations after new install").pipe(
+							yield* Effect.logInfo("[VCS] Purged superseded VCS installations after new install").pipe(
 								Effect.annotateLogs({
 									provider: active.provider,
 									externalInstallationId: active.externalInstallationId,
@@ -485,6 +611,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 					const repos = yield* provider.fetchRepositories(installation)
 					yield* repo.upsertRepositories(installation, repos)
+					yield* Effect.annotateCurrentSpan({ "vcs.repositories.reconciled": repos.length })
 
 					// Reconcile removals: soft-delete local repos no longer visible
 					// upstream. The row and its synced commits are kept (a re-grant
@@ -515,6 +642,10 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 							name: r.name,
 						})),
 					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.installation_sync.outcome": "handled",
+						"vcs.installation_sync.reason": job.reason,
+					})
 				})
 
 			const handleSyncCommits = (
@@ -561,8 +692,15 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
 					Effect.catch((cause) =>
-						Effect.logWarning("Dropping undecodable VCS sync job").pipe(
-							Effect.annotateLogs({ error: String(cause) }),
+						Effect.annotateCurrentSpan({
+							"vcs.process.outcome": "dropped",
+							"vcs.process.reason": "job_undecodable",
+						}).pipe(
+							Effect.andThen(
+								Effect.logWarning("[VCS] Dropping undecodable VCS sync job").pipe(
+									Effect.annotateLogs({ error: String(cause) }),
+								),
+							),
 							Effect.as(Option.none<VcsSyncJob>()),
 						),
 					),
@@ -574,13 +712,23 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					"vcs.job.kind": job.kind,
 					"vcs.installation.external_id": job.externalInstallationId,
 				})
+				// Correlate back to the originating webhook: webhook-origin jobs carry the
+				// provider delivery id, which the webhook receive span also recorded as
+				// `vcs.webhook.delivery_id`. Absent on cron/internally-enqueued jobs.
+				if ("deliveryId" in job && job.deliveryId !== undefined) {
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.delivery_id": job.deliveryId })
+				}
 
 				// Resolve the installation once (external id → entity carrying our internal
 				// id) — the single resolve for the whole job; every handler addresses the
 				// installation by `installation.id`.
 				const installationOpt = yield* repo.resolveInstallation(job.provider, job.externalInstallationId)
 				if (Option.isNone(installationOpt)) {
-					yield* Effect.logInfo("Dropping VCS job for unknown installation").pipe(
+					yield* Effect.annotateCurrentSpan({
+						"vcs.process.outcome": "dropped",
+						"vcs.process.reason": "installation_unknown",
+					})
+					yield* Effect.logInfo("[VCS] Dropping VCS job for unknown installation").pipe(
 						Effect.annotateLogs({
 							provider: job.provider,
 							externalInstallationId: job.externalInstallationId,
@@ -590,8 +738,14 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					return
 				}
 				const installation = installationOpt.value
+				yield* Effect.annotateCurrentSpan({ "vcs.installation.id": installation.id })
 
 				const provider = yield* registry.resolve(job.provider)
+
+				yield* Effect.annotateCurrentSpan({
+					"vcs.process.outcome": "dispatched",
+					"vcs.process.reason": job.kind,
+				})
 
 				// Dispatch by kind — each handler owns the gate, repo resolution, and all
 				// decision-making for its job. No kind-specific branching lives here.
@@ -614,9 +768,16 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				// authoritative gone signal — never on a raw HTTP status.
 				return yield* run.pipe(
 					Effect.catchTag("@maple/http/errors/VcsInstallationGoneError", () =>
-						repo.markInstallationStatus(installation.id, "disconnected").pipe(
+						Effect.annotateCurrentSpan({
+							"vcs.process.outcome": "handled",
+							"vcs.process.reason": "installation_gone",
+							"vcs.installation.transition": "disconnected",
+						}).pipe(
+							Effect.andThen(repo.markInstallationStatus(installation.id, "disconnected")),
 							Effect.flatMap(() =>
-								Effect.logWarning("VCS installation reported gone by provider — marked disconnected").pipe(
+								Effect.logWarning(
+									"[VCS] VCS installation reported gone by provider — marked disconnected",
+								).pipe(
 									Effect.annotateLogs({
 										provider: installation.provider,
 										externalInstallationId: installation.externalInstallationId,
@@ -641,20 +802,48 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 						Effect.map(Option.some),
 						Effect.orElseSucceed(() => Option.none<VcsSyncJob>()),
 					)
-					if (Option.isNone(jobOpt) || jobOpt.value.kind !== "sync-commits") return
+					if (Option.isNone(jobOpt) || jobOpt.value.kind !== "sync-commits") {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "noop",
+							"vcs.exhausted.reason": "not_sync_commits_job",
+						})
+						return
+					}
 					const job = jobOpt.value
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider": job.provider,
+						"vcs.job.kind": job.kind,
+						"vcs.repository.external_id": job.externalRepoId,
+					})
 					const installationOpt = yield* repo.resolveInstallation(
 						job.provider,
 						job.externalInstallationId,
 					)
-					if (Option.isNone(installationOpt)) return
+					if (Option.isNone(installationOpt)) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "noop",
+							"vcs.exhausted.reason": "installation_unknown",
+						})
+						return
+					}
 					const repositoryOpt = yield* resolveRepositoryForJob(installationOpt.value, job)
-					if (Option.isNone(repositoryOpt)) return
+					if (Option.isNone(repositoryOpt)) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "noop",
+							"vcs.exhausted.reason": "repository_unresolved",
+						})
+						return
+					}
 					yield* repo.markRepoSyncError(
 						repositoryOpt.value.id,
 						"backfill failed: exhausted queue retries",
 					)
-					yield* Effect.logError("VCS commit sync exhausted retries — marked repo errored").pipe(
+					yield* Effect.annotateCurrentSpan({
+						"vcs.repository.id": repositoryOpt.value.id,
+						"vcs.exhausted.outcome": "handled",
+						"vcs.exhausted.reason": "repo_marked_errored",
+					})
+					yield* Effect.logError("[VCS] VCS commit sync exhausted retries — marked repo errored").pipe(
 						Effect.annotateLogs({
 							provider: job.provider,
 							externalRepoId: job.externalRepoId,
@@ -662,8 +851,15 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 				}).pipe(
 					Effect.catchCause((cause) =>
-						Effect.logError("Failed to record exhausted VCS sync failure").pipe(
-							Effect.annotateLogs({ error: Cause.pretty(cause) }),
+						Effect.annotateCurrentSpan({
+							"vcs.exhausted.outcome": "failed",
+							"vcs.exhausted.reason": "record_failed",
+						}).pipe(
+							Effect.andThen(
+								Effect.logError("[VCS] Failed to record exhausted VCS sync failure").pipe(
+									Effect.annotateLogs({ error: Cause.pretty(cause) }),
+								),
+							),
 						),
 					),
 					Effect.withSpan("VcsSyncService.recordExhaustedFailure"),

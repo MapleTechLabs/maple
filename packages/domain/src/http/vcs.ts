@@ -301,6 +301,7 @@ export const InstallationSyncJob = Schema.Struct({
 	provider: VcsProviderId,
 	externalInstallationId: Schema.String,
 	reason: VcsInstallationSyncReason,
+	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type InstallationSyncJob = Schema.Schema.Type<typeof InstallationSyncJob>
 
@@ -345,6 +346,7 @@ export const PushJob = Schema.Struct({
 	// reconciling backfill of the branch so stale commit membership is pruned.
 	forced: Schema.optionalKey(Schema.Boolean),
 	commits: Schema.Array(CommitUpsertInput),
+	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type PushJob = Schema.Schema.Type<typeof PushJob>
 
@@ -373,6 +375,7 @@ export const BranchEventJob = Schema.Struct({
 	externalRepoId: Schema.String,
 	action: Schema.Literals(["created", "deleted"]),
 	branch: Schema.String,
+	deliveryId: Schema.optionalKey(Schema.String),
 })
 export type BranchEventJob = Schema.Schema.Type<typeof BranchEventJob>
 

@@ -204,7 +204,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							})
 						}
 						inlineRetries += 1
-						yield* Effect.logWarning("GitHub rate limit hit — waiting inline").pipe(
+						// Surface the inline-wait on the active HTTP span so a slow GitHub call
+						// is attributable to throttling (not network latency) from the trace.
+						yield* Effect.annotateCurrentSpan({
+							"vcs.provider.rate_limited": true,
+							"vcs.provider.rate_limit_wait_s": waitS,
+						})
+						yield* Effect.logWarning("[GitHub] Rate limit hit — waiting inline").pipe(
 							Effect.annotateLogs({
 								waitSeconds: waitS,
 								status: response.status,
@@ -377,7 +383,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					}
 					// Exhausted the page cap without a short final page → likely truncated.
 					if (page > MAX_PAGES) {
-						yield* Effect.logWarning("GitHub installation repositories truncated at page cap").pipe(
+						yield* Effect.logWarning("[GitHub] Installation repositories truncated at page cap").pipe(
 							Effect.annotateLogs({ externalInstallationId, maxPages: MAX_PAGES, fetched: repos.length }),
 						)
 					}
@@ -412,7 +418,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				}
 				const truncated = page > MAX_PAGES
 				if (truncated) {
-					yield* Effect.logWarning("GitHub branches truncated at page cap").pipe(
+					yield* Effect.logWarning("[GitHub] Branches truncated at page cap").pipe(
 						Effect.annotateLogs({ owner, repo, maxPages: MAX_PAGES, fetched: branches.length }),
 					)
 				}

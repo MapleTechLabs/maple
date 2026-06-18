@@ -13,10 +13,16 @@ import * as React from "react"
  *     it (the chip copies `key=value` and passes `Copied <key>`).
  *   - `highlightJson` turns a JSON string into highlighted HTML. When omitted,
  *     JSON renders as plain pre-formatted text.
+ *   - `renderValue` is an optional override for a single attribute's value cell.
+ *     It returns a node to render instead of the default copyable text, or
+ *     null/undefined to fall back. Lets apps enrich specific keys (e.g. wrap a
+ *     commit-SHA attribute in a hover card) without `@maple/ui` depending on
+ *     app-level components.
  */
 export interface AttributesConfig {
 	notifyCopied?: (message?: string) => void
 	highlightJson?: (json: string) => string
+	renderValue?: (attrKey: string, value: string) => React.ReactNode | null | undefined
 }
 
 const AttributesConfigContext = React.createContext<AttributesConfig>({})
@@ -25,10 +31,11 @@ export function AttributesProvider({
 	children,
 	notifyCopied,
 	highlightJson,
+	renderValue,
 }: AttributesConfig & { children: React.ReactNode }) {
 	const value = React.useMemo<AttributesConfig>(
-		() => ({ notifyCopied, highlightJson }),
-		[notifyCopied, highlightJson],
+		() => ({ notifyCopied, highlightJson, renderValue }),
+		[notifyCopied, highlightJson, renderValue],
 	)
 	return <AttributesConfigContext value={value}>{children}</AttributesConfigContext>
 }

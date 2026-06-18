@@ -71,9 +71,14 @@ export class VcsScheduledSyncService extends Context.Service<
 				"vcs.scheduled.installations_total": result.installationsTotal,
 				"vcs.scheduled.enqueued": result.enqueued,
 				"vcs.scheduled.skipped": result.skipped,
+				"vcs.scheduled.outcome": "completed",
 			})
 			return result
-		})
+		},
+		Effect.tapCause(() =>
+			Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" }),
+		),
+		)
 
 		return { runScheduledSync } satisfies VcsScheduledSyncServiceShape
 	}),

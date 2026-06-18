@@ -86,14 +86,25 @@ const parseError = (message: string) => new VcsWebhookParseError({ message })
 
 // Decode an event payload, logging the structured cause server-side (so schema
 // drift is diagnosable) while returning a generic 400-mapped error to the caller.
+// The child span carries the event and (on failure) the stable `invalid_payload`
+// parse-error reason so a schema-drift rejection is filterable from a trace.
 const parsePayload = <A, E>(event: string, decoded: Effect.Effect<A, E>) =>
 	decoded.pipe(
 		Effect.tapError((cause) =>
-			Effect.logWarning("Invalid GitHub webhook payload").pipe(
-				Effect.annotateLogs({ provider: PROVIDER, event, cause: String(cause) }),
-			),
+			Effect.gen(function* () {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "rejected",
+					"vcs.webhook.parse_error": "invalid_payload",
+				})
+				yield* Effect.logWarning("[GitHub] Invalid GitHub webhook payload").pipe(
+					Effect.annotateLogs({ provider: PROVIDER, event, cause: String(cause) }),
+				)
+			}),
 		),
 		Effect.mapError(() => parseError(`Invalid ${event} payload`)),
+		Effect.withSpan("GithubProvider.parsePayload", {
+			attributes: { "vcs.provider": PROVIDER, "vcs.webhook.event": event },
+		}),
 	)
 
 // Classify a GitHub HTTP failure into a semantic VCS error. HTTP-status
@@ -185,18 +196,45 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			const env = yield* Env
 			const client = yield* GithubAppClient
 
+			// Stamp the (low-cardinality) signature *result* on the active span. NEVER
+			// records the signature value or the secret — only the outcome enum. The
+			// operator-misconfig case (secret_not_configured) is kept distinct from a
+			// genuine attacker `mismatch` so dashboards don't conflate the two.
+			const annotateSignatureResult = (result: string) =>
+				Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "rejected",
+					"vcs.webhook.signature_result": result,
+				})
+
+			const signatureRejected = (result: string, message: string) =>
+				Effect.gen(function* () {
+					yield* annotateSignatureResult(result)
+					return yield* new VcsWebhookSignatureError({ message })
+				})
+
 			const verifySignature = (rawBody: string, signatureHeader: string | undefined) =>
 				Effect.gen(function* () {
 					const secret = env.GITHUB_APP_WEBHOOK_SECRET
 					if (Option.isNone(secret)) {
-						return yield* new VcsWebhookSignatureError({
-							message: "GitHub webhook secret is not configured (GITHUB_APP_WEBHOOK_SECRET)",
-						})
+						yield* Effect.logWarning(
+							"[GitHub] Webhook secret is not configured (GITHUB_APP_WEBHOOK_SECRET)",
+						).pipe(Effect.annotateLogs({ provider: PROVIDER }))
+						return yield* signatureRejected(
+							"secret_not_configured",
+							"GitHub webhook secret is not configured (GITHUB_APP_WEBHOOK_SECRET)",
+						)
 					}
-					if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
-						return yield* new VcsWebhookSignatureError({
-							message: "Missing or malformed X-Hub-Signature-256 header",
-						})
+					if (!signatureHeader) {
+						return yield* signatureRejected(
+							"missing_header",
+							"Missing X-Hub-Signature-256 header",
+						)
+					}
+					if (!signatureHeader.startsWith("sha256=")) {
+						return yield* signatureRejected(
+							"malformed_header",
+							"Malformed X-Hub-Signature-256 header",
+						)
 					}
 					const enc = new TextEncoder()
 					const key = yield* Effect.tryPromise({
@@ -208,32 +246,54 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								false,
 								["sign"],
 							),
-						catch: () =>
-							new VcsWebhookSignatureError({ message: "Failed to import webhook secret" }),
-					})
+						catch: () => "import_failed" as const,
+					}).pipe(
+						Effect.tapError(annotateSignatureResult),
+						Effect.mapError(() => new VcsWebhookSignatureError({ message: "Failed to import webhook secret" })),
+					)
 					const mac = yield* Effect.tryPromise({
 						try: () => crypto.subtle.sign("HMAC", key, enc.encode(rawBody)),
-						catch: () =>
-							new VcsWebhookSignatureError({ message: "Failed to compute webhook signature" }),
-					})
+						catch: () => "compute_failed" as const,
+					}).pipe(
+						Effect.tapError(annotateSignatureResult),
+						Effect.mapError(() => new VcsWebhookSignatureError({ message: "Failed to compute webhook signature" })),
+					)
 					const expected = `sha256=${Buffer.from(mac).toString("hex")}`
 					if (!timingSafeEqual(expected, signatureHeader)) {
-						return yield* new VcsWebhookSignatureError({ message: "Webhook signature mismatch" })
+						return yield* signatureRejected("mismatch", "Webhook signature mismatch")
 					}
-				})
+					yield* Effect.annotateCurrentSpan({ "vcs.webhook.signature_result": "ok" })
+				}).pipe(Effect.withSpan("GithubProvider.verifySignature", { attributes: { "vcs.provider": PROVIDER } }))
 
 			const mapPush = (raw: unknown, now: number) =>
 				Effect.gen(function* () {
 					const payload = yield* parsePayload("push", decodePush(raw))
-					if (!payload.ref.startsWith("refs/heads/")) return [] // ignore tag/other refs
-					const branch = payload.ref.slice("refs/heads/".length)
 					const externalInstallationId = String(payload.installation.id)
 					const externalRepoId = String(payload.repository.id)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": externalInstallationId,
+						"vcs.repository.external_id": externalRepoId,
+						"vcs.push.forced": payload.forced ?? false,
+					})
+					if (!payload.ref.startsWith("refs/heads/")) {
+						// Tag pushes and other non-branch refs aren't synced.
+						yield* Effect.annotateCurrentSpan({
+							"vcs.webhook.outcome": "skipped",
+							"vcs.webhook.skip_reason": "non_branch_ref",
+						})
+						return []
+					}
+					const branch = payload.ref.slice("refs/heads/".length)
+					yield* Effect.annotateCurrentSpan({ "vcs.push.branch": branch })
 					// A force-push rewrote history; the commit payload is unreliable, so don't
 					// ship it. Emit a single marker job and let the orchestrator re-walk the
 					// branch (if it's one we sync) instead of ingesting the payload. Keeps the
 					// rewrite handling in one place and avoids splitting commits we'd discard.
 					if (payload.forced) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.webhook.outcome": "handled",
+							"vcs.webhook.skip_reason": "force_push_marker",
+						})
 						const job: VcsSyncJob = {
 							kind: "push",
 							provider: PROVIDER,
@@ -259,7 +319,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							htmlUrl: c.url,
 						}
 					})
-					if (commits.length === 0) return []
+					yield* Effect.annotateCurrentSpan({ "vcs.push.commit_count": commits.length })
+					if (commits.length === 0) {
+						yield* Effect.annotateCurrentSpan({
+							"vcs.webhook.outcome": "skipped",
+							"vcs.webhook.skip_reason": "no_commits",
+						})
+						return []
+					}
 					// A push is best-effort enrichment only — the per-branch commit backfill
 					// remains the authoritative source for a repo's commit history.
 					const makeJob = (slice: ReadonlyArray<CommitUpsertInput>): VcsSyncJob => ({
@@ -292,31 +359,50 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						sliceBytes += commitBytes
 					}
 					jobs.push(makeJob(slice))
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.webhook.jobs": jobs.length,
+					})
 					return jobs
 				})
 
 			const mapInstallationEvent =
-				(reasonFor: (action: string) => VcsInstallationSyncReason | null) => (raw: unknown) =>
+				(event: string, reasonFor: (action: string) => VcsInstallationSyncReason | null) =>
+				(raw: unknown) =>
 					Effect.gen(function* () {
-						const payload = yield* parsePayload("installation", decodeInstallationEvent(raw))
+						const payload = yield* parsePayload(event, decodeInstallationEvent(raw))
+						const externalInstallationId = String(payload.installation.id)
+						yield* Effect.annotateCurrentSpan({
+							"vcs.webhook.action": payload.action,
+							"vcs.provider.installation_id": externalInstallationId,
+						})
 						const reason = reasonFor(payload.action)
-						if (!reason) return []
+						if (!reason) {
+							yield* Effect.annotateCurrentSpan({
+								"vcs.webhook.outcome": "skipped",
+								"vcs.webhook.skip_reason": "unhandled_action",
+							})
+							return []
+						}
+						yield* Effect.annotateCurrentSpan({ "vcs.webhook.outcome": "handled" })
 						const job: VcsSyncJob = {
 							kind: "installation-sync",
 							provider: PROVIDER,
-							externalInstallationId: String(payload.installation.id),
+							externalInstallationId,
 							reason,
 						}
 						return [job]
 					})
 
-			const mapInstallation = mapInstallationEvent(installationReason)
-			const mapInstallationRepositories = mapInstallationEvent((action) =>
-				action === "added"
-					? "repositories_added"
-					: action === "removed"
-						? "repositories_removed"
-						: null,
+			const mapInstallation = mapInstallationEvent("installation", installationReason)
+			const mapInstallationRepositories = mapInstallationEvent(
+				"installation_repositories",
+				(action) =>
+					action === "added"
+						? "repositories_added"
+						: action === "removed"
+							? "repositories_removed"
+							: null,
 			)
 
 			// `create`/`delete` (ref_type=branch) → one branch-event job; tags are ignored.
@@ -327,27 +413,41 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						action === "created" ? "create" : "delete",
 						decodeRefEvent(raw),
 					)
-					if (payload.ref_type !== "branch") return []
+					const externalInstallationId = String(payload.installation.id)
+					const externalRepoId = String(payload.repository.id)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.provider.installation_id": externalInstallationId,
+						"vcs.repository.external_id": externalRepoId,
+					})
+					if (payload.ref_type !== "branch") {
+						// `ref_type` is "tag" (or other) — only branch create/delete is synced.
+						yield* Effect.annotateCurrentSpan({
+							"vcs.webhook.outcome": "skipped",
+							"vcs.webhook.skip_reason": "non_branch_ref_event",
+						})
+						return []
+					}
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.push.branch": payload.ref,
+					})
 					const job: VcsSyncJob = {
 						kind: "branch-event",
 						provider: PROVIDER,
-						externalInstallationId: String(payload.installation.id),
-						externalRepoId: String(payload.repository.id),
+						externalInstallationId,
+						externalRepoId,
 						action,
 						branch: payload.ref,
 					}
 					return [job]
 				})
 
-			const webhookToJobs = (input: VcsWebhookRequest) =>
+			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
+			// skip_reason / identifiers) are made by each mapper onto the surrounding
+			// `webhookToJobs` span.
+			const mapEvent = (event: string | undefined, parsed: unknown, now: number) =>
 				Effect.gen(function* () {
-					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
-					const parsed = yield* Effect.try({
-						try: () => JSON.parse(input.rawBody) as unknown,
-						catch: () => parseError("Invalid JSON body"),
-					})
-					const now = yield* Clock.currentTimeMillis
-					switch (input.headers["x-github-event"]) {
+					switch (event) {
 						case "push":
 							return yield* mapPush(parsed, now)
 						case "installation":
@@ -359,8 +459,38 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						case "delete":
 							return yield* mapRefEvent("deleted")(parsed)
 						default:
-							return [] // ping and unhandled events are accepted no-ops
+							// ping and unhandled events are accepted no-ops.
+							yield* Effect.annotateCurrentSpan({
+								"vcs.webhook.outcome": "skipped",
+								"vcs.webhook.skip_reason": "unhandled_event",
+							})
+							return []
 					}
+				})
+
+			const webhookToJobs = (input: VcsWebhookRequest) =>
+				Effect.gen(function* () {
+					yield* verifySignature(input.rawBody, input.headers["x-hub-signature-256"])
+					const parsed = yield* Effect.try({
+						try: () => JSON.parse(input.rawBody) as unknown,
+						catch: () => parseError("Invalid JSON body"),
+					}).pipe(
+						Effect.tapError(() =>
+							Effect.annotateCurrentSpan({
+								"vcs.webhook.outcome": "rejected",
+								"vcs.webhook.parse_error": "invalid_json",
+							}),
+						),
+					)
+					const now = yield* Clock.currentTimeMillis
+					const jobs = yield* mapEvent(input.headers["x-github-event"], parsed, now)
+					// Stamp the GitHub delivery id onto every job this webhook produced, so
+					// the queue consumer's processMessage span can be correlated back to this
+					// webhook's receive span (both carry `vcs.webhook.delivery_id`). Every
+					// webhook-origin job kind (installation-sync / push / branch-event) carries
+					// the optional field; Schema strips it from any kind that doesn't.
+					const deliveryId = input.headers["x-github-delivery"]
+					return deliveryId ? jobs.map((job) => ({ ...job, deliveryId })) : jobs
 				}).pipe(
 					Effect.withSpan("GithubProvider.webhookToJobs", {
 						attributes: {

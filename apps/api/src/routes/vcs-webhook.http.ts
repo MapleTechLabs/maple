@@ -20,30 +20,102 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 		const queue = yield* VcsSyncQueue
 
 		const makeHandler =
-			(provider: VcsProviderClient) => (req: HttpServerRequest.HttpServerRequest) =>
-				Effect.gen(function* () {
+			(provider: VcsProviderClient) =>
+			(route: string) =>
+			(req: HttpServerRequest.HttpServerRequest) => {
+				// Used so we can return a clean HTTP 500 response (non-errored exit)
+				// while still using the fail channel of the effects inside of the span
+				// tracer.
+				class EnqueueFailure {
+					readonly _tag = "EnqueueFailure"
+					constructor(readonly message: string) {}
+				}
+
+				return Effect.gen(function* () {
+					const deliveryId = (req.headers as Record<string, string | undefined>)[
+						"x-github-delivery"
+					]
+					yield* Effect.annotateCurrentSpan({
+						"http.request.method": req.method,
+						"http.route": route,
+						...(deliveryId ? { "vcs.webhook.delivery_id": deliveryId } : {}),
+					})
+
 					const bodyOpt = yield* req.text.pipe(Effect.option)
-					if (Option.isNone(bodyOpt)) return textResponse("Missing request body", 400)
+					if (Option.isNone(bodyOpt) || bodyOpt.value.length === 0) {
+						yield* Effect.annotateCurrentSpan({
+							"http.response.status_code": 400,
+							"otel.status_code": "Ok",
+							"vcs.webhook.outcome": "rejected",
+							"vcs.webhook.reason": "empty_body",
+						})
+						yield* Effect.logInfo("[VCS] webhook rejected: empty request body")
+						return textResponse("Missing request body", 400)
+					}
 					const headers = req.headers as Record<string, string | undefined>
 
 					return yield* provider.webhookToJobs({ headers, rawBody: bodyOpt.value }).pipe(
 						Effect.flatMap((jobs) =>
 							Effect.forEach(jobs, (job) => queue.send(job), { discard: true }).pipe(
+								Effect.flatMap(() =>
+									Effect.annotateCurrentSpan({
+										"http.response.status_code": 202,
+										"otel.status_code": "Ok",
+										"vcs.webhook.outcome": "handled",
+										"vcs.webhook.jobs_enqueued": jobs.length,
+									}),
+								),
 								Effect.as(textResponse("accepted", 202)),
 							),
 						),
 						Effect.catchTags({
 							"@maple/http/errors/VcsWebhookSignatureError": (error) =>
-								Effect.succeed(textResponse(error.message, 401)),
+								Effect.annotateCurrentSpan({
+									"http.response.status_code": 401,
+									"otel.status_code": "Ok",
+									"error.type": error._tag,
+									"vcs.webhook.outcome": "rejected",
+									"vcs.webhook.reason": "signature_rejected",
+								}).pipe(Effect.as(textResponse(error.message, 401))),
 							"@maple/http/errors/VcsWebhookParseError": (error) =>
-								Effect.succeed(textResponse(error.message, 400)),
+								Effect.annotateCurrentSpan({
+									"http.response.status_code": 400,
+									"otel.status_code": "Ok",
+									"error.type": error._tag,
+									"vcs.webhook.outcome": "rejected",
+									"vcs.webhook.reason": "parse_rejected",
+								}).pipe(Effect.as(textResponse(error.message, 400))),
+							// Genuine internal failure: annotate, then FAIL so the span
+							// ends Error. The body is produced by the catch below.
 							"@maple/http/errors/VcsQueueError": (error) =>
-								Effect.logError("Failed to enqueue VCS webhook jobs")
-									.pipe(Effect.annotateLogs({ error: error.message }))
-									.pipe(Effect.as(textResponse("enqueue failed", 500))),
+								Effect.annotateCurrentSpan({
+									"http.response.status_code": 500,
+									"otel.status_code": "Error",
+									"error.type": error._tag,
+									"vcs.webhook.outcome": "failed",
+									"vcs.webhook.reason": "enqueue_failed",
+								}).pipe(
+									Effect.flatMap(() =>
+										Effect.logError("[VCS] failed to enqueue webhook jobs").pipe(
+											Effect.annotateLogs({ error: error.message }),
+										),
+									),
+									Effect.flatMap(() => Effect.fail(new EnqueueFailure(error.message))),
+								),
 						}),
 					)
-				}).pipe(Effect.withSpan("VcsWebhook.receive", { attributes: { "vcs.provider": provider.id } }))
+				}).pipe(
+					Effect.withSpan("VcsWebhook.receive", {
+						attributes: { "vcs.provider": provider.id },
+					}),
+					// Map the internal-failure marker to its 500 response OUTSIDE the
+					// span so the span exits Error (5xx) while the HTTP layer still gets
+					// a well-formed response.
+					Effect.catchTag("EnqueueFailure", () =>
+						Effect.succeed(textResponse("enqueue failed", 500)),
+					),
+				)
+			}
 
 		yield* Effect.forEach(
 			registry.ids,
@@ -53,7 +125,11 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 					.pipe(
 						Effect.orDie,
 						Effect.flatMap((provider) =>
-							router.add("POST", `/api/integrations/${id}/webhook`, makeHandler(provider)),
+							router.add(
+								"POST",
+								`/api/integrations/${id}/webhook`,
+								makeHandler(provider)(`/api/integrations/${id}/webhook`),
+							),
 						),
 					),
 			{ discard: true },

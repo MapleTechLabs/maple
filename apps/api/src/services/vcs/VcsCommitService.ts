@@ -7,6 +7,7 @@ import {
 	isInstallationProcessable,
 	type OrgId,
 	type VcsCommit,
+	type VcsInstallation,
 	VcsCommitNotFoundError,
 	VcsCommitShaInvalidError,
 	type VcsProviderId,
@@ -118,59 +119,13 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 			// provider probes within a single hover session.
 			const negativeCache = new Map<string, number>()
 
-			const resolveCommitDetail = Effect.fn("VcsCommitService.resolveCommitDetail")(function* (
+			// Check if a commit exists upstream in any of the installed installations.
+			const probeInstallations = Effect.fn("VcsCommitService.probeInstallations")(function* (
 				orgId: OrgId,
-				rawSha: string,
+				sha: GitCommitSha,
+				installations: ReadonlyArray<VcsInstallation>,
 			) {
-				// Unguarded telemetry SHA: a non-40-hex value is a typed, non-retryable
-				// error the dashboard renders as a muted "non-standard reference".
-				const sha = yield* decodeSha(rawSha).pipe(
-					Effect.mapError(
-						() =>
-							new VcsCommitShaInvalidError({
-								message:
-									"Commit reference is not a 40-character hex SHA — it may be a short SHA or a non-standard deployment identifier.",
-								sha: rawSha,
-							}),
-					),
-				)
-
-				// 1. Fast path — already stored.
-				const storedOpt = yield* asPersistence(repo.findCommitBySha(orgId, sha))
-				if (Option.isSome(storedOpt)) {
-					const stored = storedOpt.value
-					const repoOpt = yield* asPersistence(repo.getRepositoryById(orgId, stored.repositoryId))
-					const repoFullName = Option.match(repoOpt, {
-						onNone: () => "",
-						onSome: (r) => r.fullName,
-					})
-					return detailFromCommit(stored, repoFullName)
-				}
-
-				const cacheKey = `${orgId}:${sha}`
-				const now = yield* Clock.currentTimeMillis
-				const cachedUntil = negativeCache.get(cacheKey)
-				if (cachedUntil !== undefined && cachedUntil > now) {
-					return yield* new VcsCommitNotFoundError({
-						message: "No connected repository contains this commit.",
-						sha,
-					})
-				}
-				if (cachedUntil !== undefined) negativeCache.delete(cacheKey)
-
-				// 2. Resolve on the fly. Only processable (active) installations count.
-				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
-					isInstallationProcessable,
-				)
-				if (installations.length === 0) {
-					return yield* new IntegrationsNotConnectedError({
-						message: "No VCS provider is connected for this organization.",
-					})
-				}
-
-				// Track whether a genuine provider failure (vs. a clean "not here") muddied
-				// the probe — we must not cache a miss, nor claim "not found", in that case.
-				let sawUpstreamError = false
+				let reposProbed = 0
 				for (const installation of installations) {
 					const provider = yield* registry
 						.resolve(installation.provider)
@@ -179,6 +134,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						repo.listRepositoriesByInstallation(installation.id, "active"),
 					)
 					for (const repository of repos) {
+						reposProbed += 1
 						const outcome = yield* Effect.result(
 							provider.fetchCommit(
 								installation,
@@ -192,50 +148,148 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						)
 
 						if (Result.isFailure(outcome)) {
-							// A repo-scoped "unavailable" is just "not here"; any other provider
-							// error is a degradation — keep probing other repos but remember it.
-							if (outcome.failure._tag !== "@maple/http/errors/VcsRepoUnavailableError") {
-								sawUpstreamError = true
-								yield* Effect.logWarning("VCS commit probe failed for a repository").pipe(
-									Effect.annotateLogs({
-										orgId,
-										sha,
-										repositoryId: repository.id,
-										error: outcome.failure.message,
-									}),
-								)
-							}
+							// In this branch we don't care about upstream failures, we do 
+							// our best effort to resolve the commit and return nothing otherwise.
 							continue
 						}
 						if (Option.isNone(outcome.success)) continue
 
-						// Hit. Persist best-effort (a write failure must not fail the read) and
-						// return the freshly resolved detail.
-						const normalized = outcome.success.value
-						yield* asPersistence(repo.upsertCommits(repository, [normalized])).pipe(
-							Effect.catch((e) =>
-								Effect.logWarning("Resolved commit but failed to persist it").pipe(
-									Effect.annotateLogs({ orgId, sha, error: e.message }),
-								),
-							),
-						)
 						yield* Effect.annotateCurrentSpan({
-							orgId,
-							"vcs.commit.sha": sha,
-							"vcs.commit.resolved": "fetched",
+							"vcs.commit.repos_probed": reposProbed,
+							"vcs.commit.provider": installation.provider,
+							"vcs.commit.outcome": "resolved",
 							"vcs.repository.id": repository.id,
 						})
-						return detailFromInput(normalized, repository, sha)
+						return {
+							_tag: "resolved" as const,
+							normalized: outcome.success.value,
+							repository,
+							reposProbed,
+						}
 					}
 				}
 
-				if (sawUpstreamError) {
-					return yield* new IntegrationsUpstreamError({
-						message: "Could not reach the VCS provider to resolve this commit.",
+				yield* Effect.annotateCurrentSpan({
+					"vcs.commit.repos_probed": reposProbed,
+					"vcs.commit.outcome": "not_found",
+				})
+				return ({ _tag: "not_found" as const, reposProbed } as const)
+			})
+
+			const resolveCommitDetail = Effect.fn("VcsCommitService.resolveCommitDetail")(function* (
+				orgId: OrgId,
+				rawSha: string,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+
+				// Unguarded telemetry SHA: a non-40-hex value is a typed, non-retryable
+				// error the dashboard renders as a muted "non-standard reference".
+				const sha = yield* decodeSha(rawSha).pipe(
+					Effect.mapError(
+						() =>
+							new VcsCommitShaInvalidError({
+								message:
+									"Commit reference is not a 40-character hex SHA — it may be a short SHA or a non-standard deployment identifier.",
+								sha: rawSha,
+							}),
+					),
+					Effect.tapError(() =>
+						Effect.annotateCurrentSpan({
+							"vcs.commit.outcome": "rejected",
+							"vcs.commit.reason": "invalid_sha",
+						}),
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "vcs.commit.sha": sha })
+
+				// 1. Fast path — already stored.
+				const storedOpt = yield* asPersistence(repo.findCommitBySha(orgId, sha))
+				if (Option.isSome(storedOpt)) {
+					const stored = storedOpt.value
+					const repoOpt = yield* asPersistence(repo.getRepositoryById(orgId, stored.repositoryId))
+					const repoFullName = Option.match(repoOpt, {
+						onNone: () => "",
+						onSome: (r) => r.fullName,
+					})
+					yield* Effect.annotateCurrentSpan({
+						"vcs.commit.outcome": "resolved",
+						"vcs.commit.reason": "stored_hit",
+						"vcs.commit.source": "stored",
+						"vcs.repository.id": stored.repositoryId,
+					})
+					return detailFromCommit(stored, repoFullName)
+				}
+
+				const cacheKey = `${orgId}:${sha}`
+				const now = yield* Clock.currentTimeMillis
+				const cachedUntil = negativeCache.get(cacheKey)
+				if (cachedUntil !== undefined && cachedUntil > now) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.commit.outcome": "not_found",
+						"vcs.commit.reason": "negative_cache_hit",
+						"vcs.commit.source": "cache",
+					})
+					return yield* new VcsCommitNotFoundError({
+						message: "No connected repository contains this commit.",
+						sha,
 					})
 				}
+				if (cachedUntil !== undefined) negativeCache.delete(cacheKey)
+
+				// 2. Resolve on the fly. Only processable (active) installations count.
+				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
+					isInstallationProcessable,
+				)
+				yield* Effect.annotateCurrentSpan({ "vcs.commit.installations_probed": installations.length })
+				if (installations.length === 0) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.commit.outcome": "rejected",
+						"vcs.commit.reason": "not_connected",
+					})
+					return yield* new IntegrationsNotConnectedError({
+						message: "No VCS provider is connected for this organization.",
+					})
+				}
+
+				const probe = yield* probeInstallations(orgId, sha, installations)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.commit.source": "probe",
+					"vcs.commit.repos_probed": probe.reposProbed,
+				})
+
+				if (probe._tag === "resolved") {
+					// Hit. Persist best-effort (a write failure must not fail the read) and
+					// return the freshly resolved detail.
+					const { normalized, repository } = probe
+					const persisted = yield* asPersistence(repo.upsertCommits(repository, [normalized])).pipe(
+						Effect.as(true),
+						Effect.catch((e) =>
+							Effect.logWarning("[VCS] Resolved commit but failed to persist it").pipe(
+								Effect.annotateLogs({
+									orgId,
+									"vcs.commit.sha": sha,
+									"vcs.commit.reason": "persist_failed",
+									error: e.message,
+								}),
+								Effect.as(false),
+							),
+						),
+					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.commit.outcome": "resolved",
+						"vcs.commit.reason": persisted ? "resolved_via_probe" : "persist_failed",
+						"vcs.repository.id": repository.id,
+					})
+					return detailFromInput(normalized, repository, sha)
+				}
+
+
 				// Clean miss across every repo — cache it briefly.
 				negativeCache.set(cacheKey, now + NEGATIVE_TTL_MS)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.commit.outcome": "not_found",
+					"vcs.commit.reason": "not_found",
+				})
 				return yield* new VcsCommitNotFoundError({
 					message: "No connected repository contains this commit.",
 					sha,

@@ -84,7 +84,8 @@ export const runScheduledSync = Effect.gen(function* () {
 		"vcs.scheduled.enqueued": result.enqueued,
 		"vcs.scheduled.skipped": result.skipped,
 	})
-	yield* Effect.logInfo("VCS scheduled sync tick complete").pipe(
+	yield* Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "completed" })
+	yield* Effect.logInfo("[VCS] scheduled sync tick complete").pipe(
 		Effect.annotateLogs({
 			installationsTotal: result.installationsTotal,
 			enqueued: result.enqueued,
@@ -92,12 +93,17 @@ export const runScheduledSync = Effect.gen(function* () {
 		}),
 	)
 }).pipe(
-	// Log on failure (correlated to the still-open tick span / trace), then let the
-	// cause propagate so `withSpan` marks `VcsScheduledSync.tick` as Error and the
-	// failure bubbles out to the CF `scheduled` handler.
+	// Log on failure (correlated to the still-open tick span / trace), annotate the
+	// outcome enum, then let the cause propagate so `withSpan` marks
+	// `VcsScheduledSync.tick` as Error and the failure bubbles out to the CF
+	// `scheduled` handler.
 	Effect.tapCause((cause) =>
-		Effect.logError("VCS scheduled sync tick failed").pipe(
-			Effect.annotateLogs({ error: Cause.pretty(cause) }),
+		Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" }).pipe(
+			Effect.flatMap(() =>
+				Effect.logError("[VCS] scheduled sync tick failed").pipe(
+					Effect.annotateLogs({ error: Cause.pretty(cause) }),
+				),
+			),
 		),
 	),
 	Effect.withSpan("VcsScheduledSync.tick"),
@@ -121,24 +127,49 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 							// A rate limit too far out to ride inline → redeliver this message
 							// only once the VCS's budget is back, instead of an immediate retry.
 							const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
-
-							const delaySeconds =
+							const isRateLimited =
 								failure?._tag === "@maple/http/errors/VcsRateLimitedError"
-									? clampQueueDelaySeconds(failure.retryAfterSeconds)
-									: undefined
+
+							const delaySeconds = isRateLimited
+								? clampQueueDelaySeconds(failure.retryAfterSeconds)
+								: undefined
 							const isDelaySecondsSet = delaySeconds !== undefined
 							// This delivery already used the last retry → no point requeuing.
 							// Record a terminal status (so a repo can't stay stuck "backfilling")
 							// and ack to drop the message.
 							const isFinalAttempt = message.attempts > VCS_SYNC_MAX_RETRIES
 
-							return Effect.logError("VCS sync message failed").pipe(
-								Effect.annotateLogs({
-									error: Cause.pretty(cause),
-									attempt: message.attempts,
-									...(isFinalAttempt ? { exhausted: true } : {}),
-									...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : {}),
-								}),
+							// Per-message terminal decision (mirrors the log below). Kept low
+							// cardinality — the full Cause stays in the log, never on the span.
+							const outcome = isFinalAttempt
+								? "exhausted"
+								: isDelaySecondsSet
+									? "retry_delayed"
+									: "retry"
+
+							return Effect.annotateCurrentSpan({
+								"vcs.queue.message.outcome": outcome,
+								// Tag the rate-limit backpressure so a `retry_delayed` (or an
+								// exhausted message that was last rate-limited) is filterable
+								// without parsing the log.
+								...(isRateLimited
+									? { "vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError" }
+									: {}),
+								...(isDelaySecondsSet
+									? { "vcs.queue.retry.delay_seconds": delaySeconds }
+									: {}),
+							}).pipe(
+								Effect.flatMap(() =>
+									Effect.logError("[VCS] sync message failed").pipe(
+										Effect.annotateLogs({
+											error: Cause.pretty(cause),
+											attempt: message.attempts,
+											outcome,
+											...(isFinalAttempt ? { exhausted: true } : {}),
+											...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : {}),
+										}),
+									),
+								),
 								Effect.flatMap(() =>
 									isFinalAttempt
 										? service
@@ -152,7 +183,13 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 								),
 							)
 						},
-						onSuccess: () => Effect.sync(() => message.ack()),
+						onSuccess: () =>
+							Effect.annotateCurrentSpan({
+								"vcs.queue.message.outcome": "succeeded_ack",
+							}).pipe(Effect.flatMap(() => Effect.sync(() => message.ack()))),
+					}),
+					Effect.withSpan("VcsSyncQueue.processMessage", {
+						attributes: { "messaging.message.delivery_attempt": message.attempts },
 					}),
 				),
 			{ discard: true },
