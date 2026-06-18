@@ -159,36 +159,8 @@
     {
       "idx": 22,
       "version": "6",
-      "when": 1781357626183,
-      "tag": "0022_naive_enchantress",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "6",
-      "when": 1781478981456,
-      "tag": "0023_vcs_repository_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "6",
-      "when": 1781479508715,
-      "tag": "0024_vcs_commits_repository_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "6",
-      "when": 1781479600000,
-      "tag": "0025_vcs_repositories_installation_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "6",
-      "when": 1781643357092,
-      "tag": "0026_moaning_machine_man",
+      "when": 1781817385089,
+      "tag": "0022_vcs_integration",
       "breakpoints": true
     }
   ]
