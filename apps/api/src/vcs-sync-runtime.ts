@@ -73,9 +73,7 @@ export const buildVcsScheduledLayer = (_env: Record<string, unknown>) => {
 
 export const flushVcsTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
 
-// The cron program: enqueue a periodic refresh per processable installation. Any
-// failure is logged (not rethrown) so a scheduled tick never surfaces as an
-// unhandled rejection — the next tick (12h later) retries from a clean slate.
+// The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {
 	const scheduler = yield* VcsScheduledSyncService
 	const result = yield* scheduler.runScheduledSync()
@@ -94,12 +92,15 @@ export const runScheduledSync = Effect.gen(function* () {
 		}),
 	)
 }).pipe(
-	Effect.withSpan("VcsScheduledSync.tick"),
-	Effect.catchCause((cause) =>
+	// Log on failure (correlated to the still-open tick span / trace), then let the
+	// cause propagate so `withSpan` marks `VcsScheduledSync.tick` as Error and the
+	// failure bubbles out to the CF `scheduled` handler.
+	Effect.tapCause((cause) =>
 		Effect.logError("VCS scheduled sync tick failed").pipe(
 			Effect.annotateLogs({ error: Cause.pretty(cause) }),
 		),
 	),
+	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
 export const processBatch = (batch: MessageBatch<unknown>) =>
