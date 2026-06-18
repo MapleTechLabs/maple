@@ -1,0 +1,303 @@
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { generateKeyPairSync } from "node:crypto"
+import { OrgId, UserId } from "@maple/domain/http"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
+import { Env } from "@/lib/Env"
+import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
+import { GithubAppClient } from "@/services/github/GithubAppClient"
+import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
+import { GithubProvider } from "@/services/github/GithubProvider"
+import { VcsCommitService } from "@/services/vcs/VcsCommitService"
+import { VcsProviderRegistry } from "@/services/vcs/VcsProviderRegistry"
+import { VcsRepository } from "@/services/vcs/VcsRepository"
+
+const dirs: string[] = []
+afterEach(() => cleanupTempDirs(dirs))
+
+const asOrgId = Schema.decodeUnknownSync(OrgId)
+const asUserId = Schema.decodeUnknownSync(UserId)
+
+// A real RSA key so the App-JWT mint (crypto.subtle.importKey) succeeds; the
+// access-token mint + commit GET are stubbed at the GithubHttp seam below.
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+	modulusLength: 2048,
+	publicKeyEncoding: { type: "spki", format: "pem" },
+	privateKeyEncoding: { type: "pkcs8", format: "pem" },
+}).privateKey
+
+const config = (url: string) =>
+	ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3472",
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_DB_URL: url,
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+			GITHUB_APP_SLUG: "maple-test-app",
+			GITHUB_APP_ID: "123456",
+			GITHUB_APP_PRIVATE_KEY: APP_PRIVATE_KEY,
+		}),
+	)
+
+const jsonResponse = (body: unknown, init?: { status?: number }) =>
+	new Response(JSON.stringify(body), {
+		status: init?.status ?? 200,
+		headers: { "content-type": "application/json" },
+	})
+
+const commitBody = (sha: string) => ({
+	sha,
+	html_url: `https://github.com/octo/repo/commit/${sha}`,
+	commit: {
+		message: "Fix the thing\n\nlonger body",
+		author: { name: "Octo Cat", email: "octo@example.com", date: "2026-06-01T00:00:00Z" },
+		committer: { name: "Octo Cat", email: "octo@example.com", date: "2026-06-02T00:00:00Z" },
+	},
+	author: { login: "octocat", avatar_url: "https://avatars/u/1" },
+})
+
+// A GithubHttp seam that routes by URL: access-token mints always succeed; a
+// commit GET returns the canned commit only when `resolvable` says that repo has
+// the SHA, else 404 (the "not in this repo" signal). Counts commit GETs so a
+// test can prove the negative cache suppressed a re-probe.
+const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
+	const calls = { commitGets: 0 }
+	const layer = Layer.succeed(GithubHttp, {
+		fetch: async (input: string | URL | Request, init?: RequestInit) => {
+			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+			const method = init?.method ?? "GET"
+			if (url.includes("/access_tokens") && method === "POST") {
+				return jsonResponse({ token: "ghs_test", expires_at: "2999-01-01T00:00:00Z" })
+			}
+			const match = url.match(/\/repos\/[^/]+\/([^/]+)\/commits\/([0-9a-fA-F]+)/)
+			if (match) {
+				calls.commitGets += 1
+				const [, repoName, sha] = match
+				return resolvable(repoName!, sha!.toLowerCase())
+					? jsonResponse(commitBody(sha!.toLowerCase()))
+					: jsonResponse({ message: "No commit found for SHA" }, { status: 404 })
+			}
+			return jsonResponse({ message: `unexpected ${method} ${url}` }, { status: 500 })
+		},
+	} satisfies GithubHttpShape)
+	return { layer, calls }
+}
+
+// Wire VcsCommitService over a temp sqlite (real repo), a real GithubProvider /
+// registry backed by the stubbed GithubHttp. `data` is referenced both inside the
+// service and in the returned merge, so Effect memoizes one shared repo instance.
+const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
+	const env = Env.layer.pipe(Layer.provide(config(url)))
+	const database = DatabaseLibsqlLive.pipe(Layer.provide(env))
+	const data = VcsRepository.layer.pipe(Layer.provide(database), Layer.provide(env))
+	const githubAppClient = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
+	const provider = GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, githubAppClient)))
+	const registry = VcsProviderRegistry.layer.pipe(Layer.provide(provider))
+	const service = VcsCommitService.layer.pipe(Layer.provide(Layer.mergeAll(data, registry)))
+	return Layer.mergeAll(service, data)
+}
+
+const findError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
+	if (!Exit.isFailure(exit)) return undefined
+	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
+	return failure ?? Cause.squash(exit.cause)
+}
+
+const expectSome = <A>(o: Option.Option<A>): A => {
+	assert.ok(Option.isSome(o), "expected Option.some, got none")
+	return o.value
+}
+
+// Seed an active installation ("42") and its repos directly via the repo layer.
+const seed = (
+	repo: VcsRepository,
+	orgId: OrgId,
+	repos: ReadonlyArray<{ externalRepoId: string; name: string }>,
+) =>
+	Effect.gen(function* () {
+		yield* repo.upsertInstallation({
+			orgId,
+			provider: "github",
+			externalInstallationId: "42",
+			accountLogin: "octo",
+			accountType: "organization",
+			externalAccountId: "100",
+			accountAvatarUrl: null,
+			repositorySelection: "all",
+			installedByUserId: asUserId("user_1"),
+		})
+		const inst = expectSome(yield* repo.resolveInstallation("github", "42"))
+		yield* repo.upsertRepositories(
+			inst,
+			repos.map((r) => ({
+				externalRepoId: r.externalRepoId,
+				owner: "octo",
+				name: r.name,
+				fullName: `octo/${r.name}`,
+				defaultBranch: "main",
+				htmlUrl: `https://github.com/octo/${r.name}`,
+				isPrivate: false,
+				isArchived: false,
+			})),
+		)
+	})
+
+describe("VcsCommitService.resolveCommitDetail", () => {
+	it.effect("returns a stored commit without calling the provider", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-stored-", dirs)
+		const { layer, calls } = routedHttp(() => false)
+		const SHA = "a".repeat(40)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
+			yield* repo.upsertCommits(r, [
+				{
+					sha: SHA,
+					message: "stored message",
+					authorName: "Stored Author",
+					authorEmail: "s@example.com",
+					authorLogin: "storedlogin",
+					authorAvatarUrl: null,
+					authoredAt: 1000,
+					committedAt: 2000,
+					htmlUrl: `https://github.com/octo/repo/commit/${SHA}`,
+				},
+			])
+
+			const detail = yield* svc.resolveCommitDetail(orgId, SHA)
+			assert.strictEqual(detail.resolved, "stored")
+			assert.strictEqual(detail.sha, SHA)
+			assert.strictEqual(detail.message, "stored message")
+			assert.strictEqual(detail.repoFullName, "octo/repo")
+			assert.strictEqual(calls.commitGets, 0)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+
+	it.effect("uppercase SHA resolves the same stored commit (normalized)", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-case-", dirs)
+		const { layer } = routedHttp(() => false)
+		const SHA = "a".repeat(40)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+			const r = expectSome(yield* repo.resolveRepository(orgId, "github", "7"))
+			yield* repo.upsertCommits(r, [
+				{
+					sha: SHA,
+					message: "m",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: `https://github.com/octo/repo/commit/${SHA}`,
+				},
+			])
+			const detail = yield* svc.resolveCommitDetail(orgId, "A".repeat(40))
+			assert.strictEqual(detail.resolved, "stored")
+			assert.strictEqual(detail.sha, SHA)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+
+	it.effect("fetches an unstored commit from the provider, persists it, then serves it from storage", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-fetch-", dirs)
+		const { layer, calls } = routedHttp((name) => name === "repo")
+		const SHA = "c".repeat(40)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			// Two repos — the first 404s, the second resolves; the probe must continue.
+			yield* seed(repo, orgId, [
+				{ externalRepoId: "6", name: "other" },
+				{ externalRepoId: "7", name: "repo" },
+			])
+
+			const detail = yield* svc.resolveCommitDetail(orgId, SHA)
+			assert.strictEqual(detail.resolved, "fetched")
+			assert.strictEqual(detail.sha, SHA)
+			assert.strictEqual(detail.repoFullName, "octo/repo")
+			assert.strictEqual(detail.authorLogin, "octocat")
+			assert.strictEqual(detail.message.split("\n")[0], "Fix the thing")
+			assert.ok(calls.commitGets >= 2, "should have probed both repos")
+
+			// It was persisted: now stored, no further provider calls.
+			const before = calls.commitGets
+			const stored = expectSome(yield* repo.findCommitBySha(orgId, SHA as never))
+			assert.strictEqual(stored.repositoryId, expectSome(yield* repo.resolveRepository(orgId, "github", "7")).id)
+			const second = yield* svc.resolveCommitDetail(orgId, SHA)
+			assert.strictEqual(second.resolved, "stored")
+			assert.strictEqual(calls.commitGets, before)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+
+	it.effect("returns VcsCommitNotFoundError when no repo has the SHA, and caches the miss", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-miss-", dirs)
+		const { layer, calls } = routedHttp(() => false)
+		const SHA = "d".repeat(40)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+
+			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
+			const err = findError(exit) as { _tag?: string }
+			assert.strictEqual(err?._tag, "@maple/http/errors/VcsCommitNotFoundError")
+			const afterFirst = calls.commitGets
+			assert.ok(afterFirst >= 1)
+
+			// Second lookup is served from the negative cache — no new provider probe.
+			const exit2 = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
+			assert.strictEqual((findError(exit2) as { _tag?: string })?._tag, "@maple/http/errors/VcsCommitNotFoundError")
+			assert.strictEqual(calls.commitGets, afterFirst)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+
+	it.effect("rejects a non-40-hex SHA with VcsCommitShaInvalidError before any provider call", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-invalid-", dirs)
+		const { layer, calls } = routedHttp(() => true)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_test")
+			yield* seed(repo, orgId, [{ externalRepoId: "7", name: "repo" }])
+
+			for (const bad of ["abc1234", "not-a-sha", "g".repeat(40), "a".repeat(39)]) {
+				const exit = yield* svc.resolveCommitDetail(orgId, bad).pipe(Effect.exit)
+				assert.strictEqual(
+					(findError(exit) as { _tag?: string })?._tag,
+					"@maple/http/errors/VcsCommitShaInvalidError",
+					`expected invalid-sha error for "${bad}"`,
+				)
+			}
+			assert.strictEqual(calls.commitGets, 0)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+
+	it.effect("returns IntegrationsNotConnectedError when the org has no active installation", () => {
+		const { url } = createTempDbUrl("maple-vcs-commit-noconn-", dirs)
+		const { layer } = routedHttp(() => true)
+		const SHA = "e".repeat(40)
+		return Effect.gen(function* () {
+			const svc = yield* VcsCommitService
+			const orgId = asOrgId("org_test")
+			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
+			assert.strictEqual(
+				(findError(exit) as { _tag?: string })?._tag,
+				"@maple/http/errors/IntegrationsNotConnectedError",
+			)
+		}).pipe(Effect.provide(commitLayer(url, layer)))
+	})
+})

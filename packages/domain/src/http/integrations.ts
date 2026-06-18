@@ -2,7 +2,17 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { ExternalUserId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
-import { VcsAccountType, VcsRepoSelection, VcsRepoStatus, VcsRepoSyncStatus, VcsRepositoryId } from "./vcs"
+import {
+	GitCommitSha,
+	VcsAccountType,
+	VcsCommitNotFoundError,
+	VcsCommitShaInvalidError,
+	VcsProviderId,
+	VcsRepoSelection,
+	VcsRepoStatus,
+	VcsRepoSyncStatus,
+	VcsRepositoryId,
+} from "./vcs"
 
 export class HazelIntegrationStatus extends Schema.Class<HazelIntegrationStatus>("HazelIntegrationStatus")({
 	connected: Schema.Boolean,
@@ -142,6 +152,29 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	trackedBranch: Schema.String,
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
+}) {}
+
+// ---- Commit hover cards (vendor-agnostic) ---------------------------------
+
+/**
+ * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
+ * neutral: any connected VCS provider resolves into this same shape. `resolved`
+ * distinguishes a DB hit ("stored") from an on-the-fly provider fetch ("fetched")
+ * — purely diagnostic.
+ */
+export class VcsCommitDetailResponse extends Schema.Class<VcsCommitDetailResponse>("VcsCommitDetailResponse")({
+	provider: VcsProviderId,
+	sha: GitCommitSha,
+	message: Schema.String,
+	authorName: Schema.NullOr(Schema.String),
+	authorEmail: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	authorAvatarUrl: Schema.NullOr(Schema.String),
+	authoredAt: Schema.NullOr(Schema.Number),
+	committedAt: Schema.Number,
+	htmlUrl: Schema.String,
+	repoFullName: Schema.String,
+	resolved: Schema.Literals(["stored", "fetched"]),
 }) {}
 
 export class IntegrationsForbiddenError extends Schema.TaggedErrorClass<IntegrationsForbiddenError>()(
@@ -302,6 +335,28 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 				],
 			},
 		),
+	)
+	.add(
+		// Vendor-neutral: resolves a commit by SHA across whatever providers the
+		// org has connected. The `:sha` param is a raw string (NOT the strict
+		// `GitCommitSha` brand) on purpose — it carries unguarded telemetry values,
+		// so a non-40-hex SHA must reach the handler to become a typed
+		// VcsCommitShaInvalidError rather than a generic decode 400. Read-only and
+		// available to any org member (no admin gate) — every dashboard viewer
+		// hovers commit SHAs.
+		HttpApiEndpoint.get("vcsCommitDetail", "/vcs/commits/:sha", {
+			params: {
+				sha: Schema.String.check(Schema.isMinLength(1)),
+			},
+			success: VcsCommitDetailResponse,
+			error: [
+				VcsCommitShaInvalidError,
+				VcsCommitNotFoundError,
+				IntegrationsNotConnectedError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
 	)
 	.prefix("/api/integrations")
 	.middleware(Authorization) {}

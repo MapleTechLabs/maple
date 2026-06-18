@@ -463,6 +463,30 @@ export class UnknownVcsProviderError extends Schema.TaggedErrorClass<UnknownVcsP
 	{ httpApiStatus: 404 },
 ) {}
 
+/**
+ * The requested commit reference is not a resolvable git SHA — it failed the
+ * strict 40-hex `GitCommitSha` shape. Telemetry `deployment.commit_sha` is
+ * unguarded OTel data, so a value can be a short SHA, a tag, or arbitrary text;
+ * the hover-card endpoint surfaces that as this distinct, non-retryable error
+ * (422) rather than a generic 400, so the dashboard can render a muted
+ * "non-standard commit reference" state instead of a failure.
+ */
+export class VcsCommitShaInvalidError extends Schema.TaggedErrorClass<VcsCommitShaInvalidError>()(
+	"@maple/http/errors/VcsCommitShaInvalidError",
+	{ message: Schema.String, sha: Schema.String },
+	{ httpApiStatus: 422 },
+) {}
+
+/**
+ * The SHA is a valid 40-hex commit, but no connected repository in the org
+ * contains it (neither stored nor resolvable on the fly from any provider).
+ */
+export class VcsCommitNotFoundError extends Schema.TaggedErrorClass<VcsCommitNotFoundError>()(
+	"@maple/http/errors/VcsCommitNotFoundError",
+	{ message: Schema.String, sha: Schema.String },
+	{ httpApiStatus: 404 },
+) {}
+
 export class OAuthStatePersistenceError extends Schema.TaggedErrorClass<OAuthStatePersistenceError>()(
 	"@maple/http/errors/OAuthStatePersistenceError",
 	{ message: Schema.String },

@@ -1,6 +1,8 @@
-import type { Effect } from "effect"
+import type { Effect, Option } from "effect"
 import type {
 	BranchUpsertInput,
+	CommitUpsertInput,
+	GitCommitSha,
 	RepoUpsertInput,
 	VcsCommitFetch,
 	VcsInstallation,
@@ -86,5 +88,23 @@ export interface VcsProviderClient {
 	) => Effect.Effect<
 		{ readonly branches: ReadonlyArray<BranchUpsertInput>; readonly truncated: boolean },
 		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError | VcsRateLimitedError
+	>
+
+	/**
+	 * Resolve a single commit by SHA within one repo, normalized. Used by the
+	 * dashboard's hover card to fetch-and-store a commit not yet synced — the SHA
+	 * carries no repo association (it comes from telemetry), so the caller probes
+	 * each of the org's repos until one resolves. `Option.none` means "this repo
+	 * does not contain that SHA" (a 404 — expected during the probe, not a
+	 * failure); errors are reserved for genuine provider/installation failures so
+	 * the caller can distinguish "keep looking" from "the provider is down".
+	 */
+	readonly fetchCommit: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		sha: GitCommitSha,
+	) => Effect.Effect<
+		Option.Option<CommitUpsertInput>,
+		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
 	>
 }

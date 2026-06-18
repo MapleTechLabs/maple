@@ -17,9 +17,11 @@ import {
 	MapleApi,
 	RoleName,
 	UserId,
+	VcsCommitDetailResponse,
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { GithubConnectService } from "../services/github/GithubConnectService"
+import { VcsCommitService } from "../services/vcs/VcsCommitService"
 import { HazelOAuthService } from "../services/HazelOAuthService"
 import { requireAdmin as requireAdminRole } from "../lib/auth"
 
@@ -64,6 +66,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
 		const github = yield* GithubConnectService
+		const vcsCommits = yield* VcsCommitService
 
 		return handlers
 			.handle("hazelStatus", () =>
@@ -187,6 +190,15 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						payload.trackedBranch,
 					)
 					return new GithubSetTrackedBranchResponse(result)
+				}),
+			)
+			// Read-only commit hover card: no admin gate — any org member viewing the
+			// dashboard resolves SHAs. Vendor-agnostic via VcsCommitService.
+			.handle("vcsCommitDetail", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const detail = yield* vcsCommits.resolveCommitDetail(tenant.orgId, params.sha)
+					return new VcsCommitDetailResponse(detail)
 				}),
 			)
 	}),

@@ -65,6 +65,7 @@ import { GithubAppClient } from "./services/github/GithubAppClient"
 import { GithubConnectService } from "./services/github/GithubConnectService"
 import { GithubHttp } from "./services/github/GithubHttp"
 import { GithubProvider } from "./services/github/GithubProvider"
+import { VcsCommitService } from "./services/vcs/VcsCommitService"
 import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "./services/vcs/VcsRepository"
 import { VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
@@ -171,12 +172,19 @@ const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClie
 
 const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.layer, VcsSyncQueue.layer)
 
+const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
+
 export const VcsServicesLive = Layer.mergeAll(
 	VcsDataLive,
-	VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive)),
+	VcsProviderRegistryLive,
 	// The dashboard connect flow: needs the repo + state repo + sync queue
 	// (VcsDataLive) plus the GitHub App client (App-JWT installation lookup).
 	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
+	// The commit hover card: vendor-agnostic — only the repo + provider registry,
+	// never a provider module directly.
+	VcsCommitService.layer.pipe(
+		Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive)),
+	),
 ).pipe(Layer.provideMerge(InfraLive))
 
 export const MainLive = Layer.mergeAll(

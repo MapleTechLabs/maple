@@ -11,7 +11,7 @@ import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
-import { Badge } from "@maple/ui/components/ui/badge"
+import { Badge, badgeVariants } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { formatDuration } from "@/lib/format"
@@ -21,8 +21,9 @@ import { getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query
 import { findSpanById } from "@maple/ui/components/traces/flow-utils"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { TraceIdBadge } from "@/components/traces/trace-id-badge"
-import { CopyableBadge } from "@/components/common/copyable-badge"
+import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { getHttpInfo } from "@maple/ui/lib/http"
+import { cn } from "@maple/ui/utils"
 
 const TraceDetailSearchSchema = Schema.Struct({
 	spanId: Schema.optional(Schema.String),
@@ -329,13 +330,13 @@ function TraceDetailContent({
 					{commitSha && (
 						<>
 							<span className="ml-4 text-xs text-muted-foreground">Commit:</span>
-							<CopyableBadge
-								value={commitSha}
-								label="commit SHA"
-								className="font-mono text-xs"
+							<CommitShaHoverCard
+								sha={commitSha}
+								copy={{ value: commitSha, label: "commit SHA" }}
+								className={cn(badgeVariants({ variant: "outline" }), "max-w-full font-mono text-xs")}
 							>
 								{commitSha.slice(0, 7)}
-							</CopyableBadge>
+							</CommitShaHoverCard>
 						</>
 					)}
 

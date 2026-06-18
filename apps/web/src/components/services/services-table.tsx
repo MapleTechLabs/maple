@@ -12,6 +12,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { formatErrorRate } from "@maple/ui/lib/format"
+import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { type ServiceOverview, type CommitBreakdown } from "@/api/warehouse/services"
 import {
@@ -82,38 +83,27 @@ function CommitsList({ commits }: { commits: CommitBreakdown[] }) {
 
 	if (commits.length === 1) {
 		const sha = commits[0].commitSha
-		return <span>{truncateCommitSha(sha)}</span>
+		return (
+			<CommitShaHoverCard sha={sha} className="font-mono">
+				{truncateCommitSha(sha)}
+			</CommitShaHoverCard>
+		)
 	}
 
-	const top2 = commits.slice(0, 2)
-	const remaining = commits.length - 2
-
+	// Each SHA is its own hover card with its traffic share — no nested popups.
 	return (
-		<Tooltip>
-			<TooltipTrigger className="flex flex-wrap items-center gap-1">
-				{top2.map((c) => (
-					<span key={c.commitSha} className="inline-flex items-center gap-0.5">
-						<span>{truncateCommitSha(c.commitSha)}</span>
-						<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
-							{c.percentage}%
-						</Badge>
-					</span>
-				))}
-				{remaining > 0 && (
-					<span className="text-muted-foreground text-[10px]">+{remaining} more</span>
-				)}
-			</TooltipTrigger>
-			<TooltipContent side="bottom" align="start">
-				<div className="flex flex-col gap-1">
-					{commits.map((c) => (
-						<div key={c.commitSha} className="flex items-center justify-between gap-3">
-							<span className="font-mono">{truncateCommitSha(c.commitSha)}</span>
-							<span>{c.percentage}%</span>
-						</div>
-					))}
-				</div>
-			</TooltipContent>
-		</Tooltip>
+		<div className="flex flex-wrap items-center gap-1.5">
+			{commits.map((c) => (
+				<span key={c.commitSha} className="inline-flex items-center gap-0.5">
+					<CommitShaHoverCard sha={c.commitSha} className="font-mono">
+						{truncateCommitSha(c.commitSha)}
+					</CommitShaHoverCard>
+					<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
+						{c.percentage}%
+					</Badge>
+				</span>
+			))}
+		</div>
 	)
 }
 

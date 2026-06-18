@@ -425,6 +425,24 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}
 				})
 
+			const fetchCommit = (installation: VcsInstallation, repo: VcsRepositoryRef, sha: GitCommitSha) =>
+				Effect.gen(function* () {
+					const now = yield* Clock.currentTimeMillis
+					return yield* client
+						.getCommit(installation.externalInstallationId, repo.owner, repo.name, sha)
+						.pipe(
+							Effect.map((commit) => Option.some(normalizeFetchedCommit(commit, now))),
+							// A 404 means this repo doesn't contain the SHA (or access was lost) —
+							// for a SHA-only probe that's "look in the next repo", not a failure.
+							// Every other GitHub failure is mapped to the port's semantic errors.
+							Effect.catchTag("GithubAppError", (error) =>
+								error.status === 404
+									? Effect.succeed(Option.none<CommitUpsertInput>())
+									: Effect.fail(toVcsCommitError(error)),
+							),
+						)
+				})
+
 			const fetchBranches = (installation: VcsInstallation, repo: VcsRepositoryRef) =>
 				client.listBranches(installation.externalInstallationId, repo.owner, repo.name).pipe(
 					Effect.map(
@@ -447,6 +465,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchRepositories,
 				fetchCommits,
 				fetchBranches,
+				fetchCommit,
 			} satisfies VcsProviderClient
 		}),
 	},
