@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react"
+import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -231,11 +232,42 @@ function CommitSkeleton() {
 	)
 }
 
-function CommitMessage({ title, detail }: { title: string; detail?: string }) {
+// An optional call-to-action shown beneath an error message, linking into the
+// integrations area: "connect" → the catalog (no provider yet), "manage" → the
+// GitHub card (a provider is connected but this commit's repo may not be shared).
+type CommitMessageAction = "connect" | "manage"
+
+function CommitMessage({
+	title,
+	detail,
+	action,
+}: {
+	title: string
+	detail?: string
+	action?: CommitMessageAction
+}) {
 	return (
-		<div className="flex flex-col gap-1 p-3.5">
+		<div className="flex flex-col gap-1.5 p-3.5">
 			<p className="font-medium text-foreground">{title}</p>
 			{detail ? <p className="text-muted-foreground">{detail}</p> : null}
+			{action === "connect" ? (
+				<Link
+					to="/integrations"
+					className="mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline"
+				>
+					Connect a repository
+					<span aria-hidden>→</span>
+				</Link>
+			) : action === "manage" ? (
+				<Link
+					to="/integrations"
+					search={{ integration: "github" }}
+					className="mt-0.5 inline-flex w-fit items-center gap-1 font-medium text-primary hover:underline"
+				>
+					Manage repository access
+					<span aria-hidden>→</span>
+				</Link>
+			) : null}
 		</div>
 	)
 }
@@ -243,7 +275,11 @@ function CommitMessage({ title, detail }: { title: string; detail?: string }) {
 // Map a resolved error to a graceful, non-alarming message. The invalid-SHA case
 // is guarded client-side too (FULL_SHA), but a server-side
 // VcsCommitShaInvalidError is handled here as defense-in-depth.
-function describeError(error: unknown): { title: string; detail?: string } {
+function describeError(error: unknown): {
+	title: string
+	detail?: string
+	action?: CommitMessageAction
+} {
 	const tag =
 		typeof error === "object" && error !== null && "_tag" in error
 			? String((error as { _tag: unknown })._tag)
@@ -252,10 +288,22 @@ function describeError(error: unknown): { title: string; detail?: string } {
 		return { title: "Non-standard commit reference", detail: "Not a resolvable git SHA." }
 	}
 	if (tag.endsWith("VcsCommitNotFoundError")) {
-		return { title: "Commit not synced yet", detail: "It isn't in any connected repository." }
+		// Not "please wait" — a backfilled repo would already have this commit. The
+		// likely cause is that the commit's repository isn't connected (or its access
+		// was revoked), so point the user at fixing repository access.
+		return {
+			title: "Commit not found",
+			detail:
+				"Maple has no record of this commit. Make sure its repository is connected and Maple still has access to it.",
+			action: "manage",
+		}
 	}
 	if (tag.endsWith("IntegrationsNotConnectedError")) {
-		return { title: "No repository connected", detail: "Connect a VCS provider to see commit details." }
+		return {
+			title: "No repository connected",
+			detail: "Connect a repository so Maple can resolve commits to their author, message, and repo.",
+			action: "connect",
+		}
 	}
 	return { title: "Couldn't load commit", detail: "Try again in a moment." }
 }
