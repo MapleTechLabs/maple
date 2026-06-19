@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	buildRawSqlDataSource,
-	validateRawSqlMacro,
-	visualizationToDisplayType,
-} from "./raw-sql-widget"
+import { buildRawSqlDataSource, validateRawSqlMacro, visualizationToDisplayType } from "./raw-sql-widget"
 
 describe("visualizationToDisplayType", () => {
 	it("maps direct visualization kinds 1:1", () => {

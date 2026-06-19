@@ -70,10 +70,7 @@ function subtreeSize(node: SpanNode): number {
  * long/structural spans. Returns the original tree unchanged when it already
  * fits within `budget` (so small traces render exactly as before).
  */
-export function selectOverviewSpans(
-	roots: ReadonlyArray<SpanNode>,
-	budget: number,
-): OverviewSelection {
+export function selectOverviewSpans(roots: ReadonlyArray<SpanNode>, budget: number): OverviewSelection {
 	let totalCount = 0
 	const parentOf = new Map<string, SpanNode | null>()
 	forEachNode(roots, (node, parent) => {
@@ -147,9 +144,5 @@ export function selectOverviewSpans(
 }
 
 function score(node: SpanNode): number {
-	return (
-		node.durationMs +
-		(subtreeSize(node) - 1) * DESCENDANT_WEIGHT +
-		(isEntry(node) ? ENTRY_BOOST : 0)
-	)
+	return node.durationMs + (subtreeSize(node) - 1) * DESCENDANT_WEIGHT + (isEntry(node) ? ENTRY_BOOST : 0)
 }

@@ -28,14 +28,14 @@ The **Test** button probes the discovery endpoint — a failure here almost alwa
 
 Each discovered branch is scraped as its own instance, labeled with PlanetScale's own discovery labels — most usefully `planetscale_database_branch_id`, which keys every series to a branch. Highlights from the metric set ([Postgres](https://planetscale.com/docs/postgres/monitoring/prometheus-postgres) · [Vitess](https://planetscale.com/docs/vitess/integrations/prometheus)):
 
-| Metric | What it tells you |
-| --- | --- |
-| `planetscale_postgres_connection_state` | Connections by state (active, idle, idle-in-transaction). |
-| `planetscale_edge_postgres_active_connections` | Active connections at the edge. |
-| `planetscale_postgres_wal_size_bytes` | WAL size — replication and disk-pressure early warning. |
-| `planetscale_pgbouncer_current_connections` | PgBouncer pool utilization. |
-| `planetscale_pods_cpu_util_percentages` | CPU per pod backing the branch. |
-| `planetscale_vtgate_total_pods` | (Vitess) vtgate pods per availability zone. |
+| Metric                                         | What it tells you                                         |
+| ---------------------------------------------- | --------------------------------------------------------- |
+| `planetscale_postgres_connection_state`        | Connections by state (active, idle, idle-in-transaction). |
+| `planetscale_edge_postgres_active_connections` | Active connections at the edge.                           |
+| `planetscale_postgres_wal_size_bytes`          | WAL size — replication and disk-pressure early warning.   |
+| `planetscale_pgbouncer_current_connections`    | PgBouncer pool utilization.                               |
+| `planetscale_pods_cpu_util_percentages`        | CPU per pod backing the branch.                           |
+| `planetscale_vtgate_total_pods`                | (Vitess) vtgate pods per availability zone.               |
 
 Build dashboards or alert rules grouped by `planetscale_database_branch_id` — e.g. alert when WAL size grows past a threshold or active connections approach your pool limit.
 

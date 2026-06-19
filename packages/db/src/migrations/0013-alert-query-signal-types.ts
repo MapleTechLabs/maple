@@ -9,9 +9,10 @@
 //     rows carry no compiled QuerySpec)
 //   - converts existing `signal_type = 'query'` rows to `builder_query`,
 //     building a query-builder draft from the old triplet
-//   - carries over the `notes` column (added by drizzle migration 0014) and the
-//     `notification_template_json` column (added by drizzle migration 0016) —
-//     both drizzle migrations run before this data migration, so a fresh
+//   - carries over the `notes` column (added by drizzle migration 0014), the
+//     `notification_template_json` column (added by drizzle migration 0016), and
+//     the `tags_json` column (added by drizzle migration 0025) — every one of
+//     those drizzle migrations runs before this data migration, so a fresh
 //     install's table-swap does not drop them
 //
 // Idempotent: guarded by the `_maple_data_migrations` bookkeeping table and an
@@ -36,8 +37,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 
 	const columns = await db.all<{ name: string }>(sql`PRAGMA table_info(alert_rules)`)
 	const columnNames = new Set(columns.map((column) => column.name))
-	const alreadyNewShape =
-		columnNames.has("raw_query_sql") && !columnNames.has("query_data_source")
+	const alreadyNewShape = columnNames.has("raw_query_sql") && !columnNames.has("query_data_source")
 
 	if (!alreadyNewShape && columnNames.has("query_data_source")) {
 		await db.run(sql`DROP TABLE IF EXISTS alert_rules_old`)
@@ -53,6 +53,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 				severity text NOT NULL,
 				service_names_json text,
 				exclude_service_names_json text,
+				tags_json text,
 				signal_type text NOT NULL,
 				comparator text NOT NULL,
 				threshold real NOT NULL,
@@ -84,6 +85,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 		await db.run(sql`
 			INSERT INTO alert_rules (
 				id, org_id, name, notes, notification_template_json, enabled, severity, service_names_json, exclude_service_names_json,
+				tags_json,
 				signal_type, comparator, threshold, threshold_upper, window_minutes, minimum_sample_count,
 				consecutive_breaches_required, consecutive_healthy_required, renotify_interval_minutes,
 				metric_name, metric_type, metric_aggregation, apdex_threshold_ms,
@@ -93,6 +95,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 			)
 			SELECT
 				id, org_id, name, notes, notification_template_json, enabled, severity, service_names_json, exclude_service_names_json,
+				tags_json,
 				CASE WHEN signal_type = 'query' THEN 'builder_query' ELSE signal_type END,
 				comparator, threshold, threshold_upper, window_minutes, minimum_sample_count,
 				consecutive_breaches_required, consecutive_healthy_required, renotify_interval_minutes,
@@ -123,12 +126,8 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 		`)
 		await db.run(sql`DROP TABLE alert_rules_old`)
 		await db.run(sql`CREATE INDEX alert_rules_org_idx ON alert_rules (org_id)`)
-		await db.run(
-			sql`CREATE INDEX alert_rules_org_enabled_idx ON alert_rules (org_id, enabled)`,
-		)
-		await db.run(
-			sql`CREATE UNIQUE INDEX alert_rules_org_name_idx ON alert_rules (org_id, name)`,
-		)
+		await db.run(sql`CREATE INDEX alert_rules_org_enabled_idx ON alert_rules (org_id, enabled)`)
+		await db.run(sql`CREATE UNIQUE INDEX alert_rules_org_name_idx ON alert_rules (org_id, name)`)
 	}
 
 	await db.run(

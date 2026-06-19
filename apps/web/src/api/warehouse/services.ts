@@ -6,6 +6,7 @@ import {
 	ServiceApdexRequest,
 	ServiceName,
 	ServiceNamespace,
+	ServiceHealthBaselineRequest,
 	ServiceOverviewRequest,
 	ServiceReleasesRequest,
 } from "@maple/domain/http"
@@ -17,7 +18,7 @@ import {
 	trimSparseLeadingBuckets,
 } from "@/api/warehouse/timeseries-utils"
 import { summarizeSampling } from "@/lib/sampling"
-import { querySpanMetricsCalls, resolveThroughput } from "@/api/warehouse/custom-charts"
+import { resolveThroughput } from "@/api/warehouse/custom-charts"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -49,10 +50,7 @@ export interface ServiceOverview {
 	tracedThroughput: number
 	hasSampling: boolean
 	samplingWeight: number
-}
-
-export interface ServiceOverviewResponse {
-	data: ServiceOverview[]
+	spanCount: number
 }
 
 const GetServiceOverviewInput = Schema.Struct({
@@ -95,11 +93,7 @@ function coerceRow(raw: Record<string, unknown>): CoercedRow {
 	}
 }
 
-function aggregateByServiceEnvironment(
-	rows: CoercedRow[],
-	durationSeconds: number,
-	metricsByService: Map<string, number>,
-): ServiceOverview[] {
+function aggregateByServiceEnvironment(rows: CoercedRow[], durationSeconds: number): ServiceOverview[] {
 	const groups = new Map<string, CoercedRow[]>()
 
 	for (const row of rows) {
@@ -119,12 +113,15 @@ function aggregateByServiceEnvironment(
 		const totalErrors = group.reduce((sum, r) => sum + r.errorCount, 0)
 		const totalEstimated = group.reduce((sum, r) => sum + r.estimatedSpanCount, 0)
 
-		// Mirror the detail-page / overview-chart / sparkline paths: resolve
-		// throughput as SpanMetrics `calls` (pre-sampling) → sum(SampleRate) → raw
-		// count, then summarize. Without this the list shows the raw traced count
-		// while every other surface shows the extrapolated estimate.
-		const metricsCalls = metricsByService.get(group[0].serviceName)
-		const resolvedCount = resolveThroughput(totalSpans, totalEstimated, metricsCalls)
+		// Resolve throughput as sum(SampleRate) (pre-sampling estimate) → raw traced
+		// count. Each row is environment-specific, and the per-env detail page it
+		// links to resolves throughput the same way, so both agree. We deliberately
+		// do NOT use the SpanMetrics `calls` counter here: it's a service-level,
+		// ALL-environment value (it can't be filtered by `DeploymentEnv`), so on a
+		// per-environment row it would attribute the entire service's volume to each
+		// env (e.g. a tiny staging row inheriting the huge production count) and
+		// disagree with the env-scoped detail charts.
+		const resolvedCount = resolveThroughput(totalSpans, totalEstimated, undefined)
 		const sampling = summarizeSampling(resolvedCount, totalSpans, durationSeconds)
 
 		// Weighted average of latencies by span count
@@ -161,6 +158,7 @@ function aggregateByServiceEnvironment(
 			tracedThroughput: sampling.traced,
 			hasSampling: sampling.hasSampling,
 			samplingWeight: sampling.weight,
+			spanCount: totalSpans,
 		})
 	}
 
@@ -183,44 +181,26 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 
 	const startTime = input.startTime ?? fallback.startTime
 	const endTime = input.endTime ?? fallback.endTime
-	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
 
-	const [result, metricsResult] = yield* Effect.all(
-		[
-			runWarehouseQuery("serviceOverview", () =>
-				Effect.gen(function* () {
-					const client = yield* MapleApiAtomClient
-					return yield* client.queryEngine.serviceOverview({
-						payload: new ServiceOverviewRequest({
-							startTime,
-							endTime,
-							environments: input.environments,
-							namespaces: input.namespaces,
-							commitShas: input.commitShas,
-						}),
-					})
+	// Throughput resolves from the env-scoped sum(SampleRate) estimate (see
+	// `aggregateByServiceEnvironment`). The SpanMetrics `calls` counter is
+	// deliberately NOT consulted here: it's service-level and all-environment (it
+	// can't be filtered by `DeploymentEnv`), so on these per-environment rows it
+	// would over-report and disagree with the env-scoped detail page.
+	const result = yield* runWarehouseQuery("serviceOverview", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceOverview({
+				payload: new ServiceOverviewRequest({
+					startTime,
+					endTime,
+					environments: input.environments,
+					namespaces: input.namespaces,
+					commitShas: input.commitShas,
 				}),
-			),
-			// SpanMetrics `calls` counter for ALL services in one grouped query
-			// (no service filter). Same source the detail page / overview chart /
-			// sparklines use; resilient to absence (returns `{ data: [] }`).
-			querySpanMetricsCalls({
-				start_time: startTime,
-				end_time: endTime,
-				bucket_seconds: bucketSeconds,
-			}),
-		],
-		{ concurrency: 2 },
+			})
+		}),
 	)
-
-	// Total SpanMetrics `calls` per service across the window (sum of per-bucket
-	// `increase`). Keyed by service only — same granularity as the list sparkline.
-	const metricsByService = new Map<string, number>()
-	for (const r of metricsResult.data) {
-		const service = String(r.serviceName)
-		if (!service) continue
-		metricsByService.set(service, (metricsByService.get(service) ?? 0) + Number(r.sumValue))
-	}
 
 	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
 	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
@@ -228,8 +208,87 @@ const getServiceOverviewEffect = Effect.fn("QueryEngine.getServiceOverview")(fun
 
 	const coercedRows = result.data.map(coerceRow)
 	return {
-		data: aggregateByServiceEnvironment(coercedRows, durationSeconds, metricsByService),
+		data: aggregateByServiceEnvironment(coercedRows, durationSeconds),
 	}
+})
+
+// ---------------------------------------------------------------------------
+// Service latency baseline (baseline-relative health)
+// ---------------------------------------------------------------------------
+
+export interface ServiceLatencyBaseline {
+	serviceName: string
+	serviceNamespace: string
+	environment: string
+	baselineP95LatencyMs: number
+	baselineSpanCount: number
+}
+
+export interface ServiceHealthBaselineResult {
+	data: ServiceLatencyBaseline[]
+}
+
+const GetServiceHealthBaselineInput = Schema.Struct({
+	// Start of the range being judged; the baseline window is the trailing 7
+	// days BEFORE this point so an ongoing regression can't inflate its own
+	// baseline. Optional — defaults to "now".
+	rangeStartTime: Schema.optional(dateTimeString),
+	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+})
+
+export type GetServiceHealthBaselineInput = (typeof GetServiceHealthBaselineInput)["Encoded"]
+
+const BASELINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+// Snap a "YYYY-MM-DD HH:mm:ss" datetime down to the hour so the request
+// payload — and therefore the API-side cache key and the web atom key — stays
+// stable for up to an hour regardless of small range changes.
+const floorToHour = (dateTime: string) => `${dateTime.slice(0, 13)}:00:00`
+
+const warehouseDateTimeToMs = (dateTime: string) => new Date(`${dateTime.replace(" ", "T")}Z`).getTime()
+
+const msToWarehouseDateTime = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+
+export function getServiceHealthBaseline({ data }: { data: GetServiceHealthBaselineInput }) {
+	return getServiceHealthBaselineEffect({ data })
+}
+
+const getServiceHealthBaselineEffect = Effect.fn("QueryEngine.getServiceHealthBaseline")(function* ({
+	data,
+}: {
+	data: GetServiceHealthBaselineInput
+}) {
+	const input = yield* decodeInput(GetServiceHealthBaselineInput, data ?? {}, "getServiceHealthBaseline")
+	const nowDateTime = msToWarehouseDateTime(yield* Clock.currentTimeMillis)
+
+	const endTime = floorToHour(input.rangeStartTime ?? nowDateTime)
+	const startTime = msToWarehouseDateTime(warehouseDateTimeToMs(endTime) - BASELINE_WINDOW_MS)
+
+	const response = yield* runWarehouseQuery("serviceHealthBaseline", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceHealthBaseline({
+				payload: new ServiceHealthBaselineRequest({
+					startTime,
+					endTime,
+					environments: input.environments,
+					namespaces: input.namespaces,
+				}),
+			})
+		}),
+	)
+
+	const result: ServiceHealthBaselineResult = {
+		data: response.data.map((row) => ({
+			serviceName: String(row.serviceName),
+			serviceNamespace: row.serviceNamespace,
+			environment: row.environment,
+			baselineP95LatencyMs: row.baselineP95LatencyMs,
+			baselineSpanCount: row.baselineSpanCount,
+		})),
+	}
+	return result
 })
 
 // Service overview time series types
@@ -239,10 +298,6 @@ export interface ServiceTimeSeriesPoint {
 	tracedThroughput: number
 	hasSampling: boolean
 	errorRate: number
-}
-
-export interface ServiceOverviewTimeSeriesResponse {
-	data: Record<string, ServiceTimeSeriesPoint[]>
 }
 
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
@@ -285,12 +340,12 @@ function fillServiceApdexPoints(
 }
 
 // Service facets types
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
 }
 
-export interface ServicesFacets {
+interface ServicesFacets {
 	environments: FacetItem[]
 	namespaces: FacetItem[]
 	commitShas: FacetItem[]
@@ -365,16 +420,6 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 })
 
 // Service releases timeline
-export interface ServiceReleasesTimelinePoint {
-	bucket: string
-	commitSha: string
-	count: number
-}
-
-export interface ServiceReleasesTimelineResponse {
-	data: ServiceReleasesTimelinePoint[]
-}
-
 export function getServiceReleasesTimeline({ data }: { data: GetServiceDetailInput }) {
 	return getServiceReleasesTimelineEffect({ data })
 }
@@ -424,20 +469,18 @@ export interface ServiceDetailTimeSeriesPoint {
 	p99LatencyMs: number
 	apdexScore: number
 	totalCount: number
+	/**
+	 * The bucket is still settling — its window ends within the ingestion-lag
+	 * budget of "now", so it's under-filled. Charts render flagged buckets as the
+	 * dashed "in progress" segment instead of a solid crater.
+	 */
+	partial: boolean
 }
 
-export interface ServiceDetailTimeSeriesResponse {
-	data: ServiceDetailTimeSeriesPoint[]
-}
-
-export interface ServiceApdexTimeSeriesPoint {
+interface ServiceApdexTimeSeriesPoint {
 	bucket: string
 	apdexScore: number
 	totalCount: number
-}
-
-export interface ServiceApdexTimeSeriesResponse {
-	data: ServiceApdexTimeSeriesPoint[]
 }
 
 const GetServiceDetailInput = Schema.Struct({

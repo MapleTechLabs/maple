@@ -1,10 +1,18 @@
 import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import type {
+	AlertDeliveryEventId,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	ErrorIssueId,
+	OrgId,
+} from "@maple/domain/primitives"
 
 export const alertDestinations = sqliteTable(
 	"alert_destinations",
 	{
-		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
+		id: text("id").$type<AlertDestinationId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
 		name: text("name").notNull(),
 		type: text("type").notNull(),
 		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
@@ -29,8 +37,8 @@ export const alertDestinations = sqliteTable(
 export const alertRules = sqliteTable(
 	"alert_rules",
 	{
-		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
+		id: text("id").$type<AlertRuleId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
 		name: text("name").notNull(),
 		notes: text("notes"),
 		notificationTemplateJson: text("notification_template_json"),
@@ -38,6 +46,8 @@ export const alertRules = sqliteTable(
 		severity: text("severity").notNull(),
 		serviceNamesJson: text("service_names_json"),
 		excludeServiceNamesJson: text("exclude_service_names_json"),
+		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
+		tagsJson: text("tags_json"),
 		signalType: text("signal_type").notNull(),
 		comparator: text("comparator").notNull(),
 		threshold: real("threshold").notNull(),
@@ -83,8 +93,8 @@ export const alertRules = sqliteTable(
 export const alertRuleStates = sqliteTable(
 	"alert_rule_states",
 	{
-		orgId: text("org_id").notNull(),
-		ruleId: text("rule_id").notNull(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		ruleId: text("rule_id").$type<AlertRuleId>().notNull(),
 		groupKey: text("group_key").notNull().default("__total__"),
 		consecutiveBreaches: integer("consecutive_breaches", { mode: "number" }).notNull().default(0),
 		consecutiveHealthy: integer("consecutive_healthy", { mode: "number" }).notNull().default(0),
@@ -104,9 +114,9 @@ export const alertRuleStates = sqliteTable(
 export const alertIncidents = sqliteTable(
 	"alert_incidents",
 	{
-		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
-		ruleId: text("rule_id").notNull(),
+		id: text("id").$type<AlertIncidentId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		ruleId: text("rule_id").$type<AlertRuleId>().notNull(),
 		incidentKey: text("incident_key").notNull(),
 		ruleName: text("rule_name").notNull(),
 		groupKey: text("group_key"),
@@ -125,6 +135,9 @@ export const alertIncidents = sqliteTable(
 		dedupeKey: text("dedupe_key").notNull(),
 		lastDeliveredEventType: text("last_delivered_event_type"),
 		lastNotifiedAt: integer("last_notified_at", { mode: "number" }),
+		// Issue-hub link: the error_issues row (kind="alert") this incident
+		// feeds, mirroring anomalyIncidents.errorIssueId.
+		errorIssueId: text("error_issue_id").$type<ErrorIssueId>(),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
@@ -132,6 +145,7 @@ export const alertIncidents = sqliteTable(
 		index("alert_incidents_org_idx").on(table.orgId),
 		index("alert_incidents_org_status_idx").on(table.orgId, table.status),
 		index("alert_incidents_org_rule_idx").on(table.orgId, table.ruleId),
+		index("alert_incidents_org_issue_idx").on(table.orgId, table.errorIssueId),
 		uniqueIndex("alert_incidents_incident_key_idx").on(table.incidentKey),
 	],
 )
@@ -139,11 +153,11 @@ export const alertIncidents = sqliteTable(
 export const alertDeliveryEvents = sqliteTable(
 	"alert_delivery_events",
 	{
-		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
-		incidentId: text("incident_id"),
-		ruleId: text("rule_id").notNull(),
-		destinationId: text("destination_id").notNull(),
+		id: text("id").$type<AlertDeliveryEventId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		incidentId: text("incident_id").$type<AlertIncidentId>(),
+		ruleId: text("rule_id").$type<AlertRuleId>().notNull(),
+		destinationId: text("destination_id").$type<AlertDestinationId>().notNull(),
 		deliveryKey: text("delivery_key").notNull(),
 		eventType: text("event_type").notNull(),
 		attemptNumber: integer("attempt_number", { mode: "number" }).notNull(),

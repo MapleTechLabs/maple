@@ -2,7 +2,7 @@ import { Atom } from "@/lib/effect-atom"
 import { Schema } from "effect"
 import { localStorageRuntime } from "@/lib/services/common/storage-runtime"
 
-export interface ServiceMapLayout {
+interface ServiceMapLayout {
 	positions: Record<string, { x: number; y: number }>
 	viewport: { x: number; y: number; zoom: number } | null
 }

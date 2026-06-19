@@ -40,8 +40,6 @@ import {
 } from "@/lib/query-builder/widget-builder-utils"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
-export { type QueryBuilderWidgetState } from "@/lib/query-builder/widget-builder-utils"
-
 export interface WidgetQueryBuilderPageHandle {
 	apply: () => void
 	isDirty: () => boolean
@@ -69,7 +67,9 @@ const WidgetPreview = React.memo(function WidgetPreview({ widget }: { widget: Da
 		return <ListWidget dataState={dataState} display={widget.display} mode="view" onRemove={() => {}} />
 	}
 	if (widget.visualization === "heatmap") {
-		return <HeatmapWidget dataState={dataState} display={widget.display} mode="view" onRemove={() => {}} />
+		return (
+			<HeatmapWidget dataState={dataState} display={widget.display} mode="view" onRemove={() => {}} />
+		)
 	}
 	return <ChartWidget dataState={dataState} display={widget.display} mode="view" onRemove={() => {}} />
 })
@@ -111,9 +111,7 @@ function buildRawSqlDataSource(widget: DashboardWidget, draft: RawSqlDraft): Wid
 		params: {
 			sql: draft.sql,
 			displayType,
-			...(draft.granularitySeconds != null
-				? { granularitySeconds: draft.granularitySeconds }
-				: {}),
+			...(draft.granularitySeconds != null ? { granularitySeconds: draft.granularitySeconds } : {}),
 		},
 		...(transform ? { transform } : {}),
 	}
@@ -154,8 +152,7 @@ export function WidgetQueryBuilderPage({
 		actions: { setTimeRange },
 	} = useDashboardTimeRange()
 
-	const initialMode: SourceMode =
-		widget.dataSource.endpoint === "raw_sql_chart" ? "rawSql" : "builder"
+	const initialMode: SourceMode = widget.dataSource.endpoint === "raw_sql_chart" ? "rawSql" : "builder"
 	const [mode, setMode] = React.useState<SourceMode>(initialMode)
 	const initialModeRef = React.useRef<SourceMode>(initialMode)
 
@@ -214,9 +211,7 @@ export function WidgetQueryBuilderPage({
 		isDirty: () => {
 			if (mode !== initialModeRef.current) return true
 			if (mode === "rawSql") {
-				return (
-					JSON.stringify(rawSqlDraft) !== JSON.stringify(initialRawSqlSnapshotRef.current)
-				)
+				return JSON.stringify(rawSqlDraft) !== JSON.stringify(initialRawSqlSnapshotRef.current)
 			}
 			return JSON.stringify(state) !== JSON.stringify(initialSnapshot)
 		},
@@ -342,10 +337,7 @@ export function WidgetQueryBuilderPage({
 							<span className="text-[10px] uppercase tracking-wider text-muted-foreground">
 								Source
 							</span>
-							<Tabs
-								value={mode}
-								onValueChange={(value) => setMode(value as SourceMode)}
-							>
+							<Tabs value={mode} onValueChange={(value) => setMode(value as SourceMode)}>
 								<TabsList>
 									<TabsTrigger value="builder">Query Builder</TabsTrigger>
 									<TabsTrigger value="rawSql">Raw SQL</TabsTrigger>
@@ -427,11 +419,7 @@ export function WidgetQueryBuilderPage({
 										<Button variant="outline" size="sm" onClick={addFormula}>
 											+ Formula
 										</Button>
-										<Button
-											size="sm"
-											onClick={runPreview}
-											disabled={!!validationError}
-										>
+										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
 											Run Preview
 										</Button>
 										<span className="text-[11px] text-muted-foreground ml-auto">

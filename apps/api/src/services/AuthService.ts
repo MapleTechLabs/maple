@@ -451,7 +451,7 @@ const makeClerkClient = (
 	})
 }
 
-export const makeGetUserEmail = (
+const makeGetUserEmail = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
 	const clerkClient = makeClerkClient(env)
@@ -509,23 +509,26 @@ export const makeGetCustomerData = (
 	})
 }
 
-export class AuthService extends Context.Service<AuthService, AuthServiceShape>()("@maple/api/services/AuthService", {
-	make: Effect.gen(function* () {
-		const env = yield* Env
-		const resolveTenant = makeResolveTenant(env)
-		const resolveMcpTenant = makeResolveMcpTenant(env)
-		const loginSelfHosted = makeLoginSelfHosted(env)
-		const getUserEmail = makeGetUserEmail(env)
-		const getCustomerData = makeGetCustomerData(env)
+export class AuthService extends Context.Service<AuthService, AuthServiceShape>()(
+	"@maple/api/services/AuthService",
+	{
+		make: Effect.gen(function* () {
+			const env = yield* Env
+			const resolveTenant = makeResolveTenant(env)
+			const resolveMcpTenant = makeResolveMcpTenant(env)
+			const loginSelfHosted = makeLoginSelfHosted(env)
+			const getUserEmail = makeGetUserEmail(env)
+			const getCustomerData = makeGetCustomerData(env)
 
-		return {
-			resolveTenant,
-			resolveMcpTenant,
-			loginSelfHosted,
-			getUserEmail,
-			getCustomerData,
-		} satisfies AuthServiceShape
-	}),
-}) {
+			return {
+				resolveTenant,
+				resolveMcpTenant,
+				loginSelfHosted,
+				getUserEmail,
+				getCustomerData,
+			} satisfies AuthServiceShape
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

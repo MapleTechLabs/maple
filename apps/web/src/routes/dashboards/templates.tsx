@@ -1,10 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import { toast } from "sonner"
-import {
-	DashboardTemplateInstantiateRequest,
-	DashboardTemplateId,
-} from "@maple/domain/http"
+import { DashboardTemplateInstantiateRequest, DashboardTemplateId } from "@maple/domain/http"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"

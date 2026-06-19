@@ -48,6 +48,10 @@ export function groupUniqArray<T>(expr: Expr<T>): Expr<ReadonlyArray<T>> {
 	return compileFnCall<ReadonlyArray<T>>("groupUniqArray", expr)
 }
 
+export function argMaxMerge<T>(expr: Expr<T>): Expr<T> {
+	return compileFnCall<T>("argMaxMerge", expr)
+}
+
 // ---------------------------------------------------------------------------
 // Curried / parametric aggregates (handwritten — custom SQL syntax)
 // ---------------------------------------------------------------------------

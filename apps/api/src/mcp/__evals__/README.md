@@ -2,10 +2,10 @@
 
 Quality net for the Maple MCP server (`apps/api/src/mcp`). Two layers:
 
-| Layer | Files | Model? | Cost | When it runs |
-| --- | --- | --- | --- | --- |
-| **Deterministic regression tests** | `*.test.ts` (e.g. `regression.test.ts`) | No | Free | Every `test` CI run + locally via `bun test` |
-| **LLM evals** | `*.eval.ts` | Yes — real model via **OpenRouter** | 💲 per run | **Opt-in only** — see below |
+| Layer                              | Files                                   | Model?                              | Cost       | When it runs                                 |
+| ---------------------------------- | --------------------------------------- | ----------------------------------- | ---------- | -------------------------------------------- |
+| **Deterministic regression tests** | `*.test.ts` (e.g. `regression.test.ts`) | No                                  | Free       | Every `test` CI run + locally via `bun test` |
+| **LLM evals**                      | `*.eval.ts`                             | Yes — real model via **OpenRouter** | 💲 per run | **Opt-in only** — see below                  |
 
 The LLM evals hand a real model every MCP tool and score whether it picks the
 right tool with the right arguments (`vitest-evals` `ToolCallScorer`), plus a
@@ -55,7 +55,7 @@ Model defaults to the production `moonshotai/kimi-k2.7-code`. Override per-run w
 - `utils.ts` — `predictToolCalls` task + `describeMapleEval` (skips without a key).
 - `scorers.ts` — `OutputContainsScorer` for rendered-output assertions.
 - `fixtures.ts` / `fake-warehouse.ts` / `eval-runtime.ts` — canned warehouse data
-  + a runtime wired to it (`WarehouseQueryService.__testables`), for full-execution.
+    - a runtime wired to it (`WarehouseQueryService.__testables`), for full-execution.
 - `observability.eval.ts`, `cli-scenarios.eval.ts`, `disambiguation.eval.ts` —
   LLM tool-selection cases (the last two ported from the old `apps/cli/EVALS.md`).
 - `execution.eval.ts` — LLM full-execution case (large-trace `inspect_trace`).

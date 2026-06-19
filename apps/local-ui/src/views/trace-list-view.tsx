@@ -4,14 +4,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Separator } from "@maple/ui/components/ui/separator"
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@maple/ui/components/ui/table"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatDuration } from "@maple/ui/format"
 import { cn } from "@maple/ui/utils"
 import { useLocalTraces, type TraceFilters } from "../hooks/use-local-traces"
@@ -19,18 +12,11 @@ import { useLocalTraceFacets } from "../hooks/use-local-trace-facets"
 import { useQueryParams } from "../lib/router"
 import { DEFAULT_RANGE } from "../lib/time"
 import { DurationRangeFilter } from "../components/duration-range-filter"
-import {
-	FilterSection,
-	SearchableFilterSection,
-	SingleCheckboxFilter,
-} from "../components/filter-section"
-import {
-	FilterSidebarBody,
-	FilterSidebarFrame,
-	FilterSidebarHeader,
-} from "../components/filter-sidebar"
+import { FilterSection, SearchableFilterSection, SingleCheckboxFilter } from "../components/filter-section"
+import { FilterSidebarBody, FilterSidebarFrame, FilterSidebarHeader } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
-import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
+import { parseAttributes } from "@maple/ui/lib/span-tree"
+import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
 
 interface TraceListViewProps {
@@ -167,6 +153,7 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 			stats={
 				<>
 					<ToolbarStat value={rows.length} label={hasNextPage ? "traces+" : "traces"} />
+					<RefreshButton />
 					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
 				</>
 			}
@@ -216,11 +203,7 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 											<HttpSpanLabel
 												spanName={row.rootSpanName}
 												spanKind={row.rootSpanKind}
-												spanAttributes={{
-													"http.method": row.rootHttpMethod,
-													"http.route": row.rootHttpRoute,
-													"http.status_code": row.rootHttpStatusCode,
-												}}
+												spanAttributes={parseAttributes(row.rootSpanAttributes)}
 												className="min-w-0"
 											/>
 										</div>
@@ -228,7 +211,11 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 									<TableCell className="text-muted-foreground">
 										<div className="flex flex-wrap gap-1">
 											{row.services.slice(0, 3).map((svc) => (
-												<Badge key={svc} variant="secondary" className="font-mono text-[10px]">
+												<Badge
+													key={svc}
+													variant="secondary"
+													className="font-mono text-[10px]"
+												>
 													{svc}
 												</Badge>
 											))}

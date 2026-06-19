@@ -64,7 +64,10 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 			// Pick any representative SQL for this fingerprint — they're
 			// equivalent modulo literals by construction.
 			sampleSql: CH.any_(
-				CH.coalesce(CH.nullIf($.SpanAttributes.get("db.query.text"), ""), $.SpanAttributes.get("db.statement")),
+				CH.coalesce(
+					CH.nullIf($.SpanAttributes.get("db.query.text"), ""),
+					$.SpanAttributes.get("db.statement"),
+				),
 			),
 			sampleCount: CH.count(),
 			// Duration is microseconds (uint64) — convert to ms for display.
@@ -85,12 +88,8 @@ export function dbStatementSamplesQuery(opts: DbStatementSamplesOpts) {
 				CH.nullIf($.SpanAttributes.get("db.query.fingerprint"), ""),
 				$.SpanAttributes.get("db.statement.fingerprint"),
 			).neq(""),
-			opts.contextFilter
-				? $.SpanAttributes.get("query.context").eq(opts.contextFilter)
-				: undefined,
-			opts.profileFilter
-				? $.SpanAttributes.get("query.profile").eq(opts.profileFilter)
-				: undefined,
+			opts.contextFilter ? $.SpanAttributes.get("query.context").eq(opts.contextFilter) : undefined,
+			opts.profileFilter ? $.SpanAttributes.get("query.profile").eq(opts.profileFilter) : undefined,
 		])
 		.groupBy("fingerprint")
 		.orderBy(["p95DurationMs", "desc"])

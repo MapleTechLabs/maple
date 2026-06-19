@@ -61,7 +61,9 @@ describe("convertFamiliesToOtlp", () => {
 	})
 
 	it("converts counters to cumulative monotonic sums", () => {
-		const metrics = metricsOf('# TYPE requests counter\n# HELP requests Total.\nrequests_total{code="200"} 100')
+		const metrics = metricsOf(
+			'# TYPE requests counter\n# HELP requests Total.\nrequests_total{code="200"} 100',
+		)
 		const metric = metricByName(metrics, "requests_total")
 		expect(metric.description).toBe("Total.")
 		expect(metric.sum).toBeDefined()
@@ -79,7 +81,9 @@ describe("convertFamiliesToOtlp", () => {
 	})
 
 	it("merges target labels and sample labels into data point attributes, system labels win", () => {
-		const metrics = metricsOf('# TYPE g gauge\ng{job="evil",instance="evil",env="staging",custom="yes"} 1')
+		const metrics = metricsOf(
+			'# TYPE g gauge\ng{job="evil",instance="evil",env="staging",custom="yes"} 1',
+		)
 		const attrs = attrsToRecord(metricByName(metrics, "g").gauge!.dataPoints[0]!.attributes)
 		expect(attrs).toEqual({
 			env: "staging",
@@ -144,11 +148,20 @@ describe("convertFamiliesToOtlp", () => {
 
 	it("clamps negative bucket deltas and tolerates a missing _count via the +Inf bucket", () => {
 		const clamped = metricsOf(
-			["# TYPE a histogram", 'a_bucket{le="1"} 5', 'a_bucket{le="2"} 3', 'a_bucket{le="+Inf"} 5', "a_count 5", "a_sum 1"].join("\n"),
+			[
+				"# TYPE a histogram",
+				'a_bucket{le="1"} 5',
+				'a_bucket{le="2"} 3',
+				'a_bucket{le="+Inf"} 5',
+				"a_count 5",
+				"a_sum 1",
+			].join("\n"),
 		)
 		expect(metricByName(clamped, "a").histogram!.dataPoints[0]!.bucketCounts).toEqual([5, 0, 2])
 
-		const viaInf = metricsOf(["# TYPE b histogram", 'b_bucket{le="1"} 1', 'b_bucket{le="+Inf"} 4', "b_sum 2"].join("\n"))
+		const viaInf = metricsOf(
+			["# TYPE b histogram", 'b_bucket{le="1"} 1', 'b_bucket{le="+Inf"} 4', "b_sum 2"].join("\n"),
+		)
 		expect(metricByName(viaInf, "b").histogram!.dataPoints[0]!.count).toBe(4)
 
 		const incomplete = convert(["# TYPE c histogram", 'c_bucket{le="1"} 1', "c_sum 2"].join("\n"))

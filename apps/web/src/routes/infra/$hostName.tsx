@@ -11,20 +11,12 @@ import { HostDetailHeader, HostDetailHeaderLoading } from "@/components/infra/ho
 import { MetricStrip } from "@/components/infra/host-detail-chart"
 import { HostMetadataPanel } from "@/components/infra/host-metadata-panel"
 import { hostDetailSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { TIME_PRESETS, bucketSecondsFor } from "@/components/infra/constants"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 
 export const Route = createFileRoute("/infra/$hostName")({
 	component: HostDetailPage,
 })
-
-const TIME_PRESETS = [
-	{ value: "15m", label: "Last 15 minutes" },
-	{ value: "1h", label: "Last hour" },
-	{ value: "6h", label: "Last 6 hours" },
-	{ value: "12h", label: "Last 12 hours" },
-	{ value: "24h", label: "Last 24 hours" },
-	{ value: "7d", label: "Last 7 days" },
-]
 
 const METRIC_STRIPS = [
 	{ metric: "cpu", label: "CPU", caption: "Per-mode utilization · stacked area" },
@@ -33,25 +25,6 @@ const METRIC_STRIPS = [
 	{ metric: "network", label: "Network", caption: "Throughput in/out per device" },
 	{ metric: "load15", label: "Load 15m", caption: "Linux load average" },
 ] as const
-
-function bucketSecondsFor(preset: string): number {
-	switch (preset) {
-		case "15m":
-			return 15
-		case "1h":
-			return 60
-		case "6h":
-			return 300
-		case "12h":
-			return 600
-		case "24h":
-			return 900
-		case "7d":
-			return 3600
-		default:
-			return 60
-	}
-}
 
 function HostDetailPage() {
 	const infraEnabled = useInfraEnabled()

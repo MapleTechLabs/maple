@@ -44,7 +44,7 @@ export const InstructionsResource = McpServer.resource({
 - Performance analysis: find_slow_traces -> inspect_trace -> get_service_top_operations
 - Trend analysis: query_data (timeseries or breakdown)
 - Service discovery: list_services -> diagnose_service
-- Alert management: list_alert_rules -> get_alert_rule -> list_alert_incidents
+- Alert management: list_alert_rules -> get_alert_rule -> create_alert_rule / update_alert_rule / delete_alert_rule -> list_alert_incidents
 
 ## Dashboard Widget JSON
 

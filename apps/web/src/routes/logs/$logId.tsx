@@ -137,19 +137,13 @@ function LogDetailPage() {
 						{/* Hero + meta as one card, mirroring the drawer's stacked top section. */}
 						<div className="overflow-hidden rounded-md border">
 							<LogHeroHeader log={log} showClose={false} />
-							<LogMetaStrip
-								log={log}
-								timeZone={effectiveTimezone}
-								showOpenFullPage={false}
-							/>
+							<LogMetaStrip log={log} timeZone={effectiveTimezone} showOpenFullPage={false} />
 							{showErrorBanner && <LogErrorBanner log={log} />}
 						</div>
 
 						<div className="grid gap-3 lg:grid-cols-[1fr_minmax(360px,440px)]">
 							<section className="rounded-md border p-3">
-								<h2 className="mb-3 text-xs font-medium text-muted-foreground">
-									Attributes
-								</h2>
+								<h2 className="mb-3 text-xs font-medium text-muted-foreground">Attributes</h2>
 								<LogAttributesPanel log={log} />
 							</section>
 

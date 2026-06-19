@@ -18,6 +18,8 @@ const logsSearchSchema = Schema.Struct({
 	deploymentEnvMatchMode: Schema.optional(Schema.Literals(["contains"])),
 	namespaces: OptionalStringArrayParam,
 	namespaceMatchMode: Schema.optional(Schema.Literals(["contains"])),
+	// Attribute keys pinned as columns in the logs stream. Shareable via URL.
+	columns: OptionalStringArrayParam,
 	search: Schema.optional(Schema.String),
 	startTime: Schema.optional(Schema.String),
 	endTime: Schema.optional(Schema.String),

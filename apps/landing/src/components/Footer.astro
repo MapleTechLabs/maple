@@ -2,9 +2,11 @@
 import { getRelativeLocaleUrl } from "astro:i18n";
 import * as m from "../paraglide/messages";
 import LanguageSwitcher from "./LanguageSwitcher.astro";
+import { getGitHubStars, formatStars } from "../lib/github-stars";
 
 const locale = Astro.currentLocale ?? "en";
 const l = (path: string) => getRelativeLocaleUrl(locale, path);
+const stars = await getGitHubStars();
 ---
 
 <footer class="border-t border-border bg-bg-deep">
@@ -82,7 +84,7 @@ const l = (path: string) => getRelativeLocaleUrl(locale, path);
             <div>
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4">{m.footer_community()}</h4>
                 <ul class="space-y-2">
-                    <li><a href="https://github.com/Makisuo/maple" target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_github()}</a></li>
+                    <li><a href="https://github.com/Makisuo/maple" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_github()}{stars != null && <span class="tabular-nums">{formatStars(stars)}</span>}</a></li>
                     <li><a href="https://opentelemetry.io" target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                     <li><a href="https://x.com/maple_dev" target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_twitter()}</a></li>
                     <li><a href="https://discord.gg/BnXjKuwJqP" target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_discord()}</a></li>

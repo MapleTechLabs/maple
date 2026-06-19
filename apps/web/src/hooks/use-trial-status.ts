@@ -1,9 +1,9 @@
 import { useMemo } from "react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { getActivePlan } from "@/lib/billing/plan-gating"
 
 export function useTrialStatus() {
-	const { data: customer, isLoading } = useCustomer()
+	const { data: customer, isLoading } = useMapleCustomer()
 
 	return useMemo(() => {
 		const sub = getActivePlan(customer)

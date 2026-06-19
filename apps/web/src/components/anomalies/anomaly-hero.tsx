@@ -1,12 +1,7 @@
 import type { AnomalyIncidentDocument } from "@maple/domain/http"
 import { cn } from "@maple/ui/lib/utils"
 
-import {
-	deviation,
-	formatSignalValue,
-	SIGNAL_LABEL,
-	severityToneFor,
-} from "./anomaly-format"
+import { deviation, formatSignalValue, SIGNAL_LABEL, severityToneFor } from "./anomaly-format"
 
 export function AnomalyHero({
 	incident,
@@ -33,15 +28,25 @@ export function AnomalyHero({
 			</h1>
 			<p className="max-w-3xl text-sm leading-relaxed text-muted-foreground">
 				Observed{" "}
-				<span className={cn("font-mono font-medium", incident.status === "open" ? tone.text : "text-foreground")}>
+				<span
+					className={cn(
+						"font-mono font-medium",
+						incident.status === "open" ? tone.text : "text-foreground",
+					)}
+				>
 					{observed}
 				</span>{" "}
 				against a <span className="font-mono text-foreground">{baseline}</span> 7-day baseline —{" "}
-				<span className={cn("font-mono font-medium", incident.status === "open" ? tone.text : "text-foreground")}>
+				<span
+					className={cn(
+						"font-mono font-medium",
+						incident.status === "open" ? tone.text : "text-foreground",
+					)}
+				>
 					{dev.label}
 				</span>
-				{dev.sigma !== null ? " above median" : ""}, threshold{" "}
-				<span className="font-mono text-foreground">{threshold}</span>.
+				{dev.kind === "sigma" ? " above median" : dev.kind === "percent" ? " vs baseline" : ""},
+				threshold <span className="font-mono text-foreground">{threshold}</span>.
 			</p>
 		</div>
 	)

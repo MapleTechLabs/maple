@@ -2,10 +2,6 @@
 	"name": "@maple/web",
 	"private": true,
 	"type": "module",
-	"portless": {
-		"name": "web",
-		"script": "dev:app"
-	},
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "vite dev --port ${PORT:-3471} --host ${HOST:-127.0.0.1}",
@@ -52,6 +48,7 @@
 		"clsx": "catalog:ui",
 		"date-fns": "^4.1.0",
 		"effect": "catalog:effect",
+		"elkjs": "^0.9.3",
 		"fuse.js": "^7",
 		"motion": "^12.38.0",
 		"react": "catalog:react",
@@ -84,5 +81,9 @@
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",
 		"vitest": "catalog:"
+	},
+	"portless": {
+		"name": "web",
+		"script": "dev:app"
 	}
 }

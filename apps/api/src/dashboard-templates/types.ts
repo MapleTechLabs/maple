@@ -17,7 +17,7 @@ export type WidgetDef = {
 	layout: { x: number; y: number; w: number; h: number }
 }
 
-export interface TemplateParameter {
+interface TemplateParameter {
 	key: DashboardTemplateParameterKey
 	label: string
 	description: string

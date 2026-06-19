@@ -17,7 +17,7 @@ import { GridIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { cn } from "@maple/ui/lib/utils"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
-import { WorkloadTable, WorkloadTableLoading, type WorkloadRow } from "@/components/infra/workload-table"
+import { WorkloadTable, WorkloadTableLoading } from "@/components/infra/workload-table"
 import { WorkloadsFilterSidebarView, type WorkloadFilters } from "@/components/infra/k8s-filter-sidebar"
 import { listWorkloadsResultAtom, workloadFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -198,7 +198,7 @@ function WorkloadsPageContent() {
 						.onInitial(() => <WorkloadTableLoading />)
 						.onError((err) => <QueryErrorState error={err} />)
 						.onSuccess((response, result) => {
-							const wls = response.data as ReadonlyArray<WorkloadRow>
+							const wls = response.data
 							const hasAnyFilter =
 								!!search.search?.trim() ||
 								(filters.workloadNames?.length ?? 0) > 0 ||

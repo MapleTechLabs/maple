@@ -1,11 +1,4 @@
 /**
- * Escape a string for safe use in ClickHouse SQL literals.
- */
-export function escapeForSQL(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")
-}
-
-/**
  * Coerce an untrusted numeric value into a safe non-negative integer for direct
  * interpolation into SQL (LIMIT / OFFSET / duration bounds). Non-finite or
  * negative inputs collapse to `fallback`; everything is truncated and clamped

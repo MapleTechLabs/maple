@@ -50,23 +50,23 @@ API keys are available in your Maple project settings.
 
 The bare minimum every span needs. `service.name` is the primary axis Maple groups by — without it spans go to a synthetic `unknown_service` bucket.
 
-| Attribute             | Example                                | What Maple does with it                                                                                       |
-| --------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `service.name`        | `api`, `ingest`, `web`                 | **Required.** Primary grouping for services list, service map, dashboards, alerts. Filter alias: `service`.   |
-| `service.version`     | `1.4.2`, `c0b92f68`                    | Per-version slices on service overview. Auto-skipped from chip strip but always queryable.                    |
-| `service.namespace`   | `payments`                             | Logical grouping above `service.name`. Auto-skipped from chip strip.                                          |
-| `service.instance.id` | UUID per process                       | Distinguishes replicas of the same service. Auto-skipped from chip strip.                                     |
+| Attribute             | Example                | What Maple does with it                                                                                     |
+| --------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `service.name`        | `api`, `ingest`, `web` | **Required.** Primary grouping for services list, service map, dashboards, alerts. Filter alias: `service`. |
+| `service.version`     | `1.4.2`, `c0b92f68`    | Per-version slices on service overview. Auto-skipped from chip strip but always queryable.                  |
+| `service.namespace`   | `payments`             | Logical grouping above `service.name`. Auto-skipped from chip strip.                                        |
+| `service.instance.id` | UUID per process       | Distinguishes replicas of the same service. Auto-skipped from chip strip.                                   |
 
 ## Deployment & version tracking
 
 Tag every span with these and you get per-environment and per-version slices for free across the services table, service map, and per-service overview.
 
-| Attribute                     | Example                       | What Maple does with it                                                                                          |
-| ----------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `deployment.environment.name` | `production`                  | Filterable everywhere; per-env throughput / latency / error rate; environment chips in span detail.              |
-| `deployment.environment`      | `production`                  | Legacy alias, treated as the same value. Either spelling is accepted.                                            |
-| `vcs.ref.head.revision`       | `c0b92f68`                    | Git commit SHA. Enables release markers on charts and per-version metrics.                                       |
-| `vcs.repository.url.full`     | `https://github.com/acme/api` | Canonical repo URL. Links telemetry to source.                                                                   |
+| Attribute                     | Example                       | What Maple does with it                                                                             |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| `deployment.environment.name` | `production`                  | Filterable everywhere; per-env throughput / latency / error rate; environment chips in span detail. |
+| `deployment.environment`      | `production`                  | Legacy alias, treated as the same value. Either spelling is accepted.                               |
+| `vcs.ref.head.revision`       | `c0b92f68`                    | Git commit SHA. Enables release markers on charts and per-version metrics.                          |
+| `vcs.repository.url.full`     | `https://github.com/acme/api` | Canonical repo URL. Links telemetry to source.                                                      |
 
 `vcs.repository.url.full` and `vcs.ref.head.revision` are the OpenTelemetry semantic-convention keys — prefer them over legacy names like `deployment.commit_sha`, `git.repo`, or `app.repo_url`.
 
@@ -82,11 +82,11 @@ In the search bar, `env`, `environment`, and `commit_sha` are short aliases — 
 
 Maple stores span status codes as title-case strings:
 
-| Value     | Meaning                           |
-| --------- | --------------------------------- |
-| `"Unset"` | Default — no explicit status set  |
-| `"Ok"`    | Explicitly marked successful      |
-| `"Error"` | Span encountered an error         |
+| Value     | Meaning                          |
+| --------- | -------------------------------- |
+| `"Unset"` | Default — no explicit status set |
+| `"Ok"`    | Explicitly marked successful     |
+| `"Error"` | Span encountered an error        |
 
 Use the strings `"Ok"`, `"Error"`, `"Unset"` exactly. The error-rate widget filters via `WHERE StatusCode = 'Error'` — uppercase (`ERROR`) or lowercase (`error`) variants silently produce zero rows. Most OTel SDKs serialize the status enum correctly; the OpenTelemetry Collector also normalizes integer status codes (0, 1, 2) to these strings automatically. Just don't hand-stamp the wire value.
 
@@ -94,13 +94,13 @@ Only spans with `StatusCode = 'Error'` appear in error analytics.
 
 ## Span Kinds
 
-| Kind         | Description                          | How Maple Uses It                                                          |
-| ------------ | ------------------------------------ | -------------------------------------------------------------------------- |
-| `"Server"`   | Incoming request handler             | Throughput and error rate calculations. Renders path-only HTTP routes.     |
-| `"Client"`   | Outgoing request to another service  | Service map edges (with `peer.service`). Renders host+path HTTP routes.    |
-| `"Producer"` | Async message producer               | Service map edges (with `peer.service`).                                   |
-| `"Consumer"` | Async message consumer               | Throughput calculations.                                                   |
-| `"Internal"` | Default, synchronous in-process work | Trace detail view.                                                         |
+| Kind         | Description                          | How Maple Uses It                                                       |
+| ------------ | ------------------------------------ | ----------------------------------------------------------------------- |
+| `"Server"`   | Incoming request handler             | Throughput and error rate calculations. Renders path-only HTTP routes.  |
+| `"Client"`   | Outgoing request to another service  | Service map edges (with `peer.service`). Renders host+path HTTP routes. |
+| `"Producer"` | Async message producer               | Service map edges (with `peer.service`).                                |
+| `"Consumer"` | Async message consumer               | Throughput calculations.                                                |
+| `"Internal"` | Default, synchronous in-process work | Trace detail view.                                                      |
 
 `Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible; `Server` spans render path-only. The [Service Map](#service-map) only draws an edge for `Client` / `Producer` spans — leaving a network call on `Internal` makes it invisible in the map.
 
@@ -122,15 +122,15 @@ Filtering on these is a scan over a small column instead of a per-row map lookup
 
 `http.method` / `http.request.method` drives a colored pill on the span row:
 
-| Method  | Color        |
-| ------- | ------------ |
-| GET     | Blue         |
-| POST    | Orange       |
-| PUT     | Green        |
-| PATCH   | Gray         |
-| DELETE  | Red          |
-| HEAD    | Gray         |
-| OPTIONS | Dark gray    |
+| Method  | Color     |
+| ------- | --------- |
+| GET     | Blue      |
+| POST    | Orange    |
+| PUT     | Green     |
+| PATCH   | Gray      |
+| DELETE  | Red       |
+| HEAD    | Gray      |
+| OPTIONS | Dark gray |
 
 ### Status badge tiers
 
@@ -192,11 +192,11 @@ Keep `peer.service` spelling consistent across services so edges don't fragment.
 
 In addition to powering the service map, these drive the chip strip and the AI error-debug prompt context.
 
-| Attribute      | What Maple does with it                                                                                          |
-| -------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `db.system.name` (legacy `db.system`)    | Scored 70 in the chip strip; pairs with `peer.service` for service map DB nodes; toned `info` in log chips.      |
-| `db.query.text` (legacy `db.statement`)  | Scored 70; rendered in span detail; included as context in the error-debug prompt.                               |
-| `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                      |
+| Attribute                                   | What Maple does with it                                                                                     |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `db.system.name` (legacy `db.system`)       | Scored 70 in the chip strip; pairs with `peer.service` for service map DB nodes; toned `info` in log chips. |
+| `db.query.text` (legacy `db.statement`)     | Scored 70; rendered in span detail; included as context in the error-debug prompt.                          |
+| `db.operation.name` (legacy `db.operation`) | Scored 70 (e.g. `"SELECT"`, `"INSERT"`).                                                                    |
 
 ## Caching
 
@@ -214,12 +214,12 @@ Maple detects a cache span when **any** `cache.*` attribute is present. When det
 
 Drives the destructive-tone error banner shown on log rows and the highest-priority chip on every row.
 
-| Attribute           | What Maple does with it                                                                                          |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `exception.message` | Banner body. Falls back to `error.message`, then to the log body.                                                |
-| `exception.type`    | Banner top-right monospace badge. Falls back to `error.type`.                                                    |
-| `error.message`     | Same as `exception.message` (legacy fallback).                                                                   |
-| `error.type`        | Same as `exception.type` (legacy fallback).                                                                      |
+| Attribute           | What Maple does with it                                           |
+| ------------------- | ----------------------------------------------------------------- |
+| `exception.message` | Banner body. Falls back to `error.message`, then to the log body. |
+| `exception.type`    | Banner top-right monospace badge. Falls back to `error.type`.     |
+| `error.message`     | Same as `exception.message` (legacy fallback).                    |
+| `error.type`        | Same as `exception.type` (legacy fallback).                       |
 
 Any attribute matching `exception.*` is scored 100 (top of the chip strip) and auto-toned `error` (red) in log chips.
 
@@ -229,19 +229,19 @@ If `exception.message` is longer than 120 characters or contains a newline, the 
 
 For gRPC and other RPC frameworks.
 
-| Attribute             | What Maple does with it                                                                                              |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `rpc.service`         | Scored 68 in chip strip; toned `info`.                                                                               |
-| `rpc.method`          | Scored 68; toned `info`.                                                                                             |
-| `rpc.grpc.status_code`| Scored 90 (just below HTTP status). Non-zero values auto-toned `error` (red).                                        |
+| Attribute              | What Maple does with it                                                       |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `rpc.service`          | Scored 68 in chip strip; toned `info`.                                        |
+| `rpc.method`           | Scored 68; toned `info`.                                                      |
+| `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values auto-toned `error` (red). |
 
 ## User identity
 
 Promotes user/customer context to the chip strip so it's visible at a glance on every log row.
 
-| Attribute                                                  | What Maple does with it                              |
-| ---------------------------------------------------------- | ---------------------------------------------------- |
-| `user.id`, `enduser.id`, `customer.id`, `customer_id`      | All scored 66 in chip strip (equivalent priority).   |
+| Attribute                                             | What Maple does with it                            |
+| ----------------------------------------------------- | -------------------------------------------------- |
+| `user.id`, `enduser.id`, `customer.id`, `customer_id` | All scored 66 in chip strip (equivalent priority). |
 
 ## Logs
 
@@ -281,36 +281,36 @@ Tag spans with `k8s.*` and they light up the service map's pod-count badges and 
 
 Always shown in the chip strip when present.
 
-| Attribute              | What Maple does with it                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `k8s.pod.name`         | Promoted to log attribute chips.                                                       |
-| `k8s.namespace.name`   | Promoted to log attribute chips.                                                       |
-| `k8s.cluster.name`     | Cluster column on the Infrastructure tab.                                              |
-| `cloud.region`         | Promoted to log attribute chips.                                                       |
+| Attribute            | What Maple does with it                   |
+| -------------------- | ----------------------------------------- |
+| `k8s.pod.name`       | Promoted to log attribute chips.          |
+| `k8s.namespace.name` | Promoted to log attribute chips.          |
+| `k8s.cluster.name`   | Cluster column on the Infrastructure tab. |
+| `cloud.region`       | Promoted to log attribute chips.          |
 
 ### Node detail metadata
 
-| Attribute              | What Maple does with it                                                                |
-| ---------------------- | -------------------------------------------------------------------------------------- |
-| `k8s.node.name`        | Required to match node metrics from kubelet; node-list and node-detail views.          |
-| `k8s.node.uid`         | Display in node metadata panel.                                                        |
-| `k8s.pod.uid`          | Used to count distinct pods per workload.                                              |
-| `k8s.kubelet.version`  | Display in node metadata panel.                                                        |
-| `container.runtime`    | Display in K8s node metadata (containerd, cri-o, etc.).                                |
+| Attribute             | What Maple does with it                                                       |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `k8s.node.name`       | Required to match node metrics from kubelet; node-list and node-detail views. |
+| `k8s.node.uid`        | Display in node metadata panel.                                               |
+| `k8s.pod.uid`         | Used to count distinct pods per workload.                                     |
+| `k8s.kubelet.version` | Display in node metadata panel.                                               |
+| `container.runtime`   | Display in K8s node metadata (containerd, cri-o, etc.).                       |
 
 ## Cloud & platform badges
 
 These set the platform badge and runtime icon next to a service on the service map. SDKs running on common platforms auto-detect most of them — document the keys so self-instrumenters can match.
 
-| Attribute              | Example values                                                | What Maple does with it                                |
-| ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------ |
-| `cloud.provider`       | `aws`, `gcp`, `azure`, `cloudflare`, `vercel`, `railway`      | Provider icon / badge resolution.                      |
-| `cloud.platform`       | `aws_lambda`, `cloudflare.workers`, `gcp_cloud_run`           | More granular platform badge.                          |
-| `cloud.region`         | `us-west-2`, `iad1`                                           | Promoted to log chips (see Kubernetes section above).  |
-| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm`             | Runtime icon on the service map.                       |
-| `faas.name`            | Lambda function name, Cloud Run service name                  | Function-name badge on FaaS deployments.               |
-| `faas.version`         | Function version / revision                                   | Per-version slicing on FaaS.                           |
-| `faas.instance`        | Function execution / instance ID                              | Replica identifier on FaaS.                            |
+| Attribute              | Example values                                           | What Maple does with it                               |
+| ---------------------- | -------------------------------------------------------- | ----------------------------------------------------- |
+| `cloud.provider`       | `aws`, `gcp`, `azure`, `cloudflare`, `vercel`, `railway` | Provider icon / badge resolution.                     |
+| `cloud.platform`       | `aws_lambda`, `cloudflare.workers`, `gcp_cloud_run`      | More granular platform badge.                         |
+| `cloud.region`         | `us-west-2`, `iad1`                                      | Promoted to log chips (see Kubernetes section above). |
+| `process.runtime.name` | `nodejs`, `bun`, `deno`, `workerd`, `rust`, `jvm`        | Runtime icon on the service map.                      |
+| `faas.name`            | Lambda function name, Cloud Run service name             | Function-name badge on FaaS deployments.              |
+| `faas.version`         | Function version / revision                              | Per-version slicing on FaaS.                          |
+| `faas.instance`        | Function execution / instance ID                         | Replica identifier on FaaS.                           |
 
 Keep `process.runtime.name` values consistent across services running the same runtime — don't have one service emit `nodejs` and another `node`, or you'll get two runtime icons for the same fleet.
 
@@ -350,24 +350,24 @@ The data is still queryable — you can filter or group by these in the search b
 
 The chip strip on each log/span row shows the top 4 attributes by score. Higher score = more prominent.
 
-| Score | Attributes                                                                       |
-| ----- | -------------------------------------------------------------------------------- |
-| 100   | `error`, `exception`, `exception.*` (anything)                                   |
-| 95    | `http.status_code`, `http.response.status_code`                                  |
-| 90    | `rpc.grpc.status_code`                                                           |
-| 80    | `http.method`, `http.request.method`                                             |
+| Score | Attributes                                                                                          |
+| ----- | --------------------------------------------------------------------------------------------------- |
+| 100   | `error`, `exception`, `exception.*` (anything)                                                      |
+| 95    | `http.status_code`, `http.response.status_code`                                                     |
+| 90    | `rpc.grpc.status_code`                                                                              |
+| 80    | `http.method`, `http.request.method`                                                                |
 | 70    | `db.system.name`, `db.system`, `db.query.text`, `db.statement`, `db.operation.name`, `db.operation` |
-| 68    | `rpc.service`, `rpc.method`                                                      |
-| 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                            |
-| 60    | `duration_ms`, `latency_ms`, `http.duration`                                     |
-| 55    | `http.url`, `http.route`, `url.path`                                             |
-| 40    | Other `http.*`, `url.*`                                                          |
-| 38    | Other `db.*`                                                                     |
-| 36    | Other `rpc.*`                                                                    |
-| 34    | `messaging.*`                                                                    |
-| 32    | Other `user.*`, `enduser.*`                                                      |
-| 25    | Anything with a dot (`namespace.key`)                                            |
-| 20    | Bare keys (no namespace)                                                         |
+| 68    | `rpc.service`, `rpc.method`                                                                         |
+| 66    | `user.id`, `enduser.id`, `customer.id`, `customer_id`                                               |
+| 60    | `duration_ms`, `latency_ms`, `http.duration`                                                        |
+| 55    | `http.url`, `http.route`, `url.path`                                                                |
+| 40    | Other `http.*`, `url.*`                                                                             |
+| 38    | Other `db.*`                                                                                        |
+| 36    | Other `rpc.*`                                                                                       |
+| 34    | `messaging.*`                                                                                       |
+| 32    | Other `user.*`, `enduser.*`                                                                         |
+| 25    | Anything with a dot (`namespace.key`)                                                               |
+| 20    | Bare keys (no namespace)                                                                            |
 
 Resource attributes only appear in chips if they're in the promoted set (deployment env, k8s pod/namespace, cloud region); other resource attrs get their score decremented by 10 even if promoted.
 

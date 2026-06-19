@@ -5,10 +5,12 @@ mod autumn;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use autumn::{AutumnEntitlements, AutumnTracker};
 use axum::body::Bytes;
 use axum::extract::DefaultBodyLimit;
@@ -20,7 +22,7 @@ use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine;
 use chrono::DateTime;
 use dashmap::DashMap;
@@ -28,11 +30,13 @@ use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use hmac::{Hmac, Mac};
+use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEMA_VERSION;
 use maple_ingest::metrics;
 use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
-    AttributeMappingRule, DatasourceNames, MappingOperation, MappingSourceContext, PipelineError,
-    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
+    AttributeMappingRule, ClickHouseTarget, ClickHouseTargetProvider, DatasourceNames,
+    ExportDestination, MappingOperation, MappingSourceContext, PipelineError, SamplingPolicy,
+    TelemetryPipeline, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -89,7 +93,6 @@ struct AppConfig {
     port: u16,
     otlp_grpc_port: Option<u16>,
     forward_endpoint: String,
-    forward_self_managed_endpoint: Option<String>,
     forward_timeout: Duration,
     write_mode: WriteMode,
     tinybird: TinybirdConfig,
@@ -97,12 +100,15 @@ struct AppConfig {
     org_max_in_flight: u64,
     require_tls: bool,
     key_store_backend: KeyStoreBackend,
+    clickhouse_encryption_key: Option<[u8; 32]>,
     lookup_hmac_key: String,
     autumn_secret_key: Option<String>,
     autumn_api_url: String,
     autumn_flush_interval_secs: u64,
     autumn_enforce_limits: bool,
     autumn_check_cache_ttl_secs: u64,
+    ingest_key_cache_ttl_secs: u64,
+    org_routing_cache_ttl_secs: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -133,6 +139,14 @@ impl WriteMode {
     fn uses_forward(self) -> bool {
         matches!(self, Self::Forward | Self::Dual)
     }
+}
+
+fn uses_native_pipeline_for(write_mode: WriteMode, destination: ExportDestination) -> bool {
+    write_mode.uses_tinybird() || destination == ExportDestination::ClickHouse
+}
+
+fn uses_forward_path_for(write_mode: WriteMode, destination: ExportDestination) -> bool {
+    write_mode.uses_forward() && destination != ExportDestination::ClickHouse
 }
 
 #[derive(Clone)]
@@ -175,14 +189,6 @@ impl AppConfig {
         if forward_endpoint.is_empty() {
             return Err("INGEST_FORWARD_OTLP_ENDPOINT is required".to_string());
         }
-
-        // Optional: endpoint for the self-managed collector pool. When unset, self-managed
-        // orgs fall back to the shared pool so a missing env var degrades to "current
-        // behavior" rather than dropping traffic.
-        let forward_self_managed_endpoint = std::env::var("INGEST_FORWARD_SELF_MANAGED_ENDPOINT")
-            .ok()
-            .map(|value| value.trim().trim_end_matches('/').to_string())
-            .filter(|value| !value.is_empty());
 
         let forward_timeout_ms = parse_u64(
             "INGEST_FORWARD_TIMEOUT_MS",
@@ -290,18 +296,15 @@ impl AppConfig {
             );
         }
 
-        if require_tls {
-            if let Some(endpoint) = forward_self_managed_endpoint.as_ref() {
-                if !endpoint.starts_with("https://") {
-                    return Err(
-                        "INGEST_REQUIRE_TLS=true requires an https INGEST_FORWARD_SELF_MANAGED_ENDPOINT"
-                            .to_string(),
-                    );
-                }
-            }
-        }
-
         let key_store_backend = resolve_key_store_backend()?;
+        let clickhouse_encryption_key = match &key_store_backend {
+            KeyStoreBackend::D1 { .. } => {
+                let raw = std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
+                    .map_err(|_| "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required".to_string())?;
+                Some(parse_base64_aes256_gcm_key(&raw)?)
+            }
+            KeyStoreBackend::Static { .. } => None,
+        };
 
         let lookup_hmac_key = std::env::var("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY")
             .map_err(|_| "MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY is required".to_string())?
@@ -345,11 +348,22 @@ impl AppConfig {
             60,
         )?;
 
+        let ingest_key_cache_ttl_secs = parse_u64(
+            "INGEST_KEY_CACHE_TTL_SECS",
+            std::env::var("INGEST_KEY_CACHE_TTL_SECS").ok(),
+            60,
+        )?;
+
+        let org_routing_cache_ttl_secs = parse_u64(
+            "INGEST_ORG_ROUTING_CACHE_TTL_SECS",
+            std::env::var("INGEST_ORG_ROUTING_CACHE_TTL_SECS").ok(),
+            1,
+        )?;
+
         Ok(Self {
             port,
             otlp_grpc_port,
             forward_endpoint,
-            forward_self_managed_endpoint,
             forward_timeout: Duration::from_millis(forward_timeout_ms),
             write_mode,
             tinybird,
@@ -357,12 +371,15 @@ impl AppConfig {
             org_max_in_flight,
             require_tls,
             key_store_backend,
+            clickhouse_encryption_key,
             lookup_hmac_key,
             autumn_secret_key,
             autumn_api_url,
             autumn_flush_interval_secs,
             autumn_enforce_limits,
             autumn_check_cache_ttl_secs,
+            ingest_key_cache_ttl_secs,
+            org_routing_cache_ttl_secs,
         })
     }
 }
@@ -441,13 +458,21 @@ fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
 struct IngestKeyResolver {
     store: Arc<dyn KeyStore>,
     lookup_hmac_key: String,
-    cache: Cache<String, ResolvedIngestKey>,
+    cache: Cache<String, IngestKeyIdentity>,
+    routing: Arc<OrgRoutingResolver>,
 }
 
 struct CloudflareConnectorResolver {
     store: Arc<dyn KeyStore>,
     lookup_hmac_key: String,
-    cache: Cache<String, ResolvedCloudflareConnector>,
+    cache: Cache<String, CloudflareConnectorIdentity>,
+    routing: Arc<OrgRoutingResolver>,
+}
+
+struct OrgRoutingResolver {
+    store: Arc<dyn KeyStore>,
+    cache: Cache<String, OrgRouting>,
+    last_known: DashMap<String, OrgRouting>,
 }
 
 struct SamplingPolicyResolver {
@@ -458,6 +483,12 @@ struct SamplingPolicyResolver {
 struct AttributeMappingResolver {
     store: Arc<dyn KeyStore>,
     cache: Cache<String, Arc<Vec<AttributeMappingRule>>>,
+}
+
+struct ClickHouseTargetResolver {
+    store: Arc<dyn KeyStore>,
+    encryption_key: Option<[u8; 32]>,
+    cache: Cache<String, ClickHouseTarget>,
 }
 
 /// Database-agnostic surface used by the resolvers. Implementations:
@@ -488,6 +519,13 @@ trait KeyStore: Send + Sync {
         org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String>;
 
+    async fn fetch_clickhouse_target(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<ClickHouseTargetRow>, String>;
+
+    async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String>;
+
     async fn record_connector_success(&self, connector_id: &str, now_ms: i64)
         -> Result<(), String>;
 
@@ -503,6 +541,7 @@ trait KeyStore: Send + Sync {
 struct KeyRow {
     org_id: String,
     self_managed: bool,
+    clickhouse_ready: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -512,6 +551,7 @@ struct ConnectorRow {
     zone_name: String,
     dataset: String,
     self_managed: bool,
+    clickhouse_ready: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -527,6 +567,83 @@ struct AttributeMappingRow {
     source_key: String,
     target_key: String,
     operation: String,
+}
+
+#[derive(Clone)]
+struct IngestKeyIdentity {
+    org_id: String,
+    key_type: IngestKeyType,
+    key_id: String,
+}
+
+impl IngestKeyIdentity {
+    fn into_resolved(self, routing: OrgRouting) -> ResolvedIngestKey {
+        ResolvedIngestKey {
+            org_id: self.org_id,
+            key_type: self.key_type,
+            key_id: self.key_id,
+            self_managed: routing.self_managed,
+            clickhouse_ready: routing.clickhouse_ready,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct CloudflareConnectorIdentity {
+    connector_id: String,
+    org_id: String,
+    service_name: String,
+    zone_name: String,
+    dataset: String,
+    secret_key_id: String,
+}
+
+impl CloudflareConnectorIdentity {
+    fn into_resolved(self, routing: OrgRouting) -> ResolvedCloudflareConnector {
+        ResolvedCloudflareConnector {
+            connector_id: self.connector_id,
+            org_id: self.org_id,
+            service_name: self.service_name,
+            zone_name: self.zone_name,
+            dataset: self.dataset,
+            secret_key_id: self.secret_key_id,
+            self_managed: routing.self_managed,
+            clickhouse_ready: routing.clickhouse_ready,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct OrgRouting {
+    self_managed: bool,
+    clickhouse_ready: bool,
+}
+
+impl OrgRouting {
+    fn from_key_row(row: &KeyRow) -> Self {
+        Self {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        }
+    }
+
+    fn from_connector_row(row: &ConnectorRow) -> Self {
+        Self {
+            self_managed: row.self_managed,
+            clickhouse_ready: row.clickhouse_ready,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct ClickHouseTargetRow {
+    ch_url: String,
+    ch_user: String,
+    ch_password_ciphertext: Option<String>,
+    ch_password_iv: Option<String>,
+    ch_password_tag: Option<String>,
+    ch_database: String,
+    schema_version: String,
 }
 
 struct AppState {
@@ -553,6 +670,11 @@ struct ResolvedIngestKey {
     // resolve time; cached alongside the rest of the key so the hot path stays
     // branch-free beyond a single boolean check.
     self_managed: bool,
+    // Native direct ClickHouse ingest is stricter: the connection is healthy
+    // and the applied schema version equals this binary's ClickHouse migration
+    // version (SCHEMA_VERSION) — NOT the Tinybird-coupled PROJECT_REVISION, so a
+    // Tinybird-only schema change can't silently un-ready a BYO-CH org.
+    clickhouse_ready: bool,
 }
 
 #[derive(Clone)]
@@ -566,6 +688,7 @@ struct ResolvedCloudflareConnector {
     // Mirrors ResolvedIngestKey.self_managed so Cloudflare Logpush payloads route
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
+    clickhouse_ready: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -950,10 +1073,8 @@ async fn main() {
     // One UUID per process, shared by the trace and metric resources so both
     // signals attribute to the same `service.instance.id`.
     let service_instance_id = uuid::Uuid::new_v4().to_string();
-    let tracer_provider =
-        init_tracing(&config.forward_endpoint, config.port, &service_instance_id);
-    let meter_provider =
-        init_metrics(&config.forward_endpoint, config.port, &service_instance_id);
+    let tracer_provider = init_tracing(&config.forward_endpoint, config.port, &service_instance_id);
+    let meter_provider = init_metrics(&config.forward_endpoint, config.port, &service_instance_id);
 
     let http_client = match Client::builder()
         .timeout(config.forward_timeout)
@@ -970,18 +1091,6 @@ async fn main() {
         }
     };
 
-    let telemetry_pipeline = if config.write_mode.uses_tinybird() {
-        match TelemetryPipeline::new(config.tinybird.clone(), http_client.clone()).await {
-            Ok(pipeline) => Some(pipeline),
-            Err(error) => {
-                eprintln!("Telemetry pipeline init error: {error}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        None
-    };
-
     // Cloudflare D1 REST backend — the API writes ingest-key rows to D1, so
     // ingest reads them from the same place. We run a probe query before
     // accepting traffic; if anything is wrong (auth, schema, network) the
@@ -992,6 +1101,40 @@ async fn main() {
             eprintln!("Key store init error: {error}");
             std::process::exit(1);
         }
+    };
+
+    let direct_clickhouse_possible = matches!(config.key_store_backend, KeyStoreBackend::D1 { .. });
+    let clickhouse_target_provider: Option<Arc<dyn ClickHouseTargetProvider>> =
+        if direct_clickhouse_possible {
+            Some(Arc::new(ClickHouseTargetResolver {
+                store: Arc::clone(&store),
+                encryption_key: config.clickhouse_encryption_key,
+                cache: Cache::builder()
+                    .time_to_live(Duration::from_secs(60))
+                    .max_capacity(10_000)
+                    .build(),
+            }) as Arc<dyn ClickHouseTargetProvider>)
+        } else {
+            None
+        };
+
+    let telemetry_pipeline = if config.write_mode.uses_tinybird() || direct_clickhouse_possible {
+        match TelemetryPipeline::new_with_clickhouse_validation(
+            config.tinybird.clone(),
+            http_client.clone(),
+            clickhouse_target_provider,
+            config.write_mode.uses_tinybird(),
+        )
+        .await
+        {
+            Ok(pipeline) => Some(pipeline),
+            Err(error) => {
+                eprintln!("Telemetry pipeline init error: {error}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        None
     };
 
     let autumn_tracker = config.autumn_secret_key.as_ref().map(|key| {
@@ -1015,13 +1158,17 @@ async fn main() {
     };
 
     let ingest_key_cache = Cache::builder()
-        .time_to_live(Duration::from_secs(60))
+        .time_to_live(Duration::from_secs(config.ingest_key_cache_ttl_secs))
         .max_capacity(1_000)
         .build();
 
     let cloudflare_connector_cache = Cache::builder()
-        .time_to_live(Duration::from_secs(60))
+        .time_to_live(Duration::from_secs(config.ingest_key_cache_ttl_secs))
         .max_capacity(1_000)
+        .build();
+    let org_routing_cache = Cache::builder()
+        .time_to_live(Duration::from_secs(config.org_routing_cache_ttl_secs))
+        .max_capacity(10_000)
         .build();
     let sampling_policy_cache = Cache::builder()
         .time_to_live(Duration::from_secs(30))
@@ -1032,11 +1179,18 @@ async fn main() {
         .max_capacity(10_000)
         .build();
 
+    let org_routing_resolver = Arc::new(OrgRoutingResolver {
+        store: Arc::clone(&store),
+        cache: org_routing_cache,
+        last_known: DashMap::new(),
+    });
+
     let state = Arc::new(AppState {
         resolver: IngestKeyResolver {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
             cache: ingest_key_cache,
+            routing: Arc::clone(&org_routing_resolver),
         },
         org_inflight_limiter: OrgInFlightLimiter::new(config.org_max_in_flight),
         sampling_resolver: SamplingPolicyResolver {
@@ -1051,6 +1205,7 @@ async fn main() {
             store: Arc::clone(&store),
             lookup_hmac_key: config.lookup_hmac_key.clone(),
             cache: cloudflare_connector_cache,
+            routing: org_routing_resolver,
         },
         telemetry_pipeline,
         http_client,
@@ -1125,10 +1280,6 @@ async fn main() {
         info!(
             port = config.port,
             forward_endpoint = %config.forward_endpoint,
-            forward_self_managed_endpoint = %config
-                .forward_self_managed_endpoint
-                .as_deref()
-                .unwrap_or("<unset>"),
             require_tls = config.require_tls,
             max_body_bytes = config.max_request_body_bytes,
             hmac_fingerprint = %hmac_fingerprint,
@@ -1370,6 +1521,7 @@ async fn resolve_grpc_ingest_key(
             key_type: IngestKeyType::Public,
             key_id: "sentinel".to_string(),
             self_managed: false,
+            clickhouse_ready: false,
         });
     }
 
@@ -1431,10 +1583,10 @@ fn is_safe_replay_id(value: &str) -> bool {
 
 /// Auth shared by both replay endpoints. `Ok(None)` is the sentinel token —
 /// silently dropped like the OTLP path.
-async fn resolve_replay_org(
+async fn resolve_replay_key(
     state: &AppState,
     headers: &HeaderMap,
-) -> Result<Option<String>, ApiError> {
+) -> Result<Option<ResolvedIngestKey>, ApiError> {
     let ingest_key =
         extract_ingest_key(headers).ok_or_else(|| ApiError::unauthorized("Missing ingest key"))?;
     if is_sentinel_token(&ingest_key) {
@@ -1446,7 +1598,7 @@ async fn resolve_replay_org(
         .await
         .map_err(|_| ApiError::service_unavailable("Ingest authentication unavailable"))?
         .ok_or_else(|| ApiError::unauthorized("Invalid ingest key"))?;
-    Ok(Some(resolved.org_id))
+    Ok(Some(resolved))
 }
 
 async fn handle_replay_meta(
@@ -1466,6 +1618,8 @@ async fn handle_replay_meta(
         "http.request.body.size" = body.len(),
         "maple.signal" = "session_replays",
         "maple.org_id" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
     );
     let span_handle = span.clone();
     match handle_replay_meta_inner(&state, &headers, body)
@@ -1488,16 +1642,24 @@ async fn handle_replay_meta_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let org_id = match resolve_replay_org(state, headers).await? {
-        Some(org_id) => org_id,
+    let resolved_key = match resolve_replay_key(state, headers).await? {
+        Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
+    let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved_key.clickhouse_ready,
+    );
+    let destination = native_destination_for(&resolved_key);
+    Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session replay storage is not configured",
+    )?;
 
     // NDJSON: one session-metadata object per line. The org_id is always taken
     // from the authenticated key, never from the client-supplied body.
@@ -1528,8 +1690,9 @@ async fn handle_replay_meta_inner(
             session_starts += 1;
         }
         rows.push(
-            serde_json::to_vec(&value)
-                .map_err(|e| ApiError::bad_request(format!("failed to re-serialize metadata: {e}")))?,
+            serde_json::to_vec(&value).map_err(|e| {
+                ApiError::bad_request(format!("failed to re-serialize metadata: {e}"))
+            })?,
         );
     }
 
@@ -1538,10 +1701,11 @@ async fn handle_replay_meta_inner(
     }
     let count = rows.len();
     pipeline
-        .accept_rows(
+        .accept_rows_to(
             &org_id,
             state.config.tinybird.datasource_session_replays.clone(),
             rows,
+            destination,
         )
         .await
         .map_err(|e| {
@@ -1577,6 +1741,8 @@ async fn handle_session_events(
         "http.request.body.size" = body.len(),
         "maple.signal" = "session_events",
         "maple.org_id" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
     );
     let span_handle = span.clone();
     match handle_session_events_inner(&state, &headers, body)
@@ -1599,16 +1765,24 @@ async fn handle_session_events_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<usize, ApiError> {
-    let org_id = match resolve_replay_org(state, headers).await? {
-        Some(org_id) => org_id,
+    let resolved_key = match resolve_replay_key(state, headers).await? {
+        Some(resolved_key) => resolved_key,
         None => return Ok(0),
     };
+    let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved_key.clickhouse_ready,
+    );
+    let destination = native_destination_for(&resolved_key);
+    Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session event storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session event storage is not configured",
+    )?;
 
     // NDJSON: one distilled session-event object per line. As with replay
     // metadata, org_id is taken from the authenticated key, never the body.
@@ -1637,10 +1811,11 @@ async fn handle_session_events_inner(
     }
     let count = rows.len();
     pipeline
-        .accept_rows(
+        .accept_rows_to(
             &org_id,
             state.config.tinybird.datasource_session_events.clone(),
             rows,
+            destination,
         )
         .await
         .map_err(|e| {
@@ -1666,6 +1841,8 @@ async fn handle_replay_blob(
         "http.request.body.size" = body.len(),
         "maple.signal" = "session_replays",
         "maple.org_id" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
     );
     let span_handle = span.clone();
     match handle_replay_blob_inner(&state, &headers, body)
@@ -1688,16 +1865,24 @@ async fn handle_replay_blob_inner(
     headers: &HeaderMap,
     body: Bytes,
 ) -> Result<(), ApiError> {
-    let org_id = match resolve_replay_org(state, headers).await? {
-        Some(org_id) => org_id,
+    let resolved_key = match resolve_replay_key(state, headers).await? {
+        Some(resolved_key) => resolved_key,
         None => return Ok(()),
     };
+    let org_id = resolved_key.org_id.clone();
     Span::current().record("maple.org_id", org_id.as_str());
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved_key.clickhouse_ready,
+    );
+    let destination = native_destination_for(&resolved_key);
+    Span::current().record("maple.ingest.destination", destination.as_str());
 
-    let pipeline = state
-        .telemetry_pipeline
-        .as_ref()
-        .ok_or_else(|| ApiError::service_unavailable("Session replay storage is not configured"))?;
+    let pipeline = native_rows_pipeline_for(
+        state,
+        destination,
+        "Session replay storage is not configured",
+    )?;
 
     let session_id = replay_header(headers, "x-maple-session-id")
         .ok_or_else(|| ApiError::bad_request("missing x-maple-session-id header"))?;
@@ -1730,7 +1915,9 @@ async fn handle_replay_blob_inner(
 
     // Row → session_replay_events. Tinybird parses the space-separated datetime
     // into DateTime64(9); `events` is stored verbatim as a String column.
-    let timestamp = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.9f").to_string();
+    let timestamp = chrono::Utc::now()
+        .format("%Y-%m-%d %H:%M:%S%.9f")
+        .to_string();
     let row = serde_json::json!({
         "org_id": org_id,
         "session_id": session_id,
@@ -1742,10 +1929,11 @@ async fn handle_replay_blob_inner(
         "events": events_json,
         "is_checkpoint": is_checkpoint,
     });
-    let serialized = serde_json::to_vec(&row)
-        .map_err(|e| ApiError::service_unavailable(format!("failed to serialize replay events: {e}")))?;
+    let serialized = serde_json::to_vec(&row).map_err(|e| {
+        ApiError::service_unavailable(format!("failed to serialize replay events: {e}"))
+    })?;
     pipeline
-        .accept_rows(
+        .accept_rows_to(
             &org_id,
             state
                 .config
@@ -1753,9 +1941,12 @@ async fn handle_replay_blob_inner(
                 .datasource_session_replay_events
                 .clone(),
             vec![serialized],
+            destination,
         )
         .await
-        .map_err(|e| ApiError::service_unavailable(format!("failed to enqueue replay events: {e}")))?;
+        .map_err(|e| {
+            ApiError::service_unavailable(format!("failed to enqueue replay events: {e}"))
+        })?;
     Ok(())
 }
 
@@ -1807,6 +1998,8 @@ async fn handle_signal(
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.key_type" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
         "maple.ingest.payload_format" = tracing::field::Empty,
         "maple.ingest.content_encoding" = tracing::field::Empty,
         "maple.ingest.decoded_bytes" = tracing::field::Empty,
@@ -1881,6 +2074,8 @@ async fn handle_cloudflare_logpush(
         "maple.cloudflare.dataset" = "http_requests",
         "maple.cloudflare.is_validation" = tracing::field::Empty,
         "maple.ingest.self_managed" = tracing::field::Empty,
+        "maple.ingest.clickhouse_ready" = tracing::field::Empty,
+        "maple.ingest.destination" = tracing::field::Empty,
         "maple.ingest.item_count" = tracing::field::Empty,
     );
     let span_handle = span.clone();
@@ -1943,6 +2138,8 @@ async fn handle_signal_inner(
         metrics::sentinel(signal.path());
         Span::current().record("maple.org_id", SENTINEL_ORG_ID);
         Span::current().record("maple.ingest.key_type", "sentinel");
+        Span::current().record("maple.ingest.self_managed", false);
+        Span::current().record("maple.ingest.clickhouse_ready", false);
         debug!("Sentinel token; skipping resolve and forward");
         return Ok((
             StatusCode::OK.into_response(),
@@ -1973,6 +2170,10 @@ async fn handle_signal_inner(
     Span::current().record("maple.org_id", &resolved_key.org_id.as_str());
     Span::current().record("maple.ingest.key_type", resolved_key.key_type.as_str());
     Span::current().record("maple.ingest.self_managed", resolved_key.self_managed);
+    Span::current().record(
+        "maple.ingest.clickhouse_ready",
+        resolved_key.clickhouse_ready,
+    );
     debug!(
         resolve_ms = key_resolve_start.elapsed().as_millis() as u64,
         "Authenticated"
@@ -2151,6 +2352,7 @@ async fn handle_cloudflare_logpush_inner(
 
     Span::current().record("maple.org_id", &resolved.org_id.as_str());
     Span::current().record("maple.ingest.self_managed", resolved.self_managed);
+    Span::current().record("maple.ingest.clickhouse_ready", resolved.clickhouse_ready);
 
     // Logpush bills the `logs` feature — gate it the same way as OTLP logs.
     if let Some(entitlements) = &state.autumn_entitlements {
@@ -2274,6 +2476,7 @@ async fn handle_cloudflare_logpush_inner(
                 key_type: IngestKeyType::Connector,
                 key_id: resolved.secret_key_id.clone(),
                 self_managed: resolved.self_managed,
+                clickhouse_ready: resolved.clickhouse_ready,
             };
             let decoded = DecodedPayload::Logs(request);
             let response = match process_decoded_payload(
@@ -2814,21 +3017,26 @@ fn upsert_string_attribute(attributes: &mut Vec<KeyValue>, key: &str, value: &st
     });
 }
 
-/// Pick the upstream collector endpoint + pool label for a resolved ingest key.
-///
-/// Self-managed orgs go to the self-managed pool when it is configured; any
-/// other case (shared orgs, or self-managed-but-endpoint-unset) falls through
-/// to the shared pool. Kept as a pure function so the routing decision is unit
-/// testable without spinning up collectors or state.
-fn select_forward_endpoint<'a>(
-    shared: &'a str,
-    self_managed: Option<&'a str>,
-    org_is_self_managed: bool,
-) -> (&'a str, &'static str) {
-    match (org_is_self_managed, self_managed) {
-        (true, Some(url)) => (url, "self_managed"),
-        _ => (shared, "shared"),
+fn native_destination_for(resolved_key: &ResolvedIngestKey) -> ExportDestination {
+    if resolved_key.clickhouse_ready {
+        ExportDestination::ClickHouse
+    } else {
+        ExportDestination::Tinybird
     }
+}
+
+fn native_rows_pipeline_for<'a>(
+    state: &'a AppState,
+    destination: ExportDestination,
+    unavailable_message: &'static str,
+) -> Result<&'a TelemetryPipeline, ApiError> {
+    if destination == ExportDestination::Tinybird && !state.config.write_mode.uses_tinybird() {
+        return Err(ApiError::service_unavailable(unavailable_message));
+    }
+    state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable(unavailable_message))
 }
 
 async fn forward_to_collector(
@@ -2839,11 +3047,8 @@ async fn forward_to_collector(
     body: Vec<u8>,
     resolved_key: &ResolvedIngestKey,
 ) -> Result<Response, ApiError> {
-    let (endpoint, upstream_pool) = select_forward_endpoint(
-        state.config.forward_endpoint.as_str(),
-        state.config.forward_self_managed_endpoint.as_deref(),
-        resolved_key.self_managed,
-    );
+    let endpoint = state.config.forward_endpoint.as_str();
+    let upstream_pool = "shared";
 
     let url = format!("{endpoint}/v1/{}", signal.path());
     let outbound_bytes = body.len();
@@ -2957,68 +3162,17 @@ async fn process_decoded_payload(
     decoded: &DecodedPayload,
     resolved_key: &ResolvedIngestKey,
 ) -> Result<Response, ApiError> {
-    if state.config.write_mode.uses_tinybird() {
-        let pipeline = state
-            .telemetry_pipeline
-            .as_ref()
-            .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
-        let native_start = Instant::now();
-        let stats = match decoded {
-            DecodedPayload::Traces(request) => {
-                let policy = state
-                    .sampling_resolver
-                    .resolve_policy(&resolved_key.org_id)
-                    .await;
-                let attribute_mappings = state
-                    .attribute_mapping_resolver
-                    .resolve_mappings(&resolved_key.org_id)
-                    .await;
-                pipeline
-                    .accept_traces(
-                        &resolved_key.org_id,
-                        request,
-                        &policy,
-                        attribute_mappings.as_slice(),
-                    )
-                    .await
-            }
-            DecodedPayload::Logs(request) => {
-                pipeline.accept_logs(&resolved_key.org_id, request).await
-            }
-            DecodedPayload::Metrics(request) => {
-                pipeline.accept_metrics(&resolved_key.org_id, request).await
-            }
+    let destination = native_destination_for(resolved_key);
+    Span::current().record("maple.ingest.destination", destination.as_str());
+
+    if uses_native_pipeline_for(state.config.write_mode, destination) {
+        accept_native_decoded_payload(state, signal, decoded, resolved_key, destination).await?;
+        if destination == ExportDestination::ClickHouse {
+            return Ok(StatusCode::OK.into_response());
         }
-        .map_err(|error| {
-            let api_error = match &error {
-                PipelineError::Throttled(_) => {
-                    ApiError::too_many_requests("Per-org ingest queue limit exceeded")
-                }
-                PipelineError::Backpressure(_) => {
-                    ApiError::service_unavailable("Telemetry backend unavailable")
-                }
-                PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
-                    ApiError::service_unavailable("Telemetry backend unavailable")
-                }
-            };
-            error!(
-                error = %error,
-                signal = signal.path(),
-                org_id = %resolved_key.org_id,
-                "Native telemetry pipeline rejected payload"
-            );
-            api_error
-        })?;
-        metrics::native_accept_duration(signal.path(), native_start.elapsed().as_secs_f64());
-        metrics::native_rows(signal.path(), stats.rows as u64);
-        if stats.dropped > 0 {
-            metrics::native_sampled_dropped(signal.path(), stats.dropped as u64);
-        }
-        Span::current().record("maple.ingest.native_rows", stats.rows as u64);
-        Span::current().record("maple.ingest.sampled_dropped", stats.dropped as u64);
     }
 
-    if state.config.write_mode.uses_forward() {
+    if uses_forward_path_for(state.config.write_mode, destination) {
         let outbound_payload = decoded.encode(payload_format)?;
         let outbound_body = encode_payload(&outbound_payload, content_encoding)?;
         let outbound_bytes = outbound_body.len();
@@ -3038,10 +3192,122 @@ async fn process_decoded_payload(
     Ok(StatusCode::OK.into_response())
 }
 
+async fn accept_native_decoded_payload(
+    state: &AppState,
+    signal: Signal,
+    decoded: &DecodedPayload,
+    resolved_key: &ResolvedIngestKey,
+    destination: ExportDestination,
+) -> Result<(), ApiError> {
+    let pipeline = state
+        .telemetry_pipeline
+        .as_ref()
+        .ok_or_else(|| ApiError::service_unavailable("Telemetry pipeline is not configured"))?;
+    let native_start = Instant::now();
+    let stats = match decoded {
+        DecodedPayload::Traces(request) => {
+            let policy = state
+                .sampling_resolver
+                .resolve_policy(&resolved_key.org_id)
+                .await;
+            let attribute_mappings = state
+                .attribute_mapping_resolver
+                .resolve_mappings(&resolved_key.org_id)
+                .await;
+            pipeline
+                .accept_traces_to(
+                    &resolved_key.org_id,
+                    request,
+                    &policy,
+                    attribute_mappings.as_slice(),
+                    destination,
+                )
+                .await
+        }
+        DecodedPayload::Logs(request) => {
+            pipeline
+                .accept_logs_to(&resolved_key.org_id, request, destination)
+                .await
+        }
+        DecodedPayload::Metrics(request) => {
+            pipeline
+                .accept_metrics_to(&resolved_key.org_id, request, destination)
+                .await
+        }
+    }
+    .map_err(|error| {
+        let api_error = match &error {
+            PipelineError::Throttled(_) => {
+                ApiError::too_many_requests("Per-org ingest queue limit exceeded")
+            }
+            PipelineError::Backpressure(_) => {
+                ApiError::service_unavailable("Telemetry backend unavailable")
+            }
+            PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
+                ApiError::service_unavailable("Telemetry backend unavailable")
+            }
+        };
+        error!(
+            error = %error,
+            signal = signal.path(),
+            org_id = %resolved_key.org_id,
+            "Native telemetry pipeline rejected payload"
+        );
+        api_error
+    })?;
+    metrics::native_accept_duration(signal.path(), native_start.elapsed().as_secs_f64());
+    metrics::native_rows(signal.path(), stats.rows as u64);
+    if stats.dropped > 0 {
+        metrics::native_sampled_dropped(signal.path(), stats.dropped as u64);
+    }
+    Span::current().record("maple.ingest.native_rows", stats.rows as u64);
+    Span::current().record("maple.ingest.sampled_dropped", stats.dropped as u64);
+    Ok(())
+}
+
+impl OrgRoutingResolver {
+    async fn resolve_org_routing(&self, org_id: &str) -> Result<OrgRouting, String> {
+        if let Some(cached) = self.cache.get(org_id).await {
+            return Ok(cached);
+        }
+
+        match self.store.fetch_org_routing(org_id).await {
+            Ok(row) => {
+                let routing = row.unwrap_or_default();
+                self.remember_org_routing(org_id, routing.clone()).await;
+                Ok(routing)
+            }
+            Err(error) => {
+                if let Some(stale) = self.last_known.get(org_id) {
+                    warn!(
+                        org_id,
+                        error = %error,
+                        "Org routing refresh failed; serving last-known routing"
+                    );
+                    Ok(stale.clone())
+                } else {
+                    warn!(
+                        org_id,
+                        error = %error,
+                        "Org routing refresh failed with no last-known routing; using managed Tinybird path"
+                    );
+                    Ok(OrgRouting::default())
+                }
+            }
+        }
+    }
+
+    async fn remember_org_routing(&self, org_id: &str, routing: OrgRouting) {
+        self.last_known.insert(org_id.to_string(), routing.clone());
+        self.cache.insert(org_id.to_string(), routing).await;
+    }
+}
+
 impl IngestKeyResolver {
     async fn resolve_ingest_key(&self, raw_key: &str) -> Result<Option<ResolvedIngestKey>, String> {
-        if let Some(cached) = self.cache.get(raw_key).await {
-            return Ok(Some(cached));
+        if let Some(identity) = self.cache.get(raw_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(routing)));
         }
 
         let key_type = infer_ingest_key_type(raw_key);
@@ -3056,25 +3322,29 @@ impl IngestKeyResolver {
             IngestKeyType::Connector => return Ok(None),
         };
 
-        // LEFT JOIN against org_clickhouse_settings so the "self-managed?" flag is
-        // resolved in the same roundtrip as org_id. This hits the DB only on cache
-        // miss; warm cache hits (>99% of traffic) skip this entirely.
+        // LEFT JOIN against org_clickhouse_settings so the initial routing state
+        // is resolved in the same roundtrip as org_id. Warm auth-cache hits keep
+        // the key identity cached while the separate org-routing cache refreshes
+        // ClickHouse readiness on its shorter TTL.
         let Some(row) = self.store.fetch_ingest_key(&key_hash, hash_column).await? else {
             return Ok(None);
         };
 
-        let resolved = ResolvedIngestKey {
-            org_id: row.org_id,
+        let routing = OrgRouting::from_key_row(&row);
+        let identity = IngestKeyIdentity {
+            org_id: row.org_id.clone(),
             key_type,
             key_id: key_hash.chars().take(16).collect(),
-            self_managed: row.self_managed,
         };
 
         self.cache
-            .insert(raw_key.to_string(), resolved.clone())
+            .insert(raw_key.to_string(), identity.clone())
+            .await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
             .await;
 
-        Ok(Some(resolved))
+        Ok(Some(identity.into_resolved(routing)))
     }
 }
 
@@ -3085,8 +3355,9 @@ impl CloudflareConnectorResolver {
         raw_secret: &str,
     ) -> Result<Option<ResolvedCloudflareConnector>, String> {
         let cache_key = format!("{connector_id}:{raw_secret}");
-        if let Some(cached) = self.cache.get(&cache_key).await {
-            return Ok(Some(cached));
+        if let Some(identity) = self.cache.get(&cache_key).await {
+            let routing = self.routing.resolve_org_routing(&identity.org_id).await?;
+            return Ok(Some(identity.into_resolved(routing)));
         }
 
         let secret_hash = hash_ingest_key(raw_secret, &self.lookup_hmac_key)?;
@@ -3098,19 +3369,22 @@ impl CloudflareConnectorResolver {
             return Ok(None);
         };
 
-        let resolved = ResolvedCloudflareConnector {
+        let routing = OrgRouting::from_connector_row(&row);
+        let identity = CloudflareConnectorIdentity {
             connector_id: connector_id.to_string(),
-            org_id: row.org_id,
+            org_id: row.org_id.clone(),
             service_name: row.service_name,
             zone_name: row.zone_name,
             dataset: row.dataset,
             secret_key_id: secret_hash.chars().take(16).collect(),
-            self_managed: row.self_managed,
         };
 
-        self.cache.insert(cache_key, resolved.clone()).await;
+        self.cache.insert(cache_key, identity.clone()).await;
+        self.routing
+            .remember_org_routing(&identity.org_id, routing.clone())
+            .await;
 
-        Ok(Some(resolved))
+        Ok(Some(identity.into_resolved(routing)))
     }
 
     async fn record_success(&self, connector_id: &str) -> Result<(), String> {
@@ -3214,6 +3488,66 @@ impl AttributeMappingResolver {
     }
 }
 
+#[async_trait::async_trait]
+impl ClickHouseTargetProvider for ClickHouseTargetResolver {
+    async fn resolve_clickhouse_target(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<ClickHouseTarget>, String> {
+        if let Some(target) = self.cache.get(org_id).await {
+            return Ok(Some(target));
+        }
+
+        let Some(row) = self.store.fetch_clickhouse_target(org_id).await? else {
+            return Ok(None);
+        };
+        if row.schema_version != CLICKHOUSE_SCHEMA_VERSION {
+            return Ok(None);
+        }
+
+        let password = match (
+            row.ch_password_ciphertext.as_deref(),
+            row.ch_password_iv.as_deref(),
+            row.ch_password_tag.as_deref(),
+        ) {
+            (Some(ciphertext), Some(iv), Some(tag)) => {
+                let key = self.encryption_key.as_ref().ok_or_else(|| {
+                    "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required to decrypt ClickHouse credentials"
+                        .to_string()
+                })?;
+                decrypt_aes256_gcm(ciphertext, iv, tag, key)?
+            }
+            (None, None, None) => String::new(),
+            _ => {
+                return Err(
+                    "ClickHouse password encryption fields must be all present or all null"
+                        .to_string(),
+                )
+            }
+        };
+
+        let target = ClickHouseTarget {
+            endpoint: row.ch_url.trim().trim_end_matches('/').to_string(),
+            user: row.ch_user,
+            password,
+            database: row.ch_database,
+        };
+        if target.endpoint.is_empty() || target.user.is_empty() || target.database.is_empty() {
+            return Err("ClickHouse target is missing url, user, or database".to_string());
+        }
+        let endpoint_url = url::Url::parse(&target.endpoint)
+            .map_err(|error| format!("ClickHouse target endpoint URL is invalid: {error}"))?;
+        if !target.password.is_empty() && endpoint_url.scheme() != "https" {
+            return Err(
+                "ClickHouse target endpoint must use https when a password is configured"
+                    .to_string(),
+            );
+        }
+        self.cache.insert(org_id.to_string(), target.clone()).await;
+        Ok(Some(target))
+    }
+}
+
 /// Cloudflare D1 REST-backed KeyStore. Hits
 /// `POST /accounts/{acct}/d1/database/{db}/query` for every cache miss.
 /// The HMAC-fingerprint canary, the 60s in-process cache, and SQL strings
@@ -3297,15 +3631,17 @@ impl D1KeyStore {
     /// binary whose D1 access is broken for any reason.
     async fn probe(&self) -> Result<(), String> {
         let sanity_sql = "SELECT k.org_id, \
-                                 CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed \
+                                 CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
+                                 CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
                           FROM org_ingest_keys k \
                           LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
                           WHERE k.private_key_hash = ? LIMIT 1";
         self.query(
             sanity_sql,
-            vec![serde_json::Value::String(
-                "__ingest_probe_no_match__".to_string(),
-            )],
+            vec![
+                serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
+                serde_json::Value::String("__ingest_probe_no_match__".to_string()),
+            ],
         )
         .await
         .map(|_| ())
@@ -3342,6 +3678,13 @@ fn d1_str(row: &serde_json::Value, key: &str) -> Result<String, String> {
         .ok_or_else(|| format!("D1 row missing string field `{key}`: {row}"))
 }
 
+fn d1_optional_str(row: &serde_json::Value, key: &str) -> Option<String> {
+    row.get(key)
+        .and_then(|value| value.as_str())
+        .map(|s| s.to_string())
+        .filter(|value| !value.is_empty())
+}
+
 /// D1's JSON encoder represents the `CASE WHEN ... THEN 1 ELSE 0 END` as an
 /// integer (1/0). Accept either a JSON number or a bool defensively.
 fn d1_truthy(row: &serde_json::Value, key: &str) -> bool {
@@ -3361,13 +3704,20 @@ impl KeyStore for D1KeyStore {
     ) -> Result<Option<KeyRow>, String> {
         let sql = format!(
             "SELECT k.org_id, \
-                    CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed \
+                    CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
+                    CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
              WHERE k.{hash_column} = ? LIMIT 1"
         );
         let rows = self
-            .query(&sql, vec![serde_json::Value::String(key_hash.to_string())])
+            .query(
+                &sql,
+                vec![
+                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
+                    serde_json::Value::String(key_hash.to_string()),
+                ],
+            )
             .await?;
         let Some(row) = rows.into_iter().next() else {
             return Ok(None);
@@ -3375,6 +3725,7 @@ impl KeyStore for D1KeyStore {
         Ok(Some(KeyRow {
             org_id: d1_str(&row, "org_id")?,
             self_managed: d1_truthy(&row, "self_managed"),
+            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
         }))
     }
 
@@ -3384,7 +3735,8 @@ impl KeyStore for D1KeyStore {
         secret_hash: &str,
     ) -> Result<Option<ConnectorRow>, String> {
         let sql = "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
-                          CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed \
+                          CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
+                          CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
                    FROM cloudflare_logpush_connectors c \
                    LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
                    WHERE c.id = ? AND c.secret_hash = ? AND c.enabled = 1 LIMIT 1";
@@ -3392,6 +3744,7 @@ impl KeyStore for D1KeyStore {
             .query(
                 sql,
                 vec![
+                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
                     serde_json::Value::String(connector_id.to_string()),
                     serde_json::Value::String(secret_hash.to_string()),
                 ],
@@ -3406,6 +3759,7 @@ impl KeyStore for D1KeyStore {
             zone_name: d1_str(&row, "zone_name")?,
             dataset: d1_str(&row, "dataset")?,
             self_managed: d1_truthy(&row, "self_managed"),
+            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
         }))
     }
 
@@ -3452,6 +3806,62 @@ impl KeyStore for D1KeyStore {
                 })
             })
             .collect()
+    }
+
+    async fn fetch_clickhouse_target(
+        &self,
+        org_id: &str,
+    ) -> Result<Option<ClickHouseTargetRow>, String> {
+        let sql =
+            "SELECT ch_url, ch_user, ch_password_ciphertext, ch_password_iv, ch_password_tag, \
+                          ch_database, schema_version \
+                   FROM org_clickhouse_settings \
+                   WHERE org_id = ? AND sync_status = 'connected' AND schema_version = ? \
+                   LIMIT 1";
+        let rows = self
+            .query(
+                sql,
+                vec![
+                    serde_json::Value::String(org_id.to_string()),
+                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
+                ],
+            )
+            .await?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(ClickHouseTargetRow {
+            ch_url: d1_str(&row, "ch_url")?,
+            ch_user: d1_str(&row, "ch_user")?,
+            ch_password_ciphertext: d1_optional_str(&row, "ch_password_ciphertext"),
+            ch_password_iv: d1_optional_str(&row, "ch_password_iv"),
+            ch_password_tag: d1_optional_str(&row, "ch_password_tag"),
+            ch_database: d1_str(&row, "ch_database")?,
+            schema_version: d1_str(&row, "schema_version")?,
+        }))
+    }
+
+    async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
+        let sql = "SELECT CASE WHEN sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
+                          CASE WHEN sync_status = 'connected' AND schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
+                   FROM org_clickhouse_settings \
+                   WHERE org_id = ? LIMIT 1";
+        let rows = self
+            .query(
+                sql,
+                vec![
+                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
+                    serde_json::Value::String(org_id.to_string()),
+                ],
+            )
+            .await?;
+        let Some(row) = rows.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(Some(OrgRouting {
+            self_managed: d1_truthy(&row, "self_managed"),
+            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
+        }))
     }
 
     async fn record_connector_success(
@@ -3505,6 +3915,7 @@ impl KeyStore for StaticKeyStore {
         Ok(Some(KeyRow {
             org_id: self.org_id.clone(),
             self_managed: false,
+            clickhouse_ready: false,
         }))
     }
 
@@ -3528,6 +3939,17 @@ impl KeyStore for StaticKeyStore {
         _org_id: &str,
     ) -> Result<Vec<AttributeMappingRow>, String> {
         Ok(Vec::new())
+    }
+
+    async fn fetch_clickhouse_target(
+        &self,
+        _org_id: &str,
+    ) -> Result<Option<ClickHouseTargetRow>, String> {
+        Ok(None)
+    }
+
+    async fn fetch_org_routing(&self, _org_id: &str) -> Result<Option<OrgRouting>, String> {
+        Ok(None)
     }
 
     async fn record_connector_success(
@@ -3561,10 +3983,60 @@ fn infer_ingest_key_type(raw_key: &str) -> Option<IngestKeyType> {
 }
 
 fn hash_ingest_key(raw_key: &str, lookup_hmac_key: &str) -> Result<String, String> {
-    let mut mac = HmacSha256::new_from_slice(lookup_hmac_key.as_bytes())
+    let mut mac = <HmacSha256 as Mac>::new_from_slice(lookup_hmac_key.as_bytes())
         .map_err(|error| format!("Invalid HMAC key: {error}"))?;
     mac.update(raw_key.as_bytes());
     Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
+}
+
+fn parse_base64_aes256_gcm_key(raw: &str) -> Result<[u8; 32], String> {
+    let decoded = STANDARD
+        .decode(raw.trim())
+        .map_err(|_| "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64".to_string())?;
+    decoded.try_into().map_err(|bytes: Vec<u8>| {
+        format!(
+            "MAPLE_INGEST_KEY_ENCRYPTION_KEY must be base64 for exactly 32 bytes, got {} bytes",
+            bytes.len()
+        )
+    })
+}
+
+fn decrypt_aes256_gcm(
+    ciphertext: &str,
+    iv: &str,
+    tag: &str,
+    key: &[u8; 32],
+) -> Result<String, String> {
+    let ciphertext = STANDARD
+        .decode(ciphertext)
+        .map_err(|_| "ClickHouse password ciphertext is not base64".to_string())?;
+    let iv = STANDARD
+        .decode(iv)
+        .map_err(|_| "ClickHouse password iv is not base64".to_string())?;
+    let tag = STANDARD
+        .decode(tag)
+        .map_err(|_| "ClickHouse password tag is not base64".to_string())?;
+    if iv.len() != 12 {
+        return Err(format!(
+            "ClickHouse password iv must be 12 bytes for AES-GCM, got {} bytes",
+            iv.len()
+        ));
+    }
+    if tag.len() != 16 {
+        return Err(format!(
+            "ClickHouse password tag must be 16 bytes for AES-GCM, got {} bytes",
+            tag.len()
+        ));
+    }
+
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|error| format!("Invalid AES-256-GCM key: {error}"))?;
+    let mut sealed = ciphertext;
+    sealed.extend_from_slice(&tag);
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(&iv), sealed.as_ref())
+        .map_err(|_| "Decryption failed".to_string())?;
+    String::from_utf8(plaintext).map_err(|_| "Decrypted password was not UTF-8".to_string())
 }
 
 fn current_time_millis() -> u128 {
@@ -3733,7 +4205,7 @@ mod tests {
         assert_eq!(otel_status_for_rejection(413), "Ok"); // payload too large
         assert_eq!(otel_status_for_rejection(415), "Ok"); // unsupported media type
         assert_eq!(otel_status_for_rejection(429), "Ok"); // throttle
-        // 5xx server faults stay Error (e.g. auth resolver unavailable → 503).
+                                                          // 5xx server faults stay Error (e.g. auth resolver unavailable → 503).
         assert_eq!(otel_status_for_rejection(500), "Error");
         assert_eq!(otel_status_for_rejection(503), "Error");
     }
@@ -3780,6 +4252,7 @@ mod tests {
             key_type: IngestKeyType::Private,
             key_id: "abc".to_string(),
             self_managed: false,
+            clickhouse_ready: false,
         };
 
         enrich_resource_attributes(&mut attributes, &resolved);
@@ -3866,6 +4339,7 @@ mod tests {
             dataset: "http_requests".to_string(),
             secret_key_id: "secret".to_string(),
             self_managed: false,
+            clickhouse_ready: false,
         };
         let record = serde_json::from_str::<JsonMap<String, JsonValue>>(
             r#"{
@@ -3928,32 +4402,39 @@ mod tests {
     }
 
     #[test]
-    fn non_self_managed_goes_to_shared_pool() {
-        let (endpoint, pool) = select_forward_endpoint(
-            "http://shared:4318",
-            Some("http://self-managed:4318"),
-            false,
-        );
-        assert_eq!(endpoint, "http://shared:4318");
-        assert_eq!(pool, "shared");
+    fn clickhouse_destination_uses_native_pipeline_even_in_forward_mode() {
+        assert!(uses_native_pipeline_for(
+            WriteMode::Forward,
+            ExportDestination::ClickHouse
+        ));
+        assert!(!uses_forward_path_for(
+            WriteMode::Forward,
+            ExportDestination::ClickHouse
+        ));
     }
 
     #[test]
-    fn self_managed_goes_to_self_managed_pool_when_configured() {
-        let (endpoint, pool) =
-            select_forward_endpoint("http://shared:4318", Some("http://self-managed:4318"), true);
-        assert_eq!(endpoint, "http://self-managed:4318");
-        assert_eq!(pool, "self_managed");
+    fn tinybird_destination_keeps_forward_mode_on_forward_path() {
+        assert!(!uses_native_pipeline_for(
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
+        assert!(uses_forward_path_for(
+            WriteMode::Forward,
+            ExportDestination::Tinybird
+        ));
     }
 
     #[test]
-    fn self_managed_degrades_to_shared_when_endpoint_unset() {
-        // Missing INGEST_FORWARD_SELF_MANAGED_ENDPOINT should never drop traffic
-        // — self-managed orgs degrade back to the shared pool until the
-        // operator wires the second collector in.
-        let (endpoint, pool) = select_forward_endpoint("http://shared:4318", None, true);
-        assert_eq!(endpoint, "http://shared:4318");
-        assert_eq!(pool, "shared");
+    fn clickhouse_destination_is_terminal_in_dual_mode() {
+        assert!(uses_native_pipeline_for(
+            WriteMode::Dual,
+            ExportDestination::ClickHouse
+        ));
+        assert!(!uses_forward_path_for(
+            WriteMode::Dual,
+            ExportDestination::ClickHouse
+        ));
     }
 
     /// In-memory KeyStore used to exercise the resolver's behavior (caching,
@@ -3962,15 +4443,55 @@ mod tests {
     #[derive(Default)]
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
+        connectors: std::sync::Mutex<std::collections::HashMap<(String, String), ConnectorRow>>,
+        routings: std::sync::Mutex<std::collections::HashMap<String, OrgRouting>>,
+        targets: std::sync::Mutex<std::collections::HashMap<String, ClickHouseTargetRow>>,
+        ingest_key_fetches: AtomicU64,
+        connector_fetches: AtomicU64,
+        routing_fetches: AtomicU64,
+        routing_errors: AtomicBool,
     }
 
     impl FakeKeyStore {
         fn insert_private(&self, raw_key: &str, row: KeyRow) {
             let hash = hash_ingest_key(raw_key, "test-hmac-key").unwrap();
+            self.set_org_routing(
+                &row.org_id,
+                OrgRouting {
+                    self_managed: row.self_managed,
+                    clickhouse_ready: row.clickhouse_ready,
+                },
+            );
             self.keys
                 .lock()
                 .unwrap()
                 .insert((hash, "private_key_hash"), row);
+        }
+
+        fn insert_connector(&self, connector_id: &str, raw_secret: &str, row: ConnectorRow) {
+            let hash = hash_ingest_key(raw_secret, "test-hmac-key").unwrap();
+            self.set_org_routing(
+                &row.org_id,
+                OrgRouting {
+                    self_managed: row.self_managed,
+                    clickhouse_ready: row.clickhouse_ready,
+                },
+            );
+            self.connectors
+                .lock()
+                .unwrap()
+                .insert((connector_id.to_string(), hash), row);
+        }
+
+        fn set_org_routing(&self, org_id: &str, routing: OrgRouting) {
+            self.routings
+                .lock()
+                .unwrap()
+                .insert(org_id.to_string(), routing);
+        }
+
+        fn insert_clickhouse_target(&self, org_id: &str, row: ClickHouseTargetRow) {
+            self.targets.lock().unwrap().insert(org_id.to_string(), row);
         }
     }
 
@@ -3981,6 +4502,7 @@ mod tests {
             key_hash: &str,
             hash_column: &'static str,
         ) -> Result<Option<KeyRow>, String> {
+            self.ingest_key_fetches.fetch_add(1, Ordering::Relaxed);
             Ok(self
                 .keys
                 .lock()
@@ -3990,10 +4512,16 @@ mod tests {
         }
         async fn fetch_connector(
             &self,
-            _connector_id: &str,
-            _secret_hash: &str,
+            connector_id: &str,
+            secret_hash: &str,
         ) -> Result<Option<ConnectorRow>, String> {
-            Ok(None)
+            self.connector_fetches.fetch_add(1, Ordering::Relaxed);
+            Ok(self
+                .connectors
+                .lock()
+                .unwrap()
+                .get(&(connector_id.to_string(), secret_hash.to_string()))
+                .cloned())
         }
         async fn fetch_sampling_policy(
             &self,
@@ -4006,6 +4534,19 @@ mod tests {
             _org_id: &str,
         ) -> Result<Vec<AttributeMappingRow>, String> {
             Ok(Vec::new())
+        }
+        async fn fetch_clickhouse_target(
+            &self,
+            org_id: &str,
+        ) -> Result<Option<ClickHouseTargetRow>, String> {
+            Ok(self.targets.lock().unwrap().get(org_id).cloned())
+        }
+        async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
+            self.routing_fetches.fetch_add(1, Ordering::Relaxed);
+            if self.routing_errors.load(Ordering::Relaxed) {
+                return Err("simulated routing store outage".to_string());
+            }
+            Ok(self.routings.lock().unwrap().get(org_id).cloned())
         }
         async fn record_connector_success(
             &self,
@@ -4024,7 +4565,25 @@ mod tests {
         }
     }
 
+    fn make_routing_resolver(store: Arc<FakeKeyStore>, ttl: Duration) -> Arc<OrgRoutingResolver> {
+        let store: Arc<dyn KeyStore> = store;
+        Arc::new(OrgRoutingResolver {
+            store,
+            cache: Cache::builder().time_to_live(ttl).max_capacity(16).build(),
+            last_known: DashMap::new(),
+        })
+    }
+
     fn make_resolver(store: Arc<FakeKeyStore>) -> IngestKeyResolver {
+        make_resolver_with_routing_ttl(store, Duration::from_secs(60))
+    }
+
+    fn make_resolver_with_routing_ttl(
+        store: Arc<FakeKeyStore>,
+        routing_ttl: Duration,
+    ) -> IngestKeyResolver {
+        let routing = make_routing_resolver(Arc::clone(&store), routing_ttl);
+        let store: Arc<dyn KeyStore> = store;
         IngestKeyResolver {
             store,
             lookup_hmac_key: "test-hmac-key".to_string(),
@@ -4032,6 +4591,248 @@ mod tests {
                 .time_to_live(Duration::from_secs(60))
                 .max_capacity(16)
                 .build(),
+            routing,
+        }
+    }
+
+    #[derive(Debug)]
+    struct FakeClickHouseImport {
+        query: String,
+        database: String,
+        user: String,
+        content_encoding: String,
+        body: String,
+    }
+
+    #[derive(Debug)]
+    struct FakeForwardImport {
+        content_type: String,
+        content_encoding: String,
+        body_len: usize,
+    }
+
+    async fn fake_clickhouse_import(
+        State(tx): State<tokio::sync::mpsc::UnboundedSender<FakeClickHouseImport>>,
+        Query(query): Query<std::collections::HashMap<String, String>>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> StatusCode {
+        let mut decoded = String::new();
+        GzDecoder::new(&body[..])
+            .read_to_string(&mut decoded)
+            .expect("fake ClickHouse should receive gzip NDJSON");
+
+        let _ = tx.send(FakeClickHouseImport {
+            query: query.get("query").cloned().unwrap_or_default(),
+            database: query.get("database").cloned().unwrap_or_default(),
+            user: headers
+                .get("x-clickhouse-user")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            content_encoding: headers
+                .get(CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            body: decoded,
+        });
+
+        StatusCode::OK
+    }
+
+    async fn fake_forward_collector(
+        State(tx): State<tokio::sync::mpsc::UnboundedSender<FakeForwardImport>>,
+        headers: HeaderMap,
+        body: Bytes,
+    ) -> StatusCode {
+        let _ = tx.send(FakeForwardImport {
+            content_type: headers
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            content_encoding: headers
+                .get(CONTENT_ENCODING)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string(),
+            body_len: body.len(),
+        });
+        StatusCode::OK
+    }
+
+    fn unique_main_test_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "maple-ingest-main-{name}-{}-{}",
+            std::process::id(),
+            current_time_millis()
+        ))
+    }
+
+    fn test_tinybird_config(queue_dir: PathBuf) -> TinybirdConfig {
+        TinybirdConfig {
+            endpoint: String::new(),
+            token: String::new(),
+            queue_dir,
+            queue_max_bytes: 1024 * 1024,
+            org_queue_max_bytes: 1024 * 1024,
+            queue_channel_capacity: 10,
+            wal_shards: 1,
+            batch_max_rows: 100,
+            batch_max_bytes: 1024 * 1024,
+            batch_max_wait: Duration::from_millis(1),
+            export_concurrency_per_shard: 1,
+            export_max_attempts: 1,
+            datasources: DatasourceNames::defaults(),
+            datasource_session_replays: "session_replays".to_string(),
+            datasource_session_replay_events: "session_replay_events".to_string(),
+            datasource_session_events: "session_events".to_string(),
+        }
+    }
+
+    fn test_log_request(message: &str) -> ExportLogsServiceRequest {
+        ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                resource: Some(Resource {
+                    attributes: vec![KeyValue {
+                        key: "service.name".to_string(),
+                        value: Some(AnyValue {
+                            value: Some(any_value::Value::StringValue("routing-test".to_string())),
+                        }),
+                    }],
+                    dropped_attributes_count: 0,
+                    entity_refs: Vec::new(),
+                }),
+                scope_logs: vec![ScopeLogs {
+                    scope: Some(InstrumentationScope {
+                        name: "routing-logger".to_string(),
+                        version: "1.0.0".to_string(),
+                        attributes: Vec::new(),
+                        dropped_attributes_count: 0,
+                    }),
+                    log_records: vec![LogRecord {
+                        time_unix_nano: 1_700_000_002_000_000_000,
+                        observed_time_unix_nano: 1_700_000_002_000_000_000,
+                        severity_number: 9,
+                        severity_text: "INFO".to_string(),
+                        body: Some(AnyValue {
+                            value: Some(any_value::Value::StringValue(message.to_string())),
+                        }),
+                        ..Default::default()
+                    }],
+                    schema_url: String::new(),
+                }],
+                schema_url: String::new(),
+            }],
+        }
+    }
+
+    fn test_headers(raw_key: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            AUTHORIZATION,
+            format!("Bearer {raw_key}")
+                .parse()
+                .expect("valid auth header"),
+        );
+        headers.insert(CONTENT_TYPE, "application/x-protobuf".parse().unwrap());
+        headers
+    }
+
+    async fn test_app_state(
+        store: Arc<FakeKeyStore>,
+        queue_dir: PathBuf,
+        forward_endpoint: String,
+        routing_ttl: Duration,
+    ) -> AppState {
+        let tinybird = test_tinybird_config(queue_dir);
+        let key_store: Arc<dyn KeyStore> = store.clone();
+        let routing = make_routing_resolver(Arc::clone(&store), routing_ttl);
+        let clickhouse_targets = Arc::new(ClickHouseTargetResolver {
+            store: Arc::clone(&key_store),
+            encryption_key: None,
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+        });
+        let http_client = Client::builder()
+            .timeout(Duration::from_secs(5))
+            .build()
+            .unwrap();
+        let telemetry_pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            tinybird.clone(),
+            http_client.clone(),
+            Some(clickhouse_targets),
+            false,
+        )
+        .await
+        .expect("test pipeline should start without Tinybird credentials");
+
+        AppState {
+            config: AppConfig {
+                port: 0,
+                otlp_grpc_port: None,
+                forward_endpoint,
+                forward_timeout: Duration::from_secs(5),
+                write_mode: WriteMode::Forward,
+                tinybird,
+                max_request_body_bytes: 1024 * 1024,
+                org_max_in_flight: 100,
+                require_tls: false,
+                key_store_backend: KeyStoreBackend::D1 {
+                    cf_account_id: "test".to_string(),
+                    d1_database_id: "test".to_string(),
+                    d1_api_token: "test".to_string(),
+                },
+                clickhouse_encryption_key: None,
+                lookup_hmac_key: "test-hmac-key".to_string(),
+                autumn_secret_key: None,
+                autumn_api_url: "https://api.useautumn.com".to_string(),
+                autumn_flush_interval_secs: 1,
+                autumn_enforce_limits: false,
+                autumn_check_cache_ttl_secs: 60,
+                ingest_key_cache_ttl_secs: 60,
+                org_routing_cache_ttl_secs: 5,
+            },
+            http_client,
+            telemetry_pipeline: Some(telemetry_pipeline),
+            resolver: IngestKeyResolver {
+                store: Arc::clone(&key_store),
+                lookup_hmac_key: "test-hmac-key".to_string(),
+                cache: Cache::builder()
+                    .time_to_live(Duration::from_secs(60))
+                    .max_capacity(16)
+                    .build(),
+                routing: Arc::clone(&routing),
+            },
+            org_inflight_limiter: OrgInFlightLimiter::new(100),
+            sampling_resolver: SamplingPolicyResolver {
+                store: Arc::clone(&key_store),
+                cache: Cache::builder()
+                    .time_to_live(Duration::from_secs(30))
+                    .max_capacity(16)
+                    .build(),
+            },
+            attribute_mapping_resolver: AttributeMappingResolver {
+                store: Arc::clone(&key_store),
+                cache: Cache::builder()
+                    .time_to_live(Duration::from_secs(30))
+                    .max_capacity(16)
+                    .build(),
+            },
+            cloudflare_resolver: CloudflareConnectorResolver {
+                store: key_store,
+                lookup_hmac_key: "test-hmac-key".to_string(),
+                cache: Cache::builder()
+                    .time_to_live(Duration::from_secs(60))
+                    .max_capacity(16)
+                    .build(),
+                routing,
+            },
+            autumn_tracker: None,
+            autumn_entitlements: None,
         }
     }
 
@@ -4043,6 +4844,7 @@ mod tests {
             KeyRow {
                 org_id: "org_shared".to_string(),
                 self_managed: false,
+                clickhouse_ready: false,
             },
         );
 
@@ -4054,6 +4856,7 @@ mod tests {
 
         assert_eq!(resolved.org_id, "org_shared");
         assert!(!resolved.self_managed);
+        assert!(!resolved.clickhouse_ready);
     }
 
     #[tokio::test]
@@ -4064,6 +4867,7 @@ mod tests {
             KeyRow {
                 org_id: "org_byo".to_string(),
                 self_managed: true,
+                clickhouse_ready: true,
             },
         );
 
@@ -4075,6 +4879,458 @@ mod tests {
 
         assert_eq!(resolved.org_id, "org_byo");
         assert!(resolved.self_managed);
+        assert!(resolved.clickhouse_ready);
+    }
+
+    #[tokio::test]
+    async fn resolve_ingest_key_keeps_stale_schema_on_managed_native_path() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_stale_schema",
+            KeyRow {
+                org_id: "org_stale".to_string(),
+                self_managed: true,
+                clickhouse_ready: false,
+            },
+        );
+
+        let resolved = make_resolver(store)
+            .resolve_ingest_key("maple_sk_test_stale_schema")
+            .await
+            .expect("resolve should succeed")
+            .expect("key should be found");
+
+        assert!(resolved.self_managed);
+        assert!(!resolved.clickhouse_ready);
+        assert_eq!(
+            native_destination_for(&resolved),
+            ExportDestination::Tinybird
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_ingest_key_refreshes_routing_before_auth_cache_expires() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_becomes_ready",
+            KeyRow {
+                org_id: "org_transition".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+
+        let resolver = make_resolver_with_routing_ttl(Arc::clone(&store), Duration::from_millis(5));
+        let first = resolver
+            .resolve_ingest_key("maple_sk_test_becomes_ready")
+            .await
+            .expect("resolve should succeed")
+            .expect("key should be found");
+        assert!(!first.clickhouse_ready);
+        assert_eq!(store.ingest_key_fetches.load(Ordering::Relaxed), 1);
+
+        store.set_org_routing(
+            "org_transition",
+            OrgRouting {
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let second = resolver
+            .resolve_ingest_key("maple_sk_test_becomes_ready")
+            .await
+            .expect("resolve should succeed")
+            .expect("key should be found");
+        assert!(second.self_managed);
+        assert!(second.clickhouse_ready);
+        assert_eq!(
+            native_destination_for(&second),
+            ExportDestination::ClickHouse
+        );
+        assert_eq!(
+            store.ingest_key_fetches.load(Ordering::Relaxed),
+            1,
+            "auth identity should stay cached while routing refreshes"
+        );
+        assert_eq!(store.routing_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn resolve_ingest_key_serves_last_known_routing_when_refresh_fails() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_d1_blip",
+            KeyRow {
+                org_id: "org_d1_blip".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+
+        let resolver = make_resolver_with_routing_ttl(Arc::clone(&store), Duration::from_millis(5));
+        let first = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("initial resolve should succeed")
+            .expect("key should be found");
+        assert!(!first.clickhouse_ready);
+
+        store.set_org_routing(
+            "org_d1_blip",
+            OrgRouting {
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let ready = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("routing refresh should succeed")
+            .expect("key should be found");
+        assert!(ready.clickhouse_ready);
+
+        store.routing_errors.store(true, Ordering::Relaxed);
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let stale = resolver
+            .resolve_ingest_key("maple_sk_test_d1_blip")
+            .await
+            .expect("warm key should not 503 when routing refresh fails")
+            .expect("key should be found");
+        assert!(
+            stale.clickhouse_ready,
+            "last-known ready routing should be served during a routing-store outage"
+        );
+        assert_eq!(
+            store.ingest_key_fetches.load(Ordering::Relaxed),
+            1,
+            "auth identity should stay cached through the routing-store outage"
+        );
+        assert!(
+            store.routing_fetches.load(Ordering::Relaxed) >= 2,
+            "routing refresh should have been attempted before falling back to stale"
+        );
+    }
+
+    #[tokio::test]
+    async fn resolve_connector_refreshes_routing_before_auth_cache_expires() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_connector(
+            "connector_ready_later",
+            "secret-before-ready",
+            ConnectorRow {
+                org_id: "org_logpush_transition".to_string(),
+                service_name: "cloudflare/example.com".to_string(),
+                zone_name: "example.com".to_string(),
+                dataset: "http_requests".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let routing = make_routing_resolver(Arc::clone(&store), Duration::from_millis(5));
+        let key_store: Arc<dyn KeyStore> = store.clone();
+        let resolver = CloudflareConnectorResolver {
+            store: key_store,
+            lookup_hmac_key: "test-hmac-key".to_string(),
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+            routing,
+        };
+
+        let first = resolver
+            .resolve_connector("connector_ready_later", "secret-before-ready")
+            .await
+            .expect("resolve should succeed")
+            .expect("connector should be found");
+        assert!(!first.clickhouse_ready);
+        assert_eq!(store.connector_fetches.load(Ordering::Relaxed), 1);
+
+        store.set_org_routing(
+            "org_logpush_transition",
+            OrgRouting {
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let second = resolver
+            .resolve_connector("connector_ready_later", "secret-before-ready")
+            .await
+            .expect("resolve should succeed")
+            .expect("connector should be found");
+        assert!(second.self_managed);
+        assert!(second.clickhouse_ready);
+        assert_eq!(
+            store.connector_fetches.load(Ordering::Relaxed),
+            1,
+            "connector identity should stay cached while routing refreshes"
+        );
+        assert_eq!(store.routing_fetches.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn forward_mode_switches_ready_org_to_clickhouse_without_forwarding_again() {
+        let (ch_tx, mut ch_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(fake_clickhouse_import))
+            .with_state(ch_tx);
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let (forward_tx, mut forward_rx) = tokio::sync::mpsc::unbounded_channel();
+        let forward_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let forward_addr = forward_listener.local_addr().unwrap();
+        let forward_app = Router::new()
+            .route("/v1/logs", post(fake_forward_collector))
+            .with_state(forward_tx);
+        tokio::spawn(async move {
+            axum::serve(forward_listener, forward_app).await.unwrap();
+        });
+
+        let queue_dir = unique_main_test_dir("forward-ready-clickhouse");
+        let store = Arc::new(FakeKeyStore::default());
+        let raw_key = "maple_sk_test_forward_ready";
+        store.insert_private(
+            raw_key,
+            KeyRow {
+                org_id: "org_forward_ready".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+            },
+        );
+        let state = test_app_state(
+            Arc::clone(&store),
+            queue_dir.clone(),
+            format!("http://{forward_addr}"),
+            Duration::from_millis(5),
+        )
+        .await;
+
+        let first_payload = test_log_request("before setup").encode_to_vec();
+        let (first_response, first_count, _, _) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(first_payload),
+            Signal::Logs,
+        )
+        .await
+        .expect("non-ready request should be accepted through forward path");
+        assert_eq!(first_response.status(), StatusCode::OK);
+        assert_eq!(first_count, 1);
+        let first_forward = tokio::time::timeout(Duration::from_secs(2), forward_rx.recv())
+            .await
+            .expect("non-ready org should forward")
+            .expect("forward channel should stay open");
+        assert_eq!(first_forward.content_type, "application/x-protobuf");
+        assert_eq!(first_forward.content_encoding, "");
+        assert!(first_forward.body_len > 0);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), ch_rx.recv())
+                .await
+                .is_err(),
+            "non-ready org must not write to ClickHouse"
+        );
+
+        store.set_org_routing(
+            "org_forward_ready",
+            OrgRouting {
+                self_managed: true,
+                clickhouse_ready: true,
+            },
+        );
+        store.insert_clickhouse_target(
+            "org_forward_ready",
+            ClickHouseTargetRow {
+                ch_url: format!("http://{ch_addr}"),
+                ch_user: "ingest".to_string(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_string(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_string(),
+            },
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+
+        let second_payload = test_log_request("after setup").encode_to_vec();
+        let (second_response, second_count, _, _) = handle_signal_inner(
+            &state,
+            &test_headers(raw_key),
+            Bytes::from(second_payload),
+            Signal::Logs,
+        )
+        .await
+        .expect("ready request should be accepted through ClickHouse path");
+        assert_eq!(second_response.status(), StatusCode::OK);
+        assert_eq!(second_count, 1);
+
+        let clickhouse = tokio::time::timeout(Duration::from_secs(2), ch_rx.recv())
+            .await
+            .expect("ready org should write to ClickHouse")
+            .expect("ClickHouse channel should stay open");
+        assert!(clickhouse.query.starts_with("INSERT INTO logs"));
+        assert!(clickhouse.query.contains(" FROM input('"));
+        assert!(clickhouse.query.ends_with(" FORMAT JSONEachRow"));
+        assert_eq!(clickhouse.database, "maple");
+        assert_eq!(clickhouse.user, "ingest");
+        assert_eq!(clickhouse.content_encoding, "gzip");
+        assert!(clickhouse.body.contains("after setup"));
+        assert!(
+            !clickhouse.body.contains("before setup"),
+            "the earlier Tinybird-routed request must not be replayed into ClickHouse"
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), forward_rx.recv())
+                .await
+                .is_err(),
+            "ready org must not forward to the Tinybird collector path"
+        );
+        assert_eq!(
+            store.ingest_key_fetches.load(Ordering::Relaxed),
+            1,
+            "same key should stay auth-cached across setup transition"
+        );
+        assert!(
+            store.routing_fetches.load(Ordering::Relaxed) >= 1,
+            "routing cache should refresh independently from auth cache"
+        );
+
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[test]
+    fn decrypt_aes256_gcm_matches_node_crypto_fixture() {
+        // Generated with Node's createCipheriv("aes-256-gcm", Buffer.alloc(32, 5), iv).
+        let key = parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
+            .expect("base64 key parses");
+        let plaintext = decrypt_aes256_gcm(
+            "vDjK0A+Vv5bHlJ2a3A==",
+            "AQIDBAUGBwgJCgsM",
+            "b7D1umrvI8557NFvR9nJ/A==",
+            &key,
+        )
+        .expect("fixture decrypts");
+        assert_eq!(plaintext, "ch-secret-123");
+    }
+
+    #[tokio::test]
+    async fn clickhouse_target_resolver_requires_current_schema() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_clickhouse_target(
+            "org_old",
+            ClickHouseTargetRow {
+                ch_url: "https://clickhouse.example".to_string(),
+                ch_user: "ingest".to_string(),
+                ch_password_ciphertext: None,
+                ch_password_iv: None,
+                ch_password_tag: None,
+                ch_database: "maple".to_string(),
+                schema_version: "old-revision".to_string(),
+            },
+        );
+
+        let resolver = ClickHouseTargetResolver {
+            store,
+            encryption_key: None,
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+        };
+
+        let target = resolver
+            .resolve_clickhouse_target("org_old")
+            .await
+            .expect("target lookup should not fail");
+        assert!(target.is_none());
+    }
+
+    #[tokio::test]
+    async fn clickhouse_target_resolver_decrypts_current_schema_password() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_clickhouse_target(
+            "org_ready",
+            ClickHouseTargetRow {
+                ch_url: "https://clickhouse.example/".to_string(),
+                ch_user: "ingest".to_string(),
+                ch_password_ciphertext: Some("vDjK0A+Vv5bHlJ2a3A==".to_string()),
+                ch_password_iv: Some("AQIDBAUGBwgJCgsM".to_string()),
+                ch_password_tag: Some("b7D1umrvI8557NFvR9nJ/A==".to_string()),
+                ch_database: "maple".to_string(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_string(),
+            },
+        );
+
+        let resolver = ClickHouseTargetResolver {
+            store,
+            encryption_key: Some(
+                parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
+                    .unwrap(),
+            ),
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+        };
+
+        let target = resolver
+            .resolve_clickhouse_target("org_ready")
+            .await
+            .expect("target lookup should not fail")
+            .expect("target should resolve");
+        assert_eq!(target.endpoint, "https://clickhouse.example");
+        assert_eq!(target.user, "ingest");
+        assert_eq!(target.password, "ch-secret-123");
+        assert_eq!(target.database, "maple");
+    }
+
+    #[tokio::test]
+    async fn clickhouse_target_resolver_rejects_password_over_http() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_clickhouse_target(
+            "org_insecure",
+            ClickHouseTargetRow {
+                ch_url: "http://clickhouse.example/".to_string(),
+                ch_user: "ingest".to_string(),
+                ch_password_ciphertext: Some("vDjK0A+Vv5bHlJ2a3A==".to_string()),
+                ch_password_iv: Some("AQIDBAUGBwgJCgsM".to_string()),
+                ch_password_tag: Some("b7D1umrvI8557NFvR9nJ/A==".to_string()),
+                ch_database: "maple".to_string(),
+                schema_version: CLICKHOUSE_SCHEMA_VERSION.to_string(),
+            },
+        );
+
+        let resolver = ClickHouseTargetResolver {
+            store,
+            encryption_key: Some(
+                parse_base64_aes256_gcm_key("BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=")
+                    .unwrap(),
+            ),
+            cache: Cache::builder()
+                .time_to_live(Duration::from_secs(60))
+                .max_capacity(16)
+                .build(),
+        };
+
+        let error = resolver
+            .resolve_clickhouse_target("org_insecure")
+            .await
+            .expect_err("password-authenticated http endpoint should be rejected");
+        assert!(error.contains("https"));
     }
 
     #[tokio::test]
@@ -4101,7 +5357,7 @@ mod tests {
             "messages": [],
             "result": [{
                 "results": [
-                    {"org_id": "org_test", "self_managed": 1}
+                    {"org_id": "org_test", "self_managed": 1, "clickhouse_ready": 1}
                 ],
                 "success": true,
                 "meta": {"duration": 4.2}
@@ -4115,6 +5371,7 @@ mod tests {
         let row = &first.results[0];
         assert_eq!(d1_str(row, "org_id").unwrap(), "org_test");
         assert!(d1_truthy(row, "self_managed"));
+        assert!(d1_truthy(row, "clickhouse_ready"));
     }
 
     #[test]

@@ -14,7 +14,7 @@ import { createDecipheriv } from "node:crypto"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { createMapleD1Client, type CloudflareD1Database } from "@maple/db/client"
 import {
-	clickHouseProjectRevision,
+	clickHouseSchemaVersion,
 	computeSchemaDiff,
 	expandMigrationToSteps,
 	extractColumnDefinition,
@@ -194,10 +194,16 @@ const parseDesiredTables = (): ReadonlyArray<DesiredTable> => {
 const fetchActualSchema = async (cfg: ChConfig): Promise<Map<string, ActualTable>> => {
 	const dbLit = cfg.database.replace(/'/g, "''")
 	const tableRows = parseJsonEachRow<{ name: string; engine: string }>(
-		await exec(cfg, `SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`),
+		await exec(
+			cfg,
+			`SELECT name, engine FROM system.tables WHERE database = '${dbLit}' FORMAT JSONEachRow`,
+		),
 	)
 	const columnRows = parseJsonEachRow<{ table: string; name: string; type: string }>(
-		await exec(cfg, `SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`),
+		await exec(
+			cfg,
+			`SELECT table, name, type FROM system.columns WHERE database = '${dbLit}' FORMAT JSONEachRow`,
+		),
 	)
 	const colsByTable = new Map<string, Array<{ name: string; type: string }>>()
 	for (const r of columnRows) {
@@ -231,13 +237,20 @@ export async function runClickHouseSchemaApply(
 
 	const cfg = await step.do("load-config", STEP, async () => {
 		const c = await loadConfig(db, orgId, encryptionKey)
-		await updateRun(db, orgId, { status: "running", phase: "connecting", errorMessage: null, startedAt }, Date.now())
+		await updateRun(
+			db,
+			orgId,
+			{ status: "running", phase: "connecting", errorMessage: null, startedAt },
+			Date.now(),
+		)
 		return c
 	})
 
 	try {
 		await step.do("ensure-bookkeeping", STEP, () => ensureMigrationsTable(cfg).then(() => undefined))
-		const applied = await step.do("read-applied", STEP, () => readAppliedVersions(cfg).then((s) => [...s]))
+		const applied = await step.do("read-applied", STEP, () =>
+			readAppliedVersions(cfg).then((s) => [...s]),
+		)
 		const appliedSet = new Set(applied)
 
 		for (const migration of clickHouseMigrations) {
@@ -281,7 +294,8 @@ export async function runClickHouseSchemaApply(
 			for (const entry of computeSchemaDiff({ tables: desired }, actual)) {
 				if (entry.status === "missing") {
 					const table = desiredByName.get(entry.name)
-					if (table) await exec(cfg, qualifyStatementForDatabase(table.createStatement, cfg.database))
+					if (table)
+						await exec(cfg, qualifyStatementForDatabase(table.createStatement, cfg.database))
 				} else if (entry.status === "drifted" && entry.kind === "table") {
 					const table = desiredByName.get(entry.name)
 					if (!table) continue
@@ -306,7 +320,7 @@ export async function runClickHouseSchemaApply(
 					lastSyncAt: finishedAt,
 					lastSyncError: null,
 					syncStatus: "connected",
-					schemaVersion: clickHouseProjectRevision,
+					schemaVersion: clickHouseSchemaVersion,
 					updatedAt: finishedAt,
 				})
 				.where(eq(orgClickHouseSettings.orgId, orgId))

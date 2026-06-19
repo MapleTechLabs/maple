@@ -5,12 +5,12 @@ import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { getServiceLegendColor } from "@maple/ui/colors"
 import { getDbColor } from "./service-map-db"
 
-export interface ServiceNodeInfra {
+interface ServiceNodeInfra {
 	podCount: number
 	workloadCount: number
 }
 
-export type ServiceNodeKind = "service" | "database"
+type ServiceNodeKind = "service" | "database"
 
 export type ServiceMapColorMode = "service" | "health" | "platform"
 
@@ -31,6 +31,8 @@ export interface ServiceNodeData {
 	runtime?: string
 	dbSystem?: string
 	colorMode?: ServiceMapColorMode
+	/** OTel `service.namespace`, when defined. Drives namespace-cluster layout + dotted boxes. */
+	namespace?: string
 	[key: string]: unknown
 }
 
@@ -85,18 +87,20 @@ export interface ServiceEdgeData {
 	p95DurationMs: number
 	hasSampling: boolean
 	services: string[]
+	/** ELK-routed orthogonal SVG path (absolute flow coords); overrides the smooth-step path when present. */
+	elkPath?: string
+	elkLabelX?: number
+	elkLabelY?: number
 	[key: string]: unknown
 }
 
 export const DB_NODE_PREFIX = "db:"
-export const SERVICE_NODE_PREFIX = "svc:"
-export const EDGE_ID_PREFIX = "edge:"
+const EDGE_ID_PREFIX = "edge:"
 
 const encodeIdComponent = (raw: string): string => encodeURIComponent(raw)
 
 export const dbNodeId = (system: string) => `${DB_NODE_PREFIX}${encodeIdComponent(system)}`
-export const svcNodeId = (service: string) => `${SERVICE_NODE_PREFIX}${encodeIdComponent(service)}`
-export const edgeIdFor = (source: string, target: string) =>
+const edgeIdFor = (source: string, target: string) =>
 	`${EDGE_ID_PREFIX}${encodeIdComponent(source)}:${encodeIdComponent(target)}`
 
 export const isDbNodeId = (id: string) => id.startsWith(DB_NODE_PREFIX)
@@ -116,10 +120,18 @@ export type LayoutConfig = {
 	[K in keyof typeof DEFAULT_LAYOUT_CONFIG]: number
 }
 
+// Namespace-cluster spacing. These only set the DEFAULT spacing so the dotted
+// boxes (whose geometry is recomputed in the view from live node positions)
+// have breathing room — they are not the box geometry itself.
+export const NS_PADDING_X = 28
+export const NS_PADDING_Y = 24
+export const NS_LABEL_HEIGHT = 28
+const NS_CLUSTER_GAP = 80
+
 /**
  * Derive the unique list of services from edges + service overview data
  */
-export function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOverview[]): string[] {
+function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOverview[]): string[] {
 	const services = new Set<string>()
 	for (const edge of edges) {
 		services.add(edge.sourceService)
@@ -225,6 +237,7 @@ export function buildFlowElements({
 				infra,
 				platform: platforms?.get(service),
 				runtime: runtimes?.get(service),
+				namespace: overview?.serviceNamespace || undefined,
 			},
 		}
 	})
@@ -488,10 +501,10 @@ export function topologyKey(nodes: Node[], edges: Edge[]): string {
 }
 
 /**
- * Compute node positions using pure hierarchical layout.
+ * Compute node positions using pure hierarchical layout, ignoring namespaces.
  * Positions are deterministic: same input always produces same output.
  */
-export function computeNodePositions(
+export function computeFlatPositions(
 	nodes: Node<ServiceNodeData>[],
 	edges: Edge<ServiceEdgeData>[],
 	config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
@@ -590,31 +603,103 @@ export function computeNodePositions(
 	return positions
 }
 
+/** A service node's namespace, or undefined for db nodes / no namespace. */
+export function nodeNamespace(node: Node<ServiceNodeData>): string | undefined {
+	if (node.data.kind !== "service") return undefined
+	const ns = node.data.namespace
+	return ns && ns.length > 0 ? ns : undefined
+}
+
 /**
- * Check if the topology (set of node IDs + edge pairs) has changed
+ * Compute node positions. When at least one service node carries a
+ * `service.namespace`, the graph is laid out as horizontal **swimlanes** — one
+ * lane per namespace, plus an unboxed lane at the bottom for databases and
+ * namespace-less services. Crucially, the column (x) of every node comes from a
+ * SINGLE global hierarchical layering over the whole graph (call depth), so
+ * cross-namespace edges keep flowing left→right instead of looping backward the
+ * way per-cluster layouts (each restarting x at 0) make them. Each lane occupies
+ * a disjoint vertical band so the dotted boxes never overlap. When no node has a
+ * namespace, this is identical to {@link computeFlatPositions} (today's layout).
+ *
+ * Positions are deterministic: same input always produces same output.
  */
-export function topologyChanged(
-	prevNodes: Node[],
-	nextNodes: Node[],
-	prevEdges: Edge[],
-	nextEdges: Edge[],
-): boolean {
-	if (prevNodes.length !== nextNodes.length) return true
-	if (prevEdges.length !== nextEdges.length) return true
+export function computeNodePositions(
+	nodes: Node<ServiceNodeData>[],
+	edges: Edge<ServiceEdgeData>[],
+	config: LayoutConfig = DEFAULT_LAYOUT_CONFIG,
+): Map<string, { x: number; y: number }> {
+	if (nodes.length === 0) return new Map<string, { x: number; y: number }>()
 
-	const prevNodeIds = new Set(prevNodes.map((n) => n.id))
-	const nextNodeIds = new Set(nextNodes.map((n) => n.id))
-	if (prevNodeIds.size !== nextNodeIds.size) return true
-	for (const id of prevNodeIds) {
-		if (!nextNodeIds.has(id)) return true
+	// Gate: only switch to swimlanes when the user has defined namespaces.
+	const hasNamespaces = nodes.some((n) => nodeNamespace(n) !== undefined)
+	if (!hasNamespaces) return computeFlatPositions(nodes, edges, config)
+
+	const { nodeHeight, layerGapX, nodeGapY } = config
+	const cellHeight = nodeHeight + nodeGapY
+
+	// One global layering over the WHOLE graph → shared column (x) per node, plus a
+	// crossing-minimized within-column order (indexInLayer) we reuse inside lanes.
+	const layers = computeLayers(nodes, edges)
+
+	// Partition into one lane per namespace + an ungrouped lane (db nodes and
+	// namespace-less services).
+	const lanes = new Map<string, Node<ServiceNodeData>[]>()
+	const ungrouped: Node<ServiceNodeData>[] = []
+	for (const node of nodes) {
+		const ns = nodeNamespace(node)
+		if (ns === undefined) {
+			ungrouped.push(node)
+			continue
+		}
+		const lane = lanes.get(ns)
+		if (lane) lane.push(node)
+		else lanes.set(ns, [node])
 	}
 
-	const prevEdgeIds = new Set(prevEdges.map((e) => e.id))
-	const nextEdgeIds = new Set(nextEdges.map((e) => e.id))
-	if (prevEdgeIds.size !== nextEdgeIds.size) return true
-	for (const id of prevEdgeIds) {
-		if (!nextEdgeIds.has(id)) return true
+	const positions = new Map<string, { x: number; y: number }>()
+
+	// Place one lane's nodes at global columns, stacking same-column nodes
+	// vertically (centered within the lane) and ordering them by the global
+	// barycenter index to keep crossings down. Returns the lane's pixel height.
+	const placeLane = (laneNodes: Node<ServiceNodeData>[], top: number): number => {
+		const byColumn = new Map<number, Node<ServiceNodeData>[]>()
+		for (const node of laneNodes) {
+			const col = layers.get(node.id)?.layer ?? 0
+			const group = byColumn.get(col)
+			if (group) group.push(node)
+			else byColumn.set(col, [node])
+		}
+		let maxColumnCount = 0
+		for (const group of byColumn.values()) {
+			group.sort(
+				(a, b) => (layers.get(a.id)?.indexInLayer ?? 0) - (layers.get(b.id)?.indexInLayer ?? 0),
+			)
+			maxColumnCount = Math.max(maxColumnCount, group.length)
+		}
+		const laneHeight = Math.max(1, maxColumnCount) * cellHeight
+		for (const [col, group] of byColumn) {
+			const columnOffset = (laneHeight - group.length * cellHeight) / 2
+			group.forEach((node, i) => {
+				positions.set(node.id, {
+					x: NS_PADDING_X + col * layerGapX,
+					y: top + columnOffset + i * cellHeight,
+				})
+			})
+		}
+		return laneHeight
 	}
 
-	return false
+	let yOffset = 0
+	for (const ns of Array.from(lanes.keys()).sort()) {
+		const laneTop = yOffset + NS_LABEL_HEIGHT + NS_PADDING_Y
+		const laneHeight = placeLane(lanes.get(ns)!, laneTop)
+		yOffset = laneTop + laneHeight + NS_PADDING_Y + NS_CLUSTER_GAP
+	}
+
+	// Ungrouped (databases + namespace-less services) below all lanes, no box.
+	if (ungrouped.length > 0) {
+		placeLane(ungrouped, yOffset + NS_CLUSTER_GAP)
+	}
+
+	return positions
 }

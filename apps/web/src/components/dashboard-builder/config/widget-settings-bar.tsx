@@ -309,7 +309,9 @@ export function WidgetSettingsBar() {
 				<>
 					<div className="h-px bg-border" />
 					<div className="space-y-1.5">
-						<p className="text-[11px] uppercase tracking-wide text-muted-foreground">Color scale</p>
+						<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+							Color scale
+						</p>
 						<Select
 							items={Object.fromEntries(
 								(["blues", "reds", "viridis", "magma", "cividis"] as const).map((c) => [
@@ -335,7 +337,9 @@ export function WidgetSettingsBar() {
 						</Select>
 					</div>
 					<div className="space-y-1.5">
-						<p className="text-[11px] uppercase tracking-wide text-muted-foreground">Color scaling</p>
+						<p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+							Color scaling
+						</p>
 						<div className="flex h-9 rounded-md border bg-muted/40 p-0.5">
 							{(["linear", "log"] as const).map((mode) => (
 								<button

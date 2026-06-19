@@ -35,10 +35,7 @@ export interface Timeline {
  * `COLLAPSED_GAP_MS`. Intervals are sorted and clamped to `[0, realTotalMs]`
  * defensively; overlapping/out-of-range intervals are tolerated.
  */
-export function buildTimeline(
-	intervals: ReadonlyArray<InactiveInterval>,
-	realTotalMs: number,
-): Timeline {
+export function buildTimeline(intervals: ReadonlyArray<InactiveInterval>, realTotalMs: number): Timeline {
 	const total = Math.max(0, realTotalMs)
 
 	// Normalize: clamp to range, drop empty/degenerate gaps, sort, merge overlaps.

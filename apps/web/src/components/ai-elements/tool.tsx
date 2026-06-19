@@ -28,6 +28,10 @@ const LazyToolRenderer = lazy(() =>
 // Metadata
 // ---------------------------------------------------------------------------
 
+export function toolLabel(toolName: string): string {
+	return toolLabels[toolName] ?? toolName
+}
+
 const toolLabels: Record<string, string> = {
 	system_health: "System Health",
 	diagnose_service: "Diagnose Service",
@@ -78,6 +82,52 @@ function deriveStatus(state: string): ToolStatus {
 		default:
 			return "running"
 	}
+}
+
+function StatusGlyph({ status }: { status: ToolStatus }) {
+	if (status === "running")
+		return (
+			<LoaderIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+		)
+	if (status === "error") return <CircleXmarkIcon className="size-3.5 shrink-0 text-destructive" />
+	return <CircleCheckIcon className="size-3.5 shrink-0 text-severity-info" />
+}
+
+// Pick the most salient input field for a one-line row summary, e.g. `service=api`.
+const SUMMARY_KEYS = [
+	"service",
+	"serviceName",
+	"query",
+	"q",
+	"traceId",
+	"spanId",
+	"name",
+	"metric",
+	"errorId",
+]
+
+function truncate(value: string, max = 40): string {
+	const trimmed = value.trim()
+	return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed
+}
+
+function toolSummary(input: unknown): string | undefined {
+	if (input == null || typeof input !== "object") return undefined
+	const obj = input as Record<string, unknown>
+	const format = (key: string, value: unknown): string | undefined => {
+		if (typeof value === "string" && value.trim()) return `${key}=${truncate(value)}`
+		if (typeof value === "number" || typeof value === "boolean") return `${key}=${value}`
+		return undefined
+	}
+	for (const key of SUMMARY_KEYS) {
+		const formatted = format(key, obj[key])
+		if (formatted) return formatted
+	}
+	for (const [key, value] of Object.entries(obj)) {
+		const formatted = format(key, value)
+		if (formatted) return formatted
+	}
+	return undefined
 }
 
 function extractStructuredData(output: unknown): StructuredToolOutput | null {
@@ -150,11 +200,17 @@ interface ToolProps {
 	errorText?: string
 }
 
-export function Tool(props: ToolProps) {
+/**
+ * A single, cardless tool line: status glyph, tool icon, label, salient-argument
+ * summary, and an inline-expandable detail panel. The bordered container is owned
+ * by the parent (standalone `Tool` shell or `ToolGroup`) so rows never nest cards.
+ */
+export function ToolRow(props: ToolProps) {
 	const { toolName, state, input, output, errorText } = props
 	const status = deriveStatus(state)
 	const label = toolLabels[toolName] ?? toolName
 	const Icon = toolIcons[toolName] ?? CodeIcon
+	const summary = toolSummary(input)
 
 	const [open, setOpen] = useState(false)
 
@@ -165,40 +221,36 @@ export function Tool(props: ToolProps) {
 	const hasContent = hasInput || structuredData != null || outputText != null || errorText != null
 
 	return (
-		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/30 text-xs">
-			{/* Header */}
+		<div className="text-xs">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-muted/50"
-				onClick={() => hasContent && setOpen((v) => !v)}
+				className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+				disabled={!hasContent}
+				onClick={() => setOpen((v) => !v)}
 			>
+				<StatusGlyph status={status} />
 				<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="font-medium">{label}</span>
-
-				<span className="ml-auto flex items-center gap-1.5">
-					{status === "running" && (
-						<>
-							<span className="text-muted-foreground">Running…</span>
-							<LoaderIcon className="size-3 animate-spin text-muted-foreground" />
-						</>
-					)}
-					{status === "completed" && <CircleCheckIcon className="size-3.5 text-severity-info" />}
-					{status === "error" && <CircleXmarkIcon className="size-3.5 text-destructive" />}
-					{hasContent &&
-						(open ? (
-							<ChevronDownIcon className="size-3 text-muted-foreground" />
-						) : (
-							<ChevronRightIcon className="size-3 text-muted-foreground" />
-						))}
-				</span>
+				<span className="shrink-0 font-medium">{label}</span>
+				{summary ? (
+					<span className="min-w-0 flex-1 truncate text-muted-foreground">
+						<span className="mr-1 text-muted-foreground/40">·</span>
+						<span className="font-mono">{summary}</span>
+					</span>
+				) : (
+					<span className="flex-1" />
+				)}
+				{hasContent &&
+					(open ? (
+						<ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+					) : (
+						<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
+					))}
 			</button>
 
-			{/* Content */}
 			{open && hasContent && (
-				<div className="border-t border-border/50">
-					{/* Input */}
+				<div className="space-y-2 border-t border-border/40 px-2 pb-2 pl-7 pt-2">
 					{hasInput && (
-						<div className="border-b border-border/40 px-3 py-2">
+						<div>
 							<p className="mb-1 font-medium text-muted-foreground">Arguments</p>
 							<div className="space-y-0.5">
 								{Object.entries(input as Record<string, unknown>)
@@ -215,9 +267,8 @@ export function Tool(props: ToolProps) {
 						</div>
 					)}
 
-					{/* Error */}
 					{errorText != null && (
-						<div className="px-3 py-2">
+						<div>
 							<p className="mb-1 font-medium text-destructive">Error</p>
 							<pre className="max-h-40 overflow-auto whitespace-pre-wrap text-destructive/80">
 								{errorText}
@@ -225,9 +276,8 @@ export function Tool(props: ToolProps) {
 						</div>
 					)}
 
-					{/* Output */}
 					{(structuredData || outputText != null) && (
-						<div className="px-3 py-2">
+						<div>
 							{structuredData ? (
 								<Suspense fallback={<div className="text-muted-foreground">Loading…</div>}>
 									<LazyToolRenderer data={structuredData} />
@@ -244,6 +294,15 @@ export function Tool(props: ToolProps) {
 					)}
 				</div>
 			)}
+		</div>
+	)
+}
+
+/** Standalone (non-grouped) tool call: one `ToolRow` in its own hairline shell. */
+export function Tool(props: ToolProps) {
+	return (
+		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/20">
+			<ToolRow {...props} />
 		</div>
 	)
 }

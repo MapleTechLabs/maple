@@ -43,7 +43,7 @@ export const SENSITIVITY: Record<AnomalySensitivity, SensitivityConfig> = {
 }
 
 /** Minimum sealed baseline samples before a series is evaluated at all. */
-export const MIN_BASELINE_SAMPLES = 6
+const MIN_BASELINE_SAMPLES = 6
 
 const MAD_TO_SIGMA = 1.4826
 
@@ -110,11 +110,8 @@ export interface DetectionConfig {
 	readonly elapsedMinutes: number
 }
 
-export const detectorKeyFor = (
-	signalType: AnomalySignalType,
-	deploymentEnv: string,
-	subject: string,
-): string => `${signalType}:${deploymentEnv}:${subject}`
+const detectorKeyFor = (signalType: AnomalySignalType, deploymentEnv: string, subject: string): string =>
+	`${signalType}:${deploymentEnv}:${subject}`
 
 const skipped = (
 	signalType: AnomalySignalType,
@@ -146,6 +143,17 @@ const skipped = (
 const GOLDEN_MIN_VOLUME = 50
 /** Throughput needs ≥10 elapsed minutes before its per-minute rate is stable. */
 const RATE_MIN_ELAPSED_MINUTES = 10
+/**
+ * Minimum expected requests (baseline rate × elapsed minutes) before a
+ * throughput drop is evaluable: until that many requests were expected, an
+ * observed zero is indistinguishable from a normal quiet stretch.
+ */
+const THROUGHPUT_MIN_EXPECTED = 30
+/**
+ * In the clamp regime (see below) a drop only fires when observed volume is
+ * under this fraction of expected — i.e. a near-total outage.
+ */
+const THROUGHPUT_OUTAGE_FRACTION = 0.05
 
 export function evaluateGoldenSignals(
 	series: GoldenSignalSeries,
@@ -196,9 +204,7 @@ export function evaluateGoldenSignals(
 				),
 			)
 		} else {
-			const rates = baseline
-				.filter((b) => b.requestCount > 0)
-				.map((b) => b.errorCount / b.requestCount)
+			const rates = baseline.filter((b) => b.requestCount > 0).map((b) => b.errorCount / b.requestCount)
 			if (rates.length < MIN_BASELINE_SAMPLES) {
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, 0, currentCount))
 			} else {
@@ -242,15 +248,15 @@ export function evaluateGoldenSignals(
 	// --- Throughput (drops only) -----------------------------------------------
 	{
 		const signal: AnomalySignalType = "throughput"
-		const ratePerMin =
-			config.elapsedMinutes > 0 ? currentCount / config.elapsedMinutes : currentCount
+		const ratePerMin = config.elapsedMinutes > 0 ? currentCount / config.elapsedMinutes : currentCount
 		if (insufficientBaseline || config.elapsedMinutes < RATE_MIN_ELAPSED_MINUTES) {
 			evaluations.push(skipped(signal, serviceName, deploymentEnv, ratePerMin, currentCount))
 		} else {
 			const rates = baseline.map((b) => b.requestCount / 60)
 			const m = median(rates)
-			if (m < 1) {
-				// Near-idle services: a drop to zero is indistinguishable from quiet.
+			if (m * config.elapsedMinutes < THROUGHPUT_MIN_EXPECTED) {
+				// Too few expected requests so far: an observed zero is
+				// indistinguishable from a normal quiet stretch.
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, ratePerMin, currentCount))
 			} else {
 				const sigma = robustSigma(rates, m, 0.5, 0.1)
@@ -259,7 +265,12 @@ export function evaluateGoldenSignals(
 				// signal permanently un-fireable (ratePerMin >= 0 always). The 0.1m
 				// floor keeps severe outages detectable on high-variance series.
 				const threshold = Math.max(Math.min(m - k * sigma, m * 0.5), m * 0.1)
-				const breached = ratePerMin < threshold
+				// Clamp regime: the statistical bound is vacuous (m - k*sigma <= 0),
+				// so the floor is doing the work and any quiet stretch would breach.
+				// There, only a near-total outage counts.
+				const outageOnly = m - k * sigma <= 0
+				const outageCeiling = Math.max(1, THROUGHPUT_OUTAGE_FRACTION * m * config.elapsedMinutes)
+				const breached = ratePerMin < threshold && (!outageOnly || currentCount < outageCeiling)
 				evaluations.push(
 					makeEval(signal, ratePerMin, m, sigma, threshold, breached, "warning", currentCount),
 				)
@@ -276,10 +287,7 @@ export function evaluateGoldenSignals(
 
 const LOG_MIN_VOLUME = 30
 
-export function evaluateLogVolume(
-	series: LogVolumeSeries,
-	config: DetectionConfig,
-): AnomalyEvaluation {
+export function evaluateLogVolume(series: LogVolumeSeries, config: DetectionConfig): AnomalyEvaluation {
 	const signal: AnomalySignalType = "log_volume"
 	const { serviceName, deploymentEnv, current, baseline } = series
 	const { k, ratio } = config.sensitivity
@@ -325,7 +333,7 @@ export function evaluateLogVolume(
 const HALF_HOURS_PER_WEEK = 336
 const SPIKE_MIN_COUNT = 10
 /** Fingerprints younger than this stay with ErrorsService first_seen handling. */
-export const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
+const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface ErrorSpikeConfig {
 	readonly sensitivity: SensitivityConfig

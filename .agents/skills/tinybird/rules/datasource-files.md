@@ -10,11 +10,11 @@
 - DateTime64 requires precision (use DateTime64(3)).
 - Only include ENGINE_PARTITION_KEY and ENGINE_PRIMARY_KEY when explicitly requested.
 - Import configuration:
-    - S3/GCS: set IMPORT_CONNECTION_NAME, IMPORT_BUCKET_URI, IMPORT_SCHEDULE (GCS supports @on-demand only, S3 supports @auto).
-    - Kafka: set KAFKA_CONNECTION_NAME, KAFKA_TOPIC, KAFKA_GROUP_ID.
+  - S3/GCS: set IMPORT_CONNECTION_NAME, IMPORT_BUCKET_URI, IMPORT_SCHEDULE (GCS supports @on-demand only, S3 supports @auto).
+  - Kafka: set KAFKA_CONNECTION_NAME, KAFKA_TOPIC, KAFKA_GROUP_ID.
 - For landing datasources created from a .ndjson file with no schema specified, use:
-    - `SCHEMA >`
-    - `` `data` String `json:$` ``
+  - `SCHEMA >`
+  - `` `data` String `json:$` ``
 
 Example:
 
@@ -31,16 +31,43 @@ ENGINE_PARTITION_KEY "partition_key"
 ENGINE_SORTING_KEY "sorting_key_1, sorting_key_2"
 ```
 
-## Updating Datasource Schemas (Cloud)
+## Updating Data Source Schemas (Cloud)
 
-If a schema change is incompatible with the deployed Cloud datasource, add a FORWARD_QUERY to transform data to the new schema. The query is a SELECT list only (no FROM/WHERE). Use accurateCastOrDefault for lossy conversions.
+If a schema change is incompatible with the deployed Cloud Data Source, add a `FORWARD_QUERY` to transform existing data to the new schema. The query is a SELECT list only (no FROM/WHERE). It runs over existing data at read time until the next deploy compacts it.
 
-Example:
+### When to use `FORWARD_QUERY`
+
+- Adding a new column that requires a default value for existing rows
+- Changing a column type (e.g., String to UUID, Int32 to Int64)
+- Renaming a column
+- Removing a column (just omit it from the SELECT)
+
+### Examples
+
+Adding a new column with a default:
 
 ```
 FORWARD_QUERY >
-    SELECT timestamp, CAST(session_id, 'UUID') as session_id, action, version, payload
+    SELECT *, 'unknown' as source
 ```
+
+Changing a column type:
+
+```
+FORWARD_QUERY >
+    SELECT timestamp, accurateCastOrDefault(session_id, 'UUID') as session_id, action, version, payload
+```
+
+Renaming a column:
+
+```
+FORWARD_QUERY >
+    SELECT old_name as new_name, other_column
+```
+
+### After migration
+
+Once the deploy applies the `FORWARD_QUERY` and the schema change is live, the `FORWARD_QUERY` has done its job. You can remove it from the datafile in a subsequent deploy if no further schema changes are pending. Keeping stale `FORWARD_QUERY` blocks around adds unnecessary complexity.
 
 ## Sharing Datasources
 
@@ -51,7 +78,6 @@ SHARED_WITH >
 ```
 
 Limitations:
-
 - Shared datasources are read-only.
 - You cannot share a shared datasource.
 - You cannot create a materialized view from a shared datasource.

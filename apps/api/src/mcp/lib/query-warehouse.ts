@@ -7,7 +7,6 @@ import { McpAuthMissingError } from "@/mcp/tools/types"
 import { WarehouseQueryService } from "@/lib/WarehouseQueryService"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
 import { makeWarehouseExecutorFromTenant } from "@/lib/WarehouseQueryService"
-import type { TenantContext } from "@/services/AuthService"
 
 export const resolveTenant = Effect.gen(function* () {
 	const req = yield* HttpServerRequest.HttpServerRequest

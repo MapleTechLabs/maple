@@ -1,28 +1,43 @@
 import { Suspense, useCallback, useEffect, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
+import { Link } from "@tanstack/react-router"
+import { toast } from "sonner"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
-import { SidebarInset, SidebarProvider } from "@maple/ui/components/ui/sidebar"
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@maple/ui/components/ui/sidebar"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
+import { Button } from "@maple/ui/components/ui/button"
+import { useIsMobile } from "@maple/ui/hooks/use-mobile"
+import { ChevronDownIcon, LinkIcon, PlusIcon } from "@/components/icons"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
-import { useChatTabs } from "@/hooks/use-chat-tabs"
+import { useChatTabs, type ChatTab } from "@/hooks/use-chat-tabs"
 import { ChatSidebar } from "./chat-sidebar"
 import { ChatConversation } from "./chat-conversation"
 import { alertTabId, alertTabTitle, type AlertContext } from "./alert-context"
-import {
-	widgetFixTabId,
-	widgetFixTabTitle,
-	type WidgetFixContext,
-} from "./widget-fix-context"
+import { widgetFixTabId, widgetFixTabTitle, type WidgetFixContext } from "./widget-fix-context"
 
 interface ChatPageProps {
 	urlTabId?: string
 	mode?: "alert" | "widget-fix"
 	alertContext?: AlertContext
 	widgetFixContext?: WidgetFixContext
+	/** When set, render a read-only view of a teammate's shared conversation. */
+	sharedTabId?: string
+	sharedTitle?: string
 }
 
-export function ChatPage({ urlTabId, mode, alertContext, widgetFixContext }: ChatPageProps) {
+export function ChatPage({
+	urlTabId,
+	mode,
+	alertContext,
+	widgetFixContext,
+	sharedTabId,
+	sharedTitle,
+}: ChatPageProps) {
 	const { orgId } = useAuth()
 	if (!orgId) return null
+	if (sharedTabId) {
+		return <SharedChatView tabId={sharedTabId} title={sharedTitle} />
+	}
 	return (
 		<ChatPageInner
 			orgId={orgId}
@@ -34,19 +49,22 @@ export function ChatPage({ urlTabId, mode, alertContext, widgetFixContext }: Cha
 	)
 }
 
-interface ChatPageInnerProps extends ChatPageProps {
+interface ChatPageInnerProps {
 	orgId: string
+	urlTabId?: string
+	mode?: "alert" | "widget-fix"
+	alertContext?: AlertContext
+	widgetFixContext?: WidgetFixContext
 }
 
-function ChatPageInner({
-	orgId,
-	urlTabId,
-	mode,
-	alertContext,
-	widgetFixContext,
-}: ChatPageInnerProps) {
-	const { tabs, activeTabId, createTab, closeTab, setActiveTab, renameTab, ensureTab } =
-		useChatTabs(orgId, urlTabId)
+function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }: ChatPageInnerProps) {
+	const { tabs, activeTabId, createTab, closeTab, setActiveTab, renameTab, ensureTab } = useChatTabs(
+		orgId,
+		urlTabId,
+	)
+
+	const isMobile = useIsMobile()
+	const [convListOpen, setConvListOpen] = useState(false)
 
 	const [loadingTabIds, setLoadingTabIds] = useState<ReadonlySet<string>>(() => new Set())
 	const handleLoadingChange = useCallback((id: string, loading: boolean) => {
@@ -58,6 +76,21 @@ function ChatPageInner({
 			else next.delete(id)
 			return next
 		})
+	}, [])
+
+	// Build a read-only share link for the conversation and copy it to the clipboard.
+	// The link carries only the tab id (the conversation lives in an org-scoped agent),
+	// so it resolves for signed-in teammates in the same workspace and no one else.
+	const handleShare = useCallback((tab: ChatTab) => {
+		if (typeof window === "undefined") return
+		const url = new URL("/chat", window.location.origin)
+		url.searchParams.set("shared", tab.id)
+		const title = tab.title.trim()
+		if (title) url.searchParams.set("title", title)
+		navigator.clipboard
+			.writeText(url.toString())
+			.then(() => toast.success("Share link copied to clipboard"))
+			.catch(() => toast.error("Failed to copy share link"))
 	}, [])
 
 	// state → URL: reflect the current tab in the URL via history.replaceState so
@@ -105,46 +138,159 @@ function ChatPageInner({
 	const widgetFixTab =
 		mode === "widget-fix" && widgetFixContext ? widgetFixTabId(widgetFixContext) : undefined
 
+	const activeTitle = tabs.find((t) => t.id === activeTabId)?.title ?? "New chat"
+
+	const conversationArea = (
+		<div className="relative min-h-0 flex-1 bg-background">
+			{tabs.map((tab) => {
+				const isAlertTab = tab.id === alertTab
+				const isWidgetFixTab = tab.id === widgetFixTab
+				return (
+					<div key={tab.id} className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}>
+						<Suspense fallback={<ChatConversationFallback />}>
+							<ChatConversation
+								tabId={tab.id}
+								isActive={tab.id === activeTabId}
+								onFirstMessage={(id, text) => renameTab(id, text)}
+								onLoadingChange={handleLoadingChange}
+								mode={isAlertTab ? "alert" : isWidgetFixTab ? "widget-fix" : undefined}
+								alertContext={isAlertTab ? alertContext : undefined}
+								widgetFixContext={isWidgetFixTab ? widgetFixContext : undefined}
+							/>
+						</Suspense>
+					</div>
+				)
+			})}
+		</div>
+	)
+
 	return (
 		<SidebarProvider open={false} onOpenChange={() => {}} className="h-svh overflow-hidden">
 			<AppSidebar />
 			<SidebarInset>
-				<div className="flex h-full min-h-0 flex-1">
-					<ChatSidebar
-						tabs={tabs}
-						activeTabId={activeTabId}
-						loadingTabIds={loadingTabIds}
-						onSelect={setActiveTab}
-						onClose={closeTab}
-						onCreate={createTab}
-						onRename={renameTab}
-					/>
-					<div className="flex min-w-0 flex-1 flex-col">
-						<div className="relative min-h-0 flex-1 bg-background">
-							{tabs.map((tab) => {
-								const isAlertTab = tab.id === alertTab
-								const isWidgetFixTab = tab.id === widgetFixTab
-								return (
-									<div
-										key={tab.id}
-										className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}
-									>
-										<Suspense fallback={<ChatConversationFallback />}>
-											<ChatConversation
-												tabId={tab.id}
-												isActive={tab.id === activeTabId}
-												onFirstMessage={(id, text) => renameTab(id, text)}
-												onLoadingChange={handleLoadingChange}
-												mode={
-													isAlertTab ? "alert" : isWidgetFixTab ? "widget-fix" : undefined
-												}
-												alertContext={isAlertTab ? alertContext : undefined}
-												widgetFixContext={isWidgetFixTab ? widgetFixContext : undefined}
-											/>
-										</Suspense>
-									</div>
-								)
-							})}
+				{isMobile ? (
+					<div className="flex h-full min-h-0 flex-1 flex-col">
+						<header className="flex h-12 shrink-0 items-center gap-1 border-b bg-sidebar px-2 text-sidebar-foreground">
+							<SidebarTrigger className="size-9" />
+							<button
+								type="button"
+								onClick={() => setConvListOpen(true)}
+								className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1 transition-colors hover:bg-sidebar-accent/50"
+								aria-label="Switch conversation"
+							>
+								<span className="truncate text-sm font-medium">{activeTitle}</span>
+								<ChevronDownIcon size={14} className="shrink-0 opacity-60" />
+							</button>
+							<Button
+								onClick={() => {
+									const tab = tabs.find((t) => t.id === activeTabId)
+									if (tab) handleShare(tab)
+								}}
+								variant="ghost"
+								size="icon"
+								className="size-9"
+								aria-label="Copy share link"
+							>
+								<LinkIcon size={16} />
+							</Button>
+							<Button
+								onClick={createTab}
+								variant="ghost"
+								size="icon"
+								className="size-9"
+								aria-label="New chat"
+							>
+								<PlusIcon size={16} />
+							</Button>
+						</header>
+						{conversationArea}
+						<Sheet open={convListOpen} onOpenChange={setConvListOpen}>
+							<SheetContent side="left" className="w-[300px] max-w-[85vw] bg-sidebar p-0">
+								<SheetHeader className="sr-only">
+									<SheetTitle>Conversations</SheetTitle>
+									<SheetDescription>Switch between chat conversations.</SheetDescription>
+								</SheetHeader>
+								<ChatSidebar
+									tabs={tabs}
+									activeTabId={activeTabId}
+									loadingTabIds={loadingTabIds}
+									onClose={closeTab}
+									onRename={renameTab}
+									onShare={handleShare}
+									onSelect={(id) => {
+										setActiveTab(id)
+										setConvListOpen(false)
+									}}
+									onCreate={() => {
+										createTab()
+										setConvListOpen(false)
+									}}
+									className="w-full"
+								/>
+							</SheetContent>
+						</Sheet>
+					</div>
+				) : (
+					<div className="flex h-full min-h-0 flex-1">
+						<ChatSidebar
+							tabs={tabs}
+							activeTabId={activeTabId}
+							loadingTabIds={loadingTabIds}
+							onSelect={setActiveTab}
+							onClose={closeTab}
+							onCreate={createTab}
+							onRename={renameTab}
+							onShare={handleShare}
+							className="w-[260px] border-r"
+						/>
+						<div className="flex min-w-0 flex-1 flex-col">{conversationArea}</div>
+					</div>
+				)}
+			</SidebarInset>
+		</SidebarProvider>
+	)
+}
+
+/**
+ * Read-only view of a teammate's shared conversation. Renders the existing
+ * <ChatConversation> in `readOnly` mode (no composer) for the shared tab id —
+ * the agent is org-scoped, so this only loads for signed-in teammates in the
+ * same workspace. The tab is intentionally NOT added to `useChatTabs`, so a
+ * shared link never pollutes the viewer's own conversation list.
+ */
+function SharedChatView({ tabId, title }: { tabId: string; title?: string }) {
+	const heading = title?.trim() || "Shared conversation"
+	return (
+		<SidebarProvider open={false} onOpenChange={() => {}} className="h-svh overflow-hidden">
+			<AppSidebar />
+			<SidebarInset>
+				<div className="flex h-full min-h-0 flex-1 flex-col">
+					<header className="flex h-12 shrink-0 items-center gap-2 border-b bg-sidebar px-2 text-sidebar-foreground">
+						<SidebarTrigger className="size-9" />
+						<LinkIcon size={14} className="shrink-0 opacity-60" />
+						<div className="flex min-w-0 flex-1 flex-col justify-center">
+							<span className="truncate text-sm font-medium leading-tight" title={heading}>
+								{heading}
+							</span>
+							<span className="text-[10px] font-medium uppercase tracking-wider text-sidebar-foreground/60 leading-tight">
+								Read-only · shared
+							</span>
+						</div>
+						<Button
+							render={<Link to="/chat" search={{}} />}
+							variant="outline"
+							size="sm"
+							className="shrink-0 gap-1.5"
+						>
+							<PlusIcon size={14} />
+							New chat
+						</Button>
+					</header>
+					<div className="relative min-h-0 flex-1 bg-background">
+						<div className="flex h-full flex-col">
+							<Suspense fallback={<ChatConversationFallback />}>
+								<ChatConversation tabId={tabId} isActive readOnly />
+							</Suspense>
 						</div>
 					</div>
 				</div>

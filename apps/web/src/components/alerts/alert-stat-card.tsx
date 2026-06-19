@@ -11,48 +11,52 @@ const valueToneClass: Record<Tone, string> = {
 	amber: "text-warning",
 }
 
-export function AlertStatCard({
-	label,
-	value,
-	hint,
-	tone = "default",
-	icon,
-	indicator,
-	className,
-	children,
-}: {
+export type AlertStatItem = {
 	label: string
 	value: ReactNode
 	hint?: ReactNode
 	tone?: Tone
-	icon?: ReactNode
-	indicator?: ReactNode
-	className?: string
-	children?: ReactNode
-}) {
+}
+
+/**
+ * Flat, divider-separated summary row. Replaces the old "one card per single
+ * value" grid (the hero-metric / identical-card-grid pattern the design system
+ * rejects). Hairlines come from a `bg-border` backplate showing through a 1px
+ * gap; cells stack on mobile and sit in a row from `sm` up. Numerals stay at a
+ * restrained `text-xl` semibold — dense and numerical, not a marketing tile.
+ */
+export function AlertStatStrip({ items, className }: { items: AlertStatItem[]; className?: string }) {
 	return (
-		<Card className={className}>
-			<CardContent className="px-5">
-				<div className="flex items-center justify-between">
+		<div
+			className={cn(
+				"flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border sm:flex-row",
+				className,
+			)}
+		>
+			{items.map((item) => (
+				<div key={item.label} className="flex flex-1 flex-col gap-2 bg-card px-5 py-4">
 					<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-						{label}
+						{item.label}
 					</span>
-					{indicator ?? (icon ? <span className="text-muted-foreground">{icon}</span> : null)}
+					<div className="flex items-baseline gap-2">
+						<span
+							className={cn(
+								"text-xl font-semibold tabular-nums leading-none",
+								valueToneClass[item.tone ?? "default"],
+							)}
+						>
+							{item.value}
+						</span>
+						{item.hint && <span className="text-muted-foreground text-xs">{item.hint}</span>}
+					</div>
 				</div>
-				<div className="mt-3 flex items-baseline gap-2">
-					<span className={cn("text-3xl font-bold tabular-nums", valueToneClass[tone])}>
-						{value}
-					</span>
-					{hint && <span className="text-muted-foreground text-sm">{hint}</span>}
-				</div>
-				{children}
-			</CardContent>
-		</Card>
+			))}
+		</div>
 	)
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Hero firing card — dominant treatment when something is on fire           */
+/*  Status bar — flat one-row treatment that leads the Monitor / dashboard     */
 /* -------------------------------------------------------------------------- */
 
 export function AlertFiringHero({
@@ -72,39 +76,36 @@ export function AlertFiringHero({
 }) {
 	const firing = openCount > 0
 
+	const rulesSummary = (
+		<span className="tabular-nums">
+			<span className="text-foreground font-medium">{rulesEnabled}</span>
+			<span className="text-muted-foreground/70">/</span>
+			<span>{rulesTotal}</span>
+			<span className="ml-1">rules</span>
+		</span>
+	)
+
 	if (!firing) {
 		return (
-			<Card className="relative ring-success/25">
-				<span
-					aria-hidden
-					className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-r from-success/[0.06] via-transparent to-transparent"
-				/>
-				<CardContent className="relative flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5">
-					<div className="flex items-center gap-3 min-w-0">
+			<Card>
+				<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
+					<div className="flex min-w-0 items-center gap-3">
 						<StatusDot tone="emerald" />
-						<div className="flex flex-col gap-0.5 min-w-0">
-							<div className="flex items-center gap-2 text-base font-semibold tracking-tight">
-								All services healthy
-								<span className="rounded-full bg-success/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.14em] text-success/90">
-									OK
-								</span>
-							</div>
-							<div className="text-muted-foreground text-xs">
-								<span className="tabular-nums text-foreground font-medium">
+						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+							<span className="text-base font-semibold tracking-tight">All clear</span>
+							<span className="text-muted-foreground text-sm">
+								<span className="text-foreground font-medium tabular-nums">
 									{rulesEnabled}
 								</span>
 								<span className="text-muted-foreground/70"> / </span>
 								<span className="tabular-nums">{rulesTotal}</span>
 								<span className="ml-1">rules watching</span>
-								{lastEvaluatedHint && (
-									<>
-										<span className="mx-2 text-muted-foreground/40">·</span>
-										<span>{lastEvaluatedHint}</span>
-									</>
-								)}
-							</div>
+							</span>
 						</div>
 					</div>
+					{lastEvaluatedHint && (
+						<span className="text-muted-foreground shrink-0 text-xs">{lastEvaluatedHint}</span>
+					)}
 				</CardContent>
 			</Card>
 		)
@@ -116,56 +117,56 @@ export function AlertFiringHero({
 			.join(" · ") || `${openCount} open`
 
 	return (
-		<Card className="relative ring-destructive/35">
-			<span
-				aria-hidden
-				className="pointer-events-none absolute inset-0 rounded-xl bg-gradient-to-r from-destructive/[0.10] via-destructive/[0.02] to-transparent"
-			/>
-			<CardContent className="relative flex flex-wrap items-center justify-between gap-x-6 gap-y-3 px-5">
-				<div className="flex items-center gap-4 min-w-0">
+		<Card className="border-destructive/30 bg-destructive/[0.04]">
+			<CardContent className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 py-3.5">
+				<div className="flex min-w-0 items-center gap-3">
 					<StatusDot tone="destructive" pulse />
-					<div className="flex flex-col gap-0.5 min-w-0">
-						<div className="text-destructive text-[10px] font-medium uppercase tracking-[0.18em]">
+					<div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+						<span className="text-destructive text-[11px] font-medium uppercase tracking-[0.16em]">
 							Firing now
-						</div>
-						<div className="flex items-baseline gap-2.5 leading-none">
-							<span className="text-destructive text-3xl font-bold tabular-nums leading-none">
+						</span>
+						<span className="flex items-baseline gap-1.5">
+							<span className="text-destructive text-2xl font-semibold tabular-nums leading-none">
 								{openCount}
 							</span>
-							<span className="text-muted-foreground text-sm truncate">
+							<span className="text-muted-foreground text-sm">
 								{openCount === 1 ? "incident" : "incidents"}
-								<span className="mx-1.5 text-muted-foreground/40">·</span>
-								{firingLabel}
 							</span>
-						</div>
+						</span>
+						<span className="text-muted-foreground/40">·</span>
+						<span className="text-muted-foreground text-sm">{firingLabel}</span>
 					</div>
 				</div>
-				<div className="text-muted-foreground text-xs flex flex-col items-end gap-0.5 shrink-0">
-					<div className="tabular-nums">
-						<span className="text-foreground font-medium">{rulesEnabled}</span>
-						<span className="text-muted-foreground/70"> / </span>
-						<span>{rulesTotal}</span>
-						<span className="ml-1">rules</span>
-					</div>
-					{lastEvaluatedHint && <div>{lastEvaluatedHint}</div>}
+				<div className="text-muted-foreground flex shrink-0 items-center gap-2 text-xs">
+					{rulesSummary}
+					{lastEvaluatedHint && (
+						<>
+							<span className="text-muted-foreground/40">·</span>
+							<span>{lastEvaluatedHint}</span>
+						</>
+					)}
 				</div>
 			</CardContent>
 		</Card>
 	)
 }
 
+/**
+ * Severity beacon. The firing halo uses the canonical `.infra-pulse`
+ * (2.4s ease-out, reduced-motion-safe) rather than a generic ping, so it reads
+ * as the same operator-terminal pulse used across the infra surfaces.
+ */
 function StatusDot({ tone, pulse = false }: { tone: "emerald" | "destructive"; pulse?: boolean }) {
-	const colors =
-		tone === "emerald"
-			? { bg: "bg-success", halo: "bg-success/15" }
-			: { bg: "bg-destructive", halo: "bg-destructive/20" }
+	const dot = tone === "emerald" ? "bg-success" : "bg-destructive"
 	return (
-		<span className="relative flex size-8 shrink-0 items-center justify-center">
-			<span className={cn("absolute size-6 rounded-full", colors.halo)} />
+		<span className="relative flex size-3 shrink-0 items-center justify-center">
 			{pulse && (
-				<span className={cn("absolute size-6 animate-ping rounded-full opacity-60", colors.halo)} />
+				<span
+					aria-hidden
+					className={cn("infra-pulse absolute size-3 rounded-full opacity-60", dot)}
+				/>
 			)}
-			<span className={cn("relative size-2 rounded-full", colors.bg)} />
+			<span className={cn("relative size-2 rounded-full", dot)} />
 		</span>
 	)
 }

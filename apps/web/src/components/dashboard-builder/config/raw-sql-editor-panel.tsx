@@ -59,9 +59,7 @@ export function RawSqlEditorPanel({
 
 					<Badge
 						variant="outline"
-						className={cn(
-							"font-mono text-[11px] text-white border-0 shrink-0 bg-primary/80",
-						)}
+						className={cn("font-mono text-[11px] text-white border-0 shrink-0 bg-primary/80")}
 					>
 						sql
 					</Badge>
@@ -71,9 +69,7 @@ export function RawSqlEditorPanel({
 					<div className="flex-1" />
 
 					{missingOrgFilter && !collapsed && (
-						<span className="text-[11px] text-destructive">
-							Missing $__orgFilter
-						</span>
+						<span className="text-[11px] text-destructive">Missing $__orgFilter</span>
 					)}
 				</div>
 

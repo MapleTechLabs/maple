@@ -17,7 +17,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { FolderIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
-import { PodTable, PodTableLoading, type PodRow } from "@/components/infra/pod-table"
+import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
 import { listPodsResultAtom, podFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -163,7 +163,7 @@ function PodsPageContent() {
 						.onInitial(() => <PodTableLoading />)
 						.onError((err) => <QueryErrorState error={err} />)
 						.onSuccess((response, result) => {
-							const pods = response.data as ReadonlyArray<PodRow>
+							const pods = response.data
 							const hasAnyFilter =
 								!!search.search?.trim() ||
 								(filters.podNames?.length ?? 0) > 0 ||

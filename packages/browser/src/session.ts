@@ -71,7 +71,8 @@ function isExpired(record: SessionRecord, now: number): boolean {
 export function getSession(): SessionRecord {
 	const now = Date.now()
 	const existing = readRecord()
-	const record = existing && !isExpired(existing, now) ? { ...existing, lastActivityAt: now } : freshRecord(now)
+	const record =
+		existing && !isExpired(existing, now) ? { ...existing, lastActivityAt: now } : freshRecord(now)
 	writeRecord(record)
 	return record
 }

@@ -16,6 +16,12 @@ export interface IncompleteSegmentsResult<T extends Record<string, unknown>> {
  *
  * This allows Recharts to render two overlapping series — one solid (complete)
  * and one dashed (incomplete) — with a seamless connection at the bridge point.
+ *
+ * Detection is authoritative when the upstream pipeline annotates rows with
+ * `partial: true` (it knows the query's bucket size and freshness, so it can flag
+ * the in-progress *and* ingestion-lagged trailing buckets that wall-clock alone
+ * can't catch). When no row carries that flag, fall back to inferring the bucket
+ * size from point spacing and comparing each bucket's end against `now`.
  */
 export function markIncompleteSegments<T extends Record<string, unknown>>(
 	data: T[],
@@ -26,22 +32,26 @@ export function markIncompleteSegments<T extends Record<string, unknown>>(
 		return { data: [], hasIncomplete: false, incompleteKeys: [] }
 	}
 
-	const bucketSeconds = inferBucketSeconds(data as unknown as Array<{ bucket: string }>)
-	if (bucketSeconds == null) {
-		return { data, hasIncomplete: false, incompleteKeys: [] }
-	}
+	// Prefer an explicit per-row flag set by the data pipeline.
+	let firstIncompleteIdx = data.findIndex((row) => row.partial === true)
 
-	const nowMs = opts?.now ?? Date.now()
-	const intervalMs = bucketSeconds * 1000
+	if (firstIncompleteIdx === -1) {
+		// Fall back to the spacing + wall-clock heuristic.
+		const bucketSeconds = inferBucketSeconds(data as unknown as Array<{ bucket: string }>)
+		if (bucketSeconds == null) {
+			return { data, hasIncomplete: false, incompleteKeys: [] }
+		}
 
-	// Find the index of the first incomplete bucket
-	let firstIncompleteIdx = -1
-	for (let i = 0; i < data.length; i++) {
-		const bucketMs = parseBucketMs(data[i].bucket)
-		if (bucketMs == null) continue
-		if (bucketMs + intervalMs > nowMs) {
-			firstIncompleteIdx = i
-			break
+		const nowMs = opts?.now ?? Date.now()
+		const intervalMs = bucketSeconds * 1000
+
+		for (let i = 0; i < data.length; i++) {
+			const bucketMs = parseBucketMs(data[i].bucket)
+			if (bucketMs == null) continue
+			if (bucketMs + intervalMs > nowMs) {
+				firstIncompleteIdx = i
+				break
+			}
 		}
 	}
 

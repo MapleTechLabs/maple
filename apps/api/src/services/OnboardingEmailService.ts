@@ -2,12 +2,7 @@ import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
 import { render } from "@react-email/components"
-import {
-	ActivationEmail,
-	ConnectAppEmail,
-	StalledEmail,
-	WelcomeEmail,
-} from "@maple/email/onboarding"
+import { ActivationEmail, ConnectAppEmail, StalledEmail, WelcomeEmail } from "@maple/email/onboarding"
 import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { EmailService } from "../lib/EmailService"
 import { Env } from "../lib/Env"
@@ -66,117 +61,109 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 			 * Reuses the `service_overview_compare` query (same one the weekly digest
 			 * uses); the previous window is zero-width so only current rows return.
 			 */
-			const orgHasRealTelemetry = Effect.fn("OnboardingEmailService.orgHasRealTelemetry")(
-				function* (orgId: OrgId) {
-					const now = new Date(yield* Clock.currentTimeMillis)
-					const currentEnd = toClickHouseDateTime(now)
-					const currentStart = toClickHouseDateTime(new Date(now.getTime() - 30 * DAY_MS))
+			const orgHasRealTelemetry = Effect.fn("OnboardingEmailService.orgHasRealTelemetry")(function* (
+				orgId: OrgId,
+			) {
+				const now = new Date(yield* Clock.currentTimeMillis)
+				const currentEnd = toClickHouseDateTime(now)
+				const currentStart = toClickHouseDateTime(new Date(now.getTime() - 30 * DAY_MS))
 
-					const systemTenant = {
-						orgId,
-						userId: SYSTEM_ONBOARDING_USER,
-						roles: [ROOT_ROLE] as ReadonlyArray<RoleNameType>,
-						authMode: "self_hosted" as const,
-					}
+				const systemTenant = {
+					orgId,
+					userId: SYSTEM_ONBOARDING_USER,
+					roles: [ROOT_ROLE] as ReadonlyArray<RoleNameType>,
+					authMode: "self_hosted" as const,
+				}
 
-					const response = yield* warehouse.query(systemTenant, {
-						pipe: "service_overview_compare",
-						params: {
-							current_start_time: currentStart,
-							current_end_time: currentEnd,
-							previous_start_time: currentStart,
-							previous_end_time: currentStart,
-						},
-					})
+				const response = yield* warehouse.query(systemTenant, {
+					pipe: "service_overview_compare",
+					params: {
+						current_start_time: currentStart,
+						current_end_time: currentEnd,
+						previous_start_time: currentStart,
+						previous_end_time: currentStart,
+					},
+				})
 
-					const rows: ReadonlyArray<unknown> = Array.isArray(response.data)
-						? response.data
-						: []
-					return rows.some((row) => {
-						if (!isRecord(row)) return false
-						const name = row.serviceName
-						return typeof name === "string" && !name.startsWith("demo-")
-					})
-				},
-			)
+				const rows: ReadonlyArray<unknown> = Array.isArray(response.data) ? response.data : []
+				return rows.some((row) => {
+					if (!isRecord(row)) return false
+					const name = row.serviceName
+					return typeof name === "string" && !name.startsWith("demo-")
+				})
+			})
 
 			/**
 			 * Ensure an onboarding row exists for every Clerk org, keyed on the org's
 			 * first member (used as the email recipient). Clerk-mode only — mirrors
 			 * DigestService's subscription sync.
 			 */
-			const ensureRowsFromClerk = Effect.fn("OnboardingEmailService.ensureRowsFromClerk")(
-				function* () {
-					if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return 0
-					if (Option.isNone(env.CLERK_SECRET_KEY)) return 0
+			const ensureRowsFromClerk = Effect.fn("OnboardingEmailService.ensureRowsFromClerk")(function* () {
+				if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return 0
+				if (Option.isNone(env.CLERK_SECRET_KEY)) return 0
 
-					const clerk = createClerkClient({
-						secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
+				const clerk = createClerkClient({
+					secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
+				})
+
+				const paginate = <T>(
+					fetchPage: (params: {
+						limit: number
+						offset: number
+					}) => Promise<{ data: T[]; totalCount: number }>,
+				) =>
+					Effect.gen(function* () {
+						const PAGE_SIZE = 100
+						let offset = 0
+						const all: T[] = []
+						while (true) {
+							const page = yield* Effect.tryPromise({
+								try: () => fetchPage({ limit: PAGE_SIZE, offset }),
+								catch: (cause) => cause,
+							})
+							all.push(...page.data)
+							offset += page.data.length
+							if (offset >= page.totalCount || page.data.length === 0) break
+						}
+						return all
 					})
 
-					const paginate = <T>(
-						fetchPage: (params: {
-							limit: number
-							offset: number
-						}) => Promise<{ data: T[]; totalCount: number }>,
-					) =>
-						Effect.gen(function* () {
-							const PAGE_SIZE = 100
-							let offset = 0
-							const all: T[] = []
-							while (true) {
-								const page = yield* Effect.tryPromise({
-									try: () => fetchPage({ limit: PAGE_SIZE, offset }),
-									catch: (cause) => cause,
-								})
-								all.push(...page.data)
-								offset += page.data.length
-								if (offset >= page.totalCount || page.data.length === 0) break
-							}
-							return all
-						})
+				const orgs = yield* paginate((params) => clerk.organizations.getOrganizationList(params))
 
-					const orgs = yield* paginate((params) =>
-						clerk.organizations.getOrganizationList(params),
+				let ensured = 0
+				for (const org of orgs) {
+					const members = yield* paginate((params) =>
+						clerk.organizations.getOrganizationMembershipList({
+							organizationId: org.id,
+							...params,
+						}),
+					)
+					const firstMember = members.find(
+						(m) => m.publicUserData?.identifier && m.publicUserData?.userId,
+					)
+					if (!firstMember?.publicUserData) continue
+
+					const orgId = OrgId.make(org.id)
+					const orgCreatedAt =
+						typeof org.createdAt === "number" ? org.createdAt : yield* Clock.currentTimeMillis
+
+					yield* onboarding.ensureRow(
+						orgId,
+						firstMember.publicUserData.userId,
+						firstMember.publicUserData.identifier,
+						{ createdAt: orgCreatedAt },
 					)
 
-					let ensured = 0
-					for (const org of orgs) {
-						const members = yield* paginate((params) =>
-							clerk.organizations.getOrganizationMembershipList({
-								organizationId: org.id,
-								...params,
-							}),
-						)
-						const firstMember = members.find(
-							(m) => m.publicUserData?.identifier && m.publicUserData?.userId,
-						)
-						if (!firstMember?.publicUserData) continue
-
-						const orgId = OrgId.make(org.id)
-						const orgCreatedAt =
-							typeof org.createdAt === "number"
-								? org.createdAt
-								: yield* Clock.currentTimeMillis
-
-						yield* onboarding.ensureRow(
-							orgId,
-							firstMember.publicUserData.userId,
-							firstMember.publicUserData.identifier,
-							{ createdAt: orgCreatedAt },
-						)
-
-						// Orgs that predate this feature are existing users — never run
-						// the welcome → nudge → activation sequence for them.
-						if (orgCreatedAt < ONBOARDING_LAUNCH_CUTOFF) {
-							yield* onboarding.suppressOnboardingEmails(orgId)
-						}
-
-						ensured += 1
+					// Orgs that predate this feature are existing users — never run
+					// the welcome → nudge → activation sequence for them.
+					if (orgCreatedAt < ONBOARDING_LAUNCH_CUTOFF) {
+						yield* onboarding.suppressOnboardingEmails(orgId)
 					}
-					return ensured
-				},
-			)
+
+					ensured += 1
+				}
+				return ensured
+			})
 
 			const renderEmail = (node: EmailNode) =>
 				Effect.tryPromise({
@@ -184,135 +171,129 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 					catch: (cause) => cause,
 				})
 
-			const runOnboardingTick = Effect.fn("OnboardingEmailService.runOnboardingTick")(
-				function* () {
-					if (!email.isConfigured) {
-						return {
-							ensuredCount: 0,
-							sentCount: 0,
-							errorCount: 0,
-							firstDataDetected: 0,
-							skipped: true,
-						}
+			const runOnboardingTick = Effect.fn("OnboardingEmailService.runOnboardingTick")(function* () {
+				if (!email.isConfigured) {
+					return {
+						ensuredCount: 0,
+						sentCount: 0,
+						errorCount: 0,
+						firstDataDetected: 0,
+						skipped: true,
 					}
+				}
 
-					const ensuredCount = yield* ensureRowsFromClerk().pipe(
-						Effect.catchCause((cause) =>
-							Effect.logWarning("Failed to sync onboarding rows from Clerk")
-								.pipe(Effect.annotateLogs({ error: Cause.pretty(cause) }))
-								.pipe(Effect.as(0)),
-						),
-					)
+				const ensuredCount = yield* ensureRowsFromClerk().pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("Failed to sync onboarding rows from Clerk")
+							.pipe(Effect.annotateLogs({ error: Cause.pretty(cause) }))
+							.pipe(Effect.as(0)),
+					),
+				)
 
-					const rows = yield* onboarding.listAll()
-					const now = yield* Clock.currentTimeMillis
-					const dashboardUrl = env.MAPLE_APP_BASE_URL
+				const rows = yield* onboarding.listAll()
+				const now = yield* Clock.currentTimeMillis
+				const dashboardUrl = env.MAPLE_APP_BASE_URL
 
-					const results = yield* Effect.forEach(
-						rows,
-						(row) =>
-							Effect.gen(function* () {
-								const orgId = OrgId.make(row.orgId)
-								let firstDataReceivedAt = row.firstDataReceivedAt
-								let firstDataDetected = false
+				const results = yield* Effect.forEach(
+					rows,
+					(row) =>
+						Effect.gen(function* () {
+							const orgId = OrgId.make(row.orgId)
+							let firstDataReceivedAt = row.firstDataReceivedAt
+							let firstDataDetected = false
 
-								if (firstDataReceivedAt == null) {
-									const hasData = yield* orgHasRealTelemetry(orgId).pipe(
-										Effect.orElseSucceed(() => false),
-									)
-									if (hasData) {
-										const stamped =
-											yield* onboarding.recordFirstDataReceived(orgId)
-										if (stamped) {
-											firstDataReceivedAt = now
-											firstDataDetected = true
-										}
+							if (firstDataReceivedAt == null) {
+								const hasData = yield* orgHasRealTelemetry(orgId).pipe(
+									Effect.orElseSucceed(() => false),
+								)
+								if (hasData) {
+									const stamped = yield* onboarding.recordFirstDataReceived(orgId)
+									if (stamped) {
+										firstDataReceivedAt = now
+										firstDataDetected = true
 									}
 								}
+							}
 
-								// Decide which single email (if any) is due this tick.
-								const ageMs = now - row.createdAt
-								let template: EmailNode | null = null
-								let subject = ""
-								let field: OnboardingEmailField | null = null
+							// Decide which single email (if any) is due this tick.
+							const ageMs = now - row.createdAt
+							let template: EmailNode | null = null
+							let subject = ""
+							let field: OnboardingEmailField | null = null
 
-								if (row.welcomeEmailSentAt == null) {
-									template = WelcomeEmail({ dashboardUrl })
-									subject = "Welcome to Maple"
-									field = "welcomeEmailSentAt"
-								} else if (
-									firstDataReceivedAt != null &&
-									row.activationEmailSentAt == null
-								) {
-									template = ActivationEmail({ dashboardUrl })
-									subject = "You're live on Maple"
-									field = "activationEmailSentAt"
-								} else if (
-									firstDataReceivedAt == null &&
-									row.connectNudgeEmailSentAt == null &&
-									ageMs >= CONNECT_NUDGE_AFTER_MS
-								) {
-									template = ConnectAppEmail({ dashboardUrl })
-									subject = "Connect your app to Maple"
-									field = "connectNudgeEmailSentAt"
-								} else if (
-									firstDataReceivedAt == null &&
-									row.stalledEmailSentAt == null &&
-									ageMs >= STALLED_AFTER_MS
-								) {
-									template = StalledEmail({ dashboardUrl })
-									subject = "Need a hand connecting your app?"
-									field = "stalledEmailSentAt"
-								}
+							if (row.welcomeEmailSentAt == null) {
+								template = WelcomeEmail({ dashboardUrl })
+								subject = "Welcome to Maple"
+								field = "welcomeEmailSentAt"
+							} else if (firstDataReceivedAt != null && row.activationEmailSentAt == null) {
+								template = ActivationEmail({ dashboardUrl })
+								subject = "You're live on Maple"
+								field = "activationEmailSentAt"
+							} else if (
+								firstDataReceivedAt == null &&
+								row.connectNudgeEmailSentAt == null &&
+								ageMs >= CONNECT_NUDGE_AFTER_MS
+							) {
+								template = ConnectAppEmail({ dashboardUrl })
+								subject = "Connect your app to Maple"
+								field = "connectNudgeEmailSentAt"
+							} else if (
+								firstDataReceivedAt == null &&
+								row.stalledEmailSentAt == null &&
+								ageMs >= STALLED_AFTER_MS
+							) {
+								template = StalledEmail({ dashboardUrl })
+								subject = "Need a hand connecting your app?"
+								field = "stalledEmailSentAt"
+							}
 
-								if (!template || !field || !row.email) {
-									return { sent: false, failed: false, firstDataDetected }
-								}
+							if (!template || !field || !row.email) {
+								return { sent: false, failed: false, firstDataDetected }
+							}
 
-								const html = yield* renderEmail(template)
-								yield* email.send(row.email, subject, html, FOUNDER_REPLY_EMAIL)
-								yield* onboarding.markEmailSent(orgId, field)
+							const html = yield* renderEmail(template)
+							yield* email.send(row.email, subject, html, FOUNDER_REPLY_EMAIL)
+							yield* onboarding.markEmailSent(orgId, field)
 
-								return { sent: true, failed: false, firstDataDetected }
-							}).pipe(
-								Effect.catchCause((cause) =>
-									Effect.logError("Onboarding email failed for org")
-										.pipe(
-											Effect.annotateLogs({
-												orgId: row.orgId,
-												error: Cause.pretty(cause),
-											}),
-										)
-										.pipe(
-											Effect.as({
-												sent: false,
-												failed: true,
-												firstDataDetected: false,
-											}),
-										),
-								),
+							return { sent: true, failed: false, firstDataDetected }
+						}).pipe(
+							Effect.catchCause((cause) =>
+								Effect.logError("Onboarding email failed for org")
+									.pipe(
+										Effect.annotateLogs({
+											orgId: row.orgId,
+											error: Cause.pretty(cause),
+										}),
+									)
+									.pipe(
+										Effect.as({
+											sent: false,
+											failed: true,
+											firstDataDetected: false,
+										}),
+									),
 							),
-						{ concurrency: 2 },
-					)
+						),
+					{ concurrency: 2 },
+				)
 
-					const sentCount = results.filter((r) => r.sent).length
-					const errorCount = results.filter((r) => r.failed).length
-					const firstDataDetected = results.filter((r) => r.firstDataDetected).length
+				const sentCount = results.filter((r) => r.sent).length
+				const errorCount = results.filter((r) => r.failed).length
+				const firstDataDetected = results.filter((r) => r.firstDataDetected).length
 
-					yield* Effect.annotateCurrentSpan("ensuredCount", ensuredCount)
-					yield* Effect.annotateCurrentSpan("sentCount", sentCount)
-					yield* Effect.annotateCurrentSpan("errorCount", errorCount)
-					yield* Effect.annotateCurrentSpan("firstDataDetected", firstDataDetected)
+				yield* Effect.annotateCurrentSpan("ensuredCount", ensuredCount)
+				yield* Effect.annotateCurrentSpan("sentCount", sentCount)
+				yield* Effect.annotateCurrentSpan("errorCount", errorCount)
+				yield* Effect.annotateCurrentSpan("firstDataDetected", firstDataDetected)
 
-					return {
-						ensuredCount,
-						sentCount,
-						errorCount,
-						firstDataDetected,
-						skipped: false,
-					}
-				},
-			)
+				return {
+					ensuredCount,
+					sentCount,
+					errorCount,
+					firstDataDetected,
+					skipped: false,
+				}
+			})
 
 			return { runOnboardingTick }
 		}),

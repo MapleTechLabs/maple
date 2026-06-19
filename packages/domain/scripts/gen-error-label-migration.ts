@@ -9,7 +9,9 @@ import { writeFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { latestSnapshotStatements } from "../src/generated/clickhouse-schema"
 
-const mvCreate = latestSnapshotStatements.find((s) => s.includes("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv"))
+const mvCreate = latestSnapshotStatements.find((s) =>
+	s.includes("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv"),
+)
 if (!mvCreate) throw new Error("error_events_mv CREATE not found in snapshot")
 
 // Self-contained label expression over error_events' OWN columns (ExceptionType,

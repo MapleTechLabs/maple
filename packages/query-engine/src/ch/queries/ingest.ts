@@ -47,6 +47,8 @@ export function localIngestPulseQuery(): CHUnionQuery<LocalIngestPulseOutput> {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
+			$.TimestampTime.gte(param.dateTime("startTime")),
+			$.TimestampTime.lte(param.dateTime("endTime")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
 		])

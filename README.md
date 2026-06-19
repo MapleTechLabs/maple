@@ -165,6 +165,7 @@ The web app expects `VITE_API_BASE_URL` to point to the API (defaults to `http:/
 For ingest + key auth, set these at minimum in your root `.env` when running the ingest gateway:
 
 - `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`
+- `MAPLE_INGEST_KEY_ENCRYPTION_KEY` (required for D1-backed ingest deployments)
 - `INGEST_PORT`
 - `INGEST_FORWARD_OTLP_ENDPOINT`
 - `INGEST_FORWARD_TIMEOUT_MS`

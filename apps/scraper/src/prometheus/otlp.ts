@@ -31,19 +31,19 @@ export interface ScrapeOtlpContext {
 	readonly scrapeTimeMs: number
 }
 
-export interface OtlpKeyValue {
+interface OtlpKeyValue {
 	readonly key: string
 	readonly value: { readonly stringValue: string }
 }
 
-export interface OtlpNumberDataPoint {
+interface OtlpNumberDataPoint {
 	readonly attributes: ReadonlyArray<OtlpKeyValue>
 	readonly startTimeUnixNano: string
 	readonly timeUnixNano: string
 	readonly asDouble: number
 }
 
-export interface OtlpHistogramDataPoint {
+interface OtlpHistogramDataPoint {
 	readonly attributes: ReadonlyArray<OtlpKeyValue>
 	readonly startTimeUnixNano: string
 	readonly timeUnixNano: string
@@ -390,7 +390,10 @@ export const convertFamiliesToOtlp = (
 									// the ingest key.
 									{ key: "service.name", value: { stringValue: ctx.serviceName } },
 									{ key: "maple_scrape_target_id", value: { stringValue: ctx.targetId } },
-									{ key: "maple_scrape_target_name", value: { stringValue: ctx.targetName } },
+									{
+										key: "maple_scrape_target_name",
+										value: { stringValue: ctx.targetName },
+									},
 								],
 							},
 							scopeMetrics: [{ scope: { name: SCOPE_NAME }, metrics: state.metrics }],

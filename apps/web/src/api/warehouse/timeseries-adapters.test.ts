@@ -56,13 +56,13 @@ describe("timeseries adapters", () => {
 							series: {
 								count: 10,
 								error_rate: 2,
-							p50_duration: 11,
-							p95_duration: 20,
-							p99_duration: 30,
-							apdex: 0.92,
+								p50_duration: 11,
+								p95_duration: 20,
+								p99_duration: 30,
+								apdex: 0.92,
+							},
 						},
-					},
-				])
+					])
 				}
 				return emptyTs()
 			})
@@ -81,15 +81,16 @@ describe("timeseries adapters", () => {
 				},
 			})
 
-			assert.strictEqual(overview.data.length, 6)
-			assert.strictEqual(detail.data.length, 6)
+			// 25-min window auto-buckets to 60s → 26 buckets (00:00 … 00:25).
+			assert.strictEqual(overview.data.length, 26)
+			assert.strictEqual(detail.data.length, 26)
 			expect(overview.data[0]).toMatchObject({
 				bucket: "2026-01-01T00:00:00.000Z",
 				throughput: 10,
 				errorRate: 2,
 			})
 			expect(overview.data[1]).toMatchObject({
-				bucket: "2026-01-01T00:05:00.000Z",
+				bucket: "2026-01-01T00:01:00.000Z",
 				throughput: 0,
 				errorRate: 0,
 			})
@@ -135,18 +136,19 @@ describe("timeseries adapters", () => {
 				},
 			})
 
-			assert.strictEqual(response.data.checkout.length, 3)
+			// 10-min window auto-buckets to 60s → 11 buckets (00:00 … 00:10).
+			assert.strictEqual(response.data.checkout.length, 11)
 			expect(response.data.checkout[0]).toMatchObject({
 				bucket: "2026-01-01T00:00:00.000Z",
 				throughput: 3,
 				errorRate: 1,
 			})
 			expect(response.data.checkout[1]).toMatchObject({
-				bucket: "2026-01-01T00:05:00.000Z",
+				bucket: "2026-01-01T00:01:00.000Z",
 				throughput: 0,
 				errorRate: 0,
 			})
-			expect(response.data.checkout[2]).toMatchObject({
+			expect(response.data.checkout[10]).toMatchObject({
 				bucket: "2026-01-01T00:10:00.000Z",
 				throughput: 5,
 				errorRate: 0,
@@ -181,13 +183,14 @@ describe("timeseries adapters", () => {
 				},
 			})
 
-			assert.strictEqual(response.data.length, 6)
+			// 25-min window auto-buckets to 60s → 26 buckets (00:00 … 00:25).
+			assert.strictEqual(response.data.length, 26)
 			expect(response.data[0]).toMatchObject({
 				bucket: "2026-01-01T00:00:00.000Z",
 				apdexScore: 0.91,
 				totalCount: 100,
 			})
-			expect(response.data[5]).toMatchObject({
+			expect(response.data[25]).toMatchObject({
 				bucket: "2026-01-01T00:25:00.000Z",
 				apdexScore: 0,
 				totalCount: 0,

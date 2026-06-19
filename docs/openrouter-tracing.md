@@ -13,24 +13,24 @@ References verified on June 4, 2026:
 
 Every chat turn sent through `apps/chat-agent/src/index.ts` includes `providerOptions.openrouter.trace`, which the OpenAI-compatible AI SDK forwards into the OpenRouter request body. OpenRouter documents these fields as Broadcast trace metadata:
 
-| Field | Maple value |
-|---|---|
-| `trace.trace_id` | Chat request id, or a generated turn id when the request has none. |
-| `trace.trace_name` | `Maple Chat Agent`. |
-| `trace.generation_name` | `Chat Turn`. |
-| `session_id` | The chat Durable Object name, currently `<orgId>:<tabId>`. |
-| `trace.orgId` | Maple org id, surfaced downstream as `trace.metadata.orgId`. |
-| `trace.operation` | `chat.turn`. |
-| `trace.mode` | Chat mode, such as `default`, `dashboard_builder`, `alert`, or `widget-fix`. |
-| `trace.environment` | `MAPLE_ENVIRONMENT` when configured. |
-| `trace.isByok` | Whether the org's own OpenRouter key was used. |
+| Field                   | Maple value                                                                  |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `trace.trace_id`        | Chat request id, or a generated turn id when the request has none.           |
+| `trace.trace_name`      | `Maple Chat Agent`.                                                          |
+| `trace.generation_name` | `Chat Turn`.                                                                 |
+| `session_id`            | The chat Durable Object name, currently `<orgId>:<tabId>`.                   |
+| `trace.orgId`           | Maple org id, surfaced downstream as `trace.metadata.orgId`.                 |
+| `trace.operation`       | `chat.turn`.                                                                 |
+| `trace.mode`            | Chat mode, such as `default`, `dashboard_builder`, `alert`, or `widget-fix`. |
+| `trace.environment`     | `MAPLE_ENVIRONMENT` when configured.                                         |
+| `trace.isByok`          | Whether the org's own OpenRouter key was used.                               |
 
 The OpenRouter provider also sends app attribution headers:
 
-| Header | Maple value |
-|---|---|
-| `HTTP-Referer` | `MAPLE_APP_BASE_URL` when configured. |
-| `X-OpenRouter-Title` | `Maple` by default. |
+| Header               | Maple value                           |
+| -------------------- | ------------------------------------- |
+| `HTTP-Referer`       | `MAPLE_APP_BASE_URL` when configured. |
+| `X-OpenRouter-Title` | `Maple` by default.                   |
 
 ## Configure OpenRouter Broadcast To Maple
 
@@ -55,7 +55,7 @@ https://<your-ingest-host>/v1/traces
 
 ```json
 {
-  "Authorization": "Bearer maple_sk_..."
+	"Authorization": "Bearer maple_sk_..."
 }
 ```
 

@@ -14,6 +14,7 @@ import { cn } from "@maple/ui/lib/utils"
 import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { HostInfraMetric } from "@/api/warehouse/infra"
 import { formatBytesPerSecond, formatPercent } from "./format"
+import { CHART_EMPTY_MESSAGE, CHART_GRID_DASH, COLOR_PALETTE, transformRows } from "./chart-utils"
 import { formatBackendError } from "@/lib/error-messages"
 
 interface HostDetailChartProps {
@@ -25,50 +26,9 @@ interface HostDetailChartProps {
 	syncId?: string
 }
 
-function isoToLabel(iso: string): string {
-	const d = new Date(iso)
-	return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-}
-
-interface TransformedPoint extends Record<string, string | number> {
-	bucket: string
-	time: string
-}
-
-function transformRows(rows: ReadonlyArray<{ bucket: string; attributeValue: string; value: number }>): {
-	data: TransformedPoint[]
-	series: string[]
-} {
-	const seriesSet = new Set<string>()
-	const byBucket = new Map<string, TransformedPoint>()
-	for (const row of rows) {
-		const series = row.attributeValue || "value"
-		seriesSet.add(series)
-		const existing =
-			byBucket.get(row.bucket) ??
-			({
-				bucket: row.bucket,
-				time: isoToLabel(row.bucket),
-			} as TransformedPoint)
-		existing[series] = row.value
-		byBucket.set(row.bucket, existing)
-	}
-	const data = Array.from(byBucket.values()).toSorted((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
-	return { data, series: [...seriesSet] }
-}
-
-const COLOR_PALETTE = [
-	"var(--chart-1)",
-	"var(--chart-2)",
-	"var(--chart-3)",
-	"var(--chart-4)",
-	"var(--chart-5)",
-	"var(--chart-p50)",
-]
-
 const CHART_HEIGHT = 220
 
-export function HostDetailChart({
+function HostDetailChart({
 	hostName,
 	metric,
 	startTime,
@@ -141,8 +101,8 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 
 	if (data.length === 0) {
 		return (
-			<div className="flex h-[220px] items-center justify-center border border-dashed border-border/60 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-				No data
+			<div className="flex h-[220px] items-center justify-center border border-dashed border-border/60 font-mono text-[11px] text-muted-foreground">
+				{CHART_EMPTY_MESSAGE}
 			</div>
 		)
 	}
@@ -209,7 +169,11 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 								)
 							})}
 						</defs>
-						<CartesianGrid strokeDasharray="2 4" stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}
@@ -265,7 +229,11 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 					</AreaChart>
 				) : (
 					<LineChart data={data} margin={margin} syncId={syncId} syncMethod="value">
-						<CartesianGrid strokeDasharray="2 4" stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}

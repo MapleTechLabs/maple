@@ -17,7 +17,7 @@ import {
 	type CreateScrapeTargetRequest,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
-import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
+import { chunkRowsForInsert, scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
 import { and, desc, eq, gte, inArray, lt, lte } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
@@ -34,7 +34,7 @@ import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetSc
 
 type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
-export interface ScrapeTargetProxyResponse {
+interface ScrapeTargetProxyResponse {
 	readonly status: number
 	readonly body: string
 	readonly contentType: string
@@ -117,8 +117,6 @@ export interface ScrapeTargetsServiceShape {
 const CHECK_RETENTION_MS = 24 * 60 * 60 * 1000
 /** …with a per-target row cap as backstop against very short intervals. */
 const CHECK_MAX_ROWS_PER_TARGET = 10_000
-/** Rows per INSERT statement (SQLite/D1 bind-parameter budget). */
-const CHECK_INSERT_CHUNK = 50
 
 const toPersistenceError = (error: unknown) =>
 	new ScrapeTargetPersistenceError({
@@ -333,17 +331,17 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				)
 			})
 
-			const selectByIdForInternalScrape = Effect.fn(
-				"ScrapeTargetsService.selectByIdForInternalScrape",
-			)(function* (targetId: ScrapeTargetId) {
-				const rows = yield* database
-					.execute((db) =>
-						db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+			const selectByIdForInternalScrape = Effect.fn("ScrapeTargetsService.selectByIdForInternalScrape")(
+				function* (targetId: ScrapeTargetId) {
+					const rows = yield* database
+						.execute((db) =>
+							db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
+						)
+						.pipe(Effect.mapError(toPersistenceError))
 
-				return Option.fromNullishOr(rows[0])
-			})
+					return Option.fromNullishOr(rows[0])
+				},
+			)
 
 			const authHeadersForRow = (row: ScrapeTargetRow) => buildScrapeAuthHeaders(row, encryptionKey)
 
@@ -395,7 +393,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					if (request.authType !== undefined && request.authType !== "token") {
 						return yield* Effect.fail(
 							new ScrapeTargetValidationError({
-								message: 'PlanetScale targets use auth type "token" (service token id + secret)',
+								message:
+									'PlanetScale targets use auth type "token" (service token id + secret)',
 							}),
 						)
 					}
@@ -833,12 +832,15 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					]
 				})
 
-				for (let offset = 0; offset < checkRows.length; offset += CHECK_INSERT_CHUNK) {
-					const chunk = checkRows.slice(offset, offset + CHECK_INSERT_CHUNK)
-					yield* database
-						.execute((db) => db.insert(scrapeTargetChecks).values(chunk))
-						.pipe(Effect.mapError(toPersistenceError))
-				}
+				// Chunked so each INSERT stays within D1's 100 bound-parameter cap.
+				yield* Effect.forEach(
+					chunkRowsForInsert(scrapeTargetChecks, checkRows),
+					(chunk) =>
+						database
+							.execute((db) => db.insert(scrapeTargetChecks).values(chunk))
+							.pipe(Effect.mapError(toPersistenceError)),
+					{ discard: true },
+				)
 
 				yield* pruneChecks([...new Set(checkRows.map((row) => row.targetId))])
 			})
@@ -853,8 +855,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const conditions = [
 					eq(scrapeTargetChecks.targetId, targetId),
 					eq(scrapeTargetChecks.orgId, orgId),
-					...(query.startTime !== undefined ? [gte(scrapeTargetChecks.checkedAt, query.startTime)] : []),
-					...(query.endTime !== undefined ? [lte(scrapeTargetChecks.checkedAt, query.endTime)] : []),
+					...(query.startTime !== undefined
+						? [gte(scrapeTargetChecks.checkedAt, query.startTime)]
+						: []),
+					...(query.endTime !== undefined
+						? [lte(scrapeTargetChecks.checkedAt, query.endTime)]
+						: []),
 				]
 				return yield* database
 					.execute((db) =>

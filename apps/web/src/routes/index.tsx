@@ -26,6 +26,7 @@ import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-chart
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 const dashboardSearchSchema = Schema.Struct({
 	startTime: Schema.optional(Schema.String),
@@ -101,9 +102,7 @@ function DashboardPage() {
 		return { startTime: fmt(start), endTime: fmt(end) }
 	}, [])
 
-	const facetsResult = useRetainedRefreshableResultValue(
-		getServicesFacetsResultAtom({ data: facetsRange }),
-	)
+	const facetsResult = useRetainedRefreshableResultValue(getServicesFacetsResultAtom({ data: facetsRange }))
 
 	const defaultPreset = useMemo(() => {
 		if (!Result.isSuccess(facetsResult)) return "24h"
@@ -337,8 +336,12 @@ function DashboardContent({
 				</div>
 			}
 		>
-			<FirstActionHint />
-			<SetupChecklist />
+			{isClerkAuthEnabled && (
+				<>
+					<FirstActionHint />
+					<SetupChecklist />
+				</>
+			)}
 			<ServiceHealthOverview
 				startTime={effectiveStartTime}
 				endTime={effectiveEndTime}

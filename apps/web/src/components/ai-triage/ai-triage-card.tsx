@@ -19,13 +19,7 @@ import {
 	type AiTriageRunDocument,
 	type ErrorIssueId,
 } from "@maple/domain/http"
-
-const SEVERITY_TONE: Record<string, string> = {
-	critical: "bg-destructive/10 text-destructive",
-	high: "bg-orange-500/10 text-orange-600 dark:text-orange-400",
-	medium: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-	low: "bg-muted text-muted-foreground",
-}
+import { SEVERITY_TONE } from "@/components/errors/severity-badge"
 
 const CONFIDENCE_TONE: Record<string, string> = {
 	high: "bg-success/10 text-success",
@@ -64,6 +58,7 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 	const [isStarting, setIsStarting] = useState(false)
 
 	const runsFailed = Result.isFailure(runsResult)
+	const runsLoading = Result.isInitial(runsResult)
 	const run: AiTriageRunDocument | null = Result.builder(runsResult)
 		.onSuccess((value) => value.runs[0] ?? null)
 		.orElse(() => null)
@@ -74,7 +69,9 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 	useIntervalRefresh(refreshRuns, { intervalMs: 3000, enabled: runActive })
 
 	const startRun = async () => {
-		if (incidentId === null) return
+		// Block re-entry until the first runs fetch resolves — otherwise a click
+		// during the initial load can race a run that already exists.
+		if (incidentId === null || runsLoading) return
 		setIsStarting(true)
 		const result = await createRun({
 			payload: new AiTriageRunCreateRequest({
@@ -98,7 +95,7 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 				<div className="space-y-1">
 					<CardTitle className="flex items-center gap-2 text-sm">
 						AI triage
-						{runActive ? <Spinner className="size-3.5" /> : null}
+						{runsLoading || runActive ? <Spinner className="size-3.5" /> : null}
 						{run?.status === "completed" && run.result ? (
 							<>
 								<Badge
@@ -119,14 +116,16 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 					<CardDescription>
 						{runsFailed
 							? "Couldn't load triage runs for this incident."
-							: run === null
-								? "No investigation has run for this incident yet."
-								: runActive
-									? "The agent is investigating this incident…"
-									: run.status === "failed"
-										? (FAILURE_HINTS[run.error ?? ""] ??
-											`Triage failed: ${run.error ?? "unknown error"}`)
-										: `Investigated ${formatRelativeTime(run.completedAt ?? run.createdAt)}${run.model ? ` · ${run.model}` : ""}`}
+							: runsLoading
+								? "Loading triage runs…"
+								: run === null
+									? "No investigation has run for this incident yet."
+									: runActive
+										? "The agent is investigating this incident…"
+										: run.status === "failed"
+											? (FAILURE_HINTS[run.error ?? ""] ??
+												`Triage failed: ${run.error ?? "unknown error"}`)
+											: `Investigated ${formatRelativeTime(run.completedAt ?? run.createdAt)}${run.model ? ` · ${run.model}` : ""}`}
 					</CardDescription>
 				</div>
 				{runsFailed ? (
@@ -138,7 +137,7 @@ export function AiTriageCard({ incidentKind, incidentId, issueId }: AiTriageCard
 						size="sm"
 						variant="outline"
 						onClick={startRun}
-						disabled={incidentId === null || runActive || isStarting}
+						disabled={incidentId === null || runsLoading || runActive || isStarting}
 					>
 						{run === null ? "Run triage" : "Re-run"}
 					</Button>

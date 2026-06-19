@@ -15,13 +15,7 @@ import {
 	getErrorsSummary,
 	getErrorsTimeseries,
 } from "@/api/warehouse/errors"
-import {
-	getLog,
-	getLogAttributeKeys,
-	getLogAttributeValues,
-	getLogsFacets,
-	listLogs,
-} from "@/api/warehouse/logs"
+import { getLog, getLogAttributeKeys, getLogsFacets, listLogs } from "@/api/warehouse/logs"
 import {
 	getMetricAttributeKeys,
 	getMetricTimeSeries,
@@ -58,7 +52,7 @@ import {
 import { getServiceExternalEdges } from "@/api/warehouse/service-external-edges"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
 import {
-	getServiceApdexTimeSeries,
+	getServiceHealthBaseline,
 	getServiceOverview,
 	getServiceReleasesTimeline,
 	getServicesFacets,
@@ -96,21 +90,17 @@ interface QueryAtomOptions {
 	staleTime?: number
 }
 
-export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
-	"@maple/web/services/QueryAtomError",
-	{
-		message: Schema.String,
-		cause: Schema.optionalKey(Schema.Unknown),
-	},
-) {}
+class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("@maple/web/services/QueryAtomError", {
+	message: Schema.String,
+	cause: Schema.optionalKey(Schema.Unknown),
+}) {}
 
 // The error union surfaced to atom consumers: the structured query errors plus
 // any tagged backend error, all normalized through `QueryAtomError`'s shape for
 // anything that is not already a known tagged error.
 type QueryAtomFailure = QueryError | QueryAtomError
 
-const isTaggedBackendError = (error: QueryError): boolean =>
-	error._tag.startsWith("@maple/http/errors/")
+const isTaggedBackendError = (error: QueryError): boolean => error._tag.startsWith("@maple/http/errors/")
 
 const toQueryAtomError = (error: QueryError): QueryAtomFailure => {
 	// Tagged `@maple/http/errors/*` errors are already user-presentable via
@@ -158,6 +148,12 @@ export const getServicesFacetsResultAtom = makeQueryAtomFamily(getServicesFacets
 
 export const getServiceOverviewResultAtom = makeQueryAtomFamily(getServiceOverview, {
 	staleTime: 30_000,
+})
+
+export const getServiceHealthBaselineResultAtom = makeQueryAtomFamily(getServiceHealthBaseline, {
+	// The trailing-7d latency baseline moves slowly and the request payload is
+	// hour-snapped, so keep it warm far longer than the live overview.
+	staleTime: 30 * 60_000,
 })
 
 export const getCustomChartServiceSparklinesResultAtom = makeQueryAtomFamily(
@@ -326,10 +322,6 @@ export const workloadFacetsResultAtom = makeQueryAtomFamily(getWorkloadFacets, {
 	staleTime: 30_000,
 })
 
-export const getServiceApdexTimeSeriesResultAtom = makeQueryAtomFamily(getServiceApdexTimeSeries, {
-	staleTime: 30_000,
-})
-
 export const getServiceReleasesTimelineResultAtom = makeQueryAtomFamily(getServiceReleasesTimeline, {
 	staleTime: 60_000,
 })
@@ -362,10 +354,9 @@ export const getServiceMapDbEdgesResultAtom = makeQueryAtomFamily(getServiceMapD
 	staleTime: 15_000,
 })
 
-export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(
-	getServiceMapDbEdgesForService,
-	{ staleTime: 15_000 },
-)
+export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(getServiceMapDbEdgesForService, {
+	staleTime: 15_000,
+})
 
 export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
 	staleTime: 15_000,
@@ -401,8 +392,4 @@ export const getResourceAttributeValuesResultAtom = makeQueryAtomFamily(getResou
 
 export const getLogAttributeKeysResultAtom = makeQueryAtomFamily(getLogAttributeKeys, {
 	staleTime: 60_000,
-})
-
-export const getLogAttributeValuesResultAtom = makeQueryAtomFamily(getLogAttributeValues, {
-	staleTime: 30_000,
 })

@@ -43,6 +43,7 @@ export {
 	when,
 	whenTrue,
 	inList,
+	inExprList,
 	exists,
 	inSubquery,
 	outerRef,
@@ -68,6 +69,7 @@ export {
 	avgIf,
 	maxIf,
 	groupUniqArray,
+	argMaxMerge,
 	// String
 	toString_ as toString,
 	positionCaseInsensitive,
@@ -81,15 +83,18 @@ export {
 	round_,
 	intDiv,
 	toFloat64OrZero,
+	toFloat64,
 	toUInt16OrZero,
 	toUInt64,
 	toInt64,
 	least_ as least,
 	greatest_ as greatest,
+	cityHash64,
 	// Date/time
 	toStartOfInterval,
 	toStartOfHour,
 	toUnixTimestamp,
+	toUnixTimestamp64Nano,
 	intervalSub,
 	formatDateTime,
 	toDateTime,
@@ -105,9 +110,26 @@ export {
 	// Map
 	mapContains,
 	mapGet,
+	mapKeys,
+	mapValues,
 	mapLiteral,
 	// JSON
 	toJSONString,
+	// Window
+	currentRow,
+	unboundedPreceding,
+	unboundedFollowing,
+	preceding,
+	following,
+	rowsBetween,
+	windowSpec,
+	over,
+	lagInFrame,
+	type CompiledWindowSpec,
+	type WindowFrameBound,
+	type WindowOrderDirection,
+	type WindowRowsFrame,
+	type WindowSpec,
 } from "./functions"
 
 // Params
@@ -256,6 +278,7 @@ export {
 // Queries — Services
 export {
 	serviceOverviewQuery,
+	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
@@ -263,6 +286,8 @@ export {
 	servicesFacetsQuery,
 	type ServiceOverviewOpts,
 	type ServiceOverviewOutput,
+	type ServiceHealthBaselineOpts,
+	type ServiceHealthBaselineOutput,
 	type ServiceReleasesTimelineOpts,
 	type ServiceReleasesTimelineOutput,
 	type ServiceApdexTimeseriesOpts,
@@ -320,6 +345,7 @@ export {
 	anomalyTraceSignalTimeseriesQuery,
 	anomalyLogVolumeTimeseriesQuery,
 	anomalyErrorSpikeTimeseriesQuery,
+	anomalyErrorSpikeServiceTimeseriesQuery,
 	matchedHoursOfDay,
 	type AnomalyTraceSignalsOpts,
 	type AnomalyTraceSignalsOutput,

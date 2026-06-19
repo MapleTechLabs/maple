@@ -6,10 +6,12 @@ import { fileURLToPath } from "node:url"
 import type { MapleDbConfig } from "./config"
 import { reshapeDashboardWidgets } from "./migrations/0012-dashboard-widget-reshape"
 import { migrateAlertQuerySignalTypes } from "./migrations/0013-alert-query-signal-types"
+import { migrateClickHouseSchemaVersionRekey } from "./migrations/0025-clickhouse-schema-version-rekey"
 import * as schema from "./schema"
 
 export { reshapeDashboardWidgets } from "./migrations/0012-dashboard-widget-reshape"
 export { migrateAlertQuerySignalTypes } from "./migrations/0013-alert-query-signal-types"
+export { migrateClickHouseSchemaVersionRekey } from "./migrations/0025-clickhouse-schema-version-rekey"
 
 export const runMigrations = async (config: MapleDbConfig): Promise<void> => {
 	const migrationsFolder = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle")
@@ -21,5 +23,6 @@ export const runMigrations = async (config: MapleDbConfig): Promise<void> => {
 	await migrate(db, { migrationsFolder })
 	await reshapeDashboardWidgets(db)
 	await migrateAlertQuerySignalTypes(db)
+	await migrateClickHouseSchemaVersionRekey(db)
 	client.close()
 }

@@ -3,6 +3,7 @@ import type { AnomalyEvaluation } from "./detection"
 import {
 	decideTransition,
 	DEFAULT_STATE_MACHINE_CONFIG,
+	stateMachineConfigFor,
 	type DetectorStateSnapshot,
 } from "./state-machine"
 
@@ -140,6 +141,33 @@ describe("decideTransition", () => {
 			nowMs + DEFAULT_STATE_MACHINE_CONFIG.cooldownMs + 5 * 60 * 1000,
 		)
 		expect(afterCooldown.transition).toBe("open")
+	})
+
+	it("throughput requires a third consecutive breach to open", () => {
+		const config = stateMachineConfigFor("throughput")
+		expect(config.breachesToOpen).toBe(3)
+
+		const second = decideTransition(
+			state({ consecutiveBreaches: 1 }),
+			evaluation("breached"),
+			config,
+			nowMs,
+		)
+		expect(second.transition).toBe("noop")
+		expect(second.consecutiveBreaches).toBe(2)
+
+		const third = decideTransition(
+			state({ consecutiveBreaches: 2 }),
+			evaluation("breached"),
+			config,
+			nowMs,
+		)
+		expect(third.transition).toBe("open")
+	})
+
+	it("other signals keep the default two-breach open", () => {
+		expect(stateMachineConfigFor("error_rate")).toEqual(DEFAULT_STATE_MACHINE_CONFIG)
+		expect(stateMachineConfigFor("error_spike").breachesToOpen).toBe(2)
 	})
 
 	it("skipped evaluations leave counters untouched", () => {

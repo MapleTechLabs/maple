@@ -6,6 +6,7 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	ErrorIssueId,
 	HazelChannelId,
 	HazelOrganizationId,
 	IsoDateTimeString,
@@ -330,6 +331,11 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
  */
 const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 
+/** A single rule tag. Free-form, bounded so the list/group UI stays legible. */
+const TagString = Schema.String.check(Schema.isMaxLength(32))
+/** The tags array on a rule — capped to keep grouping and filtering manageable. */
+const RuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
+
 export const AlertNotificationTemplateOverride = Schema.Struct({
 	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
 	body: Schema.optionalKey(Schema.NullOr(TemplateString)),
@@ -393,6 +399,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	severity: AlertSeverity,
 	serviceNames: Schema.Array(Schema.String),
 	excludeServiceNames: Schema.Array(Schema.String),
+	/** Free-form tags used to group and filter rules in the alerts list. */
+	tags: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(AlertGroupBy),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
@@ -428,6 +436,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	severity: AlertSeverity,
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
+	tags: Schema.optionalKey(RuleTags),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
@@ -492,6 +501,7 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	dedupeKey: Schema.String,
 	lastDeliveredEventType: Schema.NullOr(AlertEventType),
 	lastNotifiedAt: Schema.NullOr(IsoDateTimeString),
+	errorIssueId: Schema.NullOr(ErrorIssueId),
 }) {}
 
 export class AlertIncidentsListResponse extends Schema.Class<AlertIncidentsListResponse>(
@@ -557,6 +567,7 @@ export class AlertPersistenceError extends Schema.TaggedErrorClass<AlertPersiste
 	"@maple/http/errors/AlertPersistenceError",
 	{
 		message: Schema.String,
+		cause: Schema.optionalKey(Schema.String),
 	},
 	{ httpApiStatus: 503 },
 ) {}
@@ -624,10 +635,10 @@ export class AlertChecksListResponse extends Schema.Class<AlertChecksListRespons
 ) {}
 
 export const ListRuleChecksQuery = Schema.Struct({
-	groupKey: Schema.optionalKey(Schema.String),
-	since: Schema.optionalKey(IsoDateTimeString),
-	until: Schema.optionalKey(IsoDateTimeString),
-	limit: Schema.optionalKey(
+	groupKey: Schema.optional(Schema.String),
+	since: Schema.optional(IsoDateTimeString),
+	until: Schema.optional(IsoDateTimeString),
+	limit: Schema.optional(
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2000 })),
 	),
 })

@@ -52,7 +52,6 @@ import { clearSelfHostedSessionToken } from "@/lib/services/common/self-hosted-a
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
-import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 import { Badge } from "@maple/ui/components/ui/badge"
 
 function UserAvatar({ imageUrl, initials, name }: { imageUrl?: string; initials: string; name: string }) {
@@ -201,8 +200,7 @@ export function AppSidebar() {
 	const otherDashboards = dashboards.filter((d) => !favorites.has(d.id))
 
 	const infraEnabled = useInfraEnabled()
-	const sessionReplaysEnabled = useSessionReplaysEnabled()
-	const signalsItems = visibleSignalsNavItems({ infraEnabled, sessionReplaysEnabled })
+	const signalsItems = visibleSignalsNavItems({ infraEnabled })
 
 	return (
 		<Sidebar collapsible="icon">
@@ -382,7 +380,14 @@ export function AppSidebar() {
 												<DiscordIcon size={16} />
 												Community Discord
 											</DropdownMenuItem>
-											<DropdownMenuItem render={<a href="mailto:support@maple.dev" aria-label="Email Support" />}>
+											<DropdownMenuItem
+												render={
+													<a
+														href="mailto:support@maple.dev"
+														aria-label="Email Support"
+													/>
+												}
+											>
 												<EnvelopeIcon size={16} />
 												Email Support
 											</DropdownMenuItem>

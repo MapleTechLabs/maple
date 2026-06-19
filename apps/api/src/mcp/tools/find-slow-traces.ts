@@ -3,7 +3,7 @@ import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
 import { clampLimit } from "../lib/limits"
-import { formatDurationMs, formatDurationFromMs, formatTable } from "../lib/format"
+import { formatDurationFromMs, formatTable } from "../lib/format"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
@@ -38,9 +38,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 					environment: environment ?? undefined,
 					limit: lim,
 				}),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("find_slow_traces")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("find_slow_traces")))
 
 			if (result.traces.length === 0) {
 				return { content: [{ type: "text" as const, text: `No traces found in ${st} — ${et}` }] }

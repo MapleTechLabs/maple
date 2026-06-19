@@ -1,17 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
-import { formatPercent, severityLevel, type SeverityLevel } from "../format"
-
-const BAR_FILL: Record<SeverityLevel, string> = {
-	ok: "bg-[var(--severity-info)]",
-	warn: "bg-[var(--severity-warn)]",
-	crit: "bg-[var(--severity-error)]",
-}
-
-const VALUE_TONE: Record<SeverityLevel, string> = {
-	ok: "text-foreground/75",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
-}
+import { formatPercent, severityLevel } from "../format"
+import { BAR_FILL, BAR_VALUE_TONE } from "../severity-tokens"
 
 const ROWS = [
 	{ key: "cpu", label: "CPU" },
@@ -51,7 +40,7 @@ export function InlineMetricBars({ cpu, memory, disk, className }: InlineMetricB
 						<span
 							className={cn(
 								"w-10 shrink-0 text-right font-mono text-[11px] tabular-nums",
-								VALUE_TONE[level],
+								BAR_VALUE_TONE[level],
 							)}
 						>
 							{formatPercent(raw)}

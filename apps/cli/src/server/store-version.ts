@@ -10,6 +10,7 @@
 // The marker lives BESIDE the data dir (same convention as the PID file) so it
 // stays out of ClickHouse's data path and is removed by `maple reset`.
 
+import { createHash } from "node:crypto"
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { CHDB_VERSION } from "../version"
@@ -21,6 +22,10 @@ export interface StoreMarker {
 	readonly maple: string
 	/** ISO timestamp the store was bootstrapped. */
 	readonly createdAt: string
+	/** Fingerprint of the bundled schema DDL the store was bootstrapped from
+	 *  (see `schemaFingerprint`). Empty for legacy stores stamped before schema
+	 *  fingerprinting existed. */
+	readonly schema: string
 }
 
 /** Path to the version marker for a given data dir (beside it, like the PID file). */
@@ -43,7 +48,8 @@ export const storeOpenMarkerPath = (dataDir: string): string => join(dirname(dat
 
 /** Mark the store as open (not yet cleanly closed). Call right after a
  *  successful chDB open; the PID is written purely for debuggability. */
-export const markStoreOpen = (dataDir: string): void => writeFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`)
+export const markStoreOpen = (dataDir: string): void =>
+	writeFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`)
 
 /** Clear the clean-shutdown sentinel. Call as the last step of a clean close;
  *  best-effort (a missing marker is fine). */
@@ -68,15 +74,48 @@ export const readMarker = (dataDir: string): StoreMarker | null => {
 	try {
 		const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<StoreMarker>
 		if (typeof parsed.chdb !== "string") return null
-		return { chdb: parsed.chdb, maple: parsed.maple ?? "unknown", createdAt: parsed.createdAt ?? "unknown" }
+		return {
+			chdb: parsed.chdb,
+			maple: parsed.maple ?? "unknown",
+			createdAt: parsed.createdAt ?? "unknown",
+			schema: parsed.schema ?? "",
+		}
 	} catch {
 		return null
 	}
 }
 
 /** Serialize a marker for the current build. */
-export const storeMarkerJson = (maple: string, now: string): string =>
-	`${JSON.stringify({ chdb: CHDB_VERSION, maple, createdAt: now } satisfies StoreMarker, null, 2)}\n`
+export const storeMarkerJson = (maple: string, now: string, schema: string): string =>
+	`${JSON.stringify({ chdb: CHDB_VERSION, maple, createdAt: now, schema } satisfies StoreMarker, null, 2)}\n`
+
+/**
+ * Stable fingerprint of the bundled schema DDL. Comments and whitespace are
+ * stripped first so cosmetic edits (a reworded comment, reindentation) don't
+ * force a rebuild, while any structural change — a new column, table, or
+ * materialized-view body — changes the digest.
+ */
+export const schemaFingerprint = (schemaSql: string): string =>
+	createHash("sha256")
+		.update(
+			schemaSql
+				.replace(/--[^\n]*/g, "")
+				.replace(/\s+/g, " ")
+				.trim(),
+		)
+		.digest("hex")
+		.slice(0, 16)
+
+/**
+ * True when a populated store was bootstrapped from a different schema than the
+ * one bundled in this build. `CREATE … IF NOT EXISTS` cannot evolve an existing
+ * store — a column added to the schema never reaches it, so queries referencing
+ * it fail — so the caller rebuilds the store from scratch (local telemetry is
+ * ephemeral and re-ingested). A store with no schema stamp (created before
+ * fingerprinting) reads as stale and is rebuilt once.
+ */
+export const isSchemaStale = (dataDir: string, currentFingerprint: string): boolean =>
+	storeHasData(dataDir) && readMarker(dataDir)?.schema !== currentFingerprint
 
 export type StoreCompatibility =
 	| { readonly compatible: true }

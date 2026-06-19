@@ -102,7 +102,17 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			)
 		}
 
-		const resolved = yield* deps.resolveConfig(tenant, pipe)
+		// Control-plane datasources (e.g. alert_checks) are written via `ingest`,
+		// which is hard-pinned to the managed Tinybird pipeline. They do NOT exist
+		// in a per-org BYO ClickHouse, so their reads must pin to the same ingest
+		// config to stay symmetric with the write — otherwise a BYO-CH org reads an
+		// empty table from its own ClickHouse.
+		const resolveFn =
+			options?.pinToIngestConfig && deps.resolveIngestConfig
+				? deps.resolveIngestConfig
+				: deps.resolveConfig
+		const resolved = yield* resolveFn(tenant, pipe)
+		if (options?.pinToIngestConfig) yield* Effect.annotateCurrentSpan("query.routing", "ingest")
 		const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
 		yield* Effect.annotateCurrentSpan("db.system.name", peerService)
 		yield* Effect.annotateCurrentSpan("peer.service", peerService)
@@ -351,5 +361,12 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			),
 	})
 
-	return { query, sqlQuery, compiledQuery, compiledQueryFirst, ingest, asExecutor } satisfies WarehouseQueryServiceShape
+	return {
+		query,
+		sqlQuery,
+		compiledQuery,
+		compiledQueryFirst,
+		ingest,
+		asExecutor,
+	} satisfies WarehouseQueryServiceShape
 }

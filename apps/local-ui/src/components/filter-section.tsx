@@ -6,11 +6,7 @@ import { ChevronDownIcon, MagnifierIcon, XmarkIcon } from "@maple/ui/components/
 import { cn } from "@maple/ui/utils"
 import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Label } from "@maple/ui/components/ui/label"
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@maple/ui/components/ui/collapsible"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 import {
 	InputGroup,
 	InputGroupAddon,

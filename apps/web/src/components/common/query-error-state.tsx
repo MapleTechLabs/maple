@@ -21,18 +21,3 @@ export function QueryErrorState({ error, className, titleOverride }: QueryErrorS
 		</div>
 	)
 }
-
-interface QueryErrorInlineProps {
-	error: unknown
-	titleOverride?: string
-}
-
-export function QueryErrorInline({ error, titleOverride }: QueryErrorInlineProps) {
-	const { title, description } = formatBackendError(error)
-	return (
-		<div className="flex flex-col gap-0.5 items-center justify-center text-center">
-			<span className="text-xs font-medium text-destructive">{titleOverride ?? title}</span>
-			<span className="text-[10px] text-destructive/70">{description}</span>
-		</div>
-	)
-}

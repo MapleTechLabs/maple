@@ -136,7 +136,12 @@ export function InstallHostModal({ open, onOpenChange }: InstallModalProps) {
 					<Button
 						variant="outline"
 						render={
-							<a href={DOCS_URL} target="_blank" rel="noopener noreferrer" aria-label="View docs" />
+							<a
+								href={DOCS_URL}
+								target="_blank"
+								rel="noopener noreferrer"
+								aria-label="View docs"
+							/>
 						}
 					>
 						View docs

@@ -49,16 +49,9 @@ export function getThresholdColor(
  * dashboard time-range context) only runs when a sparkline is configured —
  * a plain stat widget then has no dependency on a dashboard provider.
  */
-function StatSparklineLoader({
-	dataSource,
-	color,
-}: {
-	dataSource: WidgetDataSourceLike
-	color: string
-}) {
+function StatSparklineLoader({ dataSource, color }: { dataSource: WidgetDataSourceLike; color: string }) {
 	const { dataState } = useWidgetDataSource(dataSource)
-	const data =
-		dataState.status === "ready" && Array.isArray(dataState.data) ? dataState.data : []
+	const data = dataState.status === "ready" && Array.isArray(dataState.data) ? dataState.data : []
 	return <StatSparkline data={data} color={color} className="h-10 w-full shrink-0" />
 }
 
@@ -76,8 +69,7 @@ export const StatWidget = memo(function StatWidget({
 	const formattedValue = formatValue(value, display.unit, display.prefix, display.suffix)
 	const thresholdColor = getThresholdColor(value, display.thresholds)
 
-	const sparklineSource =
-		display.sparkline?.enabled === true ? display.sparkline.dataSource : undefined
+	const sparklineSource = display.sparkline?.enabled === true ? display.sparkline.dataSource : undefined
 
 	const valueText = (
 		<span className="text-2xl font-bold" style={thresholdColor ? { color: thresholdColor } : undefined}>

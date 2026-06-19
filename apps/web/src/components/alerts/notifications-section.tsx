@@ -178,9 +178,7 @@ export function NotificationsSection({
 						</div>
 
 						<div className="space-y-1.5">
-							<span className="text-muted-foreground text-[11px]">
-								Insert a variable:
-							</span>
+							<span className="text-muted-foreground text-[11px]">Insert a variable:</span>
 							<div className="flex flex-wrap gap-1">
 								{ALERT_TEMPLATE_VARIABLES.map((variable) => (
 									<button

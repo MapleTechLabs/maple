@@ -67,31 +67,33 @@ describe("service-map rollup compiled row schemas", () => {
 		}),
 	)
 
-	it.effect("decodes address resolution rows into the service_address_resolutions_hourly ingest shape", () =>
-		Effect.gen(function* () {
-			const compiled = serviceMapResolutionsRollupSQL(hourParams)
+	it.effect(
+		"decodes address resolution rows into the service_address_resolutions_hourly ingest shape",
+		() =>
+			Effect.gen(function* () {
+				const compiled = serviceMapResolutionsRollupSQL(hourParams)
 
-			const rows = yield* compiled.decodeRows([
-				{
-					OrgId: "org_1",
-					Hour: "2024-01-01 00:00:00",
-					SourceService: "checkout-api",
-					ParentServerAddress: "payments.internal",
-					ResolvedTargetService: "payments-api",
-					DeploymentEnv: "production",
-				},
-			])
+				const rows = yield* compiled.decodeRows([
+					{
+						OrgId: "org_1",
+						Hour: "2024-01-01 00:00:00",
+						SourceService: "checkout-api",
+						ParentServerAddress: "payments.internal",
+						ResolvedTargetService: "payments-api",
+						DeploymentEnv: "production",
+					},
+				])
 
-			expect(rows).toEqual([
-				{
-					OrgId: "org_1",
-					Hour: "2024-01-01 00:00:00",
-					SourceService: "checkout-api",
-					ParentServerAddress: "payments.internal",
-					ResolvedTargetService: "payments-api",
-					DeploymentEnv: "production",
-				},
-			])
-		}),
+				expect(rows).toEqual([
+					{
+						OrgId: "org_1",
+						Hour: "2024-01-01 00:00:00",
+						SourceService: "checkout-api",
+						ParentServerAddress: "payments.internal",
+						ResolvedTargetService: "payments-api",
+						DeploymentEnv: "production",
+					},
+				])
+			}),
 	)
 })

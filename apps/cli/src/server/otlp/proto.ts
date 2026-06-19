@@ -370,7 +370,7 @@ message ExportMetricsServiceRequest {
  * converts snake_case proto field names to lowerCamelCase, matching the
  * OTLP/JSON wire shape so a single encoder can consume either input.
  */
-export const otlpRoot = protobuf.parse(PROTO_SRC, { keepCase: false }).root
+const otlpRoot = protobuf.parse(PROTO_SRC, { keepCase: false }).root
 
 const ExportTraceServiceRequest = otlpRoot.lookupType("ExportTraceServiceRequest")
 const ExportLogsServiceRequest = otlpRoot.lookupType("ExportLogsServiceRequest")
@@ -413,12 +413,6 @@ export function decodeMetricsRequest(bytes: Uint8Array): unknown {
 export function encodeTraceRequest(obj: unknown): Uint8Array {
 	const message = ExportTraceServiceRequest.fromObject(obj as Record<string, unknown>)
 	return ExportTraceServiceRequest.encode(message).finish()
-}
-
-/** Test helper: encode a logs request object to protobuf bytes. */
-export function encodeLogsRequest(obj: unknown): Uint8Array {
-	const message = ExportLogsServiceRequest.fromObject(obj as Record<string, unknown>)
-	return ExportLogsServiceRequest.encode(message).finish()
 }
 
 /** Test helper: encode a metrics request object to protobuf bytes. */

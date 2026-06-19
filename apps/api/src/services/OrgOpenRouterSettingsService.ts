@@ -14,7 +14,12 @@ import {
 import { orgOpenrouterSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
+import {
+	decryptAes256Gcm,
+	encryptAes256Gcm,
+	parseBase64Aes256GcmKey,
+	type EncryptedValue,
+} from "../lib/Crypto"
 import { Database } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 

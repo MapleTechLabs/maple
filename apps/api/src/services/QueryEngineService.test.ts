@@ -408,49 +408,49 @@ describe("makeQueryEngineExecute", () => {
 
 	it.effect("aggregates metrics timeseries into an all series when groupBy=none", () =>
 		Effect.gen(function* () {
-		const execute = makeQueryEngineExecute(
-			makeTinybirdStub({
-				sqlQuery: () =>
-					Effect.succeed([
-						{
-							bucket: "2026-01-01 00:00:00",
-							serviceName: "api",
-							attributeValue: "",
-							avgValue: 10,
-							minValue: 5,
-							maxValue: 20,
-							sumValue: 30,
-							dataPointCount: 3,
-						},
-						{
-							bucket: "2026-01-01 00:00:00",
-							serviceName: "worker",
-							attributeValue: "",
-							avgValue: 20,
-							minValue: 10,
-							maxValue: 40,
-							sumValue: 40,
-							dataPointCount: 2,
-						},
-					]),
-			}),
-		)
+			const execute = makeQueryEngineExecute(
+				makeTinybirdStub({
+					sqlQuery: () =>
+						Effect.succeed([
+							{
+								bucket: "2026-01-01 00:00:00",
+								serviceName: "api",
+								attributeValue: "",
+								avgValue: 10,
+								minValue: 5,
+								maxValue: 20,
+								sumValue: 30,
+								dataPointCount: 3,
+							},
+							{
+								bucket: "2026-01-01 00:00:00",
+								serviceName: "worker",
+								attributeValue: "",
+								avgValue: 20,
+								minValue: 10,
+								maxValue: 40,
+								sumValue: 40,
+								dataPointCount: 2,
+							},
+						]),
+				}),
+			)
 
-		const request: QueryEngineExecuteRequest = {
-			startTime: "2026-01-01 00:00:00",
-			endTime: "2026-01-01 00:05:00",
-			query: {
-				kind: "timeseries",
-				source: "metrics",
-				metric: "avg",
-				groupBy: ["none"],
-				bucketSeconds: 300,
-				filters: {
-					metricName: "request.duration",
-					metricType: "histogram",
+			const request: QueryEngineExecuteRequest = {
+				startTime: "2026-01-01 00:00:00",
+				endTime: "2026-01-01 00:05:00",
+				query: {
+					kind: "timeseries",
+					source: "metrics",
+					metric: "avg",
+					groupBy: ["none"],
+					bucketSeconds: 300,
+					filters: {
+						metricName: "request.duration",
+						metricType: "histogram",
+					},
 				},
-			},
-		}
+			}
 
 			const response = yield* execute(tenant, request)
 
@@ -560,7 +560,10 @@ describe("makeQueryEngineExecute", () => {
 
 			const failure = getFailure(exit)
 			assert.isDefined(failure)
-			assert.include((failure as { message?: string })?.message ?? "", "Breakdown query time range too large")
+			assert.include(
+				(failure as { message?: string })?.message ?? "",
+				"Breakdown query time range too large",
+			)
 		}),
 	)
 
@@ -939,7 +942,9 @@ describe("makeQueryEngineEvaluateRawSql", () => {
 				windowMinutes: 5,
 			})
 
-			assert.deepStrictEqual(response, [{ groupKey: "all", value: null, sampleCount: 0, hasData: false }])
+			assert.deepStrictEqual(response, [
+				{ groupKey: "all", value: null, sampleCount: 0, hasData: false },
+			])
 		}),
 	)
 

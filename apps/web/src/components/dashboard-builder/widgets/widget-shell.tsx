@@ -86,22 +86,39 @@ export function WidgetShell({
 							{headerValue}
 						</div>
 					)}
-					{legendItems.length >= 2 && (
-						<div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-3 gap-y-1">
-							{legendItems.map((item) => (
-								<span
-									key={item.key}
-									className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-[10px] text-muted-foreground"
-								>
-									<span
-										className="size-2 shrink-0 rounded-[2px]"
-										style={{ backgroundColor: item.color }}
-									/>
-									{item.label}
-								</span>
-							))}
-						</div>
-					)}
+					{legendItems.length >= 2 &&
+						(() => {
+							// Keep the header to a single row: show a few items, then a
+							// "+N" chip (full list on hover) so a many-series legend can
+							// never wrap and crowd the title.
+							const MAX_HEADER_ITEMS = 5
+							const visible = legendItems.slice(0, MAX_HEADER_ITEMS)
+							const overflow = legendItems.length - visible.length
+							return (
+								<div className="flex min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden">
+									{visible.map((item) => (
+										<span
+											key={item.key}
+											className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-muted-foreground"
+										>
+											<span
+												className="size-2 shrink-0 rounded-[2px]"
+												style={{ backgroundColor: item.color }}
+											/>
+											<span className="truncate">{item.label}</span>
+										</span>
+									))}
+									{overflow > 0 && (
+										<span
+											className="shrink-0 text-[10px] text-muted-foreground"
+											title={legendItems.map((i) => i.label).join(", ")}
+										>
+											+{overflow}
+										</span>
+									)}
+								</div>
+							)
+						})()}
 				</div>
 				{showMenu && (
 					<CardAction

@@ -175,6 +175,10 @@ export const SessionTraceSummary = Schema.Struct({
 	durationMs: Schema.Number,
 	rootSpanName: Schema.String,
 	rootServiceName: Schema.String,
+	/** Root span's OTel kind — lets the UI format the canonical HTTP label. */
+	rootSpanKind: Schema.optionalKey(Schema.String),
+	/** Root span's attribute map, JSON-encoded — parsed by the UI for `getHttpInfo`. */
+	rootSpanAttributes: Schema.optionalKey(Schema.String),
 	spanCount: Schema.Number,
 	hasError: Schema.Number,
 })

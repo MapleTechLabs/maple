@@ -10,11 +10,7 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { cn } from "@maple/ui/utils"
 
-import {
-	ALERT_TEMPLATES,
-	BlankRuleIcon,
-	type AlertTemplate,
-} from "@/lib/alerts/templates"
+import { ALERT_TEMPLATES, BlankRuleIcon, type AlertTemplate } from "@/lib/alerts/templates"
 import { ChartLineIcon, ChevronRightIcon } from "@/components/icons"
 
 interface RuleTemplatesOverlayProps {
@@ -43,8 +39,7 @@ export function RuleTemplatesOverlay({
 				<DialogHeader>
 					<DialogTitle>Start with a template</DialogTitle>
 					<DialogDescription>
-						These cover the most common alerts. Pick one — every field stays editable
-						after.
+						These cover the most common alerts. Pick one — every field stays editable after.
 					</DialogDescription>
 				</DialogHeader>
 				<div className="grid gap-3 px-6 pb-2 md:grid-cols-3">
@@ -73,12 +68,7 @@ export function RuleTemplatesOverlay({
 					</TileShell>
 				</div>
 				<div className="flex items-center justify-end px-6 py-4">
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						onClick={() => onOpenChange(false)}
-					>
+					<Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
 						Skip — use defaults
 					</Button>
 				</div>
@@ -97,15 +87,9 @@ function TemplateTile({
 	const Icon = template.icon
 	return (
 		<TileShell onClick={() => onPick(template)}>
-			<TileHead
-				icon={<Icon size={18} />}
-				title={template.title}
-				subtitle={template.description}
-			/>
+			<TileHead icon={<Icon size={18} />} title={template.title} subtitle={template.description} />
 			<div className="mt-auto flex items-center justify-between">
-				<code className="font-mono text-[11px] text-muted-foreground">
-					{template.summary}
-				</code>
+				<code className="font-mono text-[11px] text-muted-foreground">{template.summary}</code>
 				<ChevronRightIcon
 					size={14}
 					className="text-muted-foreground transition-transform group-hover:translate-x-0.5"
@@ -115,15 +99,7 @@ function TemplateTile({
 	)
 }
 
-function TileHead({
-	icon,
-	title,
-	subtitle,
-}: {
-	icon: React.ReactNode
-	title: string
-	subtitle: string
-}) {
+function TileHead({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
 	return (
 		<div className="space-y-1">
 			<div className="flex items-center gap-2">

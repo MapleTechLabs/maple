@@ -1,9 +1,4 @@
-import {
-	getColumnJsonPath,
-	getColumnType,
-	getTinybirdType,
-	isDatasourceDefinition,
-} from "@tinybirdco/sdk"
+import { getColumnJsonPath, getColumnType, getTinybirdType, isDatasourceDefinition } from "@tinybirdco/sdk"
 import * as Datasources from "@maple/domain/tinybird"
 
 // ---------------------------------------------------------------------------
@@ -56,15 +51,13 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Cumulative or delta counter metrics. Use `rate(Value) OVER (PARTITION BY MetricName ORDER BY TimeUnix)` for rate-of-change when `IsMonotonic=1`.",
 		"`Attributes` is a Map — filter with `Attributes['service.name']`.",
 	],
-	metrics_gauge: [
-		"Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets.",
-	],
+	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
 	metrics_histogram: [
 		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
 	],
 }
 
-export interface ColumnInfo {
+interface ColumnInfo {
 	readonly name: string
 	readonly type: string
 	readonly jsonPath?: string
@@ -88,9 +81,7 @@ function collectDatasources() {
 	// functions, and constant lookup tables. `isDatasourceDefinition` is the
 	// runtime filter; we cast to `unknown` first because the static union of all
 	// exports is too wide for TS to narrow with the predicate.
-	return (Object.values(Datasources) as ReadonlyArray<unknown>).filter(
-		isDatasourceDefinition,
-	)
+	return (Object.values(Datasources) as ReadonlyArray<unknown>).filter(isDatasourceDefinition)
 }
 
 export function listWarehouseTables(): ReadonlyArray<TableSummary> {

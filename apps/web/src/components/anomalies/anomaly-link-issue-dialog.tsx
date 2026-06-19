@@ -61,15 +61,16 @@ function DialogContent({
 
 	const filtered = useMemo(() => {
 		const q = query.trim().toLowerCase()
-		const matches = q.length === 0
-			? issues
-			: issues.filter(
-					(issue) =>
-						issue.exceptionType.toLowerCase().includes(q) ||
-						issue.exceptionMessage.toLowerCase().includes(q) ||
-						issue.serviceName.toLowerCase().includes(q) ||
-						shortIssueId(issue.id).toLowerCase().includes(q),
-				)
+		const matches =
+			q.length === 0
+				? issues
+				: issues.filter(
+						(issue) =>
+							issue.exceptionType.toLowerCase().includes(q) ||
+							issue.exceptionMessage.toLowerCase().includes(q) ||
+							issue.serviceName.toLowerCase().includes(q) ||
+							shortIssueId(issue.id).toLowerCase().includes(q),
+					)
 		// Don't offer the already-linked issue.
 		return matches.filter((issue) => issue.id !== incident.errorIssueId)
 	}, [issues, query, incident.errorIssueId])
@@ -78,8 +79,15 @@ function DialogContent({
 
 	return (
 		<CommandDialogPopup>
-			<Command inline={false} filter={null} value={query} onValueChange={(value: string) => setQuery(value)}>
-				<CommandInput placeholder={`Search issues${allServices ? "" : ` in ${incident.serviceName}`}…`} />
+			<Command
+				inline={false}
+				filter={null}
+				value={query}
+				onValueChange={(value: string) => setQuery(value)}
+			>
+				<CommandInput
+					placeholder={`Search issues${allServices ? "" : ` in ${incident.serviceName}`}…`}
+				/>
 				<CommandList>
 					{loading ? (
 						<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
@@ -116,8 +124,12 @@ function DialogContent({
 										) : null}
 									</span>
 									<span className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-										<code className="font-mono tabular-nums">{shortIssueId(issue.id)}</code>
-										<span className="tabular-nums">{formatRelativeTime(issue.lastSeenAt)}</span>
+										<code className="font-mono tabular-nums">
+											{shortIssueId(issue.id)}
+										</code>
+										<span className="tabular-nums">
+											{formatRelativeTime(issue.lastSeenAt)}
+										</span>
 									</span>
 								</CommandItem>
 							))}
@@ -126,7 +138,9 @@ function DialogContent({
 				</CommandList>
 				<div className="flex items-center justify-between border-t border-border/60 px-3 py-2">
 					<span className="text-xs text-muted-foreground">
-						{allServices ? "Showing issues across all services" : `Scoped to ${incident.serviceName}`}
+						{allServices
+							? "Showing issues across all services"
+							: `Scoped to ${incident.serviceName}`}
 					</span>
 					<button
 						type="button"

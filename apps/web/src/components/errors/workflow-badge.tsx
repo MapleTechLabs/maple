@@ -1,7 +1,7 @@
 import type { WorkflowState } from "@maple/domain/http"
 import { Badge } from "@maple/ui/components/ui/badge"
 
-export const WORKFLOW_BADGE: Record<WorkflowState, { label: string; tone: string }> = {
+const WORKFLOW_BADGE: Record<WorkflowState, { label: string; tone: string }> = {
 	triage: {
 		label: "Triage",
 		tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400",

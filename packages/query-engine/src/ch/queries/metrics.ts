@@ -9,9 +9,9 @@ import type { MetricType } from "../../query-engine"
 import * as CH from "../expr"
 import * as T from "../types"
 import { param } from "../param"
-import { from } from "../query"
+import { from, type CHQuery } from "../query"
 import { table } from "../table"
-import { MetricsSum, MetricCatalog } from "../tables"
+import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
 import { compileCH } from "../compile"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 
@@ -79,6 +79,8 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 // ---------------------------------------------------------------------------
 
 export interface MetricsRateTimeseriesOpts {
+	metricName?: string
+	bucketSeconds?: number
 	serviceName?: string
 	groupByAttributeKey?: string
 	attributeKey?: string
@@ -94,7 +96,142 @@ export interface MetricsRateTimeseriesOutput {
 	readonly dataPointCount: number
 }
 
-export function metricsTimeseriesRateQuery(opts: MetricsRateTimeseriesOpts) {
+const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls"])
+
+function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
+	return (
+		opts.metricName !== undefined &&
+		SPAN_METRICS_CALLS_NAMES.has(opts.metricName) &&
+		opts.bucketSeconds !== undefined &&
+		opts.bucketSeconds >= 3600 &&
+		opts.bucketSeconds % 3600 === 0 &&
+		(opts.attributeValue === undefined || opts.attributeKey !== undefined) &&
+		(opts.attributeKey === undefined || opts.attributeKey === "span.kind") &&
+		(opts.groupByAttributeKey === undefined || opts.groupByAttributeKey === "span.kind")
+	)
+}
+
+function metricsTimeseriesRateFromSpanMetricsCallsHourly(
+	opts: MetricsRateTimeseriesOpts,
+): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+	const bucket = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("startTime")),
+		param.int("bucketSeconds"),
+	)
+	const previousBucket = CH.intervalSub(bucket, param.int("bucketSeconds"))
+	const endBucket = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("endTime")),
+		param.int("bucketSeconds"),
+	)
+
+	const hourlySql = compileCH(
+		from(SpanMetricsCallsHourly)
+			.select(($) => ({
+				Hour: $.Hour,
+				ServiceName: $.ServiceName,
+				MetricName: $.MetricName,
+				SpanKind: $.SpanKind,
+				AttrFingerprint: $.AttrFingerprint,
+				ResourceFingerprint: $.ResourceFingerprint,
+				StartTimeUnix: $.StartTimeUnix,
+				Value: CH.argMaxMerge($.LastValue),
+			}))
+			.where(($) => [
+				$.OrgId.eq(param.string("orgId")),
+				$.MetricName.eq(param.string("metricName")),
+				$.Hour.gte(previousBucket),
+				$.Hour.lte(endBucket),
+				CH.when(opts.serviceName, (v: string) => $.ServiceName.eq(v)),
+				CH.when(opts.attributeKey === "span.kind" ? opts.attributeValue : undefined, (v: string) =>
+					$.SpanKind.eq(v),
+				),
+			])
+			.groupBy(
+				"Hour",
+				"ServiceName",
+				"MetricName",
+				"SpanKind",
+				"AttrFingerprint",
+				"ResourceFingerprint",
+				"StartTimeUnix",
+			),
+		{},
+		{ skipFormat: true },
+	).sql
+
+	const hourlyValues = table("hourly_values", {
+		Hour: T.dateTime,
+		ServiceName: T.string,
+		MetricName: T.string,
+		SpanKind: T.string,
+		AttrFingerprint: T.uint64,
+		ResourceFingerprint: T.uint64,
+		StartTimeUnix: T.dateTime64,
+		Value: T.float64,
+	})
+
+	const deltasSql = compileCH(
+		from(hourlyValues)
+			.select(($) => {
+				const onePrecedingFrame = CH.windowSpec({
+					partitionBy: [
+						$.ServiceName,
+						$.MetricName,
+						$.SpanKind,
+						$.AttrFingerprint,
+						$.ResourceFingerprint,
+						$.StartTimeUnix,
+					],
+					orderBy: [[$.Hour, "asc"]],
+					frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+				})
+
+				return {
+					Hour: $.Hour,
+					ServiceName: $.ServiceName,
+					SpanKind: $.SpanKind,
+					delta: $.Value.sub(CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)),
+				}
+			})
+			.where(($) => [$.Hour.gte(bucket)]),
+		{},
+		{ skipFormat: true },
+	).sql
+
+	const deltas = table("with_deltas", {
+		Hour: T.dateTime,
+		ServiceName: T.string,
+		SpanKind: T.string,
+		delta: T.float64,
+	})
+
+	const q = from(deltas)
+		.withCTE("hourly_values", hourlySql)
+		.withCTE("with_deltas", deltasSql)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Hour, param.int("bucketSeconds")),
+			serviceName: $.ServiceName,
+			attributeValue: opts.groupByAttributeKey === "span.kind" ? $.SpanKind : CH.lit(""),
+			rateValue: CH.sumIf($.delta.div(param.int("bucketSeconds")), $.delta.gte(0)),
+			increaseValue: CH.sumIf($.delta, $.delta.gte(0)),
+			dataPointCount: CH.count(),
+		}))
+		.where(($) => [$.Hour.gte(bucket), $.Hour.lte(endBucket)])
+
+	return (
+		opts.groupByAttributeKey === "span.kind"
+			? q.groupBy("bucket", "serviceName", "attributeValue")
+			: q.groupBy("bucket", "serviceName")
+	)
+		.orderBy(["bucket", "asc"])
+		.format("JSON")
+}
+
+export function metricsTimeseriesRateQuery(
+	opts: MetricsRateTimeseriesOpts,
+): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
+	if (canUseSpanMetricsCallsHourly(opts)) return metricsTimeseriesRateFromSpanMetricsCallsHourly(opts)
+
 	// CTE: compute deltas using window functions.
 	//
 	// The PARTITION BY must isolate each emitting process: a cumulative counter
@@ -113,25 +250,34 @@ export function metricsTimeseriesRateQuery(opts: MetricsRateTimeseriesOpts) {
 	// row dominates the query cost (raw `metrics_sum` scans of span.metrics.calls
 	// ran ~7s p95). Hashing keeps per-series identity — points of one series share
 	// one exporter, so map key order is stable — at a ~2^-64 collision risk.
-	const PARTITION =
-		"PARTITION BY ServiceName, MetricName, " +
-		"cityHash64(mapKeys(Attributes), mapValues(Attributes)), " +
-		"cityHash64(mapKeys(ResourceAttributes), mapValues(ResourceAttributes)), " +
-		"StartTimeUnix"
 	const cteSql = compileCH(
 		from(MetricsSum)
-			.select(($) => ({
-				TimeUnix: $.TimeUnix,
-				ServiceName: $.ServiceName,
-				Attributes: $.Attributes,
-				Value: $.Value,
-				delta: CH.rawExpr<number>(
-					`Value - lagInFrame(Value, 1, Value) OVER (${PARTITION} ORDER BY TimeUnix ASC)`,
-				),
-				time_delta: CH.rawExpr<number>(
-					`toFloat64(toUnixTimestamp64Nano(TimeUnix) - toUnixTimestamp64Nano(lagInFrame(TimeUnix, 1, TimeUnix) OVER (${PARTITION} ORDER BY TimeUnix ASC))) / 1000000000.0`,
-				),
-			}))
+			.select(($) => {
+				const onePrecedingFrame = CH.windowSpec({
+					partitionBy: [
+						$.ServiceName,
+						$.MetricName,
+						CH.cityHash64(CH.mapKeys($.Attributes), CH.mapValues($.Attributes)),
+						CH.cityHash64(CH.mapKeys($.ResourceAttributes), CH.mapValues($.ResourceAttributes)),
+						$.StartTimeUnix,
+					],
+					orderBy: [[$.TimeUnix, "asc"]],
+					frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+				})
+				const previousValue = CH.over(CH.lagInFrame($.Value, 1, $.Value), onePrecedingFrame)
+				const previousTimeUnix = CH.over(CH.lagInFrame($.TimeUnix, 1, $.TimeUnix), onePrecedingFrame)
+
+				return {
+					TimeUnix: $.TimeUnix,
+					ServiceName: $.ServiceName,
+					Attributes: $.Attributes,
+					Value: $.Value,
+					delta: $.Value.sub(previousValue),
+					time_delta: CH.toFloat64(
+						CH.toUnixTimestamp64Nano($.TimeUnix).sub(CH.toUnixTimestamp64Nano(previousTimeUnix)),
+					).div(1000000000),
+				}
+			})
 			.where(($) => [
 				$.MetricName.eq(param.string("metricName")),
 				$.OrgId.eq(param.string("orgId")),

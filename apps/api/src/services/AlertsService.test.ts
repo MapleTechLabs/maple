@@ -98,6 +98,9 @@ function makeWarehouseStub(state: {
 		compiledQueryFirst: (_tenant, compiled) =>
 			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeFirstRow(rows).pipe(Effect.orDie))),
 		ingest: () => Effect.void,
+		asExecutor: () => {
+			throw new Error("asExecutor is not supported by this test stub")
+		},
 	}
 }
 
@@ -167,7 +170,14 @@ const makeLayer = (
 
 	return AlertsService.layer.pipe(
 		Layer.provide(
-			Layer.mergeAll(envLive, databaseLive, queryEngineLive, warehouseLive, runtimeLive, hazelOAuthLive),
+			Layer.mergeAll(
+				envLive,
+				databaseLive,
+				queryEngineLive,
+				warehouseLive,
+				runtimeLive,
+				hazelOAuthLive,
+			),
 		),
 	) as Layer.Layer<AlertsService, never, never>
 }
@@ -350,7 +360,9 @@ describe("AlertsService", () => {
 			expect(requests[0]?.headers.get("x-maple-delivery-key")).not.toBe(
 				incidentsAfterSecondTick.incidents[0]?.dedupeKey,
 			)
-		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })))
+		}).pipe(
+			Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })),
+		)
 	})
 
 	itEffect("snapshots a custom notification template into the delivered payload", () => {
@@ -415,9 +427,7 @@ describe("AlertsService", () => {
 			// The custom template is re-read from the rule and surfaces through
 			// get_alert_rule / listRules.
 			const rules = yield* alerts.listRules(orgId)
-			expect(rules.rules[0]?.notificationTemplate?.title).toBe(
-				"{{ severity }} on {{ rule.name }}",
-			)
+			expect(rules.rules[0]?.notificationTemplate?.title).toBe("{{ severity }} on {{ rule.name }}")
 
 			// The webhook body is the snapshotted delivery payload — it carries the
 			// template so retries and downstream consumers render the same message.
@@ -427,7 +437,9 @@ describe("AlertsService", () => {
 			}
 			expect(payload.template?.title).toBe("{{ severity }} on {{ rule.name }}")
 			expect(payload.template?.body).toBe("*Observed:* {{ observed.summary }}")
-		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })))
+		}).pipe(
+			Effect.provide(makeLayer(url, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })),
+		)
 	})
 
 	itEffect("skips no-data error-rate rules instead of opening incidents", () => {
@@ -540,7 +552,9 @@ describe("AlertsService", () => {
 					serviceName: "checkout",
 				},
 			})
-		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))))
+		}).pipe(
+			Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+		)
 	})
 
 	itEffect("resolves an open incident after consecutive healthy evaluations", () => {
@@ -655,10 +669,7 @@ describe("AlertsService", () => {
 			const rule = yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* Effect.promise(() =>
-				executeSql(dbPath, "update alert_rules set query_spec_json = ? where id = ?", [
-					"{",
-					rule.id,
-				]),
+				executeSql(dbPath, "update alert_rules set query_spec_json = ? where id = ?", ["{", rule.id]),
 			)
 
 			yield* Effect.promise(() =>
@@ -802,9 +813,9 @@ describe("AlertsService", () => {
 
 			expect(requestCount).toBe(1)
 			expect(tickA.processedCount + tickB.processedCount).toBe(1)
-			expect(
-				events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status,
-			).toBe("success")
+			expect(events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status).toBe(
+				"success",
+			)
 		})
 	})
 
@@ -842,80 +853,80 @@ describe("AlertsService", () => {
 		const layer = makeLayer(url, makeWarehouseStub(state), overrides)
 
 		return Effect.gen(function* () {
-				const alerts = yield* AlertsService
-				const orgId = asOrgId("org_tx_rollback")
-				const userId = asUserId("user_tx_rollback")
-				const destination = yield* createWebhookDestination(alerts, orgId, userId)
-				const rule = yield* alerts.createRule(
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_tx_rollback")
+			const userId = asUserId("user_tx_rollback")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+			const rule = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({
+					name: "Immediate trigger",
+					severity: "critical",
+					enabled: true,
+					serviceNames: ["checkout"],
+					signalType: "error_rate",
+					comparator: "gt",
+					threshold: 5,
+					windowMinutes: 5,
+					minimumSampleCount: 10,
+					consecutiveBreachesRequired: 1,
+					consecutiveHealthyRequired: 1,
+					renotifyIntervalMinutes: 30,
+					destinationIds: [destination.id],
+				}),
+			)
+			// Pre-insert a conflicting delivery event with the same delivery key
+			// that processEvaluation will generate. With onConflictDoNothing(),
+			// the duplicate insert is silently skipped and the incident is still created.
+			yield* Effect.promise(() =>
+				insertDeliveryEventRow(dbPath, {
+					id: "00000000-0000-4000-8000-000000000099",
 					orgId,
-					userId,
-					adminRoles,
-					new AlertRuleUpsertRequest({
-						name: "Immediate trigger",
-						severity: "critical",
-						enabled: true,
-						serviceNames: ["checkout"],
-						signalType: "error_rate",
-						comparator: "gt",
-						threshold: 5,
-						windowMinutes: 5,
-						minimumSampleCount: 10,
-						consecutiveBreachesRequired: 1,
-						consecutiveHealthyRequired: 1,
-						renotifyIntervalMinutes: 30,
-						destinationIds: [destination.id],
-					}),
-				)
-				// Pre-insert a conflicting delivery event with the same delivery key
-				// that processEvaluation will generate. With onConflictDoNothing(),
-				// the duplicate insert is silently skipped and the incident is still created.
-				yield* Effect.promise(() =>
-					insertDeliveryEventRow(dbPath, {
-						id: "00000000-0000-4000-8000-000000000099",
-						orgId,
-						incidentId: null,
-						ruleId: rule.id,
-						destinationId: destination.id,
-						deliveryKey: `${"00000000-0000-4000-8000-000000000004"}:${destination.id}:trigger:${fixedTime}`,
+					incidentId: null,
+					ruleId: rule.id,
+					destinationId: destination.id,
+					deliveryKey: `${"00000000-0000-4000-8000-000000000004"}:${destination.id}:trigger:${fixedTime}`,
+					eventType: "trigger",
+					attemptNumber: 1,
+					status: "queued",
+					scheduledAt: fixedTime + 60_000,
+					payloadJson: JSON.stringify({
 						eventType: "trigger",
-						attemptNumber: 1,
-						status: "queued",
-						scheduledAt: fixedTime + 60_000,
-						payloadJson: JSON.stringify({
-							eventType: "trigger",
-							incidentId: null,
-							incidentStatus: "resolved",
-							dedupeKey: "conflict-dedupe",
-							rule: {
-								id: rule.id,
-								name: rule.name,
-								signalType: rule.signalType,
-								severity: rule.severity,
-								groupKey: null,
-								comparator: rule.comparator,
-								threshold: rule.threshold,
-								windowMinutes: rule.windowMinutes,
-							},
-							observed: {
-								value: 10,
-								sampleCount: 200,
-							},
-							linkUrl: "http://127.0.0.1:3471/alerts",
-							sentAt: new Date(fixedTime).toISOString(),
-						}),
+						incidentId: null,
+						incidentStatus: "resolved",
+						dedupeKey: "conflict-dedupe",
+						rule: {
+							id: rule.id,
+							name: rule.name,
+							signalType: rule.signalType,
+							severity: rule.severity,
+							groupKey: null,
+							comparator: rule.comparator,
+							threshold: rule.threshold,
+							windowMinutes: rule.windowMinutes,
+						},
+						observed: {
+							value: 10,
+							sampleCount: 200,
+						},
+						linkUrl: "http://127.0.0.1:3471/alerts",
+						sentAt: new Date(fixedTime).toISOString(),
 					}),
-				)
+				}),
+			)
 
-				const tick = yield* alerts.runSchedulerTick()
-				const incidents = yield* alerts.listIncidents(orgId)
-				const events = yield* alerts.listDeliveryEvents(orgId)
+			const tick = yield* alerts.runSchedulerTick()
+			const incidents = yield* alerts.listIncidents(orgId)
+			const events = yield* alerts.listDeliveryEvents(orgId)
 
-				expect(tick.evaluationFailureCount).toBe(0)
-				expect(incidents.incidents).toHaveLength(1)
-				// Only the pre-existing event — the duplicate was silently skipped
-				expect(events.events).toHaveLength(1)
-				expect(events.events[0]?.deliveryKey).toContain(":trigger:")
-			}).pipe(Effect.provide(layer))
+			expect(tick.evaluationFailureCount).toBe(0)
+			expect(incidents.incidents).toHaveLength(1)
+			// Only the pre-existing event — the duplicate was silently skipped
+			expect(events.events).toHaveLength(1)
+			expect(events.events[0]?.deliveryKey).toContain(":trigger:")
+		}).pipe(Effect.provide(layer))
 	})
 
 	itEffect("times out stuck deliveries and enqueues a retry attempt", () => {
@@ -1225,7 +1236,9 @@ describe("AlertsService", () => {
 					}),
 				)
 			}).pipe(
-				Effect.provide(makeLayer(url, makeWarehouseStub({ metricsAggregateRows: emptyWarehouseRows }))),
+				Effect.provide(
+					makeLayer(url, makeWarehouseStub({ metricsAggregateRows: emptyWarehouseRows })),
+				),
 			),
 		)
 
@@ -1235,6 +1248,164 @@ describe("AlertsService", () => {
 		expect(failure).toMatchObject({
 			message: "Metrics alerts support at most one attr.* groupBy dimension",
 		})
+	})
+
+	const VALID_PD_KEY = "e93facc04764012d7bfb002500d5d1a6" // 32 hex chars
+	const REST_API_TOKEN = "u+0123456789abcdefgh" // 20 chars, '+' — the common wrong paste
+
+	it("rejects a PagerDuty key of the wrong shape without calling PagerDuty", async () => {
+		const { url } = createTempDbUrl()
+		const requests: string[] = []
+		const fetchImpl = (async (input: RequestInfo | URL) => {
+			requests.push(String(input))
+			return new Response("", { status: 202 })
+		}) as typeof fetch
+
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				return yield* alerts.createDestination(
+					asOrgId("org_pd_shape"),
+					asUserId("user_pd_shape"),
+					adminRoles,
+					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: REST_API_TOKEN },
+				)
+			}).pipe(
+				Effect.provide(
+					makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+						fetch: fetchImpl,
+					}),
+				),
+			),
+		)
+
+		expect(Exit.isFailure(exit)).toBe(true)
+		expect(getError(exit)).toMatchObject({
+			message: expect.stringContaining("32-character Events API v2 routing key"),
+		})
+		// Format check short-circuits before any network call.
+		expect(requests).toHaveLength(0)
+	})
+
+	it("rejects a well-formed PagerDuty key that PagerDuty reports invalid", async () => {
+		const { url } = createTempDbUrl()
+		const requests: Array<{ url: string; body: string }> = []
+		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+			requests.push({ url: String(input), body: String(init?.body ?? "") })
+			return new Response(
+				JSON.stringify({
+					status: "invalid event",
+					message: "Event object is invalid",
+					errors: ["Invalid routing key"],
+				}),
+				{ status: 400 },
+			)
+		}) as typeof fetch
+
+		const exit = await Effect.runPromiseExit(
+			Effect.gen(function* () {
+				const alerts = yield* AlertsService
+				return yield* alerts.createDestination(
+					asOrgId("org_pd_invalid"),
+					asUserId("user_pd_invalid"),
+					adminRoles,
+					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+				)
+			}).pipe(
+				Effect.provide(
+					makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+						fetch: fetchImpl,
+					}),
+				),
+			),
+		)
+
+		expect(Exit.isFailure(exit)).toBe(true)
+		expect(getError(exit)).toMatchObject({
+			message: expect.stringContaining("Invalid routing key"),
+		})
+		expect(requests).toHaveLength(1)
+		expect(requests[0]?.url).toBe("https://events.pagerduty.com/v2/enqueue")
+		// Validation uses a no-op resolve so it never creates an incident.
+		expect(requests[0]?.body).toContain('"event_action":"resolve"')
+	})
+
+	itEffect("accepts a PagerDuty key that PagerDuty confirms", () => {
+		const { url } = createTempDbUrl()
+		const fetchImpl = (async () => new Response("", { status: 202 })) as typeof fetch
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const destination = yield* alerts.createDestination(
+				asOrgId("org_pd_ok"),
+				asUserId("user_pd_ok"),
+				adminRoles,
+				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+			)
+			expect(destination.type).toBe("pagerduty")
+		}).pipe(
+			Effect.provide(
+				makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
+	})
+
+	itEffect("creates the destination when PagerDuty is unreachable (fails open)", () => {
+		const { url } = createTempDbUrl()
+		const fetchImpl = (async () => {
+			throw new Error("network down")
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const destination = yield* alerts.createDestination(
+				asOrgId("org_pd_open"),
+				asUserId("user_pd_open"),
+				adminRoles,
+				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
+			)
+			expect(destination.type).toBe("pagerduty")
+		}).pipe(
+			Effect.provide(
+				makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
+	})
+
+	itEffect("skips PagerDuty validation on update when the key is left blank", () => {
+		const { url } = createTempDbUrl()
+		let calls = 0
+		const fetchImpl = (async () => {
+			calls += 1
+			return new Response("", { status: 202 })
+		}) as typeof fetch
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_pd_update")
+			const userId = asUserId("user_pd_update")
+			const created = yield* alerts.createDestination(orgId, userId, adminRoles, {
+				type: "pagerduty",
+				name: "Paging",
+				enabled: true,
+				integrationKey: VALID_PD_KEY,
+			})
+			expect(calls).toBe(1) // create validated once
+
+			const updated = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
+				type: "pagerduty",
+				name: "Paging renamed",
+			})
+			expect(updated.name).toBe("Paging renamed")
+			expect(calls).toBe(1) // no re-validation when the key is omitted
+		}).pipe(
+			Effect.provide(
+				makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+					fetch: fetchImpl,
+				}),
+			),
+		)
 	})
 
 	itEffect("opens per-service incidents for grouped logs query alerts", () => {
@@ -1321,7 +1492,9 @@ describe("AlertsService", () => {
 
 				return yield* alerts.deleteDestination(orgId, adminRoles, destination.id)
 			}).pipe(
-				Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+				Effect.provide(
+					makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
+				),
 			),
 		)
 
@@ -1352,7 +1525,9 @@ describe("AlertsService", () => {
 					},
 				)
 			}).pipe(
-				Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+				Effect.provide(
+					makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
+				),
 			),
 		)
 
@@ -1424,7 +1599,65 @@ describe("AlertsService", () => {
 			const rules = yield* alerts.listRules(orgId)
 			expect(rules.rules).toHaveLength(1)
 			expect(rules.rules[0]?.destinationIds).toEqual([secondary.id])
-		}).pipe(Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))))
+		}).pipe(
+			Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+		)
+	})
+
+	itEffect("round-trips and normalizes rule tags through create/update/list", () => {
+		const { url } = createTempDbUrl()
+
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const orgId = asOrgId("org_rule_tags")
+			const userId = asUserId("user_rule_tags")
+			const destination = yield* createWebhookDestination(alerts, orgId, userId)
+
+			const baseRule = {
+				name: "Tagged rule",
+				severity: "warning",
+				enabled: true,
+				serviceNames: ["checkout"],
+				signalType: "error_rate",
+				comparator: "gt",
+				threshold: 5,
+				windowMinutes: 5,
+				minimumSampleCount: 10,
+				consecutiveBreachesRequired: 2,
+				consecutiveHealthyRequired: 2,
+				renotifyIntervalMinutes: 30,
+				destinationIds: [destination.id],
+			} as const
+
+			// Tags are trimmed, lowercased, and deduped (so "Prod" and " prod "
+			// collapse to one group key) while preserving first-seen order.
+			const created = yield* alerts.createRule(
+				orgId,
+				userId,
+				adminRoles,
+				new AlertRuleUpsertRequest({ ...baseRule, tags: ["Prod", " payments ", "prod", ""] }),
+			)
+			expect(created.tags).toEqual(["prod", "payments"])
+
+			// The normalized tags survive a round-trip through the persisted row.
+			const afterCreate = yield* alerts.listRules(orgId)
+			expect(afterCreate.rules[0]?.tags).toEqual(["prod", "payments"])
+
+			// Clearing tags on update persists an empty list, not the prior value.
+			const updated = yield* alerts.updateRule(
+				orgId,
+				userId,
+				adminRoles,
+				created.id,
+				new AlertRuleUpsertRequest({ ...baseRule, tags: [] }),
+			)
+			expect(updated.tags).toEqual([])
+
+			const afterClear = yield* alerts.listRules(orgId)
+			expect(afterClear.rules[0]?.tags).toEqual([])
+		}).pipe(
+			Effect.provide(makeLayer(url, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
+		)
 	})
 
 	itEffect("opens per-service incidents for multi-service rules", () => {
@@ -1521,8 +1754,7 @@ describe("AlertsService", () => {
 		const stub: WarehouseQueryServiceShape = {
 			...makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
 			sqlQuery: () => Effect.succeed(alertRows) as never,
-			compiledQuery: (_tenant, compiled) =>
-				compiled.decodeRows(alertRows).pipe(Effect.orDie) as never,
+			compiledQuery: (_tenant, compiled) => compiled.decodeRows(alertRows).pipe(Effect.orDie) as never,
 			compiledQueryFirst: (_tenant, compiled) =>
 				compiled.decodeFirstRow(alertRows).pipe(Effect.orDie) as never,
 		}

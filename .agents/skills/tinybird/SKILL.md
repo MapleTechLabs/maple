@@ -12,6 +12,7 @@ Guidance for Tinybird file formats, SQL rules, optimization patterns, and data m
 - Creating or updating Tinybird resources (.datasource, .pipe, .connection)
 - Writing or optimizing SQL queries
 - Designing endpoint schemas and data models
+- Organizing project structure and data layers
 - Working with materialized views or copy pipes
 - Implementing deduplication patterns
 - Reviewing or refactoring Tinybird project files
@@ -24,6 +25,7 @@ Guidance for Tinybird file formats, SQL rules, optimization patterns, and data m
 - `rules/pipe-files.md`
 - `rules/endpoint-files.md`
 - `rules/materialized-files.md`
+- `rules/materialized-join-prefilter.md`
 - `rules/sink-files.md`
 - `rules/copy-files.md`
 - `rules/connection-files.md`

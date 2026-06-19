@@ -79,7 +79,7 @@ const formatPageContextBlock = (payload: PageContextPayload): string => {
 	const lines = [
 		"",
 		"## Current Page Context",
-		"The user is viewing the following Maple page. Treat these entities as the implicit subject when the user says \"this\", \"here\", or asks open-ended questions without naming a target. The user can dismiss any of these chips, so respect what's listed below.",
+		'The user is viewing the following Maple page. Treat these entities as the implicit subject when the user says "this", "here", or asks open-ended questions without naming a target. The user can dismiss any of these chips, so respect what\'s listed below.',
 		"",
 		`page: ${payload.pathname}`,
 		...payload.contexts.map(formatAutoContextLine),
@@ -279,7 +279,9 @@ const widgetDisplaySchema = Schema.Struct({
 	listWhereClause: Schema.optionalKey(
 		Schema.String.annotate({ description: "Filter for list visualization" }),
 	),
-	listRootOnly: Schema.optionalKey(Schema.Boolean.annotate({ description: "Only root spans for trace lists" })),
+	listRootOnly: Schema.optionalKey(
+		Schema.Boolean.annotate({ description: "Only root spans for trace lists" }),
+	),
 })
 
 const dashboardWidgetDataSourceBaseSchema = Schema.Struct({
@@ -506,7 +508,8 @@ function createDashboardBuilderTools(mcpTools: McpToolSet) {
 					}),
 					params: Schema.optionalKey(
 						Schema.Record(Schema.String, Schema.Unknown).annotate({
-							description: "Parameters for the query (startTime, endTime, limit, queries[], etc.)",
+							description:
+								"Parameters for the query (startTime, endTime, limit, queries[], etc.)",
 						}),
 					),
 					transform: Schema.optionalKey(

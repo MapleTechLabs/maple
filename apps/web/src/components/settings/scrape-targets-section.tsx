@@ -129,11 +129,7 @@ function checksFromResult(result: ScrapeTargetChecksResult): ScrapeTargetCheck[]
 		.orElse(() => [])
 }
 
-function scheduledStatus(
-	target: ScrapeTarget,
-	latestCheck: ScrapeTargetCheck | null,
-	isLoading: boolean,
-) {
+function scheduledStatus(target: ScrapeTarget, latestCheck: ScrapeTargetCheck | null, isLoading: boolean) {
 	if (!target.enabled) {
 		return {
 			label: "Disabled",
@@ -195,8 +191,7 @@ const SOURCE_COPY: Record<"all" | ScrapeTargetType, SourceCopy> = {
 		description:
 			"Connect PlanetScale organizations — Maple discovers and scrapes every database branch automatically.",
 		emptyTitle: "No PlanetScale organizations",
-		emptyDescription:
-			"Connect an organization with a service token to start scraping branch metrics.",
+		emptyDescription: "Connect an organization with a service token to start scraping branch metrics.",
 	},
 }
 
@@ -649,28 +644,28 @@ export function ScrapeTargetsSection({
 							/>
 						</div>
 						{formTargetType === "prometheus" && (
-						<div className="space-y-2">
-							<Label>Authentication</Label>
-							<Select
-								items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
-								value={formAuthType}
-								onValueChange={(val: string | null) => {
-									setFormAuthType((val as ScrapeAuthType | null) ?? "none")
-									setFormAuthToken("")
-									setFormAuthUsername("")
-									setFormAuthPassword("")
-								}}
-							>
-								<SelectTrigger className="w-full">
-									<SelectValue placeholder="Select auth type" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="none">None</SelectItem>
-									<SelectItem value="bearer">Bearer Token</SelectItem>
-									<SelectItem value="basic">Basic Auth</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
+							<div className="space-y-2">
+								<Label>Authentication</Label>
+								<Select
+									items={{ none: "None", bearer: "Bearer Token", basic: "Basic Auth" }}
+									value={formAuthType}
+									onValueChange={(val: string | null) => {
+										setFormAuthType((val as ScrapeAuthType | null) ?? "none")
+										setFormAuthToken("")
+										setFormAuthUsername("")
+										setFormAuthPassword("")
+									}}
+								>
+									<SelectTrigger className="w-full">
+										<SelectValue placeholder="Select auth type" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="none">None</SelectItem>
+										<SelectItem value="bearer">Bearer Token</SelectItem>
+										<SelectItem value="basic">Basic Auth</SelectItem>
+									</SelectContent>
+								</Select>
+							</div>
 						)}
 						{formTargetType === "prometheus" && formAuthType === "bearer" && (
 							<div className="space-y-2">
@@ -861,7 +856,9 @@ function ScrapeTargetRow({
 					</span>
 					<span>{target.scrapeIntervalSeconds}s interval</span>
 					<span>{status.detail}</span>
-					{target.lastScrapeAt && <span>Last scrape {formatRelativeTime(target.lastScrapeAt)}</span>}
+					{target.lastScrapeAt && (
+						<span>Last scrape {formatRelativeTime(target.lastScrapeAt)}</span>
+					)}
 				</div>
 				{latestCheck?.message && !latestCheck.success && (
 					<div className="mt-1.5 flex items-center gap-1.5 text-xs text-destructive">
@@ -978,15 +975,15 @@ function ScrapeTargetDetails({
 						<PencilIcon size={14} />
 						Edit
 					</Button>
+					<Button variant="ghost" size="sm" onClick={() => onToggle(target)} disabled={toggling}>
+						{target.enabled ? "Disable" : "Enable"}
+					</Button>
 					<Button
 						variant="ghost"
 						size="sm"
-						onClick={() => onToggle(target)}
-						disabled={toggling}
+						className="text-destructive"
+						onClick={() => onDelete(target)}
 					>
-						{target.enabled ? "Disable" : "Enable"}
-					</Button>
-					<Button variant="ghost" size="sm" className="text-destructive" onClick={() => onDelete(target)}>
 						<TrashIcon size={14} />
 						Delete
 					</Button>
@@ -1012,7 +1009,9 @@ function ScrapeTargetDetails({
 						<MetricBox
 							label="Post relabel"
 							value={
-								latestCheck ? formatOptionalCount(latestCheck.samplesPostMetricRelabeling) : "-"
+								latestCheck
+									? formatOptionalCount(latestCheck.samplesPostMetricRelabeling)
+									: "-"
 							}
 						/>
 					</div>
@@ -1030,7 +1029,10 @@ function ScrapeTargetDetails({
 						) : (
 							<DetailRow label="Instance" value={hostnameFromUrl(target.url)} />
 						)}
-						<DetailRow label="Auth" value={AUTH_TYPE_LABELS[target.authType] ?? target.authType} />
+						<DetailRow
+							label="Auth"
+							value={AUTH_TYPE_LABELS[target.authType] ?? target.authType}
+						/>
 						<DetailRow label="Target ID" value={<span className="font-mono">{target.id}</span>} />
 						<DetailRow label="Created" value={formatDateTime(target.createdAt)} />
 						<DetailRow label="Updated" value={formatDateTime(target.updatedAt)} />

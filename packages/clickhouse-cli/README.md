@@ -42,13 +42,13 @@ you can confirm parity with a deployed Maple build.
 
 ## Exit codes
 
-| Code | Meaning |
-|---:|---|
-| 0 | Success. |
-| 1 | Unexpected error (network, parse, etc). |
-| 2 | Bad usage / missing flags. |
-| 3 | ClickHouse rejected (bad creds, bad DDL). |
-| 4 | ClickHouse upstream error (5xx). |
+| Code | Meaning                                   |
+| ---: | ----------------------------------------- |
+|    0 | Success.                                  |
+|    1 | Unexpected error (network, parse, etc).   |
+|    2 | Bad usage / missing flags.                |
+|    3 | ClickHouse rejected (bad creds, bad DDL). |
+|    4 | ClickHouse upstream error (5xx).          |
 
 ## Permissions on the user
 
@@ -63,11 +63,11 @@ collector / app user only needs `SELECT` + `INSERT` on the Maple tables.
 # .github/workflows/clickhouse-schema-drift.yml
 - name: Check pending migrations
   run: |
-    bunx @maple/clickhouse-cli@latest status \
-      --url=${{ vars.MAPLE_CH_URL }} \
-      --user=${{ vars.MAPLE_CH_USER }} \
-      --password=${{ secrets.MAPLE_CH_PASSWORD }} \
-      --database=${{ vars.MAPLE_CH_DATABASE }} \
-      | tee status.txt
-    grep -q "pending:\n  (none)" status.txt
+      bunx @maple/clickhouse-cli@latest status \
+        --url=${{ vars.MAPLE_CH_URL }} \
+        --user=${{ vars.MAPLE_CH_USER }} \
+        --password=${{ secrets.MAPLE_CH_PASSWORD }} \
+        --database=${{ vars.MAPLE_CH_DATABASE }} \
+        | tee status.txt
+      grep -q "pending:\n  (none)" status.txt
 ```

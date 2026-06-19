@@ -8,6 +8,8 @@
 // need, but a zero-config detector does).
 // ---------------------------------------------------------------------------
 
+import type { AnomalySignalType } from "@maple/domain/http"
+
 import type { AnomalyEvaluation } from "./detection"
 
 export interface DetectorStateSnapshot {
@@ -32,7 +34,21 @@ export const DEFAULT_STATE_MACHINE_CONFIG: StateMachineConfig = {
 	cooldownMs: 60 * 60 * 1000,
 }
 
-export type AnomalyTransition = "open" | "continue" | "resolve" | "noop"
+/**
+ * Per-signal overrides. Throughput drops need an extra breaching tick (15 min
+ * sustained) — short quiet stretches on bursty services self-heal within two
+ * ticks and shouldn't page.
+ */
+const STATE_MACHINE_CONFIG_OVERRIDES: Partial<Record<AnomalySignalType, Partial<StateMachineConfig>>> = {
+	throughput: { breachesToOpen: 3 },
+}
+
+export const stateMachineConfigFor = (signalType: AnomalySignalType): StateMachineConfig => ({
+	...DEFAULT_STATE_MACHINE_CONFIG,
+	...STATE_MACHINE_CONFIG_OVERRIDES[signalType],
+})
+
+type AnomalyTransition = "open" | "continue" | "resolve" | "noop"
 
 export interface TransitionDecision {
 	readonly transition: AnomalyTransition
@@ -61,8 +77,7 @@ export function decideTransition(
 		if (state.openIncidentId !== null) {
 			return { transition: "continue", consecutiveBreaches, consecutiveHealthy: 0 }
 		}
-		const inCooldown =
-			state.lastResolvedAt !== null && nowMs - state.lastResolvedAt < config.cooldownMs
+		const inCooldown = state.lastResolvedAt !== null && nowMs - state.lastResolvedAt < config.cooldownMs
 		if (consecutiveBreaches >= config.breachesToOpen && !inCooldown) {
 			return { transition: "open", consecutiveBreaches, consecutiveHealthy: 0 }
 		}

@@ -5,10 +5,12 @@ import {
 } from "@maple/domain/http"
 import { Cause, Effect, Exit, Option } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
+import type { TableDiffEntry } from "@maple/domain/clickhouse"
 import {
 	type ClickHouseExecConfig,
 	execClickHouse,
 	isRetryableUpstream,
+	shouldHealSchemaVersion,
 } from "./OrgClickHouseSettingsService"
 
 // `execClickHouse` runs through Effect's HttpClient. We inject a stub `fetch` via
@@ -51,6 +53,44 @@ const unavailable = (statusCode: number | null) =>
 	new OrgClickHouseSettingsUpstreamUnavailableError({ message: "x", statusCode })
 const rejected = (statusCode: number | null) =>
 	new OrgClickHouseSettingsUpstreamRejectedError({ message: "x", statusCode })
+
+describe("shouldHealSchemaVersion", () => {
+	const REV = "019c3db4cf690e3748b302098cae4c9213d18c55355db9fc68ea44982c7a980a"
+	const STALE = "4d5d918315933608d316aa8d6e6b57948f15a3fdca2fa6226aa271553f0b0520"
+	const upToDate = (name: string): TableDiffEntry => ({
+		status: "up_to_date",
+		name,
+		kind: "table",
+	})
+	const inSync: ReadonlyArray<TableDiffEntry> = [upToDate("traces"), upToDate("logs")]
+
+	it("heals when the live schema is in sync but the stored revision is stale", () => {
+		// The exact production case: CH applied via the standalone CLI (so D1 was never
+		// stamped) or a revision bump left it behind, yet every table is up_to_date.
+		expect(shouldHealSchemaVersion(inSync, STALE, REV)).toBe(true)
+		expect(shouldHealSchemaVersion(inSync, null, REV)).toBe(true)
+	})
+
+	it("does not heal when the stored revision already matches", () => {
+		expect(shouldHealSchemaVersion(inSync, REV, REV)).toBe(false)
+	})
+
+	it("does not heal when any table is missing or drifted", () => {
+		const missing: ReadonlyArray<TableDiffEntry> = [
+			upToDate("traces"),
+			{ status: "missing", name: "logs", kind: "table" },
+		]
+		const drifted: ReadonlyArray<TableDiffEntry> = [
+			{ status: "drifted", name: "traces", kind: "table", columnDrifts: [] },
+		]
+		expect(shouldHealSchemaVersion(missing, STALE, REV)).toBe(false)
+		expect(shouldHealSchemaVersion(drifted, STALE, REV)).toBe(false)
+	})
+
+	it("does not heal off an empty diff (degenerate / failed schema fetch)", () => {
+		expect(shouldHealSchemaVersion([], STALE, REV)).toBe(false)
+	})
+})
 
 describe("isRetryableUpstream", () => {
 	it("retries transient gateway/proxy codes and network failures, nothing else", () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as CH from "./index"
-import { compileCH, QueryBuilderError } from "./compile"
+import { compileCH } from "./compile"
 
 const TestTable = CH.table("test_table", {
 	Id: CH.string,

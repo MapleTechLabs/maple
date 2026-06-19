@@ -22,12 +22,7 @@ interface ScopeSectionProps {
  * surface a one-line hint, so the form never silently grows or shrinks as the
  * user edits.
  */
-export function ScopeSection({
-	form,
-	onChange,
-	serviceNameOptions,
-	autocompleteValues,
-}: ScopeSectionProps) {
+export function ScopeSection({ form, onChange, serviceNameOptions, autocompleteValues }: ScopeSectionProps) {
 	const hasSpecificServices = form.serviceNames.length > 0
 	const queryOwnsGrouping = form.signalType === "builder_query"
 
@@ -57,9 +52,7 @@ export function ScopeSection({
 								// Clear group/exclude when narrowing to specific services so the
 								// disabled fields don't carry stale state into the submitted rule.
 								groupBy:
-									values.length > 0 && c.signalType !== "builder_query"
-										? []
-										: c.groupBy,
+									values.length > 0 && c.signalType !== "builder_query" ? [] : c.groupBy,
 								excludeServiceNames: values.length > 0 ? [] : c.excludeServiceNames,
 							}))
 						}
@@ -96,9 +89,7 @@ export function ScopeSection({
 					<ServiceCombobox
 						serviceNames={form.excludeServiceNames}
 						options={serviceNameOptions}
-						onChange={(values) =>
-							onChange((c) => ({ ...c, excludeServiceNames: values }))
-						}
+						onChange={(values) => onChange((c) => ({ ...c, excludeServiceNames: values }))}
 						disabled={hasSpecificServices}
 						placeholder={hasSpecificServices ? "—" : "Skip these services"}
 					/>

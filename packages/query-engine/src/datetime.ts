@@ -42,3 +42,102 @@ export function warehouseDateTimeToIso(value: string): string {
 export function parseWarehouseDateTime(value: string): number {
 	return Date.parse(warehouseDateTimeToIso(value))
 }
+
+// ---------------------------------------------------------------------------
+// Time-series bucketing — single source of truth
+//
+// Both the web app and the query engine pick an auto bucket size and build
+// bucket timelines. Keeping one pure implementation here (no driver / no
+// `Date.now()`) prevents the two from drifting and producing different
+// granularities for the same window.
+// ---------------------------------------------------------------------------
+
+/**
+ * Bucket-size ladder (seconds) for auto time-series granularity. The sub-5-minute
+ * rungs (60s/120s) keep short windows (e.g. "last 1 hour") usefully dense instead
+ * of collapsing to a handful of coarse points.
+ */
+const AUTO_BUCKET_LADDER = [60, 120, 300, 900, 1800, 3600, 14400, 86400] as const
+
+export interface ComputeBucketSecondsOptions {
+	/** Aim for roughly this many points across the window. Default 30. */
+	targetPoints?: number
+	/**
+	 * Never pick a bucket so coarse the window yields fewer than this many
+	 * buckets — steps down the ladder if needed. Default 6. Guards against
+	 * near-empty charts on short windows.
+	 */
+	minBuckets?: number
+}
+
+/**
+ * Pick an auto bucket size (seconds) for the window `[startMs, endMs]`, snapping
+ * to the nearest ladder rung that targets ~`targetPoints` points, then clamping
+ * so the window keeps at least `minBuckets` buckets. Pure — safe to import from
+ * the web/cli bundles via the package root barrel.
+ */
+export function computeBucketSeconds(
+	startMs: number,
+	endMs: number,
+	options?: ComputeBucketSecondsOptions,
+): number {
+	const targetPoints = options?.targetPoints ?? 30
+	const minBuckets = options?.minBuckets ?? 6
+	const rangeSeconds = Math.max((endMs - startMs) / 1000, 1)
+	const raw = Math.max(Math.ceil(rangeSeconds / targetPoints), 1)
+
+	let bucket: number = AUTO_BUCKET_LADDER.reduce<number>(
+		(best, candidate) => (Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best),
+		AUTO_BUCKET_LADDER[0],
+	)
+
+	// Never coarser than what keeps at least `minBuckets` buckets over the range.
+	const maxBucketForMin = Math.floor(rangeSeconds / minBuckets)
+	if (bucket > maxBucketForMin) {
+		const finer = AUTO_BUCKET_LADDER.filter((candidate) => candidate <= maxBucketForMin)
+		bucket = finer.length > 0 ? finer[finer.length - 1] : AUTO_BUCKET_LADDER[0]
+	}
+
+	return bucket
+}
+
+const floorToBucketMs = (epochMs: number, bucketSeconds: number): number => {
+	const bucketMs = bucketSeconds * 1000
+	return Math.floor(epochMs / bucketMs) * bucketMs
+}
+
+const ceilToBucketMs = (epochMs: number, bucketSeconds: number): number => {
+	const bucketMs = bucketSeconds * 1000
+	return Math.ceil(epochMs / bucketMs) * bucketMs
+}
+
+/**
+ * Build the list of ISO bucket timestamps spanning `[startMs, endMs]` for the
+ * given bucket size. The leading bucket is the first one fully on-or-after
+ * `startMs` (ceil — drops the partial leading bucket the query returns for
+ * `Timestamp >= startTime`); the trailing bucket is the last one starting
+ * on-or-before `endMs` (floor — keeps the in-progress trailing bucket).
+ *
+ * Guarantees at least one bucket for any valid range: when the window is
+ * narrower than a single bucket (so `ceil(start) > floor(end)`), anchors a
+ * single bucket at the window start instead of returning `[]`.
+ */
+export function bucketTimeline(startMs: number, endMs: number, bucketSeconds: number): string[] {
+	if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs || bucketSeconds <= 0) {
+		return []
+	}
+
+	const bucketMs = bucketSeconds * 1000
+	const firstBucketMs = ceilToBucketMs(startMs, bucketSeconds)
+	const lastBucketMs = floorToBucketMs(endMs, bucketSeconds)
+
+	if (firstBucketMs > lastBucketMs) {
+		return [new Date(floorToBucketMs(startMs, bucketSeconds)).toISOString()]
+	}
+
+	const buckets: string[] = []
+	for (let cursor = firstBucketMs; cursor <= lastBucketMs; cursor += bucketMs) {
+		buckets.push(new Date(cursor).toISOString())
+	}
+	return buckets
+}

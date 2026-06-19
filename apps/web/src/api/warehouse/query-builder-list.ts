@@ -16,10 +16,6 @@ const QueryBuilderListInputSchema = Schema.Struct({
 
 export type QueryBuilderListInput = Schema.Schema.Type<typeof QueryBuilderListInputSchema>
 
-export interface QueryBuilderListResponse {
-	data: Array<Record<string, unknown>>
-}
-
 export function getQueryBuilderList({ data }: { data: QueryBuilderListInput }) {
 	return getQueryBuilderListEffect({ data })
 }

@@ -1,6 +1,6 @@
 import type { StructuredToolOutput } from "@maple/domain"
 
-export const STRUCTURED_MARKER = "__maple_ui"
+const STRUCTURED_MARKER = "__maple_ui"
 
 export function createDualContent(text: string, data: StructuredToolOutput) {
 	return [

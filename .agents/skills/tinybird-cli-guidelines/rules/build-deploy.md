@@ -35,7 +35,6 @@ In CLI 4.0, build/deploy should usually be run without `--cloud`, `--local`, or 
 - If you see warnings about deletions, stop and ask for confirmation before re-running with the flag.
 
 Example:
-
 ```
 tb deploy --allow-destructive-operations
 ```

@@ -9,7 +9,7 @@
 - Before creating tests, analyze fixture files used by the endpoint tables.
 - `expected_result` should always be an empty string; the tool fills it.
 - Only create tests when explicitly requested (e.g. "Create tests for this endpoint").
-- If asked to "test" or "call" an endpoint, call the endpoint instead of creating tests.
+- If asked to "test" or "call" an endpoint, use `tb endpoint data` instead of creating tests.
 
 Test format:
 
@@ -18,4 +18,21 @@ Test format:
   description: Test hourly granularity for a single day
   parameters: date_from=2024-01-01&date_to=2024-01-01
   expected_result: ''
+```
+
+## Fixture Data
+
+Fixtures live under `/fixtures` and provide sample data for testing.
+
+- Name fixture files to match the Data Source they populate: `fixtures/<datasource_name>.ndjson` or `.csv`.
+- Load fixtures into a local or branch environment with `tb datasource append <name> --file fixtures/<name>.ndjson`.
+- Design fixture data to cover the scenarios your tests need (edge cases, date ranges, different parameter values).
+- Keep fixtures small and deterministic. They should be committed to version control.
+
+## Running Tests
+
+```
+tb test run                      # Run all tests
+tb test run tests/my_endpoint    # Run specific test file
+tb test update tests/my_endpoint # Update expected results from current output
 ```

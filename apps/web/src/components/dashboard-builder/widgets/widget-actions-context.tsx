@@ -41,8 +41,7 @@ interface WidgetActionsProviderProps {
  * widget components' prop interfaces.
  */
 export function WidgetActionsProvider({ widget, dataState, children }: WidgetActionsProviderProps) {
-	const { readOnly, removeWidget, cloneWidget, configureWidget, dashboardId } =
-		useDashboardActions()
+	const { readOnly, removeWidget, cloneWidget, configureWidget, dashboardId } = useDashboardActions()
 	const navigate = useNavigate()
 
 	const errorTitle = dataState.status === "error" ? (dataState.title ?? null) : null

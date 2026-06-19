@@ -110,6 +110,7 @@ describe("metricsTimeseriesRateQuery", () => {
 				"cityHash64(mapKeys(ResourceAttributes), mapValues(ResourceAttributes)), " +
 				"StartTimeUnix",
 		)
+		expect(sql).toContain("ROWS BETWEEN 1 PRECEDING AND CURRENT ROW")
 		expect(sql).toContain("rateValue")
 		expect(sql).toContain("increaseValue")
 		expect(sql).toContain("sumIf(")
@@ -137,6 +138,60 @@ describe("metricsTimeseriesRateQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("Attributes['host']")
 		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+	})
+
+	it("uses the hourly SpanMetrics calls rollup for hourly calls increases", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+		})
+		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("FROM span_metrics_calls_hourly")
+		expect(sql).toContain("argMaxMerge(LastValue) AS Value")
+		expect(sql).toContain("WITH hourly_values AS")
+		expect(sql).toContain("WITH")
+		expect(sql).toContain("FROM with_deltas")
+		expect(sql).toContain("sumIf(delta, delta >= 0) AS increaseValue")
+		expect(sql).not.toContain("FROM metrics_sum")
+	})
+
+	it("applies span.kind filters on the hourly SpanMetrics calls rollup", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			attributeKey: "span.kind",
+			attributeValue: "SPAN_KIND_SERVER",
+			groupByAttributeKey: "span.kind",
+		})
+		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("SpanKind = 'SPAN_KIND_SERVER'")
+		expect(sql).toContain("SpanKind AS attributeValue")
+		expect(sql).toContain("GROUP BY bucket, serviceName, attributeValue")
+	})
+
+	it("falls back to raw metrics_sum when attributeValue has no attributeKey", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 3600,
+			attributeValue: "SPAN_KIND_SERVER",
+		})
+		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).not.toContain("span_metrics_calls_hourly")
+	})
+
+	it("falls back to raw metrics_sum for non-hourly SpanMetrics calls buckets", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			bucketSeconds: 60,
+		})
+		const { sql } = compileCH(q, {
+			...baseParams,
+			metricName: "span.metrics.calls",
+			bucketSeconds: 60,
+		})
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
 })
 
@@ -236,4 +291,3 @@ describe("metricsSummaryQuery", () => {
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 })
-

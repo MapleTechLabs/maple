@@ -14,10 +14,7 @@ import type { RawSqlDisplayType, WidgetDataSourceSchema } from "@maple/domain/ht
 
 type WidgetDataSource = typeof WidgetDataSourceSchema.Type
 
-export function visualizationToDisplayType(
-	visualization: string,
-	chartId?: string,
-): RawSqlDisplayType {
+export function visualizationToDisplayType(visualization: string, chartId?: string): RawSqlDisplayType {
 	switch (visualization) {
 		case "table":
 			return "table"

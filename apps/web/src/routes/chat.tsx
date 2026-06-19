@@ -13,6 +13,10 @@ const ChatSearch = Schema.Struct({
 	mode: Schema.optional(Schema.Literals(["alert", "widget-fix"])),
 	alert: Schema.optional(Schema.String),
 	widget: Schema.optional(Schema.String),
+	/** Read-only shared view: the tab id of a teammate's conversation to display. */
+	shared: Schema.optional(Schema.String),
+	/** Title to show for a shared conversation (the viewer doesn't have it locally). */
+	title: Schema.optional(Schema.String),
 })
 
 export const Route = effectRoute(createFileRoute("/chat"))({
@@ -21,7 +25,7 @@ export const Route = effectRoute(createFileRoute("/chat"))({
 })
 
 function ChatRoute() {
-	const { tab, mode, alert, widget } = Route.useSearch()
+	const { tab, mode, alert, widget, shared, title } = Route.useSearch()
 	const alertContext: AlertContext | undefined =
 		mode === "alert" && alert ? decodeAlertContextFromSearchParam(alert) : undefined
 	const widgetFixContext: WidgetFixContext | undefined =
@@ -32,6 +36,8 @@ function ChatRoute() {
 			mode={mode}
 			alertContext={alertContext}
 			widgetFixContext={widgetFixContext}
+			sharedTabId={shared}
+			sharedTitle={title}
 		/>
 	)
 }

@@ -152,9 +152,7 @@ const runMicro = (opts: {
 	// part of the union measurement).
 	const pool = defineTaggedErrors(Math.max(errors, 7)) as any[]
 
-	const rTagged = bench(`define ${classes} TaggedError classes`, reps, () =>
-		defineTaggedErrors(classes),
-	)
+	const rTagged = bench(`define ${classes} TaggedError classes`, reps, () => defineTaggedErrors(classes))
 	const rStructs = bench(`define ${classes} Schema.Struct`, reps, () => defineStructs(classes))
 	const rUnion1 = bench(`build ${endpoints} endpoints × 1 error`, reps, () =>
 		buildApiGroup(endpoints, 1, pool),
@@ -162,9 +160,7 @@ const runMicro = (opts: {
 	const rUnionN = bench(`build ${endpoints} endpoints × ${errors} errors`, reps, () =>
 		buildApiGroup(endpoints, errors, pool),
 	)
-	const rGraph = bench(`define representative ${graph}-struct graph`, reps, () =>
-		defineStructs(graph),
-	)
+	const rGraph = bench(`define representative ${graph}-struct graph`, reps, () => defineStructs(graph))
 
 	// Derived numbers that actually answer the question.
 	const perTaggedUs = (rTagged.cpuMs / classes) * 1000
@@ -215,9 +211,7 @@ const runMicro = (opts: {
 
 	console.log(`\n  per TaggedError class:            ${perTaggedUs.toFixed(2)} µs`)
 	console.log(`  per Schema.Struct:                ${perStructUs.toFixed(2)} µs`)
-	console.log(
-		`  union marginal (1→${errors} err × ${endpoints} ep):   ${unionMarginalMs.toFixed(3)} ms`,
-	)
+	console.log(`  union marginal (1→${errors} err × ${endpoints} ep):   ${unionMarginalMs.toFixed(3)} ms`)
 
 	console.log(`\n  ── the comment's scenario ──────────────────────────────────`)
 	console.log(`  define 7 new error classes:       ${sevenClassesMs.toFixed(3)} ms`)
@@ -239,9 +233,7 @@ const runMicro = (opts: {
 	console.log(
 		`  ./app behind a dynamic import, not trimming error classes. Post-fix startup is ~${POST_FIX_STARTUP_MS} ms.`,
 	)
-	console.log(
-		`  Authoritative V8/workerd number: \`bun run scripts/bench-startup-cpu.ts worker\`.\n`,
-	)
+	console.log(`  Authoritative V8/workerd number: \`bun run scripts/bench-startup-cpu.ts worker\`.\n`)
 }
 
 // --- cpuprofile parsing (V8 .cpuprofile format) ----------------------------
@@ -290,8 +282,7 @@ const parseProfile = (path: string, json: boolean) => {
 	const ranked = [...byFrame.entries()].sort((a, b) => b[1].self - a[1].self)
 	const idleMs = idleUs / 1000
 	const activeCpuMs = wallMs - idleMs // CPU actually spent executing JS at startup
-	const schemaMs =
-		ranked.filter(([, v]) => v.schema).reduce((s, [, v]) => s + v.self, 0) / 1000
+	const schemaMs = ranked.filter(([, v]) => v.schema).reduce((s, [, v]) => s + v.self, 0) / 1000
 
 	if (json) {
 		console.log(
@@ -315,8 +306,7 @@ const parseProfile = (path: string, json: boolean) => {
 	console.log(`\nstartup CPU profile: ${path}\n`)
 	console.log(`  startup phase (wall):     ${wallMs.toFixed(1)} ms  (incl. ${idleMs.toFixed(1)} ms idle)`)
 	console.log(
-		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` +
-			`   ← the number 10021 measures`,
+		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` + `   ← the number 10021 measures`,
 	)
 	console.log(
 		`  Cloudflare budget:        ${CF_STARTUP_BUDGET_MS} ms` +

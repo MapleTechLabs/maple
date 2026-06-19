@@ -1,5 +1,6 @@
-import type { ErrorIssueDocument, WorkflowState } from "@maple/domain/http"
+import type { ErrorIssueDocument, IssueSeverity, WorkflowState } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
 import { getServiceColorClass } from "@maple/ui/lib/colors"
 
@@ -11,9 +12,12 @@ import { ActorChip } from "./actor-chip"
 import { clampPriority, shortIssueId } from "./issue-id"
 import { IssueNotesCallout } from "./issue-notes-callout"
 import { LeaseHud } from "./lease-hud"
+import { SEVERITY_LABEL, SEVERITY_ORDER, SEVERITY_SOURCE_LABEL, SEVERITY_TONE } from "./severity-badge"
 import { StateSelect } from "./state-select"
 
-type Busy = "state" | "claim" | "release" | "heartbeat" | "comment" | null
+type Busy = "state" | "claim" | "release" | "heartbeat" | "comment" | "severity" | null
+
+const SEVERITY_NONE = "none" as const
 
 interface IssueSidebarProps {
 	issue: ErrorIssueDocument
@@ -23,6 +27,7 @@ interface IssueSidebarProps {
 	onClaim: () => void
 	onHeartbeat: () => void
 	onRelease: () => void
+	onSetSeverity: (next: IssueSeverity | null) => void
 }
 
 export function IssueSidebar({
@@ -33,6 +38,7 @@ export function IssueSidebar({
 	onClaim,
 	onHeartbeat,
 	onRelease,
+	onSetSeverity,
 }: IssueSidebarProps) {
 	const priority = clampPriority(issue.priority)
 	const isTerminal = issue.workflowState === "cancelled" || issue.workflowState === "done"
@@ -47,6 +53,36 @@ export function IssueSidebar({
 						disabled={busy === "state"}
 						onChange={onTransition}
 					/>
+				</Row>
+				<Row label="Severity">
+					<div className="flex w-full flex-col items-end gap-0.5">
+						<Select
+							value={issue.severity ?? SEVERITY_NONE}
+							disabled={busy === "severity"}
+							onValueChange={(value) =>
+								onSetSeverity(value === SEVERITY_NONE ? null : (value as IssueSeverity))
+							}
+						>
+							<SelectTrigger className="w-full">
+								<SelectValue placeholder="Severity" />
+							</SelectTrigger>
+							<SelectContent>
+								{SEVERITY_ORDER.map((value) => (
+									<SelectItem key={value} value={value}>
+										<span className={cn("rounded px-1", SEVERITY_TONE[value])}>
+											{SEVERITY_LABEL[value]}
+										</span>
+									</SelectItem>
+								))}
+								<SelectItem value={SEVERITY_NONE}>Not set</SelectItem>
+							</SelectContent>
+						</Select>
+						{issue.severitySource ? (
+							<span className="text-[11px] text-muted-foreground">
+								{SEVERITY_SOURCE_LABEL[issue.severitySource]}
+							</span>
+						) : null}
+					</div>
 				</Row>
 				<Row label="Priority">
 					<span className="flex items-center gap-2">
@@ -125,12 +161,18 @@ export function IssueSidebar({
 						{totalInWindow.toLocaleString()}
 					</span>
 				</Row>
-				<Row label="First seen" title={new Date(normalizeTimestampInput(issue.firstSeenAt)).toLocaleString()}>
+				<Row
+					label="First seen"
+					title={new Date(normalizeTimestampInput(issue.firstSeenAt)).toLocaleString()}
+				>
 					<span className="text-right tabular-nums text-muted-foreground">
 						{formatRelativeTime(issue.firstSeenAt)}
 					</span>
 				</Row>
-				<Row label="Last seen" title={new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}>
+				<Row
+					label="Last seen"
+					title={new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}
+				>
 					<span className="text-right tabular-nums text-foreground">
 						{formatRelativeTime(issue.lastSeenAt)}
 					</span>

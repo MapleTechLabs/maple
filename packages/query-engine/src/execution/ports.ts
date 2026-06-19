@@ -27,6 +27,15 @@ export type SqlQueryOptions = {
 	 * filtered and grouped by call site without re-running the SQL.
 	 */
 	context?: string
+	/**
+	 * Read this query from the INGEST config (managed Tinybird) instead of the
+	 * per-org read config. Use for Maple control-plane datasources that are
+	 * written via `ingest` (which is hard-pinned to Tinybird) and therefore do
+	 * NOT exist in a per-org BYO ClickHouse — e.g. `alert_checks`. Keeps the
+	 * read symmetric with the write. Falls back to `resolveConfig` if the host
+	 * did not inject a `resolveIngestConfig`.
+	 */
+	pinToIngestConfig?: boolean
 }
 
 /** Resolved upstream connection config for a tenant's queries. */

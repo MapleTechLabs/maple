@@ -3,17 +3,15 @@
 import type { ComponentProps } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"
-import { ScrollArea, ScrollBar } from "@maple/ui/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
 import { useCallback } from "react"
 
-export type SuggestionsProps = ComponentProps<typeof ScrollArea>
+export type SuggestionsProps = ComponentProps<"div">
 
 export const Suggestions = ({ className, children, ...props }: SuggestionsProps) => (
-	<ScrollArea className="h-auto w-full overflow-x-auto whitespace-nowrap" {...props}>
-		<div className={cn("flex w-max flex-nowrap items-center gap-2", className)}>{children}</div>
-		<ScrollBar className="hidden" orientation="horizontal" />
-	</ScrollArea>
+	<div className={cn("flex flex-wrap items-center gap-2", className)} {...props}>
+		{children}
+	</div>
 )
 
 export type SuggestionProps = Omit<ComponentProps<typeof Button>, "onClick"> & {
@@ -36,7 +34,10 @@ export const Suggestion = ({
 
 	return (
 		<Button
-			className={cn("cursor-pointer rounded-full px-4", className)}
+			className={cn(
+				"h-auto min-h-7 max-w-full cursor-pointer whitespace-normal rounded-full px-4 py-1.5 text-left",
+				className,
+			)}
 			onClick={handleClick}
 			size={size}
 			type="button"

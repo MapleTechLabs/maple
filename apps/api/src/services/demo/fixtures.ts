@@ -23,13 +23,7 @@ const DB_QUERIES = [
 	"UPDATE users SET last_seen = NOW() WHERE id = $1",
 ]
 
-const WORKER_JOBS = [
-	"send_email",
-	"process_payment",
-	"sync_inventory",
-	"generate_report",
-	"refresh_cache",
-]
+const WORKER_JOBS = ["send_email", "process_payment", "sync_inventory", "generate_report", "refresh_cache"]
 
 // ---------------------------------------------------------------------------
 // Demo data is written straight to the `traces` / `logs` datasources via
@@ -314,7 +308,10 @@ function generateWorkerTrace(timestamp: Date, orgId: string): DemoRows {
 					events_timestamp: [fmtTs(endMs)],
 					events_name: ["exception"],
 					events_attributes: [
-						{ "exception.type": "JobProcessingError", "exception.message": `worker.${job} failed` },
+						{
+							"exception.type": "JobProcessingError",
+							"exception.message": `worker.${job} failed`,
+						},
 					],
 				}
 			: {}),

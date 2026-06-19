@@ -19,6 +19,8 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					})
 					const response = yield* errors.listIssues(tenant.orgId, {
 						workflowState: query.workflowState,
+						severity: query.severity,
+						kind: query.kind,
 						service: query.service,
 						deploymentEnv: query.deploymentEnv,
 						assignedActorId: query.assignedActorId,
@@ -134,6 +136,27 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					return yield* errors.assignIssue(tenant.orgId, actor.id, params.issueId, payload.actorId)
 				}).pipe(Effect.withSpan("HttpErrors.assignIssue")),
 			)
+			.handle("setIssueSeverity", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					const actor = yield* errors.ensureUserActor(tenant.orgId, tenant.userId)
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						issueId: params.issueId,
+						severity: payload.severity ?? "null",
+					})
+					return yield* errors.setSeverity(
+						tenant.orgId,
+						actor.id,
+						params.issueId,
+						payload.severity,
+						{
+							note: payload.note,
+							source: "manual",
+						},
+					)
+				}).pipe(Effect.withSpan("HttpErrors.setIssueSeverity")),
+			)
 			.handle("listIssueEvents", ({ params, query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
@@ -210,6 +233,27 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 					)
 					return yield* errors.upsertNotificationPolicy(tenant.orgId, tenant.userId, payload)
 				}).pipe(Effect.withSpan("HttpErrors.upsertNotificationPolicy")),
+			)
+			.handle("getEscalationPolicy", () =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					return yield* errors.getEscalationPolicy(tenant.orgId)
+				}).pipe(Effect.withSpan("HttpErrors.getEscalationPolicy")),
+			)
+			.handle("upsertEscalationPolicy", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					yield* requireAdmin(
+						tenant.roles,
+						() =>
+							new ErrorForbiddenError({
+								message: "Only org admins can manage the escalation policy",
+							}),
+					)
+					return yield* errors.upsertEscalationPolicy(tenant.orgId, tenant.userId, payload)
+				}).pipe(Effect.withSpan("HttpErrors.upsertEscalationPolicy")),
 			)
 	}),
 )

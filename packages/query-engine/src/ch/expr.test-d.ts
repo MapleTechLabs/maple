@@ -4,7 +4,7 @@
 
 import { expectTypeOf } from "expect-type"
 import * as CH from "./index"
-import type { Expr, Condition, ColumnRef } from "./expr"
+import type { Expr, Condition } from "./expr"
 import type { ParamMarker } from "./param"
 import type { CHString, CHFloat64, CHMap } from "./types"
 import { makeColumnRef } from "./expr"

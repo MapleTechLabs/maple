@@ -16,7 +16,6 @@ import { McpQueryError } from "@/mcp/tools/types"
 const decodeDashboardId = Schema.decodeUnknownSync(DashboardId)
 
 export type DashboardWidget = typeof DashboardWidgetSchema.Type
-export type WidgetLayout = typeof WidgetLayoutSchema.Type
 
 const GRID_COLS = 12
 

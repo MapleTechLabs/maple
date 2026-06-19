@@ -14,7 +14,5 @@ export const isAdmin = (roles: ReadonlyArray<RoleName>): boolean =>
  * caller-supplied error factory so each route group can fail with its own
  * tagged ForbiddenError (kept domain-local for status-code mapping).
  */
-export const requireAdmin = <E>(
-	roles: ReadonlyArray<RoleName>,
-	makeError: () => E,
-): Effect.Effect<void, E> => (isAdmin(roles) ? Effect.void : Effect.fail(makeError()))
+export const requireAdmin = <E>(roles: ReadonlyArray<RoleName>, makeError: () => E): Effect.Effect<void, E> =>
+	isAdmin(roles) ? Effect.void : Effect.fail(makeError())

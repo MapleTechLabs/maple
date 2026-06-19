@@ -1,5 +1,9 @@
 import { createMapleD1Client, type CloudflareD1Database } from "@maple/db/client"
-import { migrateAlertQuerySignalTypes, reshapeDashboardWidgets } from "@maple/db/migrate"
+import {
+	migrateAlertQuerySignalTypes,
+	migrateClickHouseSchemaVersionRekey,
+	reshapeDashboardWidgets,
+} from "@maple/db/migrate"
 import { D1Database as D1DatabaseToken } from "@maple/effect-cloudflare/d1-connection"
 import { Effect, Layer } from "effect"
 import { Database, type DatabaseClient, type DatabaseShape, toDatabaseError } from "./DatabaseLive"
@@ -32,6 +36,14 @@ const makeD1Database = Effect.gen(function* () {
 		catch: toDatabaseError,
 	}).pipe(
 		Effect.tap(() => Effect.logInfo("[Database] Alert query signal-type migration complete")),
+		Effect.orDie,
+	)
+
+	yield* Effect.tryPromise({
+		try: () => migrateClickHouseSchemaVersionRekey(client),
+		catch: toDatabaseError,
+	}).pipe(
+		Effect.tap(() => Effect.logInfo("[Database] ClickHouse schema-version re-key migration complete")),
 		Effect.orDie,
 	)
 

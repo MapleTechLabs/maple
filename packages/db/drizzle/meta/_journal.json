@@ -159,8 +159,36 @@
     {
       "idx": 22,
       "version": "6",
-      "when": 1781817385089,
-      "tag": "0022_vcs_integration",
+      "when": 1781271173908,
+      "tag": "0022_yellow_proteus",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "6",
+      "when": 1781272544424,
+      "tag": "0023_giant_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1781273583822,
+      "tag": "0024_previous_jack_murdock",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1781619161427,
+      "tag": "0025_red_slipstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1781875686022,
+      "tag": "0026_vcs_integration",
       "breakpoints": true
     }
   ]

@@ -1,8 +1,10 @@
 ---
 import * as m from "../paraglide/messages";
 import { NavBar } from "./NavBar"
+import { getGitHubStars } from "../lib/github-stars"
 
 const locale = Astro.currentLocale ?? "en";
+const stars = await getGitHubStars();
 ---
 
 <!--
@@ -15,7 +17,7 @@ const locale = Astro.currentLocale ?? "en";
 
 <nav id="main-nav" class="fixed top-[28px] left-0 right-0 z-50 border-b border-border bg-bg transition-colors duration-200">
     <div class="mx-auto max-w-6xl px-6 h-14 flex items-center">
-        <NavBar locale={locale} client:load />
+        <NavBar locale={locale} stars={stars} client:load />
     </div>
 </nav>
 

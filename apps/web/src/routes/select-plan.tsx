@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/clerk-react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
@@ -37,7 +37,7 @@ function SelectPlanPage() {
 
 function SelectPlanPageInner() {
 	const { isLoaded, isSignedIn, orgId } = useAuth()
-	const { data: customer, isLoading: isCustomerLoading } = useCustomer()
+	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { redirect_url } = Route.useSearch()
 
 	if (!isLoaded || isCustomerLoading) {

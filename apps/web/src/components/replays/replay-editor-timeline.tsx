@@ -3,17 +3,15 @@ import { Link } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { TraceId } from "@maple/domain/http"
 import { cn } from "@maple/ui/utils"
+import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
+import { parseAttributes } from "@maple/ui/lib/span-tree"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	getSessionTraceSummariesResultAtom,
 	getSpanHierarchyResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import {
-	type DisplayMarker,
-	useReplayPlayer,
-	type ReplayPlayerContextValue,
-} from "./replay-player-context"
-import { spanDisplayRange } from "./replay-timeline"
+import { type DisplayMarker, useReplayPlayer, type ReplayPlayerContextValue } from "./replay-player-context"
+import { spanDisplayRange, type Timeline } from "./replay-timeline"
 import { formatClock, MARKER_STYLES } from "./replay-format"
 import {
 	ChevronRightIcon,
@@ -47,12 +45,28 @@ function pct(ms: number, totalMs: number): number {
 	return Math.min(100, Math.max(0, (ms / totalMs) * 100))
 }
 
+/**
+ * The slice of player state the traces waterfall needs — none of it changes while
+ * scrubbing (unlike `displayCurrentMs`). Threading just this subset lets the
+ * `TracesTrack` subtree be `React.memo`'d so it doesn't re-render on every seek.
+ */
+interface SeekContext {
+	recordingStartEpochMs: number
+	realTotalMs: number
+	timeline: Timeline
+	displayTotalMs: number
+	seekDisplay: (displayMs: number) => void
+}
+
 export interface SessionTraceSummary {
 	readonly traceId: string
 	readonly startTime: string
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootServiceName: string
+	/** Root span's OTel kind + attributes (JSON), used to render the HTTP label. */
+	readonly rootSpanKind?: string
+	readonly rootSpanAttributes?: string
 	readonly spanCount: number
 	readonly hasError: number
 }
@@ -67,15 +81,40 @@ export function ReplayEditorTimeline({
 }) {
 	const player = useReplayPlayer()
 
+	// Stable across scrubbing (every field is seek-independent), so `TracesTrack`'s
+	// `React.memo` bails out while the playhead moves. `seekDisplay` is rAF-coalesced
+	// and referentially stable, so it doesn't break the memo either.
+	const seek = React.useMemo<SeekContext>(
+		() => ({
+			recordingStartEpochMs: player.recordingStartEpochMs,
+			realTotalMs: player.realTotalMs,
+			timeline: player.timeline,
+			displayTotalMs: player.displayTotalMs,
+			seekDisplay: player.seekDisplay,
+		}),
+		[
+			player.recordingStartEpochMs,
+			player.realTotalMs,
+			player.timeline,
+			player.displayTotalMs,
+			player.seekDisplay,
+		],
+	)
+
 	return (
 		<section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
 			<TransportRow player={player} />
 			{/* Shared time region. The playhead overlays every track; scrubbing is
-			    driven from the activity track (the master scrub track). */}
+			    driven from the scrub surface spanning the ruler + activity rows. */}
 			<div className="relative">
-				<TimeRuler totalMs={player.displayTotalMs} />
-				<ActivityTrack player={player} />
-				<TracesTrack traceIds={traceIds} player={player} previewSummaries={previewSummaries} />
+				{/* Ruler + activity share one drag surface so the playhead can be grabbed
+				    anywhere across the top of the timeline, not just the thin lane. */}
+				<div className="relative">
+					<TimeRuler totalMs={player.displayTotalMs} />
+					<ActivityTrack player={player} />
+					<ScrubSurface player={player} />
+				</div>
+				<TracesTrack traceIds={traceIds} seek={seek} previewSummaries={previewSummaries} />
 				<Playhead player={player} />
 			</div>
 		</section>
@@ -148,16 +187,22 @@ function TimeRuler({ totalMs }: { totalMs: number }) {
 	)
 }
 
-// --- Activity track (master scrub) ----------------------------------------
+// --- Scrub surface (master scrub) -----------------------------------------
 
-function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
-	const { displayTotalMs, markers, idleBands } = player
-	const laneRef = React.useRef<HTMLDivElement | null>(null)
+/**
+ * Transparent drag surface covering the ruler + activity rows (everything right
+ * of the lane gutter). It owns the seek interaction so the playhead can be
+ * grabbed anywhere across the top of the timeline; the ruler/activity visuals
+ * render underneath and this layer only captures pointer drags.
+ */
+function ScrubSurface({ player }: { player: ReplayPlayerContextValue }) {
+	const { displayTotalMs } = player
+	const surfaceRef = React.useRef<HTMLDivElement | null>(null)
 	const [dragging, setDragging] = React.useState(false)
 
 	const msFromClientX = React.useCallback(
 		(clientX: number) => {
-			const el = laneRef.current
+			const el = surfaceRef.current
 			if (!el) return 0
 			const rect = el.getBoundingClientRect()
 			const ratio = rect.width > 0 ? (clientX - rect.left) / rect.width : 0
@@ -165,6 +210,39 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 		},
 		[displayTotalMs],
 	)
+
+	return (
+		<div
+			ref={surfaceRef}
+			role="slider"
+			aria-label="Seek"
+			aria-valuemin={0}
+			aria-valuemax={Math.round(displayTotalMs)}
+			aria-valuenow={Math.round(player.displayCurrentMs)}
+			tabIndex={0}
+			onPointerDown={(e) => {
+				e.currentTarget.setPointerCapture(e.pointerId)
+				setDragging(true)
+				player.seekDisplay(msFromClientX(e.clientX))
+			}}
+			onPointerMove={(e) => {
+				if (dragging) player.seekDisplay(msFromClientX(e.clientX))
+			}}
+			onPointerUp={(e) => {
+				e.currentTarget.releasePointerCapture(e.pointerId)
+				setDragging(false)
+			}}
+			// `left-36` matches the `w-36` lane gutter so the surface maps 1:1 to the
+			// time axis (same coordinate space as the playhead overlay).
+			className="absolute inset-y-0 right-0 left-36 cursor-pointer touch-none select-none"
+		/>
+	)
+}
+
+// --- Activity track (visual) ----------------------------------------------
+
+function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
+	const { displayTotalMs, markers, idleBands } = player
 
 	return (
 		<div className="flex items-stretch border-b border-border/60">
@@ -177,28 +255,7 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 				<PulseIcon className="size-3.5 opacity-70" />
 				Activity
 			</div>
-			<div
-				ref={laneRef}
-				role="slider"
-				aria-label="Seek"
-				aria-valuemin={0}
-				aria-valuemax={Math.round(displayTotalMs)}
-				aria-valuenow={Math.round(player.displayCurrentMs)}
-				tabIndex={0}
-				onPointerDown={(e) => {
-					e.currentTarget.setPointerCapture(e.pointerId)
-					setDragging(true)
-					player.seekDisplay(msFromClientX(e.clientX))
-				}}
-				onPointerMove={(e) => {
-					if (dragging) player.seekDisplay(msFromClientX(e.clientX))
-				}}
-				onPointerUp={(e) => {
-					e.currentTarget.releasePointerCapture(e.pointerId)
-					setDragging(false)
-				}}
-				className="group relative h-9 flex-1 cursor-pointer touch-none select-none"
-			>
+			<div className="relative h-9 flex-1">
 				{/* Track bar */}
 				<div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-muted">
 					{idleBands.map((band, i) => {
@@ -243,13 +300,13 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 
 // --- Traces track ---------------------------------------------------------
 
-function TracesTrack({
+const TracesTrack = React.memo(function TracesTrack({
 	traceIds,
-	player,
+	seek,
 	previewSummaries,
 }: {
 	traceIds: ReadonlyArray<string>
-	player: ReplayPlayerContextValue
+	seek: SeekContext
 	previewSummaries?: ReadonlyArray<SessionTraceSummary>
 }) {
 	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds } }))
@@ -272,7 +329,7 @@ function TracesTrack({
 				{header(previewSummaries.length)}
 				<ul>
 					{previewSummaries.map((s) => (
-						<TraceRow key={s.traceId} summary={s} player={player} preview />
+						<TraceRow key={s.traceId} summary={s} seek={seek} preview />
 					))}
 				</ul>
 			</div>
@@ -285,7 +342,8 @@ function TracesTrack({
 				{header(0)}
 				<p className="px-3 py-4 text-xs leading-relaxed text-muted-foreground">
 					No backend traces were linked to this session. Correlation populates automatically when
-					the page is instrumented with <span className="font-mono">@maple-dev/browser</span> tracing.
+					the page is instrumented with <span className="font-mono">@maple-dev/browser</span>{" "}
+					tracing.
 				</p>
 			</div>
 		)
@@ -321,7 +379,7 @@ function TracesTrack({
 							) : (
 								<ul>
 									{summaries.map((s) => (
-										<TraceRow key={s.traceId} summary={s} player={player} />
+										<TraceRow key={s.traceId} summary={s} seek={seek} />
 									))}
 								</ul>
 							)}
@@ -331,15 +389,15 @@ function TracesTrack({
 				.render()}
 		</div>
 	)
-}
+})
 
 function TraceRow({
 	summary,
-	player,
+	seek,
 	preview = false,
 }: {
 	summary: SessionTraceSummary
-	player: ReplayPlayerContextValue
+	seek: SeekContext
 	/** Preview rows have no real trace to expand, so the span lane is disabled. */
 	preview?: boolean
 }) {
@@ -347,9 +405,9 @@ function TraceRow({
 	const range = spanDisplayRange({
 		spanStartIso: summary.startTime,
 		durationMs: summary.durationMs,
-		recordingStartEpochMs: player.recordingStartEpochMs,
-		realTotalMs: player.realTotalMs,
-		timeline: player.timeline,
+		recordingStartEpochMs: seek.recordingStartEpochMs,
+		realTotalMs: seek.realTotalMs,
+		timeline: seek.timeline,
 	})
 	const isError = summary.hasError > 0
 
@@ -390,7 +448,13 @@ function TraceRow({
 					>
 						<span className="min-w-0 flex-1">
 							<span className="flex items-center gap-1 truncate font-medium text-foreground">
-								<span className="truncate">{summary.rootSpanName || "trace"}</span>
+								<HttpSpanLabel
+									spanName={summary.rootSpanName || "trace"}
+									spanAttributes={parseAttributes(summary.rootSpanAttributes)}
+									spanKind={summary.rootSpanKind}
+									className="min-w-0"
+									textClassName="truncate"
+								/>
 								<ExternalLinkIcon className="size-3 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/trace:opacity-100" />
 							</span>
 							<span className="block truncate font-mono text-[10px] text-muted-foreground">
@@ -401,18 +465,18 @@ function TraceRow({
 				</div>
 				<button
 					type="button"
-					onClick={() => player.seekDisplay(range.displayStartMs)}
+					onClick={() => seek.seekDisplay(range.displayStartMs)}
 					title={`${summary.rootSpanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
 						summary.durationMs,
 					)}ms${range.outOfRange ? " · outside recording" : ""}`}
 					className="relative h-11 flex-1 cursor-pointer"
 				>
 					<TraceBar
-						leftPct={pct(range.displayStartMs, player.displayTotalMs)}
+						leftPct={pct(range.displayStartMs, seek.displayTotalMs)}
 						widthPct={Math.max(
 							0.6,
-							pct(range.displayEndMs, player.displayTotalMs) -
-								pct(range.displayStartMs, player.displayTotalMs),
+							pct(range.displayEndMs, seek.displayTotalMs) -
+								pct(range.displayStartMs, seek.displayTotalMs),
 						)}
 						isError={isError}
 						outOfRange={range.outOfRange}
@@ -421,7 +485,7 @@ function TraceRow({
 				</button>
 			</div>
 			{expanded && (
-				<TraceSpanLane traceId={summary.traceId} timestamp={summary.startTime} player={player} />
+				<TraceSpanLane traceId={summary.traceId} timestamp={summary.startTime} seek={seek} />
 			)}
 		</li>
 	)
@@ -463,16 +527,18 @@ interface SpanRow {
 	readonly startTime: string
 	readonly durationMs: number
 	readonly statusCode: string
+	readonly spanAttributes: Record<string, string>
+	readonly spanKind: string
 }
 
 function TraceSpanLane({
 	traceId,
 	timestamp,
-	player,
+	seek,
 }: {
 	traceId: string
 	timestamp: string
-	player: ReplayPlayerContextValue
+	seek: SeekContext
 }) {
 	// Branding the id matches how every other caller drives this atom; the query
 	// only fires now because this component mounts only when the row is expanded.
@@ -504,13 +570,12 @@ function TraceSpanLane({
 			}
 			const sorted = [...spans].sort(
 				(a, b) =>
-					spanOffset(a, player.recordingStartEpochMs) -
-					spanOffset(b, player.recordingStartEpochMs),
+					spanOffset(a, seek.recordingStartEpochMs) - spanOffset(b, seek.recordingStartEpochMs),
 			)
 			return (
 				<div className="max-h-56 space-y-px overflow-y-auto bg-muted/10 py-1">
 					{sorted.map((span) => (
-						<SpanRowItem key={span.spanId} span={span} player={player} />
+						<SpanRowItem key={span.spanId} span={span} seek={seek} />
 					))}
 				</div>
 			)
@@ -522,17 +587,17 @@ function spanOffset(span: SpanRow, recordingStartEpochMs: number): number {
 	return new Date(span.startTime.replace(" ", "T") + "Z").getTime() - recordingStartEpochMs
 }
 
-function SpanRowItem({ span, player }: { span: SpanRow; player: ReplayPlayerContextValue }) {
+function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 	const range = spanDisplayRange({
 		spanStartIso: span.startTime,
 		durationMs: span.durationMs,
-		recordingStartEpochMs: player.recordingStartEpochMs,
-		realTotalMs: player.realTotalMs,
-		timeline: player.timeline,
+		recordingStartEpochMs: seek.recordingStartEpochMs,
+		realTotalMs: seek.realTotalMs,
+		timeline: seek.timeline,
 	})
 	const isError = span.statusCode === "Error"
-	const leftPct = pct(range.displayStartMs, player.displayTotalMs)
-	const widthPct = Math.max(0.4, pct(range.displayEndMs, player.displayTotalMs) - leftPct)
+	const leftPct = pct(range.displayStartMs, seek.displayTotalMs)
+	const widthPct = Math.max(0.4, pct(range.displayEndMs, seek.displayTotalMs) - leftPct)
 
 	return (
 		<div className="flex items-stretch">
@@ -540,11 +605,17 @@ function SpanRowItem({ span, player }: { span: SpanRow; player: ReplayPlayerCont
 				className={cn(LANE_GUTTER, "shrink-0 truncate border-r border-border/40 px-2 py-1 pl-6")}
 				title={`${span.serviceName} · ${span.spanName}`}
 			>
-				<span className="block truncate text-[10px] text-muted-foreground">{span.spanName}</span>
+				<HttpSpanLabel
+					spanName={span.spanName}
+					spanAttributes={span.spanAttributes}
+					spanKind={span.spanKind}
+					className="text-[10px]"
+					textClassName="text-[10px] text-muted-foreground"
+				/>
 			</div>
 			<button
 				type="button"
-				onClick={() => player.seekDisplay(range.displayStartMs)}
+				onClick={() => seek.seekDisplay(range.displayStartMs)}
 				title={`${span.spanName} — fired at ${formatClock(range.displayStartMs)} · ${Math.round(
 					span.durationMs,
 				)}ms${range.outOfRange ? " · outside recording" : ""}`}

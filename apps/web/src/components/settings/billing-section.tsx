@@ -1,5 +1,6 @@
 import { useMemo } from "react"
-import { useCustomer, useAggregateEvents } from "autumn-js/react"
+import { useAggregateEvents } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { PricingCards } from "./pricing-cards"
 import { format } from "date-fns"
 
@@ -41,16 +42,14 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 			<h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">
 				{title}
 			</h2>
-			{subtitle && (
-				<span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>
-			)}
+			{subtitle && <span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>}
 		</div>
 	)
 }
 
 function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string }) {
 	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLoading } = useTrialStatus()
-	const { openCustomerPortal } = useCustomer()
+	const { openCustomerPortal } = useMapleCustomer()
 
 	if (isLoading) {
 		return (
@@ -76,8 +75,7 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 
 	if (!planStatus) return null
 
-	const statusValue =
-		isTrialing && daysRemaining != null ? `Trial · ${daysRemaining}d left` : "Active"
+	const statusValue = isTrialing && daysRemaining != null ? `Trial · ${daysRemaining}d left` : "Active"
 
 	return (
 		<div>
@@ -97,7 +95,8 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 			</div>
 			{isTrialing && trialEndsAt && (
 				<p className="mt-3 text-xs text-muted-foreground">
-					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to avoid charges.
+					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to
+					avoid charges.
 				</p>
 			)}
 		</div>
@@ -122,7 +121,7 @@ function UsageSkeleton() {
 }
 
 export function BillingSection() {
-	const { data: customer, isLoading: isCustomerLoading } = useCustomer()
+	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { total, isLoading: isUsageLoading } = useAggregateEvents({
 		featureId: ["logs", "traces", "metrics", "browser_sessions"],
 		range: "1bc",

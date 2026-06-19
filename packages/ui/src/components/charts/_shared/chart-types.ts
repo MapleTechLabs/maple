@@ -36,6 +36,12 @@ export interface BaseChartProps {
 	logScale?: boolean
 	softMin?: number
 	softMax?: number
+	/**
+	 * When true, the y-axis lower bound follows the minimum of the displayed
+	 * data (with padding) instead of being pinned at zero. Ignored when
+	 * `softMin` or `logScale` are set. Applies to line/area charts.
+	 */
+	fitYAxisToData?: boolean
 	showPoints?: boolean
 	/**
 	 * Synchronizes hover state across charts that share the same id.

@@ -105,7 +105,8 @@ export function getChipTone(key: string, value: string, severityText: string): C
 	}
 
 	if (key === "http.method" || key === "http.request.method") return "info"
-	if (key === "db.system" || key === "db.system.name" || key === "rpc.service" || key === "rpc.method") return "info"
+	if (key === "db.system" || key === "db.system.name" || key === "rpc.service" || key === "rpc.method")
+		return "info"
 
 	if (rowIsError) return "muted"
 	return "muted"

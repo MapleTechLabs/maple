@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { Link } from "@tanstack/react-router"
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
@@ -38,7 +38,7 @@ function useSessionDismiss(key: string) {
  * the session; the "over" variant stays put.
  */
 export function QuotaBanner() {
-	const { data: customer } = useCustomer()
+	const { data: customer } = useMapleCustomer()
 	const status = previewLevel() ?? getQuotaStatus(customer)
 	const [approachingDismissed, dismissApproaching] = useSessionDismiss("quota-banner-approaching")
 
@@ -63,7 +63,11 @@ export function QuotaBanner() {
 						: "You're approaching the usage included in your plan. Upgrade for more headroom before you reach the limit."}
 				</AlertDescription>
 				<AlertAction className="flex items-center gap-2">
-					<Button size="sm" variant={isOver ? "default" : "outline"} render={<Link to="/settings" search={{ tab: "billing" }} />}>
+					<Button
+						size="sm"
+						variant={isOver ? "default" : "outline"}
+						render={<Link to="/settings" search={{ tab: "billing" }} />}
+					>
 						{isOver ? "Upgrade plan" : "View usage"}
 					</Button>
 					{!isOver && (

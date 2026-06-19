@@ -8,7 +8,7 @@ import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { toNames } from "@/lib/query-builder/autocomplete-utils"
 
-export interface MetricSelectionOption {
+interface MetricSelectionOption {
 	value: string
 	label: string
 	isMonotonic: boolean

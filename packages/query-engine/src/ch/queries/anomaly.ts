@@ -20,11 +20,7 @@ import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from 
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
 export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {
-	return [
-		(currentHourOfDay + 23) % 24,
-		currentHourOfDay,
-		(currentHourOfDay + 1) % 24,
-	]
+	return [(currentHourOfDay + 23) % 24, currentHourOfDay, (currentHourOfDay + 1) % 24]
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +257,33 @@ export function anomalyErrorSpikeTimeseriesQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			CH.toString_($.FingerprintHash).eq(param.string("fingerprintHash")),
+			$.FingerprintHash.eq(CH.toUInt64(param.string("fingerprintHash"))),
+			$.DeploymentEnv.eq(param.string("deploymentEnv")),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+		])
+		.groupBy("bucket")
+		.orderBy(["bucket", "asc"])
+		.limit(400)
+		.format("JSON")
+}
+
+/**
+ * Occurrence buckets for ALL error events on one (service, env) — the chart
+ * series for a consolidated spike incident, where several fingerprints share
+ * the incident and a single-fingerprint series would under-represent it.
+ * (The CH param builder has no array params, so this filters by service
+ * rather than a fingerprint IN-list.)
+ */
+export function anomalyErrorSpikeServiceTimeseriesQuery() {
+	return from(ErrorEventsByTime)
+		.select(($) => ({
+			bucket: CH.toStartOfInterval($.Timestamp, param.int("bucketSeconds")),
+			count: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.ServiceName.eq(param.string("serviceName")),
 			$.DeploymentEnv.eq(param.string("deploymentEnv")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),

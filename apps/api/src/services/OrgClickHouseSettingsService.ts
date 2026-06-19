@@ -18,14 +18,13 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import {
-	CLICKHOUSE_MV_SOURCE_TABLES,
-	clickHouseProjectRevision,
+	clickHouseSchemaVersion,
 	computeSchemaDiff,
 	migrations as clickHouseMigrations,
 	parseEmittedStatement,
-	qualifyStatementForDatabase,
 	type ActualTable,
 	type DesiredTable,
+	type TableDiffEntry,
 } from "@maple/domain/clickhouse"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
 import { eq } from "drizzle-orm"
@@ -50,7 +49,7 @@ import { validateExternalUrl } from "../lib/url-validator"
  * settings row, so callers will see `Option.none()` from
  * `resolveRuntimeConfig` for those orgs.
  */
-export type RuntimeBackendConfig = {
+type RuntimeBackendConfig = {
 	readonly backend: "clickhouse"
 	readonly url: string
 	readonly user: string
@@ -188,12 +187,6 @@ const decryptToken = (
 	decryptAes256Gcm(encrypted, encryptionKey, () =>
 		toEncryptionError("Failed to decrypt ClickHouse password"),
 	)
-
-// Both `qualifyStatementForDatabase` and `CLICKHOUSE_MV_SOURCE_TABLES` live
-// in `@maple/domain/clickhouse` now (so the `@maple/clickhouse-cli` package
-// can share them) and are imported at the top of this file. Re-exported here
-// for any tests / callers that still import from this module path.
-export { CLICKHOUSE_MV_SOURCE_TABLES, qualifyStatementForDatabase }
 
 // Image reference baked into the rendered collector config. Bumping this
 // here is the single edit needed to roll customers onto a newer maple-otel
@@ -423,6 +416,29 @@ export const isRetryableUpstream = (
 	// ClickHouse returns 500 for genuine SQL/DDL errors; 408 is our own timeout.
 	return status === 502 || status === 503 || status === 504 || (status >= 520 && status <= 529)
 }
+
+/**
+ * Whether `schemaDiff` should re-stamp the recorded `schema_version` to the
+ * current `clickHouseSchemaVersion`. True when the live ClickHouse schema is fully
+ * in sync (every diff entry `up_to_date`) yet the stored value is stale.
+ *
+ * This closes the "stuck not ready" gap: the ingest gateway only routes an org's
+ * frames to its own ClickHouse when `schema_version` equals the running version,
+ * but a credential re-save preserves the old value and the standalone CLI never
+ * writes D1 — so a CLI-applied (or revision-bumped) org whose cluster is actually
+ * current would otherwise stay on the managed Tinybird write path forever, with no
+ * way to re-stamp because Apply is disabled when there's no diff. The non-empty
+ * guard avoids healing off a degenerate empty diff (e.g. a failed schema fetch),
+ * where `every` would be vacuously true.
+ */
+export const shouldHealSchemaVersion = (
+	entries: ReadonlyArray<TableDiffEntry>,
+	storedSchemaVersion: string | null,
+	currentSchemaVersion: string,
+): boolean =>
+	storedSchemaVersion !== currentSchemaVersion &&
+	entries.length > 0 &&
+	entries.every((entry) => entry.status === "up_to_date")
 
 const describeUpstream5xx = (status: number, message: string): string => {
 	// A 52x with the literal `error code: 5xx` body is Cloudflare's synthetic
@@ -816,9 +832,47 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			const config = yield* loadConfigForRow(row)
 			const actual = yield* fetchActualSchema(config)
 			const entries = computeSchemaDiff({ tables: yield* getDesiredTables }, actual)
+
+			// Self-heal the recorded schema version. The ingest gateway only routes an
+			// org's frames directly to its ClickHouse when the stored `schema_version`
+			// equals the running `clickHouseSchemaVersion`. But a credential re-save
+			// *preserves* the old value and the standalone CLI never writes D1, so an org
+			// whose CH is already in sync can be stuck "not ready" forever — with no way to
+			// re-stamp, because the Apply action is disabled when there is no diff. When the
+			// live schema matches what we expect, record the current schema version so the
+			// read (dashboard) and write (gateway) paths agree on routing to ClickHouse
+			// instead of silently splitting writes to Tinybird.
+			let appliedSchemaVersion = row.schemaVersion ?? null
+			if (shouldHealSchemaVersion(entries, row.schemaVersion ?? null, clickHouseSchemaVersion)) {
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgClickHouseSettings)
+							.set({
+								schemaVersion: clickHouseSchemaVersion,
+								syncStatus: "connected",
+								lastSyncAt: now,
+								lastSyncError: null,
+								updatedAt: now,
+							})
+							.where(eq(orgClickHouseSettings.orgId, orgId)),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
+				appliedSchemaVersion = clickHouseSchemaVersion
+				yield* Effect.annotateCurrentSpan("clickhouse.schemaVersion.healed", true)
+				yield* Effect.logInfo("Self-healed ClickHouse schema_version to current version").pipe(
+					Effect.annotateLogs({
+						orgId,
+						previousSchemaVersion: row.schemaVersion ?? "(none)",
+						schemaVersion: clickHouseSchemaVersion,
+					}),
+				)
+			}
+
 			return new OrgClickHouseSchemaDiffResponse({
-				expectedSchemaVersion: clickHouseProjectRevision,
-				appliedSchemaVersion: row.schemaVersion ?? null,
+				expectedSchemaVersion: clickHouseSchemaVersion,
+				appliedSchemaVersion,
 				entries,
 			})
 		})
@@ -977,6 +1031,17 @@ export class OrgClickHouseSettingsService extends Context.Service<
 				if (Option.isNone(row)) {
 					return Option.none<RuntimeBackendConfig>()
 				}
+				// Reads always use the org's ClickHouse when configured — we must NOT fall
+				// back to Tinybird here, or we'd hide data already written to CH. But the
+				// ingest gateway only *writes* to CH when `schema_version` matches the running
+				// `clickHouseSchemaVersion`, so a stale value means ingest is silently landing
+				// in Tinybird while we read CH. Surface that split as a span attribute for
+				// alerting; the schemaDiff path self-heals the value when the live schema is
+				// in sync.
+				yield* Effect.annotateCurrentSpan(
+					"clickhouse.schemaDrift",
+					row.value.schemaVersion !== clickHouseSchemaVersion,
+				)
 				const password = yield* decryptStoredPassword(row.value)
 				return Option.some<RuntimeBackendConfig>({
 					backend: "clickhouse",

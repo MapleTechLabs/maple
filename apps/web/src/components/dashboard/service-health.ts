@@ -1,36 +1,110 @@
 import type { SeverityLevel } from "@/components/infra/format"
+import type { ServiceLatencyBaseline } from "@/api/warehouse/services"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 
 /** Health rollup for a single service, combining golden-signal metrics with live alerts. */
 export type ServiceHealth = "healthy" | "degraded" | "unhealthy"
 
-// Thresholds are intentionally simple, named constants so they're easy to tune
-// without hunting through JSX. Error rate is a fraction (errors / requests);
-// p95 is in milliseconds.
+// Error-rate thresholds are global absolutes — an error ratio means the same
+// thing for every service. Error rate is a fraction (errors / requests).
 const ERROR_RATE_DEGRADED = 0.01 // 1%
 const ERROR_RATE_UNHEALTHY = 0.05 // 5%
+
+// Absolute p95 thresholds (ms). Only used as a FALLBACK when a service has no
+// usable latency baseline (new service, sparse history) — otherwise latency
+// health is judged relative to the service's own trailing-7d baseline, so
+// slow-by-design services (batch workers, queue consumers) aren't permanently
+// flagged for a p95 that is normal for them.
 const P95_DEGRADED_MS = 1_000
 const P95_UNHEALTHY_MS = 3_000
+
+// Baseline-relative latency thresholds: flag only when the current p95 is a
+// multiple of the service's own baseline p95.
+const LATENCY_BASELINE_DEGRADED_RATIO = 2
+const LATENCY_BASELINE_UNHEALTHY_RATIO = 4
+// Never latency-flag below this absolute floor — a 5ms→15ms move is 3× but
+// harmless, and sub-floor p95s are dominated by noise.
+const LATENCY_ABS_FLOOR_MS = 250
+// A baseline computed from fewer spans than this is noise; treat as "no
+// baseline" and fall back to the absolute thresholds.
+const MIN_BASELINE_SPANS = 100
+// With fewer current-window spans than this, the weighted p95 is too noisy to
+// flag latency at all (error rate still applies).
+const MIN_CURRENT_SPANS = 50
+
+export interface LatencyBaselineSignal {
+	p95LatencyMs: number
+	spanCount: number
+}
 
 interface ServiceSignals {
 	errorRate: number
 	p95LatencyMs: number
+	spanCount: number
+	baseline?: LatencyBaselineSignal
+}
+
+const SEVERITY_RANK: Record<SeverityLevel, number> = {
+	ok: 0,
+	warn: 1,
+	crit: 2,
+}
+
+function maxSeverity(a: SeverityLevel, b: SeverityLevel): SeverityLevel {
+	return SEVERITY_RANK[a] >= SEVERITY_RANK[b] ? a : b
+}
+
+/**
+ * Severity of a p95 latency value. Baseline-relative when the service has a
+ * usable baseline; absolute-threshold fallback otherwise.
+ */
+export function latencySeverity(
+	p95LatencyMs: number,
+	spanCount?: number,
+	baseline?: LatencyBaselineSignal,
+): SeverityLevel {
+	// Sparse current window → weighted p95 is noise, don't flag latency.
+	if (spanCount !== undefined && spanCount < MIN_CURRENT_SPANS) return "ok"
+
+	if (baseline !== undefined && baseline.spanCount >= MIN_BASELINE_SPANS && baseline.p95LatencyMs > 0) {
+		const unhealthyAt = Math.max(
+			LATENCY_ABS_FLOOR_MS,
+			baseline.p95LatencyMs * LATENCY_BASELINE_UNHEALTHY_RATIO,
+		)
+		const degradedAt = Math.max(
+			LATENCY_ABS_FLOOR_MS,
+			baseline.p95LatencyMs * LATENCY_BASELINE_DEGRADED_RATIO,
+		)
+		if (p95LatencyMs >= unhealthyAt) return "crit"
+		if (p95LatencyMs >= degradedAt) return "warn"
+		return "ok"
+	}
+
+	if (p95LatencyMs >= P95_UNHEALTHY_MS) return "crit"
+	if (p95LatencyMs >= P95_DEGRADED_MS) return "warn"
+	return "ok"
+}
+
+const SEVERITY_TO_HEALTH: Record<SeverityLevel, ServiceHealth> = {
+	ok: "healthy",
+	warn: "degraded",
+	crit: "unhealthy",
 }
 
 /**
  * Derive a service's health. An open alert incident always forces `unhealthy`
  * — an operator has explicitly decided this service is in a bad state, so it
- * outranks any threshold heuristic.
+ * outranks any threshold heuristic. Otherwise health is the worse of the
+ * error-rate severity (global absolutes) and the latency severity
+ * (baseline-relative, see {@link latencySeverity}).
  */
 export function deriveServiceHealth(signals: ServiceSignals, hasOpenIncident: boolean): ServiceHealth {
 	if (hasOpenIncident) return "unhealthy"
-	if (signals.errorRate >= ERROR_RATE_UNHEALTHY || signals.p95LatencyMs >= P95_UNHEALTHY_MS) {
-		return "unhealthy"
-	}
-	if (signals.errorRate >= ERROR_RATE_DEGRADED || signals.p95LatencyMs >= P95_DEGRADED_MS) {
-		return "degraded"
-	}
-	return "healthy"
+	const severity = maxSeverity(
+		errorRateTone(signals.errorRate),
+		latencySeverity(signals.p95LatencyMs, signals.spanCount, signals.baseline),
+	)
+	return SEVERITY_TO_HEALTH[severity]
 }
 
 /** Severity of an error-rate value on its own (independent of latency). */
@@ -40,11 +114,17 @@ export function errorRateTone(errorRate: number): SeverityLevel {
 	return "ok"
 }
 
-/** Severity of a p95 latency value on its own (independent of error rate). */
-export function latencyTone(p95LatencyMs: number): SeverityLevel {
-	if (p95LatencyMs >= P95_UNHEALTHY_MS) return "crit"
-	if (p95LatencyMs >= P95_DEGRADED_MS) return "warn"
-	return "ok"
+/**
+ * Severity of a p95 latency value on its own (independent of error rate).
+ * Pass `spanCount`/`baseline` when available so cell tones agree with the
+ * health badge; without them this is the legacy absolute-threshold tone.
+ */
+export function latencyTone(
+	p95LatencyMs: number,
+	spanCount?: number,
+	baseline?: LatencyBaselineSignal,
+): SeverityLevel {
+	return latencySeverity(p95LatencyMs, spanCount, baseline)
 }
 
 /** Map a health level onto the `StatRail`/severity tone vocabulary. */
@@ -68,6 +148,29 @@ const HEALTH_RANK: Record<ServiceHealth, number> = {
 
 export function healthRank(health: ServiceHealth): number {
 	return HEALTH_RANK[health]
+}
+
+/**
+ * Key for matching a baseline row to an overview row. Must mirror the
+ * `${serviceName}::${serviceNamespace}::${environment}` grouping key used by
+ * `aggregateByServiceEnvironment` in `@/api/warehouse/services` — a mismatch
+ * silently (and fail-safely) reverts that service to absolute thresholds.
+ */
+export function baselineKey(serviceName: string, serviceNamespace: string, environment: string): string {
+	return `${serviceName}::${serviceNamespace}::${environment}`
+}
+
+export function buildBaselineMap(
+	rows: readonly ServiceLatencyBaseline[],
+): Map<string, LatencyBaselineSignal> {
+	const map = new Map<string, LatencyBaselineSignal>()
+	for (const row of rows) {
+		map.set(baselineKey(row.serviceName, row.serviceNamespace, row.environment), {
+			p95LatencyMs: row.baselineP95LatencyMs,
+			spanCount: row.baselineSpanCount,
+		})
+	}
+	return map
 }
 
 // Only the fields the matcher reads — keeps the function testable without

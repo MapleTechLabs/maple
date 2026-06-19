@@ -8,10 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import {
-	AnomaliesFilterSidebar,
-	type AnomalyFilters,
-} from "@/components/anomalies/anomalies-filter-sidebar"
+import { AnomaliesFilterSidebar, type AnomalyFilters } from "@/components/anomalies/anomalies-filter-sidebar"
 import {
 	ANOMALY_GROUP_ORDER,
 	AnomalyGroup,
@@ -65,10 +62,7 @@ function AnomaliesPage() {
 	const live = search.live ?? status === "open"
 
 	const incidentsQueryAtom = MapleApiAtomClient.query("anomalies", "listIncidents", {
-		query:
-			status === "all"
-				? { limit: INCIDENTS_PAGE_LIMIT }
-				: { status, limit: INCIDENTS_PAGE_LIMIT },
+		query: status === "all" ? { limit: INCIDENTS_PAGE_LIMIT } : { status, limit: INCIDENTS_PAGE_LIMIT },
 		reactivityKeys: ["anomalyIncidents"],
 	})
 	// Retain the previous list across tab switches so the page never collapses
@@ -239,8 +233,27 @@ function AnomaliesPageBody({
 			bucket.push(incident)
 			map.set(key, bucket)
 		}
+		// Cluster each bucket by service+env so the anomalies one event produces
+		// (error spikes, error rate, log volume on the same service) sit together;
+		// clusters order by their freshest incident, rows within by recency.
 		for (const bucket of map.values()) {
-			bucket.sort((a, b) => b.lastTriggeredAt.localeCompare(a.lastTriggeredAt))
+			const clusterKey = (i: AnomalyIncidentDocument) => `${i.serviceName}\u0000${i.deploymentEnv}`
+			const latestByCluster = new Map<string, string>()
+			for (const incident of bucket) {
+				const key = clusterKey(incident)
+				const latest = latestByCluster.get(key)
+				if (latest === undefined || incident.lastTriggeredAt.localeCompare(latest) > 0) {
+					latestByCluster.set(key, incident.lastTriggeredAt)
+				}
+			}
+			bucket.sort((a, b) => {
+				const clusterA = latestByCluster.get(clusterKey(a))!
+				const clusterB = latestByCluster.get(clusterKey(b))!
+				if (clusterA !== clusterB) return clusterB.localeCompare(clusterA)
+				const keyCompare = clusterKey(a).localeCompare(clusterKey(b))
+				if (keyCompare !== 0) return keyCompare
+				return b.lastTriggeredAt.localeCompare(a.lastTriggeredAt)
+			})
 		}
 		return map
 	}, [incidents])

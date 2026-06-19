@@ -159,7 +159,7 @@ export const formatSignalLabel = (signal: string) => {
 	return labels[signal] ?? signal
 }
 
-export const eventTypeEmoji = (type: string) => {
+const eventTypeEmoji = (type: string) => {
 	const map: Record<string, string> = {
 		trigger: "\u{1F6A8}",
 		resolve: "\u2705",
@@ -192,7 +192,7 @@ export const formatSignalMetric = (value: number | null, signalType: string): st
 			),
 	})
 
-export const formatWindow = (minutes: number): string => {
+const formatWindow = (minutes: number): string => {
 	if (minutes < 60) return `${minutes}m`
 	const hours = minutes / 60
 	return hours % 1 === 0 ? `${hours}h` : `${minutes}m`
@@ -319,7 +319,11 @@ const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: 
 			{ name: "Group", value: context.groupKey ?? "all", inline: true },
 			{ name: "Observed", value: formatObservedSummary(context), inline: true },
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
-			{ name: "Links", value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`, inline: false },
+			{
+				name: "Links",
+				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				inline: false,
+			},
 		],
 		footer: { text: "\u{1F341} Maple Alerts" },
 	},
@@ -376,9 +380,7 @@ export const buildTemplateContext = (
 	"comparator.label": formatComparator(context.comparator),
 	threshold: formatSignalMetric(context.threshold, context.signalType),
 	thresholdUpper:
-		context.thresholdUpper != null
-			? formatSignalMetric(context.thresholdUpper, context.signalType)
-			: "",
+		context.thresholdUpper != null ? formatSignalMetric(context.thresholdUpper, context.signalType) : "",
 	value: formatSignalMetric(context.value, context.signalType),
 	observed: formatSignalMetric(context.value, context.signalType),
 	"observed.summary": formatObservedSummary(context),
@@ -401,6 +403,67 @@ const markdownToSlackMrkdwn = (markdown: string): string =>
 
 const truncate = (value: string, max: number): string =>
 	value.length > max ? `${value.slice(0, max - 1)}…` : value
+
+// Best-effort read of a provider's error response body for diagnostics. Only runs
+// on the failure path; the body is unread in every `!response.ok` branch today.
+const readErrorBody = (response: Response): Effect.Effect<string> =>
+	Effect.promise(() => response.text().catch(() => "")).pipe(
+		Effect.map((body) => truncate(body.trim().replace(/\s+/g, " "), 500)),
+	)
+
+/**
+ * A PagerDuty Events API v2 integration ("routing") key is exactly 32
+ * alphanumeric characters. A REST API token — the usual wrong paste — is shorter
+ * and may contain `+`/`_`/`-`, so the length+charset check alone rejects it.
+ */
+export const PAGERDUTY_ROUTING_KEY_PATTERN = /^[A-Za-z0-9]{32}$/
+
+export type PagerDutyKeyVerification =
+	| { status: "valid" }
+	| { status: "invalid"; reason: string }
+	/** Network error / timeout / 429 / 5xx — can't conclude; caller should fail open. */
+	| { status: "unknown" }
+
+/**
+ * Verify a PagerDuty routing key actually works by enqueuing a no-op `resolve`
+ * event. PagerDuty validates the routing key before the action, so a valid key
+ * returns 2xx (resolving an unknown dedup_key creates no incident and pages no
+ * one) and an invalid key returns 400 "Invalid routing key". Never fails — any
+ * transport/ambiguous response collapses to `unknown` so the caller owns policy.
+ */
+export const verifyPagerDutyRoutingKey = (
+	integrationKey: string,
+	fetchFn: typeof fetch,
+	timeoutMs: number,
+	dedupKey: string,
+): Effect.Effect<PagerDutyKeyVerification> =>
+	runTimedFetch("pagerduty", "PagerDuty", fetchFn, timeoutMs, () =>
+		fetchFn("https://events.pagerduty.com/v2/enqueue", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				routing_key: integrationKey,
+				event_action: "resolve",
+				dedup_key: dedupKey,
+			}),
+		}),
+	).pipe(
+		Effect.flatMap((response) => {
+			if (response.ok) return Effect.succeed<PagerDutyKeyVerification>({ status: "valid" })
+			if (response.status === 400) {
+				return readErrorBody(response).pipe(
+					Effect.map(
+						(reason): PagerDutyKeyVerification => ({
+							status: "invalid",
+							reason: reason || "Invalid routing key",
+						}),
+					),
+				)
+			}
+			return Effect.succeed<PagerDutyKeyVerification>({ status: "unknown" })
+		}),
+		Effect.catch(() => Effect.succeed<PagerDutyKeyVerification>({ status: "unknown" })),
+	)
 
 /**
  * Resolve + render the effective title/body for a destination. Returns `null`
@@ -532,8 +595,12 @@ export const dispatchDelivery = (
 							}),
 						)
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
-								makeDeliveryError(`Slack delivery failed with ${response.status}`, "slack"),
+								makeDeliveryError(
+									`Slack delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
+									"slack",
+								),
 							)
 						}
 						return {
@@ -587,9 +654,10 @@ export const dispatchDelivery = (
 								}),
 						)
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
 								makeDeliveryError(
-									`PagerDuty delivery failed with ${response.status}`,
+									`PagerDuty delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
 									"pagerduty",
 								),
 							)
@@ -616,9 +684,10 @@ export const dispatchDelivery = (
 							safeFetch(config.url, { method: "POST", headers, body: payloadJson, fetchFn }),
 						)
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
 								makeDeliveryError(
-									`Webhook delivery failed with ${response.status}`,
+									`Webhook delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
 									"webhook",
 								),
 							)
@@ -642,11 +711,20 @@ export const dispatchDelivery = (
 								.digest("hex")
 						}
 						const response = yield* runTimedFetch("hazel", "Hazel", fetchFn, timeoutMs, () =>
-							safeFetch(config.webhookUrl, { method: "POST", headers, body: payloadJson, fetchFn }),
+							safeFetch(config.webhookUrl, {
+								method: "POST",
+								headers,
+								body: payloadJson,
+								fetchFn,
+							}),
 						)
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
-								makeDeliveryError(`Hazel delivery failed with ${response.status}`, "hazel"),
+								makeDeliveryError(
+									`Hazel delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
+									"hazel",
+								),
 							)
 						}
 						return {
@@ -723,9 +801,10 @@ export const dispatchDelivery = (
 							)
 						}
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
 								makeDeliveryError(
-									`Hazel delivery failed with ${response.status}`,
+									`Hazel delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
 									"hazel-oauth",
 								),
 							)
@@ -763,8 +842,12 @@ export const dispatchDelivery = (
 							}),
 						)
 						if (!response.ok) {
+							const detail = yield* readErrorBody(response)
 							return yield* Effect.fail(
-								makeDeliveryError(`Discord delivery failed with ${response.status}`, "discord"),
+								makeDeliveryError(
+									`Discord delivery failed with ${response.status}${detail ? `: ${detail}` : ""}`,
+									"discord",
+								),
 							)
 						}
 						return {

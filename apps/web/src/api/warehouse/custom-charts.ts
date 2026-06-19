@@ -35,6 +35,19 @@ const dateTimeString = WarehouseDateTimeString
 
 const asMetricName = Schema.decodeUnknownSync(MetricName)
 const asServiceName = Schema.decodeUnknownSync(ServiceName)
+const asDeploymentEnv = Schema.decodeUnknownSync(DeploymentEnvironment)
+
+/**
+ * Map the service list's synthetic `"unknown"` environment label back to the raw
+ * empty-string `DeploymentEnv` value the warehouse actually stores (see
+ * `coerceRow` in `services.ts`, which coerces `"" -> "unknown"` for display).
+ * Without this, scoping a detail page to an `"unknown"` row would emit
+ * `DeploymentEnv IN ('unknown')` and match nothing.
+ */
+const toEnvFilter = (
+	environments: ReadonlyArray<DeploymentEnvironment> | undefined,
+): ReadonlyArray<DeploymentEnvironment> | undefined =>
+	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
 
 // SpanMetrics connector metric names — try namespaced first, then default
 const SPANMETRICS_CALLS_CANDIDATES = ["span.metrics.calls", "calls"] as const
@@ -59,11 +72,7 @@ function spanMetricsAvailabilityCacheKey(service?: string): string {
 function pickSpanMetricsCallsMetric(
 	rows: ReadonlyArray<{ metricName: string; metricType: string }>,
 ): SpanMetricsCallsMetricName | null {
-	const available = new Set(
-		rows
-			.filter((row) => row.metricType === "sum")
-			.map((row) => row.metricName),
-	)
+	const available = new Set(rows.filter((row) => row.metricType === "sum").map((row) => row.metricName))
 	for (const candidate of SPANMETRICS_CALLS_CANDIDATES) {
 		if (available.has(candidate)) return candidate
 	}
@@ -115,7 +124,7 @@ function resolveSpanMetricsCallsMetric(params: {
 	})
 }
 
-export function querySpanMetricsCalls(params: {
+function querySpanMetricsCalls(params: {
 	service?: string
 	start_time?: string
 	end_time?: string
@@ -178,15 +187,35 @@ function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
 	return rows.toSorted((left, right) => left.bucket.localeCompare(right.bucket))
 }
 
-function fillServiceDetailPoints(
+/**
+ * How recent a bucket can be before it's treated as still-settling. A bucket
+ * whose window ends within this budget of "now" is under-filled (OTLP batch
+ * export + collector + MV materialization lag), so it's flagged `partial` and
+ * rendered as the dashed in-progress segment instead of a solid end-of-chart
+ * crater. Only ranges ending near "now" are affected — historical windows end
+ * well before `now - budget`, so nothing is flagged.
+ */
+const INGESTION_LAG_MS = 120_000
+
+export function fillServiceDetailPoints(
 	points: ServiceDetailTimeSeriesPoint[],
 	startTime: string | undefined,
 	endTime: string | undefined,
 	bucketSeconds: number,
+	nowMs: number,
 ): ServiceDetailTimeSeriesPoint[] {
+	const bucketMs = bucketSeconds * 1000
+	const partialFromMs = nowMs - INGESTION_LAG_MS
+	const isPartial = (bucketIso: string): boolean => {
+		const bucketStartMs = Date.parse(bucketIso)
+		return Number.isNaN(bucketStartMs) ? false : bucketStartMs + bucketMs > partialFromMs
+	}
+
 	const timeline = buildBucketTimeline(startTime, endTime, bucketSeconds)
 	if (timeline.length === 0) {
-		return sortByBucket(points)
+		return sortByBucket(
+			points.map((point) => ({ ...point, partial: isPartial(toIsoBucket(point.bucket)) })),
+		)
 	}
 
 	const byBucket = new Map<string, ServiceDetailTimeSeriesPoint>()
@@ -194,10 +223,10 @@ function fillServiceDetailPoints(
 		byBucket.set(toIsoBucket(point.bucket), point)
 	}
 
-	const filled = timeline.map((bucket) => {
+	const filled = timeline.map((bucket): ServiceDetailTimeSeriesPoint => {
 		const existing = byBucket.get(bucket)
 		if (existing) {
-			return existing
+			return { ...existing, partial: isPartial(bucket) }
 		}
 
 		return {
@@ -212,6 +241,7 @@ function fillServiceDetailPoints(
 			p99LatencyMs: 0,
 			apdexScore: 0,
 			totalCount: 0,
+			partial: isPartial(bucket),
 		}
 	})
 
@@ -310,7 +340,7 @@ const CustomChartTimeSeriesInputSchema = Schema.Struct({
 export type CustomChartTimeSeriesInput = (typeof CustomChartTimeSeriesInputSchema)["Encoded"]
 type CustomChartTimeSeriesDecoded = (typeof CustomChartTimeSeriesInputSchema)["Type"]
 
-export interface CustomChartTimeSeriesPoint {
+interface CustomChartTimeSeriesPoint {
 	bucket: string
 	series: Record<string, number>
 }
@@ -491,15 +521,6 @@ const CustomChartBreakdownInputSchema = Schema.Struct({
 export type CustomChartBreakdownInput = (typeof CustomChartBreakdownInputSchema)["Encoded"]
 type CustomChartBreakdownDecoded = (typeof CustomChartBreakdownInputSchema)["Type"]
 
-export interface CustomChartBreakdownItem {
-	name: string
-	value: number
-}
-
-export interface CustomChartBreakdownResponse {
-	data: CustomChartBreakdownItem[]
-}
-
 function buildBreakdownQuerySpec(data: CustomChartBreakdownDecoded): QuerySpec | string {
 	if (data.source === "traces") {
 		if (!tracesMetrics.has(data.metric as TracesMetric)) {
@@ -616,6 +637,10 @@ const GetCustomChartServiceDetailInputSchema = Schema.Struct({
 	serviceName: ServiceName,
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
+	// Scopes the detail charts to a single deployment environment. Carries the
+	// service list's display value (incl. the synthetic `"unknown"`); the
+	// `"unknown" -> ""` remap to the raw warehouse value happens in `toEnvFilter`.
+	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
 })
 
 type GetCustomChartServiceDetailInput = (typeof GetCustomChartServiceDetailInputSchema)["Encoded"]
@@ -798,12 +823,20 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 	)
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+	// When scoped to an environment, the SpanMetrics `calls` counter (a
+	// service-level, all-environment counter — `querySpanMetricsCalls` cannot
+	// filter by `DeploymentEnv`, and its hourly MV doesn't carry it) would plot
+	// all-environment volume next to the env-scoped error rate / latency. Drop it
+	// in that case and let throughput fall back to the env-scoped
+	// `estimatedSpanCount` (sum of SampleRate over the env-filtered root spans).
+	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
 		bucketSeconds,
 		serviceName: input.serviceName,
 		rootSpansOnly: true,
+		environments: toEnvFilter(input.environments),
 	}
 
 	const [allMetricsRes, metricsResult] = yield* Effect.all(
@@ -812,12 +845,14 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 				"queryEngine.serviceDetail.allMetrics",
 				makeAllMetricsTimeseriesRequest(reqOpts),
 			),
-			querySpanMetricsCalls({
-				service: input.serviceName,
-				start_time: input.startTime,
-				end_time: input.endTime,
-				bucket_seconds: bucketSeconds,
-			}),
+			envScoped
+				? Effect.succeed({ data: [] })
+				: querySpanMetricsCalls({
+						service: input.serviceName,
+						start_time: input.startTime,
+						end_time: input.endTime,
+						bucket_seconds: bucketSeconds,
+					}),
 		],
 		{ concurrency: 2 },
 	)
@@ -832,30 +867,34 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 	for (const k of allMetrics.keys()) allBuckets.add(k)
 	for (const k of metricsMap.keys()) allBuckets.add(k)
 
-	const points = Array.from(allBuckets).toSorted().map((bucket): ServiceDetailTimeSeriesPoint => {
-		const m = allMetrics.get(bucket)
-		const rawCount = m?.count ?? 0
-		const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
-		const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
-		const hasSampling = samplingWeight > 1.01
+	const points = Array.from(allBuckets)
+		.toSorted()
+		.map((bucket): ServiceDetailTimeSeriesPoint => {
+			const m = allMetrics.get(bucket)
+			const rawCount = m?.count ?? 0
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
+			const hasSampling = samplingWeight > 1.01
 
-		return {
-			bucket,
-			throughput,
-			tracedThroughput: rawCount,
-			hasSampling,
-			samplingWeight,
-			errorRate: m?.errorRate ?? 0,
-			p50LatencyMs: m?.p50 ?? 0,
-			p95LatencyMs: m?.p95 ?? 0,
-			p99LatencyMs: m?.p99 ?? 0,
-			apdexScore: m?.apdexScore ?? 0,
-			totalCount: rawCount,
-		}
-	})
+			return {
+				bucket,
+				throughput,
+				tracedThroughput: rawCount,
+				hasSampling,
+				samplingWeight,
+				errorRate: m?.errorRate ?? 0,
+				p50LatencyMs: m?.p50 ?? 0,
+				p95LatencyMs: m?.p95 ?? 0,
+				p99LatencyMs: m?.p99 ?? 0,
+				apdexScore: m?.apdexScore ?? 0,
+				totalCount: rawCount,
+				partial: false,
+			}
+		})
 
+	const nowMs = yield* Clock.currentTimeMillis
 	return {
-		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds),
+		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds, nowMs),
 	}
 })
 
@@ -879,6 +918,10 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const input = yield* decodeInput(GetOverviewTimeSeriesInputSchema, data ?? {}, "getOverviewTimeSeries")
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+	// All-environment SpanMetrics `calls` can't represent an environment-scoped
+	// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
+	// `estimatedSpanCount` when an environment filter is active.
+	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -890,11 +933,13 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const [allMetricsRes, metricsResult] = yield* Effect.all(
 		[
 			executeQueryEngine("queryEngine.overview.allMetrics", makeAllMetricsTimeseriesRequest(reqOpts)),
-			querySpanMetricsCalls({
-				start_time: input.startTime,
-				end_time: input.endTime,
-				bucket_seconds: bucketSeconds,
-			}),
+			envScoped
+				? Effect.succeed({ data: [] })
+				: querySpanMetricsCalls({
+						start_time: input.startTime,
+						end_time: input.endTime,
+						bucket_seconds: bucketSeconds,
+					}),
 		],
 		{ concurrency: 2 },
 	)
@@ -912,30 +957,34 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	for (const k of allMetrics.keys()) allBuckets.add(k)
 	for (const k of metricsMap.keys()) allBuckets.add(k)
 
-	const points = Array.from(allBuckets).toSorted().map((bucket): ServiceDetailTimeSeriesPoint => {
-		const m = allMetrics.get(bucket)
-		const rawCount = m?.count ?? 0
-		const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
-		const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
-		const hasSampling = samplingWeight > 1.01
+	const points = Array.from(allBuckets)
+		.toSorted()
+		.map((bucket): ServiceDetailTimeSeriesPoint => {
+			const m = allMetrics.get(bucket)
+			const rawCount = m?.count ?? 0
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
+			const hasSampling = samplingWeight > 1.01
 
-		return {
-			bucket,
-			throughput,
-			tracedThroughput: rawCount,
-			hasSampling,
-			samplingWeight,
-			errorRate: m?.errorRate ?? 0,
-			p50LatencyMs: m?.p50 ?? 0,
-			p95LatencyMs: m?.p95 ?? 0,
-			p99LatencyMs: m?.p99 ?? 0,
-			apdexScore: m?.apdexScore ?? 0,
-			totalCount: rawCount,
-		}
-	})
+			return {
+				bucket,
+				throughput,
+				tracedThroughput: rawCount,
+				hasSampling,
+				samplingWeight,
+				errorRate: m?.errorRate ?? 0,
+				p50LatencyMs: m?.p50 ?? 0,
+				p95LatencyMs: m?.p95 ?? 0,
+				p99LatencyMs: m?.p99 ?? 0,
+				apdexScore: m?.apdexScore ?? 0,
+				totalCount: rawCount,
+				partial: false,
+			}
+		})
 
+	const nowMs = yield* Clock.currentTimeMillis
 	return {
-		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds),
+		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds, nowMs),
 	}
 })
 
@@ -961,6 +1010,10 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 		)
 
 		const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+		// All-environment SpanMetrics `calls` can't represent an environment-scoped
+		// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
+		// `estimatedSpanCount` when an environment filter is active.
+		const envScoped = (input.environments?.length ?? 0) > 0
 		const reqOpts = {
 			startTime: input.startTime,
 			endTime: input.endTime,
@@ -977,11 +1030,13 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 					"queryEngine.sparklines.allMetrics",
 					makeAllMetricsTimeseriesRequest(reqOpts),
 				),
-				querySpanMetricsCalls({
-					start_time: input.startTime,
-					end_time: input.endTime,
-					bucket_seconds: bucketSeconds,
-				}),
+				envScoped
+					? Effect.succeed({ data: [] })
+					: querySpanMetricsCalls({
+							start_time: input.startTime,
+							end_time: input.endTime,
+							bucket_seconds: bucketSeconds,
+						}),
 			],
 			{ concurrency: 2 },
 		)

@@ -9,9 +9,18 @@ import { compileCH } from "../compile"
 import * as CH from "../expr"
 import { param } from "../param"
 import { from, type CHQuery, type ColumnAccessor } from "../query"
-import { ServiceOverviewSpans, Traces, TracesAggregatesHourly } from "../tables"
+import type { Table } from "../table"
+import {
+	ServiceOverviewSpans,
+	TraceDetailSpans,
+	TraceListMv,
+	Traces,
+	TracesAggregatesHourly,
+} from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "../types"
+import * as T from "../types"
+import { finalizeTimeseries } from "./series-cap"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
@@ -213,6 +222,20 @@ function buildBreakdownGroupExpr(
 	}
 }
 
+function buildMvBreakdownGroupExpr(
+	$: ColumnAccessor<typeof ServiceOverviewSpans.columns>,
+	groupBy: string,
+): CH.Expr<string> {
+	switch (groupBy) {
+		case "status_code":
+			return $.StatusCode
+		case "service":
+		case "none":
+		default:
+			return $.ServiceName
+	}
+}
+
 // ---------------------------------------------------------------------------
 // WHERE clause builders
 // ---------------------------------------------------------------------------
@@ -243,6 +266,12 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
 	allMetrics?: boolean
+	/**
+	 * Opt-in top-N series cap for group-by charts. When set, only the N groups
+	 * with the largest total count (across all buckets) are fetched — the long
+	 * tail is dropped server-side to avoid OOMing the browser tab.
+	 */
+	seriesLimit?: number
 }
 
 export interface TracesTimeseriesOutput {
@@ -258,6 +287,24 @@ export interface TracesTimeseriesOutput {
 	readonly toleratingCount: number
 	readonly apdexScore: number
 	readonly estimatedSpanCount: number
+}
+
+// Synthetic column defs matching TracesTimeseriesOutput, used to wrap the inner
+// query in a CTE when the top-N series cap is applied. CH types are nominal
+// here (the cap helper references columns by name), so numerics use Float64.
+const TRACES_TS_COLUMNS: ColumnDefs = {
+	bucket: T.string,
+	groupName: T.string,
+	count: T.float64,
+	avgDuration: T.float64,
+	p50Duration: T.float64,
+	p95Duration: T.float64,
+	p99Duration: T.float64,
+	errorRate: T.float64,
+	satisfiedCount: T.float64,
+	toleratingCount: T.float64,
+	apdexScore: T.float64,
+	estimatedSpanCount: T.float64,
 }
 
 export function tracesTimeseriesQuery(
@@ -305,8 +352,11 @@ export function tracesTimeseriesQuery(
 			.where(($) => tracesAggregatesWhereConditions($, opts))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return aggregates as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			TracesTimeseriesOutput,
+			{}
+		>
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -325,8 +375,11 @@ export function tracesTimeseriesQuery(
 			.where(($) => serviceOverviewWhereConditions($, opts))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return mv as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			TracesTimeseriesOutput,
+			{}
+		>
 	}
 
 	const raw = from(Traces)
@@ -338,8 +391,11 @@ export function tracesTimeseriesQuery(
 		.where(($) => buildWhereConditions($, opts))
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		.format("JSON")
-	return raw as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+		ColumnDefs,
+		TracesTimeseriesOutput,
+		{}
+	>
 }
 
 // ---------------------------------------------------------------------------
@@ -373,7 +429,30 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 	const apdexThresholdMs = opts.apdexThresholdMs ?? 500
 	const limit = opts.limit ?? 10
 
-	return from(Traces)
+	if (canUseServiceOverviewMv(opts, [opts.groupBy])) {
+		const mv = from(ServiceOverviewSpans)
+			.select(($) => {
+				const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
+					$,
+					opts.metric,
+					apdexThresholdMs,
+					false,
+					opts.allMetrics,
+				)
+				return {
+					name: buildMvBreakdownGroupExpr($, opts.groupBy),
+					...metrics,
+				}
+			})
+			.where(($) => serviceOverviewWhereConditions($, opts))
+			.groupBy("name")
+			.orderBy(["count", "desc"])
+			.limit(limit)
+			.format("JSON")
+		return mv as unknown as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
+	}
+
+	const raw = from(Traces)
 		.select(($) => {
 			const { estimatedSpanCount: _estimatedSpanCount, ...metrics } = metricSelectExprs(
 				$,
@@ -392,6 +471,7 @@ export function tracesBreakdownQuery(opts: TracesBreakdownOpts) {
 		.orderBy(["count", "desc"])
 		.limit(limit)
 		.format("JSON")
+	return raw as unknown as CHQuery<ColumnDefs, TracesBreakdownOutput, {}>
 }
 
 // ---------------------------------------------------------------------------
@@ -467,9 +547,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = (
-		$: ColumnAccessor<typeof Traces.columns>,
-	): Array<CH.Condition | undefined> => [
+	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, opts),
 		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
 	]
@@ -539,7 +617,7 @@ export interface SlowTracesOutput {
 }
 
 export function slowTracesQuery(opts: SlowTracesOpts) {
-	return from(Traces)
+	return from(TraceListMv)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanName: $.SpanName,
@@ -552,11 +630,8 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTime("startTime")),
 			$.Timestamp.lte(param.dateTime("endTime")),
-			$.ParentSpanId.eq(""),
 			CH.when(opts.service, (v: string) => $.ServiceName.eq(v)),
-			CH.when(opts.environment, (v: string) =>
-				$.ResourceAttributes.get("deployment.environment").eq(v),
-			),
+			CH.when(opts.environment, (v: string) => $.DeploymentEnv.eq(v)),
 		])
 		.orderBy(["durationMs", "desc"])
 		.limit(opts.limit ?? 10)
@@ -566,11 +641,13 @@ export function slowTracesQuery(opts: SlowTracesOpts) {
 // ---------------------------------------------------------------------------
 // Span-level search query
 //
-// DSL port of the raw `traces` scan in `observability/search-traces.ts`
+// DSL port of the span-level search in `observability/search-traces.ts`
 // (`spanLevelSearch`). Returns the matched span rows (not root summaries) for
 // flexible span-level filtering: span name (exact or contains), service,
-// error, duration bounds, attribute filters, and trace id. OrgId-scoped via
-// `tracesBaseWhereConditions`.
+// error, duration bounds, attribute filters, and trace id. When a trace id is
+// present, it reads `trace_detail_spans`, whose sort key starts with
+// (OrgId, TraceId); otherwise it uses the raw `traces` search path.
+// OrgId-scoped via `tracesBaseWhereConditions`.
 // ---------------------------------------------------------------------------
 
 export interface SpanSearchOpts extends TracesQueryOpts {
@@ -592,11 +669,30 @@ export interface SpanSearchOutput {
 	readonly timestamp: string
 }
 
-export function spanSearchQuery(opts: SpanSearchOpts) {
-	const limit = opts.limit ?? 20
-	const offset = opts.offset ?? 0
+type SpanSearchColumns = Pick<
+	typeof Traces.columns,
+	| "OrgId"
+	| "Timestamp"
+	| "TraceId"
+	| "SpanId"
+	| "ParentSpanId"
+	| "SpanName"
+	| "SpanKind"
+	| "ServiceName"
+	| "Duration"
+	| "StatusCode"
+	| "StatusMessage"
+	| "SpanAttributes"
+	| "ResourceAttributes"
+>
 
-	let q = from(Traces)
+function spanSearchFrom<Name extends string>(
+	source: Table<Name, SpanSearchColumns>,
+	opts: SpanSearchOpts,
+	limit: number,
+	offset: number,
+) {
+	const q = from(source)
 		.select(($) => ({
 			traceId: $.TraceId,
 			spanId: $.SpanId,
@@ -609,16 +705,26 @@ export function spanSearchQuery(opts: SpanSearchOpts) {
 			resourceAttributes: $.ResourceAttributes,
 			timestamp: CH.toString_($.Timestamp),
 		}))
-		.where(($) => [...buildWhereConditions($, opts), CH.when(opts.traceId, (v: string) => $.TraceId.eq(v))])
+		.where(($) => [
+			...tracesBaseWhereConditions($, opts),
+			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
+		])
 		.orderBy(["timestamp", "desc"])
 		.limit(limit)
 		.format("JSON")
 
-	if (offset > 0) {
-		q = q.offset(offset)
+	return offset > 0 ? q.offset(offset) : q
+}
+
+export function spanSearchQuery(opts: SpanSearchOpts) {
+	const limit = opts.limit ?? 20
+	const offset = opts.offset ?? 0
+
+	if (opts.traceId) {
+		return spanSearchFrom(TraceDetailSpans, opts, limit, offset)
 	}
 
-	return q
+	return spanSearchFrom(Traces, opts, limit, offset)
 }
 
 // ---------------------------------------------------------------------------
@@ -648,8 +754,33 @@ export interface TracesRootListOutput {
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
+	/**
+	 * Projected HTTP attribute map (JSON string) for the root span. Carries the
+	 * URL/host keys `rootHttp*` omits so `getHttpInfo` can render a client
+	 * destination (`host/path`) instead of falling back to `http.client GET`.
+	 */
+	readonly rootSpanAttributes: string
 	readonly hasError: number
 }
+
+/**
+ * HTTP attribute keys projected into `rootSpanAttributes`. Mirrors the web app's
+ * trace-list projection and the hierarchy query's `TREE_SPAN_ATTR_KEYS` so the
+ * shared `getHttpInfo` / `HttpSpanLabel` render identically across surfaces.
+ */
+const ROOT_SPAN_ATTR_KEYS = [
+	"http.method",
+	"http.request.method",
+	"http.route",
+	"http.target",
+	"http.status_code",
+	"http.response.status_code",
+	"http.url",
+	"url.full",
+	"url.path",
+	"server.address",
+	"net.peer.name",
+] as const
 
 /**
  * Two-stage root-trace list query. Same OOM avoidance as `tracesListQuery`:
@@ -669,9 +800,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = (
-		$: ColumnAccessor<typeof Traces.columns>,
-	): Array<CH.Condition | undefined> => [
+	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
 		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
 	]
@@ -701,6 +830,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootHttpMethod: $.SpanAttributes.get("http.method"),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
 			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
+			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])

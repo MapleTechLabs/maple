@@ -25,6 +25,8 @@ import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-ran
 import { Button } from "@maple/ui/components/ui/button"
 import { BellIcon } from "@/components/icons"
 import { ServiceDependenciesTab } from "@/components/services/service-dependencies-tab"
+import { ServiceEnvironmentSwitcher } from "@/components/services/service-environment-switcher"
+import { OptionalStringArrayParam } from "@/lib/search-params"
 
 const ServiceDetailTab = Schema.Literals(["overview", "dependencies"])
 type ServiceDetailTabValue = Schema.Schema.Type<typeof ServiceDetailTab>
@@ -34,6 +36,11 @@ const serviceDetailSearchSchema = Schema.Struct({
 	endTime: Schema.optional(Schema.String),
 	timePreset: Schema.optional(Schema.String),
 	tab: Schema.optional(ServiceDetailTab),
+	// Scopes the Overview charts to a single deployment environment (carried from
+	// the clicked service-list row, or chosen via the env switcher). Single-element
+	// by convention; `undefined` = all environments. Uses the JSON-string-tolerant
+	// param so a serialized array URL survives TanStack Router's parseSearch.
+	environments: OptionalStringArrayParam,
 })
 
 export const Route = effectRoute(createFileRoute("/services/$serviceName"))({
@@ -130,6 +137,15 @@ function ServiceDetailContent() {
 		})
 	}
 
+	const handleEnvironmentChange = (environment: string | undefined) => {
+		navigate({
+			search: (prev: Record<string, unknown>) => ({
+				...prev,
+				environments: environment ? [environment] : undefined,
+			}),
+		})
+	}
+
 	return (
 		<DashboardLayout
 			breadcrumbs={[{ label: "Services", href: "/services" }, { label: serviceName }]}
@@ -140,32 +156,49 @@ function ServiceDetailContent() {
 					    perspective toggle, not a navigation bar. Sized to match the time
 					    picker buttons (h-7) and tucked left of them so the visual order is:
 					    "what view → what window → what action". */}
-					<Tabs value={activeTab} onValueChange={handleTabChange}>
-						<TabsList variant="default" className="h-7 p-0.5 gap-0">
+					<Tabs value={activeTab} onValueChange={handleTabChange} className="w-full sm:w-auto">
+						<TabsList variant="default" className="h-7 w-full gap-0 p-0.5 sm:w-auto">
 							<TabsTrigger
 								value="overview"
-								className="h-6 px-2.5 text-xs sm:text-xs sm:h-6 font-medium"
+								className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
 							>
 								Overview
 							</TabsTrigger>
 							<TabsTrigger
 								value="dependencies"
-								className="h-6 px-2.5 text-xs sm:text-xs sm:h-6 font-medium"
+								className="h-6 flex-1 px-2.5 text-xs font-medium sm:h-6 sm:flex-initial sm:text-xs"
 							>
 								Dependencies
 							</TabsTrigger>
 						</TabsList>
 					</Tabs>
-					<TimeRangeHeaderControls
-						startTime={search.startTime}
-						endTime={search.endTime}
-						presetValue={search.timePreset ?? "12h"}
-						onTimeChange={handleTimeChange}
-					/>
-					<Button variant="outline" render={<Link to="/alerts/create" search={{ serviceName }} />}>
-						<BellIcon size={14} />
-						Create Alert
-					</Button>
+					{/* Env scope only applies to the Overview charts; hide it on the
+					    Dependencies tab so it can't imply a filter it doesn't drive. */}
+					{activeTab === "overview" && (
+						<ServiceEnvironmentSwitcher
+							serviceName={serviceName}
+							startTime={effectiveStartTime}
+							endTime={effectiveEndTime}
+							value={search.environments?.[0]}
+							onChange={handleEnvironmentChange}
+						/>
+					)}
+					<div className="flex items-center gap-2">
+						<TimeRangeHeaderControls
+							startTime={search.startTime}
+							endTime={search.endTime}
+							presetValue={search.timePreset ?? "12h"}
+							onTimeChange={handleTimeChange}
+						/>
+						<Button
+							variant="outline"
+							aria-label="Create Alert"
+							render={<Link to="/alerts/create" search={{ serviceName }} />}
+						>
+							<BellIcon size={14} />
+							<span className="hidden sm:inline">Create Alert</span>
+						</Button>
+					</div>
 				</div>
 			}
 		>
@@ -174,6 +207,7 @@ function ServiceDetailContent() {
 					serviceName={serviceName}
 					effectiveStartTime={effectiveStartTime}
 					effectiveEndTime={effectiveEndTime}
+					environments={search.environments}
 				/>
 			) : (
 				<ServiceDependenciesTab
@@ -193,15 +227,17 @@ interface OverviewTabProps {
 	serviceName: string
 	effectiveStartTime: string
 	effectiveEndTime: string
+	environments?: string[]
 }
 
-function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: OverviewTabProps) {
+function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
 	const detailResult = useRetainedRefreshableResultValue(
 		getCustomChartServiceDetailResultAtom({
 			data: {
 				serviceName,
 				startTime: effectiveStartTime,
 				endTime: effectiveEndTime,
+				environments,
 			},
 		}),
 	)

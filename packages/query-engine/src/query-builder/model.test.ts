@@ -89,3 +89,33 @@ describe("buildTimeseriesQuerySpec where-clause → attribute filters", () => {
 		expect(warnings.some((w) => w.includes("Maximum of 5 attr.* filters"))).toBe(true)
 	})
 })
+
+describe("buildTimeseriesQuerySpec series limit", () => {
+	function seriesLimitOf(overrides: Partial<QueryBuilderQueryDraftPayload>) {
+		const result = buildTimeseriesQuerySpec(tracesDraft(overrides))
+		return {
+			warnings: result.warnings,
+			seriesLimit: (result.query as { seriesLimit?: number } | null)?.seriesLimit,
+		}
+	}
+
+	it("forwards a positive integer seriesLimit onto the spec", () => {
+		const { seriesLimit, warnings } = seriesLimitOf({ seriesLimit: "5" })
+		expect(seriesLimit).toBe(5)
+		expect(warnings).toEqual([])
+	})
+
+	it("leaves seriesLimit undefined when blank", () => {
+		expect(seriesLimitOf({ seriesLimit: "" }).seriesLimit).toBeUndefined()
+		expect(seriesLimitOf({}).seriesLimit).toBeUndefined()
+	})
+
+	it("warns and disables the cap for a non-positive or non-integer value", () => {
+		const zero = seriesLimitOf({ seriesLimit: "0" })
+		expect(zero.seriesLimit).toBeUndefined()
+		expect(zero.warnings.some((w) => w.includes("series limit"))).toBe(true)
+
+		expect(seriesLimitOf({ seriesLimit: "-3" }).seriesLimit).toBeUndefined()
+		expect(seriesLimitOf({ seriesLimit: "abc" }).seriesLimit).toBeUndefined()
+	})
+})

@@ -66,16 +66,16 @@ export const resolveOrgOpenrouterKey = async (
 	const { runtime, flushTelemetry } = await getMapleAgentSetup(env)
 	const decodedOrgId = decodeOrgId(orgId)
 	try {
-			const result = (await runtime.runPromise(
-				OrgOpenRouterSettingsService.resolveApiKey(decodedOrgId).pipe(
-					Effect.catchCause((cause) =>
-						Effect.as(
+		const result = (await runtime.runPromise(
+			OrgOpenRouterSettingsService.resolveApiKey(decodedOrgId).pipe(
+				Effect.catchCause((cause) =>
+					Effect.as(
 						Effect.logError("Failed to resolve org OpenRouter API key", { cause, orgId }),
 						Option.none<string>(),
 					),
-					),
 				),
-			)) as Option.Option<string>
+			),
+		)) as Option.Option<string>
 		return Option.getOrUndefined(result)
 	} finally {
 		await flushTelemetry()

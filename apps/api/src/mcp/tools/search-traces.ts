@@ -84,9 +84,7 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 					limit: lim,
 					offset: off,
 				}),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("search_traces")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("search_traces")))
 
 			const spans = result.spans
 			yield* Effect.annotateCurrentSpan({ resultCount: spans.length, "result.count": spans.length })

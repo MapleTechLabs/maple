@@ -9,10 +9,9 @@ export interface Range {
 }
 
 /** A bad `--since` / time-range input, surfaced to the user with a hint. */
-export class TimeRangeError extends Schema.TaggedErrorClass<TimeRangeError>()(
-	"@maple/cli/TimeRangeError",
-	{ message: Schema.String },
-) {}
+export class TimeRangeError extends Schema.TaggedErrorClass<TimeRangeError>()("@maple/cli/TimeRangeError", {
+	message: Schema.String,
+}) {}
 
 const pad = (n: number): string => String(n).padStart(2, "0")
 

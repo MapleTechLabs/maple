@@ -50,9 +50,7 @@ const buildLayer = (url: string, extra: Record<string, string> = {}) => {
 	const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, databaseLive)),
 	)
-	return WarehouseQueryService.layer.pipe(
-		Layer.provide(Layer.mergeAll(envLive, orgSettingsLive)),
-	)
+	return WarehouseQueryService.layer.pipe(Layer.provide(Layer.mergeAll(envLive, orgSettingsLive)))
 }
 
 const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
@@ -74,8 +72,7 @@ const makeTenant = (): TenantContext => ({
 	authMode: "self_hosted",
 })
 
-const transient503 = () =>
-	new Error("HTTP status 503 service temporarily unavailable")
+const transient503 = () => new Error("HTTP status 503 service temporarily unavailable")
 
 describe("WarehouseQueryService.sqlQuery retry on transient upstream failures", () => {
 	// Runs under it.live: the retry schedule uses real exponential backoff
@@ -249,7 +246,12 @@ describe("WarehouseQueryService.compiledQueryFirst", () => {
 
 	it.effect("returns Some with the decoded first row", () => {
 		__testables.setClientFactory(() => ({
-			sql: async () => ({ data: [{ serviceName: "api", count: "42" }, { serviceName: "worker", count: "9" }] }),
+			sql: async () => ({
+				data: [
+					{ serviceName: "api", count: "42" },
+					{ serviceName: "worker", count: "9" },
+				],
+			}),
 			insert: async () => {},
 		}))
 
@@ -379,9 +381,7 @@ describe("WarehouseQueryService.ingest writes through the SQL client", () => {
 
 		return Effect.gen(function* () {
 			const exit = yield* Effect.exit(
-				WarehouseQueryService.use((service) =>
-					service.ingest(tenant, "traces", [{ trace_id: "a" }]),
-				),
+				WarehouseQueryService.use((service) => service.ingest(tenant, "traces", [{ trace_id: "a" }])),
 			)
 
 			assert.isTrue(Exit.isFailure(exit))

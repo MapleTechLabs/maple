@@ -4,8 +4,9 @@ A small CLI for measuring the real cost of our dashboard queries.
 
 It replays the exact SQL we already ran in production (captured on every
 `WarehouseQueryService.executeSql` span as `db.query.text`), records wall-time
-+ server-side stats + EXPLAIN plans, and lets you diff two runs so you can
-prove whether a DSL change actually moved the number.
+
+- server-side stats + EXPLAIN plans, and lets you diff two runs so you can
+  prove whether a DSL change actually moved the number.
 
 ## Commands
 
@@ -50,15 +51,15 @@ The tool resolves env vars with Effect's `Config` (not `Env.layer`), so it
 works in a checkout that doesn't have the full API config (Clerk keys, ingest
 secrets, etc.) set up. You only need warehouse credentials.
 
-| Var                       | Required by              | Purpose                                    |
-| ------------------------- | ------------------------ | ------------------------------------------ |
-| `TINYBIRD_HOST`           | `fetch`                  | Source — where prod self-instrumentation lives |
-| `TINYBIRD_TOKEN`          | `fetch`                  | Bearer token for the Tinybird workspace    |
-| `CLICKHOUSE_URL`          | `run`, `inspect`         | Target — where we replay queries           |
-| `CLICKHOUSE_USER`         | `run`, `inspect`         | Default `default`                          |
-| `CLICKHOUSE_PASSWORD`     | `run`, `inspect`         | Empty when CH allows anonymous local conns |
-| `CLICKHOUSE_DATABASE`     | `run`, `inspect`         | Default `default`                          |
-| `MAPLE_INTERNAL_ORG_ID`   | `fetch` (optional)       | Default `internal` — matches the gateway   |
+| Var                     | Required by        | Purpose                                        |
+| ----------------------- | ------------------ | ---------------------------------------------- |
+| `TINYBIRD_HOST`         | `fetch`            | Source — where prod self-instrumentation lives |
+| `TINYBIRD_TOKEN`        | `fetch`            | Bearer token for the Tinybird workspace        |
+| `CLICKHOUSE_URL`        | `run`, `inspect`   | Target — where we replay queries               |
+| `CLICKHOUSE_USER`       | `run`, `inspect`   | Default `default`                              |
+| `CLICKHOUSE_PASSWORD`   | `run`, `inspect`   | Empty when CH allows anonymous local conns     |
+| `CLICKHOUSE_DATABASE`   | `run`, `inspect`   | Default `default`                              |
+| `MAPLE_INTERNAL_ORG_ID` | `fetch` (optional) | Default `internal` — matches the gateway       |
 
 `run` and `inspect` deliberately do **not** support a Tinybird-SDK fallback.
 They need `query_id` and `system.query_log` for memory + ProfileEvents, which
@@ -68,33 +69,33 @@ only the raw ClickHouse HTTP interface exposes.
 
 1. **Capture baseline.** Pull the recent slow queries for one context label:
 
-   ```
-   bun bench:fetch --context errorsByType --since 24h --top 5 \
-     --out .bench/errorsByType-baseline.json
-   ```
+    ```
+    bun bench:fetch --context errorsByType --since 24h --top 5 \
+      --out .bench/errorsByType-baseline.json
+    ```
 
-   Skim the table to confirm the queries look real — they should start with
-   `SELECT`, contain `OrgId =`, and the p95 column should match the staging
-   trace dashboard.
+    Skim the table to confirm the queries look real — they should start with
+    `SELECT`, contain `OrgId =`, and the p95 column should match the staging
+    trace dashboard.
 
 2. **Measure baseline.** Replay them locally, 5 runs each:
 
-   ```
-   bun bench:run .bench/errorsByType-baseline.json --runs 5 \
-     --out .bench/errorsByType-before.json
-   ```
+    ```
+    bun bench:run .bench/errorsByType-baseline.json --runs 5 \
+      --out .bench/errorsByType-before.json
+    ```
 
-   Look at `read bytes` and `mem` — those are usually the more interesting
-   columns than wall time for a managed-CH dashboard query.
+    Look at `read bytes` and `mem` — those are usually the more interesting
+    columns than wall time for a managed-CH dashboard query.
 
 3. **Inspect the plan.** Find out what ClickHouse is doing:
 
-   ```
-   bun bench:inspect .bench/errorsByType-baseline.json
-   ```
+    ```
+    bun bench:inspect .bench/errorsByType-baseline.json
+    ```
 
-   In particular, EXPLAIN PIPELINE shows whether the optimizer collapsed
-   filters into a `PREWHERE` and how many threads it's using.
+    In particular, EXPLAIN PIPELINE shows whether the optimizer collapsed
+    filters into a `PREWHERE` and how many threads it's using.
 
 4. **Iterate on the DSL.** Edit
    [packages/query-engine/src/ch/queries/errors.ts](../../../packages/query-engine/src/ch/queries/errors.ts)
@@ -105,19 +106,19 @@ only the raw ClickHouse HTTP interface exposes.
    again (so the new fingerprint shows up in traces), or hand-edit the SQL in
    a copy of the baseline JSON for a faster local loop. Then:
 
-   ```
-   bun bench:run .bench/errorsByType-after-prewhere.json --runs 5 \
-     --out .bench/errorsByType-after.json
-   ```
+    ```
+    bun bench:run .bench/errorsByType-after-prewhere.json --runs 5 \
+      --out .bench/errorsByType-after.json
+    ```
 
 6. **Diff.** Confirm the change actually helped:
 
-   ```
-   bun bench:compare .bench/errorsByType-before.json .bench/errorsByType-after.json
-   ```
+    ```
+    bun bench:compare .bench/errorsByType-before.json .bench/errorsByType-after.json
+    ```
 
-   The compare table prints absolute and percentage deltas for p95 wall,
-   read bytes, and memory. Negative numbers mean improvement.
+    The compare table prints absolute and percentage deltas for p95 wall,
+    read bytes, and memory. Negative numbers mean improvement.
 
 ## Notes
 

@@ -470,22 +470,6 @@
 	animation: ref-line-draw 1.4s ease-out 0.1s both;
 }
 
-.dot-grid-bg {
-	background-image: radial-gradient(var(--border) 1px, transparent 1px);
-	background-size: 16px 16px;
-	background-position: 0 0;
-}
-
-.scanline-bg {
-	background-image: repeating-linear-gradient(
-		0deg,
-		color-mix(in oklab, var(--foreground) 4%, transparent) 0,
-		color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
-		transparent 1px,
-		transparent 3px
-	);
-}
-
 @media (prefers-reduced-motion: reduce) {
 	.infra-pulse {
 		animation: none;

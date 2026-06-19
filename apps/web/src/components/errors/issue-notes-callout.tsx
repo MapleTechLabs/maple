@@ -7,12 +7,7 @@ interface IssueNotesCalloutProps {
 
 export function IssueNotesCallout({ notes, className }: IssueNotesCalloutProps) {
 	return (
-		<div
-			className={cn(
-				"relative rounded-md border border-warning/30 bg-warning/5 px-4 py-3",
-				className,
-			)}
-		>
+		<div className={cn("relative rounded-md border border-warning/30 bg-warning/5 px-4 py-3", className)}>
 			<div className="mb-1 text-[10px] font-medium uppercase tracking-[0.12em] text-warning-foreground">
 				Notes
 			</div>

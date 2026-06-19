@@ -11,6 +11,7 @@ import { IngestionSection } from "@/components/settings/ingestion-section"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { NotificationsSection } from "@/components/settings/notifications-section"
+import { EscalationPolicySection } from "@/components/settings/escalation-policy-section"
 import { AiTriageSettingsSection } from "@/components/settings/ai-triage-settings-section"
 import { OrgOpenRouterSettingsSection } from "@/components/settings/org-openrouter-settings-section"
 import { OrgClickHouseSettingsSection } from "@/components/settings/org-clickhouse-settings-section"
@@ -85,10 +86,7 @@ export function SettingsPage() {
 
 	return (
 		<DashboardLayout
-			breadcrumbs={[
-				{ label: "Settings", href: "/settings" },
-				{ label: settingsTabLabels[activeTab] },
-			]}
+			breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTab] }]}
 			title={settingsTabLabels[activeTab]}
 			filterSidebar={
 				<SettingsNav sections={visibleSections} active={activeTab} onSelectTab={handleTabSelect} />
@@ -100,6 +98,7 @@ export function SettingsPage() {
 			{activeTab === "api-keys" && <ApiKeysSection />}
 			{activeTab === "mcp" && <McpSection />}
 			{activeTab === "notifications" && <NotificationsSection />}
+			{activeTab === "escalations" && <EscalationPolicySection isAdmin={isAdmin} />}
 			{activeTab === "ai" && (
 				<div className="space-y-6">
 					<OrgOpenRouterSettingsSection isAdmin={isAdmin} hasEntitlement={canAccessAi} />

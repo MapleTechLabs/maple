@@ -1,35 +1,26 @@
 import * as React from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import type { SeverityLevel } from "../format"
-
-type Tone = SeverityLevel | "neutral"
-
-const VALUE_TONE: Record<Tone, string> = {
-	neutral: "text-foreground",
-	ok: "text-foreground",
-	warn: "text-[var(--severity-warn)]",
-	crit: "text-[var(--severity-error)]",
-}
-
-const SPARK_COLOR: Record<Tone, string> = {
-	neutral: "var(--primary)",
-	ok: "var(--severity-info)",
-	warn: "var(--severity-warn)",
-	crit: "var(--severity-error)",
-}
+import { SPARK_COLOR, VALUE_TONE, type Tone } from "../severity-tokens"
 
 interface StatRailProps {
 	children: React.ReactNode
+	/** Columns at the `md` breakpoint (always 2-up below it). Defaults to 4. */
+	columns?: 3 | 4
 	className?: string
 }
 
-export function StatRail({ children, className }: StatRailProps) {
+const COLUMNS_CLASS: Record<3 | 4, string> = {
+	3: "md:grid-cols-3",
+	4: "md:grid-cols-4",
+}
+
+export function StatRail({ children, columns = 4, className }: StatRailProps) {
 	return (
 		<div
 			className={cn(
-				"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card",
-				"md:grid-cols-4 md:divide-y-0",
+				"grid grid-cols-2 divide-x divide-y divide-border rounded-md border bg-card md:divide-y-0",
+				COLUMNS_CLASS[columns],
 				className,
 			)}
 		>
@@ -48,6 +39,8 @@ interface StatRailItemProps {
 	spark?: ReadonlyArray<number>
 	subline?: React.ReactNode
 	delay?: number
+	/** Drop the reserved sparkline slot so the value spans full width (dense grids with no sparks). */
+	compact?: boolean
 }
 
 export function StatRailItem({
@@ -59,6 +52,7 @@ export function StatRailItem({
 	spark,
 	subline,
 	delay,
+	compact,
 }: StatRailItemProps) {
 	return (
 		<div
@@ -80,13 +74,12 @@ export function StatRailItem({
 						"font-mono text-[26px] font-semibold tabular-nums leading-none tracking-[-0.01em]",
 						VALUE_TONE[tone],
 					)}
-					style={{ fontFeatureSettings: "'tnum' 1" }}
 				>
 					{value}
 				</div>
 				{spark && spark.length > 1 ? (
 					<BarSpark values={spark.slice(-28)} color={SPARK_COLOR[tone]} className="h-7 w-24" />
-				) : (
+				) : compact ? null : (
 					<div className="h-7 w-24" />
 				)}
 			</div>

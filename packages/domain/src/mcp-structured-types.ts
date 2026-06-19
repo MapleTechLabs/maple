@@ -308,6 +308,14 @@ export interface CreateAlertRuleData {
 	rule: AlertRuleRow
 }
 
+export interface UpdateAlertRuleData {
+	rule: AlertRuleRow
+}
+
+export interface DeleteAlertRuleData {
+	id: string
+}
+
 export interface AlertRuleDetailRow extends AlertRuleRow {
 	serviceNames: string[]
 	excludeServiceNames: string[]
@@ -649,9 +657,12 @@ export interface ActorSummary {
 
 export interface ErrorIssueRow {
 	id: string
+	kind: string
 	fingerprintHash: string
 	workflowState: string
 	priority: number
+	severity: string | null
+	severitySource: string | null
 	serviceName: string
 	exceptionType: string
 	exceptionMessage: string
@@ -679,6 +690,14 @@ export interface TransitionErrorIssueData {
 	assignedActorId: string | null
 	leaseHolderActorId: string | null
 	snoozeUntil: string | null
+}
+
+export interface SetIssueSeverityData {
+	id: string
+	severity: string | null
+	severitySource: string | null
+	/** False when an AI write was blocked by a manual override. */
+	applied: boolean
 }
 
 export interface ClaimErrorIssueData {
@@ -875,6 +894,8 @@ export type StructuredToolOutput =
 	| { tool: "list_alert_incidents"; data: ListAlertIncidentsData }
 	| { tool: "list_alert_checks"; data: ListAlertChecksData }
 	| { tool: "create_alert_rule"; data: CreateAlertRuleData }
+	| { tool: "update_alert_rule"; data: UpdateAlertRuleData }
+	| { tool: "delete_alert_rule"; data: DeleteAlertRuleData }
 	| { tool: "get_alert_rule"; data: GetAlertRuleData }
 	| { tool: "list_dashboards"; data: ListDashboardsData }
 	| { tool: "get_dashboard"; data: GetDashboardData }
@@ -897,6 +918,7 @@ export type StructuredToolOutput =
 	| { tool: "inspect_chart_data"; data: InspectChartDataData }
 	| { tool: "list_error_issues"; data: ListErrorIssuesData }
 	| { tool: "transition_error_issue"; data: TransitionErrorIssueData }
+	| { tool: "set_issue_severity"; data: SetIssueSeverityData }
 	| { tool: "claim_error_issue"; data: ClaimErrorIssueData }
 	| { tool: "release_error_issue"; data: ReleaseErrorIssueData }
 	| { tool: "heartbeat_error_issue"; data: HeartbeatErrorIssueData }

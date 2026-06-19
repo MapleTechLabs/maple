@@ -1,4 +1,4 @@
-import { Navigate, createFileRoute } from "@tanstack/react-router"
+import { createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
@@ -27,7 +27,6 @@ import {
 	SessionIdentityHeader,
 	StatTile,
 } from "@/components/replays/session-detail-parts"
-import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 
 const detailSearchSchema = Schema.Struct({
 	t: Schema.optional(Schema.String),
@@ -43,12 +42,6 @@ export const Route = effectRoute(createFileRoute("/replays/$sessionId"), ({ para
 })
 
 function ReplayDetailPage() {
-	const sessionReplaysEnabled = useSessionReplaysEnabled()
-	if (!sessionReplaysEnabled) return <Navigate to="/" replace />
-	return <ReplayDetailPageContent />
-}
-
-function ReplayDetailPageContent() {
 	const { sessionId } = Route.useParams()
 	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId } }))
 

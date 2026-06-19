@@ -5,7 +5,7 @@
 
 import { useLocalIngestPulse } from "./use-local-ingest-pulse"
 
-export type LocalConnectionStatus = "connecting" | "connected" | "disconnected"
+type LocalConnectionStatus = "connecting" | "connected" | "disconnected"
 
 export interface LocalConnection {
 	status: LocalConnectionStatus

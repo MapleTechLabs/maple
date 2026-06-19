@@ -78,7 +78,7 @@ export function inferBucketSeconds(data: Array<{ bucket: string }>): number | un
 /**
  * Parse a bucket value to a millisecond timestamp.
  */
-export function parseBucketMs(value: unknown): number | null {
+function parseBucketMs(value: unknown): number | null {
 	if (typeof value !== "string") return null
 	const parsed = new Date(value).getTime()
 	return Number.isNaN(parsed) ? null : parsed
@@ -146,30 +146,6 @@ export function formatBucketLabel(
 			second: includeSeconds ? "2-digit" : undefined,
 		})
 		.replace(/^24:/, "00:")
-}
-
-const bucketLabelMap: Record<number, string> = {
-	60: "/min",
-	300: "/5min",
-	900: "/15min",
-	3600: "/h",
-	14400: "/4h",
-	86400: "/d",
-}
-
-/**
- * Map bucket interval seconds to a human-readable rate suffix.
- */
-export function bucketIntervalLabel(seconds: number | undefined): string {
-	if (seconds == null) return ""
-	return bucketLabelMap[seconds] ?? ""
-}
-
-/**
- * Format a throughput value with a rate suffix for chart axes.
- */
-export function formatThroughput(value: number, suffix: string): string {
-	return `${formatNumber(value)}${suffix}`
 }
 
 /**

@@ -27,9 +27,7 @@ const failingDatabaseLayer = Layer.succeed(
 	Database.of({
 		client: undefined as unknown as DatabaseShape["client"],
 		execute: () =>
-			Effect.fail(
-				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
-			),
+			Effect.fail(new DatabaseError({ message: "simulated query failure", cause: new Error("boom") })),
 	}),
 )
 

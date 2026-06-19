@@ -5,8 +5,15 @@ import * as Flag from "effect/unstable/cli/Flag"
 import { openSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
-import { startServer } from "../server/serve"
-import { checkStoreCompatible, isStoreDirty, storeMarkerJson, storeMarkerPath, storeOpenMarkerPath } from "../server/store-version"
+import { SCHEMA_FINGERPRINT, startServer } from "../server/serve"
+import {
+	checkStoreCompatible,
+	isSchemaStale,
+	isStoreDirty,
+	storeMarkerJson,
+	storeMarkerPath,
+	storeOpenMarkerPath,
+} from "../server/store-version"
 import { resolveUiAssets } from "../server/ui-assets"
 import { amber, bold, cyan, dim, green, underline } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
@@ -33,7 +40,12 @@ const remoteUiUrl = (): string => process.env.MAPLE_LOCAL_UI_URL?.trim() || "htt
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
  *  URL the user should open (the auto-updating `local.maple.dev` by default, or
  *  the bundled UI on `127.0.0.1` with `--offline`); `undefined` when no UI. */
-const startBanner = (addr: string, dataDir: string, dashboardUrl: string | undefined, offline: boolean): string => {
+const startBanner = (
+	addr: string,
+	dataDir: string,
+	dashboardUrl: string | undefined,
+	offline: boolean,
+): string => {
 	const row = (key: string, value: string) => `  ${dim(key.padEnd(11))}${value}`
 	const lines = [
 		"",
@@ -86,7 +98,9 @@ const port = Flag.integer("port").pipe(
 )
 
 const dataDirFlag = Flag.optional(
-	Flag.string("data-dir").pipe(Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)")),
+	Flag.string("data-dir").pipe(
+		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
+	),
 )
 
 const backgroundFlag = Flag.boolean("background").pipe(
@@ -96,7 +110,9 @@ const backgroundFlag = Flag.boolean("background").pipe(
 )
 
 const resetFlag = Flag.boolean("reset").pipe(
-	Flag.withDescription("Wipe the existing store (~/.maple/data) before starting — use after an incompatible upgrade"),
+	Flag.withDescription(
+		"Wipe the existing store (~/.maple/data) before starting — use after an incompatible upgrade",
+	),
 	Flag.withDefault(false),
 )
 
@@ -107,7 +123,9 @@ const yesFlag = Flag.boolean("yes").pipe(
 )
 
 const offlineFlag = Flag.boolean("offline").pipe(
-	Flag.withDescription("Use the UI bundled in this binary (served from 127.0.0.1) instead of local.maple.dev"),
+	Flag.withDescription(
+		"Use the UI bundled in this binary (served from 127.0.0.1) instead of local.maple.dev",
+	),
 	Flag.withDefault(false),
 )
 
@@ -260,11 +278,34 @@ export const start = Command.make("start", {
 				yield* fs.makeDirectory(dataDir, { recursive: true })
 			}
 
+			// A store bootstrapped from an older bundled schema can't be evolved in
+			// place: `CREATE … IF NOT EXISTS` is a no-op on existing tables, so a
+			// column added to the schema (e.g. ServiceNamespace on trace_list_mv)
+			// never lands and facet queries referencing it fail. Rebuild from the
+			// current schema. Safe to auto-wipe — local telemetry is ephemeral and
+			// re-ingested — and only triggers once per schema change.
+			if (isSchemaStale(dataDir, SCHEMA_FINGERPRINT)) {
+				yield* Effect.sync(() =>
+					process.stderr.write(
+						amber(
+							"⚠ the local store was built from an older schema — " +
+								"rebuilding it from the current schema (local telemetry data is discarded)\n",
+						),
+					),
+				)
+				yield* fs.remove(dataDir, { recursive: true, force: true }).pipe(Effect.ignore)
+				yield* fs.remove(storeMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
+				yield* fs.remove(storeOpenMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
+				yield* fs.makeDirectory(dataDir, { recursive: true })
+			}
+
 			// Detached: spawn the same command without --background and exit.
 			if (a.background) return yield* startDetached(a.port, dataDir, a.offline)
 
 			yield* Effect.sync(() =>
-				process.stderr.write(dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`)),
+				process.stderr.write(
+					dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
+				),
 			)
 			const assets = yield* resolveUiAssets()
 
@@ -294,7 +335,10 @@ export const start = Command.make("start", {
 					// Bootstrap succeeded — stamp the store so a later start over an
 					// incompatible binary upgrade is detected instead of crashing.
 					yield* fs
-						.writeFileString(storeMarkerPath(dataDir), storeMarkerJson(MAPLE_VERSION, new Date().toISOString()))
+						.writeFileString(
+							storeMarkerPath(dataDir),
+							storeMarkerJson(MAPLE_VERSION, new Date().toISOString(), SCHEMA_FINGERPRINT),
+						)
 						.pipe(Effect.ignore)
 
 					yield* Effect.acquireRelease(fs.writeFileString(pidPath, String(process.pid)), () =>
@@ -310,7 +354,9 @@ export const start = Command.make("start", {
 							? `${addr}/`
 							: undefined
 						: `${remoteUiUrl()}/?port=${boundPort}`
-					yield* Effect.sync(() => process.stdout.write(startBanner(addr, dataDir, dashboardUrl, a.offline)))
+					yield* Effect.sync(() =>
+						process.stdout.write(startBanner(addr, dataDir, dashboardUrl, a.offline)),
+					)
 
 					yield* Effect.never
 				}),
@@ -334,7 +380,9 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const pid = pidOpt.value
 			if (!isProcessAlive(pid)) {
 				yield* fs.remove(pidPath, { force: true }).pipe(Effect.ignore)
-				return yield* new ServerError({ message: "maple is not running (stale PID file, cleaned up)" })
+				return yield* new ServerError({
+					message: "maple is not running (stale PID file, cleaned up)",
+				})
 			}
 
 			yield* Effect.sync(() => {
@@ -360,7 +408,9 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 )
 
 export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag }).pipe(
-	Command.withDescription("Delete the local chDB store (~/.maple/data) so the next `maple start` bootstraps fresh"),
+	Command.withDescription(
+		"Delete the local chDB store (~/.maple/data) so the next `maple start` bootstraps fresh",
+	),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
@@ -388,7 +438,9 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			yield* fs.remove(dataDir, { recursive: true, force: true }).pipe(Effect.ignore)
 			yield* fs.remove(storeMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
 			yield* fs.remove(storeOpenMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
-			yield* Effect.sync(() => process.stderr.write(`${green("✓")} reset — removed ${prettyPath(dataDir)}\n`))
+			yield* Effect.sync(() =>
+				process.stderr.write(`${green("✓")} reset — removed ${prettyPath(dataDir)}\n`),
+			)
 		}),
 	),
 )

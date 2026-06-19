@@ -65,12 +65,8 @@ function PersonalEmailShell({ preview, children, signoffName = "David" }: ShellP
 						<Section>{children}</Section>
 
 						<Section className="pt-3">
-							<Text className="m-0 mb-1 text-[14px] leading-relaxed text-body">
-								Cheers,
-							</Text>
-							<Text className="m-0 text-[14px] leading-relaxed text-body">
-								{signoffName}
-							</Text>
+							<Text className="m-0 mb-1 text-[14px] leading-relaxed text-body">Cheers,</Text>
+							<Text className="m-0 text-[14px] leading-relaxed text-body">{signoffName}</Text>
 							<Text className="m-0 mt-1 text-[13px] leading-relaxed text-muted">
 								Founder, Maple
 							</Text>
@@ -80,8 +76,8 @@ function PersonalEmailShell({ preview, children, signoffName = "David" }: ShellP
 
 						<Section>
 							<Text className="m-0 text-[11px] leading-relaxed text-dim">
-								You're receiving this because you started a Maple workspace.
-								Manage email preferences in your account settings.
+								You're receiving this because you started a Maple workspace. Manage email
+								preferences in your account settings.
 							</Text>
 						</Section>
 					</Container>
@@ -136,15 +132,13 @@ export function WelcomeEmail({ dashboardUrl, trialDays }: WelcomeEmailProps) {
 			<Paragraph>Hey,</Paragraph>
 			<Paragraph>My name is David — I'm the founder of Maple.</Paragraph>
 			<Paragraph>
-				We started Maple because we wanted observability that doesn't suck — no
-				six-figure invoice, no sales call before you can see your first trace, just
-				traces, logs, and metrics in one place the moment your services start sending
-				them.
+				We started Maple because we wanted observability that doesn't suck — no six-figure invoice, no
+				sales call before you can see your first trace, just traces, logs, and metrics in one place
+				the moment your services start sending them.
 			</Paragraph>
 			{trialDays ? (
 				<Paragraph>
-					Your {trialDays}-day trial is running. Here are 3 things to do to get value
-					from it:
+					Your {trialDays}-day trial is running. Here are 3 things to do to get value from it:
 				</Paragraph>
 			) : (
 				<Paragraph>Here are 3 things to do to get started:</Paragraph>
@@ -159,8 +153,8 @@ export function WelcomeEmail({ dashboardUrl, trialDays }: WelcomeEmailProps) {
 				<InlineLink href={OTEL_QUICKSTART_URL}>Read the OpenTelemetry quickstart</InlineLink>
 			</Tip>
 			<PostScript>
-				Why did you sign up? What are you trying to debug? Hit "Reply" and let me know —
-				I read and reply to every email.
+				Why did you sign up? What are you trying to debug? Hit "Reply" and let me know — I read and
+				reply to every email.
 			</PostScript>
 		</PersonalEmailShell>
 	)
@@ -175,24 +169,22 @@ export function ConnectAppEmail({ dashboardUrl }: ConnectAppEmailProps) {
 		<PersonalEmailShell preview="Your Maple workspace is still waiting for data">
 			<Paragraph>Hey, it's David again.</Paragraph>
 			<Paragraph>
-				Your workspace is set up, but I haven't seen any telemetry from your services
-				yet. Maple only really becomes useful once your app is sending traces — so I
-				wanted to nudge you with a few ways to get unblocked.
+				Your workspace is set up, but I haven't seen any telemetry from your services yet. Maple only
+				really becomes useful once your app is sending traces — so I wanted to nudge you with a few
+				ways to get unblocked.
 			</Paragraph>
 			<Tip index={1}>
-				<InlineLink href={dashboardUrl}>Open the setup checklist</InlineLink>{" "}
-				— pick your stack and copy-paste the snippet.
+				<InlineLink href={dashboardUrl}>Open the setup checklist</InlineLink> — pick your stack and
+				copy-paste the snippet.
 			</Tip>
 			<Tip index={2}>
-				Paste a one-line prompt into Claude Code, Cursor, or Codex — it instruments your
-				whole repo with OpenTelemetry automatically. The checklist has the prompt.
+				Paste a one-line prompt into Claude Code, Cursor, or Codex — it instruments your whole repo
+				with OpenTelemetry automatically. The checklist has the prompt.
 			</Tip>
-			<Tip index={3}>
-				Or grab the manual snippet for your language and drop it in.
-			</Tip>
+			<Tip index={3}>Or grab the manual snippet for your language and drop it in.</Tip>
 			<PostScript>
-				Stuck on which exporter to use? Hit "Reply" with your stack and I'll point you
-				at the right snippet.
+				Stuck on which exporter to use? Hit "Reply" with your stack and I'll point you at the right
+				snippet.
 			</PostScript>
 		</PersonalEmailShell>
 	)
@@ -207,30 +199,29 @@ export function StalledEmail({ dashboardUrl }: StalledEmailProps) {
 		<PersonalEmailShell preview="Stuck connecting your app to Maple? I'd like to help">
 			<Paragraph>Hey, it's David.</Paragraph>
 			<Paragraph>
-				It's been a few days and I haven't seen any telemetry land in your workspace. If
-				something got in the way, I'd really like to know what.
+				It's been a few days and I haven't seen any telemetry land in your workspace. If something got
+				in the way, I'd really like to know what.
 			</Paragraph>
 			<Paragraph>
-				The usual culprits: the ingest key isn't on the exporter, the OTLP endpoint URL
-				is missing the signal path (`/v1/traces`, `/v1/logs`…), or the service hasn't
-				been redeployed yet.
+				The usual culprits: the ingest key isn't on the exporter, the OTLP endpoint URL is missing the
+				signal path (`/v1/traces`, `/v1/logs`…), or the service hasn't been redeployed yet.
 			</Paragraph>
 			<Paragraph>Three faster ways to get unstuck:</Paragraph>
 			<Tip index={1}>
-				<InlineLink href={dashboardUrl}>Open the setup checklist</InlineLink>{" "}
-				— it has copy-paste snippets for every supported stack.
+				<InlineLink href={dashboardUrl}>Open the setup checklist</InlineLink> — it has copy-paste
+				snippets for every supported stack.
 			</Tip>
 			<Tip index={2}>
-				<InlineLink href={DISCORD_URL}>Ping me in our Discord</InlineLink>{" "}
-				— quick questions get quick answers.
+				<InlineLink href={DISCORD_URL}>Ping me in our Discord</InlineLink> — quick questions get quick
+				answers.
 			</Tip>
 			<Tip index={3}>
-				<InlineLink href={BOOK_CALL_URL}>Book 30 minutes with me</InlineLink>{" "}
-				— we'll walk through setup live.
+				<InlineLink href={BOOK_CALL_URL}>Book 30 minutes with me</InlineLink> — we'll walk through
+				setup live.
 			</Tip>
 			<PostScript>
-				What got you stuck? Even a one-line reply helps me figure out what to fix next —
-				I read every one.
+				What got you stuck? Even a one-line reply helps me figure out what to fix next — I read every
+				one.
 			</PostScript>
 		</PersonalEmailShell>
 	)
@@ -246,25 +237,25 @@ export function ActivationEmail({ dashboardUrl, serviceName }: ActivationEmailPr
 		<PersonalEmailShell preview="Your first trace landed in Maple — you're live">
 			<Paragraph>Hey, it's David.</Paragraph>
 			<Paragraph>
-				Just saw the first traces land from{" "}
-				<strong>{serviceName ?? "your services"}</strong>. You're live on Maple.
+				Just saw the first traces land from <strong>{serviceName ?? "your services"}</strong>. You're
+				live on Maple.
 			</Paragraph>
 			<Paragraph>Three things worth trying today:</Paragraph>
 			<Tip index={1}>
-				<InlineLink href={dashboardUrl}>Open a slow trace</InlineLink>{" "}
-				and walk the span waterfall — that's usually where the surprises are.
+				<InlineLink href={dashboardUrl}>Open a slow trace</InlineLink> and walk the span waterfall —
+				that's usually where the surprises are.
 			</Tip>
 			<Tip index={2}>
-				<InlineLink href={dashboardUrl}>Check the service map</InlineLink>{" "}
-				to see how your services call each other.
+				<InlineLink href={dashboardUrl}>Check the service map</InlineLink> to see how your services
+				call each other.
 			</Tip>
 			<Tip index={3}>
-				<InlineLink href={dashboardUrl}>Wire up your first alert</InlineLink>{" "}
-				so Maple tells you when something breaks.
+				<InlineLink href={dashboardUrl}>Wire up your first alert</InlineLink> so Maple tells you when
+				something breaks.
 			</Tip>
 			<PostScript>
-				What's the first thing you want Maple to catch for you? Hit "Reply" and tell me —
-				it genuinely helps me prioritize what we build next.
+				What's the first thing you want Maple to catch for you? Hit "Reply" and tell me — it genuinely
+				helps me prioritize what we build next.
 			</PostScript>
 		</PersonalEmailShell>
 	)

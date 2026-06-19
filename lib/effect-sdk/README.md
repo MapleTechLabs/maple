@@ -67,12 +67,12 @@ When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are draine
 
 ### Cloudflare-specific options
 
-| Option            | Description                                                                                              |
-| ----------------- | -------------------------------------------------------------------------------------------------------- |
+| Option            | Description                                                                                                 |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- |
 | `dropSpanNames`   | Span names whose prefix matches an entry are dropped before OTLP export (e.g. `"McpServer/Notifications."`) |
-| `excludeLogSpans` | Skip Effect log spans in OTLP log attributes. Default `false`                                             |
-| `tracesPath`      | OTLP traces path appended to `endpoint`. Default `/v1/traces`                                            |
-| `logsPath`        | OTLP logs path appended to `endpoint`. Default `/v1/logs`                                                |
+| `excludeLogSpans` | Skip Effect log spans in OTLP log attributes. Default `false`                                               |
+| `tracesPath`      | OTLP traces path appended to `endpoint`. Default `/v1/traces`                                               |
+| `logsPath`        | OTLP logs path appended to `endpoint`. Default `/v1/logs`                                                   |
 
 The same `MAPLE_ENDPOINT` / `MAPLE_INGEST_KEY` / `MAPLE_ENVIRONMENT` env vars apply, read from the Workers `env` binding.
 

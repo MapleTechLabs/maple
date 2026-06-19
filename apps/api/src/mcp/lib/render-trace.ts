@@ -49,8 +49,7 @@ export function renderTraceOverview(input: TraceOverviewInput): RenderedTraceOve
 
 	const renderNode = (node: SpanNode, prefix: string, isLast: boolean): void => {
 		const connector = prefix === "" ? "" : isLast ? "└── " : "├── "
-		const status =
-			node.statusCode === "Error" ? " [Error]" : node.statusCode === "Ok" ? " [Ok]" : ""
+		const status = node.statusCode === "Error" ? " [Error]" : node.statusCode === "Ok" ? " [Ok]" : ""
 		// Full span id at the END of the line: readable label first, copyable id
 		// last for `inspect_span` / `search_logs` follow-ups.
 		lines.push(

@@ -12,7 +12,7 @@ export interface FixtureRule {
  * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
  * table, so we route by table name.
  */
-export const defaultTraceFixtures = (): FixtureRule[] => [
+const defaultTraceFixtures = (): FixtureRule[] => [
 	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
 ]
@@ -28,9 +28,7 @@ export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures
 		sql: async (sql: string) => {
 			const rule = rules.find((r) => r.match(sql))
 			if (!rule) {
-				throw new Error(
-					`[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
-				)
+				throw new Error(`[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`)
 			}
 			return { data: rule.rows as ReadonlyArray<Record<string, unknown>> }
 		},

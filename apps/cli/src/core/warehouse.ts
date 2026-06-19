@@ -31,10 +31,11 @@ export const WarehouseExecutorFromMode = Layer.effect(
 		const mode = yield* Mode
 		const getShape = yield* Effect.cached(
 			mode.resolve.pipe(
-				Effect.map((m): WarehouseExecutorShape =>
-					m._tag === "local"
-						? makeLocalWarehouseExecutorShape(m.baseUrl)
-						: makeRemoteWarehouseExecutorShape(m.apiUrl, m.token, m.orgId ?? ""),
+				Effect.map(
+					(m): WarehouseExecutorShape =>
+						m._tag === "local"
+							? makeLocalWarehouseExecutorShape(m.baseUrl)
+							: makeRemoteWarehouseExecutorShape(m.apiUrl, m.token, m.orgId ?? ""),
 				),
 				Effect.mapError((e) => new WarehouseConfigError({ message: e.message, pipe: "mode" })),
 			),
@@ -42,7 +43,9 @@ export const WarehouseExecutorFromMode = Layer.effect(
 		return WarehouseExecutor.of({
 			orgId: "",
 			query: <T>(pipe: string, params: Record<string, unknown>, options?: ExecutorQueryOptions) =>
-				getShape.pipe(Effect.flatMap((shape) => shape.query<T>(pipe as WarehouseQueryName, params, options))),
+				getShape.pipe(
+					Effect.flatMap((shape) => shape.query<T>(pipe as WarehouseQueryName, params, options)),
+				),
 			sqlQuery: <T = Record<string, unknown>>(sql: string, options?: ExecutorQueryOptions) =>
 				getShape.pipe(Effect.flatMap((shape) => shape.sqlQuery<T>(sql, options))),
 			compiledQuery: (compiled, options?: ExecutorQueryOptions) =>

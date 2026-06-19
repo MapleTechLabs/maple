@@ -31,11 +31,7 @@ export const AnomalyIncidentSeverity = Schema.Literals(["warning", "critical"]).
 })
 export type AnomalyIncidentSeverity = Schema.Schema.Type<typeof AnomalyIncidentSeverity>
 
-export const AnomalyResolveReason = Schema.Literals([
-	"returned_to_baseline",
-	"no_data",
-	"manual",
-]).annotate({
+export const AnomalyResolveReason = Schema.Literals(["returned_to_baseline", "no_data", "manual"]).annotate({
 	identifier: "@maple/AnomalyResolveReason",
 	title: "Anomaly Resolve Reason",
 })
@@ -57,30 +53,51 @@ export type AnomalyTriageStatus = Schema.Schema.Type<typeof AnomalyTriageStatus>
 // Documents
 // ---------------------------------------------------------------------------
 
-export class AnomalyIncidentDocument extends Schema.Class<AnomalyIncidentDocument>(
-	"AnomalyIncidentDocument",
+/**
+ * One fingerprint participating in a (possibly consolidated) error-spike
+ * incident. Co-onset fingerprints on the same service+env share one incident
+ * instead of opening duplicates.
+ */
+export class AnomalyIncidentFingerprint extends Schema.Class<AnomalyIncidentFingerprint>(
+	"AnomalyIncidentFingerprint",
 )({
-	id: AnomalyIncidentId,
-	detectorKey: Schema.String,
-	signalType: AnomalySignalType,
-	serviceName: Schema.String,
-	deploymentEnv: Schema.String,
-	fingerprintHash: Schema.NullOr(Schema.String),
+	fingerprintHash: Schema.String,
 	errorIssueId: Schema.NullOr(ErrorIssueId),
-	status: AnomalyIncidentStatus,
-	severity: AnomalyIncidentSeverity,
 	openedValue: Schema.Number,
-	baselineMedian: Schema.Number,
-	baselineSigma: Schema.Number,
-	thresholdValue: Schema.Number,
-	lastObservedValue: Schema.Number,
-	lastSampleCount: Schema.Number,
-	firstTriggeredAt: IsoDateTimeString,
-	lastTriggeredAt: IsoDateTimeString,
+	lastValue: Schema.Number,
+	severity: AnomalyIncidentSeverity,
+	attachedAt: IsoDateTimeString,
 	resolvedAt: Schema.NullOr(IsoDateTimeString),
-	resolveReason: Schema.NullOr(AnomalyResolveReason),
-	triageStatus: AnomalyTriageStatus,
 }) {}
+
+export class AnomalyIncidentDocument extends Schema.Class<AnomalyIncidentDocument>("AnomalyIncidentDocument")(
+	{
+		id: AnomalyIncidentId,
+		detectorKey: Schema.String,
+		signalType: AnomalySignalType,
+		serviceName: Schema.String,
+		deploymentEnv: Schema.String,
+		fingerprintHash: Schema.NullOr(Schema.String),
+		errorIssueId: Schema.NullOr(ErrorIssueId),
+		status: AnomalyIncidentStatus,
+		severity: AnomalyIncidentSeverity,
+		openedValue: Schema.Number,
+		baselineMedian: Schema.Number,
+		baselineSigma: Schema.Number,
+		thresholdValue: Schema.Number,
+		lastObservedValue: Schema.Number,
+		lastSampleCount: Schema.Number,
+		firstTriggeredAt: IsoDateTimeString,
+		lastTriggeredAt: IsoDateTimeString,
+		resolvedAt: Schema.NullOr(IsoDateTimeString),
+		resolveReason: Schema.NullOr(AnomalyResolveReason),
+		triageStatus: AnomalyTriageStatus,
+		/** All fingerprints sharing this incident; empty for golden-signal incidents. */
+		fingerprints: Schema.Array(AnomalyIncidentFingerprint),
+		reopenCount: Schema.Number,
+		lastReopenedAt: Schema.NullOr(IsoDateTimeString),
+	},
+) {}
 
 export class AnomalyIncidentsListResponse extends Schema.Class<AnomalyIncidentsListResponse>(
 	"AnomalyIncidentsListResponse",
@@ -106,14 +123,14 @@ export const AnomalyTimeseriesUnit = Schema.Literals([
 })
 export type AnomalyTimeseriesUnit = Schema.Schema.Type<typeof AnomalyTimeseriesUnit>
 
-export class AnomalyTimeseriesBucket extends Schema.Class<AnomalyTimeseriesBucket>(
-	"AnomalyTimeseriesBucket",
-)({
-	bucket: IsoDateTimeString,
-	value: Schema.Number,
-	/** Raw sample volume behind the bucket (requests, error logs, or spike count). */
-	sampleCount: Schema.Number,
-}) {}
+export class AnomalyTimeseriesBucket extends Schema.Class<AnomalyTimeseriesBucket>("AnomalyTimeseriesBucket")(
+	{
+		bucket: IsoDateTimeString,
+		value: Schema.Number,
+		/** Raw sample volume behind the bucket (requests, error logs, or spike count). */
+		sampleCount: Schema.Number,
+	},
+) {}
 
 export class AnomalyIncidentTimeseriesResponse extends Schema.Class<AnomalyIncidentTimeseriesResponse>(
 	"AnomalyIncidentTimeseriesResponse",

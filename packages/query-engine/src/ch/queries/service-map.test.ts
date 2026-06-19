@@ -344,20 +344,14 @@ describe("serviceDbEdgesForServiceQuery", () => {
 	)
 
 	it("filters ServiceName on both branches (hourly MV + raw traces)", () => {
-		const { sql } = compileCH(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
+		const { sql } = compileCH(serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }), baseParams)
 		const matches = sql.match(/ServiceName = 'artifacts-api'/g)
 		// One in the hourly branch, one in the raw-traces fallback.
 		expect(matches && matches.length === 2).toBe(true)
 	})
 
 	it("unions service_map_db_edges_hourly with raw traces for the in-progress hour", () => {
-		const { sql } = compileCH(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
+		const { sql } = compileCH(serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }), baseParams)
 		expect(sql).toContain("FROM service_map_db_edges_hourly")
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("UNION ALL")
@@ -365,10 +359,7 @@ describe("serviceDbEdgesForServiceQuery", () => {
 	})
 
 	it("restricts the raw branch to Client/Producer spans with db.system.name set", () => {
-		const { sql } = compileCH(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
+		const { sql } = compileCH(serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }), baseParams)
 		expect(sql).toContain("SpanKind IN ('Client', 'Producer')")
 		expect(sql).toContain("SpanAttributes['db.system.name'] != ''")
 	})
@@ -386,20 +377,14 @@ describe("serviceDbEdgesForServiceQuery", () => {
 	})
 
 	it("orders by callCount desc, limits to 200, formats as JSON", () => {
-		const { sql } = compileCH(
-			serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }),
-			baseParams,
-		)
+		const { sql } = compileCH(serviceDbEdgesForServiceQuery({ serviceName: "artifacts-api" }), baseParams)
 		expect(sql).toContain("ORDER BY callCount DESC")
 		expect(sql).toContain("LIMIT 200")
 		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("escapes single quotes in serviceName to prevent SQL injection", () => {
-		const { sql } = compileCH(
-			serviceDbEdgesForServiceQuery({ serviceName: "weird'service" }),
-			baseParams,
-		)
+		const { sql } = compileCH(serviceDbEdgesForServiceQuery({ serviceName: "weird'service" }), baseParams)
 		expect(sql).toContain("ServiceName = 'weird\\'service'")
 	})
 })
@@ -577,15 +562,15 @@ describe("service-map database query summaries", () => {
 			expect(rows).toEqual([
 				{
 					bucket: "2024-01-01 00:05:00",
-				queryCount: 12,
-				estimatedQueryCount: 16,
-				errorCount: 1,
-				errorRate: 0.0625,
-				avgDurationMs: 7.5,
-				p50DurationMs: 4,
-				p95DurationMs: 20,
-			},
-		])
+					queryCount: 12,
+					estimatedQueryCount: 16,
+					errorCount: 1,
+					errorRate: 0.0625,
+					avgDurationMs: 7.5,
+					p50DurationMs: 4,
+					p95DurationMs: 20,
+				},
+			])
 		}),
 	)
 

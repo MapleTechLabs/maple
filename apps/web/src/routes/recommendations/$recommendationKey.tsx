@@ -56,10 +56,7 @@ const KIND_BADGE: Record<IssueKind, { label: string; variant: "success" | "warni
 	naming: { label: "Naming", variant: "info" },
 }
 
-const STATUS_BADGE: Record<
-	IssueStatus,
-	{ label: string; variant: "success" | "secondary" | "outline" }
-> = {
+const STATUS_BADGE: Record<IssueStatus, { label: string; variant: "success" | "secondary" | "outline" }> = {
 	open: { label: "Open", variant: "outline" },
 	dismissed: { label: "Dismissed", variant: "secondary" },
 	applied: { label: "Applied", variant: "success" },
@@ -104,8 +101,7 @@ function recSentence(issue: RecommendationIssue) {
 	return (
 		<>
 			<span className="text-foreground font-medium">Rename</span>{" "}
-			<code className={MONO}>{issue.sourceKey}</code>{" "}
-			<span className="text-muted-foreground">→</span>{" "}
+			<code className={MONO}>{issue.sourceKey}</code> <span className="text-muted-foreground">→</span>{" "}
 			<code className={MONO}>{issue.canonicalKey}</code>
 		</>
 	)
@@ -119,10 +115,9 @@ function RecommendationDetailPage() {
 	// Applying a recommendation creates a mapping, so refresh the mappings list too.
 	const refreshMappings = useAtomRefresh(ingestAttributeMappingsListAtom)
 
-	const createMutation = useAtomSet(
-		MapleApiAtomClient.mutation("ingestAttributeMappings", "create"),
-		{ mode: "promiseExit" },
-	)
+	const createMutation = useAtomSet(MapleApiAtomClient.mutation("ingestAttributeMappings", "create"), {
+		mode: "promiseExit",
+	})
 	const dismissMutation = useAtomSet(MapleApiAtomClient.mutation("recommendationIssues", "dismiss"), {
 		mode: "promiseExit",
 	})
@@ -268,8 +263,8 @@ function Summary({ issue }: { issue: RecommendationIssue }) {
 			<>
 				Your spans emit both <code className={MONO}>{issue.sourceKey}</code> and{" "}
 				<code className={MONO}>{issue.canonicalKey}</code>. Standardize on{" "}
-				<code className={MONO}>{issue.canonicalKey}</code> in your SDK — an ingest mapping can't
-				merge them because the canonical key already exists on your spans.
+				<code className={MONO}>{issue.canonicalKey}</code> in your SDK — an ingest mapping can't merge
+				them because the canonical key already exists on your spans.
 			</>
 		)
 	} else if (issue.kind === "naming") {
@@ -285,8 +280,8 @@ function Summary({ issue }: { issue: RecommendationIssue }) {
 			<>
 				<code className={MONO}>{issue.sourceKey}</code> is a deprecated or non-conforming
 				OpenTelemetry attribute key. Maple can rewrite it to{" "}
-				<code className={MONO}>{issue.canonicalKey}</code> at ingest time so newly ingested spans
-				use the current semantic-convention name.
+				<code className={MONO}>{issue.canonicalKey}</code> at ingest time so newly ingested spans use
+				the current semantic-convention name.
 			</>
 		)
 	}
@@ -345,19 +340,12 @@ function ChangeBreakdown({ issue }: { issue: RecommendationIssue }) {
 }
 
 /** Orange "Please note" caution, mirroring the reference layout. */
-function CautionCallout({
-	issue,
-	isApplyable,
-}: {
-	issue: RecommendationIssue
-	isApplyable: boolean
-}) {
+function CautionCallout({ issue, isApplyable }: { issue: RecommendationIssue; isApplyable: boolean }) {
 	const text =
 		isApplyable && issue.canonicalKey ? (
 			<>
-				Applying creates an ingest mapping that copies{" "}
-				<code className={MONO}>{issue.sourceKey}</code> →{" "}
-				<code className={MONO}>{issue.canonicalKey}</code> on newly ingested spans. Existing spans
+				Applying creates an ingest mapping that copies <code className={MONO}>{issue.sourceKey}</code>{" "}
+				→ <code className={MONO}>{issue.canonicalKey}</code> on newly ingested spans. Existing spans
 				aren't rewritten, and the mapping never overwrites a target that already exists.
 			</>
 		) : (
@@ -492,9 +480,7 @@ function DetailSidebar({
 					</Badge>
 				</Row>
 				<Row label="Spans">
-					<span className="tabular-nums text-foreground">
-						{issue.usageCount.toLocaleString()}
-					</span>
+					<span className="tabular-nums text-foreground">{issue.usageCount.toLocaleString()}</span>
 				</Row>
 				<Row label="Opened" title={new Date(issue.openedAt).toLocaleString()}>
 					<span className="tabular-nums text-muted-foreground">
@@ -570,11 +556,7 @@ function DetailSidebar({
 								it for you.
 							</p>
 						)}
-						<Button
-							className="w-full"
-							onClick={onDismiss}
-							loading={busy === "dismiss"}
-						>
+						<Button className="w-full" onClick={onDismiss} loading={busy === "dismiss"}>
 							<XmarkIcon size={15} />
 							Dismiss recommendation
 						</Button>

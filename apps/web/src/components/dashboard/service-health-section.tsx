@@ -3,14 +3,17 @@ import { Link } from "@tanstack/react-router"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	getServiceHealthBaselineResultAtom,
+	getServiceOverviewResultAtom,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { listIncidentsAtom, listRulesAtom } from "@/lib/services/atoms/alerts-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { AlertFiringHero } from "@/components/alerts/alert-stat-card"
 import { StatRail, StatRailItem, StatRailLoading } from "@/components/infra/primitives/stat-rail"
 import { ArrowRightIcon } from "@/components/icons"
-import type { ServiceOverview } from "@/api/warehouse/services"
+import type { ServiceHealthBaselineResult, ServiceOverview } from "@/api/warehouse/services"
 import type { AlertIncidentDocument } from "@maple/domain/http"
 
 import { Card } from "@maple/ui/components/ui/card"
@@ -20,11 +23,14 @@ import { formatErrorRate, formatLatency } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/utils"
 
 import {
+	baselineKey,
+	buildBaselineMap,
 	deriveServiceHealth,
 	errorRateTone,
 	healthRank,
 	incidentMatchesService,
 	latencyTone,
+	type LatencyBaselineSignal,
 	type ServiceHealth,
 } from "./service-health"
 
@@ -50,10 +56,21 @@ function servicesLinkSearch({
 	return { startTime, endTime, timePreset, environments, health }
 }
 
+/**
+ * Time-range slice shared by every per-service detail link. The clicked row's
+ * environment is appended at the {@link ServiceHealthRow} link site so the
+ * detail page scopes its charts to that environment; `health` is not carried —
+ * narrower than {@link servicesLinkSearch}.
+ */
+function serviceDetailSearch({ startTime, endTime, timePreset }: ServiceHealthProps) {
+	return { startTime, endTime, timePreset }
+}
+
 interface EnrichedService {
 	service: ServiceOverview
 	health: ServiceHealth
 	hasOpenIncident: boolean
+	baseline?: LatencyBaselineSignal
 }
 
 const HEALTH_DOT_COLOR: Record<ServiceHealth, string> = {
@@ -74,6 +91,21 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 			: disabledResultAtom<{ data: ServiceOverview[] }, unknown>(),
 	)
 
+	// Trailing-7d latency baseline behind the baseline-relative health badges.
+	// Failure or loading degrades to absolute thresholds — never blocks render.
+	const baselineResult = useAtomValue(
+		facetsReady
+			? getServiceHealthBaselineResultAtom({ data: { rangeStartTime: startTime, environments } })
+			: disabledResultAtom<ServiceHealthBaselineResult, unknown>(),
+	)
+	const baselineMap = useMemo(
+		() =>
+			Result.builder(baselineResult)
+				.onSuccess((response) => buildBaselineMap(response.data))
+				.orElse(() => new Map<string, LatencyBaselineSignal>()),
+		[baselineResult],
+	)
+
 	const incidentsResult = useAtomValue(listIncidentsAtom)
 	const rulesResult = useAtomValue(listRulesAtom)
 
@@ -86,23 +118,35 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 	)
 
 	const rules = useMemo(
-		() => Result.builder(rulesResult).onSuccess((response) => [...response.rules]).orElse(() => []),
+		() =>
+			Result.builder(rulesResult)
+				.onSuccess((response) => [...response.rules])
+				.orElse(() => []),
 		[rulesResult],
 	)
 
-	return { overviewResult, openIncidents, rules }
+	return { overviewResult, baselineMap, openIncidents, rules }
 }
 
 function enrichServices(
 	services: readonly ServiceOverview[],
 	openIncidents: ReadonlyArray<AlertIncidentDocument>,
+	baselineMap: ReadonlyMap<string, LatencyBaselineSignal>,
 ): EnrichedService[] {
 	return services
 		.map((service) => {
 			const hasOpenIncident = openIncidents.some((incident) =>
 				incidentMatchesService(incident, service.serviceName),
 			)
-			return { service, hasOpenIncident, health: deriveServiceHealth(service, hasOpenIncident) }
+			const baseline = baselineMap.get(
+				baselineKey(service.serviceName, service.serviceNamespace, service.environment),
+			)
+			return {
+				service,
+				hasOpenIncident,
+				baseline,
+				health: deriveServiceHealth({ ...service, baseline }, hasOpenIncident),
+			}
 		})
 		.sort(
 			(a, b) =>
@@ -125,7 +169,7 @@ function countByHealth(services: readonly EnrichedService[]): Record<ServiceHeal
 /* -------------------------------------------------------------------------- */
 
 export function ServiceHealthOverview(props: ServiceHealthProps) {
-	const { overviewResult, openIncidents, rules } = useServiceHealthData(props)
+	const { overviewResult, baselineMap, openIncidents, rules } = useServiceHealthData(props)
 
 	const criticalCount = openIncidents.filter((incident) => incident.severity === "critical").length
 	const warningCount = openIncidents.filter((incident) => incident.severity === "warning").length
@@ -164,11 +208,9 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 		))
 		.onError(() => <section className="mb-4 space-y-3">{banner}</section>)
 		.onSuccess((response, result) => {
-			const counts = countByHealth(enrichServices(response.data, openIncidents))
+			const counts = countByHealth(enrichServices(response.data, openIncidents, baselineMap))
 			return (
-				<section
-					className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
-				>
+				<section className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
 					{banner}
 					<StatRail>
 						<StatRailItem
@@ -210,13 +252,11 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 /* -------------------------------------------------------------------------- */
 
 export function ServiceHealthList(props: ServiceHealthProps) {
-	const { overviewResult, openIncidents } = useServiceHealthData(props)
+	const { overviewResult, baselineMap, openIncidents } = useServiceHealthData(props)
 
 	const header = (
 		<div className="flex items-center justify-between">
-			<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-				Services
-			</h2>
+			<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Services</h2>
 			<Link
 				to="/services"
 				search={servicesLinkSearch(props)}
@@ -247,11 +287,9 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 			</section>
 		))
 		.onSuccess((response, result) => {
-			const rows = enrichServices(response.data, openIncidents).slice(0, MAX_ROWS)
+			const rows = enrichServices(response.data, openIncidents, baselineMap).slice(0, MAX_ROWS)
 			return (
-				<section
-					className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
-				>
+				<section className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
 					{header}
 					<Card className="overflow-hidden p-0">
 						{rows.length === 0 ? (
@@ -260,12 +298,14 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 							</div>
 						) : (
 							<ul className="divide-y divide-border">
-								{rows.map(({ service, health, hasOpenIncident }) => (
+								{rows.map(({ service, health, hasOpenIncident, baseline }) => (
 									<ServiceHealthRow
-										key={`${service.serviceName}:${service.environment}`}
+										key={`${service.serviceName}:${service.serviceNamespace}:${service.environment}`}
 										service={service}
 										health={health}
 										hasOpenIncident={hasOpenIncident}
+										baseline={baseline}
+										detailSearch={serviceDetailSearch(props)}
 									/>
 								))}
 							</ul>
@@ -277,41 +317,56 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 		.render()
 }
 
-function ServiceHealthRow({ service, health, hasOpenIncident }: EnrichedService) {
+function ServiceHealthRow({
+	service,
+	health,
+	hasOpenIncident,
+	baseline,
+	detailSearch,
+}: EnrichedService & { detailSearch: ReturnType<typeof serviceDetailSearch> }) {
 	return (
-		<li className="flex items-center gap-3 px-4 py-2.5">
-			<span
-				aria-hidden
-				className="size-2 shrink-0 rounded-full"
-				style={{ backgroundColor: HEALTH_DOT_COLOR[health] }}
-			/>
-			<div className="flex min-w-0 flex-1 items-center gap-2">
-				<span className="truncate text-sm font-medium text-foreground">{service.serviceName}</span>
-				<span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
-					{service.environment}
-				</span>
-				{hasOpenIncident && (
-					<Badge variant="error" size="sm" className="shrink-0">
-						Alerting
-					</Badge>
-				)}
-			</div>
-			<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
-				<Metric
-					label="err"
-					value={formatErrorRate(service.errorRate)}
-					tone={errorRateTone(service.errorRate)}
+		<li>
+			<Link
+				to="/services/$serviceName"
+				params={{ serviceName: service.serviceName }}
+				search={{ ...detailSearch, environments: [service.environment] }}
+				className="flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+			>
+				<span
+					aria-hidden
+					className="size-2 shrink-0 rounded-full"
+					style={{ backgroundColor: HEALTH_DOT_COLOR[health] }}
 				/>
-				<Metric
-					label="p95"
-					value={formatLatency(service.p95LatencyMs)}
-					tone={latencyTone(service.p95LatencyMs)}
-				/>
-				<Metric
-					label="rps"
-					value={`${service.hasSampling ? "~" : ""}${formatThroughput(service.throughput)}`}
-				/>
-			</div>
+				<div className="flex min-w-0 flex-1 items-center gap-2">
+					<span className="truncate text-sm font-medium text-foreground">
+						{service.serviceName}
+					</span>
+					<span className="shrink-0 rounded bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
+						{service.environment}
+					</span>
+					{hasOpenIncident && (
+						<Badge variant="error" size="sm" className="shrink-0">
+							Alerting
+						</Badge>
+					)}
+				</div>
+				<div className="flex shrink-0 items-center gap-5 font-mono text-xs tabular-nums">
+					<Metric
+						label="err"
+						value={formatErrorRate(service.errorRate)}
+						tone={errorRateTone(service.errorRate)}
+					/>
+					<Metric
+						label="p95"
+						value={formatLatency(service.p95LatencyMs)}
+						tone={latencyTone(service.p95LatencyMs, service.spanCount, baseline)}
+					/>
+					<Metric
+						label="rps"
+						value={`${service.hasSampling ? "~" : ""}${formatThroughput(service.throughput)}`}
+					/>
+				</div>
+			</Link>
 		</li>
 	)
 }

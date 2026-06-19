@@ -16,13 +16,7 @@ import {
 	CommandShortcut,
 } from "@maple/ui/components/ui/command"
 import { Kbd } from "@maple/ui/components/ui/kbd"
-import {
-	GearIcon,
-	GridSquareCirclePlusIcon,
-	KeyboardIcon,
-	MoonIcon,
-	SunIcon,
-} from "@/components/icons"
+import { GearIcon, GridSquareCirclePlusIcon, KeyboardIcon, MoonIcon, SunIcon } from "@/components/icons"
 import {
 	investigateNavItems,
 	mainNavItems,
@@ -32,7 +26,6 @@ import {
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
-import { useSessionReplaysEnabled } from "@/hooks/use-session-replays-enabled"
 
 const MAX_RESULTS = 12
 
@@ -113,7 +106,6 @@ function PaletteContent({
 	const { dashboards } = useDashboardStore()
 	const { favorites } = useDashboardPreferences()
 	const infraEnabled = useInfraEnabled()
-	const sessionReplaysEnabled = useSessionReplaysEnabled()
 
 	// The forced-open Autocomplete stopPropagation()s Escape (and swallows ⌘K)
 	// before the Dialog or the document-level hotkey manager sees it, so handle
@@ -136,7 +128,7 @@ function PaletteContent({
 		const navItems = [
 			...mainNavItems,
 			...topologyNavItems,
-			...visibleSignalsNavItems({ infraEnabled, sessionReplaysEnabled }),
+			...visibleSignalsNavItems({ infraEnabled }),
 			...investigateNavItems,
 		]
 		const navigation: PaletteEntry[] = [
@@ -168,14 +160,16 @@ function PaletteContent({
 
 		const favoriteDashboards = dashboards.filter((d) => favorites.has(d.id))
 		const otherDashboards = dashboards.filter((d) => !favorites.has(d.id))
-		const dashboardEntries: PaletteEntry[] = [...favoriteDashboards, ...otherDashboards].map((dashboard) => ({
-			id: `dashboard:${dashboard.id}`,
-			title: dashboard.name,
-			group: "Dashboards",
-			keywords: "dashboard",
-			icon: GridSquareCirclePlusIcon,
-			dashboardId: dashboard.id,
-		}))
+		const dashboardEntries: PaletteEntry[] = [...favoriteDashboards, ...otherDashboards].map(
+			(dashboard) => ({
+				id: `dashboard:${dashboard.id}`,
+				title: dashboard.name,
+				group: "Dashboards",
+				keywords: "dashboard",
+				icon: GridSquareCirclePlusIcon,
+				dashboardId: dashboard.id,
+			}),
+		)
 
 		const isDark = theme === "dark"
 		const actions: PaletteEntry[] = [
@@ -200,7 +194,7 @@ function PaletteContent({
 		]
 
 		return [...navigation, ...dashboardEntries, ...actions]
-	}, [dashboards, favorites, infraEnabled, sessionReplaysEnabled, theme, setTheme, onShowShortcuts])
+	}, [dashboards, favorites, infraEnabled, theme, setTheme, onShowShortcuts])
 
 	const fuse = useMemo(() => new Fuse(entries, FUSE_OPTIONS), [entries])
 
@@ -266,7 +260,12 @@ function PaletteContent({
 
 	return (
 		<CommandDialogPopup>
-			<Command inline={false} filter={null} value={query} onValueChange={(value: string) => setQuery(value)}>
+			<Command
+				inline={false}
+				filter={null}
+				value={query}
+				onValueChange={(value: string) => setQuery(value)}
+			>
 				<CommandInput placeholder="Search pages, dashboards, actions…" />
 				<CommandList>
 					{results !== null && results.length === 0 ? (

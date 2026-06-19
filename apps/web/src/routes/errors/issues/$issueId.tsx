@@ -6,10 +6,10 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
-import {
-	OpenAnomalyBadge,
-	RelatedAnomaliesSection,
-} from "@/components/anomalies/related-anomalies-section"
+import { OpenAnomalyBadge, RelatedAnomaliesSection } from "@/components/anomalies/related-anomalies-section"
+import { AlertSourceCard } from "@/components/errors/alert-source-card"
+import { IssueKindBadge } from "@/components/errors/kind-badge"
+import { SeverityBadge } from "@/components/errors/severity-badge"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { IssueCommentComposer } from "@/components/errors/issue-comment-composer"
 import { IssueHero } from "@/components/errors/issue-hero"
@@ -24,7 +24,12 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
-import { ErrorIssueId, type WorkflowState } from "@maple/domain/http"
+import {
+	ErrorIssueId,
+	ErrorIssueSetSeverityRequest,
+	type IssueSeverity,
+	type WorkflowState,
+} from "@maple/domain/http"
 
 const decodeIssueId = Schema.decodeSync(ErrorIssueId)
 
@@ -65,9 +70,14 @@ function IssueDetailPage() {
 	const commentOnIssue = useAtomSet(MapleApiAtomClient.mutation("errors", "commentOnIssue"), {
 		mode: "promiseExit",
 	})
+	const setIssueSeverity = useAtomSet(MapleApiAtomClient.mutation("errors", "setIssueSeverity"), {
+		mode: "promiseExit",
+	})
 
 	const [commentDraft, setCommentDraft] = useState("")
-	const [busy, setBusy] = useState<"state" | "claim" | "release" | "heartbeat" | "comment" | null>(null)
+	const [busy, setBusy] = useState<
+		"state" | "claim" | "release" | "heartbeat" | "comment" | "severity" | null
+	>(null)
 
 	const invalidateKeys = useMemo(
 		() => ["errorIssues", `errorIssue:${issueId}`, `errorIssue:${issueId}:events`],
@@ -119,6 +129,21 @@ function IssueDetailPage() {
 		setBusy(null)
 		if (Exit.isSuccess(result)) toast.success("Released")
 		else toast.error("Release failed")
+	}
+
+	const changeSeverity = async (next: IssueSeverity | null) => {
+		setBusy("severity")
+		const result = await setIssueSeverity({
+			params: { issueId },
+			payload: new ErrorIssueSetSeverityRequest({ severity: next }),
+			reactivityKeys: invalidateKeys,
+		})
+		setBusy(null)
+		if (Exit.isSuccess(result)) {
+			toast.success(next === null ? "Severity cleared" : `Severity set to ${next}`)
+		} else {
+			toast.error("Severity change failed")
+		}
 	}
 
 	const submitComment = async () => {
@@ -182,6 +207,8 @@ function IssueDetailPage() {
 					description={issue.serviceName}
 					headerActions={
 						<div className="flex items-center gap-2">
+							<IssueKindBadge kind={issue.kind} />
+							<SeverityBadge severity={issue.severity} />
 							<WorkflowBadge state={issue.workflowState} />
 							{issue.hasOpenIncident ? (
 								<Badge variant="outline" className="bg-destructive/10 text-destructive">
@@ -200,17 +227,27 @@ function IssueDetailPage() {
 							onClaim={claim}
 							onHeartbeat={heartbeat}
 							onRelease={release}
+							onSetSeverity={changeSeverity}
 						/>
 					}
 				>
 					<div className="space-y-8">
 						<section className="space-y-4">
 							<IssueHero issue={issue} />
-							<IssueOccurrenceSparkline data={timeseries} />
+							{issue.kind === "alert" ? (
+								<AlertSourceCard issue={issue} />
+							) : (
+								<IssueOccurrenceSparkline data={timeseries} />
+							)}
 							<AiTriageCard
-								incidentKind="error"
+								incidentKind={issue.kind === "alert" ? "alert" : "error"}
 								incidentId={
-									(incidents.find((i) => i.status === "open") ?? incidents[0])?.id ?? null
+									issue.kind === "alert"
+										? typeof issue.sourceRef?.latestIncidentId === "string"
+											? issue.sourceRef.latestIncidentId
+											: null
+										: ((incidents.find((i) => i.status === "open") ?? incidents[0])?.id ??
+											null)
 								}
 								issueId={issueId}
 							/>
@@ -236,17 +273,21 @@ function IssueDetailPage() {
 							/>
 						</section>
 
-						<section aria-labelledby="incidents-heading">
-							<SectionHeader id="incidents-heading" label="Incidents" />
-							<IssueIncidentsTable incidents={incidents} />
-						</section>
+						{issue.kind === "error" ? (
+							<section aria-labelledby="incidents-heading">
+								<SectionHeader id="incidents-heading" label="Incidents" />
+								<IssueIncidentsTable incidents={incidents} />
+							</section>
+						) : null}
 
 						<RelatedAnomaliesSection issueId={issueId} />
 
-						<section aria-labelledby="occurrences-heading">
-							<SectionHeader id="occurrences-heading" label="Latest occurrences" />
-							<IssueOccurrencesTable traces={sampleTraces} />
-						</section>
+						{issue.kind === "error" ? (
+							<section aria-labelledby="occurrences-heading">
+								<SectionHeader id="occurrences-heading" label="Latest occurrences" />
+								<IssueOccurrencesTable traces={sampleTraces} />
+							</section>
+						) : null}
 					</div>
 				</DashboardLayout>
 			)

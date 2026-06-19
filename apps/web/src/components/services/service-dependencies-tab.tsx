@@ -152,11 +152,7 @@ export function ServiceDependenciesTab({
 			const target = String(edge.targetName ?? "")
 			if (!target) continue
 			const kind: DependencyKind =
-				edge.targetType === "messaging"
-					? "messaging"
-					: edge.targetType === "rpc"
-						? "rpc"
-						: "http"
+				edge.targetType === "messaging" ? "messaging" : edge.targetType === "rpc" ? "rpc" : "http"
 			const callCount = Number(edge.callCount ?? 0)
 			const estimated = Number(edge.estimatedCallCount ?? callCount)
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
@@ -274,33 +270,39 @@ export function ServiceDependenciesTab({
 	return (
 		<div className={cn("flex flex-col gap-3 transition-opacity", isWaiting && "opacity-60")}>
 			{summary ? (
-				<div className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[11px] text-muted-foreground">
-					<span className="text-foreground">
-						<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}
-						<span className="text-muted-foreground">downstream</span>
-					</span>
-					<span className="text-muted-foreground/60">{summary.breakdown}</span>
-					<span className="grow" />
-					<HeadlineFact
-						label="Busiest"
-						name={summary.topByCalls.name}
-						value={`${summary.topByCalls.hasSampling ? "~" : ""}${formatRate(summary.topByCalls.callsPerSec)}/s`}
-					/>
-					{summary.topByErrors ? (
+				<div className="flex flex-col gap-2 text-[11px] text-muted-foreground sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-5 sm:gap-y-1">
+					<div className="flex items-baseline gap-x-3">
+						<span className="text-foreground">
+							<span className="tabular-nums font-mono font-medium">{dedupedRows.length}</span>{" "}
+							<span className="text-muted-foreground">downstream</span>
+						</span>
+						<span className="text-muted-foreground/60">{summary.breakdown}</span>
+					</div>
+					<span className="hidden grow sm:block" />
+					{/* On mobile the facts stack as their own rows; sm:contents dissolves
+					    this wrapper so they rejoin the parent's single-line flow on desktop. */}
+					<div className="flex flex-col gap-1 sm:contents">
 						<HeadlineFact
-							label="Most errors"
-							name={summary.topByErrors.name}
-							value={formatErrorRate(summary.topByErrors.errorRate)}
-							tone="error"
+							label="Busiest"
+							name={summary.topByCalls.name}
+							value={`${summary.topByCalls.hasSampling ? "~" : ""}${formatRate(summary.topByCalls.callsPerSec)}/s`}
 						/>
-					) : (
-						<HeadlineFact label="Errors" name="none" value="0%" />
-					)}
-					<HeadlineFact
-						label="Slowest p95"
-						name={summary.topByLatency.name}
-						value={formatLatency(summary.topByLatency.p95DurationMs)}
-					/>
+						{summary.topByErrors ? (
+							<HeadlineFact
+								label="Most errors"
+								name={summary.topByErrors.name}
+								value={formatErrorRate(summary.topByErrors.errorRate)}
+								tone="error"
+							/>
+						) : (
+							<HeadlineFact label="Errors" name="none" value="0%" />
+						)}
+						<HeadlineFact
+							label="Slowest p95"
+							name={summary.topByLatency.name}
+							value={formatLatency(summary.topByLatency.p95DurationMs)}
+						/>
+					</div>
 				</div>
 			) : null}
 
@@ -324,12 +326,14 @@ interface HeadlineFactProps {
 
 function HeadlineFact({ label, name, value, tone }: HeadlineFactProps) {
 	return (
-		<span className="inline-flex items-baseline gap-1.5">
-			<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
-			<span className="max-w-[140px] truncate text-foreground">{name}</span>
+		<span className="flex w-full items-baseline justify-between gap-1.5 sm:inline-flex sm:w-auto sm:justify-start">
+			<span className="flex min-w-0 items-baseline gap-1.5">
+				<span className="text-[10px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+				<span className="max-w-[60vw] truncate text-foreground sm:max-w-[140px]">{name}</span>
+			</span>
 			<span
 				className={cn(
-					"tabular-nums font-mono",
+					"shrink-0 tabular-nums font-mono",
 					tone === "error" ? "text-severity-error" : "text-foreground",
 				)}
 			>

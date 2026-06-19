@@ -7,11 +7,7 @@ import { chatAgentUrl } from "@/lib/services/common/chat-agent-url"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
 import { alertPromptSuggestions, type AlertContext } from "./alert-context"
 import { AlertAttachmentCard } from "./alert-attachment-card"
-import {
-	widgetFixAutoPrompt,
-	widgetFixSuggestions,
-	type WidgetFixContext,
-} from "./widget-fix-context"
+import { widgetFixAutoPrompt, widgetFixSuggestions, type WidgetFixContext } from "./widget-fix-context"
 import { WidgetFixAttachmentCard } from "./widget-fix-attachment-card"
 import {
 	deriveAutoContexts,
@@ -38,7 +34,7 @@ import {
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { Shimmer } from "@/components/ai-elements/shimmer"
 import { ThinkingIndicator } from "@/components/ai-elements/thinking-indicator"
-import { Tool } from "@/components/ai-elements/tool"
+import { Tool, ToolRow, toolLabel } from "@/components/ai-elements/tool"
 import { ToolGroup } from "@/components/ai-elements/tool-group"
 import { ApprovalCard } from "./approval-card"
 import type { UIMessage } from "ai"
@@ -101,6 +97,8 @@ interface ChatConversationProps {
 	mode?: "alert" | "widget-fix"
 	alertContext?: AlertContext
 	widgetFixContext?: WidgetFixContext
+	/** Read-only shared view: render the conversation with no composer. */
+	readOnly?: boolean
 }
 
 export function ChatConversation({
@@ -111,10 +109,11 @@ export function ChatConversation({
 	mode,
 	alertContext,
 	widgetFixContext,
+	readOnly = false,
 }: ChatConversationProps) {
 	const { orgId, getToken } = useAuth()
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
-	useTypeAnywhereFocus(textareaRef, isActive)
+	useTypeAnywhereFocus(textareaRef, isActive && !readOnly)
 
 	const referrerPath = useMemo(() => readChatReferrer(), [tabId])
 	const derivedContexts = useMemo<AutoContext[]>(
@@ -181,13 +180,7 @@ export function ChatConversation({
 
 	const getInitialMessages = useMemo(
 		() =>
-			async ({
-				url,
-			}: {
-				agent: string
-				name: string
-				url?: string
-			}) => {
+			async ({ url }: { agent: string; name: string; url?: string }) => {
 				const token = await getToken()
 				const baseUrl = url ?? agent.getHttpUrl()
 				const getMessagesUrl = new URL(baseUrl)
@@ -254,6 +247,7 @@ export function ChatConversation({
 
 	const widgetFixAutoSentRef = useRef<string | null>(null)
 	useEffect(() => {
+		if (readOnly) return
 		if (!isWidgetFixMode || !isActive) return
 		if (!hasSettled || isLoading) return
 		if (messages.length > 0) return
@@ -272,7 +266,18 @@ export function ChatConversation({
 					{!hasSettled && messages.length === 0 ? (
 						<ConversationLoadingSkeleton />
 					) : messages.length === 0 ? (
-						isAlertMode ? (
+						readOnly ? (
+							<div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
+									Shared conversation
+								</p>
+								<p className="max-w-sm text-sm text-muted-foreground">
+									This shared conversation is unavailable or empty. It may have been
+									deleted, or belong to a different workspace than the one you're signed in
+									to.
+								</p>
+							</div>
+						) : isAlertMode ? (
 							<div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
 								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
 									Ready to investigate
@@ -288,8 +293,8 @@ export function ChatConversation({
 									Diagnosing widget…
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									Maple AI is reading the broken widget config and the validation error.
-									It will propose a corrected widget JSON for you to approve.
+									Maple AI is reading the broken widget config and the validation error. It
+									will propose a corrected widget JSON for you to approve.
 								</p>
 							</div>
 						) : (
@@ -351,16 +356,24 @@ export function ChatConversation({
 													const errorCount = buf.filter(
 														(t) => deriveToolStatus(t.state) === "error",
 													).length
+													const lastRunning = [...buf]
+														.reverse()
+														.find((t) => deriveToolStatus(t.state) === "running")
 													nodes.push(
 														<ToolGroup
 															key={`group-${buf[0]!.toolCallId ?? nodes.length}`}
 															count={buf.length}
 															runningCount={runningCount}
 															errorCount={errorCount}
-															defaultOpen={runningCount > 0}
+															completedCount={buf.length - runningCount}
+															currentLabel={
+																lastRunning
+																	? toolLabel(toolNameFor(lastRunning))
+																	: undefined
+															}
 														>
 															{buf.map((t) => (
-																<Tool
+																<ToolRow
 																	key={t.toolCallId}
 																	toolName={toolNameFor(t)}
 																	toolCallId={t.toolCallId}
@@ -377,7 +390,11 @@ export function ChatConversation({
 													const part = message.parts[i]!
 													if (part.type === "text") {
 														flushTools()
-														nodes.push(<RichText key={`text-${i}`}>{part.text}</RichText>)
+														nodes.push(
+															<RichText key={`text-${i}`}>
+																{part.text}
+															</RichText>,
+														)
 														continue
 													}
 													if (isToolPart(part)) {
@@ -435,42 +452,47 @@ export function ChatConversation({
 				<ConversationScrollButton />
 			</Conversation>
 
-			<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-				{(messages.length > 0 || isAlertMode || isWidgetFixMode) && (
-					<Suggestions className="mb-3">
-						{suggestions.map((s) => (
-							<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
-						))}
-					</Suggestions>
-				)}
-				{!isWidgetFixMode && (
-					<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
-				)}
-				<PromptInput
-					onSubmit={({ text }) => handleSend(text)}
-					className="rounded-lg border shadow-sm"
-				>
-					<PromptInputTextarea
-						ref={textareaRef}
-						placeholder={
-							isAlertMode
-								? "Ask about this alert..."
-								: isWidgetFixMode
-									? "Ask about this widget..."
-									: "Ask about your system..."
-						}
-						disabled={isLoading}
-					/>
-					<PromptInputFooter>
-						<PromptInputSubmit status={status} disabled={isLoading && status !== "streaming"} />
-					</PromptInputFooter>
-				</PromptInput>
-			</div>
+			{!readOnly && (
+				<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+					{messages.length === 0 && (isAlertMode || isWidgetFixMode) && (
+						<Suggestions className="mb-3">
+							{suggestions.map((s) => (
+								<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
+							))}
+						</Suggestions>
+					)}
+					{!isWidgetFixMode && (
+						<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
+					)}
+					<PromptInput
+						onSubmit={({ text }) => handleSend(text)}
+						className="rounded-lg border shadow-sm"
+					>
+						<PromptInputTextarea
+							ref={textareaRef}
+							placeholder={
+								isAlertMode
+									? "Ask about this alert..."
+									: isWidgetFixMode
+										? "Ask about this widget..."
+										: "Ask about your system..."
+							}
+							disabled={isLoading}
+						/>
+						<PromptInputFooter>
+							<PromptInputSubmit
+								status={status}
+								disabled={isLoading && status !== "streaming"}
+							/>
+						</PromptInputFooter>
+					</PromptInput>
+				</div>
+			)}
 		</div>
 	)
 }
 
-export function ConversationLoadingSkeleton() {
+function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
 			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />

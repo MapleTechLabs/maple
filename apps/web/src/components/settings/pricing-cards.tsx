@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { useCustomer, useListPlans } from "autumn-js/react"
+import { useListPlans } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { toast } from "sonner"
 
 type Plan = NonNullable<ReturnType<typeof useListPlans>["data"]>[number]
@@ -173,13 +174,17 @@ export function PricingCards() {
 	// window and shows "Unable to load pricing plans." Retry through the gap: by the
 	// first backoff the token has settled and the request succeeds *with* customerId,
 	// preserving per-customer `customerEligibility`.
-	const { data: plans, isLoading, error } = useListPlans({
+	const {
+		data: plans,
+		isLoading,
+		error,
+	} = useListPlans({
 		queryOptions: {
 			retry: 3,
 			retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
 		},
 	})
-	const { attach, previewAttach, refetch } = useCustomer()
+	const { attach, previewAttach, refetch } = useMapleCustomer()
 	const { isTrialing, daysRemaining } = useTrialStatus()
 	const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null)
 	const [confirmDialog, setConfirmDialog] = useState<CheckoutPreview | null>(null)
@@ -351,7 +356,10 @@ export function PricingCards() {
 											Current
 										</Badge>
 									) : isUpgrade ? (
-										<Badge variant="secondary" className="text-[10px] font-medium text-primary">
+										<Badge
+											variant="secondary"
+											className="text-[10px] font-medium text-primary"
+										>
 											Recommended
 										</Badge>
 									) : null}

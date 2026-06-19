@@ -5,7 +5,7 @@ import {
 } from "@/lib/query-builder/model"
 import { type Operator, normalizeKey as sharedNormalizeKey } from "@maple/query-engine/where-clause"
 
-export type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
+type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
 
 export type WhereClauseAutocompleteScope = "default" | "trace_search"
 

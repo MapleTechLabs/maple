@@ -29,7 +29,11 @@ export function TemplateCard({
 			{requirements.length > 0 && (
 				<div className="flex flex-wrap items-center gap-1 mt-1">
 					{requirements.map((req) => (
-						<Badge key={req} variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium">
+						<Badge
+							key={req}
+							variant="outline"
+							className="text-[10px] px-1.5 py-0 h-4 font-medium"
+						>
 							{req}
 						</Badge>
 					))}
@@ -38,7 +42,11 @@ export function TemplateCard({
 			{tags.length > 0 && (
 				<div className="flex flex-wrap items-center gap-1">
 					{tags.map((tag) => (
-						<Badge key={tag} variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium">
+						<Badge
+							key={tag}
+							variant="secondary"
+							className="text-[10px] px-1.5 py-0 h-4 font-medium"
+						>
 							{tag}
 						</Badge>
 					))}

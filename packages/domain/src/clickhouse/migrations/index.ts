@@ -37,3 +37,28 @@ export const migrations: ReadonlyArray<ClickHouseMigration> = [
 	migration_0003_error_events_label,
 	migration_0004_service_namespace_projections,
 ] as const
+
+/** Highest migration `version` bundled — i.e. the schema level a fully-applied
+ * ClickHouse instance reaches. */
+export const latestMigrationVersion: number = migrations.reduce(
+	(max, migration) => Math.max(max, migration.version),
+	0,
+)
+
+/**
+ * The ClickHouse schema identity used to gate BYO-ClickHouse **ingest readiness**
+ * (`org_clickhouse_settings.schema_version`): the ingest gateway routes an org's
+ * frames to its own ClickHouse only when the stored value equals this.
+ *
+ * Deliberately the migration version — NOT the `clickHouseProjectRevision` hash,
+ * which is shared with the Tinybird manifest and therefore bumps on Tinybird-only
+ * schema changes. Keying on that global hash silently un-readied every BYO-CH org
+ * (routing their ingest to managed Tinybird while the dashboard kept reading their
+ * ClickHouse → invisible data) whenever an unrelated Tinybird datasource changed.
+ * The migration version only changes when the ClickHouse DDL actually changes.
+ *
+ * Stamped into D1 by the API's applySchema workflow and the schemaDiff self-heal,
+ * and compared by the Rust ingest gateway (emitted as `SCHEMA_VERSION` into
+ * `clickhouse_insert_mappings.rs` by `scripts/generate-clickhouse-insert-mappings.ts`).
+ */
+export const clickHouseSchemaVersion: string = String(latestMigrationVersion)

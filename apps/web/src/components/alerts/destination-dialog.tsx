@@ -45,6 +45,13 @@ interface DestinationDialogProps {
 	onSave: () => void
 }
 
+/**
+ * A PagerDuty Events API v2 integration ("routing") key is exactly 32
+ * alphanumeric characters. The common mistake is pasting a shorter REST API
+ * token; this catches it before the server round-trip.
+ */
+const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/.test(key.trim())
+
 function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 	if (form.name.trim().length === 0) return false
 	switch (form.type) {
@@ -54,6 +61,12 @@ function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 		// stored one.
 		case "discord":
 			return isEditing || form.webhookUrl.trim().length > 0
+		case "pagerduty":
+			// Editing with a blank key keeps the stored one; otherwise require a
+			// well-formed routing key.
+			return isEditing && form.integrationKey.trim().length === 0
+				? true
+				: isValidPagerDutyKey(form.integrationKey)
 		default:
 			return true
 	}
@@ -551,6 +564,26 @@ export function DestinationDialog({
 										}
 										className="font-mono text-xs"
 									/>
+									{form.integrationKey.trim().length > 0 &&
+										!isValidPagerDutyKey(form.integrationKey) && (
+											<p className="text-[11px] text-destructive">
+												That isn't a routing key (must be 32 characters). A
+												~20-character REST API token won't work — copy the Events API
+												v2 integration key.
+											</p>
+										)}
+									<p className="text-[11px] text-muted-foreground">
+										Use an{" "}
+										<a
+											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
+											target="_blank"
+											rel="noreferrer"
+											className="underline-offset-2 hover:text-foreground hover:underline"
+										>
+											Events API v2 integration key
+										</a>{" "}
+										(32 characters) — a REST API token won't work.
+									</p>
 								</div>
 							)}
 

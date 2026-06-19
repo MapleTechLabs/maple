@@ -134,19 +134,19 @@ describe("evaluateGoldenSignals — p95 latency", () => {
 
 describe("evaluateGoldenSignals — throughput", () => {
 	it("skips early in the hour", () => {
-		const evals = evaluateGoldenSignals(
-			goldenSeries({ requestCount: 100, errorCount: 0, p95Ms: 200 }),
-			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 5 },
-		)
+		const evals = evaluateGoldenSignals(goldenSeries({ requestCount: 100, errorCount: 0, p95Ms: 200 }), {
+			sensitivity: SENSITIVITY.normal,
+			elapsedMinutes: 5,
+		})
 		expect(byKey(evals, "throughput").status).toBe("skipped")
 	})
 
 	it("breaches on a >50% drop after 20 elapsed minutes", () => {
 		// Baseline 6000/h = 100/min; current 600 over 20min = 30/min.
-		const evals = evaluateGoldenSignals(
-			goldenSeries({ requestCount: 600, errorCount: 6, p95Ms: 200 }),
-			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 20 },
-		)
+		const evals = evaluateGoldenSignals(goldenSeries({ requestCount: 600, errorCount: 6, p95Ms: 200 }), {
+			sensitivity: SENSITIVITY.normal,
+			elapsedMinutes: 20,
+		})
 		expect(byKey(evals, "throughput").status).toBe("breached")
 	})
 
@@ -159,6 +159,57 @@ describe("evaluateGoldenSignals — throughput", () => {
 			normalConfig,
 		)
 		expect(byKey(evals, "throughput").status).toBe("skipped")
+	})
+
+	it("skips while too few requests were expected (low-rate service, early window)", () => {
+		// Baseline 72/h = 1.2/min; 20 elapsed minutes → 24 expected < 30.
+		const evals = evaluateGoldenSignals(
+			goldenSeries(
+				{ requestCount: 0, errorCount: 0, p95Ms: 0 },
+				goldenBaseline({ requestCount: 72, errorCount: 0 }),
+			),
+			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 20 },
+		)
+		expect(byKey(evals, "throughput").status).toBe("skipped")
+	})
+
+	it("never evaluates services whose hourly expectation stays under the floor", () => {
+		// 24/h = 0.4/min never reaches 30 expected within an hour.
+		const evals = evaluateGoldenSignals(
+			goldenSeries(
+				{ requestCount: 0, errorCount: 0, p95Ms: 0 },
+				goldenBaseline({ requestCount: 24, errorCount: 0 }),
+			),
+			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 59 },
+		)
+		expect(byKey(evals, "throughput").status).toBe("skipped")
+	})
+
+	// Rates 5/10/40 per minute → median 10, MAD-sigma ≈ 7.4, so m − 4σ < 0:
+	// the clamp floor (0.1m) is the operative threshold and only a near-total
+	// outage may fire.
+	const clampRegimeBaseline = [
+		...Array.from({ length: 7 }, () => ({ requestCount: 300, errorCount: 0, p95Ms: 200 })),
+		...Array.from({ length: 7 }, () => ({ requestCount: 600, errorCount: 0, p95Ms: 200 })),
+		...Array.from({ length: 7 }, () => ({ requestCount: 2400, errorCount: 0, p95Ms: 200 })),
+	]
+
+	it("stays healthy on a deep-but-volumed drop in the clamp regime (noise case)", () => {
+		// 25 requests in 30min = 0.83/min < 0.1m threshold, but volume is well
+		// above the outage ceiling (5% of 300 expected = 15) → quiet, not down.
+		const evals = evaluateGoldenSignals(
+			goldenSeries({ requestCount: 25, errorCount: 0, p95Ms: 200 }, clampRegimeBaseline),
+			normalConfig,
+		)
+		expect(byKey(evals, "throughput").status).toBe("healthy")
+	})
+
+	it("still breaches on a near-total outage in the clamp regime", () => {
+		const evals = evaluateGoldenSignals(
+			goldenSeries({ requestCount: 3, errorCount: 0, p95Ms: 200 }, clampRegimeBaseline),
+			normalConfig,
+		)
+		expect(byKey(evals, "throughput").status).toBe("breached")
 	})
 
 	it("stays fireable on high-variance series (threshold never goes negative)", () => {

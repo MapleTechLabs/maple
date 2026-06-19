@@ -83,10 +83,19 @@ describe("timeseries-utils", () => {
 	})
 
 	it("keeps auto bucket sizing deterministic for common ranges", () => {
-		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-01 00:30:00")).toBe(300)
-		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-01 01:00:00")).toBe(300)
+		// Short windows now use the sub-5-minute rungs so the chart stays dense.
+		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-01 00:30:00")).toBe(60)
+		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-01 01:00:00")).toBe(120)
 		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-01 06:00:00")).toBe(900)
 		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-02 00:00:00")).toBe(3600)
 		expect(computeBucketSeconds("2026-02-01 00:00:00", "2026-02-08 00:00:00")).toBe(14400)
+	})
+
+	it("never returns an empty timeline for a window narrower than a bucket", () => {
+		// 90s window with a 5-min bucket would round to an empty range; the shared
+		// helper anchors a single bucket at the window start instead.
+		expect(buildBucketTimeline("2026-02-01 00:00:30", "2026-02-01 00:02:00", 300)).toEqual([
+			"2026-02-01T00:00:00.000Z",
+		])
 	})
 })

@@ -77,11 +77,9 @@ const runTb = (
 	opts?: { branch?: string; secret?: boolean },
 ): TbResult => {
 	const envFlag = opts?.branch ? `--branch=${opts.branch}` : "--cloud"
-	const proc = spawnSync(
-		"tb",
-		[envFlag, "--host", parent.host, "--token", parent.token, ...args],
-		{ encoding: "utf8" },
-	)
+	const proc = spawnSync("tb", [envFlag, "--host", parent.host, "--token", parent.token, ...args], {
+		encoding: "utf8",
+	})
 	if (proc.error) {
 		fail(`Failed to invoke \`tb\` — is the Tinybird CLI installed? (${proc.error.message})`)
 	}

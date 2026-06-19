@@ -1,14 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
-import {
-	latestSnapshotStatements,
-	projectRevision,
-} from "../packages/domain/src/generated/clickhouse-schema"
+import { latestSnapshotStatements, projectRevision } from "../packages/domain/src/generated/clickhouse-schema"
 
-const outputPath = fileURLToPath(
-	new URL("../apps/cli/src/server/schema/local-schema.sql", import.meta.url),
-)
+const outputPath = fileURLToPath(new URL("../apps/cli/src/server/schema/local-schema.sql", import.meta.url))
 const checkMode = process.argv.includes("--check")
 
 const rendered = render(latestSnapshotStatements, projectRevision)
@@ -22,9 +17,7 @@ try {
 
 if (checkMode) {
 	if (existing !== rendered) {
-		console.error(
-			"local-schema.sql is out of date. Run `bun run clickhouse:schema`.",
-		)
+		console.error("local-schema.sql is out of date. Run `bun run clickhouse:schema`.")
 		process.exit(1)
 	}
 	console.log(

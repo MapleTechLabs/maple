@@ -11,9 +11,11 @@ import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
-import { WorkflowState } from "@maple/domain/http"
+import { IssueKind, IssueSeverity, WorkflowState } from "@maple/domain/http"
 
 const decodeWorkflowState = Schema.decodeUnknownOption(WorkflowState)
+const decodeSeverity = Schema.decodeUnknownOption(IssueSeverity)
+const decodeKind = Schema.decodeUnknownOption(IssueKind)
 
 export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 	server.tool(
@@ -23,12 +25,20 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			workflow_state: optionalStringParam(
 				"Filter by workflow state: triage, todo, in_progress, in_review, done, cancelled, wontfix (default: all non-archived)",
 			),
+			severity: optionalStringParam(
+				"Filter by triage severity: critical, high, medium, low, or 'unset' for untriaged issues",
+			),
+			kind: optionalStringParam(
+				"Filter by issue kind: error (fingerprint groups) or alert (alert-rule incidents)",
+			),
 			service: optionalStringParam("Filter by service name"),
 			limit: optionalNumberParam("Max results (default 50)"),
 			include_archived: optionalStringParam("Pass '1' to include archived issues in results"),
 		}),
 		Effect.fn("McpTool.listErrorIssues")(function* ({
 			workflow_state,
+			severity,
+			kind,
 			service,
 			limit,
 			include_archived,
@@ -37,6 +47,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				workflowState: workflow_state ?? "all",
+				severity: severity ?? "all",
 				service: service ?? "all",
 				limit: limit ?? 50,
 			})
@@ -53,9 +64,35 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				typedState = decoded.value
 			}
 
+			let typedSeverity: IssueSeverity | "unset" | undefined
+			if (severity) {
+				if (severity === "unset") {
+					typedSeverity = "unset"
+				} else {
+					const decoded = decodeSeverity(severity)
+					if (Option.isNone(decoded)) {
+						return validationError(
+							`Invalid severity: '${severity}'. Must be one of: critical, high, medium, low, unset.`,
+						)
+					}
+					typedSeverity = decoded.value
+				}
+			}
+
+			let typedKind: IssueKind | undefined
+			if (kind) {
+				const decoded = decodeKind(kind)
+				if (Option.isNone(decoded)) {
+					return validationError(`Invalid kind: '${kind}'. Must be one of: error, alert.`)
+				}
+				typedKind = decoded.value
+			}
+
 			const result = yield* errors
 				.listIssues(tenant.orgId, {
 					workflowState: typedState,
+					severity: typedSeverity,
+					kind: typedKind,
 					service,
 					limit: limit ?? 50,
 					includeArchived: include_archived === "1",
@@ -82,7 +119,9 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 			} else {
 				const headers = [
 					"ID",
+					"Kind",
 					"State",
+					"Severity",
 					"Priority",
 					"Service",
 					"Exception",
@@ -93,13 +132,12 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				]
 				const rows = issues.map((i) => [
 					i.id.slice(0, 8),
+					i.kind,
 					i.hasOpenIncident ? `${i.workflowState} (incident)` : i.workflowState,
+					i.severity ?? "—",
 					String(i.priority),
 					i.serviceName,
-					truncate(
-						i.errorLabel || `${i.exceptionType}: ${i.exceptionMessage}`,
-						50,
-					),
+					truncate(i.errorLabel || `${i.exceptionType}: ${i.exceptionMessage}`, 50),
 					formatNumber(i.occurrenceCount),
 					i.lastSeenAt.slice(0, 19),
 					i.assignedActor
@@ -135,9 +173,12 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 					data: {
 						issues: issues.map((i) => ({
 							id: i.id,
+							kind: i.kind,
 							fingerprintHash: i.fingerprintHash,
 							workflowState: i.workflowState,
 							priority: i.priority,
+							severity: i.severity,
+							severitySource: i.severitySource,
 							serviceName: i.serviceName,
 							errorLabel: i.errorLabel,
 							exceptionType: i.exceptionType,

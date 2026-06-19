@@ -13,7 +13,9 @@ class BenignError extends Data.TaggedError("BenignError")<{}> {
 class ReportableError extends Data.TaggedError("ReportableError")<{}> {}
 
 const runSpan = (buffer: ReturnType<typeof makeSpanBuffer>, effect: Effect.Effect<unknown, unknown>) =>
-	Effect.runPromise(effect.pipe(Effect.withSpan("http.server GET"), Effect.provide(buffer.tracerLayer), Effect.exit))
+	Effect.runPromise(
+		effect.pipe(Effect.withSpan("http.server GET"), Effect.provide(buffer.tracerLayer), Effect.exit),
+	)
 
 describe("makeSpanBuffer ignored-failure drop", () => {
 	it("drops spans whose failure carries [ErrorReporter.ignore]", async () => {
@@ -39,7 +41,9 @@ describe("makeSpanBuffer ignored-failure drop", () => {
 	it("drops the real HttpServerError/RouteNotFound", async () => {
 		const buffer = makeSpanBuffer()
 		const request = HttpServerRequest.fromWeb(new Request("http://localhost/nope"))
-		const error = new HttpServerError.HttpServerError({ reason: new HttpServerError.RouteNotFound({ request }) })
+		const error = new HttpServerError.HttpServerError({
+			reason: new HttpServerError.RouteNotFound({ request }),
+		})
 		await runSpan(buffer, Effect.fail(error))
 		assert.strictEqual(buffer.size(), 0)
 	})

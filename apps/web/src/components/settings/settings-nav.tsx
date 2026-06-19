@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router"
 import { useOrganization } from "@clerk/clerk-react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -16,6 +16,7 @@ import {
 	GridIcon,
 	KeyIcon,
 	ServerIcon,
+	ShieldIcon,
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
@@ -28,6 +29,7 @@ export const settingsTabValues = [
 	"api-keys",
 	"mcp",
 	"notifications",
+	"escalations",
 	"ai",
 	"billing",
 	"data-platform",
@@ -41,6 +43,7 @@ export const settingsTabLabels: Record<SettingsTab, string> = {
 	"api-keys": "API Keys",
 	mcp: "MCP",
 	notifications: "Notifications",
+	escalations: "Escalations",
 	ai: "AI",
 	billing: "Billing",
 	"data-platform": "Data Platform",
@@ -92,6 +95,7 @@ const navSections: SettingsNavSection[] = [
 		title: "Behavior",
 		items: [
 			{ id: "notifications", label: "Notifications", icon: BellIcon },
+			{ id: "escalations", label: "Escalations", icon: ShieldIcon },
 			{ id: "ai", label: "AI", icon: ChatBubbleSparkleIcon },
 		],
 	},
@@ -108,7 +112,7 @@ const navSections: SettingsNavSection[] = [
  */
 export function useVisibleSettingsSections() {
 	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
-	const { data: customer, isLoading: isCustomerLoading } = useCustomer()
+	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { organization } = useOrganization()
 
 	const isAdmin = Result.builder(sessionResult)
@@ -157,9 +161,7 @@ const rowClass = (isActive: boolean) =>
 	)
 
 function ActiveIndicator() {
-	return (
-		<span aria-hidden className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary" />
-	)
+	return <span aria-hidden className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary" />
 }
 
 export function SettingsNav({

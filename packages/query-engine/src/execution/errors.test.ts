@@ -106,9 +106,9 @@ describe("mapWarehouseError", () => {
 	})
 
 	it("honors precedence: a transient 503 wins over schema-drift text in the same message", () => {
-		expect(
-			mapWarehouseError("p", "Request failed with status 503: No such column 'x'"),
-		).toBeInstanceOf(WarehouseUpstreamError)
+		expect(mapWarehouseError("p", "Request failed with status 503: No such column 'x'")).toBeInstanceOf(
+			WarehouseUpstreamError,
+		)
 	})
 
 	it("propagates the ClickHouse code and type, coercing a numeric code", () => {

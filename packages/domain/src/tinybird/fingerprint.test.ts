@@ -228,11 +228,14 @@ describe("error fingerprint normalization", () => {
 
 	describe("JSON-object signature (key-name-agnostic)", () => {
 		const sig = (statusMessage: string) =>
-			computeFingerprintInputs({ exceptionType: "", exceptionStacktrace: "", statusMessage }).msgFallback
+			computeFingerprintInputs({ exceptionType: "", exceptionStacktrace: "", statusMessage })
+				.msgFallback
 
 		it("builds a sorted key=value signature over all top-level keys", () => {
 			expect(
-				sig('{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}'),
+				sig(
+					'{"type":"https://e/rate-limit","title":"Rate limited","detail":"retry in 5s","status":429}',
+				),
 			).toBe('detail="retry in #s"|status=#|title="Rate limited"|type="https://e/rate-limit"')
 		})
 
@@ -241,9 +244,7 @@ describe("error fingerprint normalization", () => {
 		})
 
 		it("is robust to volatile numeric/hex ids in values", () => {
-			expect(sig('{"detail":"retry user 12345 in 5s"}')).toBe(
-				sig('{"detail":"retry user 99 in 5s"}'),
-			)
+			expect(sig('{"detail":"retry user 12345 in 5s"}')).toBe(sig('{"detail":"retry user 99 in 5s"}'))
 			expect(sig('{"id":"a1b2c3d4e5f6"}')).toBe(sig('{"id":"ffffffffffff"}'))
 		})
 

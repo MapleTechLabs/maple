@@ -28,9 +28,32 @@ export interface BenchParams {
 	edges: number
 	rps: BenchRps
 	seed: number
+	/** Number of `service.namespace` groups to spread services across (0 = none). */
+	groups: number
 }
 
-export const DEFAULT_BENCH_PARAMS: BenchParams = { services: 120, edges: 400, rps: "high", seed: 1 }
+export const DEFAULT_BENCH_PARAMS: BenchParams = {
+	services: 120,
+	edges: 400,
+	rps: "high",
+	seed: 1,
+	groups: 0,
+}
+
+// Realistic-ish namespace names; falls back to `team-<n>` past the pool length.
+const NAMESPACE_POOL = [
+	"payments",
+	"checkout",
+	"platform",
+	"identity",
+	"search",
+	"growth",
+	"billing",
+	"notifications",
+	"inventory",
+	"shipping",
+]
+const namespaceName = (group: number): string => NAMESPACE_POOL[group] ?? `team-${group}`
 
 // --- deterministic PRNG (mulberry32) ---
 function makeRng(seed: number): () => number {
@@ -131,14 +154,22 @@ function generateBenchGraph(params: BenchParams): BenchGraph {
 		})
 	}
 
-	const overviews: ServiceOverview[] = names.map((name) => {
+	// Assign a `service.namespace` per service. Deterministic and rng-free so the
+	// generated topology is identical regardless of `groups` (only namespaces
+	// change) — and `groups=0` reproduces the original namespace-less graph exactly.
+	// ~1 in 7 services is left ungrouped to exercise the unboxed region.
+	const groupCount = Math.max(0, Math.floor(params.groups))
+	const namespaceFor = (i: number): string =>
+		groupCount <= 0 || i % 7 === 6 ? "" : namespaceName(i % groupCount)
+
+	const overviews: ServiceOverview[] = names.map((name, i) => {
 		const errorRate = rng() < 0.15 ? rng() * 0.1 : rng() * 0.004
 		const throughput = rpsLo + rng() * (rpsHi - rpsLo)
 		const hasSampling = rng() < 0.3
 		const samplingWeight = hasSampling ? 1 + Math.floor(rng() * 9) : 1
 		return {
 			serviceName: name,
-			serviceNamespace: "",
+			serviceNamespace: namespaceFor(i),
 			environment: "prod",
 			commits: [],
 			p50LatencyMs: 2 + rng() * 50,
@@ -149,6 +180,7 @@ function generateBenchGraph(params: BenchParams): BenchGraph {
 			tracedThroughput: throughput,
 			hasSampling,
 			samplingWeight,
+			spanCount: Math.round(throughput * 3600),
 		}
 	})
 

@@ -18,7 +18,7 @@ export interface NavItem {
 	icon: typeof PulseIcon
 }
 
-export interface SignalsNavItem extends NavItem {
+interface SignalsNavItem extends NavItem {
 	badge?: string
 	subItems?: { title: string; href: string }[]
 }
@@ -49,7 +49,7 @@ export const topologyNavItems: NavItem[] = [
 	},
 ]
 
-export const signalsNavItems: SignalsNavItem[] = [
+const signalsNavItems: SignalsNavItem[] = [
 	{
 		title: "Traces",
 		href: "/traces",
@@ -69,7 +69,6 @@ export const signalsNavItems: SignalsNavItem[] = [
 		title: "Replays",
 		href: "/replays",
 		icon: PlayRotateClockwiseIcon,
-		badge: "Beta",
 	},
 	{
 		title: "Infrastructure",
@@ -105,10 +104,6 @@ export const investigateNavItems: NavItem[] = [
 ]
 
 /** Signals items with org feature gates applied (matches the sidebar's filtering). */
-export function visibleSignalsNavItems(flags: { infraEnabled: boolean; sessionReplaysEnabled: boolean }) {
-	return signalsNavItems.filter(
-		(item) =>
-			(flags.infraEnabled || item.href !== "/infra") &&
-			(flags.sessionReplaysEnabled || item.href !== "/replays"),
-	)
+export function visibleSignalsNavItems(flags: { infraEnabled: boolean }) {
+	return signalsNavItems.filter((item) => flags.infraEnabled || item.href !== "/infra")
 }

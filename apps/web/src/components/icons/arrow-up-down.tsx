@@ -1,11 +1,6 @@
 import type { IconProps } from "./icon"
 
-const paths: ReadonlyArray<string> = [
-	"M7 4V20",
-	"M3 8L7 4L11 8",
-	"M17 20V4",
-	"M13 16L17 20L21 16",
-]
+const paths: ReadonlyArray<string> = ["M7 4V20", "M3 8L7 4L11 8", "M17 20V4", "M13 16L17 20L21 16"]
 
 function ArrowUpDownIcon({ size = 24, className, ...props }: IconProps) {
 	return (

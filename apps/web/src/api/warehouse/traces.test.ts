@@ -103,30 +103,30 @@ describe("tinybird traces attribute filter params", () => {
 	it.effect("builds a curated rootSpan summary for overview rows", () =>
 		Effect.gen(function* () {
 			executeQueryEngineMock.mockReturnValueOnce(
-			Effect.succeed({
-				result: {
-					kind: "list",
-					source: "traces",
-					data: [
-						{
-							traceId: "trace-1",
-							timestamp: "2026-02-01 00:00:00",
-							durationMs: 2000,
-							serviceName: "checkout",
-							spanName: "GET",
-							spanKind: "SPAN_KIND_SERVER",
-							statusCode: "Ok",
-							hasError: 0,
-							spanAttributes: {
-								"http.method": "GET",
-								"http.route": "/checkout",
-								"http.status_code": "200",
+				Effect.succeed({
+					result: {
+						kind: "list",
+						source: "traces",
+						data: [
+							{
+								traceId: "trace-1",
+								timestamp: "2026-02-01 00:00:00",
+								durationMs: 2000,
+								serviceName: "checkout",
+								spanName: "GET",
+								spanKind: "SPAN_KIND_SERVER",
+								statusCode: "Ok",
+								hasError: 0,
+								spanAttributes: {
+									"http.method": "GET",
+									"http.route": "/checkout",
+									"http.status_code": "200",
+								},
 							},
-						},
-					],
-				},
-			}),
-		)
+						],
+					},
+				}),
+			)
 
 			const response = yield* listTraces({
 				data: {

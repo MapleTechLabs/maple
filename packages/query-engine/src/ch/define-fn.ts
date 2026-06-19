@@ -12,7 +12,7 @@ import type { Expr, Condition } from "./expr"
 import { makeExpr, makeCond, toFragment } from "./expr"
 
 // Re-export for consumer convenience
-export { makeExpr, makeCond, toFragment }
+export { makeExpr, makeCond }
 
 // ---------------------------------------------------------------------------
 // compileFnCall — low-level helper for handwritten generic/special functions

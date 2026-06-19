@@ -85,7 +85,13 @@ export const expandBackfill = async (
 	const lo = bounds ? Number(bounds.lo) : 0
 	const hi = bounds ? Number(bounds.hi) : 0
 	if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= 0) {
-		return [{ name: `backfill:${spec.target}:empty`, sql: renderBackfillFull(spec, database), backfill: true }]
+		return [
+			{
+				name: `backfill:${spec.target}:empty`,
+				sql: renderBackfillFull(spec, database),
+				backfill: true,
+			},
+		]
 	}
 
 	const steps: ApplyStep[] = []

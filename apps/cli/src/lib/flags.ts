@@ -50,6 +50,4 @@ export const severity = Flag.optional(
 	),
 )
 
-export const traceId = Flag.optional(
-	Flag.string("trace-id").pipe(Flag.withDescription("Filter by trace ID")),
-)
+export const traceId = Flag.optional(Flag.string("trace-id").pipe(Flag.withDescription("Filter by trace ID")))

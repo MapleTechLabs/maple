@@ -63,9 +63,7 @@ export function RuleLiveChartHero({
 	const isRawQuery = form.signalType === "raw_query"
 	const safeThreshold = Number.isFinite(threshold) ? threshold : 0
 	const groupBySummary = formatGroupBySummary(form)
-	const hasPreviewSeries = chartData.some((row) =>
-		Object.keys(row).some((key) => key !== "bucket"),
-	)
+	const hasPreviewSeries = chartData.some((row) => Object.keys(row).some((key) => key !== "bucket"))
 	const emptyMessage =
 		form.signalType === "builder_query"
 			? "No series returned for this query in the last 24h"
@@ -94,17 +92,8 @@ export function RuleLiveChartHero({
 							signalType={form.signalType}
 						/>
 					)}
-					<Button
-						variant="outline"
-						size="sm"
-						onClick={onTestRule}
-						disabled={testing}
-					>
-						{testing ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : (
-							<EyeIcon size={14} />
-						)}
+					<Button variant="outline" size="sm" onClick={onTestRule} disabled={testing}>
+						{testing ? <LoaderIcon size={14} className="animate-spin" /> : <EyeIcon size={14} />}
 						Test rule
 					</Button>
 				</div>
@@ -173,11 +162,11 @@ function BreachPill({ stats }: { stats: BreachStats }) {
 	return (
 		<span className="hidden items-center gap-1 text-xs text-destructive sm:inline-flex">
 			<FireIcon size={12} />
-			Fired{" "}
-			<span className="font-mono font-semibold tabular-nums">{stats.breachCount}×</span>
+			Fired <span className="font-mono font-semibold tabular-nums">{stats.breachCount}×</span>
 			{stats.longestRunMs !== null && stats.longestRunBuckets > 1 && (
 				<>
-					{" "}· longest{" "}
+					{" "}
+					· longest{" "}
 					<span className="font-mono font-semibold tabular-nums">
 						{formatBreachDuration(stats.longestRunMs)}
 					</span>
@@ -197,11 +186,7 @@ function PreviewBadge({
 	signalType: RuleFormState["signalType"]
 }) {
 	if (status === "skipped") {
-		return (
-			<span className="text-muted-foreground text-xs">
-				Skipped · insufficient samples
-			</span>
-		)
+		return <span className="text-muted-foreground text-xs">Skipped · insufficient samples</span>
 	}
 	return (
 		<div className="flex items-center gap-2">
@@ -230,8 +215,8 @@ function RawQueryPreviewPlaceholder() {
 				</div>
 				<p className="font-medium text-sm">Live preview unavailable for raw SQL</p>
 				<p className="text-muted-foreground text-xs">
-					Use <span className="font-medium">Test rule</span> to execute the SQL
-					and see the resulting value.
+					Use <span className="font-medium">Test rule</span> to execute the SQL and see the
+					resulting value.
 				</p>
 			</div>
 		</div>

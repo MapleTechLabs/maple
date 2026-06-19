@@ -1,14 +1,10 @@
+import { bucketTimeline, computeBucketSeconds as computeBucketSecondsMs } from "@maple/query-engine"
+
 const TARGET_POINTS = 30
-const AUTO_BUCKET_LADDER = [300, 900, 1800, 3600, 14400, 86400] as const
 const TINYBIRD_DATETIME_RE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(\.\d+)?$/
 
 function toEpochMs(value: string): number {
 	return new Date(value.replace(" ", "T") + "Z").getTime()
-}
-
-function floorToBucketMs(epochMs: number, bucketSeconds: number): number {
-	const bucketMs = bucketSeconds * 1000
-	return Math.floor(epochMs / bucketMs) * bucketMs
 }
 
 function ceilToBucketMs(epochMs: number, bucketSeconds: number): number {
@@ -24,10 +20,7 @@ function ceilToBucketMs(epochMs: number, bucketSeconds: number): number {
  * query response directly) can use this to drop the partial leading bucket
  * the query returned for `Timestamp >= startTime`.
  */
-export function firstFullBucketIso(
-	startTime: string | undefined,
-	bucketSeconds: number,
-): string | null {
+export function firstFullBucketIso(startTime: string | undefined, bucketSeconds: number): string | null {
 	if (!startTime) return null
 	const startMs = toEpochMs(startTime)
 	if (Number.isNaN(startMs)) return null
@@ -102,11 +95,7 @@ export function computeBucketSeconds(
 		return 300
 	}
 
-	const rangeSeconds = Math.max((endMs - startMs) / 1000, 1)
-	const raw = Math.ceil(rangeSeconds / targetPoints)
-	return AUTO_BUCKET_LADDER.reduce((best, candidate) => {
-		return Math.abs(candidate - raw) < Math.abs(best - raw) ? candidate : best
-	}, AUTO_BUCKET_LADDER[0])
+	return computeBucketSecondsMs(startMs, endMs, { targetPoints })
 }
 
 export function buildBucketTimeline(
@@ -120,18 +109,9 @@ export function buildBucketTimeline(
 
 	const startMs = toEpochMs(startTime)
 	const endMs = toEpochMs(endTime)
-	if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs < startMs) {
+	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
 		return []
 	}
 
-	const bucketMs = bucketSeconds * 1000
-	const firstBucketMs = ceilToBucketMs(startMs, bucketSeconds)
-	const lastBucketMs = floorToBucketMs(endMs, bucketSeconds)
-	const buckets: string[] = []
-
-	for (let cursor = firstBucketMs; cursor <= lastBucketMs; cursor += bucketMs) {
-		buckets.push(new Date(cursor).toISOString())
-	}
-
-	return buckets
+	return bucketTimeline(startMs, endMs, bucketSeconds)
 }

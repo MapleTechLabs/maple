@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest"
-import {
-	computeSchemaDiff,
-	type ActualTable,
-	type DesiredSchema,
-	type DesiredTable,
-} from "./diff"
+import { computeSchemaDiff, type ActualTable, type DesiredSchema, type DesiredTable } from "./diff"
 
-const desiredTable = (
-	name: string,
-	columns: ReadonlyArray<readonly [string, string]>,
-): DesiredTable => ({
+const desiredTable = (name: string, columns: ReadonlyArray<readonly [string, string]>): DesiredTable => ({
 	name,
 	kind: "table",
 	columns: columns.map(([colName, type]) => ({ name: colName, type })),
@@ -23,10 +15,7 @@ const desiredMv = (name: string): DesiredTable => ({
 	createStatement: `CREATE MATERIALIZED VIEW ${name} TO foo AS SELECT 1`,
 })
 
-const actualTable = (
-	name: string,
-	columns: ReadonlyArray<readonly [string, string]>,
-): ActualTable => ({
+const actualTable = (name: string, columns: ReadonlyArray<readonly [string, string]>): ActualTable => ({
 	name,
 	kind: "table",
 	columns: columns.map(([colName, type]) => ({ name: colName, type })),
@@ -119,9 +108,7 @@ describe("computeSchemaDiff", () => {
 				status: "drifted",
 				name: "logs",
 				kind: "table",
-				columnDrifts: [
-					{ kind: "extra", column: "legacy_field", actualType: "String" },
-				],
+				columnDrifts: [{ kind: "extra", column: "legacy_field", actualType: "String" }],
 			},
 		])
 	})
@@ -130,10 +117,7 @@ describe("computeSchemaDiff", () => {
 		const desired: DesiredSchema = {
 			tables: [desiredTable("logs", [["Timestamp", "DateTime64(3)"]])],
 		}
-		const result = computeSchemaDiff(
-			desired,
-			actualMap(actualTable("logs", [["Timestamp", "DateTime"]])),
-		)
+		const result = computeSchemaDiff(desired, actualMap(actualTable("logs", [["Timestamp", "DateTime"]])))
 		expect(result).toEqual([
 			{
 				status: "drifted",
@@ -153,20 +137,12 @@ describe("computeSchemaDiff", () => {
 
 	it("normalizes whitespace in nested types when comparing", () => {
 		const desired: DesiredSchema = {
-			tables: [
-				desiredTable("logs", [
-					["Attributes", "Map(LowCardinality(String), String)"],
-				]),
-			],
+			tables: [desiredTable("logs", [["Attributes", "Map(LowCardinality(String), String)"]])],
 		}
 		// CH sometimes reports the type without the space after the comma.
 		const result = computeSchemaDiff(
 			desired,
-			actualMap(
-				actualTable("logs", [
-					["Attributes", "Map(LowCardinality(String),String)"],
-				]),
-			),
+			actualMap(actualTable("logs", [["Attributes", "Map(LowCardinality(String),String)"]])),
 		)
 		expect(result).toEqual([{ status: "up_to_date", name: "logs", kind: "table" }])
 	})
@@ -183,9 +159,7 @@ describe("computeSchemaDiff", () => {
 				columns: [{ name: "ignored", type: "String" }],
 			}),
 		)
-		expect(result).toEqual([
-			{ status: "up_to_date", name: "logs_hourly", kind: "materialized_view" },
-		])
+		expect(result).toEqual([{ status: "up_to_date", name: "logs_hourly", kind: "materialized_view" }])
 	})
 
 	it("handles a mixed result across multiple tables", () => {

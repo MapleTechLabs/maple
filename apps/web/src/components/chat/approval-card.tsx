@@ -70,12 +70,7 @@ export function ApprovalCard({ toolName, input, approvalId, onApprove, onDeny }:
 				) : null}
 
 				<div className="mt-3 flex gap-2">
-					<Button
-						type="button"
-						size="sm"
-						onClick={handle("approve")}
-						disabled={busy !== null}
-					>
+					<Button type="button" size="sm" onClick={handle("approve")} disabled={busy !== null}>
 						{busy === "approve" ? "Approving…" : "Approve"}
 					</Button>
 					<Button

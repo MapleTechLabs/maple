@@ -2,7 +2,6 @@
 	"name": "@maple/alerting",
 	"private": true,
 	"type": "module",
-	"portless": { "name": "alerting", "script": "dev:app" },
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "bun run ../../scripts/portless-wrangler.ts --env-file ../../.env.local --persist-to ../api/.wrangler/state --test-scheduled --port ${PORT:-8788} --inspector-port=9231",
@@ -22,5 +21,9 @@
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling",
 		"wrangler": "^4.41.0"
+	},
+	"portless": {
+		"name": "alerting",
+		"script": "dev:app"
 	}
 }

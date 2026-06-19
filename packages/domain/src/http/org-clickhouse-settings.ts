@@ -27,10 +27,11 @@ export class OrgClickHouseSettingsResponse extends Schema.Class<OrgClickHouseSet
 	lastSyncAt: Schema.NullOr(IsoDateTimeString),
 	lastSyncError: Schema.NullOr(Schema.String),
 	/**
-	 * Hash of the schema snapshot last successfully applied to the cluster, or
+	 * ClickHouse schema version last successfully applied to the cluster, or
 	 * `null` if the user has saved credentials but never applied a schema.
-	 * Compared against the bundled `clickHouseProjectRevision` in the diff
-	 * endpoint to drive "your schema is behind" hints.
+	 * Holds `clickHouseSchemaVersion` (the bundled migration version, not the
+	 * Tinybird-coupled `clickHouseProjectRevision`). Compared against the bundled
+	 * value in the diff endpoint to drive "your schema is behind" hints.
 	 */
 	schemaVersion: Schema.NullOr(Schema.String),
 }) {}
@@ -295,10 +296,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 	.add(
 		HttpApiEndpoint.get("applySchemaStatus", "/apply-schema/status", {
 			success: OrgClickHouseApplySchemaStatus,
-			error: [
-				OrgClickHouseSettingsForbiddenError,
-				OrgClickHouseSettingsPersistenceError,
-			],
+			error: [OrgClickHouseSettingsForbiddenError, OrgClickHouseSettingsPersistenceError],
 		}),
 	)
 	.add(

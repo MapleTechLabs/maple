@@ -10,6 +10,8 @@ import RustLogo from "../../components/icons/RustLogo.astro";
 import OpenJdkLogo from "../../components/icons/OpenJdkLogo.astro";
 import CsharpLogo from "../../components/icons/CsharpLogo.astro";
 import KotlinLogo from "../../components/icons/KotlinLogo.astro";
+import LaravelLogo from "../../components/icons/LaravelLogo.astro";
+import { UNIVERSAL_GROUP_ORDER } from "../../lib/docs-nav";
 
 const allDocs = await getCollection("docs", ({ data }) => !data.draft);
 
@@ -43,7 +45,7 @@ const languageGuides = allDocs
 const conceptual = allDocs.filter((d) => !d.data.sdk);
 
 const sdkGroups = orderGroups(groupBy(effectDocs), ["Effect SDK", "Platforms"]);
-const conceptualGroups = orderGroups(groupBy(conceptual), ["Getting Started", "Concepts", "Infrastructure", "Integrations", "Local Mode"]);
+const conceptualGroups = orderGroups(groupBy(conceptual), [...UNIVERSAL_GROUP_ORDER]);
 
 // Language registry for Section 02 — icon, display label, runtime hint
 const LANG_META: Record<string, { name: string; Icon: any; meta: string }> = {
@@ -55,6 +57,7 @@ const LANG_META: Record<string, { name: string; Icon: any; meta: string }> = {
     java:   { name: "java",     Icon: OpenJdkLogo, meta: "17+" },
     csharp: { name: "c#",       Icon: CsharpLogo,  meta: ".net 8" },
     kotlin: { name: "kotlin",   Icon: KotlinLogo,  meta: "jvm" },
+    laravel: { name: "laravel", Icon: LaravelLogo, meta: "10/11/12" },
 };
 
 // Per-doc runtime/role tag shown right-aligned in the Effect listing.

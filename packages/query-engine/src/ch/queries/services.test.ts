@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { compileCH, compileUnion } from "../compile"
 import {
 	serviceOverviewQuery,
+	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
@@ -60,6 +61,34 @@ describe("serviceOverviewQuery", () => {
 		const q = serviceOverviewQuery({ commitShas: ["abc123", "def456"] })
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("CommitSha IN ('abc123', 'def456')")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// serviceHealthBaselineQuery
+// ---------------------------------------------------------------------------
+
+describe("serviceHealthBaselineQuery", () => {
+	it("compiles a per-service p95 baseline scoped to the org", () => {
+		const q = serviceHealthBaselineQuery({})
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("quantile(0.95)(Duration) / 1000000 AS baselineP95LatencyMs")
+		expect(sql).toContain("count() AS baselineSpanCount")
+		// Baseline must NOT split by commit — health compares service+env totals.
+		expect(sql).toContain("GROUP BY serviceName, serviceNamespace, environment")
+		expect(sql).not.toContain("commitSha")
+		expect(sql).toContain("LIMIT 200")
+		expect(sql).toContain("FORMAT JSON")
+	})
+
+	it("applies environment and namespace filters", () => {
+		const q = serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["shop"] })
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("DeploymentEnv IN ('production')")
+		expect(sql).toContain("ServiceNamespace IN ('shop')")
 	})
 })
 

@@ -91,8 +91,7 @@ export function computeBreachStats(
 
 	for (let i = 0; i < chartData.length; i++) {
 		const peak = rowPeak(chartData[i]!)
-		const breached =
-			peak !== null && evaluateBreach(peak, comparator, threshold, thresholdUpper)
+		const breached = peak !== null && evaluateBreach(peak, comparator, threshold, thresholdUpper)
 
 		if (breached) {
 			breachCount++

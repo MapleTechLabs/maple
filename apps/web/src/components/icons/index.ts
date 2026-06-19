@@ -27,6 +27,7 @@ export {
 	EyeIcon,
 	FireIcon,
 	GlobeIcon,
+	LineHeightIcon,
 	LoaderIcon,
 	MagnifierIcon,
 	MenuIcon,
@@ -36,6 +37,8 @@ export {
 	PulseIcon,
 	RadioCheckedIcon,
 	SidebarLeftIcon,
+	TextWrapIcon,
+	ThumbtackIcon,
 	XmarkIcon,
 } from "@maple/ui/components/icons"
 
@@ -75,6 +78,8 @@ export { GithubIcon } from "./github"
 export { GridIcon } from "./grid"
 export { GridSquareCirclePlusIcon } from "./grid-square-circle-plus"
 export { GripDotsIcon } from "./grip-dots"
+export { LayersIcon } from "./layers"
+export { TagIcon } from "./tag"
 export { HazelIcon } from "./hazel"
 export { HistoryIcon } from "./history"
 export { HouseIcon } from "./house"
