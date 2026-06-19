@@ -1,6 +1,7 @@
 import * as v from "valibot"
 import { describe, expect, it } from "vitest"
-import { baseToolName, filterMcpTools } from "./mcp.ts"
+import type { ChatFlueEnv } from "./env.ts"
+import { baseToolName, connectMapleMcp, filterMcpTools } from "./mcp.ts"
 import { buildTriageContextMessage, TRIAGE_TOOL_NAMES } from "./triage-prompt.ts"
 import { AiTriageResultSchema } from "./triage-result.ts"
 
@@ -52,6 +53,15 @@ describe("mcp tool filtering", () => {
 		]
 		const kept = filterMcpTools(tools, TRIAGE_TOOL_NAMES).map((t) => t.name)
 		expect(kept).toEqual(["mcp__maple__search_traces", "mcp__maple__find_errors"])
+	})
+
+	it("connectMapleMcp fails fast (no empty bearer) when the token is unset", async () => {
+		const env: ChatFlueEnv = {
+			AI: { run: async () => ({}) },
+			MAPLE_API_URL: "http://maple-test.invalid",
+			INTERNAL_SERVICE_TOKEN: "",
+		}
+		await expect(connectMapleMcp(env, "org_1")).rejects.toThrow("INTERNAL_SERVICE_TOKEN is not configured")
 	})
 })
 

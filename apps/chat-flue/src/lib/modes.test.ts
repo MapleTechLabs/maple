@@ -8,8 +8,9 @@ describe("instance id parsing", () => {
 		expect(orgIdFromInstanceId("org_123:alert-inc_9")).toBe("org_123")
 		expect(tabIdFromInstanceId("org_123:alert-inc_9")).toBe("alert-inc_9")
 	})
-	it("treats a colon-less id as the org with no tab", () => {
-		expect(orgIdFromInstanceId("org_123")).toBe("org_123")
+	it("returns no org for a colon-less id (deny-by-default)", () => {
+		expect(orgIdFromInstanceId("org_123")).toBeUndefined()
+		expect(orgIdFromInstanceId(":tab")).toBeUndefined()
 		expect(tabIdFromInstanceId("org_123")).toBe("")
 	})
 	it("keeps colons inside the tab segment", () => {
@@ -21,7 +22,9 @@ describe("modeFromInstanceId", () => {
 	it.each([
 		["org_1:alert-inc_9", "alert"],
 		["org_1:widget-fix-dash_1-w2", "widget-fix"],
-		["org_1:dashboard-builder-dash_1", "dashboard-builder"],
+		// dashboard-builder is NOT inferred from a prefix — the web client builds no
+		// such tab id; it resolves to default until mode is carried out-of-band.
+		["org_1:dashboard-builder-dash_1", "default"],
 		["org_1:tab_random", "default"],
 		["org_1", "default"],
 	] as const)("%s -> %s", (id, expected) => {

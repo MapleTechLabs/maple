@@ -60,16 +60,18 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 	// here because tool calls need the connection live for the whole turn —
 	// connection lifecycle/pooling is a follow-up.
 	let tools: McpServerConnection["tools"] = []
-	try {
-		const maple = await connectMapleMcp(ctx.env, orgId)
-		// Propose-then-apply: mutating tools return a proposal the UI approves
-		// (Flue has no native human-in-the-loop interrupt).
-		tools = applyApprovalGates(maple.tools)
-	} catch (error) {
-		console.error(
-			"[chat-flue] MCP connect failed; continuing without Maple tools:",
-			error instanceof Error ? error.message : error,
-		)
+	if (orgId) {
+		try {
+			const maple = await connectMapleMcp(ctx.env, orgId)
+			// Propose-then-apply: mutating tools return a proposal the UI approves
+			// (Flue has no native human-in-the-loop interrupt).
+			tools = applyApprovalGates(maple.tools)
+		} catch (error) {
+			console.error(
+				"[chat-flue] MCP connect failed; continuing without Maple tools:",
+				error instanceof Error ? error.message : error,
+			)
+		}
 	}
 
 	return {

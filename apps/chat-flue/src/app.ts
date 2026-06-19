@@ -42,8 +42,14 @@ app.use("/agents/*", async (c, next) => {
 	const verified = await verifyRequest(c.req.raw, c.env)
 	if (!verified) return c.json({ error: "Authentication required" }, 401)
 
+	// Deny-by-default: every /agents/* request must carry a resolvable
+	// "<orgId>:<tabId>" instance whose org matches the caller. The agent
+	// transports are `/agents/<name>/<id>`; a path without an instance id is
+	// rejected rather than allowed through on AuthN alone.
 	const instanceId = instanceIdFromAgentPath(new URL(c.req.url).pathname)
-	if (instanceId && orgIdFromInstanceId(instanceId) !== verified.orgId) {
+	if (!instanceId) return c.json({ error: "Missing agent instance id" }, 400)
+	const namedOrgId = orgIdFromInstanceId(instanceId)
+	if (!namedOrgId || namedOrgId !== verified.orgId) {
 		return c.json({ error: "Organization does not match the addressed agent" }, 403)
 	}
 

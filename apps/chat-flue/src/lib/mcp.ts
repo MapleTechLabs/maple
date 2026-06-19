@@ -34,11 +34,17 @@ export const connectMapleMcp = async (
 	orgId: string,
 	options: ConnectMapleMcpOptions = {},
 ): Promise<McpServerConnection> => {
+	// Fail fast rather than sending `Bearer maple_svc_` (empty): an empty token
+	// would match an empty server-side INTERNAL_SERVICE_TOKEN via the constant-time
+	// compare in apps/api resolve-tenant.ts. Callers already tolerate a throw.
+	const token = env.INTERNAL_SERVICE_TOKEN
+	if (!token) throw new Error("INTERNAL_SERVICE_TOKEN is not configured")
+
 	const maple = await connectMcpServer("maple", {
 		url: new URL("/mcp", env.MAPLE_API_URL).toString(),
 		transport: "streamable-http",
 		headers: {
-			Authorization: `Bearer maple_svc_${env.INTERNAL_SERVICE_TOKEN ?? ""}`,
+			Authorization: `Bearer maple_svc_${token}`,
 			"x-org-id": orgId,
 		},
 		timeoutMs: options.timeoutMs ?? 12_000,

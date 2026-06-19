@@ -206,17 +206,21 @@ export const formatWidgetFixContextBlock = (ctx: WidgetFixContext): string => {
 
 /**
  * Derive the conversation mode from the agent instance id. The Maple web client
- * uses these tab-id prefixes (see apps/web chat tab creation):
+ * builds these tab-id prefixes (apps/web `alert-context.ts` / `widget-fix-context.ts`):
  *   - `alert-<incidentId|ruleId>`            → alert mode
  *   - `widget-fix-<dashboardId>-<widgetId>`  → widget-fix mode
- *   - `dashboard-builder-<dashboardId>`      → dashboard-builder mode
  *   - anything else                          → default
+ *
+ * `dashboard-builder` is intentionally NOT inferred from a prefix: the web client
+ * builds no `dashboard-builder-` tab id (the legacy agent selected it from a
+ * request-body `mode` field). It must be carried out-of-band via the context/mode
+ * delivery channel settled at cutover; `buildSystemPrompt` still honors
+ * `mode: "dashboard-builder"` when it is supplied that way.
  */
 export const modeFromInstanceId = (instanceId: string): ChatMode => {
 	const tab = tabIdFromInstanceId(instanceId)
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
-	if (tab.startsWith("dashboard-builder-")) return "dashboard-builder"
 	return "default"
 }
 
