@@ -62,8 +62,8 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 						<DialogHeader>
 							<DialogTitle>API key rolled</DialogTitle>
 							<DialogDescription>
-								A new secret has been issued and the previous key was revoked. Copy your new key
-								now — you won't be able to see it again.
+								A new secret has been issued and the previous key was revoked. Copy your new
+								key now — you won't be able to see it again.
 							</DialogDescription>
 						</DialogHeader>
 						<DialogPanel>
@@ -81,9 +81,9 @@ export function RollApiKeyDialog({ open, onOpenChange, apiKey, onRolled }: RollA
 							<DialogTitle>Roll API key?</DialogTitle>
 							<DialogDescription>
 								A new secret will be issued for{" "}
-								<span className="text-foreground font-medium">{apiKey?.name}</span> and the current
-								key will be revoked immediately. Any integrations using the old key will stop
-								working until you update them with the new one.
+								<span className="text-foreground font-medium">{apiKey?.name}</span> and the
+								current key will be revoked immediately. Any integrations using the old key
+								will stop working until you update them with the new one.
 							</DialogDescription>
 						</DialogHeader>
 						<DialogFooter>

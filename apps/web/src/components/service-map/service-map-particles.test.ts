@@ -1,10 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest"
-import {
-	allocateParticleBudget,
-	MAX_TOTAL_PARTICLES,
-	type EdgeParticleSpec,
-} from "./service-map-particles"
+import { allocateParticleBudget, MAX_TOTAL_PARTICLES, type EdgeParticleSpec } from "./service-map-particles"
 
 const spec = (callsPerSecond: number): EdgeParticleSpec => ({
 	pathString: "M0 0 L10 10",
@@ -40,10 +36,7 @@ describe("allocateParticleBudget", () => {
 	})
 
 	it("assigns 0 particles to zero-rate edges", () => {
-		const specs = Array.from(
-			{ length: 100 },
-			(_, i) => [`e${i}`, spec(i < 50 ? 1000 : 0)] as const,
-		)
+		const specs = Array.from({ length: 100 }, (_, i) => [`e${i}`, spec(i < 50 ? 1000 : 0)] as const)
 		const budget = allocateParticleBudget(specs)
 		for (let i = 50; i < 100; i++) expect(budget.get(`e${i}`)).toBe(0)
 		expect(sum(budget)).toBeLessThanOrEqual(MAX_TOTAL_PARTICLES)

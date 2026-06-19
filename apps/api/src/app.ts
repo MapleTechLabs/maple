@@ -110,9 +110,7 @@ export const DemoServiceLive = DemoService.layer.pipe(
 // instance shared by the bucket cache and the direct edge cache.
 export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
-export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
-	Layer.provideMerge(EdgeCacheServiceLive),
-)
+export const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheServiceLive))
 
 export const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
@@ -142,9 +140,7 @@ export const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, EdgeCacheServiceLive)),
 )
 
-export const AiTriageServiceLive = AiTriageService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+export const AiTriageServiceLive = AiTriageService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 export const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 

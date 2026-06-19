@@ -7,11 +7,7 @@ import { Checkbox } from "@maple/ui/components/ui/checkbox"
 import { Label } from "@maple/ui/components/ui/label"
 import { Popover, PopoverPopup, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { Toggle } from "@maple/ui/components/ui/toggle"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@maple/ui/components/ui/input-group"
 
 import { ChevronDownIcon, LayersIcon, MagnifierIcon, TagIcon } from "@/components/icons"
 import type { TagFacet } from "@/lib/alerts/tag-grouping"
@@ -46,9 +42,7 @@ export function AlertTagControls({
 	if (facets.length === 0 && selected.length === 0) return null
 
 	const toggleTag = (name: string) => {
-		onSelectedChange(
-			selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name],
-		)
+		onSelectedChange(selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name])
 	}
 
 	return (

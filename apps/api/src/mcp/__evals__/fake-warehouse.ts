@@ -28,9 +28,7 @@ export const installFakeWarehouse = (rules: FixtureRule[] = defaultTraceFixtures
 		sql: async (sql: string) => {
 			const rule = rules.find((r) => r.match(sql))
 			if (!rule) {
-				throw new Error(
-					`[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
-				)
+				throw new Error(`[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`)
 			}
 			return { data: rule.rows as ReadonlyArray<Record<string, unknown>> }
 		},

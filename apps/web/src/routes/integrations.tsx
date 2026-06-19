@@ -13,10 +13,7 @@ import {
 } from "@/components/integrations/integration-catalog"
 import { CloudflareLogpushSection } from "@/components/settings/cloudflare-logpush-section"
 import { ScrapeTargetsSection } from "@/components/settings/scrape-targets-section"
-import {
-	SettingsNav,
-	useVisibleSettingsSections,
-} from "@/components/settings/settings-nav"
+import { SettingsNav, useVisibleSettingsSections } from "@/components/settings/settings-nav"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/icons"
@@ -55,9 +52,7 @@ function IntegrationsPage() {
 				description="Connect external data sources and services to Maple."
 				filterSidebar={settingsSidebar}
 			>
-				<IntegrationCatalog
-					onSelect={(id) => navigate({ search: { integration: id } })}
-				/>
+				<IntegrationCatalog onSelect={(id) => navigate({ search: { integration: id } })} />
 			</DashboardLayout>
 		)
 	}

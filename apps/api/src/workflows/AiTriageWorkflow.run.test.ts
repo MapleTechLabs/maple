@@ -11,12 +11,7 @@ import {
 	runMigrations,
 } from "@maple/db"
 import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
-import {
-	AiTriageRunId,
-	AnomalyIncidentId,
-	ErrorIssueId,
-	OrgId,
-} from "@maple/domain/primitives"
+import { AiTriageRunId, AnomalyIncidentId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import { eq } from "drizzle-orm"
 import { Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
@@ -253,10 +248,7 @@ describe("runAiTriage", () => {
 			buildTools: async () => ({}),
 		})
 
-		const issues = await harness.db
-			.select()
-			.from(errorIssues)
-			.where(eq(errorIssues.id, harness.issueId))
+		const issues = await harness.db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId))
 		expect(issues[0]?.severity).toBe("high")
 		expect(issues[0]?.severitySource).toBe("ai")
 
@@ -302,10 +294,7 @@ describe("runAiTriage", () => {
 			buildTools: async () => ({}),
 		})
 
-		const issues = await harness.db
-			.select()
-			.from(errorIssues)
-			.where(eq(errorIssues.id, harness.issueId))
+		const issues = await harness.db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId))
 		expect(issues[0]?.severity).toBe("low")
 		expect(issues[0]?.severitySource).toBe("manual")
 

@@ -55,9 +55,7 @@ export function StepDemo({
 	})
 
 	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, "1h")
-	const overviewResult = useAtomValue(
-		getServiceOverviewResultAtom({ data: { startTime, endTime } }),
-	)
+	const overviewResult = useAtomValue(getServiceOverviewResultAtom({ data: { startTime, endTime } }))
 	// Only a *resolved success* tells us whether the backend already has data.
 	// A failure must NOT be silently read as "empty" — otherwise a transient
 	// fetch error would offer to seed demo data on top of a populated backend.
@@ -107,9 +105,7 @@ export function StepDemo({
 						<span className="text-[11px] font-semibold uppercase tracking-widest text-destructive">
 							Couldn't check your workspace
 						</span>
-						<h1 className="text-3xl font-semibold tracking-tight">
-							Let's connect your app
-						</h1>
+						<h1 className="text-3xl font-semibold tracking-tight">Let's connect your app</h1>
 						<p className="text-muted-foreground text-[15px] leading-relaxed">
 							We couldn't load your existing services right now, so we'll skip the demo and head
 							straight to setup. You can always add demo data later from settings.
@@ -364,9 +360,7 @@ function DemoOption({
 		<Card
 			className={cn(
 				"flex flex-col h-full relative overflow-hidden transition-all duration-200",
-				primary
-					? "border-primary/40 bg-primary/[0.02] shadow-sm shadow-primary/5"
-					: "",
+				primary ? "border-primary/40 bg-primary/[0.02] shadow-sm shadow-primary/5" : "",
 				!disabled && "hover:-translate-y-0.5",
 				primary && !disabled && "hover:shadow-md hover:shadow-primary/10",
 			)}

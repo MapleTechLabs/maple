@@ -49,10 +49,10 @@ const setBoolean = (target: JsonObject, key: string, value: boolean | undefined)
 	if (value !== undefined) target[key] = value
 }
 
-export const createOpenRouterHeaders = ({
-	appBaseUrl,
-	appTitle,
-}: OpenRouterAppOptions = {}): Record<string, string> => {
+export const createOpenRouterHeaders = ({ appBaseUrl, appTitle }: OpenRouterAppOptions = {}): Record<
+	string,
+	string
+> => {
 	const headers: Record<string, string> = {
 		"X-OpenRouter-Title": nonEmpty(appTitle) ?? "Maple",
 	}
@@ -61,10 +61,7 @@ export const createOpenRouterHeaders = ({
 	return headers
 }
 
-export const createChatModel = (
-	apiKey: string,
-	options: OpenRouterAppOptions = {},
-): LanguageModel => {
+export const createChatModel = (apiKey: string, options: OpenRouterAppOptions = {}): LanguageModel => {
 	const openrouter = createOpenAICompatible({
 		name: OPENROUTER_PROVIDER_NAME,
 		baseURL: OPENROUTER_BASE_URL,

@@ -110,8 +110,7 @@ export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
 // anything that is not already a known tagged error.
 type QueryAtomFailure = QueryError | QueryAtomError
 
-const isTaggedBackendError = (error: QueryError): boolean =>
-	error._tag.startsWith("@maple/http/errors/")
+const isTaggedBackendError = (error: QueryError): boolean => error._tag.startsWith("@maple/http/errors/")
 
 const toQueryAtomError = (error: QueryError): QueryAtomFailure => {
 	// Tagged `@maple/http/errors/*` errors are already user-presentable via
@@ -369,10 +368,9 @@ export const getServiceMapDbEdgesResultAtom = makeQueryAtomFamily(getServiceMapD
 	staleTime: 15_000,
 })
 
-export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(
-	getServiceMapDbEdgesForService,
-	{ staleTime: 15_000 },
-)
+export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(getServiceMapDbEdgesForService, {
+	staleTime: 15_000,
+})
 
 export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
 	staleTime: 15_000,

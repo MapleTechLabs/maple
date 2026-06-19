@@ -60,7 +60,9 @@ export const HttpScrapeTargetsLive = HttpApiBuilder.group(MapleApi, "scrapeTarge
 						checks: rows.map(
 							(row) =>
 								new ScrapeTargetCheckResponse({
-									timestamp: decodeIsoDateTimeStringSync(new Date(row.checkedAt).toISOString()),
+									timestamp: decodeIsoDateTimeStringSync(
+										new Date(row.checkedAt).toISOString(),
+									),
 									success: row.error === null,
 									subTargetKey: row.subTargetKey === "" ? null : row.subTargetKey,
 									durationSeconds: row.durationMs === null ? null : row.durationMs / 1000,

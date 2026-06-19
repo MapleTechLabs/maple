@@ -110,7 +110,13 @@ export function TraceTimeline() {
 			const idx = barIndexBySpanId.get(spanId)
 			if (idx === undefined) return
 			const bar = bars[idx]
-			dispatch({ type: "ZOOM_TO_SPAN", startMs: bar.startMs, endMs: bar.endMs, traceStartMs, traceEndMs })
+			dispatch({
+				type: "ZOOM_TO_SPAN",
+				startMs: bar.startMs,
+				endMs: bar.endMs,
+				traceStartMs,
+				traceEndMs,
+			})
 		},
 		[bars, barIndexBySpanId, dispatch, traceStartMs, traceEndMs],
 	)
@@ -230,7 +236,16 @@ export function TraceTimeline() {
 					break
 			}
 		},
-		[state.focusedIndex, state.searchQuery, state.viewport, bars, dispatch, onSelectSpan, traceStartMs, traceEndMs],
+		[
+			state.focusedIndex,
+			state.searchQuery,
+			state.viewport,
+			bars,
+			dispatch,
+			onSelectSpan,
+			traceStartMs,
+			traceEndMs,
+		],
 	)
 
 	const hoveredSpan = React.useMemo(() => {
@@ -273,15 +288,30 @@ export function TraceTimeline() {
 					<span className="tabular-nums">{bars.length} spans</span>
 				</div>
 				<div className="flex items-center gap-1">
-					<Button variant="ghost" size="sm" onClick={handleExpandAll} className="h-5 text-[10px] px-2">
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={handleExpandAll}
+						className="h-5 text-[10px] px-2"
+					>
 						Expand all
 					</Button>
-					<Button variant="ghost" size="sm" onClick={handleCollapseAll} className="h-5 text-[10px] px-2">
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={handleCollapseAll}
+						className="h-5 text-[10px] px-2"
+					>
 						Collapse all
 					</Button>
 					<ColorByPicker value={colorBy} onChange={setColorBy} rootSpans={rootSpans} />
 					{isZoomed && (
-						<Button variant="ghost" size="sm" onClick={handleZoomToFit} className="h-5 gap-1 text-[10px] px-2">
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={handleZoomToFit}
+							className="h-5 gap-1 text-[10px] px-2"
+						>
 							<ChevronExpandYIcon size={11} />
 							Fit
 						</Button>
@@ -312,7 +342,11 @@ export function TraceTimeline() {
 			<div className="flex border-b border-border shrink-0">
 				<div style={{ width: sidebarWidth }} className="shrink-0 border-r border-border" />
 				<div className="flex-1 min-w-0 relative">
-					<TraceTimelineTimeAxis viewport={state.viewport} ticks={timeAxisTicks} traceStartMs={traceStartMs} />
+					<TraceTimelineTimeAxis
+						viewport={state.viewport}
+						ticks={timeAxisTicks}
+						traceStartMs={traceStartMs}
+					/>
 				</div>
 			</div>
 
@@ -382,19 +416,34 @@ export function TraceTimeline() {
 			<div className="flex items-center justify-between border-t border-border bg-muted/30 px-3 py-1.5 text-[10px] text-muted-foreground shrink-0">
 				<div className="flex items-center gap-3 text-foreground/30">
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">Drag</kbd> zoom
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+							Drag
+						</kbd>{" "}
+						zoom
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">Dbl-click</kbd> zoom span
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+							Dbl-click
+						</kbd>{" "}
+						zoom span
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">⌘+Scroll</kbd> zoom
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+							⌘+Scroll
+						</kbd>{" "}
+						zoom
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">Shift+Drag</kbd> pan
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+							Shift+Drag
+						</kbd>{" "}
+						pan
 					</span>
 					<span>
-						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">/</kbd> search
+						<kbd className="border border-foreground/10 bg-muted px-1 py-0.5 font-mono text-[9px]">
+							/
+						</kbd>{" "}
+						search
 					</span>
 				</div>
 				<div className="flex items-center gap-2.5">
@@ -420,7 +469,11 @@ export function TraceTimeline() {
 				ReactDOM.createPortal(
 					<div
 						className="fixed z-[9999] pointer-events-none"
-						style={{ left: tooltipPos.x, top: tooltipPos.y - 8, transform: "translate(-50%, -100%)" }}
+						style={{
+							left: tooltipPos.x,
+							top: tooltipPos.y - 8,
+							transform: "translate(-50%, -100%)",
+						}}
 					>
 						<div className="bg-popover text-popover-foreground border border-border shadow-lg p-2.5 max-w-sm">
 							<TraceTimelineTooltipContent

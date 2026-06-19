@@ -133,13 +133,7 @@ const RANGE_LABELS: Record<string, string> = {
 	"30d": "Last 30 days",
 }
 
-export function TimeRangeSelect({
-	value,
-	onChange,
-}: {
-	value: string
-	onChange: (next: string) => void
-}) {
+export function TimeRangeSelect({ value, onChange }: { value: string; onChange: (next: string) => void }) {
 	return (
 		<div className="flex items-center gap-1.5">
 			<ClockIcon strokeWidth={2} className="size-3.5 text-muted-foreground" />

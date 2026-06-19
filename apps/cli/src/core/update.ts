@@ -124,7 +124,9 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 			}
 		},
 		catch: (e) =>
-			new UpdateError({ message: `could not check for updates: ${e instanceof Error ? e.message : String(e)}` }),
+			new UpdateError({
+				message: `could not check for updates: ${e instanceof Error ? e.message : String(e)}`,
+			}),
 	})
 
 /** Directory holding the running `maple` binary and its sibling `libchdb.so`
@@ -172,20 +174,29 @@ const sha256File = (path: string): Effect.Effect<string, UpdateError> =>
 			for await (const chunk of Bun.file(path).stream()) hasher.update(chunk)
 			return hasher.digest("hex")
 		},
-		catch: (e) => new UpdateError({ message: `could not hash bundle: ${e instanceof Error ? e.message : String(e)}` }),
+		catch: (e) =>
+			new UpdateError({
+				message: `could not hash bundle: ${e instanceof Error ? e.message : String(e)}`,
+			}),
 	})
 
 const extractTar = (tarball: string, destDir: string): Effect.Effect<void, UpdateError> =>
 	Effect.tryPromise({
 		try: async () => {
-			const proc = Bun.spawn(["tar", "-xzf", tarball, "-C", destDir], { stdout: "ignore", stderr: "pipe" })
+			const proc = Bun.spawn(["tar", "-xzf", tarball, "-C", destDir], {
+				stdout: "ignore",
+				stderr: "pipe",
+			})
 			const code = await proc.exited
 			if (code !== 0) {
 				const err = await new Response(proc.stderr).text()
 				throw new Error(`tar exited ${code}: ${err.trim()}`)
 			}
 		},
-		catch: (e) => new UpdateError({ message: `could not extract bundle: ${e instanceof Error ? e.message : String(e)}` }),
+		catch: (e) =>
+			new UpdateError({
+				message: `could not extract bundle: ${e instanceof Error ? e.message : String(e)}`,
+			}),
 	})
 
 /** Best-effort: strip the Gatekeeper quarantine flag macOS sets on downloads. */
@@ -225,7 +236,9 @@ export const performUpdate = (opts: { tag?: string } = {}): Effect.Effect<Update
 
 		yield* Effect.scoped(
 			Effect.gen(function* () {
-				yield* Effect.addFinalizer(() => Effect.promise(() => rm(tmpDir, { recursive: true, force: true }).catch(() => {})))
+				yield* Effect.addFinalizer(() =>
+					Effect.promise(() => rm(tmpDir, { recursive: true, force: true }).catch(() => {})),
+				)
 
 				// Fresh temp dir.
 				yield* Effect.tryPromise({
@@ -239,7 +252,9 @@ export const performUpdate = (opts: { tag?: string } = {}): Effect.Effect<Update
 				const tarball = join(tmpDir, "bundle.tar.gz")
 				yield* downloadTo(url, tarball)
 
-				const expected = yield* fetchText(`${url}.sha256`).pipe(Effect.map((t) => t.trim().split(/\s+/)[0]))
+				const expected = yield* fetchText(`${url}.sha256`).pipe(
+					Effect.map((t) => t.trim().split(/\s+/)[0]),
+				)
 				const actual = yield* sha256File(tarball)
 				if (expected !== actual) {
 					return yield* new UpdateError({

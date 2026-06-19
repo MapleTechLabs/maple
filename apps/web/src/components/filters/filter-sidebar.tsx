@@ -13,13 +13,7 @@ interface FilterSidebarFrameProps {
 
 export function FilterSidebarFrame({ children, waiting = false, className }: FilterSidebarFrameProps) {
 	return (
-		<div
-			className={cn(
-				"flex h-full w-56 shrink-0 flex-col",
-				waiting && "opacity-60",
-				className,
-			)}
-		>
+		<div className={cn("flex h-full w-56 shrink-0 flex-col", waiting && "opacity-60", className)}>
 			{children}
 		</div>
 	)

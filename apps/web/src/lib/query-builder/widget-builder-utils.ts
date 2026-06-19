@@ -265,9 +265,7 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 					: "hidden"
 	// Legacy widgets persisted a `legend` value but no `seriesStats`; if they
 	// showed a legend they showed the stats table, so default it on for them.
-	const seriesStatsEnabled =
-		chartPresentation?.seriesStats ??
-		(legendRaw != null && legendRaw !== "hidden")
+	const seriesStatsEnabled = chartPresentation?.seriesStats ?? (legendRaw != null && legendRaw !== "hidden")
 
 	const baseFromWidget = {
 		visualization: widget.visualization,
@@ -618,11 +616,7 @@ export function buildWidgetDisplay(
 					enabled: true,
 					// The sparkline reuses the stat's query as a raw timeseries —
 					// i.e. the same data source minus the scalar reduceToValue.
-					dataSource: buildWidgetDataSource(
-						widget,
-						{ ...state, visualization: "chart" },
-						[],
-					),
+					dataSource: buildWidgetDataSource(widget, { ...state, visualization: "chart" }, []),
 				}
 			: undefined
 	}

@@ -234,11 +234,7 @@ export const getSessionTraceSummaries = Effect.fn("SessionReplays.traceSummaries
 }: {
 	data: SessionTraceSummariesInput
 }) {
-	const input = yield* decodeInput(
-		SessionTraceSummariesInput,
-		data ?? { traceIds: [] },
-		"traceSummaries",
-	)
+	const input = yield* decodeInput(SessionTraceSummariesInput, data ?? { traceIds: [] }, "traceSummaries")
 	const result = yield* runWarehouseQuery("traceSummaries", () =>
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient

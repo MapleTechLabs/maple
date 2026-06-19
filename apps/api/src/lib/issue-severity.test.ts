@@ -7,12 +7,7 @@ import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
 import { eq } from "drizzle-orm"
 import { Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
-import {
-	applyTriageSeverity,
-	escalationReasonFor,
-	severityRank,
-	TRIAGE_AGENT_NAME,
-} from "./issue-severity"
+import { applyTriageSeverity, escalationReasonFor, severityRank, TRIAGE_AGENT_NAME } from "./issue-severity"
 
 const createdTempDirs: string[] = []
 
@@ -62,10 +57,7 @@ const baseInput = (overrides: Partial<Parameters<typeof applyTriageSeverity>[1]>
 })
 
 const loadIssue = async () => {
-	const rows = await db
-		.select()
-		.from(errorIssues)
-		.where(eq(errorIssues.id, issueId))
+	const rows = await db.select().from(errorIssues).where(eq(errorIssues.id, issueId))
 	return rows[0]
 }
 
@@ -95,10 +87,7 @@ describe("applyTriageSeverity", () => {
 		expect(issue?.severity).toBe("high")
 		expect(issue?.severitySource).toBe("ai")
 
-		const events = await db
-			.select()
-			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, issueId))
+		const events = await db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId))
 		expect(events).toHaveLength(1)
 		expect(events[0]?.type).toBe("severity_change")
 		const payload = JSON.parse(events[0]?.payloadJson ?? "{}")
@@ -133,10 +122,7 @@ describe("applyTriageSeverity", () => {
 		await applyTriageSeverity(db, baseInput())
 		await applyTriageSeverity(db, baseInput())
 
-		const events = await db
-			.select()
-			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, issueId))
+		const events = await db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId))
 		expect(events).toHaveLength(1)
 		const escalations = await db
 			.select()
@@ -198,10 +184,7 @@ describe("applyTriageSeverity", () => {
 		expect(issue?.severity).toBe("high")
 		expect(issue?.severitySource).toBe("ai")
 
-		const events = await db
-			.select()
-			.from(errorIssueEvents)
-			.where(eq(errorIssueEvents.issueId, issueId))
+		const events = await db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId))
 		expect(events.some((e) => e.type === "severity_change")).toBe(false)
 
 		// Same-level confirmation: no escalation either (upward-only rule).
@@ -229,10 +212,7 @@ describe("applyTriageSeverity", () => {
 			suggestedActions: ["Roll back payment-service."],
 			confidence: "medium",
 		}
-		const outcome = await applyTriageSeverity(
-			db,
-			baseInput({ result: decodeTriageResult(plainResult) }),
-		)
+		const outcome = await applyTriageSeverity(db, baseInput({ result: decodeTriageResult(plainResult) }))
 		expect(outcome.applied).toBe(true)
 
 		const escalations = await db

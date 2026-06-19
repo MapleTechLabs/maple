@@ -509,23 +509,26 @@ export const makeGetCustomerData = (
 	})
 }
 
-export class AuthService extends Context.Service<AuthService, AuthServiceShape>()("@maple/api/services/AuthService", {
-	make: Effect.gen(function* () {
-		const env = yield* Env
-		const resolveTenant = makeResolveTenant(env)
-		const resolveMcpTenant = makeResolveMcpTenant(env)
-		const loginSelfHosted = makeLoginSelfHosted(env)
-		const getUserEmail = makeGetUserEmail(env)
-		const getCustomerData = makeGetCustomerData(env)
+export class AuthService extends Context.Service<AuthService, AuthServiceShape>()(
+	"@maple/api/services/AuthService",
+	{
+		make: Effect.gen(function* () {
+			const env = yield* Env
+			const resolveTenant = makeResolveTenant(env)
+			const resolveMcpTenant = makeResolveMcpTenant(env)
+			const loginSelfHosted = makeLoginSelfHosted(env)
+			const getUserEmail = makeGetUserEmail(env)
+			const getCustomerData = makeGetCustomerData(env)
 
-		return {
-			resolveTenant,
-			resolveMcpTenant,
-			loginSelfHosted,
-			getUserEmail,
-			getCustomerData,
-		} satisfies AuthServiceShape
-	}),
-}) {
+			return {
+				resolveTenant,
+				resolveMcpTenant,
+				loginSelfHosted,
+				getUserEmail,
+				getCustomerData,
+			} satisfies AuthServiceShape
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

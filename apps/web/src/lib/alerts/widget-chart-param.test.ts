@@ -25,7 +25,13 @@ const builderWidgetContext: AlertChartContext = {
 						aggregation: "count",
 						// base64url-hostile content: quotes, unicode, +, /, =
 						whereClause: 'service.name = "café/checkout+v2" AND attr.note = "a=b"',
-						addOns: { groupBy: false, having: false, orderBy: false, limit: false, legend: false },
+						addOns: {
+							groupBy: false,
+							having: false,
+							orderBy: false,
+							limit: false,
+							legend: false,
+						},
 						groupBy: [],
 					},
 				],
@@ -81,9 +87,7 @@ describe("encodeAlertChartToSearchParam / decodeAlertChartFromSearchParam", () =
 
 		expect(viaParam).toEqual(direct)
 		expect(viaParam.form.signalType).toBe("builder_query")
-		expect(viaParam.form.queryWhereClause).toBe(
-			'service.name = "café/checkout+v2" AND attr.note = "a=b"',
-		)
+		expect(viaParam.form.queryWhereClause).toBe('service.name = "café/checkout+v2" AND attr.note = "a=b"')
 	})
 
 	it("round-trips a raw SQL widget keeping the SQL intact", () => {

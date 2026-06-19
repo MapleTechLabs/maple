@@ -38,9 +38,7 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 					environment: environment ?? undefined,
 					limit: lim,
 				}),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("find_slow_traces")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("find_slow_traces")))
 
 			if (result.traces.length === 0) {
 				return { content: [{ type: "text" as const, text: `No traces found in ${st} — ${et}` }] }

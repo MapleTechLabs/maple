@@ -379,7 +379,10 @@ function ErrorDetailContent() {
 
 	return (
 		<DashboardLayout
-			breadcrumbs={[{ label: "Errors", href: "/errors" }, { label: truncateErrorType(displayLabel, 50) }]}
+			breadcrumbs={[
+				{ label: "Errors", href: "/errors" },
+				{ label: truncateErrorType(displayLabel, 50) },
+			]}
 			title={displayLabel}
 			headerActions={
 				<TimeRangeHeaderControls

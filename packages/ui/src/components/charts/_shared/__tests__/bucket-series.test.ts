@@ -1,11 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-	bucketCategorical,
-	bucketTimeseries,
-	MAX_CATEGORICAL,
-	OTHER_LABEL,
-} from "../bucket-series"
+import { bucketCategorical, bucketTimeseries, MAX_CATEGORICAL, OTHER_LABEL } from "../bucket-series"
 
 describe("bucketCategorical", () => {
 	it("sorts by value descending without bucketing when within the cap", () => {

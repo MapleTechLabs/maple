@@ -66,12 +66,12 @@ maple logs                     # todo.created / todo.toggled / …
 
 Both SDKs default to the local sink. Override with env vars if needed:
 
-| var | side | default |
-| --- | --- | --- |
-| `MAPLE_ENDPOINT` | server | `http://127.0.0.1:4318` |
-| `VITE_MAPLE_ENDPOINT` | web | `http://127.0.0.1:4318` |
-| `VITE_API_BASE_URL` | web | `http://127.0.0.1:4500` |
-| `PORT` | server | `4500` |
+| var                   | side   | default                 |
+| --------------------- | ------ | ----------------------- |
+| `MAPLE_ENDPOINT`      | server | `http://127.0.0.1:4318` |
+| `VITE_MAPLE_ENDPOINT` | web    | `http://127.0.0.1:4318` |
+| `VITE_API_BASE_URL`   | web    | `http://127.0.0.1:4500` |
+| `PORT`                | server | `4500`                  |
 
 ## Layout
 

@@ -570,9 +570,7 @@ export function encodeLogs(req: unknown): EncodedBatch[] {
 			const scopeVersion = scope?.version ?? ""
 
 			for (const log of scopeLogs.logRecords ?? []) {
-				const timeNano = isNonZeroNano(log.timeUnixNano)
-					? log.timeUnixNano
-					: log.observedTimeUnixNano
+				const timeNano = isNonZeroNano(log.timeUnixNano) ? log.timeUnixNano : log.observedTimeUnixNano
 				const severityText =
 					log.severityText && log.severityText.length > 0
 						? log.severityText

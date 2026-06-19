@@ -84,12 +84,12 @@ Off by default (enable per your ingestion budget):
 
 ```yaml
 presets:
-  podLogs:
-    enabled: true
-  k8sEvents:
-    enabled: true
-  fargateMetrics:    # EKS Fargate per-pod CPU/memory
-    enabled: true
+    podLogs:
+        enabled: true
+    k8sEvents:
+        enabled: true
+    fargateMetrics: # EKS Fargate per-pod CPU/memory
+        enabled: true
 ```
 
 In-cluster apps can export to the agent's Service:
@@ -125,13 +125,13 @@ The chart bundles the OpenTelemetry Operator and an `Instrumentation/maple-defau
 
 ## Per-cloud notes
 
-| Distribution | Notes |
-| --- | --- |
-| EKS standard, GKE Standard, AKS | Works out of the box. |
-| EKS Fargate | The DaemonSet can't run on Fargate nodes. Keep one EC2 node for the agent, and set `presets.fargateMetrics.enabled=true` so per-pod CPU/memory is scraped via the API-server proxy. |
-| GKE Autopilot | Only annotate your own namespaces — mutating webhooks are rejected on Google-managed namespaces. |
-| k3s / kind / k0s | Works with auto-generated webhook certs (no cert-manager needed). |
-| Service mesh (Linkerd, Istio) | Sidecars rewrite source IPs, but the `k8s.pod.uid` / `(name, namespace)` association keys ride inside the OTLP payload and rescue the workload join. No mesh-side config needed. |
+| Distribution                    | Notes                                                                                                                                                                               |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| EKS standard, GKE Standard, AKS | Works out of the box.                                                                                                                                                               |
+| EKS Fargate                     | The DaemonSet can't run on Fargate nodes. Keep one EC2 node for the agent, and set `presets.fargateMetrics.enabled=true` so per-pod CPU/memory is scraped via the API-server proxy. |
+| GKE Autopilot                   | Only annotate your own namespaces — mutating webhooks are rejected on Google-managed namespaces.                                                                                    |
+| k3s / kind / k0s                | Works with auto-generated webhook certs (no cert-manager needed).                                                                                                                   |
+| Service mesh (Linkerd, Istio)   | Sidecars rewrite source IPs, but the `k8s.pod.uid` / `(name, namespace)` association keys ride inside the OTLP payload and rescue the workload join. No mesh-side config needed.    |
 
 ## Troubleshooting
 

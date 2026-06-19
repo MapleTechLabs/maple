@@ -8,18 +8,19 @@ import type { WorkloadKind } from "@/api/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
 import { UsageBar } from "./usage-bar"
-import { ColumnHead, MetaChip, ROW_LINK_CLASS, TableShell, TableSkeleton, useTableSort } from "./primitives/data-table"
+import {
+	ColumnHead,
+	MetaChip,
+	ROW_LINK_CLASS,
+	TableShell,
+	TableSkeleton,
+	useTableSort,
+} from "./primitives/data-table"
 import { formatRelative } from "./format"
 
 export type WorkloadRow = ListWorkloadsResponse["data"][number]
 
-type SortKey =
-	| "workloadName"
-	| "namespace"
-	| "podCount"
-	| "avgCpuLimitPct"
-	| "avgMemoryLimitPct"
-	| "lastSeen"
+type SortKey = "workloadName" | "namespace" | "podCount" | "avgCpuLimitPct" | "avgMemoryLimitPct" | "lastSeen"
 
 interface WorkloadTableProps {
 	workloads: ReadonlyArray<WorkloadRow>

@@ -390,7 +390,10 @@ export const convertFamiliesToOtlp = (
 									// the ingest key.
 									{ key: "service.name", value: { stringValue: ctx.serviceName } },
 									{ key: "maple_scrape_target_id", value: { stringValue: ctx.targetId } },
-									{ key: "maple_scrape_target_name", value: { stringValue: ctx.targetName } },
+									{
+										key: "maple_scrape_target_name",
+										value: { stringValue: ctx.targetName },
+									},
 								],
 							},
 							scopeMetrics: [{ scope: { name: SCOPE_NAME }, metrics: state.metrics }],

@@ -5,10 +5,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
 
 import { OnboardingLayout } from "@/components/onboarding/onboarding-layout"
-import {
-	QUALIFY_QUESTIONS,
-	StepQualifyQuestion,
-} from "@/components/onboarding/step-qualify"
+import { QUALIFY_QUESTIONS, StepQualifyQuestion } from "@/components/onboarding/step-qualify"
 import { StepPlan } from "@/components/onboarding/step-plan"
 import { StepDemo } from "@/components/onboarding/step-demo"
 
@@ -43,18 +40,14 @@ function QuickStartPage() {
 	// "plan" completion is the live Autumn plan state, never a persisted flag.
 	// A stale flag would disagree with __root.tsx's no-plan guard and trap the
 	// user in an infinite /quick-start <-> / redirect loop that freezes the tab.
-	const onboardingComplete =
-		isStepComplete("role") && isStepComplete("demo") && planSelected
+	const onboardingComplete = isStepComplete("role") && isStepComplete("demo") && planSelected
 
 	const currentStepNumber = STEP_IDS.indexOf(activeStep as StepId) + 1
 	const stepLabel = `Step ${currentStepNumber} of ${STEP_IDS.length}`
 
 	// Track the previous step index for slide direction by adjusting state
 	// during render — the documented React pattern for previous-render values.
-	const [stepWindow, setStepWindow] = useState<[number, number]>([
-		currentStepNumber,
-		currentStepNumber,
-	])
+	const [stepWindow, setStepWindow] = useState<[number, number]>([currentStepNumber, currentStepNumber])
 	if (stepWindow[1] !== currentStepNumber) {
 		setStepWindow([stepWindow[1], currentStepNumber])
 	}
@@ -65,20 +58,14 @@ function QuickStartPage() {
 	}
 
 	return (
-		<OnboardingLayout
-			currentStep={currentStepNumber}
-			totalSteps={STEP_IDS.length}
-			stepLabel={stepLabel}
-		>
+		<OnboardingLayout currentStep={currentStepNumber} totalSteps={STEP_IDS.length} stepLabel={stepLabel}>
 			<AnimatePresence mode="wait" custom={direction} initial={false}>
 				{activeStep === "role" && (
 					<MotionStep key="role" direction={direction}>
 						<StepQualifyQuestion
 							{...QUALIFY_QUESTIONS.role}
 							value={qualifyAnswers.role}
-							onSelect={(role: RoleOption) =>
-								setQualifyAnswers({ ...qualifyAnswers, role })
-							}
+							onSelect={(role: RoleOption) => setQualifyAnswers({ ...qualifyAnswers, role })}
 							onContinue={() => completeStep("role")}
 						/>
 					</MotionStep>
@@ -105,13 +92,7 @@ function QuickStartPage() {
 	)
 }
 
-function MotionStep({
-	children,
-	direction,
-}: {
-	children: React.ReactNode
-	direction: number
-}) {
+function MotionStep({ children, direction }: { children: React.ReactNode; direction: number }) {
 	return (
 		<motion.div
 			custom={direction}

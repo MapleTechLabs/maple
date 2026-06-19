@@ -99,7 +99,9 @@ describe("RawSqlChartService.expandMacros", () => {
 		]) {
 			it.effect(`rejects deny-listed keyword ${keyword}`, () =>
 				Effect.gen(function* () {
-					const failure = yield* expandFail(`SELECT 1 FROM Logs WHERE $__orgFilter; ${keyword} TABLE Logs`)
+					const failure = yield* expandFail(
+						`SELECT 1 FROM Logs WHERE $__orgFilter; ${keyword} TABLE Logs`,
+					)
 					// Either MultipleStatements (because of ';') or DisallowedStatement —
 					// both correctly block the dangerous query. Tighten by also testing without ';'.
 					assert.include(["MultipleStatements", "DisallowedStatement"], failure.code)
@@ -149,7 +151,9 @@ describe("RawSqlChartService.expandMacros", () => {
 
 		it.effect("appends a default LIMIT when the user did not specify one", () =>
 			Effect.gen(function* () {
-				const result = yield* expandOk("SELECT 1 FROM Logs WHERE $__orgFilter AND $__timeFilter(Timestamp)")
+				const result = yield* expandOk(
+					"SELECT 1 FROM Logs WHERE $__orgFilter AND $__timeFilter(Timestamp)",
+				)
 				assert.match(result.sql, /LIMIT 10000\s*$/)
 			}),
 		)

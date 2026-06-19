@@ -32,7 +32,12 @@ const SAMPLE_REQUEST: OtlpExportRequest = {
 							unit: "",
 							gauge: {
 								dataPoints: [
-									{ attributes: [], startTimeUnixNano: "0", timeUnixNano: "1750000000000000000", asDouble: 1 },
+									{
+										attributes: [],
+										startTimeUnixNano: "0",
+										timeUnixNano: "1750000000000000000",
+										asDouble: 1,
+									},
 								],
 							},
 						},
@@ -75,9 +80,12 @@ describe("OtlpIngest", () => {
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const otlp = yield* OtlpIngest
-			yield* otlp
-				.send("maple_pk_test_key", SAMPLE_REQUEST)
-				.pipe(Effect.provideService(FetchHttpClient.Fetch, stubFetch(recorded, () => Response.json({ partialSuccess: {} }))))
+			yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json({ partialSuccess: {} })),
+				),
+			)
 
 			expect(recorded[0]?.url).toBe("http://ingest.test/v1/metrics")
 			expect(recorded[0]?.method).toBe("POST")
@@ -90,15 +98,13 @@ describe("OtlpIngest", () => {
 	it.effect("surfaces a billing-limit rejection (402) as a typed error", () =>
 		Effect.gen(function* () {
 			const otlp = yield* OtlpIngest
-			const error = yield* otlp
-				.send("maple_pk_test_key", SAMPLE_REQUEST)
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch([], () => new Response("metrics limit reached", { status: 402 })),
-					),
-					Effect.flip,
-				)
+			const error = yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => new Response("metrics limit reached", { status: 402 })),
+				),
+				Effect.flip,
+			)
 			expect(error._tag).toBe("@maple/scraper/OtlpIngestError")
 			expect(error.status).toBe(402)
 			expect(error.message).toContain("billing limit")
@@ -108,12 +114,13 @@ describe("OtlpIngest", () => {
 	it.effect("fails with a typed error on other non-2xx responses", () =>
 		Effect.gen(function* () {
 			const otlp = yield* OtlpIngest
-			const error = yield* otlp
-				.send("maple_pk_test_key", SAMPLE_REQUEST)
-				.pipe(
-					Effect.provideService(FetchHttpClient.Fetch, stubFetch([], () => new Response("nope", { status: 401 }))),
-					Effect.flip,
-				)
+			const error = yield* otlp.send("maple_pk_test_key", SAMPLE_REQUEST).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => new Response("nope", { status: 401 })),
+				),
+				Effect.flip,
+			)
 			expect(error.status).toBe(401)
 		}).pipe(Effect.provide(TestLayer)),
 	)

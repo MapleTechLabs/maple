@@ -72,7 +72,11 @@ const ensureTriageAgentActor = async (
 			.select()
 			.from(actors)
 			.where(
-				and(eq(actors.orgId, orgId), eq(actors.type, "agent"), eq(actors.agentName, TRIAGE_AGENT_NAME)),
+				and(
+					eq(actors.orgId, orgId),
+					eq(actors.type, "agent"),
+					eq(actors.agentName, TRIAGE_AGENT_NAME),
+				),
 			)
 			.limit(1)
 	const existing = await select()
@@ -203,10 +207,7 @@ export const applyTriageSeverity = async (
 			.onConflictDoNothing()
 	}
 
-	await db
-		.update(actors)
-		.set({ lastActiveAt: input.timestamp })
-		.where(eq(actors.id, actorId))
+	await db.update(actors).set({ lastActiveAt: input.timestamp }).where(eq(actors.id, actorId))
 
 	return { applied: true, actorId }
 }

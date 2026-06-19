@@ -6,7 +6,14 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import type { ListNodesResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
-import { ColumnHead, MetaChip, ROW_LINK_CLASS, TableShell, TableSkeleton, useTableSort } from "./primitives/data-table"
+import {
+	ColumnHead,
+	MetaChip,
+	ROW_LINK_CLASS,
+	TableShell,
+	TableSkeleton,
+	useTableSort,
+} from "./primitives/data-table"
 import { formatRelative, formatUptime } from "./format"
 
 export type NodeRow = ListNodesResponse["data"][number]

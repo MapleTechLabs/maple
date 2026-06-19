@@ -98,8 +98,10 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 			}
 
 			const nextSteps: string[] = []
-			const errorPattern = result.patterns.find(
-				(p) => Object.keys(p.severityCounts).some((k) => k.toUpperCase() === "ERROR" || k.toUpperCase() === "FATAL"),
+			const errorPattern = result.patterns.find((p) =>
+				Object.keys(p.severityCounts).some(
+					(k) => k.toUpperCase() === "ERROR" || k.toUpperCase() === "FATAL",
+				),
 			)
 			if (errorPattern) {
 				nextSteps.push(

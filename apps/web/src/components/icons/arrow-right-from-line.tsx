@@ -1,10 +1,6 @@
 import type { IconProps } from "./icon"
 
-const paths: ReadonlyArray<string> = [
-	"M3 21L3 3",
-	"M7 12L21 12",
-	"M15 6L21 12L15 18",
-]
+const paths: ReadonlyArray<string> = ["M3 21L3 3", "M7 12L21 12", "M15 6L21 12L15 18"]
 
 function ArrowRightFromLineIcon({ size = 24, className, ...props }: IconProps) {
 	return (

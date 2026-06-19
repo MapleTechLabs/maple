@@ -17,10 +17,10 @@ https://api.warpstream.com/api/v1/monitoring/prometheus/virtual_clusters/$VIRTUA
 
 1. In WarpStream, create a **read-only Agent Key** for the cluster (least privilege; an account-level API key also works if you want one key for several clusters).
 2. In Maple, open **Integrations → WarpStream** (or **Prometheus**), click **Add Target**, and configure:
-   - **URL**: the hosted endpoint above, with your virtual cluster ID (`vci_…`)
-   - **Authentication**: `Basic Auth` — username `prometheus`, password = the API key
-   - **Scrape Interval**: 30–60s is plenty for control-plane metrics
-   - **Labels**: e.g. `{"cluster": "prod-kafka"}` to tag every series
+    - **URL**: the hosted endpoint above, with your virtual cluster ID (`vci_…`)
+    - **Authentication**: `Basic Auth` — username `prometheus`, password = the API key
+    - **Scrape Interval**: 30–60s is plenty for control-plane metrics
+    - **Labels**: e.g. `{"cluster": "prod-kafka"}` to tag every series
 
 See WarpStream's [Hosted Prometheus Endpoint docs](https://docs.warpstream.com/warpstream/agent-setup/monitor-the-warpstream-agents/hosted-prometheus-endpoint) for the metric set, which includes Tableflow and Schema Registry metrics on those cluster types.
 
@@ -40,14 +40,14 @@ Add one Maple target per agent (or per load-balanced agent pool), with the agent
 
 All WarpStream metrics carry the `warpstream_` prefix. From WarpStream's [Important Metrics and Logs](https://docs.warpstream.com/warpstream/agent-setup/monitor-the-warpstream-agents/important-metrics-and-logs):
 
-| Metric | Why it matters |
-| --- | --- |
-| `warpstream_consumer_group_lag` | Consumer lag in offsets — the canonical "are we keeping up" gauge. |
-| `warpstream_agent_kafka_request_latency` | Produce/fetch latency histogram by request type. |
-| `warpstream_agent_kafka_request_outcome` | Success vs. error counters per Kafka request type. |
-| `warpstream_blob_store_operation_latency` | Object-store PUT/GET health — the first thing to check when latency spikes. |
-| `warpstream_agent_control_plane_operation_latency` | Agent ↔ control-plane RPC health. |
-| `warpstream_topics_count` / `warpstream_partitions_count` (+ `_limit`) | Headroom against cluster limits. |
+| Metric                                                                 | Why it matters                                                              |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `warpstream_consumer_group_lag`                                        | Consumer lag in offsets — the canonical "are we keeping up" gauge.          |
+| `warpstream_agent_kafka_request_latency`                               | Produce/fetch latency histogram by request type.                            |
+| `warpstream_agent_kafka_request_outcome`                               | Success vs. error counters per Kafka request type.                          |
+| `warpstream_blob_store_operation_latency`                              | Object-store PUT/GET health — the first thing to check when latency spikes. |
+| `warpstream_agent_control_plane_operation_latency`                     | Agent ↔ control-plane RPC health.                                           |
+| `warpstream_topics_count` / `warpstream_partitions_count` (+ `_limit`) | Headroom against cluster limits.                                            |
 
 Once samples arrive, build dashboards and alert rules on these like any other Maple metric — e.g. an alert on `warpstream_consumer_group_lag` above a threshold for 5 minutes.
 

@@ -1,9 +1,4 @@
-import {
-	McpQueryError,
-	requiredBooleanParam,
-	requiredStringParam,
-	type McpToolRegistrar,
-} from "./types"
+import { McpQueryError, requiredBooleanParam, requiredStringParam, type McpToolRegistrar } from "./types"
 import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "@/mcp/lib/query-warehouse"
@@ -83,13 +78,10 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 			)
 
 			return {
-				content: createDualContent(
-					[`## Alert Rule Deleted`, `ID: ${result.id}`].join("\n"),
-					{
-						tool: "delete_alert_rule",
-						data: { id: result.id },
-					},
-				),
+				content: createDualContent([`## Alert Rule Deleted`, `ID: ${result.id}`].join("\n"), {
+					tool: "delete_alert_rule",
+					data: { id: result.id },
+				}),
 			}
 		}),
 	)

@@ -196,64 +196,66 @@ export interface SpanHierarchyOutput {
 }
 
 export function spanHierarchyQuery(opts: SpanHierarchyOpts) {
-	return from(TraceDetailSpans)
-		.select(($) => {
-			// HTTP span name rewriting: "http.server GET" + route → "GET /api/users"
-			const route = $.SpanAttributes.get("http.route")
-			const urlPath = $.SpanAttributes.get("url.path")
-			const httpRewriteExpr = CH.if_(
-				$.SpanName.like("http.server %")
-					.or($.SpanName.in_("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"))
-					.and(route.neq("").or(urlPath.neq(""))),
-				CH.concat(
-					CH.if_(
-						$.SpanName.like("http.server %"),
-						CH.replaceOne($.SpanName, "http.server ", ""),
-						$.SpanName,
+	return (
+		from(TraceDetailSpans)
+			.select(($) => {
+				// HTTP span name rewriting: "http.server GET" + route → "GET /api/users"
+				const route = $.SpanAttributes.get("http.route")
+				const urlPath = $.SpanAttributes.get("url.path")
+				const httpRewriteExpr = CH.if_(
+					$.SpanName.like("http.server %")
+						.or($.SpanName.in_("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"))
+						.and(route.neq("").or(urlPath.neq(""))),
+					CH.concat(
+						CH.if_(
+							$.SpanName.like("http.server %"),
+							CH.replaceOne($.SpanName, "http.server ", ""),
+							$.SpanName,
+						),
+						CH.lit(" "),
+						CH.if_(route.neq(""), route, urlPath),
 					),
-					CH.lit(" "),
-					CH.if_(route.neq(""), route, urlPath),
-				),
-				$.SpanName,
-			)
+					$.SpanName,
+				)
 
-			const relationshipExpr = opts.spanId
-				? CH.if_($.SpanId.eq(opts.spanId), CH.lit("target"), CH.lit("related"))
-				: CH.lit("related")
+				const relationshipExpr = opts.spanId
+					? CH.if_($.SpanId.eq(opts.spanId), CH.lit("target"), CH.lit("related"))
+					: CH.lit("related")
 
-			return {
-				traceId: $.TraceId,
-				spanId: $.SpanId,
-				parentSpanId: $.ParentSpanId,
-				spanName: httpRewriteExpr,
-				serviceName: $.ServiceName,
-				spanKind: $.SpanKind,
-				durationMs: $.Duration.div(1000000),
-				startTime: $.Timestamp,
-				statusCode: $.StatusCode,
-				statusMessage: $.StatusMessage,
-				// Trimmed maps — only the keys the tree views render. Full maps are
-				// fetched per-span on demand via spanDetailQuery.
-				spanAttributes: CH.toJSONString(
-					buildProjectedMapExpr(TREE_SPAN_ATTR_KEYS, "SpanAttributes"),
-				),
-				resourceAttributes: CH.toJSONString(
-					buildProjectedMapExpr(TREE_RESOURCE_ATTR_KEYS, "ResourceAttributes"),
-				),
-				relationship: relationshipExpr,
-			}
-		})
-		.where(($) => [
-			$.TraceId.eq(opts.traceId),
-			$.OrgId.eq(param.string("orgId")),
-			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
-			CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
-		])
-		// ORDER BY + LIMIT bounds pathological traces — the earliest spans keep
-		// the root subtree connected. buildSpanTree (web) re-sorts children anyway.
-		.orderBy(["startTime", "asc"])
-		.limit(SPAN_HIERARCHY_MAX_SPANS)
-		.format("JSON")
+				return {
+					traceId: $.TraceId,
+					spanId: $.SpanId,
+					parentSpanId: $.ParentSpanId,
+					spanName: httpRewriteExpr,
+					serviceName: $.ServiceName,
+					spanKind: $.SpanKind,
+					durationMs: $.Duration.div(1000000),
+					startTime: $.Timestamp,
+					statusCode: $.StatusCode,
+					statusMessage: $.StatusMessage,
+					// Trimmed maps — only the keys the tree views render. Full maps are
+					// fetched per-span on demand via spanDetailQuery.
+					spanAttributes: CH.toJSONString(
+						buildProjectedMapExpr(TREE_SPAN_ATTR_KEYS, "SpanAttributes"),
+					),
+					resourceAttributes: CH.toJSONString(
+						buildProjectedMapExpr(TREE_RESOURCE_ATTR_KEYS, "ResourceAttributes"),
+					),
+					relationship: relationshipExpr,
+				}
+			})
+			.where(($) => [
+				$.TraceId.eq(opts.traceId),
+				$.OrgId.eq(param.string("orgId")),
+				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.gte(param.dateTime("startTime"))),
+				CH.whenTrue(!!opts.narrowByTime, () => $.Timestamp.lte(param.dateTime("endTime"))),
+			])
+			// ORDER BY + LIMIT bounds pathological traces — the earliest spans keep
+			// the root subtree connected. buildSpanTree (web) re-sorts children anyway.
+			.orderBy(["startTime", "asc"])
+			.limit(SPAN_HIERARCHY_MAX_SPANS)
+			.format("JSON")
+	)
 }
 
 // ---------------------------------------------------------------------------

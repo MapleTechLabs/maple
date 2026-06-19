@@ -176,7 +176,9 @@ function WorkloadDetailContent() {
 						/>
 						<StatRailItem
 							eyebrow="Avg CPU cores"
-							value={Number.isFinite(summary.avgCpuUsage) ? summary.avgCpuUsage.toFixed(3) : "—"}
+							value={
+								Number.isFinite(summary.avgCpuUsage) ? summary.avgCpuUsage.toFixed(3) : "—"
+							}
 							compact
 						/>
 					</StatRail>

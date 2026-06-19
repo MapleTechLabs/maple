@@ -161,9 +161,7 @@ const rowClass = (isActive: boolean) =>
 	)
 
 function ActiveIndicator() {
-	return (
-		<span aria-hidden className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary" />
-	)
+	return <span aria-hidden className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary" />
 }
 
 export function SettingsNav({

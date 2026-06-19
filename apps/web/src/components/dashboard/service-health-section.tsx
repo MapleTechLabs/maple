@@ -118,7 +118,10 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 	)
 
 	const rules = useMemo(
-		() => Result.builder(rulesResult).onSuccess((response) => [...response.rules]).orElse(() => []),
+		() =>
+			Result.builder(rulesResult)
+				.onSuccess((response) => [...response.rules])
+				.orElse(() => []),
 		[rulesResult],
 	)
 
@@ -207,9 +210,7 @@ export function ServiceHealthOverview(props: ServiceHealthProps) {
 		.onSuccess((response, result) => {
 			const counts = countByHealth(enrichServices(response.data, openIncidents, baselineMap))
 			return (
-				<section
-					className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
-				>
+				<section className={cn("mb-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
 					{banner}
 					<StatRail>
 						<StatRailItem
@@ -255,9 +256,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 
 	const header = (
 		<div className="flex items-center justify-between">
-			<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-				Services
-			</h2>
+			<h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Services</h2>
 			<Link
 				to="/services"
 				search={servicesLinkSearch(props)}
@@ -290,9 +289,7 @@ export function ServiceHealthList(props: ServiceHealthProps) {
 		.onSuccess((response, result) => {
 			const rows = enrichServices(response.data, openIncidents, baselineMap).slice(0, MAX_ROWS)
 			return (
-				<section
-					className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}
-				>
+				<section className={cn("mt-4 space-y-3", result.waiting && "opacity-60 transition-opacity")}>
 					{header}
 					<Card className="overflow-hidden p-0">
 						{rows.length === 0 ? (

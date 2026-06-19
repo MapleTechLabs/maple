@@ -319,7 +319,9 @@ export function buildQueryDraftFromForm(form: RuleFormState): QueryBuilderQueryD
 	const userWhere = form.queryWhereClause.trim()
 	const whereClause =
 		form.serviceNames.length === 1
-			? [`service.name = "${form.serviceNames[0]}"`, userWhere].filter((s) => s.length > 0).join(" AND ")
+			? [`service.name = "${form.serviceNames[0]}"`, userWhere]
+					.filter((s) => s.length > 0)
+					.join(" AND ")
 			: userWhere
 	const base = {
 		id: "alert-query",
@@ -839,7 +841,10 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; dot: string;
 export type DeliveryStatusVariant = "success" | "error" | "warning" | "outline"
 
 /** Delivery status → Badge variant + human label. */
-export const deliveryStatusMeta: Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }> = {
+export const deliveryStatusMeta: Record<
+	AlertDeliveryStatus,
+	{ label: string; variant: DeliveryStatusVariant }
+> = {
 	success: { label: "Delivered", variant: "success" },
 	failed: { label: "Failed", variant: "error" },
 	processing: { label: "Sending", variant: "warning" },

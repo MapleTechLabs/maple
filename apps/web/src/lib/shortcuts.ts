@@ -10,7 +10,13 @@ import {
 	WINDOWS_MODIFIER_LABELS,
 } from "@tanstack/react-hotkeys"
 
-export const SHORTCUT_GROUPS = ["Global", "Search & Time", "Lists & Tables", "Session Replay", "Chat"] as const
+export const SHORTCUT_GROUPS = [
+	"Global",
+	"Search & Time",
+	"Lists & Tables",
+	"Session Replay",
+	"Chat",
+] as const
 
 export type ShortcutGroup = (typeof SHORTCUT_GROUPS)[number]
 
@@ -157,7 +163,11 @@ export function comboDisplayTokens(
 ): string[] {
 	const parsed = toParsed(combo, platform)
 	const modifierLabels =
-		platform === "mac" ? MAC_MODIFIER_SYMBOLS : platform === "linux" ? LINUX_MODIFIER_LABELS : WINDOWS_MODIFIER_LABELS
+		platform === "mac"
+			? MAC_MODIFIER_SYMBOLS
+			: platform === "linux"
+				? LINUX_MODIFIER_LABELS
+				: WINDOWS_MODIFIER_LABELS
 	const tokens = parsed.modifiers.map((modifier) => modifierLabels[modifier])
 	tokens.push(keyToken(parsed.key, platform))
 	return tokens

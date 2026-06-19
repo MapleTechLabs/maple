@@ -252,9 +252,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		const touchLastUsed = Effect.fn("ApiKeysService.touchLastUsed")(function* (keyId: ApiKeyId) {
 			const now = yield* Clock.currentTimeMillis
 			yield* database
-				.execute((db) =>
-					db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyId)),
-				)
+				.execute((db) => db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyId)))
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 

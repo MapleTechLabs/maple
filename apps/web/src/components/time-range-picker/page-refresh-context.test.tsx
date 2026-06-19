@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
-import { PageRefreshProvider, resolveRelativeRefreshRange, usePageRefreshContext } from "./page-refresh-context"
+import {
+	PageRefreshProvider,
+	resolveRelativeRefreshRange,
+	usePageRefreshContext,
+} from "./page-refresh-context"
 
 function createWrapper() {
 	const registry = Registry.make()

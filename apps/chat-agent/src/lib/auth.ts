@@ -46,7 +46,10 @@ const constantTimeEqual = (a: Uint8Array, b: Uint8Array): boolean => {
 	return mismatch === 0
 }
 
-const verifyHs256 = async (token: string, secret: string): Promise<{ sub: string; org_id: string } | undefined> => {
+const verifyHs256 = async (
+	token: string,
+	secret: string,
+): Promise<{ sub: string; org_id: string } | undefined> => {
 	const parts = token.split(".")
 	if (parts.length !== 3) return undefined
 	const [encodedHeader, encodedPayload, encodedSignature] = parts as [string, string, string]

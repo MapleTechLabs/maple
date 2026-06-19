@@ -68,7 +68,9 @@ describe("derivePlatformAttributes", () => {
 	})
 
 	it("maps cloudflare_workers provider to OTel cloudflare.workers", () => {
-		const attrs = derivePlatformAttributes(baseInputs({ provider: "cloudflare_workers", runtime: "workerd" }))
+		const attrs = derivePlatformAttributes(
+			baseInputs({ provider: "cloudflare_workers", runtime: "workerd" }),
+		)
 		expect(attrs["cloud.provider"]).toBe("cloudflare")
 		expect(attrs["cloud.platform"]).toBe("cloudflare.workers")
 	})
@@ -130,7 +132,9 @@ describe("derivePlatformAttributes", () => {
 
 	it("maps render and railway providers", () => {
 		expect(derivePlatformAttributes(baseInputs({ provider: "render" }))["cloud.platform"]).toBe("render")
-		expect(derivePlatformAttributes(baseInputs({ provider: "railway" }))["cloud.platform"]).toBe("railway")
+		expect(derivePlatformAttributes(baseInputs({ provider: "railway" }))["cloud.platform"]).toBe(
+			"railway",
+		)
 	})
 
 	it("returns no cloud.* when provider is unknown and not a known runtime", () => {

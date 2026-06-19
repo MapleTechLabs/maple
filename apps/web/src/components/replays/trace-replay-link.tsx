@@ -11,22 +11,24 @@ import { EyeIcon } from "@/components/icons"
 export function TraceReplayLink({ traceId }: { traceId: string }) {
 	const result = useAtomValue(getReplaysForTraceResultAtom({ data: { traceId } }))
 
-	return Result.builder(result)
-		.onSuccess((data) => {
-			const session = data.data[0]
-			if (!session) return null
-			return (
-				<Link
-					to="/replays/$sessionId"
-					params={{ sessionId: session.sessionId }}
-					className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
-				>
-					<EyeIcon className="size-3.5" /> View Session Replay
-				</Link>
-			)
-		})
-		// Stay silent on both loading and failure: a missing correlated replay and a
-		// failed lookup should both render nothing rather than intrude on the header.
-		.onError(() => null)
-		.orElse(() => null)
+	return (
+		Result.builder(result)
+			.onSuccess((data) => {
+				const session = data.data[0]
+				if (!session) return null
+				return (
+					<Link
+						to="/replays/$sessionId"
+						params={{ sessionId: session.sessionId }}
+						className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium hover:bg-muted"
+					>
+						<EyeIcon className="size-3.5" /> View Session Replay
+					</Link>
+				)
+			})
+			// Stay silent on both loading and failure: a missing correlated replay and a
+			// failed lookup should both render nothing rather than intrude on the header.
+			.onError(() => null)
+			.orElse(() => null)
+	)
 }

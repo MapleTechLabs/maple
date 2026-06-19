@@ -32,9 +32,7 @@ declare global {
 	}
 }
 
-test("service map renders filter/SMIL-free and animates smoothly under heavy traffic", async ({
-	page,
-}) => {
+test("service map renders filter/SMIL-free and animates smoothly under heavy traffic", async ({ page }) => {
 	await page.goto(BENCH_URL)
 	await page.waitForFunction(() => window.__smBench?.ready === true, undefined, { timeout: 60_000 })
 

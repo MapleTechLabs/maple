@@ -46,25 +46,14 @@ export function IngestStatus() {
 	// No recent data, or the local server isn't reachable yet — either way we're
 	// waiting on the ingest endpoint.
 	return (
-		<Pill
-			tone="idle"
-			title={isError ? "Waiting for the local collector" : "Waiting for telemetry"}
-		>
+		<Pill tone="idle" title={isError ? "Waiting for the local collector" : "Waiting for telemetry"}>
 			<ConnectionIcon size={13} className="text-muted-foreground" />
 			Listening on :{ingestPort(LOCAL_OTLP_ENDPOINT)}
 		</Pill>
 	)
 }
 
-function Pill({
-	tone,
-	title,
-	children,
-}: {
-	tone: "live" | "idle"
-	title?: string
-	children: ReactNode
-}) {
+function Pill({ tone, title, children }: { tone: "live" | "idle"; title?: string; children: ReactNode }) {
 	return (
 		<span
 			title={title}

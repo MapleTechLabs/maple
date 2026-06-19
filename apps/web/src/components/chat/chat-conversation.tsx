@@ -7,11 +7,7 @@ import { chatAgentUrl } from "@/lib/services/common/chat-agent-url"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
 import { alertPromptSuggestions, type AlertContext } from "./alert-context"
 import { AlertAttachmentCard } from "./alert-attachment-card"
-import {
-	widgetFixAutoPrompt,
-	widgetFixSuggestions,
-	type WidgetFixContext,
-} from "./widget-fix-context"
+import { widgetFixAutoPrompt, widgetFixSuggestions, type WidgetFixContext } from "./widget-fix-context"
 import { WidgetFixAttachmentCard } from "./widget-fix-attachment-card"
 import {
 	deriveAutoContexts,
@@ -184,13 +180,7 @@ export function ChatConversation({
 
 	const getInitialMessages = useMemo(
 		() =>
-			async ({
-				url,
-			}: {
-				agent: string
-				name: string
-				url?: string
-			}) => {
+			async ({ url }: { agent: string; name: string; url?: string }) => {
 				const token = await getToken()
 				const baseUrl = url ?? agent.getHttpUrl()
 				const getMessagesUrl = new URL(baseUrl)
@@ -282,8 +272,9 @@ export function ChatConversation({
 									Shared conversation
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									This shared conversation is unavailable or empty. It may have been deleted, or
-									belong to a different workspace than the one you're signed in to.
+									This shared conversation is unavailable or empty. It may have been
+									deleted, or belong to a different workspace than the one you're signed in
+									to.
 								</p>
 							</div>
 						) : isAlertMode ? (
@@ -302,8 +293,8 @@ export function ChatConversation({
 									Diagnosing widget…
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									Maple AI is reading the broken widget config and the validation error.
-									It will propose a corrected widget JSON for you to approve.
+									Maple AI is reading the broken widget config and the validation error. It
+									will propose a corrected widget JSON for you to approve.
 								</p>
 							</div>
 						) : (
@@ -399,7 +390,11 @@ export function ChatConversation({
 													const part = message.parts[i]!
 													if (part.type === "text") {
 														flushTools()
-														nodes.push(<RichText key={`text-${i}`}>{part.text}</RichText>)
+														nodes.push(
+															<RichText key={`text-${i}`}>
+																{part.text}
+															</RichText>,
+														)
 														continue
 													}
 													if (isToolPart(part)) {
@@ -485,7 +480,10 @@ export function ChatConversation({
 							disabled={isLoading}
 						/>
 						<PromptInputFooter>
-							<PromptInputSubmit status={status} disabled={isLoading && status !== "streaming"} />
+							<PromptInputSubmit
+								status={status}
+								disabled={isLoading && status !== "streaming"}
+							/>
 						</PromptInputFooter>
 					</PromptInput>
 				</div>

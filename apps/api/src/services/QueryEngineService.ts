@@ -124,74 +124,71 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				},
 			)
 
-			const bucketCachedExecute = Effect.fn("QueryEngineService.bucketCachedExecute")(
-				function* (
-					tenant: TenantContext,
-					request: QueryEngineExecuteRequest,
-					bucketSeconds: number,
-					range: TimeRangeBounds,
-				) {
-					if (request.query.kind !== "timeseries") {
-						return yield* legacyBlobCachedExecute(tenant, request)
-					}
-					const source = request.query.source
-					const perfStartMs = yield* Clock.currentTimeMillis
-					// Pin bucketSeconds onto the query so the fan-out's narrowed ranges
-					// don't let validateExecute recompute a smaller step — buckets must
-					// match the outer cache's step exactly.
-					const pinnedQuery = { ...request.query, bucketSeconds }
+			const bucketCachedExecute = Effect.fn("QueryEngineService.bucketCachedExecute")(function* (
+				tenant: TenantContext,
+				request: QueryEngineExecuteRequest,
+				bucketSeconds: number,
+				range: TimeRangeBounds,
+			) {
+				if (request.query.kind !== "timeseries") {
+					return yield* legacyBlobCachedExecute(tenant, request)
+				}
+				const source = request.query.source
+				const perfStartMs = yield* Clock.currentTimeMillis
+				// Pin bucketSeconds onto the query so the fan-out's narrowed ranges
+				// don't let validateExecute recompute a smaller step — buckets must
+				// match the outer cache's step exactly.
+				const pinnedQuery = { ...request.query, bucketSeconds }
 
-					const outcome = yield* bucketCache.getOrComputeBuckets(
-						{
-							orgId: tenant.orgId,
+				const outcome = yield* bucketCache.getOrComputeBuckets(
+					{
+						orgId: tenant.orgId,
+						query: pinnedQuery,
+						bucketSeconds,
+						startMs: range.startMs,
+						endMs: range.endMs,
+					},
+					({ startMs, endMs }) =>
+						executeImpl(tenant, {
+							...request,
 							query: pinnedQuery,
-							bucketSeconds,
-							startMs: range.startMs,
-							endMs: range.endMs,
-						},
-						({ startMs, endMs }) =>
-							executeImpl(tenant, {
-								...request,
-								query: pinnedQuery,
-								startTime: msToTinybirdDateTime(startMs),
-								endTime: msToTinybirdDateTime(endMs),
-							}).pipe(
-								Effect.map((response) =>
-									response.result.kind === "timeseries" ? response.result.data : [],
-								),
+							startTime: msToTinybirdDateTime(startMs),
+							endTime: msToTinybirdDateTime(endMs),
+						}).pipe(
+							Effect.map((response) =>
+								response.result.kind === "timeseries" ? response.result.data : [],
 							),
-					)
+						),
+				)
 
-					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsHit, outcome.bucketsHit)
-					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsMissed, outcome.bucketsMissed)
-					yield* Metric.update(
-						QueryEngineMetrics.bucketCacheMissingRanges,
-						outcome.missingRangeCount,
-					)
-					yield* recordCacheOutcome(outcome.bucketsMissed === 0)
-					yield* Effect.annotateCurrentSpan("cache.bucketsHit", outcome.bucketsHit)
-					yield* Effect.annotateCurrentSpan("cache.bucketsMissed", outcome.bucketsMissed)
-					yield* Effect.annotateCurrentSpan("cache.missingRangeCount", outcome.missingRangeCount)
-					yield* Metric.update(
-						QueryEngineMetrics.executeDurationMs,
-						(yield* Clock.currentTimeMillis) - perfStartMs,
-					)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsHit, outcome.bucketsHit)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsMissed, outcome.bucketsMissed)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheMissingRanges, outcome.missingRangeCount)
+				yield* recordCacheOutcome(outcome.bucketsMissed === 0)
+				yield* Effect.annotateCurrentSpan("cache.bucketsHit", outcome.bucketsHit)
+				yield* Effect.annotateCurrentSpan("cache.bucketsMissed", outcome.bucketsMissed)
+				yield* Effect.annotateCurrentSpan("cache.missingRangeCount", outcome.missingRangeCount)
+				yield* Metric.update(
+					QueryEngineMetrics.executeDurationMs,
+					(yield* Clock.currentTimeMillis) - perfStartMs,
+				)
 
-					return new QueryEngineExecuteResponse({
-						result: {
-							kind: "timeseries",
-							source,
-							data: outcome.points,
-						},
-					})
-				},
-			)
+				return new QueryEngineExecuteResponse({
+					result: {
+						kind: "timeseries",
+						source,
+						data: outcome.points,
+					},
+				})
+			})
 
-			const execute = Effect.fn("QueryEngineService.execute")(
-				function* (tenant: TenantContext, request: QueryEngineExecuteRequest) {
-					return yield* withTimeout(
-						Effect.gen(function* () {
-							if (!bucketCache.enabled || request.query.kind !== "timeseries") {
+			const execute = Effect.fn("QueryEngineService.execute")(function* (
+				tenant: TenantContext,
+				request: QueryEngineExecuteRequest,
+			) {
+				return yield* withTimeout(
+					Effect.gen(function* () {
+						if (!bucketCache.enabled || request.query.kind !== "timeseries") {
 							return yield* legacyBlobCachedExecute(tenant, request)
 						}
 
@@ -224,9 +221,8 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 							attributes: { orgId: tenant.orgId },
 						}),
 					),
-					)
-				},
-			)
+				)
+			})
 
 			// Bucket-cached evaluate: each alert rule re-queries a near-fully-
 			// overlapping window every tick, so route it through the same bucket
@@ -235,140 +231,137 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 			// alert staleness). The reducer/sampleCountStrategy are applied AFTER
 			// the fetch (unchanged), so the cache key is independent of them and two
 			// rules over the same query+window share buckets.
-			const bucketCachedEvaluate = Effect.fn("QueryEngineService.bucketCachedEvaluate")(
-				function* (
-					tenant: TenantContext,
-					request: QueryEngineEvaluateRequest,
-					bucketSeconds: number,
-					range: { readonly startMs: number; readonly endMs: number },
-				) {
-					yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
-					yield* Effect.annotateCurrentSpan("query.source", request.query.source)
-					yield* Effect.annotateCurrentSpan("query.reducer", request.reducer)
+			const bucketCachedEvaluate = Effect.fn("QueryEngineService.bucketCachedEvaluate")(function* (
+				tenant: TenantContext,
+				request: QueryEngineEvaluateRequest,
+				bucketSeconds: number,
+				range: { readonly startMs: number; readonly endMs: number },
+			) {
+				yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
+				yield* Effect.annotateCurrentSpan("query.source", request.query.source)
+				yield* Effect.annotateCurrentSpan("query.reducer", request.reducer)
 
-					// Pin bucketSeconds + an `__eval` discriminator so evaluate points
-					// (which encode value + sampleCount) never collide with dashboard
-					// execute points (value only) under the shared cache namespace.
-					const pinnedQuery = { ...request.query, bucketSeconds }
+				// Pin bucketSeconds + an `__eval` discriminator so evaluate points
+				// (which encode value + sampleCount) never collide with dashboard
+				// execute points (value only) under the shared cache namespace.
+				const pinnedQuery = { ...request.query, bucketSeconds }
 
-					const outcome = yield* bucketCache.getOrComputeBuckets(
-						{
-							orgId: tenant.orgId,
-							query: { __eval: true, query: pinnedQuery },
+				const outcome = yield* bucketCache.getOrComputeBuckets(
+					{
+						orgId: tenant.orgId,
+						query: { __eval: true, query: pinnedQuery },
+						bucketSeconds,
+						startMs: range.startMs,
+						endMs: range.endMs,
+					},
+					({ startMs, endMs }) =>
+						computeEvaluateBuckets(
+							warehouse,
+							tenant,
+							{
+								query: request.query,
+								startTime: msToTinybirdDateTime(startMs),
+								endTime: msToTinybirdDateTime(endMs),
+							},
 							bucketSeconds,
-							startMs: range.startMs,
-							endMs: range.endMs,
-						},
-						({ startMs, endMs }) =>
-							computeEvaluateBuckets(
-								warehouse,
-								tenant,
-								{
-									query: request.query,
-									startTime: msToTinybirdDateTime(startMs),
-									endTime: msToTinybirdDateTime(endMs),
-								},
-								bucketSeconds,
-							),
-					)
+						),
+				)
 
-					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsHit, outcome.bucketsHit)
-					yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsMissed, outcome.bucketsMissed)
-					yield* Metric.update(
-						QueryEngineMetrics.bucketCacheMissingRanges,
-						outcome.missingRangeCount,
-					)
-					yield* recordCacheOutcome(outcome.bucketsMissed === 0)
-					yield* Effect.annotateCurrentSpan("cache.bucketsHit", outcome.bucketsHit)
-					yield* Effect.annotateCurrentSpan("cache.bucketsMissed", outcome.bucketsMissed)
-					yield* Effect.annotateCurrentSpan("cache.missingRangeCount", outcome.missingRangeCount)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsHit, outcome.bucketsHit)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheBucketsMissed, outcome.bucketsMissed)
+				yield* Metric.update(QueryEngineMetrics.bucketCacheMissingRanges, outcome.missingRangeCount)
+				yield* recordCacheOutcome(outcome.bucketsMissed === 0)
+				yield* Effect.annotateCurrentSpan("cache.bucketsHit", outcome.bucketsHit)
+				yield* Effect.annotateCurrentSpan("cache.bucketsMissed", outcome.bucketsMissed)
+				yield* Effect.annotateCurrentSpan("cache.missingRangeCount", outcome.missingRangeCount)
 
-					const byGroup = decodeEvalPoints(outcome.points)
-					if (byGroup.size === 0) {
-						byGroup.set("all", [{ value: null, sampleCount: 0, hasData: false }])
-					}
-					const result = reducePerGroupObservations(byGroup, request.reducer)
-					yield* Effect.annotateCurrentSpan("result.groupCount", result.length)
-					return result
-				},
-			)
+				const byGroup = decodeEvalPoints(outcome.points)
+				if (byGroup.size === 0) {
+					byGroup.set("all", [{ value: null, sampleCount: 0, hasData: false }])
+				}
+				const result = reducePerGroupObservations(byGroup, request.reducer)
+				yield* Effect.annotateCurrentSpan("result.groupCount", result.length)
+				return result
+			})
 
-			const cachedEvaluate = Effect.fn("QueryEngineService.cachedEvaluate")(
-				function* (tenant: TenantContext, request: QueryEngineEvaluateRequest) {
-					return yield* withTimeout(
-						Effect.gen(function* () {
-							const source = request.query.source
-							const bucketable =
-								request.query.kind === "timeseries" &&
-								(source === "traces" || source === "logs" || source === "metrics")
+			const cachedEvaluate = Effect.fn("QueryEngineService.cachedEvaluate")(function* (
+				tenant: TenantContext,
+				request: QueryEngineEvaluateRequest,
+			) {
+				return yield* withTimeout(
+					Effect.gen(function* () {
+						const source = request.query.source
+						const bucketable =
+							request.query.kind === "timeseries" &&
+							(source === "traces" || source === "logs" || source === "metrics")
 
-							if (evalBucketCacheEnabled && bucketCache.enabled && bucketable) {
-								const startMs = toEpochMs(request.startTime)
-								const endMs = toEpochMs(request.endTime)
-								const bucketSeconds =
-									request.query.bucketSeconds ?? computeBucketSeconds(startMs, endMs)
-								if (
-									Number.isFinite(startMs) &&
-									Number.isFinite(endMs) &&
-									endMs > startMs &&
-									endMs - startMs >= bucketSeconds * 1000
-								) {
-									// Validate up front: the bucket path bypasses evaluateImpl,
-									// whose generator is what otherwise runs validateEvaluate.
-									yield* validateEvaluate(request)
-									return yield* bucketCachedEvaluate(tenant, request, bucketSeconds, {
-										startMs,
-										endMs,
-									})
-								}
+						if (evalBucketCacheEnabled && bucketCache.enabled && bucketable) {
+							const startMs = toEpochMs(request.startTime)
+							const endMs = toEpochMs(request.endTime)
+							const bucketSeconds =
+								request.query.bucketSeconds ?? computeBucketSeconds(startMs, endMs)
+							if (
+								Number.isFinite(startMs) &&
+								Number.isFinite(endMs) &&
+								endMs > startMs &&
+								endMs - startMs >= bucketSeconds * 1000
+							) {
+								// Validate up front: the bucket path bypasses evaluateImpl,
+								// whose generator is what otherwise runs validateEvaluate.
+								yield* validateEvaluate(request)
+								return yield* bucketCachedEvaluate(tenant, request, bucketSeconds, {
+									startMs,
+									endMs,
+								})
 							}
+						}
 
-							// Fallback: legacy 30s blob cache around the direct evaluate
-							// (tiny ranges, unsupported sources, or the kill switch off).
-							const key = buildEvaluateCacheKey(tenant.orgId, request)
-							const { value, hit } = yield* edgeCache.getOrCompute(
-								{ bucket: "qe-evaluate", key, ttlSeconds: 30 },
-								evaluateImpl(tenant, request),
-							)
-							yield* recordCacheOutcome(hit)
-							yield* Effect.annotateCurrentSpan("cache.hit", hit)
-							return value
-						}).pipe(
-							Effect.withSpan("QueryEngineService.cachedEvaluate", {
-								attributes: { orgId: tenant.orgId },
-							}),
-						),
-					)
-				},
-			)
+						// Fallback: legacy 30s blob cache around the direct evaluate
+						// (tiny ranges, unsupported sources, or the kill switch off).
+						const key = buildEvaluateCacheKey(tenant.orgId, request)
+						const { value, hit } = yield* edgeCache.getOrCompute(
+							{ bucket: "qe-evaluate", key, ttlSeconds: 30 },
+							evaluateImpl(tenant, request),
+						)
+						yield* recordCacheOutcome(hit)
+						yield* Effect.annotateCurrentSpan("cache.hit", hit)
+						return value
+					}).pipe(
+						Effect.withSpan("QueryEngineService.cachedEvaluate", {
+							attributes: { orgId: tenant.orgId },
+						}),
+					),
+				)
+			})
 
-			const cachedDirect = Effect.fn("QueryEngineService.cachedDirect")(
-				function* <A>(
-					tenant: TenantContext,
-					routeName: string,
-					payload: unknown,
-					effect: Effect.Effect<A, QueryEngineDirectError>,
-				) {
-					return yield* withTimeout(
-						Effect.gen(function* () {
-							const startMs = yield* Clock.currentTimeMillis
-							const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload)
-							const { value, hit } = yield* edgeCache.getOrCompute(
-								{ bucket: "qe-direct", key, ttlSeconds: 15 },
-								effect,
-							)
-							yield* recordCacheOutcome(hit)
-							yield* Effect.annotateCurrentSpan("cache.hit", hit)
-							yield* Metric.update(QueryEngineMetrics.executeDurationMs, (yield* Clock.currentTimeMillis) - startMs)
-							return value
-						}).pipe(
-							Effect.withSpan("QueryEngineService.cachedDirect", {
-								attributes: { orgId: tenant.orgId, routeName },
-							}),
-						),
-					)
-				},
-			)
+			const cachedDirect = Effect.fn("QueryEngineService.cachedDirect")(function* <A>(
+				tenant: TenantContext,
+				routeName: string,
+				payload: unknown,
+				effect: Effect.Effect<A, QueryEngineDirectError>,
+			) {
+				return yield* withTimeout(
+					Effect.gen(function* () {
+						const startMs = yield* Clock.currentTimeMillis
+						const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload)
+						const { value, hit } = yield* edgeCache.getOrCompute(
+							{ bucket: "qe-direct", key, ttlSeconds: 15 },
+							effect,
+						)
+						yield* recordCacheOutcome(hit)
+						yield* Effect.annotateCurrentSpan("cache.hit", hit)
+						yield* Metric.update(
+							QueryEngineMetrics.executeDurationMs,
+							(yield* Clock.currentTimeMillis) - startMs,
+						)
+						return value
+					}).pipe(
+						Effect.withSpan("QueryEngineService.cachedDirect", {
+							attributes: { orgId: tenant.orgId, routeName },
+						}),
+					),
+				)
+			})
 
 			const evaluateRawSql = (tenant: TenantContext, request: QueryEngineRawSqlEvaluateRequest) =>
 				withTimeout(

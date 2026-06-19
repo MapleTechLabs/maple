@@ -128,9 +128,7 @@ export function computeFingerprintInputs(args: {
 	let msgFallback = ""
 	if (fpFrames === "") {
 		const obj = tryParseJsonObject(args.statusMessage)
-		msgFallback = obj
-			? jsonSignature(obj)
-			: args.statusMessage.slice(0, 200).replace(MSG_REDACT_RE, "#")
+		msgFallback = obj ? jsonSignature(obj) : args.statusMessage.slice(0, 200).replace(MSG_REDACT_RE, "#")
 	}
 
 	const label = args.exceptionType !== "" ? args.exceptionType : statusLabel(args.statusMessage)

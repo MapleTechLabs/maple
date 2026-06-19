@@ -126,7 +126,9 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 							<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
 								<span className="flex min-w-0 items-center gap-1.5">
 									<GlobeIcon className="size-3.5 shrink-0 opacity-60" />
-									<span className="max-w-[18rem] truncate">{hostFromUrl(session.urlInitial)}</span>
+									<span className="max-w-[18rem] truncate">
+										{hostFromUrl(session.urlInitial)}
+									</span>
 								</span>
 								<span className="hidden items-center gap-1.5 sm:flex">
 									<DeviceIcon className="size-3.5 shrink-0 opacity-60" />
@@ -142,7 +144,11 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 						</div>
 
 						<div className="flex shrink-0 items-center gap-2.5 text-xs text-muted-foreground">
-							<Stat icon={<PulseIcon className="size-3.5" />} value={session.clickCount} title="clicks" />
+							<Stat
+								icon={<PulseIcon className="size-3.5" />}
+								value={session.clickCount}
+								title="clicks"
+							/>
 							<Stat
 								icon={<EyeIcon className="size-3.5" />}
 								value={session.pageViews || 1}

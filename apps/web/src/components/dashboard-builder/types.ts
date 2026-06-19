@@ -16,11 +16,12 @@ import type {
 
 // The domain schemas decode to deeply-readonly types; web widgets are mutable
 // React/builder state, so the derived types are unwrapped to mutable form.
-type DeepMutable<T> = T extends ReadonlyArray<infer U>
-	? Array<DeepMutable<U>>
-	: T extends object
-		? { -readonly [K in keyof T]: DeepMutable<T[K]> }
-		: T
+type DeepMutable<T> =
+	T extends ReadonlyArray<infer U>
+		? Array<DeepMutable<U>>
+		: T extends object
+			? { -readonly [K in keyof T]: DeepMutable<T[K]> }
+			: T
 
 // --- Time Range ---
 

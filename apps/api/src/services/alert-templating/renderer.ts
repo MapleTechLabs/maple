@@ -62,16 +62,13 @@ export const renderTemplate = (template: string, context: TemplateContext): Rend
 	)
 
 	// 2. Substitute remaining tokens.
-	const text = withConditionals.replace(
-		TOKEN,
-		(_match, key: string, fallback: string | undefined) => {
-			const value = context[key]
-			if (isPresent(value)) return value
-			if (fallback !== undefined) return fallback
-			missing.add(key)
-			return ""
-		},
-	)
+	const text = withConditionals.replace(TOKEN, (_match, key: string, fallback: string | undefined) => {
+		const value = context[key]
+		if (isPresent(value)) return value
+		if (fallback !== undefined) return fallback
+		missing.add(key)
+		return ""
+	})
 
 	return { text, missing: [...missing].sort() }
 }

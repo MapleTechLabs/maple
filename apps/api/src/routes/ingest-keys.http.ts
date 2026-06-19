@@ -14,10 +14,7 @@ export const HttpIngestKeysLive = HttpApiBuilder.group(MapleApi, "ingestKeys", (
 			.handle("get", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(
-						tenant.roles,
-						forbidden("Only org admins can view ingest keys"),
-					)
+					yield* requireAdmin(tenant.roles, forbidden("Only org admins can view ingest keys"))
 					return yield* ingestKeys.getOrCreate(tenant.orgId, tenant.userId)
 				}),
 			)

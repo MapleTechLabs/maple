@@ -32,8 +32,7 @@ const MIGRATION_ID = "0025-clickhouse-schema-version-rekey"
 
 // The `clickHouseProjectRevision` value that meant "ready" immediately before the
 // migration-version cutover (CH migrations 1–4). Pinned literal — see header.
-const CUTOVER_PROJECT_REVISION =
-	"019c3db4cf690e3748b302098cae4c9213d18c55355db9fc68ea44982c7a980a"
+const CUTOVER_PROJECT_REVISION = "019c3db4cf690e3748b302098cae4c9213d18c55355db9fc68ea44982c7a980a"
 // `clickHouseSchemaVersion` at cutover (latest migration version). Pinned literal.
 const CUTOVER_SCHEMA_VERSION = "4"
 

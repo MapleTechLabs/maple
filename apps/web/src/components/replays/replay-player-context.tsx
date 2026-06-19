@@ -154,10 +154,7 @@ function deriveMeta(events: unknown[]): DerivedMeta {
 			}
 		} else if (isIncremental && typeof ev.timestamp === "number") {
 			const ms = ev.timestamp - startTime
-			if (
-				source === IncrementalSource.MouseInteraction &&
-				ev.data?.type === MouseInteractions.Click
-			) {
+			if (source === IncrementalSource.MouseInteraction && ev.data?.type === MouseInteractions.Click) {
 				pushMarker("click", ms)
 			} else if (source === IncrementalSource.Input) {
 				pushMarker("input", ms)
@@ -268,8 +265,10 @@ export function ReplayPlayerProvider({
 	const mountRef = React.useRef<HTMLDivElement | null>(null)
 	const replayerRef = React.useRef<Replayer | null>(null)
 
-	const { recordedWidth, recordedHeight, startTime, actionMarkers, inactiveIntervals } =
-		React.useMemo(() => deriveMeta(events), [events])
+	const { recordedWidth, recordedHeight, startTime, actionMarkers, inactiveIntervals } = React.useMemo(
+		() => deriveMeta(events),
+		[events],
+	)
 
 	const [isPlaying, setIsPlaying] = React.useState(false)
 	const [finished, setFinished] = React.useState(false)
@@ -423,8 +422,7 @@ export function ReplayPlayerProvider({
 			if (replayer) {
 				const cur = replayer.getCurrentTime()
 				const gap =
-					skipInactiveRef.current &&
-					inactiveIntervals.find((iv) => cur >= iv.start && cur < iv.end)
+					skipInactiveRef.current && inactiveIntervals.find((iv) => cur >= iv.start && cur < iv.end)
 				if (gap && gap.end !== lastJumpedEnd) {
 					lastJumpedEnd = gap.end
 					// Explicit pause→play forces the engine to seek; play(offset) alone

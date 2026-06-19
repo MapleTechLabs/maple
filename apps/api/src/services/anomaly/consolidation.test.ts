@@ -103,10 +103,7 @@ describe("headlineSeverity", () => {
 	})
 
 	it("ignores resolved entries", () => {
-		const entries = [
-			entry(),
-			entry({ fingerprintHash: "fp2", severity: "critical", resolvedAt: nowMs }),
-		]
+		const entries = [entry(), entry({ fingerprintHash: "fp2", severity: "critical", resolvedAt: nowMs })]
 		expect(headlineSeverity(entries, "warning")).toBe("warning")
 	})
 
@@ -131,9 +128,9 @@ describe("canAttach", () => {
 	})
 
 	it("rejects fingerprints spiking long after the incident's onset", () => {
-		expect(
-			canAttach({ firstTriggeredAt: nowMs - 3 * 60 * 60 * 1000, lastReopenedAt: null }, nowMs),
-		).toBe(false)
+		expect(canAttach({ firstTriggeredAt: nowMs - 3 * 60 * 60 * 1000, lastReopenedAt: null }, nowMs)).toBe(
+			false,
+		)
 	})
 
 	it("restarts the window from a reopen", () => {
@@ -162,15 +159,15 @@ describe("shouldReopen", () => {
 	})
 
 	it("does not reopen past the window", () => {
-		expect(
-			shouldReopen(resolved("returned_to_baseline"), nowMs - REOPEN_WINDOW_MS - 1, nowMs),
-		).toBe(false)
+		expect(shouldReopen(resolved("returned_to_baseline"), nowMs - REOPEN_WINDOW_MS - 1, nowMs)).toBe(
+			false,
+		)
 	})
 
 	it("does not reopen an incident that is somehow still open", () => {
-		expect(
-			shouldReopen({ status: "open", resolveReason: null }, nowMs - 5 * 60 * 1000, nowMs),
-		).toBe(false)
+		expect(shouldReopen({ status: "open", resolveReason: null }, nowMs - 5 * 60 * 1000, nowMs)).toBe(
+			false,
+		)
 	})
 })
 

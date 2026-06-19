@@ -152,87 +152,84 @@ export function MetricsTable({
 		<div className={`space-y-4 ${waiting ? "opacity-60" : ""}`}>
 			<div className="rounded-md border overflow-auto">
 				<Table className="table-fixed">
-							<TableHeader>
-								<TableRow>
-									<TableHead className="w-[40%]">Metric Name</TableHead>
-									<TableHead className="w-[100px]">Type</TableHead>
-									<TableHead className="w-[120px]">Service</TableHead>
-									<TableHead className="w-[100px]">Points</TableHead>
-									<TableHead className="w-[100px]">Last Seen</TableHead>
+					<TableHeader>
+						<TableRow>
+							<TableHead className="w-[40%]">Metric Name</TableHead>
+							<TableHead className="w-[100px]">Type</TableHead>
+							<TableHead className="w-[120px]">Service</TableHead>
+							<TableHead className="w-[100px]">Points</TableHead>
+							<TableHead className="w-[100px]">Last Seen</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{metrics.map((metric) => {
+							const isSelected =
+								selectedMetric?.metricName === metric.metricName &&
+								selectedMetric?.metricType === metric.metricType &&
+								selectedMetric?.serviceName === metric.serviceName
+
+							return (
+								<TableRow
+									key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
+									className={`cursor-pointer ${isSelected ? "bg-muted" : "hover:bg-muted/50"}`}
+									onClick={() => onSelectMetric(isSelected ? null : metric)}
+								>
+									<TableCell>
+										<div className="flex min-w-0 flex-col gap-0.5">
+											<span
+												className="truncate font-mono text-xs"
+												title={metric.metricName}
+											>
+												{metric.metricName}
+											</span>
+											{metric.metricDescription && (
+												<span className="text-[10px] text-muted-foreground line-clamp-1">
+													{metric.metricDescription}
+												</span>
+											)}
+										</div>
+									</TableCell>
+									<TableCell className="hidden md:table-cell">
+										<MetricTypeBadge type={metric.metricType} />
+									</TableCell>
+									<TableCell className="hidden md:table-cell">
+										{metric.serviceName ? (
+											<Badge variant="outline" className="font-mono text-[10px]">
+												{metric.serviceName}
+											</Badge>
+										) : (
+											<span className="text-xs text-muted-foreground">-</span>
+										)}
+									</TableCell>
+									<TableCell className="hidden md:table-cell font-mono text-xs">
+										{formatNumber(metric.dataPointCount)}
+									</TableCell>
+									<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+										{formatTimeAgo(metric.lastSeen)}
+									</TableCell>
 								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{metrics.map((metric) => {
-									const isSelected =
-										selectedMetric?.metricName === metric.metricName &&
-										selectedMetric?.metricType === metric.metricType &&
-										selectedMetric?.serviceName === metric.serviceName
+							)
+						})}
+					</TableBody>
+				</Table>
+			</div>
 
-									return (
-										<TableRow
-											key={`${metric.metricName}-${metric.metricType}-${metric.serviceName}`}
-											className={`cursor-pointer ${isSelected ? "bg-muted" : "hover:bg-muted/50"}`}
-											onClick={() => onSelectMetric(isSelected ? null : metric)}
-										>
-											<TableCell>
-												<div className="flex min-w-0 flex-col gap-0.5">
-													<span
-														className="truncate font-mono text-xs"
-														title={metric.metricName}
-													>
-														{metric.metricName}
-													</span>
-													{metric.metricDescription && (
-														<span className="text-[10px] text-muted-foreground line-clamp-1">
-															{metric.metricDescription}
-														</span>
-													)}
-												</div>
-											</TableCell>
-											<TableCell className="hidden md:table-cell">
-												<MetricTypeBadge type={metric.metricType} />
-											</TableCell>
-											<TableCell className="hidden md:table-cell">
-												{metric.serviceName ? (
-													<Badge
-														variant="outline"
-														className="font-mono text-[10px]"
-													>
-														{metric.serviceName}
-													</Badge>
-												) : (
-													<span className="text-xs text-muted-foreground">-</span>
-												)}
-											</TableCell>
-											<TableCell className="hidden md:table-cell font-mono text-xs">
-												{formatNumber(metric.dataPointCount)}
-											</TableCell>
-											<TableCell className="hidden md:table-cell text-xs text-muted-foreground">
-												{formatTimeAgo(metric.lastSeen)}
-											</TableCell>
-										</TableRow>
-									)
-								})}
-							</TableBody>
-						</Table>
-					</div>
-
-					<div className="flex items-center gap-3 text-sm text-muted-foreground">
-						<span>
-							Showing {metrics.length} metrics
-							{hasMore ? " — more available" : ""}
-						</span>
-						{hasMore && (
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={waiting}
-								onClick={() => setLimit((current) => current + PAGE_SIZE)}
-							>
-								{waiting ? "Loading…" : "Load more"}
-							</Button>
-						)}
-					</div>
-				</div>
+			<div className="flex items-center gap-3 text-sm text-muted-foreground">
+				<span>
+					Showing {metrics.length} metrics
+					{hasMore ? " — more available" : ""}
+				</span>
+				{hasMore && (
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={waiting}
+						onClick={() => setLimit((current) => current + PAGE_SIZE)}
+					>
+						{waiting ? "Loading…" : "Load more"}
+					</Button>
+				)}
+			</div>
+		</div>
 	)
 }

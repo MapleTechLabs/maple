@@ -1,13 +1,6 @@
 import type { IconProps } from "./icon"
 
-const paths: ReadonlyArray<string> = [
-	"M7 15H8",
-	"M22 9H2",
-	"M2 18V6",
-	"M22 18V6",
-	"M4 4H20",
-	"M4 20H20",
-]
+const paths: ReadonlyArray<string> = ["M7 15H8", "M22 9H2", "M2 18V6", "M22 18V6", "M4 4H20", "M4 20H20"]
 
 function CreditCardIcon({ size = 24, className, ...props }: IconProps) {
 	return (

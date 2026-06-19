@@ -90,10 +90,7 @@ export const bestObservabilityTools: BestTool[] = [
 			"Traces, logs, and metrics in one app",
 			"ClickHouse storage for fast queries",
 		],
-		cons: [
-			"Self-hosting still means operating ClickHouse",
-			"Younger than the Grafana ecosystem",
-		],
+		cons: ["Self-hosting still means operating ClickHouse", "Younger than the Grafana ecosystem"],
 	},
 	{
 		rank: 4,
@@ -109,10 +106,7 @@ export const bestObservabilityTools: BestTool[] = [
 			"OpenTelemetry-native, ClickHouse-backed",
 			"Clean search-first UX",
 		],
-		cons: [
-			"Younger project, smaller community",
-			"Fewer prebuilt integrations than incumbents",
-		],
+		cons: ["Younger project, smaller community", "Fewer prebuilt integrations than incumbents"],
 	},
 	{
 		rank: 5,
@@ -128,10 +122,7 @@ export const bestObservabilityTools: BestTool[] = [
 			"Fast and simple to operate",
 			"Strong logs experience",
 		],
-		cons: [
-			"Tracing and metrics less mature than logs",
-			"Smaller community than Grafana or SigNoz",
-		],
+		cons: ["Tracing and metrics less mature than logs", "Smaller community than Grafana or SigNoz"],
 	},
 	{
 		rank: 6,
@@ -177,32 +168,26 @@ export const bestObservabilityTools: BestTool[] = [
 export const listicleFaqs: Array<{ question: string; answer: string }> = [
 	{
 		question: "What is the best open-source observability tool in 2026?",
-		answer:
-			"There's no single winner — it depends on how your team works. Maple is the strongest fit for OpenTelemetry-native teams that want AI-agent (MCP) workflows and usage-based pricing; Grafana's LGTM stack is best when you want maximum flexibility and don't mind operating several components; SigNoz is a great all-in-one OTel-native APM. Match the tool to the “Best for” line rather than the rank.",
+		answer: "There's no single winner — it depends on how your team works. Maple is the strongest fit for OpenTelemetry-native teams that want AI-agent (MCP) workflows and usage-based pricing; Grafana's LGTM stack is best when you want maximum flexibility and don't mind operating several components; SigNoz is a great all-in-one OTel-native APM. Match the tool to the “Best for” line rather than the rank.",
 	},
 	{
 		question: "Are open-source observability platforms production-ready?",
-		answer:
-			"Yes. Several are CNCF-graduated (Jaeger, Prometheus) and others run large production workloads today. Open source here means you can self-host, audit the code, and avoid vendor lock-in — not that the tools are experimental.",
+		answer: "Yes. Several are CNCF-graduated (Jaeger, Prometheus) and others run large production workloads today. Open source here means you can self-host, audit the code, and avoid vendor lock-in — not that the tools are experimental.",
 	},
 	{
 		question: "Why does OpenTelemetry matter when choosing an observability tool?",
-		answer:
-			"OpenTelemetry is the vendor-neutral standard for traces, logs, and metrics. Instrumenting with OpenTelemetry means you can switch backends without re-instrumenting your code, so OTel-native tools like Maple, SigNoz, and Uptrace avoid the lock-in of proprietary agents.",
+		answer: "OpenTelemetry is the vendor-neutral standard for traces, logs, and metrics. Instrumenting with OpenTelemetry means you can switch backends without re-instrumenting your code, so OTel-native tools like Maple, SigNoz, and Uptrace avoid the lock-in of proprietary agents.",
 	},
 	{
 		question: "Can I self-host all of these tools?",
-		answer:
-			"Yes — every tool in this roundup can be self-hosted. Maple, SigNoz, HyperDX, and Uptrace are ClickHouse-backed; the Grafana stack uses Loki/Tempo/Mimir; Jaeger and Prometheus are CNCF projects. Several also offer a managed cloud option if you'd rather not run the infrastructure.",
+		answer: "Yes — every tool in this roundup can be self-hosted. Maple, SigNoz, HyperDX, and Uptrace are ClickHouse-backed; the Grafana stack uses Loki/Tempo/Mimir; Jaeger and Prometheus are CNCF projects. Several also offer a managed cloud option if you'd rather not run the infrastructure.",
 	},
 	{
 		question: "Is open-source observability cheaper than SaaS tools like Datadog?",
-		answer:
-			"Often, yes — especially at scale, where SaaS per-host and per-GB pricing compounds. Self-hosting trades software fees for infrastructure and operational time. Tools with usage-based pricing or cheap object storage (Maple, OpenObserve) keep costs predictable without you operating everything yourself.",
+		answer: "Often, yes — especially at scale, where SaaS per-host and per-GB pricing compounds. Self-hosting trades software fees for infrastructure and operational time. Tools with usage-based pricing or cheap object storage (Maple, OpenObserve) keep costs predictable without you operating everything yourself.",
 	},
 	{
 		question: "Which open-source tool is best for AI agents?",
-		answer:
-			"Maple ships a first-class MCP (Model Context Protocol) server, so compatible AI agents can list services, search traces, find errors, and propose fixes directly against your telemetry — the most complete AI-agent story among the tools here.",
+		answer: "Maple ships a first-class MCP (Model Context Protocol) server, so compatible AI agents can list services, search traces, find errors, and propose fixes directly against your telemetry — the most complete AI-agent story among the tools here.",
 	},
 ]

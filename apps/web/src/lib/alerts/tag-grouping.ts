@@ -57,10 +57,7 @@ export function filterByTags<T>(
  * carries (label-style), and items with no tags collapse into a single
  * {@link UNTAGGED_KEY} group rendered last. Tagged groups are sorted by name.
  */
-export function groupByTag<T>(
-	items: readonly T[],
-	getTags: (item: T) => readonly string[],
-): TagGroup<T>[] {
+export function groupByTag<T>(items: readonly T[], getTags: (item: T) => readonly string[]): TagGroup<T>[] {
 	const tagged = new Map<string, T[]>()
 	const untagged: T[] = []
 

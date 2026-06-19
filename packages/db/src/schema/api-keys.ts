@@ -14,7 +14,9 @@ export const apiKeys = sqliteTable(
 		lastUsedAt: integer("last_used_at", { mode: "number" }),
 		expiresAt: integer("expires_at", { mode: "number" }),
 		metadataJson: text("metadata_json"),
-		kind: text("kind", { enum: ["standard", "mcp"] }).notNull().default("standard"),
+		kind: text("kind", { enum: ["standard", "mcp"] })
+			.notNull()
+			.default("standard"),
 		createdAt: integer("created_at", { mode: "number" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		createdByEmail: text("created_by_email"),

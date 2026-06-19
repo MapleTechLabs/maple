@@ -90,11 +90,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 	switch (variant) {
 		case "line":
 			return (
-				<svg
-					viewBox="0 0 100 100"
-					preserveAspectRatio="none"
-					className="h-full w-full p-1"
-				>
+				<svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full p-1">
 					<GridLines />
 					<TrendLine />
 				</svg>
@@ -102,17 +98,9 @@ function renderVariant(variant: ChartSkeletonVariant) {
 
 		case "area":
 			return (
-				<svg
-					viewBox="0 0 100 100"
-					preserveAspectRatio="none"
-					className="h-full w-full p-1"
-				>
+				<svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full p-1">
 					<GridLines />
-					<path
-						d={`${TREND} L 98 100 L 2 100 Z`}
-						fill={STROKE}
-						fillOpacity={0.1}
-					/>
+					<path d={`${TREND} L 98 100 L 2 100 Z`} fill={STROKE} fillOpacity={0.1} />
 					<TrendLine />
 				</svg>
 			)
@@ -205,11 +193,7 @@ function renderVariant(variant: ChartSkeletonVariant) {
 
 		case "gauge":
 			return (
-				<svg
-					viewBox="0 0 100 100"
-					preserveAspectRatio="xMidYMid meet"
-					className="h-full w-full"
-				>
+				<svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet" className="h-full w-full">
 					<path
 						d="M 26 79 A 34 34 0 1 1 74 79"
 						fill="none"

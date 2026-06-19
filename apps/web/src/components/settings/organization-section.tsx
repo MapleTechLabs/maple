@@ -73,7 +73,9 @@ export function OrganizationSection() {
 						<UserIcon size={20} />
 					</EmptyMedia>
 					<EmptyTitle>No organization</EmptyTitle>
-					<EmptyDescription>Select or create an organization to manage its settings.</EmptyDescription>
+					<EmptyDescription>
+						Select or create an organization to manage its settings.
+					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>
 		)
@@ -102,7 +104,9 @@ export function OrganizationSection() {
 		setIsDeleting(true)
 		const result = await deleteMutation({})
 		if (Exit.isSuccess(result)) {
-			const remaining = (userMemberships?.data ?? []).filter((m) => m.organization.id !== organization.id)
+			const remaining = (userMemberships?.data ?? []).filter(
+				(m) => m.organization.id !== organization.id,
+			)
 			const next = remaining[0]?.organization.id ?? null
 			try {
 				if (setActive) await setActive({ organization: next })
@@ -166,8 +170,8 @@ export function OrganizationSection() {
 					<CardTitle className="text-destructive">Danger Zone</CardTitle>
 					<CardDescription>
 						Permanently delete this organization, its dashboards, alerts, API keys, and all
-						associated data. Telemetry already sent to Maple will age out per its retention policy.
-						This cannot be undone.
+						associated data. Telemetry already sent to Maple will age out per its retention
+						policy. This cannot be undone.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -197,13 +201,14 @@ export function OrganizationSection() {
 						</AlertDialogMedia>
 						<AlertDialogTitle>Delete organization?</AlertDialogTitle>
 						<AlertDialogDescription>
-							All dashboards, alerts, API keys, ingest keys, and integrations for this org will be
-							permanently deleted. This cannot be undone.
+							All dashboards, alerts, API keys, ingest keys, and integrations for this org will
+							be permanently deleted. This cannot be undone.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<div className="space-y-2">
 						<Label htmlFor="org-delete-confirm" className="text-xs">
-							Type <span className="font-mono font-semibold">{organization.name}</span> to confirm.
+							Type <span className="font-mono font-semibold">{organization.name}</span> to
+							confirm.
 						</Label>
 						<Input
 							id="org-delete-confirm"

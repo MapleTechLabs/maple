@@ -85,7 +85,7 @@ Do **not** express a DDL change as a boot-time data-migration script — that sp
 across two runners (`runMigrations()` and `DatabaseD1Live.ts`) that have to be kept in sync
 by hand, which has caused a column to ship to one path but not the other.
 
-The data-migration path below is reserved strictly for transforms a DDL migration *cannot*
+The data-migration path below is reserved strictly for transforms a DDL migration _cannot_
 express — e.g. structurally rewriting a stored JSON blob (`dashboards.payloadJson`,
 `dashboardVersions.snapshotJson`). Those run as TypeScript scripts in
 `packages/db/src/migrations/`.

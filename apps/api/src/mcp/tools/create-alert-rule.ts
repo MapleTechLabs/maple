@@ -169,7 +169,7 @@ function buildAlertRuleRequest(
 		Match.when("raw_query", (): { error: string } | { draft?: unknown } => {
 			if (!params.raw_query_sql) {
 				return {
-					error: 'signal_type=raw_query requires raw_query_sql: ClickHouse SQL returning a numeric `value` column (optional `group`, `samples` columns). Must reference $__orgFilter and may use $__timeFilter(col), $__startTime, $__endTime, $__interval_s.',
+					error: "signal_type=raw_query requires raw_query_sql: ClickHouse SQL returning a numeric `value` column (optional `group`, `samples` columns). Must reference $__orgFilter and may use $__timeFilter(col), $__startTime, $__endTime, $__interval_s.",
 				}
 			}
 			if (!params.raw_query_sql.includes("$__orgFilter")) {

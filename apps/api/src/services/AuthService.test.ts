@@ -1,7 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Option, Redacted, Schema } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { makeGetCustomerData, makeLoginSelfHosted, makeResolveMcpTenant, makeResolveTenant } from "./AuthService"
+import {
+	makeGetCustomerData,
+	makeLoginSelfHosted,
+	makeResolveMcpTenant,
+	makeResolveTenant,
+} from "./AuthService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)

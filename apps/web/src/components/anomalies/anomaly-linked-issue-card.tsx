@@ -163,11 +163,21 @@ function IssueCardActions({
 }) {
 	return (
 		<div className="flex shrink-0 items-center gap-1.5">
-			<Button size="sm" variant="outline" render={<Link to="/errors/issues/$issueId" params={{ issueId }} />}>
+			<Button
+				size="sm"
+				variant="outline"
+				render={<Link to="/errors/issues/$issueId" params={{ issueId }} />}
+			>
 				Open issue
 				<ArrowRightIcon size={13} />
 			</Button>
-			<Button size="sm" variant="ghost" onClick={onOpenLinkDialog} disabled={busy} title="Link a different issue">
+			<Button
+				size="sm"
+				variant="ghost"
+				onClick={onOpenLinkDialog}
+				disabled={busy}
+				title="Link a different issue"
+			>
 				<LinkIcon size={13} />
 			</Button>
 			<Button size="sm" variant="ghost" onClick={onUnlink} disabled={busy} title="Unlink issue">

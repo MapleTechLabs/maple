@@ -39,11 +39,7 @@ const defaultTimeRange = (nowMillis: number) => {
 	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
-const knownTargetTypes: ReadonlySet<ServiceExternalTargetType> = new Set([
-	"http",
-	"messaging",
-	"rpc",
-])
+const knownTargetTypes: ReadonlySet<ServiceExternalTargetType> = new Set(["http", "messaging", "rpc"])
 
 function coerceTargetType(value: unknown): ServiceExternalTargetType {
 	return knownTargetTypes.has(value as ServiceExternalTargetType)

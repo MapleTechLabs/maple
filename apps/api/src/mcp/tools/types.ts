@@ -58,8 +58,7 @@ export const optionalNumberParam = (description: string) =>
 export const optionalBooleanParam = (description: string) =>
 	Schema.optional(Schema.Boolean).annotate({ description })
 
-export const requiredBooleanParam = (description: string) =>
-	Schema.Boolean.annotate({ description })
+export const requiredBooleanParam = (description: string) => Schema.Boolean.annotate({ description })
 
 /**
  * Create a validation error response with an optional usage example.

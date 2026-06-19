@@ -186,129 +186,129 @@ export function QueryBuilderLineChart({
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
 			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
 				<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
-				<CartesianGrid vertical={false} />
-				<XAxis
-					dataKey="bucket"
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
-				/>
-				<YAxis
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					width={80}
-					scale={logScale ? "log" : "auto"}
-					domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
-					allowDataOverflow={logScale || softMin != null || softMax != null}
-					tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
-				/>
+					<CartesianGrid vertical={false} />
+					<XAxis
+						dataKey="bucket"
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
+					/>
+					<YAxis
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						width={80}
+						scale={logScale ? "log" : "auto"}
+						domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
+						allowDataOverflow={logScale || softMin != null || softMax != null}
+						tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
+					/>
 
-				{tooltip !== "hidden" && (
-					<ChartTooltip
-						content={
-							<ChartTooltipContent
-								labelFormatter={(_, payload) => {
-									if (!payload?.[0]?.payload?.bucket) return ""
-									const bucket = payload[0].payload.bucket
-									return formatBucketLabel(bucket, axisContext, "tooltip")
-								}}
-								formatter={(value, name, item) => {
-									const nameStr = String(name)
-									const isIncomplete = nameStr.endsWith("_incomplete")
-									const baseKey = isIncomplete
-										? nameStr.replace(/_incomplete$/, "")
-										: nameStr
-									if (isIncomplete && item.payload?.[baseKey] != null) return null
-									if (!isIncomplete && value == null) return null
-									const label = labelByChartKey.get(baseKey) ?? baseKey
-									return (
-										<span className="flex items-center gap-2">
-											<span
-												className="shrink-0 size-2.5 rounded-[2px]"
-												style={{ backgroundColor: item.color }}
-											/>
-											<span className="text-muted-foreground">{label}</span>
-											<span className="font-mono font-medium">
-												{formatValueByUnit(asFiniteNumber(value), unit)}
+					{tooltip !== "hidden" && (
+						<ChartTooltip
+							content={
+								<ChartTooltipContent
+									labelFormatter={(_, payload) => {
+										if (!payload?.[0]?.payload?.bucket) return ""
+										const bucket = payload[0].payload.bucket
+										return formatBucketLabel(bucket, axisContext, "tooltip")
+									}}
+									formatter={(value, name, item) => {
+										const nameStr = String(name)
+										const isIncomplete = nameStr.endsWith("_incomplete")
+										const baseKey = isIncomplete
+											? nameStr.replace(/_incomplete$/, "")
+											: nameStr
+										if (isIncomplete && item.payload?.[baseKey] != null) return null
+										if (!isIncomplete && value == null) return null
+										const label = labelByChartKey.get(baseKey) ?? baseKey
+										return (
+											<span className="flex items-center gap-2">
+												<span
+													className="shrink-0 size-2.5 rounded-[2px]"
+													style={{ backgroundColor: item.color }}
+												/>
+												<span className="text-muted-foreground">{label}</span>
+												<span className="font-mono font-medium">
+													{formatValueByUnit(asFiniteNumber(value), unit)}
+												</span>
 											</span>
-										</span>
-									)
-								}}
-							/>
-						}
-					/>
-				)}
+										)
+									}}
+								/>
+							}
+						/>
+					)}
 
-				{showLegendBlock && legendPosition === "bottom" && (
-					<ChartLegend
-						verticalAlign="bottom"
-						height={legendHeight}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="bottom"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
-				{showLegendBlock && legendPosition === "right" && (
-					<ChartLegend
-						layout="vertical"
-						verticalAlign="middle"
-						align="right"
-						width={showStats ? 224 : 160}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="right"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
+					{showLegendBlock && legendPosition === "bottom" && (
+						<ChartLegend
+							verticalAlign="bottom"
+							height={legendHeight}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="bottom"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
+					{showLegendBlock && legendPosition === "right" && (
+						<ChartLegend
+							layout="vertical"
+							verticalAlign="middle"
+							align="right"
+							width={showStats ? 224 : 160}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="right"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
 
-				{thresholdReferenceLines(thresholds)}
+					{thresholdReferenceLines(thresholds)}
 
-				{seriesDefinitions.map((definition) => (
-					<Line
-						key={definition.chartKey}
-						type={curveType ?? "linear"}
-						dataKey={definition.chartKey}
-						stroke={`var(--color-${definition.chartKey})`}
-						strokeWidth={2}
-						dot={showPoints ? { r: 2 } : false}
-						hide={hiddenSeries.has(definition.chartKey)}
-						isAnimationActive={false}
-					/>
-				))}
-				{hasIncomplete &&
-					seriesDefinitions.map((definition) => (
+					{seriesDefinitions.map((definition) => (
 						<Line
-							key={`${definition.chartKey}_incomplete`}
+							key={definition.chartKey}
 							type={curveType ?? "linear"}
-							dataKey={`${definition.chartKey}_incomplete`}
+							dataKey={definition.chartKey}
 							stroke={`var(--color-${definition.chartKey})`}
 							strokeWidth={2}
-							strokeDasharray="4 4"
-							dot={false}
-							connectNulls
-							legendType="none"
+							dot={showPoints ? { r: 2 } : false}
 							hide={hiddenSeries.has(definition.chartKey)}
 							isAnimationActive={false}
 						/>
 					))}
-			</LineChart>
+					{hasIncomplete &&
+						seriesDefinitions.map((definition) => (
+							<Line
+								key={`${definition.chartKey}_incomplete`}
+								type={curveType ?? "linear"}
+								dataKey={`${definition.chartKey}_incomplete`}
+								stroke={`var(--color-${definition.chartKey})`}
+								strokeWidth={2}
+								strokeDasharray="4 4"
+								dot={false}
+								connectNulls
+								legendType="none"
+								hide={hiddenSeries.has(definition.chartKey)}
+								isAnimationActive={false}
+							/>
+						))}
+				</LineChart>
 			</ChartContainer>
 		</div>
 	)

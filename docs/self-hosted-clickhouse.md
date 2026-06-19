@@ -105,7 +105,7 @@ D1-backed ingest deployments must set `MAPLE_INGEST_KEY_ENCRYPTION_KEY` before r
 
 Operational caveats:
 
-- **Readiness keys on the migration version, which only the API marks.** The `schema_version` stored in D1 is written to `clickHouseSchemaVersion` **only** by the API's `applySchema` workflow (or by `schemaDiff` self-heal, below). A credential re-save *preserves* the prior value, and the standalone `clickhouse-cli` writes `_maple_schema_migrations` **on your CH server but never touches D1**. So an org whose ClickHouse schema was applied entirely via the CLI stays `schema_version`-stale and the gateway keeps routing to Tinybird, even though the cluster is fully migrated. Symptom: the dashboard (which reads CH whenever a settings row exists) shows collector-written data, but data sent through the public ingestor is invisible because it landed in Tinybird. (Before the migration-version cutover, a Tinybird-only change also tripped this; keying on the migration version removes that class of false-stale.)
+- **Readiness keys on the migration version, which only the API marks.** The `schema_version` stored in D1 is written to `clickHouseSchemaVersion` **only** by the API's `applySchema` workflow (or by `schemaDiff` self-heal, below). A credential re-save _preserves_ the prior value, and the standalone `clickhouse-cli` writes `_maple_schema_migrations` **on your CH server but never touches D1**. So an org whose ClickHouse schema was applied entirely via the CLI stays `schema_version`-stale and the gateway keeps routing to Tinybird, even though the cluster is fully migrated. Symptom: the dashboard (which reads CH whenever a settings row exists) shows collector-written data, but data sent through the public ingestor is invisible because it landed in Tinybird. (Before the migration-version cutover, a Tinybird-only change also tripped this; keying on the migration version removes that class of false-stale.)
 - **Self-heal:** calling `schemaDiff` (e.g. opening `Settings → BYO Backend → ClickHouse`, or `POST /orgClickHouseSettings/schemaDiff`) re-stamps `schema_version` to `clickHouseSchemaVersion` whenever the live schema is fully in sync (every diff entry `up_to_date`). This is the supported way to mark a CLI-applied org ready without forcing an Apply that has nothing to migrate. The read path also annotates a `clickhouse.schemaDrift` span attribute (`OrgClickHouseSettingsService.resolveRuntimeConfig`) — alert on it to catch stale orgs.
 - ClickHouse-routed frames never fall back to Tinybird. After the configured export retry budget is exhausted, the batch is dropped, the WAL cursor advances, and `ingest_clickhouse_export_dropped_total` records the datasource and final drop reason. Alert on any non-zero increase in that counter.
 - Password-authenticated ClickHouse endpoints must use `https://`; the gateway drops passworded `http://` targets before attaching `X-ClickHouse-Key`.
@@ -150,13 +150,13 @@ Apps then point `OTEL_EXPORTER_OTLP_ENDPOINT` at `http://maple-otel.maple.svc.cl
 1. `Settings → BYO Backend → ClickHouse → Download collector config` (or `GET /api/org-clickhouse-settings/collector-config`).
 2. Drop the YAML next to a copy of the image and run:
 
-   ```bash
-   docker run \
-     -e MAPLE_CLICKHOUSE_PASSWORD=$CH_PASSWORD \
-     -v ./collector.yaml:/etc/otel/config.yaml \
-     -p 4317:4317 -p 4318:4318 \
-     ghcr.io/makisuo/maple/otel-collector-maple:0.1.5
-   ```
+    ```bash
+    docker run \
+      -e MAPLE_CLICKHOUSE_PASSWORD=$CH_PASSWORD \
+      -v ./collector.yaml:/etc/otel/config.yaml \
+      -p 4317:4317 -p 4318:4318 \
+      ghcr.io/makisuo/maple/otel-collector-maple:0.1.5
+    ```
 
 The rendered YAML carries your `org_id`, ClickHouse URL/user/database, and the standard memory_limiter → k8sattributes → batch → maple pipeline. The password is referenced via `${env:MAPLE_CLICKHOUSE_PASSWORD}` so the file is safe to share.
 
@@ -184,13 +184,13 @@ If you have a small, well-defined ingest path (e.g. you control the SDK that emi
 
 ### Comparing the options
 
-| | Option A (Maple OTel Collector) | Option B (shim) | Option C (Tinybird-Local) | Option D (direct INSERTs) |
-|---|---|---|---|---|
-| Setup steps | 2 (schema + collector) | Many (write shim) | 2 | Application-specific |
-| Pre-built image | ✅ | — | ✅ (Tinybird's) | — |
-| Multi-tenant fan-out | ✅ via `org_id_from_resource_attribute` | manual | manual | application |
-| k8s pod metadata enrichment | ✅ baked into the image | manual | manual | manual |
-| Standard OTel collector pipeline shape | ✅ | partial | partial | n/a |
+|                                        | Option A (Maple OTel Collector)         | Option B (shim)   | Option C (Tinybird-Local) | Option D (direct INSERTs) |
+| -------------------------------------- | --------------------------------------- | ----------------- | ------------------------- | ------------------------- |
+| Setup steps                            | 2 (schema + collector)                  | Many (write shim) | 2                         | Application-specific      |
+| Pre-built image                        | ✅                                      | —                 | ✅ (Tinybird's)           | —                         |
+| Multi-tenant fan-out                   | ✅ via `org_id_from_resource_attribute` | manual            | manual                    | application               |
+| k8s pod metadata enrichment            | ✅ baked into the image                 | manual            | manual                    | manual                    |
+| Standard OTel collector pipeline shape | ✅                                      | partial           | partial                   | n/a                       |
 
 ## Schema source of truth
 
@@ -215,17 +215,17 @@ To add a new column, table, or materialized view:
 2. Run `bun run clickhouse:schema` to regenerate the snapshot.
 3. Create a new file `packages/domain/src/clickhouse/migrations/0002_<descriptive_name>.ts`:
 
-   ```typescript
-   export const migration_0002_add_foo_column = {
-     version: 2,
-     description: "Add Foo column to traces",
-     statements: [
-       "ALTER TABLE traces ADD COLUMN IF NOT EXISTS Foo String DEFAULT ''",
-       // For columns with non-trivial DEFAULT expressions that need backfilling:
-       "ALTER TABLE traces MATERIALIZE COLUMN Foo",
-     ],
-   } as const
-   ```
+    ```typescript
+    export const migration_0002_add_foo_column = {
+    	version: 2,
+    	description: "Add Foo column to traces",
+    	statements: [
+    		"ALTER TABLE traces ADD COLUMN IF NOT EXISTS Foo String DEFAULT ''",
+    		// For columns with non-trivial DEFAULT expressions that need backfilling:
+    		"ALTER TABLE traces MATERIALIZE COLUMN Foo",
+    	],
+    } as const
+    ```
 
 4. Append it to the `migrations` array in `packages/domain/src/clickhouse/migrations/index.ts`.
 

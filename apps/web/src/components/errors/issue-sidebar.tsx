@@ -1,12 +1,6 @@
 import type { ErrorIssueDocument, IssueSeverity, WorkflowState } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/lib/utils"
 import { getServiceColorClass } from "@maple/ui/lib/colors"
 
@@ -167,12 +161,18 @@ export function IssueSidebar({
 						{totalInWindow.toLocaleString()}
 					</span>
 				</Row>
-				<Row label="First seen" title={new Date(normalizeTimestampInput(issue.firstSeenAt)).toLocaleString()}>
+				<Row
+					label="First seen"
+					title={new Date(normalizeTimestampInput(issue.firstSeenAt)).toLocaleString()}
+				>
 					<span className="text-right tabular-nums text-muted-foreground">
 						{formatRelativeTime(issue.firstSeenAt)}
 					</span>
 				</Row>
-				<Row label="Last seen" title={new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}>
+				<Row
+					label="Last seen"
+					title={new Date(normalizeTimestampInput(issue.lastSeenAt)).toLocaleString()}
+				>
 					<span className="text-right tabular-nums text-foreground">
 						{formatRelativeTime(issue.lastSeenAt)}
 					</span>

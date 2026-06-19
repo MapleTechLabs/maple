@@ -105,7 +105,9 @@ export async function layoutServiceMapWithElk(
 			),
 			"elk.spacing.nodeNode": String(config.nodeGapY),
 			"elk.spacing.edgeNode": String(Math.max(16, Math.round(config.nodeGapY / 2))),
-			"elk.layered.spacing.edgeNodeBetweenLayers": String(Math.max(16, Math.round(config.nodeGapY / 2))),
+			"elk.layered.spacing.edgeNodeBetweenLayers": String(
+				Math.max(16, Math.round(config.nodeGapY / 2)),
+			),
 			"elk.spacing.componentComponent": String(config.componentGapY),
 			// Stable, source-order-aware crossing minimization for deterministic output.
 			"elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",

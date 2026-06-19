@@ -96,14 +96,14 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
 
 Add NuGet packages for libraries you use:
 
-| Library                  | Package                                          |
-| ------------------------ | ------------------------------------------------ |
-| ASP.NET Core             | `OpenTelemetry.Instrumentation.AspNetCore`       |
-| HttpClient               | `OpenTelemetry.Instrumentation.Http`             |
-| Entity Framework Core    | `OpenTelemetry.Instrumentation.EntityFrameworkCore` |
-| SqlClient                | `OpenTelemetry.Instrumentation.SqlClient`        |
-| StackExchange.Redis      | `OpenTelemetry.Instrumentation.StackExchangeRedis` |
-| gRPC client              | `OpenTelemetry.Instrumentation.GrpcNetClient`    |
+| Library               | Package                                             |
+| --------------------- | --------------------------------------------------- |
+| ASP.NET Core          | `OpenTelemetry.Instrumentation.AspNetCore`          |
+| HttpClient            | `OpenTelemetry.Instrumentation.Http`                |
+| Entity Framework Core | `OpenTelemetry.Instrumentation.EntityFrameworkCore` |
+| SqlClient             | `OpenTelemetry.Instrumentation.SqlClient`           |
+| StackExchange.Redis   | `OpenTelemetry.Instrumentation.StackExchangeRedis`  |
+| gRPC client           | `OpenTelemetry.Instrumentation.GrpcNetClient`       |
 
 Each registers via `.AddXxxInstrumentation()` on the `WithTracing` builder.
 

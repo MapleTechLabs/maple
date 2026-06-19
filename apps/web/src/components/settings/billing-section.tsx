@@ -42,9 +42,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 			<h2 className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/80">
 				{title}
 			</h2>
-			{subtitle && (
-				<span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>
-			)}
+			{subtitle && <span className="text-xs tabular-nums text-muted-foreground/60">{subtitle}</span>}
 		</div>
 	)
 }
@@ -77,8 +75,7 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 
 	if (!planStatus) return null
 
-	const statusValue =
-		isTrialing && daysRemaining != null ? `Trial · ${daysRemaining}d left` : "Active"
+	const statusValue = isTrialing && daysRemaining != null ? `Trial · ${daysRemaining}d left` : "Active"
 
 	return (
 		<div>
@@ -98,7 +95,8 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 			</div>
 			{isTrialing && trialEndsAt && (
 				<p className="mt-3 text-xs text-muted-foreground">
-					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to avoid charges.
+					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to
+					avoid charges.
 				</p>
 			)}
 		</div>

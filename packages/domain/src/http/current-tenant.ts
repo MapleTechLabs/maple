@@ -17,7 +17,9 @@ export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	authMode: AuthMode,
 }) {}
 
-export class Context extends EffectContext.Service<Context, TenantSchema>()("@maple/domain/http/CurrentTenant") {}
+export class Context extends EffectContext.Service<Context, TenantSchema>()(
+	"@maple/domain/http/CurrentTenant",
+) {}
 
 export class Authorization extends HttpApiMiddleware.Service<
 	Authorization,

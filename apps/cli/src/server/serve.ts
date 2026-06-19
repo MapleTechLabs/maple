@@ -55,7 +55,12 @@ type Signal = "traces" | "logs" | "metrics"
 
 /** Decode an OTLP request body (protobuf by default, JSON when content-type
  *  says so), transparently gunzipping a gzip content-encoding. */
-function decodeOtlp(signal: Signal, raw: Uint8Array, contentType: string, contentEncoding: string | null): unknown {
+function decodeOtlp(
+	signal: Signal,
+	raw: Uint8Array,
+	contentType: string,
+	contentEncoding: string | null,
+): unknown {
 	let bytes = raw
 	if (contentEncoding && contentEncoding.includes("gzip")) {
 		bytes = gunzipSync(raw)
@@ -100,13 +105,21 @@ async function ingest(db: Chdb, signal: Signal, req: Request): Promise<IngestRes
 	try {
 		decoded = decodeOtlp(signal, raw, contentType, contentEncoding)
 	} catch (error) {
-		return { response: text(`decode ${signal}: ${(error as Error).message}`, 400), accepted: 0, requestBytes }
+		return {
+			response: text(`decode ${signal}: ${(error as Error).message}`, 400),
+			accepted: 0,
+			requestBytes,
+		}
 	}
 	let batches: EncodedBatch[]
 	try {
 		batches = encodeFor(signal, decoded)
 	} catch (error) {
-		return { response: text(`encode ${signal}: ${(error as Error).message}`, 500), accepted: 0, requestBytes }
+		return {
+			response: text(`encode ${signal}: ${(error as Error).message}`, 500),
+			accepted: 0,
+			requestBytes,
+		}
 	}
 	let accepted = 0
 	for (const batch of batches) {
@@ -179,8 +192,16 @@ async function handleQuery(db: Chdb, req: Request): Promise<QueryResult> {
 	const durationMs = Math.round(performance.now() - started)
 	// chDB returns JSONEachRow (one JSON object per line). Wrap the lines into a
 	// JSON array without re-parsing each row.
-	const rows = out.split("\n").map((l) => l.trim()).filter((l) => l.length > 0)
-	return { response: text(`[${rows.join(",")}]`, 200, "application/json"), rowCount: rows.length, durationMs, sql }
+	const rows = out
+		.split("\n")
+		.map((l) => l.trim())
+		.filter((l) => l.length > 0)
+	return {
+		response: text(`[${rows.join(",")}]`, 200, "application/json"),
+		rowCount: rows.length,
+		durationMs,
+		sql,
+	}
 }
 
 function serveAsset(assets: AssetResolver, pathname: string): Response {
@@ -239,7 +260,9 @@ const ingestSpan = (runSpan: SpanRunner, db: Chdb, signal: Signal, req: Request)
 	runSpan(
 		recoverResponse(
 			Effect.gen(function* () {
-				const { response, accepted, requestBytes } = yield* Effect.promise(() => ingest(db, signal, req))
+				const { response, accepted, requestBytes } = yield* Effect.promise(() =>
+					ingest(db, signal, req),
+				)
 				yield* Effect.annotateCurrentSpan({
 					"http.request.body.size": requestBytes,
 					"maple.ingest.item_count": accepted,
@@ -264,7 +287,9 @@ const querySpan = (runSpan: SpanRunner, db: Chdb, req: Request): Promise<Respons
 	runSpan(
 		recoverResponse(
 			Effect.gen(function* () {
-				const { response, rowCount, durationMs, sql } = yield* Effect.promise(() => handleQuery(db, req))
+				const { response, rowCount, durationMs, sql } = yield* Effect.promise(() =>
+					handleQuery(db, req),
+				)
 				yield* Effect.annotateCurrentSpan({
 					"db.system.name": "clickhouse",
 					"db.duration_ms": durationMs,
@@ -322,7 +347,11 @@ export const startServer = (
 		const runSpan: SpanRunner = (effect) => telemetry.runPromise(effect)
 		const server = yield* Effect.acquireRelease(
 			Effect.sync(() =>
-				Bun.serve({ port: options.port, hostname: "127.0.0.1", fetch: makeFetch(db, options, runSpan) }),
+				Bun.serve({
+					port: options.port,
+					hostname: "127.0.0.1",
+					fetch: makeFetch(db, options, runSpan),
+				}),
 			),
 			(s) => Effect.sync(() => s.stop(true)),
 		)

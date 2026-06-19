@@ -86,7 +86,9 @@ function reshapeForLineChart(
 
 	return rows.map((row) => {
 		const out: Record<string, string | number> = {
-			bucket: String(row[bucketCol] instanceof Date ? (row[bucketCol] as Date).toISOString() : row[bucketCol]),
+			bucket: String(
+				row[bucketCol] instanceof Date ? (row[bucketCol] as Date).toISOString() : row[bucketCol],
+			),
 		}
 		for (const col of seriesCols) {
 			const value = row[col]

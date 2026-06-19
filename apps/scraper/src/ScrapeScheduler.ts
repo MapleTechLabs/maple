@@ -38,8 +38,7 @@ const hostFromUrl = (url: string): string => {
  * Fiber-map key: discovered sub-targets (PlanetScale branches) share one
  * target id, so each `(id, subTargetKey)` pair runs its own scrape loop.
  */
-const targetKey = (target: InternalScrapeTarget): string =>
-	`${target.id}:${target.subTargetKey ?? ""}`
+const targetKey = (target: InternalScrapeTarget): string => `${target.id}:${target.subTargetKey ?? ""}`
 
 /** Restart a target's loop when anything affecting its scrape output changes. */
 const targetFingerprint = (target: InternalScrapeTarget): string =>
@@ -74,7 +73,9 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 
 			const enqueueResult = (result: ScrapeResultReport) =>
 				Ref.update(resultsRef, (buffered) =>
-					buffered.length >= MAX_BUFFERED_RESULTS ? [...buffered.slice(1), result] : [...buffered, result],
+					buffered.length >= MAX_BUFFERED_RESULTS
+						? [...buffered.slice(1), result]
+						: [...buffered, result],
 				)
 
 			interface ScrapeOutcome {
@@ -96,7 +97,9 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 						error: outcome.error,
 						subTargetKey: target.subTargetKey,
 						durationMs,
-						...(outcome.samplesScraped !== undefined ? { samplesScraped: outcome.samplesScraped } : {}),
+						...(outcome.samplesScraped !== undefined
+							? { samplesScraped: outcome.samplesScraped }
+							: {}),
 						...(outcome.samplesPostMetricRelabeling !== undefined
 							? { samplesPostMetricRelabeling: outcome.samplesPostMetricRelabeling }
 							: {}),
@@ -148,7 +151,10 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 							})
 							return {
 								error: null,
-								samplesScraped: parsed.families.reduce((total, family) => total + family.samples.length, 0),
+								samplesScraped: parsed.families.reduce(
+									(total, family) => total + family.samples.length,
+									0,
+								),
 								samplesPostMetricRelabeling:
 									converted.dataPointCounts.sum +
 									converted.dataPointCounts.gauge +
@@ -188,7 +194,9 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 			// Schedule.fixed keeps start-to-start spacing at the configured
 			// interval (scrape duration does not drift the cadence).
 			const targetLoop = (target: InternalScrapeTarget) =>
-				scrapeOnce(target).pipe(Effect.repeat(Schedule.fixed(Duration.seconds(target.scrapeIntervalSeconds))))
+				scrapeOnce(target).pipe(
+					Effect.repeat(Schedule.fixed(Duration.seconds(target.scrapeIntervalSeconds))),
+				)
 
 			const reconcile = Effect.gen(function* () {
 				const targets = yield* api.listTargets()
@@ -236,7 +244,10 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 								[...results, ...buffered].slice(-MAX_BUFFERED_RESULTS),
 							)
 							yield* Effect.logWarning("Failed to report scrape results").pipe(
-								Effect.annotateLogs({ error: error.message, bufferedResults: results.length }),
+								Effect.annotateLogs({
+									error: error.message,
+									bufferedResults: results.length,
+								}),
 							)
 						}),
 					),

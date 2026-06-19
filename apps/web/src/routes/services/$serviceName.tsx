@@ -230,12 +230,7 @@ interface OverviewTabProps {
 	environments?: string[]
 }
 
-function OverviewTab({
-	serviceName,
-	effectiveStartTime,
-	effectiveEndTime,
-	environments,
-}: OverviewTabProps) {
+function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
 	const detailResult = useRetainedRefreshableResultValue(
 		getCustomChartServiceDetailResultAtom({
 			data: {

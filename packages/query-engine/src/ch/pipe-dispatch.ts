@@ -561,7 +561,9 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							matchModes:
-								str("span_name_match_mode") === "contains" ? { spanName: "contains" } : undefined,
+								str("span_name_match_mode") === "contains"
+									? { spanName: "contains" }
+									: undefined,
 							errorsOnly: bool("has_error"),
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),

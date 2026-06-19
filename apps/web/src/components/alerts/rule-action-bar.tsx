@@ -119,11 +119,7 @@ function ValidationSummary({
 	}
 	const summary = visibleIssues.join(", ") + (hiddenCount > 0 ? ` +${hiddenCount} more` : "")
 	return (
-		<span
-			className={cn(
-				"flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground",
-			)}
-		>
+		<span className={cn("flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground")}>
 			<CircleWarningIcon size={14} className="shrink-0 text-warning" />
 			<span className="truncate">
 				Missing: <span className="text-foreground">{summary}</span>

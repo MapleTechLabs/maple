@@ -108,9 +108,11 @@ Pattern (see `apps/api/src/routes/query-engine.http.ts` and `apps/api/src/servic
     	startTime, // ISO or Tinybird datetime string — resolveParam() quotes it
     	endTime,
     })
-    const rows = yield * warehouse
-    	.sqlQuery(tenant, compiled.sql, { profile: "list", context: "myQuery" })
-    	.pipe(Effect.mapError(mapTinybirdError))
+    const rows =
+    	yield *
+    	warehouse
+    		.sqlQuery(tenant, compiled.sql, { profile: "list", context: "myQuery" })
+    		.pipe(Effect.mapError(mapTinybirdError))
     const typedRows = compiled.castRows(rows)
     ```
 4. **`sqlQuery` enforces `OrgId` scoping** — every query must include an `OrgId` filter (enforced by `WarehouseQueryService`). DSL queries satisfy this via `$.OrgId.eq(param.string("orgId"))` in their `.where()`.

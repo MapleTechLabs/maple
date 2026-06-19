@@ -126,8 +126,7 @@ function SettingsLink({ children, className }: { children: React.ReactNode; clas
 			to="/settings"
 			search={{ tab: "ingestion" }}
 			className={
-				className ??
-				"font-medium text-foreground underline underline-offset-2 hover:no-underline"
+				className ?? "font-medium text-foreground underline underline-offset-2 hover:no-underline"
 			}
 		>
 			{children}

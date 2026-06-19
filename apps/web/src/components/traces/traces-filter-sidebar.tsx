@@ -48,9 +48,7 @@ export function TracesFilterSidebarView({
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <LoadingState />)
-		.onError((error) => (
-			<FilterSidebarError message={formatBackendError(error).description} />
-		))
+		.onError((error) => <FilterSidebarError message={formatBackendError(error).description} />)
 		.onSuccess((facetsResponse, result) => {
 			const facets = facetsResponse.data
 

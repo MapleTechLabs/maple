@@ -75,55 +75,48 @@ export interface MapleConfigShape {
 	/** Remove the stored token (used by `maple logout`). */
 	readonly clearToken: () => Effect.Effect<void, PlatformError.PlatformError>
 	/** Pin the default mode (used by `maple use local|remote`). */
-	readonly setDefaultMode: (
-		mode: "local" | "remote",
-	) => Effect.Effect<void, PlatformError.PlatformError>
+	readonly setDefaultMode: (mode: "local" | "remote") => Effect.Effect<void, PlatformError.PlatformError>
 	/** Drop the pinned default mode, reverting to auto-detect (`maple use auto`). */
 	readonly clearDefaultMode: () => Effect.Effect<void, PlatformError.PlatformError>
 	/** Stamp the update-check timestamp (always) and the latest seen tag (when
 	 *  provided — omitted on a failed probe so the cached version is preserved). */
-	readonly recordUpdateCheck: (
-		latestTag?: string,
-	) => Effect.Effect<void, PlatformError.PlatformError>
+	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, PlatformError.PlatformError>
 }
 
-export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>()(
-	"@maple/cli/MapleConfig",
-	{
-		make: Effect.gen(function* () {
-			const fs = yield* FileSystem
-			const stored = yield* readStored(fs)
-			const env = process.env
-			return {
-				apiUrl: env.MAPLE_API_URL ?? stored.apiUrl,
-				token: env.MAPLE_API_TOKEN ?? stored.token,
-				orgId: env.MAPLE_ORG_ID ?? stored.orgId,
-				localUrl: env.MAPLE_LOCAL_URL ?? DEFAULT_LOCAL_URL,
-				defaultMode: stored.defaultMode,
-				defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
-				lastUpdateCheck: stored.lastUpdateCheck,
-				latestKnownVersion: stored.latestKnownVersion,
-				write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
-				clearToken: () =>
-					writeMerged(fs, (cur) => {
-						const { token: _token, ...rest } = cur
-						return rest
-					}),
-				setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
-				clearDefaultMode: () =>
-					writeMerged(fs, (cur) => {
-						const { defaultMode: _mode, ...rest } = cur
-						return rest
-					}),
-				recordUpdateCheck: (latestTag) =>
-					writeMerged(fs, (cur) => ({
-						...cur,
-						lastUpdateCheck: new Date().toISOString(),
-						...(latestTag ? { latestKnownVersion: latestTag } : {}),
-					})),
-			} satisfies MapleConfigShape
-		}),
-	},
-) {
+export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>()("@maple/cli/MapleConfig", {
+	make: Effect.gen(function* () {
+		const fs = yield* FileSystem
+		const stored = yield* readStored(fs)
+		const env = process.env
+		return {
+			apiUrl: env.MAPLE_API_URL ?? stored.apiUrl,
+			token: env.MAPLE_API_TOKEN ?? stored.token,
+			orgId: env.MAPLE_ORG_ID ?? stored.orgId,
+			localUrl: env.MAPLE_LOCAL_URL ?? DEFAULT_LOCAL_URL,
+			defaultMode: stored.defaultMode,
+			defaultApiUrl: env.MAPLE_API_URL ?? DEFAULT_API_URL,
+			lastUpdateCheck: stored.lastUpdateCheck,
+			latestKnownVersion: stored.latestKnownVersion,
+			write: (next) => writeMerged(fs, (cur) => ({ ...cur, ...next })),
+			clearToken: () =>
+				writeMerged(fs, (cur) => {
+					const { token: _token, ...rest } = cur
+					return rest
+				}),
+			setDefaultMode: (mode) => writeMerged(fs, (cur) => ({ ...cur, defaultMode: mode })),
+			clearDefaultMode: () =>
+				writeMerged(fs, (cur) => {
+					const { defaultMode: _mode, ...rest } = cur
+					return rest
+				}),
+			recordUpdateCheck: (latestTag) =>
+				writeMerged(fs, (cur) => ({
+					...cur,
+					lastUpdateCheck: new Date().toISOString(),
+					...(latestTag ? { latestKnownVersion: latestTag } : {}),
+				})),
+		} satisfies MapleConfigShape
+	}),
+}) {
 	static readonly layer = Layer.effect(this, this.make)
 }

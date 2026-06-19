@@ -175,33 +175,11 @@ export function QueryBuilderAreaChart({
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
 			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
 				<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
-				<defs>
-					{seriesDefinitions.map((definition) => (
-						<linearGradient
-							key={definition.chartKey}
-							id={`fill-${definition.chartKey}`}
-							x1="0"
-							y1="0"
-							x2="0"
-							y2="1"
-						>
-							<stop
-								offset="5%"
-								stopColor={`var(--color-${definition.chartKey})`}
-								stopOpacity={0.8}
-							/>
-							<stop
-								offset="95%"
-								stopColor={`var(--color-${definition.chartKey})`}
-								stopOpacity={0.1}
-							/>
-						</linearGradient>
-					))}
-					{hasIncomplete &&
-						seriesDefinitions.map((definition) => (
+					<defs>
+						{seriesDefinitions.map((definition) => (
 							<linearGradient
-								key={`${definition.chartKey}_incomplete`}
-								id={`fill-${definition.chartKey}_incomplete`}
+								key={definition.chartKey}
+								id={`fill-${definition.chartKey}`}
 								x1="0"
 								y1="0"
 								x2="0"
@@ -210,144 +188,166 @@ export function QueryBuilderAreaChart({
 								<stop
 									offset="5%"
 									stopColor={`var(--color-${definition.chartKey})`}
-									stopOpacity={0.15}
+									stopOpacity={0.8}
 								/>
 								<stop
 									offset="95%"
 									stopColor={`var(--color-${definition.chartKey})`}
-									stopOpacity={0}
+									stopOpacity={0.1}
 								/>
 							</linearGradient>
 						))}
-				</defs>
-				<CartesianGrid vertical={false} />
-				<XAxis
-					dataKey="bucket"
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
-				/>
-				<YAxis
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					width={80}
-					scale={logScale ? "log" : "auto"}
-					domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
-					allowDataOverflow={logScale || softMin != null || softMax != null}
-					tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
-				/>
+						{hasIncomplete &&
+							seriesDefinitions.map((definition) => (
+								<linearGradient
+									key={`${definition.chartKey}_incomplete`}
+									id={`fill-${definition.chartKey}_incomplete`}
+									x1="0"
+									y1="0"
+									x2="0"
+									y2="1"
+								>
+									<stop
+										offset="5%"
+										stopColor={`var(--color-${definition.chartKey})`}
+										stopOpacity={0.15}
+									/>
+									<stop
+										offset="95%"
+										stopColor={`var(--color-${definition.chartKey})`}
+										stopOpacity={0}
+									/>
+								</linearGradient>
+							))}
+					</defs>
+					<CartesianGrid vertical={false} />
+					<XAxis
+						dataKey="bucket"
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
+					/>
+					<YAxis
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						width={80}
+						scale={logScale ? "log" : "auto"}
+						domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
+						allowDataOverflow={logScale || softMin != null || softMax != null}
+						tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
+					/>
 
-				{tooltip !== "hidden" && (
-					<ChartTooltip
-						content={
-							<ChartTooltipContent
-								labelFormatter={(_, payload) => {
-									if (!payload?.[0]?.payload?.bucket) return ""
-									return formatBucketLabel(
-										payload[0].payload.bucket,
-										axisContext,
-										"tooltip",
-									)
-								}}
-								formatter={(value, name, item) => {
-									const nameStr = String(name)
-									const isIncomplete = nameStr.endsWith("_incomplete")
-									const baseKey = isIncomplete
-										? nameStr.replace(/_incomplete$/, "")
-										: nameStr
-									if (isIncomplete && item.payload?.[baseKey] != null) return null
-									if (!isIncomplete && value == null) return null
-									const label = labelByChartKey.get(baseKey) ?? baseKey
-									return (
-										<span className="flex items-center gap-2">
-											<span
-												className="shrink-0 size-2.5 rounded-[2px]"
-												style={{ backgroundColor: item.color }}
-											/>
-											<span className="text-muted-foreground">{label}</span>
-											<span className="font-mono font-medium">
-												{formatValueByUnit(asFiniteNumber(value), unit)}
+					{tooltip !== "hidden" && (
+						<ChartTooltip
+							content={
+								<ChartTooltipContent
+									labelFormatter={(_, payload) => {
+										if (!payload?.[0]?.payload?.bucket) return ""
+										return formatBucketLabel(
+											payload[0].payload.bucket,
+											axisContext,
+											"tooltip",
+										)
+									}}
+									formatter={(value, name, item) => {
+										const nameStr = String(name)
+										const isIncomplete = nameStr.endsWith("_incomplete")
+										const baseKey = isIncomplete
+											? nameStr.replace(/_incomplete$/, "")
+											: nameStr
+										if (isIncomplete && item.payload?.[baseKey] != null) return null
+										if (!isIncomplete && value == null) return null
+										const label = labelByChartKey.get(baseKey) ?? baseKey
+										return (
+											<span className="flex items-center gap-2">
+												<span
+													className="shrink-0 size-2.5 rounded-[2px]"
+													style={{ backgroundColor: item.color }}
+												/>
+												<span className="text-muted-foreground">{label}</span>
+												<span className="font-mono font-medium">
+													{formatValueByUnit(asFiniteNumber(value), unit)}
+												</span>
 											</span>
-										</span>
-									)
-								}}
-							/>
-						}
-					/>
-				)}
+										)
+									}}
+								/>
+							}
+						/>
+					)}
 
-				{showLegendBlock && legendPosition === "bottom" && (
-					<ChartLegend
-						verticalAlign="bottom"
-						height={legendHeight}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="bottom"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
-				{showLegendBlock && legendPosition === "right" && (
-					<ChartLegend
-						layout="vertical"
-						verticalAlign="middle"
-						align="right"
-						width={showStats ? 224 : 160}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="right"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
+					{showLegendBlock && legendPosition === "bottom" && (
+						<ChartLegend
+							verticalAlign="bottom"
+							height={legendHeight}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="bottom"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
+					{showLegendBlock && legendPosition === "right" && (
+						<ChartLegend
+							layout="vertical"
+							verticalAlign="middle"
+							align="right"
+							width={showStats ? 224 : 160}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="right"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
 
-				{thresholdReferenceLines(thresholds)}
+					{thresholdReferenceLines(thresholds)}
 
-				{seriesDefinitions.map((definition) => (
-					<Area
-						key={definition.chartKey}
-						type={curveType ?? "linear"}
-						dataKey={definition.chartKey}
-						stroke={`var(--color-${definition.chartKey})`}
-						fill={`url(#fill-${definition.chartKey})`}
-						strokeWidth={2}
-						hide={hiddenSeries.has(definition.chartKey)}
-						isAnimationActive={false}
-						{...(stacked ? { stackId: "a" } : {})}
-					/>
-				))}
-				{hasIncomplete &&
-					seriesDefinitions.map((definition) => (
+					{seriesDefinitions.map((definition) => (
 						<Area
-							key={`${definition.chartKey}_incomplete`}
+							key={definition.chartKey}
 							type={curveType ?? "linear"}
-							dataKey={`${definition.chartKey}_incomplete`}
+							dataKey={definition.chartKey}
 							stroke={`var(--color-${definition.chartKey})`}
-							fill={`url(#fill-${definition.chartKey}_incomplete)`}
+							fill={`url(#fill-${definition.chartKey})`}
 							strokeWidth={2}
-							strokeDasharray="4 4"
-							dot={false}
-							connectNulls
-							legendType="none"
 							hide={hiddenSeries.has(definition.chartKey)}
 							isAnimationActive={false}
+							{...(stacked ? { stackId: "a" } : {})}
 						/>
 					))}
-			</AreaChart>
+					{hasIncomplete &&
+						seriesDefinitions.map((definition) => (
+							<Area
+								key={`${definition.chartKey}_incomplete`}
+								type={curveType ?? "linear"}
+								dataKey={`${definition.chartKey}_incomplete`}
+								stroke={`var(--color-${definition.chartKey})`}
+								fill={`url(#fill-${definition.chartKey}_incomplete)`}
+								strokeWidth={2}
+								strokeDasharray="4 4"
+								dot={false}
+								connectNulls
+								legendType="none"
+								hide={hiddenSeries.has(definition.chartKey)}
+								isAnimationActive={false}
+							/>
+						))}
+				</AreaChart>
 			</ChartContainer>
 		</div>
 	)

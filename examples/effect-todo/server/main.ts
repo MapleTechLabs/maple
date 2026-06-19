@@ -79,7 +79,9 @@ console.log(`🌳  Todo API listening on http://localhost:${server.port}`)
 console.log(`    telemetry → ${process.env.MAPLE_ENDPOINT ?? "http://127.0.0.1:4318"} (run \`maple start\`)`)
 
 const shutdown = () => {
-	void dispose().finally(() => server.stop(true)).finally(() => process.exit(0))
+	void dispose()
+		.finally(() => server.stop(true))
+		.finally(() => process.exit(0))
 }
 process.on("SIGINT", shutdown)
 process.on("SIGTERM", shutdown)

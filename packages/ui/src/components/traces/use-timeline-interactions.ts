@@ -191,8 +191,13 @@ export function useTimelineInteractions({
 		const el = bodyRef.current
 		if (!el) return
 		const handler = (e: WheelEvent) => {
-			const { sidebarWidth: sw, viewport: vp, traceStartMs: ts, traceEndMs: te, dispatch: dsp } =
-				cfgRef.current
+			const {
+				sidebarWidth: sw,
+				viewport: vp,
+				traceStartMs: ts,
+				traceEndMs: te,
+				dispatch: dsp,
+			} = cfgRef.current
 			const rect = el.getBoundingClientRect()
 			const x = e.clientX - rect.left
 			if (x < sw) return // over the sidebar → let rows scroll natively

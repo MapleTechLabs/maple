@@ -49,7 +49,10 @@ export const makeRemoteWarehouseExecutorShape = (
 						return { data: json.data ?? [] }
 					} finally {
 						// Server-side SQL isn't returned; log the pipe + params instead.
-						debugLog(`${pipe} · ${Math.round(performance.now() - started)}ms`, JSON.stringify(params))
+						debugLog(
+							`${pipe} · ${Math.round(performance.now() - started)}ms`,
+							JSON.stringify(params),
+						)
 					}
 				},
 				catch: (error) =>
@@ -58,9 +61,7 @@ export const makeRemoteWarehouseExecutorShape = (
 						pipe,
 					}),
 			}).pipe(
-				Effect.tap((result) =>
-					Effect.annotateCurrentSpan({ "result.rowCount": result.data.length }),
-				),
+				Effect.tap((result) => Effect.annotateCurrentSpan({ "result.rowCount": result.data.length })),
 				Effect.withSpan("warehouse.query", {
 					kind: "client",
 					attributes: {

@@ -64,9 +64,7 @@ describe("org_recommendation_issues migration", () => {
 			status: "open",
 		}
 		await db.insert(orgRecommendationIssues).values({ id: "issue-1", ...row })
-		await expect(
-			db.insert(orgRecommendationIssues).values({ id: "issue-2", ...row }),
-		).rejects.toThrow()
+		await expect(db.insert(orgRecommendationIssues).values({ id: "issue-2", ...row })).rejects.toThrow()
 
 		client.close()
 	})

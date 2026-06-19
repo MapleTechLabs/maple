@@ -13,24 +13,24 @@ This page is the complete surface. For a guided walkthrough, start with [Maple L
 
 These are accepted by every command (position-independent — `maple --local traces` and `maple traces --local` both work):
 
-| Flag | Description |
-| --- | --- |
-| `--local` | Force local mode (requires a running `maple start`) |
-| `--remote` | Force remote mode (requires `maple login`) |
-| `--debug` | Print the compiled SQL and per-query timing to stderr (stdout stays clean JSON) |
+| Flag                     | Description                                                                       |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `--local`                | Force local mode (requires a running `maple start`)                               |
+| `--remote`               | Force remote mode (requires `maple login`)                                        |
+| `--debug`                | Print the compiled SQL and per-query timing to stderr (stdout stays clean JSON)   |
 | `--format <json\|table>` | Output format; default `json`. `table` renders a flat row set as an aligned table |
 
 Most **query** commands also share a set of filter flags. Defaults and availability vary per command (listed below), but the shapes are consistent:
 
-| Flag | Alias | Default | Description |
-| --- | --- | --- | --- |
-| `--since <range>` | | `6h` | Relative time range — `30m`, `1h`, `6h`, `24h`, `7d` |
-| `--start <time>` | | | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC (use with `--end`) |
-| `--end <time>` | | | Absolute end, `YYYY-MM-DD HH:mm:ss` UTC |
-| `--service <name>` | `-s` | | Filter by service name |
-| `--env <name>` | `-e` | | Filter by deployment environment (e.g. `production`) |
-| `--limit <n>` | `-n` | `20` | Maximum number of results |
-| `--offset <n>` | | `0` | Pagination offset |
+| Flag               | Alias | Default | Description                                                  |
+| ------------------ | ----- | ------- | ------------------------------------------------------------ |
+| `--since <range>`  |       | `6h`    | Relative time range — `30m`, `1h`, `6h`, `24h`, `7d`         |
+| `--start <time>`   |       |         | Absolute start, `YYYY-MM-DD HH:mm:ss` UTC (use with `--end`) |
+| `--end <time>`     |       |         | Absolute end, `YYYY-MM-DD HH:mm:ss` UTC                      |
+| `--service <name>` | `-s`  |         | Filter by service name                                       |
+| `--env <name>`     | `-e`  |         | Filter by deployment environment (e.g. `production`)         |
+| `--limit <n>`      | `-n`  | `20`    | Maximum number of results                                    |
+| `--offset <n>`     |       | `0`     | Pagination offset                                            |
 
 ## Server commands
 
@@ -40,13 +40,13 @@ Local mode only. `maple start` is the long-lived process that owns the embedded 
 
 Start the local ingest + query server (embedded ClickHouse via chDB).
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--port <int>` | `4318` | Port for OTLP/HTTP ingest, the query API, and the bundled UI |
-| `--data-dir <path>` | `~/.maple/data` | Embedded ClickHouse data directory |
-| `--offline` | `false` | Serve the UI bundled in this binary (from `127.0.0.1`) instead of `local.maple.dev` |
-| `--background`, `-d` | `false` | Run detached (logs to `~/.maple/maple.log`); stop with `maple stop` |
-| `--reset` | `false` | Wipe the existing store before starting — use after an incompatible upgrade |
+| Flag                 | Default         | Description                                                                         |
+| -------------------- | --------------- | ----------------------------------------------------------------------------------- |
+| `--port <int>`       | `4318`          | Port for OTLP/HTTP ingest, the query API, and the bundled UI                        |
+| `--data-dir <path>`  | `~/.maple/data` | Embedded ClickHouse data directory                                                  |
+| `--offline`          | `false`         | Serve the UI bundled in this binary (from `127.0.0.1`) instead of `local.maple.dev` |
+| `--background`, `-d` | `false`         | Run detached (logs to `~/.maple/maple.log`); stop with `maple stop`                 |
+| `--reset`            | `false`         | Wipe the existing store before starting — use after an incompatible upgrade         |
 
 ```bash
 maple start                    # foreground, UI from local.maple.dev
@@ -58,18 +58,18 @@ maple start -d --port 4400     # detached on a custom port
 
 Stop a running `maple start` server (reads the PID file beside the data dir).
 
-| Flag | Default | Description |
-| --- | --- | --- |
+| Flag                | Default         | Description                          |
+| ------------------- | --------------- | ------------------------------------ |
 | `--data-dir <path>` | `~/.maple/data` | Data directory of the server to stop |
 
 ### `maple reset`
 
 Delete the local chDB store so the next `maple start` bootstraps fresh. Refuses to run while a server still owns the store.
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--data-dir <path>` | `~/.maple/data` | Store to delete |
-| `--yes`, `-y` | `false` | Skip the confirmation prompt |
+| Flag                | Default         | Description                  |
+| ------------------- | --------------- | ---------------------------- |
+| `--data-dir <path>` | `~/.maple/data` | Store to delete              |
+| `--yes`, `-y`       | `false`         | Skip the confirmation prompt |
 
 ## Services
 
@@ -102,13 +102,13 @@ Top operations (span names) for a service, ranked by a metric.
 
 Search traces/spans.
 
-| Flag | Description |
-| --- | --- |
-| `--span-name <substr>` | Filter by span name (substring, case-insensitive) |
-| `--errors` | Only include traces with errors |
-| `--min-duration-ms <int>` | Minimum duration in milliseconds |
-| `--max-duration-ms <int>` | Maximum duration in milliseconds |
-| `--http-method <method>` | Filter by HTTP method (`GET`, `POST`, …) |
+| Flag                      | Description                                       |
+| ------------------------- | ------------------------------------------------- |
+| `--span-name <substr>`    | Filter by span name (substring, case-insensitive) |
+| `--errors`                | Only include traces with errors                   |
+| `--min-duration-ms <int>` | Minimum duration in milliseconds                  |
+| `--max-duration-ms <int>` | Maximum duration in milliseconds                  |
+| `--http-method <method>`  | Filter by HTTP method (`GET`, `POST`, …)          |
 
 Plus `--since` / `--start` / `--end`, `--service`, `--limit`, `--offset`.
 
@@ -145,11 +145,11 @@ Show detail for one error group: sample traces + timeseries.
 
 Search logs with filtering.
 
-| Flag | Alias | Description |
-| --- | --- | --- |
-| `--severity <level>` | | Filter by severity (`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`FATAL`) |
-| `--search <text>` | `-q` | Search text (substring match) |
-| `--trace-id <id>` | | Filter by trace ID |
+| Flag                 | Alias | Description                                                        |
+| -------------------- | ----- | ------------------------------------------------------------------ |
+| `--severity <level>` |       | Filter by severity (`TRACE`/`DEBUG`/`INFO`/`WARN`/`ERROR`/`FATAL`) |
+| `--search <text>`    | `-q`  | Search text (substring match)                                      |
+| `--trace-id <id>`    |       | Filter by trace ID                                                 |
 
 Plus `--since` / `--start` / `--end`, `--service`, `--limit`, `--offset`.
 
@@ -165,10 +165,10 @@ Cluster logs into templates to surface the noisiest patterns. Flags: `--since` /
 
 Discover available attribute keys.
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--source <traces\|metrics\|services>` | `traces` | Attribute source |
-| `--scope <span\|resource>` | `span` | Attribute scope (traces only) |
+| Flag                                   | Default  | Description                   |
+| -------------------------------------- | -------- | ----------------------------- |
+| `--source <traces\|metrics\|services>` | `traces` | Attribute source              |
+| `--scope <span\|resource>`             | `span`   | Attribute scope (traces only) |
 
 Plus `--service`, `--since` / `--start` / `--end`, `--limit`.
 
@@ -203,12 +203,12 @@ maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER 
 
 Time-bucketed trace metrics (count, latency quantiles, error rate, apdex emitted per bucket).
 
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--group-by <none\|service\|span_name\|status_code\|http_method>` | `none` | Group series by dimension |
-| `--span-name <substr>` | | Filter by span name |
-| `--errors` | `false` | Only include errored spans |
-| `--bucket <seconds>` | `60` | Bucket size in seconds |
+| Flag                                                              | Default | Description                |
+| ----------------------------------------------------------------- | ------- | -------------------------- |
+| `--group-by <none\|service\|span_name\|status_code\|http_method>` | `none`  | Group series by dimension  |
+| `--span-name <substr>`                                            |         | Filter by span name        |
+| `--errors`                                                        | `false` | Only include errored spans |
+| `--bucket <seconds>`                                              | `60`    | Bucket size in seconds     |
 
 Plus `--since` / `--start` / `--end`, `--service`, `--env`.
 
@@ -216,11 +216,11 @@ Plus `--since` / `--start` / `--end`, `--service`, `--env`.
 
 Top-N trace breakdown by dimension (service, span, status code, http method).
 
-| Flag | Default | Description |
-| --- | --- | --- |
+| Flag                                                        | Default     | Description                |
+| ----------------------------------------------------------- | ----------- | -------------------------- |
 | `--group-by <service\|span_name\|status_code\|http_method>` | `span_name` | Group results by dimension |
-| `--span-name <substr>` | | Filter by span name |
-| `--errors` | `false` | Only include errored spans |
+| `--span-name <substr>`                                      |             | Filter by span name        |
+| `--errors`                                                  | `false`     | Only include errored spans |
 
 Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`.
 
@@ -228,12 +228,12 @@ Plus `--since` / `--start` / `--end`, `--service`, `--env`, `--limit`.
 
 Compare service health between two time windows (regression detection). Provide **either** `--around` **or** all four explicit window bounds.
 
-| Flag | Description |
-| --- | --- |
-| `--around <ts>` | Compare the 30m before vs. after this UTC time (`YYYY-MM-DD HH:mm:ss`) |
-| `--current-start <ts>` / `--current-end <ts>` | The "current" window |
-| `--previous-start <ts>` / `--previous-end <ts>` | The baseline window |
-| `--env <name>` | Filter by deployment environment |
+| Flag                                            | Description                                                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------- |
+| `--around <ts>`                                 | Compare the 30m before vs. after this UTC time (`YYYY-MM-DD HH:mm:ss`) |
+| `--current-start <ts>` / `--current-end <ts>`   | The "current" window                                                   |
+| `--previous-start <ts>` / `--previous-end <ts>` | The baseline window                                                    |
+| `--env <name>`                                  | Filter by deployment environment                                       |
 
 ## Auth and configuration
 
@@ -243,9 +243,9 @@ Remote credentials live in `~/.maple/config.json` (mode `0600`).
 
 Save remote workspace credentials.
 
-| Flag | Description |
-| --- | --- |
-| `--api-url <url>` | Maple API base URL (e.g. `https://api.maple.dev`) |
+| Flag              | Description                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `--api-url <url>` | Maple API base URL (e.g. `https://api.maple.dev`)                            |
 | `--token <token>` | API token. If omitted, it's read from stdin so it stays out of shell history |
 
 ### `maple logout`
@@ -272,14 +272,14 @@ Pin the default backend so commands stop auto-detecting, or restore auto-detect.
 
 `maple start` binds `127.0.0.1` only (never externally reachable). When `--offline` is set, the bundled SPA is also served over `GET`.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Liveness probe (returns `OK`); used by mode auto-detect |
-| `POST` | `/v1/traces` | OTLP traces ingest → `{ "accepted": <rowCount> }` |
-| `POST` | `/v1/logs` | OTLP logs ingest |
-| `POST` | `/v1/metrics` | OTLP metrics ingest |
-| `POST` | `/local/query` | Run SQL: `{ "sql": "..." }` → bare JSON array of rows |
-| `OPTIONS` | `*` | CORS preflight (answers Private Network Access for the `local.maple.dev` UI) |
+| Method    | Path           | Purpose                                                                      |
+| --------- | -------------- | ---------------------------------------------------------------------------- |
+| `GET`     | `/health`      | Liveness probe (returns `OK`); used by mode auto-detect                      |
+| `POST`    | `/v1/traces`   | OTLP traces ingest → `{ "accepted": <rowCount> }`                            |
+| `POST`    | `/v1/logs`     | OTLP logs ingest                                                             |
+| `POST`    | `/v1/metrics`  | OTLP metrics ingest                                                          |
+| `POST`    | `/local/query` | Run SQL: `{ "sql": "..." }` → bare JSON array of rows                        |
+| `OPTIONS` | `*`            | CORS preflight (answers Private Network Access for the `local.maple.dev` UI) |
 
 OTLP bodies may be protobuf (default) or JSON, optionally gzip-encoded. The `/local/query` handler owns the output format — it strips any trailing `FORMAT <ident>` and re-appends `FORMAT JSONEachRow`, then wraps the rows into a JSON array, so clients POST their compiled SQL verbatim.
 
@@ -287,17 +287,17 @@ OTLP bodies may be protobuf (default) or JSON, optionally gzip-encoded. The `/lo
 
 **Runtime** (CLI + server):
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MAPLE_LOCAL_URL` | `http://127.0.0.1:4318` | Base URL the CLI targets in local mode |
-| `MAPLE_LOCAL_UI_URL` | `https://local.maple.dev` | Deployed dashboard origin `maple start` links to |
-| `MAPLE_LIBCHDB` | _(auto)_ | Explicit path to `libchdb`. Otherwise resolved beside the binary (Homebrew keeps it in the same `libexec` dir), then `~/.maple/bin/libchdb.{so,dylib}` |
-| `MAPLE_API_URL` | `https://api.maple.dev` | Remote API base URL |
-| `MAPLE_API_TOKEN` | | Remote bearer token (overrides the stored value) |
-| `MAPLE_ORG_ID` | | Remote org override |
-| `MAPLE_DEBUG` | | Set to `1` to enable `--debug` |
-| `MAPLE_FORMAT` | `json` | `json` or `table` — same as `--format` |
-| `MAPLE_NO_UPDATE_CHECK` | | Set to `1` to disable startup update checks (the Homebrew wrapper sets this automatically) |
+| Variable                | Default                   | Purpose                                                                                                                                                |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `MAPLE_LOCAL_URL`       | `http://127.0.0.1:4318`   | Base URL the CLI targets in local mode                                                                                                                 |
+| `MAPLE_LOCAL_UI_URL`    | `https://local.maple.dev` | Deployed dashboard origin `maple start` links to                                                                                                       |
+| `MAPLE_LIBCHDB`         | _(auto)_                  | Explicit path to `libchdb`. Otherwise resolved beside the binary (Homebrew keeps it in the same `libexec` dir), then `~/.maple/bin/libchdb.{so,dylib}` |
+| `MAPLE_API_URL`         | `https://api.maple.dev`   | Remote API base URL                                                                                                                                    |
+| `MAPLE_API_TOKEN`       |                           | Remote bearer token (overrides the stored value)                                                                                                       |
+| `MAPLE_ORG_ID`          |                           | Remote org override                                                                                                                                    |
+| `MAPLE_DEBUG`           |                           | Set to `1` to enable `--debug`                                                                                                                         |
+| `MAPLE_FORMAT`          | `json`                    | `json` or `table` — same as `--format`                                                                                                                 |
+| `MAPLE_NO_UPDATE_CHECK` |                           | Set to `1` to disable startup update checks (the Homebrew wrapper sets this automatically)                                                             |
 
 **Homebrew**:
 
@@ -312,12 +312,12 @@ If Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap` 
 
 **Manual installer** (`scripts/install.sh`, env-only):
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MAPLE_VERSION` | `latest` | Release tag to install |
-| `MAPLE_INSTALL_DIR` | `~/.maple/bin` | Where the 2-file bundle is installed |
-| `MAPLE_BIN_DIR` | _(auto)_ | Where `maple` is symlinked onto `PATH` |
-| `MAPLE_SKIP_CHECKSUM` | `0` | Set to `1` to skip SHA-256 verification (air-gapped mirrors only) |
+| Variable              | Default        | Purpose                                                           |
+| --------------------- | -------------- | ----------------------------------------------------------------- |
+| `MAPLE_VERSION`       | `latest`       | Release tag to install                                            |
+| `MAPLE_INSTALL_DIR`   | `~/.maple/bin` | Where the 2-file bundle is installed                              |
+| `MAPLE_BIN_DIR`       | _(auto)_       | Where `maple` is symlinked onto `PATH`                            |
+| `MAPLE_SKIP_CHECKSUM` | `0`            | Set to `1` to skip SHA-256 verification (air-gapped mirrors only) |
 
 The on-disk config at `~/.maple/config.json` stores `apiUrl`, `token`, `orgId`, and `defaultMode`. Env vars take precedence over stored values.
 

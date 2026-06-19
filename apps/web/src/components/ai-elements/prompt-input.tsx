@@ -627,7 +627,10 @@ export const PromptInput = ({
 		() => ({
 			add: (incoming: SourceDocumentUIPart[] | SourceDocumentUIPart) => {
 				const array = Array.isArray(incoming) ? incoming : [incoming]
-				setReferencedSources((prev) => [...prev, ...array.map((s) => ({ ...s, id: crypto.randomUUID() }))])
+				setReferencedSources((prev) => [
+					...prev,
+					...array.map((s) => ({ ...s, id: crypto.randomUUID() })),
+				])
 			},
 			clear: clearReferencedSources,
 			remove: (id: string) => {

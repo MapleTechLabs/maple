@@ -48,9 +48,7 @@ export const DASHBOARD_TEMPLATES: ReadonlyArray<TemplateDefinition> = [
 	rabbitmqTemplate,
 ]
 
-const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(
-	DASHBOARD_TEMPLATES.map((t) => [t.id, t]),
-)
+const TEMPLATE_BY_ID = new Map<string, TemplateDefinition>(DASHBOARD_TEMPLATES.map((t) => [t.id, t]))
 
 export function getTemplate(id: string): TemplateDefinition | undefined {
 	return TEMPLATE_BY_ID.get(id)
@@ -72,4 +70,10 @@ export function listTemplateMetadata(): TemplateMetadata[] {
 	}))
 }
 
-export type { TemplateDefinition, TemplateMetadata, TemplateParameter, TemplateParameterValues, WidgetDef } from "./types"
+export type {
+	TemplateDefinition,
+	TemplateMetadata,
+	TemplateParameter,
+	TemplateParameterValues,
+	WidgetDef,
+} from "./types"

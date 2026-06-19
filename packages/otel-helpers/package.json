@@ -2,22 +2,26 @@
 	"name": "@maple/otel-helpers",
 	"version": "0.1.0",
 	"description": "Tiny OpenTelemetry helpers for Maple — withSpan() for bounded business spans without try/catch/finally bloat.",
-	"type": "module",
-	"main": "./src/index.ts",
-	"exports": {
-		".": "./src/index.ts"
-	},
+	"keywords": [
+		"maple",
+		"observability",
+		"opentelemetry",
+		"otel",
+		"tracing"
+	],
 	"files": [
 		"src/**/*.ts",
 		"!src/**/*.test.ts",
 		"README.md"
 	],
+	"type": "module",
+	"main": "./src/index.ts",
+	"exports": {
+		".": "./src/index.ts"
+	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
 		"test": "bun test"
-	},
-	"peerDependencies": {
-		"@opentelemetry/api": ">=1.9.0"
 	},
 	"devDependencies": {
 		"@opentelemetry/api": "^1.9.0",
@@ -25,11 +29,7 @@
 		"@types/node": "catalog:tooling",
 		"typescript": "catalog:tooling"
 	},
-	"keywords": [
-		"maple",
-		"opentelemetry",
-		"otel",
-		"tracing",
-		"observability"
-	]
+	"peerDependencies": {
+		"@opentelemetry/api": ">=1.9.0"
+	}
 }

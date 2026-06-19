@@ -194,7 +194,10 @@ function FleetView({
 						/>
 						{search && (
 							<InputGroupAddon align="inline-end">
-								<InputGroupButton aria-label="Clear search" onClick={() => onSearchChange("")}>
+								<InputGroupButton
+									aria-label="Clear search"
+									onClick={() => onSearchChange("")}
+								>
 									<XmarkIcon />
 								</InputGroupButton>
 							</InputGroupAddon>

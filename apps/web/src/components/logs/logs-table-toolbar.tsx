@@ -10,12 +10,7 @@ import { LineHeightIcon, TextWrapIcon, ThumbtackIcon } from "@/components/icons"
 import { Toggle } from "@maple/ui/components/ui/toggle"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@maple/ui/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 interface ColumnOption {
 	name: string

@@ -69,9 +69,7 @@ const makeCompiledQuery = <Output>(
 	rowSchema?: CompiledQueryRowSchema<Output>,
 ): CompiledQuery<Output> => {
 	const decodeRow = rowSchema
-		? (Schema.decodeUnknownEffect(rowSchema) as (
-				row: unknown,
-			) => Effect.Effect<Output, unknown, never>)
+		? (Schema.decodeUnknownEffect(rowSchema) as (row: unknown) => Effect.Effect<Output, unknown, never>)
 		: undefined
 
 	const decodeRows: CompiledQuery<Output>["decodeRows"] = (rows) => {

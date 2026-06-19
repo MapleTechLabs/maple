@@ -20,10 +20,7 @@ export type {
  * module-evaluation stays under Cloudflare's ~1s startup-CPU budget (the
  * workflow class is statically exported from `worker.ts`).
  */
-export class AiTriageWorkflow extends WorkflowEntrypoint<
-	AiTriageWorkflowEnv,
-	AiTriageWorkflowPayload
-> {
+export class AiTriageWorkflow extends WorkflowEntrypoint<AiTriageWorkflowEnv, AiTriageWorkflowPayload> {
 	override async run(
 		event: Readonly<WorkflowEvent<AiTriageWorkflowPayload>>,
 		step: WorkflowStep,

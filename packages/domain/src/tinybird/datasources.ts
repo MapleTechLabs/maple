@@ -517,34 +517,31 @@ export type ServiceExternalEdgesHourlyRow = InferRow<typeof serviceExternalEdges
  * operation that an incremental MV cannot express. Same caveat as
  * `service_map_edges_hourly`.
  */
-export const serviceAddressResolutionsHourly = defineDatasource(
-	"service_address_resolutions_hourly",
-	{
-		description:
-			"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
-		jsonPaths: false,
-		schema: {
-			OrgId: t.string().lowCardinality(),
-			Hour: t.dateTime(),
-			SourceService: t.string().lowCardinality(),
-			ParentServerAddress: t.string(),
-			ResolvedTargetService: t.string().lowCardinality(),
-			DeploymentEnv: t.string().lowCardinality(),
-		},
-		engine: engine.replacingMergeTree({
-			partitionKey: "toDate(Hour)",
-			sortingKey: [
-				"OrgId",
-				"Hour",
-				"DeploymentEnv",
-				"SourceService",
-				"ParentServerAddress",
-				"ResolvedTargetService",
-			],
-			ttl: "toDate(Hour) + INTERVAL 90 DAY",
-		}),
+export const serviceAddressResolutionsHourly = defineDatasource("service_address_resolutions_hourly", {
+	description:
+		"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		SourceService: t.string().lowCardinality(),
+		ParentServerAddress: t.string(),
+		ResolvedTargetService: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
 	},
-)
+	engine: engine.replacingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"DeploymentEnv",
+			"SourceService",
+			"ParentServerAddress",
+			"ResolvedTargetService",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
 
 export type ServiceAddressResolutionsHourlyRow = InferRow<typeof serviceAddressResolutionsHourly>
 

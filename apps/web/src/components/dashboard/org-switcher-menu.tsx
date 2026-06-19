@@ -32,11 +32,7 @@ export function OrgAvatar({
 	const initial = name.charAt(0).toUpperCase()
 	const baseClass = className ?? "size-8"
 	return imageUrl ? (
-		<img
-			src={imageUrl}
-			alt={name}
-			className={`${baseClass} shrink-0 rounded-md object-cover`}
-		/>
+		<img src={imageUrl} alt={name} className={`${baseClass} shrink-0 rounded-md object-cover`} />
 	) : (
 		<div
 			className={`${baseClass} flex shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-semibold`}

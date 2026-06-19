@@ -25,11 +25,7 @@ function MetricsPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 
-	const handleTimeChange = (range: {
-		startTime?: string
-		endTime?: string
-		presetValue?: string
-	}) => {
+	const handleTimeChange = (range: { startTime?: string; endTime?: string; presetValue?: string }) => {
 		navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
 	}
 

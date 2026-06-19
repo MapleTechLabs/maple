@@ -17,15 +17,7 @@ import { CircleWarningIcon, ConnectionIcon } from "@maple/ui/components/icons"
 import { LOCAL_OTLP_ENDPOINT, localApiBase } from "../lib/constants"
 import { CopyableField } from "./copyable-field"
 
-export function EmptyState({
-	icon,
-	title,
-	hint,
-}: {
-	icon?: ReactNode
-	title: string
-	hint?: ReactNode
-}) {
+export function EmptyState({ icon, title, hint }: { icon?: ReactNode; title: string; hint?: ReactNode }) {
 	return (
 		<Empty className="h-full">
 			{icon ? <EmptyMedia variant="icon">{icon}</EmptyMedia> : null}
@@ -124,13 +116,7 @@ export function DisconnectedState({ onRetry }: { onRetry: () => void }) {
  * `card` for the session card stack — keeps every loading state on the same
  * skeleton vocabulary instead of a bare spinner.
  */
-export function ListSkeleton({
-	rows = 8,
-	variant = "table",
-}: {
-	rows?: number
-	variant?: "table" | "card"
-}) {
+export function ListSkeleton({ rows = 8, variant = "table" }: { rows?: number; variant?: "table" | "card" }) {
 	return (
 		<div className="space-y-2 p-4">
 			{Array.from({ length: rows }).map((_, i) => (

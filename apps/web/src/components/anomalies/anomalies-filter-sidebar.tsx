@@ -35,16 +35,16 @@ function LabeledFilterSection<T extends string>({
 	onChange: (selected: ReadonlyArray<T>) => void
 }) {
 	const toggle = (value: T) => {
-		onChange(
-			selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value],
-		)
+		onChange(selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value])
 	}
 	if (options.length === 0) return null
 	return (
 		<Collapsible defaultOpen>
 			<CollapsibleTrigger className="group flex w-full items-center justify-between py-2 text-sm font-medium hover:text-foreground text-muted-foreground transition-colors">
 				<span>{title}</span>
-				<ChevronDownIcon className={cn("size-4 transition-transform group-data-[panel-open]:rotate-180")} />
+				<ChevronDownIcon
+					className={cn("size-4 transition-transform group-data-[panel-open]:rotate-180")}
+				/>
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pb-3">
 				<div className="space-y-2">
@@ -97,8 +97,7 @@ export function AnomaliesFilterSidebar({
 				envs.set(incident.deploymentEnv, (envs.get(incident.deploymentEnv) ?? 0) + 1)
 			}
 		}
-		const byCount = <K,>(map: Map<K, number>) =>
-			[...map.entries()].sort((a, b) => b[1] - a[1])
+		const byCount = <K,>(map: Map<K, number>) => [...map.entries()].sort((a, b) => b[1] - a[1])
 		return {
 			severity: byCount(severity),
 			signals: byCount(signals),

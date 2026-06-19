@@ -48,18 +48,14 @@ const sdk = new NodeSDK({
 		"deployment.environment.name": process.env.NODE_ENV || "development",
 		"vcs.repository.url.full": "https://github.com/acme/my-node-app",
 		"vcs.ref.head.revision":
-			process.env.RAILWAY_GIT_COMMIT_SHA ??
-			process.env.GITHUB_SHA ??
-			process.env.GIT_COMMIT,
+			process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? process.env.GIT_COMMIT,
 	}),
 	traceExporter: new OTLPTraceExporter({
 		url: `${MAPLE_ENDPOINT}/v1/traces`,
 		headers,
 	}),
 	logRecordProcessors: [
-		new SimpleLogRecordProcessor(
-			new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
-		),
+		new SimpleLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
 	],
 	instrumentations: [getNodeAutoInstrumentations()],
 })

@@ -39,11 +39,10 @@ export const DEFAULT_STATE_MACHINE_CONFIG: StateMachineConfig = {
  * sustained) — short quiet stretches on bursty services self-heal within two
  * ticks and shouldn't page.
  */
-export const STATE_MACHINE_CONFIG_OVERRIDES: Partial<
-	Record<AnomalySignalType, Partial<StateMachineConfig>>
-> = {
-	throughput: { breachesToOpen: 3 },
-}
+export const STATE_MACHINE_CONFIG_OVERRIDES: Partial<Record<AnomalySignalType, Partial<StateMachineConfig>>> =
+	{
+		throughput: { breachesToOpen: 3 },
+	}
 
 export const stateMachineConfigFor = (signalType: AnomalySignalType): StateMachineConfig => ({
 	...DEFAULT_STATE_MACHINE_CONFIG,
@@ -79,8 +78,7 @@ export function decideTransition(
 		if (state.openIncidentId !== null) {
 			return { transition: "continue", consecutiveBreaches, consecutiveHealthy: 0 }
 		}
-		const inCooldown =
-			state.lastResolvedAt !== null && nowMs - state.lastResolvedAt < config.cooldownMs
+		const inCooldown = state.lastResolvedAt !== null && nowMs - state.lastResolvedAt < config.cooldownMs
 		if (consecutiveBreaches >= config.breachesToOpen && !inCooldown) {
 			return { transition: "open", consecutiveBreaches, consecutiveHealthy: 0 }
 		}

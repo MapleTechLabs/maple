@@ -100,10 +100,7 @@ describe("querySpanMetricsCalls", () => {
 			)
 
 			assert.strictEqual(spanMetricsCalls.length, 1)
-			assert.strictEqual(
-				spanMetricsCalls[0][1].query.filters.metricName,
-				"span.metrics.calls",
-			)
+			assert.strictEqual(spanMetricsCalls[0][1].query.filters.metricName, "span.metrics.calls")
 		}),
 	)
 

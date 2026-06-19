@@ -92,9 +92,13 @@ export function App() {
 					)}
 
 					<ul className="divide-y divide-slate-100 dark:divide-slate-800">
-						{loading && <li className="px-4 py-6 text-center text-sm text-slate-400">Loading…</li>}
+						{loading && (
+							<li className="px-4 py-6 text-center text-sm text-slate-400">Loading…</li>
+						)}
 						{!loading && todos.length === 0 && (
-							<li className="px-4 py-6 text-center text-sm text-slate-400">Nothing yet — add one above.</li>
+							<li className="px-4 py-6 text-center text-sm text-slate-400">
+								Nothing yet — add one above.
+							</li>
 						)}
 						{todos.map((todo) => (
 							<li key={todo.id} className="group flex items-center gap-3 px-4 py-3">
@@ -109,14 +113,26 @@ export function App() {
 									}`}
 								>
 									{todo.completed && (
-										<svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2}>
-											<path d="M2.5 6.5l2 2 5-5" strokeLinecap="round" strokeLinejoin="round" />
+										<svg
+											viewBox="0 0 12 12"
+											className="h-3 w-3"
+											fill="none"
+											stroke="currentColor"
+											strokeWidth={2}
+										>
+											<path
+												d="M2.5 6.5l2 2 5-5"
+												strokeLinecap="round"
+												strokeLinejoin="round"
+											/>
 										</svg>
 									)}
 								</button>
 								<span
 									className={`flex-1 text-sm ${
-										todo.completed ? "text-slate-400 line-through" : "text-slate-700 dark:text-slate-200"
+										todo.completed
+											? "text-slate-400 line-through"
+											: "text-slate-700 dark:text-slate-200"
 									}`}
 								>
 									{todo.title}
@@ -135,8 +151,9 @@ export function App() {
 				</div>
 
 				<p className="mt-4 text-center text-xs text-slate-400">
-					Open <span className="font-medium text-slate-500 dark:text-slate-300">Maple → Traces</span> to watch each
-					click flow <span className="font-mono">todo-web → todo-api</span>.
+					Open{" "}
+					<span className="font-medium text-slate-500 dark:text-slate-300">Maple → Traces</span> to
+					watch each click flow <span className="font-mono">todo-web → todo-api</span>.
 				</p>
 			</main>
 		</div>

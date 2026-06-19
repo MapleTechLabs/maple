@@ -115,8 +115,7 @@ const peekMcpFrame = (body: string): McpFrame => {
 		const parsed = JSON.parse(body)
 		const first = Array.isArray(parsed) ? parsed[0] : parsed
 		const method = typeof first?.method === "string" ? first.method : "-"
-		const id =
-			first?.id === undefined || first?.id === null ? "-" : String(first.id)
+		const id = first?.id === undefined || first?.id === null ? "-" : String(first.id)
 		return { method, id }
 	} catch {
 		return { method: "-", id: "-" }
@@ -193,8 +192,7 @@ const handle = async (
 		console.error("[worker] handler failed:", err)
 		if (isMcp && mcpFrame) {
 			console.error(
-				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` dur=${Date.now() - startedAt}ms`,
+				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` + ` dur=${Date.now() - startedAt}ms`,
 			)
 		}
 		ctx.waitUntil(telemetry.flush(env))

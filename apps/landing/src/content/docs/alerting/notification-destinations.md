@@ -28,7 +28,7 @@ Post alerts to a Slack channel via an [incoming webhook](https://api.slack.com/m
 Trigger PagerDuty incidents through the **Events API v2**. The single most common setup mistake is pasting the **wrong key** — PagerDuty has several, and only one works here.
 
 > **Use an Events API v2 _integration key_ (also called a _routing key_) — a 32-character string.**
-> A PagerDuty **REST API token** (from *User Settings* or *API Access Keys*) will **not** work and produces `PagerDuty delivery failed with 400: Invalid routing key` on test send. The REST API is for managing PagerDuty itself; the Events API is what Maple posts alerts to, and it's scoped to a specific service.
+> A PagerDuty **REST API token** (from _User Settings_ or _API Access Keys_) will **not** work and produces `PagerDuty delivery failed with 400: Invalid routing key` on test send. The REST API is for managing PagerDuty itself; the Events API is what Maple posts alerts to, and it's scoped to a specific service.
 
 To get the right key:
 
@@ -40,8 +40,8 @@ To get the right key:
 
 See PagerDuty's own [services and integrations guide](https://support.pagerduty.com/main/docs/services-and-integrations) for screenshots.
 
-| Field | Notes |
-| --- | --- |
+| Field               | Notes                                                            |
+| ------------------- | ---------------------------------------------------------------- |
 | **Integration key** | The 32-character Events API v2 routing key from the steps above. |
 
 When an alert fires, Maple sends an Events API v2 `trigger` with a stable `dedup_key`, and a matching `resolve` when the rule recovers — so PagerDuty groups the lifecycle into one incident.

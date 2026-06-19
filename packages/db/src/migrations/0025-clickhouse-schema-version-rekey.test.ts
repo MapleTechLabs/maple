@@ -37,10 +37,7 @@ const schemaVersionOf = async (
 	db: Awaited<ReturnType<typeof freshDb>>["db"],
 	orgId: string,
 ): Promise<string | null> => {
-	const rows = await db
-		.select()
-		.from(orgClickHouseSettings)
-		.where(eq(orgClickHouseSettings.orgId, orgId))
+	const rows = await db.select().from(orgClickHouseSettings).where(eq(orgClickHouseSettings.orgId, orgId))
 	return rows[0]?.schemaVersion ?? null
 }
 

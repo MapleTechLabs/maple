@@ -126,11 +126,7 @@ const anyValue = (value: unknown): unknown => {
 }
 
 /** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
-export const post = async (
-	url: string,
-	headers: Record<string, string>,
-	body: unknown,
-): Promise<void> => {
+export const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<void> => {
 	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)

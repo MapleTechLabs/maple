@@ -76,21 +76,24 @@ export const makeSmallTraceSpans = (): SpanHierarchyOutput[] => {
 		resourceAttributes: "{}",
 		relationship: "related",
 	}
-	const children = Array.from({ length: 4 }, (_, i): SpanHierarchyOutput => ({
-		traceId: SMALL_TRACE_ID,
-		spanId: `aaaa00000000001${i}`,
-		parentSpanId: rootId,
-		spanName: `step-${i}`,
-		serviceName: FIXTURES.service,
-		spanKind: "Internal",
-		durationMs: i + 1,
-		startTime: "2026-06-02 10:00:00",
-		statusCode: "Ok",
-		statusMessage: "",
-		spanAttributes: "{}",
-		resourceAttributes: "{}",
-		relationship: "related",
-	}))
+	const children = Array.from(
+		{ length: 4 },
+		(_, i): SpanHierarchyOutput => ({
+			traceId: SMALL_TRACE_ID,
+			spanId: `aaaa00000000001${i}`,
+			parentSpanId: rootId,
+			spanName: `step-${i}`,
+			serviceName: FIXTURES.service,
+			spanKind: "Internal",
+			durationMs: i + 1,
+			startTime: "2026-06-02 10:00:00",
+			statusCode: "Ok",
+			statusMessage: "",
+			spanAttributes: "{}",
+			resourceAttributes: "{}",
+			relationship: "related",
+		}),
+	)
 	return [root, ...children]
 }
 

@@ -293,20 +293,13 @@ function ApiKeyListItem({
 				apiKey.revoked ? "opacity-60" : "hover:bg-muted/20",
 			)}
 		>
-			<div
-				className={cn(
-					"flex h-9 w-9 shrink-0 items-center justify-center border",
-					tileClass,
-				)}
-			>
+			<div className={cn("flex h-9 w-9 shrink-0 items-center justify-center border", tileClass)}>
 				<Icon size={14} />
 			</div>
 
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<div className="flex flex-wrap items-center gap-1.5">
-					<span className="text-foreground text-sm font-medium leading-none">
-						{apiKey.name}
-					</span>
+					<span className="text-foreground text-sm font-medium leading-none">{apiKey.name}</span>
 					{isMcp && (
 						<Badge variant="info" size="sm">
 							MCP
@@ -394,7 +387,11 @@ function ApiKeyListItem({
 }
 
 function MetaDot() {
-	return <span aria-hidden="true" className="text-muted-foreground/40 text-[10px]">·</span>
+	return (
+		<span aria-hidden="true" className="text-muted-foreground/40 text-[10px]">
+			·
+		</span>
+	)
 }
 
 function MetaSpan({

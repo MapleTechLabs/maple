@@ -585,7 +585,13 @@ const runQueryWindow = Effect.fn("QueryEngine.runQueryWindow")(function* (
 				const querySpec = resolveTimeseriesBucketSpec(built.query, startTime, endTime)
 
 				const outcome = yield* Effect.result(
-					executeTimeseriesQueryWithFallback(startTime, endTime, querySpec, strategy, allowFallback),
+					executeTimeseriesQueryWithFallback(
+						startTime,
+						endTime,
+						querySpec,
+						strategy,
+						allowFallback,
+					),
 				)
 
 				if (Result.isFailure(outcome)) {

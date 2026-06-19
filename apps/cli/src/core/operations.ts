@@ -59,19 +59,10 @@ export const searchTraces = (p: {
 
 export const inspectTrace = (p: { traceId: string }) => obsInspectTrace(p.traceId)
 
-export const findErrors = (p: {
-	range: Range
-	service?: string
-	environment?: string
-	limit?: number
-}) => obsFindErrors({ timeRange: p.range, service: p.service, environment: p.environment, limit: p.limit })
+export const findErrors = (p: { range: Range; service?: string; environment?: string; limit?: number }) =>
+	obsFindErrors({ timeRange: p.range, service: p.service, environment: p.environment, limit: p.limit })
 
-export const errorDetail = (p: {
-	fingerprintHash: string
-	range: Range
-	service?: string
-	limit?: number
-}) =>
+export const errorDetail = (p: { fingerprintHash: string; range: Range; service?: string; limit?: number }) =>
 	obsErrorDetail({
 		fingerprintHash: p.fingerprintHash,
 		timeRange: p.range,
@@ -117,12 +108,7 @@ export const mineLogPatterns = (p: {
 		limit: p.limit,
 	})
 
-export const findSlowTraces = (p: {
-	range: Range
-	service?: string
-	environment?: string
-	limit?: number
-}) =>
+export const findSlowTraces = (p: { range: Range; service?: string; environment?: string; limit?: number }) =>
 	obsFindSlowTraces({ timeRange: p.range, service: p.service, environment: p.environment, limit: p.limit })
 
 export const serviceMap = (p: { range: Range; service?: string; environment?: string }) =>

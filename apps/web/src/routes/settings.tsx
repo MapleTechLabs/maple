@@ -86,10 +86,7 @@ export function SettingsPage() {
 
 	return (
 		<DashboardLayout
-			breadcrumbs={[
-				{ label: "Settings", href: "/settings" },
-				{ label: settingsTabLabels[activeTab] },
-			]}
+			breadcrumbs={[{ label: "Settings", href: "/settings" }, { label: settingsTabLabels[activeTab] }]}
 			title={settingsTabLabels[activeTab]}
 			filterSidebar={
 				<SettingsNav sections={visibleSections} active={activeTab} onSelectTab={handleTabSelect} />

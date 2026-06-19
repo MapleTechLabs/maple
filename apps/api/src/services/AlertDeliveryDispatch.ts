@@ -319,7 +319,11 @@ const buildDiscordEmbeds = (context: DispatchContext, linkUrl: string, chatUrl: 
 			{ name: "Group", value: context.groupKey ?? "all", inline: true },
 			{ name: "Observed", value: formatObservedSummary(context), inline: true },
 			{ name: "Window", value: formatWindow(context.windowMinutes), inline: true },
-			{ name: "Links", value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`, inline: false },
+			{
+				name: "Links",
+				value: `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`,
+				inline: false,
+			},
 		],
 		footer: { text: "\u{1F341} Maple Alerts" },
 	},
@@ -376,9 +380,7 @@ export const buildTemplateContext = (
 	"comparator.label": formatComparator(context.comparator),
 	threshold: formatSignalMetric(context.threshold, context.signalType),
 	thresholdUpper:
-		context.thresholdUpper != null
-			? formatSignalMetric(context.thresholdUpper, context.signalType)
-			: "",
+		context.thresholdUpper != null ? formatSignalMetric(context.thresholdUpper, context.signalType) : "",
 	value: formatSignalMetric(context.value, context.signalType),
 	observed: formatSignalMetric(context.value, context.signalType),
 	"observed.summary": formatObservedSummary(context),
@@ -709,7 +711,12 @@ export const dispatchDelivery = (
 								.digest("hex")
 						}
 						const response = yield* runTimedFetch("hazel", "Hazel", fetchFn, timeoutMs, () =>
-							safeFetch(config.webhookUrl, { method: "POST", headers, body: payloadJson, fetchFn }),
+							safeFetch(config.webhookUrl, {
+								method: "POST",
+								headers,
+								body: payloadJson,
+								fetchFn,
+							}),
 						)
 						if (!response.ok) {
 							const detail = yield* readErrorBody(response)

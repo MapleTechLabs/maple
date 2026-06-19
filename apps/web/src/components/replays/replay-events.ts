@@ -16,10 +16,7 @@ import { Array as Arr, Order } from "effect"
 
 /** True when `event` is an object carrying a numeric `timestamp` — narrows without a cast. */
 const hasTimestamp = (event: unknown): event is { timestamp: number } =>
-	typeof event === "object" &&
-	event !== null &&
-	"timestamp" in event &&
-	typeof event.timestamp === "number"
+	typeof event === "object" && event !== null && "timestamp" in event && typeof event.timestamp === "number"
 
 const timestampOf = (event: unknown): number => (hasTimestamp(event) ? event.timestamp : 0)
 

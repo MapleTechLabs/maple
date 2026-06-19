@@ -146,9 +146,7 @@ function mvNamespaceCondition(
 	return CH.inList($.ServiceNamespace, opts.namespaces)
 }
 
-export function logsTimeseriesQuery(
-	opts: LogsTimeseriesOpts,
-): CHQuery<ColumnDefs, LogsTimeseriesOutput, {}> {
+export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDefs, LogsTimeseriesOutput, {}> {
 	const groupByService = opts.groupBy?.includes("service")
 	const groupBySeverity = opts.groupBy?.includes("severity")
 
@@ -528,11 +526,7 @@ export function errorRateByServiceQuery() {
 			bucketErrorLogs: CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])),
 			errorRate: CH.lit(0),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			...rawLogsTimeRange($),
-			rawLogEdgeCondition(),
-		])
+		.where(($) => [$.OrgId.eq(param.string("orgId")), ...rawLogsTimeRange($), rawLogEdgeCondition()])
 		.groupBy("serviceName")
 
 	const mvInterior = from(LogsAggregatesHourly)

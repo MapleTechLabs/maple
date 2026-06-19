@@ -8,11 +8,7 @@ import { ChevronDownIcon } from "@maple/ui/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import {
-	Collapsible,
-	CollapsibleContent,
-	CollapsibleTrigger,
-} from "@maple/ui/components/ui/collapsible"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 import type { DurationStats } from "../hooks/use-local-trace-facets"
 
 const DEBOUNCE_MS = 300
@@ -26,10 +22,7 @@ interface DurationRangeFilterProps {
 	defaultOpen?: boolean
 }
 
-function useDebouncedNumberInput(
-	value: number | undefined,
-	onChange: (value: number | undefined) => void,
-) {
+function useDebouncedNumberInput(value: number | undefined, onChange: (value: number | undefined) => void) {
 	const [text, setText] = React.useState(value != null ? String(value) : "")
 	const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	const onChangeRef = React.useRef(onChange)
@@ -92,14 +85,19 @@ export function DurationRangeFilter({
 				<div className="space-y-3">
 					<div className="flex items-center gap-2">
 						<div className="flex-1">
-							<Label htmlFor="min-duration" className="mb-1 block text-xs text-muted-foreground">
+							<Label
+								htmlFor="min-duration"
+								className="mb-1 block text-xs text-muted-foreground"
+							>
 								Min
 							</Label>
 							<Input
 								id="min-duration"
 								type="number"
 								min={0}
-								placeholder={durationStats ? String(Math.floor(durationStats.minDurationMs)) : "0"}
+								placeholder={
+									durationStats ? String(Math.floor(durationStats.minDurationMs)) : "0"
+								}
 								value={min.text}
 								onChange={min.handleChange}
 								onBlur={min.flush}
@@ -108,14 +106,19 @@ export function DurationRangeFilter({
 						</div>
 						<span className="mt-5 text-muted-foreground">-</span>
 						<div className="flex-1">
-							<Label htmlFor="max-duration" className="mb-1 block text-xs text-muted-foreground">
+							<Label
+								htmlFor="max-duration"
+								className="mb-1 block text-xs text-muted-foreground"
+							>
 								Max
 							</Label>
 							<Input
 								id="max-duration"
 								type="number"
 								min={0}
-								placeholder={durationStats ? String(Math.ceil(durationStats.maxDurationMs)) : ""}
+								placeholder={
+									durationStats ? String(Math.ceil(durationStats.maxDurationMs)) : ""
+								}
 								value={max.text}
 								onChange={max.handleChange}
 								onBlur={max.flush}
@@ -127,11 +130,15 @@ export function DurationRangeFilter({
 						<div className="space-y-1 text-xs text-muted-foreground">
 							<div className="flex justify-between">
 								<span>p50:</span>
-								<span className="tabular-nums">{formatDurationMs(durationStats.p50DurationMs)}</span>
+								<span className="tabular-nums">
+									{formatDurationMs(durationStats.p50DurationMs)}
+								</span>
 							</div>
 							<div className="flex justify-between">
 								<span>p95:</span>
-								<span className="tabular-nums">{formatDurationMs(durationStats.p95DurationMs)}</span>
+								<span className="tabular-nums">
+									{formatDurationMs(durationStats.p95DurationMs)}
+								</span>
 							</div>
 						</div>
 					)}

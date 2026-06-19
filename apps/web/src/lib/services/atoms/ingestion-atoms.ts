@@ -9,10 +9,6 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 // applying a recommendation creates a mapping). Mutations on either side must refresh both atoms so
 // the ingestion settings page stays consistent — see attribute-mappings-section.tsx and
 // recommended-mappings-section.tsx.
-export const ingestAttributeMappingsListAtom = MapleApiAtomClient.query(
-	"ingestAttributeMappings",
-	"list",
-	{},
-)
+export const ingestAttributeMappingsListAtom = MapleApiAtomClient.query("ingestAttributeMappings", "list", {})
 
 export const recommendationIssuesListAtom = MapleApiAtomClient.query("recommendationIssues", "list", {})

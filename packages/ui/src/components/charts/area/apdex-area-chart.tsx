@@ -21,14 +21,7 @@ const baseChartConfig = {
 	apdexScore: { label: "Apdex", color: "var(--chart-apdex)" },
 } satisfies ChartConfig
 
-export function ApdexAreaChart({
-	data,
-	className,
-	legend,
-	tooltip,
-	referenceLines,
-	syncId,
-}: BaseChartProps) {
+export function ApdexAreaChart({ data, className, legend, tooltip, referenceLines, syncId }: BaseChartProps) {
 	const id = useId()
 	const gradientId = `apdexGradient-${id.replace(/:/g, "")}`
 	const fadedGradientId = `apdexGradientFaded-${id.replace(/:/g, "")}`

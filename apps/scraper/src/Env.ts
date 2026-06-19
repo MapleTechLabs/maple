@@ -29,9 +29,7 @@ const envConfig = Config.all({
 	SD_INTERNAL_TOKEN: Config.redacted("SD_INTERNAL_TOKEN").pipe(
 		Config.withDefault(Redacted.make("maple-sd-dev-token")),
 	),
-	MAPLE_INGEST_URL: Config.string("MAPLE_INGEST_URL").pipe(
-		Config.withDefault("http://127.0.0.1:3474"),
-	),
+	MAPLE_INGEST_URL: Config.string("MAPLE_INGEST_URL").pipe(Config.withDefault("http://127.0.0.1:3474")),
 	SCRAPER_CONCURRENCY: Config.number("SCRAPER_CONCURRENCY").pipe(Config.withDefault(10)),
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: Config.number("SCRAPER_RECONCILE_INTERVAL_SECONDS").pipe(
 		Config.withDefault(60),

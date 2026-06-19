@@ -68,13 +68,13 @@ export function TraceViewTabs({
 
 				<TabsContent value="flow" className="flex-1 min-h-0">
 					<TraceFlowView
-							rootSpans={rootSpans}
-							totalDurationMs={totalDurationMs}
-							traceStartTime={traceStartTime}
-							services={services}
-							selectedSpanId={selectedSpanId}
-							onSelectSpan={onSelectSpan}
-						/>
+						rootSpans={rootSpans}
+						totalDurationMs={totalDurationMs}
+						traceStartTime={traceStartTime}
+						services={services}
+						selectedSpanId={selectedSpanId}
+						onSelectSpan={onSelectSpan}
+					/>
 				</TabsContent>
 			</Tabs>
 		</TraceViewProvider>

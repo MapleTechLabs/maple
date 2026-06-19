@@ -50,16 +50,10 @@ describe("MapleCloudflareSDK.make", () => {
 		const telemetry = make({ serviceName: "unit-test" })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("op-1"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.succeed(undefined).pipe(Effect.withSpan("op-1"), Effect.provide(telemetry.layer)),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(
-				Effect.withSpan("op-2"),
-				Effect.provide(telemetry.layer),
-			),
+			Effect.succeed(undefined).pipe(Effect.withSpan("op-2"), Effect.provide(telemetry.layer)),
 		)
 
 		await telemetry.flush(env)
@@ -150,8 +144,10 @@ describe("MapleCloudflareSDK.make", () => {
 			yield* Effect.promise(() => telemetry.flush(env))
 
 			const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
-			expect(traceCall, "expected traces to be POSTed even though the inner span was interrupted")
-				.toBeDefined()
+			expect(
+				traceCall,
+				"expected traces to be POSTed even though the inner span was interrupted",
+			).toBeDefined()
 			const body = traceCall!.body as {
 				resourceSpans: Array<{
 					scopeSpans: Array<{

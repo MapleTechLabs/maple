@@ -757,7 +757,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		const specFilters = buildTracesSpecFilters(filters)
 		const finalFilters = isNumericAggregation
 			? {
-					...(specFilters ?? {}),
+					...specFilters,
 					numericAggregation: {
 						key: numericAttributeKey,
 						fn: query.aggregation as "avg" | "sum" | "min" | "max" | "p50" | "p95" | "p99",

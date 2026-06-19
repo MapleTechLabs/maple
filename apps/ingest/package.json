@@ -1,7 +1,6 @@
 {
 	"name": "@maple/ingest",
 	"private": true,
-	"portless": { "name": "ingest", "script": "dev:app" },
 	"scripts": {
 		"dev": "portless",
 		"dev:app": "set -a && source ../../.env.local && set +a && INGEST_PORT=${PORT:-3473} cargo run",
@@ -9,5 +8,9 @@
 		"build": "cargo build --release",
 		"test": "cargo test",
 		"typecheck": "cargo check"
+	},
+	"portless": {
+		"name": "ingest",
+		"script": "dev:app"
 	}
 }

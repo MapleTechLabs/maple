@@ -203,11 +203,7 @@ export const getServiceMapForService = Effect.fn("QueryEngine.getServiceMapForSe
 }: {
 	data: GetServiceMapForServiceInput
 }) {
-	const input = yield* decodeInput(
-		GetServiceMapForServiceInputSchema,
-		data,
-		"getServiceMapForService",
-	)
+	const input = yield* decodeInput(GetServiceMapForServiceInputSchema, data, "getServiceMapForService")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDependenciesForService", () =>
@@ -324,11 +320,7 @@ export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuery
 }: {
 	data: GetServiceDbQuerySummaryInput
 }) {
-	const input = yield* decodeInput(
-		GetServiceDbQuerySummaryInputSchema,
-		data,
-		"getServiceDbQuerySummary",
-	)
+	const input = yield* decodeInput(GetServiceDbQuerySummaryInputSchema, data, "getServiceDbQuerySummary")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>

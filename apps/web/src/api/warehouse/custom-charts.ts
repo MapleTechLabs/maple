@@ -72,11 +72,7 @@ function spanMetricsAvailabilityCacheKey(service?: string): string {
 function pickSpanMetricsCallsMetric(
 	rows: ReadonlyArray<{ metricName: string; metricType: string }>,
 ): SpanMetricsCallsMetricName | null {
-	const available = new Set(
-		rows
-			.filter((row) => row.metricType === "sum")
-			.map((row) => row.metricName),
-	)
+	const available = new Set(rows.filter((row) => row.metricType === "sum").map((row) => row.metricName))
 	for (const candidate of SPANMETRICS_CALLS_CANDIDATES) {
 		if (available.has(candidate)) return candidate
 	}
@@ -880,28 +876,30 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 	for (const k of allMetrics.keys()) allBuckets.add(k)
 	for (const k of metricsMap.keys()) allBuckets.add(k)
 
-	const points = Array.from(allBuckets).toSorted().map((bucket): ServiceDetailTimeSeriesPoint => {
-		const m = allMetrics.get(bucket)
-		const rawCount = m?.count ?? 0
-		const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
-		const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
-		const hasSampling = samplingWeight > 1.01
+	const points = Array.from(allBuckets)
+		.toSorted()
+		.map((bucket): ServiceDetailTimeSeriesPoint => {
+			const m = allMetrics.get(bucket)
+			const rawCount = m?.count ?? 0
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
+			const hasSampling = samplingWeight > 1.01
 
-		return {
-			bucket,
-			throughput,
-			tracedThroughput: rawCount,
-			hasSampling,
-			samplingWeight,
-			errorRate: m?.errorRate ?? 0,
-			p50LatencyMs: m?.p50 ?? 0,
-			p95LatencyMs: m?.p95 ?? 0,
-			p99LatencyMs: m?.p99 ?? 0,
-			apdexScore: m?.apdexScore ?? 0,
-			totalCount: rawCount,
-			partial: false,
-		}
-	})
+			return {
+				bucket,
+				throughput,
+				tracedThroughput: rawCount,
+				hasSampling,
+				samplingWeight,
+				errorRate: m?.errorRate ?? 0,
+				p50LatencyMs: m?.p50 ?? 0,
+				p95LatencyMs: m?.p95 ?? 0,
+				p99LatencyMs: m?.p99 ?? 0,
+				apdexScore: m?.apdexScore ?? 0,
+				totalCount: rawCount,
+				partial: false,
+			}
+		})
 
 	const nowMs = yield* Clock.currentTimeMillis
 	return {
@@ -968,28 +966,30 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	for (const k of allMetrics.keys()) allBuckets.add(k)
 	for (const k of metricsMap.keys()) allBuckets.add(k)
 
-	const points = Array.from(allBuckets).toSorted().map((bucket): ServiceDetailTimeSeriesPoint => {
-		const m = allMetrics.get(bucket)
-		const rawCount = m?.count ?? 0
-		const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
-		const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
-		const hasSampling = samplingWeight > 1.01
+	const points = Array.from(allBuckets)
+		.toSorted()
+		.map((bucket): ServiceDetailTimeSeriesPoint => {
+			const m = allMetrics.get(bucket)
+			const rawCount = m?.count ?? 0
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
+			const hasSampling = samplingWeight > 1.01
 
-		return {
-			bucket,
-			throughput,
-			tracedThroughput: rawCount,
-			hasSampling,
-			samplingWeight,
-			errorRate: m?.errorRate ?? 0,
-			p50LatencyMs: m?.p50 ?? 0,
-			p95LatencyMs: m?.p95 ?? 0,
-			p99LatencyMs: m?.p99 ?? 0,
-			apdexScore: m?.apdexScore ?? 0,
-			totalCount: rawCount,
-			partial: false,
-		}
-	})
+			return {
+				bucket,
+				throughput,
+				tracedThroughput: rawCount,
+				hasSampling,
+				samplingWeight,
+				errorRate: m?.errorRate ?? 0,
+				p50LatencyMs: m?.p50 ?? 0,
+				p95LatencyMs: m?.p95 ?? 0,
+				p99LatencyMs: m?.p99 ?? 0,
+				apdexScore: m?.apdexScore ?? 0,
+				totalCount: rawCount,
+				partial: false,
+			}
+		})
 
 	const nowMs = yield* Clock.currentTimeMillis
 	return {

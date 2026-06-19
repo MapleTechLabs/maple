@@ -128,7 +128,8 @@ export class Chdb {
 		// chdb_connect returns chdb_connection* (a double pointer); chdb_query
 		// wants chdb_connection — dereference once.
 		const conn = read.ptr(connPtrPtr, 0) as Pointer
-		if (!conn) throw new Error(Chdb.#connectFailure(options.dataDir, "chdb_connect produced a NULL connection"))
+		if (!conn)
+			throw new Error(Chdb.#connectFailure(options.dataDir, "chdb_connect produced a NULL connection"))
 
 		const db = new Chdb(sym, connPtrPtr, conn)
 		db.#bootstrap(options.schemaSql)
@@ -221,7 +222,8 @@ export const acquireChdb = (options: ChdbOptions): Effect.Effect<Chdb, ChdbError
 				markStoreOpen(options.dataDir)
 				return db
 			},
-			catch: (error) => new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
+			catch: (error) =>
+				new ChdbError({ message: error instanceof Error ? error.message : String(error) }),
 		}),
 		(db) =>
 			Effect.sync(() => {

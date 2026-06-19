@@ -16,7 +16,12 @@ import {
 	nodeInfraTimeseriesResultAtom,
 	workloadInfraTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { PodInfraMetric, NodeInfraMetric, WorkloadInfraMetric, WorkloadKind } from "@/api/warehouse/infra"
+import type {
+	PodInfraMetric,
+	NodeInfraMetric,
+	WorkloadInfraMetric,
+	WorkloadKind,
+} from "@/api/warehouse/infra"
 import { formatPercent } from "./format"
 import { CHART_EMPTY_MESSAGE, CHART_GRID_DASH, COLOR_PALETTE, transformRows } from "./chart-utils"
 import { formatBackendError } from "@/lib/error-messages"
@@ -144,7 +149,11 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 								)
 							})}
 						</defs>
-						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}
@@ -200,7 +209,11 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 					</AreaChart>
 				) : (
 					<LineChart data={data} margin={margin} syncId={syncId} syncMethod="value">
-						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}

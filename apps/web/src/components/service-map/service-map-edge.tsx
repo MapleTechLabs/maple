@@ -77,12 +77,8 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 	const labelX = edgeData?.elkPath ? (edgeData.elkLabelX ?? smoothLabelX) : smoothLabelX
 	const labelY = edgeData?.elkPath ? (edgeData.elkLabelY ?? smoothLabelY) : smoothLabelY
 
-	const sourceColor = isDbNodeId(source)
-		? dbEndpointColor(source)
-		: getServiceLegendColor(source, services)
-	const targetColor = isDbNodeId(target)
-		? dbEndpointColor(target)
-		: getServiceLegendColor(target, services)
+	const sourceColor = isDbNodeId(source) ? dbEndpointColor(source) : getServiceLegendColor(source, services)
+	const targetColor = isDbNodeId(target) ? dbEndpointColor(target) : getServiceLegendColor(target, services)
 	const sw = getStrokeWidth(callCount)
 	const i = getEdgeIntensity(callsPerSecond)
 

@@ -1,7 +1,4 @@
-import {
-	latestSnapshotStatements,
-	projectRevision,
-} from "../../generated/clickhouse-schema"
+import { latestSnapshotStatements, projectRevision } from "../../generated/clickhouse-schema"
 
 /**
  * Migration 0001 — initial schema.

@@ -3,14 +3,7 @@ import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@maple/ui/utils"
 import { useClipboard } from "@maple/ui/hooks/use-clipboard"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	GlobeIcon,
-	ComputerIcon,
-	MobileIcon,
-	ClockIcon,
-	CopyIcon,
-	CheckIcon,
-} from "@/components/icons"
+import { GlobeIcon, ComputerIcon, MobileIcon, ClockIcon, CopyIcon, CheckIcon } from "@/components/icons"
 import { formatRelativeTime, gradientFor } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
 

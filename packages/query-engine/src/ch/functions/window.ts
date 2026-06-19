@@ -69,7 +69,11 @@ export function over<T>(expr: Expr<T>, spec: CompiledWindowSpec): Expr<T> {
 	return makeExpr<T>(raw(`${compile(expr.toFragment())} OVER (${spec.sql})`))
 }
 
-export function lagInFrame<T>(expr: Expr<T>, offset: number | Expr<number>, defaultValue: T | Expr<T>): Expr<T> {
+export function lagInFrame<T>(
+	expr: Expr<T>,
+	offset: number | Expr<number>,
+	defaultValue: T | Expr<T>,
+): Expr<T> {
 	return makeExpr<T>(
 		raw(
 			`lagInFrame(${compile(expr.toFragment())}, ${compile(toFragment(offset))}, ${compile(toFragment(defaultValue))})`,

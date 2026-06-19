@@ -18,12 +18,7 @@ import type { RuleFormState } from "@/lib/alerts/form-utils"
  * shape — the data here stays a pure module with no React in the import graph
  * beyond the icon components used for display.
  */
-export type AlertTemplateId =
-	| "high_error_rate"
-	| "slow_p95"
-	| "slow_p99"
-	| "low_apdex"
-	| "throughput_drop"
+export type AlertTemplateId = "high_error_rate" | "slow_p95" | "slow_p99" | "low_apdex" | "throughput_drop"
 
 export interface AlertTemplate {
 	id: AlertTemplateId

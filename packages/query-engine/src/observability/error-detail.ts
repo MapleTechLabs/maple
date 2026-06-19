@@ -14,9 +14,7 @@ const LOG_WINDOW_HALF_WIDTH_MS = 60 * 60 * 1000
  * pipe-dispatch falls back to an all-time sentinel window (2023→2099) and the
  * lookup scans full retention (mined at p95 ~5s on busy orgs).
  */
-const logRangeAround = (
-	traceStartTime: string,
-): { start_time: string; end_time: string } | undefined => {
+const logRangeAround = (traceStartTime: string): { start_time: string; end_time: string } | undefined => {
 	const ms = parseWarehouseDateTime(traceStartTime)
 	if (Number.isNaN(ms)) return undefined
 	return {

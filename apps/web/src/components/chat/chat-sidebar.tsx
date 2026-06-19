@@ -262,10 +262,7 @@ function ChatSidebarRow({
 						className="min-w-0 flex-1 bg-transparent text-sm outline-none ring-1 ring-ring/50 rounded-sm px-1 -mx-1"
 					/>
 				) : (
-					<span
-						className="min-w-0 flex-1 truncate text-left"
-						title={tab.title}
-					>
+					<span className="min-w-0 flex-1 truncate text-left" title={tab.title}>
 						{tab.title}
 					</span>
 				)}

@@ -281,9 +281,7 @@ const fluxSecondsConfig = Config.number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Con
 // single cold dashboard request only ever splits into a few ranges, but
 // "unbounded" let a burst of concurrent misses multiply into a warehouse
 // stampede (the mechanism behind the eval-bucket-cache regression). Bound it.
-const fillConcurrencyConfig = Config.number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(
-	Config.withDefault(4),
-)
+const fillConcurrencyConfig = Config.number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
 
 export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceShape>()(
 	"@maple/api/lib/BucketCacheService",

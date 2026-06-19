@@ -173,10 +173,7 @@ describe("dashboard concurrency", () => {
 			// strictly serialized". We assert the surviving state is internally
 			// consistent and the failure (if any) is the typed concurrency error.
 			assert.strictEqual(exitsAndListed.listed.dashboards.length, 1)
-			assert.include(
-				["From writer A", "From writer B"],
-				exitsAndListed.listed.dashboards[0]!.name,
-			)
+			assert.include(["From writer A", "From writer B"], exitsAndListed.listed.dashboards[0]!.name)
 
 			for (const exit of failures) {
 				const error = findError(exit)

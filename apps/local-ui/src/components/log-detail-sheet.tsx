@@ -251,12 +251,7 @@ function LogMetaStrip({ log, onOpenTrace }: { log: LocalLog; onOpenTrace: () => 
 }
 
 function getErrorMessage(log: LocalLog): string {
-	return (
-		log.logAttributes["exception.message"] ??
-		log.logAttributes["error.message"] ??
-		log.body ??
-		""
-	)
+	return log.logAttributes["exception.message"] ?? log.logAttributes["error.message"] ?? log.body ?? ""
 }
 
 function LogErrorBanner({ log }: { log: LocalLog }) {
@@ -302,7 +297,9 @@ function LogErrorBanner({ log }: { log: LocalLog }) {
 			<AlertDescription>
 				{isLong ? (
 					<Collapsible open={expanded} onOpenChange={setExpanded}>
-						{!expanded && <p className="font-mono text-[11px] break-words line-clamp-2">{message}</p>}
+						{!expanded && (
+							<p className="font-mono text-[11px] break-words line-clamp-2">{message}</p>
+						)}
 						<CollapsibleTrigger className="mt-1 flex items-center gap-1 text-[10px] text-destructive hover:text-destructive/80">
 							{expanded ? "Show less" : "Show full error"}
 							{expanded ? <ChevronUpIcon size={10} /> : <ChevronDownIcon size={10} />}

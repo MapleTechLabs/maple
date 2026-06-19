@@ -8,10 +8,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import {
-	AnomaliesFilterSidebar,
-	type AnomalyFilters,
-} from "@/components/anomalies/anomalies-filter-sidebar"
+import { AnomaliesFilterSidebar, type AnomalyFilters } from "@/components/anomalies/anomalies-filter-sidebar"
 import {
 	ANOMALY_GROUP_ORDER,
 	AnomalyGroup,
@@ -65,10 +62,7 @@ function AnomaliesPage() {
 	const live = search.live ?? status === "open"
 
 	const incidentsQueryAtom = MapleApiAtomClient.query("anomalies", "listIncidents", {
-		query:
-			status === "all"
-				? { limit: INCIDENTS_PAGE_LIMIT }
-				: { status, limit: INCIDENTS_PAGE_LIMIT },
+		query: status === "all" ? { limit: INCIDENTS_PAGE_LIMIT } : { status, limit: INCIDENTS_PAGE_LIMIT },
 		reactivityKeys: ["anomalyIncidents"],
 	})
 	// Retain the previous list across tab switches so the page never collapses

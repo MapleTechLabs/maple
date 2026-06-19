@@ -15,7 +15,13 @@ import { ShorthandInput } from "./shorthand-input"
 import { TimezoneDisplay } from "./timezone-display"
 import type { TimeRangePickerProps, TimeRangeTab } from "./types"
 
-export function TimeRangePicker({ startTime, endTime, presetValue, onChange, hotkey = false }: TimeRangePickerProps) {
+export function TimeRangePicker({
+	startTime,
+	endTime,
+	presetValue,
+	onChange,
+	hotkey = false,
+}: TimeRangePickerProps) {
 	const [open, setOpen] = useState(false)
 	const [tab, setTab] = useState<TimeRangeTab>("relative")
 	const { recentTimes, addRecentTime } = useRecentlyUsedTimes()

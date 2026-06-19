@@ -67,9 +67,7 @@ for (const stmt of latestSnapshotStatements) {
 }
 
 if (violations.length === 0) {
-	console.log(
-		`ClickHouse schema lint: OK (${tables.size} tables, ${materializedViews.length} MVs).`,
-	)
+	console.log(`ClickHouse schema lint: OK (${tables.size} tables, ${materializedViews.length} MVs).`)
 	process.exit(0)
 }
 

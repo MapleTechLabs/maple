@@ -378,11 +378,7 @@ const getLogAttributeValuesEffect = Effect.fn("QueryEngine.getLogAttributeValues
 }: {
 	data: GetLogAttributeValuesInput
 }) {
-	const input = yield* decodeInput(
-		GetLogAttributeValuesInputSchema,
-		data ?? {},
-		"getLogAttributeValues",
-	)
+	const input = yield* decodeInput(GetLogAttributeValuesInputSchema, data ?? {}, "getLogAttributeValues")
 
 	yield* Effect.annotateCurrentSpan("attributeKey", input.attributeKey)
 

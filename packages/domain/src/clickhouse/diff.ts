@@ -72,12 +72,12 @@ export type TableDiffEntry =
 const normalizeType = (type: string): string =>
 	// Collapse whitespace; CH's system.columns sometimes returns the type with
 	// or without spaces after commas in nested types, depending on version.
-	type.replace(/\s+/g, " ").replace(/\s*,\s*/g, ", ").trim()
+	type
+		.replace(/\s+/g, " ")
+		.replace(/\s*,\s*/g, ", ")
+		.trim()
 
-const diffColumns = (
-	desired: DesiredTable,
-	actual: ActualTable,
-): ReadonlyArray<ColumnDrift> => {
+const diffColumns = (desired: DesiredTable, actual: ActualTable): ReadonlyArray<ColumnDrift> => {
 	const drifts: ColumnDrift[] = []
 	const desiredByName = new Map(desired.columns.map((c) => [c.name, c]))
 	const actualByName = new Map(actual.columns.map((c) => [c.name, c]))

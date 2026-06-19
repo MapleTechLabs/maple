@@ -394,7 +394,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 															<Link
 																to="/services/$serviceName"
 																params={{ serviceName: service.serviceName }}
-																search={serviceDetailSearch(filters, service.environment)}
+																search={serviceDetailSearch(
+																	filters,
+																	service.environment,
+																)}
 																className="font-medium text-primary hover:underline"
 																onClick={(e) => e.stopPropagation()}
 															>

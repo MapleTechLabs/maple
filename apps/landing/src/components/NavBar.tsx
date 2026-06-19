@@ -35,7 +35,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 
 	const featureLinks = [
 		{ href: l("/features/distributed-tracing"), label: () => m.nav_distributed_tracing() },
-			{ href: l("/features/browser-sessions"), label: () => m.nav_browser_sessions() },
+		{ href: l("/features/browser-sessions"), label: () => m.nav_browser_sessions() },
 		{ href: l("/features/metrics-dashboards"), label: () => m.nav_metrics_dashboards() },
 		{ href: l("/features/log-management"), label: () => m.nav_log_management() },
 		{ href: l("/features/service-catalog"), label: () => m.nav_service_catalog() },

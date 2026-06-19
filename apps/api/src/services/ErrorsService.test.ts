@@ -75,8 +75,7 @@ describe("describeCause", () => {
 })
 
 describe("isBusyDatabaseError", () => {
-	const makeError = (message: string, cause: unknown = null) =>
-		new DatabaseError({ message, cause })
+	const makeError = (message: string, cause: unknown = null) => new DatabaseError({ message, cause })
 
 	it("matches SQLITE_BUSY in message", () => {
 		expect(isBusyDatabaseError(makeError("SQLITE_BUSY: database is locked"))).toBe(true)
@@ -558,49 +557,53 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
-	it.effect("a re-fired fingerprint on a done issue reopens it to triage with a regression incident", () => {
-		const rows = [scanRow()]
-		return Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			yield* TestClock.setTime(TICK_MS)
-			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
-			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+	it.effect(
+		"a re-fired fingerprint on a done issue reopens it to triage with a regression incident",
+		() => {
+			const rows = [scanRow()]
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				yield* TestClock.setTime(TICK_MS)
+				yield* seedIssue(asIssueId(randomUUID()))
+				yield* errors.runTick()
+				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
-			// Resolve through the public workflow (triage -> done is not a legal
-			// direct transition).
-			const actor = yield* errors.ensureUserActor(ORG, USER)
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_progress")
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
+				// Resolve through the public workflow (triage -> done is not a legal
+				// direct transition).
+				const actor = yield* errors.ensureUserActor(ORG, USER)
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_progress")
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 
-			const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
-			assert.strictEqual(resolved.workflowState, "done")
-			assert.isNotNull(resolved.resolvedAt)
+				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				assert.strictEqual(resolved.workflowState, "done")
+				assert.isNotNull(resolved.resolvedAt)
 
-			yield* TestClock.setTime(TICK_MS + 120_000)
-			const second = yield* errors.runTick()
-			assert.strictEqual(second.issuesTouched, 1)
-			assert.strictEqual(second.incidentsOpened, 1)
+				yield* TestClock.setTime(TICK_MS + 120_000)
+				const second = yield* errors.runTick()
+				assert.strictEqual(second.issuesTouched, 1)
+				assert.strictEqual(second.incidentsOpened, 1)
 
-			// A done issue reopens immediately on re-observation — the errors tick
-			// has no reopen cool-down window.
-			const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
-			assert.strictEqual(reopened.workflowState, "triage")
-			assert.isNull(reopened.resolvedAt)
+				// A done issue reopens immediately on re-observation — the errors tick
+				// has no reopen cool-down window.
+				const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				assert.strictEqual(reopened.workflowState, "triage")
+				assert.isNull(reopened.resolvedAt)
 
-			const events = yield* loadEventsForIssue(issue.id)
-			assert.lengthOf(
-				events.filter((e) => e.type === "regression"),
-				1,
-			)
+				const events = yield* loadEventsForIssue(issue.id)
+				assert.lengthOf(
+					events.filter((e) => e.type === "regression"),
+					1,
+				)
 
-			const incidents = yield* loadIncidentsForIssue(issue.id)
-			const open = incidents.filter((i) => i.status === "open")
-			assert.lengthOf(open, 1)
-			assert.strictEqual(open[0]?.reason, "regression")
-		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
-	}, 15_000)
+				const incidents = yield* loadIncidentsForIssue(issue.id)
+				const open = incidents.filter((i) => i.status === "open")
+				assert.lengthOf(open, 1)
+				assert.strictEqual(open[0]?.reason, "regression")
+			}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+		},
+		15_000,
+	)
 
 	it.effect("a wontfix issue with an indefinite snooze is skipped entirely by the scan", () => {
 		const rows = [scanRow()]
@@ -651,9 +654,7 @@ describe("ErrorsService.runTick", () => {
 
 			const events = yield* loadEventsForIssue(issueId)
 			const wakeups = events.filter(
-				(e) =>
-					e.type === "state_change" &&
-					JSON.parse(e.payloadJson).viaSnoozeWakeup === true,
+				(e) => e.type === "state_change" && JSON.parse(e.payloadJson).viaSnoozeWakeup === true,
 			)
 			assert.lengthOf(wakeups, 1)
 			assert.strictEqual(wakeups[0]?.fromState, "wontfix")

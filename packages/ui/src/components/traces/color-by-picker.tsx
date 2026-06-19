@@ -9,12 +9,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "../ui/select"
-import {
-	colorByFieldId,
-	colorByFromId,
-	colorByLabel,
-	type ColorByField,
-} from "./color-by"
+import { colorByFieldId, colorByFromId, colorByLabel, type ColorByField } from "./color-by"
 import { useTraceAttributeKeys } from "./use-trace-attribute-keys"
 
 interface ColorByPickerProps {

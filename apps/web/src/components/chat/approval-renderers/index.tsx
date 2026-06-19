@@ -29,9 +29,7 @@ export function ApprovalSummary({ toolName, input }: SummaryProps) {
 }
 
 function humanize(key: string): string {
-	return key
-		.replace(/_/g, " ")
-		.replace(/\b\w/g, (c) => c.toUpperCase())
+	return key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function formatValue(value: unknown): { kind: "scalar"; text: string } | { kind: "blob"; chars: number } {

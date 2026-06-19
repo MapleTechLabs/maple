@@ -9,7 +9,11 @@ import type { ShortcutId } from "@/lib/shortcuts"
 import { useAppHotkey } from "./use-app-hotkey"
 
 function Probe(props: { id: ShortcutId; onTrigger: () => void; enabled?: boolean }) {
-	useAppHotkey(props.id, props.onTrigger, props.enabled === undefined ? undefined : { enabled: props.enabled })
+	useAppHotkey(
+		props.id,
+		props.onTrigger,
+		props.enabled === undefined ? undefined : { enabled: props.enabled },
+	)
 	return null
 }
 

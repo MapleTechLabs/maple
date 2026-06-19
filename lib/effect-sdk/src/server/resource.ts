@@ -110,7 +110,9 @@ export const resolveResource = (config: ResourceConfigInput): Effect.Effect<Reso
 		const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
 		// Prefer the platform-provided commit SHA; fall back to serviceVersion only
 		// when it is itself SHA-shaped. Never shell out to git at runtime.
-		const headRevision = Option.getOrUndefined(envServiceVersion) ?? (isCommitSha(serviceVersion) ? serviceVersion : undefined)
+		const headRevision =
+			Option.getOrUndefined(envServiceVersion) ??
+			(isCommitSha(serviceVersion) ? serviceVersion : undefined)
 
 		const envEnvironment = yield* EnvConfig.environment
 		const environment = config.environment ?? envEnvironment

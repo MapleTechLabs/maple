@@ -48,12 +48,13 @@ h1{font-size:34px;font-weight:700;letter-spacing:-.02em;margin-bottom:8px}
 .btn{padding:13px 22px;border:none;border-radius:12px;background:#6366f1;color:#fff;font-size:15px;font-weight:600;cursor:pointer}
 `
 
-const el = (
-	id: number,
-	tagName: string,
-	attributes: Record<string, string>,
-	childNodes: unknown[] = [],
-) => ({ type: NodeType.Element, tagName, attributes, childNodes, id })
+const el = (id: number, tagName: string, attributes: Record<string, string>, childNodes: unknown[] = []) => ({
+	type: NodeType.Element,
+	tagName,
+	attributes,
+	childNodes,
+	id,
+})
 
 const text = (id: number, textContent: string) => ({ type: NodeType.Text, textContent, id })
 
@@ -78,7 +79,9 @@ const documentNode = {
 					]),
 					el(13, "div", { class: "main" }, [
 						el(14, "h1", {}, [text(15, "Welcome back, Jordan 👋")]),
-						el(16, "p", { class: "sub" }, [text(17, "Here's what happened while you were away.")]),
+						el(16, "p", { class: "sub" }, [
+							text(17, "Here's what happened while you were away."),
+						]),
 						el(18, "div", { class: "stats" }, [
 							stat(20, "1,284", "Active users"),
 							stat(25, "98.2%", "Uptime"),

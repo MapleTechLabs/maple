@@ -13,14 +13,12 @@ describe("validateExternalUrlSync", () => {
 		expect(url.hostname).toBe("prom.public.dev")
 	})
 
-	it.each([
-		"javascript:alert(1)",
-		"file:///etc/passwd",
-		"ftp://example.com",
-		"data:text/html,<script>",
-	])("rejects non-http(s) scheme: %s", (raw) => {
-		expect(() => validateExternalUrlSync(raw)).toThrow(UrlValidationError)
-	})
+	it.each(["javascript:alert(1)", "file:///etc/passwd", "ftp://example.com", "data:text/html,<script>"])(
+		"rejects non-http(s) scheme: %s",
+		(raw) => {
+			expect(() => validateExternalUrlSync(raw)).toThrow(UrlValidationError)
+		},
+	)
 
 	it.each([
 		"http://localhost",
@@ -92,9 +90,9 @@ describe("safeFetch", () => {
 		const fakeFetch: typeof fetch = async () => {
 			throw new Error("should not be called")
 		}
-		await expect(
-			safeFetch("http://169.254.169.254/", { fetchFn: fakeFetch }),
-		).rejects.toBeInstanceOf(UrlValidationError)
+		await expect(safeFetch("http://169.254.169.254/", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
+			UrlValidationError,
+		)
 	})
 
 	it("rejects a redirect to an internal URL", async () => {
@@ -106,9 +104,9 @@ describe("safeFetch", () => {
 				headers: { location: "http://127.0.0.1/admin" },
 			})
 		}
-		await expect(
-			safeFetch("https://api.example.com/x", { fetchFn: fakeFetch }),
-		).rejects.toBeInstanceOf(UrlValidationError)
+		await expect(safeFetch("https://api.example.com/x", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
+			UrlValidationError,
+		)
 		expect(calls).toBe(1)
 	})
 
@@ -141,8 +139,8 @@ describe("safeFetch", () => {
 				headers: { location: `https://api${calls}.example.com/r` },
 			})
 		}
-		await expect(
-			safeFetch("https://api0.example.com/r", { fetchFn: fakeFetch }),
-		).rejects.toBeInstanceOf(UrlValidationError)
+		await expect(safeFetch("https://api0.example.com/r", { fetchFn: fakeFetch })).rejects.toBeInstanceOf(
+			UrlValidationError,
+		)
 	})
 })

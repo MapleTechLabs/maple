@@ -269,8 +269,8 @@ function makeSuggestedName(form: RuleFormState): string | null {
 				? `${form.serviceNames.length} services`
 				: queryGroupBy.length > 0
 					? `per ${queryGroupBy.join(" · ")}`
-				: form.groupBy.length > 0
-					? `per ${form.groupBy.join(" · ")}`
-					: null
+					: form.groupBy.length > 0
+						? `per ${form.groupBy.join(" · ")}`
+						: null
 	return scope ? `${base} — ${scope}` : base
 }

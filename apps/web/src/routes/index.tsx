@@ -102,9 +102,7 @@ function DashboardPage() {
 		return { startTime: fmt(start), endTime: fmt(end) }
 	}, [])
 
-	const facetsResult = useRetainedRefreshableResultValue(
-		getServicesFacetsResultAtom({ data: facetsRange }),
-	)
+	const facetsResult = useRetainedRefreshableResultValue(getServicesFacetsResultAtom({ data: facetsRange }))
 
 	const defaultPreset = useMemo(() => {
 		if (!Result.isSuccess(facetsResult)) return "24h"
