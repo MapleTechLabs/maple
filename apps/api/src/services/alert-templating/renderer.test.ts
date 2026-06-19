@@ -56,9 +56,7 @@ describe("renderTemplate", () => {
 	})
 
 	it("tolerates whitespace inside the braces", () => {
-		expect(renderTemplate("{{rule.name}} {{   severity   }}", ctx).text).toBe(
-			"Checkout errors critical",
-		)
+		expect(renderTemplate("{{rule.name}} {{   severity   }}", ctx).text).toBe("Checkout errors critical")
 	})
 })
 

@@ -65,7 +65,11 @@ for (const name of INGEST_DATASOURCES) {
 }
 
 const renderedLocal = `${JSON.stringify(
-	{ projectRevision: clickHouseProjectRevision, orgPlaceholder: ORG_PLACEHOLDER, datasources: localDatasources },
+	{
+		projectRevision: clickHouseProjectRevision,
+		orgPlaceholder: ORG_PLACEHOLDER,
+		datasources: localDatasources,
+	},
 	null,
 	2,
 )}\n`

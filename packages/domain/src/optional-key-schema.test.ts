@@ -11,7 +11,9 @@ import { CreateApiKeyRequest } from "./http/api-keys.ts"
  * enforced. Decoding is synchronous (no decoding services), so plain Vitest is
  * sufficient here — no `@effect/vitest` harness needed.
  */
-type DecodeResult<A> = { readonly ok: true; readonly value: A } | { readonly ok: false; readonly error: string }
+type DecodeResult<A> =
+	| { readonly ok: true; readonly value: A }
+	| { readonly ok: false; readonly error: string }
 
 const decode = <A>(schema: Schema.Decoder<A>, value: unknown): DecodeResult<A> => {
 	try {

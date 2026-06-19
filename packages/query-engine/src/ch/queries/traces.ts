@@ -10,7 +10,13 @@ import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { param } from "@maple-dev/clickhouse-builder"
 import { from, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
 import type { Table } from "@maple-dev/clickhouse-builder"
-import { ServiceOverviewSpans, TraceDetailSpans, TraceListMv, Traces, TracesAggregatesHourly } from "../tables"
+import {
+	ServiceOverviewSpans,
+	TraceDetailSpans,
+	TraceListMv,
+	Traces,
+	TracesAggregatesHourly,
+} from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
 import * as T from "@maple-dev/clickhouse-builder/types"
@@ -541,9 +547,7 @@ export function tracesListQuery(opts: TracesListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = (
-		$: ColumnAccessor<typeof Traces.columns>,
-	): Array<CH.Condition | undefined> => [
+	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, opts),
 		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
 	]
@@ -796,9 +800,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 
 	const cursor = opts.cursor
 
-	const baseWhere = (
-		$: ColumnAccessor<typeof Traces.columns>,
-	): Array<CH.Condition | undefined> => [
+	const baseWhere = ($: ColumnAccessor<typeof Traces.columns>): Array<CH.Condition | undefined> => [
 		...buildWhereConditions($, { ...opts, rootOnly: true }),
 		CH.when(cursor, (v: string) => $.Timestamp.lt(v)),
 	]
@@ -828,9 +830,7 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			rootHttpMethod: $.SpanAttributes.get("http.method"),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
 			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
-			rootSpanAttributes: CH.toJSONString(
-				buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes"),
-			),
+			rootSpanAttributes: CH.toJSONString(buildProjectedMapExpr(ROOT_SPAN_ATTR_KEYS, "SpanAttributes")),
 			hasError: CH.if_($.StatusCode.eq("Error"), CH.lit(1), CH.lit(0)),
 		}))
 		.where(($) => [...baseWhere($), $.Timestamp.gte(cutoff)])

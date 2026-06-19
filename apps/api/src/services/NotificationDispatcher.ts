@@ -31,9 +31,7 @@ import { Env } from "../lib/Env"
 
 const DELIVERY_TIMEOUT_MS = 15_000
 
-export class NotificationDispatchError extends Data.TaggedError(
-	"@maple/api/services/NotificationDispatchError",
-)<{
+class NotificationDispatchError extends Data.TaggedError("@maple/api/services/NotificationDispatchError")<{
 	readonly message: string
 	readonly cause?: unknown
 }> {}

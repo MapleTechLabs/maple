@@ -1,6 +1,6 @@
 import { cn } from "@maple/ui/lib/utils"
 
-export interface IssuesToolbarTab<T extends string> {
+interface IssuesToolbarTab<T extends string> {
 	value: T
 	label: string
 	count?: number

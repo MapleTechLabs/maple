@@ -30,7 +30,7 @@ const BODY_WIDTH = 480
 
 const EMPTY_COLUMNS: string[] = []
 
-export interface LogsTableViewProps {
+interface LogsTableViewProps {
 	allData: Log[]
 	isFetchingNextPage: boolean
 	hasNextPage: boolean
@@ -182,8 +182,7 @@ const LogRow = React.memo(function LogRow({
 				</span>
 				{pinnedColumns.map((key) => {
 					const value = log.logAttributes[key] ?? log.resourceAttributes[key] ?? "—"
-					const numeric =
-						value !== "—" && value.trim() !== "" && !Number.isNaN(Number(value))
+					const numeric = value !== "—" && value.trim() !== "" && !Number.isNaN(Number(value))
 					return (
 						<span
 							key={key}
@@ -283,7 +282,7 @@ function PinnedHeader({
 	)
 }
 
-export function LogsTableView({
+function LogsTableView({
 	allData,
 	isFetchingNextPage,
 	hasNextPage,
@@ -444,7 +443,10 @@ export function LogsTableView({
 			<div className={`flex-1 min-h-0 flex flex-col transition-opacity ${waiting ? "opacity-60" : ""}`}>
 				{!onLogClick && <LogsTableToolbar />}
 				<div className="flex-1 min-h-0 relative">
-					<div ref={scrollContainerRef} className="absolute inset-0 overflow-auto rounded-md border">
+					<div
+						ref={scrollContainerRef}
+						className="absolute inset-0 overflow-auto rounded-md border"
+					>
 						{pinnedColumns.length > 0 && (
 							<PinnedHeader
 								pinnedColumns={pinnedColumns}

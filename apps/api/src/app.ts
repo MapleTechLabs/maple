@@ -60,11 +60,9 @@ import { PlanetScaleDiscoveryService } from "./services/PlanetScaleDiscoveryServ
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
 
-export const HealthRouter = HttpRouter.use((router) =>
-	router.add("GET", "/health", HttpServerResponse.text("OK")),
-)
+const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
 
-export const McpGetFallback = HttpRouter.use((router) =>
+const McpGetFallback = HttpRouter.use((router) =>
 	router.add("GET", "/mcp", HttpServerResponse.empty({ status: 405 })),
 )
 
@@ -73,13 +71,13 @@ export const McpGetFallback = HttpRouter.use((router) =>
 // script out of the deployed bundle (guards the 3 MB worker size limit, error
 // 10027). The `/docs` page now depends on jsDelivr being reachable from the
 // client browser.
-export const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
+const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
 	path: "/docs",
 })
 
-export const InfraLive = Env.layer
+const InfraLive = Env.layer
 
-export const CoreServicesLive = Layer.mergeAll(
+const CoreServicesLive = Layer.mergeAll(
 	AuthService.layer,
 	ApiKeysService.layer,
 	CloudflareLogpushService.layer,
@@ -97,58 +95,50 @@ export const CoreServicesLive = Layer.mergeAll(
 	IngestAttributeMappingService.layer,
 ).pipe(Layer.provideMerge(InfraLive))
 
-export const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const DemoServiceLive = DemoService.layer.pipe(
+const DemoServiceLive = DemoService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
 )
 
 // EdgeCacheService's storage backend (Workers KV / in-memory) is injected via
 // the CacheBackend port. Define the wired layer once so it memoizes to a single
 // instance shared by the bucket cache and the direct edge cache.
-export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
+const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
-export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
-	Layer.provideMerge(EdgeCacheServiceLive),
-)
+const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheServiceLive))
 
-export const QueryEngineServiceLive = QueryEngineService.layer.pipe(
+const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
 	Layer.provideMerge(EdgeCacheServiceLive),
 	Layer.provideMerge(BucketCacheServiceLive),
 )
 
-export const AlertsServiceLive = AlertsService.layer.pipe(
+const AlertsServiceLive = AlertsService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, QueryEngineServiceLive, AlertRuntime.layer)),
 )
 
-export const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const ErrorsServiceLive = ErrorsService.layer.pipe(
+const ErrorsServiceLive = ErrorsService.layer.pipe(
 	Layer.provideMerge(
 		Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, NotificationDispatcherLive),
 	),
 )
 
-export const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
+const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
 )
 
-export const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
+const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, EdgeCacheServiceLive)),
 )
 
-export const AiTriageServiceLive = AiTriageService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const AiTriageServiceLive = AiTriageService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
+const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
-export const DigestServiceLive = DigestService.layer.pipe(
+const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
 
@@ -166,7 +156,7 @@ export const MainLive = Layer.mergeAll(
 	RawSqlChartService.layer,
 )
 
-export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
+const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
 	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive)),

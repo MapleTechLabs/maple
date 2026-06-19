@@ -183,9 +183,7 @@ function SpanBar({
 				borderLeft: `3px solid ${bar.borderColor}`,
 			}}
 		>
-			{showName && (
-				<span className="truncate px-1.5 text-foreground/90">{bar.span.spanName}</span>
-			)}
+			{showName && <span className="truncate px-1.5 text-foreground/90">{bar.span.spanName}</span>}
 			{showDuration && (
 				<span className="ml-auto shrink-0 px-1.5 text-foreground/50 tabular-nums">
 					{formatDuration(bar.span.durationMs)}

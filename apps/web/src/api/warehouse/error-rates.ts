@@ -3,17 +3,6 @@ import { ErrorRateByServiceRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
-export interface ErrorRateByService {
-	serviceName: string
-	totalLogs: number
-	errorLogs: number
-	errorRate: number
-}
-
-export interface ErrorRateByServiceResponse {
-	data: ErrorRateByService[]
-}
-
 const GetErrorRateByServiceInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),

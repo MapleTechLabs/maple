@@ -9,10 +9,7 @@ import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import {
-	listReplaysResultAtom,
-	replaysFacetsResultAtom,
-} from "@/lib/services/atoms/warehouse-query-atoms"
+import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -74,9 +71,7 @@ function ReplaysPage() {
 	const sessions = Result.isSuccess(result) ? result.value.data : []
 	const errorSessions = Result.isSuccess(facetsResult) ? facetsResult.value.errorCount : 0
 
-	const titleContent = (
-		<h1 className="truncate text-2xl font-semibold tracking-tight">Session Replays</h1>
-	)
+	const titleContent = <h1 className="truncate text-2xl font-semibold tracking-tight">Session Replays</h1>
 
 	const headerActions = (
 		<TimeRangeHeaderControls

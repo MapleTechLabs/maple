@@ -30,16 +30,14 @@ import { Routes } from "./routes"
 
 const telemetry = MapleCloudflareSDK.make({ serviceName: "my-worker" })
 
-const handler = HttpRouter.toWebHandler(
-    Routes.pipe(Layer.provideMerge(telemetry.layer)),
-)
+const handler = HttpRouter.toWebHandler(Routes.pipe(Layer.provideMerge(telemetry.layer)))
 
 export default {
-    async fetch(req: Request, env: Env, ctx: ExecutionContext) {
-        const res = await handler(req)
-        ctx.waitUntil(telemetry.flush(env))
-        return res
-    },
+	async fetch(req: Request, env: Env, ctx: ExecutionContext) {
+		const res = await handler(req)
+		ctx.waitUntil(telemetry.flush(env))
+		return res
+	},
 }
 ```
 
@@ -57,12 +55,12 @@ If a flush fails (network error, 5xx from the collector), the affected signal go
 
 In addition to the [common options](/docs/sdks/effect#configuration-reference), `make()` accepts a few Workers-specific knobs:
 
-| Option            | Type                  | Default        | Description                                                              |
-| ----------------- | --------------------- | -------------- | ------------------------------------------------------------------------ |
-| `excludeLogSpans` | `boolean`             | `false`        | Skip Effect log spans in OTLP log attributes                             |
-| `dropSpanNames`   | `ReadonlyArray<string>` | —            | Drop spans whose name starts with any prefix in this list                |
-| `tracesPath`      | `string`              | `/v1/traces`   | OTLP traces path appended to `endpoint`                                  |
-| `logsPath`        | `string`              | `/v1/logs`     | OTLP logs path appended to `endpoint`                                    |
+| Option            | Type                    | Default      | Description                                               |
+| ----------------- | ----------------------- | ------------ | --------------------------------------------------------- |
+| `excludeLogSpans` | `boolean`               | `false`      | Skip Effect log spans in OTLP log attributes              |
+| `dropSpanNames`   | `ReadonlyArray<string>` | —            | Drop spans whose name starts with any prefix in this list |
+| `tracesPath`      | `string`                | `/v1/traces` | OTLP traces path appended to `endpoint`                   |
+| `logsPath`        | `string`                | `/v1/logs`   | OTLP logs path appended to `endpoint`                     |
 
 `dropSpanNames` is useful for suppressing protocol-level chatter — e.g. `["McpServer/Notifications."]` to drop MCP notification spam without dropping legitimate handler spans.
 

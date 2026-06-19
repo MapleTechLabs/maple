@@ -1,11 +1,6 @@
 import type { IconProps } from "./icon"
 
-const paths: ReadonlyArray<string> = [
-	"M4 5H9V10H4Z",
-	"M9 10L18 19",
-	"M18 19L20 17",
-	"M14 15L16 13",
-]
+const paths: ReadonlyArray<string> = ["M4 5H9V10H4Z", "M9 10L18 19", "M18 19L20 17", "M14 15L16 13"]
 
 function KeyIcon({ size = 24, className, ...props }: IconProps) {
 	return (

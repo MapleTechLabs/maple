@@ -84,9 +84,7 @@ function arcPath(
 	const [ox1, oy1] = polar(cx, cy, outerR, startA)
 	const [ox2, oy2] = polar(cx, cy, outerR, endA)
 	if (innerR <= 0) {
-		return (
-			`M ${cx} ${cy} L ${ox1} ${oy1} A ${outerR} ${outerR} 0 ${large} 1 ${ox2} ${oy2} Z`
-		)
+		return `M ${cx} ${cy} L ${ox1} ${oy1} A ${outerR} ${outerR} 0 ${large} 1 ${ox2} ${oy2} Z`
 	}
 	const [ix1, iy1] = polar(cx, cy, innerR, startA)
 	const [ix2, iy2] = polar(cx, cy, innerR, endA)
@@ -134,8 +132,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 			const startA = cursor * 2 * Math.PI
 			cursor += pct
 			const endA = cursor * 2 * Math.PI
-			const color =
-				row.name === OTHER_LABEL ? OTHER_COLOR : resolveSeriesColor(row.name, idx)
+			const color = row.name === OTHER_LABEL ? OTHER_COLOR : resolveSeriesColor(row.name, idx)
 			return { ...row, pct, color, startA, endA }
 		})
 		return { slices: out, total: sum }
@@ -159,9 +156,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 	// wrapped chips, then clip excess (the tooltip still shows the full name).
 	const showLegend = legend !== "hidden"
 	const legendRef = React.useRef<HTMLDivElement | null>(null)
-	const [legendH, setLegendH] = React.useState(() =>
-		showLegend ? LEGEND_ROW_H : 0,
-	)
+	const [legendH, setLegendH] = React.useState(() => (showLegend ? LEGEND_ROW_H : 0))
 	React.useLayoutEffect(() => {
 		if (!showLegend || !legendRef.current) {
 			if (legendH !== 0) setLegendH(0)
@@ -176,16 +171,11 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 
 	const pieAreaW = size.w
 	const pieAreaH = size.h - (showLegend ? legendH + LEGEND_GAP : 0)
-	const pieSize = Math.max(
-		PIE_MIN_SIZE,
-		Math.min(pieAreaW, pieAreaH) - PIE_PAD * 2,
-	)
+	const pieSize = Math.max(PIE_MIN_SIZE, Math.min(pieAreaW, pieAreaH) - PIE_PAD * 2)
 	const cx = pieAreaW / 2
 	const cy = Math.max(pieSize / 2 + PIE_PAD, pieAreaH / 2)
 	const outerR = pieSize / 2
-	const innerR = pie?.donut
-		? Math.max(8, Math.min(outerR - 6, pie.innerRadius ?? outerR * 0.58))
-		: 0
+	const innerR = pie?.donut ? Math.max(8, Math.min(outerR - 6, pie.innerRadius ?? outerR * 0.58)) : 0
 
 	const showLabels = pie?.showLabels === true
 	const showPercent = pie?.showPercent !== false
@@ -198,10 +188,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 		return (
 			<div
 				ref={containerRef}
-				className={cn(
-					"relative h-full w-full grid place-items-center",
-					className,
-				)}
+				className={cn("relative h-full w-full grid place-items-center", className)}
 			>
 				<span className="text-[11px] text-muted-foreground">No data</span>
 			</div>
@@ -224,17 +211,12 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 				<defs>
 					<filter id="pie-shadow" x="-20%" y="-20%" width="140%" height="140%">
 						<feGaussianBlur stdDeviation="3" />
-						<feColorMatrix
-							values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.18 0"
-						/>
+						<feColorMatrix values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.18 0" />
 					</filter>
 				</defs>
 
 				{/* Shadow layer */}
-				<g
-					filter="url(#pie-shadow)"
-					style={{ pointerEvents: "none", opacity: 0.6 }}
-				>
+				<g filter="url(#pie-shadow)" style={{ pointerEvents: "none", opacity: 0.6 }}>
 					{slices.map((s) => (
 						<path
 							key={`shadow-${s.name}`}
@@ -292,8 +274,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 									style={{
 										fontSize: 11,
 										fontWeight: 600,
-										textShadow:
-											"0 1px 2px rgba(0,0,0,0.45)",
+										textShadow: "0 1px 2px rgba(0,0,0,0.45)",
 										paintOrder: "stroke",
 										stroke: "rgba(0,0,0,0.35)",
 										strokeWidth: 0.8,
@@ -351,8 +332,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 							60,
 							pieAreaW - 60,
 						),
-						top:
-							cy + Math.sin(angleMid(slices[hover]) - Math.PI / 2) * (outerR * 0.85) - 8,
+						top: cy + Math.sin(angleMid(slices[hover]) - Math.PI / 2) * (outerR * 0.85) - 8,
 						fontSize: 11,
 					}}
 				>
@@ -364,9 +344,7 @@ export function QueryBuilderPieChart({ data, className, legend, tooltip, unit, p
 						<span>{slices[hover].name}</span>
 					</div>
 					<div className="mt-0.5 tabular-nums text-muted-foreground">
-						<span className="text-foreground/90">
-							{fmtValue(slices[hover].value, unit)}
-						</span>
+						<span className="text-foreground/90">{fmtValue(slices[hover].value, unit)}</span>
 						<span className="px-1 text-muted-foreground/60">·</span>
 						<span>{(slices[hover].pct * 100).toFixed(1)}%</span>
 					</div>

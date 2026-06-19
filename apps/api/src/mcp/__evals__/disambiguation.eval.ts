@@ -33,7 +33,12 @@ describeMapleEval("tool disambiguation", {
 			expectedTools: [
 				{
 					name: "query_data",
-					arguments: { source: "traces", kind: "breakdown", metric: "count", group_by: "status_code" },
+					arguments: {
+						source: "traces",
+						kind: "breakdown",
+						metric: "count",
+						group_by: "status_code",
+					},
 				},
 			],
 		},

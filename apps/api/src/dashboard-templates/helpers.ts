@@ -109,7 +109,7 @@ export const CHART_DISPLAY_LINE = {
 	curveType: "monotone",
 }
 
-export const CHART_DISPLAY_BAR = {
+const CHART_DISPLAY_BAR = {
 	chartId: "query-builder-bar",
 	chartPresentation: { legend: "visible" },
 	stacked: true,
@@ -140,11 +140,6 @@ export function serviceWhereClause(serviceName?: string): string {
 
 export function combineWhere(...clauses: Array<string | undefined>): string {
 	return clauses.filter((clause) => clause && clause.trim().length > 0).join(" AND ")
-}
-
-export function attrEqClause(attr: string, value?: string): string {
-	if (!value) return ""
-	return `${attr} = "${value}"`
 }
 
 // ---------------------------------------------------------------------------

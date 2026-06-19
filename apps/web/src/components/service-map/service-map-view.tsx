@@ -697,7 +697,9 @@ function DbQueryActivityChart({
 								return (
 									<span className="flex items-center gap-2">
 										<span className="text-muted-foreground">{label}</span>
-										<span className="font-mono font-medium tabular-nums">{formatted}</span>
+										<span className="font-mono font-medium tabular-nums">
+											{formatted}
+										</span>
 									</span>
 								)
 							}}
@@ -1411,10 +1413,7 @@ export function ServiceMapCanvas({
 	}, [nodes])
 
 	// Boxes first so they paint behind the service nodes.
-	const renderedNodes = useMemo(
-		() => [...namespaceGroupNodes, ...nodes],
-		[namespaceGroupNodes, nodes],
-	)
+	const renderedNodes = useMemo(() => [...namespaceGroupNodes, ...nodes], [namespaceGroupNodes, nodes])
 
 	if (nodes.length === 0) {
 		return (
@@ -1481,21 +1480,21 @@ export function ServiceMapCanvas({
 								>
 									<ServiceMapParticleCanvas />
 									<Controls showInteractive={false} />
-								<MiniMap
-									nodeColor={(node: Node) => {
-										if (node.type === "namespaceGroup") return "transparent"
-										const data = node.data as ServiceNodeData
-										return getServiceMapNodeColor(data, data.services, colorMode)
-									}}
-									nodeComponent={ServiceMiniMapNode}
-									nodeStrokeWidth={0}
-									maskColor="oklch(0.15 0 0 / 0.8)"
-									className="!bg-muted/50 !border-border"
-									pannable={false}
-									zoomable={false}
-								/>
-								<Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-							</ReactFlow>
+									<MiniMap
+										nodeColor={(node: Node) => {
+											if (node.type === "namespaceGroup") return "transparent"
+											const data = node.data as ServiceNodeData
+											return getServiceMapNodeColor(data, data.services, colorMode)
+										}}
+										nodeComponent={ServiceMiniMapNode}
+										nodeStrokeWidth={0}
+										maskColor="oklch(0.15 0 0 / 0.8)"
+										className="!bg-muted/50 !border-border"
+										pannable={false}
+										zoomable={false}
+									/>
+									<Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+								</ReactFlow>
 							</ParticleRegistryProvider>
 						</div>
 
@@ -1604,7 +1603,9 @@ export function ServiceMapCanvas({
 							<ResizableHandle withHandle />
 							<ResizablePanel defaultSize={35} minSize={25}>
 								<DatabaseDetailPanel
-									dbSystem={decodeURIComponent(selectedServiceId.slice(DB_NODE_PREFIX.length))}
+									dbSystem={decodeURIComponent(
+										selectedServiceId.slice(DB_NODE_PREFIX.length),
+									)}
 									dbEdges={dbEdges}
 									services={services}
 									durationSeconds={durationSeconds}

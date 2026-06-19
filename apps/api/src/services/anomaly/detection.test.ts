@@ -134,19 +134,19 @@ describe("evaluateGoldenSignals — p95 latency", () => {
 
 describe("evaluateGoldenSignals — throughput", () => {
 	it("skips early in the hour", () => {
-		const evals = evaluateGoldenSignals(
-			goldenSeries({ requestCount: 100, errorCount: 0, p95Ms: 200 }),
-			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 5 },
-		)
+		const evals = evaluateGoldenSignals(goldenSeries({ requestCount: 100, errorCount: 0, p95Ms: 200 }), {
+			sensitivity: SENSITIVITY.normal,
+			elapsedMinutes: 5,
+		})
 		expect(byKey(evals, "throughput").status).toBe("skipped")
 	})
 
 	it("breaches on a >50% drop after 20 elapsed minutes", () => {
 		// Baseline 6000/h = 100/min; current 600 over 20min = 30/min.
-		const evals = evaluateGoldenSignals(
-			goldenSeries({ requestCount: 600, errorCount: 6, p95Ms: 200 }),
-			{ sensitivity: SENSITIVITY.normal, elapsedMinutes: 20 },
-		)
+		const evals = evaluateGoldenSignals(goldenSeries({ requestCount: 600, errorCount: 6, p95Ms: 200 }), {
+			sensitivity: SENSITIVITY.normal,
+			elapsedMinutes: 20,
+		})
 		expect(byKey(evals, "throughput").status).toBe("breached")
 	})
 

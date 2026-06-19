@@ -42,7 +42,8 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 		}) {
 			const range = resolveTimeRange(start_time, end_time, { maxHours: 24 * 7 })
 			const { st, et } = range
-			const metricOption = metric === undefined ? Option.some("count" as const) : decodeTracesMetric(metric)
+			const metricOption =
+				metric === undefined ? Option.some("count" as const) : decodeTracesMetric(metric)
 			if (Option.isNone(metricOption)) {
 				return validationError(
 					`Invalid metric: ${metric}. Must be one of: count, error_rate, avg_duration, p95_duration.`,

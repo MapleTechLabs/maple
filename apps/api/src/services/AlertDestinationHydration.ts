@@ -2,7 +2,7 @@ import type { AlertDestinationRow } from "@maple/db"
 import { Effect, Schema } from "effect"
 import { decryptAes256Gcm } from "../lib/Crypto"
 
-export const DestinationPublicConfigSchema = Schema.Struct({
+const DestinationPublicConfigSchema = Schema.Struct({
 	summary: Schema.String,
 	channelLabel: Schema.NullOr(Schema.String),
 	hazelOrganizationId: Schema.optionalKey(Schema.String),
@@ -12,7 +12,7 @@ export const DestinationPublicConfigSchema = Schema.Struct({
 	hazelChannelName: Schema.optionalKey(Schema.String),
 })
 
-export const DestinationSecretConfigSchema = Schema.Union([
+const DestinationSecretConfigSchema = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("slack"),
 		webhookUrl: Schema.String,
@@ -50,13 +50,6 @@ export const DestinationSecretConfigSchema = Schema.Union([
 export type DestinationPublicConfig = Schema.Schema.Type<typeof DestinationPublicConfigSchema>
 export type DestinationSecretConfig = Schema.Schema.Type<typeof DestinationSecretConfigSchema>
 
-/**
- * No enrichment is needed for hazel-oauth at delivery time — the webhook URL
- * already embeds its delivery token, so the dispatcher POSTs directly. Kept
- * around so the dispatch type alias still resolves to the same shape.
- */
-export type EnrichedHazelOAuthSecretConfig = Extract<DestinationSecretConfig, { type: "hazel-oauth" }>
-
 export type EnrichedDestinationSecretConfig = DestinationSecretConfig
 
 export const PublicConfigFromJson = Schema.fromJsonString(DestinationPublicConfigSchema)
@@ -67,16 +60,13 @@ export interface HydratedDestination {
 	readonly secretConfig: DestinationSecretConfig
 }
 
-export const parsePublicConfig = <E>(
+const parsePublicConfig = <E>(
 	row: AlertDestinationRow,
 	onError: () => E,
 ): Effect.Effect<DestinationPublicConfig, E> =>
 	Schema.decodeUnknownEffect(PublicConfigFromJson)(row.configJson).pipe(Effect.mapError(onError))
 
-export const parseSecretConfig = <E>(
-	json: string,
-	onError: () => E,
-): Effect.Effect<DestinationSecretConfig, E> =>
+const parseSecretConfig = <E>(json: string, onError: () => E): Effect.Effect<DestinationSecretConfig, E> =>
 	Schema.decodeUnknownEffect(SecretConfigFromJson)(json).pipe(Effect.mapError(onError))
 
 export const hydrateDestinationRow = <E>(

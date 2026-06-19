@@ -65,14 +65,12 @@ describe("ApiClient", () => {
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
-			const targets = yield* client
-				.listTargets()
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => Response.json([VALID_TARGET])),
-					),
-				)
+			const targets = yield* client.listTargets().pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json([VALID_TARGET])),
+				),
+			)
 
 			expect(recorded[0]?.url).toBe("http://api.test/api/internal/scrape-targets")
 			expect(recorded[0]?.headers.authorization).toBe("Bearer internal-token")
@@ -86,15 +84,13 @@ describe("ApiClient", () => {
 	it.effect("fails with a typed error on non-2xx target list responses", () =>
 		Effect.gen(function* () {
 			const client = yield* ApiClient
-			const result = yield* client
-				.listTargets()
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch([], () => new Response("nope", { status: 401 })),
-					),
-					Effect.flip,
-				)
+			const result = yield* client.listTargets().pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => new Response("nope", { status: 401 })),
+				),
+				Effect.flip,
+			)
 			expect(result._tag).toBe("@maple/scraper/ApiRequestError")
 			expect(result.status).toBe(401)
 		}).pipe(Effect.provide(TestLayer)),
@@ -103,15 +99,13 @@ describe("ApiClient", () => {
 	it.effect("fails with a typed error when the payload does not match the schema", () =>
 		Effect.gen(function* () {
 			const client = yield* ApiClient
-			const result = yield* client
-				.listTargets()
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch([], () => Response.json([{ nonsense: true }])),
-					),
-					Effect.flip,
-				)
+			const result = yield* client.listTargets().pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => Response.json([{ nonsense: true }])),
+				),
+				Effect.flip,
+			)
 			expect(result.message).toContain("payload mismatch")
 		}).pipe(Effect.provide(TestLayer)),
 	)
@@ -120,14 +114,12 @@ describe("ApiClient", () => {
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
-			const response = yield* client
-				.scrapeTarget("target-1")
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => new Response("# TYPE up gauge\nup 1", { status: 200 })),
-					),
-				)
+			const response = yield* client.scrapeTarget("target-1").pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => new Response("# TYPE up gauge\nup 1", { status: 200 })),
+				),
+			)
 
 			expect(recorded[0]?.url).toBe("http://api.test/api/internal/prometheus-scrape?targetId=target-1")
 			expect(recorded[0]?.headers.authorization).toBe("Bearer internal-token")
@@ -140,14 +132,12 @@ describe("ApiClient", () => {
 		Effect.gen(function* () {
 			const recorded: Array<RecordedRequest> = []
 			const client = yield* ApiClient
-			yield* client
-				.scrapeTarget("target-1", "branch a/1")
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => new Response("up 1", { status: 200 })),
-					),
-				)
+			yield* client.scrapeTarget("target-1", "branch a/1").pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => new Response("up 1", { status: 200 })),
+				),
+			)
 
 			expect(recorded[0]?.url).toBe(
 				"http://api.test/api/internal/prometheus-scrape?targetId=target-1&sub=branch%20a%2F1",

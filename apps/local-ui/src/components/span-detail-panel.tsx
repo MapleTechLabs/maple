@@ -158,7 +158,9 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 									<div className="flex justify-between">
 										<span className="text-muted-foreground">Start Time</span>
 										<span className="font-mono">
-											<CopyableValue value={span.startTime}>{span.startTime}</CopyableValue>
+											<CopyableValue value={span.startTime}>
+												{span.startTime}
+											</CopyableValue>
 										</span>
 									</div>
 									<div className="flex justify-between">
@@ -221,7 +223,9 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 										groupByNamespace
 									/>
 									<ResourceAttributesSection
-										attributes={detail.data?.resourceAttributes ?? span.resourceAttributes ?? {}}
+										attributes={
+											detail.data?.resourceAttributes ?? span.resourceAttributes ?? {}
+										}
 										groupByNamespace
 									/>
 								</>
@@ -346,7 +350,9 @@ function SpanLogs({
 							<span className="font-mono">{log.timestamp}</span>
 							<SeverityBadge severity={log.severityText} className="shrink-0" />
 						</div>
-						<p className="line-clamp-3 whitespace-pre-wrap break-all font-mono text-xs">{log.body}</p>
+						<p className="line-clamp-3 whitespace-pre-wrap break-all font-mono text-xs">
+							{log.body}
+						</p>
 					</button>
 				))}
 			</div>

@@ -6,10 +6,7 @@ import type { AlertDestinationDocument, AlertRuleDocument, DashboardDocument } f
 import { AlertCreateFormSurface } from "@/components/alerts/alert-create-form-surface"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import { defaultRuleForm, ruleToFormState, type RuleFormState } from "@/lib/alerts/form-utils"
-import {
-	decodeAlertChartFromSearchParam,
-	type AlertChartContext,
-} from "@/lib/alerts/widget-chart-param"
+import { decodeAlertChartFromSearchParam, type AlertChartContext } from "@/lib/alerts/widget-chart-param"
 import {
 	createWidgetAlertPrefill,
 	resolveWidgetAlertPrefill,

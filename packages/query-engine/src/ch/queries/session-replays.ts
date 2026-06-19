@@ -381,10 +381,7 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 				traceId: $.TraceId,
 				startTime: CH.min_($.Timestamp),
 				durationMs: CH.if_(entryDurationMs.gt(0), entryDurationMs, fallbackDurationMs),
-				rootSpanName: CH.coalesce(
-					CH.nullIf(CH.anyIf($.SpanName, isRoot), ""),
-					CH.any_($.SpanName),
-				),
+				rootSpanName: CH.coalesce(CH.nullIf(CH.anyIf($.SpanName, isRoot), ""), CH.any_($.SpanName)),
 				rootServiceName: CH.coalesce(
 					CH.nullIf(CH.anyIf($.ServiceName, isRoot), ""),
 					CH.any_($.ServiceName),

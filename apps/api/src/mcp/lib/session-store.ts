@@ -3,7 +3,7 @@ import type { McpSchema } from "effect/unstable/ai"
 
 export type SessionPayload = typeof McpSchema.Initialize.payloadSchema.Type
 
-export const SESSION_TTL_SECONDS = 60 * 60 * 24
+const SESSION_TTL_SECONDS = 60 * 60 * 24
 
 export interface SessionsBinding {
 	readonly get: (key: string, type: "json") => Promise<unknown>

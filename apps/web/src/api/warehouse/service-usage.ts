@@ -3,7 +3,7 @@ import { ServiceName, ServiceUsageRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
-export interface ServiceUsage {
+interface ServiceUsage {
 	serviceName: string
 	totalLogs: number
 	totalTraces: number

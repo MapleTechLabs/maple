@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import {
-	getSeriesColorByIndex,
-	getSemanticSeriesColor,
-	resolveSeriesColor,
-} from "../semantic-series-colors"
+import { getSeriesColorByIndex, getSemanticSeriesColor, resolveSeriesColor } from "../semantic-series-colors"
 
 describe("getSeriesColorByIndex", () => {
 	it("uses the named --chart vars for the first five series", () => {

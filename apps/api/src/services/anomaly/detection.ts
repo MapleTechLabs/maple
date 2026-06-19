@@ -43,7 +43,7 @@ export const SENSITIVITY: Record<AnomalySensitivity, SensitivityConfig> = {
 }
 
 /** Minimum sealed baseline samples before a series is evaluated at all. */
-export const MIN_BASELINE_SAMPLES = 6
+const MIN_BASELINE_SAMPLES = 6
 
 const MAD_TO_SIGMA = 1.4826
 
@@ -110,11 +110,8 @@ export interface DetectionConfig {
 	readonly elapsedMinutes: number
 }
 
-export const detectorKeyFor = (
-	signalType: AnomalySignalType,
-	deploymentEnv: string,
-	subject: string,
-): string => `${signalType}:${deploymentEnv}:${subject}`
+const detectorKeyFor = (signalType: AnomalySignalType, deploymentEnv: string, subject: string): string =>
+	`${signalType}:${deploymentEnv}:${subject}`
 
 const skipped = (
 	signalType: AnomalySignalType,
@@ -207,9 +204,7 @@ export function evaluateGoldenSignals(
 				),
 			)
 		} else {
-			const rates = baseline
-				.filter((b) => b.requestCount > 0)
-				.map((b) => b.errorCount / b.requestCount)
+			const rates = baseline.filter((b) => b.requestCount > 0).map((b) => b.errorCount / b.requestCount)
 			if (rates.length < MIN_BASELINE_SAMPLES) {
 				evaluations.push(skipped(signal, serviceName, deploymentEnv, 0, currentCount))
 			} else {
@@ -253,8 +248,7 @@ export function evaluateGoldenSignals(
 	// --- Throughput (drops only) -----------------------------------------------
 	{
 		const signal: AnomalySignalType = "throughput"
-		const ratePerMin =
-			config.elapsedMinutes > 0 ? currentCount / config.elapsedMinutes : currentCount
+		const ratePerMin = config.elapsedMinutes > 0 ? currentCount / config.elapsedMinutes : currentCount
 		if (insufficientBaseline || config.elapsedMinutes < RATE_MIN_ELAPSED_MINUTES) {
 			evaluations.push(skipped(signal, serviceName, deploymentEnv, ratePerMin, currentCount))
 		} else {
@@ -276,8 +270,7 @@ export function evaluateGoldenSignals(
 				// There, only a near-total outage counts.
 				const outageOnly = m - k * sigma <= 0
 				const outageCeiling = Math.max(1, THROUGHPUT_OUTAGE_FRACTION * m * config.elapsedMinutes)
-				const breached =
-					ratePerMin < threshold && (!outageOnly || currentCount < outageCeiling)
+				const breached = ratePerMin < threshold && (!outageOnly || currentCount < outageCeiling)
 				evaluations.push(
 					makeEval(signal, ratePerMin, m, sigma, threshold, breached, "warning", currentCount),
 				)
@@ -294,10 +287,7 @@ export function evaluateGoldenSignals(
 
 const LOG_MIN_VOLUME = 30
 
-export function evaluateLogVolume(
-	series: LogVolumeSeries,
-	config: DetectionConfig,
-): AnomalyEvaluation {
+export function evaluateLogVolume(series: LogVolumeSeries, config: DetectionConfig): AnomalyEvaluation {
 	const signal: AnomalySignalType = "log_volume"
 	const { serviceName, deploymentEnv, current, baseline } = series
 	const { k, ratio } = config.sensitivity
@@ -343,7 +333,7 @@ export function evaluateLogVolume(
 const HALF_HOURS_PER_WEEK = 336
 const SPIKE_MIN_COUNT = 10
 /** Fingerprints younger than this stay with ErrorsService first_seen handling. */
-export const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
+const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface ErrorSpikeConfig {
 	readonly sensitivity: SensitivityConfig

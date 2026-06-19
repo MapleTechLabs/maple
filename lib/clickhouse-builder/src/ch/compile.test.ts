@@ -10,7 +10,9 @@ describe("CompiledQuery.decodeRows", () => {
 		Effect.gen(function* () {
 			const table = CH.table("events", { OrgId: CH.string, Count: CH.uint64 })
 			const compiled = compileCH(
-				CH.from(table).select(($) => ({ count: $.Count })).where(($) => [$.OrgId.eq("org")]),
+				CH.from(table)
+					.select(($) => ({ count: $.Count }))
+					.where(($) => [$.OrgId.eq("org")]),
 				{},
 			)
 
@@ -110,10 +112,7 @@ describe("CompiledQuery.decodeFirstRow", () => {
 				rowSchema: Schema.Struct({ count: RowNumber }),
 			})
 
-			const row = yield* compiled.decodeFirstRow([
-				{ count: "42" },
-				{ count: "not-a-number" },
-			])
+			const row = yield* compiled.decodeFirstRow([{ count: "42" }, { count: "not-a-number" }])
 
 			expect(Option.isSome(row)).toBe(true)
 			if (Option.isSome(row)) {

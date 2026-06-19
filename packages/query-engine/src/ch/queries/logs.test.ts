@@ -464,9 +464,7 @@ describe("logsFacetsQuery", () => {
 		const { sql } = compileUnion(q, baseParams)
 		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
-		expect(sql).toContain(
-			"positionCaseInsensitive(ResourceAttributes['deployment.environment'], 'prod')",
-		)
+		expect(sql).toContain("positionCaseInsensitive(ResourceAttributes['deployment.environment'], 'prod')")
 	})
 })
 

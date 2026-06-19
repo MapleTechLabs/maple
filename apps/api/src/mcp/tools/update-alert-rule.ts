@@ -103,8 +103,7 @@ function buildUpdatedRequest(
 	if (params.destination_ids !== undefined) request.destinationIds = splitCsv(params.destination_ids)
 	if (params.service_names !== undefined) request.serviceNames = splitCsv(params.service_names)
 	if (params.group_by !== undefined) request.groupBy = splitCsv(params.group_by)
-	if (params.minimum_sample_count !== undefined)
-		request.minimumSampleCount = params.minimum_sample_count
+	if (params.minimum_sample_count !== undefined) request.minimumSampleCount = params.minimum_sample_count
 	if (params.consecutive_breaches !== undefined)
 		request.consecutiveBreachesRequired = params.consecutive_breaches
 	if (params.consecutive_healthy !== undefined)

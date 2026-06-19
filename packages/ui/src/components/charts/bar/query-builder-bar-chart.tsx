@@ -158,7 +158,11 @@ export function QueryBuilderBarChart({
 	}, [])
 
 	const seriesStats = React.useMemo(
-		() => computeSeriesStats(displayData, seriesDefinitions.map((d) => d.chartKey)),
+		() =>
+			computeSeriesStats(
+				displayData,
+				seriesDefinitions.map((d) => d.chartKey),
+			),
 		[displayData, seriesDefinitions],
 	)
 
@@ -184,108 +188,110 @@ export function QueryBuilderBarChart({
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
 			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
 				<BarChart data={displayData} accessibilityLayer syncId={syncId} syncMethod="value">
-				<CartesianGrid vertical={false} />
-				<XAxis
-					dataKey="bucket"
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
-				/>
-				<YAxis
-					tickLine={false}
-					axisLine={false}
-					tickMargin={8}
-					width={80}
-					scale={logScale ? "log" : "auto"}
-					domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
-					allowDataOverflow={logScale || softMin != null || softMax != null}
-					tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
-				/>
+					<CartesianGrid vertical={false} />
+					<XAxis
+						dataKey="bucket"
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
+					/>
+					<YAxis
+						tickLine={false}
+						axisLine={false}
+						tickMargin={8}
+						width={80}
+						scale={logScale ? "log" : "auto"}
+						domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
+						allowDataOverflow={logScale || softMin != null || softMax != null}
+						tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
+					/>
 
-				{tooltip !== "hidden" && (
-					<ChartTooltip
-						content={
-							<ChartTooltipContent
-								labelFormatter={(_, payload) => {
-									if (!payload?.[0]?.payload?.bucket) return ""
-									return formatBucketLabel(
-										payload[0].payload.bucket,
-										axisContext,
-										"tooltip",
-									)
-								}}
-								formatter={(value, name, item) => {
-									const label = labelByChartKey.get(String(name)) ?? String(name)
-									return (
-										<span className="flex items-center gap-2">
-											<span
-												className="shrink-0 size-2.5 rounded-[2px]"
-												style={{ backgroundColor: item.color }}
-											/>
-											<span className="text-muted-foreground">{label}</span>
-											<span className="font-mono font-medium">
-												{formatValueByUnit(asFiniteNumber(value), unit)}
+					{tooltip !== "hidden" && (
+						<ChartTooltip
+							content={
+								<ChartTooltipContent
+									labelFormatter={(_, payload) => {
+										if (!payload?.[0]?.payload?.bucket) return ""
+										return formatBucketLabel(
+											payload[0].payload.bucket,
+											axisContext,
+											"tooltip",
+										)
+									}}
+									formatter={(value, name, item) => {
+										const label = labelByChartKey.get(String(name)) ?? String(name)
+										return (
+											<span className="flex items-center gap-2">
+												<span
+													className="shrink-0 size-2.5 rounded-[2px]"
+													style={{ backgroundColor: item.color }}
+												/>
+												<span className="text-muted-foreground">{label}</span>
+												<span className="font-mono font-medium">
+													{formatValueByUnit(asFiniteNumber(value), unit)}
+												</span>
 											</span>
-										</span>
-									)
-								}}
-							/>
-						}
-					/>
-				)}
+										)
+									}}
+								/>
+							}
+						/>
+					)}
 
-				{showLegendBlock && legendPosition === "bottom" && (
-					<ChartLegend
-						verticalAlign="bottom"
-						height={legendHeight}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="bottom"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
-				{showLegendBlock && legendPosition === "right" && (
-					<ChartLegend
-						layout="vertical"
-						verticalAlign="middle"
-						align="right"
-						width={showStats ? 224 : 160}
-						content={
-							<QueryBuilderLegend
-								series={legendSeries}
-								stats={seriesStats}
-								hidden={hiddenSeries}
-								onToggle={toggleSeries}
-								unit={unit}
-								layout="right"
-								variant={variant}
-							/>
-						}
-					/>
-				)}
+					{showLegendBlock && legendPosition === "bottom" && (
+						<ChartLegend
+							verticalAlign="bottom"
+							height={legendHeight}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="bottom"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
+					{showLegendBlock && legendPosition === "right" && (
+						<ChartLegend
+							layout="vertical"
+							verticalAlign="middle"
+							align="right"
+							width={showStats ? 224 : 160}
+							content={
+								<QueryBuilderLegend
+									series={legendSeries}
+									stats={seriesStats}
+									hidden={hiddenSeries}
+									onToggle={toggleSeries}
+									unit={unit}
+									layout="right"
+									variant={variant}
+								/>
+							}
+						/>
+					)}
 
-				{thresholdReferenceLines(thresholds)}
+					{thresholdReferenceLines(thresholds)}
 
-				{seriesDefinitions.map((definition, index) => (
-					<Bar
-						key={definition.chartKey}
-						dataKey={definition.chartKey}
-						fill={`var(--color-${definition.chartKey})`}
-						radius={stacked && index < seriesDefinitions.length - 1 ? [0, 0, 0, 0] : [4, 4, 0, 0]}
-						hide={hiddenSeries.has(definition.chartKey)}
-						isAnimationActive={false}
-						{...(stacked ? { stackId: "a" } : {})}
-					/>
-				))}
-			</BarChart>
+					{seriesDefinitions.map((definition, index) => (
+						<Bar
+							key={definition.chartKey}
+							dataKey={definition.chartKey}
+							fill={`var(--color-${definition.chartKey})`}
+							radius={
+								stacked && index < seriesDefinitions.length - 1 ? [0, 0, 0, 0] : [4, 4, 0, 0]
+							}
+							hide={hiddenSeries.has(definition.chartKey)}
+							isAnimationActive={false}
+							{...(stacked ? { stackId: "a" } : {})}
+						/>
+					))}
+				</BarChart>
 			</ChartContainer>
 		</div>
 	)

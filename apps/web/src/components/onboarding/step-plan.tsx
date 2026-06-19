@@ -4,11 +4,7 @@ import { PricingCards } from "@/components/settings/pricing-cards"
 import { Button } from "@maple/ui/components/ui/button"
 import { ArrowLeftIcon } from "@/components/icons"
 
-export function StepPlan({
-	onBack,
-}: {
-	onBack?: () => void
-}) {
+export function StepPlan({ onBack }: { onBack?: () => void }) {
 	const { isLoading } = useMapleCustomer()
 
 	return (
@@ -18,9 +14,7 @@ export function StepPlan({
 					<span className="text-[11px] font-semibold uppercase tracking-widest text-primary">
 						Pick a plan
 					</span>
-					<h2 className="text-3xl font-semibold tracking-tight mt-2">
-						Pick a plan to keep going
-					</h2>
+					<h2 className="text-3xl font-semibold tracking-tight mt-2">Pick a plan to keep going</h2>
 					<p className="text-muted-foreground text-[15px] mt-3 max-w-lg mx-auto">
 						Start a {TRIAL_DURATION_DAYS}-day free trial: we'll save your card now and won't
 						charge until day {TRIAL_DURATION_DAYS}. Cancel anytime from settings.

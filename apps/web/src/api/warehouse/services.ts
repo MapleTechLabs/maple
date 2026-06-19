@@ -53,10 +53,6 @@ export interface ServiceOverview {
 	spanCount: number
 }
 
-export interface ServiceOverviewResponse {
-	data: ServiceOverview[]
-}
-
 const GetServiceOverviewInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
@@ -304,10 +300,6 @@ export interface ServiceTimeSeriesPoint {
 	errorRate: number
 }
 
-export interface ServiceOverviewTimeSeriesResponse {
-	data: Record<string, ServiceTimeSeriesPoint[]>
-}
-
 function sortByBucket<T extends { bucket: string }>(rows: T[]): T[] {
 	return rows.toSorted((left, right) => left.bucket.localeCompare(right.bucket))
 }
@@ -348,12 +340,12 @@ function fillServiceApdexPoints(
 }
 
 // Service facets types
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
 }
 
-export interface ServicesFacets {
+interface ServicesFacets {
 	environments: FacetItem[]
 	namespaces: FacetItem[]
 	commitShas: FacetItem[]
@@ -428,16 +420,6 @@ const getServicesFacetsEffect = Effect.fn("QueryEngine.getServicesFacets")(funct
 })
 
 // Service releases timeline
-export interface ServiceReleasesTimelinePoint {
-	bucket: string
-	commitSha: string
-	count: number
-}
-
-export interface ServiceReleasesTimelineResponse {
-	data: ServiceReleasesTimelinePoint[]
-}
-
 export function getServiceReleasesTimeline({ data }: { data: GetServiceDetailInput }) {
 	return getServiceReleasesTimelineEffect({ data })
 }
@@ -495,18 +477,10 @@ export interface ServiceDetailTimeSeriesPoint {
 	partial: boolean
 }
 
-export interface ServiceDetailTimeSeriesResponse {
-	data: ServiceDetailTimeSeriesPoint[]
-}
-
-export interface ServiceApdexTimeSeriesPoint {
+interface ServiceApdexTimeSeriesPoint {
 	bucket: string
 	apdexScore: number
 	totalCount: number
-}
-
-export interface ServiceApdexTimeSeriesResponse {
-	data: ServiceApdexTimeSeriesPoint[]
 }
 
 const GetServiceDetailInput = Schema.Struct({

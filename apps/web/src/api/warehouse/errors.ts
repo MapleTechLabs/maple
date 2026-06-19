@@ -32,10 +32,6 @@ export interface ErrorByType {
 	lastSeen: Date
 }
 
-export interface ErrorsByTypeResponse {
-	data: ErrorByType[]
-}
-
 const GetErrorsByTypeInputSchema = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
@@ -91,19 +87,9 @@ const getErrorsByTypeEffect = Effect.fn("QueryEngine.getErrorsByType")(function*
 	}
 })
 
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
-}
-
-export interface ErrorsFacets {
-	services: FacetItem[]
-	deploymentEnvs: FacetItem[]
-	errorTypes: FacetItem[]
-}
-
-export interface ErrorsFacetsResponse {
-	data: ErrorsFacets
 }
 
 const GetErrorsFacetsInputSchema = Schema.Struct({
@@ -178,18 +164,6 @@ const getErrorsFacetsEffect = Effect.fn("QueryEngine.getErrorsFacets")(function*
 	}
 })
 
-export interface ErrorsSummary {
-	totalErrors: number
-	totalSpans: number
-	errorRate: number
-	affectedServicesCount: number
-	affectedTracesCount: number
-}
-
-export interface ErrorsSummaryResponse {
-	data: ErrorsSummary | null
-}
-
 const GetErrorsSummaryInputSchema = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
@@ -252,10 +226,6 @@ export interface ErrorDetailTrace {
 	services: string[]
 	rootSpanName: string
 	errorMessage: string
-}
-
-export interface ErrorDetailTracesResponse {
-	data: ErrorDetailTrace[]
 }
 
 const GetErrorDetailTracesInputSchema = Schema.Struct({

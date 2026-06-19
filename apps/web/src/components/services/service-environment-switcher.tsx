@@ -2,13 +2,7 @@ import { useMemo } from "react"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 
 /** Sentinel for the "no environment filter" option (all environments blended). */
 const ALL = "all"
@@ -40,9 +34,7 @@ export function ServiceEnvironmentSwitcher({
 	value,
 	onChange,
 }: ServiceEnvironmentSwitcherProps) {
-	const overviewResult = useAtomValue(
-		getServiceOverviewResultAtom({ data: { startTime, endTime } }),
-	)
+	const overviewResult = useAtomValue(getServiceOverviewResultAtom({ data: { startTime, endTime } }))
 
 	const options = useMemo(() => {
 		const set = Result.builder(overviewResult)

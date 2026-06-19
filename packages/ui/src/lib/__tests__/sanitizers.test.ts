@@ -91,14 +91,10 @@ describe("validateInternalRedirect", () => {
 		expect(validateInternalRedirect(value)).toBe(value)
 	})
 
-	it.each([
-		"//attacker.com",
-		"https://attacker.com",
-		"javascript:alert(1)",
-		"dashboard",
-		"",
-		"/\\bad",
-	])("rejects %s", (value) => {
-		expect(validateInternalRedirect(value)).toBeNull()
-	})
+	it.each(["//attacker.com", "https://attacker.com", "javascript:alert(1)", "dashboard", "", "/\\bad"])(
+		"rejects %s",
+		(value) => {
+			expect(validateInternalRedirect(value)).toBeNull()
+		},
+	)
 })

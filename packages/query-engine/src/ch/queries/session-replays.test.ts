@@ -19,9 +19,7 @@ describe("sessionTraceSummariesQuery", () => {
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("AS rootSpanName")
 		expect(sql).toContain("anyIf(SpanKind, ParentSpanId = '') AS rootSpanKind")
-		expect(sql).toContain(
-			"anyIf(toJSONString(SpanAttributes), ParentSpanId = '') AS rootSpanAttributes",
-		)
+		expect(sql).toContain("anyIf(toJSONString(SpanAttributes), ParentSpanId = '') AS rootSpanAttributes")
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("FORMAT JSON")
 	})

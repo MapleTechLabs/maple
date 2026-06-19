@@ -48,7 +48,8 @@ export const storeOpenMarkerPath = (dataDir: string): string => join(dirname(dat
 
 /** Mark the store as open (not yet cleanly closed). Call right after a
  *  successful chDB open; the PID is written purely for debuggability. */
-export const markStoreOpen = (dataDir: string): void => writeFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`)
+export const markStoreOpen = (dataDir: string): void =>
+	writeFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`)
 
 /** Clear the clean-shutdown sentinel. Call as the last step of a clean close;
  *  best-effort (a missing marker is fine). */

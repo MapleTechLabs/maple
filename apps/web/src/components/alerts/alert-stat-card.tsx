@@ -94,7 +94,9 @@ export function AlertFiringHero({
 						<div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
 							<span className="text-base font-semibold tracking-tight">All clear</span>
 							<span className="text-muted-foreground text-sm">
-								<span className="text-foreground font-medium tabular-nums">{rulesEnabled}</span>
+								<span className="text-foreground font-medium tabular-nums">
+									{rulesEnabled}
+								</span>
 								<span className="text-muted-foreground/70"> / </span>
 								<span className="tabular-nums">{rulesTotal}</span>
 								<span className="ml-1">rules watching</span>

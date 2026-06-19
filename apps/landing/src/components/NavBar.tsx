@@ -35,7 +35,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 
 	const featureLinks = [
 		{ href: l("/features/distributed-tracing"), label: () => m.nav_distributed_tracing() },
-			{ href: l("/features/browser-sessions"), label: () => m.nav_browser_sessions() },
+		{ href: l("/features/browser-sessions"), label: () => m.nav_browser_sessions() },
 		{ href: l("/features/metrics-dashboards"), label: () => m.nav_metrics_dashboards() },
 		{ href: l("/features/log-management"), label: () => m.nav_log_management() },
 		{ href: l("/features/service-catalog"), label: () => m.nav_service_catalog() },
@@ -48,13 +48,6 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 		{ href: l("/use-cases/ecommerce-observability"), label: () => m.nav_ecommerce() },
 		{ href: l("/use-cases/microservices-debugging"), label: () => m.nav_microservices() },
 		{ href: l("/use-cases/api-performance"), label: () => m.nav_api_performance() },
-	]
-
-	const compareLinks = [
-		{ href: l("/compare/datadog"), label: () => m.nav_vs_datadog() },
-		{ href: l("/compare/grafana"), label: () => m.nav_vs_grafana() },
-		{ href: l("/compare/new-relic"), label: () => m.nav_vs_new_relic() },
-		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0() },
 	]
 
 	const integrationLinks = [

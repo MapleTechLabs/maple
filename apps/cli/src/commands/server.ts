@@ -40,7 +40,12 @@ const remoteUiUrl = (): string => process.env.MAPLE_LOCAL_UI_URL?.trim() || "htt
 /** The startup banner shown once the server is listening. `dashboardUrl` is the
  *  URL the user should open (the auto-updating `local.maple.dev` by default, or
  *  the bundled UI on `127.0.0.1` with `--offline`); `undefined` when no UI. */
-const startBanner = (addr: string, dataDir: string, dashboardUrl: string | undefined, offline: boolean): string => {
+const startBanner = (
+	addr: string,
+	dataDir: string,
+	dashboardUrl: string | undefined,
+	offline: boolean,
+): string => {
 	const row = (key: string, value: string) => `  ${dim(key.padEnd(11))}${value}`
 	const lines = [
 		"",
@@ -93,7 +98,9 @@ const port = Flag.integer("port").pipe(
 )
 
 const dataDirFlag = Flag.optional(
-	Flag.string("data-dir").pipe(Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)")),
+	Flag.string("data-dir").pipe(
+		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
+	),
 )
 
 const backgroundFlag = Flag.boolean("background").pipe(
@@ -103,7 +110,9 @@ const backgroundFlag = Flag.boolean("background").pipe(
 )
 
 const resetFlag = Flag.boolean("reset").pipe(
-	Flag.withDescription("Wipe the existing store (~/.maple/data) before starting — use after an incompatible upgrade"),
+	Flag.withDescription(
+		"Wipe the existing store (~/.maple/data) before starting — use after an incompatible upgrade",
+	),
 	Flag.withDefault(false),
 )
 
@@ -114,7 +123,9 @@ const yesFlag = Flag.boolean("yes").pipe(
 )
 
 const offlineFlag = Flag.boolean("offline").pipe(
-	Flag.withDescription("Use the UI bundled in this binary (served from 127.0.0.1) instead of local.maple.dev"),
+	Flag.withDescription(
+		"Use the UI bundled in this binary (served from 127.0.0.1) instead of local.maple.dev",
+	),
 	Flag.withDefault(false),
 )
 
@@ -292,7 +303,9 @@ export const start = Command.make("start", {
 			if (a.background) return yield* startDetached(a.port, dataDir, a.offline)
 
 			yield* Effect.sync(() =>
-				process.stderr.write(dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`)),
+				process.stderr.write(
+					dim(`◌ opening chDB at ${prettyPath(dataDir)} (bootstrapping schema)…\n`),
+				),
 			)
 			const assets = yield* resolveUiAssets()
 
@@ -341,7 +354,9 @@ export const start = Command.make("start", {
 							? `${addr}/`
 							: undefined
 						: `${remoteUiUrl()}/?port=${boundPort}`
-					yield* Effect.sync(() => process.stdout.write(startBanner(addr, dataDir, dashboardUrl, a.offline)))
+					yield* Effect.sync(() =>
+						process.stdout.write(startBanner(addr, dataDir, dashboardUrl, a.offline)),
+					)
 
 					yield* Effect.never
 				}),
@@ -365,7 +380,9 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 			const pid = pidOpt.value
 			if (!isProcessAlive(pid)) {
 				yield* fs.remove(pidPath, { force: true }).pipe(Effect.ignore)
-				return yield* new ServerError({ message: "maple is not running (stale PID file, cleaned up)" })
+				return yield* new ServerError({
+					message: "maple is not running (stale PID file, cleaned up)",
+				})
 			}
 
 			yield* Effect.sync(() => {
@@ -391,7 +408,9 @@ export const stop = Command.make("stop", { dataDir: dataDirFlag }).pipe(
 )
 
 export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag }).pipe(
-	Command.withDescription("Delete the local chDB store (~/.maple/data) so the next `maple start` bootstraps fresh"),
+	Command.withDescription(
+		"Delete the local chDB store (~/.maple/data) so the next `maple start` bootstraps fresh",
+	),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const fs = yield* FileSystem
@@ -419,7 +438,9 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			yield* fs.remove(dataDir, { recursive: true, force: true }).pipe(Effect.ignore)
 			yield* fs.remove(storeMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
 			yield* fs.remove(storeOpenMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
-			yield* Effect.sync(() => process.stderr.write(`${green("✓")} reset — removed ${prettyPath(dataDir)}\n`))
+			yield* Effect.sync(() =>
+				process.stderr.write(`${green("✓")} reset — removed ${prettyPath(dataDir)}\n`),
+			)
 		}),
 	),
 )

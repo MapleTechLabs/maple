@@ -12,10 +12,7 @@ import { clampLimit, clampOffset } from "../lib/limits"
 import { formatNextSteps } from "../lib/next-steps"
 import { Array as Arr, Effect, Schema, pipe } from "effect"
 import { createDualContent } from "../lib/structured-output"
-import {
-	getSessionTranscript,
-	type SessionTranscriptOutput,
-} from "@maple/query-engine/observability"
+import { getSessionTranscript, type SessionTranscriptOutput } from "@maple/query-engine/observability"
 
 const KNOWN_EVENT_TYPES = ["navigation", "click", "input", "console", "network", "error"] as const
 
@@ -75,7 +72,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 			})
 
 			// Fetch one extra row to detect whether more events remain past this page.
-			const rows = (yield* withTenantExecutor(
+			const rows = yield* withTenantExecutor(
 				getSessionTranscript({
 					sessionId: session_id,
 					types: types.length > 0 ? types : undefined,
@@ -84,9 +81,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 					limit: lim + 1,
 					offset: off,
 				}),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("get_session_transcript")),
-			))
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("get_session_transcript")))
 
 			const hasMore = rows.length > lim
 			const events = hasMore ? rows.slice(0, lim) : rows

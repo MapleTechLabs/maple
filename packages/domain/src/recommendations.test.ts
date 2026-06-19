@@ -144,7 +144,14 @@ describe("planReconcileIssues", () => {
 	it("inserts a newly detected recommendation with the next per-org number", () => {
 		const plan = planReconcileIssues(
 			[rec({ id: "rename:http.status_code", usageCount: 9 })],
-			[issue({ id: "x", number: 7, recommendationKey: "rename:db.statement", sourceKey: "db.statement" })],
+			[
+				issue({
+					id: "x",
+					number: 7,
+					recommendationKey: "rename:db.statement",
+					sourceKey: "db.statement",
+				}),
+			],
 			[],
 		)
 		expect(plan.inserts).toHaveLength(1)

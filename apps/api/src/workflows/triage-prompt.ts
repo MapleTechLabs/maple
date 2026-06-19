@@ -32,10 +32,7 @@ Work out what happened, how bad it is, and what a human responder should do firs
 - suggestedActions: ordered, concrete next steps (what to check, what to roll back, who to page).
 - confidence: high only when multiple independent signals agree.`
 
-export const buildTriageContextMessage = (
-	incidentKind: string,
-	context: Record<string, unknown>,
-): string => {
+export const buildTriageContextMessage = (incidentKind: string, context: Record<string, unknown>): string => {
 	const lines = Object.entries(context)
 		.filter(([, value]) => value !== null && value !== undefined && value !== "")
 		.map(([key, value]) => `- ${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`)

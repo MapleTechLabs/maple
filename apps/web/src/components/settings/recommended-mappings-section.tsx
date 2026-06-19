@@ -8,13 +8,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@maple/ui/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	ArrowRotateAnticlockwiseIcon,
@@ -86,8 +80,7 @@ function recSentence(issue: RecommendationIssue) {
 	return (
 		<>
 			<span className="text-foreground font-medium">Rename</span>{" "}
-			<code className={MONO}>{issue.sourceKey}</code>{" "}
-			<span className="text-muted-foreground">→</span>{" "}
+			<code className={MONO}>{issue.sourceKey}</code> <span className="text-muted-foreground">→</span>{" "}
 			<code className={MONO}>{issue.canonicalKey}</code>
 		</>
 	)
@@ -110,10 +103,9 @@ export function RecommendedMappingsSection() {
 	// Applying a recommendation creates a mapping, so refresh the mappings list too.
 	const refreshMappings = useAtomRefresh(ingestAttributeMappingsListAtom)
 
-	const createMutation = useAtomSet(
-		MapleApiAtomClient.mutation("ingestAttributeMappings", "create"),
-		{ mode: "promiseExit" },
-	)
+	const createMutation = useAtomSet(MapleApiAtomClient.mutation("ingestAttributeMappings", "create"), {
+		mode: "promiseExit",
+	})
 	const dismissMutation = useAtomSet(MapleApiAtomClient.mutation("recommendationIssues", "dismiss"), {
 		mode: "promiseExit",
 	})
@@ -211,8 +203,8 @@ export function RecommendedMappingsSection() {
 			<CardHeader>
 				<CardTitle>Recommendations</CardTitle>
 				<CardDescription>
-					Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans. Apply
-					a fix to create the matching mapping, or dismiss it.
+					Deprecated or non-conforming OpenTelemetry attribute keys detected on your spans. Apply a
+					fix to create the matching mapping, or dismiss it.
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
@@ -305,7 +297,10 @@ export function RecommendedMappingsSection() {
 															disabled={isApplying}
 														>
 															{isApplying ? (
-																<LoaderIcon size={14} className="animate-spin" />
+																<LoaderIcon
+																	size={14}
+																	className="animate-spin"
+																/>
 															) : (
 																<CheckIcon size={14} />
 															)}

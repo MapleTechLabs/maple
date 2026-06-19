@@ -2,10 +2,6 @@
 	"name": "@maple/landing",
 	"version": "0.0.1",
 	"type": "module",
-	"portless": {
-		"name": "landing",
-		"script": "dev:app"
-	},
 	"scripts": {
 		"dev": "portless",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
@@ -47,5 +43,9 @@
 	"devDependencies": {
 		"@astrojs/check": "^0.9.9",
 		"typescript": "^6.0.3"
+	},
+	"portless": {
+		"name": "landing",
+		"script": "dev:app"
 	}
 }

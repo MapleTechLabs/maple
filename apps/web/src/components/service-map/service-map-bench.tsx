@@ -32,7 +32,13 @@ export interface BenchParams {
 	groups: number
 }
 
-export const DEFAULT_BENCH_PARAMS: BenchParams = { services: 120, edges: 400, rps: "high", seed: 1, groups: 0 }
+export const DEFAULT_BENCH_PARAMS: BenchParams = {
+	services: 120,
+	edges: 400,
+	rps: "high",
+	seed: 1,
+	groups: 0,
+}
 
 // Realistic-ish namespace names; falls back to `team-<n>` past the pool length.
 const NAMESPACE_POOL = [

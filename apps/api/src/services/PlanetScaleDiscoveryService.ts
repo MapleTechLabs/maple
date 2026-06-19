@@ -75,7 +75,12 @@ const subTargetsFromGroup = (group: {
 			dropped.push(url)
 			continue
 		}
-		const subTargetKey = branchId && group.targets.length === 1 ? branchId : (branchId ? `${branchId}:${hostPort}` : hostPort)
+		const subTargetKey =
+			branchId && group.targets.length === 1
+				? branchId
+				: branchId
+					? `${branchId}:${hostPort}`
+					: hostPort
 		ok.push({ url, subTargetKey, labels })
 	}
 	return { ok, dropped }
@@ -160,16 +165,14 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 				dropped.push(...converted.dropped)
 			}
 			if (dropped.length > 0) {
-				yield* Effect.logWarning("Dropped PlanetScale discovered targets failing URL validation").pipe(
-					Effect.annotateLogs({ scrapeTargetId: row.id, dropped: dropped.join(", ") }),
-				)
+				yield* Effect.logWarning(
+					"Dropped PlanetScale discovered targets failing URL validation",
+				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: dropped.join(", ") }))
 			}
 			return entries as ReadonlyArray<PlanetScaleSubTarget>
 		})
 
-		const discover = Effect.fn("PlanetScaleDiscoveryService.discover")(function* (
-			row: ScrapeTargetRow,
-		) {
+		const discover = Effect.fn("PlanetScaleDiscoveryService.discover")(function* (row: ScrapeTargetRow) {
 			const now = yield* Clock.currentTimeMillis
 			const cached = (yield* Ref.get(cache)).get(row.id)
 			if (cached && now - cached.fetchedAt < DISCOVERY_TTL_MS) {

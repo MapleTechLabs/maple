@@ -450,16 +450,14 @@ export const serviceMapDbQueryShapesHourlyMv = defineMaterializedView(
  * `server.address` → `http.host` → `url.authority` — modern OTel SDKs emit
  * `server.address`; legacy ones still emit `http.host`; some emit `url.authority`.
  */
-export const serviceExternalEdgesHourlyMv = defineMaterializedView(
-	"service_external_edges_hourly_mv",
-	{
-		description:
-			"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
-		datasource: serviceExternalEdgesHourly,
-		nodes: [
-			node({
-				name: "service_external_edges_hourly_mv_node",
-				sql: `
+export const serviceExternalEdgesHourlyMv = defineMaterializedView("service_external_edges_hourly_mv", {
+	description:
+		"Pre-aggregates Client/Producer spans without db.system.name into hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab.",
+	datasource: serviceExternalEdgesHourly,
+	nodes: [
+		node({
+			name: "service_external_edges_hourly_mv_node",
+			sql: `
         SELECT
           OrgId,
           toStartOfHour(toDateTime(Timestamp)) AS Hour,
@@ -507,10 +505,9 @@ export const serviceExternalEdgesHourlyMv = defineMaterializedView(
         GROUP BY OrgId, Hour, ServiceName, TargetType, TargetSystem, TargetName, DeploymentEnv
         HAVING TargetName != ''
       `,
-			}),
-		],
-	},
-)
+		}),
+	],
+})
 
 /**
  * Materialized view pre-aggregating per-service hosting-platform attributes per hour.

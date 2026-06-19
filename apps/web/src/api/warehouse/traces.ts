@@ -93,7 +93,7 @@ const LIST_PROJECTED_COLUMNS = [
 	"spanAttributes.net.peer.name",
 ] as const
 
-export interface TraceRootSpanSummary {
+interface TraceRootSpanSummary {
 	name: string
 	kind: string
 	statusCode: string
@@ -412,12 +412,12 @@ const getSpanDetailEffect = Effect.fn("QueryEngine.getSpanDetail")(function* ({
 	} satisfies SpanDetailResult
 })
 
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
 }
 
-export interface TracesFacets {
+interface TracesFacets {
 	services: FacetItem[]
 	spanNames: FacetItem[]
 	httpMethods: FacetItem[]
@@ -435,15 +435,6 @@ export interface TracesFacets {
 
 export interface TracesFacetsResponse {
 	data: TracesFacets
-}
-
-export interface TracesDurationStatsResponse {
-	data: Array<{
-		minDurationMs: number
-		maxDurationMs: number
-		p50DurationMs: number
-		p95DurationMs: number
-	}>
 }
 
 const GetTracesFacetsInputSchema = Schema.Struct({
@@ -587,10 +578,6 @@ const GetSpanAttributeKeysInputSchema = Schema.Struct({
 
 export type GetSpanAttributeKeysInput = Schema.Schema.Type<typeof GetSpanAttributeKeysInputSchema>
 
-export interface SpanAttributeKeysResponse {
-	data: Array<{ attributeKey: string; usageCount: number }>
-}
-
 export function getSpanAttributeKeys({ data }: { data: GetSpanAttributeKeysInput }) {
 	return getSpanAttributeKeysEffect({ data })
 }
@@ -631,10 +618,6 @@ const GetSpanAttributeValuesInputSchema = Schema.Struct({
 })
 
 export type GetSpanAttributeValuesInput = Schema.Schema.Type<typeof GetSpanAttributeValuesInputSchema>
-
-export interface SpanAttributeValuesResponse {
-	data: Array<{ attributeValue: string; usageCount: number }>
-}
 
 export function getSpanAttributeValues({ data }: { data: GetSpanAttributeValuesInput }) {
 	return getSpanAttributeValuesEffect({ data })
@@ -683,10 +666,6 @@ const GetResourceAttributeKeysInputSchema = Schema.Struct({
 
 export type GetResourceAttributeKeysInput = Schema.Schema.Type<typeof GetResourceAttributeKeysInputSchema>
 
-export interface ResourceAttributeKeysResponse {
-	data: Array<{ attributeKey: string; usageCount: number }>
-}
-
 export function getResourceAttributeKeys({ data }: { data: GetResourceAttributeKeysInput }) {
 	return getResourceAttributeKeysEffect({ data })
 }
@@ -726,10 +705,6 @@ const GetResourceAttributeValuesInputSchema = Schema.Struct({
 })
 
 export type GetResourceAttributeValuesInput = Schema.Schema.Type<typeof GetResourceAttributeValuesInputSchema>
-
-export interface ResourceAttributeValuesResponse {
-	data: Array<{ attributeValue: string; usageCount: number }>
-}
 
 export function getResourceAttributeValues({ data }: { data: GetResourceAttributeValuesInput }) {
 	return getResourceAttributeValuesEffect({ data })

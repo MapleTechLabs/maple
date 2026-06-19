@@ -12,7 +12,7 @@ import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
 
 /** Disable a signal for this long after a failed POST so a broken collector isn't hammered. */
-export const COOLDOWN_MS = 60_000
+const COOLDOWN_MS = 60_000
 
 /**
  * Minimal resource shape consumed by {@link buildResolved}. Structurally
@@ -41,7 +41,7 @@ export interface Resolved {
 	readonly noOp: boolean
 }
 
-export interface OtlpResourceLike {
+interface OtlpResourceLike {
 	readonly attributes: ReadonlyArray<{ readonly key: string; readonly value: unknown }>
 	readonly droppedAttributesCount: number
 }
@@ -126,11 +126,7 @@ const anyValue = (value: unknown): unknown => {
 }
 
 /** Plain `fetch` POST. Throws on non-2xx so {@link flushSignal} records a cooldown. */
-export const post = async (
-	url: string,
-	headers: Record<string, string>,
-	body: unknown,
-): Promise<void> => {
+const post = async (url: string, headers: Record<string, string>, body: unknown): Promise<void> => {
 	const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) })
 	if (!res.ok) {
 		throw new Error(`OTLP ${res.status} ${res.statusText}`)

@@ -207,84 +207,88 @@ export function IngestionSection() {
 	return (
 		<>
 			<div className="space-y-4">
-			<div className="grid grid-cols-2 gap-4">
-				<Card>
-					<CardHeader>
-						<CardTitle>Ingest Endpoint</CardTitle>
-						<CardDescription>Send telemetry data to this endpoint using OTLP.</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						<InputGroup>
-							<InputGroupInput
-								readOnly
-								value={ingestUrl}
-								className="font-mono text-xs tracking-wide select-all"
-							/>
-							<InputGroupAddon align="inline-end">
-								<InputGroupButton
-									onClick={handleCopyEndpoint}
-									aria-label="Copy endpoint to clipboard"
-									title={endpointCopied ? "Copied!" : "Copy"}
+				<div className="grid grid-cols-2 gap-4">
+					<Card>
+						<CardHeader>
+							<CardTitle>Ingest Endpoint</CardTitle>
+							<CardDescription>
+								Send telemetry data to this endpoint using OTLP.
+							</CardDescription>
+						</CardHeader>
+						<CardContent className="space-y-3">
+							<InputGroup>
+								<InputGroupInput
+									readOnly
+									value={ingestUrl}
+									className="font-mono text-xs tracking-wide select-all"
+								/>
+								<InputGroupAddon align="inline-end">
+									<InputGroupButton
+										onClick={handleCopyEndpoint}
+										aria-label="Copy endpoint to clipboard"
+										title={endpointCopied ? "Copied!" : "Copy"}
+									>
+										{endpointCopied ? (
+											<CheckIcon size={14} className="text-severity-info" />
+										) : (
+											<CopyIcon size={14} />
+										)}
+									</InputGroupButton>
+								</InputGroupAddon>
+							</InputGroup>
+							<p className="text-muted-foreground text-xs">
+								Learn how to send telemetry data in the{" "}
+								<a
+									href="https://maple.dev/docs"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-foreground underline underline-offset-2 hover:no-underline"
 								>
-									{endpointCopied ? (
-										<CheckIcon size={14} className="text-severity-info" />
-									) : (
-										<CopyIcon size={14} />
-									)}
-								</InputGroupButton>
-							</InputGroupAddon>
-						</InputGroup>
-						<p className="text-muted-foreground text-xs">
-							Learn how to send telemetry data in the{" "}
-							<a
-								href="https://maple.dev/docs"
-								target="_blank"
-								rel="noopener noreferrer"
-								className="text-foreground underline underline-offset-2 hover:no-underline"
-							>
-								documentation
-							</a>
-							.
-						</p>
-					</CardContent>
-				</Card>
+									documentation
+								</a>
+								.
+							</p>
+						</CardContent>
+					</Card>
 
-				<Card>
-					<CardHeader>
-						<CardTitle>Ingest Keys</CardTitle>
-						<CardDescription>Use these keys to authenticate ingestion requests.</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<ApiKeyRow
-							type="public"
-							label="Public"
-							description="For browser and client-side telemetry SDKs"
-							keyValue={publicKey}
-							isVisible={publicKeyVisible}
-							onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
-							isCopied={copiedKey === "public"}
-							onCopy={() => handleCopy("public")}
-							onRegenerate={() => openRegenerateDialog("public")}
-							disabled={isBusy}
-						/>
-						<Separator />
-						<ApiKeyRow
-							type="private"
-							label="Private"
-							description="For server-side ingestion and backend services"
-							keyValue={privateKey}
-							isVisible={privateKeyVisible}
-							onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
-							isCopied={copiedKey === "private"}
-							onCopy={() => handleCopy("private")}
-							onRegenerate={() => openRegenerateDialog("private")}
-							disabled={isBusy}
-						/>
-					</CardContent>
-				</Card>
-			</div>
+					<Card>
+						<CardHeader>
+							<CardTitle>Ingest Keys</CardTitle>
+							<CardDescription>
+								Use these keys to authenticate ingestion requests.
+							</CardDescription>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<ApiKeyRow
+								type="public"
+								label="Public"
+								description="For browser and client-side telemetry SDKs"
+								keyValue={publicKey}
+								isVisible={publicKeyVisible}
+								onToggleVisibility={() => setPublicKeyVisible((v) => !v)}
+								isCopied={copiedKey === "public"}
+								onCopy={() => handleCopy("public")}
+								onRegenerate={() => openRegenerateDialog("public")}
+								disabled={isBusy}
+							/>
+							<Separator />
+							<ApiKeyRow
+								type="private"
+								label="Private"
+								description="For server-side ingestion and backend services"
+								keyValue={privateKey}
+								isVisible={privateKeyVisible}
+								onToggleVisibility={() => setPrivateKeyVisible((v) => !v)}
+								isCopied={copiedKey === "private"}
+								onCopy={() => handleCopy("private")}
+								onRegenerate={() => openRegenerateDialog("private")}
+								disabled={isBusy}
+							/>
+						</CardContent>
+					</Card>
+				</div>
 
-			<RecommendedMappingsSection />
+				<RecommendedMappingsSection />
 
 				<AttributeMappingsSection />
 			</div>

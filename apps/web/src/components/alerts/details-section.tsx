@@ -25,8 +25,7 @@ interface DetailsSectionProps {
  * until the user opts in, because most rules ship without notes.
  */
 export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }: DetailsSectionProps) {
-	const showSuggest =
-		form.name.trim().length === 0 && suggestedName !== null && suggestedName.length > 0
+	const showSuggest = form.name.trim().length === 0 && suggestedName !== null && suggestedName.length > 0
 	const hasExistingNotes = form.notes.trim().length > 0
 	const [notesOpen, setNotesOpen] = useState(hasExistingNotes)
 
@@ -45,9 +44,7 @@ export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }
 								type="button"
 								variant="ghost"
 								size="sm"
-								onClick={() =>
-									onChange((c) => ({ ...c, name: suggestedName! }))
-								}
+								onClick={() => onChange((c) => ({ ...c, name: suggestedName! }))}
 								className="h-6 px-1.5 text-[11px]"
 							>
 								Suggest: {suggestedName}

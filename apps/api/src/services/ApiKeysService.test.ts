@@ -1,7 +1,6 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { ApiKeyNotFoundError, OrgId, UserId } from "@maple/domain/http"
-import { Database } from "../lib/DatabaseLive"
 import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
 import { ApiKeysService } from "./ApiKeysService"

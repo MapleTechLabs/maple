@@ -150,7 +150,11 @@ export class CloudflareLogpushApiGroup extends HttpApiGroup.make("cloudflareLogp
 				connectorId: CloudflareLogpushConnectorId,
 			},
 			success: CloudflareLogpushDeleteResponse,
-			error: [CloudflareLogpushForbiddenError, CloudflareLogpushNotFoundError, CloudflareLogpushPersistenceError],
+			error: [
+				CloudflareLogpushForbiddenError,
+				CloudflareLogpushNotFoundError,
+				CloudflareLogpushPersistenceError,
+			],
 		}),
 	)
 	.add(

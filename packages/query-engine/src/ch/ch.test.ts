@@ -126,7 +126,7 @@ describe("CH.from / select / where / compile", () => {
 	})
 
 	it("compiles toStartOfInterval", () => {
-		const q = CH.from(TestTable).select(($) => ({
+		const q = CH.from(TestTable).select((_$) => ({
 			bucket: CH.toStartOfInterval(CH.rawExpr<string>("Timestamp"), 3600),
 		}))
 

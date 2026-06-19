@@ -41,7 +41,7 @@ function buildBackToTracesHref(searchStr: string): string {
 }
 
 export const Route = effectRoute(createFileRoute("/traces/$traceId"), ({ params, search }) => {
-	const t = typeof (search as { t?: unknown }).t === "string" ? ((search as { t: string }).t) : undefined
+	const t = typeof (search as { t?: unknown }).t === "string" ? (search as { t: string }).t : undefined
 	return [
 		getSpanHierarchyResultAtom({
 			data: { traceId: Schema.decodeSync(TraceId)(params.traceId), timestamp: t },
@@ -153,13 +153,7 @@ function TraceDetailPage() {
 				)
 			}
 
-			return (
-				<TraceDetailContent
-					data={data}
-					traceId={traceId}
-					backToTracesHref={backToTracesHref}
-				/>
-			)
+			return <TraceDetailContent data={data} traceId={traceId} backToTracesHref={backToTracesHref} />
 		})
 		.render()
 }
@@ -234,10 +228,7 @@ function TraceDetailContent({
 
 	return (
 		<DashboardLayout
-			breadcrumbs={[
-				{ label: "Traces", href: backToTracesHref },
-				{ label: traceId.slice(0, 8) },
-			]}
+			breadcrumbs={[{ label: "Traces", href: backToTracesHref }, { label: traceId.slice(0, 8) }]}
 			title={rootHttpInfo ? undefined : (rootSpan?.spanName ?? "Unknown Trace")}
 			titleContent={
 				rootHttpInfo ? (
@@ -329,22 +320,14 @@ function TraceDetailContent({
 					{commitSha && (
 						<>
 							<span className="ml-4 text-xs text-muted-foreground">Commit:</span>
-							<CopyableBadge
-								value={commitSha}
-								label="commit SHA"
-								className="font-mono text-xs"
-							>
+							<CopyableBadge value={commitSha} label="commit SHA" className="font-mono text-xs">
 								{commitSha.slice(0, 7)}
 							</CopyableBadge>
 						</>
 					)}
 
 					<span className="ml-4 text-xs text-muted-foreground">Trace ID:</span>
-					<TraceIdBadge
-						traceId={traceId}
-						size="default"
-						className="text-xs max-w-[10rem]"
-					/>
+					<TraceIdBadge traceId={traceId} size="default" className="text-xs max-w-[10rem]" />
 				</div>
 
 				<ResizablePanelGroup

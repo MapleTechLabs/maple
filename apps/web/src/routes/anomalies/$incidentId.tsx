@@ -10,11 +10,7 @@ import { AnomalyLinkIssueDialog } from "@/components/anomalies/anomaly-link-issu
 import { AnomalyLinkedIssueCard } from "@/components/anomalies/anomaly-linked-issue-card"
 import { AnomalySidebar } from "@/components/anomalies/anomaly-sidebar"
 import { AnomalyTimeseriesChart } from "@/components/anomalies/anomaly-timeseries-chart"
-import {
-	RESOLVE_REASON_LABEL,
-	SIGNAL_LABEL,
-	severityToneFor,
-} from "@/components/anomalies/anomaly-format"
+import { RESOLVE_REASON_LABEL, SIGNAL_LABEL, severityToneFor } from "@/components/anomalies/anomaly-format"
 import { useAnomalyMutations } from "@/components/anomalies/use-anomaly-mutations"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { SectionHeader } from "@/components/layout/section-header"
@@ -35,11 +31,7 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
-import {
-	AnomalyIncidentId,
-	type AnomalyIncidentDocument,
-	type ErrorIssueId,
-} from "@maple/domain/http"
+import { AnomalyIncidentId, type AnomalyIncidentDocument, type ErrorIssueId } from "@maple/domain/http"
 
 const decodeIncidentId = Schema.decodeSync(AnomalyIncidentId)
 const LIVE_REFRESH_INTERVAL_MS = 15_000
@@ -175,15 +167,18 @@ function AnomalyDetailBody({
 										)}
 									/>
 									<span
-										className={cn("relative inline-flex size-full rounded-full", tone.accent)}
+										className={cn(
+											"relative inline-flex size-full rounded-full",
+											tone.accent,
+										)}
 									/>
 								</span>
 								{incident.severity}
 							</span>
+						) : incident.resolveReason !== null ? (
+							RESOLVE_REASON_LABEL[incident.resolveReason]
 						) : (
-							(incident.resolveReason !== null
-								? RESOLVE_REASON_LABEL[incident.resolveReason]
-								: "Resolved")
+							"Resolved"
 						)}
 					</Badge>
 					{isOpen ? (
@@ -256,8 +251,8 @@ function AnomalyDetailBody({
 							{incident.fingerprints.filter((f) => f.resolvedAt === null).length > 1
 								? ", including every error fingerprint grouped into it"
 								: ""}
-							. If the signal keeps deviating, the detector waits out a one-hour cooldown
-							before re-opening it.
+							. If the signal keeps deviating, the detector waits out a one-hour cooldown before
+							re-opening it.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

@@ -20,6 +20,7 @@ count.txt
 .output
 .vinxi
 .turbo
+**/drizzle.config.local.ts
 todos.json
 apps/api/.data/
 apps/api/scripts/.bench/

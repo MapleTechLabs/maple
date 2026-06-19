@@ -7,7 +7,14 @@ import type { ListHostsResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
 import { InlineMetricBars } from "./primitives/inline-bars"
-import { ColumnHead, MetaChip, ROW_LINK_CLASS, TableShell, TableSkeleton, useTableSort } from "./primitives/data-table"
+import {
+	ColumnHead,
+	MetaChip,
+	ROW_LINK_CLASS,
+	TableShell,
+	TableSkeleton,
+	useTableSort,
+} from "./primitives/data-table"
 import { formatLoad, formatRelative } from "./format"
 
 export type HostRow = ListHostsResponse["data"][number]

@@ -1,6 +1,6 @@
 import type { ToolSet } from "ai"
 
-export const GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+const GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"create_dashboard",
 	"update_dashboard",
 	"add_dashboard_widget",

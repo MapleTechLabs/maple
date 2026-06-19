@@ -18,7 +18,10 @@ describe("SHORTCUTS registry", () => {
 			for (const combo of [def.combo, ...(def.aliases ?? [])]) {
 				const normalized = normalizeRegisterableHotkey(combo, "mac")
 				const existing = seen.get(normalized)
-				expect(existing, `combo ${normalized} registered by both ${existing} and ${id}`).toBeUndefined()
+				expect(
+					existing,
+					`combo ${normalized} registered by both ${existing} and ${id}`,
+				).toBeUndefined()
 				seen.set(normalized, id)
 			}
 		}

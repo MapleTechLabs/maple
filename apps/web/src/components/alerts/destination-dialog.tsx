@@ -567,8 +567,9 @@ export function DestinationDialog({
 									{form.integrationKey.trim().length > 0 &&
 										!isValidPagerDutyKey(form.integrationKey) && (
 											<p className="text-[11px] text-destructive">
-												That isn't a routing key (must be 32 characters). A ~20-character
-												REST API token won't work — copy the Events API v2 integration key.
+												That isn't a routing key (must be 32 characters). A
+												~20-character REST API token won't work — copy the Events API
+												v2 integration key.
 											</p>
 										)}
 									<p className="text-[11px] text-muted-foreground">

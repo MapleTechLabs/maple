@@ -36,12 +36,12 @@ const INFORMATIONAL_FLAGS: ReadonlySet<ChartFlag> = new Set<ChartFlag>(["SUSPICI
 const SAMPLE_HEAD = 3
 const SAMPLE_TAIL = 3
 
-export interface SeriesSample {
+interface SeriesSample {
 	bucket?: string
 	value: number | null
 }
 
-export interface SeriesStat {
+interface SeriesStat {
 	name: string
 	min: number | null
 	max: number | null
@@ -342,8 +342,4 @@ export function verdictFromFlags(flags: readonly ChartFlag[]): ChartVerdict {
 	// where the UI auto-extends the window anyway) stays healthy and is surfaced
 	// as a note instead — so "suspicious" keeps meaning something.
 	return flags.some((f) => !INFORMATIONAL_FLAGS.has(f)) ? "suspicious" : "looks_healthy"
-}
-
-export function isInformationalFlag(flag: ChartFlag): boolean {
-	return INFORMATIONAL_FLAGS.has(flag)
 }

@@ -167,7 +167,7 @@ export function anyValueString(value: AnyValue | undefined | null): string {
  * notation for large/small magnitudes, so we expand any exponent into a plain
  * decimal string.
  */
-export function formatDouble(num: number): string {
+function formatDouble(num: number): string {
 	if (Number.isNaN(num)) {
 		return "NaN"
 	}
@@ -237,7 +237,7 @@ function expandExponential(s: string, eIndex: number): string {
  * Port of Rust `attr_map`: `{ [key]: anyValueString(value) }`. Every value is
  * coerced to a string (the ClickHouse columns are `Map(String, String)`).
  */
-export function attrMap(attributes: KeyValue[] | undefined): AttrMap {
+function attrMap(attributes: KeyValue[] | undefined): AttrMap {
 	const out: AttrMap = {}
 	if (!attributes) {
 		return out
@@ -249,7 +249,7 @@ export function attrMap(attributes: KeyValue[] | undefined): AttrMap {
 }
 
 /** Port of Rust `span_kind`. */
-export function spanKind(kind: number | undefined): string {
+function spanKind(kind: number | undefined): string {
 	switch (kind) {
 		case 1:
 			return "Internal"
@@ -279,7 +279,7 @@ export function statusCode(code: number | undefined): string {
 }
 
 /** Port of Rust `severity_number_to_text`. */
-export function severityNumberToText(n: number | undefined): string {
+function severityNumberToText(n: number | undefined): string {
 	const num = n ?? 0
 	if (num >= 1 && num <= 4) {
 		return "TRACE"
@@ -570,9 +570,7 @@ export function encodeLogs(req: unknown): EncodedBatch[] {
 			const scopeVersion = scope?.version ?? ""
 
 			for (const log of scopeLogs.logRecords ?? []) {
-				const timeNano = isNonZeroNano(log.timeUnixNano)
-					? log.timeUnixNano
-					: log.observedTimeUnixNano
+				const timeNano = isNonZeroNano(log.timeUnixNano) ? log.timeUnixNano : log.observedTimeUnixNano
 				const severityText =
 					log.severityText && log.severityText.length > 0
 						? log.severityText

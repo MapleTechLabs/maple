@@ -103,7 +103,9 @@ async function runApply(config: ClickHouseConfig): Promise<number> {
 		// Connectivity smoke-test up front so credential errors surface
 		// before any DDL hits the wire.
 		const version = await ping(config)
-		process.stdout.write(`connected to ClickHouse ${version} as ${config.user}@${config.url}/${config.database}\n`)
+		process.stdout.write(
+			`connected to ClickHouse ${version} as ${config.user}@${config.url}/${config.database}\n`,
+		)
 
 		const result = await applyMigrations(config)
 		for (const m of result.skipped) {
@@ -112,7 +114,9 @@ async function runApply(config: ClickHouseConfig): Promise<number> {
 		for (const m of result.applied) {
 			process.stdout.write(`  apply  ${m.version}  ${m.description}\n`)
 		}
-		process.stdout.write(`\n${result.applied.length} applied, ${result.skipped.length} already present.\n`)
+		process.stdout.write(
+			`\n${result.applied.length} applied, ${result.skipped.length} already present.\n`,
+		)
 		return 0
 	} catch (err) {
 		return reportError(err)
@@ -206,7 +210,9 @@ function parseFlags(args: ReadonlyArray<string>): Flags {
 main(process.argv.slice(2)).then(
 	(code) => process.exit(code),
 	(err) => {
-		process.stderr.write(`unexpected: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`)
+		process.stderr.write(
+			`unexpected: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}\n`,
+		)
 		process.exit(1)
 	},
 )

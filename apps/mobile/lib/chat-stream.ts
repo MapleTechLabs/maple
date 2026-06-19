@@ -40,12 +40,7 @@ export interface StreamChatOptions {
 	callbacks: ChatStreamCallbacks
 }
 
-export function streamChat({
-	threadId,
-	body,
-	getToken,
-	callbacks,
-}: StreamChatOptions): StreamController {
+export function streamChat({ threadId, body, getToken, callbacks }: StreamChatOptions): StreamController {
 	const controller = new AbortController()
 
 	const completion = (async () => {

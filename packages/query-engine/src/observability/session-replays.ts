@@ -2,15 +2,9 @@ import { Effect, Option } from "effect"
 import * as CH from "../ch"
 import { WarehouseExecutor } from "./WarehouseExecutor"
 
-export type {
-	SessionReplayDetailOutput,
-	SessionTraceSummaryOutput,
-} from "../ch/queries/session-replays"
+export type { SessionReplayDetailOutput, SessionTraceSummaryOutput } from "../ch/queries/session-replays"
 
-import type {
-	SessionReplayDetailOutput,
-	SessionTraceSummaryOutput,
-} from "../ch/queries/session-replays"
+import type { SessionReplayDetailOutput, SessionTraceSummaryOutput } from "../ch/queries/session-replays"
 
 const DEFAULT_TRACE_LIMIT = 50
 const MAX_TRACE_LIMIT = 100

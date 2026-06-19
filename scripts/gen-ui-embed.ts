@@ -29,7 +29,8 @@ const MIME: Record<string, string> = {
 	txt: "text/plain",
 	wasm: "application/wasm",
 }
-const mimeFor = (p: string): string => MIME[p.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+const mimeFor = (p: string): string =>
+	MIME[p.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
 
 function* walk(dir: string): Generator<string> {
 	for (const entry of readdirSync(dir)) {
@@ -44,7 +45,9 @@ let count = 0
 for (const file of walk(distDir)) {
 	const rel = relative(distDir, file).split("\\").join("/")
 	const b64 = readFileSync(file).toString("base64")
-	entries.push(`\t[${JSON.stringify(rel)}, { data: d(${JSON.stringify(b64)}), contentType: ${JSON.stringify(mimeFor(rel))} }],`)
+	entries.push(
+		`\t[${JSON.stringify(rel)}, { data: d(${JSON.stringify(b64)}), contentType: ${JSON.stringify(mimeFor(rel))} }],`,
+	)
 	count++
 }
 

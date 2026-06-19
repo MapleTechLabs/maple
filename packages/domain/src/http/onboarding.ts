@@ -2,17 +2,17 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { Authorization } from "./current-tenant"
 
-export class OnboardingStateResponse extends Schema.Class<OnboardingStateResponse>(
-	"OnboardingStateResponse",
-)({
-	role: Schema.NullOr(Schema.String),
-	demoDataRequested: Schema.Boolean,
-	onboardingCompletedAt: Schema.NullOr(Schema.Number),
-	checklistDismissedAt: Schema.NullOr(Schema.Number),
-	firstDataReceivedAt: Schema.NullOr(Schema.Number),
-	createdAt: Schema.Number,
-	updatedAt: Schema.Number,
-}) {}
+export class OnboardingStateResponse extends Schema.Class<OnboardingStateResponse>("OnboardingStateResponse")(
+	{
+		role: Schema.NullOr(Schema.String),
+		demoDataRequested: Schema.Boolean,
+		onboardingCompletedAt: Schema.NullOr(Schema.Number),
+		checklistDismissedAt: Schema.NullOr(Schema.Number),
+		firstDataReceivedAt: Schema.NullOr(Schema.Number),
+		createdAt: Schema.Number,
+		updatedAt: Schema.Number,
+	},
+) {}
 
 export class UpdateOnboardingStateRequest extends Schema.Class<UpdateOnboardingStateRequest>(
 	"UpdateOnboardingStateRequest",

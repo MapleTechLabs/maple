@@ -23,7 +23,7 @@ const LOOKBACK_HOURS = 6
 /** Concurrency for per-org rollup processing. */
 const ORG_CONCURRENCY = 4
 
-export interface ServiceMapRollupResult {
+interface ServiceMapRollupResult {
 	readonly orgsProcessed: number
 	readonly hoursRolledUp: number
 	readonly edgesWritten: number

@@ -63,7 +63,11 @@ export function QuotaBanner() {
 						: "You're approaching the usage included in your plan. Upgrade for more headroom before you reach the limit."}
 				</AlertDescription>
 				<AlertAction className="flex items-center gap-2">
-					<Button size="sm" variant={isOver ? "default" : "outline"} render={<Link to="/settings" search={{ tab: "billing" }} />}>
+					<Button
+						size="sm"
+						variant={isOver ? "default" : "outline"}
+						render={<Link to="/settings" search={{ tab: "billing" }} />}
+					>
 						{isOver ? "Upgrade plan" : "View usage"}
 					</Button>
 					{!isOver && (

@@ -202,8 +202,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		const doc = (globalThis as Record<string, any>)["document"]
 		if (doc && doc.visibilityState === "hidden") void flush()
 	}
-	const canListen =
-		(config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
+	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
 	if (canListen) {
 		globalThis.addEventListener("pagehide", onPageHide)
 		globalThis.addEventListener("visibilitychange", onVisibilityChange)

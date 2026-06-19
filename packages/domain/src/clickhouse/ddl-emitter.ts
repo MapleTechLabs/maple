@@ -35,7 +35,7 @@ const defaultOptions: Required<EmitterOptions> = {
 
 const resolve = (options?: EmitterOptions): Required<EmitterOptions> => ({
 	...defaultOptions,
-	...(options ?? {}),
+	...options,
 })
 
 const qualified = (name: string, database: string): string =>
@@ -44,8 +44,7 @@ const qualified = (name: string, database: string): string =>
 const quoteIdent = (name: string): string =>
 	/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `\`${name.replace(/`/g, "``")}\``
 
-const stripJsonPathAnnotations = (line: string): string =>
-	line.replace(/\s*`json:[^`]*`/g, "")
+const stripJsonPathAnnotations = (line: string): string => line.replace(/\s*`json:[^`]*`/g, "")
 
 const indent = (lines: ReadonlyArray<string>, prefix = "    "): string =>
 	lines.map((line) => `${prefix}${line}`).join("\n")
@@ -83,7 +82,10 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	const blockBuffer: string[] = []
 
 	const flushBlock = () => {
-		const body = blockBuffer.map((l) => l.replace(/^    /, "")).join("\n").trim()
+		const body = blockBuffer
+			.map((l) => l.replace(/^    /, ""))
+			.join("\n")
+			.trim()
 		switch (currentBlock) {
 			case "DESCRIPTION":
 				description = body
@@ -98,7 +100,10 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 			}
 			case "INDEXES":
 				indexLines.push(
-					...body.split("\n").map((l) => l.trim()).filter((l) => l.length > 0),
+					...body
+						.split("\n")
+						.map((l) => l.trim())
+						.filter((l) => l.length > 0),
 				)
 				break
 			case "FORWARD_QUERY":
@@ -205,7 +210,10 @@ const parsePipe = (content: string): ParsedPipe => {
 	const blockBuffer: string[] = []
 
 	const flushBlock = () => {
-		const body = blockBuffer.map((l) => l.replace(/^    /, "")).join("\n").trim()
+		const body = blockBuffer
+			.map((l) => l.replace(/^    /, ""))
+			.join("\n")
+			.trim()
 		switch (currentBlock) {
 			case "DESCRIPTION":
 				description = body
@@ -301,10 +309,7 @@ export interface ResourceContent {
 /**
  * Emit a CREATE TABLE statement for a single Tinybird datasource resource.
  */
-export const emitCreateTable = (
-	datasource: ResourceContent,
-	options?: EmitterOptions,
-): string => {
+export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
 	const parsed = parseDatasource(datasource.content)
 
@@ -312,8 +317,12 @@ export const emitCreateTable = (
 	const tableRef = qualified(datasource.name, opts.database)
 
 	const innerLines = [
-		...parsed.columns.map((col, i) => `${col}${i < parsed.columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`),
-		...parsed.indexes.map((idx, i) => `${buildIndexClause(idx)}${i < parsed.indexes.length - 1 ? "," : ""}`),
+		...parsed.columns.map(
+			(col, i) => `${col}${i < parsed.columns.length - 1 || parsed.indexes.length > 0 ? "," : ""}`,
+		),
+		...parsed.indexes.map(
+			(idx, i) => `${buildIndexClause(idx)}${i < parsed.indexes.length - 1 ? "," : ""}`,
+		),
 	]
 
 	const lines = [
@@ -341,10 +350,7 @@ export const emitCreateTable = (
  * `… TO <target>` references a pre-existing table. The Tinybird `.pipe`
  * format encodes the target via `DATASOURCE <name>`.
  */
-export const emitCreateMaterializedView = (
-	pipe: ResourceContent,
-	options?: EmitterOptions,
-): string => {
+export const emitCreateMaterializedView = (pipe: ResourceContent, options?: EmitterOptions): string => {
 	const opts = resolve(options)
 	const parsed = parsePipe(pipe.content)
 
@@ -352,9 +358,7 @@ export const emitCreateMaterializedView = (
 	const viewRef = qualified(pipe.name, opts.database)
 	const targetRef = qualified(parsed.target, opts.database)
 
-	return [`CREATE MATERIALIZED VIEW ${ifNotExists}${viewRef} TO ${targetRef} AS`, parsed.sql].join(
-		"\n",
-	)
+	return [`CREATE MATERIALIZED VIEW ${ifNotExists}${viewRef} TO ${targetRef} AS`, parsed.sql].join("\n")
 }
 
 /**

@@ -152,9 +152,7 @@ function sessionMetaRow(
 						"deployment.environment.name": config.environment,
 					}
 				: {}),
-			...(config.serviceVersion
-				? { "deployment.commit_sha": config.serviceVersion }
-				: {}),
+			...(config.serviceVersion ? { "deployment.commit_sha": config.serviceVersion } : {}),
 		},
 	}
 	if (status === "ended") {

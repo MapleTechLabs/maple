@@ -1,10 +1,6 @@
 import type { IconProps } from "./icon"
 
-const paths: ReadonlyArray<string> = [
-	"M7 4h10",
-	"M9 4l-1 7-2 2v2h12v-2l-2-2-1-7",
-	"M12 15v5",
-]
+const paths: ReadonlyArray<string> = ["M7 4h10", "M9 4l-1 7-2 2v2h12v-2l-2-2-1-7", "M12 15v5"]
 
 function ThumbtackIcon({ size = 24, className, ...props }: IconProps) {
 	return (
@@ -19,7 +15,14 @@ function ThumbtackIcon({ size = 24, className, ...props }: IconProps) {
 			{...props}
 		>
 			{paths.map((d, i) => (
-				<path key={i} d={d} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+				<path
+					key={i}
+					d={d}
+					stroke="currentColor"
+					strokeWidth="2"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+				/>
 			))}
 		</svg>
 	)

@@ -64,14 +64,14 @@ interface EffectRouteContextBase {
 /**
  * The context passed to an effect loader function.
  */
-export interface EffectLoaderContext extends EffectRouteContextBase {
+interface EffectLoaderContext extends EffectRouteContextBase {
 	readonly preload: boolean
 }
 
 /**
  * The context passed to an effect beforeLoad function.
  */
-export type EffectBeforeLoadContext = EffectRouteContextBase
+type EffectBeforeLoadContext = EffectRouteContextBase
 
 /**
  * A function that receives route loader context and returns an Effect.

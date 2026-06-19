@@ -5,12 +5,7 @@ import { AuthService } from "@/services/AuthService"
 import { ApiKeysService } from "@/services/ApiKeysService"
 import { Env } from "@/lib/Env"
 import { ActorId, OrgId, RoleName, UserId } from "@maple/domain/http"
-import {
-	McpAuthMissingError,
-	McpAuthInvalidError,
-	McpInvalidTenantError,
-	McpTenantError,
-} from "../tools/types"
+import { McpAuthMissingError, McpAuthInvalidError, McpInvalidTenantError } from "../tools/types"
 
 const INTERNAL_SERVICE_PREFIX = "maple_svc_"
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)

@@ -13,13 +13,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
-import {
-	DashboardDocument,
-	DashboardId,
-	IsoDateTimeString,
-	OrgId,
-	UserId,
-} from "@maple/domain/http"
+import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
 import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { AuthService } from "@/services/AuthService"
@@ -134,10 +128,8 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			const result = yield* withDashboardMutation(
-				DASHBOARD,
-				"update_dashboard_widget",
-				(widgets) => Effect.succeed([...widgets, widget("w-new")]),
+			const result = yield* withDashboardMutation(DASHBOARD, "update_dashboard_widget", (widgets) =>
+				Effect.succeed([...widgets, widget("w-new")]),
 			)
 
 			assert.strictEqual(result.ok, true)

@@ -56,13 +56,13 @@ describe("timeseries adapters", () => {
 							series: {
 								count: 10,
 								error_rate: 2,
-							p50_duration: 11,
-							p95_duration: 20,
-							p99_duration: 30,
-							apdex: 0.92,
+								p50_duration: 11,
+								p95_duration: 20,
+								p99_duration: 30,
+								apdex: 0.92,
+							},
 						},
-					},
-				])
+					])
 				}
 				return emptyTs()
 			})

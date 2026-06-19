@@ -3,13 +3,7 @@
  * The `Result.builder` helper makes rendering an async atom's
  * initial/success/error states a one-liner.
  */
-import {
-	RegistryContext,
-	scheduleTask,
-	useAtomRefresh,
-	useAtomSet,
-	useAtomValue,
-} from "@effect/atom-react"
+import { RegistryContext, scheduleTask, useAtomRefresh, useAtomSet, useAtomValue } from "@effect/atom-react"
 import { Cause, Option } from "effect"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
 

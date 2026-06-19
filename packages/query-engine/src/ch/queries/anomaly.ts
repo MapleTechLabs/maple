@@ -20,11 +20,7 @@ import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from 
 
 /** Hour-of-day values matching the current hour ±1, wrapping at midnight. */
 export function matchedHoursOfDay(currentHourOfDay: number): readonly number[] {
-	return [
-		(currentHourOfDay + 23) % 24,
-		currentHourOfDay,
-		(currentHourOfDay + 1) % 24,
-	]
+	return [(currentHourOfDay + 23) % 24, currentHourOfDay, (currentHourOfDay + 1) % 24]
 }
 
 // ---------------------------------------------------------------------------

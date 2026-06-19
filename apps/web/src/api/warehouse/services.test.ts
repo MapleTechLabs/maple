@@ -94,8 +94,8 @@ describe("getServiceOverview throughput resolution", () => {
 				assert.ok(Math.abs(svc.samplingWeight - 10) < 1e-9, `weight=${svc.samplingWeight}`)
 
 				// The SpanMetrics `calls` counter must not be queried for the overview.
-				const spanMetricsCalls = executeQueryEngineMock.mock.calls.filter(
-					(call) => String(call[0]).includes("spanMetricsCalls"),
+				const spanMetricsCalls = executeQueryEngineMock.mock.calls.filter((call) =>
+					String(call[0]).includes("spanMetricsCalls"),
 				)
 				assert.strictEqual(spanMetricsCalls.length, 0)
 			}),

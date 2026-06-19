@@ -40,10 +40,6 @@ export interface Metric {
 	isMonotonic: boolean
 }
 
-export interface MetricsResponse {
-	data: Metric[]
-}
-
 function transformMetric(raw: Record<string, unknown>): Metric {
 	return {
 		metricName: String(raw.metricName ?? ""),
@@ -103,7 +99,7 @@ const GetMetricTimeSeriesInputSchema = Schema.Struct({
 
 export type GetMetricTimeSeriesInput = (typeof GetMetricTimeSeriesInputSchema)["Encoded"]
 
-export interface MetricTimeSeriesPoint {
+interface MetricTimeSeriesPoint {
 	bucket: string
 	serviceName: string
 	attributeValue: string
@@ -235,16 +231,6 @@ const GetMetricsSummaryInputSchema = Schema.Struct({
 })
 
 export type GetMetricsSummaryInput = (typeof GetMetricsSummaryInputSchema)["Encoded"]
-
-export interface MetricTypeSummary {
-	metricType: string
-	metricCount: number
-	dataPointCount: number
-}
-
-export interface MetricsSummaryResponse {
-	data: MetricTypeSummary[]
-}
 
 export function getMetricsSummary({ data }: { data: GetMetricsSummaryInput }) {
 	return getMetricsSummaryEffect({ data })

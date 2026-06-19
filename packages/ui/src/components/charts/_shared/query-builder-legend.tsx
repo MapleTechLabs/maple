@@ -42,9 +42,7 @@ export function computeSeriesStats(
 		}
 
 		result[key] =
-			count === 0
-				? { min: 0, max: 0, mean: 0, last: 0 }
-				: { min, max, mean: sum / count, last }
+			count === 0 ? { min: 0, max: 0, mean: 0, last: 0 } : { min, max, mean: sum / count, last }
 	}
 
 	return result
@@ -65,10 +63,7 @@ interface QueryBuilderLegendProps {
 }
 
 /** Vertical space (px) a bottom-aligned legend block needs. */
-export function legendBlockHeight(
-	variant: "compact" | "stats",
-	seriesCount: number,
-): number {
+export function legendBlockHeight(variant: "compact" | "stats", seriesCount: number): number {
 	if (variant === "stats") {
 		// pt-2 (8) + header row (20) + capped data rows (20 each)
 		return 28 + Math.min(seriesCount, 4) * 20
@@ -163,12 +158,7 @@ export function QueryBuilderLegend({
 	}
 
 	return (
-		<div
-			className={cn(
-				"h-full overflow-auto text-xs",
-				layout === "right" ? "pl-3" : "pt-2",
-			)}
-		>
+		<div className={cn("h-full overflow-auto text-xs", layout === "right" ? "pl-3" : "pt-2")}>
 			<table className="w-full border-collapse">
 				<thead>
 					<tr className="text-muted-foreground">
@@ -207,9 +197,7 @@ export function QueryBuilderLegend({
 										key={column.field}
 										className="px-2 text-right font-mono tabular-nums last:pr-0"
 									>
-										{entryStats
-											? formatValueByUnit(entryStats[column.field], unit)
-											: "—"}
+										{entryStats ? formatValueByUnit(entryStats[column.field], unit) : "—"}
 									</td>
 								))}
 							</tr>

@@ -31,7 +31,8 @@ const MIME: Record<string, string> = {
 	wasm: "application/wasm",
 }
 
-const mimeFor = (path: string): string => MIME[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
+const mimeFor = (path: string): string =>
+	MIME[path.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream"
 
 /**
  * Build an `AssetResolver`, or `undefined` when no SPA is available.
@@ -57,7 +58,9 @@ export const resolveUiAssets = (): Effect.Effect<AssetResolver | undefined, neve
 		const distDir = fileURLToPath(new URL("../../../local-ui/dist/", import.meta.url))
 		if (!(yield* fs.exists(distDir).pipe(Effect.orElseSucceed(() => false)))) return undefined
 
-		const entries = yield* fs.readDirectory(distDir, { recursive: true }).pipe(Effect.orElseSucceed(() => [] as Array<string>))
+		const entries = yield* fs
+			.readDirectory(distDir, { recursive: true })
+			.pipe(Effect.orElseSucceed(() => [] as Array<string>))
 		const preloaded = new Map<string, { readonly body: Uint8Array; readonly contentType: string }>()
 		yield* Effect.forEach(
 			entries,

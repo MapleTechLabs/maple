@@ -98,7 +98,10 @@ export function AnomalyRow({ incident, focused = false, onFocus, variant = "defa
 				>
 					<span
 						aria-hidden
-						className={cn("size-1.5 shrink-0 rounded-full", getServiceColorClass(incident.serviceName))}
+						className={cn(
+							"size-1.5 shrink-0 rounded-full",
+							getServiceColorClass(incident.serviceName),
+						)}
 					/>
 					<span className="max-w-[140px] truncate">{incident.serviceName}</span>
 				</span>

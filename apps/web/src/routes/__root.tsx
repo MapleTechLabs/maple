@@ -124,7 +124,9 @@ function ClerkReverseRedirects() {
 		// review; render the shell without waiting on the customer query (which
 		// may stall when Autumn isn't configured locally).
 		const quotaPreview =
-			import.meta.env.DEV && typeof window !== "undefined" && window.location.search.includes("quota_preview")
+			import.meta.env.DEV &&
+			typeof window !== "undefined" &&
+			window.location.search.includes("quota_preview")
 		// Apply plan-gating only once the customer query has settled. While it's
 		// still loading/retrying, fall through and render the dashboard instead of
 		// blanking the screen (`return null`) — the redirect, if any, fires on the

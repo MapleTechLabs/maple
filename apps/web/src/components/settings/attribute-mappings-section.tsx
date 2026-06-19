@@ -1,8 +1,5 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import {
-	CreateIngestAttributeMappingRequest,
-	UpdateIngestAttributeMappingRequest,
-} from "@maple/domain/http"
+import { CreateIngestAttributeMappingRequest, UpdateIngestAttributeMappingRequest } from "@maple/domain/http"
 import type {
 	IngestAttributeMapping,
 	IngestAttributeMappingId,
@@ -243,8 +240,8 @@ export function AttributeMappingsSection() {
 						)}
 					</CardTitle>
 					<CardDescription>
-						Rename or promote span attribute keys at ingest so telemetry from different SDKs
-						stays consistent. Applied only to spans received after a rule is saved.
+						Rename or promote span attribute keys at ingest so telemetry from different SDKs stays
+						consistent. Applied only to spans received after a rule is saved.
 					</CardDescription>
 					<CardAction>
 						<Button size="sm" onClick={openAddDialog}>
@@ -313,73 +310,79 @@ export function AttributeMappingsSection() {
 								const operation = OPERATION_BADGE[mapping.operation]
 								const OperationIcon = operation.icon
 								return (
-								<div
-									key={mapping.id}
-									className={cn(
-										"group border-border/60 hover:bg-muted/40 -mx-6 flex items-center gap-4 border-b px-6 py-2.5 transition-colors last:border-b-0",
-										!mapping.enabled && "opacity-55",
-									)}
-								>
-									<span className="w-44 shrink-0 truncate text-sm font-medium" title={mapping.name}>
-										{mapping.name}
-									</span>
-
-									<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
-										<code className={MONO}>{mapping.sourceKey}</code>
-										<ArrowRightIcon size={12} className="text-muted-foreground shrink-0" />
-										<code className="font-mono text-[0.92em] text-foreground">
-											{mapping.targetKey}
-										</code>
-										{mapping.sourceContext === "resource" && (
-											<span className="text-muted-foreground text-xs">
-												· from {SOURCE_CONTEXT_LABELS.resource.toLowerCase()}
-											</span>
+									<div
+										key={mapping.id}
+										className={cn(
+											"group border-border/60 hover:bg-muted/40 -mx-6 flex items-center gap-4 border-b px-6 py-2.5 transition-colors last:border-b-0",
+											!mapping.enabled && "opacity-55",
 										)}
-									</div>
-
-									<div className="w-24 shrink-0">
-										<Badge variant={operation.variant} className="gap-1">
-											<OperationIcon size={11} />
-											{OPERATION_LABELS[mapping.operation]}
-										</Badge>
-									</div>
-
-									<div className="relative flex w-40 shrink-0 items-center justify-end gap-3">
-										<Switch
-											checked={mapping.enabled}
-											onCheckedChange={() => handleToggleEnabled(mapping)}
-											disabled={togglingId === mapping.id}
-										/>
+									>
 										<span
-											className="text-muted-foreground w-20 text-right text-xs whitespace-nowrap tabular-nums transition-opacity group-hover:opacity-0"
-											title={new Date(mapping.createdAt).toLocaleString()}
+											className="w-44 shrink-0 truncate text-sm font-medium"
+											title={mapping.name}
 										>
-											{formatRelativeTime(mapping.createdAt)}
+											{mapping.name}
 										</span>
-										<div className="absolute right-0 flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-											<Button
-												variant="ghost"
-												size="icon-sm"
-												className="text-muted-foreground hover:text-foreground"
-												onClick={() => openEditDialog(mapping)}
-												aria-label="Edit mapping"
-												title="Edit"
+
+										<div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-sm">
+											<code className={MONO}>{mapping.sourceKey}</code>
+											<ArrowRightIcon
+												size={12}
+												className="text-muted-foreground shrink-0"
+											/>
+											<code className="font-mono text-[0.92em] text-foreground">
+												{mapping.targetKey}
+											</code>
+											{mapping.sourceContext === "resource" && (
+												<span className="text-muted-foreground text-xs">
+													· from {SOURCE_CONTEXT_LABELS.resource.toLowerCase()}
+												</span>
+											)}
+										</div>
+
+										<div className="w-24 shrink-0">
+											<Badge variant={operation.variant} className="gap-1">
+												<OperationIcon size={11} />
+												{OPERATION_LABELS[mapping.operation]}
+											</Badge>
+										</div>
+
+										<div className="relative flex w-40 shrink-0 items-center justify-end gap-3">
+											<Switch
+												checked={mapping.enabled}
+												onCheckedChange={() => handleToggleEnabled(mapping)}
+												disabled={togglingId === mapping.id}
+											/>
+											<span
+												className="text-muted-foreground w-20 text-right text-xs whitespace-nowrap tabular-nums transition-opacity group-hover:opacity-0"
+												title={new Date(mapping.createdAt).toLocaleString()}
 											>
-												<PencilIcon size={14} />
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon-sm"
-												className="text-muted-foreground hover:text-destructive"
-												onClick={() => setDeleteConfirm(mapping)}
-												aria-label="Delete mapping"
-												title="Delete"
-											>
-												<TrashIcon size={14} />
-											</Button>
+												{formatRelativeTime(mapping.createdAt)}
+											</span>
+											<div className="absolute right-0 flex items-center gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													className="text-muted-foreground hover:text-foreground"
+													onClick={() => openEditDialog(mapping)}
+													aria-label="Edit mapping"
+													title="Edit"
+												>
+													<PencilIcon size={14} />
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon-sm"
+													className="text-muted-foreground hover:text-destructive"
+													onClick={() => setDeleteConfirm(mapping)}
+													aria-label="Delete mapping"
+													title="Delete"
+												>
+													<TrashIcon size={14} />
+												</Button>
+											</div>
 										</div>
 									</div>
-								</div>
 								)
 							})}
 						</div>
@@ -394,7 +397,9 @@ export function AttributeMappingsSection() {
 						<div className="bg-primary/10 text-primary flex size-9 items-center justify-center rounded-lg">
 							<ArrowUpDownIcon size={18} />
 						</div>
-						<DialogTitle>{editing ? "Edit Attribute Mapping" : "Add Attribute Mapping"}</DialogTitle>
+						<DialogTitle>
+							{editing ? "Edit Attribute Mapping" : "Add Attribute Mapping"}
+						</DialogTitle>
 						<DialogDescription>
 							The value at the source key is written to the target span attribute. An existing
 							target key is never overwritten.
@@ -423,7 +428,8 @@ export function AttributeMappingsSection() {
 									<SelectValue placeholder="Select source context">
 										{(value: string | null) => {
 											const ctx =
-												(value as IngestMappingSourceContext | null) ?? formSourceContext
+												(value as IngestMappingSourceContext | null) ??
+												formSourceContext
 											const Icon = SOURCE_CONTEXT_ICON[ctx]
 											return (
 												<span className="flex items-center gap-2">
@@ -482,7 +488,8 @@ export function AttributeMappingsSection() {
 								<SelectTrigger className="w-full">
 									<SelectValue placeholder="Select operation">
 										{(value: string | null) => {
-											const op = (value as IngestMappingOperation | null) ?? formOperation
+											const op =
+												(value as IngestMappingOperation | null) ?? formOperation
 											const meta = OPERATION_BADGE[op]
 											const Icon = meta.icon
 											return (
@@ -499,7 +506,10 @@ export function AttributeMappingsSection() {
 										<span className="flex items-center gap-2">
 											<CopyIcon className="text-info" />
 											<span>
-												Copy <span className="text-muted-foreground">— keep source key</span>
+												Copy{" "}
+												<span className="text-muted-foreground">
+													— keep source key
+												</span>
 											</span>
 										</span>
 									</SelectItem>
@@ -508,7 +518,9 @@ export function AttributeMappingsSection() {
 											<ArrowRightFromLineIcon className="text-warning" />
 											<span>
 												Move{" "}
-												<span className="text-muted-foreground">— remove source key</span>
+												<span className="text-muted-foreground">
+													— remove source key
+												</span>
 											</span>
 										</span>
 									</SelectItem>

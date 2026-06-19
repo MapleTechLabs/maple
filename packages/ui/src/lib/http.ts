@@ -136,7 +136,12 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 
 	const method = pipe(
 		attr(attrs, "http.method", "http.request.method"),
-		Option.orElse(() => pipe(nameInfo, Option.flatMap((n) => nonEmpty(n.method)))),
+		Option.orElse(() =>
+			pipe(
+				nameInfo,
+				Option.flatMap((n) => nonEmpty(n.method)),
+			),
+		),
 	)
 	if (Option.isNone(method)) return null
 

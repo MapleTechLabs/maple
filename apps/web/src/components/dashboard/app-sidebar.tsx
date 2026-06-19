@@ -380,7 +380,14 @@ export function AppSidebar() {
 												<DiscordIcon size={16} />
 												Community Discord
 											</DropdownMenuItem>
-											<DropdownMenuItem render={<a href="mailto:support@maple.dev" aria-label="Email Support" />}>
+											<DropdownMenuItem
+												render={
+													<a
+														href="mailto:support@maple.dev"
+														aria-label="Email Support"
+													/>
+												}
+											>
 												<EnvelopeIcon size={16} />
 												Email Support
 											</DropdownMenuItem>

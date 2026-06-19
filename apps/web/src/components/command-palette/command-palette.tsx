@@ -16,13 +16,7 @@ import {
 	CommandShortcut,
 } from "@maple/ui/components/ui/command"
 import { Kbd } from "@maple/ui/components/ui/kbd"
-import {
-	GearIcon,
-	GridSquareCirclePlusIcon,
-	KeyboardIcon,
-	MoonIcon,
-	SunIcon,
-} from "@/components/icons"
+import { GearIcon, GridSquareCirclePlusIcon, KeyboardIcon, MoonIcon, SunIcon } from "@/components/icons"
 import {
 	investigateNavItems,
 	mainNavItems,
@@ -166,14 +160,16 @@ function PaletteContent({
 
 		const favoriteDashboards = dashboards.filter((d) => favorites.has(d.id))
 		const otherDashboards = dashboards.filter((d) => !favorites.has(d.id))
-		const dashboardEntries: PaletteEntry[] = [...favoriteDashboards, ...otherDashboards].map((dashboard) => ({
-			id: `dashboard:${dashboard.id}`,
-			title: dashboard.name,
-			group: "Dashboards",
-			keywords: "dashboard",
-			icon: GridSquareCirclePlusIcon,
-			dashboardId: dashboard.id,
-		}))
+		const dashboardEntries: PaletteEntry[] = [...favoriteDashboards, ...otherDashboards].map(
+			(dashboard) => ({
+				id: `dashboard:${dashboard.id}`,
+				title: dashboard.name,
+				group: "Dashboards",
+				keywords: "dashboard",
+				icon: GridSquareCirclePlusIcon,
+				dashboardId: dashboard.id,
+			}),
+		)
 
 		const isDark = theme === "dark"
 		const actions: PaletteEntry[] = [
@@ -264,7 +260,12 @@ function PaletteContent({
 
 	return (
 		<CommandDialogPopup>
-			<Command inline={false} filter={null} value={query} onValueChange={(value: string) => setQuery(value)}>
+			<Command
+				inline={false}
+				filter={null}
+				value={query}
+				onValueChange={(value: string) => setQuery(value)}
+			>
 				<CommandInput placeholder="Search pages, dashboards, actions…" />
 				<CommandList>
 					{results !== null && results.length === 0 ? (

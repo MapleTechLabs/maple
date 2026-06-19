@@ -53,7 +53,11 @@ export function GlobalShortcuts() {
 
 	return (
 		<>
-			<CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} onShowShortcuts={handleShowShortcuts} />
+			<CommandPalette
+				open={paletteOpen}
+				onOpenChange={setPaletteOpen}
+				onShowShortcuts={handleShowShortcuts}
+			/>
 			<KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 		</>
 	)

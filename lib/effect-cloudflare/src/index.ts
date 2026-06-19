@@ -109,7 +109,7 @@ export {
 // ---------------------------------------------------------------------------
 // Storage bindings (runtime clients)
 // ---------------------------------------------------------------------------
-export { D1Connection, D1Database, type D1ConnectionClient, type D1DatabaseToken } from "./d1-connection.ts"
+export { D1Database, type D1ConnectionClient, type D1DatabaseToken } from "./d1-connection.ts"
 export {
 	KVNamespace,
 	KVNamespaceError,

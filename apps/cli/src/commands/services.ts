@@ -18,7 +18,10 @@ export const services = Command.make("services", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
-			const result = yield* Ops.listServices({ range, environment: Option.getOrUndefined(a.environment) })
+			const result = yield* Ops.listServices({
+				range,
+				environment: Option.getOrUndefined(a.environment),
+			})
 			yield* printResult(result)
 		}),
 	),

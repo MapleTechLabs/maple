@@ -17,11 +17,11 @@ npm install @maple-dev/browser
 import { MapleBrowser } from "@maple-dev/browser"
 
 MapleBrowser.init({
-  ingestKey: "maple_pk_...",     // public ingest key
-  serviceName: "acme-web",
-  environment: "production",
-  replay: { enabled: true, sampleRate: 1.0 },
-  privacy: { maskAllInputs: true },
+	ingestKey: "maple_pk_...", // public ingest key
+	serviceName: "acme-web",
+	environment: "production",
+	replay: { enabled: true, sampleRate: 1.0 },
+	privacy: { maskAllInputs: true },
 })
 ```
 

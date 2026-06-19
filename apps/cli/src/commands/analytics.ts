@@ -6,9 +6,7 @@ import { printResult } from "../lib/output"
 import { resolveRangeChecked, type Range } from "../core/time"
 import * as Ops from "../core/operations"
 
-const spanName = Flag.optional(
-	Flag.string("span-name").pipe(Flag.withDescription("Filter by span name")),
-)
+const spanName = Flag.optional(Flag.string("span-name").pipe(Flag.withDescription("Filter by span name")))
 const errorsOnly = Flag.boolean("errors").pipe(
 	Flag.withDescription("Only include errored spans"),
 	Flag.withDefault(false),
@@ -24,13 +22,10 @@ export const timeseries = Command.make("timeseries", {
 	service: f.service,
 	environment: f.environment,
 	span: spanName,
-	groupBy: Flag.choice("group-by", [
-		"none",
-		"service",
-		"span_name",
-		"status_code",
-		"http_method",
-	]).pipe(Flag.withDescription("Group series by dimension"), Flag.withDefault("none")),
+	groupBy: Flag.choice("group-by", ["none", "service", "span_name", "status_code", "http_method"]).pipe(
+		Flag.withDescription("Group series by dimension"),
+		Flag.withDefault("none"),
+	),
 	errors: errorsOnly,
 	bucket,
 }).pipe(

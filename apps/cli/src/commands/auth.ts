@@ -48,7 +48,9 @@ export const login = Command.make("login", {
 	),
 	token: Flag.optional(
 		Flag.string("token").pipe(
-			Flag.withDescription("API token. If omitted, it is read from stdin (so it stays out of shell history)."),
+			Flag.withDescription(
+				"API token. If omitted, it is read from stdin (so it stays out of shell history).",
+			),
 		),
 	),
 }).pipe(
@@ -106,7 +108,12 @@ export const whoami = Command.make("whoami", {}).pipe(
 			yield* printJson(
 				resolved.m._tag === "local"
 					? { mode: "local", defaultMode, url: resolved.m.baseUrl }
-					: { mode: "remote", defaultMode, apiUrl: resolved.m.apiUrl, orgId: resolved.m.orgId ?? null },
+					: {
+							mode: "remote",
+							defaultMode,
+							apiUrl: resolved.m.apiUrl,
+							orgId: resolved.m.orgId ?? null,
+						},
 			)
 		}),
 	),

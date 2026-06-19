@@ -2,8 +2,8 @@
 	"name": "@maple-examples/effect-todo",
 	"version": "0.0.0",
 	"private": true,
-	"type": "module",
 	"description": "Distributed-tracing demo: React + effect-atom frontend and an Effect (Bun) backend, both instrumented with the Maple SDK and feeding Maple local mode.",
+	"type": "module",
 	"scripts": {
 		"server": "bun run --watch server/main.ts",
 		"web": "vite --config web/vite.config.ts",

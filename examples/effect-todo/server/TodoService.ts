@@ -14,9 +14,24 @@ import { Context, Duration, Effect, Layer, Ref } from "effect"
 import { Todo, TodoNotFoundError, ToggleFailedError } from "../shared/api.ts"
 
 const seedTodos: ReadonlyArray<Todo> = [
-	new Todo({ id: "seed-1", title: "Ship the Maple demo", completed: false, createdAt: "2026-01-01T00:00:00.000Z" }),
-	new Todo({ id: "seed-2", title: "Instrument the backend", completed: true, createdAt: "2026-01-01T00:00:00.000Z" }),
-	new Todo({ id: "seed-3", title: "Watch the distributed trace", completed: false, createdAt: "2026-01-01T00:00:00.000Z" }),
+	new Todo({
+		id: "seed-1",
+		title: "Ship the Maple demo",
+		completed: false,
+		createdAt: "2026-01-01T00:00:00.000Z",
+	}),
+	new Todo({
+		id: "seed-2",
+		title: "Instrument the backend",
+		completed: true,
+		createdAt: "2026-01-01T00:00:00.000Z",
+	}),
+	new Todo({
+		id: "seed-3",
+		title: "Watch the distributed trace",
+		completed: false,
+		createdAt: "2026-01-01T00:00:00.000Z",
+	}),
 ]
 
 /** Sleep a random number of ms in [min, max] to make spans visibly wide. */
@@ -32,7 +47,11 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 				yield* jitter(10, 40)
 				const map = yield* Ref.get(store)
 				return [...map.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-			}).pipe(Effect.withSpan("db.read", { attributes: { "db.system.name": "memory", "db.operation": "scan" } }))
+			}).pipe(
+				Effect.withSpan("db.read", {
+					attributes: { "db.system.name": "memory", "db.operation": "scan" },
+				}),
+			)
 			yield* Effect.annotateCurrentSpan("todo.count", todos.length)
 			return todos
 		})
@@ -43,8 +62,14 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 			yield* Effect.gen(function* () {
 				yield* jitter(20, 90)
 				yield* Ref.update(store, (map) => new Map(map).set(id, todo))
-			}).pipe(Effect.withSpan("db.persist", { attributes: { "db.system.name": "memory", "db.operation": "insert", "todo.id": id } }))
-			yield* Effect.logInfo("todo.created").pipe(Effect.annotateLogs({ "todo.id": id, "todo.title": title }))
+			}).pipe(
+				Effect.withSpan("db.persist", {
+					attributes: { "db.system.name": "memory", "db.operation": "insert", "todo.id": id },
+				}),
+			)
+			yield* Effect.logInfo("todo.created").pipe(
+				Effect.annotateLogs({ "todo.id": id, "todo.title": title }),
+			)
 			return todo
 		})
 
@@ -64,9 +89,13 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 
 			const updated = new Todo({ ...existing, completed: !existing.completed })
 			yield* Ref.update(store, (m) => new Map(m).set(id, updated)).pipe(
-				Effect.withSpan("db.persist", { attributes: { "db.system.name": "memory", "db.operation": "update", "todo.id": id } }),
+				Effect.withSpan("db.persist", {
+					attributes: { "db.system.name": "memory", "db.operation": "update", "todo.id": id },
+				}),
 			)
-			yield* Effect.logInfo("todo.toggled").pipe(Effect.annotateLogs({ "todo.id": id, "todo.completed": updated.completed }))
+			yield* Effect.logInfo("todo.toggled").pipe(
+				Effect.annotateLogs({ "todo.id": id, "todo.completed": updated.completed }),
+			)
 			return updated
 		})
 
@@ -83,7 +112,11 @@ export class TodoService extends Context.Service<TodoService>()("@maple-examples
 					next.delete(id)
 					return next
 				})
-			}).pipe(Effect.withSpan("db.persist", { attributes: { "db.system.name": "memory", "db.operation": "delete", "todo.id": id } }))
+			}).pipe(
+				Effect.withSpan("db.persist", {
+					attributes: { "db.system.name": "memory", "db.operation": "delete", "todo.id": id },
+				}),
+			)
 			yield* Effect.logInfo("todo.removed").pipe(Effect.annotateLogs({ "todo.id": id }))
 			return existing
 		})

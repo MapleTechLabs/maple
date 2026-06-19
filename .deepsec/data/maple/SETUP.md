@@ -14,28 +14,28 @@ still has placeholder sections.
 2. **Fill in `data/maple/INFO.md`.** It's auto-injected into the AI
    prompt for every batch — keep it short and selective.
 
-   **Length budget: 50–100 lines total.** Verbose context dilutes
-   signal in the scanner's prompt window. The goal is "what would a
-   reviewer miss if they didn't read this?", not exhaustive enumeration.
+    **Length budget: 50–100 lines total.** Verbose context dilutes
+    signal in the scanner's prompt window. The goal is "what would a
+    reviewer miss if they didn't read this?", not exhaustive enumeration.
 
-   **Per-section rubric**:
-   - Pick 3–5 representative items per section. **Don't list every
-     file, helper, or callsite** — pick the patterns.
-   - Name primitives by their public name (e.g. `withAuthentication`,
-     `auth.can()`, `isTeamAdmin`). **No line numbers.** Don't enumerate
-     more than 5 paths in any list.
-   - Skip generic CWE categories — built-in matchers already cover
-     "SSRF", "SQL injection", "XSS". Cover what's *project-specific*:
-     internal auth helpers, custom middleware names, fork-specific
-     stubs, intended-public endpoints.
-   - One short paragraph or 3–5 short bullets per section. Not both.
+    **Per-section rubric**:
+    - Pick 3–5 representative items per section. **Don't list every
+      file, helper, or callsite** — pick the patterns.
+    - Name primitives by their public name (e.g. `withAuthentication`,
+      `auth.can()`, `isTeamAdmin`). **No line numbers.** Don't enumerate
+      more than 5 paths in any list.
+    - Skip generic CWE categories — built-in matchers already cover
+      "SSRF", "SQL injection", "XSS". Cover what's _project-specific_:
+      internal auth helpers, custom middleware names, fork-specific
+      stubs, intended-public endpoints.
+    - One short paragraph or 3–5 short bullets per section. Not both.
 
-   Source material (read in this order, stop when you have enough):
-   - `../README.md`
-   - any `AGENTS.md` / `CLAUDE.md` in `..`
-   - `../package.json` (or `go.mod`, `pyproject.toml`, etc.)
-   - 5–10 representative code files (entry points, auth helpers) — not
-     a full code tour.
+    Source material (read in this order, stop when you have enough):
+    - `../README.md`
+    - any `AGENTS.md` / `CLAUDE.md` in `..`
+    - `../package.json` (or `go.mod`, `pyproject.toml`, etc.)
+    - 5–10 representative code files (entry points, auth helpers) — not
+      a full code tour.
 
 3. **(Optional) Add custom matchers** for repo-specific patterns the
    built-in matchers won't catch. Read

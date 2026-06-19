@@ -14,19 +14,6 @@ export interface TimeBounds {
 	endTime: string
 }
 
-/**
- * Wide default window for local mode. Data volume is small, so we look back a
- * generous span (default 30 days) and pad the upper bound by an hour to absorb
- * clock skew between the ingesting app and this UI.
- */
-export function defaultTimeBounds(days = 30): TimeBounds {
-	const now = Date.now()
-	return {
-		startTime: toClickHouseDateTime(now - days * 24 * 60 * 60 * 1000),
-		endTime: toClickHouseDateTime(now + 60 * 60 * 1000),
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Time-range presets — drive the segmented range control in the filter bar.
 // ---------------------------------------------------------------------------

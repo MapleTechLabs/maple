@@ -23,9 +23,7 @@ try {
 
 if (checkMode) {
 	if (existingModule !== renderedModule) {
-		console.error(
-			"ClickHouse schema is out of date. Run `bun run clickhouse:schema`.",
-		)
+		console.error("ClickHouse schema is out of date. Run `bun run clickhouse:schema`.")
 		process.exit(1)
 	}
 	console.log(

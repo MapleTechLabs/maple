@@ -61,7 +61,9 @@ const metricExpr = (
 					// grouped so the division binds after the sum.
 					paren(
 						countIf(durationMs($.Duration).lt(500)).add(
-							countIf(durationMs($.Duration).gte(500).and(durationMs($.Duration).lt(2000))).mul(0.5),
+							countIf(durationMs($.Duration).gte(500).and(durationMs($.Duration).lt(2000))).mul(
+								0.5,
+							),
 						),
 					).div(count()),
 					4,

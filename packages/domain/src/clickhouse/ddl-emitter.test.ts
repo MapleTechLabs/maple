@@ -14,9 +14,7 @@ describe("ClickHouse DDL emitter", () => {
 		const stmts = emitProjectDdl(manifest)
 
 		expect(stmts.length).toBe(manifest.datasources.length + manifest.pipes.length)
-		expect(stmts.filter((s) => s.startsWith("CREATE TABLE")).length).toBe(
-			manifest.datasources.length,
-		)
+		expect(stmts.filter((s) => s.startsWith("CREATE TABLE")).length).toBe(manifest.datasources.length)
 		expect(stmts.filter((s) => s.startsWith("CREATE MATERIALIZED VIEW")).length).toBe(
 			manifest.pipes.length,
 		)
@@ -157,9 +155,7 @@ ENGINE = MergeTree`
 	})
 
 	it("returns null for non-CREATE-TABLE input", () => {
-		expect(
-			extractColumnDefinition("CREATE MATERIALIZED VIEW foo TO bar AS SELECT 1", "OrgId"),
-		).toBeNull()
+		expect(extractColumnDefinition("CREATE MATERIALIZED VIEW foo TO bar AS SELECT 1", "OrgId")).toBeNull()
 		expect(extractColumnDefinition("not sql at all", "OrgId")).toBeNull()
 	})
 

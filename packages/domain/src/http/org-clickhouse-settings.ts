@@ -296,10 +296,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 	.add(
 		HttpApiEndpoint.get("applySchemaStatus", "/apply-schema/status", {
 			success: OrgClickHouseApplySchemaStatus,
-			error: [
-				OrgClickHouseSettingsForbiddenError,
-				OrgClickHouseSettingsPersistenceError,
-			],
+			error: [OrgClickHouseSettingsForbiddenError, OrgClickHouseSettingsPersistenceError],
 		}),
 	)
 	.add(

@@ -3,7 +3,7 @@ import { ServiceName, ServiceWorkloadsRequest } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
-export type ServiceWorkloadKind = "deployment" | "statefulset" | "daemonset" | "unknown"
+type ServiceWorkloadKind = "deployment" | "statefulset" | "daemonset" | "unknown"
 
 export interface ServiceWorkload {
 	serviceName: string
@@ -16,7 +16,7 @@ export interface ServiceWorkload {
 	avgMemoryLimitUtilization: number | null
 }
 
-export interface ServiceWorkloadsResult {
+interface ServiceWorkloadsResult {
 	workloads: ServiceWorkload[]
 }
 

@@ -52,7 +52,8 @@ describe("ScrapeTargetsService", () => {
 		const calls: Array<{ url: string; authorization: string | null }> = []
 
 		globalThis.fetch = (async (input, init) => {
-			const requestUrl = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+			const requestUrl =
+				typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
 			const headers = new Headers(init?.headers)
 			calls.push({
 				url: requestUrl,
@@ -125,7 +126,9 @@ describe("ScrapeTargetsService", () => {
 			)
 
 			const goodScrapeAt = 1750000000000
-			yield* service.recordScrapeResults([{ targetId: target.id, scrapedAt: goodScrapeAt, error: null }])
+			yield* service.recordScrapeResults([
+				{ targetId: target.id, scrapedAt: goodScrapeAt, error: null },
+			])
 			yield* service.recordScrapeResults([
 				{ targetId: target.id, scrapedAt: goodScrapeAt + 15_000, error: "HTTP 503" },
 			])
@@ -264,7 +267,12 @@ describe("ScrapeTargetsService", () => {
 			)
 
 			yield* service.recordScrapeResults([
-				{ targetId: target.id, scrapedAt: 1750000000000, error: "HTTP 503", subTargetKey: "branch-1" },
+				{
+					targetId: target.id,
+					scrapedAt: 1750000000000,
+					error: "HTTP 503",
+					subTargetKey: "branch-1",
+				},
 			])
 			const failed = yield* service.get(orgId, target.id)
 			expect(failed.lastScrapeError).toBe("[branch:branch-1] HTTP 503")

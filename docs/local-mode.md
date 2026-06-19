@@ -88,10 +88,10 @@ Manual-installer builds keep themselves current:
   installer can't overwrite a running executable; the rename swaps the directory
   entry while the live process keeps its old inode). It then clears the macOS
   quarantine flag. Restart any running `maple start` afterward.
-  - `maple update --check` — report current vs. latest without installing.
-  - `maple update --tag <tag>` — install a specific release (e.g. `v0.6.0`); also
-    the way to downgrade. (Named `--tag`, not `--version`, because the CLI
-    reserves `--version` for printing the binary version.)
+    - `maple update --check` — report current vs. latest without installing.
+    - `maple update --tag <tag>` — install a specific release (e.g. `v0.6.0`); also
+      the way to downgrade. (Named `--tag`, not `--version`, because the CLI
+      reserves `--version` for printing the binary version.)
 
 This is the same artifact the installer fetches, so `maple update` and re-running
 `curl … | sh` are interchangeable.
@@ -125,13 +125,13 @@ There is a single binary, `maple`, compiled from **`apps/cli`** (package
 the server, and it talks to the embedded ClickHouse engine **directly via
 `bun:ffi`** — no subprocess, no second language at the front:
 
-| Concern | Where | How |
-| --- | --- | --- |
-| CLI commands | `apps/cli/src/commands` | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace — every command bottoms out at the shared `WarehouseExecutor`, and only the executor layer swaps per [mode](#local-vs-remote-mode). |
-| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA — all on one port. |
-| Embedded ClickHouse | `apps/cli/src/server/chdb.ts` | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process. |
-| OTLP → rows | `apps/cli/src/server/otlp/` | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge. |
-| UI (SPA) | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
+| Concern              | Where                          | How                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI commands         | `apps/cli/src/commands`        | `maple services`, `traces`, `errors`, … run against **either** the local server **or** a remote workspace — every command bottoms out at the shared `WarehouseExecutor`, and only the executor layer swaps per [mode](#local-vs-remote-mode).                                                                                                                        |
+| `maple start` server | `apps/cli/src/server/serve.ts` | A `Bun.serve` hosting OTLP/HTTP ingest (`POST /v1/{traces,logs,metrics}`), the query API (`POST /local/query`), and the bundled SPA — all on one port.                                                                                                                                                                                                               |
+| Embedded ClickHouse  | `apps/cli/src/server/chdb.ts`  | `dlopen`s `libchdb` via `bun:ffi` (the `chdb_*` accessor C API) and holds a single connection for the process.                                                                                                                                                                                                                                                       |
+| OTLP → rows          | `apps/cli/src/server/otlp/`    | Decodes OTLP protobuf/JSON (protobufjs) and encodes each signal to per-table NDJSON, matching the generated `local-inserts.json` schema exactly. Ported from the production Rust encoders so row shapes can't diverge.                                                                                                                                               |
+| UI (SPA)             | `apps/local-ui` (Vite + React) | Hooks compile queries with `CH.compile(...)` and POST to `/local/query`. The same build is deployed to `local.maple.dev` (the default) **and** inlined into the binary as the `--offline` fallback (see [release bundle](#release-bundle)); it picks its query base URL from `window.location` at runtime (see [Where the UI comes from](#where-the-ui-comes-from)). |
 
 chDB allows exactly one connection per process and isn't safe to call
 concurrently — so the long-lived `maple start` process owns the connection, and
@@ -179,7 +179,7 @@ The dashboard SPA is a single build served two ways, and it decides which
 - **Default — `local.maple.dev`.** `maple start` points you at the SPA deployed to
   `local.maple.dev` (a Cloudflare worker, `apps/local-ui/alchemy.run.ts`). This
   decouples UI updates from binary releases: ship a UI fix by deploying, no new
-  binary. Because that page is a *public* origin, its queries to
+  binary. Because that page is a _public_ origin, its queries to
   `http://127.0.0.1:<port>/local/query` are a **public → loopback** request, which
   trips the browser's **Private Network Access** gate. The server answers the
   preflight with `Access-Control-Allow-Private-Network: true` (set on

@@ -18,7 +18,12 @@ export function GradientAreaChart({ data, className, syncId }: BaseChartProps) {
 
 	return (
 		<ChartContainer config={chartConfig} className={className}>
-			<AreaChart data={data ?? areaTimeSeriesData} accessibilityLayer syncId={syncId} syncMethod="value">
+			<AreaChart
+				data={data ?? areaTimeSeriesData}
+				accessibilityLayer
+				syncId={syncId}
+				syncMethod="value"
+			>
 				<defs>
 					<VerticalGradient id={desktopGradientId} color="var(--color-desktop)" />
 					<VerticalGradient id={mobileGradientId} color="var(--color-mobile)" />

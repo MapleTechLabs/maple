@@ -1,7 +1,7 @@
 import { McpSchema, McpServer as EffectMcpServer } from "effect/unstable/ai"
 import { Effect, Layer, Schema, Context } from "effect"
 import { mapleToolDefinitions, toInputSchema, type MapleToolDefinition } from "./tools/registry"
-import type { McpToolError, McpToolRegistrar, McpToolResult } from "./tools/types"
+import type { McpToolResult } from "./tools/types"
 
 const toErrorMessage = (error: unknown): string => {
 	if (error instanceof Error && "error" in error && (error as any).error != null) {

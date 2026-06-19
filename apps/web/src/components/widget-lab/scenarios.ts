@@ -426,11 +426,7 @@ export const chartScenarios: ChartScenario[] = [
 // ---------------------------------------------------------------------------
 
 /** N synthetic timeseries with smooth, deterministic, distinct shapes. */
-function makeManySeries(
-	seriesCount: number,
-	points = 14,
-	namePrefix = "service",
-): Record<string, unknown>[] {
+function makeManySeries(seriesCount: number, points = 14, namePrefix = "service"): Record<string, unknown>[] {
 	const base = new Date("2026-01-01T00:00:00Z").getTime()
 	return Array.from({ length: points }, (_, p) => {
 		const row: Record<string, unknown> = {
@@ -722,8 +718,7 @@ export const tableScenarios: WidgetScenario[] = [
 		dataState: ready([
 			{
 				name: "billing-service @ us-east-1 with a very long descriptor",
-				detail:
-					"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
+				detail: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
 			},
 			{
 				name: "auth-service",

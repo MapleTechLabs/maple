@@ -5,7 +5,7 @@ visualization. Maple ingests the full OTel triad and stores a near-complete span
 ClickHouse/Tinybird — but a lot of stored data (span events, span links, span kind, trace state, log
 attributes, metric exemplars, exponential histograms) is never exposed in the product.
 
-**Framing:** most high-value gaps need *zero* ingestion work — the columns are already populated, they
+**Framing:** most high-value gaps need _zero_ ingestion work — the columns are already populated, they
 just need query-engine + UI plumbing. Tier 3 items require changes to the Rust ingest encoder
 (`apps/ingest/src/telemetry.rs`).
 
@@ -26,7 +26,7 @@ data exists:
 - **Span links** — **0 rows have links.** ❌ No producers emit them → #6 deprioritized until data exists.
 - **Scope name** — ~100% populated on both traces and logs. ✅
 - **Log attributes** — ~100% populated. ✅
-- **Log severity** — numbers 5/9/13/17 present; severity *text* casing is inconsistent
+- **Log severity** — numbers 5/9/13/17 present; severity _text_ casing is inconsistent
   (`info` vs `Info`, `debug`) → confirms a severity-**number** range filter beats text matching. ✅
 - **Metric exemplars** — 6.7M on histograms, ~46K on sums. ✅
 - **Exponential histograms** — **0 rows.** ❌ → #10 deprioritized.
@@ -38,37 +38,37 @@ data exists:
 
 - [ ] ~~**1. Span kind filter** (Server/Client/Producer/Consumer/Internal)~~ — ✗ **REJECTED (tried & reverted).** Built end-to-end and verified working (Client → 36 traces), but judged not useful enough for the sidebar. Don't rebuild without a clearer use case.
 - [ ] ~~**2. Span status filter** (Ok / Unset / Error, not just `has_error`)~~ — ✗ **REJECTED (tried & reverted).** Same as #1 — the existing `has_error` toggle covers the common case; granular Ok/Unset/Error wasn't worth the sidebar space.
-- [ ] **3. Log attribute filters** (arbitrary `log_attributes`) — *S–M, logs*
-  `LogsFilters` has no `attributeFilters` — only service/severity/trace_id/body-search. Reuse `AttributeFilter` + `traces-shared.ts` operators.
-- [ ] **4. Log severity range** (`>= ERROR`) — *S, logs*
-  `severity_number` is stored but only exact-match on text is exposed. Add a `minSeverityNumber` filter.
-- [ ] **5. Span events on the waterfall/timeline** — *M, trace visuals*
-  `events_*` arrays stored and completely unrendered. Add event markers to `trace-timeline.tsx` / `span-hierarchy.tsx` + events list in span detail. Highest-visibility visual win.
-- [ ] **6. Span links rendered** (clickable links to related traces) — *M, trace visuals* — ⏸ **DEPRIORITIZED: 0 links in prod data.** `links_*` arrays stored, never shown. Revisit once a producer emits links.
-- [ ] **7. Scope / instrumentation filter** (`scope_name` / `scope_version`) — *S, trace + log filtering*
-  Stored on all three signals, filterable on none. Isolates one SDK/library.
-- [ ] **8. Generic attribute filter UI builder** — *M, trace filtering*
-  `attributeFilters` + `resourceAttributeFilters` already work end-to-end in the query engine (and `hasActiveFilters` counts them) — but the sidebar renders no control to add them. Wire a key/op/value row builder backed by `explore-attributes` autocomplete.
+- [ ] **3. Log attribute filters** (arbitrary `log_attributes`) — _S–M, logs_
+      `LogsFilters` has no `attributeFilters` — only service/severity/trace_id/body-search. Reuse `AttributeFilter` + `traces-shared.ts` operators.
+- [ ] **4. Log severity range** (`>= ERROR`) — _S, logs_
+      `severity_number` is stored but only exact-match on text is exposed. Add a `minSeverityNumber` filter.
+- [ ] **5. Span events on the waterfall/timeline** — _M, trace visuals_
+      `events_*` arrays stored and completely unrendered. Add event markers to `trace-timeline.tsx` / `span-hierarchy.tsx` + events list in span detail. Highest-visibility visual win.
+- [ ] **6. Span links rendered** (clickable links to related traces) — _M, trace visuals_ — ⏸ **DEPRIORITIZED: 0 links in prod data.** `links_*` arrays stored, never shown. Revisit once a producer emits links.
+- [ ] **7. Scope / instrumentation filter** (`scope_name` / `scope_version`) — _S, trace + log filtering_
+      Stored on all three signals, filterable on none. Isolates one SDK/library.
+- [ ] **8. Generic attribute filter UI builder** — _M, trace filtering_
+      `attributeFilters` + `resourceAttributeFilters` already work end-to-end in the query engine (and `hasActiveFilters` counts them) — but the sidebar renders no control to add them. Wire a key/op/value row builder backed by `explore-attributes` autocomplete.
 
 ## Tier 2 — Medium (data stored, new query/visual work)
 
-- [ ] **9. Exemplar → trace links on charts** — *M, metric visuals*
-  `exemplars_trace_id/span_id/value/timestamp` stored per metric point, never read. Overlay exemplar dots on latency/line charts that deep-link to the trace — the canonical OTel metrics↔traces bridge.
-- [ ] **10. Exponential-histogram heatmap** — *M–L, metric visuals* — ⏸ **DEPRIORITIZED: 0 exp-histogram rows in prod.** Revisit once data exists; explicit-bucket histograms (#11) have 36.8M rows and are the better first target.
-- [ ] **11. Explicit-bucket histogram distribution view** — *M, metric visuals*
-  Histogram datasource has bounds + bucket counts; registry has a generic histogram/heatmap but nothing wired to OTel histogram buckets.
-- [ ] **12. trace_state / sampling filter** — *S, trace filtering*
-  `TraceState` + `SampleRate` stored; useful for "show only head-sampled" debugging. Lower demand.
-- [ ] **13. GenAI / LLM semantic conventions** (`gen_ai.*`) — *M, filtering + visuals*
-  Token usage, model, system land in the generic attrs map — no dedicated facets or token/cost visuals. Emerging, high-interest namespace.
+- [ ] **9. Exemplar → trace links on charts** — _M, metric visuals_
+      `exemplars_trace_id/span_id/value/timestamp` stored per metric point, never read. Overlay exemplar dots on latency/line charts that deep-link to the trace — the canonical OTel metrics↔traces bridge.
+- [ ] **10. Exponential-histogram heatmap** — _M–L, metric visuals_ — ⏸ **DEPRIORITIZED: 0 exp-histogram rows in prod.** Revisit once data exists; explicit-bucket histograms (#11) have 36.8M rows and are the better first target.
+- [ ] **11. Explicit-bucket histogram distribution view** — _M, metric visuals_
+      Histogram datasource has bounds + bucket counts; registry has a generic histogram/heatmap but nothing wired to OTel histogram buckets.
+- [ ] **12. trace_state / sampling filter** — _S, trace filtering_
+      `TraceState` + `SampleRate` stored; useful for "show only head-sampled" debugging. Lower demand.
+- [ ] **13. GenAI / LLM semantic conventions** (`gen_ai.*`) — _M, filtering + visuals_
+      Token usage, model, system land in the generic attrs map — no dedicated facets or token/cost visuals. Emerging, high-interest namespace.
 
 ## Tier 3 — Needs ingest-encoder changes (`apps/ingest/src/telemetry.rs`)
 
-- [ ] **14. Summary metrics** — *M.* Currently silently dropped at encode time. Add datasource + encode path if customers send Prometheus-summary-style data.
-- [ ] **15. Span flags / dropped-attribute counts** — *M.* `flags` and all `dropped_*_count` hardcoded to 0; needed for spec-complete fidelity + "data loss" indicators.
-- [ ] **16. Structured (nested) log body** — *M.* OTel AnyValue body is flattened to string; nested bodies lose shape.
-- [ ] **17. Profiles signal** — *L.* No OTLP profiles ingestion at all. Large, separable effort.
-- [ ] **18. Baggage persistence** — *L.* Parsed but not stored; low product value.
+- [ ] **14. Summary metrics** — _M._ Currently silently dropped at encode time. Add datasource + encode path if customers send Prometheus-summary-style data.
+- [ ] **15. Span flags / dropped-attribute counts** — _M._ `flags` and all `dropped_*_count` hardcoded to 0; needed for spec-complete fidelity + "data loss" indicators.
+- [ ] **16. Structured (nested) log body** — _M._ OTel AnyValue body is flattened to string; nested bodies lose shape.
+- [ ] **17. Profiles signal** — _L._ No OTLP profiles ingestion at all. Large, separable effort.
+- [ ] **18. Baggage persistence** — _L._ Parsed but not stored; low product value.
 
 ---
 
@@ -91,6 +91,6 @@ data exists:
 - **Filter UIs:** `apps/web/src/components/traces/traces-filter-sidebar.tsx`, `apps/web/src/components/logs/logs-filter-sidebar.tsx`, shared `filter-section.tsx`.
 - **Trace visuals:** `packages/ui/src/components/traces/{trace-timeline,span-hierarchy,flamegraph,flow-view}.tsx`, `apps/web/src/components/traces/span-detail-panel.tsx`.
 - **Chart registry / metric visuals:** `packages/ui/src/components/charts/registry.ts`; verify via `/widget-lab`.
-- **Datasource schemas:** `packages/domain/src/tinybird/datasources.ts` (traces, logs, metric_* tables).
+- **Datasource schemas:** `packages/domain/src/tinybird/datasources.ts` (traces, logs, metric\_\* tables).
 - **Ingest encoder (Tier 3 only):** `apps/ingest/src/telemetry.rs`.
 - **MCP parity:** `apps/api/src/mcp/tools/{search-traces,search-logs,explore-attributes}.ts`.

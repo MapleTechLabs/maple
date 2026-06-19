@@ -177,9 +177,7 @@ export const Workflow = <_Self = unknown>() => {
  * Resolve a workflow handle from the worker env for creating / inspecting
  * workflow instances.
  */
-export const workflowHandle = Effect.fn("workflowHandle")(function* (
-	classOrName: { name: string } | string,
-) {
+export const workflowHandle = Effect.fn("workflowHandle")(function* (classOrName: { name: string } | string) {
 	const env = yield* WorkerEnvironment
 	const name = typeof classOrName === "string" ? classOrName : classOrName.name
 	const binding = env[name] as any
@@ -191,10 +189,7 @@ export const workflowHandle = Effect.fn("workflowHandle")(function* (
 	return {
 		name,
 		create: (params?: unknown) =>
-			Effect.tryPromise(() => binding.create({ params })).pipe(
-				Effect.map(wrapInstance),
-				Effect.orDie,
-			),
+			Effect.tryPromise(() => binding.create({ params })).pipe(Effect.map(wrapInstance), Effect.orDie),
 		get: (instanceId: string) =>
 			Effect.tryPromise(() => binding.get(instanceId)).pipe(Effect.map(wrapInstance), Effect.orDie),
 	} satisfies WorkflowHandle

@@ -5,12 +5,6 @@ import type {
 	SchemaApplyWorkflowResult,
 } from "./ClickHouseSchemaApplyWorkflow.run"
 
-export type {
-	SchemaApplyWorkflowEnv,
-	SchemaApplyWorkflowPayload,
-	SchemaApplyWorkflowResult,
-} from "./ClickHouseSchemaApplyWorkflow.run"
-
 /**
  * Cloudflare Workflow that applies Maple's ClickHouse schema to a customer's BYO
  * cluster, chunking heavy backfills across durable steps so they never hit the

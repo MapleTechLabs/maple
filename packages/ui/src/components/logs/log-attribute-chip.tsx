@@ -3,12 +3,7 @@
 import { cn } from "../../lib/utils"
 import { useClipboard } from "../../hooks/use-clipboard"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "../ui/hover-card"
-import {
-	tryParseJson,
-	CopyableValue,
-	CollapsibleJsonValue,
-	useAttributesConfig,
-} from "../attributes"
+import { tryParseJson, CopyableValue, CollapsibleJsonValue, useAttributesConfig } from "../attributes"
 import type { ChipTone } from "../../lib/log-attributes"
 
 const TONE_CLASSES: Record<ChipTone, string> = {

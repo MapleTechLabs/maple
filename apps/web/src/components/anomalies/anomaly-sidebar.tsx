@@ -40,12 +40,24 @@ export function AnomalySidebar({
 		<div className="flex h-full w-72 shrink-0 flex-col overflow-y-auto border-l bg-card/30">
 			<SidebarGroup label="Actions">
 				{isOpen ? (
-					<Button size="sm" variant="outline" className="w-full" onClick={onResolve} disabled={busy}>
+					<Button
+						size="sm"
+						variant="outline"
+						className="w-full"
+						onClick={onResolve}
+						disabled={busy}
+					>
 						Resolve anomaly
 					</Button>
 				) : null}
 				{incident.errorIssueId === null ? (
-					<Button size="sm" variant="outline" className="w-full" onClick={onOpenLinkDialog} disabled={busy}>
+					<Button
+						size="sm"
+						variant="outline"
+						className="w-full"
+						onClick={onOpenLinkDialog}
+						disabled={busy}
+					>
 						<LinkIcon size={13} />
 						Link issue
 					</Button>
@@ -96,7 +108,12 @@ export function AnomalySidebar({
 
 			<SidebarGroup label="Values">
 				<Row label="Observed">
-					<span className={cn("font-mono text-sm tabular-nums", isOpen ? tone.text : "text-foreground")}>
+					<span
+						className={cn(
+							"font-mono text-sm tabular-nums",
+							isOpen ? tone.text : "text-foreground",
+						)}
+					>
 						{fmt(incident.lastObservedValue)}
 					</span>
 				</Row>
@@ -116,7 +133,12 @@ export function AnomalySidebar({
 					</span>
 				</Row>
 				<Row label="Deviation">
-					<span className={cn("font-mono text-sm tabular-nums", isOpen ? tone.text : "text-foreground")}>
+					<span
+						className={cn(
+							"font-mono text-sm tabular-nums",
+							isOpen ? tone.text : "text-foreground",
+						)}
+					>
 						{dev.label}
 					</span>
 				</Row>
@@ -162,9 +184,7 @@ export function AnomalySidebar({
 								)}
 							</span>
 							<span className="font-mono text-xs tabular-nums text-muted-foreground">
-								{fingerprint.resolvedAt !== null
-									? "resolved"
-									: fmt(fingerprint.lastValue)}
+								{fingerprint.resolvedAt !== null ? "resolved" : fmt(fingerprint.lastValue)}
 							</span>
 						</div>
 					))}

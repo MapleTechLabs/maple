@@ -67,13 +67,7 @@ import {
 import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
@@ -215,9 +209,7 @@ function NotifyChannels({ destinations, enabled }: { destinations: AlertDestinat
 						<ProviderLogo key={d.id} type={d.type} size={28} bare className="flex items-center" />
 					))}
 				</span>
-				{extra > 0 && (
-					<span className="text-muted-foreground text-xs tabular-nums">+{extra}</span>
-				)}
+				{extra > 0 && <span className="text-muted-foreground text-xs tabular-nums">+{extra}</span>}
 			</TooltipTrigger>
 			<TooltipContent>{destinations.map((d) => d.name).join(", ")}</TooltipContent>
 		</Tooltip>
@@ -283,14 +275,14 @@ function MonitorTab({
 		[openIncidents, tagsByRuleId],
 	)
 	const visibleIncidents = useMemo(
-		() => sortIncidents([...filterByTags(openIncidents, (i) => tagsByRuleId.get(i.ruleId) ?? [], selectedTags)]),
+		() =>
+			sortIncidents([
+				...filterByTags(openIncidents, (i) => tagsByRuleId.get(i.ruleId) ?? [], selectedTags),
+			]),
 		[openIncidents, tagsByRuleId, selectedTags],
 	)
 	const incidentGroups = useMemo(
-		() =>
-			grouped
-				? groupItemsByTag(visibleIncidents, (i) => tagsByRuleId.get(i.ruleId) ?? [])
-				: null,
+		() => (grouped ? groupItemsByTag(visibleIncidents, (i) => tagsByRuleId.get(i.ruleId) ?? []) : null),
 		[grouped, visibleIncidents, tagsByRuleId],
 	)
 	const visibleEvents = useMemo(
@@ -511,7 +503,8 @@ function MonitorTab({
 													<span className="shrink-0 text-destructive text-xs font-medium">
 														Failed
 													</span>
-												) : event.status === "queued" || event.status === "processing" ? (
+												) : event.status === "queued" ||
+												  event.status === "processing" ? (
 													<span className="shrink-0 text-muted-foreground/70 text-xs">
 														Pending
 													</span>
@@ -521,7 +514,10 @@ function MonitorTab({
 										<TableCell className="text-muted-foreground tabular-nums">
 											{event.scheduledAt ? (
 												<Tooltip>
-													<TooltipTrigger render={<span />} className="cursor-default">
+													<TooltipTrigger
+														render={<span />}
+														className="cursor-default"
+													>
 														{formatRelativeTime(event.scheduledAt)}
 													</TooltipTrigger>
 													<TooltipContent>
@@ -779,10 +775,7 @@ function AlertsPage() {
 
 	// Resolve each rule's destination IDs against the destinations already loaded
 	// for the page — no extra query — so the Notify column can show real channels.
-	const destinationsById = useMemo(
-		() => new Map(destinations.map((d) => [d.id, d])),
-		[destinations],
-	)
+	const destinationsById = useMemo(() => new Map(destinations.map((d) => [d.id, d])), [destinations])
 
 	const renderRuleRow = (rule: AlertRule, key: string) => {
 		const status: "firing" | "ok" | "disabled" = !rule.enabled
@@ -975,9 +968,7 @@ function AlertsPage() {
 												search: (prev) => ({
 													...prev,
 													createdBy:
-														value === ANY_CREATOR
-															? undefined
-															: (value as string),
+														value === ANY_CREATOR ? undefined : (value as string),
 												}),
 											})
 										}
@@ -1232,7 +1223,9 @@ function AlertsPage() {
 																{group.label}
 																<span className="tracking-normal normal-case text-muted-foreground/55">
 																	{group.events.length}{" "}
-																	{group.events.length === 1 ? "attempt" : "attempts"}
+																	{group.events.length === 1
+																		? "attempt"
+																		: "attempts"}
 																</span>
 															</span>
 														</TableCell>
@@ -1244,7 +1237,10 @@ function AlertsPage() {
 															<TableRow key={event.id}>
 																<TableCell>
 																	<span className="flex items-center gap-1.5">
-																		<Badge variant={status.variant} size="sm">
+																		<Badge
+																			variant={status.variant}
+																			size="sm"
+																		>
 																			{status.label}
 																		</Badge>
 																		{event.attemptNumber > 1 && (
@@ -1264,7 +1260,12 @@ function AlertsPage() {
 																			ev.text,
 																		)}
 																	>
-																		<span className={cn("size-1.5 rounded-full", ev.dot)} />
+																		<span
+																			className={cn(
+																				"size-1.5 rounded-full",
+																				ev.dot,
+																			)}
+																		/>
 																		{ev.label}
 																	</span>
 																</TableCell>
@@ -1284,7 +1285,8 @@ function AlertsPage() {
 																<TableCell className="max-w-0">
 																	{event.status === "failed" ? (
 																		<span className="block truncate text-xs text-destructive/90">
-																			{event.errorMessage ?? "Delivery failed"}
+																			{event.errorMessage ??
+																				"Delivery failed"}
 																			{event.responseCode != null && (
 																				<span className="text-muted-foreground">
 																					{" · "}
@@ -1304,10 +1306,14 @@ function AlertsPage() {
 																			render={<span />}
 																			className="cursor-default text-muted-foreground tabular-nums"
 																		>
-																			{formatAlertTime(event.scheduledAt)}
+																			{formatAlertTime(
+																				event.scheduledAt,
+																			)}
 																		</TooltipTrigger>
 																		<TooltipContent>
-																			{formatAlertDateTime(event.scheduledAt)}
+																			{formatAlertDateTime(
+																				event.scheduledAt,
+																			)}
 																		</TooltipContent>
 																	</Tooltip>
 																</TableCell>

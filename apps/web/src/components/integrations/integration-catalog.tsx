@@ -25,7 +25,7 @@ export interface CatalogEntry {
 	readonly docsUrl?: string
 }
 
-export const CATALOG: ReadonlyArray<CatalogEntry> = [
+const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		name: "Cloudflare Logpush",
@@ -54,8 +54,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "warpstream",
 		name: "WarpStream",
-		description:
-			"Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
+		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
 		icon: WarpStreamIcon,
 		// WarpStream's brand crimson (fill of the official mark).
 		accent: "#E52344",
@@ -71,8 +70,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	},
 ]
 
-export const catalogEntry = (id: IntegrationId): CatalogEntry =>
-	CATALOG.find((entry) => entry.id === id)!
+export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
 interface CardStatus {
 	readonly label: string
@@ -184,11 +182,7 @@ export function IntegrationIconPlate({
 	)
 }
 
-export function IntegrationCatalog({
-	onSelect,
-}: {
-	onSelect: (id: IntegrationId) => void
-}) {
+export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const statuses = useIntegrationStatuses()
 
 	return (

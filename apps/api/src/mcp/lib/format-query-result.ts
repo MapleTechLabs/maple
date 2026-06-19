@@ -5,7 +5,7 @@ import type { McpToolResult } from "../tools/types"
 import type { QueryEngineExecuteResponse } from "@maple/query-engine"
 import type { QueryDataQueryContext, QueryDataUnit } from "@maple/domain"
 
-export function formatBucket(bucket: string): string {
+function formatBucket(bucket: string): string {
 	const match = bucket.match(/T(\d{2}:\d{2}:\d{2})/)
 	return match ? match[1] : bucket.slice(11, 19)
 }
@@ -20,7 +20,7 @@ function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1)
 }
 
-export function inferUnit(source: string, metric: string, metricName?: string): QueryDataUnit {
+function inferUnit(source: string, metric: string, metricName?: string): QueryDataUnit {
 	if (source === "traces") {
 		if (metric === "error_rate") return "percent"
 		if (metric.includes("duration")) return "duration_ms"

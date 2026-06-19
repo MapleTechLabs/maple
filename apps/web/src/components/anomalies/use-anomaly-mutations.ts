@@ -66,5 +66,3 @@ export function useAnomalyMutations() {
 
 	return { resolveIncident, linkIssue }
 }
-
-export type AnomalyMutations = ReturnType<typeof useAnomalyMutations>

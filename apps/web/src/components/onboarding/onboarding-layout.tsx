@@ -1,9 +1,6 @@
 import { motion } from "motion/react"
 import { cn } from "@maple/ui/utils"
-import {
-	OnboardingOrgSwitcher,
-	OnboardingUserMenu,
-} from "./onboarding-header-actions"
+import { OnboardingOrgSwitcher, OnboardingUserMenu } from "./onboarding-header-actions"
 
 const PIP_TRANSITION = { duration: 0.4, ease: [0.16, 1, 0.3, 1] as const }
 

@@ -361,5 +361,12 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			),
 	})
 
-	return { query, sqlQuery, compiledQuery, compiledQueryFirst, ingest, asExecutor } satisfies WarehouseQueryServiceShape
+	return {
+		query,
+		sqlQuery,
+		compiledQuery,
+		compiledQueryFirst,
+		ingest,
+		asExecutor,
+	} satisfies WarehouseQueryServiceShape
 }

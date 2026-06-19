@@ -10,11 +10,7 @@ import {
 	getSessionTraceSummariesResultAtom,
 	getSpanHierarchyResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import {
-	type DisplayMarker,
-	useReplayPlayer,
-	type ReplayPlayerContextValue,
-} from "./replay-player-context"
+import { type DisplayMarker, useReplayPlayer, type ReplayPlayerContextValue } from "./replay-player-context"
 import { spanDisplayRange, type Timeline } from "./replay-timeline"
 import { formatClock, MARKER_STYLES } from "./replay-format"
 import {
@@ -346,7 +342,8 @@ const TracesTrack = React.memo(function TracesTrack({
 				{header(0)}
 				<p className="px-3 py-4 text-xs leading-relaxed text-muted-foreground">
 					No backend traces were linked to this session. Correlation populates automatically when
-					the page is instrumented with <span className="font-mono">@maple-dev/browser</span> tracing.
+					the page is instrumented with <span className="font-mono">@maple-dev/browser</span>{" "}
+					tracing.
 				</p>
 			</div>
 		)

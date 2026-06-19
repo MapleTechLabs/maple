@@ -26,33 +26,6 @@ const TIME_UNITS: Record<string, (date: Date, amount: number) => Date> = {
 	mo: subMonths,
 }
 
-export function parseTimeShorthand(value: string): number | null {
-	const trimmed = value.trim().toLowerCase()
-
-	if (trimmed === "today") {
-		const now = new Date()
-		const start = startOfDay(now)
-		return now.getTime() - start.getTime()
-	}
-
-	// Match patterns like "1m", "2h", "4d", "6w", "2mo"
-	const match = trimmed.match(/^(\d+)(mo|m|h|d|w)$/)
-	if (!match) return null
-
-	const [, amountStr, unit] = match
-	const amount = parseInt(amountStr, 10)
-
-	const multipliers: Record<string, number> = {
-		m: 60 * 1000,
-		h: 60 * 60 * 1000,
-		d: 24 * 60 * 60 * 1000,
-		w: 7 * 24 * 60 * 60 * 1000,
-		mo: 30 * 24 * 60 * 60 * 1000,
-	}
-
-	return amount * multipliers[unit]
-}
-
 export function relativeToAbsolute(shorthand: string): { startTime: string; endTime: string } | null {
 	const trimmed = shorthand.trim().toLowerCase()
 	const now = new Date()
@@ -218,7 +191,7 @@ export function getTimezoneAbbr(): string {
 	return Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
-export const CACHE_SNAP_INTERVAL_S = 15
+const CACHE_SNAP_INTERVAL_S = 15
 
 /**
  * Snap a Tinybird-format datetime string ("YYYY-MM-DD HH:mm:ss") to the

@@ -1,12 +1,7 @@
 import * as React from "react"
 import "@rrweb/replay/dist/style.css"
 import { cn } from "@maple/ui/utils"
-import {
-	type DisplayMarker,
-	type IdleBand,
-	errorMessage,
-	useReplayPlayer,
-} from "./replay-player-context"
+import { type DisplayMarker, type IdleBand, errorMessage, useReplayPlayer } from "./replay-player-context"
 import {
 	GlobeIcon,
 	ArrowPathIcon,
@@ -196,11 +191,7 @@ function ReplayControls() {
 				title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 				className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 			>
-				{isFullscreen ? (
-					<MinimizeIcon className="size-4" />
-				) : (
-					<MaximizeIcon className="size-4" />
-				)}
+				{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
 			</button>
 		</div>
 	)

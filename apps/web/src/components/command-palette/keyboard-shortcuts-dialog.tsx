@@ -50,7 +50,9 @@ export function KeyboardShortcutsDialog({
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>Keyboard shortcuts</DialogTitle>
-					<DialogDescription>Available across Maple — press ? anywhere to open this list.</DialogDescription>
+					<DialogDescription>
+						Available across Maple — press ? anywhere to open this list.
+					</DialogDescription>
 				</DialogHeader>
 				<DialogPanel>
 					<div className="space-y-4">

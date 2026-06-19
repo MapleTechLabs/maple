@@ -32,19 +32,13 @@ import { buildAttrFilterCondition } from "../../traces-shared"
  * @param errorCondition - Optional predicate identifying errored spans
  *                         (typically `$.StatusCode.eq("Error")`)
  */
-export function apdexExprs(
-	durationMs: CH.Expr<number>,
-	thresholdMs: number,
-	errorCondition?: CH.Condition,
-) {
+export function apdexExprs(durationMs: CH.Expr<number>, thresholdMs: number, errorCondition?: CH.Condition) {
 	const satisfiedLatency = durationMs.lt(thresholdMs)
 	const toleratingLatency = durationMs.gte(thresholdMs).and(durationMs.lt(thresholdMs * 4))
 	// Gate the latency buckets on "not an error" so failed requests fall through
 	// to frustrated. `total` still counts every span, so errors pull the score down.
 	const satisfiedCond = errorCondition ? CH.not(errorCondition).and(satisfiedLatency) : satisfiedLatency
-	const toleratingCond = errorCondition
-		? CH.not(errorCondition).and(toleratingLatency)
-		: toleratingLatency
+	const toleratingCond = errorCondition ? CH.not(errorCondition).and(toleratingLatency) : toleratingLatency
 	const satisfied = CH.countIf(satisfiedCond)
 	const tolerating = CH.countIf(toleratingCond)
 	const total = CH.count()
@@ -401,12 +395,12 @@ export function tracesAggregatesWhereConditions(
 // Metrics table lookup + SELECT factory
 // ---------------------------------------------------------------------------
 
-export const VALUE_TABLES = {
+const VALUE_TABLES = {
 	sum: MetricsSum,
 	gauge: MetricsGauge,
 } as const
 
-export const HISTOGRAM_TABLES = {
+const HISTOGRAM_TABLES = {
 	histogram: MetricsHistogram,
 	exponential_histogram: MetricsExpHistogram,
 } as const

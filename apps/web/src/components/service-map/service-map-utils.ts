@@ -5,12 +5,12 @@ import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { getServiceLegendColor } from "@maple/ui/colors"
 import { getDbColor } from "./service-map-db"
 
-export interface ServiceNodeInfra {
+interface ServiceNodeInfra {
 	podCount: number
 	workloadCount: number
 }
 
-export type ServiceNodeKind = "service" | "database"
+type ServiceNodeKind = "service" | "database"
 
 export type ServiceMapColorMode = "service" | "health" | "platform"
 
@@ -95,14 +95,12 @@ export interface ServiceEdgeData {
 }
 
 export const DB_NODE_PREFIX = "db:"
-export const SERVICE_NODE_PREFIX = "svc:"
-export const EDGE_ID_PREFIX = "edge:"
+const EDGE_ID_PREFIX = "edge:"
 
 const encodeIdComponent = (raw: string): string => encodeURIComponent(raw)
 
 export const dbNodeId = (system: string) => `${DB_NODE_PREFIX}${encodeIdComponent(system)}`
-export const svcNodeId = (service: string) => `${SERVICE_NODE_PREFIX}${encodeIdComponent(service)}`
-export const edgeIdFor = (source: string, target: string) =>
+const edgeIdFor = (source: string, target: string) =>
 	`${EDGE_ID_PREFIX}${encodeIdComponent(source)}:${encodeIdComponent(target)}`
 
 export const isDbNodeId = (id: string) => id.startsWith(DB_NODE_PREFIX)
@@ -128,12 +126,12 @@ export type LayoutConfig = {
 export const NS_PADDING_X = 28
 export const NS_PADDING_Y = 24
 export const NS_LABEL_HEIGHT = 28
-export const NS_CLUSTER_GAP = 80
+const NS_CLUSTER_GAP = 80
 
 /**
  * Derive the unique list of services from edges + service overview data
  */
-export function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOverview[]): string[] {
+function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOverview[]): string[] {
 	const services = new Set<string>()
 	for (const edge of edges) {
 		services.add(edge.sourceService)
@@ -704,33 +702,4 @@ export function computeNodePositions(
 	}
 
 	return positions
-}
-
-/**
- * Check if the topology (set of node IDs + edge pairs) has changed
- */
-export function topologyChanged(
-	prevNodes: Node[],
-	nextNodes: Node[],
-	prevEdges: Edge[],
-	nextEdges: Edge[],
-): boolean {
-	if (prevNodes.length !== nextNodes.length) return true
-	if (prevEdges.length !== nextEdges.length) return true
-
-	const prevNodeIds = new Set(prevNodes.map((n) => n.id))
-	const nextNodeIds = new Set(nextNodes.map((n) => n.id))
-	if (prevNodeIds.size !== nextNodeIds.size) return true
-	for (const id of prevNodeIds) {
-		if (!nextNodeIds.has(id)) return true
-	}
-
-	const prevEdgeIds = new Set(prevEdges.map((e) => e.id))
-	const nextEdgeIds = new Set(nextEdges.map((e) => e.id))
-	if (prevEdgeIds.size !== nextEdgeIds.size) return true
-	for (const id of prevEdgeIds) {
-		if (!nextEdgeIds.has(id)) return true
-	}
-
-	return false
 }

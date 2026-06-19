@@ -1,8 +1,4 @@
-import {
-	requiredStringParam,
-	optionalNumberParam,
-	type McpToolRegistrar,
-} from "./types"
+import { requiredStringParam, optionalNumberParam, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, resolveTenant } from "../lib/query-warehouse"
 import { clampLimit } from "../lib/limits"
@@ -32,9 +28,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 
 			const { session, traces, totalTraceCount } = yield* withTenantExecutor(
 				getSessionTraces({ sessionId: session_id, limit: lim }),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("get_session_traces")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("get_session_traces")))
 
 			if (!session) {
 				return {

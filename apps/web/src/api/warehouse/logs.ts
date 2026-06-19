@@ -13,7 +13,6 @@ import {
 	WarehouseDateTimeString,
 	decodeInput,
 	executeQueryEngine,
-	extractAttributeValues,
 	extractCount,
 	extractFacets,
 	runWarehouseQuery,
@@ -225,20 +224,9 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 	}
 })
 
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
-}
-
-export interface LogsFacets {
-	services: FacetItem[]
-	severities: FacetItem[]
-	deploymentEnvs: FacetItem[]
-	namespaces: FacetItem[]
-}
-
-export interface LogsFacetsResponse {
-	data: LogsFacets
 }
 
 const GetLogsFacetsInputSchema = Schema.Struct({
@@ -325,10 +313,6 @@ const GetLogAttributeKeysInputSchema = Schema.Struct({
 
 export type GetLogAttributeKeysInput = Schema.Schema.Type<typeof GetLogAttributeKeysInputSchema>
 
-export interface LogAttributeKeysResponse {
-	data: Array<{ attributeKey: string; usageCount: number }>
-}
-
 export function getLogAttributeKeys({ data }: { data: GetLogAttributeKeysInput }) {
 	return getLogAttributeKeysEffect({ data })
 }
@@ -352,62 +336,6 @@ const getLogAttributeKeysEffect = Effect.fn("QueryEngine.getLogAttributeKeys")(f
 	return {
 		data: result.data.map((row) => ({
 			attributeKey: row.key,
-			usageCount: Number(row.count),
-		})),
-	}
-})
-
-const GetLogAttributeValuesInputSchema = Schema.Struct({
-	startTime: Schema.optional(WarehouseDateTimeString),
-	endTime: Schema.optional(WarehouseDateTimeString),
-	attributeKey: Schema.String,
-})
-
-export type GetLogAttributeValuesInput = Schema.Schema.Type<typeof GetLogAttributeValuesInputSchema>
-
-export interface LogAttributeValuesResponse {
-	data: Array<{ attributeValue: string; usageCount: number }>
-}
-
-export function getLogAttributeValues({ data }: { data: GetLogAttributeValuesInput }) {
-	return getLogAttributeValuesEffect({ data })
-}
-
-const getLogAttributeValuesEffect = Effect.fn("QueryEngine.getLogAttributeValues")(function* ({
-	data,
-}: {
-	data: GetLogAttributeValuesInput
-}) {
-	const input = yield* decodeInput(
-		GetLogAttributeValuesInputSchema,
-		data ?? {},
-		"getLogAttributeValues",
-	)
-
-	yield* Effect.annotateCurrentSpan("attributeKey", input.attributeKey)
-
-	if (!input.attributeKey) {
-		return { data: [] }
-	}
-
-	const fallback = defaultLogsTimeRange(yield* Clock.currentTimeMillis)
-	const response = yield* executeQueryEngine(
-		"queryEngine.getLogAttributeValues",
-		new QueryEngineExecuteRequest({
-			startTime: input.startTime ?? fallback.startTime,
-			endTime: input.endTime ?? fallback.endTime,
-			query: {
-				kind: "attributeValues" as const,
-				source: "logs" as const,
-				scope: "log" as const,
-				attributeKey: input.attributeKey,
-			},
-		}),
-	)
-
-	return {
-		data: extractAttributeValues(response).map((row) => ({
-			attributeValue: row.value,
 			usageCount: Number(row.count),
 		})),
 	}

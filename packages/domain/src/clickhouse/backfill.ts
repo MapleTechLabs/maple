@@ -36,9 +36,7 @@ export interface BackfillSpec {
 }
 
 export const isBackfill = (stmt: unknown): stmt is BackfillSpec =>
-	typeof stmt === "object" &&
-	stmt !== null &&
-	(stmt as { readonly kind?: unknown }).kind === "backfill"
+	typeof stmt === "object" && stmt !== null && (stmt as { readonly kind?: unknown }).kind === "backfill"
 
 /**
  * Reliable time column per source table backfills read from. Used to window
@@ -61,8 +59,7 @@ const buildInsert = (spec: BackfillSpec, db: string, timePredicate?: string): st
 	if (spec.where && spec.where.trim().length > 0) whereParts.push(`(${spec.where})`)
 	if (timePredicate) whereParts.push(timePredicate)
 	const whereClause = whereParts.length > 0 ? `\nWHERE ${whereParts.join(" AND ")}` : ""
-	const groupByClause =
-		spec.groupBy && spec.groupBy.trim().length > 0 ? `\nGROUP BY ${spec.groupBy}` : ""
+	const groupByClause = spec.groupBy && spec.groupBy.trim().length > 0 ? `\nGROUP BY ${spec.groupBy}` : ""
 	// `prefer_column_name_to_alias = 1` only when we add the time predicate: the
 	// projection aliases a column to its own name (e.g. `toDateTime(Timestamp) AS
 	// Timestamp` on traces), so an unqualified `Timestamp` in WHERE would

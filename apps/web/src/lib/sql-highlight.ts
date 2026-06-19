@@ -1,22 +1,65 @@
 const KEYWORDS = new Set([
-	"SELECT", "FROM", "WHERE", "GROUP", "BY", "ORDER", "LIMIT", "JOIN", "ON",
-	"AS", "AND", "OR", "NOT", "NULL", "CASE", "WHEN", "THEN", "ELSE", "END",
-	"WITH", "HAVING", "UNION", "ALL", "DISTINCT", "INNER", "LEFT", "RIGHT",
-	"FULL", "OUTER", "ARRAY", "TUPLE", "ASOF", "FINAL", "PREWHERE", "SAMPLE",
-	"SETTINGS", "FORMAT", "INSERT", "INTO", "VALUES", "IF", "BETWEEN", "IN",
-	"LIKE", "ILIKE", "IS", "INTERVAL", "DESC", "ASC", "OFFSET", "USING",
-	"CROSS", "ANY", "SEMI", "ANTI", "TRUE", "FALSE",
+	"SELECT",
+	"FROM",
+	"WHERE",
+	"GROUP",
+	"BY",
+	"ORDER",
+	"LIMIT",
+	"JOIN",
+	"ON",
+	"AS",
+	"AND",
+	"OR",
+	"NOT",
+	"NULL",
+	"CASE",
+	"WHEN",
+	"THEN",
+	"ELSE",
+	"END",
+	"WITH",
+	"HAVING",
+	"UNION",
+	"ALL",
+	"DISTINCT",
+	"INNER",
+	"LEFT",
+	"RIGHT",
+	"FULL",
+	"OUTER",
+	"ARRAY",
+	"TUPLE",
+	"ASOF",
+	"FINAL",
+	"PREWHERE",
+	"SAMPLE",
+	"SETTINGS",
+	"FORMAT",
+	"INSERT",
+	"INTO",
+	"VALUES",
+	"IF",
+	"BETWEEN",
+	"IN",
+	"LIKE",
+	"ILIKE",
+	"IS",
+	"INTERVAL",
+	"DESC",
+	"ASC",
+	"OFFSET",
+	"USING",
+	"CROSS",
+	"ANY",
+	"SEMI",
+	"ANTI",
+	"TRUE",
+	"FALSE",
 ])
 
 const TOKEN_RE =
 	/(\/\*[\s\S]*?\*\/|--[^\n]*)|('(?:''|\\.|[^'\\])*'|"(?:""|\\.|[^"\\])*")|(\$__[a-zA-Z_][a-zA-Z0-9_]*)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([a-zA-Z_][a-zA-Z0-9_]*)/g
-
-function escapeHtml(s: string): string {
-	return s
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-}
 
 export interface SqlHighlightToken {
 	text: string
@@ -55,13 +98,4 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 	}
 	if (last < code.length) tokens.push({ text: code.slice(last), start: last })
 	return tokens
-}
-
-export function highlightSql(code: string): string {
-	return tokenizeSql(code)
-		.map((token) => {
-			const text = escapeHtml(token.text)
-			return token.className ? `<span class="${token.className}">${text}</span>` : text
-		})
-		.join("")
 }

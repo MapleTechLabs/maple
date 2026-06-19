@@ -136,7 +136,7 @@ const toUpstreamError = (message: string, status?: number, cause?: unknown) =>
 		...(cause === undefined ? {} : { cause }),
 	})
 
-export interface HazelOAuthAccessToken {
+interface HazelOAuthAccessToken {
 	readonly accessToken: string
 	readonly externalUserId: string
 }
@@ -444,7 +444,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					if (!response.ok) {
 						const text = yield* Effect.tryPromise({
 							try: () => response.text(),
-							catch: (cause) => toUpstreamError("Token exchange failed", response.status, cause),
+							catch: (cause) =>
+								toUpstreamError("Token exchange failed", response.status, cause),
 						})
 						return yield* Effect.fail(
 							toUpstreamError(
@@ -513,11 +514,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					})
 					return yield* decodeTokenResponse(json).pipe(
 						Effect.mapError((cause) =>
-							toUpstreamError(
-								"Token refresh returned an unexpected payload",
-								undefined,
-								cause,
-							),
+							toUpstreamError("Token refresh returned an unexpected payload", undefined, cause),
 						),
 					)
 				})
@@ -572,7 +569,9 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 					? yield* encryptValue(tokenResponse.refresh_token)
 					: null
 				const expiresAt =
-					tokenResponse.expires_in != null ? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000 : null
+					tokenResponse.expires_in != null
+						? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000
+						: null
 				const currentTime = yield* Clock.currentTimeMillis
 				const orgId = stateRow.orgId as OrgId
 
@@ -672,7 +671,9 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 						? yield* encryptValue(tokenResponse.refresh_token)
 						: null
 					const expiresAt =
-						tokenResponse.expires_in != null ? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000 : null
+						tokenResponse.expires_in != null
+							? (yield* Clock.currentTimeMillis) + tokenResponse.expires_in * 1000
+							: null
 					const currentTime = yield* Clock.currentTimeMillis
 					yield* dbExecute((db) =>
 						db
@@ -697,7 +698,9 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 			) {
 				const config = yield* resolveConfig
 				const row = yield* requireConnection(orgId)
-				const isValid = row.expiresAt == null || row.expiresAt - (yield* Clock.currentTimeMillis) > REFRESH_LEEWAY_MS
+				const isValid =
+					row.expiresAt == null ||
+					row.expiresAt - (yield* Clock.currentTimeMillis) > REFRESH_LEEWAY_MS
 
 				if (isValid) {
 					const accessToken = yield* decryptValue({
@@ -782,11 +785,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				const json = yield* Effect.tryPromise({
 					try: () => response.json(),
 					catch: (cause) =>
-						toUpstreamError(
-							"Hazel organizations returned a non-JSON response",
-							undefined,
-							cause,
-						),
+						toUpstreamError("Hazel organizations returned a non-JSON response", undefined, cause),
 				})
 				const decoded = yield* decodeOrganizationsResponse(json).pipe(
 					Effect.mapError((cause) =>

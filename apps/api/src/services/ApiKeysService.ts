@@ -16,7 +16,7 @@ import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 
-export interface ResolvedApiKey {
+interface ResolvedApiKey {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly keyId: ApiKeyId
@@ -252,9 +252,7 @@ export class ApiKeysService extends Context.Service<ApiKeysService>()("@maple/ap
 		const touchLastUsed = Effect.fn("ApiKeysService.touchLastUsed")(function* (keyId: ApiKeyId) {
 			const now = yield* Clock.currentTimeMillis
 			yield* database
-				.execute((db) =>
-					db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyId)),
-				)
+				.execute((db) => db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, keyId)))
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 

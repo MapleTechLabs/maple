@@ -99,9 +99,7 @@ interface SpanImpl extends Tracer.Span {
 	readonly export: (span: SpanImpl) => void
 	readonly attributes: Map<string, unknown>
 	readonly links: Array<Tracer.SpanLink>
-	readonly events: Array<
-		[name: string, startTime: bigint, attributes: Record<string, unknown> | undefined]
-	>
+	readonly events: Array<[name: string, startTime: bigint, attributes: Record<string, unknown> | undefined]>
 	status: Tracer.SpanStatus
 }
 

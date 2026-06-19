@@ -1,14 +1,7 @@
 import type { IconProps } from "./icon"
 
 // Nucleo Pixel "mobile-toolbar": vertical smartphone — body edges, earpiece, home bar.
-const paths: ReadonlyArray<string> = [
-	"M9 18H15",
-	"M11 6L13 6",
-	"M7 2H17",
-	"M7 22H17",
-	"M5 20V4",
-	"M19 20V4",
-]
+const paths: ReadonlyArray<string> = ["M9 18H15", "M11 6L13 6", "M7 2H17", "M7 22H17", "M5 20V4", "M19 20V4"]
 
 function MobileIcon({ size = 24, className, ...props }: IconProps) {
 	return (

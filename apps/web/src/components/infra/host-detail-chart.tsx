@@ -28,7 +28,7 @@ interface HostDetailChartProps {
 
 const CHART_HEIGHT = 220
 
-export function HostDetailChart({
+function HostDetailChart({
 	hostName,
 	metric,
 	startTime,
@@ -169,7 +169,11 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 								)
 							})}
 						</defs>
-						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}
@@ -225,7 +229,11 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 					</AreaChart>
 				) : (
 					<LineChart data={data} margin={margin} syncId={syncId} syncMethod="value">
-						<CartesianGrid strokeDasharray={CHART_GRID_DASH} stroke="var(--border)" vertical={false} />
+						<CartesianGrid
+							strokeDasharray={CHART_GRID_DASH}
+							stroke="var(--border)"
+							vertical={false}
+						/>
 						<XAxis
 							dataKey="time"
 							tickLine={false}

@@ -7,7 +7,14 @@ import type { ListPodsResponse } from "@maple/domain/http"
 
 import { HostStatusBadge } from "./status-badge"
 import { UsageBar } from "./usage-bar"
-import { ColumnHead, MetaChip, ROW_LINK_CLASS, TableShell, TableSkeleton, useTableSort } from "./primitives/data-table"
+import {
+	ColumnHead,
+	MetaChip,
+	ROW_LINK_CLASS,
+	TableShell,
+	TableSkeleton,
+	useTableSort,
+} from "./primitives/data-table"
 import { formatRelative } from "./format"
 
 export type PodRow = ListPodsResponse["data"][number]

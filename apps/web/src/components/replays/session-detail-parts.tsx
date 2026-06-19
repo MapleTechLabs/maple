@@ -3,14 +3,7 @@ import { motion, useReducedMotion } from "motion/react"
 import { cn } from "@maple/ui/utils"
 import { useClipboard } from "@maple/ui/hooks/use-clipboard"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import {
-	GlobeIcon,
-	ComputerIcon,
-	MobileIcon,
-	ClockIcon,
-	CopyIcon,
-	CheckIcon,
-} from "@/components/icons"
+import { GlobeIcon, ComputerIcon, MobileIcon, ClockIcon, CopyIcon, CheckIcon } from "@/components/icons"
 import { formatRelativeTime, gradientFor } from "./replay-format"
 import { parseChTimestampMs } from "./replay-timeline"
 
@@ -68,7 +61,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
 	)
 }
 
-export function StatusPill({ active }: { active: boolean }) {
+function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
 			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">

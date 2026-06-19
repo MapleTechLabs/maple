@@ -108,9 +108,7 @@ export const makeAgentHarnessRuntime = Effect.fn("AgentHarness.make")(function* 
 	const snapshotRef = yield* Ref.make<SessionSnapshot>(createEmptySnapshot(sessionId))
 	const activeAbortRef = yield* Ref.make<AbortController | undefined>(undefined)
 
-	const loadSnapshot = store
-		.load(sessionId)
-		.pipe(Effect.tap((snapshot) => Ref.set(snapshotRef, snapshot)))
+	const loadSnapshot = store.load(sessionId).pipe(Effect.tap((snapshot) => Ref.set(snapshotRef, snapshot)))
 
 	const compactNow = Effect.fn("AgentHarness.compactNow")(function* (
 		turnId: string,

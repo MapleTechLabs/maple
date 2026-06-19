@@ -67,7 +67,10 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				Effect.mapError(toMcpQueryError("search_logs")),
 			)
 
-			yield* Effect.annotateCurrentSpan({ resultCount: result.logs.length, "result.count": result.logs.length })
+			yield* Effect.annotateCurrentSpan({
+				resultCount: result.logs.length,
+				"result.count": result.logs.length,
+			})
 
 			if (result.logs.length === 0) {
 				return { content: [{ type: "text", text: `No logs found matching filters (${st} — ${et})` }] }
@@ -97,9 +100,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 					const span = trace_id && log.spanId ? ` span:${log.spanId.slice(0, 8)}` : ""
 					ref = ` [trace:${log.traceId.slice(0, 8)}${span}]`
 				}
-				lines.push(
-					`${marker} ${time} [${sev}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}`,
-				)
+				lines.push(`${marker} ${time} [${sev}] ${log.serviceName}: ${truncate(log.body, 120)}${ref}`)
 			}
 
 			const hasMore = result.pagination.hasMore

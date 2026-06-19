@@ -47,10 +47,7 @@ export const makeLogBuffer = (options: { readonly excludeLogSpans?: boolean } = 
 // Log record conversion (adapted from `effect/unstable/observability/OtlpLogger`)
 // ---------------------------------------------------------------------------
 
-const makeLogRecord = (
-	logOptions: Logger.Options<unknown>,
-	excludeLogSpans: boolean,
-): LogRecord => {
+const makeLogRecord = (logOptions: Logger.Options<unknown>, excludeLogSpans: boolean): LogRecord => {
 	const nowMillis = logOptions.date.getTime()
 	const nanosString = String(BigInt(nowMillis) * 1_000_000n)
 

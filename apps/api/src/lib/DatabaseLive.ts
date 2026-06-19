@@ -1,10 +1,7 @@
-import type { MapleD1Client, MapleLibsqlClient } from "@maple/db/client"
+import type { MapleLibsqlClient } from "@maple/db/client"
 import { Context, Effect, Schema } from "effect"
 
 export type DatabaseClient = MapleLibsqlClient
-export type DatabaseTransaction = Parameters<Parameters<DatabaseClient["transaction"]>[0]>[0]
-
-export type AnyDatabaseClient = MapleLibsqlClient | MapleD1Client
 
 export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("@maple/api/lib/DatabaseError", {
 	message: Schema.String,

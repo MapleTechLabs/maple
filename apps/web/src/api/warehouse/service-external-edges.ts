@@ -4,7 +4,7 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { summarizeSampling } from "@/lib/sampling"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
-export type ServiceExternalTargetType = "http" | "messaging" | "rpc"
+type ServiceExternalTargetType = "http" | "messaging" | "rpc"
 
 export interface ServiceExternalEdge {
 	sourceService: string
@@ -21,10 +21,6 @@ export interface ServiceExternalEdge {
 	samplingWeight: number
 }
 
-export interface ServiceExternalEdgesResponse {
-	edges: ServiceExternalEdge[]
-}
-
 const GetServiceExternalEdgesInputSchema = Schema.Struct({
 	serviceName: ServiceName,
 	startTime: Schema.optional(WarehouseDateTimeString),
@@ -39,11 +35,7 @@ const defaultTimeRange = (nowMillis: number) => {
 	return { startTime: fmt(nowMillis - 24 * 60 * 60 * 1000), endTime: fmt(nowMillis) }
 }
 
-const knownTargetTypes: ReadonlySet<ServiceExternalTargetType> = new Set([
-	"http",
-	"messaging",
-	"rpc",
-])
+const knownTargetTypes: ReadonlySet<ServiceExternalTargetType> = new Set(["http", "messaging", "rpc"])
 
 function coerceTargetType(value: unknown): ServiceExternalTargetType {
 	return knownTargetTypes.has(value as ServiceExternalTargetType)

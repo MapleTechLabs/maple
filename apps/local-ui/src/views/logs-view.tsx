@@ -13,11 +13,7 @@ import { DEFAULT_RANGE } from "../lib/time"
 import { normalizeLog, type LocalLog } from "../lib/log-shape"
 import { LogDetailSheet } from "../components/log-detail-sheet"
 import { FilterSection, SearchableFilterSection } from "../components/filter-section"
-import {
-	FilterSidebarBody,
-	FilterSidebarFrame,
-	FilterSidebarHeader,
-} from "../components/filter-sidebar"
+import { FilterSidebarBody, FilterSidebarFrame, FilterSidebarHeader } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
 import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
@@ -37,10 +33,7 @@ export function LogsView() {
 	const { data, isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
 		useLocalLogs({ service, severity, search, range })
 
-	const rows = useMemo<ReadonlyArray<LocalLog>>(
-		() => (data?.pages.flat() ?? []).map(normalizeLog),
-		[data],
-	)
+	const rows = useMemo<ReadonlyArray<LocalLog>>(() => (data?.pages.flat() ?? []).map(normalizeLog), [data])
 	const scrollRef = useRef<HTMLDivElement>(null)
 
 	const [selectedLog, setSelectedLog] = useState<LocalLog | null>(null)
@@ -222,7 +215,12 @@ function LogRow({
 			{chips.length > 0 && (
 				<div className="hidden min-w-0 max-w-[45%] shrink items-center gap-1 overflow-hidden md:flex">
 					{chips.map((chip) => (
-						<LogAttributeChip key={chip.key} attrKey={chip.key} value={chip.value} tone={chip.tone} />
+						<LogAttributeChip
+							key={chip.key}
+							attrKey={chip.key}
+							value={chip.value}
+							tone={chip.tone}
+						/>
 					))}
 				</div>
 			)}

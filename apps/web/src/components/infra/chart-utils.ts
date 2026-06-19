@@ -22,7 +22,7 @@ export interface TransformedPoint extends Record<string, string | number> {
 	time: string
 }
 
-export function isoToLabel(iso: string): string {
+function isoToLabel(iso: string): string {
 	const d = new Date(iso)
 	return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
 }

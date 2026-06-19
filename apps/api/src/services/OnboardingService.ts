@@ -8,10 +8,7 @@ import { Database } from "../lib/DatabaseLive"
 
 const toPersistenceError = (error: unknown) =>
 	new OnboardingPersistenceError({
-		message:
-			error instanceof Error
-				? error.message
-				: `Onboarding persistence error: ${String(error)}`,
+		message: error instanceof Error ? error.message : `Onboarding persistence error: ${String(error)}`,
 	})
 
 export type OnboardingEmailField =
@@ -20,7 +17,7 @@ export type OnboardingEmailField =
 	| "stalledEmailSentAt"
 	| "activationEmailSentAt"
 
-export interface OnboardingUpdateInput {
+interface OnboardingUpdateInput {
 	role?: string
 	demoDataRequested?: boolean
 	markOnboardingComplete?: boolean
@@ -39,110 +36,113 @@ function rowToResponse(row: OrgOnboardingStateRow): OnboardingStateResponse {
 	})
 }
 
-export class OnboardingService extends Context.Service<OnboardingService>()("@maple/api/services/OnboardingService", {
-	make: Effect.gen(function* () {
-		const database = yield* Database
+export class OnboardingService extends Context.Service<OnboardingService>()(
+	"@maple/api/services/OnboardingService",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
 
-		const findRow = (orgId: OrgId) =>
-			database
-				.execute((db) =>
-					db
-						.select()
-						.from(orgOnboardingState)
-						.where(eq(orgOnboardingState.orgId, orgId))
-						.limit(1),
-				)
-				.pipe(
-					Effect.mapError(toPersistenceError),
-					Effect.map((rows) => rows[0]),
-				)
+			const findRow = (orgId: OrgId) =>
+				database
+					.execute((db) =>
+						db
+							.select()
+							.from(orgOnboardingState)
+							.where(eq(orgOnboardingState.orgId, orgId))
+							.limit(1),
+					)
+					.pipe(
+						Effect.mapError(toPersistenceError),
+						Effect.map((rows) => rows[0]),
+					)
 
-		const ensureRow = Effect.fn("OnboardingService.ensureRow")(function* (
-			orgId: OrgId,
-			userId?: string,
-			email?: string,
-			opts?: { createdAt?: number },
-		) {
-			const existing = yield* findRow(orgId)
-			if (existing) return existing
+			const ensureRow = Effect.fn("OnboardingService.ensureRow")(function* (
+				orgId: OrgId,
+				userId?: string,
+				email?: string,
+				opts?: { createdAt?: number },
+			) {
+				const existing = yield* findRow(orgId)
+				if (existing) return existing
 
-			const now = yield* Clock.currentTimeMillis
-			yield* database
-				.execute((db) =>
-					db
-						.insert(orgOnboardingState)
-						.values({
-							orgId,
-							userId: userId ?? null,
-							email: email ?? null,
-							demoDataRequested: 0,
-							createdAt: opts?.createdAt ?? now,
-							updatedAt: now,
-						})
-						.onConflictDoNothing(),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.insert(orgOnboardingState)
+							.values({
+								orgId,
+								userId: userId ?? null,
+								email: email ?? null,
+								demoDataRequested: 0,
+								createdAt: opts?.createdAt ?? now,
+								updatedAt: now,
+							})
+							.onConflictDoNothing(),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
 
-			const row = yield* findRow(orgId)
-			if (!row) {
-				return yield* new OnboardingPersistenceError({
-					message: "Failed to create onboarding state row",
-				})
-			}
-			return row
-		})
+				const row = yield* findRow(orgId)
+				if (!row) {
+					return yield* new OnboardingPersistenceError({
+						message: "Failed to create onboarding state row",
+					})
+				}
+				return row
+			})
 
-		const getState = Effect.fn("OnboardingService.getState")(function* (
-			orgId: OrgId,
-			userId?: string,
-			email?: string,
-		) {
-			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			const row = yield* ensureRow(orgId, userId, email)
-			return rowToResponse(row)
-		})
+			const getState = Effect.fn("OnboardingService.getState")(function* (
+				orgId: OrgId,
+				userId?: string,
+				email?: string,
+			) {
+				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				const row = yield* ensureRow(orgId, userId, email)
+				return rowToResponse(row)
+			})
 
-		const updateState = Effect.fn("OnboardingService.updateState")(function* (
-			orgId: OrgId,
-			userId: string | undefined,
-			email: string | undefined,
-			input: OnboardingUpdateInput,
-		) {
-			yield* Effect.annotateCurrentSpan("orgId", orgId)
-			yield* ensureRow(orgId, userId, email)
+			const updateState = Effect.fn("OnboardingService.updateState")(function* (
+				orgId: OrgId,
+				userId: string | undefined,
+				email: string | undefined,
+				input: OnboardingUpdateInput,
+			) {
+				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				yield* ensureRow(orgId, userId, email)
 
-			const now = yield* Clock.currentTimeMillis
-			yield* database
-				.execute((db) =>
-					db
-						.update(orgOnboardingState)
-						.set({
-							...(input.role != null ? { role: input.role } : {}),
-							...(input.demoDataRequested != null
-								? { demoDataRequested: input.demoDataRequested ? 1 : 0 }
-								: {}),
-							...(input.markOnboardingComplete ? { onboardingCompletedAt: now } : {}),
-							...(input.markChecklistDismissed ? { checklistDismissedAt: now } : {}),
-							...(userId != null ? { userId } : {}),
-							...(email != null ? { email } : {}),
-							updatedAt: now,
-						})
-						.where(eq(orgOnboardingState.orgId, orgId)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
+				const now = yield* Clock.currentTimeMillis
+				yield* database
+					.execute((db) =>
+						db
+							.update(orgOnboardingState)
+							.set({
+								...(input.role != null ? { role: input.role } : {}),
+								...(input.demoDataRequested != null
+									? { demoDataRequested: input.demoDataRequested ? 1 : 0 }
+									: {}),
+								...(input.markOnboardingComplete ? { onboardingCompletedAt: now } : {}),
+								...(input.markChecklistDismissed ? { checklistDismissedAt: now } : {}),
+								...(userId != null ? { userId } : {}),
+								...(email != null ? { email } : {}),
+								updatedAt: now,
+							})
+							.where(eq(orgOnboardingState.orgId, orgId)),
+					)
+					.pipe(Effect.mapError(toPersistenceError))
 
-			const row = yield* findRow(orgId)
-			if (!row) {
-				return yield* new OnboardingPersistenceError({
-					message: "Onboarding state row missing after update",
-				})
-			}
-			return rowToResponse(row)
-		})
+				const row = yield* findRow(orgId)
+				if (!row) {
+					return yield* new OnboardingPersistenceError({
+						message: "Onboarding state row missing after update",
+					})
+				}
+				return rowToResponse(row)
+			})
 
-		/** Stamp first-data time only if not already set. Returns true when newly stamped. */
-		const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(
-			function* (orgId: OrgId) {
+			/** Stamp first-data time only if not already set. Returns true when newly stamped. */
+			const recordFirstDataReceived = Effect.fn("OnboardingService.recordFirstDataReceived")(function* (
+				orgId: OrgId,
+			) {
 				const now = yield* Clock.currentTimeMillis
 				const result = yield* database
 					.execute((db) =>
@@ -158,75 +158,75 @@ export class OnboardingService extends Context.Service<OnboardingService>()("@ma
 					)
 					.pipe(Effect.mapError(toPersistenceError))
 				return result.rowsAffected > 0
-			},
-		)
+			})
 
-		const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (
-			orgId: OrgId,
-			field: OnboardingEmailField,
-		) {
-			const now = yield* Clock.currentTimeMillis
-			const set: Partial<typeof orgOnboardingState.$inferInsert> = { updatedAt: now }
-			if (field === "welcomeEmailSentAt") set.welcomeEmailSentAt = now
-			else if (field === "connectNudgeEmailSentAt") set.connectNudgeEmailSentAt = now
-			else if (field === "stalledEmailSentAt") set.stalledEmailSentAt = now
-			else set.activationEmailSentAt = now
-
-			yield* database
-				.execute((db) =>
-					db.update(orgOnboardingState).set(set).where(eq(orgOnboardingState.orgId, orgId)),
-				)
-				.pipe(Effect.mapError(toPersistenceError))
-		})
-
-		const listAll = Effect.fn("OnboardingService.listAll")(function* () {
-			return yield* database
-				.execute((db) => db.select().from(orgOnboardingState))
-				.pipe(Effect.mapError(toPersistenceError))
-		})
-
-		/**
-		 * Mark an org as already-onboarded so the activation email sequence never
-		 * fires for it — used for orgs that predate the onboarding-emails feature.
-		 * One-shot: the `onboardingCompletedAt IS NULL` guard means re-running is a
-		 * no-op once an org has been suppressed.
-		 */
-		const suppressOnboardingEmails = Effect.fn("OnboardingService.suppressOnboardingEmails")(
-			function* (orgId: OrgId) {
+			const markEmailSent = Effect.fn("OnboardingService.markEmailSent")(function* (
+				orgId: OrgId,
+				field: OnboardingEmailField,
+			) {
 				const now = yield* Clock.currentTimeMillis
+				const set: Partial<typeof orgOnboardingState.$inferInsert> = { updatedAt: now }
+				if (field === "welcomeEmailSentAt") set.welcomeEmailSentAt = now
+				else if (field === "connectNudgeEmailSentAt") set.connectNudgeEmailSentAt = now
+				else if (field === "stalledEmailSentAt") set.stalledEmailSentAt = now
+				else set.activationEmailSentAt = now
+
 				yield* database
 					.execute((db) =>
-						db
-							.update(orgOnboardingState)
-							.set({
-								welcomeEmailSentAt: now,
-								connectNudgeEmailSentAt: now,
-								stalledEmailSentAt: now,
-								activationEmailSentAt: now,
-								onboardingCompletedAt: now,
-								updatedAt: now,
-							})
-							.where(
-								and(
-									eq(orgOnboardingState.orgId, orgId),
-									isNull(orgOnboardingState.onboardingCompletedAt),
-								),
-							),
+						db.update(orgOnboardingState).set(set).where(eq(orgOnboardingState.orgId, orgId)),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
-			},
-		)
+			})
 
-		return {
-			getState,
-			updateState,
-			ensureRow,
-			recordFirstDataReceived,
-			markEmailSent,
-			suppressOnboardingEmails,
-			listAll,
-		}
-	}),
-}) {
+			const listAll = Effect.fn("OnboardingService.listAll")(function* () {
+				return yield* database
+					.execute((db) => db.select().from(orgOnboardingState))
+					.pipe(Effect.mapError(toPersistenceError))
+			})
+
+			/**
+			 * Mark an org as already-onboarded so the activation email sequence never
+			 * fires for it — used for orgs that predate the onboarding-emails feature.
+			 * One-shot: the `onboardingCompletedAt IS NULL` guard means re-running is a
+			 * no-op once an org has been suppressed.
+			 */
+			const suppressOnboardingEmails = Effect.fn("OnboardingService.suppressOnboardingEmails")(
+				function* (orgId: OrgId) {
+					const now = yield* Clock.currentTimeMillis
+					yield* database
+						.execute((db) =>
+							db
+								.update(orgOnboardingState)
+								.set({
+									welcomeEmailSentAt: now,
+									connectNudgeEmailSentAt: now,
+									stalledEmailSentAt: now,
+									activationEmailSentAt: now,
+									onboardingCompletedAt: now,
+									updatedAt: now,
+								})
+								.where(
+									and(
+										eq(orgOnboardingState.orgId, orgId),
+										isNull(orgOnboardingState.onboardingCompletedAt),
+									),
+								),
+						)
+						.pipe(Effect.mapError(toPersistenceError))
+				},
+			)
+
+			return {
+				getState,
+				updateState,
+				ensureRow,
+				recordFirstDataReceived,
+				markEmailSent,
+				suppressOnboardingEmails,
+				listAll,
+			}
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

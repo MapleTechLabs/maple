@@ -37,8 +37,7 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 
 	const columns = await db.all<{ name: string }>(sql`PRAGMA table_info(alert_rules)`)
 	const columnNames = new Set(columns.map((column) => column.name))
-	const alreadyNewShape =
-		columnNames.has("raw_query_sql") && !columnNames.has("query_data_source")
+	const alreadyNewShape = columnNames.has("raw_query_sql") && !columnNames.has("query_data_source")
 
 	if (!alreadyNewShape && columnNames.has("query_data_source")) {
 		await db.run(sql`DROP TABLE IF EXISTS alert_rules_old`)
@@ -127,12 +126,8 @@ export async function migrateAlertQuerySignalTypes(db: MapleLibsqlClient): Promi
 		`)
 		await db.run(sql`DROP TABLE alert_rules_old`)
 		await db.run(sql`CREATE INDEX alert_rules_org_idx ON alert_rules (org_id)`)
-		await db.run(
-			sql`CREATE INDEX alert_rules_org_enabled_idx ON alert_rules (org_id, enabled)`,
-		)
-		await db.run(
-			sql`CREATE UNIQUE INDEX alert_rules_org_name_idx ON alert_rules (org_id, name)`,
-		)
+		await db.run(sql`CREATE INDEX alert_rules_org_enabled_idx ON alert_rules (org_id, enabled)`)
+		await db.run(sql`CREATE UNIQUE INDEX alert_rules_org_name_idx ON alert_rules (org_id, name)`)
 	}
 
 	await db.run(
