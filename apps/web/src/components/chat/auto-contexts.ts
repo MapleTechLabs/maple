@@ -200,4 +200,3 @@ export function readChatReferrer(): string | null {
 		return null
 	}
 }
-

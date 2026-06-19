@@ -53,7 +53,6 @@ export interface ServiceOverview {
 	spanCount: number
 }
 
-
 const GetServiceOverviewInput = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),

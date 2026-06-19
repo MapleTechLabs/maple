@@ -15,12 +15,7 @@ import {
 	getErrorsSummary,
 	getErrorsTimeseries,
 } from "@/api/warehouse/errors"
-import {
-	getLog,
-	getLogAttributeKeys,
-	getLogsFacets,
-	listLogs,
-} from "@/api/warehouse/logs"
+import { getLog, getLogAttributeKeys, getLogsFacets, listLogs } from "@/api/warehouse/logs"
 import {
 	getMetricAttributeKeys,
 	getMetricTimeSeries,
@@ -95,13 +90,10 @@ interface QueryAtomOptions {
 	staleTime?: number
 }
 
-class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
-	"@maple/web/services/QueryAtomError",
-	{
-		message: Schema.String,
-		cause: Schema.optionalKey(Schema.Unknown),
-	},
-) {}
+class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("@maple/web/services/QueryAtomError", {
+	message: Schema.String,
+	cause: Schema.optionalKey(Schema.Unknown),
+}) {}
 
 // The error union surfaced to atom consumers: the structured query errors plus
 // any tagged backend error, all normalized through `QueryAtomError`'s shape for
@@ -401,4 +393,3 @@ export const getResourceAttributeValuesResultAtom = makeQueryAtomFamily(getResou
 export const getLogAttributeKeysResultAtom = makeQueryAtomFamily(getLogAttributeKeys, {
 	staleTime: 60_000,
 })
-

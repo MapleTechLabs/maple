@@ -110,11 +110,8 @@ export interface DetectionConfig {
 	readonly elapsedMinutes: number
 }
 
-const detectorKeyFor = (
-	signalType: AnomalySignalType,
-	deploymentEnv: string,
-	subject: string,
-): string => `${signalType}:${deploymentEnv}:${subject}`
+const detectorKeyFor = (signalType: AnomalySignalType, deploymentEnv: string, subject: string): string =>
+	`${signalType}:${deploymentEnv}:${subject}`
 
 const skipped = (
 	signalType: AnomalySignalType,

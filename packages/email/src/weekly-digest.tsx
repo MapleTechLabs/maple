@@ -1,14 +1,4 @@
-import {
-	Body,
-	Container,
-	Head,
-	Html,
-	Link,
-	Preview,
-	Section,
-	Tailwind,
-	Text,
-} from "@react-email/components"
+import { Body, Container, Head, Html, Link, Preview, Section, Tailwind, Text } from "@react-email/components"
 
 export interface WeeklyDigestProps {
 	orgName: string

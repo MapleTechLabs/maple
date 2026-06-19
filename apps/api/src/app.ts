@@ -60,9 +60,7 @@ import { PlanetScaleDiscoveryService } from "./services/PlanetScaleDiscoveryServ
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
 
-const HealthRouter = HttpRouter.use((router) =>
-	router.add("GET", "/health", HttpServerResponse.text("OK")),
-)
+const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
 
 const McpGetFallback = HttpRouter.use((router) =>
 	router.add("GET", "/mcp", HttpServerResponse.empty({ status: 405 })),
@@ -97,9 +95,7 @@ const CoreServicesLive = Layer.mergeAll(
 	IngestAttributeMappingService.layer,
 ).pipe(Layer.provideMerge(InfraLive))
 
-const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 const DemoServiceLive = DemoService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
@@ -122,9 +118,7 @@ const AlertsServiceLive = AlertsService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, QueryEngineServiceLive, AlertRuntime.layer)),
 )
 
-const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 const ErrorsServiceLive = ErrorsService.layer.pipe(
 	Layer.provideMerge(

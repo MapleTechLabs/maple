@@ -39,10 +39,9 @@ export const DEFAULT_STATE_MACHINE_CONFIG: StateMachineConfig = {
  * sustained) — short quiet stretches on bursty services self-heal within two
  * ticks and shouldn't page.
  */
-const STATE_MACHINE_CONFIG_OVERRIDES: Partial<Record<AnomalySignalType, Partial<StateMachineConfig>>> =
-	{
-		throughput: { breachesToOpen: 3 },
-	}
+const STATE_MACHINE_CONFIG_OVERRIDES: Partial<Record<AnomalySignalType, Partial<StateMachineConfig>>> = {
+	throughput: { breachesToOpen: 3 },
+}
 
 export const stateMachineConfigFor = (signalType: AnomalySignalType): StateMachineConfig => ({
 	...DEFAULT_STATE_MACHINE_CONFIG,

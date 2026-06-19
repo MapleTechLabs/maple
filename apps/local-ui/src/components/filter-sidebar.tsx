@@ -62,4 +62,3 @@ export function FilterSidebarBody({ children }: { children: ReactNode }) {
 		</>
 	)
 }
-

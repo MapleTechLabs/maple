@@ -90,7 +90,6 @@ const decodeStoredJsonRecord = Schema.decodeUnknownOption(
 )
 const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 
-
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_EVENTS_LIMIT = 100
 const AUTO_RESOLVE_MINUTES = 30

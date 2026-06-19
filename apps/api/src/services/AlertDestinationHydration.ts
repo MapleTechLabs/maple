@@ -66,10 +66,7 @@ const parsePublicConfig = <E>(
 ): Effect.Effect<DestinationPublicConfig, E> =>
 	Schema.decodeUnknownEffect(PublicConfigFromJson)(row.configJson).pipe(Effect.mapError(onError))
 
-const parseSecretConfig = <E>(
-	json: string,
-	onError: () => E,
-): Effect.Effect<DestinationSecretConfig, E> =>
+const parseSecretConfig = <E>(json: string, onError: () => E): Effect.Effect<DestinationSecretConfig, E> =>
 	Schema.decodeUnknownEffect(SecretConfigFromJson)(json).pipe(Effect.mapError(onError))
 
 export const hydrateDestinationRow = <E>(

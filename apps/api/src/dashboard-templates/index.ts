@@ -70,9 +70,4 @@ export function listTemplateMetadata(): TemplateMetadata[] {
 	}))
 }
 
-export type {
-	TemplateDefinition,
-	TemplateMetadata,
-	TemplateParameterValues,
-	WidgetDef,
-} from "./types"
+export type { TemplateDefinition, TemplateMetadata, TemplateParameterValues, WidgetDef } from "./types"

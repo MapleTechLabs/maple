@@ -660,4 +660,3 @@ export function DotMatrixBase({
 		</div>
 	)
 }
-

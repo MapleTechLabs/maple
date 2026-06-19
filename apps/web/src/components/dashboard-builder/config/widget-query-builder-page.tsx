@@ -40,7 +40,6 @@ import {
 } from "@/lib/query-builder/widget-builder-utils"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
-
 export interface WidgetQueryBuilderPageHandle {
 	apply: () => void
 	isDirty: () => boolean

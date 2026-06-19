@@ -21,4 +21,3 @@ export function QueryErrorState({ error, className, titleOverride }: QueryErrorS
 		</div>
 	)
 }
-

@@ -50,8 +50,6 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 		{ href: l("/use-cases/api-performance"), label: () => m.nav_api_performance() },
 	]
 
-	
-
 	const integrationLinks = [
 		{ href: l("/integrations/nextjs"), label: () => m.nav_nextjs() },
 		{ href: l("/integrations/python"), label: () => m.nav_python() },
