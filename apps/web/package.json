@@ -18,6 +18,8 @@
 		"@cloudflare/ai-chat": "^0.8.1",
 		"@effect-router/core": "workspace:*",
 		"@effect/atom-react": "catalog:effect",
+		"@flue/react": "1.0.0-beta.1",
+		"@flue/sdk": "1.0.0-beta.1",
 		"@fontsource-variable/geist": "^5.2.8",
 		"@fontsource-variable/geist-mono": "^5.2.7",
 		"@json-render/core": "^0.16.0",
