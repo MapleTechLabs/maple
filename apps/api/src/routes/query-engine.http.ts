@@ -6,7 +6,6 @@ import {
 	QueryEngineExecutionError,
 	QueryEngineValidationError,
 	RawSqlExecuteResponse,
-	RawSqlValidationError,
 	SpanHierarchyResponse,
 	SpanDetailResponse,
 	ErrorsByTypeResponse,

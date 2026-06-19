@@ -4,7 +4,6 @@ import {
 	type ActorId,
 	ActorId as ActorIdSchema,
 	ActorNotFoundError,
-	type ActorType,
 	ActorsListResponse,
 	type AlertDestinationId,
 	ErrorIncidentDocument,
@@ -12,7 +11,6 @@ import {
 	type ErrorIncidentReason,
 	ErrorIssueDetailResponse,
 	ErrorIssueDocument,
-	type ErrorIssueEventId,
 	ErrorIssueEventId as ErrorIssueEventIdSchema,
 	ErrorIssueEventDocument,
 	ErrorIssueEventsResponse,
@@ -92,7 +90,7 @@ const decodeStoredJsonRecord = Schema.decodeUnknownOption(
 )
 const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 
-const DEFAULT_LIST_WINDOW_MS = 24 * 60 * 60 * 1000
+
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_EVENTS_LIMIT = 100
 const AUTO_RESOLVE_MINUTES = 30

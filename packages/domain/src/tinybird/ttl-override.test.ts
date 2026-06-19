@@ -21,10 +21,7 @@ const rawTraces = {
 	content: 'ENGINE "MergeTree"\nENGINE_TTL "toDate(Timestamp) + INTERVAL 90 DAY"',
 }
 
-const rawMetricsSum = {
-	name: "metrics_sum",
-	content: 'ENGINE "MergeTree"\nENGINE_TTL "toDate(TimeUnix) + INTERVAL 365 DAY"',
-}
+
 
 const mvServiceMap = {
 	name: "service_map_spans",

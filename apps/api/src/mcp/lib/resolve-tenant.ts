@@ -9,7 +9,6 @@ import {
 	McpAuthMissingError,
 	McpAuthInvalidError,
 	McpInvalidTenantError,
-	McpTenantError,
 } from "../tools/types"
 
 const INTERNAL_SERVICE_PREFIX = "maple_svc_"

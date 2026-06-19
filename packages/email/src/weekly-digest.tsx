@@ -1,13 +1,10 @@
 import {
 	Body,
-	Column,
 	Container,
 	Head,
-	Hr,
 	Html,
 	Link,
 	Preview,
-	Row,
 	Section,
 	Tailwind,
 	Text,

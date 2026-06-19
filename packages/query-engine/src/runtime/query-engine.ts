@@ -29,7 +29,7 @@ import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "e
 import { LOGS_BODY_SEARCH_SETTINGS, type QueryProfileName, type WarehouseQuerySettings } from "../profiles"
 import { computeBucketSeconds } from "../datetime"
 import { makeExpandMacros } from "./raw-sql"
-import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
+import { encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
 
 // Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
 // `computeBucketSeconds` from here; the implementation now lives in the pure

@@ -29,7 +29,6 @@ import {
 	AlertIncidentDocument,
 	AlertIncidentsListResponse,
 	AlertIncidentStatus,
-	AlertIncidentTransition,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
 	AlertMetricAggregation as AlertMetricAggregationSchema,
 	AlertMetricType as AlertMetricTypeSchema,
@@ -112,9 +111,6 @@ import {
 	buildAlertChatUrl,
 	dispatchDelivery as dispatchDeliveryImpl,
 	formatComparator,
-	formatSignalLabel,
-	formatEventTypeLabel,
-	formatSignalMetric,
 	PAGERDUTY_ROUTING_KEY_PATTERN,
 	verifyPagerDutyRoutingKey,
 } from "./AlertDeliveryDispatch"
@@ -304,7 +300,7 @@ const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStat
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
-const decodeAlertGroupBySync = Schema.decodeUnknownSync(AlertGroupBySchema)
+
 const decodeAlertGroupByFromJsonSync = Schema.decodeUnknownSync(AlertGroupByFromJson)
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 
@@ -2181,7 +2177,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			) {
 				yield* requireAdmin(roles)
 				const row = yield* requireDestinationRow(orgId, destinationId)
-				const result = yield* sendImmediateNotification(row, {
+				yield* sendImmediateNotification(row, {
 					deliveryKey: `${orgId}:${destinationId}:test`,
 					ruleId: decodeAlertRuleIdSync(makeUuid()),
 					ruleName: "Test alert",

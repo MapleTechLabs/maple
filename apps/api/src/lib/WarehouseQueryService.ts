@@ -1,6 +1,6 @@
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Effect, Layer, Option, Redacted } from "effect"
 import type { WarehouseQueryRequest } from "@maple/domain/http"
 import {
 	makeWarehouseExecutor,
