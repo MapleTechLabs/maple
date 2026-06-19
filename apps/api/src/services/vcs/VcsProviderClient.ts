@@ -62,6 +62,20 @@ export interface VcsProviderClient {
 	 * returns what it fetched plus `VcsCommitFetch.next` (resume cursor + delay +
 	 * reason). Failures: `VcsInstallationGoneError` (disconnect),
 	 * `VcsRepoUnavailableError` (repo-scoped), `VcsProviderError` (transient).
+	 *
+	 * ORDERING CONTRACT (load-bearing — read before implementing a new provider):
+	 * when the walk is cut short, the returned commits MUST be the descending-
+	 * committer-date *prefix* of the requested `(sinceMs, untilMs]` window — i.e. the
+	 * provider must walk the window newest-first, and a truncated page must contain
+	 * the newest commits in the window, contiguously, with no gap. The resume
+	 * watermark is `min(committedAt)` of the page, so the caller assumes everything
+	 * from that watermark up to `untilMs` is fully fetched and resumes *below* it.
+	 * A provider that truncates a page out of committer-date order (oldest-first or
+	 * arbitrary) would push the watermark down past commits it never returned, and
+	 * those commits are then silently skipped forever — a coverage gap, not a crash.
+	 * (An *untruncated* page — `next` absent — may be in any order; the requirement
+	 * only bites on truncation.) GitHub satisfies this because its commits listing is
+	 * newest-first; any new provider must guarantee the same.
 	 */
 	readonly fetchCommits: (
 		installation: VcsInstallation,

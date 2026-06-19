@@ -256,6 +256,13 @@ export type BranchUpsertInput = Schema.Schema.Type<typeof BranchUpsertInput>
  *    limit — resume immediately (`retryAfterSeconds` is 0).
  * Either way, resume the backfill from `untilMs` (a committer-date watermark).
  * Absent ⇒ the window is complete.
+ *
+ * `untilMs` is `min(committedAt)` of the commits in this page, and the caller
+ * resumes strictly *below* it — which is only correct if a truncated page is the
+ * descending-committer-date prefix of the requested window (newest-first, no gap).
+ * A provider that truncates out of order would advance the watermark past commits
+ * it never returned, silently skipping them. See `VcsProviderClient.fetchCommits`
+ * for the full ordering contract a provider must honour.
  */
 export interface VcsCommitFetch {
 	readonly commits: ReadonlyArray<CommitUpsertInput>

@@ -553,6 +553,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// resume from the oldest committer-date we got (a stable watermark —
 					// re-fetching only the boundary, idempotently). A page-budget stop
 					// continues immediately (no wait); a rate limit waits out its reset.
+					// SAFE ONLY because GitHub's listing is newest-first, so a truncated
+					// page is the descending-committer-date prefix of the window — `Math.min`
+					// is order-agnostic, but the *coverage* of the truncated page is not.
+					// See the ordering contract on `VcsProviderClient.fetchCommits`.
 					const oldestMs =
 						normalized.length > 0
 							? normalized.reduce(
