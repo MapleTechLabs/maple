@@ -115,6 +115,10 @@ export const TracesTimeseriesQuery = Schema.Struct({
 	),
 	filters: Schema.optional(TracesFilters),
 	bucketSeconds: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+	// Opt-in top-N series cap: keep only the N largest groups (by total count
+	// across buckets). Avoids fetching the long tail of a high-cardinality
+	// group-by. Ignored when there is no real group-by.
+	seriesLimit: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
 })
 export type TracesTimeseriesQuery = Schema.Schema.Type<typeof TracesTimeseriesQuery>
 
@@ -125,6 +129,9 @@ export const LogsTimeseriesQuery = Schema.Struct({
 	groupBy: Schema.optional(Schema.Array(Schema.Literals(["service", "severity", "none"]))),
 	filters: Schema.optional(LogsFilters),
 	bucketSeconds: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+	// Opt-in top-N series cap: keep only the N largest groups (by total count
+	// across buckets). Ignored when there is no real group-by.
+	seriesLimit: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
 })
 export type LogsTimeseriesQuery = Schema.Schema.Type<typeof LogsTimeseriesQuery>
 

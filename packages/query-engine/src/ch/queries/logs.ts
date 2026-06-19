@@ -9,8 +9,10 @@ import * as CH from "../expr"
 import { param } from "../param"
 import { from, fromUnion, type CHQuery, type ColumnAccessor } from "../query"
 import type { ColumnDefs } from "../types"
+import * as T from "../types"
 import { unionAll, type CHUnionQuery } from "../union"
 import { Logs, LogsAggregatesHourly } from "../tables"
+import { finalizeTimeseries } from "./series-cap"
 
 // ---------------------------------------------------------------------------
 // Shared options
@@ -96,12 +98,25 @@ export interface LogsTimeseriesOpts extends LogsQueryOpts {
 	 * absent (or sub-hour), the raw `logs` table is used.
 	 */
 	bucketSeconds?: number
+	/**
+	 * Opt-in top-N series cap for group-by charts. When set, only the N groups
+	 * with the largest total count (across all buckets) are fetched.
+	 */
+	seriesLimit?: number
 }
 
 export interface LogsTimeseriesOutput {
 	readonly bucket: string
 	readonly groupName: string
 	readonly count: number
+}
+
+// Synthetic column defs matching LogsTimeseriesOutput, used to wrap the inner
+// query in a CTE when the top-N series cap is applied.
+const LOGS_TS_COLUMNS: ColumnDefs = {
+	bucket: T.string,
+	groupName: T.string,
+	count: T.float64,
 }
 
 /**
@@ -176,8 +191,11 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return mv as unknown as CHQuery<ColumnDefs, LogsTimeseriesOutput, {}>
+		return finalizeTimeseries(mv, LOGS_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			LogsTimeseriesOutput,
+			{}
+		>
 	}
 
 	const raw = from(Logs)
@@ -201,8 +219,11 @@ export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDef
 		])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		.format("JSON")
-	return raw as unknown as CHQuery<ColumnDefs, LogsTimeseriesOutput, {}>
+	return finalizeTimeseries(raw, LOGS_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+		ColumnDefs,
+		LogsTimeseriesOutput,
+		{}
+	>
 }
 
 function buildLogsGroupNameExpr(

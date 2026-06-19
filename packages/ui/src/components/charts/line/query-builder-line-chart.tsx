@@ -12,6 +12,7 @@ import {
 	responsiveLegendHeight,
 } from "../_shared/query-builder-legend"
 import { thresholdReferenceLines } from "../_shared/threshold-lines"
+import { findNearestSeriesKey } from "../_shared/nearest-series"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
 import {
 	type ChartConfig,
@@ -29,6 +30,12 @@ const fallbackData: Record<string, unknown>[] = [
 	{ bucket: "2026-01-01T03:00:00Z", A: 18, B: 12 },
 	{ bucket: "2026-01-01T04:00:00Z", A: 16, B: 11 },
 ]
+
+// Defense-in-depth render cap: never attempt to draw more than this many series,
+// even if a query returns a high-cardinality group-by without a `seriesLimit`.
+// The primary guardrail is the query-level top-N cap; this just keeps a runaway
+// result set from locking up the browser.
+const HARD_SERIES_LIMIT = 60
 
 function asFiniteNumber(value: unknown): number {
 	const parsed = typeof value === "number" ? value : Number(value)
@@ -54,6 +61,7 @@ export function QueryBuilderLineChart({
 	logScale,
 	softMin,
 	softMax,
+	fitYAxisToData,
 	showPoints,
 	syncId,
 	thresholds,
@@ -71,7 +79,7 @@ export function QueryBuilderLineChart({
 			}
 		}
 
-		const seriesDefinitions = rawSeriesKeys.map((rawKey, index) => ({
+		const seriesDefinitions = rawSeriesKeys.slice(0, HARD_SERIES_LIMIT).map((rawKey, index) => ({
 			rawKey,
 			chartKey: `s${index + 1}`,
 		}))
@@ -182,6 +190,43 @@ export function QueryBuilderLineChart({
 	const legendPosition = legend === "right" ? "right" : "bottom"
 	const legendHeight = responsiveLegendHeight(variant, seriesDefinitions.length, containerHeight)
 
+	// Per-series active-point pixel Y, captured by each Line's active dot during
+	// render (Recharts draws graphical items before the tooltip in the same
+	// commit). Hidden series get no active dot, so they're filtered out below.
+	const seriesYByKeyRef = React.useRef<Record<string, number>>({})
+	const resolveHighlightKey = React.useCallback(
+		(coordinate: { x?: number; y?: number } | undefined) => {
+			if (seriesDefinitions.length <= 1) return undefined
+			const visibleKeys = seriesDefinitions
+				.map((d) => d.chartKey)
+				.filter((key) => !hiddenSeries.has(key))
+			return findNearestSeriesKey(seriesYByKeyRef.current, visibleKeys, coordinate?.y, 24)
+		},
+		[seriesDefinitions, hiddenSeries],
+	)
+
+	// "Fit Y-axis to data": lower bound follows the data minimum (with padding)
+	// instead of being pinned at 0/auto. Ignored when softMin or logScale set.
+	const fitDomainMin = React.useMemo(() => {
+		if (!fitYAxisToData || softMin != null || logScale) return undefined
+		let min = Number.POSITIVE_INFINITY
+		let max = Number.NEGATIVE_INFINITY
+		for (const row of processedData) {
+			for (const key of valueKeys) {
+				const value = row[key]
+				if (typeof value !== "number" || !Number.isFinite(value)) continue
+				if (value < min) min = value
+				if (value > max) max = value
+			}
+		}
+		if (!Number.isFinite(min) || !Number.isFinite(max)) return undefined
+		const padding = max > min ? (max - min) * 0.1 : Math.abs(min) * 0.1 || 1
+		return min - padding
+	}, [fitYAxisToData, softMin, logScale, processedData, valueKeys])
+
+	const yDomainMin = softMin ?? fitDomainMin ?? (logScale ? 1 : "auto")
+	const yDomainMax = softMax ?? "auto"
+
 	return (
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
 			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
@@ -200,8 +245,10 @@ export function QueryBuilderLineChart({
 						tickMargin={8}
 						width={80}
 						scale={logScale ? "log" : "auto"}
-						domain={[softMin ?? (logScale ? 1 : "auto"), softMax ?? "auto"]}
-						allowDataOverflow={logScale || softMin != null || softMax != null}
+						domain={[yDomainMin, yDomainMax]}
+						allowDataOverflow={
+							logScale || softMin != null || softMax != null || fitDomainMin != null
+						}
 						tickFormatter={(value) => formatValueByUnit(asFiniteNumber(value), unit)}
 					/>
 
@@ -209,6 +256,7 @@ export function QueryBuilderLineChart({
 						<ChartTooltip
 							content={
 								<ChartTooltipContent
+									resolveHighlightKey={resolveHighlightKey}
 									labelFormatter={(_, payload) => {
 										if (!payload?.[0]?.payload?.bucket) return ""
 										const bucket = payload[0].payload.bucket
@@ -290,6 +338,22 @@ export function QueryBuilderLineChart({
 							dot={showPoints ? { r: 2 } : false}
 							hide={hiddenSeries.has(definition.chartKey)}
 							isAnimationActive={false}
+							activeDot={(props: { cx?: number; cy?: number }) => {
+								if (typeof props.cy === "number") {
+									seriesYByKeyRef.current[definition.chartKey] = props.cy
+								}
+								return (
+									<circle
+										className="recharts-dot"
+										cx={props.cx}
+										cy={props.cy}
+										r={4}
+										fill={`var(--color-${definition.chartKey})`}
+										stroke="#fff"
+										strokeWidth={2}
+									/>
+								)
+							}}
 						/>
 					))}
 					{hasIncomplete &&

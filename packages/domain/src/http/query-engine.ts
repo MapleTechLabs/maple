@@ -988,6 +988,9 @@ const queryDraftBaseFields = {
 	having: Schema.optional(Schema.String),
 	orderBy: Schema.optional(Schema.String),
 	limit: Schema.optional(Schema.String),
+	// Opt-in top-N series cap for group-by timeseries charts (entered as a string
+	// in the builder; parsed to a positive integer when lowering to a QuerySpec).
+	seriesLimit: Schema.optional(Schema.String),
 	legend: Schema.optional(Schema.String),
 }
 

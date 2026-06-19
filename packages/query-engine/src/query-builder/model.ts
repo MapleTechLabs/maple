@@ -681,6 +681,16 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 		warnings.push("Invalid step interval ignored; auto interval will be used")
 	}
 
+	// Opt-in top-N series cap. Parsed from the builder's string field; a blank,
+	// zero, negative, or non-integer value disables the cap.
+	const seriesLimitRaw = query.seriesLimit?.trim()
+	const seriesLimitParsed = seriesLimitRaw ? Number.parseInt(seriesLimitRaw, 10) : Number.NaN
+	const seriesLimit =
+		Number.isInteger(seriesLimitParsed) && seriesLimitParsed > 0 ? seriesLimitParsed : undefined
+	if (seriesLimitRaw && seriesLimit === undefined) {
+		warnings.push("Invalid series limit ignored; all series will be fetched")
+	}
+
 	if (query.dataSource === "traces") {
 		// A non-empty `valueField` (e.g. "attr.result.rowCount") switches the query
 		// into numeric-attribute aggregation mode: `aggregation` becomes a numeric
@@ -783,6 +793,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				groupBy,
 				filters: finalFilters,
 				bucketSeconds,
+				seriesLimit,
 			} as QuerySpec,
 			warnings,
 			error: null,
@@ -823,6 +834,7 @@ export function buildTimeseriesQuerySpec(query: QueryBuilderQueryDraftPayload): 
 				groupBy,
 				filters: Object.keys(filters).length ? filters : undefined,
 				bucketSeconds,
+				seriesLimit,
 			} as QuerySpec,
 			warnings,
 			error: null,

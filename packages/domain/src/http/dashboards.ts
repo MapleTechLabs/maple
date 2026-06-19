@@ -112,6 +112,11 @@ export const WidgetDisplayConfigSchema = Schema.Struct({
 			softMin: Schema.optional(Schema.Number),
 			softMax: Schema.optional(Schema.Number),
 			logScale: Schema.optional(Schema.Boolean),
+			// When true, the y-axis lower bound follows the minimum of the
+			// displayed data (with padding) instead of being pinned at zero,
+			// making small fluctuations between series easier to see. Ignored
+			// when `softMin`/`min` or `logScale` are set.
+			fitYAxisToData: Schema.optional(Schema.Boolean),
 			visible: Schema.optional(Schema.Boolean),
 		}),
 	),

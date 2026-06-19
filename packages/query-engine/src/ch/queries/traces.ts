@@ -19,6 +19,8 @@ import {
 } from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
 import type { ColumnDefs } from "../types"
+import * as T from "../types"
+import { finalizeTimeseries } from "./series-cap"
 import {
 	apdexExprs,
 	buildProjectedMapExpr,
@@ -264,6 +266,12 @@ export interface TracesTimeseriesOpts extends TracesQueryOpts {
 	apdexThresholdMs?: number
 	/** When true, emit all metric columns regardless of the selected metric. Used by custom charts. */
 	allMetrics?: boolean
+	/**
+	 * Opt-in top-N series cap for group-by charts. When set, only the N groups
+	 * with the largest total count (across all buckets) are fetched — the long
+	 * tail is dropped server-side to avoid OOMing the browser tab.
+	 */
+	seriesLimit?: number
 }
 
 export interface TracesTimeseriesOutput {
@@ -279,6 +287,24 @@ export interface TracesTimeseriesOutput {
 	readonly toleratingCount: number
 	readonly apdexScore: number
 	readonly estimatedSpanCount: number
+}
+
+// Synthetic column defs matching TracesTimeseriesOutput, used to wrap the inner
+// query in a CTE when the top-N series cap is applied. CH types are nominal
+// here (the cap helper references columns by name), so numerics use Float64.
+const TRACES_TS_COLUMNS: ColumnDefs = {
+	bucket: T.string,
+	groupName: T.string,
+	count: T.float64,
+	avgDuration: T.float64,
+	p50Duration: T.float64,
+	p95Duration: T.float64,
+	p99Duration: T.float64,
+	errorRate: T.float64,
+	satisfiedCount: T.float64,
+	toleratingCount: T.float64,
+	apdexScore: T.float64,
+	estimatedSpanCount: T.float64,
 }
 
 export function tracesTimeseriesQuery(
@@ -326,8 +352,11 @@ export function tracesTimeseriesQuery(
 			.where(($) => tracesAggregatesWhereConditions($, opts))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return aggregates as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+		return finalizeTimeseries(aggregates, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			TracesTimeseriesOutput,
+			{}
+		>
 	}
 
 	// Fast path: when no filter or groupBy references span-level columns
@@ -346,8 +375,11 @@ export function tracesTimeseriesQuery(
 			.where(($) => serviceOverviewWhereConditions($, opts))
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return mv as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+		return finalizeTimeseries(mv, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			TracesTimeseriesOutput,
+			{}
+		>
 	}
 
 	const raw = from(Traces)
@@ -359,8 +391,11 @@ export function tracesTimeseriesQuery(
 		.where(($) => buildWhereConditions($, opts))
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		.format("JSON")
-	return raw as unknown as CHQuery<ColumnDefs, TracesTimeseriesOutput, {}>
+	return finalizeTimeseries(raw, TRACES_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+		ColumnDefs,
+		TracesTimeseriesOutput,
+		{}
+	>
 }
 
 // ---------------------------------------------------------------------------

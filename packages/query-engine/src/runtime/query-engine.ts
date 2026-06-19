@@ -951,6 +951,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						apdexThresholdMs:
 							request.query.metric === "apdex" ? request.query.apdexThresholdMs : undefined,
 						bucketSeconds: bucketSeconds!,
+						seriesLimit: request.query.seriesLimit,
 					}),
 					{
 						orgId: tenant.orgId,
@@ -981,6 +982,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					apdexThresholdMs:
 						request.query.metric === "apdex" ? request.query.apdexThresholdMs : undefined,
 					bucketSeconds: bucketSeconds!,
+					seriesLimit: request.query.seriesLimit,
 				}),
 				{
 					orgId: tenant.orgId,
@@ -1013,6 +1015,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					matchModes: logsMatchModes(request.query.filters),
 					groupBy: request.query.groupBy as string[] | undefined,
 					bucketSeconds: bucketSeconds!,
+					seriesLimit: request.query.seriesLimit,
 				}),
 				{
 					orgId: tenant.orgId,

@@ -62,6 +62,7 @@ export const ChartWidget = memo(function ChartWidget({
 					logScale={display.yAxis?.logScale}
 					softMin={display.yAxis?.softMin}
 					softMax={display.yAxis?.softMax}
+					fitYAxisToData={display.yAxis?.fitYAxisToData}
 					showPoints={display.chartPresentation?.showPoints}
 					thresholds={display.thresholds}
 				/>
