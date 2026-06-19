@@ -17,7 +17,7 @@ export type OnboardingEmailField =
 	| "stalledEmailSentAt"
 	| "activationEmailSentAt"
 
-export interface OnboardingUpdateInput {
+interface OnboardingUpdateInput {
 	role?: string
 	demoDataRequested?: boolean
 	markOnboardingComplete?: boolean

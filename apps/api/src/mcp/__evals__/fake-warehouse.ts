@@ -12,7 +12,7 @@ export interface FixtureRule {
  * `span_hierarchy` and `list_logs` pipes compile to SQL referencing their CH
  * table, so we route by table name.
  */
-export const defaultTraceFixtures = (): FixtureRule[] => [
+const defaultTraceFixtures = (): FixtureRule[] => [
 	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
 ]

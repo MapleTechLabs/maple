@@ -61,7 +61,7 @@ export function CopyButton({ value, label }: { value: string; label?: string }) 
 	)
 }
 
-export function StatusPill({ active }: { active: boolean }) {
+function StatusPill({ active }: { active: boolean }) {
 	if (!active) {
 		return (
 			<span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">

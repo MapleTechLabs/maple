@@ -13,7 +13,7 @@ import type { CHQuery } from "./query"
 // Union state (runtime)
 // ---------------------------------------------------------------------------
 
-export interface CHUnionState {
+interface CHUnionState {
 	readonly queries: ReadonlyArray<CHQuery<any, any, any>>
 	readonly outerOrderBySpecs: Array<[string, "asc" | "desc"]>
 	readonly outerLimitValue?: number

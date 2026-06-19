@@ -247,8 +247,3 @@ export const formatBackendError = (input: unknown): FormattedError => {
 		description: typeof error === "string" ? error : "An unexpected error occurred.",
 	}
 }
-
-export const formatBackendErrorMessage = (input: unknown): string => {
-	const { title, description } = formatBackendError(input)
-	return `${title} — ${description}`
-}

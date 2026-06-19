@@ -52,7 +52,7 @@ const StrategySchema = Schema.Struct({
 	maxFallbackRangeSeconds: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
 })
 
-export const QueryBuilderTimeseriesInputSchema = Schema.Struct({
+const QueryBuilderTimeseriesInputSchema = Schema.Struct({
 	startTime: dateTimeString,
 	endTime: dateTimeString,
 	queries: Schema.mutable(Schema.Array(QueryBuilderQueryDraftSchema)),
@@ -103,7 +103,7 @@ interface QueryBuilderTimeseriesDebug {
 	previousQueries: QueryExecutionDebug[]
 }
 
-export interface QueryBuilderTimeseriesResponse {
+interface QueryBuilderTimeseriesResponse {
 	data: Array<Record<string, string | number>>
 	debug?: QueryBuilderTimeseriesDebug
 }

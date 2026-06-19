@@ -3,7 +3,7 @@ import { useReplayPlayer } from "@/components/replays/replay-player-context"
 import { isDialogOpen, isEditableTarget } from "@/lib/keyboard"
 
 /** Arrow-key seek step, in display ms. */
-export const SEEK_STEP_MS = 5000
+const SEEK_STEP_MS = 5000
 
 /**
  * Page-wide keyboard transport for the replay player:

@@ -6,7 +6,7 @@ import {
 } from "@maple/query-engine/where-clause"
 import { Match } from "effect"
 
-export interface AttributeFilterEntry {
+interface AttributeFilterEntry {
 	key: string
 	value: string
 	matchMode?: FilterMatchMode
@@ -38,7 +38,7 @@ export interface TracesSearchLike {
 	excludedHttpStatusCodes?: string[]
 }
 
-export type FilterMatchMode = "contains"
+type FilterMatchMode = "contains"
 
 export interface ParsedWhereClauseFilters {
 	service?: string

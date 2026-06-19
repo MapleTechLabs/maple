@@ -31,19 +31,19 @@ export interface ScrapeOtlpContext {
 	readonly scrapeTimeMs: number
 }
 
-export interface OtlpKeyValue {
+interface OtlpKeyValue {
 	readonly key: string
 	readonly value: { readonly stringValue: string }
 }
 
-export interface OtlpNumberDataPoint {
+interface OtlpNumberDataPoint {
 	readonly attributes: ReadonlyArray<OtlpKeyValue>
 	readonly startTimeUnixNano: string
 	readonly timeUnixNano: string
 	readonly asDouble: number
 }
 
-export interface OtlpHistogramDataPoint {
+interface OtlpHistogramDataPoint {
 	readonly attributes: ReadonlyArray<OtlpKeyValue>
 	readonly startTimeUnixNano: string
 	readonly timeUnixNano: string

@@ -23,13 +23,13 @@ export interface Location {
 	readonly query: URLSearchParams
 }
 
-export function parseLocation(hash: string): Location {
+function parseLocation(hash: string): Location {
 	const [rawPath, rawSearch = ""] = hash.split("?")
 	const path = rawPath && rawPath.startsWith("/") ? rawPath : "/traces"
 	return { path, query: new URLSearchParams(rawSearch) }
 }
 
-export function buildHash(path: string, query?: URLSearchParams): string {
+function buildHash(path: string, query?: URLSearchParams): string {
 	const qs = query?.toString()
 	return `#${path}${qs ? `?${qs}` : ""}`
 }

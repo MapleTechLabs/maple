@@ -23,7 +23,7 @@ interface ReplaysFacetItem {
 	readonly count: number
 }
 
-export interface ReplaysFacets {
+interface ReplaysFacets {
 	readonly services: ReadonlyArray<ReplaysFacetItem>
 	readonly browsers: ReadonlyArray<ReplaysFacetItem>
 	readonly countries: ReadonlyArray<ReplaysFacetItem>

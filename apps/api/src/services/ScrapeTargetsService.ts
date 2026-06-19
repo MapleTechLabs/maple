@@ -34,7 +34,7 @@ import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetSc
 
 type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
-export interface ScrapeTargetProxyResponse {
+interface ScrapeTargetProxyResponse {
 	readonly status: number
 	readonly body: string
 	readonly contentType: string

@@ -30,7 +30,7 @@ const TIME_SERIES_DISPLAY_TYPES: ReadonlyArray<"line" | "area" | "bar"> = ["line
 
 const ISO_OR_TINYBIRD_DATETIME_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}:\d{2})/
 
-export const GetRawSqlChartInputSchema = Schema.Struct({
+const GetRawSqlChartInputSchema = Schema.Struct({
 	sql: Schema.String,
 	displayType: RawSqlDisplayType,
 	startTime: WarehouseDateTimeString,
@@ -40,7 +40,7 @@ export const GetRawSqlChartInputSchema = Schema.Struct({
 
 export type GetRawSqlChartInput = Schema.Schema.Type<typeof GetRawSqlChartInputSchema>
 
-export interface RawSqlChartResponse {
+interface RawSqlChartResponse {
 	data: Array<Record<string, unknown>>
 	meta: {
 		rowCount: number

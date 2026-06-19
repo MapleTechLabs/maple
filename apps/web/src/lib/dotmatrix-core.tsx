@@ -3,10 +3,9 @@
 import type { CSSProperties } from "react"
 
 import "@/components/dotmatrix-loader.css"
-import { useDotMatrixPhases, usePrefersReducedMotion } from "@/lib/dotmatrix-hooks"
 
 export type MatrixPattern = "diamond" | "full" | "outline" | "rose" | "cross" | "rings"
-export type DotShape = "circle" | "square" | "diamond" | "hearts"
+type DotShape = "circle" | "square" | "diamond" | "hearts"
 export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRipple"
 export type DotMatrixColorPreset =
 	| "solid-theme"
@@ -59,7 +58,7 @@ const DOT_MATRIX_COLOR_PRESETS: Record<
 	},
 }
 
-export function resolveDmxColorTokens(
+function resolveDmxColorTokens(
 	color: string,
 	colorPreset?: DotMatrixColorPreset,
 ): {
@@ -106,7 +105,7 @@ export interface DotMatrixCommonProps {
 	minSize?: number
 }
 
-export interface DotAnimationContext {
+interface DotAnimationContext {
 	index: number
 	row: number
 	col: number
@@ -119,46 +118,46 @@ export interface DotAnimationContext {
 	reducedMotion: boolean
 }
 
-export interface DotAnimationState {
+interface DotAnimationState {
 	className?: string
 	style?: CSSProperties
 }
 
 export type DotAnimationResolver = (ctx: DotAnimationContext) => DotAnimationState
 
-export function cx(...values: Array<string | undefined | null | false>): string {
+function cx(...values: Array<string | undefined | null | false>): string {
 	return values.filter(Boolean).join(" ")
 }
 
-export const MATRIX_SIZE = 5
+const MATRIX_SIZE = 5
 const CENTER = Math.floor(MATRIX_SIZE / 2)
 const RANGE = Array.from({ length: MATRIX_SIZE }, (_, index) => index)
 const MAX_RADIUS = Math.hypot(CENTER, CENTER)
 
-export const FULL_INDEXES = RANGE.flatMap((row) => RANGE.map((col) => rowMajorIndex(row, col)))
+const FULL_INDEXES = RANGE.flatMap((row) => RANGE.map((col) => rowMajorIndex(row, col)))
 
-export const DIAMOND_INDEXES = FULL_INDEXES.filter((index) => {
+const DIAMOND_INDEXES = FULL_INDEXES.filter((index) => {
 	const { row, col } = indexToCoord(index)
 	return Math.abs(row - CENTER) + Math.abs(col - CENTER) <= 2
 })
 
-export const OUTLINE_INDEXES = FULL_INDEXES.filter((index) => {
+const OUTLINE_INDEXES = FULL_INDEXES.filter((index) => {
 	const { row, col } = indexToCoord(index)
 	return row === 0 || row === MATRIX_SIZE - 1 || col === 0 || col === MATRIX_SIZE - 1
 })
 
-export const CROSS_INDEXES = FULL_INDEXES.filter((index) => {
+const CROSS_INDEXES = FULL_INDEXES.filter((index) => {
 	const { row, col } = indexToCoord(index)
 	return row === CENTER || col === CENTER
 })
 
-export const RINGS_INDEXES = FULL_INDEXES.filter((index) => {
+const RINGS_INDEXES = FULL_INDEXES.filter((index) => {
 	const { row, col } = indexToCoord(index)
 	const radius = Math.hypot(row - CENTER, col - CENTER)
 	return Math.round(radius) === 1 || Math.round(radius) === 2
 })
 
-export const ROSE_INDEXES = FULL_INDEXES.filter((index) => {
+const ROSE_INDEXES = FULL_INDEXES.filter((index) => {
 	const { row, col } = indexToCoord(index)
 	const dx = col - CENTER
 	const dy = row - CENTER
@@ -177,186 +176,43 @@ const PATTERN_INDEXES: Record<MatrixPattern, number[]> = {
 	rings: RINGS_INDEXES,
 }
 
-export function getPatternIndexes(pattern: MatrixPattern = "diamond"): number[] {
+function getPatternIndexes(pattern: MatrixPattern = "diamond"): number[] {
 	return PATTERN_INDEXES[pattern]
 }
 
-export function rowMajorIndex(row: number, col: number): number {
+function rowMajorIndex(row: number, col: number): number {
 	return row * MATRIX_SIZE + col
 }
 
-export function indexToCoord(index: number): { row: number; col: number } {
+function indexToCoord(index: number): { row: number; col: number } {
 	return {
 		row: Math.floor(index / MATRIX_SIZE),
 		col: index % MATRIX_SIZE,
 	}
 }
 
-export function distanceFromCenter(index: number): number {
+function distanceFromCenter(index: number): number {
 	const { row, col } = indexToCoord(index)
 	return Math.hypot(row - CENTER, col - CENTER)
 }
 
-export function rowDistance(index: number): number {
-	const { row } = indexToCoord(index)
-	return Math.abs(row - CENTER)
-}
-
-export function polarAngle(index: number): number {
+function polarAngle(index: number): number {
 	const { row, col } = indexToCoord(index)
 	return Math.atan2(row - CENTER, col - CENTER)
 }
 
-export function normalizedRadius(index: number): number {
+function normalizedRadius(index: number): number {
 	const { row, col } = indexToCoord(index)
 	return Math.hypot(row - CENTER, col - CENTER) / MAX_RADIUS
 }
 
-export function manhattanDistance(index: number): number {
+function manhattanDistance(index: number): number {
 	const { row, col } = indexToCoord(index)
 	return Math.abs(row - CENTER) + Math.abs(col - CENTER)
 }
 
-export function harmonicPhase(row: number, col: number, a: number, b: number): number {
-	return Math.sin((row + 1) * a + (col + 1) * b)
-}
-
-export function lissajousOffset(
-	row: number,
-	col: number,
-	amplitude = 2.25,
-): { x: number; y: number; phase: number } {
-	const x = Math.sin((row + 1) * 1.15 + (col + 1) * 2.2) * amplitude
-	const y = Math.cos((row + 1) * 2.45 + (col + 1) * 0.95) * amplitude
-	const phase = Math.abs(Math.sin((row + 1) * 0.7 + (col + 1) * 1.1))
-	return { x, y, phase }
-}
-
-export function spiralOffset(
-	angle: number,
-	radiusNormalizedValue: number,
-	amplitude = 2.8,
-): { x: number; y: number; phase: number } {
-	const spin = angle + radiusNormalizedValue * Math.PI * 2.1
-	const radius = radiusNormalizedValue * amplitude
-	const x = Math.cos(spin) * radius
-	const y = Math.sin(spin) * radius
-	const phase = Math.abs(Math.sin(spin * 0.5))
-	return { x, y, phase }
-}
-
-export function isPrime(value: number): boolean {
-	if (value <= 1) {
-		return false
-	}
-	if (value === 2) {
-		return true
-	}
-	if (value % 2 === 0) {
-		return false
-	}
-
-	const limit = Math.floor(Math.sqrt(value))
-	for (let divisor = 3; divisor <= limit; divisor += 2) {
-		if (value % divisor === 0) {
-			return false
-		}
-	}
-
-	return true
-}
-
 const N = MATRIX_SIZE
-const C = Math.floor(MATRIX_SIZE / 2)
 const CELLS = N * N
-const MAX_TRBL = (N - 1) * 2
-
-export function trBlPathNormFromIndex(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return (row + (N - 1 - col)) / MAX_TRBL
-}
-
-function buildSnakeOrderToIndexMap(): number[] {
-	const pathOrder = new Array<number>(CELLS)
-	const key = (row: number, col: number) => rowMajorIndex(row, col)
-	let t = 0
-	for (let row = 0; row < N; row += 1) {
-		if (row % 2 === 0) {
-			for (let col = 0; col < N; col += 1) {
-				pathOrder[key(row, col)] = t
-				t += 1
-			}
-		} else {
-			for (let col = N - 1; col >= 0; col -= 1) {
-				pathOrder[key(row, col)] = t
-				t += 1
-			}
-		}
-	}
-	return pathOrder
-}
-
-const SNAKE_ORDER: readonly number[] = buildSnakeOrderToIndexMap()
-
-export function snakePathNormFromIndex(index: number): number {
-	return SNAKE_ORDER[index]! / (CELLS - 1)
-}
-
-export function snakePathOrderValue(index: number): number {
-	return SNAKE_ORDER[index]!
-}
-
-function buildSpiralInwardOrderToIndexMap(): number[] {
-	const order = new Array<number>(CELLS)
-	let top = 0
-	let bottom = N - 1
-	let left = 0
-	let right = N - 1
-	let t = 0
-
-	while (top <= bottom && left <= right) {
-		for (let col = left; col <= right; col += 1) {
-			order[rowMajorIndex(top, col)] = t
-			t += 1
-		}
-
-		for (let row = top + 1; row <= bottom; row += 1) {
-			order[rowMajorIndex(row, right)] = t
-			t += 1
-		}
-
-		if (top < bottom) {
-			for (let col = right - 1; col >= left; col -= 1) {
-				order[rowMajorIndex(bottom, col)] = t
-				t += 1
-			}
-		}
-
-		if (left < right) {
-			for (let row = bottom - 1; row > top; row -= 1) {
-				order[rowMajorIndex(row, left)] = t
-				t += 1
-			}
-		}
-
-		top += 1
-		bottom -= 1
-		left += 1
-		right -= 1
-	}
-
-	return order
-}
-
-const SPIRAL_INWARD_ORDER: readonly number[] = buildSpiralInwardOrderToIndexMap()
-
-export function spiralInwardNormFromIndex(index: number): number {
-	return SPIRAL_INWARD_ORDER[index]! / (CELLS - 1)
-}
-
-export function spiralInwardOrderValue(index: number): number {
-	return SPIRAL_INWARD_ORDER[index]!
-}
 
 function buildOuterRingClockwiseOrderToIndexMap(): number[] {
 	const order = new Array<number>(CELLS).fill(-1)
@@ -429,106 +285,6 @@ export function middleRingAntiClockwiseNormFromIndex(index: number): number {
 	return order >= 0 ? order / 7 : 0
 }
 
-function buildDiagonalSnakeOrderToIndexMap(): number[] {
-	const order = new Array<number>(CELLS)
-	let t = 0
-
-	for (let diagonal = 0; diagonal <= (N - 1) * 2; diagonal += 1) {
-		const rowStart = Math.max(0, diagonal - (N - 1))
-		const rowEnd = Math.min(N - 1, diagonal)
-
-		if (diagonal % 2 === 0) {
-			for (let row = rowEnd; row >= rowStart; row -= 1) {
-				const col = diagonal - row
-				order[rowMajorIndex(row, col)] = t
-				t += 1
-			}
-		} else {
-			for (let row = rowStart; row <= rowEnd; row += 1) {
-				const col = diagonal - row
-				order[rowMajorIndex(row, col)] = t
-				t += 1
-			}
-		}
-	}
-
-	return order
-}
-
-const DIAGONAL_SNAKE_ORDER: readonly number[] = buildDiagonalSnakeOrderToIndexMap()
-
-export function diagonalSnakeOrderValue(index: number): number {
-	return DIAGONAL_SNAKE_ORDER[index]!
-}
-
-export function diagonalSnakeNormFromIndex(index: number): number {
-	return DIAGONAL_SNAKE_ORDER[index]! / (CELLS - 1)
-}
-
-function buildRowWaveSnakeOrderToIndexMap(): number[] {
-	const order = new Array<number>(CELLS)
-	const route: Array<{ col: number; dir: "up" | "down" }> = [
-		{ col: 0, dir: "up" },
-		{ col: 2, dir: "down" },
-		{ col: 1, dir: "up" },
-		{ col: 3, dir: "down" },
-		{ col: 2, dir: "up" },
-		{ col: 4, dir: "down" },
-	]
-
-	let t = 0
-	for (const step of route) {
-		if (step.dir === "up") {
-			for (let row = N - 1; row >= 0; row -= 1) {
-				order[rowMajorIndex(row, step.col)] = t
-				t += 1
-			}
-		} else {
-			for (let row = 0; row < N; row += 1) {
-				order[rowMajorIndex(row, step.col)] = t
-				t += 1
-			}
-		}
-	}
-
-	return order
-}
-
-const ROW_WAVE_SNAKE_ORDER: readonly number[] = buildRowWaveSnakeOrderToIndexMap()
-const ROW_WAVE_SNAKE_MAX_ORDER = Math.max(...ROW_WAVE_SNAKE_ORDER)
-
-export function rowWaveOrderValue(index: number): number {
-	return ROW_WAVE_SNAKE_ORDER[index]!
-}
-
-export function rowWaveNormFromIndex(index: number): number {
-	return ROW_WAVE_SNAKE_MAX_ORDER > 0 ? rowWaveOrderValue(index) / ROW_WAVE_SNAKE_MAX_ORDER : 0
-}
-
-export function colWaveNormFromIndex(index: number): number {
-	const { col } = indexToCoord(index)
-	return N > 1 ? col / (N - 1) : 0
-}
-
-export function concentricRingNormFromIndex(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return Math.max(Math.abs(row - C), Math.abs(col - C)) / C
-}
-
-const CORNER_COORDS = new Set(["0,0", "0,4", "4,0", "4,4"])
-
-export function isWithinCircularMask(row: number, col: number): boolean {
-	return !CORNER_COORDS.has(`${row},${col}`)
-}
-
-export function stylePx(n: number): string {
-	return `${n}px`
-}
-
-export function styleOpacity(opacity: number): number {
-	return Math.round(opacity * 1e6) / 1e6
-}
-
 const SOURCE_BASE_OPACITY = 0.08
 const SOURCE_MID_OPACITY = 0.34
 const SOURCE_PEAK_OPACITY = 0.94
@@ -552,7 +308,7 @@ function coerceOpacityDmx(value: number | undefined): number | undefined {
 	return Math.min(1, Math.max(0, value))
 }
 
-export function remapOpacityToTriplet(
+function remapOpacityToTriplet(
 	opacity: number,
 	opacityBase: number | undefined,
 	opacityMid: number | undefined,
@@ -592,13 +348,13 @@ export function remapOpacityToTriplet(
 }
 
 /** Remapped opacity where bloom begins (weakest glow); scales linearly to full bloom at 1. */
-export const DMX_BLOOM_OPACITY_MIN = 0.6
+const DMX_BLOOM_OPACITY_MIN = 0.6
 
-export function opacityToBloomLevel(remappedOpacity: number): number {
+function opacityToBloomLevel(remappedOpacity: number): number {
 	return Math.max(0, Math.min(1, (remappedOpacity - DMX_BLOOM_OPACITY_MIN) / (1 - DMX_BLOOM_OPACITY_MIN)))
 }
 
-export function remappedOpacityQualifiesForBloom(remappedOpacity: number): boolean {
+function remappedOpacityQualifiesForBloom(remappedOpacity: number): boolean {
 	return remappedOpacity >= DMX_BLOOM_OPACITY_MIN
 }
 
@@ -609,12 +365,12 @@ function clampHalo(value: number | undefined): number {
 	return Math.min(1, Math.max(0, value))
 }
 
-export function dmxBloomRootActive(bloom: boolean, halo: number | undefined): boolean {
+function dmxBloomRootActive(bloom: boolean, halo: number | undefined): boolean {
 	return bloom || clampHalo(halo) > 0
 }
 
 /** Root class when `halo` > 0 — CSS widens drop-shadow falloff for a softer, more diffuse glow. */
-export function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-halo" | false {
+function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-halo" | false {
 	return clampHalo(halo) > 0 ? "dmx-bloom-halo" : false
 }
 
@@ -622,7 +378,7 @@ export function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-ha
  * Bloom level and dot class for one cell. `curveOpacity` is the loader’s logical opacity **before**
  * `remapOpacityToTriplet` (same as `bloom` uses today).
  */
-export function dmxDotBloomParts(
+function dmxDotBloomParts(
 	isActive: boolean,
 	curveOpacity: number,
 	bloom: boolean,
@@ -905,67 +661,3 @@ export function DotMatrixBase({
 	)
 }
 
-type NormFn = (ctx: Pick<DotAnimationContext, "row" | "col" | "index">) => number
-
-export function createPathWaveResolver(getPathNorm: NormFn): DotAnimationResolver {
-	return ({ isActive, row, col, index, reducedMotion, phase }) => {
-		if (!isActive) {
-			return { className: "dmx-inactive" }
-		}
-
-		const path = getPathNorm({ row, col, index })
-		const style = { "--dmx-path": path } as CSSProperties
-
-		if (reducedMotion || phase === "idle") {
-			return {
-				style: {
-					...style,
-					opacity: 0.12 + path * 0.72,
-				},
-			}
-		}
-
-		return { className: "dmx-path", style }
-	}
-}
-
-type PathWaveComponentProps = DotMatrixCommonProps
-
-export function createPathWaveComponent(displayName: string, getPathNorm: NormFn) {
-	const resolve = createPathWaveResolver(getPathNorm)
-
-	function PathWaveComponent({
-		pattern = "full",
-		animated = true,
-		hoverAnimated = false,
-		speed = 1,
-		...rest
-	}: PathWaveComponentProps) {
-		const reducedMotion = usePrefersReducedMotion()
-		const {
-			phase: matrixPhase,
-			onMouseEnter,
-			onMouseLeave,
-		} = useDotMatrixPhases({
-			animated: Boolean(animated && !reducedMotion),
-			hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
-			speed,
-		})
-		return (
-			<DotMatrixBase
-				{...rest}
-				speed={speed}
-				pattern={pattern}
-				animated={animated}
-				phase={matrixPhase}
-				reducedMotion={reducedMotion}
-				onMouseEnter={onMouseEnter}
-				onMouseLeave={onMouseLeave}
-				animationResolver={resolve}
-			/>
-		)
-	}
-
-	PathWaveComponent.displayName = displayName
-	return PathWaveComponent
-}

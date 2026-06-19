@@ -136,7 +136,7 @@ const toUpstreamError = (message: string, status?: number, cause?: unknown) =>
 		...(cause === undefined ? {} : { cause }),
 	})
 
-export interface HazelOAuthAccessToken {
+interface HazelOAuthAccessToken {
 	readonly accessToken: string
 	readonly externalUserId: string
 }

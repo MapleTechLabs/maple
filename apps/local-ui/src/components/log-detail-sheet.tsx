@@ -391,7 +391,7 @@ function LogTracePanel({ log, onOpenTrace }: { log: LocalLog; onOpenTrace: () =>
 }
 
 /** Pretty-printed JSON of the full log, with a copy control. */
-export function buildLogJsonPayload(log: LocalLog): string {
+function buildLogJsonPayload(log: LocalLog): string {
 	return JSON.stringify(
 		{
 			timestamp: log.timestamp,

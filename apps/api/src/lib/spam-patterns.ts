@@ -1,4 +1,4 @@
-export const SCANNER_SPAM_PATTERNS = [
+const SCANNER_SPAM_PATTERNS = [
 	// Environment/config file probes
 	".env",
 	".git/",

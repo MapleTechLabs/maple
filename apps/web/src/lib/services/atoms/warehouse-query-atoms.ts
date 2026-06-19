@@ -18,7 +18,6 @@ import {
 import {
 	getLog,
 	getLogAttributeKeys,
-	getLogAttributeValues,
 	getLogsFacets,
 	listLogs,
 } from "@/api/warehouse/logs"
@@ -58,7 +57,6 @@ import {
 import { getServiceExternalEdges } from "@/api/warehouse/service-external-edges"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
 import {
-	getServiceApdexTimeSeries,
 	getServiceHealthBaseline,
 	getServiceOverview,
 	getServiceReleasesTimeline,
@@ -97,7 +95,7 @@ interface QueryAtomOptions {
 	staleTime?: number
 }
 
-export class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
+class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()(
 	"@maple/web/services/QueryAtomError",
 	{
 		message: Schema.String,
@@ -332,10 +330,6 @@ export const workloadFacetsResultAtom = makeQueryAtomFamily(getWorkloadFacets, {
 	staleTime: 30_000,
 })
 
-export const getServiceApdexTimeSeriesResultAtom = makeQueryAtomFamily(getServiceApdexTimeSeries, {
-	staleTime: 30_000,
-})
-
 export const getServiceReleasesTimelineResultAtom = makeQueryAtomFamily(getServiceReleasesTimeline, {
 	staleTime: 60_000,
 })
@@ -408,6 +402,3 @@ export const getLogAttributeKeysResultAtom = makeQueryAtomFamily(getLogAttribute
 	staleTime: 60_000,
 })
 
-export const getLogAttributeValuesResultAtom = makeQueryAtomFamily(getLogAttributeValues, {
-	staleTime: 30_000,
-})

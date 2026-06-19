@@ -201,9 +201,3 @@ export function readChatReferrer(): string | null {
 	}
 }
 
-export function clearChatReferrer(): void {
-	if (typeof window === "undefined") return
-	try {
-		window.sessionStorage.removeItem(REFERRER_KEY)
-	} catch {}
-}

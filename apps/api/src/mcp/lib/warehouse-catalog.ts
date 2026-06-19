@@ -57,7 +57,7 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 	],
 }
 
-export interface ColumnInfo {
+interface ColumnInfo {
 	readonly name: string
 	readonly type: string
 	readonly jsonPath?: string

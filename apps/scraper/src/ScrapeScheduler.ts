@@ -6,7 +6,7 @@ import { parsePrometheusText } from "./prometheus/parser"
 import { OtlpIngest } from "./OtlpIngest"
 import { ScraperEnv } from "./Env"
 
-export interface SchedulerStats {
+interface SchedulerStats {
 	readonly activeTargets: number
 	readonly lastReconcileAt: number | null
 	readonly pendingResults: number

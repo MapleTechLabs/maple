@@ -61,10 +61,6 @@ const KEYWORDS = new Set([
 const TOKEN_RE =
 	/(\/\*[\s\S]*?\*\/|--[^\n]*)|('(?:''|\\.|[^'\\])*'|"(?:""|\\.|[^"\\])*")|(\$__[a-zA-Z_][a-zA-Z0-9_]*)|(\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([a-zA-Z_][a-zA-Z0-9_]*)/g
 
-function escapeHtml(s: string): string {
-	return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-}
-
 export interface SqlHighlightToken {
 	text: string
 	start: number
@@ -102,13 +98,4 @@ export function tokenizeSql(code: string): SqlHighlightToken[] {
 	}
 	if (last < code.length) tokens.push({ text: code.slice(last), start: last })
 	return tokens
-}
-
-export function highlightSql(code: string): string {
-	return tokenizeSql(code)
-		.map((token) => {
-			const text = escapeHtml(token.text)
-			return token.className ? `<span class="${token.className}">${text}</span>` : text
-		})
-		.join("")
 }

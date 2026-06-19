@@ -36,8 +36,6 @@ export const QUALIFY_QUESTIONS = {
 	},
 } as const
 
-export type QualifyQuestionId = keyof typeof QUALIFY_QUESTIONS
-
 const GRID_VARIANTS = {
 	hidden: {},
 	show: {

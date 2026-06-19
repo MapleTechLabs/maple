@@ -18,12 +18,10 @@ import {
 	UserId,
 } from "@maple/domain/http"
 import {
-	CLICKHOUSE_MV_SOURCE_TABLES,
 	clickHouseSchemaVersion,
 	computeSchemaDiff,
 	migrations as clickHouseMigrations,
 	parseEmittedStatement,
-	qualifyStatementForDatabase,
 	type ActualTable,
 	type DesiredTable,
 	type TableDiffEntry,
@@ -51,7 +49,7 @@ import { validateExternalUrl } from "../lib/url-validator"
  * settings row, so callers will see `Option.none()` from
  * `resolveRuntimeConfig` for those orgs.
  */
-export type RuntimeBackendConfig = {
+type RuntimeBackendConfig = {
 	readonly backend: "clickhouse"
 	readonly url: string
 	readonly user: string
@@ -189,12 +187,6 @@ const decryptToken = (
 	decryptAes256Gcm(encrypted, encryptionKey, () =>
 		toEncryptionError("Failed to decrypt ClickHouse password"),
 	)
-
-// Both `qualifyStatementForDatabase` and `CLICKHOUSE_MV_SOURCE_TABLES` live
-// in `@maple/domain/clickhouse` now (so the `@maple/clickhouse-cli` package
-// can share them) and are imported at the top of this file. Re-exported here
-// for any tests / callers that still import from this module path.
-export { CLICKHOUSE_MV_SOURCE_TABLES, qualifyStatementForDatabase }
 
 // Image reference baked into the rendered collector config. Bumping this
 // here is the single edit needed to roll customers onto a newer maple-otel

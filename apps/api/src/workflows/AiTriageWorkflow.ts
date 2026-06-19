@@ -5,12 +5,6 @@ import type {
 	AiTriageWorkflowResult,
 } from "./AiTriageWorkflow.run"
 
-export type {
-	AiTriageWorkflowEnv,
-	AiTriageWorkflowPayload,
-	AiTriageWorkflowResult,
-} from "./AiTriageWorkflow.run"
-
 /**
  * Cloudflare Workflow that runs the headless AI triage agent for a freshly
  * opened incident (error or anomaly), org opt-in.

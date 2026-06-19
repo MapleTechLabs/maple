@@ -23,7 +23,7 @@
  * yet have a good story for handling whitespace / formatting differences.
  */
 
-export type ClickHouseTableKind = "table" | "materialized_view"
+type ClickHouseTableKind = "table" | "materialized_view"
 
 export interface DesiredTable {
 	readonly name: string

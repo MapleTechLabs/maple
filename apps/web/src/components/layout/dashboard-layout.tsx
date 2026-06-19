@@ -20,7 +20,7 @@ import { QuotaBanner } from "@/components/billing/quota-banner"
 import { Link, defaultParseSearch } from "@tanstack/react-router"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
-export interface BreadcrumbItem {
+interface BreadcrumbItem {
 	label: string
 	href?: string
 }

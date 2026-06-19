@@ -102,7 +102,7 @@ export type VisualizationType =
 	| "markdown"
 	| (string & {})
 export type WidgetMode = "view" | "edit"
-export type WidgetErrorKind = "decode" | "runtime"
+type WidgetErrorKind = "decode" | "runtime"
 export type WidgetDataState =
 	| { status: "loading" }
 	| { status: "error"; title?: string; message?: string; kind?: WidgetErrorKind }

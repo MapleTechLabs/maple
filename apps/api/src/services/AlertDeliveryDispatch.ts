@@ -159,7 +159,7 @@ export const formatSignalLabel = (signal: string) => {
 	return labels[signal] ?? signal
 }
 
-export const eventTypeEmoji = (type: string) => {
+const eventTypeEmoji = (type: string) => {
 	const map: Record<string, string> = {
 		trigger: "\u{1F6A8}",
 		resolve: "\u2705",
@@ -192,7 +192,7 @@ export const formatSignalMetric = (value: number | null, signalType: string): st
 			),
 	})
 
-export const formatWindow = (minutes: number): string => {
+const formatWindow = (minutes: number): string => {
 	if (minutes < 60) return `${minutes}m`
 	const hours = minutes / 60
 	return hours % 1 === 0 ? `${hours}h` : `${minutes}m`

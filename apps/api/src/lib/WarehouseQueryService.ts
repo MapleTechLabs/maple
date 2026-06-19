@@ -10,7 +10,6 @@ import {
 	type WarehouseExecutorDeps,
 	type WarehouseQueryServiceShape,
 	type WarehouseSqlClient,
-	type WarehouseSqlError,
 } from "@maple/query-engine/execution"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -30,7 +29,7 @@ import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsS
 // ---------------------------------------------------------------------------
 
 // Re-export the executor types so existing import sites stay stable.
-export type { WarehouseQueryServiceShape, SqlQueryOptions, WarehouseSqlError }
+export type { WarehouseQueryServiceShape, SqlQueryOptions }
 
 type ClickHouseConfig = Extract<ResolvedWarehouseConfig, { _tag: "clickhouse" }>
 type TinybirdConfig = Extract<ResolvedWarehouseConfig, { _tag: "tinybird" }>

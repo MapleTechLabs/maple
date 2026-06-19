@@ -144,7 +144,7 @@ async function ingest(db: Chdb, signal: Signal, req: Request): Promise<IngestRes
  * `force_json_each_row` from the former Rust server: callers POST `compiled.sql`
  * verbatim (`CH.compile(...)` appends `FORMAT JSON`).
  */
-export function forceJsonEachRow(sql: string): string {
+function forceJsonEachRow(sql: string): string {
 	let s = sql.trimEnd()
 	if (s.endsWith(";")) s = s.slice(0, -1).trimEnd()
 	const lower = s.toLowerCase()

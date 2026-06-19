@@ -28,7 +28,7 @@ interface HostDetailChartProps {
 
 const CHART_HEIGHT = 220
 
-export function HostDetailChart({
+function HostDetailChart({
 	hostName,
 	metric,
 	startTime,

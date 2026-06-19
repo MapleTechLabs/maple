@@ -16,7 +16,7 @@ import { Clock, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Database } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 
-export interface ResolvedApiKey {
+interface ResolvedApiKey {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly keyId: ApiKeyId

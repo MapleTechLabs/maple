@@ -49,7 +49,7 @@ function formatValue(value: unknown): { kind: "scalar"; text: string } | { kind:
 	}
 }
 
-export function KeyValueFallback({ input }: { input: unknown }) {
+function KeyValueFallback({ input }: { input: unknown }) {
 	const obj = asRecord(input)
 	if (!obj) {
 		return (

@@ -23,7 +23,7 @@ function getElk(): Promise<ELK> {
 
 const ELK_CONTAINER_PREFIX = "elkns:"
 
-export interface ElkEdgeRoute {
+interface ElkEdgeRoute {
 	/** SVG path (absolute coords) through ELK's routed bend points. */
 	path: string
 	/** Absolute midpoint, for placing the edge label. */

@@ -124,7 +124,7 @@ function resolveSpanMetricsCallsMetric(params: {
 	})
 }
 
-export function querySpanMetricsCalls(params: {
+function querySpanMetricsCalls(params: {
 	service?: string
 	start_time?: string
 	end_time?: string
@@ -340,7 +340,7 @@ const CustomChartTimeSeriesInputSchema = Schema.Struct({
 export type CustomChartTimeSeriesInput = (typeof CustomChartTimeSeriesInputSchema)["Encoded"]
 type CustomChartTimeSeriesDecoded = (typeof CustomChartTimeSeriesInputSchema)["Type"]
 
-export interface CustomChartTimeSeriesPoint {
+interface CustomChartTimeSeriesPoint {
 	bucket: string
 	series: Record<string, number>
 }
@@ -520,15 +520,6 @@ const CustomChartBreakdownInputSchema = Schema.Struct({
 
 export type CustomChartBreakdownInput = (typeof CustomChartBreakdownInputSchema)["Encoded"]
 type CustomChartBreakdownDecoded = (typeof CustomChartBreakdownInputSchema)["Type"]
-
-export interface CustomChartBreakdownItem {
-	name: string
-	value: number
-}
-
-export interface CustomChartBreakdownResponse {
-	data: CustomChartBreakdownItem[]
-}
 
 function buildBreakdownQuerySpec(data: CustomChartBreakdownDecoded): QuerySpec | string {
 	if (data.source === "traces") {

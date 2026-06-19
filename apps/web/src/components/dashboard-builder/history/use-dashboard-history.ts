@@ -6,7 +6,7 @@ import { DashboardId, DashboardVersionId } from "@maple/domain/http"
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
 const asDashboardVersionId = Schema.decodeUnknownSync(DashboardVersionId)
 
-export const dashboardVersionsKey = (dashboardId: string) => `dashboard:${dashboardId}:versions`
+const dashboardVersionsKey = (dashboardId: string) => `dashboard:${dashboardId}:versions`
 
 export function useDashboardVersions(dashboardId: string) {
 	const queryAtom = MapleApiAtomClient.query("dashboards", "listVersions", {

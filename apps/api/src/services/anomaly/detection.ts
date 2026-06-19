@@ -43,7 +43,7 @@ export const SENSITIVITY: Record<AnomalySensitivity, SensitivityConfig> = {
 }
 
 /** Minimum sealed baseline samples before a series is evaluated at all. */
-export const MIN_BASELINE_SAMPLES = 6
+const MIN_BASELINE_SAMPLES = 6
 
 const MAD_TO_SIGMA = 1.4826
 
@@ -110,7 +110,7 @@ export interface DetectionConfig {
 	readonly elapsedMinutes: number
 }
 
-export const detectorKeyFor = (
+const detectorKeyFor = (
 	signalType: AnomalySignalType,
 	deploymentEnv: string,
 	subject: string,
@@ -336,7 +336,7 @@ export function evaluateLogVolume(series: LogVolumeSeries, config: DetectionConf
 const HALF_HOURS_PER_WEEK = 336
 const SPIKE_MIN_COUNT = 10
 /** Fingerprints younger than this stay with ErrorsService first_seen handling. */
-export const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
+const SPIKE_MIN_ISSUE_AGE_MS = 24 * 60 * 60 * 1000
 
 export interface ErrorSpikeConfig {
 	readonly sensitivity: SensitivityConfig

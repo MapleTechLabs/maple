@@ -30,7 +30,7 @@ const BODY_WIDTH = 480
 
 const EMPTY_COLUMNS: string[] = []
 
-export interface LogsTableViewProps {
+interface LogsTableViewProps {
 	allData: Log[]
 	isFetchingNextPage: boolean
 	hasNextPage: boolean
@@ -282,7 +282,7 @@ function PinnedHeader({
 	)
 }
 
-export function LogsTableView({
+function LogsTableView({
 	allData,
 	isFetchingNextPage,
 	hasNextPage,

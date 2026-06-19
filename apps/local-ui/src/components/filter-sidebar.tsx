@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react"
 import { Separator } from "@maple/ui/components/ui/separator"
-import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
 import { cn } from "@maple/ui/utils"
 
@@ -64,22 +63,3 @@ export function FilterSidebarBody({ children }: { children: ReactNode }) {
 	)
 }
 
-export function FilterSidebarLoading({ sectionCount = 3 }: { sectionCount?: number }) {
-	return (
-		<FilterSidebarFrame>
-			<div className="flex items-center justify-between py-2">
-				<Skeleton className="h-5 w-16" />
-			</div>
-			<Separator className="my-2" />
-			<div className="space-y-4">
-				{Array.from({ length: sectionCount }).map((_, i) => (
-					<div key={i} className="space-y-2">
-						<Skeleton className="h-4 w-24" />
-						<Skeleton className="h-4 w-full" />
-						<Skeleton className="h-4 w-3/4" />
-					</div>
-				))}
-			</div>
-		</FilterSidebarFrame>
-	)
-}

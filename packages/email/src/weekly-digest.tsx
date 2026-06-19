@@ -426,5 +426,3 @@ export function WeeklyDigest({
 		</Html>
 	)
 }
-
-export default WeeklyDigest

@@ -18,7 +18,7 @@ export interface NavItem {
 	icon: typeof PulseIcon
 }
 
-export interface SignalsNavItem extends NavItem {
+interface SignalsNavItem extends NavItem {
 	badge?: string
 	subItems?: { title: string; href: string }[]
 }
@@ -49,7 +49,7 @@ export const topologyNavItems: NavItem[] = [
 	},
 ]
 
-export const signalsNavItems: SignalsNavItem[] = [
+const signalsNavItems: SignalsNavItem[] = [
 	{
 		title: "Traces",
 		href: "/traces",

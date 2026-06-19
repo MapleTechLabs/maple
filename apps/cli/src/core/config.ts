@@ -8,7 +8,7 @@ import * as path from "node:path"
  * `~/.maple` directory holds the local binary's data dir and the extracted
  * query CLI, so everything Maple-local lives in one place.
  */
-export interface StoredConfig {
+interface StoredConfig {
 	apiUrl?: string
 	token?: string
 	orgId?: string
@@ -20,11 +20,11 @@ export interface StoredConfig {
 	latestKnownVersion?: string
 }
 
-export const CONFIG_DIR = path.join(os.homedir(), ".maple")
-export const CONFIG_PATH = path.join(CONFIG_DIR, "config.json")
+const CONFIG_DIR = path.join(os.homedir(), ".maple")
+const CONFIG_PATH = path.join(CONFIG_DIR, "config.json")
 
-export const DEFAULT_LOCAL_URL = "http://127.0.0.1:4318"
-export const DEFAULT_API_URL = "https://api.maple.dev"
+const DEFAULT_LOCAL_URL = "http://127.0.0.1:4318"
+const DEFAULT_API_URL = "https://api.maple.dev"
 
 const readStored = (fs: FileSystem): Effect.Effect<StoredConfig> =>
 	fs.readFileString(CONFIG_PATH).pipe(

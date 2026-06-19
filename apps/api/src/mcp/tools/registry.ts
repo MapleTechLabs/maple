@@ -72,7 +72,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 		: document.schema
 }
 
-export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
+const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
 	const registrar: McpToolRegistrar = {
 		tool(name, description, schema, handler) {

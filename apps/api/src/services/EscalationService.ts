@@ -44,7 +44,7 @@ const CONFIDENCE_RANK: Record<EscalationConfidence, number> = { low: 1, medium: 
 const chatSeverityFor = (severity: IssueSeverity): AlertSeverity =>
 	severity === "critical" || severity === "high" ? "critical" : "warning"
 
-export interface EscalationTickResult {
+interface EscalationTickResult {
 	readonly processed: number
 	readonly sent: number
 	readonly skipped: number

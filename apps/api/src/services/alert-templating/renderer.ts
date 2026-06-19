@@ -14,7 +14,7 @@
  * Keys are `[A-Za-z0-9_.]+` (e.g. `rule.name`, `links.app`).
  */
 
-export interface NotificationTemplateOverride {
+interface NotificationTemplateOverride {
 	readonly title?: string | null
 	readonly body?: string | null
 }

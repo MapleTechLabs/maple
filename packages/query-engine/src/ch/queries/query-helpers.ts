@@ -395,12 +395,12 @@ export function tracesAggregatesWhereConditions(
 // Metrics table lookup + SELECT factory
 // ---------------------------------------------------------------------------
 
-export const VALUE_TABLES = {
+const VALUE_TABLES = {
 	sum: MetricsSum,
 	gauge: MetricsGauge,
 } as const
 
-export const HISTOGRAM_TABLES = {
+const HISTOGRAM_TABLES = {
 	histogram: MetricsHistogram,
 	exponential_histogram: MetricsExpHistogram,
 } as const

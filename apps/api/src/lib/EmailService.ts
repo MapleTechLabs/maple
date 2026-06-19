@@ -1,7 +1,7 @@
 import { Duration, Effect, Layer, Option, Redacted, Schema, Context } from "effect"
 import { Env } from "./Env"
 
-export class EmailDeliveryError extends Schema.TaggedErrorClass<EmailDeliveryError>()(
+class EmailDeliveryError extends Schema.TaggedErrorClass<EmailDeliveryError>()(
 	"@maple/errors/EmailDeliveryError",
 	{
 		message: Schema.String,

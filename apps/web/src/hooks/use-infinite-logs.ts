@@ -115,4 +115,4 @@ export function useInfiniteLogs(filters: LogsSearchParams | undefined): UseInfin
 	}
 }
 
-export { PAGE_SIZE, FETCH_THRESHOLD }
+export { FETCH_THRESHOLD }

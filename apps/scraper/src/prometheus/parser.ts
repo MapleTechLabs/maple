@@ -7,7 +7,7 @@
  * `skippedLineCount`), never thrown.
  */
 
-export type PromMetricType = "counter" | "gauge" | "histogram" | "summary" | "untyped"
+type PromMetricType = "counter" | "gauge" | "histogram" | "summary" | "untyped"
 
 export interface PromSample {
 	readonly name: string

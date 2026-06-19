@@ -10,7 +10,7 @@ import { Database } from "./DatabaseLive"
 // the api worker; the alerting worker reaches it via a cross-script binding.
 export const AI_TRIAGE_WORKFLOW_BINDING = "AI_TRIAGE_WORKFLOW"
 
-export interface AiTriageWorkflowParams {
+interface AiTriageWorkflowParams {
 	readonly orgId: string
 	readonly incidentKind: AiTriageIncidentKind
 	readonly incidentId: string
@@ -39,9 +39,9 @@ export const newAiTriageRunId = () => decodeRunIdSync(randomUUID())
  * (workflow instance died, or its terminal write was lost) and its dedup slot
  * is reclaimable. Generous vs the workflow's 10-minute agent-step timeout.
  */
-export const STALE_RUN_RECLAIM_MS = 15 * 60 * 1000
+const STALE_RUN_RECLAIM_MS = 15 * 60 * 1000
 
-export const startOfUtcDay = (nowMs: number): number => {
+const startOfUtcDay = (nowMs: number): number => {
 	const date = new Date(nowMs)
 	return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
 }

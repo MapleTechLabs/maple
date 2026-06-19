@@ -6,11 +6,11 @@ import { MapleConfig } from "./config"
  * raised when a command actually needs a backend (i.e. touches the
  * WarehouseExecutor); `login`/`logout`/`whoami` never trigger it.
  */
-export class ModeError extends Schema.TaggedErrorClass<ModeError>()("@maple/cli/ModeError", {
+class ModeError extends Schema.TaggedErrorClass<ModeError>()("@maple/cli/ModeError", {
 	message: Schema.String,
 }) {}
 
-export type ResolvedMode =
+type ResolvedMode =
 	| { readonly _tag: "local"; readonly baseUrl: string }
 	| {
 			readonly _tag: "remote"

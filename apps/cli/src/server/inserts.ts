@@ -6,7 +6,7 @@
 import insertMappings from "./schema/local-inserts.json"
 
 /** Pinned single-tenant org id; every row is written under it. */
-export const LOCAL_ORG_ID = "local"
+const LOCAL_ORG_ID = "local"
 
 interface DatasourceMapping {
 	readonly table: string
@@ -43,8 +43,6 @@ const templates: Map<string, InsertTemplate> = (() => {
 	}
 	return out
 })()
-
-export const KNOWN_DATASOURCES: ReadonlySet<string> = new Set(templates.keys())
 
 /**
  * Build an `INSERT … SELECT … FROM format(JSONEachRow, '<schema>', '<data>')`

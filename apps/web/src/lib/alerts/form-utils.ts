@@ -106,7 +106,7 @@ export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> =
 }
 
 /** Default ClickHouse SQL shown when a fresh raw_query alert is created. */
-export const DEFAULT_RAW_QUERY_SQL = `SELECT
+const DEFAULT_RAW_QUERY_SQL = `SELECT
   toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS bucket,
   count() AS value
 FROM traces
@@ -130,21 +130,6 @@ export const isRangeComparator = (c: AlertComparator): c is "between" | "not_bet
 	c === "between" || c === "not_between"
 
 export { destinationTypeLabels } from "@/components/alerts/destination-provider"
-
-export const metricTypeLabels: Record<AlertMetricType, string> = {
-	sum: "Sum",
-	gauge: "Gauge",
-	histogram: "Histogram",
-	exponential_histogram: "Exponential histogram",
-}
-
-export const metricAggregationLabels: Record<AlertMetricAggregation, string> = {
-	avg: "Average",
-	min: "Minimum",
-	max: "Maximum",
-	sum: "Sum",
-	count: "Count",
-}
 
 export function getExitErrorMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): string {
 	if (Exit.isSuccess(exit)) return fallback
@@ -200,13 +185,13 @@ export function domainThresholdToForm(signalType: AlertSignalType, value: number
 	return signalType === "error_rate" ? String(value * 100) : String(value)
 }
 
-export function parsePositiveNumber(value: string, fallback: number): number {
+function parsePositiveNumber(value: string, fallback: number): number {
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed) || parsed <= 0) return fallback
 	return parsed
 }
 
-export function parseNonNegativeNumber(value: string, fallback: number): number {
+function parseNonNegativeNumber(value: string, fallback: number): number {
 	const parsed = Number(value)
 	if (!Number.isFinite(parsed) || parsed < 0) return fallback
 	return parsed
@@ -812,7 +797,7 @@ export function formatAlertTime(value: string | null): string {
 const startOfLocalDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
 /** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
-export function formatAlertDayHeading(value: string): string {
+function formatAlertDayHeading(value: string): string {
 	const date = new Date(value)
 	const today = startOfLocalDay(new Date())
 	const target = startOfLocalDay(date)

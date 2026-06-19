@@ -6,8 +6,4 @@ export {
 	AttributesTable,
 	ResourceAttributesSection,
 	tryParseJson,
-	CollapsibleJsonValue,
-	AttributesProvider,
-	useAttributesConfig,
 } from "@maple/ui/components/attributes"
-export type { AttributesTableProps, AttributesConfig } from "@maple/ui/components/attributes"

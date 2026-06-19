@@ -118,13 +118,13 @@ export function inferDefaultUnitForQueries(queries: QueryBuilderQueryDraft[]): V
 	return inferredUnits.every((unit) => unit === firstUnit) ? firstUnit : undefined
 }
 
-export function parsePositiveNumber(raw: string): number | undefined {
+function parsePositiveNumber(raw: string): number | undefined {
 	const parsed = Number.parseInt(raw.trim(), 10)
 	if (!Number.isFinite(parsed) || parsed <= 0) return undefined
 	return parsed
 }
 
-export function parseFiniteNumber(raw: string): number | undefined {
+function parseFiniteNumber(raw: string): number | undefined {
 	const trimmed = raw.trim()
 	if (trimmed.length === 0) return undefined
 	const parsed = Number(trimmed)

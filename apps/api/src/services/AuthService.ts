@@ -451,7 +451,7 @@ const makeClerkClient = (
 	})
 }
 
-export const makeGetUserEmail = (
+const makeGetUserEmail = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
 	const clerkClient = makeClerkClient(env)

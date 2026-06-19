@@ -127,7 +127,7 @@ interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly deploymentEnv: string
 }
 
-export interface AnomalyTickResult {
+interface AnomalyTickResult {
 	readonly orgsProcessed: number
 	readonly seriesEvaluated: number
 	readonly incidentsOpened: number

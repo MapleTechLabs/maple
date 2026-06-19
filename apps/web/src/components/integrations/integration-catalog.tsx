@@ -25,7 +25,7 @@ export interface CatalogEntry {
 	readonly docsUrl?: string
 }
 
-export const CATALOG: ReadonlyArray<CatalogEntry> = [
+const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		name: "Cloudflare Logpush",

@@ -5,7 +5,7 @@ import { compile } from "./sql-fragment"
 // Query structure
 // ---------------------------------------------------------------------------
 
-export interface SqlJoin {
+interface SqlJoin {
 	readonly type: "INNER" | "LEFT" | "CROSS"
 	readonly table: string
 	readonly alias: string

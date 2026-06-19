@@ -73,7 +73,3 @@ export const D1Database = Object.assign((logicalId: string): D1DatabaseToken => 
 	bind: (token: D1DatabaseToken): Effect.Effect<D1ConnectionClient, never, never> =>
 		Effect.succeed(makeClient(token)),
 })
-
-// Alias preserving alchemy's `D1Connection` export name. Both surface the
-// same `.bind()` API so either import style works during migration.
-export const D1Connection = D1Database

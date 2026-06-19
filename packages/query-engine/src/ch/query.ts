@@ -53,7 +53,7 @@ export type InferOutput<S extends SelectRecord> = {
 	readonly [K in keyof S]: S[K] extends Expr<infer T> ? T : never
 }
 
-export type OrderBySpec<Output> = [keyof Output & string, "asc" | "desc"]
+type OrderBySpec<Output> = [keyof Output & string, "asc" | "desc"]
 
 /** Callback for ON conditions — receives main and joined column accessors. */
 export type JoinOnCallback<MainCols extends ColumnDefs, JoinedCols extends ColumnDefs> = (
@@ -65,7 +65,7 @@ export type JoinOnCallback<MainCols extends ColumnDefs, JoinedCols extends Colum
 // Query state (runtime storage)
 // ---------------------------------------------------------------------------
 
-export interface TypedJoinClause {
+interface TypedJoinClause {
 	readonly type: "INNER" | "LEFT" | "CROSS"
 	/** Table name for direct table joins. */
 	readonly tableName?: string
@@ -76,7 +76,7 @@ export interface TypedJoinClause {
 	readonly on?: Condition
 }
 
-export interface CHQueryState {
+interface CHQueryState {
 	readonly tableName: string
 	readonly tableAlias?: string
 	readonly columns: ColumnDefs

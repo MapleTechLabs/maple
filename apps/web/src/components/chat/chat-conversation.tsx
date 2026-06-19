@@ -492,7 +492,7 @@ export function ChatConversation({
 	)
 }
 
-export function ConversationLoadingSkeleton() {
+function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
 			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
