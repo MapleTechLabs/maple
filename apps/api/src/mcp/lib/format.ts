@@ -1,10 +1,3 @@
-export function formatDurationMs(micros: number | bigint): string {
-	const ms = Number(micros) / 1000
-	if (ms < 1) return `${(Number(micros) / 1).toFixed(0)}us`
-	if (ms < 1000) return `${ms.toFixed(1)}ms`
-	return `${(ms / 1000).toFixed(2)}s`
-}
-
 export function formatDurationFromMs(ms: number): string {
 	if (ms < 1) return `${(ms * 1000).toFixed(0)}us`
 	if (ms < 1000) return `${ms.toFixed(1)}ms`

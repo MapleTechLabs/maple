@@ -147,7 +147,7 @@ export const formatComparator = (
 	return `${operator} ${threshold}`
 }
 
-export const formatSignalLabel = (signal: string) => {
+const formatSignalLabel = (signal: string) => {
 	const labels: Record<string, string> = {
 		error_rate: "Error Rate",
 		p95_latency: "P95 Latency",
@@ -169,7 +169,7 @@ const eventTypeEmoji = (type: string) => {
 	return map[type] ?? "\u{1F4E2}"
 }
 
-export const formatEventTypeLabel = (type: string) => {
+const formatEventTypeLabel = (type: string) => {
 	const map: Record<string, string> = {
 		trigger: "Triggered",
 		resolve: "Resolved",
@@ -179,7 +179,7 @@ export const formatEventTypeLabel = (type: string) => {
 	return map[type] ?? type
 }
 
-export const formatSignalMetric = (value: number | null, signalType: string): string =>
+const formatSignalMetric = (value: number | null, signalType: string): string =>
 	Option.match(Option.fromNullishOr(value), {
 		onNone: () => "n/a",
 		onSome: (v) =>

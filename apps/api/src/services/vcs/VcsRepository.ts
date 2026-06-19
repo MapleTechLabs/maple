@@ -148,7 +148,7 @@ const rowToBranch = (row: VcsRepositoryBranchRow): VcsBranch =>
 // the schema column default ("active"); all status transitions (suspend /
 // disconnect / unsuspend) go through `markInstallationStatus`, so a reconciling
 // upsert never touches an existing installation's status.
-export interface UpsertInstallationInput {
+interface UpsertInstallationInput {
 	readonly orgId: OrgId
 	readonly provider: VcsProviderId
 	readonly externalInstallationId: string
@@ -160,7 +160,7 @@ export interface UpsertInstallationInput {
 	readonly installedByUserId: UserId
 }
 
-export interface RepoSyncStatusUpdate {
+interface RepoSyncStatusUpdate {
 	readonly status: VcsRepoSyncStatus
 	readonly error?: string | null
 	readonly syncedAt?: number | null
@@ -174,7 +174,7 @@ export interface RepoSyncStatusUpdate {
  * `"active"`; the dashboard status (which surfaces the "re-enable / delete"
  * affordances) wants `"all"`.
  */
-export type RepoQueryScope = "active" | "all"
+type RepoQueryScope = "active" | "all"
 
 export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/services/vcs/VcsRepository", {
 	make: Effect.gen(function* () {

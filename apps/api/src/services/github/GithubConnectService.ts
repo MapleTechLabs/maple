@@ -44,12 +44,12 @@ const STATE_TTL_MS = 10 * 60_000 // 10 minutes
 
 // ---- Service shape --------------------------------------------------------
 
-export interface GithubBranchStatus {
+interface GithubBranchStatus {
 	readonly name: string
 	readonly isDefault: boolean
 }
 
-export interface GithubRepoStatus {
+interface GithubRepoStatus {
 	readonly id: VcsRepositoryId
 	readonly fullName: string
 	readonly htmlUrl: string
@@ -64,7 +64,7 @@ export interface GithubRepoStatus {
 	readonly branches: ReadonlyArray<GithubBranchStatus>
 }
 
-export interface GithubConnectStatus {
+interface GithubConnectStatus {
 	readonly connected: boolean
 	readonly accountLogin: string | null
 	readonly accountType: VcsAccountType | null

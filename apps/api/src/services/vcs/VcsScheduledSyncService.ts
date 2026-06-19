@@ -19,7 +19,7 @@ import { VcsSyncQueue } from "./VcsSyncQueue"
 // delivery (push, branch, installation) that was dropped.
 // ---------------------------------------------------------------------------
 
-export interface VcsScheduledSyncResult {
+interface VcsScheduledSyncResult {
 	/** Installations found across all orgs, regardless of status. */
 	readonly installationsTotal: number
 	/** Jobs enqueued (one per processable installation). */

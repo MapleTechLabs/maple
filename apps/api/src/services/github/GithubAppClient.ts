@@ -98,7 +98,6 @@ const GithubInstallationDetailSchema = Schema.Struct({
 	),
 	repository_selection: Schema.optionalKey(Schema.String), // "all" | "selected"
 })
-export type GithubInstallationDetail = Schema.Schema.Type<typeof GithubInstallationDetailSchema>
 
 // Response from the OAuth token exchange. GitHub returns either `access_token` or,
 // even on a 200, an `error` field — so both are optional and we check which we got.
@@ -127,7 +126,7 @@ const GithubApiRepoSchema = Schema.Struct({
 	html_url: Schema.String,
 	owner: Schema.Struct({ login: Schema.String }),
 })
-export type GithubApiRepo = Schema.Schema.Type<typeof GithubApiRepoSchema>
+type GithubApiRepo = Schema.Schema.Type<typeof GithubApiRepoSchema>
 
 const GithubInstallationReposResponse = Schema.Struct({
 	total_count: Schema.Number,
@@ -163,7 +162,7 @@ const GithubApiBranchSchema = Schema.Struct({
 	name: Schema.String,
 	commit: Schema.Struct({ sha: GitCommitSha }), // 40-hex validated by the brand
 })
-export type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
+type GithubApiBranch = Schema.Schema.Type<typeof GithubApiBranchSchema>
 const GithubApiBranchList = Schema.Array(GithubApiBranchSchema)
 
 const decodeOAuthToken = Schema.decodeUnknownEffect(GithubOAuthTokenResponse)

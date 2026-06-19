@@ -20,7 +20,7 @@ export const asUserId = Schema.decodeUnknownSync(UserId)
 
 // A real RSA key so the App-JWT mint (crypto.subtle.importKey) succeeds; the
 // App's REST calls are always stubbed at the GithubHttp seam.
-export const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
+const APP_PRIVATE_KEY = generateKeyPairSync("rsa", {
 	modulusLength: 2048,
 	publicKeyEncoding: { type: "spki", format: "pem" },
 	privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -56,7 +56,7 @@ const baseConfigValues = {
 
 // ConfigProvider layer wired to a temp DB url; `extra` adds (or overrides) keys
 // such as the GitHub App config or the webhook secret.
-export const testConfig = (url: string, extra?: Record<string, unknown>) =>
+const testConfig = (url: string, extra?: Record<string, unknown>) =>
 	ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfigValues, MAPLE_DB_URL: url, ...extra }))
 
 export const testEnv = (url: string, extra?: Record<string, unknown>) =>

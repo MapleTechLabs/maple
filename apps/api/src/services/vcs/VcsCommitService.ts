@@ -52,7 +52,7 @@ const evictNegativeCache = (cache: Map<string, number>, now: number): void => {
 	}
 }
 
-export interface VcsCommitDetail {
+interface VcsCommitDetail {
 	readonly provider: VcsProviderId
 	readonly sha: GitCommitSha
 	readonly message: string

@@ -162,7 +162,7 @@ const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.lay
 
 const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
 
-export const VcsServicesLive = Layer.mergeAll(
+const VcsServicesLive = Layer.mergeAll(
 	VcsDataLive,
 	VcsProviderRegistryLive,
 	// OAuth connect flow — needs VcsDataLive + GithubAppClient for App-JWT installation lookup.

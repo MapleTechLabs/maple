@@ -17,7 +17,7 @@ const encodeJob = Schema.encodeSync(VcsSyncJob)
 // splitting a large push so each job fits — import these rather than hardcoding
 // the platform's magic numbers.
 export const QUEUE_MESSAGE_LIMIT_BYTES = 128 * 1024 // max serialized message size
-export const QUEUE_MAX_DELAY_SECONDS = 86_400 // max visibility delay (24h)
+const QUEUE_MAX_DELAY_SECONDS = 86_400 // max visibility delay (24h)
 // A single `sendBatch` call accepts at most 100 messages OR 256 KB of payload,
 // whichever comes first. `sendBatch` packs jobs into chunks under BOTH bounds so
 // callers can hand it an arbitrarily long list without pre-chunking.

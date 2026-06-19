@@ -1,7 +1,7 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 
-export class McpTenantError extends Schema.TaggedErrorClass<McpTenantError>()(
+class McpTenantError extends Schema.TaggedErrorClass<McpTenantError>()(
 	"@maple/mcp/errors/McpTenantError",
 	{ message: Schema.String },
 ) {}
