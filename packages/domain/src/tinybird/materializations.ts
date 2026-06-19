@@ -762,6 +762,11 @@ export const traceDetailSpansMv = defineMaterializedView("trace_detail_spans_mv"
 	],
 })
 
+// NOTE: the HTTP span-name display rewrite and the http.method / http.status_code
+// semconv coalescing below are mirrored in TypeScript by `httpDisplaySpanName` and
+// `buildAttrFilterCondition` in `@maple/query-engine` (traces-shared.ts) so the
+// raw-`traces` filter path agrees with these MV columns. If you edit either side,
+// update the other — the parity is enforced by traces-shared.test.ts.
 export const traceListMvMv = defineMaterializedView("trace_list_mv_mv", {
 	description:
 		"Populates trace_list_mv from root spans with pre-extracted HTTP attributes and normalized span names.",

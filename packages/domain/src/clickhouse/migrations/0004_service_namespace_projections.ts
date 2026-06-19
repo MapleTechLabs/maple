@@ -45,6 +45,11 @@ const serviceOverviewSpansBackfill: BackfillSpec = {
 	where: "SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''",
 }
 
+// NOTE: the HTTP span-name display rewrite and semconv coalescing in this
+// backfill `select` are mirrored in TypeScript by `httpDisplaySpanName` /
+// `buildAttrFilterCondition` in `@maple/query-engine` (traces-shared.ts), and
+// match `trace_list_mv_mv` in materializations.ts. Keep all three in sync — the
+// parity is enforced by traces-shared.test.ts.
 const traceListBackfill: BackfillSpec = {
 	kind: "backfill",
 	target: "trace_list_mv",
