@@ -20,17 +20,11 @@ afterEach(() => cleanupTempDirs(dirs))
 // Wire VcsScheduledSyncService over a temp sqlite (real repo) and a recording
 // VcsSyncQueue that captures every enqueued job. When `failQueue` is set,
 // `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
-const schedulerLayer = (
-	url: string,
-	sent: Array<VcsSyncJob>,
-	opts?: { readonly failQueue?: boolean },
-) => {
+const schedulerLayer = (url: string, sent: Array<VcsSyncJob>, opts?: { readonly failQueue?: boolean }) => {
 	const data = testRepoLayer(url)
-	const queue = recordingQueueLayer(sent, {
-		...(opts?.failQueue
+	const queue = recordingQueueLayer(sent, (opts?.failQueue
 			? { failBatch: () => new VcsQueueError({ message: "simulated queue outage" }) }
-			: {}),
-	})
+			: {}))
 	const service = VcsScheduledSyncService.layer.pipe(Layer.provide(Layer.mergeAll(data, queue)))
 	return Layer.mergeAll(service, data)
 }
@@ -72,10 +66,7 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 				sent.every((j) => j.kind === "installation-sync" && j.reason === "scheduled"),
 				"every job is a scheduled installation-sync",
 			)
-			assert.deepStrictEqual(
-				sent.map((j) => j.externalInstallationId).sort(),
-				["1", "2"],
-			)
+			assert.deepStrictEqual(sent.map((j) => j.externalInstallationId).sort(), ["1", "2"])
 		}).pipe(Effect.provide(schedulerLayer(url, sent)))
 	})
 

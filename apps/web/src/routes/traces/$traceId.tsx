@@ -324,7 +324,10 @@ function TraceDetailContent({
 							<CommitShaHoverCard
 								sha={commitSha}
 								copy={{ value: commitSha, label: "commit SHA" }}
-								className={cn(badgeVariants({ variant: "outline" }), "max-w-full font-mono text-xs")}
+								className={cn(
+									badgeVariants({ variant: "outline" }),
+									"max-w-full font-mono text-xs",
+								)}
 							>
 								{commitSha.slice(0, 7)}
 							</CommitShaHoverCard>

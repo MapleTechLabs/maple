@@ -15,13 +15,7 @@ import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT } from "./github-integration-card"
 import { HAZEL_ACCENT } from "./hazel-integration-card"
 
-export type IntegrationId =
-	| "cloudflare"
-	| "prometheus"
-	| "planetscale"
-	| "warpstream"
-	| "hazel"
-	| "github"
+export type IntegrationId = "cloudflare" | "prometheus" | "planetscale" | "warpstream" | "hazel" | "github"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId

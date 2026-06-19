@@ -44,10 +44,7 @@ export const buildVcsSyncLayer = (_env: Record<string, unknown>) => {
 		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsProviderRegistryLive, VcsSyncQueueLive)),
 	)
 
-	return VcsSyncServiceLive.pipe(
-		Layer.provideMerge(telemetry.layer),
-		Layer.provideMerge(ConfigLive),
-	)
+	return VcsSyncServiceLive.pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
 }
 
 // The periodic (cron) producer's layer graph. Deliberately lighter than the
@@ -120,8 +117,7 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 						onFailure: (cause) => {
 							// Rate-limited: delay redelivery until the VCS budget resets instead of retrying immediately.
 							const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
-							const isRateLimited =
-								failure?._tag === "@maple/http/errors/VcsRateLimitedError"
+							const isRateLimited = failure?._tag === "@maple/http/errors/VcsRateLimitedError"
 
 							const delaySeconds = isRateLimited
 								? clampQueueDelaySeconds(failure.retryAfterSeconds)

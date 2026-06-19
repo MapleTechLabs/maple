@@ -1,195 +1,195 @@
 {
-  "version": "7",
-  "dialect": "sqlite",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1776292962494,
-      "tag": "0000_shiny_venus",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1776644022082,
-      "tag": "0001_purple_big_bertha",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1776723447868,
-      "tag": "0002_errors_workflow",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1776807065333,
-      "tag": "0003_slimy_moira_mactaggert",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1777204738595,
-      "tag": "0004_cheerful_paibok",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1777216816116,
-      "tag": "0005_heavy_william_stryker",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1777563103366,
-      "tag": "0006_fancy_carnage",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1777587750594,
-      "tag": "0007_clickhouse_only",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1777676016956,
-      "tag": "0008_gray_blade",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1778457600000,
-      "tag": "0009_dashboard_versioning",
-      "breakpoints": true
-    },
-    {
-      "idx": 10,
-      "version": "6",
-      "when": 1778451599385,
-      "tag": "0010_amused_gorgon",
-      "breakpoints": true
-    },
-    {
-      "idx": 11,
-      "version": "6",
-      "when": 1779494400000,
-      "tag": "0011_org_ingest_sampling_policies",
-      "breakpoints": true
-    },
-    {
-      "idx": 12,
-      "version": "6",
-      "when": 1779580800000,
-      "tag": "0012_org_onboarding_state",
-      "breakpoints": true
-    },
-    {
-      "idx": 13,
-      "version": "6",
-      "when": 1779667200000,
-      "tag": "0013_org_ingest_attribute_mappings",
-      "breakpoints": true
-    },
-    {
-      "idx": 14,
-      "version": "6",
-      "when": 1779753600000,
-      "tag": "0014_alert_rule_notes",
-      "breakpoints": true
-    },
-    {
-      "idx": 15,
-      "version": "6",
-      "when": 1779578878420,
-      "tag": "0015_large_tyger_tiger",
-      "breakpoints": true
-    },
-    {
-      "idx": 16,
-      "version": "6",
-      "when": 1780401096177,
-      "tag": "0016_alert_notification_template",
-      "breakpoints": true
-    },
-    {
-      "idx": 17,
-      "version": "6",
-      "when": 1780588258189,
-      "tag": "0017_blue_kid_colt",
-      "breakpoints": true
-    },
-    {
-      "idx": 18,
-      "version": "6",
-      "when": 1780939911112,
-      "tag": "0018_overconfident_captain_america",
-      "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "6",
-      "when": 1781091541809,
-      "tag": "0019_harsh_betty_brant",
-      "breakpoints": true
-    },
-    {
-      "idx": 20,
-      "version": "6",
-      "when": 1781132553585,
-      "tag": "0020_wonderful_orphan",
-      "breakpoints": true
-    },
-    {
-      "idx": 21,
-      "version": "6",
-      "when": 1781177263154,
-      "tag": "0021_flimsy_random",
-      "breakpoints": true
-    },
-    {
-      "idx": 22,
-      "version": "6",
-      "when": 1781271173908,
-      "tag": "0022_yellow_proteus",
-      "breakpoints": true
-    },
-    {
-      "idx": 23,
-      "version": "6",
-      "when": 1781272544424,
-      "tag": "0023_giant_hex",
-      "breakpoints": true
-    },
-    {
-      "idx": 24,
-      "version": "6",
-      "when": 1781273583822,
-      "tag": "0024_previous_jack_murdock",
-      "breakpoints": true
-    },
-    {
-      "idx": 25,
-      "version": "6",
-      "when": 1781619161427,
-      "tag": "0025_red_slipstream",
-      "breakpoints": true
-    },
-    {
-      "idx": 26,
-      "version": "6",
-      "when": 1781875686022,
-      "tag": "0026_vcs_integration",
-      "breakpoints": true
-    }
-  ]
+	"version": "7",
+	"dialect": "sqlite",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "6",
+			"when": 1776292962494,
+			"tag": "0000_shiny_venus",
+			"breakpoints": true
+		},
+		{
+			"idx": 1,
+			"version": "6",
+			"when": 1776644022082,
+			"tag": "0001_purple_big_bertha",
+			"breakpoints": true
+		},
+		{
+			"idx": 2,
+			"version": "6",
+			"when": 1776723447868,
+			"tag": "0002_errors_workflow",
+			"breakpoints": true
+		},
+		{
+			"idx": 3,
+			"version": "6",
+			"when": 1776807065333,
+			"tag": "0003_slimy_moira_mactaggert",
+			"breakpoints": true
+		},
+		{
+			"idx": 4,
+			"version": "6",
+			"when": 1777204738595,
+			"tag": "0004_cheerful_paibok",
+			"breakpoints": true
+		},
+		{
+			"idx": 5,
+			"version": "6",
+			"when": 1777216816116,
+			"tag": "0005_heavy_william_stryker",
+			"breakpoints": true
+		},
+		{
+			"idx": 6,
+			"version": "6",
+			"when": 1777563103366,
+			"tag": "0006_fancy_carnage",
+			"breakpoints": true
+		},
+		{
+			"idx": 7,
+			"version": "6",
+			"when": 1777587750594,
+			"tag": "0007_clickhouse_only",
+			"breakpoints": true
+		},
+		{
+			"idx": 8,
+			"version": "6",
+			"when": 1777676016956,
+			"tag": "0008_gray_blade",
+			"breakpoints": true
+		},
+		{
+			"idx": 9,
+			"version": "6",
+			"when": 1778457600000,
+			"tag": "0009_dashboard_versioning",
+			"breakpoints": true
+		},
+		{
+			"idx": 10,
+			"version": "6",
+			"when": 1778451599385,
+			"tag": "0010_amused_gorgon",
+			"breakpoints": true
+		},
+		{
+			"idx": 11,
+			"version": "6",
+			"when": 1779494400000,
+			"tag": "0011_org_ingest_sampling_policies",
+			"breakpoints": true
+		},
+		{
+			"idx": 12,
+			"version": "6",
+			"when": 1779580800000,
+			"tag": "0012_org_onboarding_state",
+			"breakpoints": true
+		},
+		{
+			"idx": 13,
+			"version": "6",
+			"when": 1779667200000,
+			"tag": "0013_org_ingest_attribute_mappings",
+			"breakpoints": true
+		},
+		{
+			"idx": 14,
+			"version": "6",
+			"when": 1779753600000,
+			"tag": "0014_alert_rule_notes",
+			"breakpoints": true
+		},
+		{
+			"idx": 15,
+			"version": "6",
+			"when": 1779578878420,
+			"tag": "0015_large_tyger_tiger",
+			"breakpoints": true
+		},
+		{
+			"idx": 16,
+			"version": "6",
+			"when": 1780401096177,
+			"tag": "0016_alert_notification_template",
+			"breakpoints": true
+		},
+		{
+			"idx": 17,
+			"version": "6",
+			"when": 1780588258189,
+			"tag": "0017_blue_kid_colt",
+			"breakpoints": true
+		},
+		{
+			"idx": 18,
+			"version": "6",
+			"when": 1780939911112,
+			"tag": "0018_overconfident_captain_america",
+			"breakpoints": true
+		},
+		{
+			"idx": 19,
+			"version": "6",
+			"when": 1781091541809,
+			"tag": "0019_harsh_betty_brant",
+			"breakpoints": true
+		},
+		{
+			"idx": 20,
+			"version": "6",
+			"when": 1781132553585,
+			"tag": "0020_wonderful_orphan",
+			"breakpoints": true
+		},
+		{
+			"idx": 21,
+			"version": "6",
+			"when": 1781177263154,
+			"tag": "0021_flimsy_random",
+			"breakpoints": true
+		},
+		{
+			"idx": 22,
+			"version": "6",
+			"when": 1781271173908,
+			"tag": "0022_yellow_proteus",
+			"breakpoints": true
+		},
+		{
+			"idx": 23,
+			"version": "6",
+			"when": 1781272544424,
+			"tag": "0023_giant_hex",
+			"breakpoints": true
+		},
+		{
+			"idx": 24,
+			"version": "6",
+			"when": 1781273583822,
+			"tag": "0024_previous_jack_murdock",
+			"breakpoints": true
+		},
+		{
+			"idx": 25,
+			"version": "6",
+			"when": 1781619161427,
+			"tag": "0025_red_slipstream",
+			"breakpoints": true
+		},
+		{
+			"idx": 26,
+			"version": "6",
+			"when": 1781875686022,
+			"tag": "0026_vcs_integration",
+			"breakpoints": true
+		}
+	]
 }

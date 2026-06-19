@@ -44,7 +44,10 @@ export const vcsInstallations = sqliteTable(
 		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	},
 	(table) => [
-		uniqueIndex("vcs_installations_provider_external_idx").on(table.provider, table.externalInstallationId),
+		uniqueIndex("vcs_installations_provider_external_idx").on(
+			table.provider,
+			table.externalInstallationId,
+		),
 		index("vcs_installations_org_idx").on(table.orgId),
 	],
 )

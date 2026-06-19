@@ -103,13 +103,15 @@ export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRe
 	branches: Schema.Array(GithubBranchSummary),
 }) {}
 
-export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")({
-	connected: Schema.Boolean,
-	accountLogin: Schema.NullOr(Schema.String),
-	accountType: Schema.NullOr(VcsAccountType),
-	repositorySelection: Schema.NullOr(VcsRepoSelection),
-	repositories: Schema.Array(GithubRepoSummary),
-}) {}
+export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")(
+	{
+		connected: Schema.Boolean,
+		accountLogin: Schema.NullOr(Schema.String),
+		accountType: Schema.NullOr(VcsAccountType),
+		repositorySelection: Schema.NullOr(VcsRepoSelection),
+		repositories: Schema.Array(GithubRepoSummary),
+	},
+) {}
 
 export class GithubStartConnectRequest extends Schema.Class<GithubStartConnectRequest>(
 	"GithubStartConnectRequest",
@@ -160,20 +162,22 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
  * distinguishes a DB hit ("stored") from an on-the-fly provider fetch ("fetched")
  * — purely diagnostic.
  */
-export class VcsCommitDetailResponse extends Schema.Class<VcsCommitDetailResponse>("VcsCommitDetailResponse")({
-	provider: VcsProviderId,
-	sha: GitCommitSha,
-	message: Schema.String,
-	authorName: Schema.NullOr(Schema.String),
-	authorEmail: Schema.NullOr(Schema.String),
-	authorLogin: Schema.NullOr(Schema.String),
-	authorAvatarUrl: Schema.NullOr(Schema.String),
-	authoredAt: Schema.NullOr(Schema.Number),
-	committedAt: Schema.Number,
-	htmlUrl: Schema.String,
-	repoFullName: Schema.String,
-	resolved: Schema.Literals(["stored", "fetched"]),
-}) {}
+export class VcsCommitDetailResponse extends Schema.Class<VcsCommitDetailResponse>("VcsCommitDetailResponse")(
+	{
+		provider: VcsProviderId,
+		sha: GitCommitSha,
+		message: Schema.String,
+		authorName: Schema.NullOr(Schema.String),
+		authorEmail: Schema.NullOr(Schema.String),
+		authorLogin: Schema.NullOr(Schema.String),
+		authorAvatarUrl: Schema.NullOr(Schema.String),
+		authoredAt: Schema.NullOr(Schema.Number),
+		committedAt: Schema.Number,
+		htmlUrl: Schema.String,
+		repoFullName: Schema.String,
+		resolved: Schema.Literals(["stored", "fetched"]),
+	},
+) {}
 
 export class IntegrationsForbiddenError extends Schema.TaggedErrorClass<IntegrationsForbiddenError>()(
 	"@maple/http/errors/IntegrationsForbiddenError",
@@ -309,30 +313,18 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			success: GithubDeleteRepositoryResponse,
 			// Validation: a repo can only be deleted once its provider access was
 			// removed (status "removed"); deleting an active repo is rejected (400).
-			error: [
-				IntegrationsForbiddenError,
-				IntegrationsValidationError,
-				IntegrationsPersistenceError,
-			],
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
 	.add(
-		HttpApiEndpoint.put(
-			"githubSetTrackedBranch",
-			"/github/repositories/:repositoryId/tracked-branch",
-			{
-				params: {
-					repositoryId: VcsRepositoryId,
-				},
-				payload: GithubSetTrackedBranchRequest,
-				success: GithubSetTrackedBranchResponse,
-				error: [
-					IntegrationsForbiddenError,
-					IntegrationsValidationError,
-					IntegrationsPersistenceError,
-				],
+		HttpApiEndpoint.put("githubSetTrackedBranch", "/github/repositories/:repositoryId/tracked-branch", {
+			params: {
+				repositoryId: VcsRepositoryId,
 			},
-		),
+			payload: GithubSetTrackedBranchRequest,
+			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
 	)
 	.add(
 		// Vendor-neutral: resolves a commit by SHA across all connected providers.

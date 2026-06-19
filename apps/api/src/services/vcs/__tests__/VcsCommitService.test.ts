@@ -78,11 +78,7 @@ const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
 }
 
 // Seed an active installation ("42") and its repos directly via the repo layer.
-const seed = (
-	repo: VcsRepo,
-	orgId: OrgId,
-	repos: ReadonlyArray<{ externalRepoId: string; name: string }>,
-) =>
+const seed = (repo: VcsRepo, orgId: OrgId, repos: ReadonlyArray<{ externalRepoId: string; name: string }>) =>
 	Effect.gen(function* () {
 		yield* repo.upsertInstallation({
 			orgId,
@@ -174,37 +170,43 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 		}).pipe(Effect.provide(commitLayer(url, layer)))
 	})
 
-	it.effect("fetches an unstored commit from the provider, persists it, then serves it from storage", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-fetch-", dirs)
-		const { layer, calls } = routedHttp((name) => name === "repo")
-		const SHA = "c".repeat(40)
-		return Effect.gen(function* () {
-			const svc = yield* VcsCommitService
-			const repo = yield* VcsRepository
-			const orgId = asOrgId("org_test")
-			// Two repos — the first 404s, the second resolves; the probe must continue.
-			yield* seed(repo, orgId, [
-				{ externalRepoId: "6", name: "other" },
-				{ externalRepoId: "7", name: "repo" },
-			])
+	it.effect(
+		"fetches an unstored commit from the provider, persists it, then serves it from storage",
+		() => {
+			const { url } = createTempDbUrl("maple-vcs-commit-fetch-", dirs)
+			const { layer, calls } = routedHttp((name) => name === "repo")
+			const SHA = "c".repeat(40)
+			return Effect.gen(function* () {
+				const svc = yield* VcsCommitService
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_test")
+				// Two repos — the first 404s, the second resolves; the probe must continue.
+				yield* seed(repo, orgId, [
+					{ externalRepoId: "6", name: "other" },
+					{ externalRepoId: "7", name: "repo" },
+				])
 
-			const detail = yield* svc.resolveCommitDetail(orgId, SHA)
-			assert.strictEqual(detail.resolved, "fetched")
-			assert.strictEqual(detail.sha, SHA)
-			assert.strictEqual(detail.repoFullName, "octo/repo")
-			assert.strictEqual(detail.authorLogin, "octocat")
-			assert.strictEqual(detail.message.split("\n")[0], "Fix the thing")
-			assert.ok(calls.commitGets >= 2, "should have probed both repos")
+				const detail = yield* svc.resolveCommitDetail(orgId, SHA)
+				assert.strictEqual(detail.resolved, "fetched")
+				assert.strictEqual(detail.sha, SHA)
+				assert.strictEqual(detail.repoFullName, "octo/repo")
+				assert.strictEqual(detail.authorLogin, "octocat")
+				assert.strictEqual(detail.message.split("\n")[0], "Fix the thing")
+				assert.ok(calls.commitGets >= 2, "should have probed both repos")
 
-			// It was persisted: now stored, no further provider calls.
-			const before = calls.commitGets
-			const stored = expectSome(yield* repo.findCommitBySha(orgId, SHA as never))
-			assert.strictEqual(stored.repositoryId, expectSome(yield* repo.resolveRepository(orgId, "github", "7")).id)
-			const second = yield* svc.resolveCommitDetail(orgId, SHA)
-			assert.strictEqual(second.resolved, "stored")
-			assert.strictEqual(calls.commitGets, before)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
-	})
+				// It was persisted: now stored, no further provider calls.
+				const before = calls.commitGets
+				const stored = expectSome(yield* repo.findCommitBySha(orgId, SHA as never))
+				assert.strictEqual(
+					stored.repositoryId,
+					expectSome(yield* repo.resolveRepository(orgId, "github", "7")).id,
+				)
+				const second = yield* svc.resolveCommitDetail(orgId, SHA)
+				assert.strictEqual(second.resolved, "stored")
+				assert.strictEqual(calls.commitGets, before)
+			}).pipe(Effect.provide(commitLayer(url, layer)))
+		},
+	)
 
 	it.effect("returns VcsCommitNotFoundError when no repo has the SHA, and caches the miss", () => {
 		const { url } = createTempDbUrl("maple-vcs-commit-miss-", dirs)

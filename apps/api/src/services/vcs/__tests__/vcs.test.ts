@@ -89,8 +89,7 @@ const commitsResponse = (shas: ReadonlyArray<string>) => jsonResponse(shas.map(c
 const rateLimited = (retryAfterSeconds: number) =>
 	new Response("rate limited", { status: 429, headers: { "retry-after": String(retryAfterSeconds) } })
 
-const hexShas = (count: number) =>
-	Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
+const hexShas = (count: number) => Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
 
 describe("VcsSyncJob", () => {
 	it("round-trips through encode/decode", () => {
@@ -240,7 +239,9 @@ describe("GithubProvider.webhookToJobs", () => {
 				assert.strictEqual(job.branch, "main")
 			}
 			// Every commit is preserved across the slices, in order — none dropped.
-			const splitShas = jobs.flatMap((job) => (job.kind === "push" ? job.commits.map((c) => c.sha) : []))
+			const splitShas = jobs.flatMap((job) =>
+				job.kind === "push" ? job.commits.map((c) => c.sha) : [],
+			)
 			assert.deepStrictEqual(splitShas, shas)
 		}).pipe(Effect.provide(providerLayer())),
 	)
@@ -382,7 +383,10 @@ describe("GithubProvider.webhookToJobs", () => {
 				assert.strictEqual(job.externalInstallationId, "99")
 			}
 			// An action we don't act on (e.g. new_permissions_accepted) is dropped.
-			const ignoredBody = JSON.stringify({ action: "new_permissions_accepted", installation: { id: 99 } })
+			const ignoredBody = JSON.stringify({
+				action: "new_permissions_accepted",
+				installation: { id: 99 },
+			})
 			const ignored = yield* provider.webhookToJobs({
 				headers: { "x-github-event": "installation", "x-hub-signature-256": sign(ignoredBody) },
 				rawBody: ignoredBody,
@@ -527,10 +531,10 @@ describe("VcsRepository", () => {
 				truncated: false,
 			})
 			assert.deepStrictEqual([...deleted], ["stale"])
-			assert.deepStrictEqual(
-				(yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort(),
-				["feature", "main"],
-			)
+			assert.deepStrictEqual((yield* repo.listBranchesByRepository(r.id)).map((b) => b.name).sort(), [
+				"feature",
+				"main",
+			])
 			// A truncated listing is never authoritative → no deletions, empty result.
 			const none = yield* repo.reconcileBranchDeletions(r.id, new Set(["main"]), { truncated: true })
 			assert.strictEqual(none.length, 0)
@@ -622,7 +626,20 @@ describe("VcsRepository", () => {
 						(id, org_id, provider, external_installation_id, account_login, account_type,
 						 external_account_id, repository_selection, status, installed_by_user_id, created_at, updated_at)
 					 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-					[randomUUID(), "org_x", "github", "55", "octo", "team", "1", "all", "active", "user_1", 0, 0],
+					[
+						randomUUID(),
+						"org_x",
+						"github",
+						"55",
+						"octo",
+						"team",
+						"1",
+						"all",
+						"active",
+						"user_1",
+						0,
+						0,
+					],
 				),
 			)
 			const exit = yield* repo.resolveInstallation("github", "55").pipe(Effect.exit)
@@ -631,71 +648,78 @@ describe("VcsRepository", () => {
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 
-	it.effect("purgeInstallation deletes the installation with its repos + commits, leaving other installations intact", () => {
-		const { url } = createTempDbUrl("maple-vcs-purge-", dirs)
-		return Effect.gen(function* () {
-			const repo = yield* VcsRepository
-			const orgId = asOrgId("org_purge")
-			const repoFixture = (externalRepoId: string, fullName: string) => ({
-				externalRepoId,
-				owner: fullName.split("/")[0]!,
-				name: fullName.split("/")[1]!,
-				fullName,
-				defaultBranch: "main",
-				htmlUrl: `https://github.com/${fullName}`,
-				isPrivate: true,
-				isArchived: false,
-			})
-			const commitFixture = (sha: string) => ({
-				sha,
-				message: "m",
-				authorName: null,
-				authorEmail: null,
-				authorLogin: null,
-				authorAvatarUrl: null,
-				authoredAt: null,
-				committedAt: 1,
-				htmlUrl: `https://github.com/octo/repo/commit/${sha}`,
-				branch: "main",
-			})
-			const seed = (externalInstallationId: string, accountLogin: string, externalAccountId: string) =>
-				repo.upsertInstallation({
-					orgId,
-					provider: "github",
-					externalInstallationId,
-					accountLogin,
-					accountType: "organization",
-					externalAccountId,
-					accountAvatarUrl: null,
-					repositorySelection: "all",
-					installedByUserId: asUserId("user_1"),
+	it.effect(
+		"purgeInstallation deletes the installation with its repos + commits, leaving other installations intact",
+		() => {
+			const { url } = createTempDbUrl("maple-vcs-purge-", dirs)
+			return Effect.gen(function* () {
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_purge")
+				const repoFixture = (externalRepoId: string, fullName: string) => ({
+					externalRepoId,
+					owner: fullName.split("/")[0]!,
+					name: fullName.split("/")[1]!,
+					fullName,
+					defaultBranch: "main",
+					htmlUrl: `https://github.com/${fullName}`,
+					isPrivate: true,
+					isArchived: false,
 				})
+				const commitFixture = (sha: string) => ({
+					sha,
+					message: "m",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: `https://github.com/octo/repo/commit/${sha}`,
+					branch: "main",
+				})
+				const seed = (
+					externalInstallationId: string,
+					accountLogin: string,
+					externalAccountId: string,
+				) =>
+					repo.upsertInstallation({
+						orgId,
+						provider: "github",
+						externalInstallationId,
+						accountLogin,
+						accountType: "organization",
+						externalAccountId,
+						accountAvatarUrl: null,
+						repositorySelection: "all",
+						installedByUserId: asUserId("user_1"),
+					})
 
-			// Two installations in the same org, each with a repo + a commit.
-			yield* seed("42", "octo", "100")
-			yield* seed("99", "other", "200")
-			yield* upsertReposFor(repo, "42", [repoFixture("7", "octo/repo")])
-			yield* upsertReposFor(repo, "99", [repoFixture("8", "other/repo")])
-			const SHA_42 = "a".repeat(40)
-			const SHA_99 = "b".repeat(40)
-			yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
-			yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
+				// Two installations in the same org, each with a repo + a commit.
+				yield* seed("42", "octo", "100")
+				yield* seed("99", "other", "200")
+				yield* upsertReposFor(repo, "42", [repoFixture("7", "octo/repo")])
+				yield* upsertReposFor(repo, "99", [repoFixture("8", "other/repo")])
+				const SHA_42 = "a".repeat(40)
+				const SHA_99 = "b".repeat(40)
+				yield* upsertCommitsFor(repo, orgId, "7", [commitFixture(SHA_42)])
+				yield* upsertCommitsFor(repo, orgId, "8", [commitFixture(SHA_99)])
 
-			yield* purgeInstallationFor(repo, orgId, "42")
+				yield* purgeInstallationFor(repo, orgId, "42")
 
-			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
-			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
-			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_42 as never)))
+				assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
+				assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
+				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_42 as never)))
 
-			// Installation 99 is untouched (delete was scoped to 42's repo ids).
-			assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "99")))
-			assert.strictEqual((yield* reposOfInstallation(repo, "99", "all")).length, 1)
-			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_99 as never)))
+				// Installation 99 is untouched (delete was scoped to 42's repo ids).
+				assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "99")))
+				assert.strictEqual((yield* reposOfInstallation(repo, "99", "all")).length, 1)
+				assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_99 as never)))
 
-			// Idempotent: purging again is a no-op, not an error.
-			yield* purgeInstallationFor(repo, orgId, "42")
-		}).pipe(Effect.provide(repoLayer(url)))
-	})
+				// Idempotent: purging again is a no-op, not an error.
+				yield* purgeInstallationFor(repo, orgId, "42")
+			}).pipe(Effect.provide(repoLayer(url)))
+		},
+	)
 })
 
 describe("VcsSyncService orchestrator", () => {
@@ -734,10 +758,7 @@ describe("VcsSyncService orchestrator", () => {
 			retryAfterSeconds: number
 			reason: "rate-limited" | "page-budget"
 		}
-		readonly fetchCommitsError?:
-			| VcsProviderError
-			| VcsInstallationGoneError
-			| VcsRepoUnavailableError
+		readonly fetchCommitsError?: VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
 		readonly fetchReposError?: VcsRateLimitedError | VcsProviderError | VcsInstallationGoneError
 		readonly branches?: ReadonlyArray<{ name: string; headSha: string | null }>
 		readonly branchesTruncated?: boolean
@@ -755,9 +776,7 @@ describe("VcsSyncService orchestrator", () => {
 			id: "github",
 			webhookToJobs: () => Effect.succeed([]),
 			fetchRepositories: () =>
-				opts.fetchReposError
-					? Effect.fail(opts.fetchReposError)
-					: Effect.succeed(opts.repos ?? []),
+				opts.fetchReposError ? Effect.fail(opts.fetchReposError) : Effect.succeed(opts.repos ?? []),
 			fetchCommits: () =>
 				opts.fetchCommitsError
 					? Effect.fail(opts.fetchCommitsError)
@@ -955,9 +974,7 @@ describe("VcsSyncService orchestrator", () => {
 					branch: "feature/x",
 				}),
 			)
-			assert.ok(
-				(yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"),
-			)
+			assert.ok((yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "feature/x"))
 
 			// Put a commit on the repo, then delete the branch — the commit row survives
 			// (commits belong to the repo, not the deleted branch).
@@ -1014,10 +1031,7 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
-			assert.strictEqual(
-				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
-				"main",
-			)
+			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
 	})
 
@@ -1056,14 +1070,11 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 			const backfills = sent.filter((j) => j.kind === "sync-commits")
 			assert.strictEqual(backfills.length, 1)
-			assert.strictEqual(
-				backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
-				"main",
-			)
+			assert.strictEqual(backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "", "main")
 		}).pipe(
 			Effect.provide(
 				orchestratorLayer(url, { sent, repos: oneRepo, branches: [{ name: "main", headSha: null }] }),
-			)
+			),
 		)
 	})
 
@@ -1303,7 +1314,9 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, STALE_SHA as never)))
 
 			// …leaving exactly the new installation, which synced its own repo.
-			const remaining = (yield* repo.listInstallationsByOrg(orgId)).filter((i) => i.provider === "github")
+			const remaining = (yield* repo.listInstallationsByOrg(orgId)).filter(
+				(i) => i.provider === "github",
+			)
 			assert.strictEqual(remaining.length, 1)
 			assert.strictEqual(remaining[0]!.externalInstallationId, "42")
 			const newRepos = yield* reposOfInstallation(repo, "42", "all")
@@ -1436,7 +1449,9 @@ describe("VcsSyncService orchestrator", () => {
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
 			yield* seedRepo(repo) // backfill is gated on the repo row existing
-			const exit = yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob)).pipe(Effect.exit)
+			const exit = yield* svc
+				.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
+				.pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit)) // transient → propagated so the queue retries
 			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
@@ -1653,7 +1668,10 @@ describe("VcsSyncService orchestrator", () => {
 			Effect.provide(
 				orchestratorLayer(url, {
 					sent,
-					fetchReposError: new VcsRateLimitedError({ message: "rate limited", retryAfterSeconds: 600 }),
+					fetchReposError: new VcsRateLimitedError({
+						message: "rate limited",
+						retryAfterSeconds: 600,
+					}),
 				}),
 			),
 		)
@@ -1875,7 +1893,11 @@ describe("GithubProvider rate-limit handling", () => {
 		}).pipe(
 			// token mint → page 1 (429, retry-after 0 → inline retry) → page 1 (commits)
 			Effect.provide(
-				stubbedProviderLayer([tokenResponse, () => rateLimited(0), () => commitsResponse(["a".repeat(40)])]),
+				stubbedProviderLayer([
+					tokenResponse,
+					() => rateLimited(0),
+					() => commitsResponse(["a".repeat(40)]),
+				]),
 			),
 		),
 	)
@@ -1890,7 +1912,11 @@ describe("GithubProvider rate-limit handling", () => {
 		}).pipe(
 			// token → page 1 (full) → page 2 (429, retry-after 600 → defer)
 			Effect.provide(
-				stubbedProviderLayer([tokenResponse, () => commitsResponse(hexShas(100)), () => rateLimited(600)]),
+				stubbedProviderLayer([
+					tokenResponse,
+					() => commitsResponse(hexShas(100)),
+					() => rateLimited(600),
+				]),
 			),
 		),
 	)

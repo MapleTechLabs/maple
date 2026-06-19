@@ -291,8 +291,7 @@ function describeError(error: unknown): {
 		// was revoked), so point the user at fixing repository access.
 		return {
 			title: "Commit not found",
-			detail:
-				"Maple has no record of this commit. Make sure its repository is connected and Maple still has access to it.",
+			detail: "Maple has no record of this commit. Make sure its repository is connected and Maple still has access to it.",
 			action: "manage",
 		}
 	}

@@ -237,13 +237,8 @@ const handleQueue = async (
 // Cron handler (every 12h, see wrangler.jsonc `triggers.crons`): enqueue a
 // periodic VCS sync per installation. Single cron expression — no `event.cron`
 // dispatch needed.
-const handleScheduled = async (
-	env: Record<string, unknown>,
-	ctx: ExecutionContext,
-): Promise<void> => {
-	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import(
-		"./vcs-sync-runtime"
-	)
+const handleScheduled = async (env: Record<string, unknown>, ctx: ExecutionContext): Promise<void> => {
+	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import("./vcs-sync-runtime")
 	try {
 		await runScheduledEffect(buildVcsScheduledLayer(env), runScheduledSync, ctx)
 	} finally {

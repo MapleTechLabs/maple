@@ -220,9 +220,7 @@ export function tracesBaseWhereConditions(
 		)
 		conditions.push(
 			CH.not(
-				CH.inList($.SpanName, opts.excludedSpanNames).or(
-					CH.inList(display, opts.excludedSpanNames),
-				),
+				CH.inList($.SpanName, opts.excludedSpanNames).or(CH.inList(display, opts.excludedSpanNames)),
 			),
 		)
 	}

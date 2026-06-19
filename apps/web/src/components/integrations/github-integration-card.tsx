@@ -130,9 +130,7 @@ export function GithubIntegrationCard() {
 	// window after it closes, and while any repo is still syncing (self-terminating).
 	const syncing =
 		status?.connected === true &&
-		status.repositories.some(
-			(r) => r.syncStatus === "pending" || r.syncStatus === "backfilling",
-		)
+		status.repositories.some((r) => r.syncStatus === "pending" || r.syncStatus === "backfilling")
 	const shouldPoll = popupOpen || forcePoll || syncing
 
 	useEffect(() => {
@@ -341,8 +339,8 @@ function DisconnectedState({ busy, onConnect }: { busy: boolean; onConnect: () =
 			<div className="flex max-w-md flex-col gap-1.5">
 				<h3 className="text-base font-semibold">Connect your GitHub organization</h3>
 				<p className="text-sm text-muted-foreground">
-					Install the Maple GitHub App to sync repositories and commit history. Backfill runs in
-					the background once connected.
+					Install the Maple GitHub App to sync repositories and commit history. Backfill runs in the
+					background once connected.
 				</p>
 			</div>
 
@@ -361,11 +359,7 @@ function DisconnectedState({ busy, onConnect }: { busy: boolean; onConnect: () =
 
 			<div className="flex flex-col items-center gap-2">
 				<Button onClick={onConnect} disabled={busy}>
-					{busy ? (
-						<LoaderIcon size={16} className="animate-spin" />
-					) : (
-						<GithubIcon size={16} />
-					)}
+					{busy ? <LoaderIcon size={16} className="animate-spin" /> : <GithubIcon size={16} />}
 					Connect GitHub
 				</Button>
 				<p className="text-xs text-muted-foreground">
@@ -401,9 +395,8 @@ function ConnectedView({
 	const removedRepos = status.repositories.filter((r) => r.status === "removed")
 	const counts = {
 		synced: activeRepos.filter((r) => r.syncStatus === "ready").length,
-		syncing: activeRepos.filter(
-			(r) => r.syncStatus === "pending" || r.syncStatus === "backfilling",
-		).length,
+		syncing: activeRepos.filter((r) => r.syncStatus === "pending" || r.syncStatus === "backfilling")
+			.length,
 		failed: activeRepos.filter((r) => r.syncStatus === "error").length,
 	}
 	const scopeLabel =
@@ -458,26 +451,12 @@ function ConnectedView({
 						<ArrowPathIcon size={14} className={refreshing ? "animate-spin" : ""} />
 						{refreshing ? "Refreshing…" : "Refresh"}
 					</Button>
-					<Button
-						size="sm"
-						variant="outline"
-						onClick={onManage}
-						disabled={busy !== null}
-					>
-						{busy === "connect" ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : null}
+					<Button size="sm" variant="outline" onClick={onManage} disabled={busy !== null}>
+						{busy === "connect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
 						Manage
 					</Button>
-					<Button
-						size="sm"
-						variant="outline"
-						onClick={onDisconnect}
-						disabled={busy !== null}
-					>
-						{busy === "disconnect" ? (
-							<LoaderIcon size={14} className="animate-spin" />
-						) : null}
+					<Button size="sm" variant="outline" onClick={onDisconnect} disabled={busy !== null}>
+						{busy === "disconnect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
 						Disconnect
 					</Button>
 				</div>
@@ -543,10 +522,7 @@ function ConnectedView({
 					<ul className="divide-y divide-border/40">
 						{removedRepos.map((repo) => (
 							<li key={repo.id} className="flex items-center gap-3 px-4 py-3">
-								<CircleWarningIcon
-									size={17}
-									className="shrink-0 text-warning-foreground"
-								/>
+								<CircleWarningIcon size={17} className="shrink-0 text-warning-foreground" />
 								<div className="min-w-0 flex-1">
 									<div className="flex items-center gap-2">
 										<a
@@ -679,8 +655,7 @@ function BranchSelector({
 	const [query, setQuery] = useState("")
 	const [saving, setSaving] = useState(false)
 	// Optimistic view of the tracked branch; falls back to the default like the API.
-	const serverTracked =
-		repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null
+	const serverTracked = repo.trackedBranch ?? repo.branches.find((b) => b.isDefault)?.name ?? null
 	const [tracked, setTracked] = useState<string | null>(serverTracked)
 	// The branch awaiting change confirmation (destructive: wipes + resyncs).
 	const [pending, setPending] = useState<string | null>(null)
@@ -731,9 +706,7 @@ function BranchSelector({
 							className="h-7 shrink-0 gap-1.5 px-2.5 font-normal"
 							disabled={saving}
 						>
-							{saving ? (
-								<LoaderIcon size={12} className="animate-spin" />
-							) : null}
+							{saving ? <LoaderIcon size={12} className="animate-spin" /> : null}
 							<span className="text-muted-foreground">branch</span>
 							<span className="max-w-[10rem] truncate font-medium">{tracked ?? "—"}</span>
 							<ChevronDownIcon size={12} className="text-muted-foreground" />
@@ -799,11 +772,10 @@ function BranchSelector({
 					<AlertDialogHeader>
 						<AlertDialogTitle>Change tracked branch</AlertDialogTitle>
 						<AlertDialogDescription>
-							This switches{" "}
-							<span className="font-medium text-foreground">{repo.fullName}</span> to track{" "}
-							<span className="font-medium text-foreground">{pending}</span>. Maple deletes
-							this repo&apos;s currently synced commits and re-syncs the last 90 days from{" "}
-							<span className="font-medium text-foreground">{pending}</span>.
+							This switches <span className="font-medium text-foreground">{repo.fullName}</span>{" "}
+							to track <span className="font-medium text-foreground">{pending}</span>. Maple
+							deletes this repo&apos;s currently synced commits and re-syncs the last 90 days
+							from <span className="font-medium text-foreground">{pending}</span>.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

@@ -168,9 +168,7 @@ export const VcsServicesLive = Layer.mergeAll(
 	// OAuth connect flow — needs VcsDataLive + GithubAppClient for App-JWT installation lookup.
 	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
 	// Routed via VcsProviderRegistry so no provider module is imported directly.
-	VcsCommitService.layer.pipe(
-		Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive)),
-	),
+	VcsCommitService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive))),
 ).pipe(Layer.provideMerge(InfraLive))
 
 export const MainLive = Layer.mergeAll(

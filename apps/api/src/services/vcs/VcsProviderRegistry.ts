@@ -12,9 +12,7 @@ import type { VcsProviderClient } from "./VcsProviderClient"
 export interface VcsProviderRegistryShape {
 	/** The ids of every registered provider (e.g. for static webhook routes). */
 	readonly ids: ReadonlyArray<string>
-	readonly resolve: (
-		provider: string,
-	) => Effect.Effect<VcsProviderClient, UnknownVcsProviderError>
+	readonly resolve: (provider: string) => Effect.Effect<VcsProviderClient, UnknownVcsProviderError>
 }
 
 export class VcsProviderRegistry extends Context.Service<VcsProviderRegistry, VcsProviderRegistryShape>()(

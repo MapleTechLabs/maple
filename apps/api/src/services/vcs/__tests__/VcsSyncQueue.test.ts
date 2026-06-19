@@ -2,11 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type VcsSyncJob } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/effect-cloudflare"
 import { Effect, Exit, Layer } from "effect"
-import {
-	QUEUE_BATCH_MAX_BYTES,
-	QUEUE_BATCH_MAX_MESSAGES,
-	VcsSyncQueue,
-} from "@/services/vcs/VcsSyncQueue"
+import { QUEUE_BATCH_MAX_BYTES, QUEUE_BATCH_MAX_MESSAGES, VcsSyncQueue } from "@/services/vcs/VcsSyncQueue"
 import { findError } from "./harness"
 
 type CapturedMessage = { readonly body: unknown }
@@ -47,7 +43,10 @@ const assertChunksValid = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>
 		)
 		const bytes = chunk.reduce((sum, m) => sum + bodyBytes(m), 0)
 		if (chunk.length > 1) {
-			assert.ok(bytes <= QUEUE_BATCH_MAX_BYTES, `multi-message chunk ${bytes} <= ${QUEUE_BATCH_MAX_BYTES} bytes`)
+			assert.ok(
+				bytes <= QUEUE_BATCH_MAX_BYTES,
+				`multi-message chunk ${bytes} <= ${QUEUE_BATCH_MAX_BYTES} bytes`,
+			)
 		}
 	}
 }
@@ -93,7 +92,11 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			const queue = yield* VcsSyncQueue
 			yield* queue.sendBatch(jobs)
 			assertChunksValid(chunks)
-			assert.deepStrictEqual(chunkSizes(chunks), [QUEUE_BATCH_MAX_MESSAGES, QUEUE_BATCH_MAX_MESSAGES, 30])
+			assert.deepStrictEqual(chunkSizes(chunks), [
+				QUEUE_BATCH_MAX_MESSAGES,
+				QUEUE_BATCH_MAX_MESSAGES,
+				30,
+			])
 			// No job is dropped: every chunk concatenated reconstructs the full list.
 			assert.strictEqual(
 				chunks.reduce((n, c) => n + c.length, 0),
@@ -126,7 +129,9 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			const queue = yield* VcsSyncQueue
 			yield* queue.sendBatch(jobs)
 			assertChunksValid(chunks)
-			const oversizedChunk = chunks.find((c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES)
+			const oversizedChunk = chunks.find(
+				(c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES,
+			)
 			assert.ok(oversizedChunk, "oversized message is sent in a chunk of its own")
 			// All three jobs survive across the chunks (nothing silently dropped).
 			assert.strictEqual(

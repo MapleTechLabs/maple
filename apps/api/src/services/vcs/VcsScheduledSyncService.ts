@@ -43,39 +43,38 @@ export class VcsScheduledSyncService extends Context.Service<
 		const repo = yield* VcsRepository
 		const queue = yield* VcsSyncQueue
 
-		const runScheduledSync = Effect.fn("VcsScheduledSyncService.runScheduledSync")(function* () {
-			const installations = yield* repo.listAllInstallations()
-			// Filter here so we don't enqueue no-op work; the consumer would skip
-			// suspended/disconnected installations anyway.
-			const processable = installations.filter(isInstallationProcessable)
+		const runScheduledSync = Effect.fn("VcsScheduledSyncService.runScheduledSync")(
+			function* () {
+				const installations = yield* repo.listAllInstallations()
+				// Filter here so we don't enqueue no-op work; the consumer would skip
+				// suspended/disconnected installations anyway.
+				const processable = installations.filter(isInstallationProcessable)
 
-			const jobs = processable.map(
-				(installation): VcsSyncJob => ({
-					kind: "installation-sync",
-					provider: installation.provider,
-					externalInstallationId: installation.externalInstallationId,
-					reason: "scheduled",
-				}),
-			)
-			// `sendBatch` handles chunking to platform per-call caps internally.
-			yield* queue.sendBatch(jobs)
+				const jobs = processable.map(
+					(installation): VcsSyncJob => ({
+						kind: "installation-sync",
+						provider: installation.provider,
+						externalInstallationId: installation.externalInstallationId,
+						reason: "scheduled",
+					}),
+				)
+				// `sendBatch` handles chunking to platform per-call caps internally.
+				yield* queue.sendBatch(jobs)
 
-			const result: VcsScheduledSyncResult = {
-				installationsTotal: installations.length,
-				enqueued: jobs.length,
-				skipped: installations.length - jobs.length,
-			}
-			yield* Effect.annotateCurrentSpan({
-				"vcs.scheduled.installations_total": result.installationsTotal,
-				"vcs.scheduled.enqueued": result.enqueued,
-				"vcs.scheduled.skipped": result.skipped,
-				"vcs.scheduled.outcome": "completed",
-			})
-			return result
-		},
-		Effect.tapCause(() =>
-			Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" }),
-		),
+				const result: VcsScheduledSyncResult = {
+					installationsTotal: installations.length,
+					enqueued: jobs.length,
+					skipped: installations.length - jobs.length,
+				}
+				yield* Effect.annotateCurrentSpan({
+					"vcs.scheduled.installations_total": result.installationsTotal,
+					"vcs.scheduled.enqueued": result.enqueued,
+					"vcs.scheduled.skipped": result.skipped,
+					"vcs.scheduled.outcome": "completed",
+				})
+				return result
+			},
+			Effect.tapCause(() => Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" })),
 		)
 
 		return { runScheduledSync } satisfies VcsScheduledSyncServiceShape

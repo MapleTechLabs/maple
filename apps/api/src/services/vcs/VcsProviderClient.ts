@@ -67,10 +67,7 @@ export interface VcsProviderClient {
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
 		opts: { readonly sinceMs: number; readonly untilMs?: number; readonly branch: string },
-	) => Effect.Effect<
-		VcsCommitFetch,
-		VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError
-	>
+	) => Effect.Effect<VcsCommitFetch, VcsProviderError | VcsInstallationGoneError | VcsRepoUnavailableError>
 
 	/**
 	 * All branch names of a repo (never the commits on them), normalized. `truncated`

@@ -65,10 +65,7 @@ const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 }
 
 /** `if(map[k0] != '', map[k0], if(map[k1] != '', …))` — first non-empty alias. */
-function coalescedMapGet(
-	mapExpr: CH.Expr<Record<string, string>>,
-	keys: readonly string[],
-): CH.Expr<string> {
+function coalescedMapGet(mapExpr: CH.Expr<Record<string, string>>, keys: readonly string[]): CH.Expr<string> {
 	let expr = CH.mapGet(mapExpr, keys[keys.length - 1])
 	for (let i = keys.length - 2; i >= 0; i--) {
 		const candidate = CH.mapGet(mapExpr, keys[i])
@@ -78,10 +75,7 @@ function coalescedMapGet(
 }
 
 /** `mapContains(map, k0) OR mapContains(map, k1) OR …` */
-function anyMapContains(
-	mapExpr: CH.Expr<Record<string, string>>,
-	keys: readonly string[],
-): CH.Condition {
+function anyMapContains(mapExpr: CH.Expr<Record<string, string>>, keys: readonly string[]): CH.Condition {
 	let cond = CH.mapContains(mapExpr, keys[0])
 	for (let i = 1; i < keys.length; i++) {
 		cond = cond.or(CH.mapContains(mapExpr, keys[i]))

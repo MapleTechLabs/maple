@@ -175,7 +175,9 @@ const timingSafeEqual = (a: string, b: string): boolean => {
 
 const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUpsertInput => {
 	const authoredAt = commit.commit.author?.date ? finiteOrNull(Date.parse(commit.commit.author.date)) : null
-	const committedAt = commit.commit.committer?.date ? finiteOrNull(Date.parse(commit.commit.committer.date)) : null
+	const committedAt = commit.commit.committer?.date
+		? finiteOrNull(Date.parse(commit.commit.committer.date))
+		: null
 	return {
 		sha: commit.sha,
 		message: commit.commit.message,
@@ -249,21 +251,33 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						catch: () => "import_failed" as const,
 					}).pipe(
 						Effect.tapError(annotateSignatureResult),
-						Effect.mapError(() => new VcsWebhookSignatureError({ message: "Failed to import webhook secret" })),
+						Effect.mapError(
+							() =>
+								new VcsWebhookSignatureError({ message: "Failed to import webhook secret" }),
+						),
 					)
 					const mac = yield* Effect.tryPromise({
 						try: () => crypto.subtle.sign("HMAC", key, enc.encode(rawBody)),
 						catch: () => "compute_failed" as const,
 					}).pipe(
 						Effect.tapError(annotateSignatureResult),
-						Effect.mapError(() => new VcsWebhookSignatureError({ message: "Failed to compute webhook signature" })),
+						Effect.mapError(
+							() =>
+								new VcsWebhookSignatureError({
+									message: "Failed to compute webhook signature",
+								}),
+						),
 					)
 					const expected = `sha256=${Buffer.from(mac).toString("hex")}`
 					if (!timingSafeEqual(expected, signatureHeader)) {
 						return yield* signatureRejected("mismatch", "Webhook signature mismatch")
 					}
 					yield* Effect.annotateCurrentSpan({ "vcs.webhook.signature_result": "ok" })
-				}).pipe(Effect.withSpan("GithubProvider.verifySignature", { attributes: { "vcs.provider": PROVIDER } }))
+				}).pipe(
+					Effect.withSpan("GithubProvider.verifySignature", {
+						attributes: { "vcs.provider": PROVIDER },
+					}),
+				)
 
 			const mapPush = (raw: unknown, now: number) =>
 				Effect.gen(function* () {
@@ -395,14 +409,12 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					})
 
 			const mapInstallation = mapInstallationEvent("installation", installationReason)
-			const mapInstallationRepositories = mapInstallationEvent(
-				"installation_repositories",
-				(action) =>
-					action === "added"
-						? "repositories_added"
-						: action === "removed"
-							? "repositories_removed"
-							: null,
+			const mapInstallationRepositories = mapInstallationEvent("installation_repositories", (action) =>
+				action === "added"
+					? "repositories_added"
+					: action === "removed"
+						? "repositories_removed"
+						: null,
 			)
 
 			// `create`/`delete` (ref_type=branch) → one branch-event job; tags are ignored.
@@ -501,17 +513,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			const fetchRepositories = (installation: VcsInstallation) =>
 				client.listInstallationRepositories(installation.externalInstallationId).pipe(
-					Effect.map((repos): ReadonlyArray<RepoUpsertInput> =>
-						repos.map((r) => ({
-							externalRepoId: String(r.id),
-							owner: r.owner.login,
-							name: r.name,
-							fullName: r.full_name,
-							defaultBranch: r.default_branch ?? "main",
-							htmlUrl: r.html_url,
-							isPrivate: r.private,
-							isArchived: r.archived ?? false,
-						})),
+					Effect.map(
+						(repos): ReadonlyArray<RepoUpsertInput> =>
+							repos.map((r) => ({
+								externalRepoId: String(r.id),
+								owner: r.owner.login,
+								name: r.name,
+								fullName: r.full_name,
+								defaultBranch: r.default_branch ?? "main",
+								htmlUrl: r.html_url,
+								isPrivate: r.private,
+								isArchived: r.archived ?? false,
+							})),
 					),
 					Effect.mapError(toVcsError),
 				)
@@ -542,14 +555,18 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// continues immediately (no wait); a rate limit waits out its reset.
 					const oldestMs =
 						normalized.length > 0
-							? normalized.reduce((min, c) => Math.min(min, c.committedAt), Number.POSITIVE_INFINITY)
+							? normalized.reduce(
+									(min, c) => Math.min(min, c.committedAt),
+									Number.POSITIVE_INFINITY,
+								)
 							: (opts.untilMs ?? now)
 					return {
 						commits: normalized,
 						next: {
 							untilMs: oldestMs,
 							reason: result.reason,
-							retryAfterSeconds: result.reason === "rate-limited" ? result.retryAfterSeconds : 0,
+							retryAfterSeconds:
+								result.reason === "rate-limited" ? result.retryAfterSeconds : 0,
 						},
 					}
 				})

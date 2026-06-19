@@ -124,7 +124,8 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 							try: () => queue.sendBatch(chunk),
 							catch: (cause) =>
 								new VcsQueueError({
-									message: cause instanceof Error ? cause.message : "queue sendBatch failed",
+									message:
+										cause instanceof Error ? cause.message : "queue sendBatch failed",
 								}),
 						}),
 					{ discard: true },
