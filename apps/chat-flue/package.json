@@ -12,7 +12,6 @@
 	"dependencies": {
 		"@clerk/backend": "^2.30.1",
 		"@flue/runtime": "1.0.0-beta.2",
-		"@flue/sdk": "1.0.0-beta.1",
 		"agents": "^0.14.1",
 		"hono": "^4.8.3",
 		"valibot": "^1.1.0"

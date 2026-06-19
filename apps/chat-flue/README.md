@@ -99,21 +99,24 @@ bun run connect          # flue connect maple-chat local
 > preamble. Decided in Phase 2 with the frontend. Until then the agent uses the
 > base prompt for the id-derived mode.
 
-## Phase 2 — frontend adapter (built, not yet cut over)
+## Phase 2 — frontend adapter (designed; ships with the cutover)
 
 `@flue/react` ships `useFlueAgent` whose message shape mirrors AI SDK v5
-`UIMessage` (text + `dynamic-tool` parts), which the existing renderer already
-handles. The adapter is built and typechecks against `apps/web`:
+`UIMessage` (text + `dynamic-tool` parts with
+`input-available`/`output-available`/`output-error` states), which the existing
+`chat-conversation.tsx` renderer already handles. So the adapter is a thin
+wrapper, not a rewrite:
 
-- `apps/web/src/components/chat/use-flue-chat.ts` — `useFlueChat({ tabId })`
-  wraps `useFlueAgent` and exposes the same `{ messages, sendMessage, status,
-  addToolApprovalResponse }` surface `chat-conversation.tsx` consumes (status
-  `idle`/`connecting` → `ready`; first-message context preamble).
-- `apps/web/src/lib/services/common/chat-agent-url.ts` — adds `flueChatUrl`.
-- deps: `@flue/react`, `@flue/sdk`.
+- `useFlueChat({ tabId })` wraps `useFlueAgent` and exposes the same
+  `{ messages, sendMessage, status, addToolApprovalResponse }` surface the UI
+  consumes — mapping status (`idle`/`connecting` → `ready`) and carrying
+  per-conversation context as a first-message preamble.
 
-It is **not wired into the live UI** — `chat-conversation.tsx` still uses the
-legacy `useAgentChat`. The swap is the cutover below.
+It's been validated (typechecks against `apps/web` with `@flue/react` +
+`@flue/sdk`) but is **deliberately not included in this change** — nothing
+imports it until the cutover, and the repo enforces no dead code (knip). It
+lands in the cutover step below, where `chat-conversation.tsx` actually swaps to
+it.
 
 ## Cutover (final, gated on a deployable Flue backend)
 

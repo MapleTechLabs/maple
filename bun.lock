@@ -94,7 +94,6 @@
       "dependencies": {
         "@clerk/backend": "^2.30.1",
         "@flue/runtime": "1.0.0-beta.2",
-        "@flue/sdk": "1.0.0-beta.1",
         "agents": "^0.14.1",
         "hono": "^4.8.3",
         "valibot": "^1.1.0",
@@ -264,8 +263,6 @@
         "@cloudflare/ai-chat": "^0.8.1",
         "@effect-router/core": "workspace:*",
         "@effect/atom-react": "catalog:effect",
-        "@flue/react": "1.0.0-beta.1",
-        "@flue/sdk": "1.0.0-beta.1",
         "@fontsource-variable/geist": "^5.2.8",
         "@fontsource-variable/geist-mono": "^5.2.7",
         "@json-render/core": "^0.16.0",
@@ -1167,8 +1164,6 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.11", "", {}, "sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg=="],
 
     "@flue/cli": ["@flue/cli@1.0.0-beta.1", "", { "dependencies": { "@cloudflare/vite-plugin": "^1.39.2", "@flue/runtime": "1.0.0-beta.1", "@flue/sdk": "1.0.0-beta.1", "@vercel/detect-agent": "^1.2.3", "minisearch": "^7.2.0", "package-up": "^5.0.0", "valibot": "^1.0.0", "vite": "^8.0.14" }, "bin": { "flue": "bin/flue.mjs" } }, "sha512-XbSsn7Nl2/J80Y+7Ph7tLF0Y3+doVdBXD8rPikuaMeq4mhHYSn5DjOwgXS2+TdzKcpOKyNVwttORyoVAjWdbtA=="],
-
-    "@flue/react": ["@flue/react@1.0.0-beta.1", "", { "peerDependencies": { "@flue/sdk": "1.0.0-beta.1", "react": ">=18" } }, "sha512-ccBBGMGhNQQxW/Rv/OQiTDqSD3wDM04WxAF+VWBT+h81SmEFP+8oeto37rwhbvjnvFCI3wCAxR/gbmpeS8C4qA=="],
 
     "@flue/runtime": ["@flue/runtime@1.0.0-beta.2", "", { "dependencies": { "@earendil-works/pi-agent-core": "^0.79.4", "@earendil-works/pi-ai": "^0.79.4", "@hono/node-server": "^2.0.3", "@hono/standard-validator": "^0.2.0", "@modelcontextprotocol/sdk": "^1.29.0", "@standard-community/standard-json": "^0.3.5", "@standard-community/standard-openapi": "^0.2.9", "@valibot/to-json-schema": "^1.3.0", "hono": "^4.8.3", "hono-openapi": "^1.3.0", "js-yaml": "^4.1.1", "just-bash": "^3.0.1", "openapi-types": "^12.1.3", "quansync": "^0.2.11", "ulidx": "^2.4.1", "valibot": "^1.1.0" } }, "sha512-AHPaXiE2K0ABVe60XCCjUAH12tO6zMYZ+CJGbcFdPW5cYOGyzc91laBIA6fKHGgRENw4wh7w/6Jz3ZRDCvuKVw=="],
 
