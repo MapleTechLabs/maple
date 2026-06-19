@@ -65,14 +65,9 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 	// Vendor-agnostic VCS sync queue (commit backfill + webhook deltas). The same
 	// `api` worker is both producer (binding) and consumer (eventSources). Local
 	// dev is wired separately in wrangler.jsonc so miniflare runs it in-process.
-	const vcsSyncDlq = await Queue("vcs-sync-dlq", {
-		name: resolveWorkerName("vcs-sync-dlq", stage),
-		adopt: true,
-	})
 	const vcsSyncQueue = await Queue("vcs-sync", {
 		name: resolveWorkerName("vcs-sync", stage),
 		adopt: true,
-		dlq: vcsSyncDlq,
 	})
 
 	const worker = await Worker("api", {
@@ -94,7 +89,6 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 					maxConcurrency: 2,
 					maxRetries: 3,
 					maxWaitTimeMs: 5000,
-					deadLetterQueue: vcsSyncDlq,
 				},
 			},
 		],
