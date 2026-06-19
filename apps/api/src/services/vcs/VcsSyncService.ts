@@ -7,7 +7,6 @@ import {
 	type SyncBranchesJob,
 	type UnknownVcsProviderError,
 	VcsInstallation,
-	type VcsInstallationSyncReason,
 	type VcsProviderError,
 	type VcsQueueError,
 	type VcsRateLimitedError,
