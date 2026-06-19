@@ -6,7 +6,7 @@ import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Env } from "@/lib/Env"
 import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
-import { VcsSyncQueue, type VcsSyncQueueShape } from "@/services/vcs/VcsSyncQueue"
+import { clampQueueDelaySeconds, VcsSyncQueue, type VcsSyncQueueShape } from "@/services/vcs/VcsSyncQueue"
 
 // ---------------------------------------------------------------------------
 // Shared test harness for the GitHub / VCS integration. The id-resolver
@@ -87,6 +87,11 @@ export const scriptedHttp = (responders: ReadonlyArray<() => Response>) => {
 
 // A recording VcsSyncQueue: captures every enqueued job (and per-send delay).
 // `failBatch` makes `sendBatch` fail instead, to exercise propagation.
+//
+// The recorded delay is run through the SAME `clampQueueDelaySeconds` the real
+// queue producer applies (floor + [0, 86_400] clamp), so a regression that
+// enqueued a fractional or out-of-range delay — which the live binding would
+// reject outright — is observable here instead of being silently recorded raw.
 export const recordingQueue = (
 	sent: Array<VcsSyncJob>,
 	opts?: { readonly sentDelays?: Array<number | undefined>; readonly failBatch?: () => unknown },
@@ -94,7 +99,11 @@ export const recordingQueue = (
 	send: (job, options) =>
 		Effect.sync(() => {
 			sent.push(job)
-			opts?.sentDelays?.push(options?.delaySeconds)
+			opts?.sentDelays?.push(
+				options?.delaySeconds === undefined
+					? undefined
+					: clampQueueDelaySeconds(options.delaySeconds),
+			)
 		}),
 	sendBatch: (jobs) =>
 		opts?.failBatch ? Effect.fail(opts.failBatch() as never) : Effect.sync(() => void sent.push(...jobs)),

@@ -2,7 +2,6 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { randomUUID } from "node:crypto"
 import {
 	GitCommitSha,
-	type OrgId,
 	VcsInstallation,
 	VcsInstallationGoneError,
 	VcsProviderError,
@@ -13,7 +12,7 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Effect, Exit, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl, executeSql } from "@/lib/test-sqlite"
 import { COMMIT_PAGES_PER_INVOCATION, GithubAppClient } from "@/services/github/GithubAppClient"
 import { GithubHttp } from "@/services/github/GithubHttp"
@@ -21,7 +20,12 @@ import { GithubProvider } from "@/services/github/GithubProvider"
 import type { VcsProviderClient } from "@/services/vcs/VcsProviderClient"
 import { VcsProviderRegistry, type VcsProviderRegistryShape } from "@/services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
-import { MAX_BACKFILL_STALL_RETRIES, VcsSyncService } from "@/services/vcs/VcsSyncService"
+import { clampQueueDelaySeconds } from "@/services/vcs/VcsSyncQueue"
+import {
+	BACKFILL_WINDOW_MS,
+	MAX_BACKFILL_STALL_RETRIES,
+	VcsSyncService,
+} from "@/services/vcs/VcsSyncService"
 import {
 	asOrgId,
 	asUserId,
@@ -61,6 +65,14 @@ const providerLayer = () => {
 	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
 }
 
+// Same as providerLayer but with NO webhook secret configured — exercises the
+// operator-misconfig (`secret_not_configured`) signature-rejection branch.
+const providerLayerNoSecret = () => {
+	const env = testEnv("")
+	const client = GithubAppClient.layer.pipe(Layer.provide(Layer.mergeAll(env, GithubHttp.layer)))
+	return GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, client)))
+}
+
 // Build a GithubProvider whose HTTP responses are scripted in call order. The
 // first call is always the installation-token mint.
 const stubbedProviderLayer = (responders: ReadonlyArray<() => Response>) => {
@@ -92,33 +104,38 @@ const rateLimited = (retryAfterSeconds: number) =>
 const hexShas = (count: number) => Array.from({ length: count }, (_, n) => n.toString(16).padStart(40, "0"))
 
 describe("VcsSyncJob", () => {
-	it("round-trips through encode/decode", () => {
-		const job: VcsSyncJob = {
-			kind: "push",
-			provider: "github",
-			externalInstallationId: "42",
-			externalRepoId: "7",
-			branch: "main",
-			commits: [
-				{
-					sha: SHA,
-					message: "hello",
-					authorName: "Octo",
-					authorEmail: "o@x.io",
-					authorLogin: "octocat",
-					authorAvatarUrl: null,
-					authoredAt: 1,
-					committedAt: 2,
-					htmlUrl: "https://github.com/o/r/commit/x",
-				},
-			],
-		}
-		const wire = JSON.parse(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
-		assert.deepStrictEqual(Schema.decodeUnknownSync(VcsSyncJob)(wire), job)
-	})
-
-	it("round-trips sync-branches, branch-event, and a branch backfill job", () => {
+	// One smoke test over every union member: confirms each kind survives the
+	// encode → wire → decode round-trip the queue relies on (the discriminator and
+	// any optional keys are preserved). Per-kind behavior is covered by the provider
+	// and orchestrator suites; this just guards the transport schema.
+	it("round-trips every job kind through encode/decode", () => {
 		const jobs: VcsSyncJob[] = [
+			{
+				kind: "push",
+				provider: "github",
+				externalInstallationId: "42",
+				externalRepoId: "7",
+				branch: "main",
+				commits: [
+					{
+						sha: SHA,
+						message: "hello",
+						authorName: "Octo",
+						authorEmail: "o@x.io",
+						authorLogin: "octocat",
+						authorAvatarUrl: null,
+						authoredAt: 1,
+						committedAt: 2,
+						htmlUrl: "https://github.com/o/r/commit/x",
+					},
+				],
+			},
+			{
+				kind: "installation-sync",
+				provider: "github",
+				externalInstallationId: "42",
+				reason: "created",
+			},
 			{
 				kind: "sync-branches",
 				provider: "github",
@@ -418,6 +435,145 @@ describe("GithubProvider.webhookToJobs", () => {
 				assert.strictEqual(job.reason, reason)
 				assert.strictEqual(job.externalInstallationId, "99")
 			}
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// Signature is the security boundary; each rejection reason is a distinct branch.
+	// A missing header must be rejected BEFORE any HMAC compute (the existing
+	// invalid-signature test only covers the `mismatch` branch).
+	it.effect("rejects a missing x-hub-signature-256 header with VcsWebhookSignatureError", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* provider
+				.webhookToJobs({ headers: { "x-github-event": "push" }, rawBody: pushBody })
+				.pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// A header without the `sha256=` prefix is malformed — a separate branch from a
+	// well-formed-but-wrong signature.
+	it.effect("rejects a malformed (prefix-less) signature header with VcsWebhookSignatureError", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* provider
+				.webhookToJobs({
+					headers: { "x-github-event": "push", "x-hub-signature-256": "deadbeef" },
+					rawBody: pushBody,
+				})
+				.pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// Operator misconfig: no webhook secret set. Every webhook must be rejected (never
+	// silently accepted) — a distinct reason from an attacker mismatch.
+	it.effect("rejects every webhook with VcsWebhookSignatureError when no secret is configured", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* provider
+				.webhookToJobs({
+					headers: { "x-github-event": "push", "x-hub-signature-256": sign(pushBody) },
+					rawBody: pushBody,
+				})
+				.pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			assert.ok(findError(exit) instanceof VcsWebhookSignatureError)
+		}).pipe(Effect.provide(providerLayerNoSecret())),
+	)
+
+	// A push to a non-branch ref (e.g. a tag push) carries no branch — it must be
+	// dropped, not sliced into a garbage branch name.
+	it.effect("ignores a push to a non-branch ref (refs/tags/…)", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "refs/tags/v1.0.0",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				after: SHA,
+				commits: [
+					{
+						id: SHA,
+						message: "tagged",
+						timestamp: "2026-01-01T00:00:00Z",
+						url: `https://github.com/octo/repo/commit/${SHA}`,
+						author: { name: "Octo", email: "o@x.io", username: "octo" },
+					},
+				],
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// A branch-pointer move with no new commits (non-forced) emits no job — the split
+	// loop must never enqueue an empty-commit push.
+	it.effect("emits no job for a non-forced push with an empty commit list", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "refs/heads/main",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				after: SHA,
+				commits: [],
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// Only the `refs/heads/` prefix is stripped — a branch name with slashes survives
+	// intact (guards against a "strip all heads/" regression).
+	it.effect("preserves slashes in a branch name when stripping refs/heads/", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({
+				ref: "refs/heads/feature/a/b",
+				repository: { id: 7, owner: { login: "octo" } },
+				installation: { id: 42 },
+				after: SHA,
+				commits: [
+					{
+						id: SHA,
+						message: "m",
+						timestamp: "2026-01-01T00:00:00Z",
+						url: `https://github.com/octo/repo/commit/${SHA}`,
+						author: { name: "Octo", email: "o@x.io", username: "octo" },
+					},
+				],
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 1)
+			const job = jobs[0]!
+			if (job.kind !== "push") return
+			assert.strictEqual(job.branch, "feature/a/b")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	// An unrecognized event (e.g. GitHub's `ping`, sent on every webhook reconfigure)
+	// is accepted as a no-op — it must NOT throw / 500 the receiver.
+	it.effect("accepts an unhandled event (ping) as a no-op", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = JSON.stringify({ zen: "Keep it simple", hook_id: 1 })
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "ping", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			assert.strictEqual(jobs.length, 0)
 		}).pipe(Effect.provide(providerLayer())),
 	)
 })
@@ -720,6 +876,209 @@ describe("VcsRepository", () => {
 			}).pipe(Effect.provide(repoLayer(url)))
 		},
 	)
+
+	const installationSeed = (externalInstallationId: string, externalAccountId: string) => ({
+		provider: "github" as const,
+		externalInstallationId,
+		accountLogin: "octo",
+		accountType: "organization" as const,
+		externalAccountId,
+		accountAvatarUrl: null,
+		repositorySelection: "all" as const,
+		installedByUserId: asUserId("user_1"),
+	})
+
+	const repoFixture = (over?: Partial<Parameters<VcsRepo["upsertRepositories"]>[1][number]>) => ({
+		externalRepoId: "7",
+		owner: "octo",
+		name: "repo",
+		fullName: "octo/repo",
+		defaultBranch: "main",
+		htmlUrl: "https://github.com/octo/repo",
+		isPrivate: true,
+		isArchived: false,
+		...over,
+	})
+
+	// upsertRepositories' ON CONFLICT clause is the whole point of the upsert: a
+	// re-listed repo must refresh its mutable metadata AND reactivate a prior
+	// soft-removal, while leaving the user-owned trackedBranch untouched and never
+	// duplicating the row.
+	it.effect("re-upserting a repo refreshes metadata + reactivates it but preserves trackedBranch", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-conflict-", dirs)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_conflict")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [repoFixture()])
+			const r = yield* repoFor(repo, orgId, "7")
+			// The user picks a non-default tracked branch, then the provider revokes access.
+			yield* repo.changeTrackedBranch(orgId, r.id, "feature")
+			yield* repo.markRepositoryRemoved(r.id)
+			// Access is re-granted and the repo has been renamed + made public upstream.
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ name: "repo-renamed", fullName: "octo/repo-renamed", isPrivate: false }),
+			])
+
+			const all = yield* reposOfInstallation(repo, "42", "all")
+			assert.strictEqual(all.length, 1) // updated in place, never duplicated
+			const updated = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(updated.status, "active") // soft-removal cleared
+			assert.strictEqual(updated.name, "repo-renamed") // metadata refreshed
+			assert.strictEqual(updated.isPrivate, false)
+			assert.strictEqual(updated.trackedBranch, "feature") // the user's choice survives
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	// findCommitBySha is org-scoped: the same SHA legitimately exists in two orgs
+	// (the unique key is (repositoryId, sha), not org-global). Each org must resolve
+	// only its own row — a missing org filter would leak another tenant's commit.
+	it.effect("findCommitBySha is org-scoped — the same SHA in two orgs never crosses over", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-crossorg-find-", dirs)
+		const SHARED = "a".repeat(40)
+		const commitFixture = {
+			sha: SHARED,
+			message: "m",
+			authorName: null,
+			authorEmail: null,
+			authorLogin: null,
+			authorAvatarUrl: null,
+			authoredAt: null,
+			committedAt: 1,
+			htmlUrl: `https://github.com/o/r/commit/${SHARED}`,
+			branch: "main",
+		}
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgA = asOrgId("org_a")
+			const orgB = asOrgId("org_b")
+			yield* repo.upsertInstallation({ orgId: orgA, ...installationSeed("42", "100") })
+			yield* repo.upsertInstallation({ orgId: orgB, ...installationSeed("43", "200") })
+			yield* upsertReposFor(repo, "42", [repoFixture({ externalRepoId: "7" })])
+			yield* upsertReposFor(repo, "43", [repoFixture({ externalRepoId: "8" })])
+			yield* upsertCommitsFor(repo, orgA, "7", [commitFixture])
+			yield* upsertCommitsFor(repo, orgB, "8", [commitFixture])
+
+			const repoA = yield* repoFor(repo, orgA, "7")
+			const repoB = yield* repoFor(repo, orgB, "8")
+			const foundA = yield* repo.findCommitBySha(orgA, SHARED as never)
+			const foundB = yield* repo.findCommitBySha(orgB, SHARED as never)
+			assert.strictEqual(expectSome(foundA).repositoryId, repoA.id)
+			assert.strictEqual(expectSome(foundB).repositoryId, repoB.id)
+			// And never the other org's row.
+			assert.notStrictEqual(expectSome(foundA).repositoryId, repoB.id)
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	// changeTrackedBranch org-scopes BOTH the update and the commit-wipe. Calling it
+	// with a foreign orgId for a real repo id must be a complete no-op — neither
+	// retargeting the branch nor deleting that repo's commits (the over-delete guard
+	// the inline comment warns about).
+	it.effect("changeTrackedBranch with a foreign orgId neither retargets nor wipes commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-crossorg-track-", dirs)
+		const SHA_X = "a".repeat(40)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_owner")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [repoFixture()])
+			yield* upsertCommitsFor(repo, orgId, "7", [
+				{
+					sha: SHA_X,
+					message: "m",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: `https://github.com/o/r/commit/${SHA_X}`,
+					branch: "main",
+				},
+			])
+			const r = yield* repoFor(repo, orgId, "7")
+			// Wrong org, real repo id.
+			yield* repo.changeTrackedBranch(asOrgId("org_intruder"), r.id, "feature")
+
+			const after = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(after.trackedBranch, "main") // untouched
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_X as never))) // not wiped
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	// "active" filters out provider-removed repos; "all" includes them.
+	it.effect("listRepositoriesByInstallation 'active' excludes removed repos that 'all' includes", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-scope-", dirs)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_scope")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [
+				repoFixture({ externalRepoId: "7", fullName: "octo/a", name: "a" }),
+				repoFixture({ externalRepoId: "8", fullName: "octo/b", name: "b" }),
+			])
+			yield* markRemovedFor(repo, orgId, "8")
+
+			// Exercise the repo method directly (by internal installation id + scope).
+			const inst = yield* installationFor(repo, "42")
+			const active = yield* repo.listRepositoriesByInstallation(inst.id, "active")
+			const all = yield* repo.listRepositoriesByInstallation(inst.id, "all")
+			assert.deepStrictEqual(
+				active.map((r) => r.externalRepoId),
+				["7"],
+			)
+			assert.deepStrictEqual(
+				all.map((r) => r.externalRepoId).sort(),
+				["7", "8"],
+			)
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	// A SHA persisted in any case is normalized to lowercase (the GitCommitSha decode
+	// lowercases on the write path), so an uppercase push and a lowercase lookup never
+	// split into two rows.
+	it.effect("upsertCommits lowercases the SHA so a lowercase lookup finds an uppercased commit", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-sha-lower-", dirs)
+		const UPPER = "A".repeat(40)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_lower")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [repoFixture()])
+			yield* upsertCommitsFor(repo, orgId, "7", [
+				{
+					sha: UPPER,
+					message: "m",
+					authorName: null,
+					authorEmail: null,
+					authorLogin: null,
+					authorAvatarUrl: null,
+					authoredAt: null,
+					committedAt: 1,
+					htmlUrl: `https://github.com/o/r/commit/${UPPER}`,
+					branch: "main",
+				},
+			])
+			// Stored lowercased → found by the lowercase form.
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, "a".repeat(40) as never)))
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
+
+	// Empty-input upserts are explicit early-out no-ops (not a malformed empty INSERT).
+	it.effect("empty upserts are no-ops: upsertCommits([]) returns 0, upsertBranches([]) does nothing", () => {
+		const { url } = createTempDbUrl("maple-vcs-repo-empty-", dirs)
+		return Effect.gen(function* () {
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_empty")
+			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+			yield* upsertReposFor(repo, "42", [repoFixture()])
+			const r = yield* repoFor(repo, orgId, "7")
+			const count = yield* repo.upsertCommits(r, [])
+			assert.strictEqual(count, 0)
+			yield* repo.upsertBranches(r, [])
+			assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 0)
+		}).pipe(Effect.provide(repoLayer(url)))
+	})
 })
 
 describe("VcsSyncService orchestrator", () => {
@@ -1185,7 +1544,10 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
 
-	it.effect("push upserts every commit and never changes repo sync state", () => {
+	// A push is pure enrichment: it upserts commits but must NEVER move the repo's
+	// sync_status (only the backfill owns that). Commit storage on the tracked branch
+	// is covered by the tracked-push tests above; this pins the status invariant.
+	it.effect("a push never changes repo sync state", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-push-", dirs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
@@ -1194,20 +1556,18 @@ describe("VcsSyncService orchestrator", () => {
 			const orgId = asOrgId("org_orch")
 			yield* seedInstallation(repo, orgId)
 			yield* seedRepo(repo) // a freshly-discovered repo (pending, no cursor)
-			const job: VcsSyncJob = {
-				kind: "push",
-				provider: "github",
-				externalInstallationId: "42",
-				externalRepoId: "7",
-				branch: "main",
-				commits: [commit(SHA_A, 1), commit(SHA_B, 2)],
-			}
-			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
-			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
-			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
-			assert.ok(Option.isSome(a) && Option.isSome(b))
-			// A push is pure enrichment — the sync status stays exactly as the
-			// backfill left it (here: untouched since no backfill has run).
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "main",
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never))) // push landed…
+			// …yet the sync status stays exactly as the backfill left it (untouched here).
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "pending")
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
@@ -1523,14 +1883,11 @@ describe("VcsSyncService orchestrator", () => {
 			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(job))
 			const inst = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isSome(inst))
-			assert.strictEqual(inst.value.status, "active") // reactivated
-			const stored = yield* reposOfInstallation(repo, "42", "all")
-			assert.strictEqual(stored.length, 1) // re-sync ran
-			// Per repo: only a branch-list sync. The commit backfills (default + tracked)
-			// are enqueued later, when that sync-branches job is itself processed.
+			assert.strictEqual(inst.value.status, "active") // reactivated — the unique behavior here
+			// And the reactivation triggers a fresh re-sync (repos stored + work enqueued).
+			// The exact enqueue shape is the installation-sync test's job, not re-asserted here.
+			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 1)
 			assert.strictEqual(sent.length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-branches").length, 1)
-			assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
@@ -1775,6 +2132,411 @@ describe("VcsSyncService orchestrator", () => {
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_A as never)))
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
 	})
+
+	// The enqueued backfill must walk from `now - BACKFILL_WINDOW_MS`, not from `now`
+	// (which would fetch zero history) — a sign/offset regression here is silent: the
+	// job still enqueues with the right branch, it just never imports any commits.
+	it.effect("an enqueued backfill walks from now − BACKFILL_WINDOW_MS (fresh, no cursor)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-sincems-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const before = yield* Clock.currentTimeMillis
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "sync-branches",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+				}),
+			)
+			const after = yield* Clock.currentTimeMillis
+			const backfill = sent.find((j) => j.kind === "sync-commits")
+			assert.ok(backfill && backfill.kind === "sync-commits")
+			if (!backfill || backfill.kind !== "sync-commits") return
+			// A fresh walk starts from the tip (no resume cursor)…
+			assert.strictEqual(backfill.untilMs, undefined)
+			// …and reaches back exactly one window from the enqueue moment.
+			assert.ok(backfill.sinceMs >= before - BACKFILL_WINDOW_MS)
+			assert.ok(backfill.sinceMs <= after - BACKFILL_WINDOW_MS)
+		}).pipe(
+			Effect.provide(orchestratorLayer(url, { sent, branches: [{ name: "main", headSha: null }] })),
+		)
+	})
+
+	// A continuation must carry the original walk's `sinceMs` (and branch) unchanged —
+	// only `untilMs`/`staleAttempts` advance. Resetting `sinceMs` per page re-expands
+	// the window every continuation, so the walk never terminates.
+	it.effect("a backfill continuation preserves sinceMs + branch, advancing only untilMs", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-cont-carry-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)(backfillJob))
+			assert.strictEqual(sent.length, 1)
+			const continuation = sent[0]!
+			assert.strictEqual(continuation.kind, "sync-commits")
+			if (continuation.kind !== "sync-commits") return
+			assert.strictEqual(continuation.sinceMs, backfillJob.sinceMs) // carried through (0)
+			assert.strictEqual(continuation.branch, "main")
+			assert.strictEqual(continuation.externalRepoId, "7")
+			assert.strictEqual(continuation.untilMs, 5000) // only the watermark moves
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					commits: [commit(SHA_A, 1)],
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 0, reason: "page-budget" },
+				}),
+			),
+		)
+	})
+
+	// A no-progress continuation must INCREMENT staleAttempts (the stall cap is
+	// otherwise unreachable and the requeue loop never terminates).
+	it.effect("a no-progress backfill increments staleAttempts on the continuation", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-stale-inc-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)({ ...backfillJob, staleAttempts: 3 }))
+			assert.strictEqual(sent.length, 1)
+			const continuation = sent[0]!
+			assert.strictEqual(continuation.kind, "sync-commits")
+			if (continuation.kind !== "sync-commits") return
+			assert.strictEqual(continuation.staleAttempts, 4) // 3 + 1, zero commits fetched
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					commits: [], // no progress
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 600, reason: "rate-limited" },
+				}),
+			),
+		)
+	})
+
+	// Any productive run resets the stall counter — so an installation that recovers
+	// after several throttled runs gets the full stall budget again.
+	it.effect("a productive backfill resets staleAttempts to 0 on the continuation", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-stale-reset-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			// Carry a high stale count in, and make progress (commits fetched + watermark
+			// moved below the prior boundary) so neither stall guard fires.
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 10000, staleAttempts: 5 }),
+			)
+			assert.strictEqual(sent.length, 1)
+			const continuation = sent[0]!
+			assert.strictEqual(continuation.kind, "sync-commits")
+			if (continuation.kind !== "sync-commits") return
+			assert.strictEqual(continuation.staleAttempts, 0)
+			assert.strictEqual(continuation.untilMs, 5000)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					commits: [commit(SHA_A, 1)],
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 0, reason: "page-budget" },
+				}),
+			),
+		)
+	})
+
+	// A resume that fetched commits but didn't move the watermark below its boundary
+	// (e.g. >100 commits sharing one committer-second) would requeue forever. The guard
+	// stops + errors instead — distinct from the rate-limit stall cap.
+	it.effect("a backfill whose watermark fails to advance errors the repo (no requeue)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-watermark-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			// Resume from untilMs=5000; the page comes back with commits but next.untilMs
+			// is NOT below 5000 → no progress past the boundary.
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 5000 }),
+			)
+			assert.strictEqual(sent.length, 0) // never requeues
+			const stored = yield* reposOfInstallation(repo, "42", "all")
+			assert.strictEqual(stored[0]!.syncStatus, "error")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					commits: [commit(SHA_A, 1)], // fetched, but…
+					commitFetchNext: { untilMs: 5000, retryAfterSeconds: 0, reason: "page-budget" }, // …watermark stuck at 5000
+				}),
+			),
+		)
+	})
+
+	// fetchBranches errors are NOT all drained: only repo-unavailable is swallowed
+	// (covered above). A transient provider error must propagate so the queue retries.
+	it.effect("sync-branches propagates a transient VcsProviderError (queue retries)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-branch-transient-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const exit = yield* svc
+				.processMessage(
+					Schema.encodeSync(VcsSyncJob)({
+						kind: "sync-branches",
+						provider: "github",
+						externalInstallationId: "42",
+						externalRepoId: "7",
+						owner: "octo",
+						name: "repo",
+					}),
+				)
+				.pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			assert.strictEqual(sent.length, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchBranchesError: new VcsProviderError({ message: "upstream", status: 503 }),
+				}),
+			),
+		)
+	})
+
+	// A rate-limited branch sync has no resume cursor, so it propagates (the consumer
+	// redelivers the whole small job) rather than being silently swallowed.
+	it.effect("sync-branches propagates a VcsRateLimitedError (not swallowed)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-branch-rl-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const exit = yield* svc
+				.processMessage(
+					Schema.encodeSync(VcsSyncJob)({
+						kind: "sync-branches",
+						provider: "github",
+						externalInstallationId: "42",
+						externalRepoId: "7",
+						owner: "octo",
+						name: "repo",
+					}),
+				)
+				.pipe(Effect.exit)
+			assert.ok(Exit.isFailure(exit))
+			assert.ok(findError(exit) instanceof VcsRateLimitedError)
+			assert.strictEqual(sent.length, 0)
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchBranchesError: new VcsRateLimitedError({
+						message: "rate limited",
+						retryAfterSeconds: 600,
+					}),
+				}),
+			),
+		)
+	})
+
+	// An installation-gone signal from the branch path routes through the same
+	// disconnect handler as the commit path.
+	it.effect("sync-branches reporting installation-gone disconnects the installation", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-branch-gone-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "sync-branches",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+				}),
+			)
+			const inst = yield* repo.resolveInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "disconnected")
+		}).pipe(
+			Effect.provide(
+				orchestratorLayer(url, {
+					sent,
+					fetchBranchesError: new VcsInstallationGoneError({ message: "gone" }),
+				}),
+			),
+		)
+	})
+
+	// A push to the tracked branch when no branch row exists yet must BOTH create the
+	// picker row (getOrCreateBranch precedes the tracked check) and store the commits.
+	it.effect("push to the tracked branch with no branch row creates the row and stores commits", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-push-norow-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo) // repo only — no branch rows yet
+			const r = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 0)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "main", // the default → tracked
+					commits: [commit(SHA_A, 1)],
+				}),
+			)
+			assert.ok((yield* repo.listBranchesByRepository(r.id)).some((b) => b.name === "main"))
+			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_A as never)))
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
+	})
+
+	// A branch-pointer move / no-new-commits merge: a tracked push with an empty commit
+	// list is a no-op upsert, must not fail, and must not touch sync state.
+	it.effect("an empty-commits push to the tracked branch is a no-op (status untouched)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-push-empty-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* seedRepo(repo)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "push",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					branch: "main",
+					commits: [],
+				}),
+			) // must not fail
+			const stored = yield* reposOfInstallation(repo, "42", "all")
+			assert.strictEqual(stored[0]!.syncStatus, "pending") // a push never moves sync state
+			assert.strictEqual(sent.length, 0)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
+	})
+
+	// A "suspend" installation-sync only flips the gate's answer — it must NOT call the
+	// provider or enqueue any work (a regression that fell through would re-sync a
+	// suspended installation).
+	it.effect("installation-sync 'suspend' marks suspended without syncing", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-inst-suspend-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "installation-sync",
+					provider: "github",
+					externalInstallationId: "42",
+					reason: "suspend",
+				}),
+			)
+			const inst = yield* repo.resolveInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "suspended")
+			assert.strictEqual(sent.length, 0) // no fetchRepositories, no branch-sync enqueued
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+	})
+
+	// A "deleted" installation-sync disconnects without syncing.
+	it.effect("installation-sync 'deleted' marks disconnected without syncing", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-inst-deleted-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "installation-sync",
+					provider: "github",
+					externalInstallationId: "42",
+					reason: "deleted",
+				}),
+			)
+			const inst = yield* repo.resolveInstallation("github", "42")
+			assert.ok(Option.isSome(inst))
+			assert.strictEqual(inst.value.status, "disconnected")
+			assert.strictEqual(sent.length, 0)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+	})
+
+	// Deleting a branch that has no local row is a reported no-op: no failure, no queue
+	// work, and crucially no retarget even if the (absent) name equals the tracked one.
+	it.effect("branch-event delete of an absent branch is a no-op (no retarget)", () => {
+		const { url } = createTempDbUrl("maple-vcs-orch-be-absent-", dirs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* VcsSyncService
+			const repo = yield* VcsRepository
+			const orgId = asOrgId("org_orch")
+			yield* seedInstallation(repo, orgId)
+			yield* upsertReposFor(repo, "42", oneRepo)
+			const r = yield* repoFor(repo, orgId, "7")
+			yield* repo.upsertBranches(r, [{ name: "main", headSha: null }])
+			yield* repo.changeTrackedBranch(orgId, r.id, "release") // tracked branch never had a row
+			yield* svc.processMessage(
+				Schema.encodeSync(VcsSyncJob)({
+					kind: "branch-event",
+					provider: "github",
+					externalInstallationId: "42",
+					externalRepoId: "7",
+					action: "deleted",
+					branch: "release", // == tracked, but no row exists → deleteBranch returns false
+				}),
+			)
+			// deleteBranch returned false → the retarget branch is skipped: tracked unchanged.
+			const updated = yield* repoFor(repo, orgId, "7")
+			assert.strictEqual(updated.trackedBranch, "release")
+			assert.strictEqual(sent.length, 0)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent })))
+	})
 })
 
 // The SHA-shape regex lives only in the GitCommitSha brand; these assert that
@@ -1858,7 +2620,11 @@ describe("git SHA validation (branded type)", () => {
 				},
 			]).pipe(Effect.exit)
 			assert.ok(Exit.isFailure(exit))
-			assert.ok(findError(exit) instanceof VcsRepoDecodeError)
+			const error = findError(exit)
+			assert.ok(error instanceof VcsRepoDecodeError)
+			// The write-side decode pins the offending column so a row-build failure is
+			// distinguishable from a read-side row decode (which carries no column).
+			assert.strictEqual((error as VcsRepoDecodeError).column, "sha")
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 })
@@ -1969,4 +2735,73 @@ describe("GithubProvider rate-limit handling", () => {
 			Effect.provide(stubbedProviderLayer([tokenResponse, () => commitsResponse(hexShas(100))])),
 		),
 	)
+
+	// GitHub may send `retry-after` as an HTTP-date instead of delta-seconds; the wait
+	// is the seconds until that instant. A long date-based wait defers (no inline sleep).
+	// (Computed against the Effect clock, which the test runtime pins at epoch 0, so the
+	// date is expressed as an offset from the epoch — keeping the delta exact.)
+	it.effect("computes the deferral from an HTTP-date retry-after header", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
+			assert.strictEqual(result.commits.length, 0)
+			assert.ok(result.next !== undefined)
+			assert.strictEqual(result.next?.retryAfterSeconds, 600) // 600s past the epoch clock
+		}).pipe(
+			Effect.provide(
+				stubbedProviderLayer([
+					tokenResponse,
+					() =>
+						new Response("rate limited", {
+							status: 429,
+							headers: { "retry-after": new Date(600_000).toUTCString() },
+						}),
+				]),
+			),
+		),
+	)
+
+	// With no `retry-after`, the wait falls back to `x-ratelimit-reset` (epoch seconds).
+	it.effect("falls back to x-ratelimit-reset (epoch seconds) when retry-after is absent", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const result = yield* provider.fetchCommits(installation, REPO, { sinceMs: 0, branch: "main" })
+			assert.strictEqual(result.commits.length, 0)
+			assert.ok(result.next !== undefined)
+			assert.strictEqual(result.next?.retryAfterSeconds, 600) // reset is 600s past the epoch clock
+		}).pipe(
+			Effect.provide(
+				stubbedProviderLayer([
+					tokenResponse,
+					() =>
+						new Response("rate limited", {
+							status: 429,
+							headers: { "x-ratelimit-reset": "600" },
+						}),
+				]),
+			),
+		),
+	)
+})
+
+// The queue producer floors + clamps every requested delay into the range the
+// Cloudflare binding accepts ([0, 86_400] whole seconds); an out-of-range or
+// fractional value would otherwise make the live `send` reject outright. The
+// rate-limit continuation feeds `retryAfterSeconds` straight through this.
+describe("clampQueueDelaySeconds", () => {
+	it("floors fractional seconds", () => {
+		assert.strictEqual(clampQueueDelaySeconds(600.7), 600)
+		assert.strictEqual(clampQueueDelaySeconds(0.9), 0)
+	})
+	it("clamps below 0 up to 0", () => {
+		assert.strictEqual(clampQueueDelaySeconds(-5), 0)
+	})
+	it("caps at the 24h maximum", () => {
+		assert.strictEqual(clampQueueDelaySeconds(90_000), 86_400)
+		assert.strictEqual(clampQueueDelaySeconds(86_400), 86_400)
+	})
+	it("passes an in-range whole number through unchanged", () => {
+		assert.strictEqual(clampQueueDelaySeconds(600), 600)
+		assert.strictEqual(clampQueueDelaySeconds(0), 0)
+	})
 })
