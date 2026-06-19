@@ -29,7 +29,16 @@ function prettyUrl(url: string | undefined): string {
  * `ReplayPlayerProvider`, so this player and the `<ReplayEditorTimeline>` strip
  * below it read and drive the same playhead.
  */
-export function ReplaySurface({ url }: { url?: string }) {
+export function ReplaySurface({
+	url,
+	detachedTransport = false,
+}: {
+	url?: string
+	/** Render only the browser chrome + video; the caller places `<ReplayTransport>`
+	 *  separately (so a side panel can match just the video block). Fullscreen always
+	 *  keeps the controls inside the figure. */
+	detachedTransport?: boolean
+}) {
 	const { status, error, figureRef, surfaceRef, mountRef, isFullscreen } = useReplayPlayer()
 
 	// Page-wide Space/←/→ transport — Space to play/pause, arrows to seek ±5s.
@@ -87,20 +96,44 @@ export function ReplaySurface({ url }: { url?: string }) {
 				)}
 			</div>
 
-			<ReplayControls />
-
-			{/* Legend for the scrubber's action-marker dots — otherwise the colors
-			    are undiscoverable. Hidden in fullscreen to keep the surface clean. */}
-			{!isFullscreen && (
-				<div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-3 py-1.5">
-					<MarkerLegend />
-				</div>
+			{/* Transport stays inside the figure unless the caller renders it detached
+			    below the surface. Fullscreen always keeps the controls in the figure. */}
+			{(!detachedTransport || isFullscreen) && (
+				<>
+					<ReplayControls />
+					{/* Legend for the scrubber's action-marker dots — otherwise the colors
+					    are undiscoverable. Hidden in fullscreen to keep the surface clean. */}
+					{!isFullscreen && (
+						<div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-3 py-1.5">
+							<MarkerLegend />
+						</div>
+					)}
+				</>
 			)}
 		</figure>
 	)
 }
 
-function ReplayControls() {
+/**
+ * The transport controls + scrubber legend, rendered detached from the player
+ * surface. Pair with `<ReplaySurface detachedTransport />` so a side panel can
+ * match the height of the video block while the controls span their own row.
+ */
+export function ReplayTransport() {
+	const { isFullscreen } = useReplayPlayer()
+	// In fullscreen the controls live inside the fullscreen figure.
+	if (isFullscreen) return null
+	return (
+		<div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+			<ReplayControls detached />
+			<div className="flex items-center justify-between gap-3 border-t border-border bg-muted/20 px-3 py-1.5">
+				<MarkerLegend />
+			</div>
+		</div>
+	)
+}
+
+function ReplayControls({ detached = false }: { detached?: boolean }) {
 	const {
 		isPlaying,
 		finished,
@@ -119,7 +152,14 @@ function ReplayControls() {
 	} = useReplayPlayer()
 
 	return (
-		<div className="flex items-center gap-3 border-t border-border bg-card px-3 py-2.5">
+		<div
+			className={cn(
+				"flex items-center gap-3 bg-card px-3 py-2.5",
+				// Attached: a divider from the surface above. Detached: it's the top of
+				// its own card, so no divider.
+				!detached && "border-t border-border",
+			)}
+		>
 			<button
 				type="button"
 				onClick={togglePlay}

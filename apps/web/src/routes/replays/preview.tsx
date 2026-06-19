@@ -1,22 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@maple/ui/components/ui/resizable"
-
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { ReplaySurface } from "@/components/replays/replay-player"
-import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
-import { ReplayEditorTimeline } from "@/components/replays/replay-editor-timeline"
-import { SessionEventsPanel } from "@/components/replays/session-events-panel"
-import { ClockIcon, PulseIcon, EyeIcon, CircleWarningIcon, UserIcon, GlobeIcon } from "@/components/icons"
-import { formatDuration } from "@/components/replays/replay-format"
-import {
-	CopyButton,
-	DetailRow,
-	deviceIcon,
-	Reveal,
-	SessionIdentityHeader,
-	StatTile,
-} from "@/components/replays/session-detail-parts"
+import { ReplayStudio } from "@/components/replays/replay-studio"
 import {
 	PREVIEW_RRWEB_EVENTS,
 	PREVIEW_SESSION,
@@ -37,124 +22,16 @@ function ReplayPreviewPage() {
 
 	return (
 		<DashboardLayout breadcrumbs={breadcrumbs} title="Session Replay (preview)">
-			<div className="flex h-full min-h-0 flex-col gap-3">
-				<Reveal>
-					<SessionIdentityHeader
-						sessionId={session.sessionId}
-						label={session.userId}
-						urlInitial={session.urlInitial}
-						startTime={session.startTime}
-						isActive={false}
-					/>
-				</Reveal>
-
-				<ReplayPlayerProvider sessionId={session.sessionId} previewEvents={PREVIEW_RRWEB_EVENTS}>
-					<ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-						<ResizablePanel defaultSize="60%" minSize="30%" className="min-h-0">
-							<div className="h-full space-y-4 overflow-auto pr-1">
-								<Reveal delay={0.06}>
-									<div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[1.9fr_1fr]">
-										<ReplaySurface url={session.urlInitial} />
-										<div className="space-y-4">
-											<div className="grid grid-cols-2 gap-2.5">
-												<StatTile
-													icon={<ClockIcon className="size-4" />}
-													label="Duration"
-													value={formatDuration(session.durationMs)}
-												/>
-												<StatTile
-													icon={<PulseIcon className="size-4" />}
-													label="Clicks"
-													value={String(session.clickCount)}
-												/>
-												<StatTile
-													icon={<EyeIcon className="size-4" />}
-													label="Pages"
-													value={String(session.pageViews)}
-												/>
-												<StatTile
-													icon={<CircleWarningIcon className="size-4" />}
-													label="Errors"
-													value={String(session.errorCount)}
-													tone={session.errorCount > 0 ? "error" : undefined}
-												/>
-											</div>
-
-											<section className="overflow-hidden rounded-xl border border-border bg-card">
-												<h3 className="border-b border-border px-4 py-2.5 font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-													Details
-												</h3>
-												<dl className="divide-y divide-border">
-													<DetailRow
-														icon={<UserIcon className="size-3.5" />}
-														label="User"
-													>
-														{session.userId}
-													</DetailRow>
-													<DetailRow
-														icon={<GlobeIcon className="size-3.5" />}
-														label="Browser"
-													>
-														{session.browserName}
-														<span className="text-muted-foreground">{` · ${session.osName}`}</span>
-													</DetailRow>
-													<DetailRow
-														icon={deviceIcon(session.deviceType)}
-														label="Device"
-													>
-														<span className="capitalize">
-															{session.deviceType}
-														</span>
-													</DetailRow>
-													<DetailRow
-														icon={<GlobeIcon className="size-3.5" />}
-														label="Country"
-													>
-														{session.country}
-													</DetailRow>
-													<DetailRow
-														icon={<PulseIcon className="size-3.5" />}
-														label="Service"
-													>
-														<span className="inline-flex items-center gap-1">
-															<span className="truncate font-mono text-xs">
-																{session.serviceName}
-															</span>
-															<CopyButton
-																value={session.serviceName}
-																label="Copy service name"
-															/>
-														</span>
-													</DetailRow>
-												</dl>
-											</section>
-										</div>
-									</div>
-								</Reveal>
-
-								<Reveal delay={0.12}>
-									<ReplayEditorTimeline
-										traceIds={[]}
-										previewSummaries={PREVIEW_TRACE_SUMMARIES}
-									/>
-								</Reveal>
-							</div>
-						</ResizablePanel>
-
-						<ResizableHandle
-							withHandle
-							className="cursor-row-resize bg-border/60 transition-colors hover:bg-primary/40 active:bg-primary/50"
-						/>
-
-						<ResizablePanel defaultSize="40%" minSize="15%" className="min-h-0">
-							<SessionEventsPanel
-								sessionId={session.sessionId}
-								previewEvents={PREVIEW_TRANSCRIPT}
-							/>
-						</ResizablePanel>
-					</ResizablePanelGroup>
-				</ReplayPlayerProvider>
-			</div>
+			<ReplayStudio
+				sessionId={session.sessionId}
+				session={session}
+				traceIds={[]}
+				preview={{
+					rrwebEvents: PREVIEW_RRWEB_EVENTS,
+					traceSummaries: PREVIEW_TRACE_SUMMARIES,
+					transcript: PREVIEW_TRANSCRIPT,
+				}}
+			/>
 		</DashboardLayout>
 	)
 }
