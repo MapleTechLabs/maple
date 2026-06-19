@@ -91,10 +91,9 @@ function anyMapContains(
 
 /**
  * Rewrites an HTTP server span name to the display form used by the UI and by
- * `trace_list_mv.SpanName`: `"http.server GET"` + route → `"GET /api/users"`.
- * Centralized so the materialized view, the span-hierarchy query, and the
- * trace-list span-name filter all agree on the spelling (drift between them is
- * exactly what made the "Root Span" quick filter return zero rows).
+ * `trace_list_mv.SpanName`: spanName `"http.server GET"` + route → `"GET /api/users"`.
+ * Centralized so the MV, span-hierarchy query, and span-name filter stay in
+ * sync — drift between them caused the "Root Span" quick filter to return zero rows.
  */
 export function httpDisplaySpanName(
 	spanName: CH.Expr<string>,

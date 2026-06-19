@@ -154,7 +154,6 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// No `code` to prove ownership → a new installation isn't connected.
 	it.effect("completeConnect refuses a new binding when no OAuth code is supplied", () => {
 		const { url } = createTempDbUrl("maple-gh-no-code-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -174,7 +173,6 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// Valid code, but the user doesn't manage installation 42 → reject.
 	it.effect("completeConnect rejects when the user cannot administer the installation", () => {
 		const { url } = createTempDbUrl("maple-gh-not-admin-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -194,7 +192,6 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// Reconnecting an install this org already owns works without a code.
 	it.effect("completeConnect allows a same-org reconnect without an OAuth code", () => {
 		const { url } = createTempDbUrl("maple-gh-reconnect-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -239,9 +236,7 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// The state nonce is a short-lived (10-min) CSRF guard: a callback that arrives
-	// after the TTL is rejected, and nothing is connected. (it.effect freezes the
-	// clock, so we advance past the TTL with TestClock.)
+	// State TTL is 10 min; it.effect freezes the clock so we advance with TestClock.
 	it.effect("completeConnect rejects an expired state and connects nothing", () => {
 		const { url } = createTempDbUrl("maple-gh-state-expired-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -263,8 +258,6 @@ describe("GithubConnectService", () => {
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
 
-	// State is single-use: it is consumed on the first callback, so a replay of the
-	// same state (a duplicated / retried redirect) is rejected and never connects twice.
 	it.effect("completeConnect consumes the state — a replay is rejected", () => {
 		const { url } = createTempDbUrl("maple-gh-state-replay-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -329,7 +322,6 @@ describe("GithubConnectService", () => {
 				},
 			])
 
-			// Disconnect removes the installation row and all its VCS data.
 			const result = yield* svc.disconnect(orgId)
 			assert.strictEqual(result.disconnected, true)
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
@@ -419,7 +411,6 @@ describe("GithubConnectService", () => {
 				const result = yield* svc.deleteRepository(orgId, repo7Id)
 				assert.strictEqual(result.deleted, true)
 
-				// "7" and its commit are gone; "8" and its commit remain.
 				assert.ok(Option.isNone(yield* repo.resolveRepository(orgId, "github", "7")))
 				assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_7 as never)))
 				assert.ok(Option.isSome(yield* repo.resolveRepository(orgId, "github", "8")))
@@ -546,8 +537,7 @@ describe("GithubConnectService", () => {
 				assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
 				assert.strictEqual(sent.filter((j) => j.kind === "sync-commits").length, 0)
 
-				// Changing the tracked branch wipes the repo's commits and enqueues a backfill
-				// of the new branch.
+				// Changing the branch wipes commits and enqueues a backfill.
 				sent.length = 0
 				const changed = yield* svc.setTrackedBranch(orgId, r.id, "release")
 				assert.strictEqual(changed.trackedBranch, "release")

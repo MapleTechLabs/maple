@@ -1,7 +1,6 @@
-// Stub for the `cloudflare:workers` virtual module so worker-dependent code can
-// be imported in the node test environment (vitest). Only the symbols that
-// `@maple/effect-cloudflare`'s barrel statically imports are needed here
-// (`DurableObject`, `WorkflowEntrypoint`); runtime worker behavior is never
-// exercised in unit tests — services that read bindings are stubbed via layers.
+// Stub for the `cloudflare:workers` virtual module so it can be imported in the
+// node/vitest environment. Only `DurableObject` and `WorkflowEntrypoint` are
+// needed — the modules in `@maple/effect-cloudflare` that statically import
+// them are never exercised at runtime in unit tests (bindings are layered in).
 export class DurableObject {}
 export class WorkflowEntrypoint {}

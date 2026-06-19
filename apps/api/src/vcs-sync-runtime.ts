@@ -77,8 +77,7 @@ export const flushVcsTelemetry = (env: Record<string, unknown>) => telemetry.flu
 export const runScheduledSync = Effect.gen(function* () {
 	const scheduler = yield* VcsScheduledSyncService
 	const result = yield* scheduler.runScheduledSync()
-	// Mirror the counts onto the tick span (the service method annotates its own
-	// child span) so cron-level traces are filterable without drilling in.
+	// Duplicate counts onto the tick span so cron-level traces are filterable without drilling into child spans.
 	yield* Effect.annotateCurrentSpan({
 		"vcs.scheduled.installations_total": result.installationsTotal,
 		"vcs.scheduled.enqueued": result.enqueued,
@@ -93,10 +92,7 @@ export const runScheduledSync = Effect.gen(function* () {
 		}),
 	)
 }).pipe(
-	// Log on failure (correlated to the still-open tick span / trace), annotate the
-	// outcome enum, then let the cause propagate so `withSpan` marks
-	// `VcsScheduledSync.tick` as Error and the failure bubbles out to the CF
-	// `scheduled` handler.
+	// tapCause lets the cause propagate so `withSpan` marks `VcsScheduledSync.tick` as Error.
 	Effect.tapCause((cause) =>
 		Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
@@ -109,10 +105,8 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
-// Mirrors the consumer's `max_retries` in wrangler.jsonc (and alchemy.run.ts). A
-// message is delivered up to `max_retries + 1` times; on that final failing
-// delivery there's no further retry (and no dead-letter queue), so we persist a
-// terminal status instead of dropping the work silently.
+// Must match `max_retries` in wrangler.jsonc / alchemy.run.ts. No DLQ exists, so on the
+// final delivery (attempt > max_retries) we persist a terminal status instead of silently dropping.
 const VCS_SYNC_MAX_RETRIES = 3
 
 export const processBatch = (batch: MessageBatch<unknown>) =>
@@ -124,8 +118,7 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 				service.processMessage(message.body).pipe(
 					Effect.matchCauseEffect({
 						onFailure: (cause) => {
-							// A rate limit too far out to ride inline → redeliver this message
-							// only once the VCS's budget is back, instead of an immediate retry.
+							// Rate-limited: delay redelivery until the VCS budget resets instead of retrying immediately.
 							const failure = Option.getOrUndefined(Cause.findErrorOption(cause))
 							const isRateLimited =
 								failure?._tag === "@maple/http/errors/VcsRateLimitedError"
@@ -134,13 +127,10 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 								? clampQueueDelaySeconds(failure.retryAfterSeconds)
 								: undefined
 							const isDelaySecondsSet = delaySeconds !== undefined
-							// This delivery already used the last retry → no point requeuing.
-							// Record a terminal status (so a repo can't stay stuck "backfilling")
-							// and ack to drop the message.
+							// Last retry exhausted: persist terminal status so repos don't get stuck backfilling, then ack.
 							const isFinalAttempt = message.attempts > VCS_SYNC_MAX_RETRIES
 
-							// Per-message terminal decision (mirrors the log below). Kept low
-							// cardinality — the full Cause stays in the log, never on the span.
+							// Low-cardinality outcome label — full Cause stays in the log, not the span.
 							const outcome = isFinalAttempt
 								? "exhausted"
 								: isDelaySecondsSet
@@ -149,9 +139,7 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 
 							return Effect.annotateCurrentSpan({
 								"vcs.queue.message.outcome": outcome,
-								// Tag the rate-limit backpressure so a `retry_delayed` (or an
-								// exhausted message that was last rate-limited) is filterable
-								// without parsing the log.
+								// Tag rate-limit errors so `retry_delayed`/`exhausted` spans are filterable without parsing logs.
 								...(isRateLimited
 									? { "vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError" }
 									: {}),

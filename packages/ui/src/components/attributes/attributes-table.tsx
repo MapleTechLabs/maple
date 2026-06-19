@@ -59,8 +59,7 @@ function AttributeRow({
 }) {
 	const { renderValue } = useAttributesConfig()
 	const parsed = tryParseJson(value)
-	// Apps may enrich specific keys (e.g. a commit SHA → hover card). Only the
-	// non-JSON branch is overridable; JSON values keep their collapsible renderer.
+	// Only non-JSON values are overridable; JSON keeps its collapsible renderer.
 	const override = parsed === null ? renderValue?.(attrKey, value) : null
 	return (
 		<div className="grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40">

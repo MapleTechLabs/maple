@@ -194,8 +194,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						return new GithubSetTrackedBranchResponse(result)
 					}),
 				)
-				// Read-only commit hover card: no admin gate — any org member viewing the
-				// dashboard resolves SHAs. Vendor-agnostic via VcsCommitService.
+				// No admin gate — any org member may resolve commit SHAs for hover cards.
 				.handle("vcsCommitDetail", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
@@ -310,7 +309,6 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 		const github = yield* GithubConnectService
 		const env = yield* Env
 
-		// Where the callback pages post their result. Computed once, reused below.
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
 		const hazelCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
 			renderCallbackPage({

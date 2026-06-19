@@ -13,8 +13,7 @@ const COMMIT_SHA_KEYS = new Set(["deployment.commit_sha", "vcs.ref.head.revision
 /**
  * `AttributesConfig.renderValue` implementation. Returns a hover-card-wrapped
  * value for known commit-SHA keys, or `null` to fall back to the default
- * copyable text. Defined at module scope so the `AttributesProvider` context
- * value keeps a stable identity across renders.
+ * copyable text.
  */
 export function renderAttributeValue(attrKey: string, value: string): ReactNode | null {
 	if (!COMMIT_SHA_KEYS.has(attrKey)) return null

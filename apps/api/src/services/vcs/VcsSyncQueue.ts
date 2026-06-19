@@ -25,13 +25,12 @@ export const QUEUE_BATCH_MAX_MESSAGES = 100
 export const QUEUE_BATCH_MAX_BYTES = 256 * 1024
 
 // Coerce a requested delay into the range Cloudflare accepts: a whole number of
-// seconds in [0, 86_400]. Out-of-range/fractional values would otherwise make
-// the binding reject the send/retry outright.
+// seconds in [0, 86_400]. Out-of-range/fractional values cause the binding to
+// reject the send outright.
 export const clampQueueDelaySeconds = (seconds: number): number =>
 	Math.min(Math.max(0, Math.floor(seconds)), QUEUE_MAX_DELAY_SECONDS)
 
-// Serialized byte size of a message body — the basis for Cloudflare's per-batch
-// byte cap. Measured as UTF-8
+// Serialized byte size of a message body (UTF-8) — the basis for Cloudflare's per-batch byte cap.
 const textEncoder = new TextEncoder()
 const jsonByteLength = (body: unknown): number => textEncoder.encode(JSON.stringify(body)).length
 
@@ -93,12 +92,9 @@ export class VcsSyncQueue extends Context.Service<VcsSyncQueue, VcsSyncQueueShap
 				}
 
 				// Encode once, then greedily pack into chunks bounded by BOTH the message
-				// count and the cumulative serialized size Cloudflare accepts per
-				// `sendBatch`. `encodeJob` yields the structured body (an object, not a
-				// string), so size is measured against its JSON byte length — the basis
-				// for the platform's limit. A single job over the per-message cap is sent
-				// on its own (Cloudflare rejects it, surfacing as a VcsQueueError) rather
-				// than silently dropped.
+				// count and the byte cap Cloudflare accepts per `sendBatch`. A single job
+				// over the per-message cap is sent on its own (Cloudflare rejects it,
+				// surfacing as VcsQueueError) rather than silently dropped.
 				const sized = jobs.map((job) => {
 					const body = encodeJob(job)
 					return { message: { body }, size: jsonByteLength(body) }

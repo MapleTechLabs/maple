@@ -21,9 +21,7 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 
 		const makeHandler =
 			(provider: VcsProviderClient, route: string) => (req: HttpServerRequest.HttpServerRequest) => {
-				// Used so we can return a clean HTTP 500 response (non-errored exit)
-				// while still using the fail channel of the effects inside of the span
-				// tracer.
+				// Sentinel: lets the span exit Error while the HTTP layer returns a 500.
 				class EnqueueFailure {
 					readonly _tag = "EnqueueFailure"
 					constructor(readonly message: string) {}
@@ -83,8 +81,7 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 									"vcs.webhook.outcome": "rejected",
 									"vcs.webhook.reason": "parse_rejected",
 								}).pipe(Effect.as(textResponse(error.message, 400))),
-							// Genuine internal failure: annotate, then FAIL so the span
-							// ends Error. The body is produced by the catch below.
+							// Annotate + fail so the span exits Error; caught below for the 500 body.
 							"@maple/http/errors/VcsQueueError": (error) =>
 								Effect.annotateCurrentSpan({
 									"http.response.status_code": 500,
@@ -106,9 +103,7 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 					Effect.withSpan("VcsWebhook.receive", {
 						attributes: { "vcs.provider": provider.id },
 					}),
-					// Map the internal-failure marker to its 500 response OUTSIDE the
-					// span so the span exits Error (5xx) while the HTTP layer still gets
-					// a well-formed response.
+					// Catch OUTSIDE the span so the span exits Error but HTTP gets a 500.
 					Effect.catchTag("EnqueueFailure", () =>
 						Effect.succeed(textResponse("enqueue failed", 500)),
 					),

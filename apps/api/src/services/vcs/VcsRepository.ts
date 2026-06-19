@@ -198,11 +198,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-		// THE external → internal resolver for installations: the one place a
-		// provider's external installation id is turned into a Maple installation
-		// (carrying our internal `id`). Every other installation method takes that
-		// internal id; callers resolve once here and pass `installation.id` onward.
-		// Returns the whole row, so there's never a resolve-then-refetch round-trip.
+		// THE external → internal resolver for installations. Returns the whole row
+		// (including our internal `id`) so callers never need a resolve-then-refetch.
 		const resolveInstallation = Effect.fn("VcsRepository.resolveInstallation")(function* (
 			provider: VcsProviderId,
 			externalInstallationId: string,
@@ -222,11 +219,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 		})
 
-		// Every installation across every org — the cross-org listing the periodic
-		// sync scheduler walks to enqueue a refresh per installation. Status is not
-		// filtered here (the caller applies the `isInstallationProcessable` gate, the
-		// single place that rule lives); this returns the raw set so callers can also
-		// observe suspended/disconnected installs if they need to.
+		// Every installation across every org — the cross-org listing the sync
+		// scheduler walks. Status is not filtered here; the caller applies
+		// `isInstallationProcessable` (the single place that rule lives).
 		const listAllInstallations = Effect.fn("VcsRepository.listAllInstallations")(function* () {
 			const rows = yield* database
 				.execute((db) => db.select().from(vcsInstallations))
@@ -234,9 +229,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return yield* decodeAll("vcs_installations", rows, rowToInstallation)
 		})
 
-		// Look up an installation by Maple's own id — org-scoped (ids are globally
-		// unique UUIDs, so the org filter is a safety bound). Used where a caller holds
-		// a repo's internal installationId and needs the external id for a queue job.
+		// Look up an installation by Maple's own id — org-scoped as a safety bound
+		// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
 		const getInstallationById = Effect.fn("VcsRepository.getInstallationById")(function* (
 			orgId: OrgId,
 			installationId: VcsInstallationId,
@@ -300,8 +294,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
-			// `.returning()` hands back the upserted row in the same statement — one
-			// round-trip, and no read-after-write race with a concurrent status change.
+			// `.returning()` gives back the upserted row in the same round-trip, avoiding
+			// a read-after-write race with a concurrent status change.
 			const row = Option.fromNullishOr(rows[0])
 			if (Option.isNone(row)) {
 				return yield* new VcsRepoPersistenceError({ message: "Installation upsert returned no row" })
@@ -346,11 +340,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			},
 		)
 
-		// THE external → internal resolver for repositories: turns the provider's
-		// external repo id (the only handle a webhook/queue job carries) into a
-		// Maple repo (carrying our internal `id` and `installationId`). Returns the
-		// whole row, so the sync path resolves once and passes the entity onward —
-		// no resolve-then-refetch. Org-scoped so a tenant can't read another's repo.
+		// THE external → internal resolver for repositories. Returns the whole row
+		// (including internal `id` and `installationId`) so the sync path never needs
+		// a separate refetch. Org-scoped so a tenant can't read another's repo.
 		const resolveRepository = Effect.fn("VcsRepository.resolveRepository")(function* (
 			orgId: OrgId,
 			provider: VcsProviderId,
@@ -376,9 +368,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			return Option.some(yield* decodeOne("vcs_repositories", row.value, rowToRepo))
 		})
 
-		// Look up a repo by Maple's own id — the dashboard's handle. Org-scoped, so a
-		// tenant can't read another's repo even with a guessed id (ids are globally
-		// unique UUIDs, so the org filter is purely a safety bound).
+		// Look up a repo by Maple's own id — org-scoped as a safety bound
+		// (UUIDs are globally unique, but the org filter prevents cross-tenant reads).
 		const getRepositoryById = Effect.fn("VcsRepository.getRepositoryById")(function* (
 			orgId: OrgId,
 			repositoryId: VcsRepositoryId,
@@ -562,14 +553,9 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		// ---- Commits ------------------------------------------------------
 
 		// Persist commits for an already-resolved repository. Commits belong to the
-		// repo only — a repo stores the commits of its single tracked branch, so
-		// there is no commit↔branch link to maintain. Idempotent (upsert on
-		// (repository_id, sha)). The orchestrator resolves the repo via
-		// resolveRepository and only calls here when the row exists (a push racing
-		// ahead of repo discovery is dropped upstream), so the "unknown repo" case
-		// no longer lives at this layer. The commit row denormalizes the repo's
-		// org/provider for the dashboard's (org_id, sha) lookup, so both come
-		// straight off the entity.
+		// repo only (no commit↔branch link — a repo tracks one branch at a time).
+		// Idempotent: upsert on (repository_id, sha). The commit row denormalizes
+		// org/provider for the dashboard's (org_id, sha) lookup.
 		const upsertCommits = Effect.fn("VcsRepository.upsertCommits")(function* (
 			repository: VcsRepo,
 			commits: ReadonlyArray<CommitUpsertInput>,
@@ -765,13 +751,10 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 		})
 
 		// Retarget the repo's single tracked branch: point `tracked_branch` at the new
-		// branch AND wipe the repo's stored commits (they were the old branch's history).
-		// The caller then enqueues a fresh backfill of the new branch; the sync engine
-		// owns every `sync_status` transition for that backfill (start → terminal), so
-		// this write deliberately leaves `sync_status` / `last_synced_at` untouched. Used
-		// by the dashboard's branch selection and the engine's fallback to the default
-		// when the tracked branch is deleted. The update + commit-wipe run as one atomic
-		// batch so we never point at the new branch while still holding old commits.
+		// branch AND wipe stored commits (they were the old branch's history). Leaves
+		// `sync_status`/`last_synced_at` untouched — the sync engine owns those
+		// transitions for the subsequent backfill. The update + commit-wipe run as one
+		// atomic batch so we never point at the new branch while still holding old commits.
 		const changeTrackedBranch = Effect.fn("VcsRepository.changeTrackedBranch")(function* (
 			orgId: OrgId,
 			repositoryId: VcsRepositoryId,

@@ -15,11 +15,9 @@ import { cn } from "@maple/ui/utils"
 // open a hover card (and never hit the backend); they render as plain children.
 const FULL_SHA = /^[0-9a-f]{40}$/i
 
-// The tooltip is visible after this long a hover (so a cursor merely crossing a
-// SHA never flashes a card)…
+// Card becomes visible after this long a hover; fetch is armed sooner (ARM_DELAY_MS)
+// so the request is already in flight (or cached) when the card opens.
 const OPEN_DELAY_MS = 200
-// …but the fetch is armed much sooner, so by the time the card opens the request
-// is already in flight (or cached) and the loading state barely shows.
 const ARM_DELAY_MS = 20
 
 interface CommitShaHoverCardProps {
@@ -31,8 +29,8 @@ interface CommitShaHoverCardProps {
 	className?: string
 	/**
 	 * When set, the trigger is a button that copies this value on click (with a
-	 * toast). Used where the SHA was previously a copyable badge — the rich hover
-	 * card replaces the old copy tooltip, so the two never stack as popups.
+	 * toast). Keeps copy affordance and hover card in one element so they never
+	 * stack as separate popups.
 	 */
 	copy?: { value: string; label: string }
 }

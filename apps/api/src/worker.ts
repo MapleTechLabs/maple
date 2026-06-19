@@ -46,16 +46,12 @@ const telemetry = MapleCloudflareSDK.make({
 	dropSpanNames: ["McpServer/Notifications."],
 })
 
-// Effect's `HttpMiddleware.tracer` ends the root HTTP *server* span on a
-// deferred macrotask (`scheduleTask(span.end, 0)` → `setTimeout(0)`), whereas
-// `Effect.withSpan` child spans end synchronously. `telemetry.flush` drains the
-// span buffer synchronously, so flushing the instant the response resolves
-// captures the child spans but NOT the server span — its macrotask hasn't run
-// yet. Busy routes get rescued by a later request's flush; an isolated request
-// (e.g. a GitHub webhook) freezes the isolate first, so its server span is lost
-// and the request never surfaces as a trace. Yield one macrotask so the
-// scheduled `span.end` runs before we drain — mirrors `drainScheduler` in
-// `@maple/effect-cloudflare`'s `runScheduledEffect`, which the queue path uses.
+// `HttpMiddleware.tracer` ends the root server span on a deferred macrotask
+// (`scheduleTask(span.end, 0)`), but `telemetry.flush` drains synchronously.
+// Flushing immediately after the response loses the server span — its macrotask
+// hasn't fired yet. Isolated requests (e.g. a GitHub webhook) freeze the isolate
+// before a subsequent request rescues it, so the trace is silently dropped.
+// Yield one macrotask first so `span.end` runs before we drain.
 const flushTelemetry = async (env: Record<string, unknown>): Promise<void> => {
 	await new Promise<void>((resolve) => setTimeout(resolve, 0))
 	await telemetry.flush(env)
@@ -225,9 +221,8 @@ const handle = async (
 export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
 export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 
-// VCS sync queue consumer. The runtime + layer graph are dynamic-imported (same
-// startup-CPU-budget discipline as the route graph above): build a dedicated
-// per-invocation layer and run the batch under it, then flush telemetry.
+// VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
+// as the route graph above) to keep module-scope evaluation light.
 const handleQueue = async (
 	batch: MessageBatch<unknown>,
 	env: Record<string, unknown>,
@@ -242,9 +237,8 @@ const handleQueue = async (
 }
 
 // Cron handler (every 12h, see wrangler.jsonc `triggers.crons`): enqueue a
-// periodic VCS sync per installation. Dynamic-imported on the same startup-CPU
-// discipline as the route/queue graphs above. There is only one cron expression,
-// so no `event.cron` dispatch is needed.
+// periodic VCS sync per installation. Single cron expression — no `event.cron`
+// dispatch needed.
 const handleScheduled = async (
 	env: Record<string, unknown>,
 	ctx: ExecutionContext,

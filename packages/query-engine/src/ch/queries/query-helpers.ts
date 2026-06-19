@@ -204,8 +204,7 @@ export function tracesBaseWhereConditions(
 		conditions.push(CH.notInList($.ServiceName, opts.excludedServiceNames))
 	}
 	if (opts.excludedSpanNames?.length) {
-		// Display-name aware (see the spanName include branch above): exclude a row
-		// when either its raw or rewritten span name is in the list.
+		// Display-name aware: exclude rows matching either the raw or rewritten span name.
 		const display = httpDisplaySpanName(
 			$.SpanName,
 			$.SpanAttributes.get("http.route"),

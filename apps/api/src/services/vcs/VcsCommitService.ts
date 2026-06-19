@@ -31,18 +31,15 @@ import { VcsRepository } from "./VcsRepository"
 //   3. else     → not found (cached briefly so repeated hovers don't re-probe)
 // ---------------------------------------------------------------------------
 
-// How long a "no repo has this SHA" result is remembered, so a stream of hovers
-// on an unresolvable SHA doesn't re-scan every repo against the provider each
-// time. Short, because a backfill may land the commit moments later.
+// How long a "not found" result is cached. Short because a backfill may land
+// the commit moments later, but long enough to absorb hover-card bursts.
 const NEGATIVE_TTL_MS = 60_000
 
 const NEGATIVE_CACHE_MAX = 1000
 const NEGATIVE_CACHE_TARGET = 900
 
-// Once the cache hits MAX, trim it back down to TARGET so it can't grow forever.
 const evictNegativeCache = (cache: Map<string, number>, now: number): void => {
 	if (cache.size < NEGATIVE_CACHE_MAX) return
-	// First drop anything expired.
 	for (const [key, expiry] of cache) {
 		if (expiry <= now) cache.delete(key)
 	}
@@ -137,7 +134,6 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 			// every hover. Per-isolate and size-capped by evictNegativeCache.
 			const negativeCache = new Map<string, number>()
 
-			// Check if a commit exists upstream in any of the installed installations.
 			const probeInstallations = Effect.fn("VcsCommitService.probeInstallations")(function* (
 				orgId: OrgId,
 				sha: GitCommitSha,
@@ -166,8 +162,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 						)
 
 						if (Result.isFailure(outcome)) {
-							// In this branch we don't care about upstream failures, we do
-							// our best effort to resolve the commit and return nothing otherwise.
+							// Best-effort: skip repos that error; another may have the commit.
 							continue
 						}
 						if (Option.isNone(outcome.success)) continue
@@ -276,8 +271,7 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				})
 
 				if (probe._tag === "resolved") {
-					// Hit. Persist best-effort (a write failure must not fail the read) and
-					// return the freshly resolved detail.
+					// Persist best-effort — a write failure must not fail the read.
 					const { normalized, repository } = probe
 					const persisted = yield* asPersistence(repo.upsertCommits(repository, [normalized])).pipe(
 						Effect.as(true),

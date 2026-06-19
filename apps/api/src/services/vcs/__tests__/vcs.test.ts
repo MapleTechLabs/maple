@@ -205,9 +205,7 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
-	// A Cloudflare Queue message caps at 128 KB and commit messages are unbounded,
-	// so a large push must split into multiple jobs packed by *byte size* — each
-	// independently enqueueable — rather than relying on a fixed commit count.
+	// Cloudflare Queue caps at 128 KB; a large push splits by byte size, not commit count.
 	it.effect("splits a large push into multiple jobs that each stay under the 128 KB queue cap", () =>
 		Effect.gen(function* () {
 			const QUEUE_MESSAGE_LIMIT = 128 * 1024
@@ -230,14 +228,13 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			assert.ok(jobs.length > 1) // the push was split across multiple jobs
+			assert.ok(jobs.length > 1)
 			for (const job of jobs) {
 				assert.strictEqual(job.kind, "push")
 				if (job.kind !== "push") return
 				// Every job is independently enqueueable, regardless of the (count-blind) split.
 				const wireBytes = Buffer.byteLength(JSON.stringify(Schema.encodeSync(VcsSyncJob)(job)))
 				assert.ok(wireBytes < QUEUE_MESSAGE_LIMIT)
-				// All slices share the same provider/installation/repo/branch.
 				assert.strictEqual(job.externalInstallationId, "42")
 				assert.strictEqual(job.externalRepoId, "7")
 				assert.strictEqual(job.branch, "main")
@@ -248,9 +245,8 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
-	// A force-push rewrote history, so the commit payload is unreliable: the provider
-	// discards it and emits a single marker job (no commits, no splitting). The
-	// orchestrator re-walks the branch rather than trusting the payload.
+	// Force-push rewrote history: payload unreliable, so the provider discards it and
+	// emits a single marker job. The orchestrator re-walks instead of trusting the payload.
 	it.effect("a forced push emits a single empty marker job (no commits, no split)", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -273,7 +269,7 @@ describe("GithubProvider.webhookToJobs", () => {
 				headers: { "x-github-event": "push", "x-hub-signature-256": sign(body) },
 				rawBody: body,
 			})
-			assert.strictEqual(jobs.length, 1) // forced ⇒ one marker job, never split
+			assert.strictEqual(jobs.length, 1)
 			const job = jobs[0]!
 			assert.strictEqual(job.kind, "push")
 			if (job.kind !== "push") return
@@ -395,8 +391,6 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
-	// installation_repositories events: added/removed map to the repositories_*
-	// sync reasons so the orchestrator reconciles the repo set.
 	it.effect("maps installation_repositories added/removed to repositories_added/removed jobs", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -518,7 +512,6 @@ describe("VcsRepository", () => {
 			assert.ok(branches.find((b) => b.name === "main")!.isDefault)
 			assert.ok(branches.filter((b) => b.name !== "main").every((b) => !b.isDefault))
 
-			// Seed commits on the repo (its current tracked branch is "main").
 			yield* repo.upsertCommits(r, [mk(SHA_X, 100), mk(SHA_Y, 200)])
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_X as never)))
 
@@ -543,7 +536,6 @@ describe("VcsRepository", () => {
 			assert.strictEqual(none.length, 0)
 			assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 2)
 
-			// Delete "feature": branch row gone, deleteBranch reports it removed.
 			assert.ok(yield* repo.deleteBranch(r.id, "feature"))
 			assert.deepStrictEqual(
 				(yield* repo.listBranchesByRepository(r.id)).map((b) => b.name),
@@ -614,7 +606,6 @@ describe("VcsRepository", () => {
 			const commit = yield* repo.findCommitBySha(orgId, SHA as never)
 			assert.ok(Option.isSome(commit))
 			assert.strictEqual(commit.value.authorLogin, "octocat")
-			// The commit is linked to its repo row by internal id.
 			assert.strictEqual(commit.value.repositoryId, repoRow.value.id)
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
@@ -692,12 +683,11 @@ describe("VcsRepository", () => {
 
 			yield* purgeInstallationFor(repo, orgId, "42")
 
-			// Installation 42 is fully gone — row, repositories, and commits.
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA_42 as never)))
 
-			// Installation 99 is untouched — the commit delete was scoped to 42's repo ids.
+			// Installation 99 is untouched (delete was scoped to 42's repo ids).
 			assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "99")))
 			assert.strictEqual((yield* reposOfInstallation(repo, "99", "all")).length, 1)
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA_99 as never)))
@@ -828,9 +818,8 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedInstallation(repo, orgId)
 			yield* upsertReposFor(repo, "42", oneRepo)
 			const r = yield* repoFor(repo, orgId, "7")
-			// The repo's tracked branch is the seeded default "main". Pre-seed a local
-			// "stale" branch (absent upstream) plus "release" (present upstream).
 			assert.strictEqual(r.trackedBranch, "main")
+			// Pre-seed a local "stale" branch (absent upstream) plus "release" (present upstream).
 			yield* repo.upsertBranches(r, [
 				{ name: "release", headSha: null },
 				{ name: "stale", headSha: null },
@@ -999,7 +988,6 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedInstallation(repo, orgId)
 			yield* upsertReposFor(repo, "42", oneRepo)
 			const r = yield* repoFor(repo, orgId, "7")
-			// Track a non-default branch and store a commit for it.
 			yield* repo.upsertBranches(r, [
 				{ name: "main", headSha: null },
 				{ name: "release", headSha: null },
@@ -1171,7 +1159,6 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedRepo(repo)
 			const r = yield* repoFor(repo, orgId, "7")
 			yield* repo.upsertBranches(r, [{ name: "release", headSha: null }])
-			// Make "release" the repo's single tracked branch.
 			yield* repo.changeTrackedBranch(orgId, r.id, "release")
 			yield* svc.processMessage(
 				Schema.encodeSync(VcsSyncJob)({
@@ -1208,7 +1195,7 @@ describe("VcsSyncService orchestrator", () => {
 			const a = yield* repo.findCommitBySha(orgId, SHA_A as never)
 			const b = yield* repo.findCommitBySha(orgId, SHA_B as never)
 			assert.ok(Option.isSome(a) && Option.isSome(b))
-			// B2: a push is pure enrichment — the sync status stays exactly as the
+			// A push is pure enrichment — the sync status stays exactly as the
 			// backfill left it (here: untouched since no backfill has run).
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "pending")
@@ -1253,10 +1240,8 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos })))
 	})
 
-	// A new installation supersedes any prior one for the org: if the user removed
-	// the old GitHub installation without Maple receiving the `installation.deleted`
-	// webhook, the stale (still "active") row — and its repos/commits — is purged,
-	// so the org is never left with multiple active installations.
+	// A new installation supersedes any prior one for the same org: the stale row and
+	// its repos/commits are purged (guards against a missed `installation.deleted` webhook).
 	it.effect("a 'created' installation-sync purges any prior installation for the org", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-supersede-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -1277,8 +1262,6 @@ describe("VcsSyncService orchestrator", () => {
 			const repo = yield* VcsRepository
 			const orgId = asOrgId("org_orch")
 
-			// A stale prior installation ("11"), still active in Maple because the
-			// GitHub uninstall webhook never arrived, with a repo + commit of its own.
 			yield* repo.upsertInstallation({
 				orgId,
 				provider: "github",
@@ -1305,7 +1288,6 @@ describe("VcsSyncService orchestrator", () => {
 			const STALE_SHA = "c".repeat(40)
 			yield* upsertCommitsFor(repo, orgId, "70", [commit(STALE_SHA, 1)])
 
-			// The freshly-connected installation ("42") exists; its created sync job runs.
 			yield* seedInstallation(repo, orgId)
 			const job: VcsSyncJob = {
 				kind: "installation-sync",
@@ -1469,7 +1451,7 @@ describe("VcsSyncService orchestrator", () => {
 		)
 	})
 
-	// C1: the processability gate. A non-active installation must process nothing.
+	// Processability gate: a non-active installation must process nothing.
 	it.effect("a suspended installation is skipped — no data processed, no failure", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-suspended-", dirs)
 		const sent: Array<VcsSyncJob> = []
@@ -1496,7 +1478,6 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, commits: [commit(SHA_A, 1)] })))
 	})
 
-	// C1: unsuspend must flip the installation back to active and resume syncing.
 	it.effect("unsuspend reactivates a suspended installation and re-syncs its repos", () => {
 		const { url } = createTempDbUrl("maple-vcs-orch-unsuspend-", dirs)
 		const sent: Array<VcsSyncJob> = []

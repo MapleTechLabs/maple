@@ -13,11 +13,10 @@ import * as React from "react"
  *     it (the chip copies `key=value` and passes `Copied <key>`).
  *   - `highlightJson` turns a JSON string into highlighted HTML. When omitted,
  *     JSON renders as plain pre-formatted text.
- *   - `renderValue` is an optional override for a single attribute's value cell.
- *     It returns a node to render instead of the default copyable text, or
- *     null/undefined to fall back. Lets apps enrich specific keys (e.g. wrap a
- *     commit-SHA attribute in a hover card) without `@maple/ui` depending on
- *     app-level components.
+ *   - `renderValue` lets apps enrich specific keys (e.g. wrap a commit-SHA in a
+ *     hover card) without `@maple/ui` depending on app-level components. Return
+ *     null/undefined to fall back to the default copyable text. JSON values are
+ *     never passed through — they always use the collapsible renderer.
  */
 export interface AttributesConfig {
 	notifyCopied?: (message?: string) => void

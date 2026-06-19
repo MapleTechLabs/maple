@@ -76,7 +76,6 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const trackedBranchOf = (repository: VcsRepo): string =>
 				repository.trackedBranch ?? repository.defaultBranch
 
-			// Build a commit-backfill job for a repo's branch over the standard window.
 			const backfillJob = (
 				installation: VcsInstallation,
 				repository: VcsRepo,
@@ -159,7 +158,6 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* Effect.annotateCurrentSpan({ "vcs.commits.fetched": commits.length })
 
 					if (!next) {
-						// Window fully walked → done.
 						yield* repo.updateRepoSyncStatus(repository.id, {
 							status: "ready",
 							error: null,
@@ -305,8 +303,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				// next installation-sync). Commit ingestion is gated on the tracked branch.
 				yield* repo.getOrCreateBranch(repository, job.branch)
 				if (job.branch !== tracked) {
-					// THE off-tracked-branch gate: the push landed on a branch we don't ingest
-					// commits for, so we surface it in the picker but ingest nothing.
+					// Push landed on an untracked branch — surfaced in the picker, no commit ingestion.
 					yield* Effect.annotateCurrentSpan({
 						"vcs.push.outcome": "skipped",
 						"vcs.push.reason": "untracked_branch",
@@ -452,11 +449,8 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				})
 			})
 
-			// THE gate: the single, vendor-agnostic answer to "should the sync engine
-			// act on this installation's data?" (rule lives in isInstallationProcessable).
-			// Every per-kind handler runs through here; the decision is annotated on the
-			// current span (`vcs.installation.processable`) so it's traceable, and a skip
-			// is logged. Suspended / disconnected installations are skipped.
+			// Single gate for "should the engine act on this installation?" — rule lives in
+			// isInstallationProcessable. Suspended/disconnected installations are skipped.
 			const ensureProcessable = (installation: VcsInstallation, kind: VcsSyncJob["kind"]) =>
 				Effect.gen(function* () {
 					const processable = isInstallationProcessable(installation)
@@ -634,9 +628,8 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					)
 				}
 
-				// Per repo: sync its branch list (names only). The sync-branches handler
-				// then enqueues the commit backfills for every tracked branch (the default
-				// among them), so all commit-sync enqueuing lives in one place.
+				// Per repo: sync its branch list (names only); sync-branches then enqueues
+				// the commit backfill, keeping all commit-sync enqueuing in one place.
 				yield* queue.sendBatch(
 					repos.map(
 						(r): VcsSyncJob => ({
@@ -726,9 +719,8 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					yield* Effect.annotateCurrentSpan({ "vcs.webhook.delivery_id": job.deliveryId })
 				}
 
-				// Resolve the installation once (external id → entity carrying our internal
-				// id) — the single resolve for the whole job; every handler addresses the
-				// installation by `installation.id`.
+				// Resolve the installation once (external id → entity); every handler uses
+				// `installation.id` from here on.
 				const installationOpt = yield* repo.resolveInstallation(
 					job.provider,
 					job.externalInstallationId,

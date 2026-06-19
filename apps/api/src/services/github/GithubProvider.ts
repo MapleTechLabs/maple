@@ -420,7 +420,6 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						"vcs.repository.external_id": externalRepoId,
 					})
 					if (payload.ref_type !== "branch") {
-						// `ref_type` is "tag" (or other) — only branch create/delete is synced.
 						yield* Effect.annotateCurrentSpan({
 							"vcs.webhook.outcome": "skipped",
 							"vcs.webhook.skip_reason": "non_branch_ref_event",

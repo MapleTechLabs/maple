@@ -45,9 +45,8 @@ export class VcsScheduledSyncService extends Context.Service<
 
 		const runScheduledSync = Effect.fn("VcsScheduledSyncService.runScheduledSync")(function* () {
 			const installations = yield* repo.listAllInstallations()
-			// Apply THE gate (the one place the rule lives) — never enqueue work for a
-			// suspended/disconnected installation; the consumer would skip it anyway,
-			// so filtering here just avoids the no-op round-trip through the queue.
+			// Filter here so we don't enqueue no-op work; the consumer would skip
+			// suspended/disconnected installations anyway.
 			const processable = installations.filter(isInstallationProcessable)
 
 			const jobs = processable.map(
@@ -58,8 +57,7 @@ export class VcsScheduledSyncService extends Context.Service<
 					reason: "scheduled",
 				}),
 			)
-			// `sendBatch` chunks internally to the platform's per-call caps, so the full
-			// list goes in one call regardless of how many installations there are.
+			// `sendBatch` handles chunking to platform per-call caps internally.
 			yield* queue.sendBatch(jobs)
 
 			const result: VcsScheduledSyncResult = {

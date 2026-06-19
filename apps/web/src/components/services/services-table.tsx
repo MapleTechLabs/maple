@@ -90,7 +90,7 @@ function CommitsList({ commits }: { commits: CommitBreakdown[] }) {
 		)
 	}
 
-	// Each SHA is its own hover card with its traffic share — no nested popups.
+	// Each SHA gets its own hover card — avoids nesting a popup inside a popup.
 	return (
 		<div className="flex flex-wrap items-center gap-1.5">
 			{commits.map((c) => (

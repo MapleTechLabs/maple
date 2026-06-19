@@ -39,10 +39,8 @@ const commitBody = (sha: string) => ({
 	author: { login: "octocat", avatar_url: "https://avatars/u/1" },
 })
 
-// A GithubHttp seam that routes by URL: access-token mints always succeed; a
-// commit GET returns the canned commit only when `resolvable` says that repo has
-// the SHA, else 404 (the "not in this repo" signal). Counts commit GETs so a
-// test can prove the negative cache suppressed a re-probe.
+// GithubHttp seam: access-token POSTs always succeed; commit GETs return the canned
+// body or 404 based on `resolvable`. Counts GETs so tests can verify the negative cache.
 const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	const calls = { commitGets: 0 }
 	const layer = Layer.succeed(GithubHttp, {
@@ -66,9 +64,8 @@ const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	return { layer, calls }
 }
 
-// Wire VcsCommitService over a temp sqlite (real repo), a real GithubProvider /
-// registry backed by the stubbed GithubHttp. `data` is referenced both inside the
-// service and in the returned merge, so Effect memoizes one shared repo instance.
+// Full layer stack over a temp sqlite + stubbed GithubHttp. `data` appears in both
+// the service deps and the returned merge so Effect memoizes one shared repo instance.
 const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
 	const env = testEnv(url, GITHUB_APP_CONFIG)
 	const database = DatabaseLibsqlLive.pipe(Layer.provide(env))

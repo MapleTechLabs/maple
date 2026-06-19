@@ -162,11 +162,9 @@ export const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
 
-// Vendor-agnostic VCS services for the fetch path: the webhook router needs the
-// provider registry + sync queue; the repo + state repo are ready for the
-// Step-2 settings endpoints. The sync orchestrator (VcsSyncService) lives only
-// in the queue-consumer runtime (vcs-sync-runtime.ts), not here. Database /
-// WorkerEnvironment are satisfied at worker scope (like CoreServicesLive).
+// VCS service wiring for the fetch-path worker. VcsSyncService (the sync
+// orchestrator) lives only in vcs-sync-runtime.ts — not here. Database /
+// WorkerEnvironment are provided at worker scope (like CoreServicesLive).
 const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
 const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))
 
@@ -177,11 +175,9 @@ const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(Git
 export const VcsServicesLive = Layer.mergeAll(
 	VcsDataLive,
 	VcsProviderRegistryLive,
-	// The dashboard connect flow: needs the repo + state repo + sync queue
-	// (VcsDataLive) plus the GitHub App client (App-JWT installation lookup).
+	// OAuth connect flow — needs VcsDataLive + GithubAppClient for App-JWT installation lookup.
 	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
-	// The commit hover card: vendor-agnostic — only the repo + provider registry,
-	// never a provider module directly.
+	// Routed via VcsProviderRegistry so no provider module is imported directly.
 	VcsCommitService.layer.pipe(
 		Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive)),
 	),

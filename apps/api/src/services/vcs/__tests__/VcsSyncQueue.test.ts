@@ -11,11 +11,8 @@ import { findError } from "./harness"
 
 type CapturedMessage = { readonly body: unknown }
 
-// A fake Cloudflare Queue binding that records each `sendBatch` chunk the producer
-// hands it (full messages, not just counts). Wired in via a `WorkerEnvironment`
-// whose VCS_SYNC_QUEUE is this binding, so the real `VcsSyncQueue.sendBatch`
-// chunking runs unchanged. `reject` makes every `sendBatch` throw, to exercise the
-// VcsQueueError path.
+// Fake Cloudflare Queue binding that captures each chunk passed to `sendBatch`.
+// `reject` makes every call throw so the VcsQueueError path can be exercised.
 const fakeQueueEnv = (opts?: { reject?: boolean }) => {
 	const chunks: CapturedMessage[][] = []
 	const binding = {
@@ -39,11 +36,8 @@ const chunkSizes = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>): numb
 const encoder = new TextEncoder()
 const bodyBytes = (m: CapturedMessage): number => encoder.encode(JSON.stringify(m.body)).length
 
-// Invariant every chunk must satisfy regardless of the exact encoded sizes: at
-// most QUEUE_BATCH_MAX_MESSAGES messages, and — unless the chunk is a lone
-// oversized message that cannot be split — at most QUEUE_BATCH_MAX_BYTES total.
-// Asserting the invariant (not just exact chunk arrays) keeps the test from
-// breaking if a fixture's encoded size shifts without the chunking logic changing.
+// Checks per-chunk limits rather than exact arrays so tests don't break if a
+// fixture's encoded size shifts without the chunking logic changing.
 const assertChunksValid = (chunks: ReadonlyArray<ReadonlyArray<CapturedMessage>>): void => {
 	for (const chunk of chunks) {
 		assert.ok(chunk.length >= 1, "no empty chunks are emitted")
@@ -132,7 +126,6 @@ describe("VcsSyncQueue.sendBatch chunking", () => {
 			const queue = yield* VcsSyncQueue
 			yield* queue.sendBatch(jobs)
 			assertChunksValid(chunks)
-			// The oversized job is isolated in a chunk of one.
 			const oversizedChunk = chunks.find((c) => c.length === 1 && bodyBytes(c[0]!) > QUEUE_BATCH_MAX_BYTES)
 			assert.ok(oversizedChunk, "oversized message is sent in a chunk of its own")
 			// All three jobs survive across the chunks (nothing silently dropped).

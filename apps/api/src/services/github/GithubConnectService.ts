@@ -193,8 +193,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 					orgId,
 					"vcs.connect.outcome": "started",
 				})
-				// GitHub echoes `state` back to the post-install redirect; the callback
-				// reads it from the query.
 				const params = new URLSearchParams({ state })
 				return {
 					redirectUrl: `${GITHUB_WEB_BASE}/apps/${slug}/installations/new?${params.toString()}`,
@@ -552,8 +550,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				}
 
 				// The chosen branch must be one the repo actually knows about (the picker's
-				// list), so we don't point the tracker at a non-existent ref. The default
-				// branch always qualifies (it's listed and is the seeded default).
+				// list), so we don't point the tracker at a non-existent ref.
 				const branches = yield* asPersistence(repo.listBranchesByRepository(repositoryId))
 				if (!branches.some((b) => b.name === trackedBranch)) {
 					yield* Effect.annotateCurrentSpan({
@@ -587,7 +584,6 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				// stored set reflects exactly the current tracked branch.
 				yield* asPersistence(repo.changeTrackedBranch(orgId, repositoryId, trackedBranch))
 
-				// Installation is present (checked above), so the wipe always pairs with a backfill.
 				const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
 				yield* asPersistence(
 					queue.send({

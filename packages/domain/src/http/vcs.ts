@@ -42,8 +42,7 @@ export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
  * case a provider — or an OTel `deployment.commit_sha` attribute — emits it in.
  * Strict — unlike the permissive telemetry `CommitSha` brand (which must not
  * throw on arbitrary OTel data) — so the SHA-shape regex lives in exactly this
- * one declarative type. Decoding a value through it (at the webhook/REST
- * boundary and on persistence) is the only SHA validation in the codebase.
+ * one declarative type, validated at the webhook/REST boundary and on persistence.
  *
  * (40 hex = git's SHA-1 object format; git's experimental SHA-256 object format
  * — 64 hex — is a known, currently-unused limitation across every git host.)
@@ -52,8 +51,7 @@ const GitCommitShaBrand = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/)
 	Schema.brand("@maple/GitCommitSha"),
 )
 export const GitCommitSha = Schema.String.pipe(
-	// Lowercase on the way in (before the pattern check) so `aBc…` and `ABC…`
-	// resolve to the same branded value, hence the same row and the same lookup.
+	// Lowercase before the pattern check so `aBc…` and `ABC…` resolve to the same branded value.
 	Schema.decodeTo(GitCommitShaBrand, {
 		decode: SchemaGetter.transform((s: string) => s.toLowerCase()),
 		encode: SchemaGetter.passthrough<string>(),
@@ -294,9 +292,8 @@ export const VcsInstallationSyncReason = Schema.Literals([
 ]).annotate({ identifier: "@maple/VcsInstallationSyncReason", title: "VCS Installation Sync Reason" })
 export type VcsInstallationSyncReason = Schema.Schema.Type<typeof VcsInstallationSyncReason>
 
-// Jobs carry only `externalInstallationId` (+ provider); the sync orchestrator
-// resolves `orgId` from the installation row. A webhook handler has no DB
-// access and cannot know the Maple org, so it must not be carried here.
+// Jobs carry only `externalInstallationId` (+ provider); the sync orchestrator resolves `orgId`
+// from the installation row (a webhook handler has no DB access and cannot know the Maple org).
 export const InstallationSyncJob = Schema.Struct({
 	kind: Schema.Literal("installation-sync"),
 	provider: VcsProviderId,
@@ -318,7 +315,7 @@ export const SyncCommitsJob = Schema.Struct({
 	externalRepoId: Schema.String,
 	owner: Schema.String,
 	name: Schema.String,
-	// The ref to walk — every commit found is linked as this branch's membership.
+	// The ref to walk — all commits fetched are stored against this branch.
 	branch: Schema.String,
 	sinceMs: Schema.Number,
 	// Resume cursor for a continuation requeued after a rate limit: fetch commits
@@ -333,10 +330,9 @@ export const SyncCommitsJob = Schema.Struct({
 export type SyncCommitsJob = Schema.Schema.Type<typeof SyncCommitsJob>
 
 // A push event's commits, applied incrementally — purely best-effort enrichment.
-// A push may target any branch and its payload may be incomplete (GitHub caps
-// `commits` at 2048 per delivery and sends one delivery per push, not many), so
-// it is never treated as an authoritative sync: the branch's commit backfill is
-// the source of truth and re-fetches the full history regardless.
+// GitHub caps `commits` at 2048 per delivery and never splits a push across
+// deliveries, so this is never treated as authoritative: the commit backfill
+// re-fetches the full branch history regardless.
 export const PushJob = Schema.Struct({
 	kind: Schema.Literal("push"),
 	provider: VcsProviderId,
@@ -422,7 +418,7 @@ export class VcsProviderError extends Schema.TaggedErrorClass<VcsProviderError>(
 /**
  * The provider is certain the installation no longer exists / access is
  * permanently revoked at the installation level (e.g. GitHub's installation
- * token endpoint returning gone). The ONLY error the sync orchestrator treats
+ * token endpoint returning 410 Gone). The ONLY error the sync orchestrator treats
  * as a disconnect — raw HTTP status never drives that decision. Providers must
  * only raise this when the signal is unambiguous.
  */
@@ -443,10 +439,10 @@ export class VcsRepoUnavailableError extends Schema.TaggedErrorClass<VcsRepoUnav
 ) {}
 
 /**
- * A provider rate limit too far out to wait through inline. `retryAfterSeconds`
- * is when the budget is available again (from `retry-after` / the rate-limit
- * reset). The sync consumer redelivers the failed job with this delay; backfill
- * instead catches it earlier and requeues from a cursor (see `VcsCommitFetch.next`).
+ * A provider rate limit too far out to wait inline. `retryAfterSeconds` is seconds
+ * until the budget resets (from `retry-after` / rate-limit headers). The sync
+ * consumer redelivers the failed job with this delay; backfill catches it earlier
+ * and requeues from a cursor (see `VcsCommitFetch.next`).
  */
 export class VcsRateLimitedError extends Schema.TaggedErrorClass<VcsRateLimitedError>()(
 	"@maple/http/errors/VcsRateLimitedError",

@@ -56,11 +56,8 @@ export const vcsRepositories = sqliteTable(
 		id: text("id").$type<VcsRepositoryId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		provider: text("provider").$type<VcsProviderId>().notNull(),
-		// The owning vcs_installations row, by Maple's internal id (NOT the provider's
-		// external installation id). Mirrors vcs_commits.repository_id: the whole VCS
-		// tree links by internal id, and a provider's external installation id lives on
-		// exactly one row — the installation it identifies — resolved at the
-		// sync/webhook boundary into this internal handle.
+		// Internal id of the owning vcs_installations row (NOT the provider's external
+		// installation id). Provider ids are resolved at the sync/webhook boundary.
 		installationId: text("installation_id").$type<VcsInstallationId>().notNull(),
 		externalRepoId: text("external_repo_id").notNull(),
 		owner: text("owner").notNull(),
@@ -69,9 +66,8 @@ export const vcsRepositories = sqliteTable(
 		defaultBranch: text("default_branch").notNull().default("main"),
 		// The single branch this repo tracks: only its commits are backfilled and
 		// ingested. Seeded to `default_branch` on discovery; user-owned thereafter
-		// (a reconcile never overwrites it). Nullable so a repo whose tracked branch
-		// was deleted can fall back lazily; in practice the sync engine keeps it
-		// pinned to a valid branch (falls back to the default on deletion).
+		// (a reconcile never overwrites it). Nullable to allow lazy fallback when the
+		// tracked branch is deleted.
 		trackedBranch: text("tracked_branch"),
 		htmlUrl: text("html_url").notNull(),
 		isPrivate: integer("is_private", { mode: "number" }).notNull().default(1),
@@ -108,10 +104,8 @@ export const vcsCommits = sqliteTable(
 		id: text("id").$type<VcsCommitRowId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		provider: text("provider").$type<VcsProviderId>().notNull(),
-		// The owning repository row. `vcs_repositories` ids are globally unique, so
-		// this alone identifies the repo (no org/provider needed in the link). A
-		// purge deletes commits by this id; the app refuses to write a commit whose
-		// repo row is absent.
+		// The owning repository row. `vcs_repositories` ids are globally unique so
+		// this alone identifies the repo (no org/provider prefix needed in the link).
 		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
 		sha: text("sha").$type<GitCommitSha>().notNull(),
 		message: text("message").notNull(),

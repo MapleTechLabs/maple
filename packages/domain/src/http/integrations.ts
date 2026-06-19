@@ -85,15 +85,13 @@ export class GithubBranchSummary extends Schema.Class<GithubBranchSummary>("Gith
 
 /** One synced repository, surfaced read-only so the dashboard can watch backfill. */
 export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRepoSummary")({
-	// Maple's own repository id (the `vcs_repositories` row) — the stable handle the
-	// dashboard passes back to delete-from-Maple. The provider's `externalRepoId`
-	// stays an internal sync detail and is deliberately not surfaced here.
+	// Maple's internal repository id — the stable handle for delete-from-Maple.
+	// The provider's `externalRepoId` is an internal sync detail, not surfaced here.
 	id: VcsRepositoryId,
 	fullName: Schema.String,
 	htmlUrl: Schema.String,
 	isPrivate: Schema.Boolean,
-	// Access lifecycle: "active" or "removed" (provider revoked access — the
-	// dashboard prompts the user to re-enable in GitHub, or delete from Maple).
+	// Access lifecycle: "active" or "removed" (provider revoked access — see VcsRepoStatus).
 	status: VcsRepoStatus,
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
@@ -337,13 +335,10 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		),
 	)
 	.add(
-		// Vendor-neutral: resolves a commit by SHA across whatever providers the
-		// org has connected. The `:sha` param is a raw string (NOT the strict
-		// `GitCommitSha` brand) on purpose — it carries unguarded telemetry values,
-		// so a non-40-hex SHA must reach the handler to become a typed
-		// VcsCommitShaInvalidError rather than a generic decode 400. Read-only and
-		// available to any org member (no admin gate) — every dashboard viewer
-		// hovers commit SHAs.
+		// Vendor-neutral: resolves a commit by SHA across all connected providers.
+		// `:sha` is a raw string (NOT `GitCommitSha`) on purpose — unguarded telemetry
+		// values must reach the handler so they surface as VcsCommitShaInvalidError
+		// (422) rather than a generic decode 400.
 		HttpApiEndpoint.get("vcsCommitDetail", "/vcs/commits/:sha", {
 			params: {
 				sha: Schema.String.check(Schema.isMinLength(1)),

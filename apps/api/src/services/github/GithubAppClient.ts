@@ -33,13 +33,9 @@ const PER_PAGE = 100
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
-// Commit pages walked per consumer invocation before yielding a continuation.
-// Each page is a sequential GitHub round-trip; a single backfill can span an
-// unbounded history, so we cap the work per invocation to keep its wall-clock
-// far under Cloudflare Queues' 15-min consumer limit. The remainder resumes from
-// a committer-date watermark in a follow-up job, so a full history is walked
-// across many short invocations — there is no per-invocation history cap here
-// (unlike `MAX_PAGES`); the walk simply continues rather than truncating.
+// Pages walked per consumer invocation before yielding a continuation. Caps
+// wall-clock per invocation to stay under Cloudflare Queues' 15-min limit;
+// the remainder resumes from a committer-date watermark in a follow-up job.
 export const COMMIT_PAGES_PER_INVOCATION = 25
 // Ride out short rate limits inline; anything longer is surfaced so the caller
 // can defer (backfill requeues from a cursor; other jobs get a delayed retry).
@@ -211,8 +207,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			const installationTokens = new Map<string, { token: string; expiresAtMs: number }>()
 
 			// Run a request, riding out short rate limits inline and surfacing longer
-			// ones as a GithubAppError carrying `retryAfterSeconds`. The single place
-			// 429s are detected and turned into a rate-limit signal.
+			// ones as a GithubAppError carrying `retryAfterSeconds`.
 			const rateLimitedFetch = (request: Effect.Effect<Response, GithubAppError>) =>
 				Effect.gen(function* () {
 					let inlineRetries = 0
@@ -439,9 +434,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				},
 			)
 
-			// All branch names of a repo (paginated). Returns `truncated` when the page
-			// cap is hit so the caller can skip delete-reconciliation. Scoped to the
-			// repository so a 404 maps to "repo unavailable", not "no branches".
+			// Returns `truncated` when the page cap is hit so the caller can skip
+			// delete-reconciliation. Scoped to "repository" so a 404 means "repo
+			// unavailable", not "no branches".
 			const listBranches = Effect.fn("GithubAppClient.listBranches")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -518,10 +513,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						commits.push(...decoded)
 						if (decoded.length < PER_PAGE) return { complete: true as const }
 					}
-					// Hit the per-invocation page budget with a full final page → more
-					// remain. Yield a continuation (NOT a truncation): the caller resumes
-					// from a committer-date watermark in a follow-up job, keeping each
-					// invocation's wall-clock far under the Queues 15-min consumer limit.
+					// Full final page with no break → more remain; yield a continuation.
 					return { complete: false as const, reason: "page-budget" as const }
 				}).pipe(
 					Effect.catch((error) =>
@@ -567,8 +559,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
-			// App-JWT lookup of a single installation (account + repository_selection).
-			// The dashboard connect flow uses this to populate the installation row.
+			// Used by the dashboard connect flow to populate the installation row.
 			const getInstallation = Effect.fn("GithubAppClient.getInstallation")(function* (
 				externalInstallationId: string,
 			) {
@@ -651,7 +642,6 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return decoded.access_token
 			})
 
-			// The installation ids this user can manage.
 			const listUserInstallationIds = Effect.fn("GithubAppClient.listUserInstallationIds")(function* (
 				userAccessToken: string,
 			) {

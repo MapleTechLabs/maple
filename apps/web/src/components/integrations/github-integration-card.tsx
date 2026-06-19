@@ -37,17 +37,14 @@ import {
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 
-/** GitHub's brand black — third-party brand color, no app token applies. */
+/** GitHub's brand black — third-party color, not a design token. */
 export const GITHUB_ACCENT = "#181717"
 
 /** How often to re-fetch status while the connect flow / background sync is active. */
 const POLL_INTERVAL_MS = 3_000
 /**
- * Keep polling for a bit after an action that triggers server-side work we can't yet
- * see in `status` — a closed connect popup (the install lands just after) or a
- * tracked-branch change (the backfill is enqueued; the repo flips to "backfilling"
- * once the worker picks it up). Bridges the gap until the repo's own sync status
- * takes over driving the poll.
+ * Grace window after an action whose effect isn't yet visible in `status` (popup close,
+ * tracked-branch change). Bridges the gap until the repo's sync status takes over polling.
  */
 const FORCE_POLL_WINDOW_MS = 10_000
 
@@ -99,17 +96,11 @@ export function GithubIntegrationCard() {
 	)
 
 	const [busy, setBusy] = useState<"connect" | "disconnect" | null>(null)
-	// Manual-refresh spinner. Driven separately from the query's `waiting` flag so it
-	// reflects only an explicit Refresh click — not the 3s background poll that also
-	// flips `waiting` while a sync is in progress.
+	// Separate from the query's `waiting` flag — only true on an explicit Refresh click, not background polls.
 	const [refreshing, setRefreshing] = useState(false)
-	// The removed repo awaiting delete confirmation, and the id mid-delete (so its
-	// row shows a spinner). Keyed by Maple's repository id.
+	// Repo awaiting delete confirmation; id of the repo currently being deleted (shows spinner).
 	const [repoToDelete, setRepoToDelete] = useState<GithubRepoSummary | null>(null)
 	const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
-	// The connect popup handle and whether we're actively watching it, plus a short
-	// "force poll" window opened after an action whose effect isn't yet in `status`
-	// (popup close, tracked-branch change) — these, plus an in-progress sync, drive polling.
 	const popupRef = useRef<Window | null>(null)
 	const [popupOpen, setPopupOpen] = useState(false)
 	const [forcePoll, setForcePoll] = useState(false)
@@ -173,8 +164,7 @@ export function GithubIntegrationCard() {
 
 	function handleManualRefresh() {
 		refreshStatus()
-		// Hold the spinner briefly so the refetch is perceptible even when it returns
-		// almost instantly; the real data lands via the query result regardless.
+		// Hold the spinner briefly so a fast refetch is still perceptible.
 		setRefreshing(true)
 	}
 
@@ -246,9 +236,7 @@ export function GithubIntegrationCard() {
 		if (Exit.isSuccess(result)) {
 			if (result.value.backfillQueued) {
 				toast.success(`Now tracking ${trackedBranch} — re-syncing commits…`)
-				// The backfill is enqueued but the repo won't flip to "backfilling" until
-				// the worker picks it up — poll through the gap so the row reflects the
-				// re-sync (and its completion) without a manual refresh.
+				// Poll through the gap between enqueue and the worker flipping the repo to "backfilling".
 				setForcePoll(true)
 				refreshStatus()
 			}
@@ -423,7 +411,6 @@ function ConnectedView({
 
 	return (
 		<div className="space-y-4">
-			{/* Connection summary — green status, account, scope, and account-level actions. */}
 			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
 				<div className="flex items-center gap-3">
 					<span className="relative flex size-2.5 shrink-0" aria-hidden>
@@ -496,7 +483,6 @@ function ConnectedView({
 				</div>
 			</div>
 
-			{/* Repositories panel. */}
 			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
 				<div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
 					<h3 className="text-sm font-medium">

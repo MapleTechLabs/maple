@@ -84,8 +84,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,
-		// Periodic VCS sync backstop (every 12h) — see worker.ts `scheduled` and
-		// wrangler.jsonc `triggers.crons`. Enqueues a refresh per installation.
+		// Periodic VCS sync backstop (every 12h) — enqueues a refresh per installation; see worker.ts `scheduled`.
 		crons: ["0 */12 * * *"],
 		eventSources: [
 			{
