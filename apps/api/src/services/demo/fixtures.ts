@@ -25,60 +25,6 @@ const DB_QUERIES = [
 
 const WORKER_JOBS = ["send_email", "process_payment", "sync_inventory", "generate_report", "refresh_cache"]
 
-// Demo "releases": the demo telemetry rotates `deployment.commit_sha` through these
-// full 40-hex SHAs across the seeded window, so every demo service's charts show
-// deploy markers. DemoService seeds a matching demo repo + vcs_commits so the
-// markers' commit hover cards resolve to these (instead of "commit not found").
-//
-// `from` is the fraction of the window [0, 1) at/after which the release goes live.
-// detectReleaseMarkers marks each distinct SHA at its first appearance, so all three
-// surface as deploy markers (the first near the window start, the others mid-window).
-export interface DemoRelease {
-	readonly sha: string
-	readonly message: string
-	readonly authorName: string
-	readonly authorEmail: string
-	readonly authorLogin: string
-	readonly from: number
-}
-
-export const DEMO_RELEASES: ReadonlyArray<DemoRelease> = [
-	{
-		sha: "3f7a9c1e8b2d4a6f0c5e9b8a1d2f3e4c5b6a7d80",
-		message:
-			"perf(api): cache user lookups on the orders hot path\n\nMemoize the per-request user fetch so /api/orders stops re-querying\nPostgres for every line item.",
-		authorName: "Ada Lovelace",
-		authorEmail: "ada@demo.maple.dev",
-		authorLogin: "ada-demo",
-		from: 0,
-	},
-	{
-		sha: "b4e2d1a8c7f60593e2b1a4c6d8f0e9b7a5c3d2e1",
-		message: "feat(checkout): add idempotency keys to payment processing",
-		authorName: "Grace Hopper",
-		authorEmail: "grace@demo.maple.dev",
-		authorLogin: "grace-demo",
-		from: 0.55,
-	},
-	{
-		sha: "c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9",
-		message: "fix(worker): retry inventory sync on transient queue errors",
-		authorName: "Alan Turing",
-		authorEmail: "alan@demo.maple.dev",
-		authorLogin: "alan-demo",
-		from: 0.8,
-	},
-]
-
-/** The demo release live at a given fraction of the seeded window. */
-const releaseForFraction = (fraction: number): DemoRelease => {
-	let live = DEMO_RELEASES[0]!
-	for (const release of DEMO_RELEASES) {
-		if (fraction >= release.from) live = release
-	}
-	return live
-}
-
 // ---------------------------------------------------------------------------
 // Demo data is written straight to the `traces` / `logs` datasources via
 // WarehouseQueryService.ingest (bypassing the billing-enforced ingest gateway),
@@ -175,13 +121,10 @@ function dbLatencyMs(): number {
 // ClickHouse DateTime64 wire format: "YYYY-MM-DD HH:MM:SS.mmm" in UTC.
 const fmtTs = (epochMs: number) => new Date(epochMs).toISOString().replace("T", " ").replace("Z", "")
 
-const resourceAttrs = (service: DemoServiceName, orgId: string, commitSha: string): Attrs => ({
+const resourceAttrs = (service: DemoServiceName, orgId: string): Attrs => ({
 	maple_org_id: orgId,
 	"service.name": service,
-	// The short SHA reads as a version; the full SHA is what the MV extracts into
-	// `service_overview_spans.CommitSha` (→ deploy markers / commit hover cards).
-	"service.version": commitSha.slice(0, 7),
-	"deployment.commit_sha": commitSha,
+	"service.version": "1.0.0",
 	"deployment.environment": "production",
 	"telemetry.sdk.name": "maple-demo",
 	"telemetry.sdk.language": "nodejs",
@@ -242,7 +185,7 @@ const makeLogRow = (
 	...over,
 })
 
-function generateHttpTrace(timestamp: Date, orgId: string, commitSha: string): DemoRows {
+function generateHttpTrace(timestamp: Date, orgId: string): DemoRows {
 	const route = pick(HTTP_ROUTES)
 	const traceId = traceIdHex()
 	const rootSpanId = spanIdHex()
@@ -267,7 +210,7 @@ function generateHttpTrace(timestamp: Date, orgId: string, commitSha: string): D
 		duration: Math.round(totalLatency * 1_000_000),
 		status_code: isError ? "Error" : "Ok",
 		status_message: isError ? "Internal server error" : "",
-		resource_attributes: resourceAttrs(route.service, orgId, commitSha),
+		resource_attributes: resourceAttrs(route.service, orgId),
 		span_attributes: {
 			"http.method": route.method,
 			"http.route": route.route,
@@ -301,7 +244,7 @@ function generateHttpTrace(timestamp: Date, orgId: string, commitSha: string): D
 		service_name: "demo-db",
 		duration: Math.round(dbLatency * 1_000_000),
 		status_code: "Ok",
-		resource_attributes: resourceAttrs("demo-db", orgId, commitSha),
+		resource_attributes: resourceAttrs("demo-db", orgId),
 		span_attributes: {
 			"db.system": "postgresql",
 			"db.statement": pick(DB_QUERIES),
@@ -321,7 +264,7 @@ function generateHttpTrace(timestamp: Date, orgId: string, commitSha: string): D
 				severity_number: 17,
 				service_name: route.service,
 				body: `Unhandled error in ${route.method} ${route.route}: connection reset`,
-				resource_attributes: resourceAttrs(route.service, orgId, commitSha),
+				resource_attributes: resourceAttrs(route.service, orgId),
 				log_attributes: {
 					"http.route": route.route,
 					"error.type": "ConnectionResetError",
@@ -334,7 +277,7 @@ function generateHttpTrace(timestamp: Date, orgId: string, commitSha: string): D
 	return { traceRows: [apiRow, dbRow], logRows }
 }
 
-function generateWorkerTrace(timestamp: Date, orgId: string, commitSha: string): DemoRows {
+function generateWorkerTrace(timestamp: Date, orgId: string): DemoRows {
 	const job = pick(WORKER_JOBS)
 	const traceId = traceIdHex()
 	const spanId = spanIdHex()
@@ -353,7 +296,7 @@ function generateWorkerTrace(timestamp: Date, orgId: string, commitSha: string):
 		duration: Math.round(total * 1_000_000),
 		status_code: isError ? "Error" : "Ok",
 		status_message: isError ? "Job processing failed" : "",
-		resource_attributes: resourceAttrs("demo-worker", orgId, commitSha),
+		resource_attributes: resourceAttrs("demo-worker", orgId),
 		span_attributes: {
 			"messaging.operation": "process",
 			"messaging.system": "demo-queue",
@@ -395,13 +338,8 @@ export function generateDemoRows({
 		const offsetMs = Math.floor((i / totalTraces) * hours * 3600 * 1000)
 		const ts = new Date(now - hours * 3600 * 1000 + offsetMs)
 
-		// All demo services share one deploy timeline so every service's charts show
-		// the same markers; the SHA rotates with the trace's position in the window.
-		const commitSha = releaseForFraction(i / totalTraces).sha
 		const isWorker = Math.random() < 0.25
-		const result = isWorker
-			? generateWorkerTrace(ts, orgId, commitSha)
-			: generateHttpTrace(ts, orgId, commitSha)
+		const result = isWorker ? generateWorkerTrace(ts, orgId) : generateHttpTrace(ts, orgId)
 
 		traceRows.push(...result.traceRows)
 		logRows.push(...result.logRows)

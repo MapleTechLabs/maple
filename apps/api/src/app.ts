@@ -108,11 +108,7 @@ const CoreServicesLive = Layer.mergeAll(
 const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
 const DemoServiceLive = DemoService.layer.pipe(
-	// VcsRepository so the demo seed can plant a matching repo + commits for the
-	// deploy markers it stamps on demo telemetry. Its Database requirement bubbles
-	// to MainLive (worker scope) like VcsDataLive's, and Layer memoization shares the
-	// single VcsRepository instance with the VCS services.
-	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, VcsRepository.layer)),
+	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
 )
 
 // EdgeCacheService's storage backend (Workers KV / in-memory) is injected via
