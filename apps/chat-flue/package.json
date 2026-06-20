@@ -5,7 +5,7 @@
 	"scripts": {
 		"dev": "flue dev --target cloudflare",
 		"build": "flue build --target cloudflare",
-		"deploy": "flue build --target cloudflare && wrangler deploy --config dist/maple-chat-flue/wrangler.json",
+		"deploy": "flue build --target cloudflare && wrangler deploy --config dist/maple_chat_flue/wrangler.json",
 		"connect": "flue connect maple-chat local",
 		"test": "vitest run --passWithNoTests",
 		"typecheck": "tsc --noEmit"
