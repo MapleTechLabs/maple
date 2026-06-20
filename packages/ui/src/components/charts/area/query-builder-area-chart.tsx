@@ -1,10 +1,11 @@
 import * as React from "react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
 import { cn } from "../../../lib/utils"
 import { useContainerSize } from "../../../hooks/use-container-size"
 import { resolveSeriesColor } from "../../../lib/semantic-series-colors"
 import type { BaseChartProps } from "../_shared/chart-types"
+import { useChartDragZoom } from "../_shared/use-drag-zoom"
 import {
 	type LegendSeries,
 	QueryBuilderLegend,
@@ -61,7 +62,10 @@ export function QueryBuilderAreaChart({
 	fitYAxisToData,
 	syncId,
 	thresholds,
+	onZoomSelect,
+	timeZone,
 }: BaseChartProps) {
+	const dragZoom = useChartDragZoom(onZoomSelect)
 	const { chartData, seriesDefinitions } = React.useMemo(() => {
 		const source = Array.isArray(data) && data.length > 0 ? data : fallbackData
 		const rawSeriesKeys: string[] = []
@@ -220,8 +224,17 @@ export function QueryBuilderAreaChart({
 
 	return (
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
-			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
-				<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
+			<ChartContainer
+				config={chartConfig}
+				className={cn("h-full w-full aspect-auto", dragZoom.containerClassName)}
+			>
+				<AreaChart
+					data={processedData}
+					accessibilityLayer
+					syncId={syncId}
+					syncMethod="value"
+					{...dragZoom.chartHandlers}
+				>
 					<defs>
 						{seriesDefinitions.map((definition) => (
 							<linearGradient
@@ -273,7 +286,7 @@ export function QueryBuilderAreaChart({
 						tickLine={false}
 						axisLine={false}
 						tickMargin={8}
-						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
+						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick", timeZone)}
 					/>
 					<YAxis
 						tickLine={false}
@@ -299,6 +312,7 @@ export function QueryBuilderAreaChart({
 											payload[0].payload.bucket,
 											axisContext,
 											"tooltip",
+											timeZone,
 										)
 									}}
 									formatter={(value, name, item) => {
@@ -413,6 +427,7 @@ export function QueryBuilderAreaChart({
 								isAnimationActive={false}
 							/>
 						))}
+					{dragZoom.overlayProps && <ReferenceArea {...dragZoom.overlayProps} />}
 				</AreaChart>
 			</ChartContainer>
 		</div>

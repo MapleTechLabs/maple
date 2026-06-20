@@ -121,6 +121,12 @@ export function formatBucketLabel(
 	value: unknown,
 	context: { rangeMs: number; bucketSeconds: number | undefined },
 	mode: "tick" | "tooltip",
+	/**
+	 * IANA timezone the label is projected into. When omitted (or `undefined`)
+	 * the browser's local zone is used — passing `timeZone: undefined` to Intl
+	 * already means "browser zone", so this is forwarded unconditionally.
+	 */
+	timeZone?: string,
 ): string {
 	if (typeof value !== "string") return ""
 
@@ -138,18 +144,20 @@ export function formatBucketLabel(
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,
+			timeZone,
 		})
 	}
 
 	if (includeDate) {
 		if ((context.bucketSeconds ?? 0) >= 24 * 60 * 60) {
-			return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+			return date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
 		}
 		return date.toLocaleString(undefined, {
 			month: "short",
 			day: "numeric",
 			hour: "2-digit",
 			minute: "2-digit",
+			timeZone,
 		})
 	}
 
@@ -158,6 +166,7 @@ export function formatBucketLabel(
 			hour: "2-digit",
 			minute: "2-digit",
 			second: includeSeconds ? "2-digit" : undefined,
+			timeZone,
 		})
 		.replace(/^24:/, "00:")
 }

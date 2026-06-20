@@ -1,7 +1,9 @@
 import { useMemo } from "react"
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
+import { CartesianGrid, Line, LineChart, ReferenceArea, XAxis, YAxis } from "recharts"
 
+import { cn } from "../../../lib/utils"
 import type { BaseChartProps } from "../_shared/chart-types"
+import { useChartDragZoom } from "../_shared/use-drag-zoom"
 import { renderReferenceLines } from "../_shared/reference-markers"
 import { latencyTimeSeriesData } from "../_shared/sample-data"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -31,8 +33,11 @@ export function LatencyLineChart({
 	referenceLines,
 	renderReferenceMarker,
 	syncId,
+	onZoomSelect,
+	timeZone,
 }: BaseChartProps) {
 	const chartData = data ?? latencyTimeSeriesData
+	const dragZoom = useChartDragZoom(onZoomSelect)
 
 	const {
 		data: processedData,
@@ -54,8 +59,14 @@ export function LatencyLineChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={className}>
-			<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
+		<ChartContainer config={chartConfig} className={cn(className, dragZoom.containerClassName)}>
+			<LineChart
+				data={processedData}
+				accessibilityLayer
+				syncId={syncId}
+				syncMethod="value"
+				{...dragZoom.chartHandlers}
+			>
 				<CartesianGrid vertical={false} />
 				{renderReferenceLines(referenceLines, renderReferenceMarker)}
 				<XAxis
@@ -63,7 +74,7 @@ export function LatencyLineChart({
 					tickLine={false}
 					axisLine={false}
 					tickMargin={8}
-					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick")}
+					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick", timeZone)}
 				/>
 				<YAxis
 					tickLine={false}
@@ -82,7 +93,7 @@ export function LatencyLineChart({
 									const release = referenceLines?.find((rl) => rl.x === bucket)
 									return (
 										<span>
-											{formatBucketLabel(bucket, axisContext, "tooltip")}
+											{formatBucketLabel(bucket, axisContext, "tooltip", timeZone)}
 											{release?.label && (
 												<span className="ml-2 text-muted-foreground">
 													Deploy: {release.label}
@@ -183,6 +194,7 @@ export function LatencyLineChart({
 						isAnimationActive={false}
 					/>
 				)}
+				{dragZoom.overlayProps && <ReferenceArea {...dragZoom.overlayProps} />}
 			</LineChart>
 		</ChartContainer>
 	)

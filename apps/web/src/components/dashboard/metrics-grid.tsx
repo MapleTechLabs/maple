@@ -8,6 +8,7 @@ import type {
 	ChartReferenceLine,
 	ChartTooltipMode,
 } from "@maple/ui/components/charts/_shared/chart-types"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { ReadonlyWidgetShell } from "@/components/dashboard-builder/widgets/widget-shell"
 
 interface MetricsGridItem {
@@ -27,6 +28,8 @@ interface MetricsGridItem {
 	headerValue?: ReactNode
 	/** Summary stat rendered below the chart. */
 	footer?: ReactNode
+	/** Drag-to-zoom on the chart. See `BaseChartProps.onZoomSelect`. */
+	onZoomSelect?: (range: { startBucket: string; endBucket: string }) => void
 }
 
 interface MetricsGridProps {
@@ -41,6 +44,7 @@ interface MetricsGridProps {
 }
 
 export function MetricsGrid({ items, className, waiting, syncId }: MetricsGridProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	return (
 		<div
 			className={cn(
@@ -58,27 +62,48 @@ export function MetricsGrid({ items, className, waiting, syncId }: MetricsGridPr
 				const ChartComponent = entry.component
 				const fullWidth = item.layout.w > 6
 
+				const renderChart = (expanded: boolean) => (
+					<ChartComponent
+						data={item.data}
+						className="h-full w-full aspect-auto"
+						// In the expanded modal the legend renders inline (no widget
+						// header to hoist it into), so show it even when the inline
+						// chart's legend is hidden/unset.
+						legend={expanded ? (item.legend ?? "visible") : item.legend}
+						tooltip={item.tooltip}
+						rateMode={item.rateMode}
+						referenceLines={item.referenceLines}
+						renderReferenceMarker={item.renderReferenceMarker}
+						timeZone={effectiveTimezone}
+						// The expanded (modal) chart drops the shared syncId so hovering
+						// it doesn't drive the tooltip cursor on the grid charts hidden
+						// behind the dialog.
+						syncId={expanded ? undefined : syncId}
+						onZoomSelect={item.onZoomSelect}
+					/>
+				)
+
 				return (
 					<div key={item.id} className={cn("h-[240px] md:h-[280px]", fullWidth && "md:col-span-2")}>
 						<ReadonlyWidgetShell
 							title={item.title}
 							headerValue={item.headerValue}
 							footer={item.footer}
+							renderExpanded={
+								item.isLoading
+									? undefined
+									: () => (
+											<Suspense fallback={<ChartSkeleton variant={entry.category} />}>
+												{renderChart(true)}
+											</Suspense>
+										)
+							}
 						>
 							{item.isLoading ? (
 								<ChartSkeleton variant={entry.category} />
 							) : (
 								<Suspense fallback={<ChartSkeleton variant={entry.category} />}>
-									<ChartComponent
-										data={item.data}
-										className="h-full w-full aspect-auto"
-										legend={item.legend}
-										tooltip={item.tooltip}
-										rateMode={item.rateMode}
-										referenceLines={item.referenceLines}
-										renderReferenceMarker={item.renderReferenceMarker}
-										syncId={syncId}
-									/>
+									{renderChart(false)}
 								</Suspense>
 							)}
 						</ReadonlyWidgetShell>

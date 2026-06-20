@@ -1,7 +1,9 @@
 import { useId, useMemo } from "react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
+import { cn } from "../../../lib/utils"
 import type { BaseChartProps } from "../_shared/chart-types"
+import { useChartDragZoom } from "../_shared/use-drag-zoom"
 import { renderReferenceLines } from "../_shared/reference-markers"
 import { errorRateTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
@@ -30,7 +32,10 @@ export function ErrorRateAreaChart({
 	referenceLines,
 	renderReferenceMarker,
 	syncId,
+	onZoomSelect,
+	timeZone,
 }: BaseChartProps) {
+	const dragZoom = useChartDragZoom(onZoomSelect)
 	const id = useId()
 	const gradientId = `errorRateGradient-${id.replace(/:/g, "")}`
 	const fadedGradientId = `errorRateGradientFaded-${id.replace(/:/g, "")}`
@@ -56,8 +61,14 @@ export function ErrorRateAreaChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={className}>
-			<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
+		<ChartContainer config={chartConfig} className={cn(className, dragZoom.containerClassName)}>
+			<AreaChart
+				data={processedData}
+				accessibilityLayer
+				syncId={syncId}
+				syncMethod="value"
+				{...dragZoom.chartHandlers}
+			>
 				<defs>
 					<VerticalGradient id={gradientId} color="var(--color-errorRate)" />
 					{hasIncomplete && (
@@ -76,7 +87,7 @@ export function ErrorRateAreaChart({
 					tickLine={false}
 					axisLine={false}
 					tickMargin={8}
-					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick")}
+					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick", timeZone)}
 				/>
 				<YAxis
 					tickLine={false}
@@ -96,7 +107,7 @@ export function ErrorRateAreaChart({
 									const release = referenceLines?.find((rl) => rl.x === bucket)
 									return (
 										<span>
-											{formatBucketLabel(bucket, axisContext, "tooltip")}
+											{formatBucketLabel(bucket, axisContext, "tooltip", timeZone)}
 											{release?.label && (
 												<span className="ml-2 text-muted-foreground">
 													Deploy: {release.label}
@@ -152,6 +163,7 @@ export function ErrorRateAreaChart({
 						isAnimationActive={false}
 					/>
 				)}
+				{dragZoom.overlayProps && <ReferenceArea {...dragZoom.overlayProps} />}
 			</AreaChart>
 		</ChartContainer>
 	)

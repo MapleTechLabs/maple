@@ -180,15 +180,75 @@ export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "today", value: "today" },
 ]
 
-export function getTimezoneDisplay(): string {
-	const offset = new Date().getTimezoneOffset()
-	const hours = Math.abs(Math.floor(offset / 60))
-	const sign = offset <= 0 ? "+" : "-"
-	return `UTC${sign}${hours}`
+/**
+ * Current UTC offset label for an IANA timezone, e.g. "UTC-4" / "UTC+5:30".
+ * Falls back to "UTC" if the zone can't be resolved.
+ */
+export function formatZoneOffsetLabel(timeZone: string): string {
+	try {
+		const parts = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			timeZoneName: "shortOffset",
+		}).formatToParts(new Date())
+		const name = parts.find((p) => p.type === "timeZoneName")?.value
+		if (name) return name.replace("GMT", "UTC")
+	} catch {
+		// fall through
+	}
+	return "UTC"
 }
 
-export function getTimezoneAbbr(): string {
-	return Intl.DateTimeFormat().resolvedOptions().timeZone
+/**
+ * Current UTC offset of an IANA timezone in minutes (e.g. UTC+5:30 → 330,
+ * UTC-4 → -240). Used to sort/search the timezone list. Returns 0 on failure.
+ */
+export function getZoneOffsetMinutes(timeZone: string): number {
+	try {
+		const parts = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			timeZoneName: "shortOffset",
+		}).formatToParts(new Date())
+		const name = parts.find((p) => p.type === "timeZoneName")?.value ?? ""
+		const match = name.match(/GMT([+-])(\d{1,2})(?::(\d{2}))?/)
+		if (!match) return 0
+		const sign = match[1] === "-" ? -1 : 1
+		const hours = parseInt(match[2], 10)
+		const minutes = match[3] ? parseInt(match[3], 10) : 0
+		return sign * (hours * 60 + minutes)
+	} catch {
+		return 0
+	}
+}
+
+/**
+ * Convert a chart `bucket` timestamp (ISO 8601, e.g. "2026-06-20T12:00:00Z")
+ * to the warehouse/Tinybird DateTime format used by time-range params.
+ * Returns null when the bucket can't be parsed.
+ */
+export function bucketToWarehouse(bucket: string): string | null {
+	const ms = Date.parse(bucket)
+	if (Number.isNaN(ms)) return null
+	return formatForTinybird(new Date(ms))
+}
+
+/**
+ * Convert a drag-to-zoom selection (two chart `bucket` ISO timestamps) into an
+ * absolute warehouse-format `{ startTime, endTime }`, ordered ascending. Returns
+ * null for a degenerate selection (unparseable bucket, or both ends equal) so
+ * callers can no-op. Shared by every zoom surface (dashboard atom + URL routes)
+ * so the bucket conversion, ordering, and dedupe guard live in one place.
+ */
+export function zoomRangeToWarehouse(range: {
+	startBucket: string
+	endBucket: string
+}): { startTime: string; endTime: string } | null {
+	const a = bucketToWarehouse(range.startBucket)
+	const b = bucketToWarehouse(range.endBucket)
+	if (!a || !b || a === b) return null
+	// Warehouse strings ("YYYY-MM-DD HH:mm:ss", UTC) sort lexicographically by
+	// time, so a plain compare orders the window even if the buckets arrive
+	// reversed.
+	return a <= b ? { startTime: a, endTime: b } : { startTime: b, endTime: a }
 }
 
 const CACHE_SNAP_INTERVAL_S = 15

@@ -46,6 +46,11 @@ export interface BaseChartProps {
 	 */
 	thresholds?: ChartThreshold[]
 	unit?: string
+	/**
+	 * IANA timezone for all x-axis time labels/tooltips (and the deploy-marker
+	 * time in the tooltip). Defaults to the browser zone when omitted.
+	 */
+	timeZone?: string
 	logScale?: boolean
 	softMin?: number
 	softMax?: number
@@ -62,6 +67,13 @@ export interface BaseChartProps {
 	 * tooltip cursor lines up to the same time bucket on hover.
 	 */
 	syncId?: string
+	/**
+	 * Enables "drag to zoom" on time-series charts: the user drags across the
+	 * plot to select a window, and on release this fires with the bucket
+	 * timestamps (the chart's `bucket` x-values) at each end, ordered ascending.
+	 * The host converts these to a time range. When omitted, drag-zoom is off.
+	 */
+	onZoomSelect?: (range: { startBucket: string; endBucket: string }) => void
 	pie?: {
 		donut?: boolean
 		innerRadius?: number

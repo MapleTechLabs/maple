@@ -21,6 +21,7 @@ import {
 import { detectReleaseMarkers } from "@/lib/services/release-markers"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { zoomRangeToWarehouse } from "@/lib/time-utils"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { Button } from "@maple/ui/components/ui/button"
@@ -126,6 +127,21 @@ function ServiceDetailContent() {
 		})
 	}
 
+	// Drag-to-zoom: charts hand back the bucket timestamps (ISO) at each end of the
+	// dragged window; narrow the page time range to that absolute window. Convert to
+	// the warehouse format the custom-range picker uses so the round-trip is identical.
+	const handleChartZoom = useCallback(
+		(range: { startBucket: string; endBucket: string }) => {
+			const resolved = zoomRangeToWarehouse(range)
+			if (resolved) {
+				navigate({
+					search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, resolved),
+				})
+			}
+		},
+		[navigate],
+	)
+
 	const activeTab: ServiceDetailTabValue = search.tab ?? "overview"
 	const handleTabChange = (value: unknown) => {
 		const next = value === "dependencies" ? "dependencies" : "overview"
@@ -188,7 +204,7 @@ function ServiceDetailContent() {
 						<TimeRangeHeaderControls
 							startTime={search.startTime}
 							endTime={search.endTime}
-							presetValue={search.timePreset ?? "12h"}
+							presetValue={search.timePreset}
 							onTimeChange={handleTimeChange}
 						/>
 						<Button
@@ -209,6 +225,7 @@ function ServiceDetailContent() {
 					effectiveStartTime={effectiveStartTime}
 					effectiveEndTime={effectiveEndTime}
 					environments={search.environments}
+					onZoomSelect={handleChartZoom}
 				/>
 			) : (
 				<ServiceDependenciesTab
@@ -229,9 +246,16 @@ interface OverviewTabProps {
 	effectiveStartTime: string
 	effectiveEndTime: string
 	environments?: string[]
+	onZoomSelect?: (range: { startBucket: string; endBucket: string }) => void
 }
 
-function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
+function OverviewTab({
+	serviceName,
+	effectiveStartTime,
+	effectiveEndTime,
+	environments,
+	onZoomSelect,
+}: OverviewTabProps) {
 	const detailResult = useRetainedRefreshableResultValue(
 		getCustomChartServiceDetailResultAtom({
 			data: {
@@ -310,6 +334,7 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		rateMode: chart.rateMode,
 		referenceLines: releaseMarkers,
 		renderReferenceMarker,
+		onZoomSelect,
 	}))
 
 	return <MetricsGrid items={metrics} waiting={!!isWaiting} syncId={`service-${serviceName}`} />

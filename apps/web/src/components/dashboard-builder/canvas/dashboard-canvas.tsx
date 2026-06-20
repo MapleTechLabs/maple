@@ -10,8 +10,10 @@ import type {
 	WidgetMode,
 } from "@/components/dashboard-builder/types"
 import { useDashboardActions } from "@/components/dashboard-builder/dashboard-actions-context"
+import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-providers"
 import { WidgetActionsProvider } from "@/components/dashboard-builder/widgets/widget-actions-context"
 import { useWidgetData } from "@/hooks/use-widget-data"
+import { zoomRangeToWarehouse } from "@/lib/time-utils"
 import { ChartWidget } from "@/components/dashboard-builder/widgets/chart-widget"
 import { StatWidget } from "@/components/dashboard-builder/widgets/stat-widget"
 import { GaugeWidget } from "@/components/dashboard-builder/widgets/gauge-widget"
@@ -39,6 +41,7 @@ const visualizationRegistry: Record<
 		dataState: WidgetDataState
 		display: WidgetDisplayConfig
 		mode: WidgetMode
+		onZoomSelect?: (range: { startBucket: string; endBucket: string }) => void
 	}>
 > = {
 	chart: ChartWidget,
@@ -97,16 +100,42 @@ function useInViewportSticky() {
 	return { ref, visible }
 }
 
-const WidgetRenderer = memo(function WidgetRenderer({ widget }: { widget: DashboardWidget }) {
+const WidgetRenderer = memo(function WidgetRenderer({
+	widget,
+	readOnly,
+}: {
+	widget: DashboardWidget
+	readOnly: boolean
+}) {
 	const { mode } = useDashboardActions()
+	const {
+		actions: { setTimeRange },
+	} = useDashboardTimeRange()
 	const { ref, visible } = useInViewportSticky()
 	const { dataState } = useWidgetData(widget, visible)
 	const Visualization = visualizationRegistry[widget.visualization] ?? visualizationRegistry.chart
 
+	// Drag-to-zoom: a chart hands back the bucket timestamps at each end of the
+	// dragged window; narrow the dashboard time range to that absolute window.
+	// Disabled in read-only mode (e.g. previewing a historical version) so a
+	// drag can't mutate the live dashboard time range.
+	const handleZoomSelect = useCallback(
+		(range: { startBucket: string; endBucket: string }) => {
+			const resolved = zoomRangeToWarehouse(range)
+			if (resolved) setTimeRange({ type: "absolute", ...resolved })
+		},
+		[setTimeRange],
+	)
+
 	return (
 		<div ref={ref} className="h-full w-full">
 			<WidgetActionsProvider widget={widget} dataState={dataState}>
-				<Visualization dataState={dataState} display={widget.display} mode={mode} />
+				<Visualization
+					dataState={dataState}
+					display={widget.display}
+					mode={mode}
+					onZoomSelect={readOnly ? undefined : handleZoomSelect}
+				/>
 			</WidgetActionsProvider>
 		</div>
 	)
@@ -185,7 +214,7 @@ export function DashboardCanvas({ widgets, readOnly = false }: DashboardCanvasPr
 				>
 					{widgets.map((widget) => (
 						<div key={widget.id}>
-							<WidgetRenderer widget={widget} />
+							<WidgetRenderer widget={widget} readOnly={readOnly} />
 						</div>
 					))}
 				</GridLayout>

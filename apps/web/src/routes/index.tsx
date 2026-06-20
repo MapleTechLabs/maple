@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Result } from "@/lib/effect-atom"
@@ -26,6 +26,7 @@ import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-chart
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { zoomRangeToWarehouse } from "@/lib/time-utils"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 const dashboardSearchSchema = Schema.Struct({
@@ -148,6 +149,21 @@ function DashboardContent({
 			search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, range),
 		})
 	}
+
+	// Drag-to-zoom: a chart hands back the bucket timestamps (ISO) at each end of
+	// the dragged window; narrow the page time range to that absolute window, in
+	// the warehouse format the custom-range picker uses so the round-trip matches.
+	const handleChartZoom = useCallback(
+		(range: { startBucket: string; endBucket: string }) => {
+			const resolved = zoomRangeToWarehouse(range)
+			if (resolved) {
+				navigate({
+					search: (prev: Record<string, unknown>) => applyTimeRangeSearch(prev, resolved),
+				})
+			}
+		},
+		[navigate],
+	)
 
 	const handleEnvironmentChange = (value: string | null) => {
 		navigate({
@@ -293,8 +309,9 @@ function DashboardContent({
 						</span>
 					</>
 				) : undefined,
+			onZoomSelect: handleChartZoom,
 		}))
-	}, [overviewPoints, logPoints, isOverviewLoading, isLogVolumeLoading])
+	}, [overviewPoints, logPoints, isOverviewLoading, isLogVolumeLoading, handleChartZoom])
 
 	const environmentItems = useMemo(
 		() => [

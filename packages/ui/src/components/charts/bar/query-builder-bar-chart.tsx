@@ -1,10 +1,11 @@
 import * as React from "react"
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, CartesianGrid, ReferenceArea, XAxis, YAxis } from "recharts"
 
 import { cn } from "../../../lib/utils"
 import { useContainerSize } from "../../../hooks/use-container-size"
 import { resolveSeriesColor } from "../../../lib/semantic-series-colors"
 import type { BaseChartProps } from "../_shared/chart-types"
+import { useChartDragZoom } from "../_shared/use-drag-zoom"
 import {
 	type LegendSeries,
 	QueryBuilderLegend,
@@ -52,7 +53,10 @@ export function QueryBuilderBarChart({
 	softMax,
 	syncId,
 	thresholds,
+	onZoomSelect,
+	timeZone,
 }: BaseChartProps) {
+	const dragZoom = useChartDragZoom(onZoomSelect)
 	const { chartData, seriesDefinitions } = React.useMemo(() => {
 		const source = Array.isArray(data) && data.length > 0 ? data : fallbackData
 		const rawSeriesKeys: string[] = []
@@ -186,15 +190,24 @@ export function QueryBuilderBarChart({
 
 	return (
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
-			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
-				<BarChart data={displayData} accessibilityLayer syncId={syncId} syncMethod="value">
+			<ChartContainer
+				config={chartConfig}
+				className={cn("h-full w-full aspect-auto", dragZoom.containerClassName)}
+			>
+				<BarChart
+					data={displayData}
+					accessibilityLayer
+					syncId={syncId}
+					syncMethod="value"
+					{...dragZoom.chartHandlers}
+				>
 					<CartesianGrid vertical={false} />
 					<XAxis
 						dataKey="bucket"
 						tickLine={false}
 						axisLine={false}
 						tickMargin={8}
-						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick")}
+						tickFormatter={(value) => formatBucketLabel(value, axisContext, "tick", timeZone)}
 					/>
 					<YAxis
 						tickLine={false}
@@ -217,6 +230,7 @@ export function QueryBuilderBarChart({
 											payload[0].payload.bucket,
 											axisContext,
 											"tooltip",
+											timeZone,
 										)
 									}}
 									formatter={(value, name, item) => {
@@ -291,6 +305,7 @@ export function QueryBuilderBarChart({
 							{...(stacked ? { stackId: "a" } : {})}
 						/>
 					))}
+					{dragZoom.overlayProps && <ReferenceArea {...dragZoom.overlayProps} />}
 				</BarChart>
 			</ChartContainer>
 		</div>

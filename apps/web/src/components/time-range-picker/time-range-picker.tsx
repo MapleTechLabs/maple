@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui
 
 import { ClockIcon } from "@/components/icons"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useRecentlyUsedTimes, type RecentTimeRange } from "@/hooks/use-recently-used-times"
 import { formatTimeRangeDisplay, presetLabel, relativeToAbsolute, type TimePreset } from "@/lib/time-utils"
 
@@ -25,6 +26,7 @@ export function TimeRangePicker({
 	const [open, setOpen] = useState(false)
 	const [tab, setTab] = useState<TimeRangeTab>("relative")
 	const { recentTimes, addRecentTime } = useRecentlyUsedTimes()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	// Only the page-level picker opts in (hotkey prop) so secondary pickers
 	// (e.g. the widget builder's) don't double-register "D".
@@ -125,6 +127,7 @@ export function TimeRangePicker({
 					<CustomRangePicker
 						startTime={startTime}
 						endTime={endTime}
+						timeZone={effectiveTimezone}
 						onApply={handleCustomApply}
 						onCancel={() => setTab("relative")}
 					/>
