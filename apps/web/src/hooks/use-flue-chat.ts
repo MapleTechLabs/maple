@@ -1,13 +1,13 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { useFlueAgent, type AgentStatus, type UIMessage } from "@flue/react"
 import type { ChatStatus } from "@/components/ai-elements/types"
 import {
 	buildContextPreamble,
-	stripContextPreamble,
 	wrapContextPreamble,
 	type ChatContext,
 } from "@/components/chat/context-preamble"
+import { loadUserLog, mergeUserMessages, saveUserLog, type UserLogEntry } from "./flue-user-log"
 
 const AGENT_NAME = "maple-chat"
 
@@ -39,47 +39,58 @@ const toChatStatus = (status: AgentStatus): ChatStatus => {
 	}
 }
 
-/** Hide the first-message context block from the user's own bubble. */
-const cleanForDisplay = (message: UIMessage): UIMessage => {
-	if (message.role !== "user") return message
-	let changed = false
-	const parts = message.parts.map((part) => {
-		if (part.type !== "text") return part
-		const stripped = stripContextPreamble(part.text)
-		if (stripped === part.text) return part
-		changed = true
-		return { ...part, text: stripped }
-	})
-	return changed ? { ...message, parts } : message
-}
-
 /**
  * Thin adapter over `useFlueAgent` exposing the surface `chat-conversation.tsx`
  * consumes. Addresses the org-scoped `maple-chat/<orgId>:<tabId>` agent,
  * reconstructs full history, maps status for the composer, and attaches the
- * per-conversation context preamble to the first message (stripped from the
- * rendered user bubble).
+ * per-conversation context preamble to the first message.
+ *
+ * The deployed Flue runtime never emits the user's own message into the durable
+ * event stream, so `useFlueAgent`'s optimistic user bubble vanishes the moment the
+ * assistant turn starts (see {@link mergeUserMessages}). We therefore own the user's
+ * messages here: persist each sent message (clean text + an assistant-turn anchor)
+ * and merge them back into the rendered transcript.
  */
 export function useFlueChat({ tabId, context }: UseFlueChatOptions): UseFlueChatResult {
 	const { orgId } = useAuth()
-	const id = orgId ? `${orgId}:${tabId}` : undefined
-	const agent = useFlueAgent({ name: AGENT_NAME, id, history: "all" })
+	const conversationId = orgId ? `${orgId}:${tabId}` : undefined
+	const agent = useFlueAgent({ name: AGENT_NAME, id: conversationId, history: "all" })
 
-	const messages = useMemo(() => agent.messages.map(cleanForDisplay), [agent.messages])
+	// Client-owned user messages (Flue never streams them back). Reload from storage
+	// whenever the addressed conversation changes.
+	const [userLog, setUserLog] = useState<UserLogEntry[]>(() => loadUserLog(conversationId))
+	useEffect(() => {
+		setUserLog(loadUserLog(conversationId))
+	}, [conversationId])
+
+	const messages = useMemo(
+		() => mergeUserMessages(agent.messages, userLog),
+		[agent.messages, userLog],
+	)
 
 	const isLoading = agent.status === "submitted" || agent.status === "streaming"
 
 	const sendMessage = useCallback(
 		(text: string) => {
 			const trimmed = text.trim()
-			if (!trimmed) return
-			// Only the first message of a fresh conversation carries the preamble.
-			const isFirst = agent.messages.length === 0
+			if (!trimmed || !conversationId) return
+			// Only the first message of a fresh conversation carries the context preamble.
+			const isFirst = agent.messages.length === 0 && userLog.length === 0
 			const block = isFirst && context ? buildContextPreamble(context) : ""
 			const outgoing = block ? wrapContextPreamble(block, trimmed) : trimmed
+			// Anchor this message before the assistant turn(s) it will trigger.
+			const turnsBefore = agent.messages.filter((message) => message.role === "assistant").length
+			setUserLog((prev) => {
+				const next: UserLogEntry[] = [
+					...prev,
+					{ id: `${conversationId}:user:${prev.length}`, text: trimmed, turnsBefore },
+				]
+				saveUserLog(conversationId, next)
+				return next
+			})
 			void agent.sendMessage(outgoing)
 		},
-		[agent, context],
+		[agent, context, conversationId, userLog.length],
 	)
 
 	return {

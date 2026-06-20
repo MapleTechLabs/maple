@@ -33,11 +33,19 @@ import {
 import { Popover, PopoverTrigger, PopoverContent } from "@maple/ui/components/ui/popover"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { ScrollArea } from "@maple/ui/components/ui/scroll-area"
+import {
+	Empty,
+	EmptyContent,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@maple/ui/components/ui/empty"
 import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { formatBucketLabel } from "@/lib/format"
-import { ArrowRightIcon, CubeIcon, NetworkNodesIcon, XmarkIcon } from "@/components/icons"
+import { ArrowRightIcon, CubeIcon, ExternalLinkIcon, NetworkNodesIcon, XmarkIcon } from "@/components/icons"
 import {
 	getServiceDbQuerySummaryResultAtom,
 	getServiceMapDbEdgesResultAtom,
@@ -560,6 +568,114 @@ function ServiceInfraEmptyState() {
 			<pre className="text-[10px] bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
 				kubectl label namespace &lt;ns&gt; maple.io/instrument=true
 			</pre>
+		</div>
+	)
+}
+
+// A single faint service-node glyph for the empty-state ghost graph — a rounded
+// card with a status dot and two label lines, echoing the real ServiceMapNode.
+function GhostNode({ x, y, color }: { x: number; y: number; color: string }) {
+	return (
+		<g>
+			<rect
+				x={x}
+				y={y}
+				width={72}
+				height={30}
+				rx={7}
+				fill={color}
+				fillOpacity={0.16}
+				stroke={color}
+				strokeOpacity={0.5}
+				strokeWidth={1.25}
+			/>
+			<circle cx={x + 13} cy={y + 15} r={3} fill={color} fillOpacity={0.9} />
+			<rect x={x + 22} y={y + 10} width={36} height={3} rx={1.5} fill={color} fillOpacity={0.34} />
+			<rect x={x + 22} y={y + 17} width={22} height={3} rx={1.5} fill={color} fillOpacity={0.2} />
+		</g>
+	)
+}
+
+// Empty-state for the canvas, shown when there's no service activity at all in
+// the window (no edges, db edges, or overviews → zero nodes). Echoes the live
+// map's own language — the dotted Background grid plus a faint geometric service
+// graph — so it reads as "the map, empty," not a blank void.
+function ServiceMapEmptyState() {
+	return (
+		<div className="relative flex h-full items-center justify-center overflow-hidden">
+			{/* Dotted grid: the live map's <Background variant={Dots} gap={16} size={1}>,
+			    faded out toward the centre so it never competes with the message. */}
+			<div
+				aria-hidden
+				className="pointer-events-none absolute inset-0 opacity-70"
+				style={{
+					backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)",
+					backgroundSize: "16px 16px",
+					maskImage: "radial-gradient(ellipse 75% 72% at 50% 50%, transparent 26%, black 82%)",
+					WebkitMaskImage:
+						"radial-gradient(ellipse 75% 72% at 50% 50%, transparent 26%, black 82%)",
+				}}
+			/>
+
+			<div className="relative z-10 flex flex-col items-center motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-300">
+				{/* Ghost graph drawn in the node/edge vocabulary of the real map. */}
+				<svg
+					aria-hidden
+					viewBox="0 0 460 178"
+					className="pointer-events-none mb-1 w-[min(440px,76vw)] text-muted-foreground"
+					fill="none"
+					style={{
+						maskImage:
+							"radial-gradient(ellipse 62% 78% at 50% 50%, black 52%, transparent 100%)",
+						WebkitMaskImage:
+							"radial-gradient(ellipse 62% 78% at 50% 50%, black 52%, transparent 100%)",
+					}}
+				>
+					<style>{`
+						@keyframes sm-empty-flow { to { stroke-dashoffset: -16; } }
+						.sm-empty-flow { animation: sm-empty-flow 1.8s linear infinite; }
+						@media (prefers-reduced-motion: reduce) { .sm-empty-flow { animation: none; } }
+					`}</style>
+					<g stroke="currentColor" strokeWidth={1.25} strokeOpacity={0.3} strokeDasharray="4 4">
+						<path d="M108 49 C 150 40, 162 30, 194 27" />
+						<path className="sm-empty-flow" d="M108 49 C 150 66, 162 122, 194 131" />
+						<path d="M266 27 C 312 34, 322 72, 352 79" />
+						<path d="M266 131 C 312 122, 322 86, 352 79" />
+					</g>
+					<GhostNode x={36} y={34} color="var(--service-1)" />
+					<GhostNode x={194} y={12} color="var(--service-2)" />
+					<GhostNode x={194} y={116} color="var(--service-3)" />
+					<GhostNode x={352} y={64} color="var(--service-5)" />
+				</svg>
+
+				<Empty className="flex-none bg-transparent py-0">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<NetworkNodesIcon size={18} />
+						</EmptyMedia>
+						<EmptyTitle>No service map yet</EmptyTitle>
+						<EmptyDescription>
+							Maple builds this map from cross-service spans in your traces. Once your
+							services report calls to each other, they&rsquo;ll appear here as a connected
+							graph.
+						</EmptyDescription>
+					</EmptyHeader>
+					<EmptyContent>
+						<a
+							href="https://maple.dev/docs/getting-started/introduction"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="inline-flex items-center gap-1.5 text-foreground underline underline-offset-2 transition-colors hover:no-underline"
+						>
+							Set up instrumentation
+							<ExternalLinkIcon size={12} />
+						</a>
+						<p className="text-xs text-muted-foreground/70">
+							Seeing this with active services? Try widening the time range.
+						</p>
+					</EmptyContent>
+				</Empty>
+			</div>
 		</div>
 	)
 }
@@ -1416,16 +1532,7 @@ export function ServiceMapCanvas({
 	const renderedNodes = useMemo(() => [...namespaceGroupNodes, ...nodes], [namespaceGroupNodes, nodes])
 
 	if (nodes.length === 0) {
-		return (
-			<div className="flex items-center justify-center h-full">
-				<div className="text-center space-y-2">
-					<p className="text-sm font-medium text-muted-foreground">No service dependencies found</p>
-					<p className="text-xs text-muted-foreground/60">
-						Service connections will appear when trace data with cross-service calls is ingested.
-					</p>
-				</div>
-			</div>
-		)
+		return <ServiceMapEmptyState />
 	}
 
 	return (
