@@ -1,3 +1,4 @@
+import { appendFileSync } from "node:fs"
 import alchemy from "alchemy"
 import { CloudflareStateStore } from "alchemy/state"
 import { parseMapleStage, resolveMapleDomains } from "@maple/infra/cloudflare"
@@ -62,7 +63,7 @@ const localUi = await createLocalUiWorker({ stage, domains })
 
 const alerting = await createAlertingWorker({ stage, domains, mapleDb })
 
-console.log({
+const summary = {
 	stage: app.stage,
 	apiUrl: resolvedApiUrl,
 	chatUrl: resolvedChatUrl,
@@ -71,6 +72,22 @@ console.log({
 	landingUrl: domains.landing ? `https://${domains.landing}` : landing.url,
 	localUiUrl: domains.local ? `https://${domains.local}` : localUi.url,
 	alertingWorker: alerting.name,
-})
+}
+
+console.log(summary)
+
+// In GitHub Actions, expose the deployed URLs as step outputs so the workflow
+// can attach the web preview to the PR as a clickable deployment.
+if (process.env.GITHUB_OUTPUT) {
+	appendFileSync(
+		process.env.GITHUB_OUTPUT,
+		`${[
+			`web_url=${summary.webUrl ?? ""}`,
+			`api_url=${summary.apiUrl ?? ""}`,
+			`chat_url=${summary.chatUrl ?? ""}`,
+			`landing_url=${summary.landingUrl ?? ""}`,
+		].join("\n")}\n`,
+	)
+}
 
 await app.finalize()

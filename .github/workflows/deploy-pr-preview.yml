@@ -14,6 +14,7 @@ concurrency:
 
 permissions:
     contents: read
+    deployments: write
 
 jobs:
     deploy-pr-preview:
@@ -22,7 +23,11 @@ jobs:
         # `pr-preview` environment must require manual approval in repo settings.
         # This blocks PR-controlled code (install scripts, build steps) from
         # accessing Doppler secrets until a maintainer reviews the diff.
-        environment: pr-preview
+        # `url` surfaces the deployed web app as a clickable deployment on the PR
+        # (empty on `closed`, when the deploy step is skipped).
+        environment:
+            name: pr-preview
+            url: ${{ steps.deploy.outputs.web_url }}
         env:
             DOPPLER_PROJECT: maple
             DOPPLER_CONFIG: pr
@@ -64,6 +69,7 @@ jobs:
               run: bun scripts/tinybird-pr-branch.ts up "$PR_NUMBER"
 
             - name: Deploy PR preview stack with Alchemy
+              id: deploy
               if: ${{ github.event.action != 'closed' }}
               run: bun run alchemy:deploy:pr
 
