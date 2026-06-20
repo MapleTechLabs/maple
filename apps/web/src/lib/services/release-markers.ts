@@ -9,44 +9,23 @@ export function detectReleaseMarkers(
 ): ReleaseMarker[] {
 	if (timeline.length === 0) return []
 
+	// A single-version window has no deploy to mark (nothing changed).
+	const distinct = new Set(timeline.map((point) => point.commitSha))
+	if (distinct.size <= 1) return []
+
 	const sorted = timeline.toSorted((a, b) => a.bucket.localeCompare(b.bucket))
 
-	// Find the dominant SHA (highest total count) — this is the "established" release
-	const countBySha = new Map<string, number>()
-	for (const point of sorted) {
-		countBySha.set(point.commitSha, (countBySha.get(point.commitSha) ?? 0) + point.count)
-	}
-
-	let dominantSha = ""
-	let maxCount = 0
-	for (const [sha, count] of countBySha) {
-		if (count > maxCount) {
-			dominantSha = sha
-			maxCount = count
-		}
-	}
-
-	// Only 1 SHA in the entire range — no releases to mark
-	if (countBySha.size <= 1) return []
-
-	// Mark the first appearance of every non-dominant SHA,
-	// but only if it appears after the first bucket (otherwise the
-	// release predates the visible time range)
-	const firstBucket = sorted[0].bucket
+	// One marker per SHA, at the earliest bucket it shows up in.
 	const seen = new Set<string>()
 	const markers: ReleaseMarker[] = []
-
 	for (const point of sorted) {
-		if (!seen.has(point.commitSha)) {
-			seen.add(point.commitSha)
-			if (point.commitSha !== dominantSha && point.bucket !== firstBucket) {
-				markers.push({
-					bucket: point.bucket,
-					commitSha: point.commitSha,
-					label: point.commitSha.slice(0, 7),
-				})
-			}
-		}
+		if (seen.has(point.commitSha)) continue
+		seen.add(point.commitSha)
+		markers.push({
+			bucket: point.bucket,
+			commitSha: point.commitSha,
+			label: point.commitSha.slice(0, 7),
+		})
 	}
 
 	return markers
