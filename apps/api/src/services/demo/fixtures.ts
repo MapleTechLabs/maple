@@ -31,8 +31,8 @@ const WORKER_JOBS = ["send_email", "process_payment", "sync_inventory", "generat
 // markers' commit hover cards resolve to these (instead of "commit not found").
 //
 // `from` is the fraction of the window [0, 1) at/after which the release goes live.
-// The first (`from: 0`) covers most of the window, so detectReleaseMarkers treats it
-// as the dominant/established baseline; the later two surface as deploy markers.
+// detectReleaseMarkers marks each distinct SHA at its first appearance, so all three
+// surface as deploy markers (the first near the window start, the others mid-window).
 export interface DemoRelease {
 	readonly sha: string
 	readonly message: string
