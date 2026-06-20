@@ -18,10 +18,10 @@
 		"valibot": "^1.1.0"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20260603.1",
+		"@cloudflare/workers-types": "4.20260603.1",
 		"@flue/cli": "1.0.0-beta.1",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:",
-		"wrangler": "^4.14.4"
+		"wrangler": "^4.41.0"
 	}
 }

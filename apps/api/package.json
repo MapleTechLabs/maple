@@ -47,7 +47,7 @@
 	},
 	"devDependencies": {
 		"@ai-sdk/openai-compatible": "^2.0.48",
-		"@cloudflare/workers-types": "^4.20260603.1",
+		"@cloudflare/workers-types": "4.20260603.1",
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
 		"ai": "^6.0.196",
