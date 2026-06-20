@@ -1,6 +1,7 @@
 import { observe } from "@flue/runtime"
 import { flue } from "@flue/runtime/routing"
 import { Hono } from "hono"
+import { cors } from "hono/cors"
 import { instanceIdFromAgentPath, verifyRequest } from "./lib/auth.ts"
 import type { ChatFlueEnv } from "./lib/env.ts"
 import { orgIdFromInstanceId } from "./lib/org.ts"
@@ -30,6 +31,45 @@ observe((event) => {
 // HTTP application
 // ---------------------------------------------------------------------------
 const app = new Hono<{ Bindings: ChatFlueEnv }>()
+
+// CORS. The web/mobile clients call this worker cross-origin (e.g.
+// app.maple.dev → chat.maple.dev / *.workers.dev), so every response needs CORS
+// headers. Registered FIRST so the OPTIONS preflight is answered here, before
+// the `/agents/*` auth middleware — preflight requests carry no Authorization
+// header and would otherwise be rejected with 401.
+//
+// Requests are non-credentialed (bearer token in a header, no cookies), so `*`
+// origin is valid. `allowHeaders` is omitted on purpose: Hono then reflects the
+// preflight's `Access-Control-Request-Headers`, covering `Authorization` plus
+// whatever the Durable-Streams transport sends. The exposed `Stream-*` response
+// headers are what `@flue/sdk`'s transport reads for offset/cursor bookkeeping —
+// without exposing them the browser hides them and live tailing breaks.
+app.use(
+	"*",
+	cors({
+		origin: "*",
+		allowMethods: ["GET", "POST", "OPTIONS"],
+		exposeHeaders: [
+			"Stream-Next-Offset",
+			"Stream-Offset",
+			"Stream-Cursor",
+			"Stream-Seq",
+			"Stream-Ttl",
+			"Stream-Expires-At",
+			"Stream-Closed",
+			"Stream-Up-To-Date",
+			"Stream-Api",
+			"Stream-Forked-From",
+			"Stream-Fork-Offset",
+			"Stream-Response-State",
+			"Stream-Response-Methods",
+			"Stream-Db",
+			"Stream-Level",
+			"Stream-Sse-Data-Encoding",
+		],
+		maxAge: 86400,
+	}),
+)
 
 app.get("/health", (c) => c.json({ ok: true }))
 
