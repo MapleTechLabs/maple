@@ -417,7 +417,7 @@ export class VcsProviderError extends Schema.TaggedErrorClass<VcsProviderError>(
 	{
 		message: Schema.String,
 		status: Schema.optionalKey(Schema.Number),
-		cause: Schema.optionalKey(Schema.Defect),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 	{ httpApiStatus: 502 },
 ) {}
