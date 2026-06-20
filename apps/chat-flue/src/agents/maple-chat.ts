@@ -6,17 +6,17 @@ import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
 import { orgIdFromInstanceId } from "../lib/org.ts"
 
 /**
- * Default Workers AI model. `cloudflare/<model-id>` is passed verbatim to
- * `env.AI.run(...)`, billed to the Worker's account (no API key).
+ * Default chat model. EXPERIMENT: trying Google's Gemini 3.5 Flash through the
+ * Cloudflare Workers AI binding's partner-model path. `cloudflare/<model-id>` is
+ * passed verbatim to `env.AI.run(...)`, so this resolves to
+ * `env.AI.run("google/gemini-3.5-flash", …)`. Inference is billed through the
+ * Cloudflare account (Workers AI Unified Billing) — **no Gemini API key and no
+ * AI Gateway BYOK setup needed**, same keyless model as the `@cf/*` models.
  *
- * `@cf/moonshotai/kimi-k2.6` is validated working (Phase 0 live run) and is the
- * same model family the legacy agent used via OpenRouter (`moonshotai/kimi-k2.7-code`),
- * so tool-calling quality should carry over. Note the Workers AI catalog churns:
- * `@cf/meta/llama-3.1-8b-instruct` was deprecated 2026-05-30 and
- * `@cf/meta/llama-3.3-70b-instruct-fp8-fast` returned a bad stream — confirm any
- * swap against the live catalog. Override per-org via `MAPLE_CHAT_MODEL`.
+ * Previous default: `cloudflare/@cf/moonshotai/kimi-k2.6` (validated, keyless).
+ * Override per-org via `MAPLE_CHAT_MODEL`.
  */
-const DEFAULT_MODEL = "cloudflare/@cf/moonshotai/kimi-k2.6"
+const DEFAULT_MODEL = "cloudflare/google/gemini-3.5-flash"
 
 /**
  * The addressable Maple chat agent on Cloudflare Workers AI, with tools sourced
