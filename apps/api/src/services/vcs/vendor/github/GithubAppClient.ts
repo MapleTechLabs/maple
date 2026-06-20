@@ -1,6 +1,6 @@
 import { GitCommitSha } from "@maple/domain/http"
 import { Clock, Context, Data, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { Env } from "../../lib/Env"
+import { Env } from "../../../../lib/Env"
 import { GithubHttp } from "./GithubHttp"
 
 // ---------------------------------------------------------------------------
@@ -195,7 +195,7 @@ interface ResolvedAppConfig {
 }
 
 export class GithubAppClient extends Context.Service<GithubAppClient>()(
-	"@maple/api/services/github/GithubAppClient",
+	"@maple/api/services/vcs/vendor/github/GithubAppClient",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

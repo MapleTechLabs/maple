@@ -16,11 +16,11 @@ import {
 	type VcsSyncJob,
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option } from "effect"
-import { Env } from "../../lib/Env"
-import { OAuthStateRepository } from "../OAuthStateRepository"
-import { VcsRepository } from "../vcs/VcsRepository"
-import { BACKFILL_WINDOW_MS } from "../vcs/VcsSyncService"
-import { VcsSyncQueue } from "../vcs/VcsSyncQueue"
+import { Env } from "../../../../lib/Env"
+import { OAuthStateRepository } from "../../../OAuthStateRepository"
+import { VcsRepository } from "../../VcsRepository"
+import { BACKFILL_WINDOW_MS } from "../../VcsSyncService"
+import { VcsSyncQueue } from "../../VcsSyncQueue"
 import { GithubAppClient, type GithubAppError } from "./GithubAppClient"
 
 // ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ const fromGithubError = (error: GithubAppError) =>
 			})
 
 export class GithubConnectService extends Context.Service<GithubConnectService, GithubConnectServiceShape>()(
-	"@maple/api/services/github/GithubConnectService",
+	"@maple/api/services/vcs/vendor/github/GithubConnectService",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

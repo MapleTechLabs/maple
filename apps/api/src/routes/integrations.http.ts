@@ -21,7 +21,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { Env } from "../lib/Env"
-import { GithubConnectService } from "../services/github/GithubConnectService"
+import { GithubConnectService } from "../services/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "../services/vcs/VcsCommitService"
 import { HazelOAuthService } from "../services/HazelOAuthService"
 import { requireAdmin as requireAdminRole } from "../lib/auth"

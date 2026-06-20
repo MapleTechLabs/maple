@@ -4,9 +4,9 @@ import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
-import { GithubAppClient } from "@/services/github/GithubAppClient"
-import { GithubConnectService } from "@/services/github/GithubConnectService"
-import type { GithubHttp } from "@/services/github/GithubHttp"
+import { GithubAppClient } from "@/services/vcs/vendor/github/GithubAppClient"
+import { GithubConnectService } from "@/services/vcs/vendor/github/GithubConnectService"
+import type { GithubHttp } from "@/services/vcs/vendor/github/GithubHttp"
 import { OAuthStateRepository } from "@/services/OAuthStateRepository"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
 import { VcsSyncQueue } from "@/services/vcs/VcsSyncQueue"
@@ -25,7 +25,7 @@ import {
 	testEnv,
 	upsertCommitsFor,
 	upsertReposFor,
-} from "../../vcs/__tests__/harness"
+} from "../../../__tests__/harness"
 
 const dirs: string[] = []
 afterEach(() => cleanupTempDirs(dirs))

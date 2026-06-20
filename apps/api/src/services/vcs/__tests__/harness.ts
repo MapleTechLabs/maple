@@ -4,7 +4,7 @@ import { OrgId, UserId, type VcsSyncJob } from "@maple/domain/http"
 import { Cause, ConfigProvider, type Context, Effect, Exit, Layer, Option, Schema } from "effect"
 import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Env } from "@/lib/Env"
-import { GithubHttp, type GithubHttpShape } from "@/services/github/GithubHttp"
+import { GithubHttp, type GithubHttpShape } from "@/services/vcs/vendor/github/GithubHttp"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
 import { clampQueueDelaySeconds, VcsSyncQueue, type VcsSyncQueueShape } from "@/services/vcs/VcsSyncQueue"
 

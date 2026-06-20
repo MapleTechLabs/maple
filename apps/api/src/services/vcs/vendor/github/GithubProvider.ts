@@ -16,9 +16,9 @@ import {
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
 import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { Env } from "../../lib/Env"
-import type { VcsProviderClient, VcsWebhookRequest } from "../vcs/VcsProviderClient"
-import { QUEUE_MESSAGE_LIMIT_BYTES } from "../vcs/VcsSyncQueue"
+import { Env } from "../../../../lib/Env"
+import type { VcsProviderClient, VcsWebhookRequest } from "../../VcsProviderClient"
+import { QUEUE_MESSAGE_LIMIT_BYTES } from "../../VcsSyncQueue"
 import { type GithubApiCommit, GithubAppClient, GithubAppError } from "./GithubAppClient"
 
 const PROVIDER: VcsProviderId = "github"
@@ -192,7 +192,7 @@ const normalizeFetchedCommit = (commit: GithubApiCommit, now: number): CommitUps
 }
 
 export class GithubProvider extends Context.Service<GithubProvider, VcsProviderClient>()(
-	"@maple/api/services/github/GithubProvider",
+	"@maple/api/services/vcs/vendor/github/GithubProvider",
 	{
 		make: Effect.gen(function* () {
 			const env = yield* Env

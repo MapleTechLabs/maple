@@ -1,6 +1,6 @@
 import { UnknownVcsProviderError } from "@maple/domain/http"
 import { Context, Effect, Layer } from "effect"
-import { GithubProvider } from "../github/GithubProvider"
+import { GithubProvider } from "./vendor/github/GithubProvider"
 import type { VcsProviderClient } from "./VcsProviderClient"
 
 // ---------------------------------------------------------------------------

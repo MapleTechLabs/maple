@@ -11,7 +11,7 @@ export interface GithubHttpShape {
 }
 
 export class GithubHttp extends Context.Service<GithubHttp, GithubHttpShape>()(
-	"@maple/api/services/github/GithubHttp",
+	"@maple/api/services/vcs/vendor/github/GithubHttp",
 	{
 		make: Effect.sync((): GithubHttpShape => ({ fetch: (url, init) => fetch(url, init) })),
 	},
