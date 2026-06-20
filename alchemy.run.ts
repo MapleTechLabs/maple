@@ -3,7 +3,6 @@ import { CloudflareStateStore } from "alchemy/state"
 import { parseMapleStage, resolveMapleDomains } from "@maple/infra/cloudflare"
 import { createAlertingWorker } from "./apps/alerting/alchemy.run.ts"
 import { createMapleApi } from "./apps/api/alchemy.run.ts"
-import { createChatAgentWorker } from "./apps/chat-agent/alchemy.run.ts"
 import { createLandingWorker } from "./apps/landing/alchemy.run.ts"
 import { createLocalUiWorker } from "./apps/local-ui/alchemy.run.ts"
 import { createMapleWeb } from "./apps/web/alchemy.run.ts"
@@ -31,17 +30,14 @@ if (!resolvedApiUrl) {
 	throw new Error("api worker deployed without a url — set `url: true` or provide a custom domain")
 }
 
-const chatAgent = await createChatAgentWorker({
-	stage,
-	domains,
-	mapleApiUrl: resolvedApiUrl,
-	mapleDb,
-})
-
-const resolvedChatAgentUrl = domains.chat ? `https://${domains.chat}` : chatAgent.url
-if (!resolvedChatAgentUrl) {
-	throw new Error("chat-agent worker deployed without a url — set `url: true` or provide a custom domain")
-}
+// The Flue chat worker (`apps/chat-flue`) is deployed via its own Flue build +
+// wrangler pipeline (`bun --filter=@maple/chat-flue deploy`), not alchemy —
+// Flue generates the Worker entrypoint + Durable Object migrations. Point the
+// web app at the chat custom domain (or a caller-supplied override) the same way
+// ingest is resolved below.
+const resolvedChatUrl = domains.chat
+	? `https://${domains.chat}`
+	: process.env.VITE_FLUE_CHAT_URL?.trim() || "https://chat.maple.dev"
 
 // ingest is not currently deployed via alchemy; for non-custom-domain stages,
 // fall back to a caller-supplied env var or the public Maple ingest endpoint.
@@ -54,7 +50,7 @@ const web = await createMapleWeb({
 	domains,
 	apiUrl: resolvedApiUrl,
 	ingestUrl: resolvedIngestUrl,
-	chatAgentUrl: resolvedChatAgentUrl,
+	flueChatUrl: resolvedChatUrl,
 })
 
 const landing = await createLandingWorker({ stage, domains })
@@ -66,7 +62,7 @@ const alerting = await createAlertingWorker({ stage, domains, mapleDb })
 console.log({
 	stage: app.stage,
 	apiUrl: resolvedApiUrl,
-	chatAgentUrl: resolvedChatAgentUrl,
+	chatUrl: resolvedChatUrl,
 	ingestUrl: resolvedIngestUrl,
 	webUrl: domains.web ? `https://${domains.web}` : web.url,
 	landingUrl: domains.landing ? `https://${domains.landing}` : landing.url,

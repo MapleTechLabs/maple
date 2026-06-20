@@ -1,6 +1,6 @@
 import { memo } from "react"
 import { Text, View } from "react-native"
-import type { UIMessage } from "ai"
+import type { UIMessage } from "../../lib/chat-types"
 import { RichText } from "./rich-text"
 import { ToolCallCard } from "./tool-call-card"
 import { ThinkingIndicator } from "./thinking-indicator"

@@ -23,12 +23,9 @@
 		"apps/alerting": {
 			"entry": ["alchemy.run.ts"]
 		},
-		"apps/chat-agent": {
-			"entry": ["alchemy.run.ts"]
-		},
 		"apps/chat-flue": {
 			"entry": ["src/app.ts", "src/agents/*.ts", "src/workflows/*.ts", "flue.config.ts"],
-			"ignoreDependencies": ["agents", "wrangler"]
+			"ignoreDependencies": ["agents"]
 		},
 		"apps/local-ui": {
 			"entry": ["src/worker.ts", "alchemy.run.ts"]

@@ -1,6 +1,6 @@
 "use client"
 
-import type { UIMessage } from "ai"
+import type { UIMessage } from "./types"
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react"
 
 import { Button } from "@maple/ui/components/ui/button"

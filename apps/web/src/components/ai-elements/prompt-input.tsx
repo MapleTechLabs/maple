@@ -1,6 +1,6 @@
 "use client"
 
-import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "ai"
+import type { ChatStatus, FileUIPart, SourceDocumentUIPart } from "./types"
 import type {
 	ChangeEvent,
 	ChangeEventHandler,

@@ -12,6 +12,7 @@ import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { useChatTabs, type ChatTab } from "@/hooks/use-chat-tabs"
 import { ChatSidebar } from "./chat-sidebar"
 import { ChatConversation } from "./chat-conversation"
+import { FlueClientProvider } from "./flue-client-provider"
 import { alertTabId, alertTabTitle, type AlertContext } from "./alert-context"
 import { widgetFixTabId, widgetFixTabTitle, type WidgetFixContext } from "./widget-fix-context"
 
@@ -35,17 +36,20 @@ export function ChatPage({
 }: ChatPageProps) {
 	const { orgId } = useAuth()
 	if (!orgId) return null
-	if (sharedTabId) {
-		return <SharedChatView tabId={sharedTabId} title={sharedTitle} />
-	}
 	return (
-		<ChatPageInner
-			orgId={orgId}
-			urlTabId={urlTabId}
-			mode={mode}
-			alertContext={alertContext}
-			widgetFixContext={widgetFixContext}
-		/>
+		<FlueClientProvider>
+			{sharedTabId ? (
+				<SharedChatView tabId={sharedTabId} title={sharedTitle} />
+			) : (
+				<ChatPageInner
+					orgId={orgId}
+					urlTabId={urlTabId}
+					mode={mode}
+					alertContext={alertContext}
+					widgetFixContext={widgetFixContext}
+				/>
+			)}
+		</FlueClientProvider>
 	)
 }
 
