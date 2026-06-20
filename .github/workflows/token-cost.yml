@@ -32,6 +32,12 @@ jobs:
 
             - run: bun install --frozen-lockfile
 
+            # @maple/api's measure-tokens imports query-engine, which pulls the
+            # dist-based @maple-dev/clickhouse-builder (+ effect-sdk, browser).
+            # Those ship from dist/ and must be built before they can be loaded.
+            - name: Build workspace deps
+              run: bun run alchemy:build-deps
+
             - name: Measure (PR head)
               run: bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
 
