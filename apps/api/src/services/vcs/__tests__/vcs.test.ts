@@ -21,11 +21,7 @@ import type { VcsProviderClient } from "@/services/vcs/VcsProviderClient"
 import { VcsProviderRegistry, type VcsProviderRegistryShape } from "@/services/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
 import { clampQueueDelaySeconds } from "@/services/vcs/VcsSyncQueue"
-import {
-	BACKFILL_WINDOW_MS,
-	MAX_BACKFILL_STALL_RETRIES,
-	VcsSyncService,
-} from "@/services/vcs/VcsSyncService"
+import { BACKFILL_WINDOW_MS, MAX_BACKFILL_STALL_RETRIES, VcsSyncService } from "@/services/vcs/VcsSyncService"
 import {
 	asOrgId,
 	asUserId,
@@ -1027,10 +1023,7 @@ describe("VcsRepository", () => {
 				active.map((r) => r.externalRepoId),
 				["7"],
 			)
-			assert.deepStrictEqual(
-				all.map((r) => r.externalRepoId).sort(),
-				["7", "8"],
-			)
+			assert.deepStrictEqual(all.map((r) => r.externalRepoId).sort(), ["7", "8"])
 		}).pipe(Effect.provide(repoLayer(url)))
 	})
 
@@ -1065,20 +1058,23 @@ describe("VcsRepository", () => {
 	})
 
 	// Empty-input upserts are explicit early-out no-ops (not a malformed empty INSERT).
-	it.effect("empty upserts are no-ops: upsertCommits([]) returns 0, upsertBranches([]) does nothing", () => {
-		const { url } = createTempDbUrl("maple-vcs-repo-empty-", dirs)
-		return Effect.gen(function* () {
-			const repo = yield* VcsRepository
-			const orgId = asOrgId("org_empty")
-			yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
-			yield* upsertReposFor(repo, "42", [repoFixture()])
-			const r = yield* repoFor(repo, orgId, "7")
-			const count = yield* repo.upsertCommits(r, [])
-			assert.strictEqual(count, 0)
-			yield* repo.upsertBranches(r, [])
-			assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 0)
-		}).pipe(Effect.provide(repoLayer(url)))
-	})
+	it.effect(
+		"empty upserts are no-ops: upsertCommits([]) returns 0, upsertBranches([]) does nothing",
+		() => {
+			const { url } = createTempDbUrl("maple-vcs-repo-empty-", dirs)
+			return Effect.gen(function* () {
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_empty")
+				yield* repo.upsertInstallation({ orgId, ...installationSeed("42", "100") })
+				yield* upsertReposFor(repo, "42", [repoFixture()])
+				const r = yield* repoFor(repo, orgId, "7")
+				const count = yield* repo.upsertCommits(r, [])
+				assert.strictEqual(count, 0)
+				yield* repo.upsertBranches(r, [])
+				assert.strictEqual((yield* repo.listBranchesByRepository(r.id)).length, 0)
+			}).pipe(Effect.provide(repoLayer(url)))
+		},
+	)
 })
 
 describe("VcsSyncService orchestrator", () => {
@@ -2165,9 +2161,7 @@ describe("VcsSyncService orchestrator", () => {
 			// …and reaches back exactly one window from the enqueue moment.
 			assert.ok(backfill.sinceMs >= before - BACKFILL_WINDOW_MS)
 			assert.ok(backfill.sinceMs <= after - BACKFILL_WINDOW_MS)
-		}).pipe(
-			Effect.provide(orchestratorLayer(url, { sent, branches: [{ name: "main", headSha: null }] })),
-		)
+		}).pipe(Effect.provide(orchestratorLayer(url, { sent, branches: [{ name: "main", headSha: null }] })))
 	})
 
 	// A continuation must carry the original walk's `sinceMs` (and branch) unchanged —
@@ -2277,9 +2271,7 @@ describe("VcsSyncService orchestrator", () => {
 			yield* seedRepo(repo)
 			// Resume from untilMs=5000; the page comes back with commits but next.untilMs
 			// is NOT below 5000 → no progress past the boundary.
-			yield* svc.processMessage(
-				Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 5000 }),
-			)
+			yield* svc.processMessage(Schema.encodeSync(VcsSyncJob)({ ...backfillJob, untilMs: 5000 }))
 			assert.strictEqual(sent.length, 0) // never requeues
 			const stored = yield* reposOfInstallation(repo, "42", "all")
 			assert.strictEqual(stored[0]!.syncStatus, "error")

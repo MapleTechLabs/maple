@@ -22,9 +22,10 @@ afterEach(() => cleanupTempDirs(dirs))
 // `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
 const schedulerLayer = (url: string, sent: Array<VcsSyncJob>, opts?: { readonly failQueue?: boolean }) => {
 	const data = testRepoLayer(url)
-	const queue = recordingQueueLayer(sent, (opts?.failQueue
-			? { failBatch: () => new VcsQueueError({ message: "simulated queue outage" }) }
-			: {}))
+	const queue = recordingQueueLayer(
+		sent,
+		opts?.failQueue ? { failBatch: () => new VcsQueueError({ message: "simulated queue outage" }) } : {},
+	)
 	const service = VcsScheduledSyncService.layer.pipe(Layer.provide(Layer.mergeAll(data, queue)))
 	return Layer.mergeAll(service, data)
 }
