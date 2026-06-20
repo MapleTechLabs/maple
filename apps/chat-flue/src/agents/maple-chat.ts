@@ -6,17 +6,17 @@ import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
 import { orgIdFromInstanceId } from "../lib/org.ts"
 
 /**
- * Default Workers AI model. `cloudflare/<model-id>` is passed verbatim to
- * `env.AI.run(...)`, billed to the Worker's account (no API key).
+ * Default Workers AI model. EXPERIMENT: trying Z.ai's `@cf/zai-org/glm-5.2`.
+ * `cloudflare/<model-id>` is passed verbatim to `env.AI.run(...)`; an `@cf/*`
+ * model is hosted natively on Workers AI — keyless and billed as normal Workers
+ * AI usage (neurons + the daily free allocation), no partner/Unified Billing or
+ * AI Gateway BYOK.
  *
- * `@cf/moonshotai/kimi-k2.6` is validated working (Phase 0 live run) and is the
- * same model family the legacy agent used via OpenRouter (`moonshotai/kimi-k2.7-code`),
- * so tool-calling quality should carry over. Note the Workers AI catalog churns:
- * `@cf/meta/llama-3.1-8b-instruct` was deprecated 2026-05-30 and
- * `@cf/meta/llama-3.3-70b-instruct-fp8-fast` returned a bad stream — confirm any
- * swap against the live catalog. Override per-org via `MAPLE_CHAT_MODEL`.
+ * Previous default: `cloudflare/@cf/moonshotai/kimi-k2.6` (validated). The
+ * Workers AI catalog churns, so confirm the id against the live catalog if a
+ * call 404s. Override per-org via `MAPLE_CHAT_MODEL`.
  */
-const DEFAULT_MODEL = "cloudflare/@cf/moonshotai/kimi-k2.6"
+const DEFAULT_MODEL = "cloudflare/@cf/zai-org/glm-5.2"
 
 /**
  * The addressable Maple chat agent on Cloudflare Workers AI, with tools sourced
