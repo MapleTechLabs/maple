@@ -26,6 +26,7 @@ import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-chart
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { useTimeRangeKeyboardControls } from "@/hooks/use-time-range-keyboard"
 import { zoomRangeToWarehouse } from "@/lib/time-utils"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
@@ -164,6 +165,15 @@ function DashboardContent({
 		},
 		[navigate],
 	)
+
+	// Arrow-key pan/zoom over the resolved absolute window (Left/Right pan,
+	// Up/Down zoom, Shift/Ctrl modifiers). Writes an absolute range with
+	// `replace` so rapid presses don't stack history entries.
+	useTimeRangeKeyboardControls({
+		start: effectiveStartTime,
+		end: effectiveEndTime,
+		onChange: ({ startTime, endTime }) => handleTimeChange({ startTime, endTime }, { replace: true }),
+	})
 
 	const handleEnvironmentChange = (value: string | null) => {
 		navigate({

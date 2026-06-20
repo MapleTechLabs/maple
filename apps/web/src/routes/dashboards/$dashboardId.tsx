@@ -19,6 +19,7 @@ import {
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import type { WidgetMode } from "@/components/dashboard-builder/types"
 import { useDashboardStore } from "@/hooks/use-dashboard-store"
+import { useTimeRangeKeyboardControls } from "@/hooks/use-time-range-keyboard"
 import { DashboardHistoryPanel, PreviewedCanvas } from "@/components/dashboard-builder/history"
 import { historyPanelOpenAtom, previewedVersionAtom } from "@/atoms/dashboard-history-atoms"
 import { useDashboardVersions } from "@/components/dashboard-builder/history/use-dashboard-history"
@@ -39,9 +40,20 @@ export const Route = effectRoute(createFileRoute("/dashboards/$dashboardId"))({
 
 function DashboardRefreshBridge({ children }: { children: ReactNode }) {
 	const {
-		state: { timeRange },
+		state: { timeRange, resolvedTimeRange },
+		actions: { setTimeRange },
 	} = useDashboardTimeRange()
 	const timePreset = timeRange.type === "relative" ? timeRange.value : undefined
+
+	// Arrow-key pan/zoom over the resolved absolute window. Drag-to-zoom writes
+	// the range the same way (absolute), so this round-trips identically.
+	useTimeRangeKeyboardControls({
+		start: resolvedTimeRange?.startTime ?? "",
+		end: resolvedTimeRange?.endTime ?? "",
+		enabled: resolvedTimeRange != null,
+		onChange: ({ startTime, endTime }) => setTimeRange({ type: "absolute", startTime, endTime }),
+	})
+
 	return <PageRefreshProvider timePreset={timePreset}>{children}</PageRefreshProvider>
 }
 

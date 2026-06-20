@@ -6,6 +6,7 @@ import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useTimeRangeKeyboardControls } from "@/hooks/use-time-range-keyboard"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import type {
@@ -141,6 +142,16 @@ function ServiceDetailContent() {
 		},
 		[navigate],
 	)
+
+	// Arrow-key pan/zoom over the resolved absolute window. Writes an absolute
+	// range (replace, so rapid presses don't stack history entries); only active
+	// on the Overview tab where the charts live.
+	useTimeRangeKeyboardControls({
+		start: effectiveStartTime,
+		end: effectiveEndTime,
+		enabled: (search.tab ?? "overview") === "overview",
+		onChange: ({ startTime, endTime }) => handleTimeChange({ startTime, endTime }, { replace: true }),
+	})
 
 	const activeTab: ServiceDetailTabValue = search.tab ?? "overview"
 	const handleTabChange = (value: unknown) => {

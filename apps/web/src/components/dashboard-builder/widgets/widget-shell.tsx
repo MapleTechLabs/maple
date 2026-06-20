@@ -1,5 +1,6 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { cn } from "@maple/ui/utils"
+import { isEditableTarget, isOverlayOpen } from "@/lib/keyboard"
 import { ChartLegendSlotContext, type ChartLegendItem } from "@maple/ui/components/ui/chart"
 import {
 	GripDotsIcon,
@@ -81,8 +82,37 @@ export function WidgetShell({
 	const [legendItems, setLegendItems] = useState<ChartLegendItem[]>([])
 	const legendSlot = useMemo(() => ({ setItems: setLegendItems }), [])
 
+	// "F" opens the expand modal for the chart the mouse is currently over. The
+	// listener is owned by the hovered shell (attached on mouse-enter, removed on
+	// leave) so only that one widget responds — no shared hover registry needed.
+	const [hovered, setHovered] = useState(false)
+	const expandRef = useRef<() => void>(() => undefined)
+	expandRef.current = () => {
+		if (canExpand) setExpanded(true)
+	}
+
+	useEffect(() => {
+		if (!hovered || !canExpand) return
+		const handler = (e: KeyboardEvent) => {
+			if (e.key !== "f" && e.key !== "F") return
+			if (e.metaKey || e.ctrlKey || e.altKey) return
+			if (isEditableTarget(e.target)) return
+			if (isEditableTarget(document.activeElement)) return
+			if (isOverlayOpen()) return
+			e.preventDefault()
+			e.stopPropagation()
+			expandRef.current()
+		}
+		window.addEventListener("keydown", handler, { capture: true })
+		return () => window.removeEventListener("keydown", handler, { capture: true })
+	}, [hovered, canExpand])
+
 	return (
-		<Card className="group/card h-full flex flex-col">
+		<Card
+			className="group/card h-full flex flex-col"
+			onMouseEnter={() => setHovered(true)}
+			onMouseLeave={() => setHovered(false)}
+		>
 			<CardHeader className="py-2.5 items-center">
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
