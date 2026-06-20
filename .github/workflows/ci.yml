@@ -18,7 +18,7 @@ jobs:
         name: TypeScript
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
@@ -30,7 +30,7 @@ jobs:
         name: Knip
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
@@ -42,7 +42,7 @@ jobs:
         name: Shell
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             # shellcheck is preinstalled on the ubuntu-latest runner image.
             - name: shellcheck
@@ -58,7 +58,7 @@ jobs:
         name: Service Map Perf
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
             - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
 
