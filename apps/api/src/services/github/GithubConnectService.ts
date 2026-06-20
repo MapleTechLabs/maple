@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto"
 import {
+	type GithubConnectionState,
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
@@ -7,6 +8,7 @@ import {
 	type OrgId,
 	type UserId,
 	type VcsAccountType,
+	type VcsInstallationId,
 	type VcsRepoSelection,
 	type VcsRepositoryId,
 	type VcsRepoStatus,
@@ -66,6 +68,7 @@ interface GithubRepoStatus {
 
 interface GithubConnectStatus {
 	readonly connected: boolean
+	readonly state: GithubConnectionState
 	readonly accountLogin: string | null
 	readonly accountType: VcsAccountType | null
 	readonly repositorySelection: VcsRepoSelection | null
@@ -375,30 +378,16 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { orgId: stateRow.orgId as OrgId, returnTo: stateRow.returnTo ?? null }
 			})
 
-			const getStatus = Effect.fn("GithubConnectService.getStatus")(function* (orgId: OrgId) {
-				const installations = yield* asPersistence(repo.listInstallationsByOrg(orgId))
-				const active = installations.find(
-					(i) => i.provider === GITHUB_PROVIDER && i.status === "active",
+			// Resolve an installation's repositories into the dashboard summary shape
+			// (one branch query per repo — fine at current scale, tens of repos). "all"
+			// scope: surface provider-removed repos too, with their dashboard affordances.
+			const repositoriesOf = Effect.fn("GithubConnectService.repositoriesOf")(function* (installation: {
+				readonly id: VcsInstallationId
+			}) {
+				const repos = yield* asPersistence(
+					repo.listRepositoriesByInstallation(installation.id, "all"),
 				)
-				if (!active) {
-					yield* Effect.annotateCurrentSpan({
-						orgId,
-						"vcs.status.outcome": "ok",
-						"vcs.status.connected": false,
-					})
-					return {
-						connected: false,
-						accountLogin: null,
-						accountType: null,
-						repositorySelection: null,
-						repositories: [],
-					} satisfies GithubConnectStatus
-				}
-				// "all": the dashboard surfaces provider-removed repos too, with the
-				// "re-enable access / delete from Maple" affordances.
-				const repos = yield* asPersistence(repo.listRepositoriesByInstallation(active.id, "all"))
-				// One branch query per repo — fine at current scale (tens of repos).
-				const repositories = yield* Effect.forEach(repos, (r) =>
+				return yield* Effect.forEach(repos, (r) =>
 					Effect.gen(function* () {
 						const branches = yield* asPersistence(repo.listBranchesByRepository(r.id))
 						return {
@@ -420,19 +409,75 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						}
 					}),
 				)
+			})
+
+			const getStatus = Effect.fn("GithubConnectService.getStatus")(function* (orgId: OrgId) {
+				const installations = (yield* asPersistence(repo.listInstallationsByOrg(orgId))).filter(
+					(i) => i.provider === GITHUB_PROVIDER,
+				)
+				const active = installations.find((i) => i.status === "active")
+				if (active) {
+					const repositories = yield* repositoriesOf(active)
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.status.outcome": "ok",
+						"vcs.status.state": "connected",
+						"vcs.status.connected": true,
+						"vcs.account.type": active.accountType,
+						"vcs.repository.selection": active.repositorySelection,
+						"vcs.repository.count": repositories.length,
+					})
+					return {
+						connected: true,
+						state: "connected",
+						accountLogin: active.accountLogin,
+						accountType: active.accountType,
+						repositorySelection: active.repositorySelection,
+						repositories,
+					} satisfies GithubConnectStatus
+				}
+
+				// No active installation. Rather than reverting to the pristine "never
+				// connected" screen (which makes a deactivated integration look deleted),
+				// surface the most-recently-touched deactivated row so the dashboard can
+				// explain it was uninstalled/suspended on GitHub and offer a reconnect.
+				// Installation rows are never auto-deleted, so one is here whenever the org
+				// has connected before. Its repos/commits are kept too — shown read-only.
+				const deactivated = [...installations].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+				if (!deactivated) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.status.outcome": "ok",
+						"vcs.status.state": "not_connected",
+						"vcs.status.connected": false,
+					})
+					return {
+						connected: false,
+						state: "not_connected",
+						accountLogin: null,
+						accountType: null,
+						repositorySelection: null,
+						repositories: [],
+					} satisfies GithubConnectStatus
+				}
+
+				const state = deactivated.status === "suspended" ? "suspended" : "disconnected"
+				const repositories = yield* repositoriesOf(deactivated)
 				yield* Effect.annotateCurrentSpan({
 					orgId,
 					"vcs.status.outcome": "ok",
-					"vcs.status.connected": true,
-					"vcs.account.type": active.accountType,
-					"vcs.repository.selection": active.repositorySelection,
+					"vcs.status.state": state,
+					"vcs.status.connected": false,
+					"vcs.installation.status": deactivated.status,
+					"vcs.account.type": deactivated.accountType,
 					"vcs.repository.count": repositories.length,
 				})
 				return {
-					connected: true,
-					accountLogin: active.accountLogin,
-					accountType: active.accountType,
-					repositorySelection: active.repositorySelection,
+					connected: false,
+					state,
+					accountLogin: deactivated.accountLogin,
+					accountType: deactivated.accountType,
+					repositorySelection: deactivated.repositorySelection,
 					repositories,
 				} satisfies GithubConnectStatus
 			})

@@ -144,6 +144,10 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 
 	const github: CardStatus | null = Result.builder(githubResult)
 		.onSuccess((status): CardStatus => {
+			// Deactivated on GitHub's side (uninstalled / suspended) — the install row is
+			// kept, so flag it for attention rather than showing a bare "Not connected".
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warning" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warning" }
 			if (!status.connected) return NOT_CONNECTED
 			// Count only active repos; provider-removed ones are shown in the card
 			// with a re-enable/delete affordance, not as live synced repos.

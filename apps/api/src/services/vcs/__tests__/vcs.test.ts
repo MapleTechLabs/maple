@@ -2499,6 +2499,43 @@ describe("VcsSyncService orchestrator", () => {
 		}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
 	})
 
+	// Reconnecting (the dashboard's "Reconnect" flow re-enqueues "updated" for an
+	// existing org's external id, or "created" for a brand-new install) must revive a
+	// disconnected row, not leave it gated out. upsertInstallation leaves status
+	// untouched on conflict, so the sync engine is what flips it back to active —
+	// proving the reconnect actually resumes syncing. Both reactivating reasons share
+	// one code path, so they're exercised in a table to keep them honest.
+	for (const reason of ["updated", "created"] as const) {
+		it.effect(
+			`installation-sync '${reason}' reactivates a disconnected installation and re-syncs`,
+			() => {
+				const { url } = createTempDbUrl(`maple-vcs-orch-reconnect-${reason}-`, dirs)
+				const sent: Array<VcsSyncJob> = []
+				return Effect.gen(function* () {
+					const svc = yield* VcsSyncService
+					const repo = yield* VcsRepository
+					const orgId = asOrgId("org_orch")
+					yield* seedInstallation(repo, orgId)
+					yield* markInstStatusFor(repo, "42", "disconnected")
+					yield* svc.processMessage(
+						Schema.encodeSync(VcsSyncJob)({
+							kind: "installation-sync",
+							provider: "github",
+							externalInstallationId: "42",
+							reason,
+						}),
+					)
+					const inst = yield* repo.resolveInstallation("github", "42")
+					assert.ok(Option.isSome(inst))
+					assert.strictEqual(inst.value.status, "active") // revived — was disconnected
+					// Reactivation runs the full sync: the repo is stored and branch-sync enqueued.
+					assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 1)
+					assert.strictEqual(sent.length, 1)
+				}).pipe(Effect.provide(orchestratorLayer(url, { sent, repos: oneRepo })))
+			},
+		)
+	}
+
 	// Deleting a branch that has no local row is a reported no-op: no failure, no queue
 	// work, and crucially no retarget even if the (absent) name equals the tracked one.
 	it.effect("branch-event delete of an absent branch is a no-op (no retarget)", () => {

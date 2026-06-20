@@ -147,6 +147,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						const status = yield* github.getStatus(tenant.orgId)
 						return new GithubIntegrationStatus({
 							connected: status.connected,
+							state: status.state,
 							accountLogin: status.accountLogin,
 							accountType: status.accountType,
 							repositorySelection: status.repositorySelection,

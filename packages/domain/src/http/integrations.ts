@@ -103,9 +103,30 @@ export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRe
 	branches: Schema.Array(GithubBranchSummary),
 }) {}
 
+/**
+ * The dashboard-facing connection state of the GitHub integration:
+ * - `connected`: a live, active installation.
+ * - `disconnected`: the Maple GitHub App was uninstalled (or access fully revoked)
+ *   on GitHub's side. The installation row and its synced data are KEPT — never
+ *   auto-deleted — so the dashboard can explain what happened and offer a reconnect.
+ * - `suspended`: GitHub temporarily suspended the installation; reconnect/reactivate.
+ * - `not_connected`: this org has never connected GitHub (the first-run state).
+ * `connected` (boolean) stays as the `state === "connected"` shorthand the card keys on.
+ */
+export const GithubConnectionState = Schema.Literals([
+	"connected",
+	"disconnected",
+	"suspended",
+	"not_connected",
+]).annotate({ identifier: "@maple/GithubConnectionState", title: "GitHub Connection State" })
+export type GithubConnectionState = Schema.Schema.Type<typeof GithubConnectionState>
+
 export class GithubIntegrationStatus extends Schema.Class<GithubIntegrationStatus>("GithubIntegrationStatus")(
 	{
 		connected: Schema.Boolean,
+		// Finer-grained than `connected`: distinguishes a never-connected org from one
+		// whose installation was deactivated on GitHub (so the dashboard can say why).
+		state: GithubConnectionState,
 		accountLogin: Schema.NullOr(Schema.String),
 		accountType: Schema.NullOr(VcsAccountType),
 		repositorySelection: Schema.NullOr(VcsRepoSelection),

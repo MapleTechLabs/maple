@@ -16,6 +16,7 @@ import {
 	findError,
 	GITHUB_APP_CONFIG,
 	jsonResponse,
+	markInstStatusFor,
 	markRemovedFor,
 	recordingQueue,
 	repoFor,
@@ -328,13 +329,106 @@ describe("GithubConnectService", () => {
 			assert.strictEqual((yield* reposOfInstallation(repo, "42", "all")).length, 0)
 			assert.ok(Option.isNone(yield* repo.findCommitBySha(orgId, SHA as never)))
 
-			// Status now reports disconnected, and a second disconnect is a no-op.
+			// A user-initiated disconnect fully removes the row, so status reverts to the
+			// pristine "never connected" state; a second disconnect is a no-op.
 			const status = yield* svc.getStatus(orgId)
 			assert.strictEqual(status.connected, false)
+			assert.strictEqual(status.state, "not_connected")
 			const second = yield* svc.disconnect(orgId)
 			assert.strictEqual(second.disconnected, false)
 		}).pipe(Effect.provide(connectLayer(url, http, sent)))
 	})
+
+	it.effect(
+		"getStatus surfaces a webhook-disconnected installation as deactivated (not deleted), keeping account + repos",
+		() => {
+			const { url } = createTempDbUrl("maple-gh-deactivated-", dirs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp(connectResponders())
+			return Effect.gen(function* () {
+				const svc = yield* GithubConnectService
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_test")
+				const userId = asUserId("user_1")
+
+				const { state } = yield* svc.startConnect(orgId, userId, {
+					callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+				})
+				yield* svc.completeConnect("42", state, TEST_CODE)
+				yield* upsertReposFor(repo, "42", [
+					{
+						externalRepoId: "7",
+						owner: "octo",
+						name: "repo",
+						fullName: "octo/repo",
+						defaultBranch: "main",
+						htmlUrl: "https://github.com/octo/repo",
+						isPrivate: true,
+						isArchived: false,
+					},
+				])
+
+				// Simulate the `installation.deleted` webhook outcome: the row is marked
+				// disconnected (soft), never purged.
+				yield* markInstStatusFor(repo, "42", "disconnected")
+
+				const status = yield* svc.getStatus(orgId)
+				// Not the pristine first-run state: it reports *why* it went quiet, keeps the
+				// account label, and still lists the preserved repositories.
+				assert.strictEqual(status.connected, false)
+				assert.strictEqual(status.state, "disconnected")
+				assert.strictEqual(status.accountLogin, "octo")
+				assert.strictEqual(status.repositories.length, 1)
+				// The installation row is still present — nothing was hard-deleted.
+				assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
+			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		},
+	)
+
+	it.effect(
+		"getStatus surfaces a suspended installation as state 'suspended' (distinct from disconnected), keeping account + repos",
+		() => {
+			const { url } = createTempDbUrl("maple-gh-suspended-", dirs)
+			const sent: Array<VcsSyncJob> = []
+			const http = scriptedHttp(connectResponders())
+			return Effect.gen(function* () {
+				const svc = yield* GithubConnectService
+				const repo = yield* VcsRepository
+				const orgId = asOrgId("org_test")
+				const userId = asUserId("user_1")
+
+				const { state } = yield* svc.startConnect(orgId, userId, {
+					callbackUrl: "https://tunnel.example/api/integrations/github/callback",
+				})
+				yield* svc.completeConnect("42", state, TEST_CODE)
+				yield* upsertReposFor(repo, "42", [
+					{
+						externalRepoId: "7",
+						owner: "octo",
+						name: "repo",
+						fullName: "octo/repo",
+						defaultBranch: "main",
+						htmlUrl: "https://github.com/octo/repo",
+						isPrivate: true,
+						isArchived: false,
+					},
+				])
+
+				// Simulate the `installation.suspend` webhook outcome: the row is marked
+				// suspended (soft), never purged — distinct from disconnected/deleted.
+				yield* markInstStatusFor(repo, "42", "suspended")
+
+				const status = yield* svc.getStatus(orgId)
+				assert.strictEqual(status.connected, false)
+				// The suspended status maps to its own state so the dashboard can tell the
+				// user to reactivate (not reinstall), unlike "disconnected".
+				assert.strictEqual(status.state, "suspended")
+				assert.strictEqual(status.accountLogin, "octo")
+				assert.strictEqual(status.repositories.length, 1)
+				assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
+			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		},
+	)
 
 	it.effect(
 		"deleteRepository purges only that repo + its commits; getStatus surfaces removed repos",

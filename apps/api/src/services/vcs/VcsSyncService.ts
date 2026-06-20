@@ -552,10 +552,20 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					return
 				}
 				let active = installation
-				if (job.reason === "unsuspend") {
-					// The provider re-enabled the installation → restore it to active before
-					// re-syncing so the gate lets the sync proceed. Reflect the new status on the
-					// entity we already hold rather than re-reading it.
+				// Reasons that represent a (re)connection or provider re-enable restore the
+				// installation to active before the gate, so the sync proceeds. This is what
+				// makes the dashboard's reconnect flow actually revive a previously
+				// disconnected/suspended row: completeConnect re-enqueues "created"/"updated"
+				// for the same external id, and upsertInstallation leaves status untouched on
+				// conflict (status is owned here) — so without this it would stay disconnected
+				// and the gate below would drop the sync. Idempotent for a fresh install
+				// (already active). A bare data refresh (scheduled / repositories_*) must NOT
+				// reactivate: a stray webhook can't silently revive an integration the user
+				// removed on GitHub.
+				const reactivates =
+					job.reason === "unsuspend" || job.reason === "created" || job.reason === "updated"
+				if (reactivates && installation.status !== "active") {
+					// Reflect the new status on the entity we already hold rather than re-reading it.
 					yield* repo.markInstallationStatus(installation.id, "active")
 					active = new VcsInstallation({ ...installation, status: "active", suspendedAt: null })
 					yield* Effect.annotateCurrentSpan({ "vcs.installation.transition": "active" })

@@ -101,6 +101,8 @@ export function GithubIntegrationCard() {
 	// Repo awaiting delete confirmation; id of the repo currently being deleted (shows spinner).
 	const [repoToDelete, setRepoToDelete] = useState<GithubRepoSummary | null>(null)
 	const [deletingRepoId, setDeletingRepoId] = useState<string | null>(null)
+	// Disconnect is a full purge (repos + commit history), so it routes through a confirmation.
+	const [confirmingDisconnect, setConfirmingDisconnect] = useState(false)
 	const popupRef = useRef<Window | null>(null)
 	const [popupOpen, setPopupOpen] = useState(false)
 	const [forcePoll, setForcePoll] = useState(false)
@@ -257,13 +259,49 @@ export function GithubIntegrationCard() {
 					deletingRepoId={deletingRepoId}
 					onRefresh={handleManualRefresh}
 					onManage={handleConnect}
-					onDisconnect={handleDisconnect}
+					onRequestDisconnect={() => setConfirmingDisconnect(true)}
 					onRequestDelete={setRepoToDelete}
 					onSetTrackedBranch={handleSetTrackedBranch}
 				/>
+			) : status?.state === "disconnected" || status?.state === "suspended" ? (
+				<DeactivatedState
+					status={status}
+					busy={busy === "connect"}
+					onReconnect={handleConnect}
+				/>
 			) : (
-				<DisconnectedState busy={busy === "connect"} onConnect={handleConnect} />
+				<NotConnectedState busy={busy === "connect"} onConnect={handleConnect} />
 			)}
+
+			<AlertDialog
+				open={confirmingDisconnect}
+				onOpenChange={(open) => {
+					if (!open) setConfirmingDisconnect(false)
+				}}
+			>
+				<AlertDialogContent>
+					<AlertDialogHeader>
+						<AlertDialogTitle>Disconnect GitHub</AlertDialogTitle>
+						<AlertDialogDescription>
+							This removes the Maple GitHub App connection and permanently deletes all synced
+							repositories and their commit history from Maple. This cannot be undone. You can
+							reconnect later, but everything will be re-synced from scratch.
+						</AlertDialogDescription>
+					</AlertDialogHeader>
+					<AlertDialogFooter>
+						<AlertDialogCancel>Cancel</AlertDialogCancel>
+						<AlertDialogAction
+							onClick={() => {
+								setConfirmingDisconnect(false)
+								void handleDisconnect()
+							}}
+							className="bg-destructive text-white hover:bg-destructive/90"
+						>
+							Disconnect
+						</AlertDialogAction>
+					</AlertDialogFooter>
+				</AlertDialogContent>
+			</AlertDialog>
 
 			<AlertDialog
 				open={repoToDelete !== null}
@@ -316,7 +354,7 @@ function LoadingState() {
 }
 
 /** First-run empty state: explains the value and offers the single connect action. */
-function DisconnectedState({ busy, onConnect }: { busy: boolean; onConnect: () => void }) {
+function NotConnectedState({ busy, onConnect }: { busy: boolean; onConnect: () => void }) {
 	return (
 		<div className="flex flex-col items-center gap-5 rounded-lg border border-border/60 bg-card px-6 py-10 text-center">
 			<span
@@ -370,6 +408,89 @@ function DisconnectedState({ busy, onConnect }: { busy: boolean; onConnect: () =
 	)
 }
 
+/**
+ * Shown when the org connected GitHub before but the installation is no longer
+ * active — uninstalled / access revoked ("disconnected") or temporarily
+ * "suspended" on GitHub's side. The row and its synced data are never auto-deleted,
+ * so this state explains *why* the integration went quiet (instead of silently
+ * reverting to the first-run screen) and offers a single reconnect action.
+ */
+function DeactivatedState({
+	status,
+	busy,
+	onReconnect,
+}: {
+	status: GithubIntegrationStatus
+	busy: boolean
+	onReconnect: () => void
+}) {
+	const suspended = status.state === "suspended"
+	const account = status.accountLogin ? (
+		<>
+			{" "}
+			for{" "}
+			<span className="font-medium text-foreground">@{status.accountLogin}</span>
+		</>
+	) : null
+	const repoCount = status.repositories.length
+
+	return (
+		<div className="flex flex-col items-center gap-5 rounded-lg border border-warning/40 bg-warning/5 px-6 py-10 text-center">
+			<span
+				className="relative inline-flex size-14 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-card"
+				aria-hidden
+			>
+				<span className="relative text-foreground">
+					<GithubIcon size={26} />
+				</span>
+				<span className="absolute -bottom-1.5 -right-1.5 inline-flex items-center justify-center rounded-full bg-card">
+					<CircleWarningIcon size={18} className="text-warning-foreground" />
+				</span>
+			</span>
+
+			<div className="flex max-w-md flex-col gap-1.5">
+				<h3 className="text-base font-semibold">
+					{suspended ? "GitHub integration suspended" : "GitHub integration deactivated"}
+				</h3>
+				<p className="text-sm text-muted-foreground">
+					{suspended ? (
+						<>
+							GitHub suspended the Maple GitHub App{account}, so syncing is paused. Reactivate
+							it in GitHub, then reconnect to resume.
+						</>
+					) : (
+						<>
+							The Maple GitHub App was uninstalled (or its access was revoked) on GitHub
+							{account}, so syncing is paused. Reconnect to resume — nothing was deleted.
+						</>
+					)}
+				</p>
+			</div>
+
+			{repoCount > 0 ? (
+				<p className="text-xs text-muted-foreground">
+					{repoCount} {repoCount === 1 ? "repository" : "repositories"} and their commit history
+					are preserved.
+				</p>
+			) : null}
+
+			<div className="flex flex-col items-center gap-2">
+				<Button onClick={onReconnect} disabled={busy}>
+					{busy ? (
+						<LoaderIcon size={16} className="animate-spin" />
+					) : (
+						<ArrowPathIcon size={16} />
+					)}
+					Reconnect GitHub
+				</Button>
+				<p className="text-xs text-muted-foreground">
+					You&apos;ll be sent to GitHub to reinstall the Maple app.
+				</p>
+			</div>
+		</div>
+	)
+}
+
 function ConnectedView({
 	status,
 	busy,
@@ -377,7 +498,7 @@ function ConnectedView({
 	deletingRepoId,
 	onRefresh,
 	onManage,
-	onDisconnect,
+	onRequestDisconnect,
 	onRequestDelete,
 	onSetTrackedBranch,
 }: {
@@ -387,7 +508,7 @@ function ConnectedView({
 	deletingRepoId: string | null
 	onRefresh: () => void
 	onManage: () => void
-	onDisconnect: () => void
+	onRequestDisconnect: () => void
 	onRequestDelete: (repo: GithubRepoSummary) => void
 	onSetTrackedBranch: (repo: GithubRepoSummary, branch: string) => Promise<void>
 }) {
@@ -455,7 +576,7 @@ function ConnectedView({
 						{busy === "connect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
 						Manage
 					</Button>
-					<Button size="sm" variant="outline" onClick={onDisconnect} disabled={busy !== null}>
+					<Button size="sm" variant="outline" onClick={onRequestDisconnect} disabled={busy !== null}>
 						{busy === "disconnect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
 						Disconnect
 					</Button>
