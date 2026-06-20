@@ -17,7 +17,7 @@
 import * as CH from "./index"
 import type { TracesMetric, AttributeFilter } from "../query-engine"
 import type { OrgId } from "@maple/domain"
-import { unsafeCompiledQuery, type CompiledQuery } from "./compile"
+import { unsafeCompiledQuery, type CompiledQuery } from "@maple-dev/clickhouse-builder"
 import { Array as A, Match, Result } from "effect"
 
 type CompileTarget = Parameters<typeof CH.compile>[0]

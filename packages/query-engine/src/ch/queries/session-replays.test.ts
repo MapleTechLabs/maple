@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
 import { sessionTraceSummariesQuery } from "./session-replays"
 
 const baseParams = { orgId: "org_1" }

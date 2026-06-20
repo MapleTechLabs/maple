@@ -6,13 +6,13 @@
 // ---------------------------------------------------------------------------
 
 import type { MetricType } from "../../query-engine"
-import * as CH from "../expr"
-import * as T from "../types"
-import { param } from "../param"
-import { from, type CHQuery } from "../query"
-import { table } from "../table"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type CHQuery } from "@maple-dev/clickhouse-builder"
+import { table } from "@maple-dev/clickhouse-builder"
 import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
-import { compileCH } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 
 // ---------------------------------------------------------------------------

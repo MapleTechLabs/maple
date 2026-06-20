@@ -9,13 +9,13 @@
 
 import { Match } from "effect"
 import type { TracesMetric } from "../../query-engine"
-import { compile } from "../../sql/sql-fragment"
-import * as CH from "../expr"
-import { avg, count, countIf, quantile } from "../functions/aggregate"
-import { if_ } from "../functions/conditional"
-import { round_ } from "../functions/numeric"
-import { param } from "../param"
-import { from } from "../query"
+import { compile } from "@maple-dev/clickhouse-builder/sql"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { avg, count, countIf, quantile } from "@maple-dev/clickhouse-builder"
+import { if_ } from "@maple-dev/clickhouse-builder"
+import { round_ } from "@maple-dev/clickhouse-builder"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from } from "@maple-dev/clickhouse-builder"
 import { Traces } from "../tables"
 
 /**

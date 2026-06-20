@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
 import { slowTracesQuery, spanSearchQuery, tracesListQuery, tracesRootListQuery } from "./traces"
 
 const baseParams = {

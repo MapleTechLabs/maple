@@ -1,6 +1,29 @@
+diff --git a/node_modules/effect/.bun-tag-1d037809e62e2eb2 b/.bun-tag-1d037809e62e2eb2
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/node_modules/effect/.bun-tag-c229b3c97d76a6b9 b/.bun-tag-c229b3c97d76a6b9
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/internal/effect.js b/dist/internal/effect.js
+index 542308a1c54b7112bfa816dafb54cd413b001ae4..241f15339399df2274345245c92e195d03369636 100644
+--- a/dist/internal/effect.js
++++ b/dist/internal/effect.js
+@@ -2524,7 +2524,14 @@ const processOrPerformanceNow = /*#__PURE__*/function () {
+   if (!processHrtime) {
+     return performanceNowNanos;
+   }
+-  const origin = /*#__PURE__*/performanceNowNanos() - /*#__PURE__*/processHrtime.bigint();
++  // maple patch (workerd/miniflare clock fix): anchor the hrtime offset on Date.now()
++  // instead of performanceNowNanos(). performanceNowNanos() is 0 at module-load scope in
++  // `wrangler dev`/miniflare while process.hrtime is already live wall-clock, which poisons
++  // this cached origin and makes Clock.currentTimeNanos (and span start times) ~1970.
++  // Date.now() is consistent with hrtime's scale at load in every runtime (both 0 in
++  // production workerd, both live in miniflare, wall-clock+monotonic in node) so origin is
++  // correct everywhere. Deployed workerd is unaffected. See workers-sdk / effect-smol issues.
++  const origin = BigInt(Date.now()) * BigInt(1_000_000) - processHrtime.bigint();
+   return () => origin + processHrtime.bigint();
+ }();
+ /** @internal */
 diff --git a/dist/unstable/ai/McpServer.d.ts b/dist/unstable/ai/McpServer.d.ts
 index 54d704a04d931c25bae1ca7f6c54877bae040317..0e5f97a8370ab0ce76a6a8e3d3495bbf29af0c7e 100644
 --- a/dist/unstable/ai/McpServer.d.ts

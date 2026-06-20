@@ -41,9 +41,9 @@ function PricingSkeleton() {
 		<div
 			role="status"
 			aria-label="Loading plans"
-			className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl mx-auto"
+			className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto"
 		>
-			{[0, 1, 2].map((i) => (
+			{[0, 1].map((i) => (
 				<div
 					key={`plan-skeleton-${i}`}
 					className="rounded-xl border bg-card p-6 space-y-4"

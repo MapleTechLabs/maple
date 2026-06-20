@@ -4,13 +4,13 @@
 // DSL-based query definitions for logs timeseries and breakdown.
 // ---------------------------------------------------------------------------
 
-import { compileCH } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromUnion, type CHQuery, type ColumnAccessor } from "../query"
-import type { ColumnDefs } from "../types"
-import * as T from "../types"
-import { unionAll, type CHUnionQuery } from "../union"
+import { compileCH } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { Logs, LogsAggregatesHourly } from "../tables"
 import { finalizeTimeseries } from "./series-cap"
 

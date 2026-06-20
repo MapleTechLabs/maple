@@ -18,11 +18,11 @@
 // not exposed as SQL filters since the DSL has no HAVING clause.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { compileFnCall, compileFnCallCond } from "../define-fn"
-import { param } from "../param"
-import { from, type ColumnAccessor } from "../query"
-import { unionAll, type CHUnionQuery } from "../union"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { compileFnCall, compileFnCallCond } from "@maple-dev/clickhouse-builder"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest

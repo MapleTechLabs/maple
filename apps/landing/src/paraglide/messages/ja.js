@@ -1015,7 +1015,7 @@ export const cta_bookend_title = () => `Run it yourself.`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const cta_bookend_lede = () => `14-day trial on Starter. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
+export const cta_bookend_lede = () => `14-day free trial. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
 
 
 /**
@@ -2227,7 +2227,7 @@ export const pricing_advanced_alerting = () => `高度なアラート`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_full_api = () => `フルAPI`
+export const pricing_full_api = () => `フルAPIアクセス`
 
 
 /**
@@ -2451,7 +2451,7 @@ export const faq_limits_q = () => `プランの制限を超えた場合は？`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_limits_a = () => `制限に近づくと通知します。Starterプランでは上限に達すると取り込みが一時停止します。Startupプランでは、追加使用量は透明なGB単価で課金されます。`
+export const faq_limits_a = () => `制限に近づくと通知します。Startupプランでは、追加使用量は透明なGB単価で課金されます。`
 
 
 /**
@@ -2467,7 +2467,7 @@ export const faq_retention_q = () => `データの保持期間は？`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_retention_a = () => `保持期間はプランにより異なります。Starterプランは14日、Startupは30日、Enterpriseプランはカスタム保持期間を提供します。すべてのプランで保持データへの完全なクエリアクセスが含まれます。`
+export const faq_retention_a = () => `保持期間はプランにより異なります。Startupは30日、Enterpriseプランはカスタム保持期間を提供します。すべてのプランで保持データへの完全なクエリアクセスが含まれます。`
 
 
 /**
@@ -4324,3 +4324,27 @@ export const language_ja = () => `日本語`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const language_ko = () => `한국어`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_mcp_server = () => `MCPサーバー`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_chat = () => `AIチャット`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_triage = () => `AIエラートリアージ`

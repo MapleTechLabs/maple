@@ -14,12 +14,12 @@
 // ---------------------------------------------------------------------------
 
 import { Schema } from "effect"
-import type { CompiledQuery, CompiledQueryRowSchema } from "../compile"
-import { compileCH, unsafeCompiledQuery } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromQuery } from "../query"
-import { escapeClickHouseString } from "../../sql/sql-fragment"
+import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import { compileCH, unsafeCompiledQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery } from "@maple-dev/clickhouse-builder"
+import { escapeClickHouseString } from "@maple-dev/clickhouse-builder/sql"
 import { ServiceMapEdgesHourly, Traces } from "../tables"
 import { serviceMapEdgeJoinSQL } from "./service-map"
 

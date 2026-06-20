@@ -80,8 +80,8 @@ function SelectPlanPageInner() {
 						Start your free trial
 					</h1>
 					<p className="text-muted-foreground mt-4 text-sm md:text-base leading-relaxed max-w-lg mx-auto [text-wrap:balance]">
-						Try any paid plan free for {TRIAL_DURATION_DAYS} days. You won't be charged until the
-						trial ends. Cancel anytime.
+						Try Maple free for {TRIAL_DURATION_DAYS} days. You won't be charged until the trial
+						ends. Cancel anytime.
 					</p>
 				</div>
 

@@ -308,14 +308,19 @@ export function PricingCards() {
 
 	const enterprisePlanFeatures = getPlanFeatures("enterprise")
 
+	// Enterprise renders as a peer card in the grid, so the layout is always
+	// balanced: one paid plan + Enterprise = a clean two-up; a second paid plan
+	// would make it a three-up. Never a lone, full-width card.
+	const totalCards = visiblePlans.length + 1
+
 	return (
 		<div className="space-y-6">
-			{/* Normal Plans Grid */}
+			{/* Plans + Enterprise share one grid so columns stay balanced */}
 			<div
 				className={cn(
 					"grid grid-cols-1 gap-4",
-					visiblePlans.length === 2 && "sm:grid-cols-2",
-					visiblePlans.length >= 3 && "sm:grid-cols-3",
+					totalCards === 2 && "sm:grid-cols-2",
+					totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
 				)}
 			>
 				{visiblePlans.map((plan) => {
@@ -469,76 +474,83 @@ export function PricingCards() {
 						</Card>
 					)
 				})}
-			</div>
+				{/* Enterprise as a peer card, so the grid stays balanced */}
+				<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
+					<CardHeader>
+						<div className="flex items-center justify-between gap-2">
+							<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+								Enterprise
+							</CardTitle>
+						</div>
+						<div className="mt-3 flex items-baseline gap-1">
+							<span className="text-3xl font-semibold tracking-tight tabular-nums">Custom</span>
+						</div>
+						<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+							For high-volume teams with custom retention, compliance, and dedicated support.
+						</CardDescription>
+					</CardHeader>
 
-			{/* Enterprise tonal band */}
-			<section className="rounded-lg border border-border/60 bg-background">
-				<div className="flex flex-col gap-4 p-6 sm:flex-row sm:items-start sm:justify-between">
-					<div className="max-w-xl space-y-2">
-						<div className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-							Enterprise
-						</div>
-						<div className="text-2xl font-semibold tracking-tight tabular-nums">Custom</div>
-						<p className="text-sm text-muted-foreground leading-relaxed">
-							Built for high-volume teams with custom compliance, data retention, and dedicated
-							support requirements.
-						</p>
-					</div>
-					<Button
-						variant="default"
-						className="w-full sm:w-auto shrink-0"
-						onClick={handleEnterpriseContact}
-					>
-						Talk to founder
-					</Button>
-				</div>
-				<div className="border-t border-border/60 grid grid-cols-1 divide-y divide-border/60 sm:grid-cols-2 sm:divide-x sm:divide-y-0">
-					<div className="p-6">
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-							Data included
-						</div>
-						<div className="space-y-2.5">
-							{ENTERPRISE_DATA_FEATURES.map((feature) => {
-								const Icon = FEATURE_ICONS[feature.featureId]
-								return (
-									<div
-										key={feature.featureId}
-										className="flex items-center justify-between gap-4 text-sm"
-									>
-										<div className="text-muted-foreground flex items-center gap-2.5">
-											{Icon && <Icon className="size-4 opacity-70" />}
-											<span className="font-medium">{feature.label}</span>
+					<CardContent className="flex flex-col gap-5 flex-1">
+						<div>
+							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+								Data included
+							</div>
+							<div className="space-y-2.5">
+								{ENTERPRISE_DATA_FEATURES.map((feature) => {
+									const Icon = FEATURE_ICONS[feature.featureId]
+									return (
+										<div
+											key={feature.featureId}
+											className="flex items-center justify-between text-sm"
+										>
+											<div className="text-muted-foreground flex items-center gap-2.5">
+												{Icon && <Icon className="size-4 opacity-70" />}
+												<span className="font-medium">{feature.label}</span>
+											</div>
+											<span className="font-semibold tabular-nums text-foreground">
+												{feature.value}
+											</span>
 										</div>
-										<span className="font-semibold tabular-nums text-foreground">
-											{feature.value}
+									)
+								})}
+							</div>
+						</div>
+
+						<Separator className="bg-border/60" />
+
+						<div>
+							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+								Platform features
+							</div>
+							<div className="space-y-2.5">
+								{enterprisePlanFeatures.map((feature) => (
+									<div key={feature.label} className="flex items-start gap-2.5 text-sm">
+										<CircleCheckIcon className="text-primary size-4 shrink-0 mt-0.5" />
+										<span className="text-muted-foreground leading-snug">
+											{feature.label}
 										</span>
+										{feature.value && (
+											<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+												{feature.value}
+											</span>
+										)}
 									</div>
-								)
-							})}
+								))}
+							</div>
 						</div>
-					</div>
-					<div className="p-6">
-						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-							Platform features
-						</div>
-						<div className="space-y-2.5">
-							{enterprisePlanFeatures.map((feature) => (
-								<div key={feature.label} className="flex items-start gap-2.5 text-sm">
-									<CircleCheckIcon className="text-primary size-4 shrink-0 mt-0.5" />
-									<span className="text-muted-foreground leading-snug">
-										{feature.label}
-									</span>
-									{feature.value && (
-										<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-											{feature.value}
-										</span>
-									)}
-								</div>
-							))}
-						</div>
-					</div>
-				</div>
-			</section>
+					</CardContent>
+
+					<CardFooter className="mt-auto flex-col gap-2 items-stretch">
+						<Button
+							variant="outline"
+							className="w-full font-medium"
+							onClick={handleEnterpriseContact}
+						>
+							Talk to founder
+						</Button>
+					</CardFooter>
+				</Card>
+			</div>
 
 			<Dialog
 				open={confirmDialog !== null}

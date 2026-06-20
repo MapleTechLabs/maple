@@ -13,10 +13,10 @@
 // Host identity is carried on the ResourceAttributes map under `host.name`.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, type ColumnAccessor } from "../query"
-import { unionAll, type CHUnionQuery } from "../union"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { MetricsGauge, MetricsSum } from "../tables"
 
 const HOSTMETRIC_NAMES = [

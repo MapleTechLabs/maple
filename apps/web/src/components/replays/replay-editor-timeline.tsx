@@ -327,7 +327,7 @@ const TracesTrack = React.memo(function TracesTrack({
 		return (
 			<div>
 				{header(previewSummaries.length)}
-				<ul>
+				<ul className="max-h-72 overflow-y-auto">
 					{previewSummaries.map((s) => (
 						<TraceRow key={s.traceId} summary={s} seek={seek} preview />
 					))}
@@ -377,7 +377,7 @@ const TracesTrack = React.memo(function TracesTrack({
 									Linked traces aren’t available yet — they may still be ingesting.
 								</p>
 							) : (
-								<ul>
+								<ul className="max-h-72 overflow-y-auto">
 									{summaries.map((s) => (
 										<TraceRow key={s.traceId} summary={s} seek={seek} />
 									))}

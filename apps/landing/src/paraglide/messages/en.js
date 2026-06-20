@@ -1015,7 +1015,7 @@ export const cta_bookend_title = () => `Run it yourself.`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const cta_bookend_lede = () => `14-day trial on Starter. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
+export const cta_bookend_lede = () => `14-day free trial. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
 
 
 /**
@@ -2431,7 +2431,7 @@ export const pricing_advanced_alerting = () => `Advanced alerting`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_full_api = () => `Full API`
+export const pricing_full_api = () => `Full API access`
 
 
 /**
@@ -2655,7 +2655,7 @@ export const faq_limits_q = () => `What happens if I exceed my plan limits?`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_limits_a = () => `We'll notify you as you approach your limits. On the Starter plan, ingestion pauses once you hit the cap. On the Startup plan, additional usage is billed at transparent per-GB rates with no surprises.`
+export const faq_limits_a = () => `We'll notify you as you approach your limits. On the Startup plan, additional usage is billed at transparent per-GB rates with no surprises.`
 
 
 /**
@@ -2671,7 +2671,7 @@ export const faq_retention_q = () => `How long is data retained?`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_retention_a = () => `Retention varies by plan — the Starter plan includes 14-day retention, Startup includes 30 days, and Enterprise plans offer custom retention periods. All plans include full query access to your retained data.`
+export const faq_retention_a = () => `Retention varies by plan — the Startup plan includes 30-day retention and Enterprise plans offer custom retention periods. All plans include full query access to your retained data.`
 
 
 /**
@@ -4528,3 +4528,27 @@ export const language_ja = () => `日本語`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const language_ko = () => `한국어`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_mcp_server = () => `MCP server`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_chat = () => `AI chat`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_triage = () => `AI error triaging`

@@ -23,6 +23,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@maple-dev/clickhouse-builder": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"effect": "catalog:effect"
 	},

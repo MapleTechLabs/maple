@@ -49,43 +49,6 @@ export const bringYourOwnCloud = feature({
 	type: "boolean",
 })
 
-export const starter = plan({
-	id: "starter",
-	name: "Starter",
-	price: {
-		amount: 19,
-		interval: "month",
-	},
-	items: [
-		{
-			featureId: "logs",
-			included: 50,
-			reset: {
-				interval: "month",
-			},
-		},
-		{
-			featureId: "metrics",
-			included: 50,
-			reset: {
-				interval: "month",
-			},
-		},
-		{
-			featureId: "traces",
-			included: 50,
-			reset: {
-				interval: "month",
-			},
-		},
-	],
-	freeTrial: {
-		durationLength: 14,
-		durationType: "day",
-		cardRequired: true,
-	},
-})
-
 export const startup = plan({
 	id: "startup",
 	name: "Startup",
@@ -125,6 +88,11 @@ export const startup = plan({
 			},
 		},
 	],
+	freeTrial: {
+		durationLength: 14,
+		durationType: "day",
+		cardRequired: true,
+	},
 })
 
 export const bringYourOwnCloudAddOn = plan({

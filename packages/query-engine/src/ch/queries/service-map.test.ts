@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit } from "effect"
-import { compileCH } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
 import {
 	serviceDbEdgesSQL,
 	serviceDbEdgesForServiceQuery,

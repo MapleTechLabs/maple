@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "../compile"
-import { compileUnion } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
+import { compileUnion } from "@maple-dev/clickhouse-builder"
 import {
 	listHostsQuery,
 	hostDetailSummaryQuery,

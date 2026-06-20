@@ -7,9 +7,9 @@
 // their scope explicit.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { param } from "../param"
-import { from } from "../query"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from } from "@maple-dev/clickhouse-builder"
 import { Traces } from "../tables"
 
 // ---------------------------------------------------------------------------

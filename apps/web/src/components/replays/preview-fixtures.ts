@@ -262,4 +262,16 @@ export const PREVIEW_TRANSCRIPT: ReadonlyArray<EventRow> = [
 			"TypeError: Cannot read properties of undefined (reading 'rows')\n  at renderTable (table.tsx:88)\n  at Dashboard (dashboard.tsx:142)",
 		traceId: "c3d4e5f60718293a4b5c6d7e8f90a1b2",
 	}),
+	// A longer run of network calls so the preview exercises a scrollable list
+	// (a short list hides whether the panel scrolls vs. inflates the layout).
+	...Array.from({ length: 32 }, (_, i) =>
+		ev({
+			timestamp: ch(5000 + i * 500),
+			type: "network",
+			netMethod: i % 4 === 0 ? "GET" : "POST",
+			netUrl: `/api/resource/${i}`,
+			netStatus: i % 9 === 0 ? 500 : 200,
+			netDurationMs: 40 + ((i * 137) % 1400),
+		}),
+	),
 ]

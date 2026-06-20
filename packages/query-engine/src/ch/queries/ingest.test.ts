@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileUnion } from "../compile"
+import { compileUnion } from "@maple-dev/clickhouse-builder"
 import { localIngestPulseQuery } from "./ingest"
 
 const baseParams = {

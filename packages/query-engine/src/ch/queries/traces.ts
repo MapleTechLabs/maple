@@ -5,11 +5,11 @@
 // ---------------------------------------------------------------------------
 
 import type { TracesMetric } from "../../query-engine"
-import { compileCH } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, type CHQuery, type ColumnAccessor } from "../query"
-import type { Table } from "../table"
+import { compileCH } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import type { Table } from "@maple-dev/clickhouse-builder"
 import {
 	ServiceOverviewSpans,
 	TraceDetailSpans,
@@ -18,8 +18,8 @@ import {
 	TracesAggregatesHourly,
 } from "../tables"
 import { METRIC_NEEDS } from "../../traces-shared"
-import type { ColumnDefs } from "../types"
-import * as T from "../types"
+import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/clickhouse-builder/types"
 import { finalizeTimeseries } from "./series-cap"
 import {
 	apdexExprs,

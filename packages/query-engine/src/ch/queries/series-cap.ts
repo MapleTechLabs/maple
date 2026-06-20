@@ -14,11 +14,11 @@
 // stay byte-identical.
 // ---------------------------------------------------------------------------
 
-import { compileCH } from "../compile"
-import * as CH from "../expr"
-import { from, type CHQuery } from "../query"
-import { table } from "../table"
-import type { ColumnDefs } from "../types"
+import { compileCH } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { from, type CHQuery } from "@maple-dev/clickhouse-builder"
+import { table } from "@maple-dev/clickhouse-builder"
+import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
 
 const SERIES_BASE_ALIAS = "__series_base"
 

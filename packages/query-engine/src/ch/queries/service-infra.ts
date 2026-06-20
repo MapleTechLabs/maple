@@ -27,10 +27,10 @@
 // ---------------------------------------------------------------------------
 
 import { Schema } from "effect"
-import { compileCH, unsafeCompiledQuery, type CompiledQuery, type CompiledQueryRowSchema } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromQuery } from "../query"
+import { compileCH, unsafeCompiledQuery, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery } from "@maple-dev/clickhouse-builder"
 import { MetricsGauge, ServicePlatformsHourly } from "../tables"
 
 const CHNumber = Schema.Union([Schema.Finite, Schema.FiniteFromString])

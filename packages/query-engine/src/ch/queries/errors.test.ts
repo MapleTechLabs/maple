@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compileCH, compileUnion } from "../compile"
+import { compileCH, compileUnion } from "@maple-dev/clickhouse-builder"
 import {
 	errorsByTypeQuery,
 	errorsTimeseriesQuery,

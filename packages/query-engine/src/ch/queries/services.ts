@@ -4,10 +4,10 @@
 // DSL-based query definitions for service overview, releases, apdex, and usage.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, type ColumnAccessor } from "../query"
-import { unionAll, type CHUnionQuery } from "../union"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { ServiceOverviewSpans, ServiceUsage } from "../tables"
 import { apdexExprs, serviceOverviewWhereConditions } from "./query-helpers"
 
