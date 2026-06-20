@@ -40,6 +40,56 @@ describe("Logger", () => {
     })
   )
 
+  it.effect("formatLogFmt does not double quote string messages or annotations", () =>
+    Effect.gen(function*() {
+      const result: Array<string> = []
+      const logger = Logger.formatLogFmt.pipe(
+        Logger.map((output): void => {
+          result.push(output)
+        })
+      )
+
+      yield* Effect.logInfo("Welcome to the Effect Playground!").pipe(
+        Effect.annotateLogs({
+          annotation1: "first",
+          annotation2: "second",
+          annotation3: "\"omg\""
+        }),
+        Effect.provide(Logger.layer([logger]))
+      )
+
+      assert.strictEqual(result.length, 1)
+      const output = result[0] as string
+      assert.match(output, /message="Welcome to the Effect Playground!"/)
+      assert.match(output, /annotation1=first/)
+      assert.match(output, /annotation2=second/)
+      assert.match(output, /annotation3="\\"omg\\""/)
+      assert.ok(!output.includes("message=\"\\\"Welcome to the Effect Playground!\\\"\""))
+      assert.ok(!output.includes("annotation1=\"\\\"first\\\"\""))
+    }))
+
+  it.effect("formatSimple does not double quote string messages or annotations", () =>
+    Effect.gen(function*() {
+      const result: Array<string> = []
+      const logger = Logger.formatSimple.pipe(
+        Logger.map((output): void => {
+          result.push(output)
+        })
+      )
+
+      yield* Effect.logInfo("hello world").pipe(
+        Effect.annotateLogs("annotation", "value with spaces"),
+        Effect.provide(Logger.layer([logger]))
+      )
+
+      assert.strictEqual(result.length, 1)
+      const output = result[0] as string
+      assert.match(output, /message="hello world"/)
+      assert.match(output, /annotation="value with spaces"/)
+      assert.ok(!output.includes("message=\"\\\"hello world\\\"\""))
+      assert.ok(!output.includes("annotation=\"\\\"value with spaces\\\"\""))
+    }))
+
   it.effect("annotateLogsScoped applies annotations only while scoped", () =>
     Effect.gen(function*() {
       const annotations: Array<Record<string, unknown>> = []

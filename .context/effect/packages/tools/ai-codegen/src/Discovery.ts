@@ -59,9 +59,9 @@ export interface ProviderDiscovery {
 }
 
 /**
- * Context service tag for discovering AI provider codegen configurations.
+ * Service tag for discovering AI provider codegen configurations.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const ProviderDiscovery: Context.Service<ProviderDiscovery, ProviderDiscovery> = Context.Service(

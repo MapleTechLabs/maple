@@ -22,7 +22,7 @@ export class McpInvalidTenantError extends Schema.TaggedErrorClass<McpInvalidTen
 
 export class McpQueryError extends Schema.TaggedErrorClass<McpQueryError>()(
 	"@maple/mcp/errors/McpQueryError",
-	{ message: Schema.String, pipe: Schema.String, cause: Schema.optionalKey(Schema.Defect) },
+	{ message: Schema.String, pipe: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 
 export type McpToolError =

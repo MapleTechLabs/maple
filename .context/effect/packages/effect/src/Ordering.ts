@@ -1,35 +1,9 @@
 /**
- * The `Ordering` module provides the standard representation for the result of
- * comparing two values. An `Ordering` is one of three numeric literals: `-1`
- * when the first value is less than the second, `0` when both values compare as
- * equal, and `1` when the first value is greater than the second.
- *
- * **Mental model**
- *
- * - `Ordering` describes the relationship between two compared values, not the
- *   values themselves
- * - Negative means "less than", zero means "equal", and positive means "greater
- *   than"
- * - Unlike JavaScript comparators, this type is normalized to exactly `-1`, `0`,
- *   or `1`
- * - `0` is neutral when combining comparisons; the first non-zero ordering
- *   determines the result
- *
- * **Common tasks**
- *
- * - Interpret a comparison result with {@link match}
- * - Reverse ascending and descending order with {@link reverse}
- * - Combine multiple comparison criteria with {@link Reducer}
- * - Build custom comparison functions for sorting, ordered collections, and
- *   domain-specific ordering rules
- *
- * **Gotchas**
- *
- * - Do not cast arbitrary comparator results such as `a.localeCompare(b)`
- *   directly unless they have been normalized to `-1`, `0`, or `1`
- * - In comparator-style APIs, `-1` means the left value should come before the
- *   right value, while `1` means it should come after
- * - Reversing an `Ordering` swaps `-1` and `1`, but leaves `0` unchanged
+ * The standard result of comparing two values. An `Ordering` is `-1` when the
+ * first value is less than the second, `0` when both values compare as equal,
+ * and `1` when the first value is greater than the second. This module also
+ * provides helpers for reversing an ordering, matching on the three cases, and
+ * combining ordered comparison results with a reducer.
  *
  * @since 2.0.0
  */
@@ -39,6 +13,11 @@ import * as Reducer_ from "./Reducer.ts"
 
 /**
  * Represents the result of comparing two values.
+ *
+ * **When to use**
+ *
+ * Use to model a normalized comparison result that is exactly less than,
+ * equal to, or greater than.
  *
  * **Details**
  *
@@ -74,8 +53,13 @@ import * as Reducer_ from "./Reducer.ts"
 export type Ordering = -1 | 0 | 1
 
 /**
- * Inverts the ordering of the input Ordering.
+ * Reverses the ordering of the input Ordering.
  * This is useful for creating descending sort orders from ascending ones.
+ *
+ * **When to use**
+ *
+ * Use to flip an ordering result when reversing sort direction or comparison
+ * priority.
  *
  * **Example** (Reversing comparison order)
  *
@@ -111,7 +95,11 @@ export type Ordering = -1 | 0 | 1
 export const reverse = (o: Ordering): Ordering => (o === -1 ? 1 : o === 1 ? -1 : 0)
 
 /**
- * Depending on the `Ordering` parameter given to it, returns a value produced by one of the 3 functions provided as parameters.
+ * Matches an `Ordering` value and returns the branch selected by that ordering.
+ *
+ * **When to use**
+ *
+ * Use to branch on the three possible comparison outcomes in one expression.
  *
  * **Example** (Pattern matching on orderings)
  *
@@ -159,12 +147,22 @@ export const match: {
 ): A | B | C => self === -1 ? onLessThan() : self === 0 ? onEqual() : onGreaterThan())
 
 /**
- * A `Reducer` for combining `Ordering`s.
+ * Reducer for combining `Ordering`s.
+ *
+ * **When to use**
+ *
+ * Use to combine multiple comparison results in priority order, such as
+ * checking secondary criteria only when earlier criteria compare as equal.
  *
  * **Details**
  *
  * If any of the `Ordering`s is non-zero, the result is the first non-zero `Ordering`.
  * If all the `Ordering`s are zero, the result is zero.
+ *
+ * **Gotchas**
+ *
+ * `combineAll` stops consuming the iterable as soon as it finds a non-zero
+ * `Ordering`.
  *
  * @category ordering
  * @since 4.0.0

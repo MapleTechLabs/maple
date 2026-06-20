@@ -1,20 +1,11 @@
 /**
- * Mutable reactive references for local, in-memory state that should be read,
- * updated, and observed without going through an `AtomRegistry`.
+ * Mutable reactive references for local, in-memory state.
  *
- * `AtomRef` is useful for small state models, form-like state, and collections
- * of item references where callers need direct mutation methods together with
- * subscriptions. A ref exposes its current `value`, notifies subscribers after
- * `set` or `update`, can derive read-only views with `map`, and can focus on
- * nested object or array properties with `prop`.
- *
- * Notifications are equality-aware: setting a value that is `Equal.equals` to
- * the current value is ignored, and mapped or property subscriptions only emit
- * when their derived value changes. Mutate state through `set`, `update`, or a
- * property ref so subscribers are notified; direct mutation of the stored value
- * does not notify listeners. Collection subscribers are notified when items are
- * inserted, removed, or when an item ref changes, while `toArray` returns the
- * current raw item values.
+ * `AtomRef` provides small observable state cells that can be read, updated,
+ * mapped, and subscribed to without going through an `AtomRegistry`. Mutable
+ * refs can also create refs for nested properties. The module also provides a
+ * collection helper that stores item refs and notifies subscribers when items are
+ * inserted, removed, or changed.
  *
  * @since 4.0.0
  */
@@ -137,25 +128,36 @@ class ReadonlyRefImpl<A> implements ReadonlyRef<A> {
     return Hash.hash(this.value)
   }
 
-  listeners: Array<(a: A) => void> = []
-  listenerCount = 0
+  listeners: Listener<A> | null = null
 
   notify(a: A) {
-    for (let i = 0; i < this.listenerCount; i++) {
-      this.listeners[i](a)
+    let listener = this.listeners
+    while (listener !== null) {
+      listener.f(a)
+      listener = listener.next
     }
   }
 
   subscribe(f: (a: A) => void): () => void {
-    this.listeners.push(f)
-    this.listenerCount++
+    const listener: Listener<A> = {
+      f,
+      prev: null,
+      next: this.listeners
+    }
+    if (this.listeners) {
+      this.listeners.prev = listener
+    }
+    this.listeners = listener
 
     return () => {
-      const index = this.listeners.indexOf(f)
-      if (index !== -1) {
-        this.listeners[index] = this.listeners[this.listenerCount - 1]
-        this.listeners.pop()
-        this.listenerCount--
+      if (this.listeners === listener) {
+        this.listeners = listener.next
+      }
+      if (listener.prev) {
+        listener.prev.next = listener.next
+      }
+      if (listener.next) {
+        listener.next.prev = listener.prev
       }
     }
   }
@@ -163,6 +165,12 @@ class ReadonlyRefImpl<A> implements ReadonlyRef<A> {
   map<B>(f: (a: A) => B): ReadonlyRef<B> {
     return new MapRefImpl(this, f)
   }
+}
+
+type Listener<A> = {
+  readonly f: (a: A) => void
+  prev: Listener<A> | null
+  next: Listener<A> | null
 }
 
 class AtomRefImpl<A> extends ReadonlyRefImpl<A> implements AtomRef<A> {

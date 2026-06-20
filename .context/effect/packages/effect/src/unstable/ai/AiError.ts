@@ -1,82 +1,13 @@
 /**
- * The `AiError` module provides comprehensive, provider-agnostic error handling
- * for AI operations.
+ * Defines shared errors for AI operations.
  *
- * This module uses the `reason` pattern where `AiError` is a top-level
- * wrapper error containing `module`, `method`, and a `reason` field that holds
- * the semantic error. This design enables ergonomic error handling while
- * preserving rich context about failures.
- *
- * ## Semantic Error Categories
- *
- * - **RateLimitError** - Request throttled (429s, provider-specific limits)
- * - **QuotaExhaustedError** - Account/billing limits reached
- * - **AuthenticationError** - Invalid/expired credentials
- * - **ContentPolicyError** - Input/output violated content policy
- * - **InvalidRequestError** - Malformed request parameters
- * - **InvalidUserInputError** - Prompt contains unsupported content
- * - **InternalProviderError** - Provider-side failures (5xx)
- * - **NetworkError** - Transport-level failures
- * - **InvalidOutputError** - LLM output parsing/validation failures
- * - **StructuredOutputError** - LLM generated text that doesn't conform to structured output schema
- * - **UnsupportedSchemaError** - Codec transformer rejected a schema with unsupported constructs
- * - **UnknownError** - Catch-all for unknown errors
- *
- * ## Tool Call Errors
- *
- * - **ToolNotFoundError** - Model requested non-existent tool
- * - **ToolParameterValidationError** - Tool call params failed validation
- * - **InvalidToolResultError** - Tool handler returned invalid result
- * - **ToolResultEncodingError** - Tool result encoding failed
- * - **ToolConfigurationError** - Provider tool misconfigured
- *
- * ## Retryability
- *
- * Each reason type has an `isRetryable` getter indicating whether the error is
- * transient. Some errors also provide a `retryAfter` duration hint.
- *
- * **Example** (Handling AI errors by reason)
- *
- * ```ts
- * import { Effect, Match } from "effect"
- * import type { AiError } from "effect/unstable/ai"
- *
- * // Handle errors using Match on the reason
- * const handleAiError = Match.type<AiError.AiError>().pipe(
- *   Match.when(
- *     { reason: { _tag: "RateLimitError" } },
- *     (err) => Effect.logWarning(`Rate limited, retry after ${err.retryAfter}`)
- *   ),
- *   Match.when(
- *     { reason: { _tag: "AuthenticationError" } },
- *     (err) => Effect.logError(`Auth failed: ${err.reason.kind}`)
- *   ),
- *   Match.when(
- *     { reason: { isRetryable: true } },
- *     (err) => Effect.logWarning(`Transient error, retrying: ${err.message}`)
- *   ),
- *   Match.orElse((err) => Effect.logError(`Permanent error: ${err.message}`))
- * )
- * ```
- *
- * **Example** (Creating an AI error with a reason)
- *
- * ```ts
- * import { Duration, Effect } from "effect"
- * import { AiError } from "effect/unstable/ai"
- *
- * // Create an AiError with a reason
- * const error = AiError.make({
- *   module: "OpenAI",
- *   method: "completion",
- *   reason: new AiError.RateLimitError({
- *     retryAfter: Duration.seconds(60)
- *   })
- * })
- *
- * console.log(error.isRetryable) // true
- * console.log(error.message) // "OpenAI.completion: Rate limit exceeded. Retry after 1 minute"
- * ```
+ * `AiError` records where a failure happened and stores the detailed reason in a
+ * `reason` field. Those reasons cover transport problems, provider responses,
+ * rate limits, authentication, content policy failures, invalid requests,
+ * invalid output, unsupported schemas, tool failures, invalid user input, and
+ * unknown failures. This module also includes metadata schemas, guards,
+ * constructors, and helpers for converting HTTP response information into AI
+ * error reasons.
  *
  * @since 4.0.0
  */
@@ -250,7 +181,7 @@ export class NetworkError extends Schema.ErrorClass<NetworkError>(
  * Provider-specific metadata is namespaced by provider name. Each provider
  * value can contain arbitrary mutable JSON metadata or `null`.
  *
- * **Example** (Metadata shape)
+ * **Example** (Inspecting metadata shape)
  *
  * ```ts
  * const metadata = {
@@ -364,7 +295,12 @@ export interface UnsupportedSchemaErrorMetadata extends ProviderMetadata {}
 export interface UnknownErrorMetadata extends ProviderMetadata {}
 
 /**
- * Token usage information from AI operations.
+ * Schema for token usage information from AI operations.
+ *
+ * **Details**
+ *
+ * Schema for optional provider-reported token counts for prompt tokens,
+ * completion tokens, and total tokens.
  *
  * @category schemas
  * @since 4.0.0
@@ -376,7 +312,20 @@ export const UsageInfo = Schema.Struct({
 }).annotate({ identifier: "UsageInfo" })
 
 /**
- * Combined HTTP context for error reporting.
+ * Schema for the combined HTTP context used in error reporting.
+ *
+ * **When to use**
+ *
+ * Use to attach request details, optional response details, and optional body
+ * text to AI provider errors.
+ *
+ * **Details**
+ *
+ * Includes the required request details plus optional response details and raw
+ * response body.
+ *
+ * @see {@link HttpRequestDetails} for captured request details
+ * @see {@link HttpResponseDetails} for captured response details
  *
  * @category schemas
  * @since 4.0.0
@@ -937,7 +886,7 @@ export class UnsupportedSchemaError extends Schema.ErrorClass<UnsupportedSchemaE
 }
 
 /**
- * Catch-all error for unknown or unexpected errors.
+ * Error data for unknown or unexpected AI failures.
  *
  * **Details**
  *
@@ -1415,6 +1364,16 @@ export type AiErrorReason =
 /**
  * Schema for validating and parsing AI error reasons.
  *
+ * **When to use**
+ *
+ * Use when decoding or validating unknown AI error reason values with Schema.
+ *
+ * **Details**
+ *
+ * This runtime schema is the union of the concrete AI error reason classes.
+ *
+ * @see {@link isAiErrorReason} for checking an existing value without Schema decoding
+ *
  * @category schemas
  * @since 4.0.0
  */
@@ -1465,11 +1424,12 @@ export const AiErrorReason: Schema.Union<[
 const TypeId = "~effect/unstable/ai/AiError/AiError" as const
 
 /**
- * Top-level AI error wrapper using the `reason` pattern.
+ * Schema for the top-level AI error wrapper using the `reason` pattern.
  *
  * **When to use**
  *
- * Use with `Effect.catchReason` for ergonomic error handling.
+ * Use when you need AI errors that can be handled by semantic reason with
+ * `Effect.catchReason`.
  *
  * **Details**
  *
@@ -1619,7 +1579,8 @@ export const make = (params: {
  *
  * **When to use**
  *
- * Provider packages can use this as a base for provider-specific mapping.
+ * Use as the base mapping when provider packages translate HTTP status codes into
+ * provider-specific error reasons.
  *
  * **Example** (Mapping an HTTP status to a reason)
  *

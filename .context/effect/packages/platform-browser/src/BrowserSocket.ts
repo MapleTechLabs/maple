@@ -1,26 +1,9 @@
 /**
  * Browser WebSocket layers for Effect sockets.
  *
- * This module provides the browser entry point for `Socket.Socket` values
- * backed by the platform `WebSocket` implementation. Use `layerWebSocket` when
- * client-side Effect programs, browser tests, RPC transports, or realtime UI
- * features need a bidirectional socket connected to a WebSocket URL, and use
- * `layerWebSocketConstructor` when lower-level socket APIs need access to the
- * browser constructor service.
- *
- * Browser WebSocket rules still apply. Connections are created through
- * `globalThis.WebSocket`, so URL schemes, subprotocol negotiation, mixed-content
- * blocking, cookies, authentication, CORS-like origin checks, and extension
- * negotiation are controlled by the browser and server rather than by Effect.
- * Close events are translated into socket errors unless the provided
- * `closeCodeIsError` predicate classifies the close code as clean, which is
- * useful for protocols that use application-specific close codes.
- *
- * Messages are delivered as strings or binary `Uint8Array` values; browser
- * `Blob` messages are read into bytes before they reach the socket handler.
- * Outgoing data should already be serialized to a string or bytes, and protocol
- * frames that represent an intentional close should be sent as `CloseEvent`
- * values so the underlying `WebSocket.close` code and reason are preserved.
+ * `layerWebSocket` creates a `Socket.Socket` connected to a WebSocket URL using
+ * the browser `WebSocket` constructor. `layerWebSocketConstructor` provides
+ * only the browser-backed constructor service for lower-level socket code.
  *
  * @since 4.0.0
  */
@@ -29,6 +12,25 @@ import * as Socket from "effect/unstable/socket/Socket"
 
 /**
  * Creates a `Socket` layer connected to the given URL using the browser `WebSocket` constructor.
+ *
+ * **When to use**
+ *
+ * Use when you need browser code to satisfy the platform socket service from a
+ * URL without wiring the browser constructor service separately.
+ *
+ * **Details**
+ *
+ * Delegates socket construction to `Socket.makeWebSocket` and provides the
+ * browser-backed `WebSocketConstructor` service.
+ *
+ * **Gotchas**
+ *
+ * Browser WebSocket rules still control URL schemes, mixed-content blocking,
+ * cookies, authentication, origin checks, subprotocols, and extensions. Close
+ * events are errors unless `closeCodeIsError` classifies the close code as
+ * clean.
+ *
+ * @see {@link layerWebSocketConstructor} for providing only the browser constructor service
  *
  * @category layers
  * @since 4.0.0

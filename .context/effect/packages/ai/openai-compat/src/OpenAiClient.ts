@@ -1,26 +1,9 @@
 /**
- * The `OpenAiClient` module provides an Effect service for calling
- * OpenAI-compatible chat completions and embeddings APIs. It builds on the
- * Effect HTTP client, adds authentication and OpenAI header handling, and
- * exposes typed helpers for regular responses, server-sent event streaming, and
- * embedding requests.
- *
- * **Common tasks**
- *
- * - Create a client service directly with {@link make}
- * - Provide the service as a layer with {@link layer} or {@link layerConfig}
- * - Send non-streaming chat completion requests with `createResponse`
- * - Send streaming chat completion requests with `createResponseStream`
- * - Generate embeddings with `createEmbedding`
- * - Reuse the exported request and response types when integrating compatible providers
- *
- * **Gotchas**
- *
- * - The default base URL is `https://api.openai.com/v1`; set `apiUrl` for other
- *   OpenAI-compatible providers.
- * - `createResponseStream` forces `stream: true` and requests usage events with
- *   `stream_options.include_usage`.
- * - HTTP and schema decoding failures are mapped into `AiError`.
+ * The `OpenAiClient` module provides an Effect service for OpenAI-compatible
+ * chat completions and embeddings APIs. It builds on the Effect HTTP client,
+ * adds authentication and OpenAI organization or project headers, and exposes
+ * typed helpers for non-streaming chat completions, streaming chat completions,
+ * and embedding requests.
  *
  * @since 4.0.0
  */
@@ -77,8 +60,22 @@ export interface Service {
 }
 
 /**
- * Context service tag for accessing an OpenAI-compatible client from the
- * Effect context.
+ * Service tag for the OpenAI-compatible chat completions and embeddings client.
+ *
+ * **When to use**
+ *
+ * Use when building effects that depend on the low-level OpenAI-compatible
+ * client through context rather than receiving the client as a value.
+ *
+ * **Details**
+ *
+ * The tagged service is the `Service` interface produced by `make` and provided
+ * by `layer` or `layerConfig`.
+ *
+ * @see {@link Service} for the operations provided by the service
+ * @see {@link make} for constructing the service from explicit options
+ * @see {@link layer} for providing the service from explicit options
+ * @see {@link layerConfig} for loading client settings from `Config`
  *
  * @category services
  * @since 4.0.0
@@ -90,7 +87,7 @@ export class OpenAiClient extends Context.Service<OpenAiClient, Service>()(
 /**
  * Configuration options used to construct an OpenAI-compatible client.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type Options = {
@@ -109,10 +106,24 @@ const RedactedOpenAiHeaders = {
 /**
  * Constructs an OpenAI-compatible client service from explicit options.
  *
+ * **When to use**
+ *
+ * Use when you need the OpenAI-compatible client service value inside an effect.
+ *
  * **Details**
  *
- * The returned service applies the configured base URL, authentication, and
- * OpenAI organization/project headers to the underlying HTTP client.
+ * The returned service uses the current `HttpClient`, prepends `apiUrl` or
+ * `https://api.openai.com/v1`, adds authentication and OpenAI
+ * organization/project headers, accepts JSON responses, and applies
+ * `transformClient` when provided.
+ *
+ * **Gotchas**
+ *
+ * A scoped `OpenAiConfig.withClientTransform` is applied when request helpers
+ * run, after the `transformClient` option supplied to `make`.
+ *
+ * @see {@link layer} for providing this client from explicit options
+ * @see {@link layerConfig} for loading client settings from `Config`
  *
  * @category constructors
  * @since 4.0.0
@@ -257,6 +268,14 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer that provides an OpenAI-compatible client from explicit options.
  *
+ * **When to use**
+ *
+ * Use to install `OpenAiClient` in an application layer when the client options
+ * are already available as values rather than loaded from `Config`.
+ *
+ * @see {@link make} for constructing the client service effectfully
+ * @see {@link layerConfig} for loading client settings from `Config`
+ *
  * @category layers
  * @since 4.0.0
  */
@@ -266,6 +285,20 @@ export const layer = (options: Options): Layer.Layer<OpenAiClient, never, HttpCl
 /**
  * Creates a layer that loads OpenAI-compatible client settings from `Config`
  * values before constructing the service.
+ *
+ * **When to use**
+ *
+ * Use when you need client settings for OpenAI-compatible APIs to be read from
+ * Effect `Config` values while providing `OpenAiClient` as a layer.
+ *
+ * **Details**
+ *
+ * Only config values supplied in `options` are loaded. Omitted fields are
+ * passed to `make` as `undefined`, and `transformClient` is forwarded as a
+ * plain option.
+ *
+ * @see {@link make} for constructing the client service effectfully
+ * @see {@link layer} for providing the client from already-resolved options
  *
  * @category layers
  * @since 4.0.0
@@ -1044,7 +1077,10 @@ const ChatCompletionToolFunction = Schema.Struct({
 })
 
 const ChatCompletionToolFunctionDelta = Schema.Struct({
-  name: Schema.optionalKey(Schema.String),
+  // Some OpenAI-compatible providers (e.g. Fireworks) send `name: null` on
+  // streamed tool-call continuation fragments. `name` must be nullable, else
+  // the whole chunk fails validation and its argument delta is dropped.
+  name: Schema.optionalKey(Schema.NullOr(Schema.String)),
   arguments: Schema.optionalKey(Schema.String)
 })
 
@@ -1065,12 +1101,16 @@ const ChatCompletionToolCallDelta = Schema.Struct({
 const ChatCompletionMessage = Schema.Struct({
   role: Schema.optionalKey(Schema.String),
   content: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  reasoning: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  reasoning_content: Schema.optionalKey(Schema.NullOr(Schema.String)),
   tool_calls: Schema.optionalKey(Schema.Array(ChatCompletionToolCall))
 })
 
 const ChatCompletionDelta = Schema.Struct({
   role: Schema.optionalKey(Schema.String),
   content: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  reasoning: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  reasoning_content: Schema.optionalKey(Schema.NullOr(Schema.String)),
   tool_calls: Schema.optionalKey(Schema.Array(ChatCompletionToolCallDelta))
 })
 

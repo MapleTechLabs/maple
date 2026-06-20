@@ -1,33 +1,11 @@
 /**
- * The `Path` module provides a platform path service for manipulating file
- * system paths through Effect's environment. It models path operations as a
- * replaceable service so programs can depend on path behavior without directly
- * coupling to a particular runtime implementation.
+ * Provides path operations through the Effect environment.
  *
- * **Mental model**
- *
- * - `Path.Path` is a `Context.Service` tag used to access the current path implementation
- * - The service offers familiar path operations such as joining, resolving, parsing, and formatting
- * - Most operations are pure string transformations and follow POSIX-style path semantics
- * - File URL conversions return `Effect`s because invalid paths or URLs can fail with `BadArgument`
- * - Custom implementations can be provided with `Layer.succeed` for alternate platforms or tests
- *
- * **Common tasks**
- *
- * - Combine path segments with `join` or turn segments into an absolute path with `resolve`
- * - Normalize `.` and `..` segments with `normalize`
- * - Inspect paths with `basename`, `dirname`, `extname`, and `isAbsolute`
- * - Convert between structured path parts and strings with `parse` and `format`
- * - Compute relative paths with `relative`
- * - Convert between file paths and `file:` URLs with `toFileUrl` and `fromFileUrl`
- *
- * **Gotchas**
- *
- * - Path strings are not checked against the file system; these operations only manipulate syntax
- * - `resolve` may consult the host current working directory when no absolute segment is supplied
- * - `fromFileUrl` only accepts valid `file:` URLs and rejects encoded path separators
- * - Use the service from the environment when writing portable Effect code instead of importing
- *   host-specific path APIs directly
+ * The `Path` service works with file system paths without tying code to one
+ * concrete platform module. It exposes common operations such as joining,
+ * normalizing, parsing, formatting, resolving, and converting paths to or from
+ * file URLs. This module includes the service interface, parsed path type,
+ * service tag, runtime marker, and built-in POSIX path layer.
  *
  * @since 4.0.0
  */
@@ -40,13 +18,26 @@ import { BadArgument } from "./PlatformError.ts"
 /**
  * Runtime type identifier used to mark implementations of the `Path` service.
  *
+ * **Details**
+ *
+ * The marker is the exact string stored on `Path` service implementations.
+ * Most code should depend on the `Path` service instead of inspecting this
+ * value directly.
+ *
+ * @see {@link layer} for the built-in POSIX `Path` service layer
+ *
  * @category type IDs
  * @since 4.0.0
  */
 export const TypeId = "~effect/platform/Path"
 
 /**
- * Service interface for platform-specific path manipulation.
+ * Defines the service interface for platform-specific path manipulation.
+ *
+ * **When to use**
+ *
+ * Use to depend on path operations through the Effect environment instead of a
+ * concrete host path module.
  *
  * **Details**
  *
@@ -111,6 +102,10 @@ export interface Path {
 /**
  * Namespace containing types associated with the `Path` service.
  *
+ * **When to use**
+ *
+ * Use to reference types associated with path parsing and formatting.
+ *
  * **Example** (Working with parsed paths)
  *
  * ```ts
@@ -141,6 +136,11 @@ export interface Path {
 export declare namespace Path {
   /**
    * Structured representation of a parsed file system path.
+   *
+   * **When to use**
+   *
+   * Use to model the object form produced by `Path.parse` and consumed by
+   * `Path.format`.
    *
    * **Details**
    *
@@ -190,12 +190,11 @@ export declare namespace Path {
 }
 
 /**
- * Context service tag for accessing the current `Path` implementation.
+ * Service tag for accessing the current `Path` implementation.
  *
  * **When to use**
  *
- * Yield this service inside an effect to use path operations supplied by the
- * environment, or provide a custom implementation with `Layer.succeed`.
+ * Use when you need path operations supplied by an effect's environment.
  *
  * **Example** (Providing a custom Path service)
  *
@@ -253,7 +252,7 @@ export declare namespace Path {
  * const result = Effect.provide(program, customPathLayer)
  * ```
  *
- * @category tag
+ * @category services
  * @since 4.0.0
  */
 export const Path: Context.Service<Path, Path> = Context.Service("effect/Path")
@@ -855,8 +854,15 @@ const posixImpl = Path.of({
  *
  * **When to use**
  *
- * Use this layer when an effect requires the `Path` service and should use
- * forward-slash path semantics.
+ * Use when you need an effect that requires the `Path` service to run with the
+ * built-in POSIX path implementation.
+ *
+ * **Details**
+ *
+ * The layer provides a static service whose separator is `/` and whose
+ * operations use POSIX path semantics.
+ *
+ * @see {@link Path} for accessing the `Path` service from an effect
  *
  * @category layers
  * @since 4.0.0

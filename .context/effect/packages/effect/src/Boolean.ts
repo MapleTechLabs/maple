@@ -1,6 +1,10 @@
 /**
- * This module provides utility functions and type class instances for working with the `boolean` type in TypeScript.
- * It includes functions for basic boolean operations.
+ * Works with TypeScript `boolean` values.
+ *
+ * This module exposes the native `Boolean` constructor together with helpers
+ * for checking values, choosing between lazy branches, combining booleans with
+ * logical operations, checking collections with `every` or `some`, ordering
+ * booleans, and reducing boolean values.
  *
  * @since 2.0.0
  */
@@ -12,7 +16,18 @@ import * as predicate from "./Predicate.ts"
 import * as Reducer from "./Reducer.ts"
 
 /**
- * Reference to the global Boolean constructor.
+ * Exposes the global boolean constructor for JavaScript truthiness
+ * coercion.
+ *
+ * **When to use**
+ *
+ * Use to access native JavaScript truthiness coercion from the Effect module
+ * namespace.
+ *
+ * **Gotchas**
+ *
+ * This follows native truthiness rules. For example, non-empty strings such as
+ * `"false"` coerce to `true`.
  *
  * **Example** (Coercing values to booleans)
  *
@@ -35,7 +50,11 @@ import * as Reducer from "./Reducer.ts"
 export const Boolean = globalThis.Boolean
 
 /**
- * Tests if a value is a `boolean`.
+ * Checks whether a value is a `boolean`.
+ *
+ * **When to use**
+ *
+ * Use to validate unknown input and narrow it to `boolean`.
  *
  * **Example** (Checking for booleans)
  *
@@ -53,8 +72,11 @@ export const Boolean = globalThis.Boolean
 export const isBoolean: (input: unknown) => input is boolean = predicate.isBoolean
 
 /**
- * This function returns the result of either of the given functions depending on the value of the boolean parameter.
- * It is useful when you have to run one of two functions depending on the boolean value.
+ * Chooses between two lazy branches based on a boolean value.
+ *
+ * **When to use**
+ *
+ * Use to choose between two lazy branches based on a boolean value.
  *
  * **Example** (Pattern matching on booleans)
  *
@@ -92,6 +114,11 @@ export const match: {
  * Provides an `Order` instance for `boolean` that allows comparing and sorting boolean values.
  * In this ordering, `false` is considered less than `true`.
  *
+ * **When to use**
+ *
+ * Use when you need to sort or compare boolean values through APIs that accept
+ * an ordering instance where `false` comes before `true`.
+ *
  * **Example** (Comparing booleans)
  *
  * ```ts
@@ -108,7 +135,12 @@ export const match: {
 export const Order: order.Order<boolean> = order.Boolean
 
 /**
- * An `Equivalence` instance for booleans using strict equality (`===`).
+ * Equivalence instance for booleans using strict equality (`===`).
+ *
+ * **When to use**
+ *
+ * Use when checking boolean equality through APIs that accept an equivalence
+ * relation.
  *
  * **Example** (Comparing booleans for equivalence)
  *
@@ -127,6 +159,10 @@ export const Equivalence: Equ.Equivalence<boolean> = Equ.Boolean
 /**
  * Negates the given boolean: `!self`
  *
+ * **When to use**
+ *
+ * Use to invert a boolean value.
+ *
  * **Example** (Negating booleans)
  *
  * ```ts
@@ -143,7 +179,15 @@ export const Equivalence: Equ.Equivalence<boolean> = Equ.Boolean
 export const not = (self: boolean): boolean => !self
 
 /**
- * Combines two boolean using AND: `self && that`.
+ * Combines two booleans using logical AND: `self && that`.
+ *
+ * **When to use**
+ *
+ * Use to require both boolean operands to be `true`.
+ *
+ * **Details**
+ *
+ * Supports both data-first and data-last forms.
  *
  * **Example** (Combining booleans with AND)
  *
@@ -166,7 +210,11 @@ export const and: {
 } = dual(2, (self: boolean, that: boolean): boolean => self && that)
 
 /**
- * Combines two boolean using NAND: `!(self && that)`.
+ * Combines two booleans using NAND: `!(self && that)`.
+ *
+ * **When to use**
+ *
+ * Use to negate a logical AND result.
  *
  * **Example** (Combining booleans with NAND)
  *
@@ -189,7 +237,11 @@ export const nand: {
 } = dual(2, (self: boolean, that: boolean): boolean => !(self && that))
 
 /**
- * Combines two boolean using OR: `self || that`.
+ * Combines two booleans using OR: `self || that`.
+ *
+ * **When to use**
+ *
+ * Use to accept when either boolean operand is `true`.
  *
  * **Example** (Combining booleans with OR)
  *
@@ -214,6 +266,10 @@ export const or: {
 /**
  * Combines two booleans using NOR: `!(self || that)`.
  *
+ * **When to use**
+ *
+ * Use to accept only when both boolean operands are `false`.
+ *
  * **Example** (Combining booleans with NOR)
  *
  * ```ts
@@ -236,6 +292,10 @@ export const nor: {
 
 /**
  * Combines two booleans using XOR: `(!self && that) || (self && !that)`.
+ *
+ * **When to use**
+ *
+ * Use to accept when exactly one boolean operand is `true`.
  *
  * **Example** (Combining booleans with XOR)
  *
@@ -260,6 +320,10 @@ export const xor: {
 /**
  * Combines two booleans using EQV (aka XNOR): `!xor(self, that)`.
  *
+ * **When to use**
+ *
+ * Use to accept when both boolean operands have the same truth value.
+ *
  * **Example** (Checking boolean equivalence)
  *
  * ```ts
@@ -283,6 +347,10 @@ export const eqv: {
 /**
  * Combines two booleans using an implication: `(!self || that)`.
  *
+ * **When to use**
+ *
+ * Use to model logical implication between a condition and a consequence.
+ *
  * **Example** (Checking boolean implication)
  *
  * ```ts
@@ -304,7 +372,11 @@ export const implies: {
 } = dual(2, (self, that) => self ? that : true)
 
 /**
- * This utility function is used to check if all the elements in a collection of boolean values are `true`.
+ * Checks whether every boolean in a collection is `true`.
+ *
+ * **When to use**
+ *
+ * Use to check that every boolean in an iterable is `true`.
  *
  * **Example** (Checking every boolean)
  *
@@ -316,7 +388,10 @@ export const implies: {
  * assert.deepStrictEqual(Boolean.every([true, false, true]), false)
  * ```
  *
- * @category utils
+ * @see {@link some} for checking whether at least one value is `true`
+ * @see {@link ReducerAnd} for reducing booleans with AND through a `Reducer`
+ *
+ * @category predicates
  * @since 2.0.0
  */
 export const every = (collection: Iterable<boolean>): boolean => {
@@ -329,7 +404,11 @@ export const every = (collection: Iterable<boolean>): boolean => {
 }
 
 /**
- * This utility function is used to check if at least one of the elements in a collection of boolean values is `true`.
+ * Checks whether at least one boolean in a collection is `true`.
+ *
+ * **When to use**
+ *
+ * Use to check that at least one boolean in an iterable is `true`.
  *
  * **Example** (Checking some booleans)
  *
@@ -341,7 +420,10 @@ export const every = (collection: Iterable<boolean>): boolean => {
  * assert.deepStrictEqual(Boolean.some([false, false, false]), false)
  * ```
  *
- * @category utils
+ * @see {@link every} for checking whether all values are `true`
+ * @see {@link ReducerOr} for reducing booleans with OR through a `Reducer`
+ *
+ * @category predicates
  * @since 2.0.0
  */
 export const some = (collection: Iterable<boolean>): boolean => {
@@ -354,11 +436,24 @@ export const some = (collection: Iterable<boolean>): boolean => {
 }
 
 /**
- * A `Reducer` for combining `boolean`s using AND.
+ * Reducer for combining `boolean`s using AND.
+ *
+ * **When to use**
+ *
+ * Use to require every accumulated boolean to be `true` through APIs that
+ * consume a `Reducer`.
  *
  * **Details**
  *
- * The `initialValue` is `true`.
+ * The `initialValue` is `true`, so `combineAll([])` returns `true`.
+ *
+ * **Gotchas**
+ *
+ * `combineAll` uses the default left-to-right `Reducer.make` fold and does not
+ * short-circuit on `false`.
+ *
+ * @see {@link ReducerOr} for reducing with OR semantics
+ * @see {@link every} for checking an iterable directly
  *
  * @category math
  * @since 4.0.0
@@ -366,11 +461,19 @@ export const some = (collection: Iterable<boolean>): boolean => {
 export const ReducerAnd: Reducer.Reducer<boolean> = Reducer.make((a, b) => a && b, true)
 
 /**
- * A `Reducer` for combining `boolean`s using OR.
+ * Reducer for combining `boolean`s using OR.
+ *
+ * **When to use**
+ *
+ * Use to reduce boolean values where the result should be `true` if any
+ * combined value is `true`.
  *
  * **Details**
  *
  * The `initialValue` is `false`.
+ *
+ * @see {@link ReducerAnd} for reducing with AND semantics
+ * @see {@link some} for checking an iterable directly
  *
  * @category math
  * @since 4.0.0

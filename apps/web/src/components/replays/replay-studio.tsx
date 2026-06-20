@@ -97,7 +97,7 @@ export function ReplayStudio({
 						<SessionEventsPanel
 							sessionId={sessionId}
 							previewEvents={preview?.transcript}
-							className="h-[420px] lg:absolute lg:inset-0 lg:h-auto"
+							className="h-[clamp(20rem,60vh,28rem)] lg:absolute lg:inset-0 lg:h-auto"
 						/>
 					</div>
 				</div>

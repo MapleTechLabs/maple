@@ -1,19 +1,10 @@
 /**
- * Shared error types for the RPC client protocol layer.
+ * Client-side protocol failures reported by unstable RPC transports.
  *
- * This module defines the client-side failures added to schema-aware RPC
- * clients. `RpcClientError` wraps transport failures from the built-in HTTP,
- * socket, and worker protocols, while `RpcClientDefect` records protocol
- * problems such as empty HTTP responses, malformed response batches, failed
- * transport decoding, or unexpected connection failures.
- *
- * These errors are separate from a remote handler's typed error. Remote
- * failures that match an RPC's error schema are decoded from the RPC exit and
- * remain part of the procedure's domain error channel. Server defects and
- * schema mismatches are not normal remote errors: they surface as defects or
- * protocol failures, so handlers commonly inspect `RpcClientError.reason` to
- * decide whether a failure is retryable transport trouble or an incompatible
- * client/server schema or serialization boundary.
+ * `RpcClientError` is the error type generated clients use when a call fails
+ * before a remote handler can return its declared typed error. Its `reason`
+ * covers built-in transport failures from HTTP, sockets, and workers, plus
+ * `RpcClientDefect` values for malformed or incompatible protocol data.
  *
  * @since 4.0.0
  */
@@ -34,12 +25,12 @@ const TypeId = "~effect/rpc/RpcClientError"
 export class RpcClientDefect extends Schema.ErrorClass<RpcClientDefect>("effect/rpc/RpcClientError/RpcClientDefect")({
   _tag: Schema.tag("RpcClientDefect"),
   message: Schema.String,
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 /**
- * The public RPC client error type, wrapping worker, socket, HTTP client, and
- * client protocol defect failures.
+ * Error wrapper for RPC client failures, including worker, socket, HTTP client,
+ * and client protocol defect failures.
  *
  * @category errors
  * @since 4.0.0

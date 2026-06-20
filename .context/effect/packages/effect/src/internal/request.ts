@@ -79,7 +79,7 @@ interface Batch {
 }
 
 const batchPool: Array<Batch> = []
-const pendingBatches = new Map<RequestResolver<any>, Map<unknown, Batch>>()
+const pendingBatches = new WeakMap<RequestResolver<any>, Map<unknown, Batch>>()
 
 const addEntry = <A extends Request.Any>(
   resolver: RequestResolver<A>,
@@ -150,6 +150,8 @@ const addEntry = <A extends Request.Any>(
               newBatch.entrySet.clear()
               newBatch.key = undefined
               newBatch.fiber = undefined
+              newBatch.resolver = undefined as any
+              newBatch.map = undefined as any
               batchPool.push(newBatch)
             }
             return effect.void

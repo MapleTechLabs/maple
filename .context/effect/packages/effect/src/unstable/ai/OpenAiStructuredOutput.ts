@@ -1,5 +1,12 @@
 /**
- * Provides codec transformations for OpenAI structured output.
+ * Adapts Effect schemas for OpenAI structured output.
+ *
+ * OpenAI structured output accepts only a subset of JSON Schema. This module
+ * converts an Effect `Schema.Codec` into a provider-compatible JSON Schema and
+ * a matching codec for decoding the model response back into the original
+ * application type. When possible, unsupported schema shapes are rewritten into
+ * supported ones; schema kinds that cannot be represented safely fail during
+ * conversion.
  *
  * @since 4.0.0
  */
@@ -9,34 +16,36 @@ import * as Option from "../../Option.ts"
 import * as Predicate from "../../Predicate.ts"
 import * as Rec from "../../Record.ts"
 import * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
-import * as Transformation from "../../SchemaTransformation.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
+import * as SchemaTransformation from "../../SchemaTransformation.ts"
 import * as Tool from "./Tool.ts"
 
 /**
- * Transforms a `Schema.Codec` into a form compatible with OpenAI's structured output constraints.
+ * Converts a `Schema.Codec` to OpenAI structured-output JSON Schema and a
+ * matching codec for model output.
+ *
+ * **When to use**
+ *
+ * Use when you send Effect Schema-backed structured output requests to OpenAI
+ * and need provider-compatible JSON Schema without losing the decoded
+ * application type.
  *
  * **Details**
  *
- * The transformation walks the schema AST and rewrites constructs that
- * OpenAI does not support natively:
+ * Returns the JSON Schema to include in the request and the codec to use when
+ * decoding the model response. If the input schema already fits OpenAI's
+ * supported JSON Schema subset, the original codec is returned unchanged.
  *
- * - **Tuples** are converted to objects with numeric string keys (e.g.
- *   `"0"`, `"1"`) since OpenAI does not support tuple schemas. Rest
- *   elements are placed under a `"__rest__"` key.
- * - **Optional properties** are replaced with `T | null` unions, because
- *   OpenAI requires all properties to be present.
- * - **Records** (index signatures) are converted to arrays of `[key, value]`
- *   pairs.
- * - **`oneOf` unions** are rewritten as `anyOf` unions.
- * - **Regex patterns** from multiple filters are merged into a single
- *   `pattern` using lookaheads, since OpenAI does not support `allOf`.
- * - **Filters and annotations** are preserved where compatible (e.g.
- *   `description`, supported `format` values like `"date-time"`, `"email"`,
- *   `"uuid"`, etc.), and stripped otherwise.
+ * **Gotchas**
  *
- * If the schema is already compatible, the original codec is returned
- * unchanged.
+ * - Some schemas use a provider-safe encoded shape: tuples become objects with
+ *   numeric string keys, records become arrays of `[key, value]` pairs, and
+ *   optional properties become required nullable properties.
+ * - `oneOf` unions are emitted as `anyOf` unions.
+ * - Regex patterns from multiple filters are merged into one `pattern` because
+ *   OpenAI structured output does not support `allOf`.
+ * - Unsupported schema kinds throw during conversion instead of producing a
+ *   lossy schema.
  *
  * @category Codec Transformation
  * @since 4.0.0
@@ -48,8 +57,10 @@ export function toCodecOpenAI<T, E, RD, RE>(
   jsonSchema: JsonSchema.JsonSchema
 } {
   const to = schema.ast
-  const from = recurOpenAI(AST.toEncoded(to))
-  const codec = from === to ? schema : Schema.make<typeof schema>(AST.decodeTo(from, to, Transformation.passthrough()))
+  const from = recurOpenAI(SchemaAST.toEncoded(to))
+  const codec = from === to
+    ? schema
+    : Schema.make<typeof schema>(SchemaAST.decodeTo(from, to, SchemaTransformation.passthrough()))
   const document = JsonSchema.resolveTopLevel$ref(Schema.toJsonSchemaDocument(codec))
   const jsonSchema = rewriteOpenAI(document.schema)
   if (Object.keys(document.definitions).length > 0) {
@@ -89,7 +100,7 @@ function rewriteOpenAI(schema: JsonSchema.JsonSchema): JsonSchema.JsonSchema {
   return out
 }
 
-function recurOpenAI(ast: AST.AST): AST.AST {
+function recurOpenAI(ast: SchemaAST.AST): SchemaAST.AST {
   switch (ast._tag) {
     case "Declaration":
     case "Void":
@@ -116,14 +127,14 @@ function recurOpenAI(ast: AST.AST): AST.AST {
     case "String": {
       const { annotations, filters } = get(ast)
       if (annotations !== undefined || filters !== undefined) {
-        return new AST.String(annotations, filters)
+        return new SchemaAST.String(annotations, filters)
       }
       return ast
     }
     case "Number": {
       const { annotations, filters } = get(ast)
       if (annotations !== undefined || filters !== undefined) {
-        return new AST.Number(annotations, filters)
+        return new SchemaAST.Number(annotations, filters)
       }
       return ast
     }
@@ -134,7 +145,7 @@ function recurOpenAI(ast: AST.AST): AST.AST {
       if (typeof literal === "string" || typeof literal === "number" || typeof literal === "boolean") {
         const { annotations, filters } = get(ast)
         if (annotations !== undefined || filters !== undefined) {
-          return new AST.Literal(ast.literal, annotations, filters)
+          return new SchemaAST.Literal(ast.literal, annotations, filters)
         }
         return ast
       }
@@ -146,12 +157,12 @@ function recurOpenAI(ast: AST.AST): AST.AST {
     }
     case "Union": {
       if (ast.mode === "oneOf") {
-        return new AST.Union(ast.types, "anyOf", ast.annotations, ast.checks)
+        return new SchemaAST.Union(ast.types, "anyOf", ast.annotations, ast.checks)
       }
-      const types = AST.mapOrSame(ast.types, recurOpenAI)
+      const types = SchemaAST.mapOrSame(ast.types, recurOpenAI)
       const { annotations, filters } = get(ast)
       if (types !== ast.types || annotations !== undefined || filters !== undefined) {
-        return new AST.Union(types, "anyOf", annotations, filters)
+        return new SchemaAST.Union(types, "anyOf", annotations, filters)
       }
       return ast
     }
@@ -171,15 +182,17 @@ function recurOpenAI(ast: AST.AST): AST.AST {
           annotations.description = TUPLE_DESCRIPTION
         }
         const propertySignatures = ast.elements.map((e, i) => {
-          return new AST.PropertySignature(String(i), e)
+          return new SchemaAST.PropertySignature(String(i), e)
         })
         if (ast.rest.length === 1) {
-          propertySignatures.push(new AST.PropertySignature(REST_PROPERTY_NAME, new AST.Arrays(false, [], ast.rest)))
+          propertySignatures.push(
+            new SchemaAST.PropertySignature(REST_PROPERTY_NAME, new SchemaAST.Arrays(false, [], ast.rest))
+          )
         }
-        return AST.decodeTo(
-          recurOpenAI(new AST.Objects(propertySignatures, [], annotations, filters)),
+        return SchemaAST.decodeTo(
+          recurOpenAI(new SchemaAST.Objects(propertySignatures, [], annotations, filters)),
           ast,
-          Transformation.transform({
+          SchemaTransformation.transform({
             decode: (o) => {
               let t: Array<unknown> = []
               for (let i = 0; i < ast.elements.length; i++) {
@@ -208,9 +221,9 @@ function recurOpenAI(ast: AST.AST): AST.AST {
           })
         )
       } else {
-        const rest = AST.mapOrSame(ast.rest, recurOpenAI)
+        const rest = SchemaAST.mapOrSame(ast.rest, recurOpenAI)
         if (rest !== ast.rest || annotations !== undefined || filters !== undefined) {
-          return new AST.Arrays(false, [], rest, annotations, filters)
+          return new SchemaAST.Arrays(false, [], rest, annotations, filters)
         }
         return ast
       }
@@ -218,7 +231,7 @@ function recurOpenAI(ast: AST.AST): AST.AST {
     case "Objects": {
       let { annotations, filters } = get(ast)
       if (ast.indexSignatures.length === 0) {
-        const propertySignatures = AST.mapOrSame(ast.propertySignatures, (ps) => {
+        const propertySignatures = SchemaAST.mapOrSame(ast.propertySignatures, (ps) => {
           if (typeof ps.name !== "string") {
             throw new Error(
               `${errorPrefix}: Property names must be strings (got ${typeof ps.name})`
@@ -226,11 +239,11 @@ function recurOpenAI(ast: AST.AST): AST.AST {
           }
           let type = recurOpenAI(ps.type)
           // optional properties are not supported by OpenAI, so we translate them to nullable unions
-          if (AST.isOptional(ps.type)) {
-            type = AST.decodeTo(
-              new AST.Union([type, AST.null], "anyOf"),
-              AST.optionalKey(type),
-              Transformation.transformOptional({
+          if (SchemaAST.isOptional(ps.type)) {
+            type = SchemaAST.decodeTo(
+              new SchemaAST.Union([type, SchemaAST.null], "anyOf"),
+              SchemaAST.optionalKey(type),
+              SchemaTransformation.transformOptional({
                 decode: Option.filter(Predicate.isNotNull),
                 encode: Option.orElseSome(() => null)
               })
@@ -239,12 +252,12 @@ function recurOpenAI(ast: AST.AST): AST.AST {
           if (type === ps.type) {
             return ps
           }
-          return new AST.PropertySignature(ps.name, type)
+          return new SchemaAST.PropertySignature(ps.name, type)
         })
         if (
           propertySignatures !== ast.propertySignatures || annotations !== undefined || filters !== undefined
         ) {
-          return new AST.Objects(propertySignatures, [], annotations, filters)
+          return new SchemaAST.Objects(propertySignatures, [], annotations, filters)
         }
       } else if (ast.indexSignatures.length === 1 && ast.propertySignatures.length === 0) {
         const is = ast.indexSignatures[0]
@@ -258,10 +271,12 @@ function recurOpenAI(ast: AST.AST): AST.AST {
           annotations ??= {}
           annotations.description = RECORD_DESCRIPTION
         }
-        return AST.decodeTo(
-          recurOpenAI(new AST.Arrays(false, [], [new AST.Arrays(false, [is.parameter, is.type], [])], annotations)),
+        return SchemaAST.decodeTo(
+          recurOpenAI(
+            new SchemaAST.Arrays(false, [], [new SchemaAST.Arrays(false, [is.parameter, is.type], [])], annotations)
+          ),
           ast,
-          Transformation.transform({
+          SchemaTransformation.transform({
             decode: Object.fromEntries,
             encode: Object.entries
           })
@@ -276,19 +291,19 @@ function recurOpenAI(ast: AST.AST): AST.AST {
     case "Suspend": {
       const cached = cache.get(ast)
       if (cached) return cached
-      const { annotations, filters } = get(ast)
-      const out = new AST.Suspend(() => recurOpenAI(ast.thunk()), annotations, filters)
+      const { annotations } = get(ast)
+      const out = new SchemaAST.Suspend(() => recurOpenAI(ast.thunk()), annotations)
       cache.set(ast, out)
       return out
     }
   }
 }
 
-const cache = new Map<AST.AST, AST.AST>()
+const cache = new Map<SchemaAST.AST, SchemaAST.AST>()
 
 const errorPrefix = "OpenAiStructuredOutput"
 
-function unsupportedAst(ast: AST.AST, details?: string): never {
+function unsupportedAst(ast: SchemaAST.AST, details?: string): never {
   const base = `Unsupported AST ${ast._tag}`
   const full = `${errorPrefix}: ${base}`
   throw new Error(details !== undefined ? `${full} (${details})` : full)
@@ -308,17 +323,17 @@ type Annotation =
 
 type Filter =
   | Annotation
-  | { readonly _tag: "filter"; readonly filter: AST.Filter<any> }
+  | { readonly _tag: "filter"; readonly filter: SchemaAST.Filter<any> }
   | { readonly _tag: "regex"; readonly source: string }
 
-const get = (ast: AST.AST): {
+const get = (ast: SchemaAST.AST): {
   annotations: Record<string, string> | undefined
-  filters: [AST.Check<any>, ...AST.Check<any>[]] | undefined
+  filters: [SchemaAST.Check<any>, ...SchemaAST.Check<any>[]] | undefined
 } => {
   const annotations: Record<string, string> = {}
-  const filters: Array<AST.Filter<any>> = []
+  const filters: Array<SchemaAST.Filter<any>> = []
   const regexSources: Array<string> = []
-  const checks = getChecks(ast, AST.isArrays(ast))
+  const checks = getChecks(ast, SchemaAST.isArrays(ast))
   if (checks.length > 0) {
     for (const check of checks) {
       switch (check._tag) {
@@ -347,10 +362,10 @@ const get = (ast: AST.AST): {
   }
   // OpenAI does not support allOf, so we merge multiple regex patterns into a single isPattern filter
   if (regexSources.length === 1) {
-    filters.push(AST.isPattern(new RegExp(regexSources[0])))
+    filters.push(SchemaAST.isPattern(new RegExp(regexSources[0])))
   } else if (regexSources.length > 1) {
     const combined = regexSources.map((s) => `(?=[\\s\\S]*?(?:${s}))`).join("")
-    filters.push(AST.isPattern(new RegExp(`^${combined}`)))
+    filters.push(SchemaAST.isPattern(new RegExp(`^${combined}`)))
   }
   return {
     annotations: Object.keys(annotations).length > 0 ? annotations : undefined,
@@ -358,7 +373,7 @@ const get = (ast: AST.AST): {
   }
 }
 
-const getChecks = (ast: AST.AST, isArray: boolean): Array<Filter> => [
+const getChecks = (ast: SchemaAST.AST, isArray: boolean): Array<Filter> => [
   ...(ast.checks !== undefined ? getFilters(ast.checks, isArray) : []),
   ...getAnnotations(ast.annotations)
 ]
@@ -385,7 +400,7 @@ const getAnnotations = (annotations: Schema.Annotations.Filter | undefined): Arr
   return out
 }
 
-function getFilter(filter: AST.Filter<any>, isArray: boolean): Array<Filter> {
+function getFilter(filter: SchemaAST.Filter<any>, isArray: boolean): Array<Filter> {
   let out: Array<Filter> = []
   const annotations = getAnnotations(filter.annotations)
   const meta = filter.annotations?.meta
@@ -424,7 +439,7 @@ function getFilter(filter: AST.Filter<any>, isArray: boolean): Array<Filter> {
   return out
 }
 
-function resetFilter(filter: AST.Filter<any>): AST.Filter<any> {
+function resetFilter(filter: SchemaAST.Filter<any>): SchemaAST.Filter<any> {
   return filter.annotate({
     description: undefined,
     expected: undefined,
@@ -433,7 +448,10 @@ function resetFilter(filter: AST.Filter<any>): AST.Filter<any> {
   })
 }
 
-function getFilters(checks: readonly [AST.Check<any>, ...AST.Check<any>[]], isArray: boolean): Array<Filter> {
+function getFilters(
+  checks: readonly [SchemaAST.Check<any>, ...SchemaAST.Check<any>[]],
+  isArray: boolean
+): Array<Filter> {
   return checks.flatMap((check) => {
     switch (check._tag) {
       case "Filter":

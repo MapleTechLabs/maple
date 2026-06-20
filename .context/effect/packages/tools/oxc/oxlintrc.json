@@ -20,20 +20,7 @@
     }],
     "effect/no-js-extension-imports": "error",
     "effect/no-opaque-instance-fields": "error",
-    "effect/standard-jsdoc": ["error", {
-      "tsconfig": "tsconfig.packages.json",
-      "include": [
-        "packages/**/src/*.ts",
-        "packages/**/src/**/*.ts"
-      ],
-      "exclude": [
-        "packages/tools/**",
-        "packages/**/src/index.ts",
-        "packages/**/src/*Generated.ts",
-        "packages/**/src/internal/**",
-        "packages/**/src/**/internal/**"
-      ]
-    }],
+    "effect/jsdocs": "error",
     // Tune native rules
     // Import rules
     "typescript/consistent-type-imports": ["error", {

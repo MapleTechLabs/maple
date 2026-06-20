@@ -15,7 +15,7 @@ import * as Option from "../../../Option.ts"
 import { CurrentLogAnnotations } from "../../../References.ts"
 import * as Schedule from "../../../Schedule.ts"
 import * as Schema from "../../../Schema.ts"
-import * as Issue from "../../../SchemaIssue.ts"
+import * as SchemaIssue from "../../../SchemaIssue.ts"
 import * as Scope from "../../../Scope.ts"
 import type * as Rpc from "../../rpc/Rpc.ts"
 import { RequestId } from "../../rpc/RpcMessage.ts"
@@ -145,7 +145,8 @@ export const make = Effect.fnUntraced(function*<
     )
 
     const activeRequests: EntityState["activeRequests"] = new Map()
-    let defectRequestIds: Array<bigint> = []
+    let defectRequestIds = new Set<bigint>()
+    let isRestartingDueToDefect = false
 
     // the server is stored in a ref, so if there is a defect, we can
     // swap the server without losing the active requests
@@ -185,6 +186,14 @@ export const make = Effect.fnUntraced(function*<
                 if (!request) return Effect.void
 
                 request.sentReply = true
+
+                if (
+                  isShuttingDown &&
+                  Exit.hasInterrupts(response.exit) &&
+                  defectRequestIds.has(response.requestId)
+                ) {
+                  return Effect.void
+                }
 
                 // For durable messages, ignore interrupts during shutdown.
                 // They will be retried when the entity is restarted.
@@ -281,9 +290,11 @@ export const make = Effect.fnUntraced(function*<
           })
         )
 
-        if (defectRequestIds.length > 0) {
+        if (defectRequestIds.size > 0) {
           for (const id of defectRequestIds) {
-            const { lastSentChunk, message } = activeRequests.get(id)!
+            const request = activeRequests.get(id)
+            if (!request) continue
+            const { lastSentChunk, message } = request
             yield* server.write(0, {
               ...message.envelope,
               id: RequestId(message.envelope.requestId),
@@ -294,7 +305,7 @@ export const make = Effect.fnUntraced(function*<
               } as any) as any
             })
           }
-          defectRequestIds = []
+          defectRequestIds.clear()
         }
 
         return server.write
@@ -305,11 +316,18 @@ export const make = Effect.fnUntraced(function*<
       if (!activeServers.has(address.entityId)) {
         return endLatch.open
       }
+      if (isRestartingDueToDefect) {
+        return Effect.void
+      }
+      defectRequestIds = new Set(activeRequests.keys())
+      isRestartingDueToDefect = true
       const effect = writeRef.rebuildUnsafe()
-      defectRequestIds = Array.from(activeRequests.keys())
       return Effect.logError("Defect in entity, restarting", cause).pipe(
         Effect.andThen(Effect.ignore(retryDriver(void 0))),
         Effect.flatMap(() => activeServers.has(address.entityId) ? effect : endLatch.open),
+        Effect.ensuring(Effect.sync(() => {
+          isRestartingDueToDefect = false
+        })),
         Effect.annotateLogs({
           module: "EntityManager",
           address,
@@ -636,7 +654,7 @@ const makeMessageDecode = <Type extends string, Rpcs extends Rpc.Any>(
     if (!rpc) {
       return Effect.fail(
         new Schema.SchemaError(
-          new Issue.InvalidValue(Option.some(message), {
+          new SchemaIssue.InvalidValue(Option.some(message), {
             message: `Unknown tag ${message.envelope.tag} for entity type ${entity.type}`
           })
         )

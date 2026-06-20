@@ -22,7 +22,7 @@ import { Schema } from "effect"
 const warehouseErrorBaseFields = {
 	message: Schema.String,
 	pipe: Schema.String,
-	cause: Schema.optionalKey(Schema.Defect),
+	cause: Schema.optionalKey(Schema.Defect()),
 	clickhouseCode: Schema.optional(Schema.String),
 	clickhouseType: Schema.optional(Schema.String),
 }

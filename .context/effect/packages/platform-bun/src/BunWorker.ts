@@ -1,21 +1,12 @@
 /**
- * Parent-side Bun support for Effect workers.
+ * Parent-side worker support for Bun applications.
  *
- * This module provides the `WorkerPlatform` used by Bun programs that spawn
- * and communicate with `globalThis.Worker` instances through Effect's worker
- * protocol. Pair it with `BunWorkerRunner` in the worker entrypoint when
- * building worker-backed RPC clients, moving CPU-bound work off the main
- * thread, isolating Bun-only services, or hosting long-lived handlers behind a
- * typed message boundary.
- *
- * The supplied spawner is responsible for creating the Bun worker for each
- * numeric worker id. Messages follow Bun's worker cloning and transfer
- * semantics, so payloads and transfer lists must be accepted by the Bun worker
- * runtime. Calls to `send` are buffered until the worker runner posts its ready
- * signal; if the worker entrypoint never starts `BunWorkerRunner`, those
- * buffered messages will not be delivered. Scope finalization sends the Effect
- * worker close signal, waits for Bun's `close` event for a short grace period,
- * and then terminates the worker if graceful shutdown does not complete.
+ * `layerPlatform` provides the `WorkerPlatform` used to communicate with
+ * `globalThis.Worker` instances through Effect's worker protocol. `layer`
+ * combines that platform with a `Spawner` built from a callback that creates a
+ * worker for each worker id. The platform forwards worker messages and errors,
+ * asks workers to close on scope finalization, and terminates them if graceful
+ * shutdown times out.
  *
  * @since 4.0.0
  */

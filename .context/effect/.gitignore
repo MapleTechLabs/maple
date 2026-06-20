@@ -34,6 +34,7 @@ scratchpad/**/*
 
 # OpenCode local tooling
 .opencode/
+opencode.json
 
 # Repositories
 .repos/

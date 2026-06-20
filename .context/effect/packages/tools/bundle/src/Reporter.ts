@@ -8,16 +8,19 @@
  * generate visualizations when a size change needs inspection.
  *
  * Reports compare files by basename and display gzipped Rollup output sizes in
- * decimal kilobytes. If a current fixture has no matching basename in the base
- * directory it is reported as unchanged, and visualization artifacts are named
- * from entry file stems in the requested output directory, so duplicate names can
- * make the output misleading.
+ * decimal kilobytes. Base fixtures are bundled only when the matching file
+ * exists; if a current fixture has no matching basename in the base directory it
+ * is reported as unchanged. Visualization artifacts are named from entry file
+ * stems in the requested output directory, so duplicate names can make the
+ * output misleading.
  *
  * @since 4.0.0
  */
 import * as Context from "effect/Context"
 import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import { constFalse } from "effect/Function"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import { Fixtures } from "./Fixtures.ts"
@@ -37,7 +40,7 @@ export class ReporterError extends Data.TaggedError("ReporterError")<{
 /**
  * Options for generating a bundle size comparison report against fixture files from a base directory.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface ReportOptions {
@@ -47,7 +50,7 @@ export interface ReportOptions {
 /**
  * Options for generating bundle visualizations for selected entry files into an output directory.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface VisualizeOptions {
@@ -58,7 +61,7 @@ export interface VisualizeOptions {
 /**
  * Options for generating a bundle size report for an explicit list of entry files.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface ReportSelectedOptions {
@@ -75,6 +78,7 @@ export class Reporter extends Context.Service<Reporter>()(
   "@effect/bundle/Reporter",
   {
     make: Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
       const path = yield* Path.Path
       const { fixtures, fixturesDir } = yield* Fixtures
       const rollup = yield* Rollup
@@ -140,12 +144,19 @@ export class Reporter extends Context.Service<Reporter>()(
         function*(options: ReportOptions) {
           yield* Effect.logInfo(`Found ${fixtures.length} files to bundle`)
 
+          const currentPaths = fixtures.map((fixture) => path.join(fixturesDir, fixture))
+          const previousPaths = yield* Effect.filter(
+            fixtures.map((fixture) => path.join(options.baseDirectory, fixture)),
+            (previousPath) => fs.exists(previousPath).pipe(Effect.orElseSucceed(constFalse)),
+            { concurrency: fixtures.length }
+          )
+
           const [currentStats, previousStats] = yield* Effect.all([
             rollup.bundleAll({
-              paths: fixtures.map((fixture) => path.join(fixturesDir, fixture))
+              paths: currentPaths
             }),
             rollup.bundleAll({
-              paths: fixtures.map((fixture) => path.join(options.baseDirectory, fixture))
+              paths: previousPaths
             })
           ], { concurrency: 2 })
 

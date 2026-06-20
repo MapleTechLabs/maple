@@ -1,14 +1,10 @@
 /**
- * The `Singleton` module provides a small helper for registering effects that
- * should run once across an Effect cluster. A singleton is coordinated through
- * `Sharding`, which assigns ownership to one node at a time and can move that
- * ownership when nodes leave or fail.
+ * Register effects that should have one active owner in an Effect cluster.
  *
- * Use singletons for cluster-wide background work such as schedulers, polling
- * loops, maintenance jobs, or consumers that must not have one instance per
- * process. Because ownership can change during failover, the registered effect
- * should be interruptible, scoped, and able to resume work without assuming that
- * the previous owner completed every in-flight action exactly once.
+ * `Singleton.make` wraps `Sharding.registerSingleton` in a `Layer`. When the
+ * local runner owns the shard for the singleton's name and shard group,
+ * sharding starts the effect; when ownership moves or the layer scope closes,
+ * the running fiber is interrupted and the registration is removed.
  *
  * @since 4.0.0
  */
@@ -20,6 +16,29 @@ import { Sharding } from "./Sharding.ts"
 /**
  * Creates a layer that registers a singleton effect with `Sharding` under the
  * specified name and optional shard group.
+ *
+ * **When to use**
+ *
+ * Use to register a cluster-wide background effect as a `Layer`, so the effect
+ * is started only by the runner that currently owns the singleton's shard.
+ *
+ * **Details**
+ *
+ * The returned layer requires `Sharding` and the services needed by `run`,
+ * except for `Scope`. The registration is scoped to the layer; closing the
+ * layer removes the singleton registration and stops the singleton fiber if it
+ * is running.
+ *
+ * **Gotchas**
+ *
+ * - Registering the same singleton name in the same shard group more than once
+ *   dies during registration.
+ * - A `run` effect that completes normally is kept alive until the registration
+ *   scope closes or shard ownership moves.
+ * - Failures from `run` are converted to defects, so handle expected failures
+ *   inside `run` when the singleton should keep running.
+ *
+ * @see {@link Sharding} for the lower-level service that registers singletons and manages shard ownership
  *
  * @category constructors
  * @since 4.0.0

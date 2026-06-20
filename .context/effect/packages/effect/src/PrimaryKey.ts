@@ -1,11 +1,8 @@
 /**
- * This module provides functionality for working with primary keys.
- * A `PrimaryKey` is a simple interface that represents a unique identifier
- * that can be converted to a string representation.
- *
- * Primary keys are useful for creating unique identifiers for objects,
- * database records, cache keys, or any scenario where you need a
- * string-based unique identifier.
+ * The `PrimaryKey` module defines a small protocol for values that can expose
+ * a stable, string-based identifier. A value participates by implementing a
+ * method at {@link symbol}; consumers can check unknown values with
+ * {@link isPrimaryKey} and read the key with {@link value}.
  *
  * @since 2.0.0
  */
@@ -13,7 +10,16 @@
 import { hasProperty } from "./Predicate.ts"
 
 /**
- * The unique identifier used to identify objects that implement the `PrimaryKey` interface.
+ * Defines the unique identifier used to identify objects that implement the `PrimaryKey` interface.
+ *
+ * **When to use**
+ *
+ * Use to implement the `PrimaryKey` protocol as a computed property key on
+ * classes or object literals that expose a stable string identifier.
+ *
+ * @see {@link PrimaryKey} for the protocol interface that declares the method keyed by this symbol
+ * @see {@link value} for reading the string key from a `PrimaryKey` value
+ * @see {@link isPrimaryKey} for checking whether an unknown value carries this method
  *
  * @category symbols
  * @since 2.0.0
@@ -22,6 +28,11 @@ export const symbol = "~effect/interfaces/PrimaryKey"
 
 /**
  * An interface for objects that can provide a string-based primary key.
+ *
+ * **When to use**
+ *
+ * Use to define values that expose a stable string identifier for equality,
+ * hashing, caching, or persistence.
  *
  * **Details**
  *
@@ -55,10 +66,20 @@ export interface PrimaryKey {
 /**
  * Checks whether a value implements the `PrimaryKey` protocol.
  *
+ * **When to use**
+ *
+ * Use to narrow an unknown value before treating it as a `PrimaryKey`.
+ *
  * **Details**
  *
- * This is a structural guard for the `PrimaryKey.symbol` property. It does not
- * call the method or verify that it returns a string.
+ * This is a structural guard for the `PrimaryKey.symbol` property.
+ *
+ * **Gotchas**
+ *
+ * This guard does not call the method or verify that it returns a string.
+ *
+ * @see {@link PrimaryKey} for the protocol being checked
+ * @see {@link value} for extracting the string value after narrowing
  *
  * @category models
  * @since 4.0.0
@@ -67,6 +88,11 @@ export const isPrimaryKey = (u: unknown): u is PrimaryKey => hasProperty(u, symb
 
 /**
  * Extracts the string value from a `PrimaryKey`.
+ *
+ * **When to use**
+ *
+ * Use to read the stable string identifier from a value that implements
+ * `PrimaryKey`.
  *
  * **Example** (Reading primary key values)
  *

@@ -1,17 +1,13 @@
 /**
- * Utilities and data types for describing outgoing HTTP body content.
+ * Describes HTTP request and response bodies before they reach a platform
+ * adapter.
  *
- * This module provides a small set of `HttpBody` variants used by HTTP client
- * requests and server responses: empty bodies, raw runtime values, in-memory
- * bytes, `FormData`, and byte streams. Constructors cover the common cases of
- * text, JSON, URL-encoded forms, multipart forms, and files while carrying the
- * content type and, when known, the content length used by platform adapters.
- *
- * Streaming bodies are represented as streams of `Uint8Array` chunks and may
- * omit `contentLength` when the size is not known ahead of time. Multipart
- * `FormData` intentionally leaves `contentType` unset so the runtime can add
- * the required boundary; setting that header manually can produce invalid
- * requests.
+ * `HttpBody` is the shared body representation used by the HTTP modules. Each
+ * variant stores the payload together with metadata that can be known before
+ * sending it, such as `contentType` and `contentLength`. This module includes
+ * body constructors for common payload shapes, support for schema-encoded JSON
+ * bodies, streaming and file-backed bodies, and the error type used when body
+ * construction fails.
  *
  * @since 4.0.0
  */
@@ -25,7 +21,7 @@ import * as Predicate from "../../Predicate.ts"
 import * as Schema from "../../Schema.ts"
 import type { ParseOptions } from "../../SchemaAST.ts"
 import type { Issue } from "../../SchemaIssue.ts"
-import * as Parser from "../../SchemaParser.ts"
+import * as SchemaParser from "../../SchemaParser.ts"
 import type * as Stream_ from "../../Stream.ts"
 import * as UrlParams from "./UrlParams.ts"
 
@@ -158,9 +154,13 @@ export class Empty extends Proto {
 }
 
 /**
- * Singleton empty HTTP body.
+ * Provides the singleton empty HTTP body.
  *
- * @category constructors
+ * **When to use**
+ *
+ * Use when you need an HTTP body value that represents no body content.
+ *
+ * @category constants
  * @since 4.0.0
  */
 export const empty: Empty = new Empty()
@@ -321,7 +321,7 @@ export const jsonSchema = <S extends Schema.Top>(
   schema: S,
   options?: ParseOptions | undefined
 ) => {
-  const encode = Parser.encodeUnknownEffect(Schema.toCodecJson(schema))
+  const encode = SchemaParser.encodeUnknownEffect(Schema.toCodecJson(schema))
   return (body: S["Type"], contentType?: string): Effect.Effect<Uint8Array, HttpBodyError, S["EncodingServices"]> =>
     encode(body, options).pipe(
       Effect.mapError((issue) => new HttpBodyError({ reason: { _tag: "SchemaError", issue }, cause: issue })),

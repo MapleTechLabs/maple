@@ -1,20 +1,10 @@
 /**
- * Utilities for parsing and rendering Server-Sent Events text streams.
+ * Parses and renders Server-Sent Events text streams.
  *
- * This module is useful at HTTP streaming boundaries that speak the EventSource
- * wire format, such as live updates, notifications, progress feeds, and other
- * unidirectional server-to-client event streams. It provides low-level parser
- * and encoder primitives, channel combinators for streaming chunks through
- * Effect pipelines, and schema-aware helpers for validating or transforming the
- * `id`, `event`, and string `data` fields at the edge of an application.
- *
- * SSE is line-oriented text rather than a framed binary protocol. Incoming
- * chunks may split fields across arbitrary boundaries, events are dispatched by
- * a blank line, repeated `data:` lines are joined with newlines, and `retry:`
- * directives are control messages rather than regular events. The decoder
- * handles UTF-8 byte order marks, CRLF and LF line endings, default `message`
- * events, and retry directives so callers can reconnect with the requested
- * delay while preserving the last event ID when available.
+ * Server-Sent Events, or SSE, are the text format used by `EventSource` for
+ * one-way server-to-client updates. This module includes parsers, encoders,
+ * channel helpers, and schema-based helpers for the `id`, `event`, and `data`
+ * fields of each event.
  *
  * @since 4.0.0
  */
@@ -30,7 +20,7 @@ import { hasProperty } from "../../Predicate.ts"
 import * as Pull from "../../Pull.ts"
 import * as Result from "../../Result.ts"
 import * as Schema from "../../Schema.ts"
-import * as Transformation from "../../SchemaTransformation.ts"
+import * as SchemaTransformation from "../../SchemaTransformation.ts"
 
 /**
  * Creates a channel that parses Server-Sent Events text chunks into `Event` values.
@@ -84,6 +74,25 @@ export const decode = <IE, Done>(): Channel.Channel<
   )
 
 /**
+ * A constraint for schemas that can decode SSE events.
+ *
+ * @category decoding
+ * @since 4.0.0
+ */
+export interface EventCodec extends
+  Schema.Codec<
+    any,
+    {
+      readonly id?: string | undefined
+      readonly event?: string | undefined
+      readonly data: string
+    },
+    any,
+    any
+  >
+{}
+
+/**
  * Creates an SSE decoder channel that decodes each parsed event with a schema.
  *
  * **Details**
@@ -95,24 +104,19 @@ export const decode = <IE, Done>(): Channel.Channel<
  * @since 4.0.0
  */
 export const decodeSchema = <
-  Type extends {
-    readonly id?: string | undefined
-    readonly event: string
-    readonly data: string
-  },
-  DecodingServices,
+  S extends EventCodec,
   IE,
   Done
 >(
-  schema: Schema.Decoder<Type, DecodingServices>
+  schema: S
 ): Channel.Channel<
-  NonEmptyReadonlyArray<Type>,
+  NonEmptyReadonlyArray<S["Type"]>,
   IE | Retry | Schema.SchemaError,
   Done,
   NonEmptyReadonlyArray<string>,
   IE,
   Done,
-  DecodingServices
+  S["DecodingServices"]
 > =>
   Channel.pipeTo(
     decode<IE, Done>(),
@@ -153,7 +157,10 @@ export const decodeDataSchema = <Type, DecodingServices, IE, Done>(
   })
   return Channel.pipeTo(
     decode<IE, Done>(),
-    ChannelSchema.decode(eventSchema)()
+    Channel.map(
+      ChannelSchema.decode(eventSchema)(),
+      Arr.map((event) => ({ ...event, id: event.id }))
+    )
   )
 }
 
@@ -387,10 +394,7 @@ export const encode = <IE, Done>(): Channel.Channel<
  * @since 4.0.0
  */
 export const encodeSchema = <
-  S extends Schema.Encoder<
-    { readonly id?: string | undefined; readonly event: string; readonly data: string },
-    unknown
-  >,
+  S extends EventCodec,
   IE,
   Done
 >(schema: S): Channel.Channel<
@@ -433,17 +437,17 @@ export interface Event {
 }
 
 /**
- * Schema for the untagged Server-Sent Events payload shape containing `id`, `event`, and string `data` fields.
+ * Schema for the untagged Server-Sent Events payload shape containing an optional `id`, `event`, and string `data` fields.
  *
  * @category models
  * @since 4.0.0
  */
 export const EventEncoded: Schema.Struct<{
-  readonly id: Schema.UndefinedOr<Schema.String>
+  readonly id: Schema.optional<Schema.String>
   readonly event: Schema.String
   readonly data: Schema.String
 }> = Schema.Struct({
-  id: Schema.UndefinedOr(Schema.String),
+  id: Schema.optional(Schema.String),
   event: Schema.String,
   data: Schema.String
 })
@@ -467,15 +471,15 @@ export const Event: Schema.Struct<{
 })
 
 /**
- * Schema transformation between the untagged SSE event shape and the tagged
- * `Event` model.
+ * Schema for transforming untagged SSE event payloads into tagged `Event`
+ * models.
  *
  * @category models
  * @since 4.0.0
  */
-export const transformEvent = Transformation.transform<{
+export const transformEvent = SchemaTransformation.transform<{
   readonly id?: string | undefined
-  readonly event: string
+  readonly event?: string | undefined
   readonly data: string
 }, {
   readonly _tag: "Event"
@@ -487,7 +491,7 @@ export const transformEvent = Transformation.transform<{
   encode: (event) => ({
     _tag: "Event",
     id: event.id,
-    event: event.event,
+    event: event.event ?? "message",
     data: event.data
   })
 })
@@ -500,14 +504,14 @@ export const transformEvent = Transformation.transform<{
  */
 export interface EventEncoded {
   readonly event: string
-  readonly id: string | undefined
+  readonly id?: string | undefined
   readonly data: string
 }
 
 const RetryTypeId = "~effect/encoding/Sse/Retry" as const
 
 /**
- * Server-Sent Events retry directive.
+ * Represents a Server-Sent Events retry directive.
  *
  * **Details**
  *

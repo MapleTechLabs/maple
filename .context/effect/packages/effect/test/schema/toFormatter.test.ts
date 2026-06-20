@@ -238,6 +238,14 @@ describe("toFormatter", () => {
       strictEqual(format({ a: Option.none() }), `{ "a": none() }`)
     })
 
+    it("Record(String.check, Option(Number)) should use the key checks to select keys", () => {
+      const format = Schema.toFormatter(Schema.Record(
+        Schema.String.check(Schema.isPattern(/^a/)),
+        Schema.Option(Schema.Number)
+      ))
+      strictEqual(format({ a: Option.some(1), b: Option.some(2) }), `{ "a": some(1) }`)
+    })
+
     it("Record(Symbol, Option(Number))", () => {
       const format = Schema.toFormatter(Schema.Record(Schema.Symbol, Schema.Option(Schema.Number)))
       strictEqual(format({ [Symbol.for("a")]: Option.some(1) }), `{ Symbol(a): some(1) }`)

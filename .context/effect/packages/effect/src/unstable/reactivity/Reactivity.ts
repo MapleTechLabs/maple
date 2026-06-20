@@ -1,24 +1,11 @@
 /**
- * The `Reactivity` module provides an in-memory service for connecting writes to
- * dependent reads through explicit invalidation keys. It is useful for keeping
- * query results, UI subscriptions, read models, or other derived views fresh
- * after mutations without coupling the writer to every consumer that should
- * rerun.
+ * Process-local invalidation for connecting writes to dependent reads.
  *
- * Reads are modeled with {@link query} and {@link stream}: the effect runs once
- * immediately and then runs again whenever one of its keys is invalidated.
- * Writes can use {@link mutation} to invalidate keys only after the wrapped
- * effect succeeds, or call {@link invalidate} directly. Keys may be supplied as
- * a flat collection or as a record of namespaces with ids, which lets callers
- * invalidate both broad groups and individual records.
- *
- * The service tracks handlers by hashed keys and does not cache values by
- * itself; consumers receive fresh queue or stream emissions and decide how to
- * store them. Registrations are tied to the surrounding scope, failures from a
- * query fail the queue or stream, and invalidations that arrive while a query is
- * already running schedule a single follow-up run. Use stable key values, be
- * aware that the default layer is process-local, and use the {@link Reactivity}
- * service when many invalidations should be coalesced until the batch exits.
+ * This module does not cache values itself. It lets callers register handlers
+ * for keys, invalidate those keys, wrap successful mutations so they invalidate
+ * keys, and expose effects as queues or streams that rerun when matching keys
+ * change. The service can also batch invalidations so handlers run after the
+ * batch completes.
  *
  * @since 4.0.0
  */
@@ -35,7 +22,12 @@ import * as Scope from "../../Scope.ts"
 import * as Stream from "../../Stream.ts"
 
 /**
- * A service for key-based reactive invalidation.
+ * Service for key-based reactive invalidation.
+ *
+ * **When to use**
+ *
+ * Use to provide the invalidation service that refreshes queries, streams, and
+ * atoms when application keys change.
  *
  * **Details**
  *
@@ -43,7 +35,7 @@ import * as Stream from "../../Stream.ts"
  * mutations so successful effects invalidate keys, and turn query effects into
  * queues or streams that rerun when keys are invalidated.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class Reactivity extends Context.Service<

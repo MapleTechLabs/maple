@@ -1,17 +1,10 @@
 /**
- * Node.js entry-point helpers for running Effect programs.
+ * Node.js process runner for Effect programs.
  *
- * This module exposes `runMain`, the Node runtime launcher used at the edge of
- * CLI tools, scripts, servers, and worker processes. It runs an already
- * self-contained Effect as the process main program, with built-in error
- * reporting and Node signal handling.
- *
- * `NodeRuntime` does not provide application services by itself. Provide any
- * required layers, such as `NodeServices.layer` or narrower service-specific
- * layers, before passing the effect to `runMain`. On `SIGINT` or `SIGTERM`,
- * the main fiber is interrupted so scoped resources and finalizers can shut
- * down; keep long-running work attached to that scope and avoid finalizers that
- * never complete, otherwise process shutdown can be delayed.
+ * This module exports `runMain`, which runs one Effect as the main process
+ * fiber in Node.js. It reuses the shared Node runtime runner, including its
+ * error reporting, `SIGINT` / `SIGTERM` interruption, and optional teardown
+ * behavior.
  *
  * @since 4.0.0
  */
@@ -24,9 +17,9 @@ import type * as Runtime from "effect/Runtime"
  *
  * **When to use**
  *
- * Use this function to run an Effect as your application's main program, especially
- * when you need structured error handling, log management, interrupt support,
- * or advanced teardown capabilities.
+ * Use to run a Node.js application's main Effect with structured error
+ * handling, log management, interrupt support, or advanced teardown
+ * capabilities.
  *
  * **Details**
  *

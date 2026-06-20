@@ -1,23 +1,11 @@
 /**
- * The `ScopedRef` module provides a mutable reference for values that are tied
- * to scoped resources. Each value stored in a `ScopedRef` is acquired within its
- * own `Scope`, and replacing the value safely releases the resources associated
- * with the previous value.
+ * Stores a current value together with the scope that owns it.
  *
- * Use `ScopedRef` when an application needs to keep a current resource-backed
- * value, such as a live client, connection, subscription, or cached handle, and
- * later swap it for a newly acquired value without leaking the old resources.
- * Reads are simple, while updates are synchronized and resource-safe.
- *
- * **Gotchas**
- *
- * - A `ScopedRef` must itself be created and used within a `Scope`; when that
- *   scope closes, the currently stored value is finalized.
- * - Use {@link fromAcquire} or {@link set} for resourceful values so acquisition
- *   and finalization are tracked correctly.
- * - Use {@link make} only for values that do not acquire resources.
- * - Updating a `ScopedRef` waits for the replacement acquisition and old
- *   finalization to complete before returning.
+ * A `ScopedRef<A>` is useful for resource-backed values such as clients,
+ * connections, subscriptions, or handles. Replacing the value acquires the
+ * replacement in a new scope and releases the resources owned by the previous
+ * value. Reads can be effectful or synchronous, and updates are synchronized so
+ * only one replacement happens at a time.
  *
  * @since 2.0.0
  */
@@ -37,6 +25,12 @@ const TypeId = "~effect/ScopedRef"
  * `ScopedRef`, as well as set it to a new value (which may require new
  * resources). The reference itself takes care of properly releasing resources
  * for the old value whenever a new value is obtained.
+ *
+ * **When to use**
+ *
+ * Use when an application needs to keep a current resource-backed value and
+ * later replace it with another acquired value while ensuring the previous
+ * value is released.
  *
  * @category models
  * @since 2.0.0
@@ -67,9 +61,14 @@ const makeUnsafe = <A>(
 }
 
 /**
- * Creates a new `ScopedRef` from an effect that resourcefully produces a
- * value.
+ * Creates a new `ScopedRef` from an effect that acquires the initial value.
  *
+ * **When to use**
+ *
+ * Use when creating a `ScopedRef` whose initial value requires acquiring
+ * resources that must be released.
+ *
+ * @see {@link make} for creating a `ScopedRef` from a value that does not require resource acquisition
  * @category constructors
  * @since 2.0.0
  */
@@ -89,7 +88,14 @@ export const fromAcquire: <A, E, R>(
 }, Effect.uninterruptible)
 
 /**
- * Retrieves the current value of the scoped reference.
+ * Retrieves the current value of the scoped reference synchronously.
+ *
+ * **When to use**
+ *
+ * Use when you need immediate synchronous access to the current `ScopedRef`
+ * value and can guarantee that reading outside the `Effect` API is safe.
+ *
+ * @see {@link get} for Effect-wrapped access in Effect programs
  *
  * @category getters
  * @since 4.0.0
@@ -97,7 +103,14 @@ export const fromAcquire: <A, E, R>(
 export const getUnsafe = <A>(self: ScopedRef<A>): A => self.backing.backing.ref.current[1]
 
 /**
- * Retrieves the current value of the scoped reference.
+ * Retrieves the current value of the scoped reference effectfully.
+ *
+ * **When to use**
+ *
+ * Use to read the value currently stored in a `ScopedRef` inside an `Effect`
+ * workflow.
+ *
+ * @see {@link getUnsafe} for reading the current value synchronously when an unsafe read is acceptable
  *
  * @category getters
  * @since 2.0.0
@@ -105,8 +118,26 @@ export const getUnsafe = <A>(self: ScopedRef<A>): A => self.backing.backing.ref.
 export const get = <A>(self: ScopedRef<A>): Effect.Effect<A> => Effect.sync(() => getUnsafe(self))
 
 /**
- * Creates a new `ScopedRef` from the specified value. This method should
- * not be used for values whose creation require the acquisition of resources.
+ * Creates a new `ScopedRef` from the specified value.
+ *
+ * **When to use**
+ *
+ * Use to create a `ScopedRef` when the initial value is already available or
+ * can be produced without acquiring resources.
+ *
+ * **Details**
+ *
+ * The `evaluate` function runs when the returned effect runs. The returned
+ * effect requires a `Scope`, and the reference closes the currently stored
+ * value's scope when that outer scope closes.
+ *
+ * **Gotchas**
+ *
+ * Do not use `make` for an initial value whose creation acquires resources; use
+ * `fromAcquire` so acquisition and finalization are tracked.
+ *
+ * @see {@link fromAcquire} for creating a `ScopedRef` from an effect that acquires the initial value
+ * @see {@link set} for replacing the current value with a newly acquired value
  *
  * @category constructors
  * @since 2.0.0
@@ -120,8 +151,13 @@ export const make = <A>(evaluate: LazyArg<A>): Effect.Effect<ScopedRef<A>, never
   })
 
 /**
- * Sets the value of this reference to the specified resourcefully-created
- * value, releasing any resources associated with the old value.
+ * Sets the value of this reference to a newly acquired scoped value, releasing
+ * any resources associated with the old value.
+ *
+ * **When to use**
+ *
+ * Use to replace the current value of an existing `ScopedRef` with a newly
+ * acquired scoped value while releasing resources for the previous value.
  *
  * **Details**
  *
@@ -129,7 +165,7 @@ export const make = <A>(evaluate: LazyArg<A>): Effect.Effect<ScopedRef<A>, never
  * changed to the new value, with old resources released, or until the attempt
  * to acquire a new value fails.
  *
- * @category getters
+ * @category setters
  * @since 2.0.0
  */
 export const set: {

@@ -1,5 +1,10 @@
 /**
- * Browser platform implementation of the Crypto service.
+ * Browser-backed implementation of Effect's Crypto service.
+ *
+ * This module provides a `Crypto.Crypto` layer backed by the Web Crypto API.
+ * The {@link WebCrypto} context reference defaults to `globalThis.crypto`, so
+ * browser programs can use the standard implementation while tests or embedded
+ * runtimes can provide their own `Crypto` object.
  *
  * @since 1.0.0
  */
@@ -10,9 +15,14 @@ import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 
 /**
- * Browser Web Crypto APIs used by the Crypto service implementation.
+ * Provides Browser Web Crypto APIs used by the Crypto service implementation.
  *
- * @category models
+ * **When to use**
+ *
+ * Use to override the browser `Crypto` object used by the platform crypto
+ * layer.
+ *
+ * @category references
  * @since 1.0.0
  */
 export const WebCrypto = Context.Reference<Crypto>("@effect/platform-browser/Crypto/WebCrypto", {
@@ -20,7 +30,23 @@ export const WebCrypto = Context.Reference<Crypto>("@effect/platform-browser/Cry
 })
 
 /**
- * A layer that directly interfaces with the Web Crypto API.
+ * Layer that directly interfaces with the Web Crypto API.
+ *
+ * **When to use**
+ *
+ * Use to provide cryptographic randomness, UUID generation, and digest
+ * operations in browser runtimes backed by `globalThis.crypto`.
+ *
+ * **Details**
+ *
+ * Random bytes are produced with `crypto.getRandomValues`. Digests are computed
+ * with `crypto.subtle.digest` and returned as `Uint8Array` values.
+ *
+ * **Gotchas**
+ *
+ * The layer dies if the Web Crypto object is unavailable. Digest operations
+ * fail with `PlatformError` when `crypto.subtle.digest` is unavailable or the
+ * browser rejects the digest request.
  *
  * @category layers
  * @since 1.0.0

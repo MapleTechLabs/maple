@@ -1,22 +1,13 @@
 /**
- * Embedded PostgreSQL client implementation for Effect SQL, backed by
- * `@electric-sql/pglite`.
+ * Connects Effect SQL to PGlite, the embedded PostgreSQL-compatible database
+ * from `@electric-sql/pglite`.
  *
- * This module exposes constructors and layers for providing a `PgliteClient`
- * as both the PGlite-specific service and the generic `SqlClient`. It can
- * create a scoped `PGlite` instance from constructor options or wrap a
- * caller-owned `liveClient`, making it useful for local-first browser storage,
- * web worker databases, tests, demos, migrations, and development tools that
- * want PostgreSQL syntax without connecting to a separate PostgreSQL server.
- *
- * The client uses the PostgreSQL statement compiler and adds PGlite-specific
- * access to the underlying instance, JSON fragments, LISTEN/NOTIFY streams,
- * data directory dumps, and array type refresh. Because PGlite is embedded in
- * the current JavaScript runtime, operations share the supplied instance and
- * are serialized by this client; a `liveClient` remains caller-owned and is not
- * closed by the layer. In browsers or workers, persistence, durability,
- * extension availability, and lifecycle all follow the selected PGlite
- * `dataDir`/runtime rather than a hosted PostgreSQL process.
+ * This module can create a managed PGlite instance or wrap an existing one and
+ * expose it as both `PgliteClient` and the generic Effect SQL client. The client
+ * runs PostgreSQL-style SQL, adds helpers for JSON values and LISTEN/NOTIFY
+ * messages, can dump the PGlite data directory, and can refresh PGlite array
+ * types. It also provides layers and maps common PostgreSQL-style failures into
+ * Effect SQL errors.
  *
  * @since 4.0.0
  */
@@ -84,9 +75,13 @@ export interface PgliteClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the `PgliteClient` service.
+ * Service tag for the PGlite client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a PGlite client through the Effect context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const PgliteClient = Context.Service<PgliteClient>("@effect/sql-pglite/PgliteClient")

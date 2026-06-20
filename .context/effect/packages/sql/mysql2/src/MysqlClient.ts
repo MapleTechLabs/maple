@@ -1,20 +1,12 @@
 /**
- * MySQL client implementation for Effect SQL, backed by the `mysql2` driver.
+ * MySQL adapter for Effect SQL, backed by the `mysql2` driver.
  *
- * This module exposes constructors and layers for providing both the MySQL-specific
- * `MysqlClient` service and the generic `SqlClient` service. It is intended for server
- * applications, background workers, migrations, and tests that need Effect SQL query
- * compilation, scoped resource management, streaming queries, and consistent `SqlError`
- * classification for MySQL driver failures.
- *
- * Each client owns a scoped mysql2 pool, validates connectivity with `SELECT 1` during
- * acquisition, and closes the pool when the surrounding scope is released. You can configure
- * the pool from a connection URI or discrete connection fields; when `url` is supplied it
- * takes precedence over the host, port, database, username, and password fields. Regular
- * queries run through the shared pool, while transactions acquire a dedicated pooled
- * connection for their lifetime, so long-running transactions and streams can occupy pool
- * capacity. Size `maxConnections`, `connectionTTL`, and any mysql2 `poolConfig` with that in
- * mind.
+ * This module provides constructors and layers for a {@link MysqlClient} and
+ * the generic Effect SQL client service. `make` creates a managed mysql2 pool,
+ * checks the connection with `SELECT 1`, maps mysql2 failures to `SqlError`,
+ * supports transaction connections, and exposes streaming queries through
+ * mysql2 query streams. It also provides direct and config-backed layers plus a
+ * MySQL statement compiler.
  *
  * @since 4.0.0
  */
@@ -170,9 +162,13 @@ export interface MysqlClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the `MysqlClient` service.
+ * Service tag for the mysql2 SQL client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a mysql2 client through the Effect context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const MysqlClient = Context.Service<MysqlClient>("@effect/sql-mysql2/MysqlClient")

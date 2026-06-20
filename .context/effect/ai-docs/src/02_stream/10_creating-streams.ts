@@ -50,7 +50,7 @@ export const fetchJobsPage = Stream.paginate(
 )
 
 class LetterError extends Schema.TaggedErrorClass<LetterError>()("LetterError", {
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 async function* asyncIterable() {
@@ -89,7 +89,7 @@ export const callbackStream = Stream.callback<PointerEvent>(Effect.fn(function*(
 }))
 
 export class NodeStreamError extends Schema.TaggedErrorClass<NodeStreamError>()("NodeStreamError", {
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 // Create a stream from a Node.js readable stream.

@@ -152,87 +152,96 @@ function ReplayControls({ detached = false }: { detached?: boolean }) {
 	} = useReplayPlayer()
 
 	return (
+		// On phones the controls stack into two rows; at ≥640px the inner wrappers
+		// collapse to `display:contents` so everything flows into one row exactly as
+		// before. Row 1 is play + scrubber + clock; row 2 is speed + skip + fullscreen.
 		<div
 			className={cn(
-				"flex items-center gap-3 bg-card px-3 py-2.5",
+				"flex flex-col gap-2 bg-card px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3",
 				// Attached: a divider from the surface above. Detached: it's the top of
 				// its own card, so no divider.
 				!detached && "border-t border-border",
 			)}
 		>
-			<button
-				type="button"
-				onClick={togglePlay}
-				aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
-				aria-keyshortcuts="Space"
-				title={`${finished ? "Replay" : isPlaying ? "Pause" : "Play"} (Space)`}
-				className="grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95"
-			>
-				{finished ? (
-					<ArrowPathIcon className="size-4" />
-				) : isPlaying ? (
-					<MediaPauseIcon className="size-4" />
-				) : (
-					<MediaPlayIcon className="size-4 translate-x-px" />
-				)}
-			</button>
+			<div className="flex items-center gap-3 sm:contents">
+				<button
+					type="button"
+					onClick={togglePlay}
+					aria-label={finished ? "Replay" : isPlaying ? "Pause" : "Play"}
+					aria-keyshortcuts="Space"
+					title={`${finished ? "Replay" : isPlaying ? "Pause" : "Play"} (Space)`}
+					className="relative grid size-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground transition-transform hover:scale-105 active:scale-95 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+				>
+					{finished ? (
+						<ArrowPathIcon className="size-4" />
+					) : isPlaying ? (
+						<MediaPauseIcon className="size-4" />
+					) : (
+						<MediaPlayIcon className="size-4 translate-x-px" />
+					)}
+				</button>
 
-			<Scrubber
-				currentMs={displayCurrentMs}
-				totalMs={displayTotalMs}
-				markers={markers}
-				idleBands={idleBands}
-				onSeek={seekDisplay}
-			/>
+				<Scrubber
+					currentMs={displayCurrentMs}
+					totalMs={displayTotalMs}
+					markers={markers}
+					idleBands={idleBands}
+					onSeek={seekDisplay}
+				/>
 
-			<div className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
-				<span className="text-foreground">{formatClock(displayCurrentMs)}</span>
-				<span className="opacity-50">/</span>
-				<span>{formatClock(displayTotalMs)}</span>
+				<div className="flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
+					<span className="text-foreground">{formatClock(displayCurrentMs)}</span>
+					<span className="opacity-50">/</span>
+					<span>{formatClock(displayTotalMs)}</span>
+				</div>
 			</div>
 
-			<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
-				{SPEEDS.map((s) => (
-					<button
-						key={s}
-						type="button"
-						onClick={() => changeSpeed(s)}
-						className={cn(
-							"rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors",
-							speed === s
-								? "bg-background text-foreground shadow-sm"
-								: "text-muted-foreground hover:text-foreground",
-						)}
-					>
-						{s}×
-					</button>
-				))}
+			<div className="flex items-center gap-2 sm:contents">
+				<div className="flex shrink-0 items-center rounded-md bg-muted p-0.5">
+					{SPEEDS.map((s) => (
+						<button
+							key={s}
+							type="button"
+							onClick={() => changeSpeed(s)}
+							className={cn(
+								// Grouped control: expand the touch target vertically only
+								// (min-h) so adjacent segments' hit areas don't overlap.
+								"relative rounded px-1.5 py-0.5 text-xs font-medium tabular-nums transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11",
+								speed === s
+									? "bg-background text-foreground shadow-sm"
+									: "text-muted-foreground hover:text-foreground",
+							)}
+						>
+							{s}×
+						</button>
+					))}
+				</div>
+
+				<button
+					type="button"
+					onClick={toggleSkipInactive}
+					aria-pressed={skipInactive}
+					title={skipInactive ? "Idle gaps skipped during playback" : "Skip idle gaps"}
+					className={cn(
+						"relative shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11",
+						skipInactive
+							? "bg-primary/10 text-primary"
+							: "text-muted-foreground hover:bg-muted hover:text-foreground",
+					)}
+				>
+					Skip idle
+				</button>
+
+				<button
+					type="button"
+					onClick={toggleFullscreen}
+					aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+					className="relative grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground max-sm:ml-auto pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+				>
+					{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
+				</button>
 			</div>
-
-			<button
-				type="button"
-				onClick={toggleSkipInactive}
-				aria-pressed={skipInactive}
-				title={skipInactive ? "Idle gaps skipped during playback" : "Skip idle gaps"}
-				className={cn(
-					"shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors",
-					skipInactive
-						? "bg-primary/10 text-primary"
-						: "text-muted-foreground hover:bg-muted hover:text-foreground",
-				)}
-			>
-				Skip idle
-			</button>
-
-			<button
-				type="button"
-				onClick={toggleFullscreen}
-				aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-				title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-				className="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-			>
-				{isFullscreen ? <MinimizeIcon className="size-4" /> : <MaximizeIcon className="size-4" />}
-			</button>
 		</div>
 	)
 }
@@ -348,9 +357,9 @@ function Scrubber({
 						/>
 					)
 				})}
-			{/* Thumb */}
+			{/* Thumb — hover-revealed on desktop, always shown on touch (no hover). */}
 			<div
-				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100"
+				className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background opacity-0 shadow-sm transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100"
 				style={{ left: `${pct}%`, opacity: dragging ? 1 : undefined }}
 			/>
 		</div>

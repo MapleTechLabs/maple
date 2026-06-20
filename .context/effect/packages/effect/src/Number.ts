@@ -1,6 +1,9 @@
 /**
- * This module provides utility functions and type class instances for working with the `number` type in TypeScript.
- * It includes functions for basic arithmetic operations.
+ * Works with TypeScript `number` values.
+ *
+ * This module exposes the native `Number` constructor together with helpers for
+ * checking, parsing, arithmetic, safe division, comparison, range checks,
+ * clamping, rounding, ordering, equivalence, and numeric aggregation.
  *
  * @since 2.0.0
  */
@@ -13,7 +16,19 @@ import * as predicate from "./Predicate.ts"
 import * as Reducer from "./Reducer.ts"
 
 /**
- * The global `Number` constructor.
+ * Exposes the global number constructor.
+ *
+ * **When to use**
+ *
+ * Use to access native JavaScript numeric coercion from the Effect module
+ * namespace.
+ *
+ * **Gotchas**
+ *
+ * This follows native `Number` coercion rules, including empty strings
+ * becoming `0` and invalid numeric strings becoming `NaN`.
+ *
+ * @see {@link parse} for parsing strings into an `Option`
  *
  * **Example** (Coercing values to numbers)
  *
@@ -33,7 +48,11 @@ import * as Reducer from "./Reducer.ts"
 export const Number = globalThis.Number
 
 /**
- * Tests if a value is a `number`.
+ * Checks whether a value is a `number`.
+ *
+ * **When to use**
+ *
+ * Use to validate unknown input and narrow it to `number`.
  *
  * **Example** (Checking for numbers)
  *
@@ -53,6 +72,10 @@ export const isNumber: (input: unknown) => input is number = predicate.isNumber
 /**
  * Provides an addition operation on `number`s.
  *
+ * **When to use**
+ *
+ * Use to add two numbers.
+ *
  * **Example** (Adding numbers)
  *
  * ```ts
@@ -61,6 +84,8 @@ export const isNumber: (input: unknown) => input is number = predicate.isNumber
  *
  * assert.deepStrictEqual(Number.sum(2, 3), 5)
  * ```
+ *
+ * @see {@link sumAll} for summing an iterable of numbers
  *
  * @category math
  * @since 2.0.0
@@ -73,6 +98,10 @@ export const sum: {
 /**
  * Provides a multiplication operation on `number`s.
  *
+ * **When to use**
+ *
+ * Use to multiply two numbers.
+ *
  * **Example** (Multiplying numbers)
  *
  * ```ts
@@ -81,6 +110,8 @@ export const sum: {
  *
  * assert.deepStrictEqual(Number.multiply(2, 3), 6)
  * ```
+ *
+ * @see {@link multiplyAll} for multiplying an iterable of numbers
  *
  * @category math
  * @since 2.0.0
@@ -92,6 +123,10 @@ export const multiply: {
 
 /**
  * Provides a subtraction operation on `number`s.
+ *
+ * **When to use**
+ *
+ * Use to subtract one number from another.
  *
  * **Example** (Subtracting numbers)
  *
@@ -111,7 +146,11 @@ export const subtract: {
 } = dual(2, (self: number, that: number): number => self - that)
 
 /**
- * Provides a division operation on `number`s, returning `Option.none()` if the divisor is `0`.
+ * Divides `number`s safely, returning `Option.none()` if the divisor is `0`.
+ *
+ * **When to use**
+ *
+ * Use to divide numbers while representing division by zero as `Option.none`.
  *
  * **Example** (Dividing numbers safely)
  *
@@ -121,6 +160,9 @@ export const subtract: {
  * Number.divide(6, 3) // Option.some(2)
  * Number.divide(6, 0) // Option.none()
  * ```
+ *
+ * @see {@link divideUnsafe} for division that throws when the divisor is zero
+ * @see {@link remainder} for the numeric remainder operation
  *
  * @category math
  * @since 2.0.0
@@ -134,7 +176,16 @@ export const divide: {
 )
 
 /**
- * Provides an unsafe division operation on `number`s that throws a `RangeError` if the divisor is `0`.
+ * Divides two `number` values without returning an `Option`.
+ *
+ * **When to use**
+ *
+ * Use to divide `number` values where the divisor is known to be non-zero and
+ * a plain `number` result is preferred over handling `Option.none`.
+ *
+ * **Gotchas**
+ *
+ * Throws a `RangeError` if the divisor is `0`.
  *
  * **Example** (Dividing numbers unsafely)
  *
@@ -145,6 +196,8 @@ export const divide: {
  *
  * // Passing 0 as the divisor throws a RangeError("Division by zero").
  * ```
+ *
+ * @see {@link divide} for division that returns `Option.none` when the divisor is zero
  *
  * @category math
  * @since 4.0.0
@@ -160,6 +213,10 @@ export const divideUnsafe: {
 
 /**
  * Returns the result of adding `1` to a given number.
+ *
+ * **When to use**
+ *
+ * Use to increment a numeric counter by one.
  *
  * **Example** (Incrementing a number)
  *
@@ -178,6 +235,10 @@ export const increment = (n: number): number => n + 1
 /**
  * Decrements a number by `1`.
  *
+ * **When to use**
+ *
+ * Use to decrement a numeric counter by one.
+ *
  * **Example** (Decrementing a number)
  *
  * ```ts
@@ -193,7 +254,12 @@ export const increment = (n: number): number => n + 1
 export const decrement = (n: number): number => n - 1
 
 /**
- * An `Order` instance for `number` values.
+ * Order instance for `number` values.
+ *
+ * **When to use**
+ *
+ * Use when you need to sort or compare numbers through APIs that accept an
+ * ordering instance.
  *
  * **Example** (Comparing numbers)
  *
@@ -211,7 +277,12 @@ export const decrement = (n: number): number => n - 1
 export const Order: order.Order<number> = order.Number
 
 /**
- * An `Equivalence` instance for numbers where `NaN` is considered equal to `NaN`.
+ * Equivalence instance for numbers where `NaN` is considered equal to `NaN`.
+ *
+ * **When to use**
+ *
+ * Use when checking numeric equality through APIs that accept an equivalence
+ * relation.
  *
  * **Example** (Comparing numbers for equivalence)
  *
@@ -230,6 +301,10 @@ export const Equivalence: Equ.Equivalence<number> = Equ.Number
 
 /**
  * Returns `true` if the first argument is less than the second, otherwise `false`.
+ *
+ * **When to use**
+ *
+ * Use to test whether one number is strictly less than another.
  *
  * **Example** (Checking less-than comparisons)
  *
@@ -253,6 +328,10 @@ export const isLessThan: {
 /**
  * Returns a function that checks if a given `number` is less than or equal to the provided one.
  *
+ * **When to use**
+ *
+ * Use to test whether one number is less than or equal to another.
+ *
  * **Example** (Checking less-than-or-equal comparisons)
  *
  * ```ts
@@ -274,6 +353,10 @@ export const isLessThanOrEqualTo: {
 
 /**
  * Returns `true` if the first argument is greater than the second, otherwise `false`.
+ *
+ * **When to use**
+ *
+ * Use to test whether one number is strictly greater than another.
  *
  * **Example** (Checking greater-than comparisons)
  *
@@ -297,6 +380,10 @@ export const isGreaterThan: {
 /**
  * Returns a function that checks if a given `number` is greater than or equal to the provided one.
  *
+ * **When to use**
+ *
+ * Use to test whether one number is greater than or equal to another.
+ *
  * **Example** (Checking greater-than-or-equal comparisons)
  *
  * ```ts
@@ -317,7 +404,11 @@ export const isGreaterThanOrEqualTo: {
 } = order.isGreaterThanOrEqualTo(Order)
 
 /**
- * Checks if a `number` is between a `minimum` and `maximum` value (inclusive).
+ * Checks whether a `number` is between a `minimum` and `maximum` value (inclusive).
+ *
+ * **When to use**
+ *
+ * Use to test whether a number falls inside an inclusive range.
  *
  * **Example** (Checking inclusive ranges)
  *
@@ -331,6 +422,8 @@ export const isGreaterThanOrEqualTo: {
  * assert.deepStrictEqual(between(-1), false)
  * assert.deepStrictEqual(between(6), false)
  * ```
+ *
+ * @see {@link clamp} for forcing a number into an inclusive range
  *
  * @category predicates
  * @since 2.0.0
@@ -348,6 +441,10 @@ export const between: {
 
 /**
  * Restricts the given `number` to be within the range specified by the `minimum` and `maximum` values.
+ *
+ * **When to use**
+ *
+ * Use to force a number into an inclusive range.
  *
  * **Details**
  *
@@ -368,6 +465,8 @@ export const between: {
  * assert.equal(clamp(6), 5)
  * ```
  *
+ * @see {@link between} for checking whether a number is already inside a range
+ *
  * @category math
  * @since 2.0.0
  */
@@ -385,6 +484,10 @@ export const clamp: {
 /**
  * Returns the minimum between two `number`s.
  *
+ * **When to use**
+ *
+ * Use to select the smaller of two numbers.
+ *
  * **Example** (Finding the minimum)
  *
  * ```ts
@@ -393,6 +496,8 @@ export const clamp: {
  *
  * assert.deepStrictEqual(Number.min(2, 3), 2)
  * ```
+ *
+ * @see {@link max} for selecting the larger value
  *
  * @category math
  * @since 2.0.0
@@ -405,6 +510,10 @@ export const min: {
 /**
  * Returns the maximum between two `number`s.
  *
+ * **When to use**
+ *
+ * Use to select the larger of two numbers.
+ *
  * **Example** (Finding the maximum)
  *
  * ```ts
@@ -413,6 +522,8 @@ export const min: {
  *
  * assert.deepStrictEqual(Number.max(2, 3), 3)
  * ```
+ *
+ * @see {@link min} for selecting the smaller value
  *
  * @category math
  * @since 2.0.0
@@ -424,6 +535,10 @@ export const max: {
 
 /**
  * Determines the sign of a given `number`.
+ *
+ * **When to use**
+ *
+ * Use to classify a number as negative, zero, or positive.
  *
  * **Example** (Determining the sign)
  *
@@ -444,6 +559,10 @@ export const sign = (n: number): Ordering => Order(n, 0)
 /**
  * Takes an `Iterable` of `number`s and returns their sum as a single `number`.
  *
+ * **When to use**
+ *
+ * Use to sum all numbers in an iterable.
+ *
  * **Example** (Summing an iterable)
  *
  * ```ts
@@ -452,6 +571,9 @@ export const sign = (n: number): Ordering => Order(n, 0)
  *
  * assert.deepStrictEqual(Number.sumAll([2, 3, 4]), 9)
  * ```
+ *
+ * @see {@link sum} for adding two numbers
+ * @see {@link ReducerSum} for summing through APIs that consume a `Reducer`
  *
  * @category math
  * @since 2.0.0
@@ -467,6 +589,10 @@ export const sumAll = (collection: Iterable<number>): number => {
 /**
  * Takes an `Iterable` of `number`s and returns their multiplication as a single `number`.
  *
+ * **When to use**
+ *
+ * Use to multiply all numbers in an iterable.
+ *
  * **Example** (Multiplying an iterable)
  *
  * ```ts
@@ -475,6 +601,9 @@ export const sumAll = (collection: Iterable<number>): number => {
  *
  * assert.deepStrictEqual(Number.multiplyAll([2, 3, 4]), 24)
  * ```
+ *
+ * @see {@link multiply} for multiplying two numbers
+ * @see {@link ReducerMultiply} for multiplying through APIs that consume a `Reducer`
  *
  * @category math
  * @since 2.0.0
@@ -493,6 +622,11 @@ export const multiplyAll = (collection: Iterable<number>): number => {
 /**
  * Returns the remainder left over when one operand is divided by a second operand, always taking the sign of the dividend.
  *
+ * **When to use**
+ *
+ * Use to compute a numeric remainder while preserving decimal precision better
+ * than direct JavaScript `%` for decimal operands.
+ *
  * **Example** (Calculating remainders)
  *
  * ```ts
@@ -503,6 +637,8 @@ export const multiplyAll = (collection: Iterable<number>): number => {
  * assert.deepStrictEqual(Number.remainder(3, 2), 1)
  * assert.deepStrictEqual(Number.remainder(-4, 2), -0)
  * ```
+ *
+ * @see {@link divide} for quotient calculation with division-by-zero represented as `Option.none`
  *
  * @category math
  * @since 2.0.0
@@ -533,6 +669,10 @@ function decimalCount(n: number): number {
 /**
  * Returns the next power of 2 from the given number.
  *
+ * **When to use**
+ *
+ * Use to round a number up to the next power of two.
+ *
  * **Example** (Finding the next power of two)
  *
  * ```ts
@@ -552,8 +692,12 @@ export const nextPow2 = (n: number): number => {
 }
 
 /**
- * Tries to parse a `number` from a `string` using the `Number()` function.
+ * Parses a `number` from a `string` safely using the `Number()` function.
  * The following special string values are supported: "NaN", "Infinity", "-Infinity".
+ *
+ * **When to use**
+ *
+ * Use to parse numeric text without throwing on invalid input.
  *
  * **Example** (Parsing numbers from strings)
  *
@@ -567,6 +711,8 @@ export const nextPow2 = (n: number): number => {
  * Number.parse("-Infinity") // Option.some(-Infinity)
  * Number.parse("not a number") // Option.none()
  * ```
+ *
+ * @see {@link Number} for native constructor coercion
  *
  * @category constructors
  * @since 2.0.0
@@ -591,6 +737,10 @@ export const parse = (s: string): Option.Option<number> => {
 /**
  * Returns the number rounded with the given precision.
  *
+ * **When to use**
+ *
+ * Use to round a number to a fixed number of decimal places.
+ *
  * **Example** (Rounding with precision)
  *
  * ```ts
@@ -613,7 +763,18 @@ export const round: {
 })
 
 /**
- * A `Reducer` for combining `number`s using addition.
+ * Reducer for combining `number`s using addition.
+ *
+ * **When to use**
+ *
+ * Use to sum many numbers through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The reducer starts from `0`, so `combineAll([])` returns `0`.
+ *
+ * @see {@link sumAll} for summing an iterable directly
+ * @see {@link ReducerMultiply} for multiplying number values
  *
  * @category math
  * @since 4.0.0
@@ -621,7 +782,22 @@ export const round: {
 export const ReducerSum: Reducer.Reducer<number> = Reducer.make((a, b) => a + b, 0)
 
 /**
- * A `Reducer` for combining `number`s using multiplication.
+ * Reducer for combining `number`s using multiplication.
+ *
+ * **When to use**
+ *
+ * Use to multiply many numbers through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The reducer starts from `1`, so reducing an empty collection returns `1`.
+ *
+ * **Gotchas**
+ *
+ * Reducing an iterable short-circuits when it sees `0`, so later elements are
+ * not consumed.
+ *
+ * @see {@link multiplyAll} for multiplying an iterable directly
  *
  * @category math
  * @since 4.0.0
@@ -636,7 +812,23 @@ export const ReducerMultiply: Reducer.Reducer<number> = Reducer.make((a, b) => a
 })
 
 /**
- * A `Reducer` for reducing `number`s by keeping the maximum value.
+ * Reducer for reducing `number`s by keeping the maximum value.
+ *
+ * **When to use**
+ *
+ * Use to keep the largest number through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The reducer starts from `-Infinity`, so reducing an empty collection returns
+ * `-Infinity`.
+ *
+ * **Gotchas**
+ *
+ * `NaN` values propagate through `Math.max`.
+ *
+ * @see {@link ReducerMin} for keeping the smallest number
+ * @see {@link max} for comparing two numbers directly
  *
  * @category math
  * @since 4.0.0
@@ -644,7 +836,23 @@ export const ReducerMultiply: Reducer.Reducer<number> = Reducer.make((a, b) => a
 export const ReducerMax: Reducer.Reducer<number> = Reducer.make((a, b) => Math.max(a, b), -Infinity)
 
 /**
- * A `Reducer` for reducing `number`s by keeping the minimum value.
+ * Reducer for reducing `number`s by keeping the minimum value.
+ *
+ * **When to use**
+ *
+ * Use to keep the smallest number through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The reducer starts from `Infinity`, so reducing an empty collection returns
+ * `Infinity`.
+ *
+ * **Gotchas**
+ *
+ * `NaN` values propagate through `Math.min`.
+ *
+ * @see {@link ReducerMax} for keeping the largest number
+ * @see {@link min} for comparing two numbers directly
  *
  * @category math
  * @since 4.0.0

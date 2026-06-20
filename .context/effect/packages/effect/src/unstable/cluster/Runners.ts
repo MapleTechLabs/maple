@@ -1,33 +1,12 @@
 /**
- * The `Runners` module defines the service used by the unstable cluster runtime
- * to communicate with processes that host entity shards. It is the transport
- * boundary between sharding decisions and runner execution: callers can ping a
- * runner, send requests or envelopes, notify a runner that persisted work is
- * available, and report an address as unavailable.
+ * Handles communication between Effect Cluster runners.
  *
- * The default implementation wraps lower-level runner callbacks with cluster
- * message semantics. Persisted messages are written to `MessageStorage` before
- * delivery, duplicate requests can resume from stored replies, and local sends
- * can optionally serialize and deserialize messages to exercise the same path as
- * remote delivery.
- *
- * **Common tasks**
- *
- * - Provide runner communication with {@link layerRpc}
- * - Build a custom implementation with {@link make}
- * - Use {@link makeNoop} or {@link layerNoop} when no remote runners are
- *   available
- * - Define runner-to-runner protocol support with {@link Rpcs} and
- *   {@link RpcClientProtocol}
- *
- * **Gotchas**
- *
- * - `notify` is only for RPCs annotated as persisted; non-persisted messages
- *   should be sent directly.
- * - Failed remote sends can fall back to reading replies from storage, so reply
- *   polling and `entityReplyPollInterval` affect recovery latency.
- * - Unavailable runners invalidate cached RPC clients, but shard ownership and
- *   rebalancing are coordinated by the sharding layer rather than this module.
+ * `Runners` sits between sharding decisions and runner execution. It can ping a
+ * runner, send requests or control envelopes, notify a runner that persisted
+ * work is available, and record that a runner address is unavailable. This
+ * module defines the runner communication service, its RPC protocol, no-op and
+ * RPC-backed implementations, local persistence support, reply recovery, and
+ * the protocol service used by transport-specific runner layers.
  *
  * @since 4.0.0
  */
@@ -67,7 +46,7 @@ import * as Snowflake from "./Snowflake.ts"
  */
 export class Runners extends Context.Service<Runners, {
   /**
-   * Checks if a Runner is responsive.
+   * Checks whether a Runner is responsive.
    */
   readonly ping: (address: RunnerAddress) => Effect.Effect<void, RunnerUnavailable>
 
@@ -149,6 +128,30 @@ export class Runners extends Context.Service<Runners, {
  * Builds the `Runners` service from remote runner callbacks and adds local
  * message persistence, duplicate request handling, optional local serialization
  * simulation, and polling for persisted replies.
+ *
+ * **When to use**
+ *
+ * Use when you need a custom `Runners` service around remote `ping`, `send`,
+ * `notify`, and `onRunnerUnavailable` callbacks, with standard local
+ * persistence and reply recovery behavior.
+ *
+ * **Details**
+ *
+ * `make` uses the supplied remote callbacks for runner communication and
+ * derives `sendLocal` and `notifyLocal`. Local sends can optionally simulate
+ * remote serialization, persisted notifications are saved through
+ * `MessageStorage`, duplicate requests are resumed from stored replies when
+ * possible, and pending replies are polled according to
+ * `ShardingConfig.entityReplyPollInterval`.
+ *
+ * **Gotchas**
+ *
+ * `notify` and `notifyLocal` only support RPCs annotated as persisted; calling
+ * either path with a non-persisted message dies instead of returning a typed
+ * error.
+ *
+ * @see {@link makeRpc} for the RPC-backed implementation built on top of this constructor
+ * @see {@link makeNoop} for a no-op implementation when remote runner communication is not needed
  *
  * @category constructors
  * @since 4.0.0
@@ -678,7 +681,7 @@ export const layerRpc: Layer.Layer<
  * Service that creates an RPC client protocol for communicating with a runner at a
  * given address.
  *
- * @category Client
+ * @category client
  * @since 4.0.0
  */
 export class RpcClientProtocol extends Context.Service<

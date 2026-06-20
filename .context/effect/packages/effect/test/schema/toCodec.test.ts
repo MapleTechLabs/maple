@@ -912,13 +912,38 @@ describe("Serializers", () => {
       })
 
       it("Error", async () => {
-        const schema = Schema.Error
+        const schema = Schema.Error()
         const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
 
         const encoding = asserts.encoding()
         await encoding.succeed(
           new Error("a"),
           { name: "Error", message: "a" }
+        )
+        await encoding.succeed(
+          new Error("a", { cause: new Error("b") }),
+          { name: "Error", message: "a", cause: { name: "Error", message: "b" } }
+        )
+        await encoding.succeed(
+          new Error("a", { cause: "b" }),
+          { name: "Error", message: "a", cause: "b" }
+        )
+        const selfCause = new Error("a")
+        selfCause.stack = "stack"
+        selfCause.cause = selfCause
+        await encoding.succeed(
+          selfCause,
+          {
+            name: "Error",
+            message: "a",
+            cause: "[Circular]"
+          }
+        )
+        const cyclicCause: Record<string, unknown> = {}
+        cyclicCause.self = cyclicCause
+        await encoding.succeed(
+          new Error("a", { cause: cyclicCause }),
+          { name: "Error", message: "a", cause: {} }
         )
 
         const decoding = asserts.decoding()
@@ -945,6 +970,51 @@ describe("Serializers", () => {
             err.stack = "c"
             return err
           })()
+        )
+        // Error: message and cause
+        await decoding.succeed(
+          { message: "a", cause: { message: "b" } },
+          new Error("a", { cause: new Error("b") })
+        )
+        // Error: explicit null cause
+        await decoding.succeed(
+          { message: "a", cause: null },
+          new Error("a", { cause: null })
+        )
+      })
+
+      it("Error with stack", async () => {
+        const schema = Schema.Error({ includeStack: true })
+        const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
+        const error = new Error("a")
+        error.stack = "stack"
+        const customError = new Error("b")
+        customError.name = "CustomError"
+        customError.stack = "custom stack"
+
+        const encoding = asserts.encoding()
+        await encoding.succeed(error, { name: "Error", message: "a", stack: "stack" })
+        await encoding.succeed(customError, { name: "CustomError", message: "b", stack: "custom stack" })
+
+        const decoding = asserts.decoding()
+        await decoding.succeed(
+          { message: "a", stack: "stack" },
+          error
+        )
+        await decoding.succeed(
+          { name: "CustomError", message: "b", stack: "custom stack" },
+          customError
+        )
+      })
+
+      it("Error with excluded cause", async () => {
+        const schema = Schema.Error({ excludeCause: true })
+        const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
+
+        const encoding = asserts.encoding()
+        await encoding.succeed(
+          new Error("a", { cause: new Error("b") }),
+          { name: "Error", message: "a" }
         )
       })
 
@@ -1129,6 +1199,33 @@ describe("Serializers", () => {
           const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
 
           const encoding = asserts.encoding()
+          await encoding.succeed(
+            Redacted.make(Option.none()),
+            { _tag: "None" }
+          )
+          await encoding.succeed(
+            Redacted.make(Option.some("a")),
+            { _tag: "Some", value: "a" }
+          )
+
+          const decoding = asserts.decoding()
+          await decoding.succeed(
+            { _tag: "None" },
+            Redacted.make(Option.none())
+          )
+          await decoding.succeed(
+            { _tag: "Some", value: "a" },
+            Redacted.make(Option.some("a"))
+          )
+        })
+
+        it("Redacted(Option(String)) disallowJsonEncode", async () => {
+          const schema = Schema.Redacted(Schema.Option(Schema.String), {
+            disallowJsonEncode: true
+          })
+          const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
+
+          const encoding = asserts.encoding()
           await encoding.fail(
             Redacted.make(Option.none()),
             `Cannot serialize Redacted`
@@ -1166,9 +1263,9 @@ describe("Serializers", () => {
           const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
 
           const encoding = asserts.encoding()
-          await encoding.fail(
+          await encoding.succeed(
             Redacted.make("a", { label: "API key" }),
-            `Cannot serialize Redacted with label: "API key"`
+            "a"
           )
         })
       })
@@ -1342,13 +1439,49 @@ describe("Serializers", () => {
       })
 
       it("Defect", async () => {
-        const schema = Schema.Defect
+        const schema = Schema.Defect()
         const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
 
         const encoding = asserts.encoding()
         await encoding.succeed(new Error("a"), { name: "Error", message: "a" })
+        await encoding.succeed(
+          new Error("a", { cause: new Error("b") }),
+          { name: "Error", message: "a", cause: { name: "Error", message: "b" } }
+        )
+        await encoding.succeed(
+          new Error("a", { cause: "b" }),
+          { name: "Error", message: "a", cause: "b" }
+        )
+        await encoding.succeed(
+          new Cause.NoSuchElementError(),
+          { name: "NoSuchElementError", message: "" }
+        )
+        const cyclicDefect: Record<string, unknown> = {}
+        cyclicDefect.self = cyclicDefect
+        await encoding.succeed(cyclicDefect, {})
         await encoding.succeed("a")
         await encoding.succeed({ a: 1 })
+
+        const decoding = asserts.decoding()
+        await decoding.succeed(
+          { message: "a", cause: { message: "b" } },
+          new Error("a", { cause: new Error("b") })
+        )
+        await decoding.succeed(
+          { message: "a", cause: null },
+          new Error("a", { cause: null })
+        )
+      })
+
+      it("Defect with excluded cause", async () => {
+        const schema = Schema.Defect({ excludeCause: true })
+        const asserts = new TestSchema.Asserts(Schema.toCodecJson(schema))
+
+        const encoding = asserts.encoding()
+        await encoding.succeed(
+          new Error("a", { cause: new Error("b") }),
+          { name: "Error", message: "a" }
+        )
       })
 
       it("Cause(Option(Finite), Option(String))", async () => {
@@ -2288,7 +2421,7 @@ Expected "Infinity" | "-Infinity" | "NaN", got "a"`
       })
 
       it("Error", async () => {
-        const schema = Schema.Error
+        const schema = Schema.Error()
         const asserts = new TestSchema.Asserts(Schema.toCodecStringTree(schema))
 
         const encoding = asserts.encoding()
@@ -2383,13 +2516,40 @@ Expected "Infinity" | "-Infinity" | "NaN", got "a"`
         const asserts = new TestSchema.Asserts(Schema.toCodecStringTree(schema))
 
         const encoding = asserts.encoding()
+        await encoding.succeed(
+          Redacted.make(Option.none()),
+          { _tag: "None" }
+        )
+        await encoding.succeed(
+          Redacted.make(Option.some("a")),
+          { _tag: "Some", value: "a" }
+        )
+
+        const decoding = asserts.decoding()
+        await decoding.succeed(
+          { _tag: "None" },
+          Redacted.make(Option.none())
+        )
+        await decoding.succeed(
+          { _tag: "Some", value: "a" },
+          Redacted.make(Option.some("a"))
+        )
+      })
+
+      it("Redacted(Option(String)) disallowJsonEncode", async () => {
+        const schema = Schema.Redacted(Schema.Option(Schema.String), {
+          disallowJsonEncode: true
+        })
+        const asserts = new TestSchema.Asserts(Schema.toCodecStringTree(schema))
+
+        const encoding = asserts.encoding()
         await encoding.fail(
           Redacted.make(Option.none()),
-          `Cannot serialize Redacted`
+          "Cannot serialize Redacted"
         )
         await encoding.fail(
           Redacted.make(Option.some("a")),
-          `Cannot serialize Redacted`
+          "Cannot serialize Redacted"
         )
 
         const decoding = asserts.decoding()

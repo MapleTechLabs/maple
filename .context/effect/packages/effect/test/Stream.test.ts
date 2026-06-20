@@ -133,6 +133,36 @@ describe("Stream", () => {
       }))
   })
 
+  describe("destructors", () => {
+    it.effect("runForEachWhile continues across chunk boundaries", () =>
+      Effect.gen(function*() {
+        const seen: Array<number> = []
+        yield* Stream.fromArrays([1, 2], [3, 4]).pipe(
+          Stream.runForEachWhile((n) =>
+            Effect.sync(() => {
+              seen.push(n)
+              return true
+            })
+          )
+        )
+        assert.deepStrictEqual(seen, [1, 2, 3, 4])
+      }))
+
+    it.effect("runForEachWhile stops when predicate returns false", () =>
+      Effect.gen(function*() {
+        const seen: Array<number> = []
+        yield* Stream.fromArrays([1, 2, 3], [4, 5]).pipe(
+          Stream.runForEachWhile((n) =>
+            Effect.sync(() => {
+              seen.push(n)
+              return n < 3
+            })
+          )
+        )
+        assert.deepStrictEqual(seen, [1, 2, 3])
+      }))
+  })
+
   describe("constructors", () => {
     class Greeter extends Context.Service<Greeter, {
       readonly greet: (name: string) => string
@@ -237,6 +267,25 @@ describe("Stream", () => {
 
         assert.deepStrictEqual(result, [2, 4])
         assert.strictEqual(yield* Ref.get(releases), 2)
+      }))
+
+    it.effect("fromReadableStream - errored streams fail with the mapped error, not a finalizer defect", () =>
+      Effect.gen(function*() {
+        const exit = yield* Stream.fromReadableStream({
+          evaluate: () =>
+            new ReadableStream<number>({
+              start(controller) {
+                controller.error(new Error("boom"))
+              }
+            }),
+          onError: (error) => new Error(`mapped: ${(error as Error).message}`)
+        }).pipe(Stream.runDrain, Effect.exit)
+
+        assertTrue(Exit.isFailure(exit))
+        if (Exit.isFailure(exit)) {
+          assertTrue(exit.cause.reasons.every(Cause.isFailReason))
+          deepStrictEqual(Cause.squash(exit.cause), new Error("mapped: boom"))
+        }
       }))
   })
 

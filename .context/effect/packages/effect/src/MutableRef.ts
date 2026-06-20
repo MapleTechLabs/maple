@@ -1,34 +1,11 @@
 /**
- * The `MutableRef` module provides a small synchronous container for mutable
- * state. A `MutableRef<A>` stores one current value of type `A`, exposes that
- * value through `.current`, and offers pipeable helpers for reading, replacing,
- * and transforming the value in place.
+ * Stores synchronous mutable state in a small reference object.
  *
- * **Mental model**
- *
- * - `MutableRef<A>` is a stable reference whose `.current` field may change over time
- * - Reads and writes are synchronous and return immediately
- * - `set`, `update`, `increment`, `decrement`, and `toggle` mutate the same reference in place
- * - `getAnd*` helpers return the previous value, while `*AndGet` helpers return the new value
- * - `compareAndSet` updates only when the current value is equal to the expected value using `Equal.equals`
- * - A `MutableRef` is useful for local mutable state, but it does not make updates transactional or effectful
- *
- * **Common tasks**
- *
- * - Create a reference: {@link make}
- * - Read the current value: {@link get} or `.current`
- * - Replace the current value: {@link set}, {@link setAndGet}, {@link getAndSet}
- * - Transform the current value: {@link update}, {@link updateAndGet}, {@link getAndUpdate}
- * - Coordinate conditional replacement: {@link compareAndSet}
- * - Work with counters: {@link increment}, {@link decrement}, {@link incrementAndGet}, {@link decrementAndGet}
- * - Work with boolean flags: {@link toggle}
- *
- * **Gotchas**
- *
- * - All updates are imperative mutations; aliases to the same `MutableRef` observe the same changing value
- * - Updating object or array values does not clone them unless the update function creates a new value
- * - `compareAndSet` compares with Effect equality semantics, not only JavaScript reference equality
- * - For state that must participate in `Effect` workflows, interruption, or fiber coordination, prefer higher-level Effect data types
+ * A `MutableRef<A>` stores one current value and exposes it through `.current`.
+ * Unlike `Ref`, its operations are synchronous and update the same object in
+ * place. This module includes pipeable helpers for reading, setting, comparing,
+ * and updating the value, plus numeric increment/decrement helpers and a
+ * boolean toggle helper.
  *
  * @since 2.0.0
  */
@@ -42,6 +19,10 @@ const TypeId = "~effect/MutableRef"
 
 /**
  * A synchronous mutable reference that stores a current value.
+ *
+ * **When to use**
+ *
+ * Use to keep local mutable state in a stable, pipeable reference.
  *
  * **Details**
  *
@@ -103,6 +84,10 @@ const MutableRefProto: Omit<MutableRef<unknown>, "current"> = {
 /**
  * Creates a new MutableRef with the specified initial value.
  *
+ * **When to use**
+ *
+ * Use to create a synchronous `MutableRef` initialized with a value.
+ *
  * **Example** (Creating mutable refs)
  *
  * ```ts
@@ -132,9 +117,14 @@ export const make = <T>(value: T): MutableRef<T> => {
 }
 
 /**
- * Atomically sets the value to newValue if the current value equals oldValue.
+ * Sets the value to newValue atomically if the current value equals oldValue.
  * Returns true if the value was updated, false otherwise.
  * Uses Effect's Equal interface for value comparison.
+ *
+ * **When to use**
+ *
+ * Use to replace a `MutableRef` value only when the current value still matches
+ * an expected value.
  *
  * **Example** (Comparing and setting values)
  *
@@ -185,6 +175,11 @@ export const compareAndSet: {
 /**
  * Decrements a numeric MutableRef by 1 and returns the reference.
  *
+ * **When to use**
+ *
+ * Use when you need an in-place `MutableRef` decrement that returns the same
+ * `MutableRef`.
+ *
  * **Example** (Decrementing numeric refs)
  *
  * ```ts
@@ -216,6 +211,11 @@ export const decrement = (self: MutableRef<number>): MutableRef<number> => updat
 
 /**
  * Decrements a numeric MutableRef by 1 and returns the new value.
+ *
+ * **When to use**
+ *
+ * Use to decrement a numeric `MutableRef` and immediately read the updated
+ * value.
  *
  * **Example** (Decrementing and reading refs)
  *
@@ -249,6 +249,10 @@ export const decrementAndGet = (self: MutableRef<number>): number => updateAndGe
 /**
  * Gets the current value of the MutableRef.
  *
+ * **When to use**
+ *
+ * Use to read the current `MutableRef` value without mutating it.
+ *
  * **Example** (Reading current values)
  *
  * ```ts
@@ -278,6 +282,10 @@ export const get = <T>(self: MutableRef<T>): T => self.current
 
 /**
  * Decrements a numeric MutableRef by 1 and returns the previous value.
+ *
+ * **When to use**
+ *
+ * Use to read the current numeric `MutableRef` value before decrementing it.
  *
  * **Example** (Reading before decrementing)
  *
@@ -311,6 +319,10 @@ export const getAndDecrement = (self: MutableRef<number>): number => getAndUpdat
 
 /**
  * Increments a numeric MutableRef by 1 and returns the previous value.
+ *
+ * **When to use**
+ *
+ * Use to read the current numeric `MutableRef` value before incrementing it.
  *
  * **Example** (Reading before incrementing)
  *
@@ -352,6 +364,11 @@ export const getAndIncrement = (self: MutableRef<number>): number => getAndUpdat
 
 /**
  * Sets the MutableRef to a new value and returns the previous value.
+ *
+ * **When to use**
+ *
+ * Use to replace the current `MutableRef` value while keeping the previous
+ * value.
  *
  * **Example** (Reading before setting)
  *
@@ -400,6 +417,11 @@ export const getAndSet: {
 /**
  * Updates the MutableRef with the result of applying a function to its current value,
  * and returns the previous value.
+ *
+ * **When to use**
+ *
+ * Use to transform the current `MutableRef` value while keeping the previous
+ * value.
  *
  * **Example** (Reading before updating)
  *
@@ -450,6 +472,11 @@ export const getAndUpdate: {
 /**
  * Increments a numeric MutableRef by 1 and returns the reference.
  *
+ * **When to use**
+ *
+ * Use when you need an in-place `MutableRef` increment that returns the same
+ * `MutableRef`.
+ *
  * **Example** (Incrementing numeric refs)
  *
  * ```ts
@@ -484,6 +511,11 @@ export const increment = (self: MutableRef<number>): MutableRef<number> => updat
 
 /**
  * Increments a numeric MutableRef by 1 and returns the new value.
+ *
+ * **When to use**
+ *
+ * Use to increment a numeric `MutableRef` and immediately read the updated
+ * value.
  *
  * **Example** (Incrementing and reading refs)
  *
@@ -520,6 +552,11 @@ export const incrementAndGet = (self: MutableRef<number>): number => updateAndGe
 
 /**
  * Sets the MutableRef to a new value and returns the reference.
+ *
+ * **When to use**
+ *
+ * Use when you need an in-place `MutableRef` replacement that returns the same
+ * `MutableRef`.
  *
  * **Example** (Setting values)
  *
@@ -571,6 +608,11 @@ export const set: {
 /**
  * Sets the MutableRef to a new value and returns the new value.
  *
+ * **When to use**
+ *
+ * Use to replace the current `MutableRef` value and immediately read the
+ * replacement.
+ *
  * **Example** (Setting and reading values)
  *
  * ```ts
@@ -617,6 +659,11 @@ export const setAndGet: {
 /**
  * Updates the MutableRef with the result of applying a function to its current value,
  * and returns the reference.
+ *
+ * **When to use**
+ *
+ * Use when you need an in-place `MutableRef` value transformation that returns
+ * the same `MutableRef`.
  *
  * **Example** (Updating values)
  *
@@ -670,6 +717,11 @@ export const update: {
  * Updates the MutableRef with the result of applying a function to its current value,
  * and returns the new value.
  *
+ * **When to use**
+ *
+ * Use to transform the current `MutableRef` value and immediately read the
+ * updated value.
+ *
  * **Example** (Updating and reading values)
  *
  * ```ts
@@ -721,7 +773,13 @@ export const updateAndGet: {
 >(2, (self, f) => setAndGet(self, f(get(self))))
 
 /**
- * Toggles a boolean MutableRef (true becomes false, false becomes true) and returns the reference.
+ * Switches a boolean `MutableRef` between `true` and `false`, then returns the
+ * reference.
+ *
+ * **When to use**
+ *
+ * Use when you need an in-place boolean `MutableRef` toggle that returns the
+ * same `MutableRef`.
  *
  * **Example** (Toggling boolean refs)
  *

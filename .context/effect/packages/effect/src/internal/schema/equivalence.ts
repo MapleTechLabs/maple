@@ -3,17 +3,17 @@ import * as Equivalence from "../../Equivalence.ts"
 import { memoize } from "../../Function.ts"
 import * as Predicate from "../../Predicate.ts"
 import type * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
-import * as Parser from "../../SchemaParser.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
+import * as SchemaParser from "../../SchemaParser.ts"
 import { errorWithPath } from "../errors.ts"
 import * as InternalAnnotations from "./annotations.ts"
 
 /** @internal */
-export const toEquivalence = memoize((ast: AST.AST): Equivalence.Equivalence<any> => {
+export const toEquivalence = memoize((ast: SchemaAST.AST): Equivalence.Equivalence<any> => {
   return recur(ast, [])
 })
 
-function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equivalence<any> {
+function recur(ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equivalence<any> {
   // ---------------------------------------------
   // handle annotations
   // ---------------------------------------------
@@ -21,7 +21,7 @@ function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equi
     | Schema.Annotations.ToEquivalence.Declaration<any, ReadonlyArray<any>>
     | undefined
   if (annotation) {
-    return annotation(AST.isDeclaration(ast) ? ast.typeParameters.map((tp) => recur(tp, path)) : [])
+    return annotation(SchemaAST.isDeclaration(ast) ? ast.typeParameters.map((tp) => recur(tp, path)) : [])
   }
   switch (ast._tag) {
     case "Never":
@@ -105,7 +105,7 @@ function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equi
           const name = ps.name
           const aHas = Object.hasOwn(a, name)
           const bHas = Object.hasOwn(b, name)
-          if (AST.isOptional(ps.type)) {
+          if (SchemaAST.isOptional(ps.type)) {
             if (aHas !== bHas) {
               return false
             }
@@ -119,8 +119,8 @@ function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equi
         // ---------------------------------------------
         for (let i = 0; i < indexSignatures.length; i++) {
           const is = ast.indexSignatures[i]
-          const aKeys = AST.getIndexSignatureKeys(a, is.parameter)
-          const bKeys = AST.getIndexSignatureKeys(b, is.parameter)
+          const aKeys = SchemaAST.getIndexSignatureKeys(a, is.parameter)
+          const bKeys = SchemaAST.getIndexSignatureKeys(b, is.parameter)
 
           if (aKeys.length !== bKeys.length) return false
 
@@ -136,8 +136,8 @@ function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equi
     }
     case "Union":
       return Equivalence.make((a, b) => {
-        const candidates = AST.getCandidates(a, ast.types)
-        const types = candidates.map(Parser._is)
+        const candidates = SchemaAST.getCandidates(a, ast.types)
+        const types = candidates.map(SchemaParser._is)
         for (let i = 0; i < candidates.length; i++) {
           const is = types[i]
           if (is(a) && is(b)) {
@@ -147,7 +147,7 @@ function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): Equivalence.Equi
         return false
       })
     case "Suspend": {
-      const get = AST.memoizeThunk(() => recur(ast.thunk(), path))
+      const get = SchemaAST.memoizeThunk(() => recur(ast.thunk(), path))
       return Equivalence.make((a, b) => get()(a, b))
     }
   }

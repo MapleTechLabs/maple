@@ -28917,7 +28917,7 @@ export const CreateConversationItemsRequestJson = Schema.StructWithRest(
       "description": "The items to add to the conversation. You may add up to 20 items at a time.\n"
     }).check(Schema.isMaxLength(20))
   }),
-  [Schema.Record(Schema.String, Schema.Json)]
+  [Schema.Record(Schema.String, Schema.Unknown)]
 )
 export type CreateConversationItems200 = ConversationItemList
 export const CreateConversationItems200 = ConversationItemList

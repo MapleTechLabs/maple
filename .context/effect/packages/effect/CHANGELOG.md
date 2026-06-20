@@ -1,5 +1,351 @@
 # effect
 
+## 4.0.0-beta.85
+
+### Patch Changes
+
+- [#2436](https://github.com/Effect-TS/effect-smol/pull/2436) [`328d97c`](https://github.com/Effect-TS/effect-smol/commit/328d97cc53c0dcb89077a5623e35b095eaa59a8c) Thanks @MohanedMashaly! - change default operation in redis from LPUSH TO RPUSH
+
+- [#2431](https://github.com/Effect-TS/effect-smol/pull/2431) [`8441836`](https://github.com/Effect-TS/effect-smol/commit/8441836e6dde70e8ae2126be9cefe9b45798b134) Thanks @gcanti! - Derive template literal arbitraries from encoded parts, closes [#2414](https://github.com/Effect-TS/effect-smol/issues/2414).
+
+- [#2439](https://github.com/Effect-TS/effect-smol/pull/2439) [`074e436`](https://github.com/Effect-TS/effect-smol/commit/074e4361091289104cb0ab6959dc3b0ea7794a6a) Thanks @gcanti! - Allow schema class `.extend` to accept a `Struct` and preserve checks from the extension schema, closes [#2419](https://github.com/Effect-TS/effect-smol/issues/2419).
+
+- [#2444](https://github.com/Effect-TS/effect-smol/pull/2444) [`c1dfd60`](https://github.com/Effect-TS/effect-smol/commit/c1dfd60663eb13a58916f3712d877499943b628a) Thanks @bweis! - Avoid throwing when `Error.stackTraceLimit` is non-writable (frozen intrinsics / SES / deterministic sandboxes such as Temporal).
+
+  Effect manipulates `Error.stackTraceLimit` in several internal spots to capture short or empty stack traces cheaply. In hardened environments where `Error` is frozen and `stackTraceLimit` is read-only, assigning to it throws, which broke Effect entirely. Stack-trace-limit manipulation is now best-effort and silently no-ops when the property cannot be modified, mirroring Node's own internal guard. Behavior in normal (writable) environments is unchanged.
+
+- [#2425](https://github.com/Effect-TS/effect-smol/pull/2425) [`2ba316b`](https://github.com/Effect-TS/effect-smol/commit/2ba316bd15fcbf1c50626500d44a2c9b3bec19f5) Thanks @tim-smart! - Add Random.choice for selecting a random element from an iterable.
+
+- [#2434](https://github.com/Effect-TS/effect-smol/pull/2434) [`7ce7344`](https://github.com/Effect-TS/effect-smol/commit/7ce7344c41056c79e2ee19ee6a9346c0f1d227c1) Thanks @gcanti! - Use semantic matching for TemplateLiteral parsing and index signature keys
+
+  Replace regex-based TemplateLiteral parsing with backtracking segmentation over
+  template literal parts, applying part checks during matching.
+
+  Use schema membership when selecting Record index signature keys, including
+  checked string, number, symbol, and TemplateLiteral parameters. Tighten valid
+  index signature parameters on both type and encoded sides, and preserve key
+  parameter semantics in codec transformations.
+
+## 4.0.0-beta.84
+
+### Patch Changes
+
+- [#2420](https://github.com/Effect-TS/effect-smol/pull/2420) [`87f52ba`](https://github.com/Effect-TS/effect-smol/commit/87f52ba16c4370ffa3f84bf8e53038e1419c284e) Thanks @tim-smart! - Add `Effect.transposeOption` for converting an `Option<Effect<A, E, R>>` into an `Effect<Option<A>, E, R>`.
+
+- [#2374](https://github.com/Effect-TS/effect-smol/pull/2374) [`b8ee07f`](https://github.com/Effect-TS/effect-smol/commit/b8ee07ffda8903b5ec2e45a786ddcba59f128fda) Thanks @gcanti! - Import unconstrained JSON Schema nodes as `Schema.Json` instead of `Schema.Unknown`.
+
+- [#2407](https://github.com/Effect-TS/effect-smol/pull/2407) [`867c0d7`](https://github.com/Effect-TS/effect-smol/commit/867c0d70a09079b040260d45a1e92ff04dbfbf2f) Thanks @gcanti! - Normalize error behavior for Schema and SchemaParser boundary APIs.
+
+  `SchemaError` now extends `Data.TaggedError`, so it is also a native `Error`.
+  SchemaParser Promise APIs now reject an `Error` whose cause is the
+  `SchemaIssue.Issue` for schema failures.
+
+  Schema and SchemaParser `Effect` and `Exit` adapters now preserve full causes
+  while mapping schema issue failures to their public error type. The `is`,
+  `asserts`, `Promise`, `Sync`, `Result`, `Option`, `make`, and `makeOption`
+  adapters now distinguish schema issues from non-schema causes. Schema-only
+  failures are converted to the adapter's normal representation (`false`,
+  rejected or thrown schema error, `Result.fail`, or `None`), while non-schema
+  causes throw or reject with an `Error` whose cause is the underlying `Cause`.
+
+- [#2409](https://github.com/Effect-TS/effect-smol/pull/2409) [`b93bc6c`](https://github.com/Effect-TS/effect-smol/commit/b93bc6c9cb27b909a41d094c97c4f9d25bbc6d6b) Thanks @tim-smart! - Fix Stream.runForEachWhile so it continues across chunk boundaries while the predicate returns true and stops when the predicate returns false.
+
+- [#2424](https://github.com/Effect-TS/effect-smol/pull/2424) [`57d387f`](https://github.com/Effect-TS/effect-smol/commit/57d387f92c30ab63e15e3e641f0a903b65886610) Thanks @tim-smart! - Fix cluster workflow activity defect hydration
+
+- [#2403](https://github.com/Effect-TS/effect-smol/pull/2403) [`bacca41`](https://github.com/Effect-TS/effect-smol/commit/bacca4141c2400effae1eabfdb36c89a459cf246) Thanks @lloydrichards! - align ProcessInput.Input runtime field name with type definition on Prompt.custom
+
+- [#2423](https://github.com/Effect-TS/effect-smol/pull/2423) [`0f8ac79`](https://github.com/Effect-TS/effect-smol/commit/0f8ac7959d29ed68c68ce25aabd6bf0cb7e63ecc) Thanks @tim-smart! - RpcGroup.toHandlers is definition first
+
+- [#2383](https://github.com/Effect-TS/effect-smol/pull/2383) [`25b4482`](https://github.com/Effect-TS/effect-smol/commit/25b448270c01317703f25107e1480d4cd0246d9a) Thanks @gcanti! - Fix config path composition and directory-backed lookup behavior.
+
+  `ConfigProvider.orElse` now keeps each side's own `nested` and `mapInput`
+  behavior. Applying `nested` or `mapInput` to a combined provider now applies the
+  same transformation to both sides.
+
+  `ConfigProvider` path transformations now compose as a single path function.
+  This makes `nested` and `mapInput` behave consistently with normal function
+  composition.
+
+  `Config.nested` now tracks the logical config path in `Config` itself instead of
+  wrapping the provider. This keeps lookup paths and schema error paths aligned.
+  The low-level `Config.make` constructor is no longer exported; use config
+  constructors and combinators, or implement custom lookup behavior with
+  `ConfigProvider.make`.
+
+  `ConfigProvider.fromDir` now returns `undefined` when neither a file nor a
+  directory exists at the requested path, so `orElse` can fall back instead of
+  failing with `SourceError`.
+
+- [#2415](https://github.com/Effect-TS/effect-smol/pull/2415) [`9cf3a25`](https://github.com/Effect-TS/effect-smol/commit/9cf3a25c66b0c44a52be9829870c44517ea52db2) Thanks @gcanti! - Fix `Effect.try` thunk usage and `Effect.tryPromise` mapper and signal handling defects.
+
+  `Effect.try` now supports passing a thunk directly, matching `Effect.tryPromise`. Thrown values from direct-thunk usage are mapped to `Cause.UnknownError`.
+
+  When a promise handled by `Effect.tryPromise` rejected and the custom `catch` mapper threw while mapping that rejection, the effect could remain pending and produce an unhandled rejection. The mapper is now guarded consistently with the synchronous throw path, so a thrown mapper error becomes an Effect defect. The JSDoc for `Effect.try` and `Effect.tryPromise` was also corrected.
+
+  `Effect.tryPromise` now also only creates an `AbortController` when the wrapped thunk declares an `AbortSignal` parameter.
+
+- [#2417](https://github.com/Effect-TS/effect-smol/pull/2417) [`8def767`](https://github.com/Effect-TS/effect-smol/commit/8def7674b1787f91035298cda4d122937e87ef72) Thanks @tim-smart! - deduplicate SqlResolver.findById requests
+
+## 4.0.0-beta.83
+
+### Patch Changes
+
+- [#2394](https://github.com/Effect-TS/effect-smol/pull/2394) [`1f2e8ce`](https://github.com/Effect-TS/effect-smol/commit/1f2e8ceef09e0a791c850ed2ade01f97089596f9) Thanks @IMax153! - Fix published HttpApi declaration files by exporting schema metadata types referenced by public declarations.
+
+## 4.0.0-beta.82
+
+### Patch Changes
+
+- [#2391](https://github.com/Effect-TS/effect-smol/pull/2391) [`193690b`](https://github.com/Effect-TS/effect-smol/commit/193690b642ea802bbed40d663bd677251bbe9dc3) Thanks @IMax153! - Fix HttpApiEndpoint endpoint error inference when success schemas include streams.
+
+## 4.0.0-beta.81
+
+### Patch Changes
+
+- [#2387](https://github.com/Effect-TS/effect-smol/pull/2387) [`93cb4f8`](https://github.com/Effect-TS/effect-smol/commit/93cb4f8fbfb9e07cb9dc86ce6b155fd1f8167914) Thanks @gcanti! - `Config.withDefault` now only recovers from missing data for literal/union
+  schemas. Invalid present values now propagate validation errors instead of
+  using the default, closes [#2384](https://github.com/Effect-TS/effect-smol/issues/2384).
+
+- [#2388](https://github.com/Effect-TS/effect-smol/pull/2388) [`60341d9`](https://github.com/Effect-TS/effect-smol/commit/60341d9ca744d0473ce3fab621ca9bd225af3a39) Thanks @gcanti! - `Config.withDefault` no longer recovers from schema filter failures. A filter
+  failure means a present value reached refinement checks, so using the default
+  could hide invalid configuration values.
+
+- [#2389](https://github.com/Effect-TS/effect-smol/pull/2389) [`1105ab5`](https://github.com/Effect-TS/effect-smol/commit/1105ab56cb724212f7ea7b431396ce82e8fd0484) Thanks @gcanti! - Fix `Schema.toTaggedUnion(...).isAnyOf` narrowing for custom discriminant keys, closes [#2386](https://github.com/Effect-TS/effect-smol/issues/2386).
+
+  Previously, the type predicate always extracted union members by `_tag`, even
+  when `toTaggedUnion` was created with a different discriminant key. Runtime
+  behavior already used the supplied key, so this aligns the type-level narrowing
+  with the existing runtime behavior.
+
+- [#2270](https://github.com/Effect-TS/effect-smol/pull/2270) [`4500fbf`](https://github.com/Effect-TS/effect-smol/commit/4500fbfe00763d8a72af6e5d6c5988e8bd4ade36) Thanks @IMax153! - Add HTTP API streaming response support
+
+## 4.0.0-beta.80
+
+### Patch Changes
+
+- [#2205](https://github.com/Effect-TS/effect-smol/pull/2205) [`d944330`](https://github.com/Effect-TS/effect-smol/commit/d94433090ee03f426d43e13b883abae4494e55e6) Thanks @lloydrichards! - add support for merging external events into `Prompt.custom` render loops via an optional `events` dequeue and `receive` handler.
+
+  The prompt races user input against events from the dequeue, allowing background events to trigger re-renders without waiting for a keypress:
+
+  ```ts
+  const eventQueue = yield * Queue.make<number>();
+
+  const prompt = Prompt.custom(
+    { count: 0 },
+    Queue.asDequeue(eventQueue), // <-- provide the event queue as a dequeue to the prompt
+    {
+      render: (state) => Effect.succeed(`Count: ${state.count}`),
+      process: (input, state) =>
+        Effect.succeed(
+          Match.value(input).pipe(
+            // handle user input
+            Match.tag("Input", () => Action.Submit({ value: state.count })),
+            // handle external events from the queue
+            Match.tag("Event", (input) =>
+              Action.NextFrame({ state: { count: state.count + input.value } }),
+            ),
+            Match.exhaustive,
+          ),
+        ),
+      clear: () => Effect.succeed(""),
+    },
+  );
+  ```
+
+- [#2369](https://github.com/Effect-TS/effect-smol/pull/2369) [`f48659f`](https://github.com/Effect-TS/effect-smol/commit/f48659fdcc84930ebc1e5b45b540c0f973389182) Thanks @gcanti! - Round fractional durations symmetrically when normalizing to nanoseconds.
+
+- [#2373](https://github.com/Effect-TS/effect-smol/pull/2373) [`7652aaa`](https://github.com/Effect-TS/effect-smol/commit/7652aaa3bdbc39f241fe58b54b9a43b713e22e12) Thanks @StarpTech! - Stream.fromReadableStream: swallow the `reader.cancel()` rejection in the finalizer. Cancelling the reader of an already-errored ReadableStream rejects with the stored error, which turned the typed `onError` failure into a defect.
+
+- [#2371](https://github.com/Effect-TS/effect-smol/pull/2371) [`98630b7`](https://github.com/Effect-TS/effect-smol/commit/98630b7c8f679c352ba6796636c85688fa009d8d) Thanks @gcanti! - Emit `Schema.ObjectKeyword` as an object-or-array JSON Schema union.
+
+- [#2376](https://github.com/Effect-TS/effect-smol/pull/2376) [`90ae23c`](https://github.com/Effect-TS/effect-smol/commit/90ae23cf07284da5e1bcd9dffa882e85df7e617b) Thanks @fubhy! - Add `Graph.successors` and `Graph.predecessors`, deprecate `Graph.neighborsDirected`, and fix graph algorithm edge cases around reversal, undirected edge queries, shortest-path weight validation, topological sort initials, and strongly connected components.
+
+## 4.0.0-beta.79
+
+### Patch Changes
+
+- [#2364](https://github.com/Effect-TS/effect-smol/pull/2364) [`b9704dc`](https://github.com/Effect-TS/effect-smol/commit/b9704dc9de9f1649ad502371014fe869b69a49a3) Thanks @mikearnaldi! - Fix module-level side effects that defeated bundler tree-shaking.
+
+  Bare top-level statements cannot be `#__PURE__`-annotated by the build, so
+  bundlers must retain them and everything they reference, even in bundles that
+  never use the code:
+  - `Option`: the standalone `Object.defineProperty(SomeProto, "valueOrUndefined", ...)`
+    statement anchored the whole `Option` proto chain into every bundle. It is
+    now folded into the `SomeProto` initializer.
+  - `Headers`: same pattern with `Object.defineProperties(Proto, ...)`, folded
+    into the initializer.
+  - `Logger`: module-level `process.stdout.isTTY` property reads (potential
+    getters, never droppable) moved inside `consolePretty`.
+  - `Utils`: when `internalCall` was unused, its dropped binding left behind a
+    retained initializer tail (`standard`/`forced` probe with computed property
+    reads). The selection is now wrapped in a single pure-annotated call.
+
+  A minimal `Effect.succeed(123).pipe(Effect.runFork)` bundle shrinks by ~1.3%
+  gzipped; bundles that don't use `Option` or `Headers` no longer pay for them.
+
+- [#2339](https://github.com/Effect-TS/effect-smol/pull/2339) [`a207113`](https://github.com/Effect-TS/effect-smol/commit/a207113f66837bb54416926718a9a7d66774d079) Thanks @tim-smart! - Fix EntityManager defect restarts so in-flight requests are replayed instead of being dropped when the old entity scope is interrupted.
+
+- [#2362](https://github.com/Effect-TS/effect-smol/pull/2362) [`5e9b9e2`](https://github.com/Effect-TS/effect-smol/commit/5e9b9e217b164ebfd4a002dd4380b3b1563200c3) Thanks @fubhy! - Fix Graph traversal and shortest-path algorithms to traverse undirected edges independently of their stored source/target orientation.
+
+- [#2366](https://github.com/Effect-TS/effect-smol/pull/2366) [`7c128ae`](https://github.com/Effect-TS/effect-smol/commit/7c128aef458a1e2d224712e51c483c9badad1d44) Thanks @IMax153! - Fix string seed encoding in Random.withSeed so short, trailing, and astral UTF-8 bytes affect deterministic streams.
+
+- [#2352](https://github.com/Effect-TS/effect-smol/pull/2352) [`0ada457`](https://github.com/Effect-TS/effect-smol/commit/0ada457c0513d8d908254ab77ebb7d29d2b523d6) Thanks @alvarosevilla95! - Fix the Redis `RateLimiterStore` token-bucket failing with opaque errors under memory pressure: it now writes its keys with a TTL and guards against a missing refill timestamp.
+
+- [#2359](https://github.com/Effect-TS/effect-smol/pull/2359) [`d7cc5a2`](https://github.com/Effect-TS/effect-smol/commit/d7cc5a2bede3de10943aa0c6bdb4f26836a91efd) Thanks @gcanti! - Fix `Struct` key renaming and `Schema.encodeKeys` to support symbol keys, and reject duplicate encoded keys.
+
+- [#2365](https://github.com/Effect-TS/effect-smol/pull/2365) [`aad63be`](https://github.com/Effect-TS/effect-smol/commit/aad63becf65e0a6b076e94f8973be7bbe7fbd46f) Thanks @gcanti! - Fix `Schema` encoding so container-level checks are validated against the decoded value instead of the encoded output.
+
+  Disallow adding checks directly to `Schema.suspend(...)`; add the checks to the suspended schema instead.
+
+  Fix `StructWithRest` so index signatures do not re-parse or overwrite fixed properties.
+
+- [#2342](https://github.com/Effect-TS/effect-smol/pull/2342) [`09809f6`](https://github.com/Effect-TS/effect-smol/commit/09809f60f19ec98232f98b33e33e02ecb7e4fbd6) Thanks @gcanti! - Use generic ordered constraints for schema arbitrary derivation.
+
+  Range checks such as `isGreaterThan`, `isLessThan`, and `isBetween` now populate `ctx.constraints.ordered`
+  instead of type-specific range fields on `number`, `date`, or `bigint` constraints. Custom `toArbitrary`
+  annotations that read range constraints should migrate to `ctx.constraints.ordered`.
+
+  This also fixes BigDecimal arbitrary generation by adapting decimal bounds to the generated scale, avoiding
+  invalid fast-check bigint ranges for narrow decimal intervals.
+
+- [#2368](https://github.com/Effect-TS/effect-smol/pull/2368) [`2fddda5`](https://github.com/Effect-TS/effect-smol/commit/2fddda5311929f46b61e503f0ade4fc749e8c77d) Thanks @IMax153! - Encode HTTP API client path parameters when building request URLs.
+
+- [#2348](https://github.com/Effect-TS/effect-smol/pull/2348) [`5f21768`](https://github.com/Effect-TS/effect-smol/commit/5f2176833399757c4500d8875b7f2fba0393de75) Thanks @gcanti! - Update Schema arbitrary derivation to use the new filter metadata, candidate generation, optional derivation reports, recursion-aware generation, and the renamed `OrderedConstraint<T>` model.
+
+  Migration from the previous v4 API:
+  - Replace filter annotations from `toArbitraryConstraint: constraint` to `arbitrary: { constraint }`. When a filter cannot be described as a constraint, use `arbitrary: { candidate }` to add a weighted source that is still checked by the filter.
+  - Replace bucketed constraints with the flat `Schema.Annotations.ToArbitrary.Constraint` shape:
+    - `string.minLength`, `array.minLength`, object property counts, collection sizes -> `minLength`
+    - `string.maxLength`, `array.maxLength`, object property counts, collection sizes -> `maxLength`
+    - `string.patterns` -> `patterns`
+    - `number.isInteger` -> `integer`
+    - `number.noNaN` -> `noNaN`
+    - `number.noDefaultInfinity` -> `noInfinity`
+    - `date.noInvalidDate` -> `valid`
+    - `array.comparator` for uniqueness -> `unique` using Effect equality
+    - `ordered.min` / `minExcluded` / `max` / `maxExcluded` -> `ordered.minimum` / `exclusiveMinimum` / `maximum` / `exclusiveMaximum`
+  - In arbitrary hooks, read `context.constraint` instead of `context.constraints`. Replace `context.isSuspend` with `context.recursion`; when combining finite and recursive branches, pass `context.recursion` to `fc.oneof` with the finite branch first.
+  - Generic declaration hooks now receive type parameters as `{ arbitrary, terminal }`. Atomic declarations may still return a bare `FastCheck.Arbitrary<T>`, but generic declarations should return `{ arbitrary, terminal }` when they can preserve a finite terminal branch.
+  - `Schema.toArbitrary(schema, { report: true })` now returns `{ value, report }`; without `{ report: true }`, it keeps returning the arbitrary directly. `Schema.toArbitraryLazy` always returns a lazy arbitrary.
+
+- [#2343](https://github.com/Effect-TS/effect-smol/pull/2343) [`f27003e`](https://github.com/Effect-TS/effect-smol/commit/f27003e00524ff83f20dd9909f62b2f8795efe03) Thanks @MohanedMashaly! - Add meta-var that shows log level and bash options in command line.
+
+## 4.0.0-beta.78
+
+### Patch Changes
+
+- [#2333](https://github.com/Effect-TS/effect-smol/pull/2333) [`7836b8e`](https://github.com/Effect-TS/effect-smol/commit/7836b8eb8bb0f3e04cdf554ee070caccf74f00c1) Thanks @tim-smart! - Fix Schema.Defect JSON encoding for Error values whose message property is not a string.
+
+- [#2329](https://github.com/Effect-TS/effect-smol/pull/2329) [`35d49a3`](https://github.com/Effect-TS/effect-smol/commit/35d49a3a09bdba6b513de87ddcead9e61a1042ba) Thanks @alvarosevilla95! - Retry Redis scripts after `NOSCRIPT` and declare the token bucket refill key
+
+- [#2334](https://github.com/Effect-TS/effect-smol/pull/2334) [`4093258`](https://github.com/Effect-TS/effect-smol/commit/40932580e65bafab5f23c5f14b520cb411d0b2cd) Thanks @tim-smart! - clean up otlp config
+
+## 4.0.0-beta.77
+
+### Patch Changes
+
+- [#2326](https://github.com/Effect-TS/effect-smol/pull/2326) [`6e9a5ca`](https://github.com/Effect-TS/effect-smol/commit/6e9a5ca62a61156fd67b2518ad3ab14ac0d25f23) Thanks @fubhy! - Prefer OTEL resource environment variables over explicit `OtlpResource.fromConfig` options.
+
+- [#2325](https://github.com/Effect-TS/effect-smol/pull/2325) [`302f398`](https://github.com/Effect-TS/effect-smol/commit/302f3984ce206e35d86ddd99d3b72be144850a51) Thanks @fubhy! - Add OTEL environment variable configuration for unstable OTLP observability.
+
+## 4.0.0-beta.76
+
+### Patch Changes
+
+- [#2320](https://github.com/Effect-TS/effect-smol/pull/2320) [`016108a`](https://github.com/Effect-TS/effect-smol/commit/016108a472af7048ddbbfd05f233e67529fafe12) Thanks @gcanti! - Add `Schema.isGUID` and update `Schema.isUUID` to accept the RFC 9562 max UUID.
+
+- [#2319](https://github.com/Effect-TS/effect-smol/pull/2319) [`95c03d2`](https://github.com/Effect-TS/effect-smol/commit/95c03d2c55930668c215b5a41c23cf7742fead84) Thanks @fubhy! - Add support for configuring Scalar API reference pages with a custom fetch implementation.
+
+- [#2318](https://github.com/Effect-TS/effect-smol/pull/2318) [`07299a3`](https://github.com/Effect-TS/effect-smol/commit/07299a33c09fd52faa9810d30835a2622c752386) Thanks @gcanti! - Replace the `Schema.Error` and `Schema.Defect` schema constants with constructor
+  functions, `Schema.Error()` and `Schema.Defect()`.
+
+  Unify `Schema.ErrorWithStack` into `Schema.Error({ includeStack: true })` and
+  `Schema.DefectWithStack` into `Schema.Defect({ includeStack: true })`.
+
+  Error causes are encoded by default using the same JSON defect encoding
+  semantics used by `Schema.Defect`; pass `{ excludeCause: true }` to omit nested
+  cause data.
+
+  Equivalent `Schema.Error` and `Schema.Defect` options are canonicalized, so
+  repeated constructor calls with the same option values reuse the same schema.
+
+  `Schema.Defect()` now models defects as `unknown` values with a JSON encoded
+  form. Error-shaped JSON objects with a string `message` decode to JavaScript
+  `Error` values, so non-`Error` objects such as `{ message: "boom" }` do not
+  round-trip unchanged. Other non-`Error` values are normalized through JSON
+  serialization, with non-JSON values falling back to Effect's formatted string
+  representation.
+
+## 4.0.0-beta.75
+
+### Patch Changes
+
+- [#2294](https://github.com/Effect-TS/effect-smol/pull/2294) [`81b187c`](https://github.com/Effect-TS/effect-smol/commit/81b187c17a0d8817b58232826939154010ae49d7) Thanks @mattiamanzati! - Align workflow tags with RPCs by changing `Workflow.make` to accept the tag as its first argument, exposing workflow tags as `_tag`, and supporting `class MyWorkflow extends Workflow.make(...) {}`.
+
+- [#2312](https://github.com/Effect-TS/effect-smol/pull/2312) [`ad4b535`](https://github.com/Effect-TS/effect-smol/commit/ad4b535e17f94ce35261829d5a3675f0a7808b4e) Thanks @gcanti! - Validate `Schema.StructWithRest` fixed fields against rest index signatures at the type level so schemas cannot be constructed with incompatible decoded, encoded, or make shapes. This keeps `StructWithRest` types sound and updates the generated OpenAI conversation-items request schema to keep accepting arbitrary additional fields under the stricter validation.
+
+- [#2314](https://github.com/Effect-TS/effect-smol/pull/2314) [`a29c2e7`](https://github.com/Effect-TS/effect-smol/commit/a29c2e7e3570920156702671d6f3367cd0195f6c) Thanks @gcanti! - Preserve `Schema.Redacted` options when roundtripping through schema representations.
+  This keeps `label` validation and `disallowJsonEncode` behavior intact when
+  schemas are revived from a representation or emitted through code generation.
+
+- [#2298](https://github.com/Effect-TS/effect-smol/pull/2298) [`1fdd9ae`](https://github.com/Effect-TS/effect-smol/commit/1fdd9aeed92b6bb70987c862e7f6f66ead0339b3) Thanks @gcanti! - Remove the `Types.MergeRecord` alias. Use `Types.MergeLeft` instead.
+
+- [#2298](https://github.com/Effect-TS/effect-smol/pull/2298) [`1fdd9ae`](https://github.com/Effect-TS/effect-smol/commit/1fdd9aeed92b6bb70987c862e7f6f66ead0339b3) Thanks @gcanti! - Align Schema adapter failures: `Schema` result, promise, and sync adapters now surface `SchemaError`, while `SchemaParser` result, promise, and sync adapters expose `SchemaIssue.Issue`. Mark `SchemaParser` option adapters as internal because their error details are discarded.
+
+- [#2313](https://github.com/Effect-TS/effect-smol/pull/2313) [`ffea4ec`](https://github.com/Effect-TS/effect-smol/commit/ffea4ecf2925f6a4c9fd13079d47584cbf2bed00) Thanks @MohanedMashaly! - Add -v alias for version flag
+
+- [#2306](https://github.com/Effect-TS/effect-smol/pull/2306) [`4255c9b`](https://github.com/Effect-TS/effect-smol/commit/4255c9ba78bb98c7838fbe9dccdd8465e9da5427) Thanks @sam-goodwin! - Fix `HttpApiSecurity` bearer/http credential decoding
+
+## 4.0.0-beta.74
+
+### Patch Changes
+
+- [#2295](https://github.com/Effect-TS/effect-smol/pull/2295) [`b1fc6a4`](https://github.com/Effect-TS/effect-smol/commit/b1fc6a4b4d0ca7fa9fd162799ae17c86f2f7ee8e) Thanks @jgoux! - Fix CLI parsing so command-local flags can override globals without breaking global flags before subcommands.
+
+## 4.0.0-beta.73
+
+### Patch Changes
+
+- [#2291](https://github.com/Effect-TS/effect-smol/pull/2291) [`361ca30`](https://github.com/Effect-TS/effect-smol/commit/361ca30eb6e134feece547d6e00f82be4cb23f75) Thanks @tim-smart! - Add HttpApiSecurity.http for passing custom schemes
+
+- [#2289](https://github.com/Effect-TS/effect-smol/pull/2289) [`b9598c6`](https://github.com/Effect-TS/effect-smol/commit/b9598c6a209e75bfdb87ee3b024ecd1e3923ff6e) Thanks @tim-smart! - make EntityResource lazy by default
+
+## 4.0.0-beta.72
+
+### Patch Changes
+
+- [#2287](https://github.com/Effect-TS/effect-smol/pull/2287) [`73e67d1`](https://github.com/Effect-TS/effect-smol/commit/73e67d119a84d697773eaecb4865c6a71eb1a9cb) Thanks @tim-smart! - Ensure ClusterWorkflowEngine routes durable clock wakeups and registered workflow deferred completions through the owning workflow's shard group.
+
+- [#2286](https://github.com/Effect-TS/effect-smol/pull/2286) [`01d71ec`](https://github.com/Effect-TS/effect-smol/commit/01d71ec5a75f3c2747a8d3b1ad9701d1e27b7ce5) Thanks @tim-smart! - Add default value support to `Prompt.file`.
+
+- [#2285](https://github.com/Effect-TS/effect-smol/pull/2285) [`fcd707e`](https://github.com/Effect-TS/effect-smol/commit/fcd707e091a16e1b35343c901cc4052274e32239) Thanks @tim-smart! - Add default value support to CLI integer prompts.
+
+## 4.0.0-beta.71
+
+### Patch Changes
+
+- [#2252](https://github.com/Effect-TS/effect-smol/pull/2252) [`d8ac76b`](https://github.com/Effect-TS/effect-smol/commit/d8ac76b5bad458c42cebe8a0c1b3843f955ac293) Thanks @tim-smart! - Added `Schedule.tap`, which allows observing full schedule metadata without altering schedule inputs or outputs.
+
+- [#2261](https://github.com/Effect-TS/effect-smol/pull/2261) [`2c3c00a`](https://github.com/Effect-TS/effect-smol/commit/2c3c00af6faba7b7d422af26a7a2bbc35636d230) Thanks @gcanti! - Add JSON Schema custom annotation passthrough option, closes [#2260](https://github.com/Effect-TS/effect-smol/issues/2260)
+
+- [#2269](https://github.com/Effect-TS/effect-smol/pull/2269) [`3751e7c`](https://github.com/Effect-TS/effect-smol/commit/3751e7cf353e7a54cd692c37401207d9afba1e63) Thanks @gcanti! - Schema: reintroduce `.value` on `Schema.Array` and `Schema.NonEmptyArray` for consistency with other collection wrappers (`Chunk`, `HashSet`, etc.), closes [#2268](https://github.com/Effect-TS/effect-smol/issues/2268).
+
+- [#2272](https://github.com/Effect-TS/effect-smol/pull/2272) [`fc5f25b`](https://github.com/Effect-TS/effect-smol/commit/fc5f25b03ada5fc2431987768a74d3d3e75ca485) Thanks @gcanti! - Clarify that `Data.$is(tag)` only checks the `_tag` field, not the full structure, closes [#2271](https://github.com/Effect-TS/effect-smol/issues/2271).
+
+- [#2257](https://github.com/Effect-TS/effect-smol/pull/2257) [`7ccced4`](https://github.com/Effect-TS/effect-smol/commit/7ccced42867c14c013b01160b3d292f14c05bd04) Thanks @bwbuchanan! - Fixed the `catch*` combinators silently dropping unhandled error types
+
+- [#2263](https://github.com/Effect-TS/effect-smol/pull/2263) [`a2e1fe5`](https://github.com/Effect-TS/effect-smol/commit/a2e1fe5835c98c8ee4393a091b1d11b75126e349) Thanks @patroza! - Use `WeakMap` for `pendingBatches` instead of `Map`, to allow GC to collect resolvers
+
+- [#2266](https://github.com/Effect-TS/effect-smol/pull/2266) [`4a4a36b`](https://github.com/Effect-TS/effect-smol/commit/4a4a36b10e6e616cad07584a43908f6a7e07e618) Thanks @gcanti! - Fix schema arbitrary constraints for exclusive BigInt, Date, and integer number bounds.
+
+- [#2249](https://github.com/Effect-TS/effect-smol/pull/2249) [`d350292`](https://github.com/Effect-TS/effect-smol/commit/d3502922b4740fa9d745797cbc3775cb67839b6d) Thanks @tim-smart! - allow encoding Redacted by default, and add option to disallow encoding
+
+- [#2276](https://github.com/Effect-TS/effect-smol/pull/2276) [`730afb6`](https://github.com/Effect-TS/effect-smol/commit/730afb66696adf9bd5a328cbca29df9c05968771) Thanks @tim-smart! - Fix AtomRef notifications when a listener re-subscribes itself during notification.
+
+- [#2250](https://github.com/Effect-TS/effect-smol/pull/2250) [`df1b008`](https://github.com/Effect-TS/effect-smol/commit/df1b008f370f414c2a67a7b8139ef747af8e5fba) Thanks @tim-smart! - Fix `Argument.variadic(argument)` so it supports direct calls without options.
+
+- [#2277](https://github.com/Effect-TS/effect-smol/pull/2277) [`6d469d5`](https://github.com/Effect-TS/effect-smol/commit/6d469d567a7c41d7e5343bdee21d45b07b0e8190) Thanks @tim-smart! - Fix string messages and annotations being double-quoted by simple and logfmt loggers.
+
 ## 4.0.0-beta.70
 
 ### Patch Changes

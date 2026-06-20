@@ -1,8 +1,10 @@
 /**
- * OpenAI Language Model implementation.
- *
- * Provides a LanguageModel implementation for OpenAI's chat completions API,
- * supporting text generation, structured output, tool calling, and streaming.
+ * The `OpenAiLanguageModel` module adapts OpenAI-compatible chat completions
+ * providers to Effect AI's `LanguageModel` service. It builds a model service
+ * from a model id, translates prompts, files, tools, structured output schemas,
+ * and provider-specific options into `OpenAiClient` requests, and maps normal
+ * or streaming chat completion results back into Effect AI response content and
+ * metadata.
  *
  * @since 4.0.0
  */
@@ -59,7 +61,15 @@ type ImageDetail = "auto" | "low" | "high"
 // =============================================================================
 
 /**
- * Service definition for OpenAI language model configuration.
+ * Context service for OpenAI language model configuration.
+ *
+ * **When to use**
+ *
+ * Use as the context service for OpenAI-compatible language model request
+ * configuration, especially when a scoped operation should override the defaults
+ * supplied to `model`, `make`, or `layer`.
+ *
+ * @see {@link withConfigOverride} for scoping language model request overrides
  *
  * @category context
  * @since 4.0.0
@@ -506,7 +516,15 @@ declare module "effect/unstable/ai/Response" {
 // =============================================================================
 
 /**
- * Creates an AI model descriptor for an OpenAI-compatible language model.
+ * Creates an OpenAI-compatible model descriptor that can be provided with `Effect.provide`.
+ *
+ * **When to use**
+ *
+ * Use when you want an OpenAI-compatible language model value that carries
+ * provider and model metadata and can be supplied directly to an Effect program.
+ *
+ * @see {@link layer} for creating a `LanguageModel.LanguageModel` layer directly
+ * @see {@link make} for constructing the language model service effectfully
  *
  * @category constructors
  * @since 4.0.0
@@ -529,7 +547,22 @@ export const model = (
 //   AiModel.make("openai", model, layerWithTokenizer({ model, config }))
 
 /**
- * Creates an OpenAI language model service.
+ * Creates an OpenAI-compatible `LanguageModel` service from a model identifier and optional request defaults.
+ *
+ * **When to use**
+ *
+ * Use to construct an OpenAI-compatible chat-completions language model service
+ * backed by `OpenAiClient`.
+ *
+ * **Details**
+ *
+ * The returned effect requires `OpenAiClient`. Request defaults from the
+ * `config` option are merged with any `Config` service in the context, with
+ * context values taking precedence. The service supports both `generateText` and
+ * `streamText`.
+ *
+ * @see {@link layer} for providing the service as a `Layer`
+ * @see {@link model} for creating a model descriptor for `AiModel.provide`
  *
  * @category constructors
  * @since 4.0.0
@@ -628,7 +661,16 @@ export const make = Effect.fnUntraced(function*({ model, config: providerConfig 
 })
 
 /**
- * Creates a layer for the OpenAI language model.
+ * Creates a layer for the OpenAI-compatible language model.
+ *
+ * **When to use**
+ *
+ * Use when composing application layers and you want OpenAI-compatible APIs to
+ * satisfy `LanguageModel.LanguageModel` while supplying `OpenAiClient` from
+ * another layer.
+ *
+ * @see {@link make} for constructing the language model service effectfully
+ * @see {@link model} for creating an AI model descriptor
  *
  * @category layers
  * @since 4.0.0
@@ -640,7 +682,19 @@ export const layer = (options: {
   Layer.effect(LanguageModel.LanguageModel, make(options))
 
 /**
- * Provides config overrides for OpenAI language model operations.
+ * Provides scoped config overrides for OpenAI-compatible language model operations.
+ *
+ * **When to use**
+ *
+ * Use to override request configuration for a single language model effect
+ * without changing the defaults supplied to `model`, `make`, or `layer`.
+ *
+ * **Details**
+ *
+ * Existing `Config` values from the Effect context are merged with `overrides`,
+ * and the override values take precedence.
+ *
+ * @see {@link Config} for the configuration shape
  *
  * @category configuration
  * @since 4.0.0
@@ -1010,6 +1064,11 @@ const makeResponse = Effect.fnUntraced(
     const message = choice?.message
 
     if (message !== undefined) {
+      const reasoning = message.reasoning ?? message.reasoning_content
+      if (Predicate.isNotNullish(reasoning) && reasoning.length > 0) {
+        parts.push({ type: "reasoning", text: reasoning })
+      }
+
       if (
         message.content !== undefined && Predicate.isNotNull(message.content) && message.content.length > 0
       ) {
@@ -1083,6 +1142,8 @@ const makeStreamResponse = Effect.fnUntraced(
     let metadataEmitted = false
     let textStarted = false
     let textId = ""
+    let reasoningStarted = false
+    let reasoningId = ""
     let hasToolCalls = false
     const activeToolCalls: Record<number, ActiveToolCall> = {}
 
@@ -1091,6 +1152,14 @@ const makeStreamResponse = Effect.fnUntraced(
         const parts: Array<Response.StreamPartEncoded> = []
 
         if (event === "[DONE]") {
+          if (reasoningStarted) {
+            parts.push({
+              type: "reasoning-end",
+              id: reasoningId,
+              metadata: { openai: { ...makeItemIdMetadata(reasoningId) } }
+            })
+          }
+
           if (textStarted) {
             parts.push({
               type: "text-end",
@@ -1148,6 +1217,7 @@ const makeStreamResponse = Effect.fnUntraced(
         if (!metadataEmitted) {
           metadataEmitted = true
           textId = `${event.id}_message`
+          reasoningId = `${event.id}_reasoning`
           parts.push({
             type: "response-metadata",
             id: event.id,
@@ -1162,7 +1232,29 @@ const makeStreamResponse = Effect.fnUntraced(
           return parts
         }
 
+        const reasoningDelta = choice.delta?.reasoning ?? choice.delta?.reasoning_content
+        if (Predicate.isNotNullish(reasoningDelta) && reasoningDelta.length > 0) {
+          if (!reasoningStarted) {
+            reasoningStarted = true
+            parts.push({
+              type: "reasoning-start",
+              id: reasoningId,
+              metadata: { openai: { ...makeItemIdMetadata(reasoningId) } }
+            })
+          }
+          parts.push({ type: "reasoning-delta", id: reasoningId, delta: reasoningDelta })
+        }
+
         if (choice.delta?.content !== undefined && Predicate.isNotNull(choice.delta.content)) {
+          if (reasoningStarted) {
+            reasoningStarted = false
+            parts.push({
+              type: "reasoning-end",
+              id: reasoningId,
+              metadata: { openai: { ...makeItemIdMetadata(reasoningId) } }
+            })
+          }
+
           if (!textStarted) {
             textStarted = true
             parts.push({
@@ -1181,7 +1273,7 @@ const makeStreamResponse = Effect.fnUntraced(
             const activeToolCall = activeToolCalls[toolIndex]
             const toolId = activeToolCall?.id ?? deltaTool.id ?? `${event.id}_tool_${toolIndex}`
             const providerToolName = deltaTool.function?.name
-            const toolName = providerToolName !== undefined
+            const toolName = Predicate.isNotNullish(providerToolName)
               ? toolNameMapper.getCustomName(providerToolName)
               : activeToolCall?.name ?? toolNameMapper.getCustomName("unknown_tool")
             const argumentsDelta = deltaTool.function?.arguments ?? ""

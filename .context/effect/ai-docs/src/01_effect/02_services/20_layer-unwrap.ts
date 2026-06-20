@@ -6,7 +6,7 @@
 import { Config, Context, Effect, Layer, Schema } from "effect"
 
 export class MessageStoreError extends Schema.TaggedErrorClass<MessageStoreError>()("MessageStoreError", {
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 export class MessageStore extends Context.Service<MessageStore, {

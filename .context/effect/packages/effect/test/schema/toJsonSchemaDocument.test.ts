@@ -161,6 +161,188 @@ describe("toJsonSchemaDocument", () => {
         })
       })
     })
+
+    describe("includeAnnotationKey", () => {
+      it("passthroughs matching annotation keys at schema level", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({
+            title: "Name",
+            description: "A name",
+            "markdownDescription": "The **name** field"
+          }),
+          {
+            schema: {
+              "type": "string",
+              "title": "Name",
+              "description": "A name",
+              "markdownDescription": "The **name** field"
+            }
+          },
+          { includeAnnotationKey: (key) => key === "markdownDescription" }
+        )
+      })
+
+      it("does not include keys not matching the predicate", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({
+            title: "Name",
+            description: "A name",
+            "markdownDescription": "The **name** field",
+            "customKey": "value"
+          }),
+          {
+            schema: {
+              "type": "string",
+              "title": "Name",
+              "description": "A name",
+              "markdownDescription": "The **name** field"
+            }
+          },
+          { includeAnnotationKey: (key) => key === "markdownDescription" }
+        )
+      })
+
+      it("does not include matching keys with undefined values", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({
+            "x-missing": undefined,
+            "x-value": "value"
+          }),
+          {
+            schema: {
+              "type": "string",
+              "x-value": "value"
+            }
+          },
+          { includeAnnotationKey: (key) => key.startsWith("x-") }
+        )
+      })
+
+      it("standard keys are always included regardless of predicate", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({
+            title: "Name",
+            description: "A name",
+            default: "hello"
+          }),
+          {
+            schema: {
+              "type": "string",
+              "title": "Name",
+              "description": "A name",
+              "default": "hello"
+            }
+          },
+          { includeAnnotationKey: (_key) => false }
+        )
+      })
+
+      it("does not overwrite generated contentSchema with the raw annotation", () => {
+        assertJsonSchemaDocument(
+          Schema.fromJsonString(Schema.Struct({
+            a: Schema.String
+          })),
+          {
+            schema: {
+              "type": "string",
+              "contentMediaType": "application/json",
+              "contentSchema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "string"
+                  }
+                },
+                "required": ["a"],
+                "additionalProperties": false
+              }
+            }
+          },
+          { includeAnnotationKey: (key) => key === "contentSchema" }
+        )
+      })
+
+      it("passthroughs at property level in structs", () => {
+        const schema = Schema.Struct({
+          name: Schema.String.annotate({
+            description: "A name",
+            "markdownDescription": "The **name** field"
+          }),
+          tag: Schema.String.annotate({
+            description: "A tag",
+            "defaultSnippets": [{ label: "v1", body: "v1" }]
+          })
+        })
+        assertJsonSchemaDocument(
+          schema,
+          {
+            schema: {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "A name",
+                  "markdownDescription": "The **name** field"
+                },
+                "tag": {
+                  "type": "string",
+                  "description": "A tag",
+                  "defaultSnippets": [{ label: "v1", body: "v1" }]
+                }
+              },
+              "required": ["name", "tag"],
+              "additionalProperties": false
+            }
+          },
+          { includeAnnotationKey: (key) => key === "markdownDescription" || key === "defaultSnippets" }
+        )
+      })
+
+      it("passthroughs at check level", () => {
+        const schema = Schema.String
+          .annotate({ description: "A string" })
+          .pipe(
+            Schema.check(
+              Schema.isMinLength(1, {
+                "x-check-annotation": true
+              })
+            )
+          )
+        assertJsonSchemaDocument(
+          schema,
+          {
+            schema: {
+              "type": "string",
+              "description": "A string",
+              "allOf": [{
+                "minLength": 1,
+                "x-check-annotation": true
+              }]
+            }
+          },
+          { includeAnnotationKey: (key) => key.startsWith("x-") }
+        )
+      })
+
+      it("passthroughs x- prefixed vendor extensions", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({
+            description: "A value",
+            "x-custom": true,
+            "x-extension": { foo: "bar" }
+          }),
+          {
+            schema: {
+              "type": "string",
+              "description": "A value",
+              "x-custom": true,
+              "x-extension": { foo: "bar" }
+            }
+          },
+          { includeAnnotationKey: (key) => key.startsWith("x-") }
+        )
+      })
+    })
   })
 
   it("should support JSON Schema annotations", () => {
@@ -332,14 +514,15 @@ describe("toJsonSchemaDocument", () => {
     })
 
     it("Error", () => {
-      const schema = Schema.Error
+      const schema = Schema.Error()
       assertJsonSchemaDocument(schema, {
         schema: {
           "type": "object",
           "properties": {
             "name": { "type": "string" },
             "message": { "type": "string" },
-            "stack": { "type": "string" }
+            "stack": { "type": "string" },
+            "cause": {}
           },
           "required": ["message"],
           "additionalProperties": false
@@ -1124,7 +1307,24 @@ describe("toJsonSchemaDocument", () => {
                 {
                   "format": "uuid",
                   "pattern":
-                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|[fF]{8}-[fF]{4}-[fF]{4}-[fF]{4}-[fF]{12})$"
+                }
+              ]
+            }
+          }
+        )
+      })
+
+      it("isGUID", () => {
+        assertJsonSchemaDocument(
+          Schema.String.annotate({ description: "description" }).check(Schema.isGUID()),
+          {
+            schema: {
+              "type": "string",
+              "description": "description",
+              "allOf": [
+                {
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
                 }
               ]
             }
@@ -1439,13 +1639,17 @@ describe("toJsonSchemaDocument", () => {
     assertJsonSchemaDocument(
       schema,
       {
-        schema: {}
+        schema: { anyOf: [{ type: "object" }, { type: "array" }] }
       }
     )
     assertJsonSchemaDocument(
       schema.annotate({ description: "a" }),
       {
         schema: {
+          "anyOf": [
+            { "type": "object" },
+            { "type": "array" }
+          ],
           "description": "a"
         }
       }

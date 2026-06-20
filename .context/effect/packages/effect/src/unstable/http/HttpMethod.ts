@@ -1,19 +1,10 @@
 /**
- * Defines the supported HTTP method literals shared by the unstable HTTP client,
- * server, and routing APIs.
+ * Defines supported HTTP method names for the unstable HTTP modules.
  *
- * Use this module when constructing method-specific requests, matching incoming
- * requests, validating unknown method values, or deriving method helper names.
- * Methods are represented as uppercase string literals, so values such as `"get"`
- * are not accepted as `HttpMethod` values.
- *
- * The body classification is intentionally conservative and file-specific:
- * `GET`, `HEAD`, `OPTIONS`, and `TRACE` are modeled as bodyless methods, while
- * `POST`, `PUT`, `DELETE`, and `PATCH` are modeled as methods that can carry a
- * request body. This means `DELETE` is allowed to carry a body even though some
- * servers and intermediaries may ignore it, and `GET` request bodies are not
- * represented by these helpers even though the wire protocol does not strictly
- * forbid them.
+ * Values are uppercase string literals such as `"GET"` and `"POST"`, matching
+ * the method tokens used by HTTP requests and routes. This module also includes
+ * helpers for checking whether a method can carry a request body and whether an
+ * unknown value is one of the supported methods.
  *
  * @since 4.0.0
  */
@@ -67,9 +58,14 @@ export const hasBody = (method: HttpMethod): method is HttpMethod.WithBody =>
   method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && method !== "TRACE"
 
 /**
- * Set containing every supported `HttpMethod` literal.
+ * Provides a readonly set containing every supported `HttpMethod` literal.
  *
- * @category models
+ * **When to use**
+ *
+ * Use when you need to iterate over or test membership against every supported
+ * HTTP method literal.
+ *
+ * @category constants
  * @since 4.0.0
  */
 export const all: ReadonlySet<HttpMethod> = new Set([
@@ -84,9 +80,15 @@ export const all: ReadonlySet<HttpMethod> = new Set([
 ])
 
 /**
- * Tuples mapping each supported HTTP method to its short request-constructor name.
+ * Provides tuples mapping each supported HTTP method to its short
+ * request-constructor name.
  *
- * @category models
+ * **When to use**
+ *
+ * Use when you need the mapping from supported HTTP method literals to their
+ * short request-constructor names.
+ *
+ * @category constants
  * @since 4.0.0
  */
 export const allShort = [
@@ -101,7 +103,7 @@ export const allShort = [
 ] as const
 
 /**
- * Tests if a value is a `HttpMethod`.
+ * Checks whether a value is a `HttpMethod`.
  *
  * **Example** (Checking HTTP method values)
  *

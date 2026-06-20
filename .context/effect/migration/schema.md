@@ -186,6 +186,8 @@ const schema = Schema.TemplateLiteral([Schema.String, ".", Schema.String])
 const parser = Schema.TemplateLiteralParser(schema.parts)
 ```
 
+Behavior note: `TemplateLiteral` and `TemplateLiteralParser` match parts semantically. Checks on string, number, and bigint schema parts are applied while matching each segment, so refined parts can reject strings that would match the broader primitive shape.
+
 ### format
 
 **Migration: manual**
@@ -293,6 +295,8 @@ import { Schema } from "effect"
 
 const schema = Schema.Record(Schema.String, Schema.Number)
 ```
+
+Behavior note: dynamic record key schemas select matching own properties before the value schema is applied. Refined key schemas such as `Schema.String.check(...)`, `Schema.Int`, or checked template literals ignore properties that do not match the key schema; they do not validate the value at those ignored keys. For transformed key schemas, selection is based on encoded property names before selected keys are decoded.
 
 ### pick / omit
 

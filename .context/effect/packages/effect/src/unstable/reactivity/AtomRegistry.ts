@@ -1,22 +1,11 @@
 /**
- * The `AtomRegistry` module provides the runtime cache used by reactivity
- * atoms. A registry owns the node graph for a group of atoms, stores their
- * current values, records parent/child dependencies while atoms are read, and
- * coordinates writes, refreshes, stream conversions, and node disposal.
+ * Stores and runs atoms for one reactive runtime.
  *
- * Create a registry directly with {@link make} or provide it with {@link layer}
- * or {@link layerOptions} when a UI root, request, test, or other Effect scope
- * needs its own atom state. The same atom can have different cached values in
- * different registries, while serializable atoms are keyed by their
- * serialization key so preloaded values can hydrate a node before its first
- * read.
- *
- * Subscriptions and {@link mount} keep nodes alive and must be released when
- * the consumer is done; scoped helpers install finalizers for this. Unobserved
- * non-`keepAlive` atoms may be removed immediately or after their `idleTTL` (or
- * the registry `defaultIdleTTL`), which means later reads can rebuild derived
- * state. Disposing a registry clears its cache and makes future atom access an
- * error.
+ * An `AtomRegistry` evaluates atoms, caches their current values, tracks
+ * dependencies, applies writes and refreshes, manages subscriptions, and
+ * disposes unused nodes. Each registry is independent, so the same atom can hold
+ * different values in different registries. Serializable atom values can also be
+ * preloaded before the first read.
  *
  * @since 4.0.0
  */
@@ -141,9 +130,14 @@ export const make = (
   )
 
 /**
- * The `Context` service tag for the current `AtomRegistry`.
+ * Service tag for the active atom runtime cache.
  *
- * @category Tags
+ * **When to use**
+ *
+ * Use to access or provide the registry that stores atom values,
+ * dependencies, subscriptions, and disposal state for a reactive lifetime.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const AtomRegistry = Context.Service<AtomRegistry>(TypeId)

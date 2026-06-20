@@ -1,21 +1,12 @@
 /**
- * Structured SQL errors used by the unstable SQL APIs.
+ * Defines structured failures for SQL clients and driver integrations.
  *
- * This module defines the top-level `SqlError` wrapper, the concrete
- * `SqlErrorReason` variants used by drivers and adapters, and helpers for
- * recognizing and classifying database failures. It is useful when turning
- * native driver errors into typed Effect failures, choosing retry policies from
- * `isRetryable`, or distinguishing user-facing query problems such as syntax
- * and constraint failures from infrastructure problems such as connection,
- * lock, statement timeout, deadlock, and serialization failures.
- *
- * Query, connection, and migration code should preserve the original cause and
- * operation metadata when constructing these errors. Retrying can be appropriate
- * for transient connection and concurrency failures, but syntax, authorization,
- * authentication, and constraint failures generally require changing the query,
- * credentials, permissions, or migration data. When classifying SQLite errors,
- * the helpers inspect `code` and `errno` values and extract unique constraint
- * names when available.
+ * `SqlError` wraps the different reasons a SQL operation can fail, such as
+ * connection, authentication, authorization, syntax, constraint, or transaction
+ * problems. Each reason keeps the original cause, optional message and
+ * operation metadata, and whether retrying may succeed. This module also
+ * includes schemas, guards, a SQLite error classifier, and the
+ * `ResultLengthMismatch` error used by ordered batched SQL resolvers.
  *
  * @since 4.0.0
  */
@@ -26,7 +17,7 @@ const TypeId = "~effect/sql/SqlError" as const
 const ReasonTypeId = "~effect/sql/SqlError/Reason" as const
 
 const ReasonFields = {
-  cause: Schema.Defect,
+  cause: Schema.Defect(),
   message: Schema.optional(Schema.String),
   operation: Schema.optional(Schema.String)
 }
@@ -355,7 +346,7 @@ export type SqlErrorReason =
   | UnknownError
 
 /**
- * Schema union for encoding and decoding `SqlErrorReason` values.
+ * Schema for encoding and decoding SQL error reasons.
  *
  * @category schemas
  * @since 4.0.0
@@ -387,7 +378,7 @@ export const SqlErrorReason: Schema.Union<[
 ])
 
 /**
- * Top-level SQL error wrapper whose `message`, `cause`, and `isRetryable`
+ * Error wrapper for SQL failures whose `message`, `cause`, and `isRetryable`
  * values are derived from its `SqlErrorReason`.
  *
  * @category errors

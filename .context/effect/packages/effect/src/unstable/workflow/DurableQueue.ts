@@ -1,19 +1,12 @@
 /**
- * Durable queues bridge workflow executions with persisted background workers.
- * A workflow calls `process` to enqueue a schema-encoded payload in a named
- * `PersistedQueue`, attach a durable deferred token, and suspend until a worker
- * records the handler's `Exit` back through that deferred.
+ * Durable workflow queues delegate work to persisted background workers and
+ * resume the waiting workflow with the worker result.
  *
- * Use this module for workflow steps that should be delegated to independent
- * workers: long-running side effects, rate-limited or concurrency-limited
- * integrations, fan-out jobs, API calls, and other work that must survive
- * workflow suspension, process restarts, or handoff to another service.
- *
- * Queue names, payload schemas, result schemas, and idempotency keys become
- * persisted coordination state. Keep them deterministic and stable across
- * deployments; changing them is a persistence migration. Delivery follows the
- * underlying `PersistedQueue` semantics, so handlers should be idempotent and
- * prepared for retries, duplicate observations, and worker restarts.
+ * A workflow calls `process` to encode a payload, offer it to a named
+ * `PersistedQueue`, attach a `DurableDeferred` token, and suspend. A worker
+ * created with `makeWorker` or `worker` takes the item, runs the handler, and
+ * records the handler's `Exit` through that token so the original workflow can
+ * continue with the typed success or error.
  *
  * @since 4.0.0
  */
@@ -63,8 +56,8 @@ export interface DurableQueue<
 }
 
 /**
- * A `DurableQueue` wraps a `PersistedQueue`, providing a way to wait for items
- * to finish processing using a `DurableDeferred`.
+ * Creates a `DurableQueue` that waits for persisted items to finish processing
+ * using a `DurableDeferred`.
  *
  * **Example** (Defining a durable queue with workers)
  *
@@ -86,8 +79,7 @@ export interface DurableQueue<
  *   }
  * })
  *
- * const MyWorkflow = Workflow.make({
- *   name: "MyWorkflow",
+ * const MyWorkflow = Workflow.make("MyWorkflow", {
  *   payload: {
  *     id: Schema.String
  *   },
@@ -176,7 +168,7 @@ const getQueueSchema = <Payload extends Schema.Top>(
 }
 
 /**
- * Add an item to the queue and wait for a worker to process it.
+ * Adds an item to the queue and wait for a worker to process it.
  *
  * @category Processing
  * @since 4.0.0

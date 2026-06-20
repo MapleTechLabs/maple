@@ -1,27 +1,10 @@
 /**
- * Low-level OTLP/HTTP batch exporter used by the observability modules for
- * logs, metrics, and traces.
+ * Shared batch exporter for OTLP/HTTP observability modules.
  *
- * This module owns the scoped transport loop for already-encoded telemetry
- * payloads: callers provide the OTLP endpoint, request headers, a body encoder,
- * and batching settings, then push records that should be delivered to a
- * collector. It is useful when implementing a concrete signal exporter, such
- * as the OTLP logger or tracer, or when wiring a snapshot-based exporter like
- * metrics into the same lifecycle and retry behavior.
- *
- * The exporter sends HTTP POST requests with the provided `HttpClient`, disables
- * tracer propagation for its own traffic, retries transient failures, and
- * honors numeric `retry-after` values on 429 responses. Exports run on
- * `exportInterval`, flush during scope finalization up to `shutdownTimeout`,
- * and can also be triggered early when the buffered item count reaches
- * `maxBatchSize`.
- *
- * Use `maxBatchSize: "disabled"` only for pull-style exporters whose `body`
- * callback builds a fresh payload without relying on drained buffered items,
- * because pushed data is not cleared in that mode. After an unrecovered export
- * failure the exporter drops the buffered batch and disables exporting for 60
- * seconds, so choose intervals, batch sizes, headers, and shutdown timeouts with
- * collector limits and process shutdown behavior in mind.
+ * Signal modules use this exporter to buffer already-encoded telemetry and post
+ * it to a configured OTLP endpoint. It owns the scoped transport loop, batching,
+ * retry behavior, temporary disabling after repeated failures, and final flush
+ * during shutdown.
  *
  * @since 4.0.0
  */

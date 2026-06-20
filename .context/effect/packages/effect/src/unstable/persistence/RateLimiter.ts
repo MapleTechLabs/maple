@@ -1,28 +1,12 @@
 /**
- * Persistent rate limiting for effects that need to coordinate token
- * consumption through a shared `RateLimiterStore`.
+ * Coordinates rate limits through shared persistent storage.
  *
- * The module exposes a `RateLimiter` service that can consume tokens for
- * string keys using either fixed-window counters or token-bucket state. It is
- * useful for protecting external APIs, enforcing per-user or per-tenant quotas,
- * throttling job workers, and coordinating limits across multiple fibers or
- * processes when they share the Redis-backed store. The helpers can fail fast
- * with `RateLimiterError`, return a delay to apply yourself, or wrap an effect
- * so it waits before continuing.
- *
- * Rate-limit keys and Redis prefixes are part of the persistence namespace, so
- * choose stable, collision-free values. The in-memory store is process-local
- * and is only coordinated inside one runtime, while the Redis store uses Lua
- * scripts for atomic updates under concurrent consumers. Time is measured with
- * the Effect `Clock`, windows are clamped to at least one millisecond, and
- * refill calculations use millisecond granularity.
- *
- * Fixed-window state is TTL-driven: rejected `fail` attempts do not extend the
- * current TTL, and Redis fixed-window keys expire automatically. Token-bucket
- * state keeps the remaining token count and last-refill time instead of using a
- * TTL, so high-cardinality dynamic keys may need an external cleanup or bounded
- * key strategy. With `onExceeded: "delay"`, overflow can be recorded so callers
- * should actually sleep for the returned delay, or use the provided accessors.
+ * The `RateLimiter` service consumes tokens for string keys using fixed-window
+ * counters or token-bucket state. It can protect external APIs, enforce quotas,
+ * or throttle workers across fibers and processes that share the same store.
+ * This module includes helpers that fail when a limit is exceeded, return the
+ * delay needed before continuing, or wrap an effect so it waits automatically.
+ * It also defines the store service and in-memory or Redis-backed store layers.
  *
  * @since 4.0.0
  */
@@ -72,9 +56,14 @@ export interface RateLimiter {
 }
 
 /**
- * Context service tag for the `RateLimiter` service.
+ * Service tag for persistent token-consumption services.
  *
- * @category Tags
+ * **When to use**
+ *
+ * Use to access or provide rate-limit checks backed by fixed-window counters or
+ * token-bucket state.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const RateLimiter: Context.Service<RateLimiter, RateLimiter> = Context.Service<RateLimiter>(TypeId)
@@ -235,7 +224,7 @@ export const layer: Layer.Layer<
 > = Layer.effect(RateLimiter, make)
 
 /**
- * Access a function that applies rate limiting to an effect.
+ * Accesses a function that applies rate limiting to an effect.
  *
  * **Example** (Applying rate limits to effects)
  *
@@ -260,7 +249,7 @@ export const layer: Layer.Layer<
  * })
  * ```
  *
- * @category Accessors
+ * @category accessors
  * @since 4.0.0
  */
 export const makeWithRateLimiter: Effect.Effect<
@@ -284,7 +273,7 @@ export const makeWithRateLimiter: Effect.Effect<
 )
 
 /**
- * Access a function that sleeps when the rate limit is exceeded.
+ * Accesses a function that sleeps when the rate limit is exceeded.
  *
  * **Example** (Sleeping until rate limit permits)
  *
@@ -307,7 +296,7 @@ export const makeWithRateLimiter: Effect.Effect<
  * })
  * ```
  *
- * @category Accessors
+ * @category accessors
  * @since 4.0.0
  */
 export const makeSleep: Effect.Effect<
@@ -338,7 +327,7 @@ export const makeSleep: Effect.Effect<
 /**
  * Runtime type identifier for `RateLimiterError`.
  *
- * @category errors
+ * @category type IDs
  * @since 4.0.0
  */
 export const ErrorTypeId: ErrorTypeId = "~@effect/experimental/RateLimiter/RateLimiterError"
@@ -346,7 +335,7 @@ export const ErrorTypeId: ErrorTypeId = "~@effect/experimental/RateLimiter/RateL
 /**
  * Type-level identifier used to brand `RateLimiterError` values.
  *
- * @category errors
+ * @category type IDs
  * @since 4.0.0
  */
 export type ErrorTypeId = "~@effect/experimental/RateLimiter/RateLimiterError"
@@ -391,7 +380,7 @@ export class RateLimitStoreError extends Schema.ErrorClass<RateLimitStoreError>(
 )({
   _tag: Schema.tag("RateLimitStoreError"),
   message: Schema.String,
-  cause: Schema.optional(Schema.Defect)
+  cause: Schema.optional(Schema.Defect())
 }) {}
 
 /**
@@ -481,9 +470,14 @@ export interface ConsumeResult {
 }
 
 /**
- * Low-level backing store for fixed-window counters and token-bucket state.
+ * Defines the low-level backing store for fixed-window counters and token-bucket state.
  *
- * @category RateLimiterStore
+ * **When to use**
+ *
+ * Use to provide the shared counter storage used by persistent rate-limit
+ * checks.
+ *
+ * @category store
  * @since 4.0.0
  */
 export class RateLimiterStore extends Context.Service<
@@ -620,11 +614,13 @@ export const makeStoreRedis = Effect.fnUntraced(function*(
     },
     tokenBucket(options) {
       const key = `${prefix}${options.key}`
+      const lastRefillKey = `${key}:refill`
       const refillMillis = Duration.toMillis(options.refillRate)
       return Effect.clockWith((clock) =>
         Effect.mapError(
           tokenBucket(
             key,
+            lastRefillKey,
             options.tokens,
             refillMillis,
             options.limit,
@@ -677,17 +673,18 @@ return { next, nextpttl }
 const tokenBucketScript = Redis.script(
   (
     key: string,
+    lastRefillKey: string,
     tokens: number,
     refillMillis: number,
     limit: number,
     now: number,
     overflow: 0 | 1
-  ) => [key, tokens, refillMillis, limit, now, overflow],
+  ) => [key, lastRefillKey, tokens, refillMillis, limit, now, overflow],
   {
-    numberOfKeys: 1,
+    numberOfKeys: 2,
     lua: `
 local key = KEYS[1]
-local last_refill_key = key .. ":refill"
+local last_refill_key = KEYS[2]
 local tokens = tonumber(ARGV[1])
 local refill_ms = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
@@ -696,28 +693,26 @@ local overflow = ARGV[5] == "1"
 local current = tonumber(redis.call("GET", key))
 local last_refill = tonumber(redis.call("GET", last_refill_key))
 
-if not current then
-  current = limit
-  last_refill = now
-  redis.call("SET", key, current)
-  redis.call("SET", last_refill_key, last_refill)
-end
+if not current then current = limit end
+if not last_refill then last_refill = now end
 
 local elapsed = now - last_refill
 local refill_amount = math.floor(elapsed / refill_ms)
 if refill_amount > 0 then
   current = math.min(current + refill_amount, limit)
   last_refill = last_refill + (refill_amount * refill_ms)
-  redis.call("SET", last_refill_key, last_refill)
 end
 
 local next = current - tokens
-if next < 0 and not overflow then
-  redis.call("SET", key, current)
-  return next
+local stored = current
+if next >= 0 or overflow then
+  stored = next
 end
 
-redis.call("SET", key, next)
+local ttl = math.floor((limit - stored) * refill_ms)
+if ttl < 1 then ttl = 1 end
+redis.call("SET", key, stored, "PX", ttl)
+redis.call("SET", last_refill_key, last_refill, "PX", ttl)
 return next
 `
   }

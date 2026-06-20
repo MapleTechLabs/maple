@@ -1,19 +1,11 @@
 /**
- * Interoperability between Node streams and Effect streams and channels.
+ * Adapters between Node streams and Effect streams, channels, and readables.
  *
- * This module adapts `Readable` and `Duplex` instances at the boundary with
- * Node APIs: wrapping sources such as files, HTTP responses, child process
- * output, and compression transforms as Effect `Stream`s or `Channel`s, piping
- * Effect streams through Node duplex transforms, exposing an Effect `Stream`
- * back to Node as a `Readable`, and collecting small readable payloads into
- * strings or binary buffers.
- *
- * The adapters preserve the Node stream semantics that matter for production
- * code. Writes wait for `drain` when a writable side applies backpressure,
- * readable streams are destroyed on scope finalization by default, and stream
- * failures are routed through `onError` or `Cause.UnknownError`. For long-lived
- * or externally owned streams, pass `closeOnDone` or `endOnDone` carefully, and
- * use `maxBytes` on collection helpers to avoid buffering unbounded input.
+ * This module is the stream boundary for Node APIs. It wraps `Readable` and
+ * `Duplex` values as Effect `Stream`s and `Channel`s, pipes Effect streams
+ * through Node duplex streams, exposes an Effect `Stream` back to Node as a
+ * `Readable`, and collects readable payloads into strings, array buffers, or
+ * `Uint8Array`s with optional byte limits.
  *
  * @since 4.0.0
  */

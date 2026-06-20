@@ -37,8 +37,10 @@ import {
 // time positions line up across tracks and with the playhead overlay.
 // ---------------------------------------------------------------------------
 
-/** Fixed left gutter (label column) shared by every row. Matches `left-36`. */
-const LANE_GUTTER = "w-36"
+/** Left gutter (label column) shared by every row. Narrows on phones to leave the
+ *  time axis room. Kept in sync with the `left-28 sm:left-36` offsets on the scrub
+ *  surface and playhead — all three share one coordinate space. */
+const LANE_GUTTER = "w-28 sm:w-36"
 
 function pct(ms: number, totalMs: number): number {
 	if (totalMs <= 0) return 0
@@ -176,6 +178,9 @@ function TimeRuler({ totalMs }: { totalMs: number }) {
 							"absolute top-0 -translate-x-1/2 px-1 font-mono text-[10px] tabular-nums text-muted-foreground",
 							i === 0 && "translate-x-0",
 							i === ticks.length - 1 && "-translate-x-full",
+							// On phones keep only start / middle / end so labels don't overlap
+							// in the narrow axis; show all seven at ≥640px.
+							i !== 0 && i !== 3 && i !== ticks.length - 1 && "max-sm:hidden",
 						)}
 						style={{ left: `${pct(ms, totalMs)}%` }}
 					>
@@ -232,9 +237,9 @@ function ScrubSurface({ player }: { player: ReplayPlayerContextValue }) {
 				e.currentTarget.releasePointerCapture(e.pointerId)
 				setDragging(false)
 			}}
-			// `left-36` matches the `w-36` lane gutter so the surface maps 1:1 to the
-			// time axis (same coordinate space as the playhead overlay).
-			className="absolute inset-y-0 right-0 left-36 cursor-pointer touch-none select-none"
+			// `left-28 sm:left-36` matches the `LANE_GUTTER` width so the surface maps
+			// 1:1 to the time axis (same coordinate space as the playhead overlay).
+			className="absolute inset-y-0 right-0 left-28 cursor-pointer touch-none select-none sm:left-36"
 		/>
 	)
 }
@@ -428,7 +433,7 @@ function TraceRow({
 							onClick={() => setExpanded((v) => !v)}
 							aria-expanded={expanded}
 							title={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
-							className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+							className="relative grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
 						>
 							{expanded ? (
 								<ChevronDownIcon className="size-3.5" />
@@ -638,10 +643,10 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 
 function Playhead({ player }: { player: ReplayPlayerContextValue }) {
 	const position = pct(player.displayCurrentMs, player.displayTotalMs)
-	// Overlay covers the shared time area only (right of the `w-36` gutter), so
+	// Overlay covers the shared time area only (right of the `LANE_GUTTER`), so
 	// `left: position%` maps to the same coordinate space as the track bars.
 	return (
-		<div className="pointer-events-none absolute inset-y-0 left-36 right-0">
+		<div className="pointer-events-none absolute inset-y-0 right-0 left-28 sm:left-36">
 			<div className="absolute inset-y-0 w-px bg-primary/80" style={{ left: `${position}%` }}>
 				<div className="absolute -top-0.5 left-1/2 size-2 -translate-x-1/2 rounded-full bg-primary shadow-sm" />
 			</div>

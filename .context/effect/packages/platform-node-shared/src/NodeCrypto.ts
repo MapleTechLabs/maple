@@ -1,5 +1,10 @@
 /**
- * Node.js implementation of the Crypto service.
+ * Node-compatible implementation of Effect's `Crypto` service.
+ *
+ * This module builds the service from `node:crypto`, using `randomBytes` for
+ * random data and `createHash` for supported digest algorithms. It exports
+ * `make` as the concrete service value and `layer` for providing it through
+ * Effect context.
  *
  * @since 1.0.0
  */
@@ -47,7 +52,7 @@ export const make: EffectCrypto.Crypto = EffectCrypto.make({
 })
 
 /**
- * A layer that provides the Node.js Crypto service implementation.
+ * Layer that provides the Node.js Crypto service implementation.
  *
  * @category layers
  * @since 1.0.0

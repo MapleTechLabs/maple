@@ -1,13 +1,12 @@
 /**
- * Primitive types for CLI parameter parsing.
+ * Parses raw command-line strings into typed values.
  *
- * Primitives handle the low-level parsing of string input into typed values.
- * Most users should use the higher-level `Argument` and `Flag` modules instead.
- *
- * This module is primarily useful for:
- * - Creating custom primitive types
- * - Understanding how CLI parsing works internally
- * - Advanced customization of parsing behavior
+ * A `Primitive<A>` receives one string and returns an `Effect` that either
+ * produces an `A` or fails with a parser message. `Argument` and `Flag` build
+ * on these primitives to add names, aliases, defaults, prompts, configuration
+ * fallbacks, repetition, and help metadata. Primitive parsers cover common
+ * scalar values, paths, files, structured config files, schema-decoded input,
+ * redacted values, and key-value pairs.
  *
  * @since 4.0.0
  */
@@ -512,7 +511,7 @@ export const fileText: Primitive<string> = makePrimitive(
  * Represents options which can be provided to methods that deal with parsing
  * file content.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type FileParseOptions = {
@@ -576,7 +575,7 @@ export const fileParse = (options?: FileParseOptions): Primitive<unknown> => {
  * Represents options which can be provided to methods that deal with parsing
  * file content and decoding the file content with a `Schema`.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type FileSchemaOptions = Struct.Simplify<
@@ -675,11 +674,11 @@ export const keyValuePair: Primitive<Record<string, string>> = makePrimitive(
 )
 
 /**
- * A sentinel primitive that always fails to parse a value.
+ * Creates a sentinel primitive that always fails to parse a value.
  *
  * **When to use**
  *
- * Used for flags that don't accept values.
+ * Use when you need a CLI primitive for flags that do not accept values.
  *
  * **Example** (Rejecting option values)
  *
@@ -705,7 +704,8 @@ export const none: Primitive<never> = makePrimitive("None", () => Effect.fail("T
  *
  * **When to use**
  *
- * Used for generating help documentation.
+ * Use when you need the display type name for a `Primitive`, such as when
+ * generating CLI help documentation.
  *
  * **Example** (Getting primitive type names)
  *
@@ -725,7 +725,7 @@ export const none: Primitive<never> = makePrimitive("None", () => Effect.fail("T
  * console.log(Primitive.getTypeName(logLevelChoice)) // "choice"
  * ```
  *
- * @category utils
+ * @category getters
  * @since 4.0.0
  */
 export const getTypeName = <A>(primitive: Primitive<A>): string => {

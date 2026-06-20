@@ -1,8 +1,10 @@
 /**
- * OpenAI Client module for interacting with OpenAI's API.
- *
- * Provides a type-safe, Effect-based client for OpenAI operations including
- * completions, embeddings, and streaming responses.
+ * The `OpenAiClient` module defines the low-level Effect service used by the
+ * OpenAI integration for Responses API and embedding requests. It builds a
+ * configured HTTP client with authentication and OpenAI organization or project
+ * headers, exposes helpers for non-streaming responses, SSE response streams,
+ * WebSocket response streams, and embeddings, and maps transport or decoding
+ * failures into `AiError`.
  *
  * @since 4.0.0
  */
@@ -90,7 +92,16 @@ export interface Service {
 // =============================================================================
 
 /**
- * Service identifier for the OpenAI client.
+ * Service tag for the OpenAI client.
+ *
+ * **When to use**
+ *
+ * Use when accessing or providing the OpenAI client service through Effect's
+ * context.
+ *
+ * @see {@link make} for constructing an OpenAI client effectfully
+ * @see {@link layer} for providing a client from explicit options
+ * @see {@link layerConfig} for providing a client from `Config`
  *
  * @category services
  * @since 4.0.0
@@ -106,7 +117,7 @@ export class OpenAiClient extends Context.Service<OpenAiClient, Service>()(
 /**
  * Options for configuring the OpenAI client.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type Options = {
@@ -149,6 +160,25 @@ const RedactedOpenAiHeaders = {
 
 /**
  * Creates an OpenAI client service with the given options.
+ *
+ * **When to use**
+ *
+ * Use when you need the OpenAI client service value inside an effect.
+ *
+ * **Details**
+ *
+ * The returned service uses the current `HttpClient`, prepends `apiUrl` or
+ * `https://api.openai.com/v1`, adds the bearer token and optional OpenAI
+ * organization/project headers, accepts JSON responses, filters for successful
+ * HTTP statuses, and applies `transformClient` when provided.
+ *
+ * **Gotchas**
+ *
+ * A scoped `OpenAiConfig.withClientTransform` is applied when request helpers
+ * run, after the `transformClient` option supplied to `make`.
+ *
+ * @see {@link layer} for providing this client from explicit options
+ * @see {@link layerConfig} for loading client settings from `Config`
  *
  * @category constructors
  * @since 4.0.0
@@ -302,6 +332,14 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer for the OpenAI client with the given options.
  *
+ * **When to use**
+ *
+ * Use when you already have explicit `Options` values, such as an API key or
+ * custom API URL, and want to provide `OpenAiClient` as a `Layer`.
+ *
+ * @see {@link make} for constructing the client service effectfully
+ * @see {@link layerConfig} for loading client settings from `Config`
+ *
  * @category layers
  * @since 4.0.0
  */
@@ -309,8 +347,21 @@ export const layer = (options: Options): Layer.Layer<OpenAiClient, never, HttpCl
   Layer.effect(OpenAiClient, make(options))
 
 /**
- * Creates a layer for the OpenAI client, loading the requisite configuration
- * via Effect's `Config` module.
+ * Creates a layer for the OpenAI client from provided `Config` values.
+ *
+ * **When to use**
+ *
+ * Use when you need client settings for OpenAI-compatible APIs to be read from
+ * Effect `Config` values while providing `OpenAiClient` as a `Layer`.
+ *
+ * **Details**
+ *
+ * Only config values supplied in `options` are loaded. Omitted fields are
+ * passed to `make` as `undefined`, and `transformClient` is forwarded as a
+ * plain option.
+ *
+ * @see {@link make} for constructing the client service effectfully
+ * @see {@link layer} for providing the client from already-resolved options
  *
  * @category layers
  * @since 4.0.0
@@ -380,6 +431,25 @@ export type ResponseStreamEvent = typeof OpenAiSchema.ResponseStreamEvent.Type
 
 /**
  * Service for creating OpenAI response streams over a WebSocket connection.
+ *
+ * **When to use**
+ *
+ * Use when you need direct access to the WebSocket-backed response streaming
+ * service rather than wrapping an effect with WebSocket mode.
+ *
+ * **Details**
+ *
+ * `createResponseStream` sends a `response.create` message over the WebSocket
+ * connection and returns an HTTP response together with a stream of
+ * `ResponseStreamEvent` values.
+ *
+ * **Gotchas**
+ *
+ * WebSocket response streams are serialized to one request at a time by the
+ * shared socket service.
+ *
+ * @see {@link withWebSocketMode} for enabling WebSocket mode for one effect
+ * @see {@link layerWebSocketMode} for providing WebSocket mode through a layer
  *
  * @category Websocket mode
  * @since 4.0.0
@@ -470,7 +540,7 @@ const makeSocket = Effect.gen(function*() {
           const event = decodeEvent(text)
           if (event.type === "error" && "status" in event) {
             const status = Number(event.status)
-            const error = "error" in event ? event.error : event
+            const error = "error" in event ? event.error as typeof ErrorEvent.Type.error : event
             const json = JSON.stringify(error)
             return Effect.fail(
               AiError.make({
@@ -478,7 +548,7 @@ const makeSocket = Effect.gen(function*() {
                 method: "createResponseStream",
                 reason: AiError.reasonFromHttpStatus({
                   description: json,
-                  status: isNaN(status) ? 500 : status,
+                  status: isNaN(status) ? errorTypeToStatus[error.type] ?? 500 : status,
                   metadata: error as any,
                   http: {
                     body: json,
@@ -581,11 +651,24 @@ const ErrorEvent = Schema.Struct({
   })
 })
 
+const errorTypeToStatus: Record<string, number> = {
+  invalid_request_error: 400,
+  invalid_api_key_error: 401,
+  insufficient_quota_error: 429,
+  rate_limit_error: 429,
+  service_unavailable_error: 503
+}
+
 const AllEvents = Schema.Union([ErrorEvent, OpenAiSchema.ResponseStreamEvent])
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(AllEvents))
 
 /**
- * Uses OpenAI's websocket mode for all responses within the provided effect.
+ * Uses OpenAI's WebSocket mode for response streams within the provided effect.
+ *
+ * **When to use**
+ *
+ * Use to enable WebSocket mode around one effect that creates OpenAI response
+ * streams.
  *
  * **Gotchas**
  *
@@ -594,7 +677,11 @@ const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(AllEvents))
  * - `NodeSocket.layerWebSocketConstructorWS`
  * - `BunSocket.layerWebSocketConstructor`
  *
- * This is because it needs to use non-standard options for setting the Authorization header.
+ * These constructor layers support the non-standard options needed to set the
+ * Authorization header.
+ *
+ * @see {@link layerWebSocketMode} for providing WebSocket mode through a layer
+ * @see {@link OpenAiSocket} for direct access to the WebSocket-backed streaming service
  *
  * @category Websocket mode
  * @since 4.0.0
@@ -616,6 +703,11 @@ export const withWebSocketMode = <A, E, R>(
 /**
  * Uses OpenAI's websocket mode for all responses that use the Layer.
  *
+ * **When to use**
+ *
+ * Use to provide WebSocket mode through layer composition for effects that use
+ * OpenAI response streaming.
+ *
  * **Gotchas**
  *
  * This only works with the following WebSocket constructor layers:
@@ -623,7 +715,10 @@ export const withWebSocketMode = <A, E, R>(
  * - `NodeSocket.layerWebSocketConstructorWS`
  * - `BunSocket.layerWebSocketConstructor`
  *
- * This is because it needs to use non-standard options for setting the Authorization header.
+ * These constructor layers support the non-standard options needed to set the
+ * Authorization header.
+ *
+ * @see {@link withWebSocketMode} for enabling WebSocket mode around a single effect
  *
  * @category Websocket mode
  * @since 4.0.0

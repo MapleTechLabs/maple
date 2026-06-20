@@ -1,22 +1,13 @@
 /**
- * Composable HTTP client service for executing `HttpClientRequest` values and
- * receiving `HttpClientResponse` values inside Effect programs.
+ * Provides the service used to run outgoing HTTP requests.
  *
- * This module provides the `HttpClient` service tag, method-specific accessors,
- * constructors for low-level runtimes, and middleware-style combinators for
- * common client concerns such as request rewriting, response filtering, retries,
- * redirects, cookies, rate limiting, and tracing. It is intended for code that
- * needs dependency-injected outbound HTTP calls, reusable clients customized for
- * an API, or cross-cutting behavior layered around a concrete platform client.
- *
- * Responses are successful Effects even for non-2xx status codes unless a
- * filter such as `filterStatus` or `filterStatusOk` is applied. Request
- * middleware is ordered by whether it prepends to or appends after the existing
- * preprocessing pipeline, so use `mapRequestInput` for transformations that
- * should run before previously installed request middleware and `mapRequest`
- * for transformations that should run after it. Non-scoped responses are tied to
- * an abort controller for interruption cleanup; use `withScope` when the request
- * lifetime should instead be controlled by a surrounding `Scope`.
+ * `HttpClient` executes immutable `HttpClientRequest` values and returns
+ * `HttpClientResponse` values. Keeping HTTP behind this service lets programs,
+ * tests, and generated API clients use the same request model without depending
+ * on one concrete platform transport. This module includes request accessors,
+ * constructors and layers, request and response transformations, status
+ * filtering, retries, rate limiting, cookies, redirect handling, scoped request
+ * abortion, and tracing support.
  *
  * @since 4.0.0
  */
@@ -145,9 +136,14 @@ export declare namespace HttpClient {
 }
 
 /**
- * Service tag for the default `HttpClient` used by HTTP client accessors.
+ * Service tag for the default outgoing HTTP client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to provide the default outgoing HTTP client service used by request
+ * accessors such as `execute`, `get`, and `post`.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const HttpClient: Context.Service<HttpClient, HttpClient> = Context.Service<HttpClient, HttpClient>(
@@ -372,7 +368,15 @@ export const catchTag: {
       e: ExtractTag<E, K extends NonEmptyReadonlyArray<string> ? K[number] : K>
     ) => Effect.Effect<HttpClientResponse.HttpClientResponse, E1, R1>
   ): HttpClient.With<E1 | ExcludeTag<E, K extends NonEmptyReadonlyArray<string> ? K[number] : K>, R1 | R> =>
-    transformResponse(self, Effect.catchTag(tag, f))
+    transformResponse(
+      self,
+      (effect) =>
+        Effect.catchTag<HttpClientResponse.HttpClientResponse, E, R, K, R1, E1, HttpClientResponse.HttpClientResponse>(
+          effect,
+          tag,
+          f
+        )
+    )
 )
 
 /**
@@ -871,7 +875,7 @@ export const retry: {
  *
  * **When to use**
  *
- * Use `retryOn` to focus on retrying errors, transient responses, or both.
+ * Use to focus on retrying errors, transient responses, or both.
  *
  * **Details**
  *
@@ -1328,7 +1332,12 @@ export const tapRequest: {
 )
 
 /**
- * Associates a `Ref` of cookies with the client for handling cookies across requests.
+ * Adds a `Ref` of cookies to the client for handling cookies across requests.
+ *
+ * **When to use**
+ *
+ * Use to add shared cookie storage to a client so response cookies are retained
+ * and sent by later requests.
  *
  * @category cookies
  * @since 4.0.0
@@ -1361,9 +1370,9 @@ export const withCookiesRef: {
 )
 
 /**
- * Ties the lifetime of the `HttpClientRequest` to a `Scope`.
+ * Attaches the lifetime of the `HttpClientRequest` to a `Scope`.
  *
- * @category Scope
+ * @category resource management
  * @since 4.0.0
  */
 export const withScope = <E, R>(
@@ -1382,7 +1391,7 @@ export const withScope = <E, R>(
   )
 
 /**
- * Follows HTTP redirects up to a specified number of times.
+ * Enables following HTTP redirects up to a specified number of times.
  *
  * @category redirects
  * @since 4.0.0

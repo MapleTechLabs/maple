@@ -1,20 +1,8 @@
 /**
- * The `ScopedAtom` module provides a small React integration for creating atom
- * instances that are scoped to a component subtree. A scoped atom bundles a
- * React provider, context, and `use` accessor so each mounted provider owns its
- * own atom instance instead of sharing a single module-level atom.
- *
- * Use `ScopedAtom` when an atom needs to be isolated per feature, route,
- * component instance, test harness, or provider input. The provider may receive
- * an initial `value` that is passed to the atom factory, making it useful for
- * state that should be seeded from React props while still being consumed by the
- * atom hooks in descendants.
- *
- * **Gotchas**
- *
- * - `use` must be called under the matching provider or it throws.
- * - The provider creates the atom once for its lifetime; changing the provider
- *   `value` prop after mount does not recreate the atom.
+ * React helpers for creating Atom instances that belong to one component
+ * subtree. `make` returns a scoped atom with a provider, context, and `use`
+ * accessor. Each provider creates its own Atom once, so different subtrees can
+ * use the same scoped atom definition without sharing state.
  *
  * @since 4.0.0
  */
@@ -24,7 +12,12 @@ import type * as Atom from "effect/unstable/reactivity/Atom"
 import * as React from "react"
 
 /**
- * Type identifier for ScopedAtom.
+ * Literal type used as the `ScopedAtom` type identifier.
+ *
+ * **Details**
+ *
+ * Used as the computed property key and marker value stored on `ScopedAtom`
+ * objects.
  *
  * @category type IDs
  * @since 4.0.0
@@ -33,6 +26,11 @@ export type TypeId = "~@effect/atom-react/ScopedAtom"
 
 /**
  * Type identifier for ScopedAtom.
+ *
+ * **Details**
+ *
+ * Used as the computed property key and marker value stored on `ScopedAtom`
+ * objects.
  *
  * @category type IDs
  * @since 4.0.0
@@ -45,15 +43,15 @@ export const TypeId: TypeId = "~@effect/atom-react/ScopedAtom"
  * **Example** (Providing and reading a scoped atom)
  *
  * ```ts
- * import * as AtomReact from "@effect/atom-react"
+ * import { make, useAtomValue } from "@effect/atom-react"
  * import { Atom } from "effect/unstable/reactivity"
  * import * as React from "react"
  *
- * const Counter = AtomReact.make(() => Atom.make(0))
+ * const Counter = make(() => Atom.make(0))
  *
  * function View() {
  *   const atom = Counter.use()
- *   const value = AtomReact.useAtomValue(atom)
+ *   const value = useAtomValue(atom)
  *   return React.createElement("div", null, value)
  * }
  *
@@ -76,18 +74,34 @@ export interface ScopedAtom<A extends Atom.Atom<any>, Input = never> {
 /**
  * Creates a ScopedAtom from a factory function.
  *
+ * **When to use**
+ *
+ * Use to create an atom instance that is owned by a React provider and scoped
+ * to a component subtree.
+ *
+ * **Details**
+ *
+ * The returned scoped atom includes a `Provider`, `Context`, and `use`
+ * accessor. The provider creates the atom once for its lifetime, passing the
+ * `value` prop to the factory when the scoped atom expects input.
+ *
+ * **Gotchas**
+ *
+ * `use` must run under the matching provider. Changing the provider `value`
+ * prop after mount does not recreate the atom.
+ *
  * **Example** (Creating a scoped atom with input)
  *
  * ```ts
- * import * as AtomReact from "@effect/atom-react"
+ * import { make, useAtomValue } from "@effect/atom-react"
  * import { Atom } from "effect/unstable/reactivity"
  * import * as React from "react"
  *
- * const User = AtomReact.make((name: string) => Atom.make(name))
+ * const User = make((name: string) => Atom.make(name))
  *
  * function UserName() {
  *   const atom = User.use()
- *   const value = AtomReact.useAtomValue(atom)
+ *   const value = useAtomValue(atom)
  *   return React.createElement("span", null, value)
  * }
  *

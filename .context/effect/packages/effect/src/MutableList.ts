@@ -1,50 +1,10 @@
 /**
- * The `MutableList` module provides a mutable linked list for accumulating,
- * ordering, inspecting, and draining values with efficient operations at both
- * ends of the list.
- *
- * A `MutableList<A>` stores values in linked buckets of arrays. Appending adds
- * values to the tail, prepending adds values to the head, and taking removes
- * values from the head. Unlike persistent collections, every mutation updates
- * the list object in place: operations such as {@link append}, {@link prepend},
- * {@link take}, {@link takeN}, {@link clear}, {@link filter}, and {@link remove}
- * change the same `MutableList` instance and update its `length`.
- *
- * **Mental model**
- *
- * - `MutableList<A>` is a stateful container with `head`, `tail`, and `length`
- * - Values are consumed from the head with {@link take}, {@link takeN}, or
- *   {@link takeAll}
- * - {@link append} and {@link appendAll} preserve FIFO queue order for normal
- *   producer-consumer use cases
- * - {@link prepend} and {@link prependAll} place values before the current
- *   contents, which is useful for priority work or restoring items to the front
- * - {@link toArray} and {@link toArrayN} copy values without modifying the list
- * - The `head` and `tail` bucket fields are exposed for advanced use, but most
- *   code should treat them as implementation details
- *
- * **Common tasks**
- *
- * - Create an empty list: {@link make}
- * - Add one value: {@link append}, {@link prepend}
- * - Add many values: {@link appendAll}, {@link prependAll}
- * - Drain one value: {@link take}
- * - Drain many values: {@link takeN}, {@link takeAll}
- * - Inspect without draining: {@link toArrayN}, {@link toArray}
- * - Reset the list: {@link clear}
- * - Mutate contents in place: {@link filter}, {@link remove}
- *
- * **Gotchas**
- *
- * - `MutableList` is intentionally mutable; sharing a list means sharing its
- *   changing state
- * - {@link take} returns the {@link Empty} symbol when the list has no value, so
- *   compare with `MutableList.Empty` instead of relying on falsy checks
- * - {@link appendAllUnsafe} and {@link prependAllUnsafe} may reuse the provided
- *   array when `mutable` is `true`; only enable that optimization when callers
- *   will not keep using the array independently
- * - {@link remove} uses JavaScript strict equality semantics, not structural
- *   equality
+ * Mutable lists for collecting ordered values and draining them from the front.
+ * A `MutableList<A>` can append values to the end, prepend values to the
+ * beginning, take one or more values from the front, inspect its contents as an
+ * array, filter values, remove values, and clear itself. All operations update
+ * the same list object in place and keep its `length` field current. Taking
+ * from an empty list returns the `Empty` symbol.
  *
  * @since 4.0.0
  */
@@ -172,8 +132,13 @@ export declare namespace MutableList {
 }
 
 /**
- * A unique symbol used to represent an empty result when taking elements from a MutableList.
+ * Defines the unique symbol used to represent an empty result when taking elements from a MutableList.
  * This symbol is returned by `take` when the list is empty, allowing for safe type checking.
+ *
+ * **When to use**
+ *
+ * Use to detect that `take` returned no element before handling the result as a
+ * list item.
  *
  * **Example** (Checking for empty results)
  *
@@ -205,7 +170,7 @@ export declare namespace MutableList {
  * console.log(empty === MutableList.Empty) // true, list is empty
  * ```
  *
- * @category Symbols
+ * @category symbols
  * @since 4.0.0
  */
 export const Empty: unique symbol = Symbol.for("effect/MutableList/Empty")
@@ -255,7 +220,7 @@ export const Empty: unique symbol = Symbol.for("effect/MutableList/Empty")
  * }
  * ```
  *
- * @category Symbols
+ * @category symbols
  * @since 4.0.0
  */
 export type Empty = typeof Empty
@@ -422,6 +387,11 @@ export const prependAll = <A>(self: MutableList<A>, messages: Iterable<A>): void
  * Prepends all elements from a ReadonlyArray to the beginning of the MutableList.
  * This is an optimized version that can reuse the array when mutable=true.
  *
+ * **When to use**
+ *
+ * Use when prepending a trusted array directly is worth the optimized path and
+ * you control whether the input may be reused.
+ *
  * **Gotchas**
  *
  * When mutable=true, the input array may be modified internally. Only use
@@ -506,6 +476,11 @@ export const appendAll = <A>(self: MutableList<A>, messages: Iterable<A>): numbe
  * Appends all elements from a ReadonlyArray to the end of the MutableList.
  * This is an optimized version that can reuse the array when mutable=true.
  * Returns the number of elements added.
+ *
+ * **When to use**
+ *
+ * Use when appending a trusted array directly is worth the optimized path and
+ * you control whether the input may be reused.
  *
  * **Gotchas**
  *
@@ -674,11 +649,19 @@ export const takeN = <A>(self: MutableList<A>, n: number): Array<A> => {
  * Removes up to `n` elements from the beginning of the `MutableList` without
  * returning them.
  *
+ * **When to use**
+ *
+ * Use to discard a bounded number of values from the head of a `MutableList`
+ * when the removed values are not needed.
+ *
  * **Details**
  *
  * If `n` is less than or equal to zero, or the list is empty, the list is left
  * unchanged. If `n` is greater than or equal to the current length, the list is
  * cleared.
+ *
+ * @see {@link takeN} for removing up to `n` values and returning them as an array
+ * @see {@link clear} for removing every value from the list
  *
  * @category elements
  * @since 4.0.0
@@ -822,7 +805,10 @@ export const take = <A>(self: MutableList<A>): Empty | A => {
  *
  * **When to use**
  *
- * Use `takeN` when the copied elements should also be removed from the list.
+ * Use when you need to inspect or snapshot a bounded prefix of the list without
+ * consuming it.
+ *
+ * @see {@link takeN} for removing up to `n` values and returning them as an array
  *
  * @category elements
  * @since 4.0.0
@@ -848,8 +834,10 @@ export const toArrayN = <A>(self: MutableList<A>, n: number): Array<A> => {
  *
  * **When to use**
  *
- * Use `takeAll` when the list should be emptied after converting it to an
- * array.
+ * Use when you need a snapshot of all current elements while keeping the list
+ * unchanged.
+ *
+ * @see {@link takeAll} for converting all elements to an array and clearing the list
  *
  * @category elements
  * @since 4.0.0
@@ -923,6 +911,11 @@ export const filter = <A>(self: MutableList<A>, f: (value: A, i: number) => bool
 /**
  * Removes all occurrences of a value from the `MutableList` using JavaScript
  * strict equality semantics.
+ *
+ * **When to use**
+ *
+ * Use when in-place removal should use JavaScript identity/strict equality
+ * rather than Effect structural equality.
  *
  * **Details**
  *

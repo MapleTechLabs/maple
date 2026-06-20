@@ -2235,6 +2235,30 @@ export const pricing_full_api = () => `フルAPIアクセス`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const pricing_mcp_server = () => `MCPサーバー`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_chat = () => `AIチャット`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_triage = () => `AIエラートリアージ`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const pricing_email_support = () => `メールサポート`
 
 
@@ -4331,7 +4355,7 @@ export const language_ko = () => `한국어`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_mcp_server = () => `MCPサーバー`
+export const nav_product = () => `プロダクト`
 
 
 /**
@@ -4339,7 +4363,7 @@ export const pricing_mcp_server = () => `MCPサーバー`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_ai_chat = () => `AIチャット`
+export const nav_compare = () => `比較`
 
 
 /**
@@ -4347,4 +4371,156 @@ export const pricing_ai_chat = () => `AIチャット`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_ai_triage = () => `AIエラートリアージ`
+export const nav_desc_distributed_tracing = () => `サービスをまたいで全リクエストを追跡`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_browser_sessions = () => `セッションを再生し、トレースへ移動`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_metrics_dashboards = () => `重要なシグナルをすべて計測`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_log_management = () => `ログを即座に検索・相関`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_service_catalog = () => `すべてのサービスを一目で把握`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_error_tracking = () => `エラーを素早く発見して修正`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ai_mcp = () => `MCPによるAI診断`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_kubernetes = () => `Pod・ノード・ワークロードをスパンと並べて監視`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ecommerce = () => `決済の失敗を顧客より先に検知`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_microservices = () => `サービス境界をまたぐレイテンシを追跡`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_api_performance = () => `遅いエンドポイントを発見して改善`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nextjs = () => `ルート・RSC・ミドルウェアを自動計装`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_python = () => `Flask・FastAPI・Djangoをコードレスでトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nodejs = () => `Express・Fastifyをフルスタックでトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_datadog = () => `オープンソース、ホスト課金なし`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_grafana = () => `組み立て不要のオールインワン`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_new_relic = () => `OTelネイティブ、明朗な料金`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_dash0 = () => `より多くのシグナルと深いトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer = () => `すべてを一つのプラットフォームで`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer_cta = () => `すべての機能を見る →`

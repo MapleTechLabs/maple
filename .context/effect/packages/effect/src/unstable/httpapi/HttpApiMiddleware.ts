@@ -1,28 +1,13 @@
 /**
- * The `HttpApiMiddleware` module defines middleware services that can wrap
- * `HttpApi` endpoint execution on the server and request execution in generated
- * clients.
+ * Declares middleware for schema-driven HTTP APIs.
  *
- * Use this module for cross-cutting HTTP API behavior such as authentication and
- * authorization, request logging or tracing, rate limiting, adding request-scoped
- * services to the endpoint context, normalizing schema errors, or installing
- * client-side request middleware for APIs that require the same concern on both
- * sides. Middleware services carry type-level metadata describing the services
- * they require and provide, the error schemas they may fail with, whether they
- * implement security schemes, and whether generated clients must provide a
- * matching client middleware.
- *
- * Security middleware is declared with non-empty `security` schemes and receives
- * decoded credentials from `HttpApiSecurity`; ordinary middleware receives only
- * endpoint and group metadata. Error declarations must be `Schema` values (or an
- * array of them) because middleware failures are added to the endpoint error
- * surface and must be encodable by the HTTP API builder. If a middleware turns
- * `HttpApiSchemaError` failures into API errors, use
- * `layerSchemaErrorTransform` and make sure the transformed error is covered by
- * the middleware's declared schema. Client middleware installed with
- * `layerClient` is made available through the `ForClient` marker and captures
- * its surrounding context, so client requirements should be declared explicitly
- * when `requiredForClient` is enabled.
+ * HTTP API middleware wraps endpoint execution on the server and, when the API
+ * requires it, can also wrap requests made by generated clients. It is used for
+ * cross-cutting behavior that belongs to the API contract, such as
+ * authentication, authorization, logging, tracing, rate limiting,
+ * request-scoped services, schema-error handling, and client request
+ * decoration. This module defines the middleware service keys and helpers used
+ * by `HttpApi` declarations.
  *
  * @since 4.0.0
  */
@@ -30,6 +15,7 @@
 /** @effect-diagnostics classSelfMismatch:off */
 import * as Context from "../../Context.ts"
 import * as Effect from "../../Effect.ts"
+import { getStackTraceLimit, setStackTraceLimit } from "../../internal/stackTraceLimit.ts"
 import * as Layer from "../../Layer.ts"
 import { hasProperty } from "../../Predicate.ts"
 import type * as Schema from "../../Schema.ts"
@@ -324,9 +310,9 @@ export type ServiceClass<
  *
  * **When to use**
  *
- * Use the optional configuration to declare required services, provided services,
- * typed error schemas, security schemes, client errors, and whether generated
- * clients must provide a matching client middleware.
+ * Use when you need an HTTP API middleware service whose configuration declares
+ * required services, provided services, typed error schemas, security schemes,
+ * client errors, or a matching client middleware requirement.
  *
  * @category schemas
  * @since 4.0.0
@@ -367,10 +353,10 @@ export const Service = <
   } | undefined
 ) => {
   const Err = globalThis.Error as any
-  const limit = Err.stackTraceLimit
-  Err.stackTraceLimit = 2
+  const limit = getStackTraceLimit()
+  setStackTraceLimit(2)
   const creationError = new Err()
-  Err.stackTraceLimit = limit
+  setStackTraceLimit(limit)
 
   class Service extends Context.Service<Self, any>()(id) {}
   const self = Service as any

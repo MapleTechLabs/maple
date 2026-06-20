@@ -8,22 +8,15 @@
  * to compose transformations, validations, and effectful operations while
  * keeping the original value as the starting point of the pipeline.
  *
- * **Common tasks**
- *
- * - Type values that expose a `.pipe(...)` method with the {@link Pipeable} interface
- * - Implement a custom `.pipe(...)` method with {@link pipeArguments}
- * - Reuse the standard implementation through {@link Prototype}, {@link Class}, or {@link Mixin}
- *
- * **Gotchas**
- *
- * - Each function receives the result of the previous function, not the original value
- * - The overloads preserve precise types for long pipelines, but very long chains may be easier to read when split
- *
  * @since 2.0.0
  */
 
 /**
  * Interface for values that support method-style `pipe` composition.
+ *
+ * **When to use**
+ *
+ * Use to type values that expose an Effect-style `.pipe(...)` method.
  *
  * **Details**
  *
@@ -533,6 +526,11 @@ export interface Pipeable {
  * Applies a `pipe` method's variadic arguments to an initial value from left
  * to right.
  *
+ * **When to use**
+ *
+ * Use to implement a custom `.pipe(...)` method from JavaScript's `arguments`
+ * object.
+ *
  * **Details**
  *
  * This helper is intended for implementing `Pipeable.pipe` methods that
@@ -559,7 +557,7 @@ export interface Pipeable {
  * console.log(result) // 21
  * ```
  *
- * @category utils
+ * @category combinators
  * @since 2.0.0
  */
 export const pipeArguments = <A>(self: A, args: IArguments): unknown => {
@@ -599,10 +597,10 @@ export const pipeArguments = <A>(self: A, args: IArguments): unknown => {
  *
  * **When to use**
  *
- * Classes or object prototypes can reuse this value when they need the
+ * Use when classes or object prototypes can reuse this value when they need the
  * standard pipe implementation backed by `pipeArguments`.
  *
- * @category models
+ * @category prototypes
  * @since 3.15.0
  */
 export const Prototype: Pipeable = {
@@ -612,13 +610,13 @@ export const Prototype: Pipeable = {
 }
 
 /**
- * Base constructor whose instances implement the standard `Pipeable.pipe`
+ * Provides a base constructor whose instances implement the standard `Pipeable.pipe`
  * method.
  *
  * **When to use**
  *
- * Extend or compose this constructor when defining a class that should support
- * Effect-style method chaining through `.pipe(...)`.
+ * Use when you need to define a class that supports Effect-style method
+ * chaining through `.pipe(...)`.
  *
  * @category constructors
  * @since 3.15.0
@@ -632,6 +630,15 @@ export const Class: new() => Pipeable = (function() {
 /**
  * Constructor type for classes whose instances implement `Pipeable`.
  *
+ * **When to use**
+ *
+ * Use as the constructor-side type when a class value should be known to create
+ * instances that support Effect-style method chaining with `.pipe(...)`.
+ *
+ * @see {@link Pipeable} for the instance-side contract
+ * @see {@link Class} for the base constructor
+ * @see {@link Mixin} for wrapping an existing class constructor
+ *
  * @category models
  * @since 3.15.0
  */
@@ -643,11 +650,18 @@ export interface PipeableConstructor {
  * Returns a subclass of the provided class that adds the standard `pipe`
  * method.
  *
+ * **When to use**
+ *
+ * Use to add pipe support to an existing class without extending a base class
+ * or modifying its prototype.
+ *
  * **Details**
  *
  * The original constructor and instance members are preserved, and the added
  * method delegates to `pipeArguments`.
  *
+ * @see {@link Prototype} for a reusable prototype object
+ * @see {@link Class} for a base constructor to extend
  * @category constructors
  * @since 4.0.0
  */

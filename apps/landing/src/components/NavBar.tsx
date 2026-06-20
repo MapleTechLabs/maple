@@ -16,6 +16,8 @@ import { GithubStarButton, Octocat } from "./GithubStarButton"
 
 const PUBLISHABLE_KEY = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY
 
+type MenuLink = { href: string; label: () => string; desc: () => string }
+
 function AuthAwareCTA() {
 	const { isSignedIn, isLoaded } = useAuth()
 	return isLoaded && isSignedIn ? m.nav_dashboard() : m.nav_get_started()
@@ -29,31 +31,113 @@ function CTAButton() {
 	return <AuthAwareCTA />
 }
 
+function Eyebrow({ children }: { children: React.ReactNode }) {
+	return (
+		<span className="text-[11px] uppercase tracking-wider font-medium text-accent">{children}</span>
+	)
+}
+
+function MegaLink({ link }: { link: MenuLink }) {
+	return (
+		<NavigationMenuLink
+			href={link.href}
+			className="group/link flex flex-col items-start gap-0.5 rounded-lg p-2 hover:bg-muted/20"
+		>
+			<span className="text-xs font-medium text-fg transition-colors group-hover/link:text-accent">
+				{link.label()}
+			</span>
+			<span className="text-[11px] leading-snug text-fg-muted">{link.desc()}</span>
+		</NavigationMenuLink>
+	)
+}
+
 function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number | null }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const l = (path: string) => (locale === "en" ? path : `/${locale}${path}`)
 
-	const featureLinks = [
-		{ href: l("/features/distributed-tracing"), label: () => m.nav_distributed_tracing() },
-		{ href: l("/features/browser-sessions"), label: () => m.nav_browser_sessions() },
-		{ href: l("/features/metrics-dashboards"), label: () => m.nav_metrics_dashboards() },
-		{ href: l("/features/log-management"), label: () => m.nav_log_management() },
-		{ href: l("/features/service-catalog"), label: () => m.nav_service_catalog() },
-		{ href: l("/features/error-tracking"), label: () => m.nav_error_tracking() },
-		{ href: l("/features/ai-mcp-integration"), label: () => m.nav_ai_mcp() },
-		{ href: l("/features/kubernetes-monitoring"), label: () => m.nav_kubernetes() },
+	const featureLinks: MenuLink[] = [
+		{
+			href: l("/features/distributed-tracing"),
+			label: () => m.nav_distributed_tracing(),
+			desc: () => m.nav_desc_distributed_tracing(),
+		},
+		{
+			href: l("/features/browser-sessions"),
+			label: () => m.nav_browser_sessions(),
+			desc: () => m.nav_desc_browser_sessions(),
+		},
+		{
+			href: l("/features/metrics-dashboards"),
+			label: () => m.nav_metrics_dashboards(),
+			desc: () => m.nav_desc_metrics_dashboards(),
+		},
+		{
+			href: l("/features/log-management"),
+			label: () => m.nav_log_management(),
+			desc: () => m.nav_desc_log_management(),
+		},
+		{
+			href: l("/features/service-catalog"),
+			label: () => m.nav_service_catalog(),
+			desc: () => m.nav_desc_service_catalog(),
+		},
+		{
+			href: l("/features/error-tracking"),
+			label: () => m.nav_error_tracking(),
+			desc: () => m.nav_desc_error_tracking(),
+		},
+		{
+			href: l("/features/ai-mcp-integration"),
+			label: () => m.nav_ai_mcp(),
+			desc: () => m.nav_desc_ai_mcp(),
+		},
+		{
+			href: l("/features/kubernetes-monitoring"),
+			label: () => m.nav_kubernetes(),
+			desc: () => m.nav_desc_kubernetes(),
+		},
 	]
 
-	const useCaseLinks = [
-		{ href: l("/use-cases/ecommerce-observability"), label: () => m.nav_ecommerce() },
-		{ href: l("/use-cases/microservices-debugging"), label: () => m.nav_microservices() },
-		{ href: l("/use-cases/api-performance"), label: () => m.nav_api_performance() },
+	const useCaseLinks: MenuLink[] = [
+		{
+			href: l("/use-cases/ecommerce-observability"),
+			label: () => m.nav_ecommerce(),
+			desc: () => m.nav_desc_ecommerce(),
+		},
+		{
+			href: l("/use-cases/microservices-debugging"),
+			label: () => m.nav_microservices(),
+			desc: () => m.nav_desc_microservices(),
+		},
+		{
+			href: l("/use-cases/api-performance"),
+			label: () => m.nav_api_performance(),
+			desc: () => m.nav_desc_api_performance(),
+		},
 	]
 
-	const integrationLinks = [
-		{ href: l("/integrations/nextjs"), label: () => m.nav_nextjs() },
-		{ href: l("/integrations/python"), label: () => m.nav_python() },
-		{ href: l("/integrations/nodejs"), label: () => m.nav_nodejs() },
+	const integrationLinks: MenuLink[] = [
+		{ href: l("/integrations/nextjs"), label: () => m.nav_nextjs(), desc: () => m.nav_desc_nextjs() },
+		{ href: l("/integrations/python"), label: () => m.nav_python(), desc: () => m.nav_desc_python() },
+		{ href: l("/integrations/nodejs"), label: () => m.nav_nodejs(), desc: () => m.nav_desc_nodejs() },
+	]
+
+	const compareLinks: MenuLink[] = [
+		{ href: l("/compare/datadog"), label: () => m.nav_vs_datadog(), desc: () => m.nav_desc_vs_datadog() },
+		{ href: l("/compare/grafana"), label: () => m.nav_vs_grafana(), desc: () => m.nav_desc_vs_grafana() },
+		{
+			href: l("/compare/new-relic"),
+			label: () => m.nav_vs_new_relic(),
+			desc: () => m.nav_desc_vs_new_relic(),
+		},
+		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0(), desc: () => m.nav_desc_vs_dash0() },
+	]
+
+	const mobileGroups: { title: string; links: MenuLink[] }[] = [
+		{ title: m.nav_features(), links: featureLinks },
+		{ title: m.nav_use_cases(), links: useCaseLinks },
+		{ title: m.nav_integrations(), links: integrationLinks },
+		{ title: m.nav_compare(), links: compareLinks },
 	]
 
 	return (
@@ -70,50 +154,71 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 				<NavigationMenu className="hidden sm:flex">
 					<NavigationMenuList>
 						<NavigationMenuItem>
-							<NavigationMenuTrigger className="h-8 bg-transparent hover:bg-muted/20 text-fg-muted hover:text-fg">
-								{m.nav_features()}
+							<NavigationMenuTrigger className="h-8 bg-transparent hover:bg-muted/20 text-fg-muted hover:text-fg data-popup-open:text-fg">
+								{m.nav_product()}
 							</NavigationMenuTrigger>
-							<NavigationMenuContent>
-								<div className="grid grid-cols-2 gap-1 p-2">
-									{featureLinks.map((link) => (
-										<NavigationMenuLink
-											key={link.href}
-											href={link.href}
-											className="whitespace-nowrap"
-										>
-											{link.label()}
-										</NavigationMenuLink>
-									))}
-								</div>
-							</NavigationMenuContent>
-						</NavigationMenuItem>
+							<NavigationMenuContent className="p-0">
+								<div className="w-[820px] max-w-[calc(100vw-1.5rem)]">
+									{/* Top: Features (2x4) + Use Cases + Integrations */}
+									<div className="grid grid-cols-12 gap-x-2 p-4">
+										<div className="col-span-6">
+											<div className="px-2">
+												<Eyebrow>{m.nav_features()}</Eyebrow>
+											</div>
+											<div className="mt-2 grid grid-cols-2 gap-0.5">
+												{featureLinks.map((link) => (
+													<MegaLink key={link.href} link={link} />
+												))}
+											</div>
+										</div>
 
-						<NavigationMenuItem>
-							<NavigationMenuTrigger className="h-8 bg-transparent hover:bg-muted/20 text-fg-muted hover:text-fg">
-								{m.nav_use_cases()}
-							</NavigationMenuTrigger>
-							<NavigationMenuContent>
-								<div className="p-2 min-w-[220px]">
-									{useCaseLinks.map((link) => (
-										<NavigationMenuLink key={link.href} href={link.href}>
-											{link.label()}
-										</NavigationMenuLink>
-									))}
-								</div>
-							</NavigationMenuContent>
-						</NavigationMenuItem>
+										<div className="col-span-3 border-l border-border pl-2">
+											<div className="px-2">
+												<Eyebrow>{m.nav_use_cases()}</Eyebrow>
+											</div>
+											<div className="mt-2 flex flex-col gap-0.5">
+												{useCaseLinks.map((link) => (
+													<MegaLink key={link.href} link={link} />
+												))}
+											</div>
+										</div>
 
-						<NavigationMenuItem>
-							<NavigationMenuTrigger className="h-8 bg-transparent hover:bg-muted/20 text-fg-muted hover:text-fg">
-								{m.nav_integrations()}
-							</NavigationMenuTrigger>
-							<NavigationMenuContent>
-								<div className="p-2 min-w-[220px]">
-									{integrationLinks.map((link) => (
-										<NavigationMenuLink key={link.href} href={link.href}>
-											{link.label()}
-										</NavigationMenuLink>
-									))}
+										<div className="col-span-3 border-l border-border pl-2">
+											<div className="px-2">
+												<Eyebrow>{m.nav_integrations()}</Eyebrow>
+											</div>
+											<div className="mt-2 flex flex-col gap-0.5">
+												{integrationLinks.map((link) => (
+													<MegaLink key={link.href} link={link} />
+												))}
+											</div>
+										</div>
+									</div>
+
+									{/* Compare row */}
+									<div className="border-t border-border px-4 pt-3 pb-4">
+										<div className="px-2">
+											<Eyebrow>{m.nav_compare()}</Eyebrow>
+										</div>
+										<div className="mt-2 grid grid-cols-4 gap-0.5">
+											{compareLinks.map((link) => (
+												<MegaLink key={link.href} link={link} />
+											))}
+										</div>
+									</div>
+
+									{/* Footer CTA strip */}
+									<NavigationMenuLink
+										href={l("/")}
+										className="group/cta flex items-center justify-between rounded-none border-t border-border bg-muted/10 px-6 py-3.5 hover:bg-muted/20"
+									>
+										<span className="text-xs font-medium text-fg">
+											{m.nav_product_footer()}
+										</span>
+										<span className="inline-flex items-center gap-1 text-xs text-accent transition-transform group-hover/cta:translate-x-0.5">
+											{m.nav_product_footer_cta()}
+										</span>
+									</NavigationMenuLink>
 								</div>
 							</NavigationMenuContent>
 						</NavigationMenuItem>
@@ -124,15 +229,6 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 								className="inline-flex h-8 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-xs font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
 							>
 								{m.nav_pricing()}
-							</a>
-						</NavigationMenuItem>
-
-						<NavigationMenuItem>
-							<a
-								href={l("/roadmap")}
-								className="inline-flex h-8 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-xs font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
-							>
-								{m.nav_roadmap()}
 							</a>
 						</NavigationMenuItem>
 
@@ -197,54 +293,27 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 					<nav className="flex flex-col px-4 pb-6">
 						<div className="py-4 border-b border-border">
 							<span className="text-[11px] text-accent uppercase tracking-wider font-medium">
-								{m.nav_features()}
+								{m.nav_product()}
 							</span>
-							<div className="mt-3 flex flex-col gap-1">
-								{featureLinks.map((link) => (
-									<a
-										key={link.href}
-										href={link.href}
-										onClick={() => setMenuOpen(false)}
-										className="text-xs text-fg-muted hover:text-fg transition-colors py-2"
-									>
-										{link.label()}
-									</a>
-								))}
-							</div>
-						</div>
-
-						<div className="py-4 border-b border-border">
-							<span className="text-[11px] text-accent uppercase tracking-wider font-medium">
-								{m.nav_use_cases()}
-							</span>
-							<div className="mt-3 flex flex-col gap-1">
-								{useCaseLinks.map((link) => (
-									<a
-										key={link.href}
-										href={link.href}
-										onClick={() => setMenuOpen(false)}
-										className="text-xs text-fg-muted hover:text-fg transition-colors py-2"
-									>
-										{link.label()}
-									</a>
-								))}
-							</div>
-						</div>
-
-						<div className="py-4 border-b border-border">
-							<span className="text-[11px] text-accent uppercase tracking-wider font-medium">
-								{m.nav_integrations()}
-							</span>
-							<div className="mt-3 flex flex-col gap-1">
-								{integrationLinks.map((link) => (
-									<a
-										key={link.href}
-										href={link.href}
-										onClick={() => setMenuOpen(false)}
-										className="text-xs text-fg-muted hover:text-fg transition-colors py-2"
-									>
-										{link.label()}
-									</a>
+							<div className="mt-3 flex flex-col gap-5">
+								{mobileGroups.map((group) => (
+									<div key={group.title}>
+										<span className="text-[10px] text-fg-muted uppercase tracking-wider">
+											{group.title}
+										</span>
+										<div className="mt-1.5 flex flex-col gap-1">
+											{group.links.map((link) => (
+												<a
+													key={link.href}
+													href={link.href}
+													onClick={() => setMenuOpen(false)}
+													className="text-xs text-fg-muted hover:text-fg transition-colors py-1.5"
+												>
+													{link.label()}
+												</a>
+											))}
+										</div>
+									</div>
 								))}
 							</div>
 						</div>
@@ -256,13 +325,6 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 								className="text-xs text-fg hover:text-fg transition-colors py-2 font-medium"
 							>
 								{m.nav_pricing()}
-							</a>
-							<a
-								href={l("/roadmap")}
-								onClick={() => setMenuOpen(false)}
-								className="text-xs text-fg hover:text-fg transition-colors py-2 font-medium"
-							>
-								{m.nav_roadmap()}
 							</a>
 							<a
 								href={l("/local")}

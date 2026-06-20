@@ -1,27 +1,12 @@
 /**
- * The `CliError` module defines the structured error model used by the
- * unstable CLI parser and runner. It distinguishes command-line parse failures,
- * CLI definition problems, explicit help requests, and user handler failures so
- * applications can report errors consistently while still pattern matching on
- * the exact cause.
+ * Defines structured errors for the unstable CLI parser and runner.
  *
- * **Common tasks**
- *
- * - Detect CLI errors at runtime with {@link isCliError}
- * - Represent parse failures such as unknown flags, missing required inputs, or
- *   invalid argument values
- * - Attach parse or validation errors to {@link ShowHelp} when the runner should
- *   render help text together with the failure
- * - Preserve command handler failures with {@link UserError}
- *
- * **Gotchas**
- *
- * - {@link ShowHelp} is a control-flow error, not a parse failure; it exits with
- *   code `0` for explicit help and `1` when it carries errors
- * - Duplicate option names between parent and child commands are rejected
- *   because the parent command claims the flag before the child can see it
- * - Suggestion-bearing errors keep suggestions separate from the primary cause
- *   so help renderers can decide how much guidance to display
+ * CLI errors describe problems such as unknown or duplicate flags, missing
+ * flags or arguments, invalid values, unknown subcommands, user handler
+ * failures, and requests to show command help. This module includes the
+ * `CliError` union, the `isCliError` guard, schema-backed error classes with
+ * display messages, and the `NonShowHelpErrors` union used when parse or
+ * validation errors should be shown with help output.
  *
  * @since 4.0.0
  */
@@ -30,7 +15,7 @@ import * as Runtime from "../../Runtime.ts"
 import * as Schema from "../../Schema.ts"
 
 /**
- * @category type id
+ * @category type IDs
  * @since 4.0.0
  */
 const TypeId = "~effect/cli/CliError"
@@ -444,7 +429,7 @@ export class UnknownSubcommand extends Schema.ErrorClass<UnknownSubcommand>(`${T
 }
 
 /**
- * Wrapper for user (handler) errors to unify under CLI error channel when desired.
+ * Error wrapper for user handler failures in the CLI error channel.
  *
  * **Example** (Wrapping user errors)
  *
@@ -481,7 +466,7 @@ export class UnknownSubcommand extends Schema.ErrorClass<UnknownSubcommand>(`${T
  */
 export class UserError extends Schema.ErrorClass<UserError>(`${TypeId}/UserError`)({
   _tag: Schema.tag("UserError"),
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {
   /**
    * Marks this value as a user handler error for runtime guards.
@@ -537,7 +522,7 @@ export const NonShowHelpErrors: Schema.Union<
 export type NonShowHelpErrors = typeof NonShowHelpErrors.Type
 
 /**
- * Control-flow value that asks the CLI runner to render help for a command path.
+ * Error data requesting CLI help rendering for a command path.
  *
  * **Details**
  *

@@ -1,19 +1,10 @@
 /**
- * The `RcRef` module provides reference-counted access to a shared resource
- * whose lifecycle is managed by `Scope`. An `RcRef<A, E>` lazily acquires its
- * resource the first time it is requested, shares that resource across active
- * users, and releases it when the final scope holding a reference closes.
- *
- * Use `RcRef` when several scoped operations should reuse the same expensive
- * or stateful resource, such as a connection, client, cache, or worker, without
- * making each operation acquire and release its own copy. `make` defines how
- * the resource is acquired, `get` borrows the current resource for the active
- * scope, and `invalidate` forces a future `get` to acquire a fresh resource.
- *
- * The resource is tied to scopes rather than ordinary object reachability:
- * every `get` must run with a `Scope`, and the reference count is decremented
- * when that scope closes. If `idleTimeToLive` is configured, a resource whose
- * reference count reaches zero can remain cached briefly before release.
+ * Reference-counted handles for sharing one scoped resource across many scoped
+ * users. An `RcRef<A, E>` acquires the resource lazily the first time `get`
+ * needs it, reuses that value while it is borrowed or kept idle, and finalizes
+ * it when the final borrowing scope closes unless an idle timeout keeps it
+ * available. The module also provides `invalidate` for forcing the next `get`
+ * to acquire a fresh resource.
  *
  * @since 3.5.0
  */
@@ -28,6 +19,11 @@ const TypeId = "~effect/RcRef"
 
 /**
  * A reference counted reference that manages resource lifecycle.
+ *
+ * **When to use**
+ *
+ * Use to share a scoped resource across active users with reference-counted
+ * acquisition and release.
  *
  * **Details**
  *
@@ -87,6 +83,11 @@ export declare namespace RcRef {
   /**
    * Type-level variance marker for `RcRef`.
    *
+   * **When to use**
+   *
+   * Use to carry the value and error type parameters for `RcRef` in Effect's
+   * type machinery.
+   *
    * **Details**
    *
    * This interface records the covariant value and error types carried by an
@@ -104,6 +105,11 @@ export declare namespace RcRef {
 
 /**
  * Creates an `RcRef` from an acquire effect.
+ *
+ * **When to use**
+ *
+ * Use to create a lazily acquired, reference-counted resource from an acquire
+ * effect.
  *
  * **Details**
  *
@@ -152,6 +158,11 @@ export const make: <A, E, R>(
 /**
  * Gets the value from an `RcRef`, acquiring it first if needed.
  *
+ * **When to use**
+ *
+ * Use to borrow the current resource within a `Scope`, acquiring it first if
+ * necessary.
+ *
  * **Details**
  *
  * The reference count is incremented for the current `Scope`, and a release
@@ -192,11 +203,21 @@ export const get: <A, E>(self: RcRef<A, E>) => Effect.Effect<A, E, Scope> = inte
 /**
  * Invalidates the currently cached resource, if one has been acquired.
  *
+ * **When to use**
+ *
+ * Use to force future `RcRef.get` calls to acquire a fresh resource when the
+ * currently cached resource should no longer be reused.
+ *
  * **Details**
  *
- * After invalidation, the next `get` acquires a fresh resource. If the current
- * resource is still referenced by active scopes, it remains usable until those
- * scopes close; otherwise it is closed immediately.
+ * After invalidation, the next `get` acquires a fresh resource.
+ *
+ * **Gotchas**
+ *
+ * Invalidation does not revoke resources already borrowed by active scopes;
+ * those remain usable until their scopes close.
+ *
+ * @see {@link get} for acquiring the current cached resource or the fresh resource after invalidation
  *
  * @category combinators
  * @since 3.19.6

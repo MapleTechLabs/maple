@@ -1,15 +1,11 @@
 /**
- * The `ResponseIdTracker` module provides a small service for reusing provider
- * response IDs across incremental language model calls. It records which prompt
- * message objects were sent for a provider response, then prepares a later
- * prompt by returning the recognized `previousResponseId` together with only
- * the new messages that should be sent.
+ * Track provider response IDs for incremental language model calls.
  *
- * Use this when integrating providers that support continuing a conversation
- * from a prior response ID instead of resending the entire prompt. The tracker
- * is intentionally identity-based and mutable: it only recognizes the same
- * message objects that were previously marked, and it clears its state when a
- * prompt can no longer be matched safely.
+ * Some providers can continue from a prior response by accepting a
+ * `previousResponseId` plus only the messages added after that response. This
+ * module exposes a small mutable service that remembers which prompt message
+ * objects were included in each provider response and prepares a shorter prompt
+ * when a later call extends the same conversation.
  *
  * @since 4.0.0
  */
@@ -61,8 +57,9 @@ export interface Service {
  *
  * **When to use**
  *
- * When provided, language model operations can use the tracker to send only new
- * prompt messages together with the provider's prior response ID.
+ * Use when you provide a language model with previous-response ID tracking so
+ * later calls can send only new prompt messages together with the provider's
+ * prior response ID.
  *
  * @category services
  * @since 4.0.0

@@ -1314,6 +1314,24 @@ describe("Schema", () => {
         expect(B.aStatic).type.toBe<"value">()
       })
 
+      it("extend Struct argument", () => {
+        class A extends Schema.Class<A>("A")({
+          a: Schema.String
+        }) {}
+        const Extension = Schema.Struct({
+          b: Schema.Number
+        }).check(Schema.makeFilter((input) => {
+          expect(input).type.toBe<{ readonly b: number }>()
+          return input.b > 0
+        }))
+        class B extends A.extend<B>("B")(Extension) {}
+
+        expect(new B({ a: "a", b: 1 })).type.toBe<B>()
+        expect(B.make({ a: "a", b: 1 })).type.toBe<B>()
+        expect(Schema.revealCodec(B)).type.toBe<Schema.Codec<B, { readonly a: string; readonly b: number }>>()
+        expect(B.fields).type.toBe<{ readonly a: Schema.String; readonly b: Schema.Number }>()
+      })
+
       it("extend & branded (unique symbol)", () => {
         class Common extends Schema.Class<Common>("Common")({
           a: Schema.String
@@ -1607,6 +1625,41 @@ describe("Schema", () => {
           }>,
           Schema.Struct<{
             readonly c: Schema.toEncoded<Schema.String>
+          }>
+        >
+      >()
+    })
+
+    it("should support symbol keys", () => {
+      const decoded = Symbol.for("decoded")
+      const encoded = Symbol.for("encoded")
+
+      const source = Schema.Struct({
+        [decoded]: Schema.String
+      }).pipe(Schema.encodeKeys({ [decoded]: "decoded" }))
+
+      expect(source).type.toBe<
+        Schema.decodeTo<
+          Schema.Struct<{
+            readonly [decoded]: Schema.String
+          }>,
+          Schema.Struct<{
+            readonly decoded: Schema.toEncoded<Schema.String>
+          }>
+        >
+      >()
+
+      const destination = Schema.Struct({
+        decoded: Schema.String
+      }).pipe(Schema.encodeKeys({ decoded: encoded }))
+
+      expect(destination).type.toBe<
+        Schema.decodeTo<
+          Schema.Struct<{
+            readonly decoded: Schema.String
+          }>,
+          Schema.Struct<{
+            readonly [encoded]: Schema.toEncoded<Schema.String>
           }>
         >
       >()

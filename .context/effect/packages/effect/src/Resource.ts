@@ -1,35 +1,10 @@
 /**
- * The `Resource` module provides refreshable, scoped values. A
- * `Resource<A, E>` stores the latest successful or failed acquisition result and
- * can be read with {@link get}, refreshed manually with {@link refresh}, or
- * refreshed automatically with {@link auto}.
+ * Stores refreshable scoped values.
  *
- * **Mental model**
- *
- * - A `Resource` wraps an acquisition `Effect` whose result is kept in a
- *   `ScopedRef`
- * - Each refresh re-runs acquisition and replaces the stored `Exit`
- * - Replacing the stored value releases resources associated with the previous
- *   scoped value
- * - Reading a resource returns the current acquired value or fails with the
- *   current acquisition error
- *
- * **Common tasks**
- *
- * - Create a manually refreshed resource with {@link manual}
- * - Create a schedule-driven resource with {@link auto}
- * - Read the current value with {@link get}
- * - Force a reload with {@link refresh}
- * - Check whether an unknown value is a resource with {@link isResource}
- *
- * **Gotchas**
- *
- * - Creating a resource requires a `Scope`; when the scope closes, scoped
- *   values held by the resource are released
- * - Failed acquisitions are stored too, so subsequent {@link get} calls fail
- *   until a refresh succeeds
- * - Automatic refreshes run in the resource scope and stop when that scope is
- *   closed
+ * A `Resource<A, E>` keeps the latest successful or failed acquisition result.
+ * It can be read repeatedly, refreshed manually, or refreshed automatically on a
+ * schedule. Resource acquisition runs in a scope, so replacements and final
+ * cleanup release the resources owned by previous values.
  *
  * @since 2.0.0
  */
@@ -50,6 +25,16 @@ const TypeId = "~effect/Resource" as const
  * A `Resource` is a value loaded into memory that can be refreshed manually or
  * automatically according to a schedule.
  *
+ * **When to use**
+ *
+ * Use to model a scoped value whose latest acquisition result is kept available
+ * for repeated reads and can be refreshed manually or on a schedule.
+ *
+ * @see {@link manual} for creating a resource refreshed by the caller
+ * @see {@link auto} for creating a resource refreshed according to a schedule
+ * @see {@link get} for reading the currently stored acquisition result
+ * @see {@link refresh} for forcing a new acquisition
+ *
  * @category models
  * @since 2.0.0
  */
@@ -61,6 +46,15 @@ export interface Resource<in out A, in out E = never> extends Pipeable {
 
 /**
  * Returns `true` if the specified value is a `Resource`.
+ *
+ * **When to use**
+ *
+ * Use to validate unknown values at runtime boundaries before treating them as
+ * `Resource` values.
+ *
+ * **Details**
+ *
+ * This predicate narrows the input to `Resource<unknown, unknown>`.
  *
  * @category guards
  * @since 4.0.0
@@ -92,6 +86,13 @@ const makeUnsafe = <A, E>(
 /**
  * Creates a `Resource` that must be refreshed manually.
  *
+ * **When to use**
+ *
+ * Use when you need manual control over resource refresh timing rather than an
+ * automatic schedule.
+ *
+ * @see {@link auto} for schedule-driven automatic refreshes
+ * @see {@link refresh} to manually trigger a resource refresh
  * @category constructors
  * @since 2.0.0
  */
@@ -113,6 +114,14 @@ export const manual = <A, E, R>(
  * Creates a `Resource` that refreshes automatically according to the supplied
  * schedule.
  *
+ * **When to use**
+ *
+ * Use when a resource should refresh in the background according to a schedule
+ * for the lifetime of its scope.
+ *
+ * @see {@link manual} for caller-controlled refresh timing
+ * @see {@link refresh} to trigger a refresh explicitly
+ *
  * @category constructors
  * @since 2.0.0
  */
@@ -128,6 +137,17 @@ export const auto = <A, E, R, Out, E2, R2>(
 /**
  * Retrieves the current value stored in this resource.
  *
+ * **When to use**
+ *
+ * Use to read the value currently cached by a `Resource`.
+ *
+ * **Gotchas**
+ *
+ * If the resource currently stores a failed acquisition result, the returned
+ * effect fails with the stored error.
+ *
+ * @see {@link refresh} to re-run acquisition and update the stored value before a later read
+ *
  * @category getters
  * @since 2.0.0
  */
@@ -137,13 +157,27 @@ export const get = <A, E>(self: Resource<A, E>): Effect.Effect<A, E> =>
 /**
  * Re-runs this resource's acquisition effect and updates the current value.
  *
+ * **When to use**
+ *
+ * Use to force an existing `Resource` to reacquire its value at a
+ * caller-controlled point.
+ *
  * **Details**
  *
- * Refreshing replaces the value stored in the resource's scoped reference and
- * releases resources associated with the previous value. If acquisition fails,
- * the returned effect fails with the acquisition error.
+ * When acquisition succeeds, refreshing replaces the value stored in the
+ * resource's scoped reference and releases resources associated with the
+ * previous value.
  *
- * @category utils
+ * **Gotchas**
+ *
+ * If acquisition fails, the returned effect fails and the previously stored
+ * result is left as what `get` reads.
+ *
+ * @see {@link get} for reading the current stored value
+ * @see {@link manual} for resources refreshed only by caller action
+ * @see {@link auto} for schedule-driven automatic refreshes
+ *
+ * @category resource management
  * @since 2.0.0
  */
 export const refresh = <A, E>(self: Resource<A, E>): Effect.Effect<void, E> =>

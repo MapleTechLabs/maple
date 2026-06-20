@@ -32,7 +32,7 @@ const EFFECT_PACKAGE_REGEX = /^(@effect\/[\w-]+|effect)(\/.*)?$/
 /**
  * Options for configuring Rollup plugins.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface PluginOptions {

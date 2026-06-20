@@ -1,17 +1,10 @@
 /**
- * Shared Node-compatible implementation of Effect's `Path` service.
+ * Node-backed provider for Effect's `Path` service.
  *
- * This module adapts Node's `node:path` and `node:url` APIs into layers that
- * can be provided to Effect programs needing path manipulation, such as
- * resolving configuration files, building file system locations, parsing
- * names and extensions, or converting between file paths and `file:` URLs.
- *
- * The default layer follows the host platform semantics exposed by
- * `node:path`, while `layerPosix` and `layerWin32` provide stable POSIX or
- * Windows behavior regardless of the current runtime. Path operations are
- * syntactic and do not check whether files exist; separators, drive letters,
- * UNC paths, and URL encoding rules can also differ by platform. Invalid
- * file URL conversions are reported through `BadArgument`.
+ * This module turns Node's `node:path` and `node:url` APIs into `Path` layers.
+ * `layer` uses the host platform path implementation, while `layerPosix` and
+ * `layerWin32` provide fixed POSIX and Windows variants. All three layers also
+ * include helpers for converting between file paths and file URLs.
  *
  * @since 4.0.0
  */

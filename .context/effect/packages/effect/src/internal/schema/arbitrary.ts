@@ -1,46 +1,122 @@
 import * as Array from "../../Array.ts"
 import * as Boolean from "../../Boolean.ts"
 import type * as Combiner from "../../Combiner.ts"
+import * as Equal from "../../Equal.ts"
 import { memoize } from "../../Function.ts"
 import * as Number from "../../Number.ts"
 import * as Option from "../../Option.ts"
+import * as Order from "../../Order.ts"
 import * as Predicate from "../../Predicate.ts"
 import type * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
 import * as Struct from "../../Struct.ts"
 import type * as FastCheck from "../../testing/FastCheck.ts"
 import * as UndefinedOr from "../../UndefinedOr.ts"
 import { errorWithPath } from "../errors.ts"
 import * as InternalAnnotations from "./annotations.ts"
 
-const arbitraryMemoMap = new WeakMap<AST.AST, LazyArbitraryWithContext<any>>()
+const arbitraryMemoMap = new WeakMap<SchemaAST.AST, LazyArbitraryWithContext<any>>()
+const suspendDepthIdentifierMap = new WeakMap<SchemaAST.Suspend, FastCheck.DepthIdentifier>()
+const emptyRecursionStack: RecursionStack = []
 
-function applyChecks(ast: AST.AST, filters: Array<AST.Filter<any>>, arbitrary: FastCheck.Arbitrary<any>) {
-  return filters.map((filter) => (a: any) => filter.run(a, ast, AST.defaultParseOptions) === undefined).reduce(
-    (acc, filter) => acc.filter(filter),
+type RecursionStack = ReadonlyArray<SchemaAST.Suspend>
+
+type Context = Schema.Annotations.ToArbitrary.Context
+type Constraint = Schema.Annotations.ToArbitrary.Constraint
+type OrderedConstraint = Schema.Annotations.ToArbitrary.OrderedConstraint<any>
+type ArbitraryFilter = Schema.Annotations.ToArbitrary.Filter
+
+type Lazy<T> = (fc: typeof FastCheck, ctx: Context, recursionStack: RecursionStack) => FastCheck.Arbitrary<T>
+type LazyOption<T> = (
+  fc: typeof FastCheck,
+  ctx: Context,
+  recursionStack: RecursionStack
+) => FastCheck.Arbitrary<T> | undefined
+
+export interface MutableReport {
+  readonly warnings: Array<Schema.Annotations.ToArbitrary.Warning>
+}
+
+/** @internal */
+export function makeReport(): MutableReport {
+  return { warnings: [] }
+}
+
+/** @internal */
+export function toReport(report: MutableReport): Schema.Annotations.ToArbitrary.Report {
+  return { warnings: report.warnings.slice() }
+}
+
+function arbitraryError(what: string) {
+  return new Error(`Unable to derive an arbitrary for ${what}`)
+}
+
+const entryComparator = ([a]: readonly [any, any], [b]: readonly [any, any]) => Equal.equals(a, b)
+
+function applyChecks(ast: SchemaAST.AST, filters: Array<SchemaAST.Filter<any>>, arbitrary: FastCheck.Arbitrary<any>) {
+  return filters.reduce(
+    (acc, filter) => acc.filter((a) => filter.run(a, ast, SchemaAST.defaultParseOptions) === undefined),
     arbitrary
   )
 }
 
-function isUniqueArrayConstraintsCustomCompare(
-  constraint: Schema.Annotations.ToArbitrary.ArrayConstraints | undefined
-): constraint is Schema.Annotations.ToArbitrary.ArrayConstraints & FastCheck.UniqueArrayConstraintsCustomCompare<any> {
-  return constraint?.comparator !== undefined
+function validateArrayConstraints(constraint: FastCheck.ArrayConstraints | undefined, label: string) {
+  if (
+    constraint?.minLength !== undefined && constraint.maxLength !== undefined &&
+    constraint.minLength > constraint.maxLength
+  ) {
+    throw arbitraryError(`${label} constraints`)
+  }
 }
 
-function array(fc: typeof FastCheck, ctx: Schema.Annotations.ToArbitrary.Context, item: FastCheck.Arbitrary<any>) {
-  const constraint = ctx.constraints?.array
-  const out = isUniqueArrayConstraintsCustomCompare(constraint)
-    ? fc.uniqueArray(item, constraint)
+function lengthToFastCheckConstraints(
+  constraint: { readonly minLength?: number | undefined; readonly maxLength?: number | undefined } | undefined
+) {
+  return constraint === undefined || (constraint.minLength === undefined && constraint.maxLength === undefined)
+    ? undefined
+    : {
+      ...(constraint.minLength !== undefined ? { minLength: constraint.minLength } : {}),
+      ...(constraint.maxLength !== undefined ? { maxLength: constraint.maxLength } : {})
+    }
+}
+
+function arrayWithConstraints(
+  fc: typeof FastCheck,
+  item: FastCheck.Arbitrary<any>,
+  constraint: FastCheck.ArrayConstraints | undefined,
+  comparator?: ((a: any, b: any) => boolean) | undefined
+) {
+  return comparator
+    ? fc.uniqueArray(item, { ...constraint, comparator })
     : fc.array(item, constraint)
-  if (ctx.isSuspend) {
-    return fc.oneof(
-      { maxDepth: 2, depthIdentifier: "" },
-      fc.constant([]),
-      out
-    )
-  }
-  return out
+}
+
+function array(fc: typeof FastCheck, ctx: Context, item: FastCheck.Arbitrary<any>, terminal = false) {
+  const constraint = ctx.constraint
+  const arrayConstraints = lengthToFastCheckConstraints(constraint)
+  validateArrayConstraints(arrayConstraints, "array")
+  return arrayWithConstraints(
+    fc,
+    item,
+    terminal ? { ...arrayConstraints, maxLength: arrayConstraints?.minLength ?? 0 } : arrayConstraints,
+    constraint?.unique ? Equal.equals : undefined
+  )
+}
+
+function appendArray(
+  fc: typeof FastCheck,
+  out: FastCheck.Arbitrary<Array<any>>,
+  len: number,
+  rest: FastCheck.Arbitrary<ReadonlyArray<any>>
+) {
+  return out.chain((as) => as.length < len ? fc.constant(as) : rest.map((rest) => [...as, ...rest]))
+}
+
+function appendObjectEntries(
+  out: FastCheck.Arbitrary<any>,
+  entries: FastCheck.Arbitrary<Array<readonly [PropertyKey, any]>>
+) {
+  return out.chain((o) => entries.map((entries) => ({ ...Object.fromEntries(entries), ...o })))
 }
 
 const max = UndefinedOr.makeReducer(Number.ReducerMax)
@@ -49,262 +125,787 @@ const or = UndefinedOr.makeReducer(Boolean.ReducerOr)
 const concat = UndefinedOr.makeReducer(Array.makeReducerConcat())
 
 const combiner: Combiner.Combiner<any> = Struct.makeCombiner({
-  isInteger: or,
-  max: min,
-  maxExcluded: or,
+  integer: or,
   maxLength: min,
-  min: max,
-  minExcluded: or,
   minLength: max,
-  noDefaultInfinity: or,
-  noInteger: or,
-  noInvalidDate: or,
+  noInfinity: or,
   noNaN: or,
   patterns: concat,
-  comparator: or
+  unique: or,
+  valid: or
 }, {
   omitKeyWhen: Predicate.isUndefined
 })
 
-type FastCheckConstraint =
-  | Schema.Annotations.ToArbitrary.StringConstraints
-  | Schema.Annotations.ToArbitrary.NumberConstraints
-  | Schema.Annotations.ToArbitrary.BigIntConstraints
-  | Schema.Annotations.ToArbitrary.ArrayConstraints
-  | Schema.Annotations.ToArbitrary.DateConstraints
-
-function merge(
-  _tag: "string" | "number" | "bigint" | "array" | "date",
-  constraints: Schema.Annotations.ToArbitrary.Constraint,
-  constraint: FastCheckConstraint
-): Schema.Annotations.ToArbitrary.Constraint {
-  const c = constraints[_tag]
-  return {
-    ...constraints,
-    [_tag]: c ? combiner.combine(c, constraint) : constraint
+function mergeOrderedBound<T>(
+  order: Order.Order<T>,
+  self: T | undefined,
+  selfExclusive: boolean | undefined,
+  that: T | undefined,
+  thatExclusive: boolean | undefined,
+  takeComparison: -1 | 1
+): readonly [T | undefined, boolean | undefined] {
+  if (that === undefined || self === undefined) {
+    return that === undefined ? [self, selfExclusive] : [that, thatExclusive]
   }
+  const comparison = order(self, that)
+  return comparison === takeComparison
+    ? [that, thatExclusive]
+    : comparison === 0
+    ? [self, selfExclusive || thatExclusive]
+    : [self, selfExclusive]
 }
 
-const constraintsKeys = {
-  string: null,
-  number: null,
-  bigint: null,
-  array: null,
-  date: null
-}
+function mergeOrderedConstraints(self: OrderedConstraint | undefined, that: OrderedConstraint) {
+  if (self === undefined) {
+    return that
+  }
+  if (self.order !== that.order) {
+    throw new Error("Cannot merge ordered arbitrary constraints with different Order instances")
+  }
 
-function isConstraintKey(key: string): key is keyof Schema.Annotations.ToArbitrary.Constraint {
-  return key in constraintsKeys
-}
-
-/** @internal */
-export function constraintContext(
-  filters: Array<AST.Filter<any>>
-): (ctx: Schema.Annotations.ToArbitrary.Context) => Schema.Annotations.ToArbitrary.Context {
-  const annotations = filters.map((filter) => filter.annotations?.toArbitraryConstraint).filter(
-    Predicate.isNotUndefined
+  const [minimum, exclusiveMinimum] = mergeOrderedBound(
+    self.order,
+    self.minimum,
+    self.exclusiveMinimum,
+    that.minimum,
+    that.exclusiveMinimum,
+    -1
   )
-  return (ctx) => {
-    const constraints = annotations.reduce((acc: Schema.Annotations.ToArbitrary.Constraint, c) => {
-      const keys = Object.keys(c)
-      for (const key of keys) {
-        if (isConstraintKey(key)) {
-          acc = merge(key, acc, c[key]!)
-        }
-      }
-      return acc
-    }, ctx.constraints || {})
-    return { ...ctx, constraints }
+  const [maximum, exclusiveMaximum] = mergeOrderedBound(
+    self.order,
+    self.maximum,
+    self.exclusiveMaximum,
+    that.maximum,
+    that.exclusiveMaximum,
+    1
+  )
+
+  return {
+    order: self.order,
+    ...(minimum !== undefined ? { minimum } : {}),
+    ...(exclusiveMinimum !== undefined ? { exclusiveMinimum } : {}),
+    ...(maximum !== undefined ? { maximum } : {}),
+    ...(exclusiveMaximum !== undefined ? { exclusiveMaximum } : {})
   }
 }
 
-function resetContext(ctx: Schema.Annotations.ToArbitrary.Context): Schema.Annotations.ToArbitrary.Context {
-  return { ...ctx, constraints: undefined }
+function mergeConstraint(self: Constraint | undefined, that: Constraint): Constraint {
+  const { ordered: selfOrdered, ...selfRest } = self ?? {}
+  const { ordered: thatOrdered, ...thatRest } = that
+  const ordered = thatOrdered === undefined
+    ? selfOrdered
+    : mergeOrderedConstraints(selfOrdered, thatOrdered)
+  const out = combiner.combine(selfRest, thatRest)
+  return {
+    ...out,
+    ...(ordered === undefined ? {} : { ordered })
+  }
+}
+
+function collectChecks(checks: SchemaAST.Checks | undefined) {
+  const filters: Array<SchemaAST.Filter<any>> = []
+  const arbitraries: Array<ArbitraryFilter> = []
+  function visit(check: SchemaAST.Check<any>) {
+    if (check.annotations?.arbitrary) {
+      arbitraries.push(check.annotations.arbitrary)
+    }
+    if (check._tag !== "Filter") {
+      for (const child of check.checks) {
+        visit(child)
+      }
+    } else {
+      filters.push(check)
+    }
+  }
+  checks?.forEach(visit)
+  return { filters, arbitraries }
+}
+
+function constraintContext(arbitraries: Array<ArbitraryFilter>): (ctx: Context) => Context {
+  const constraintAnnotations = arbitraries.map(({ constraint }) => constraint).filter(Predicate.isNotUndefined)
+  return (ctx) => {
+    const constraint = constraintAnnotations.reduce(
+      (acc: Constraint | undefined, c) => mergeConstraint(acc, c),
+      ctx.constraint
+    )
+    return { ...ctx, constraint }
+  }
+}
+
+function resetContext(ctx: Context) {
+  return { ...ctx, constraint: undefined }
+}
+
+function objectEntriesConstraints(ast: SchemaAST.Objects, constraint: Constraint | undefined, requiredKeys: number) {
+  if (constraint === undefined || (constraint.minLength === undefined && constraint.maxLength === undefined)) {
+    return undefined
+  }
+  if (
+    constraint.minLength !== undefined &&
+    ast.indexSignatures.length === 0 &&
+    constraint.minLength > ast.propertySignatures.length
+  ) {
+    throw arbitraryError("object property constraints")
+  }
+  const out: FastCheck.ArrayConstraints = {}
+  if (constraint.minLength !== undefined) {
+    out.minLength = Math.max(0, constraint.minLength - requiredKeys)
+  }
+  if (constraint.maxLength !== undefined) {
+    out.maxLength = constraint.maxLength - requiredKeys
+    if (out.maxLength < 0) {
+      throw arbitraryError("object property constraints")
+    }
+  }
+  validateArrayConstraints(out, "object property")
+  return out
+}
+
+function objectWithOptionalCount(
+  fc: typeof FastCheck,
+  pss: Record<PropertyKey, FastCheck.Arbitrary<any>>,
+  orderedNames: ReadonlyArray<PropertyKey>,
+  requiredKeys: ReadonlyArray<PropertyKey>,
+  optionalNames: ReadonlyArray<PropertyKey>,
+  constraint: Constraint
+) {
+  const requiredCount = requiredKeys.length
+  if (constraint.maxLength !== undefined && constraint.maxLength < requiredCount) {
+    throw arbitraryError("object property constraints")
+  }
+  const minOptional = constraint.minLength === undefined ? 0 : Math.max(0, constraint.minLength - requiredCount)
+  const maxOptional = constraint.maxLength === undefined
+    ? optionalNames.length
+    : Math.min(optionalNames.length, constraint.maxLength - requiredCount)
+  if (minOptional > maxOptional) {
+    throw arbitraryError("object property constraints")
+  }
+  const full = fc.record<any>(pss, { requiredKeys: [...requiredKeys, ...optionalNames] })
+  const chosen = fc.shuffledSubarray([...optionalNames], { minLength: minOptional, maxLength: maxOptional })
+  return fc.tuple(full, chosen).map(([base, names]) => {
+    const keep = new Set<PropertyKey>([...requiredKeys, ...names])
+    const out: Record<PropertyKey, any> = {}
+    for (const name of orderedNames) {
+      if (keep.has(name)) {
+        out[name] = base[name]
+      }
+    }
+    return out
+  })
+}
+
+function toRangeConstraints<T extends number | bigint>(
+  ordered: OrderedConstraint | undefined,
+  min: (value: T, excluded: boolean) => T,
+  max: (value: T, excluded: boolean) => T,
+  error: string
+) {
+  const out: { min?: T; max?: T } = {}
+  if (ordered?.minimum !== undefined) {
+    out.min = min(ordered.minimum as T, ordered.exclusiveMinimum === true)
+  }
+  if (ordered?.maximum !== undefined) {
+    out.max = max(ordered.maximum as T, ordered.exclusiveMaximum === true)
+  }
+  if (out.min !== undefined && out.max !== undefined && out.min > out.max) {
+    throw arbitraryError(error)
+  }
+  return out
+}
+
+function toIntegerConstraints(ordered: OrderedConstraint | undefined) {
+  return toRangeConstraints<number>(
+    ordered,
+    (minimum, excluded) => excluded ? Math.floor(minimum) + 1 : Math.ceil(minimum),
+    (maximum, excluded) => excluded ? Math.ceil(maximum) - 1 : Math.floor(maximum),
+    "integer constraints"
+  )
+}
+
+function toFloatConstraints(constraint: Constraint | undefined, ordered: OrderedConstraint | undefined) {
+  const out: FastCheck.FloatConstraints = {
+    ...(constraint?.noInfinity ? { noDefaultInfinity: true } : {}),
+    ...(constraint?.noNaN ? { noNaN: true } : {}),
+    ...(ordered?.minimum !== undefined ? { min: ordered.minimum as number } : {}),
+    ...(ordered?.exclusiveMinimum !== undefined ? { minExcluded: ordered.exclusiveMinimum } : {}),
+    ...(ordered?.maximum !== undefined ? { max: ordered.maximum as number } : {}),
+    ...(ordered?.exclusiveMaximum !== undefined ? { maxExcluded: ordered.exclusiveMaximum } : {})
+  }
+  if (
+    out.min !== undefined &&
+    out.max !== undefined &&
+    (out.min > out.max || (out.min === out.max && (out.minExcluded || out.maxExcluded)))
+  ) {
+    throw arbitraryError("number constraints")
+  }
+  return out
+}
+
+function toBigIntConstraints(ordered: OrderedConstraint | undefined) {
+  return toRangeConstraints<bigint>(
+    ordered,
+    (minimum, excluded) => excluded ? minimum + BigInt(1) : minimum,
+    (maximum, excluded) => excluded ? maximum - BigInt(1) : maximum,
+    "the ordered bigint constraints"
+  )
 }
 
 interface LazyArbitraryWithContext<T> {
-  (fc: typeof FastCheck, ctx: Schema.Annotations.ToArbitrary.Context): FastCheck.Arbitrary<T>
+  (fc: typeof FastCheck, ctx: Context, recursionStack?: RecursionStack): FastCheck.Arbitrary<T>
+  readonly terminal: (
+    fc: typeof FastCheck,
+    ctx: Context,
+    recursionStack?: RecursionStack
+  ) => FastCheck.Arbitrary<T> | undefined
 }
 
-/** @internal */
-export function getFilters(checks: AST.Checks | undefined): Array<AST.Filter<any>> {
-  if (checks) {
-    return checks.flatMap((check) => {
-      switch (check._tag) {
-        case "Filter":
-          return [check]
-        case "FilterGroup":
-          return getFilters(check.checks)
-      }
-    })
+function makeLazy<T>(normal: Lazy<T>, terminal: LazyOption<T>): LazyArbitraryWithContext<T> {
+  const out =
+    ((fc, ctx, recursionStack = emptyRecursionStack) => normal(fc, ctx, recursionStack)) as LazyArbitraryWithContext<T>
+  ;(out as { terminal: LazyOption<T> }).terminal = (fc, ctx, recursionStack = emptyRecursionStack) =>
+    terminal(fc, ctx, recursionStack)
+  return out
+}
+
+function same<T>(f: Lazy<T>) {
+  return makeLazy(f, f)
+}
+
+function getSuspendRecursion(fc: typeof FastCheck, ast: SchemaAST.Suspend) {
+  const depthIdentifier = suspendDepthIdentifierMap.get(ast) ?? fc.createDepthIdentifier()
+  suspendDepthIdentifierMap.set(ast, depthIdentifier)
+  return { maxDepth: 2, depthIdentifier }
+}
+
+function oneOf<T>(fc: typeof FastCheck, arbitraries: ReadonlyArray<FastCheck.Arbitrary<T>>) {
+  return arbitraries.length === 0 ? undefined : arbitraries.length === 1 ? arbitraries[0] : fc.oneof(...arbitraries)
+}
+
+const finiteNumberConstraint: Constraint = {
+  noInfinity: true,
+  noNaN: true
+}
+
+function finiteNumberContext(ctx: Context): Context {
+  return {
+    ...ctx,
+    constraint: finiteNumberConstraint
   }
-  return []
+}
+
+function reportChecks(report: MutableReport, checks: SchemaAST.Checks | undefined, path: ReadonlyArray<PropertyKey>) {
+  function visit(check: SchemaAST.Check<any>, covered: boolean) {
+    const arbitrary = check.annotations?.arbitrary
+    const nextCovered = covered || arbitrary?.constraint !== undefined || arbitrary?.candidate !== undefined
+    if (check._tag !== "Filter") {
+      for (const child of check.checks) {
+        visit(child, nextCovered)
+      }
+    } else if (!nextCovered) {
+      const meta = check.annotations?.meta
+      const description = typeof meta === "object" && meta !== null && "_tag" in meta && typeof meta._tag === "string"
+        ? meta._tag
+        : check.annotations?.identifier ?? check.annotations?.expected
+      report.warnings.push({ _tag: "OpaqueFilter", path, ...(description === undefined ? {} : { description }) })
+    }
+  }
+  checks?.forEach((check) => visit(check, false))
 }
 
 /** @internal */
-export const memoized = memoize((ast: AST.AST): LazyArbitraryWithContext<any> => {
-  return recur(ast, [])
-})
+export function collectReport(ast: SchemaAST.AST, report: MutableReport) {
+  const stack = new WeakSet<SchemaAST.AST>()
+  function visit(ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>) {
+    if (stack.has(ast)) {
+      return
+    }
+    stack.add(ast)
+    reportChecks(report, ast.checks, path)
+    switch (ast._tag) {
+      case "Declaration":
+        ast.typeParameters.forEach((tp) => visit(tp, path))
+        break
+      case "Arrays": {
+        for (const [i, type] of [...ast.elements, ...ast.rest].entries()) {
+          visit(type, [...path, i])
+        }
+        break
+      }
+      case "Objects":
+        ast.propertySignatures.forEach((ps) => visit(ps.type, [...path, ps.name]))
+        ast.indexSignatures.forEach((is) => {
+          visit(is.parameter, path)
+          visit(is.type, path)
+        })
+        break
+      case "Union":
+        ast.types.forEach((type) => visit(type, path))
+        break
+      case "TemplateLiteral":
+        ast.parts.forEach((part, i) => visit(SchemaAST.toEncoded(part), [...path, i]))
+        break
+      case "Suspend":
+        visit(ast.thunk(), path)
+        break
+    }
+    stack.delete(ast)
+  }
+  visit(ast, [])
+}
 
-function recur(ast: AST.AST, path: ReadonlyArray<PropertyKey>): LazyArbitraryWithContext<any> {
+function applyCandidates(
+  fc: typeof FastCheck,
+  ctx: Context,
+  arbitraries: Array<ArbitraryFilter>,
+  base: FastCheck.Arbitrary<any> | undefined
+) {
+  const weighted: Array<FastCheck.WeightedArbitrary<any>> = base === undefined
+    ? []
+    : [{ arbitrary: base, weight: 1 }]
+  for (const { candidate } of arbitraries) {
+    if (!candidate) {
+      continue
+    }
+    const arbitrary = candidate.make(fc, ctx)
+    if (arbitrary === undefined) {
+      continue
+    }
+    const weight = candidate.weight ?? 1
+    if (!globalThis.Number.isInteger(weight) || weight <= 0) {
+      throw arbitraryError("a candidate with an invalid weight")
+    }
+    weighted.push({ arbitrary, weight })
+  }
+  return weighted.length === 0 ? undefined : weighted.length === 1 ? weighted[0].arbitrary : fc.oneof(...weighted)
+}
+
+function applyFilterLayer(
+  ast: SchemaAST.AST,
+  checks: ReturnType<typeof collectChecks>,
+  fc: typeof FastCheck,
+  ctx: Context,
+  base: FastCheck.Arbitrary<any> | undefined
+) {
+  const out = applyCandidates(fc, ctx, checks.arbitraries, base)
+  return out === undefined ? undefined : applyChecks(ast, checks.filters, out)
+}
+
+function normalizeDerivation<T>(
+  output: Schema.Annotations.ToArbitrary.Output<T>,
+  hasTypeParameters: boolean
+) {
+  if (!(typeof output === "object" && output !== null && "arbitrary" in output)) {
+    return { arbitrary: output, terminal: hasTypeParameters ? undefined : output }
+  }
+  const terminal = "terminal" in output ? output.terminal : hasTypeParameters ? undefined : output.arbitrary
+  return {
+    arbitrary: output.arbitrary,
+    terminal
+  }
+}
+
+function makeTypeParameters(
+  typeParameters: ReadonlyArray<LazyArbitraryWithContext<any>>,
+  fc: typeof FastCheck,
+  ctx: Context,
+  recursionStack: RecursionStack,
+  lazyNormal: boolean
+) {
+  return typeParameters.map((tp) => ({
+    arbitrary: lazyNormal ? fc.constant(null).chain(() => tp(fc, ctx, recursionStack)) : tp(fc, ctx, recursionStack),
+    terminal: tp.terminal(fc, ctx, recursionStack)
+  }))
+}
+
+type BaseBuilder = (
+  fc: typeof FastCheck,
+  ctx: Context,
+  nextCtx: Context,
+  recursionStack: RecursionStack
+) => FastCheck.Arbitrary<any> | undefined
+
+function filterLayer(
+  ast: SchemaAST.AST,
+  checks: ReturnType<typeof collectChecks>,
+  normalBase: BaseBuilder,
+  terminalBase: BaseBuilder
+): LazyArbitraryWithContext<any> {
+  const f = constraintContext(checks.arbitraries)
+  return makeLazy((fc, ctx, recursionStack) => {
+    const nextCtx = f(ctx)
+    return applyFilterLayer(ast, checks, fc, nextCtx, normalBase(fc, ctx, nextCtx, recursionStack))!
+  }, (fc, ctx, recursionStack) => {
+    const nextCtx = f(ctx)
+    return applyFilterLayer(ast, checks, fc, nextCtx, terminalBase(fc, ctx, nextCtx, recursionStack))
+  })
+}
+
+/** @internal */
+export const memoized = memoize((ast: SchemaAST.AST) => recur(ast, []))
+
+function recur(ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>): LazyArbitraryWithContext<any> {
   // ---------------------------------------------
-  // handle Override annotation
+  // handle annotations
   // ---------------------------------------------
   const annotation = InternalAnnotations.resolve(ast)?.toArbitrary as
     | Schema.Annotations.ToArbitrary.Declaration<any, ReadonlyArray<Schema.Top>>
     | undefined
   if (annotation) {
-    const typeParameters = AST.isDeclaration(ast) ? ast.typeParameters.map((tp) => recur(tp, path)) : []
-    const filters = getFilters(ast.checks)
-    const f = constraintContext(filters)
-    return (fc, ctx) =>
-      applyChecks(
-        ast,
-        filters,
-        annotation(typeParameters.map((tp) => tp(fc, resetContext(ctx))))(fc, f(ctx))
-      )
+    const typeParameters = SchemaAST.isDeclaration(ast) ? ast.typeParameters.map((tp) => recur(tp, path)) : []
+    const checks = collectChecks(ast.checks)
+    const derive = (lazyNormal: boolean): BaseBuilder => (fc, ctx, nextCtx, recursionStack) =>
+      normalizeDerivation(
+        annotation(makeTypeParameters(typeParameters, fc, resetContext(ctx), recursionStack, lazyNormal))(fc, nextCtx),
+        typeParameters.length > 0
+      )[lazyNormal ? "terminal" : "arbitrary"]
+    return filterLayer(ast, checks, derive(false), derive(true))
   }
   if (ast.checks) {
-    const filters = getFilters(ast.checks)
-    const f = constraintContext(filters)
-    const lawc = recur(AST.replaceChecks(ast, undefined), path)
-    return (fc, ctx) => applyChecks(ast, filters, lawc(fc, f(ctx)))
+    const checks = collectChecks(ast.checks)
+    const lawc = recur(SchemaAST.replaceChecks(ast, undefined), path)
+    return filterLayer(
+      ast,
+      checks,
+      (fc, _ctx, nextCtx, recursionStack) => lawc(fc, nextCtx, recursionStack),
+      (fc, _ctx, nextCtx, recursionStack) => lawc.terminal(fc, nextCtx, recursionStack)
+    )
   }
   return base(ast, path)
 }
 
-function base(ast: AST.AST, path: ReadonlyArray<PropertyKey>): LazyArbitraryWithContext<any> {
+function base(ast: SchemaAST.AST, path: ReadonlyArray<PropertyKey>): LazyArbitraryWithContext<any> {
   switch (ast._tag) {
     case "Never":
     case "Declaration":
       throw errorWithPath(`Unsupported AST ${ast._tag}`, path)
     case "Null":
-      return (fc) => fc.constant(null)
+      return same((fc) => fc.constant(null))
     case "Void":
     case "Undefined":
-      return (fc) => fc.constant(undefined)
+      return same((fc) => fc.constant(undefined))
     case "Unknown":
     case "Any":
-      return (fc) => fc.anything()
+      return same((fc) => fc.anything())
     case "String":
-      return (fc, ctx) => {
-        const constraint = ctx.constraints?.string
+      return same((fc, ctx) => {
+        const constraint = ctx.constraint
         const patterns = constraint?.patterns
-        if (patterns) {
-          return fc.oneof(...patterns.map((pattern) => fc.stringMatching(new RegExp(pattern))))
-        }
-        return fc.string(constraint)
-      }
+        return patterns
+          ? fc.oneof(...patterns.map((pattern) => fc.stringMatching(new RegExp(pattern))))
+          : fc.string(lengthToFastCheckConstraints(constraint))
+      })
     case "Number":
-      return (fc, ctx) => {
-        const constraint = ctx.constraints?.number
-        if (constraint?.isInteger) {
-          return fc.integer(constraint)
-        }
-        return fc.float(constraint)
-      }
+      return same((fc, ctx) => {
+        const constraint = ctx.constraint
+        const ordered = constraint?.ordered?.order === Order.Number ? constraint.ordered : undefined
+        return constraint?.integer
+          ? fc.integer(toIntegerConstraints(ordered))
+          : fc.float(toFloatConstraints(constraint, ordered))
+      })
     case "Boolean":
-      return (fc) => fc.boolean()
+      return same((fc) => fc.boolean())
     case "BigInt":
-      return (fc, ctx) => fc.bigInt(ctx.constraints?.bigint ?? {})
+      return same((fc, ctx) => {
+        const ordered = ctx.constraint?.ordered?.order === Order.BigInt ? ctx.constraint.ordered : undefined
+        return fc.bigInt(toBigIntConstraints(ordered))
+      })
     case "Symbol":
-      return (fc) => fc.string().map(Symbol.for)
+      return same((fc) => fc.string().map(Symbol.for))
     case "Literal":
-      return (fc) => fc.constant(ast.literal)
+      return same((fc) => fc.constant(ast.literal))
     case "UniqueSymbol":
-      return (fc) => fc.constant(ast.symbol)
+      return same((fc) => fc.constant(ast.symbol))
     case "ObjectKeyword":
-      return (fc) => fc.oneof(fc.object(), fc.array(fc.anything()))
+      return same((fc) => fc.oneof(fc.object(), fc.array(fc.anything())))
     case "Enum":
-      return recur(AST.enumsToLiterals(ast), path)
-    case "TemplateLiteral":
-      return (fc) => fc.stringMatching(AST.getTemplateLiteralRegExp(ast))
-    case "Arrays":
-      return (fc, ctx) => {
+      return recur(SchemaAST.enumsToLiterals(ast), path)
+    case "TemplateLiteral": {
+      const parts = ast.parts.map((part, i) => recur(SchemaAST.toEncoded(part), [...path, i]))
+      return same((fc, ctx, recursionStack) =>
+        fc.tuple(...parts.map((part) => part(fc, finiteNumberContext(ctx), recursionStack))).map((segments) =>
+          segments.map((segment) => globalThis.String(segment)).join("")
+        )
+      )
+    }
+    case "Arrays": {
+      const elements = ast.elements.map((ast, i) => ({
+        ast,
+        arbitrary: recur(ast, [...path, i])
+      }))
+      const len = ast.elements.length
+      const rest = ast.rest.map((ast, i) => ({
+        ast,
+        arbitrary: recur(ast, [...path, len + i])
+      }))
+      const terminal: LazyOption<any> = (fc, ctx, recursionStack) => {
+        const reset = resetContext(ctx)
+        const elementArbitraries: Array<FastCheck.Arbitrary<Option.Option<any>>> = []
+        const optionals: Array<FastCheck.Arbitrary<any> | undefined> = []
+        let length = 0
+        for (const element of elements) {
+          const out = element.arbitrary.terminal(fc, reset, recursionStack)
+          if (SchemaAST.isOptional(element.ast)) {
+            optionals.push(out)
+            continue
+          }
+          if (out === undefined) {
+            return undefined
+          }
+          length++
+          elementArbitraries.push(out.map(Option.some))
+        }
+        const minLength = ctx.constraint?.minLength ?? 0
+        const needsRest = Array.isReadonlyArrayNonEmpty(rest) && minLength > length + optionals.length
+        const optionalTarget = needsRest ? optionals.length : Math.max(0, minLength - length)
+        let includedOptionals = 0
+        for (const out of optionals) {
+          if (includedOptionals >= optionalTarget || out === undefined) {
+            elementArbitraries.push(fc.constant(Option.none()))
+            continue
+          }
+          includedOptionals++
+          length++
+          elementArbitraries.push(out.map(Option.some))
+        }
+        if (includedOptionals < optionalTarget) {
+          return undefined
+        }
+        let out = fc.tuple(...elementArbitraries).map(Array.getSomes)
+        if (Array.isReadonlyArrayNonEmpty(rest)) {
+          const [head, ...tail] = rest
+          const restCtx = ast.elements.length === 0 ? ctx : reset
+          const minRestLength = Math.max(0, minLength - length - tail.length)
+          const headArbitrary = minRestLength === 0
+            ? undefined
+            : head.arbitrary.terminal(fc, reset, recursionStack)
+          if (minRestLength > 0 && headArbitrary === undefined) {
+            return undefined
+          }
+          const restArbitrary = minRestLength === 0
+            ? fc.constant([])
+            : array(
+              fc,
+              { ...restCtx, constraint: { ...restCtx.constraint, minLength: minRestLength } },
+              headArbitrary!,
+              true
+            )
+          out = appendArray(fc, out, len, restArbitrary)
+          if (tail.length > 0) {
+            const tailArbitraries: Array<FastCheck.Arbitrary<any>> = []
+            for (const element of tail) {
+              const out = element.arbitrary.terminal(fc, reset, recursionStack)
+              if (out === undefined) {
+                return undefined
+              }
+              tailArbitraries.push(out)
+            }
+            const t = fc.tuple(...tailArbitraries)
+            out = appendArray(fc, out, len, t)
+          }
+        }
+        return out
+      }
+      return makeLazy((fc, ctx, recursionStack) => {
         const reset = resetContext(ctx)
         // ---------------------------------------------
         // handle elements
         // ---------------------------------------------
-        const elements: Array<FastCheck.Arbitrary<Option.Option<any>>> = ast.elements.map((e, i) => {
-          const out = recur(e, [...path, i])(fc, reset)
-          if (!AST.isOptional(e)) {
-            return out.map(Option.some)
+        const elementArbitraries: Array<FastCheck.Arbitrary<Option.Option<any>>> = elements.map(
+          ({ ast, arbitrary }) => {
+            const out = arbitrary(fc, reset, recursionStack)
+            return SchemaAST.isOptional(ast)
+              ? out.chain((a) => fc.boolean().map((b) => b ? Option.some(a) : Option.none()))
+              : out.map(Option.some)
           }
-          return out.chain((a) => fc.boolean().map((b) => b ? Option.some(a) : Option.none()))
-        })
-        let out = fc.tuple(...elements).map(Array.getSomes)
+        )
+        let out = fc.tuple(...elementArbitraries).map(Array.getSomes)
         // ---------------------------------------------
         // handle rest element
         // ---------------------------------------------
-        if (Array.isReadonlyArrayNonEmpty(ast.rest)) {
-          const len = ast.elements.length
-          const [head, ...tail] = ast.rest.map((r, i) => recur(r, [...path, len + i])(fc, reset))
+        if (Array.isReadonlyArrayNonEmpty(rest)) {
+          const [head, ...tail] = rest.map(({ arbitrary }) => arbitrary(fc, reset, recursionStack))
 
-          const rest = array(fc, ast.elements.length === 0 ? ctx : reset, head)
-          out = out.chain((as) => {
-            if (as.length < len) {
-              return fc.constant(as)
-            }
-            return rest.map((rest) => [...as, ...rest])
-          })
+          const restArbitrary = array(fc, ast.elements.length === 0 ? ctx : reset, head)
+          out = appendArray(fc, out, len, restArbitrary)
           // ---------------------------------------------
           // handle post rest elements
           // ---------------------------------------------
           if (tail.length > 0) {
             const t = fc.tuple(...tail)
-            out = out.chain((as) => {
-              if (as.length < len) {
-                return fc.constant(as)
-              }
-              return t.map((rest) => [...as, ...rest])
-            })
+            out = appendArray(fc, out, len, t)
+          }
+        }
+        if (ctx.recursion) {
+          const terminalOut = terminal(fc, ctx, recursionStack)
+          if (terminalOut !== undefined) {
+            return fc.oneof(ctx.recursion, terminalOut, out)
           }
         }
         return out
+      }, terminal)
+    }
+    case "Objects": {
+      const propertySignatures = ast.propertySignatures.map((ps) => ({
+        ps,
+        arbitrary: recur(ps.type, [...path, ps.name])
+      }))
+      const indexSignatures = ast.indexSignatures.map((is) => ({
+        is,
+        parameter: recur(is.parameter, path),
+        type: recur(is.type, path)
+      }))
+      const terminal: LazyOption<any> = (fc, ctx, recursionStack) => {
+        const reset = resetContext(ctx)
+        const pss: any = {}
+        const requiredKeys: Array<PropertyKey> = []
+        const optionals: Array<readonly [PropertyKey, FastCheck.Arbitrary<any>]> = []
+        for (const { ps, arbitrary } of propertySignatures) {
+          const name = ps.name
+          const out = arbitrary.terminal(fc, reset, recursionStack)
+          if (SchemaAST.isOptional(ps.type)) {
+            if (out !== undefined) {
+              optionals.push([name, out])
+            }
+            continue
+          }
+          if (out === undefined) {
+            return undefined
+          }
+          requiredKeys.push(name)
+          pss[name] = out
+        }
+        let optionalCount = Math.max(0, (ctx.constraint?.minLength ?? 0) - requiredKeys.length)
+        for (const [name, out] of optionals) {
+          if (optionalCount === 0) {
+            break
+          }
+          optionalCount--
+          requiredKeys.push(name)
+          pss[name] = out
+        }
+        if (optionalCount > 0 && ast.indexSignatures.length === 0) {
+          return undefined
+        }
+        let out = fc.record<any>(pss, { requiredKeys })
+        const entriesConstraints = objectEntriesConstraints(ast, ctx.constraint, requiredKeys.length)
+        const minEntries = entriesConstraints?.minLength ?? 0
+        for (const { parameter, type } of indexSignatures) {
+          let entries: FastCheck.Arbitrary<Array<readonly [PropertyKey, any]>>
+          if (minEntries === 0) {
+            entries = fc.constant([])
+          } else {
+            const key = parameter.terminal(fc, reset, recursionStack)
+            const value = type.terminal(fc, reset, recursionStack)
+            if (key === undefined || value === undefined) {
+              return undefined
+            }
+            entries = arrayWithConstraints(
+              fc,
+              fc.tuple(key, value),
+              { ...entriesConstraints, maxLength: minEntries },
+              entryComparator
+            )
+          }
+          out = appendObjectEntries(out, entries)
+        }
+        return out
       }
-    case "Objects":
-      return (fc, ctx) => {
+      return makeLazy((fc, ctx, recursionStack) => {
         const reset = resetContext(ctx)
         // ---------------------------------------------
         // handle property signatures
         // ---------------------------------------------
         const pss: any = {}
+        const orderedNames: Array<PropertyKey> = []
         const requiredKeys: Array<PropertyKey> = []
-        for (const ps of ast.propertySignatures) {
+        const optionalNames: Array<PropertyKey> = []
+        for (const { ps, arbitrary } of propertySignatures) {
           const name = ps.name
-          if (!AST.isOptional(ps.type)) {
+          orderedNames.push(name)
+          if (SchemaAST.isOptional(ps.type)) {
+            optionalNames.push(name)
+          } else {
             requiredKeys.push(name)
           }
-          pss[name] = recur(ps.type, [...path, name])(fc, reset)
+          pss[name] = arbitrary(fc, reset, recursionStack)
+        }
+        // When property-count constraints must be satisfied by selecting
+        // optional keys (no index signatures are available to fill the gap),
+        // generate a count-controlled subset of optional keys instead of
+        // relying on fast-check's independent inclusion plus discards. This
+        // enforces both bounds precisely while still varying which optionals
+        // appear.
+        const constraint = ctx.constraint
+        if (
+          optionalNames.length > 0 &&
+          indexSignatures.length === 0 &&
+          constraint !== undefined &&
+          (constraint.minLength !== undefined || constraint.maxLength !== undefined)
+        ) {
+          return objectWithOptionalCount(fc, pss, orderedNames, requiredKeys, optionalNames, constraint)
         }
         let out = fc.record<any>(pss, { requiredKeys })
+        const entriesConstraints = objectEntriesConstraints(ast, ctx.constraint, requiredKeys.length)
         // ---------------------------------------------
         // handle index signatures
         // ---------------------------------------------
-        for (const is of ast.indexSignatures) {
-          const entry = fc.tuple(recur(is.parameter, path)(fc, reset), recur(is.type, path)(fc, reset))
-          const entries = array(fc, ast.propertySignatures.length === 0 ? ctx : reset, entry)
-          out = out.chain((o) => {
-            return entries.map((entries) => {
-              return {
-                ...Object.fromEntries(entries),
-                ...o
-              }
-            })
-          })
+        for (const { parameter, type } of indexSignatures) {
+          const entry = fc.tuple(parameter(fc, reset, recursionStack), type(fc, reset, recursionStack))
+          const entries = arrayWithConstraints(fc, entry, entriesConstraints, entryComparator)
+          out = appendObjectEntries(out, entries)
         }
         return out
-      }
-    case "Union":
-      return (fc, ctx) => fc.oneof(...ast.types.map((ast) => recur(ast, path)(fc, ctx)))
+      }, terminal)
+    }
+    case "Union": {
+      const types = ast.types.map((ast) => recur(ast, path))
+      const terminal: LazyOption<any> = (fc, ctx, recursionStack) =>
+        oneOf(fc, types.map((type) => type.terminal(fc, ctx, recursionStack)).filter(Predicate.isNotUndefined))
+      return makeLazy((fc, ctx, recursionStack) => {
+        const arbitraries = types.map((type) => type(fc, ctx, recursionStack))
+        if (ctx.recursion) {
+          const terminalOut = terminal(fc, ctx, recursionStack)
+          if (terminalOut !== undefined) {
+            return fc.oneof(ctx.recursion, terminalOut, ...arbitraries)
+          }
+        }
+        const out = oneOf(fc, arbitraries)
+        if (out === undefined) {
+          throw arbitraryError("a union with no members")
+        }
+        return out
+      }, terminal)
+    }
     case "Suspend": {
       const memo = arbitraryMemoMap.get(ast)
 
       if (memo) return memo
 
-      const get = AST.memoizeThunk(() => recur(ast.thunk(), path))
-      const out: LazyArbitraryWithContext<any> = (fc, ctx) =>
-        fc.constant(null).chain(() => get()(fc, { ...ctx, isSuspend: true }))
+      const get = SchemaAST.memoizeThunk(() => recur(ast.thunk(), path))
+      const out = makeLazy((fc, ctx, recursionStack) => {
+        const recursion = getSuspendRecursion(fc, ast)
+        const nextCtx = { ...ctx, recursion }
+        const nextStack = recursionStack.includes(ast) ? recursionStack : [...recursionStack, ast]
+        const terminal = get().terminal(fc, nextCtx, nextStack)
+        if (terminal === undefined) {
+          throw errorWithPath(
+            "Unable to derive an arbitrary for a recursive schema without a finite generation path",
+            path
+          )
+        }
+        return fc.oneof(
+          recursion,
+          terminal,
+          fc.constant(null).chain(() => get()(fc, nextCtx, nextStack))
+        )
+      }, (fc, ctx, recursionStack) => {
+        if (recursionStack.includes(ast)) {
+          return undefined
+        }
+        const recursion = getSuspendRecursion(fc, ast)
+        return get().terminal(fc, { ...ctx, recursion }, [...recursionStack, ast])
+      })
 
       arbitraryMemoMap.set(ast, out)
 

@@ -1,15 +1,13 @@
 /**
- * Utilities for adapting Node `http.IncomingMessage` values to the Effect HTTP
- * incoming message interface used by the platform Node server and client
- * implementations.
+ * Adapter base for exposing Node `http.IncomingMessage` values as Effect HTTP
+ * incoming messages.
  *
- * This module is useful when code needs to keep access to Node's request or
- * response object while also exposing Effect's typed headers, remote address,
- * body decoders, and stream interface. The body helpers consume Node's readable
- * stream, cache decoded text and array-buffer results, and honor the
- * `HttpIncomingMessage.MaxBodySize` fiber ref. Prefer a single body access
- * strategy per message: raw `stream` access is not cached, and Node request
- * bodies cannot be replayed once the underlying stream has been consumed.
+ * Server requests and Node client responses both arrive as Node readable
+ * streams with raw header objects, socket metadata, and one-shot body
+ * consumption. This module's `NodeHttpIncomingMessage` class keeps the original
+ * Node message available while presenting Effect's `HttpIncomingMessage` shape:
+ * typed headers, remote address lookup, stream access, and text, JSON,
+ * URL-encoded, and array-buffer body readers.
  *
  * @since 4.0.0
  */
@@ -25,9 +23,17 @@ import type * as Http from "node:http"
 import * as NodeStream from "./NodeStream.ts"
 
 /**
- * Base adapter from Node `IncomingMessage` to Effect HTTP incoming messages,
- * exposing headers, remote address, stream access, and cached text, JSON, URL
- * parameter, and array-buffer body decoders with caller-provided error mapping.
+ * Adapts a Node `IncomingMessage` to Effect HTTP incoming messages.
+ *
+ * **When to use**
+ *
+ * Use to implement Node HTTP request or response adapters that expose the
+ * Effect HTTP incoming-message interface.
+ *
+ * **Details**
+ *
+ * The adapter exposes headers, remote address, stream access, and cached body
+ * decoders. Subclasses provide the error mapping for unknown Node errors.
  *
  * @category constructors
  * @since 4.0.0

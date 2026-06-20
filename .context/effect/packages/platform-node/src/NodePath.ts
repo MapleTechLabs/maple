@@ -1,17 +1,10 @@
 /**
  * Node.js layers for Effect's `Path` service.
  *
- * Use this module when an Effect program running on Node needs path operations
- * from the `Path` service, such as joining and normalizing filesystem
- * locations, resolving configuration or static asset paths, working with CLI
- * path arguments, or converting between file paths and `file:` URLs.
- *
- * `layer` follows the host platform's `node:path` semantics. Use `layerPosix`
- * or `layerWin32` when code needs stable POSIX or Windows behavior regardless
- * of the operating system. These layers provide only path manipulation; they do
- * not read the filesystem or validate that paths exist. `NodeServices.layer`
- * already includes the default Node path layer, so provide this module directly
- * when you want the narrower service or one of the platform-specific variants.
+ * This module provides the default, POSIX, and Windows variants of the
+ * platform-independent `Path` service by reusing the shared Node path
+ * implementation. The provided path services include Node file URL conversion
+ * behavior.
  *
  * @since 4.0.0
  */

@@ -72,9 +72,9 @@ export interface PostProcessor {
 }
 
 /**
- * Context service tag for linting and formatting generated code.
+ * Service tag for linting and formatting generated code.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const PostProcessor: Context.Service<PostProcessor, PostProcessor> = Context.Service(

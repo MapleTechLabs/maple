@@ -158,7 +158,7 @@ export function ReplayDetailSkeleton() {
 			{/* Browser chrome + video | event stream */}
 			<div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,64rem)_minmax(20rem,1fr)] lg:items-stretch">
 				<Skeleton className="aspect-video w-full rounded-xl" />
-				<Skeleton className="h-[420px] w-full rounded-xl lg:h-auto" />
+				<Skeleton className="h-[clamp(20rem,60vh,28rem)] w-full rounded-xl lg:h-auto" />
 			</div>
 
 			{/* Transport bar — full width */}

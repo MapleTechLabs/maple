@@ -1,29 +1,11 @@
 /**
  * Node.js implementations of the Effect `HttpClient`.
  *
- * This module provides the Node-specific layers and constructors for sending
- * Effect HTTP client requests. It re-exports the fetch-based client for
- * programs that want to use `globalThis.fetch`, provides an Undici-backed
- * client for applications that need Undici dispatcher control, and provides a
- * lower-level `node:http` / `node:https` client for integrations that need
- * native Node agent configuration.
- *
- * Use these clients in server-side applications, CLIs, tests, and integrations
- * where requests should participate in Effect resource management, interruption,
- * streaming, and typed transport / decode errors. The Undici path sends each
- * request through the current `Dispatcher`; `layerUndici` owns a scoped
- * `Agent`, while `dispatcherLayerGlobal` uses Undici's process-global dispatcher
- * without destroying it. The `node:http` path uses separate scoped HTTP and
- * HTTPS agents, making it the right choice when native agent options such as
- * TLS, proxy, keep-alive, or socket behavior need to be configured directly.
- *
- * The backends are not completely interchangeable. Fetch, Undici, and
- * `node:http` expose different agent and dispatcher hooks, body implementations,
- * abort behavior, upgrade support, and response body readers. This module
- * converts Effect request bodies to the selected runtime representation:
- * streams remain streaming, `FormData` may contribute generated content headers,
- * and body read failures are reported as `HttpClientError` decode or transport
- * errors.
+ * This module supplies Node runtime backends for the platform-independent
+ * Effect HTTP client API. It re-exports the fetch-based `Fetch`, `RequestInit`,
+ * and `layerFetch` APIs, defines an Undici-backed client with dispatcher
+ * services and request options, and defines a lower-level `node:http` /
+ * `node:https` client with scoped HTTP agent layers.
  *
  * @since 4.0.0
  */
@@ -62,23 +44,32 @@ import * as Undici from "./Undici.ts"
 
 export {
   /**
-   * Fetch-based HTTP client implementation for Node.js.
+   * Provides a fetch-based HTTP client implementation for Node.js.
    *
-   * @category Fetch
+   * **When to use**
+   *
+   * Use to access or override the fetch implementation used by the Node
+   * fetch-based HTTP client.
+   *
+   * @category fetch
    * @since 4.0.0
    */
   Fetch,
   /**
    * Layer that provides the fetch-based HTTP client implementation.
    *
-   * @category Fetch
+   * @category fetch
    * @since 4.0.0
    */
   layer as layerFetch,
   /**
-   * Request initialization options accepted by the fetch-based HTTP client.
+   * Provides request initialization options accepted by the fetch-based HTTP client.
    *
-   * @category Fetch
+   * **When to use**
+   *
+   * Use to provide default fetch request options for Node HTTP requests.
+   *
+   * @category fetch
    * @since 4.0.0
    */
   RequestInit
@@ -132,7 +123,7 @@ export const dispatcherLayerGlobal: Layer.Layer<Dispatcher> = Layer.sync(Dispatc
  * Fiber reference containing default Undici request options applied to requests
  * sent by `makeUndici`.
  *
- * @category undici
+ * @category Undici
  * @since 4.0.0
  */
 export const UndiciOptions = Context.Reference<Partial<Undici.Dispatcher.RequestOptions>>(
@@ -145,7 +136,7 @@ export const UndiciOptions = Context.Reference<Partial<Undici.Dispatcher.Request
  * `Dispatcher`, converts Effect HTTP bodies to Undici bodies, and maps
  * transport and decode failures to `HttpClientError`.
  *
- * @category undici
+ * @category Undici
  * @since 4.0.0
  */
 export const makeUndici = Effect.gen(function*() {

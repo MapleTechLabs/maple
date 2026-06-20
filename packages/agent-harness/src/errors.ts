@@ -9,7 +9,7 @@ export class AgentHarnessModelError extends Schema.TaggedErrorClass<AgentHarness
 	"@maple/agent-harness/ModelError",
 	{
 		message: Schema.String,
-		cause: Schema.optionalKey(Schema.Defect),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 
@@ -17,7 +17,7 @@ export class AgentHarnessCompactionError extends Schema.TaggedErrorClass<AgentHa
 	"@maple/agent-harness/CompactionError",
 	{
 		message: Schema.String,
-		cause: Schema.optionalKey(Schema.Defect),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 

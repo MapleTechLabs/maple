@@ -39,6 +39,46 @@ describe("Schedule", () => {
   })
 
   describe("sequencing", () => {
+    it.effect("tap - provides full metadata", () =>
+      Effect.gen(function*() {
+        const observed: Array<Schedule.Metadata<number, string>> = []
+        const schedule = Schedule.spaced(Duration.millis(250)).pipe(
+          Schedule.tap((metadata: Schedule.Metadata<number, string>) =>
+            Effect.sync(() => {
+              observed.push(metadata)
+            })
+          )
+        )
+        const step = yield* Schedule.toStep(schedule)
+        const first = yield* step(1_000, "a")
+        const second = yield* step(1_250, "b")
+
+        expect(first).toEqual([0, Duration.millis(250)])
+        expect(second).toEqual([1, Duration.millis(250)])
+        expect(observed).toEqual([
+          {
+            input: "a",
+            output: 0,
+            duration: Duration.millis(250),
+            attempt: 1,
+            start: 1_000,
+            now: 1_000,
+            elapsed: 0,
+            elapsedSincePrevious: 0
+          },
+          {
+            input: "b",
+            output: 1,
+            duration: Duration.millis(250),
+            attempt: 2,
+            start: 1_000,
+            now: 1_250,
+            elapsed: 250,
+            elapsedSincePrevious: 250
+          }
+        ])
+      }))
+
     it.effect("andThenResult - executes schedules sequentially to completion", () =>
       Effect.gen(function*() {
         const left = Schedule.fixed("500 millis").pipe(

@@ -38,7 +38,7 @@ export class OpenAiClientGenerated extends Context.Service<OpenAiClientGenerated
  * Options for configuring the generated OpenAI client.
  *
  * @since 4.0.0
- * @category models
+ * @category options
  */
 export type Options = {
   /**

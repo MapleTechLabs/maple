@@ -1,18 +1,10 @@
 /**
- * Utilities for representing and generating HTTP entity tags.
+ * HTTP entity tag values and metadata-based generator layers.
  *
- * ETags are validators that identify a particular representation of a
- * resource. Servers commonly attach them to responses so clients and
- * intermediaries can revalidate cached content with conditional requests such
- * as `If-None-Match`, or protect updates with preconditions such as `If-Match`.
- *
- * This module models weak and strong ETags, formats them for the `ETag` header,
- * and provides generator layers that derive tags from file size and
- * modification-time metadata. Metadata-derived tags are convenient for static
- * files, but they are only as precise as the underlying metadata: choose strong
- * tags only when that metadata reliably changes for every byte-level change,
- * and use weak tags when the validator is suitable for cache revalidation but
- * not for operations that require byte-for-byte identity.
+ * ETags are validators for a specific representation of a resource. Servers put
+ * them in `ETag` response headers so clients and intermediaries can revalidate
+ * cached content with `If-None-Match`, or protect writes with preconditions such
+ * as `If-Match`.
  *
  * @since 4.0.0
  */
@@ -64,7 +56,7 @@ export interface Strong {
 /**
  * Formats an `Etag` as an HTTP header value, including quotes and the `W/` prefix for weak tags.
  *
- * @category convertions
+ * @category converting
  * @since 4.0.0
  */
 export const toString = (self: Etag): string => {
@@ -100,7 +92,22 @@ const fromFileWeb = (file: Body.HttpBody.FileLike) => {
 }
 
 /**
- * Layer that provides a `Generator` which produces strong ETags from file size and modification time metadata.
+ * Layer that provides a `Generator` which produces strong ETags from file size
+ * and modification time metadata.
+ *
+ * **When to use**
+ *
+ * Use when you need the `Generator` service to produce strong ETags and file
+ * size plus modification time reliably change for every byte-level change.
+ *
+ * **Gotchas**
+ *
+ * This layer marks metadata-derived tags as strong. If the underlying storage
+ * can update file contents without changing the recorded size or modification
+ * time, those tags can stop representing byte-for-byte identity.
+ *
+ * @see {@link layerWeak} for weak metadata-derived ETags when byte-for-byte identity is not required
+ * @see {@link Generator} for the service provided by this layer
  *
  * @category layers
  * @since 4.0.0

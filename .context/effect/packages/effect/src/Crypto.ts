@@ -1,55 +1,11 @@
 /**
- * The `Crypto` module provides a platform-agnostic service for cryptographic
- * operations. Runtime packages such as `@effect/platform-node`,
- * `@effect/platform-bun`, and `@effect/platform-browser` provide concrete
- * implementations backed by the host platform's cryptography APIs.
+ * Defines a platform-independent service for cryptographic operations.
  *
- * Use `Crypto` for cryptographic randomness, UUID generation, random values,
- * and message digests. The base `Random` service is not cryptographically
- * secure unless you replace it with a cryptographically secure implementation.
- *
- * **Example** (Providing a test Crypto service)
- *
- * ```ts
- * import { Console, Crypto, Effect, Layer } from "effect"
- *
- * const TestCrypto = Layer.succeed(
- *   Crypto.Crypto,
- *   Crypto.make({
- *     randomBytes: (size) => new Uint8Array(size),
- *     digest: (_algorithm, data) => Effect.succeed(data)
- *   })
- * )
- *
- * const program = Effect.gen(function*() {
- *   const crypto = yield* Crypto.Crypto
- *   const id = yield* crypto.randomUUIDv4
- *   yield* Console.log(`Created id: ${id}`)
- * })
- *
- * Effect.runPromise(Effect.provide(program, TestCrypto))
- * ```
- *
- * **Example** (Generating random bytes)
- *
- * ```ts
- * import { Crypto, Effect, Layer } from "effect"
- *
- * const TestCrypto = Layer.succeed(
- *   Crypto.Crypto,
- *   Crypto.make({
- *     randomBytes: (size) => new Uint8Array(size),
- *     digest: (_algorithm, data) => Effect.succeed(data)
- *   })
- * )
- *
- * const program = Effect.gen(function*() {
- *   const crypto = yield* Crypto.Crypto
- *   return yield* crypto.randomBytes(32)
- * })
- *
- * Effect.runPromise(Effect.provide(program, TestCrypto))
- * ```
+ * Runtime packages provide concrete implementations backed by the host
+ * platform's cryptography APIs. This module defines the service interface and a
+ * constructor from random-byte and digest primitives. The service provides
+ * secure random bytes and numbers, UUIDv4 and UUIDv7 generation, shuffling, and
+ * SHA message digests.
  *
  * @since 4.0.0
  */
@@ -198,7 +154,19 @@ export interface Crypto {
 }
 
 /**
- * The service identifier for the platform `Crypto` service.
+ * Service tag for platform cryptography.
+ *
+ * **When to use**
+ *
+ * Use when you need to provide or retrieve the full platform cryptography
+ * service from an effect's context.
+ *
+ * **Details**
+ *
+ * Providing this service supplies platform-agnostic cryptographic operations
+ * such as hashing, UUID generation, and secure random values.
+ *
+ * @see {@link make} for constructing a Crypto service from primitive operations
  *
  * @category services
  * @since 4.0.0
@@ -208,6 +176,23 @@ export const Crypto: Context.Service<Crypto, Crypto> = Context.Service("effect/C
 /**
  * Creates a `Crypto` service from the primitive implementation, deriving the
  * random generator helpers and UUID generation from those primitives.
+ *
+ * **When to use**
+ *
+ * Use to build a Crypto service for a platform integration, test layer, or
+ * custom runtime from primitive random-byte and digest operations.
+ *
+ * **Details**
+ *
+ * The constructor derives random numbers, booleans, integer ranges, shuffling,
+ * and UUID generation from `impl.randomBytes`. Digest operations delegate to
+ * `impl.digest`.
+ *
+ * **Gotchas**
+ *
+ * `impl.randomBytes` must return cryptographically secure bytes of the
+ * requested length. UUID formatting mutates the byte array returned for UUID
+ * generation, so the implementation should return a fresh array for each call.
  *
  * **Example** (Creating a Crypto service)
  *

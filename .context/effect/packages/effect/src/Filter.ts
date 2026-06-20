@@ -1,37 +1,12 @@
 /**
- * The `Filter` module provides composable functions for accepting, rejecting,
- * narrowing, and transforming values. A `Filter<Input, Pass, Fail>` receives an
- * input and returns a `Result`: success means the value passed the filter, while
- * failure means the value was filtered out.
+ * Defines composable checks that can also transform values.
  *
- * **Mental model**
- *
- * - A filter is a typed predicate that can also transform the successful value
- * - Predicate-based filters pass the original input when the predicate returns `true`
- * - Refinement-based filters narrow the successful type, for example from `unknown` to `string`
- * - Custom filters return `Result.succeed(pass)` or `Result.fail(fail)` directly
- * - Filters compose with logical and sequential combinators instead of throwing exceptions
- * - `FilterEffect` is the effectful form for filters that need asynchronous work, errors, or services
- *
- * **Common tasks**
- *
- * - Build filters: {@link make}, {@link makeEffect}, {@link fromPredicate}, {@link fromPredicateOption}
- * - Narrow unknown values: {@link string}, {@link number}, {@link boolean}, {@link bigint}, {@link symbol}, {@link date}
- * - Match shapes and variants: {@link instanceOf}, {@link tagged}, {@link reason}, {@link has}
- * - Match exact values: {@link equals}, {@link equalsStrict}
- * - Combine alternatives: {@link or}
- * - Require multiple filters: {@link zip}, {@link zipWith}, {@link andLeft}, {@link andRight}
- * - Run filters in sequence: {@link compose}, {@link composePassthrough}
- * - Convert results: {@link toPredicate}, {@link toOption}, {@link toResult}
- * - Adjust failure values: {@link mapFail}
- *
- * **Gotchas**
- *
- * - A failed filter is data in the `Result` failure channel; it is not an exception
- * - `compose` preserves intermediate failure values, while {@link composePassthrough} fails with the original input
- * - `equalsStrict` uses JavaScript `===`; use {@link equals} for structural equality
- * - `fromPredicateOption` fails with the original input when the returned `Option` is `None`
- * - Prefer refinement predicates when you want TypeScript to narrow the successful value type
+ * A `Filter<Input, Pass, Fail>` receives an input and returns a `Result`.
+ * Success means the value passed the filter, and failure means the value was
+ * filtered out. Filters may also narrow or transform the passing value. This
+ * module includes constructors from predicates, options, and effects, built-in
+ * filters for common JavaScript values and tags, helpers for combining filters,
+ * and conversions to predicates, options, and results.
  *
  * @since 4.0.0
  */
@@ -263,7 +238,15 @@ export const fromPredicateOption = <A, B>(predicate: (a: A) => Option.Option<B>)
 /**
  * Converts a Filter into a predicate function.
  *
- * @category constructors
+ * **When to use**
+ *
+ * Use to reuse a `Filter` with APIs that accept only boolean predicates when
+ * the pass and fail payloads are not needed.
+ *
+ * @see {@link toOption} for keeping passed values and discarding failure values
+ * @see {@link toResult} for preserving both pass and failure values
+ *
+ * @category converting
  * @since 4.0.0
  */
 export const toPredicate = <A, Pass, Fail>(
@@ -292,6 +275,20 @@ export const string: Filter<unknown, string> = fromPredicate(Predicate.isString)
  * Creates a `Filter` that passes only values strictly equal to the specified
  * value using JavaScript `===` comparison.
  *
+ * **When to use**
+ *
+ * Use when you need a `Filter` that accepts only the exact primitive value or
+ * object reference using JavaScript strict equality in a `Filter` / `Result`
+ * pipeline.
+ *
+ * **Gotchas**
+ *
+ * `NaN` never passes, even when the expected value is `NaN`, and objects pass
+ * only when they are the same reference.
+ *
+ * @see {@link equals} for structural equality when distinct values with equal
+ * contents should pass
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -303,6 +300,16 @@ export const equalsStrict =
  * Creates a `Filter` that passes inputs whose `has(key)` method returns
  * `true` for the specified key.
  *
+ * **When to use**
+ *
+ * Use to keep inputs that expose a `has` method, such as `Set` or `Map`, when
+ * they contain a required key.
+ *
+ * @see {@link fromPredicate} for custom predicate filters or inputs without a
+ * `has` method
+ * @see {@link Predicate.hasProperty} for guarding property presence instead of
+ * calling an input's `has` method
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -312,6 +319,23 @@ export const has =
 
 /**
  * Creates a filter that only passes instances of the given constructor.
+ *
+ * **When to use**
+ *
+ * Use to narrow unknown input to values created by a specific JavaScript
+ * constructor while keeping the result in the `Filter` / `Result` pipeline.
+ *
+ * **Details**
+ *
+ * The filter succeeds when the input satisfies `instanceof constructor`.
+ * Otherwise it fails with the original input.
+ *
+ * **Gotchas**
+ *
+ * This uses JavaScript `instanceof` semantics, including prototype-chain and
+ * realm behavior.
+ *
+ * @see {@link fromPredicate} for custom predicate-based narrowing
  *
  * @category constructors
  * @since 4.0.0
@@ -341,13 +365,44 @@ export const number: Filter<unknown, number> = fromPredicate(Predicate.isNumber)
 /**
  * A predefined filter that only passes through boolean values.
  *
+ * **When to use**
+ *
+ * Use when accepting an unknown input only if it is already a boolean and you
+ * want a `Filter` result rather than a plain predicate result.
+ *
+ * **Details**
+ *
+ * Implemented with `fromPredicate(Predicate.isBoolean)`, so `true` and `false`
+ * succeed and non-booleans fail with the original input.
+ *
+ * @see {@link Predicate.isBoolean} for the underlying guard
+ * @see {@link fromPredicate} for custom predicate-based filters
+ *
  * @category constructors
  * @since 4.0.0
  */
 export const boolean: Filter<unknown, boolean> = fromPredicate(Predicate.isBoolean)
 
 /**
- * A predefined filter that only passes through BigInt values.
+ * A predefined filter that only passes through `bigint` primitive values.
+ *
+ * **When to use**
+ *
+ * Use to keep primitive big integer values from unknown input while staying in
+ * the composable `Filter` / `Result` pipeline.
+ *
+ * **Details**
+ *
+ * Implemented with `fromPredicate(Predicate.isBigInt)`, so values where
+ * `typeof input === "bigint"` succeed and all other inputs fail with the
+ * original input.
+ *
+ * **Gotchas**
+ *
+ * This filter does not coerce numbers or strings; `1n` passes while `1` fails.
+ *
+ * @see {@link number} for JavaScript `number` values
+ * @see {@link Predicate.isBigInt} for the underlying guard
  *
  * @category constructors
  * @since 4.0.0
@@ -365,6 +420,25 @@ export const symbol: Filter<unknown, symbol> = fromPredicate(Predicate.isSymbol)
 /**
  * A predefined filter that only passes through Date objects.
  *
+ * **When to use**
+ *
+ * Use when you need to narrow unknown input to JavaScript `Date` instances with
+ * a reusable `Filter`.
+ *
+ * **Details**
+ *
+ * Implemented with `fromPredicate(Predicate.isDate)`, so passing values return
+ * `Result.succeed(input)` and failing values return `Result.fail(input)`.
+ *
+ * **Gotchas**
+ *
+ * The check uses `instanceof Date`, so invalid `Date` objects still pass; the
+ * filter does not validate the timestamp.
+ *
+ * @see {@link Predicate.isDate} for the underlying guard
+ * @see {@link instanceOf} for constructor-based filtering
+ * @see {@link fromPredicate} for custom date checks
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -372,6 +446,24 @@ export const date: Filter<unknown, Date> = fromPredicate(Predicate.isDate)
 
 /**
  * Creates a filter that checks if an input is tagged with a specific tag.
+ *
+ * **When to use**
+ *
+ * Use to keep only the matching member of a `_tag`-discriminated union while
+ * staying in a composable `Filter` / `Result` pipeline.
+ *
+ * **Details**
+ *
+ * The filter succeeds when `Predicate.isTagged(input, tag)` returns `true`.
+ * Otherwise it fails with the original input.
+ *
+ * **Gotchas**
+ *
+ * This only checks `_tag`; it does not validate the rest of the variant fields.
+ *
+ * @see {@link Predicate.isTagged} for the underlying boolean guard when a
+ * `Filter` result is not needed
+ * @see {@link reason} for extracting a nested reason variant from tagged errors
  *
  * @category constructors
  * @since 4.0.0
@@ -431,6 +523,20 @@ const reasonImpl =
 /**
  * Creates a filter that only passes values equal to the specified value using structural equality.
  *
+ * **When to use**
+ *
+ * Use to accept inputs that are structurally equal to a known expected value
+ * while staying in a composable `Filter` / `Result` pipeline.
+ *
+ * **Details**
+ *
+ * Delegates to `Equal.equals`. On success it returns `Result.succeed(value)`;
+ * on failure it returns `Result.fail(input)`.
+ *
+ * @see {@link equalsStrict} for JavaScript `===` matching instead of structural
+ * equality
+ * @see {@link Equal.equals} for the underlying structural equality semantics
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -464,10 +570,16 @@ export const or: {
 /**
  * Combines two filters and applies a function to their results.
  *
+ * **When to use**
+ *
+ * Use to combine two filters with a custom function to merge their outputs.
+ *
  * **Details**
  *
  * Both filters must succeed (not return `fail`) for the combination to succeed.
  * If both filters pass, their outputs are combined using the provided function.
+ *
+ * @see {@link zip} for combining two filters into a tuple
  *
  * @category combinators
  * @since 4.0.0
@@ -672,6 +784,14 @@ export const composePassthrough: {
  * Converts a `Filter` into a function that returns `Some` for passed values
  * and `None` for filtered-out values.
  *
+ * **When to use**
+ *
+ * Use when adapting a `Filter` to `Option`-based code where passed values
+ * become `Some` and filtered-out inputs become `None`.
+ *
+ * @see {@link toResult} for keeping the filter failure value
+ * @see {@link toPredicate} for plain boolean pass/fail checks
+ *
  * @category converting
  * @since 4.0.0
  */
@@ -686,6 +806,14 @@ export const toOption = <A, Pass, Fail>(
 /**
  * Converts a `Filter` into a function that returns the underlying
  * `Result.Result` for each input.
+ *
+ * **When to use**
+ *
+ * Use to adapt a `Filter` to APIs that expect a plain function returning
+ * `Result`, while preserving both the pass value and the failure value.
+ *
+ * @see {@link toOption} for keeping only passed values
+ * @see {@link toPredicate} for plain boolean pass/fail checks
  *
  * @category converting
  * @since 4.0.0

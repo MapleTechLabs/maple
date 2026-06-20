@@ -240,14 +240,14 @@ it("Cause", () => {
 })
 
 it("Error", () => {
-  const schema = Schema.Error
+  const schema = Schema.Error()
   const optic = Schema.toIso(schema)
 
   expect(optic).type.toBe<Optic.Iso<Error, Error>>()
 })
 
 it("Exit", () => {
-  const schema = Schema.Exit(Value, Schema.Error, Schema.Defect)
+  const schema = Schema.Exit(Value, Schema.Error(), Schema.Defect())
   const optic = Schema.toIso(schema)
 
   expect(optic).type.toBe<

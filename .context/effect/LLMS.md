@@ -139,7 +139,7 @@ export class Database extends Context.Service<Database, {
 }
 
 export class DatabaseError extends Schema.TaggedErrorClass<DatabaseError>()("DatabaseError", {
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 // If you ever need to access the service type, use `Database["Service"]`
@@ -259,6 +259,19 @@ Learn how to batch multiple requests into fewer external calls.
 Schedules define recurring patterns for retries, repeats and polling.
 
 - **[Working with the Schedule module](./ai-docs/src/06_schedule/10_schedules.ts)**: Build schedules, compose them, and use them with `Effect.retry` and `Effect.repeat`.
+
+## Working with DateTime
+
+When working with dates and time, use the `DateTime` module instead of `Date` and `Date.now`.
+
+Use it when your Effect programs need testable current time, safe parsing, stable ISO formatting, time-zone conversion, or calendar arithmetic.
+
+- **[Creating and formatting DateTime values](./ai-docs/src/07_datetime/10_creating-and-formatting.ts)**:
+  Parse incoming date values safely, use Clock-powered current time, and format
+  instants for API payloads or user-facing labels.
+- **[Working with time zones](./ai-docs/src/07_datetime/20_time-zones.ts)**:
+  Attach IANA zones to instants, render zoned ISO strings, and provide a
+  CurrentTimeZone service for code that should use the workspace/user zone.
 
 ## Observability
 

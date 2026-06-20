@@ -670,6 +670,34 @@ describe("StructWithRest", () => {
     >()
   })
 
+  it("rejects decoded fields incompatible with string index signatures", () => {
+    expect(Schema.StructWithRest).type.not.toBeCallableWith(
+      Schema.Struct({ count: Schema.NumberFromString }),
+      [Schema.Record(Schema.String, Schema.String)]
+    )
+  })
+
+  it("rejects encoded fields incompatible with string index signatures", () => {
+    expect(Schema.StructWithRest).type.not.toBeCallableWith(
+      Schema.Struct({ count: Schema.NumberFromString }),
+      [Schema.Record(Schema.String, Schema.Number)]
+    )
+  })
+
+  it("allows optionalKey fields compatible with string index signatures", () => {
+    expect(Schema.StructWithRest).type.toBeCallableWith(
+      Schema.Struct({ a: Schema.optionalKey(Schema.String) }),
+      [Schema.Record(Schema.String, Schema.String)]
+    )
+  })
+
+  it("rejects optional fields incompatible with string index signatures", () => {
+    expect(Schema.StructWithRest).type.not.toBeCallableWith(
+      Schema.Struct({ a: Schema.optional(Schema.String) }),
+      [Schema.Record(Schema.String, Schema.String)]
+    )
+  })
+
   it("records mutability and optionality", () => {
     const schema = Schema.StructWithRest(
       Schema.Struct({ a: Schema.Number }),

@@ -1,19 +1,12 @@
 /**
- * Utilities for marking the parts of worker messages that should be transferred
- * through `postMessage` instead of copied by the structured clone algorithm.
+ * Marks encoded worker message fields that should move through `postMessage` as
+ * transfer-list entries.
  *
- * This module is used with worker message schemas to collect
- * `globalThis.Transferable` values while encoding a message, so the worker
- * platform can pass the collected list as the `postMessage` transfer list.
- * Common cases include sending large `Uint8Array` payloads, `ImageData` pixel
- * buffers, or `MessagePort` channels without paying for an extra copy.
- *
- * Transferable annotations do not make an otherwise unsupported value
- * structured-cloneable; the encoded message still has to be valid for
- * `postMessage`. Transferring also moves ownership to the receiver, so buffers
- * are detached from the sender after the send completes. Be careful when a
- * typed array view shares a backing buffer with other data, since collecting
- * that buffer transfers ownership of the whole buffer.
+ * Worker messages still pass through schema encoding and structured clone, but
+ * schemas wrapped with `schema` can also report backing resources such as
+ * `ArrayBuffer`, `ImageData.data.buffer`, or `MessagePort` to a `Collector`.
+ * Worker platforms then pass the collected values as the transfer list for the
+ * same `postMessage` call, avoiding copies for large payloads and ports.
  *
  * @since 4.0.0
  */
@@ -21,7 +14,7 @@ import * as Context from "../../Context.ts"
 import * as Effect from "../../Effect.ts"
 import { dual } from "../../Function.ts"
 import * as Schema from "../../Schema.ts"
-import * as Getter from "../../SchemaGetter.ts"
+import * as SchemaGetter from "../../SchemaGetter.ts"
 
 /**
  * Service for collecting `Transferable` objects while encoding worker messages
@@ -99,13 +92,13 @@ export const addAll = (
  * Creates a schema getter that records transferables derived from a value in
  * the current `Collector` while passing the value through unchanged.
  *
- * @category Getter
+ * @category getters
  * @since 4.0.0
  */
 export const getterAddAll = <A>(
   f: (_: A) => Iterable<globalThis.Transferable>
-): Getter.Getter<A, A> =>
-  Getter.transformOrFail((e: A) =>
+): SchemaGetter.Getter<A, A> =>
+  SchemaGetter.transformOrFail((e: A) =>
     Effect.contextWith((services) => {
       const collector = Context.getOrUndefined(services, Collector)
       if (!collector) return Effect.succeed(e)
@@ -153,20 +146,19 @@ export const schema: {
       toCodecJson: () => passthroughLink
     }).pipe(
       Schema.decode({
-        decode: Getter.passthrough(),
+        decode: SchemaGetter.passthrough(),
         encode: getterAddAll(f)
       })
     )
 )
 
 const passthroughLink = Schema.link()(Schema.Any, {
-  decode: Getter.passthrough(),
-  encode: Getter.passthrough()
+  decode: SchemaGetter.passthrough(),
+  encode: SchemaGetter.passthrough()
 })
 
 /**
- * Transferable schema for `ImageData` values that records the underlying pixel
- * data buffer.
+ * Schema for transferring `ImageData` values with their pixel data buffer.
  *
  * @category schemas
  * @since 4.0.0
@@ -177,8 +169,7 @@ export const ImageData: Transferable<Schema.declare<ImageData>> = schema(
 )
 
 /**
- * Transferable schema for `MessagePort` values that records the port itself as
- * transferable.
+ * Schema for transferring `MessagePort` values as transferable objects.
  *
  * @category schemas
  * @since 4.0.0
@@ -189,8 +180,7 @@ export const MessagePort: Transferable<Schema.declare<MessagePort>> = schema(
 )
 
 /**
- * Transferable schema for `Uint8Array` values that records the array's backing
- * buffer.
+ * Schema for transferring `Uint8Array` values with their backing buffer.
  *
  * @category schemas
  * @since 4.0.0

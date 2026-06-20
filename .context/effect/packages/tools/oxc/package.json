@@ -58,6 +58,9 @@
     "test": "vitest",
     "coverage": "vitest --coverage"
   },
+  "dependencies": {
+    "@effect/jsdocs": "workspace:^"
+  },
   "peerDependencies": {
     "typescript": ">=5.0.0 <7.0.0"
   },

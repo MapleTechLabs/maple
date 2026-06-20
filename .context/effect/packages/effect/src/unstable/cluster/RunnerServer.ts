@@ -1,27 +1,12 @@
 /**
- * The `RunnerServer` module provides the transport-agnostic server side of the
- * cluster runner protocol. It turns the runner RPC group into handlers that
- * receive ping, notification, request, stream, and envelope messages from other
- * runners, then forwards them into `Sharding` and coordinates persisted replies
- * through `MessageStorage`.
+ * Provides server-side layers for the cluster runner protocol.
  *
- * **Common tasks**
- *
- * - Build a runner server once an `RpcServer.Protocol` has been supplied by a
- *   transport such as HTTP, WebSocket, or sockets
- * - Provide the complete runner runtime with `Sharding` and `Runners` clients
- *   using {@link layerWithClients}
- * - Embed a cluster client without serving runner RPCs or accepting shard
- *   assignments using {@link layerClientOnly}
- *
- * **Gotchas**
- *
- * - This module does not choose a wire transport; transport-specific modules
- *   provide the `RpcServer.Protocol`
- * - Persisted requests register reply handlers in `MessageStorage` before the
- *   message is delivered to `Sharding`
- * - Client-only layers clear the configured runner address, so they can send
- *   cluster messages but do not register as shard-owning runners
+ * Runner protocol handlers receive ping, notification, request, stream, and
+ * envelope messages from other runners. They forward those messages into
+ * `Sharding` and coordinate persisted replies through `MessageStorage`. This
+ * module includes the handler layer, a transport-independent RPC server layer, a
+ * full server layer that also provides runner clients, and a client-only layer
+ * for applications that do not serve runner RPCs.
  *
  * @since 4.0.0
  */
@@ -46,8 +31,8 @@ import { ShardingConfig } from "./ShardingConfig.ts"
 const constVoid = constant(Effect.void)
 
 /**
- * Layer of RPC handlers for the runner protocol, forwarding ping, notify, effect,
- * stream, and envelope requests to `Sharding` and `MessageStorage`.
+ * Layer that handles runner protocol RPCs by forwarding requests to `Sharding`
+ * and `MessageStorage`.
  *
  * @category layers
  * @since 4.0.0
@@ -160,6 +145,20 @@ const constWaitUntilRead = { waitUntilRead: true } as const
  * runners, forwards them to the `Sharding` layer, and responds to `Ping`
  * requests.
  *
+ * **When to use**
+ *
+ * Use when a runner process should accept runner-to-runner protocol messages
+ * over a provided server `RpcServer.Protocol`.
+ *
+ * **Gotchas**
+ *
+ * This layer does not choose or provide the wire transport; provide a
+ * transport-specific `RpcServer.Protocol` separately.
+ *
+ * @see {@link layerHandlers} for the lower-level handler layer used when the RPC server is supplied elsewhere
+ * @see {@link layerWithClients} for a runner server layer that also provides the `Sharding` and `Runners` clients
+ * @see {@link layerClientOnly} for embedding a cluster client without serving runner RPCs
+ *
  * @category layers
  * @since 4.0.0
  */
@@ -173,7 +172,8 @@ export const layer: Layer.Layer<
 }).pipe(Layer.provide(layerHandlers))
 
 /**
- * A `RunnerServer` layer that includes the `Runners` & `Sharding` clients.
+ * Layer that provides `RunnerServer` together with `Runners` and `Sharding`
+ * clients.
  *
  * @category layers
  * @since 4.0.0
@@ -197,8 +197,8 @@ export const layerWithClients: Layer.Layer<
  *
  * **When to use**
  *
- * Use this layer to embed a cluster client inside another Effect application
- * without registering with the ShardManager or receiving shard assignments.
+ * Use to embed a cluster client inside another Effect application without registering with
+ * the ShardManager or receiving shard assignments.
  *
  * @category layers
  * @since 4.0.0

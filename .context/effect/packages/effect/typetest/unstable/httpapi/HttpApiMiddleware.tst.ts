@@ -1,9 +1,22 @@
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiError, HttpApiMiddleware, HttpApiSecurity } from "effect/unstable/httpapi"
+import {
+  HttpApiEndpoint,
+  HttpApiError,
+  HttpApiMiddleware,
+  HttpApiSchema,
+  HttpApiSecurity
+} from "effect/unstable/httpapi"
 import { describe, expect, it } from "tstyche"
 
 describe("HttpApiMiddleware", () => {
   describe("Service", () => {
+    it("defaults error services to never", () => {
+      class M extends HttpApiMiddleware.Service<M>()("Http/Logger") {}
+
+      expect<HttpApiMiddleware.ErrorServicesEncode<M>>().type.toBe<never>()
+      expect<HttpApiMiddleware.ErrorServicesDecode<M>>().type.toBe<never>()
+    })
+
     it("error", () => {
       class M extends HttpApiMiddleware.Service<M>()("Http/Logger", {
         error: Schema.String
@@ -14,6 +27,16 @@ describe("HttpApiMiddleware", () => {
       expect(M.error).type.toBe<ReadonlySet<Schema.Top>>()
       expect<HttpApiEndpoint.MiddlewareError<typeof endpoint>>().type.toBe<string>()
       expect(M.security).type.toBe<never>()
+    })
+
+    it("preserves error services for status annotations used with pipe", () => {
+      class NotFound extends Schema.TaggedErrorClass<NotFound>()("NotFound", {}) {}
+      class M extends HttpApiMiddleware.Service<M>()("Http/Logger", {
+        error: NotFound.pipe(HttpApiSchema.status(404))
+      }) {}
+
+      expect<HttpApiMiddleware.ErrorServicesEncode<M>>().type.toBe<never>()
+      expect<HttpApiMiddleware.ErrorServicesDecode<M>>().type.toBe<never>()
     })
 
     it("security", () => {

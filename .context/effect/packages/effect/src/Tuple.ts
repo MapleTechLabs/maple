@@ -1,71 +1,12 @@
 /**
- * Utilities for creating, accessing, transforming, and comparing fixed-length
- * arrays (tuples). Every function produces a new tuple — inputs are never
- * mutated.
+ * Works with fixed-length arrays, also called tuples.
  *
- * ## Mental model
- *
- * - **Tuple**: A fixed-length readonly array where each position can have a
- *   different type (e.g., `readonly [string, number, boolean]`).
- * - **Index-based access**: Elements are accessed by numeric index, and the
- *   type system tracks the type at each position.
- * - **Dual API**: Most functions accept arguments in both data-first
- *   (`Tuple.get(t, 0)`) and data-last (`pipe(t, Tuple.get(0))`) style.
- * - **Immutability**: All operations return a new tuple; the original is
- *   never modified.
- * - **Lambda**: A type-level function interface (from {@link Struct}) used by
- *   {@link map}, {@link mapPick}, and {@link mapOmit} so the compiler can
- *   track how element types change.
- *
- * ## Common tasks
- *
- * - Create a tuple → {@link make}
- * - Access an element by index → {@link get}
- * - Select / remove elements by index → {@link pick}, {@link omit}
- * - Append elements → {@link appendElement}, {@link appendElements}
- * - Transform selected elements → {@link evolve}
- * - Swap element positions → {@link renameIndices}
- * - Map all elements with a typed lambda → {@link map}, {@link mapPick},
- *   {@link mapOmit}
- * - Compare tuples → {@link makeEquivalence}, {@link makeOrder}
- * - Combine / reduce tuples → {@link makeCombiner}, {@link makeReducer}
- * - Check tuple length at runtime → {@link isTupleOf},
- *   {@link isTupleOfAtLeast}
- *
- * ## Gotchas
- *
- * - {@link pick} and {@link omit} use numeric indices, not string keys.
- * - {@link renameIndices} takes an array of stringified source indices
- *   (e.g., `["2", "1", "0"]`), not arbitrary names.
- * - {@link map}, {@link mapPick}, {@link mapOmit} require a Lambda value
- *   created with `Struct.lambda`; a plain function won't type-check.
- * - {@link isTupleOf} and {@link isTupleOfAtLeast} only check length, not
- *   element types.
- *
- * ## Quickstart
- *
- * **Example** (Creating and transforming a tuple)
- *
- * ```ts
- * import { pipe, Tuple } from "effect"
- *
- * const point = Tuple.make(10, 20, "red")
- *
- * const result = pipe(
- *   point,
- *   Tuple.evolve([
- *     (x) => x * 2,
- *     (y) => y * 2
- *   ])
- * )
- *
- * console.log(result) // [20, 40, "red"]
- * ```
- *
- * ## See also
- *
- * - {@link Struct} – similar utilities for objects with named keys
- * - {@link Array} – operations on variable-length arrays
+ * The runtime helpers in this module create new tuples instead of mutating
+ * their inputs, and the types preserve element positions where possible. The
+ * helpers cover tuple construction, indexed access, selecting or removing
+ * positions, appending values, transforming elements, renaming indices, mapping
+ * typed positions, and deriving comparison or combination helpers for tuple
+ * shapes.
  *
  * @since 2.0.0
  */
@@ -81,8 +22,8 @@ import type { Apply, Lambda } from "./Struct.ts"
  *
  * **When to use**
  *
- * Use this instead of `[a, b, c] as const` when you want a properly typed tuple
- * without a manual cast.
+ * Use when you need a properly typed tuple without writing `[a, b, c] as const`
+ * or another manual cast.
  *
  * **Details**
  *
@@ -112,12 +53,11 @@ type Indices<T extends ReadonlyArray<unknown>> = Exclude<Partial<T>["length"], T
  *
  * **When to use**
  *
- * Use this in a pipeline when you need to extract a single element.
+ * Use when a single tuple element should be extracted in a pipeline.
  *
  * **Details**
  *
- * The index is constrained to valid tuple positions at the type level, and the
- * input tuple is not mutated.
+ * The index is constrained to valid tuple positions at the type level.
  *
  * **Example** (Extracting an element by index)
  *
@@ -159,12 +99,11 @@ type PickTuple<T extends ReadonlyArray<unknown>, K> = _BuildTuple<T, K>
  *
  * **When to use**
  *
- * Use this to select a subset of elements from a tuple by position.
+ * Use to select a subset of elements from a tuple by position.
  *
  * **Details**
  *
- * The result order matches the order of the provided indices. The input tuple is
- * not mutated; a fresh tuple is returned.
+ * The result order matches the order of the provided indices.
  *
  * **Example** (Selecting elements by index)
  *
@@ -177,7 +116,7 @@ type PickTuple<T extends ReadonlyArray<unknown>, K> = _BuildTuple<T, K>
  *
  * @see {@link omit} – the inverse (exclude indices instead)
  * @see {@link get} – extract a single element
- * @category utils
+ * @category filtering
  * @since 4.0.0
  */
 export const pick: {
@@ -205,12 +144,11 @@ type OmitTuple<T extends ReadonlyArray<unknown>, K> = _BuildTuple<T, Exclude<Ind
  *
  * **When to use**
  *
- * Use this to drop elements from a tuple by position.
+ * Use to drop elements from a tuple by position.
  *
  * **Details**
  *
- * Elements not at the specified indices are kept in their original order. The
- * input tuple is not mutated; a fresh tuple is returned.
+ * Elements not at the specified indices are kept in their original order.
  *
  * **Example** (Removing elements by index)
  *
@@ -222,7 +160,7 @@ type OmitTuple<T extends ReadonlyArray<unknown>, K> = _BuildTuple<T, Exclude<Ind
  * ```
  *
  * @see {@link pick} – the inverse (keep only specified indices)
- * @category utils
+ * @category filtering
  * @since 4.0.0
  */
 export const omit: {
@@ -247,10 +185,14 @@ export const omit: {
 /**
  * Appends a single element to the end of a tuple.
  *
+ * **When to use**
+ *
+ * Use when you need the appended value to remain part of the tuple's type-level
+ * shape and preserve literal element positions.
+ *
  * **Details**
  *
- * The result type is `[...T, E]`, preserving all existing element types. The
- * input tuple is not mutated; a fresh tuple is returned.
+ * The result type is `[...T, E]`, preserving all existing element types.
  *
  * **Example** (Appending an element)
  *
@@ -262,7 +204,7 @@ export const omit: {
  * ```
  *
  * @see {@link appendElements} – append multiple elements (another tuple)
- * @category Concatenating
+ * @category combining
  * @since 2.0.0
  */
 export const appendElement: {
@@ -272,6 +214,10 @@ export const appendElement: {
 
 /**
  * Concatenates two tuples into a single tuple.
+ *
+ * **When to use**
+ *
+ * Use to append all elements from one tuple to another tuple.
  *
  * **Details**
  *
@@ -288,7 +234,7 @@ export const appendElement: {
  * ```
  *
  * @see {@link appendElement} – append a single element
- * @category Concatenating
+ * @category combining
  * @since 4.0.0
  */
 export const appendElements: {
@@ -315,12 +261,12 @@ type Evolved<T, E> = { [I in keyof T]: I extends keyof E ? (E[I] extends (...a: 
  *
  * **When to use**
  *
- * Use this when you want to update the first N elements while keeping the rest.
+ * Use when you want to update the first N elements while keeping the rest.
  *
  * **Details**
  *
  * Each transform function receives the current value and can return a different
- * type. The input tuple is not mutated; a fresh tuple is returned.
+ * type.
  *
  * **Example** (Transforming selected elements)
  *
@@ -353,13 +299,17 @@ export const evolve: {
 )
 
 /**
- * Rearranges elements of a tuple by providing an array of stringified source
+ * Renames tuple indices by providing an array of stringified source
  * indices. Each position in the array specifies which index to read from
  * (e.g., `["2", "1", "0"]` reverses a 3-element tuple).
  *
+ * **When to use**
+ *
+ * Use to reorder tuple elements while preserving index-specific types.
+ *
  * **Details**
  *
- * The input tuple is not mutated; a fresh tuple is returned.
+ * The mapping returns a tuple in the requested index order.
  *
  * **Gotchas**
  *
@@ -404,12 +354,11 @@ export const renameIndices: {
  *
  * **When to use**
  *
- * Use this when you want to apply the same transformation to every element.
+ * Use when you want to apply the same transformation to every tuple element.
  *
  * **Details**
  *
- * The lambda lets the compiler track the output type for each element. The
- * input tuple is not mutated; a fresh tuple is returned.
+ * The lambda lets the compiler track the output type for each element.
  *
  * **Gotchas**
  *
@@ -460,12 +409,8 @@ export const map: {
  *
  * **When to use**
  *
- * Use this when you want to apply the same transformation to a subset of
+ * Use when you want to apply the same transformation to a subset of
  * positions.
- *
- * **Details**
- *
- * The input tuple is not mutated; a fresh tuple is returned.
  *
  * **Example** (Wrapping only selected elements in arrays)
  *
@@ -520,12 +465,8 @@ export const mapPick: {
  *
  * **When to use**
  *
- * Use this when most elements should be transformed but a few should be
+ * Use when most elements should be transformed but a few should be
  * preserved.
- *
- * **Details**
- *
- * The input tuple is not mutated; a fresh tuple is returned.
  *
  * **Example** (Wrapping all elements except one in arrays)
  *
@@ -581,7 +522,7 @@ export const mapOmit: {
  *
  * **When to use**
  *
- * Use this when you need to compare tuples element-by-element.
+ * Use when you need an `Equivalence` to compare tuples element-by-element.
  *
  * **Details**
  *
@@ -602,7 +543,7 @@ export const mapOmit: {
  * ```
  *
  * @see {@link makeOrder} – create an `Order` for tuples
- * @category Equivalence
+ * @category instances
  * @since 4.0.0
  */
 export const makeEquivalence = Equivalence.Tuple
@@ -614,7 +555,8 @@ export const makeEquivalence = Equivalence.Tuple
  *
  * **When to use**
  *
- * Use this to sort or compare tuples lexicographically by element position.
+ * Use when you need to sort fixed-position arrays lexicographically, with each
+ * position using its own ordering rule.
  *
  * **Details**
  *
@@ -632,19 +574,20 @@ export const makeEquivalence = Equivalence.Tuple
  * ```
  *
  * @see {@link makeEquivalence} – create an `Equivalence` for tuples
- * @category Ordering
+ * @category ordering
  * @since 4.0.0
  */
 export const makeOrder = order.Tuple
 
 export {
   /**
-   * Checks if an array has exactly `N` elements, narrowing the type to a
+   * Checks whether an array has exactly `N` elements, narrowing the type to a
    * fixed-length tuple.
    *
    * **When to use**
    *
-   * Use this to guard against unexpected array lengths at runtime.
+   * Use to guard that an array has exactly the tuple length expected at
+   * runtime.
    *
    * **Details**
    *
@@ -667,19 +610,19 @@ export {
    * }
    * ```
    *
-   * @see {@link isTupleOfAtLeast} – check for a minimum length
+   * @see `isTupleOfAtLeast` – check for a minimum length
    * @category guards
    * @since 3.3.0
    */
   isTupleOf,
   /**
-   * Checks if an array has at least `N` elements, narrowing the type to a
+   * Checks whether an array has at least `N` elements, narrowing the type to a
    * tuple with a minimum length.
    *
    * **When to use**
    *
-   * Use this to guard that an array has at least the expected number of
-   * elements.
+   * Use to guard that an array has at least the tuple length expected at
+   * runtime.
    *
    * **Details**
    *
@@ -702,7 +645,7 @@ export {
    * }
    * ```
    *
-   * @see {@link isTupleOf} – check for an exact length
+   * @see `isTupleOf` – check for an exact length
    * @category guards
    * @since 3.3.0
    */
@@ -716,12 +659,8 @@ export {
  *
  * **When to use**
  *
- * Use this when you need to merge two tuples of the same shape, such as summing
- * counters or concatenating strings.
- *
- * **Details**
- *
- * The inputs are not mutated; a fresh tuple is returned.
+ * Use when you need to merge two same-shape tuples by combining each position
+ * independently, such as summing counters or concatenating strings.
  *
  * **Example** (Combining tuple elements)
  *
@@ -761,11 +700,8 @@ export function makeCombiner<A extends ReadonlyArray<unknown>>(
  *
  * **When to use**
  *
- * Use this to fold a collection of tuples into a single summary tuple.
- *
- * **Details**
- *
- * The inputs are not mutated; a fresh tuple is returned.
+ * Use when you need to fold same-shape tuples by accumulating each position
+ * independently into one summary tuple.
  *
  * **Example** (Reducing a collection of tuples)
  *

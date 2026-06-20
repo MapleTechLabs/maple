@@ -1,30 +1,11 @@
 /**
- * The `AtomHttpApi` module adapts typed `HttpApi` clients to the unstable atom
- * reactivity runtime. Use it to define a `Context.Service` whose generated HTTP
- * API client is available directly and whose endpoints can also be invoked as
- * atoms: `query` creates an atom of `AsyncResult` for reads, while `mutation`
- * creates an `AtomResultFn` for writes.
+ * Connects typed `HttpApi` clients to atoms.
  *
- * It is intended for applications that want server state to participate in atom
- * caching, invalidation, and hydration. Queries can be associated with
- * `reactivityKeys` so they refresh when those keys are invalidated, mutations can
- * invalidate the same keys after the request succeeds, and `timeToLive` controls
- * whether idle query atoms expire, stay alive for a duration, or are kept alive.
- *
- * Serialization is schema-based and intentionally limited to decoded values.
- * Mutation atoms are serializable only in `"decoded-only"` mode, while query
- * atoms are serializable only in `"decoded-only"` mode when a stable
- * `serializationKey` is supplied. Choose serialization keys that uniquely
- * identify the endpoint request, keep reactivity keys stable across client and
- * server registries during hydration, and avoid serializing response modes that
- * expose raw `HttpClientResponse` values.
- *
- * The service wraps `HttpApiClient.make`, so the same `HttpApi` definition,
- * schemas, base URL, middleware services, and HTTP client layer must be available
- * wherever the atom runtime is constructed. Use `transformClient` and
- * `transformResponse` for cross-cutting client behavior, and remember that
- * schema or low-level HTTP client failures are raised as defects while endpoint
- * and middleware failures remain typed errors.
+ * The service created here exposes the generated HTTP API client plus
+ * atom-based query and mutation helpers. Query atoms call endpoints and track
+ * their asynchronous result, while mutations run endpoint calls that can
+ * invalidate reactivity keys after a successful request. Query atoms can also be
+ * cached, serialized for hydration, and kept alive with a time-to-live.
  *
  * @since 4.0.0
  */
@@ -101,7 +82,7 @@ export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpA
           readonly reactivityKeys?: ReadonlyArray<unknown> | ReadonlyRecord<string, ReadonlyArray<unknown>> | undefined
         }
       >,
-      ResponseByMode<_Success["Type"], ResponseMode>,
+      ResponseByMode<Extract<_Success, Schema.Top>["Type"], ResponseMode>,
       ErrorByMode<_Error, _Middleware, ResponseMode>
     >
     : never
@@ -159,7 +140,7 @@ export interface AtomHttpApiClient<Self, Id extends string, Groups extends HttpA
     >
   ] ? Atom.Atom<
       AsyncResult.AsyncResult<
-        ResponseByMode<_Success["Type"], ResponseMode>,
+        ResponseByMode<Extract<_Success, Schema.Top>["Type"], ResponseMode>,
         ErrorByMode<_Error, _Middleware, ResponseMode>
       >
     >

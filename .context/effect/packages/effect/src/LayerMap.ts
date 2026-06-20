@@ -1,36 +1,11 @@
 /**
- * The `LayerMap` module provides utilities for managing scoped resources that
- * are selected by key and built from `Layer` values. A `LayerMap<K, I, E>` turns
- * a key into a cached service `Context<I>`, so applications can lazily acquire
- * and reuse different resource instances such as tenant clients, regional
- * connections, environment-specific services, or other keyed infrastructure.
+ * Caches scoped services selected by key and built from layers.
  *
- * **Mental model**
- *
- * - A `LayerMap` is a scoped, reference-counted cache of contexts produced by layers
- * - Keys identify which layer-backed resource set should be acquired
- * - Resources are acquired on demand when a key is requested
- * - The same key reuses the cached context while it remains live
- * - Cached resources are finalized when invalidated, when their scope closes, or after idle expiration
- * - The layers built by a `LayerMap` share the current layer memoization map
- *
- * **Common tasks**
- *
- * - Create from a lookup function: {@link make}
- * - Create from a fixed record of layers: {@link fromRecord}
- * - Define a service wrapper with accessor helpers: {@link Service}
- * - Retrieve a layer for a key: {@link LayerMap.get}
- * - Retrieve a scoped context directly: {@link LayerMap.contextEffect}
- * - Force a cached entry to be rebuilt later: {@link LayerMap.invalidate}
- * - Remove idle entries automatically with the `idleTimeToLive` option
- * - Eagerly build known entries with `preloadKeys` or `preload`
- *
- * **Gotchas**
- *
- * - `contextEffect` requires a `Scope.Scope` because it exposes the acquired context directly
- * - `get` returns a `Layer` that can be provided to programs expecting the keyed services
- * - Invalidating a key finalizes the current cached resources for that key; the next access rebuilds them
- * - Preloading moves layer construction errors to `LayerMap` creation instead of first use
+ * A `LayerMap<K, I, E>` turns a key into a cached service `Context<I>` and
+ * exposes that context as either a `Layer` or a scoped effect. Entries can be
+ * invalidated explicitly or released after they sit unused. This is useful for
+ * keyed resource families such as tenant clients, regional connections, or
+ * environment-specific services.
  *
  * @since 3.14.0
  */
@@ -38,6 +13,7 @@ import * as Context from "./Context.ts"
 import type * as Duration from "./Duration.ts"
 import * as Effect from "./Effect.ts"
 import { identity } from "./Function.ts"
+import { getStackTraceLimit, setStackTraceLimit } from "./internal/stackTraceLimit.ts"
 import * as Layer from "./Layer.ts"
 import * as RcMap from "./RcMap.ts"
 import * as Scope from "./Scope.ts"
@@ -115,8 +91,7 @@ export interface LayerMap<in out K, in out I, in out E = never> {
 }
 
 /**
- * A `LayerMap` allows you to create a map of Layer's that can be used to
- * dynamically access resources based on a key.
+ * Creates a `LayerMap` that dynamically provides resources based on a key.
  *
  * **Example** (Creating a layer map)
  *
@@ -272,10 +247,18 @@ export const fromRecord = <
 /**
  * Service class shape produced by `LayerMap.Service`.
  *
+ * **When to use**
+ *
+ * Use as the public type for classes returned by `LayerMap.Service` when an API
+ * needs to accept, return, or alias the generated service class and its static
+ * helpers.
+ *
  * **Details**
  *
  * It combines a `Context.Service` tag for the `LayerMap` with default layers
  * and helper accessors for retrieving, using, and invalidating keyed resources.
+ *
+ * @see {@link Service} for creating concrete `LayerMap` service classes
  *
  * @category services
  * @since 3.14.0
@@ -401,10 +384,10 @@ export const Service = <Self>() =>
     : never
 > => {
   const Err = globalThis.Error as any
-  const limit = Err.stackTraceLimit
-  Err.stackTraceLimit = 2
+  const limit = getStackTraceLimit()
+  setStackTraceLimit(2)
   const creationError = new Err()
-  Err.stackTraceLimit = limit
+  setStackTraceLimit(limit)
 
   function TagClass() {}
   const TagClass_ = TagClass as any as Mutable<TagClass<Self, Id, string, any, any, any, any, any>>

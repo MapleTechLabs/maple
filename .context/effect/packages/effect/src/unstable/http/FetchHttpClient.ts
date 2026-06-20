@@ -1,19 +1,10 @@
 /**
- * Provides an `HttpClient` implementation backed by the Web Fetch API.
+ * Fetch-based implementation of the Effect HTTP client service.
  *
- * Use this module when an application should run HTTP requests through the
- * platform's `fetch` implementation, such as browser code, edge runtimes, or
- * Node.js environments that provide `globalThis.fetch`. The `Fetch` reference
- * allows tests and custom runtimes to supply a different fetch function, while
- * `RequestInit` can provide defaults such as credentials, redirect behavior,
- * cache mode, or other platform-specific fetch options.
- *
- * The client translates Effect HTTP requests into fetch calls and wraps Web
- * `Response` values as `HttpClientResponse`s. Fetch implementations control
- * details such as CORS, cookies, redirect handling, and abort semantics, so
- * behavior can vary by platform. Stream request bodies are sent as Web streams
- * with `duplex: "half"` for runtimes that require it, and `content-length` is
- * omitted so fetch can manage body framing itself.
+ * This module provides an `HttpClient` layer that executes requests through a
+ * Web Fetch API implementation. It is the transport to use in browsers, edge
+ * runtimes, and Node.js environments where `globalThis.fetch` is available, or
+ * anywhere a compatible fetch function can be supplied.
  *
  * @since 4.0.0
  */
@@ -33,7 +24,7 @@ import * as HttpClientResponse from "./HttpClientResponse.ts"
  *
  * Defaults to `globalThis.fetch`.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const Fetch = Context.Reference<typeof globalThis.fetch>("effect/http/FetchHttpClient/Fetch", {
@@ -41,13 +32,18 @@ export const Fetch = Context.Reference<typeof globalThis.fetch>("effect/http/Fet
 })
 
 /**
- * Service containing default `RequestInit` options for the fetch-based HTTP client.
+ * Service that contains default fetch options for the fetch-based HTTP client.
+ *
+ * **When to use**
+ *
+ * Use to provide default credentials, cache, redirect, integrity, or other
+ * fetch options for outgoing HTTP requests.
  *
  * **Details**
  *
  * Request-specific method, headers, body, and abort signal are supplied by the client when a request is executed.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class RequestInit extends Context.Service<RequestInit, globalThis.RequestInit>()(
@@ -96,7 +92,30 @@ const fetch: HttpClient.HttpClient = HttpClient.make((request, url, signal, fibe
 })
 
 /**
- * Layer that provides an `HttpClient` implementation backed by the configured `Fetch` function.
+ * Layer that provides an `HttpClient` implementation backed by the configured
+ * `Fetch` function.
+ *
+ * **When to use**
+ *
+ * Use when an Effect program should execute `HttpClient` requests through the
+ * platform `fetch` implementation, especially in browser, edge, or Node.js
+ * runtimes with `globalThis.fetch`.
+ *
+ * **Details**
+ *
+ * The layer uses the current `Fetch` reference and optional `RequestInit`
+ * service for each request. Request-specific method, headers, body, and abort
+ * signal are supplied by the client and override matching `RequestInit` fields.
+ *
+ * **Gotchas**
+ *
+ * Fetch behavior comes from the runtime's implementation, so CORS, cookies,
+ * redirects, abort handling, and streaming support can vary by platform. Stream
+ * request bodies are sent as Web streams with `duplex: "half"`, and any
+ * `content-length` header is removed before calling `fetch`.
+ *
+ * @see {@link Fetch} for supplying the fetch implementation used by this layer
+ * @see {@link RequestInit} for default `RequestInit` options applied before request-specific fields
  *
  * @category layers
  * @since 4.0.0

@@ -1,29 +1,12 @@
 /**
  * Schema-aware `RequestResolver` helpers for SQL-backed data loading.
  *
- * This module bridges `Effect.request` with `SqlClient` by representing each
- * lookup or mutation as a `SqlRequest` and batching concurrent requests into a
- * single SQL operation. Request payloads are encoded with the request schema
- * before `execute` is called, and rows returned by the query are decoded with
- * the result schema before entries are completed.
- *
- * Use `ordered` when a query returns exactly one row per request in the same
- * order, `findById` for `where id in (...)` lookups, `grouped` for one-to-many
- * relationships, and `void` for inserts, updates, deletes, or other
- * side-effecting statements where no row is needed.
- *
- * **Gotchas**
- *
- * - `ordered` requires the result count and order to match the request batch.
- * - `grouped` and `findById` rely on stable request/result keys and fail
- *   missing requests with `NoSuchElementError`.
- * - Equal payloads are equal `SqlRequest`s, which enables request batching,
- *   deduplication, and cache reuse; model payload identity deliberately.
- * - Batches are split by the active SQL transaction connection, so requests
- *   made in different transactions are not resolved together.
- * - Queries like `where id in (...)` often return rows in database order; use
- *   `findById` or `grouped`, or preserve input order explicitly before choosing
- *   `ordered`.
+ * This module represents each lookup or mutation as a `SqlRequest` and batches
+ * concurrent requests into SQL operations. Request payloads are encoded with the
+ * request schema before `execute` is called, and returned rows are decoded with
+ * the result schema before requests are completed. It provides ordered,
+ * grouped, id-based, and side-effect-only resolver constructors, and keeps
+ * batches separated by the active SQL transaction connection.
  *
  * @since 4.0.0
  */
@@ -34,6 +17,7 @@ import * as Equal from "../../Equal.ts"
 import * as Exit from "../../Exit.ts"
 import * as Hash from "../../Hash.ts"
 import * as MutableHashMap from "../../MutableHashMap.ts"
+import * as Option from "../../Option.ts"
 import * as Request from "../../Request.ts"
 import * as RequestResolver from "../../RequestResolver.ts"
 import * as Schema from "../../Schema.ts"
@@ -66,7 +50,7 @@ const SqlRequestProto = {
 }
 
 /**
- * Submits a payload as a `SqlRequest` to a request resolver, either directly
+ * Runs a payload as a `SqlRequest` through a request resolver, either directly
  * with a payload and resolver or curried by resolver.
  *
  * @category requests
@@ -381,8 +365,20 @@ const partitionRequestsById = function*<In, A, E, R, InE>(
 
   for (let i = 0; i < len; i++) {
     entry = requests[i]
-    yield (Effect.provideContext(handle(encode(entry.request.payload)), entry.context) as Effect.Effect<void>)
-    MutableHashMap.set(byIdMap, entry.request.payload, entry)
+    const existing = MutableHashMap.get(byIdMap, entry.request.payload)
+    if (Option.isSome(existing)) {
+      const duplicate = entry
+      MutableHashMap.set(byIdMap, entry.request.payload, {
+        ...existing.value,
+        completeUnsafe(exit) {
+          existing.value.completeUnsafe(exit)
+          duplicate.completeUnsafe(exit)
+        }
+      })
+    } else {
+      yield (Effect.provideContext(handle(encode(entry.request.payload)), entry.context) as Effect.Effect<void>)
+      MutableHashMap.set(byIdMap, entry.request.payload, entry)
+    }
   }
 
   return [inputs, byIdMap] as const

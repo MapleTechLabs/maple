@@ -49,7 +49,7 @@ export function ReplaysToolbar({
 
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-3">
-			<InputGroup className="max-w-sm">
+			<InputGroup className="w-full sm:max-w-sm">
 				<InputGroupAddon>
 					<MagnifierIcon />
 				</InputGroupAddon>

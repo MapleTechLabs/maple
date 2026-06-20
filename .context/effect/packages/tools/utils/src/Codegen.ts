@@ -4,19 +4,31 @@
  * This module provides the `BarrelGenerator` service used by the codegen CLI to
  * find files annotated with `@barrel` comments and rewrite the generated export
  * section beneath each annotation. The generator resolves matching modules
- * relative to each annotated barrel file, preserves the discovered modules'
- * leading JSDoc blocks in the generated output, and normalizes export paths so
- * the produced TypeScript is stable across platforms.
+ * relative to each annotated barrel file, copies each module's top-level
+ * `@since` tag into a minimal JSDoc block, and normalizes export paths so the
+ * produced TypeScript is stable across platforms.
  *
  * @since 4.0.0
  */
 import * as Context from "effect/Context"
+import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Path from "effect/Path"
 import type { PlatformError } from "effect/PlatformError"
 import * as Glob from "./Glob.ts"
+
+/**
+ * Error raised when barrel export generation cannot read required module metadata.
+ *
+ * @category errors
+ * @since 4.0.0
+ */
+export class BarrelCodegenError extends Data.TaggedError("BarrelCodegenError")<{
+  readonly path: string
+  readonly reason: string
+}> {}
 
 const findAnnotation = (content: string): { pattern: string; offset: number } | undefined => {
   const lines = content.split("\n")
@@ -53,6 +65,44 @@ const parseAnnotation = (line: string): string | undefined => {
   return match[1] ?? "*.ts"
 }
 
+const extractModuleSince = (file: string, content: string): Effect.Effect<string, BarrelCodegenError> => {
+  const block = content.match(/^\s*(\/\*\*[\s\S]*?\*\/)/)?.[1]
+  if (block === undefined) {
+    return Effect.fail(
+      new BarrelCodegenError({
+        path: file,
+        reason: "missing top-level module JSDoc"
+      })
+    )
+  }
+  const matches = Array.from(block.matchAll(/^\s*\*\s*@since(?:\s+(.*))?$/gm))
+  if (matches.length !== 1) {
+    return Effect.fail(
+      new BarrelCodegenError({
+        path: file,
+        reason: matches.length === 0
+          ? "missing top-level module @since tag"
+          : "multiple top-level module @since tags"
+      })
+    )
+  }
+  const since = matches[0]?.[1]?.trim() ?? ""
+  if (since.length === 0) {
+    return Effect.fail(
+      new BarrelCodegenError({
+        path: file,
+        reason: "empty top-level module @since tag"
+      })
+    )
+  }
+  return Effect.succeed(since)
+}
+
+const renderExportJSDoc = (since: string): string =>
+  `/**
+ * @since ${since}
+ */`
+
 /**
  * Metadata for a barrel file discovered from a `@barrel` annotation, including the file path, glob pattern, and insertion offset for generated exports.
  *
@@ -76,13 +126,13 @@ export interface BarrelGenerator {
     pattern: string,
     cwd: string
   ) => Effect.Effect<Array<BarrelFile>, PlatformError | Glob.GlobError>
-  readonly processFile: (file: BarrelFile) => Effect.Effect<void, PlatformError | Glob.GlobError>
+  readonly processFile: (file: BarrelFile) => Effect.Effect<void, PlatformError | Glob.GlobError | BarrelCodegenError>
 }
 
 /**
- * Context service tag for barrel file generation.
+ * Service tag for barrel file generation.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const BarrelGenerator: Context.Service<BarrelGenerator, BarrelGenerator> = Context.Service(
@@ -113,9 +163,9 @@ export const layer: Layer.Layer<BarrelGenerator, never, FileSystem.FileSystem | 
       const fullPath = path.join(directory, file)
       const posixPath = toPosix(file)
       const content = yield* fs.readFileString(fullPath)
-      const topComment = content.match(/\/\*\*\n[\s\S]*?\*\//)?.[0] ?? ""
+      const since = yield* extractModuleSince(fullPath, content)
       const moduleName = fileToModuleName(posixPath)
-      return `${topComment}\nexport * as ${moduleName} from "./${posixPath}"`
+      return `${renderExportJSDoc(since)}\nexport * as ${moduleName} from "./${posixPath}"`
     })
 
     const discoverFile = Effect.fn("discoverFile")(function*(file: string) {

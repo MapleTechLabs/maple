@@ -37,6 +37,67 @@ describe("ConfigProvider", () => {
     await assertSuccess(provider, ["B"], ConfigProvider.makeValue("value2"))
   })
 
+  it("orElse does not fall back on SourceError", async () => {
+    const error = new ConfigProvider.SourceError({ message: "io down" })
+    const primary = ConfigProvider.make(() => Effect.fail(error))
+    const fallback = ConfigProvider.fromEnv({ env: { KEY: "fallback" } })
+    const provider = primary.pipe(ConfigProvider.orElse(fallback))
+    const r = await Effect.runPromise(Effect.result(provider.load(["KEY"])))
+    deepStrictEqual(r, Result.fail(error))
+  })
+
+  it("orElse applies each operand's transformations", async () => {
+    const primary = ConfigProvider.fromEnv({
+      env: {
+        "DATABASE_HOST": "from-env"
+      }
+    }).pipe(ConfigProvider.constantCase)
+    const fallback = ConfigProvider.fromEnv({
+      env: {
+        "APP_PORT": "3000"
+      }
+    }).pipe(ConfigProvider.nested("APP"))
+    const provider = primary.pipe(ConfigProvider.orElse(fallback))
+    await assertSuccess(provider, ["databaseHost"], ConfigProvider.makeValue("from-env"))
+    await assertSuccess(provider, ["PORT"], ConfigProvider.makeValue("3000"))
+  })
+
+  it("mapInput distributes over orElse", async () => {
+    const appendSuffix = ConfigProvider.mapInput((path) =>
+      path.map((seg) => typeof seg === "string" ? `${seg}_SUFFIX` : seg)
+    )
+    const primary = ConfigProvider.fromEnv({
+      env: {
+        "prefix_SUFFIX_KEY_SUFFIX": "primary"
+      }
+    }).pipe(ConfigProvider.nested("prefix"))
+    const fallback = ConfigProvider.fromEnv({
+      env: {
+        "fallback_SUFFIX_KEY_SUFFIX": "fallback",
+        "fallback_SUFFIX_OTHER_SUFFIX": "fallback"
+      }
+    }).pipe(ConfigProvider.nested("fallback"))
+    const provider = primary.pipe(ConfigProvider.orElse(fallback), appendSuffix)
+    await assertSuccess(provider, ["KEY"], ConfigProvider.makeValue("primary"))
+    await assertSuccess(provider, ["OTHER"], ConfigProvider.makeValue("fallback"))
+  })
+
+  it("nested distributes over orElse", async () => {
+    const primary = ConfigProvider.fromEnv({
+      env: {
+        "app_DATABASE_HOST": "primary"
+      }
+    }).pipe(ConfigProvider.constantCase)
+    const fallback = ConfigProvider.fromEnv({
+      env: {
+        "app_PORT": "fallback"
+      }
+    })
+    const provider = primary.pipe(ConfigProvider.orElse(fallback), ConfigProvider.nested("app"))
+    await assertSuccess(provider, ["databaseHost"], ConfigProvider.makeValue("primary"))
+    await assertSuccess(provider, ["PORT"], ConfigProvider.makeValue("fallback"))
+  })
+
   it("constantCase", async () => {
     const provider = ConfigProvider.constantCase(ConfigProvider.fromEnv({
       env: {
@@ -85,6 +146,25 @@ describe("ConfigProvider", () => {
         }
       }).pipe(ConfigProvider.nested("prefix.with.dots"), ConfigProvider.constantCase)
       await assertSuccess(provider, ["key.with.dots"], ConfigProvider.makeValue("value"))
+    })
+
+    it("multiple nested calls compose as wrappers", async () => {
+      const provider = ConfigProvider.fromEnv({
+        env: {
+          "b_a_KEY": "value"
+        }
+      }).pipe(ConfigProvider.nested("a"), ConfigProvider.nested("b"))
+      await assertSuccess(provider, ["KEY"], ConfigProvider.makeValue("value"))
+    })
+
+    it("mapInput after nested transforms the full path", async () => {
+      const appendLeaf = ConfigProvider.mapInput((path) => [...path, "leaf"])
+      const provider = ConfigProvider.fromEnv({
+        env: {
+          "app_KEY_leaf": "value"
+        }
+      }).pipe(ConfigProvider.nested("app"), appendLeaf)
+      await assertSuccess(provider, ["KEY"], ConfigProvider.makeValue("value"))
     })
   })
 
@@ -509,7 +589,7 @@ A=1`)
   describe("fromDir", () => {
     const provider = ConfigProvider.fromDir({ rootPath: "/" })
     const files: Record<string, string> = {
-      "/secret": "keepitsafe\n", // test trimming
+      "/secret": "keepitsafe\n",
       "/SHOUTING": "value",
       "/integer": "123",
       "/nested/config": "hello"
@@ -573,17 +653,57 @@ A=1`)
       deepStrictEqual(result.integer, ConfigProvider.makeValue("123"))
       deepStrictEqual(result.nestedConfig, ConfigProvider.makeValue("hello"))
 
-      // Test that non-existent path throws an error
-      const error = await Effect.runPromise(
-        Effect.flip(
-          Effect.gen(function*() {
-            const provider = yield* ConfigProvider.ConfigProvider
-            yield* provider.load(["fallback"])
-          }).pipe(Effect.provide(SetLayer))
-        )
+      const fallback = await Effect.runPromise(
+        Effect.gen(function*() {
+          const provider = yield* ConfigProvider.ConfigProvider
+          return yield* provider.load(["fallback"])
+        }).pipe(Effect.provide(SetLayer))
       )
 
-      deepStrictEqual(error.message, "Failed to read file at /fallback")
+      deepStrictEqual(fallback, undefined)
+    })
+
+    it("orElse falls back when fromDir path is missing", async () => {
+      const provider = await Effect.runPromise(
+        ConfigProvider.fromDir({ rootPath: "/" }).pipe(
+          Effect.map((dir) => dir.pipe(ConfigProvider.orElse(ConfigProvider.fromEnv({ env: { fallback: "value" } })))),
+          Effect.provide(Platform)
+        )
+      )
+      await assertSuccess(provider, ["fallback"], ConfigProvider.makeValue("value"))
+    })
+
+    it("reads directory entries as a record", async () => {
+      const dirs: Record<string, ReadonlyArray<string>> = {
+        "/app": ["host", "port"]
+      }
+      const Fs = FileSystem.layerNoop({
+        readFileString() {
+          return Effect.fail(
+            PlatformError.systemError({
+              module: "FileSystem",
+              _tag: "NotFound",
+              method: "readFileString"
+            })
+          )
+        },
+        readDirectory(path) {
+          const entries = dirs[path]
+          return entries
+            ? Effect.succeed([...entries])
+            : Effect.fail(
+              PlatformError.systemError({
+                module: "FileSystem",
+                _tag: "NotFound",
+                method: "readDirectory"
+              })
+            )
+        }
+      })
+      const provider = await Effect.runPromise(
+        ConfigProvider.fromDir({ rootPath: "/" }).pipe(Effect.provide(Layer.mergeAll(Fs, Path.layer)))
+      )
+      await assertSuccess(provider, ["app"], ConfigProvider.makeRecord(new Set(["host", "port"])))
     })
 
     it("layerAdd uses fallback", async () => {

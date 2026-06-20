@@ -1,72 +1,11 @@
 /**
- * The `Chunk` module provides an immutable, high-performance sequence data structure
- * optimized for functional programming patterns. A `Chunk` is a persistent data structure
- * that supports efficient append, prepend, and concatenation operations.
+ * Stores many values in an immutable ordered collection.
  *
- * ## What is a Chunk?
- *
- * A `Chunk<A>` is an immutable sequence of elements of type `A` that provides:
- * - **O(1) append and prepend operations**
- * - **Efficient concatenation** through tree-like structure
- * - **Memory efficiency** with structural sharing
- * - **Rich API** with functional programming operations
- * - **Type safety** with full TypeScript integration
- *
- * ## Key Features
- *
- * - **Immutable**: All operations return new chunks without modifying the original
- * - **Efficient**: Optimized data structure with logarithmic complexity for most operations
- * - **Functional**: Rich set of transformation and combination operators
- * - **Lazy evaluation**: Many operations are deferred until needed
- * - **Interoperable**: Easy conversion to/from arrays and other collections
- *
- * ## Performance Characteristics
- *
- * - **Append/Prepend**: O(1) amortized
- * - **Random Access**: O(log n)
- * - **Concatenation**: O(log min(m, n))
- * - **Iteration**: O(n)
- * - **Memory**: Structural sharing minimizes allocation
- *
- * **Example** (Creating and combining chunks)
- *
- * ```ts
- * import { Chunk } from "effect"
- *
- * // Creating chunks
- * const chunk1 = Chunk.fromIterable([1, 2, 3])
- * const chunk2 = Chunk.fromIterable([4, 5, 6])
- * const empty = Chunk.empty<number>()
- *
- * // Combining chunks
- * const combined = Chunk.appendAll(chunk1, chunk2)
- * console.log(Chunk.toReadonlyArray(combined)) // [1, 2, 3, 4, 5, 6]
- * ```
- *
- * **Example** (Transforming chunks)
- *
- * ```ts
- * import { Chunk } from "effect"
- *
- * // Functional transformations
- * const numbers = Chunk.range(1, 5) // [1, 2, 3, 4, 5]
- * const doubled = Chunk.map(numbers, (n) => n * 2) // [2, 4, 6, 8, 10]
- * const evens = Chunk.filter(doubled, (n) => n % 4 === 0) // [4, 8]
- * const sum = Chunk.reduce(evens, 0, (acc, n) => acc + n) // 12
- * ```
- *
- * **Example** (Processing chunks with Effect)
- *
- * ```ts
- * import { Chunk, Effect } from "effect"
- *
- * // Working with Effects
- * const processChunk = Effect.fnUntraced(function*(chunk: Chunk.Chunk<number>) {
- *   const mapped = Chunk.map(chunk, (n) => n * 2)
- *   const filtered = Chunk.filter(mapped, (n) => n > 5)
- *   return Chunk.toReadonlyArray(filtered)
- * })
- * ```
+ * A `Chunk<A>` is useful when you need to build or transform collections
+ * without changing the original collection. It is designed for efficient
+ * append, prepend, and concatenation. This module includes helpers for
+ * creating, reading, slicing, mapping, filtering, sorting, zipping, combining,
+ * and converting chunks to and from arrays and iterables.
  *
  * @since 2.0.0
  */
@@ -225,7 +164,7 @@ const emptyArray: ReadonlyArray<never> = []
  * console.log(eq(chunk1, chunk3)) // false
  * ```
  *
- * @category equivalence
+ * @category instances
  * @since 4.0.0
  */
 export const makeEquivalence = <A>(isEquivalent: Equivalence.Equivalence<A>): Equivalence.Equivalence<Chunk<A>> =>
@@ -319,7 +258,7 @@ const makeChunk = <A>(backing: Backing<A>): Chunk<A> => {
 }
 
 /**
- * Checks if `u` is a `Chunk<unknown>`
+ * Checks whether `u` is a `Chunk<unknown>`
  *
  * **Example** (Checking for chunks)
  *
@@ -542,7 +481,15 @@ const reverseChunk = <A>(self: Chunk<A>): Chunk<A> => {
 
 /**
  * Reverses the order of elements in a `Chunk`.
- * Importantly, if the input chunk is a `NonEmptyChunk`, the reversed chunk will also be a `NonEmptyChunk`.
+ *
+ * **When to use**
+ *
+ * Use to read or process chunk elements in reverse order.
+ *
+ * **Details**
+ *
+ * If the input chunk is a `NonEmptyChunk`, the reversed chunk is also a
+ * `NonEmptyChunk`.
  *
  * **Example** (Reversing chunks)
  *
@@ -561,7 +508,8 @@ const reverseChunk = <A>(self: Chunk<A>): Chunk<A> => {
 export const reverse: <S extends Chunk<any>>(self: S) => Chunk.With<S, Chunk.Infer<S>> = reverseChunk as any
 
 /**
- * This function provides a safe way to read a value at a particular index from a `Chunk`.
+ * Gets the value at an index in a `Chunk` safely, returning `None` when the index is
+ * out of bounds.
  *
  * **Example** (Accessing elements safely)
  *
@@ -592,7 +540,16 @@ export const get: {
 )
 
 /**
- * Wraps an array into a chunk without copying, unsafe on mutable arrays
+ * Wraps an array into a chunk without copying.
+ *
+ * **When to use**
+ *
+ * Use when the input array can be shared with the resulting `Chunk` and avoiding
+ * a copy matters.
+ *
+ * **Gotchas**
+ *
+ * Mutating the source array after wrapping can mutate the resulting `Chunk`.
  *
  * **Example** (Creating chunks without copying arrays)
  *
@@ -615,7 +572,16 @@ export const fromArrayUnsafe = <A>(self: ReadonlyArray<A>): Chunk<A> =>
   self.length === 0 ? empty() : self.length === 1 ? of(self[0]) : makeChunk({ _tag: "IArray", array: self })
 
 /**
- * Wraps an array into a chunk without copying, unsafe on mutable arrays
+ * Wraps a non-empty array into a non-empty chunk without copying.
+ *
+ * **When to use**
+ *
+ * Use when the input array is already known to be non-empty, can be shared with
+ * the resulting `Chunk`, and avoiding a copy matters.
+ *
+ * **Gotchas**
+ *
+ * Mutating the source array after wrapping can mutate the resulting `Chunk`.
  *
  * **Example** (Creating non-empty chunks without copying arrays)
  *
@@ -637,7 +603,16 @@ export const fromNonEmptyArrayUnsafe = <A>(self: NonEmptyReadonlyArray<A>): NonE
   fromArrayUnsafe(self) as any
 
 /**
- * Gets an element unsafely, will throw on out of bounds
+ * Gets an element at the specified index without returning an `Option`.
+ *
+ * **When to use**
+ *
+ * Use when reading from a `Chunk` at an index known to be in bounds and direct
+ * element access is preferred over handling `Option.none`.
+ *
+ * **Gotchas**
+ *
+ * Throws if the index is out of bounds.
  *
  * **Example** (Accessing elements unsafely)
  *
@@ -691,6 +666,11 @@ export const getUnsafe: {
 /**
  * Appends the specified element to the end of the `Chunk`.
  *
+ * **When to use**
+ *
+ * Use to add one element after the existing chunk elements and return a
+ * `NonEmptyChunk`.
+ *
  * **Example** (Appending an element)
  *
  * ```ts
@@ -706,7 +686,10 @@ export const getUnsafe: {
  * console.log(Chunk.toArray(singleElement)) // [42]
  * ```
  *
- * @category concatenating
+ * @see {@link prepend} for adding one element before the existing elements
+ * @see {@link appendAll} for appending all elements from another chunk
+ *
+ * @category combining
  * @since 2.0.0
  */
 export const append: {
@@ -715,7 +698,7 @@ export const append: {
 } = dual(2, <A, A2>(self: Chunk<A>, a: A2): NonEmptyChunk<A | A2> => appendAll(self, of(a)))
 
 /**
- * Prepend an element to the front of a `Chunk`, creating a new `NonEmptyChunk`.
+ * Prepends an element to the front of a `Chunk`, creating a new `NonEmptyChunk`.
  *
  * **Example** (Prepending an element)
  *
@@ -732,7 +715,7 @@ export const append: {
  * console.log(Chunk.toArray(singleElement)) // ["first"]
  * ```
  *
- * @category concatenating
+ * @category combining
  * @since 2.0.0
  */
 export const prepend: {
@@ -921,7 +904,7 @@ export const dropWhile: {
  * // [ "a", "b", 1, 2 ]
  * ```
  *
- * @category concatenating
+ * @category combining
  * @since 2.0.0
  */
 export const prependAll: {
@@ -937,6 +920,11 @@ export const prependAll: {
  * Concatenates two chunks, combining their elements.
  * If either chunk is non-empty, the result is also a non-empty chunk.
  *
+ * **When to use**
+ *
+ * Use to concatenate two chunks when the second chunk's elements should come
+ * after the first.
+ *
  * **Example** (Appending all elements)
  *
  * ```ts
@@ -951,7 +939,10 @@ export const prependAll: {
  * // [ 1, 2, "a", "b" ]
  * ```
  *
- * @category concatenating
+ * @see {@link prependAll} for concatenating chunks in the opposite order
+ * @see {@link append} for adding a single element to the end
+ *
+ * @category combining
  * @since 2.0.0
  */
 export const appendAll: {
@@ -1121,7 +1112,7 @@ export const filterMapWhile: {
 })
 
 /**
- * Filter out optional values
+ * Filters out optional values
  *
  * **Example** (Compacting optional values)
  *
@@ -1267,6 +1258,20 @@ export const flatten: <S extends Chunk<Chunk<any>>>(self: S) => Chunk.Flatten<S>
 /**
  * Groups elements in chunks of up to `n` elements.
  *
+ * **When to use**
+ *
+ * Use to divide a chunk into ordered, non-overlapping chunks with at most `n`
+ * elements each.
+ *
+ * **Details**
+ *
+ * The final chunk may contain fewer than `n` elements. Empty input produces an
+ * empty chunk of chunks.
+ *
+ * **Gotchas**
+ *
+ * Values of `n` less than or equal to zero produce singleton chunks.
+ *
  * **Example** (Splitting into fixed-size chunks)
  *
  * ```ts
@@ -1284,6 +1289,8 @@ export const flatten: <S extends Chunk<Chunk<any>>>(self: S) => Chunk.Flatten<S>
  * console.log(Chunk.toArray(chunked2).map(Chunk.toArray))
  * // [[1, 2], [3, 4], [5]]
  * ```
+ *
+ * @see {@link split} for splitting into a target number of chunks instead of a fixed chunk size
  *
  * @category elements
  * @since 2.0.0
@@ -1382,7 +1389,7 @@ export const isEmpty = <A>(self: Chunk<A>): boolean => self.length === 0
 export const isNonEmpty = <A>(self: Chunk<A>): self is NonEmptyChunk<A> => self.length > 0
 
 /**
- * Returns the first element of this chunk if it exists.
+ * Returns the first element of this chunk safely if it exists.
  *
  * **Example** (Getting the first element)
  *
@@ -1400,6 +1407,11 @@ export const head: <A>(self: Chunk<A>) => Option<A> = get(0)
 
 /**
  * Returns the first element of this chunk.
+ *
+ * **When to use**
+ *
+ * Use when you know the chunk is non-empty and need the first element directly
+ * without handling `Option.none`.
  *
  * **Gotchas**
  *
@@ -1449,7 +1461,7 @@ export const headUnsafe = <A>(self: Chunk<A>): A => getUnsafe(self, 0)
 export const headNonEmpty: <A>(self: NonEmptyChunk<A>) => A = headUnsafe
 
 /**
- * Returns the last element of this chunk if it exists.
+ * Returns the last element of this chunk safely if it exists.
  *
  * **Example** (Getting the last element)
  *
@@ -1467,6 +1479,11 @@ export const last = <A>(self: Chunk<A>): Option<A> => get(self, self.length - 1)
 
 /**
  * Returns the last element of this chunk.
+ *
+ * **When to use**
+ *
+ * Use when you know the chunk is non-empty and need the last element directly
+ * without handling `Option.none`.
  *
  * **Gotchas**
  *
@@ -1697,7 +1714,7 @@ export const map: {
     fromArrayUnsafe(pipe(toReadonlyArray(self), RA.map((a, i) => f(a, i)))))
 
 /**
- * Statefully maps over the chunk, producing new elements of type `B`.
+ * Maps over the chunk statefully, producing new elements of type `B`.
  *
  * **Example** (Mapping with accumulated state)
  *
@@ -1836,7 +1853,7 @@ export const separate = <A, B>(self: Chunk<Result<B, A>>): [Chunk<A>, Chunk<B>] 
 export const size = <A>(self: Chunk<A>): number => self.length
 
 /**
- * Sort the elements of a Chunk in increasing order, creating a new Chunk.
+ * Sorts the elements of a `Chunk` in increasing order, creating a new `Chunk`.
  *
  * **Example** (Sorting chunks)
  *
@@ -1869,7 +1886,7 @@ export const sort: {
 )
 
 /**
- * Sorts the elements of a Chunk based on a projection function.
+ * Sorts the elements of a `Chunk` based on a projection function.
  *
  * **Example** (Sorting chunks by a derived value)
  *
@@ -2065,7 +2082,7 @@ export const splitWhere: {
 })
 
 /**
- * Returns every elements after the first.
+ * Returns every element after the first safely, or `None` when the chunk is empty.
  *
  * **Example** (Getting the tail safely)
  *
@@ -2088,7 +2105,7 @@ export const splitWhere: {
 export const tail = <A>(self: Chunk<A>): O.Option<Chunk<A>> => self.length > 0 ? O.some(drop(self, 1)) : O.none()
 
 /**
- * Returns every elements after the first.
+ * Returns every element after the first from a non-empty chunk.
  *
  * **Example** (Getting the tail of a non-empty chunk)
  *
@@ -2366,7 +2383,7 @@ export const zip: {
 )
 
 /**
- * Delete the element at the specified index, creating a new `Chunk`.
+ * Deletes the element at the specified index, creating a new `Chunk`.
  *
  * **Example** (Removing an element)
  *
@@ -2398,7 +2415,7 @@ export const remove: {
 )
 
 /**
- * Applies a function to the element at the specified index, creating a new `Chunk`,
+ * Applies a function to the element at the specified index safely, creating a new `Chunk`,
  * or returns `None` if the index is out of bounds.
  *
  * **Example** (Modifying an element)
@@ -2432,7 +2449,7 @@ export const modify: {
 )
 
 /**
- * Change the element at the specified index, creating a new `Chunk`,
+ * Changes the element at the specified index safely, creating a new `Chunk`,
  * or returns `None` if the index is out of bounds.
  *
  * **Example** (Replacing an element)
@@ -2617,7 +2634,7 @@ export const findFirst: {
 } = RA.findFirst
 
 /**
- * Return the first index for which a predicate holds.
+ * Returns the first index for which a predicate holds.
  *
  * **Example** (Finding the first matching index)
  *
@@ -2649,7 +2666,7 @@ export const findFirstIndex: {
 )
 
 /**
- * Find the last element for which a predicate holds.
+ * Finds the last element for which a predicate holds.
  *
  * **Example** (Finding the last matching element)
  *
@@ -2681,7 +2698,7 @@ export const findLast: {
 } = RA.findLast
 
 /**
- * Return the last index for which a predicate holds.
+ * Returns the last index for which a predicate holds.
  *
  * **Example** (Finding the last matching index)
  *
@@ -2713,7 +2730,7 @@ export const findLastIndex: {
 )
 
 /**
- * Check if a predicate holds true for every `Chunk` element.
+ * Checks whether a predicate holds true for every `Chunk` element.
  *
  * **Example** (Checking every element)
  *
@@ -2751,7 +2768,7 @@ export const every: {
 )
 
 /**
- * Check if a predicate holds true for some `Chunk` element.
+ * Checks whether a predicate holds true for some `Chunk` element.
  *
  * **Example** (Checking for some matching element)
  *

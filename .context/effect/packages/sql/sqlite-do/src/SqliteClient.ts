@@ -1,21 +1,11 @@
 /**
- * Provides an Effect SQL client for Cloudflare Durable Object SQLite storage.
+ * Connects Effect SQL to SQLite storage inside Cloudflare Durable Objects.
  *
- * This module adapts a Durable Object `SqlStorage` handle into both the
- * Durable Object-specific `SqliteClient` service and the generic Effect
- * `SqlClient` service. Use it from inside a Durable Object to run local
- * per-object queries, repositories, migrations, transactional read/write
- * workflows, and tests that exercise Cloudflare's SQLite-backed storage API.
- *
- * Durable Object SQLite storage is scoped to one object id, so each object
- * instance has its own database and callers should pass the same `SqlStorage`
- * handle that the object uses for normal reads and writes. This adapter
- * serializes Effect SQL access through one connection; a transaction holds that
- * permit for the lifetime of its scope, so keep transactions short, avoid
- * suspending them across unrelated work, and use them when multi-statement
- * writes must commit atomically. `SqlStorage.exec` returns `ArrayBuffer` values
- * for SQLite blobs, which this client normalizes to `Uint8Array`, and SQLite
- * does not support `updateValues`.
+ * This module wraps a Durable Object `SqlStorage` handle and exposes it as both
+ * `SqliteClient` and the generic Effect SQL client. It serializes access,
+ * supports normal and streaming queries, converts returned `ArrayBuffer` values
+ * to `Uint8Array`, and provides layers for wiring the client into an Effect
+ * application. `updateValues` is not supported by this driver.
  *
  * @since 4.0.0
  */
@@ -71,9 +61,14 @@ export interface SqliteClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the Cloudflare Durable Object `SqliteClient` service.
+ * Service tag for the Cloudflare Durable Object SQLite client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a Durable Object SQLite client through the Effect
+ * context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const SqliteClient = Context.Service<SqliteClient>("@effect/sql-sqlite-do/SqliteClient")

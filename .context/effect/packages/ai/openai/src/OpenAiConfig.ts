@@ -1,19 +1,8 @@
 /**
- * The `OpenAiConfig` module provides contextual configuration for the
- * `@effect/ai-openai` integration. It is used to customize how OpenAI clients
- * are built and interpreted without threading configuration through every API
- * call manually.
- *
- * The primary use case is installing an HTTP client transform with
- * {@link withClientTransform}. This lets applications adapt the underlying
- * OpenAI HTTP client for cross-cutting concerns such as custom middleware,
- * instrumentation, proxying, or request policy changes while keeping the
- * OpenAI service APIs unchanged.
- *
- * Configuration is scoped through Effect's context, so transforms only apply to
- * the effect they are provided to and anything evaluated inside that scope.
- * When multiple transforms are needed, compose them into a single
- * `HttpClient => HttpClient` function before providing the configuration.
+ * The `OpenAiConfig` module lets a workflow temporarily customize the HTTP
+ * client used by `@effect/ai-openai` request helpers. OpenAI client, language
+ * model, and embedding code read this scoped transform when they execute
+ * provider calls.
  *
  * @since 4.0.0
  */
@@ -23,8 +12,14 @@ import { dual } from "effect/Function"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
 
 /**
- * Context service carrying scoped OpenAI configuration for provider
- * operations.
+ * Context service for scoped OpenAI configuration used by provider operations.
+ *
+ * **When to use**
+ *
+ * Use to provide scoped OpenAI client configuration, such as an HTTP client
+ * transform, to OpenAI provider operations without passing it through each call.
+ *
+ * @see {@link withClientTransform} for scoping an HTTP client transformation
  *
  * @category services
  * @since 4.0.0
@@ -65,6 +60,22 @@ export declare namespace OpenAiConfig {
 /**
  * Provides a scoped transform for the OpenAI HTTP client used by provider
  * operations.
+ *
+ * **When to use**
+ *
+ * Use when you need temporary OpenAI HTTP client customization for a single
+ * effect or workflow without rebuilding the client layer.
+ *
+ * **Details**
+ *
+ * Supports both data-first and data-last forms. The transform is stored in the
+ * scoped `OpenAiConfig` service and read by OpenAI provider operations while
+ * running the supplied effect.
+ *
+ * **Gotchas**
+ *
+ * If a transform is already present in the scoped config, this helper replaces
+ * it. Compose transforms manually when both should apply.
  *
  * @category configuration
  * @since 4.0.0

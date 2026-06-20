@@ -1,40 +1,10 @@
 /**
- * The `FiberSet` module provides a scoped container for managing many fibers as
- * one lifecycle. A `FiberSet<A, E>` tracks fibers whose successful values are
- * compatible with `A` and whose failures are compatible with `E`, removes each
- * fiber when it completes, and interrupts all still-running fibers when the
- * owning `Scope` closes.
+ * Manages many fibers together inside one scope.
  *
- * **Mental model**
- *
- * - A `FiberSet` is an owned, scoped collection of fibers
- * - Fibers can be added directly with {@link add} / {@link addUnsafe}
- * - Effects can be forked into the set with {@link run}, {@link runtime}, or
- *   {@link runtimePromise}
- * - Completed fibers are automatically removed from the set
- * - Closing the scope or calling {@link clear} interrupts the currently tracked
- *   fibers
- * - {@link join} waits for the set's first non-ignored failure, while
- *   {@link awaitEmpty} waits until all tracked fibers have completed
- *
- * **Common tasks**
- *
- * - Create a scoped set: {@link make}
- * - Create scoped runners: {@link makeRuntime}, {@link makeRuntimePromise}
- * - Add an existing fiber: {@link add}
- * - Fork an effect into the set: {@link run}
- * - Interrupt tracked fibers: {@link clear}
- * - Observe the set: {@link size}, {@link awaitEmpty}, {@link join}
- * - Check a value: {@link isFiberSet}
- *
- * **Gotchas**
- *
- * - `FiberSet` values are scoped; use them inside `Effect.scoped` or another
- *   scope owner so their fibers are interrupted reliably
- * - Adding or running into a closed set interrupts the fiber immediately
- * - By default, interruptions are not treated as failures for {@link join};
- *   use the `propagateInterruption` option when interruption should be
- *   propagated
+ * A `FiberSet<A, E>` tracks running fibers, removes each fiber when it
+ * completes, and interrupts all still-running fibers when the owning scope
+ * closes. This module includes scoped runtime constructors plus helpers for
+ * adding, clearing, running, counting, joining, and waiting for managed fibers.
  *
  * @since 2.0.0
  */
@@ -93,7 +63,7 @@ export interface FiberSet<out A = unknown, out E = unknown>
 }
 
 /**
- * Checks if a value is a FiberSet.
+ * Checks whether a value is a FiberSet.
  *
  * **Example** (Checking if a value is a FiberSet)
  *
@@ -233,6 +203,11 @@ export const makeRuntime = <R = never, A = unknown, E = unknown>(): Effect.Effec
  * Creates a scoped run function that forks effects into a new `FiberSet` and
  * returns a `Promise` for each effect result.
  *
+ * **When to use**
+ *
+ * Use when many scoped fibers should be tracked as a set while exposing each
+ * result through Promise-based APIs.
+ *
  * **Details**
  *
  * Managed fibers are removed when they complete and are interrupted when the
@@ -283,6 +258,11 @@ const isInternalInterruption = Filter.toPredicate(Filter.compose(
 /**
  * Adds an existing fiber to the `FiberSet` using a synchronous, unsafe
  * mutation.
+ *
+ * **When to use**
+ *
+ * Use when an already forked fiber must be registered immediately and
+ * synchronous interruption on a closed set is acceptable.
  *
  * **Details**
  *
@@ -357,7 +337,7 @@ export const addUnsafe: {
 })
 
 /**
- * Add a fiber to the FiberSet. When the fiber completes, it will be removed.
+ * Adds a fiber to the FiberSet. When the fiber completes, it will be removed.
  *
  * **Example** (Adding a fiber)
  *
@@ -405,7 +385,7 @@ export const add: {
 )
 
 /**
- * Interrupt all fibers in the FiberSet and clear the set.
+ * Interrupts all fibers in the `FiberSet` and clears the set.
  *
  * **Example** (Clearing all fibers)
  *
@@ -450,7 +430,7 @@ const constInterruptedFiber = (function() {
 })()
 
 /**
- * Fork an Effect and add the forked fiber to the FiberSet.
+ * Forks an Effect and add the forked fiber to the FiberSet.
  * When the fiber completes, it will be removed from the FiberSet.
  *
  * **Example** (Forking effects into a set)
@@ -520,7 +500,7 @@ const runImpl = <A, E, R, XE extends E, XA extends A>(
   })
 
 /**
- * Capture a Runtime and use it to fork Effect's, adding the forked fibers to the FiberSet.
+ * Captures a `Runtime` and uses it to fork effects into the `FiberSet`.
  *
  * **Example** (Capturing a runtime)
  *
@@ -581,7 +561,13 @@ export const runtime: <A, E>(
   )
 
 /**
- * Captures a Runtime and uses it to fork Effects into the `FiberSet`.
+ * Captures a `Runtime` and returns a Promise-based runner that forks effects
+ * into the `FiberSet`.
+ *
+ * **When to use**
+ *
+ * Use when you need to bridge effects to `Promise` values while still tracking
+ * their fibers in a `FiberSet`.
  *
  * **Details**
  *
@@ -606,6 +592,8 @@ export const runtime: <A, E>(
  *   console.log(result1, result2) // "hello" "world"
  * })
  * ```
+ *
+ * @see {@link runtime} for a runner that returns the forked `Fiber`
  *
  * @category combinators
  * @since 3.13.0
@@ -642,7 +630,7 @@ export const runtimePromise = <A, E>(self: FiberSet<A, E>): <R = never>() => Eff
   )
 
 /**
- * Get the number of fibers currently in the FiberSet.
+ * Gets the number of fibers currently in the FiberSet.
  *
  * **Example** (Checking the set size)
  *
@@ -669,7 +657,7 @@ export const size = <A, E>(self: FiberSet<A, E>): Effect.Effect<number> =>
   Effect.sync(() => self.state._tag === "Closed" ? 0 : self.state.backing.size)
 
 /**
- * Join all fibers in the FiberSet. If any of the Fiber's in the set terminate with a failure,
+ * Joins all fibers in the FiberSet. If any fiber in the set terminates with a failure,
  * the returned Effect will terminate with the first failure that occurred.
  *
  * **Example** (Joining failing fibers)
@@ -693,7 +681,7 @@ export const join = <A, E>(self: FiberSet<A, E>): Effect.Effect<void, E> =>
   Deferred.await(self.deferred as Deferred.Deferred<void, E>)
 
 /**
- * Wait until the fiber set is empty.
+ * Waits until the fiber set is empty.
  *
  * **Example** (Waiting for an empty set)
  *

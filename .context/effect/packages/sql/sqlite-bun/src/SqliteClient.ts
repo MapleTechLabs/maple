@@ -1,20 +1,10 @@
 /**
- * Bun SQLite client implementation for Effect SQL, backed by `bun:sqlite`.
+ * Connects Effect SQL to SQLite when running on Bun, using `bun:sqlite`.
  *
- * This module provides constructors and layers for using a Bun-managed SQLite database as both the
- * SQLite-specific `SqliteClient` service and the generic `SqlClient` service. It is intended for
- * file-backed or in-memory databases in Bun applications, local development tools, migrations,
- * integration tests, and embedded persistence use cases that need Effect SQL query compilation plus
- * SQLite-specific helpers such as database export and native extension loading.
- *
- * Each client owns one scoped `bun:sqlite` `Database` handle and serializes access through it, which
- * is important because Bun executes SQLite statements synchronously. WAL mode is enabled by default,
- * so set `disableWAL` when opening read-only databases or when the database file or directory cannot
- * be updated with SQLite's WAL side files. A transaction holds the serialized connection permit for
- * the transaction scope, so concurrent fibers using the same client wait until it completes, while
- * separate database handles or processes can still contend for SQLite write locks. Safe integer
- * handling follows the `SqlClient` fiber-local setting, `executeStream` is not implemented, and
- * SQLite does not support `updateValues`.
+ * This module opens a SQLite database and exposes it as both `SqliteClient` and
+ * the generic Effect SQL client. It serializes access to the database, enables
+ * WAL mode unless disabled, and supports database export and extension loading.
+ * Streaming queries and `updateValues` are not supported by this driver.
  *
  * @since 4.0.0
  */
@@ -72,9 +62,13 @@ export interface SqliteClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the Bun `SqliteClient` service.
+ * Service tag for the Bun SQLite client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a Bun SQLite client through the Effect context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const SqliteClient = Context.Service<SqliteClient>("@effect/sql-sqlite-bun/Client")

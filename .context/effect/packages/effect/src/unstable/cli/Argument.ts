@@ -1,25 +1,11 @@
 /**
- * The `Argument` module defines typed positional command-line arguments for
- * Effect CLI applications. Arguments consume ordered values after a command name
- * and its flags, then parse them into the types your command handler expects.
+ * Defines typed positional arguments for Effect CLI applications.
  *
- * Use this module for required inputs such as file paths, directories, numbers,
- * dates, choices, secrets, and structured configuration files. Arguments can be
- * made optional, variadic, validated with Schema, transformed with pure or
- * effectful functions, and supplied from defaults, config, or prompts when
- * missing.
- *
- * **Gotchas**
- *
- * - Positional arguments are order-sensitive; compose them in the same order the
- *   user should type them.
- * - `variadic` arguments can consume more than one value, so place them where
- *   the remaining positional input belongs.
- * - Use {@link withDescription} and {@link withMetavar} to keep generated help
- *   text clear, especially when the parser name differs from the value users
- *   should provide.
- * - Boolean positional arguments are intentionally not provided. Prefer boolean
- *   flags, or use {@link choice} for explicit `"true"` / `"false"` values.
+ * Arguments consume ordered values after a command name and its flags, then
+ * parse them into the types a command handler expects. This module includes
+ * constructors for common argument shapes, plus helpers for optional or
+ * variadic arguments, schema validation, transformations, defaults, config
+ * fallbacks, and prompts for missing values.
  *
  * @since 4.0.0
  */
@@ -432,7 +418,7 @@ export const withFallbackPrompt: {
 export const variadic: {
   (options?: Param.VariadicParamOptions | undefined): <A>(self: Argument<A>) => Argument<ReadonlyArray<A>>
   <A>(self: Argument<A>, options?: Param.VariadicParamOptions | undefined): Argument<ReadonlyArray<A>>
-} = dual(2, <A>(
+} = dual((args) => Param.isParam(args[0]), <A>(
   self: Argument<A>,
   options?: Param.VariadicParamOptions | undefined
 ): Argument<ReadonlyArray<A>> => Param.variadic(self, options))

@@ -1,19 +1,13 @@
 /**
- * Browser-backed `KeyValueStore` layers for Effect programs.
+ * Browser-backed `KeyValueStore` layers for client-side Effect programs.
  *
- * This module provides `KeyValueStore` implementations backed by the browser's
- * synchronous Web Storage APIs: `localStorage` for origin-scoped data that
- * persists across page reloads and browser sessions, and `sessionStorage` for
- * page-session data that is cleared when that tab or window's page session
- * ends. They are useful for small client-side values such as user preferences,
- * feature flags, lightweight caches, persisted drafts, or session-only workflow
- * state.
- *
- * Web Storage is only available in browser environments and is scoped by origin.
- * Browsers may deny access in private modes or restricted contexts, and writes
- * can fail when storage quotas are exceeded. The API stores strings and runs
- * synchronously on the main thread, so prefer it for small payloads and avoid
- * treating it as a database or a secure place for sensitive data.
+ * This module provides browser implementations of the unstable persistence
+ * `KeyValueStore` service. Use {@link layerLocalStorage} for small
+ * origin-scoped values that should survive reloads and browser restarts, use
+ * {@link layerSessionStorage} for tab / page-session state, and use
+ * {@link layerIndexedDb} when the store should be asynchronous and backed by
+ * IndexedDB. The IndexedDB layer requires the browser `IndexedDb` service and
+ * accepts an optional database name.
  *
  * @since 4.0.0
  */
@@ -44,6 +38,26 @@ export const layerSessionStorage: Layer.Layer<KeyValueStore.KeyValueStore> = Key
 
 /**
  * Creates a `KeyValueStore` layer backed by IndexedDB.
+ *
+ * **When to use**
+ *
+ * Use when you need persistent asynchronous IndexedDB storage for a browser
+ * `KeyValueStore` instead of the synchronous Web Storage APIs.
+ *
+ * **Details**
+ *
+ * The database name defaults to `"effect_key_value_store"`. The layer requires
+ * the `IndexedDb` service and stores string and `Uint8Array` values in the same
+ * backing object store.
+ *
+ * **Gotchas**
+ *
+ * IndexedDB may be unavailable or blocked by browser settings, private browsing,
+ * quota limits, or restricted contexts. The string and `Uint8Array` accessors do
+ * not coerce values stored with the other representation.
+ *
+ * @see {@link layerLocalStorage} for synchronous persistent Web Storage
+ * @see {@link layerSessionStorage} for synchronous tab-session Web Storage
  *
  * @category layers
  * @since 4.0.0

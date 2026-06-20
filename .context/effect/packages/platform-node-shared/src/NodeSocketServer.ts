@@ -1,20 +1,12 @@
 /**
- * Shared Node socket server constructors for exposing `node:net` servers and
- * `ws` WebSocket servers as Effect `SocketServer.SocketServer` services.
+ * Node socket server adapters for Effect's unstable socket server API.
  *
- * Use this module when implementing TCP services, Unix domain socket services,
- * WebSocket endpoints, or higher-level protocols such as RPC transports that
- * need to accept incoming connections through Effect's socket APIs. TCP
- * connections are adapted through `NodeSocket.fromDuplex`, while WebSocket
- * handlers also receive the underlying `WebSocket` and Node `IncomingMessage`
- * in their fiber context.
- *
- * The server starts listening before the constructor returns, and the exported
- * `address` is derived from the actual Node server after binding. Prefer that
- * address when using port `0`, wildcard hosts, or Unix socket paths. Incoming
- * connections accepted before `run` is installed are queued and then handed to
- * the handler, each `run` call owns the scope for its connection fibers, and
- * the enclosing scope closes the underlying Node server.
+ * This module turns `node:net` TCP or Unix-domain servers and `ws` WebSocket
+ * servers into scoped `SocketServer.SocketServer` services. Use the TCP
+ * constructors when handlers should receive a `Socket.Socket` backed by a Node
+ * `net.Socket`; use the WebSocket constructors when handlers should receive a
+ * `Socket.Socket` backed by `ws` and have access to the per-connection
+ * WebSocket and `IncomingMessage` services.
  *
  * @since 4.0.0
  */
@@ -40,7 +32,7 @@ import { NodeWS } from "./NodeSocket.ts"
  * Service tag for the Node `IncomingMessage` associated with the current
  * WebSocket server connection.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class IncomingMessage extends Context.Service<

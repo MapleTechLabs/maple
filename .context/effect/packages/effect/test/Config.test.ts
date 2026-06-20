@@ -343,6 +343,39 @@ describe("Config", () => {
   at ["b"]`
         )
       })
+
+      it("does not recover from invalid union values", async () => {
+        const config = Config.logLevel("LOG_LEVEL").pipe(Config.withDefault("Info"))
+
+        await assertSuccess(config, ConfigProvider.fromUnknown({}), "Info")
+        await assertFailure(
+          config,
+          ConfigProvider.fromUnknown({ LOG_LEVEL: "debug" }),
+          `Expected "All" | "Fatal" | "Error" | "Warn" | "Info" | "Debug" | "Trace" | "None", got "debug"
+  at ["LOG_LEVEL"]`
+        )
+      })
+
+      it("does not recover from filter failures", async () => {
+        const schema = Schema.String.check(
+          Schema.makeFilter((s) =>
+            s === "a" ? undefined : new SchemaIssue.InvalidValue(Option.none(), { message: `must be "a"` })
+          )
+        )
+        const config = Config.schema(schema, "a").pipe(Config.withDefault("fallback"))
+
+        // missing key -> default
+        await assertSuccess(config, ConfigProvider.fromUnknown({}), "fallback")
+        // valid present value -> parsed
+        await assertSuccess(config, ConfigProvider.fromUnknown({ a: "a" }), "a")
+        // present value that fails the refinement must fail, not use the default
+        await assertFailure(
+          config,
+          ConfigProvider.fromUnknown({ a: "b" }),
+          `must be "a"
+  at ["a"]`
+        )
+      })
     })
 
     describe("option", () => {
@@ -512,6 +545,37 @@ describe("Config", () => {
             ConfigProvider.fromEnv({ env: {} }),
             `Expected string, got undefined
   at ["database"]["host"]`
+          )
+        })
+
+        it("config nested and provider nested compose lookup but not error paths", async () => {
+          const config = Config.string("host").pipe(Config.nested("database"))
+          const provider = ConfigProvider.fromEnv({
+            env: { app_database_host: "localhost" }
+          }).pipe(ConfigProvider.nested("app"))
+
+          await assertSuccess(config, provider, "localhost")
+          await assertFailure(
+            config,
+            ConfigProvider.fromEnv({ env: {} }).pipe(ConfigProvider.nested("app")),
+            `Expected string, got undefined
+  at ["database"]["host"]`
+          )
+        })
+
+        it("provider nested over orElse keeps the logical error path", async () => {
+          const provider = ConfigProvider.fromEnv({ env: { app_port: "abc" } }).pipe(
+            ConfigProvider.orElse(ConfigProvider.fromEnv({ env: {} })),
+            ConfigProvider.nested("app")
+          )
+
+          await assertFailure(
+            Config.number("port"),
+            provider,
+            `Expected a string representing a finite number, got "abc"
+  at ["port"]
+Expected "Infinity" | "-Infinity" | "NaN", got "abc"
+  at ["port"]`
           )
         })
       })
@@ -923,7 +987,7 @@ describe("Config", () => {
       const config = Config.schema(schema)
 
       // ensure array
-      await assertSuccess(config, ConfigProvider.fromEnv({ env: { a: "1" } }), { a: [1] })
+      await assertSuccess(config, ConfigProvider.fromEnv({ env: { a: "1,2,3" } }), { a: [1, 2, 3] })
       await assertSuccess(config, ConfigProvider.fromEnv({ env: { a_0: "1", a_1: "2" } }), { a: [1, 2] })
       await assertFailure(
         config,
