@@ -30,14 +30,23 @@ import {
 	DialogDescription,
 	DialogFooter,
 } from "@maple/ui/components/ui/dialog"
-import { FileIcon, PulseIcon, ChartLineIcon, CircleCheckIcon } from "@/components/icons"
+import { FileIcon, PulseIcon, ChartLineIcon, CircleCheckIcon, MediaPlayIcon } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 
 const FEATURE_ICONS: Record<string, IconComponent> = {
 	logs: FileIcon,
 	traces: PulseIcon,
 	metrics: ChartLineIcon,
+	browser_sessions: MediaPlayIcon,
 }
+
+// Friendlier labels than Autumn's raw feature names (e.g. "Browser Sessions").
+const FEATURE_LABELS: Record<string, string> = {
+	browser_sessions: "Session replays",
+}
+
+// Feature ids billed by session count rather than ingested GB.
+const SESSION_FEATURE_IDS = new Set<string>(["browser_sessions"])
 
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
 
@@ -67,12 +76,18 @@ function getPlanPrice(plan: Plan): {
 function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	if (item.included != null) {
-		return `${Number(item.included)} GB`
+		return item.featureId && SESSION_FEATURE_IDS.has(item.featureId)
+			? Number(item.included).toLocaleString("en-US")
+			: `${Number(item.included)} GB`
 	}
 	return ""
 }
 
-function normalizeDetailText(text: string): string {
+function normalizeDetailText(text: string, featureId?: string): string {
+	if (featureId && SESSION_FEATURE_IDS.has(featureId)) {
+		// Autumn renders e.g. "then $3 per 1000 browser sessions"; tidy the unit + separator.
+		return text.replace(/\bbrowser sessions?\b/i, "sessions").replace(/\bper\s+1000\b/i, "per 1,000")
+	}
 	return text.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
 }
 
@@ -81,9 +96,11 @@ function getFeatureRows(plan: Plan) {
 		.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
 		.map((item) => ({
 			featureId: item.featureId,
-			label: item.feature?.name ?? item.featureId,
+			label: (item.featureId && FEATURE_LABELS[item.featureId]) || item.feature?.name || item.featureId,
 			value: formatIncludedUsage(item),
-			detail: item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined,
+			detail: item.display?.secondaryText
+				? normalizeDetailText(item.display.secondaryText, item.featureId)
+				: undefined,
 		}))
 }
 
@@ -91,6 +108,7 @@ const ENTERPRISE_DATA_FEATURES = [
 	{ featureId: "logs", label: "Logs", value: "Custom" },
 	{ featureId: "traces", label: "Traces", value: "Custom" },
 	{ featureId: "metrics", label: "Metrics", value: "Custom" },
+	{ featureId: "browser_sessions", label: "Session replays", value: "Custom" },
 ]
 
 function getScenario(plan: Plan): string {

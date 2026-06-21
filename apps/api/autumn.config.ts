@@ -87,6 +87,16 @@ export const startup = plan({
 				interval: "month",
 			},
 		},
+		{
+			featureId: "browser_sessions",
+			included: 5000,
+			price: {
+				amount: 3,
+				billingUnits: 1000,
+				billingMethod: "usage_based",
+				interval: "month",
+			},
+		},
 	],
 	freeTrial: {
 		durationLength: 14,

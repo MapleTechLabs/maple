@@ -376,6 +376,7 @@
 	"pricing_logs": "Logs",
 	"pricing_traces": "Traces",
 	"pricing_metrics": "Metrics",
+	"pricing_sessions": "Session replays",
 	"pricing_start_trial": "Start {duration}-day free trial",
 
 	"faq_badge": "FAQ",

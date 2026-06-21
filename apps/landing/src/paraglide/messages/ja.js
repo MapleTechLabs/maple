@@ -2607,6 +2607,14 @@ export const pricing_metrics = () => `メトリクス`
 
 
 /**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_sessions = () => `セッションリプレイ`
+
+
+/**
  * @param {{ duration: NonNullable<unknown> }} params
  * @returns {string}
  */

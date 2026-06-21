@@ -235,6 +235,7 @@
 	"pricing_logs": "\ub85c\uadf8",
 	"pricing_traces": "\ud2b8\ub808\uc774\uc2a4",
 	"pricing_metrics": "\uba54\ud2b8\ub9ad",
+	"pricing_sessions": "\uc138\uc158 \ub9ac\ud50c\ub808\uc774",
 	"pricing_start_trial": "{duration}\uc77c \ubb34\ub8cc \uccb4\ud5d8 \uc2dc\uc791",
 
 	"faq_badge": "FAQ",

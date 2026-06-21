@@ -11,11 +11,16 @@ const DATA_FEATURE_LABELS: Record<string, string> = {
     logs: m.pricing_logs(),
     traces: m.pricing_traces(),
     metrics: m.pricing_metrics(),
+    browser_sessions: m.pricing_sessions(),
 }
+
+// Feature ids billed by session count rather than ingested GB. Drives the
+// value/overage unit so sessions read "5,000 / then $3 per 1,000" not "GB".
+const SESSION_FEATURE_IDS = new Set<string>(["browser_sessions"])
 
 // Canonical row order so the plan card matches the Enterprise card (Autumn can
 // return items in any order).
-const DATA_FEATURE_ORDER = ["logs", "traces", "metrics"]
+const DATA_FEATURE_ORDER = ["logs", "traces", "metrics", "browser_sessions"]
 const dataFeatureRank = (id: string | undefined) => {
     const i = id ? DATA_FEATURE_ORDER.indexOf(id) : -1
     return i === -1 ? DATA_FEATURE_ORDER.length : i
@@ -90,20 +95,31 @@ try {
 
             const dataFeatures = product.items
                 .filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
-                .map((item) => ({
-                    featureId: item.featureId,
-                    label:
-                        (item.featureId ? DATA_FEATURE_LABELS[item.featureId] : undefined) ??
-                        item.feature?.name ??
-                        item.featureId ??
-                        "",
-                    value: item.unlimited ? "Unlimited" : `${Number(item.included ?? 0)} GB`,
-                    detail: item.price?.display?.secondaryText
-                        ? item.price.display.secondaryText.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
-                        : item.price?.amount != null
-                          ? `then $${item.price.amount} per GB`
-                          : undefined,
-                }))
+                .map((item) => {
+                    const isSessions = !!item.featureId && SESSION_FEATURE_IDS.has(item.featureId)
+                    return {
+                        featureId: item.featureId,
+                        label:
+                            (item.featureId ? DATA_FEATURE_LABELS[item.featureId] : undefined) ??
+                            item.feature?.name ??
+                            item.featureId ??
+                            "",
+                        value: item.unlimited
+                            ? "Unlimited"
+                            : isSessions
+                              ? Number(item.included ?? 0).toLocaleString("en-US")
+                              : `${Number(item.included ?? 0)} GB`,
+                        detail: isSessions
+                            ? item.price?.amount != null
+                              ? `then $${item.price.amount} per 1,000`
+                              : undefined
+                            : item.price?.display?.secondaryText
+                              ? item.price.display.secondaryText.replace(/\bper\s+(?:[\d,]+\s+)?(?:logs?|traces?|metrics?)\b/i, "per GB")
+                              : item.price?.amount != null
+                                ? `then $${item.price.amount} per GB`
+                                : undefined,
+                    }
+                })
                 .sort((a, b) => dataFeatureRank(a.featureId) - dataFeatureRank(b.featureId))
 
             const platformFeatures = PLAN_FEATURES[slug] ?? PLAN_FEATURES["startup"] ?? []
@@ -145,6 +161,7 @@ if (plans.length === 0) {
                 { featureId: "logs", label: m.pricing_logs(), value: "100 GB", detail: "then $0.25 per GB" },
                 { featureId: "traces", label: m.pricing_traces(), value: "100 GB", detail: "then $0.25 per GB" },
                 { featureId: "metrics", label: m.pricing_metrics(), value: "100 GB", detail: "then $0.25 per GB" },
+                { featureId: "browser_sessions", label: m.pricing_sessions(), value: "5,000", detail: "then $3 per 1,000" },
             ],
             platformFeatures: PLAN_FEATURES["startup"]!,
             ctaLabel: m.pricing_start_trial({ duration: "14" }),
@@ -170,6 +187,7 @@ const enterprisePlan: PlanCard = {
         { featureId: "logs", label: m.pricing_logs(), value: m.pricing_custom() },
         { featureId: "traces", label: m.pricing_traces(), value: m.pricing_custom() },
         { featureId: "metrics", label: m.pricing_metrics(), value: m.pricing_custom() },
+        { featureId: "browser_sessions", label: m.pricing_sessions(), value: m.pricing_custom() },
     ],
     platformFeatures: [
         m.pricing_custom_retention(),
@@ -240,6 +258,9 @@ const maxWidthClass = cards.length >= 3 ? "max-w-6xl" : "max-w-4xl"
                                             )}
                                             {feature.featureId === "metrics" && (
                                                 <svg class="w-4 h-4 text-fg-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 16l4-8 4 5 5-6"/></svg>
+                                            )}
+                                            {feature.featureId === "browser_sessions" && (
+                                                <svg class="w-4 h-4 text-fg-muted shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/><path d="m10 8 5 3-5 3Z"/></svg>
                                             )}
                                             <span class="text-sm text-fg">{feature.label}</span>
                                         </div>

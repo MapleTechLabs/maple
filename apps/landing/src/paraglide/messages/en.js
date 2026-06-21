@@ -2811,6 +2811,14 @@ export const pricing_metrics = () => `Metrics`
 
 
 /**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_sessions = () => `Session replays`
+
+
+/**
  * @param {{ duration: NonNullable<unknown> }} params
  * @returns {string}
  */

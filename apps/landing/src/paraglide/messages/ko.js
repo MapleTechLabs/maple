@@ -2607,6 +2607,14 @@ export const pricing_metrics = () => `메트릭`
 
 
 /**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_sessions = () => `세션 리플레이`
+
+
+/**
  * @param {{ duration: NonNullable<unknown> }} params
  * @returns {string}
  */
