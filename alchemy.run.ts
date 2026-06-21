@@ -1,9 +1,10 @@
+import { appendFileSync } from "node:fs"
 import alchemy from "alchemy"
 import { CloudflareStateStore } from "alchemy/state"
 import { parseMapleStage, resolveMapleDomains } from "@maple/infra/cloudflare"
 import { createAlertingWorker } from "./apps/alerting/alchemy.run.ts"
 import { createMapleApi } from "./apps/api/alchemy.run.ts"
-import { createChatAgentWorker } from "./apps/chat-agent/alchemy.run.ts"
+import { createChatFlueWorker } from "./apps/chat-flue/alchemy.run.ts"
 import { createLandingWorker } from "./apps/landing/alchemy.run.ts"
 import { createLocalUiWorker } from "./apps/local-ui/alchemy.run.ts"
 import { createMapleWeb } from "./apps/web/alchemy.run.ts"
@@ -31,16 +32,15 @@ if (!resolvedApiUrl) {
 	throw new Error("api worker deployed without a url — set `url: true` or provide a custom domain")
 }
 
-const chatAgent = await createChatAgentWorker({
+const chatFlue = await createChatFlueWorker({
 	stage,
 	domains,
 	mapleApiUrl: resolvedApiUrl,
-	mapleDb,
 })
 
-const resolvedChatAgentUrl = domains.chat ? `https://${domains.chat}` : chatAgent.url
-if (!resolvedChatAgentUrl) {
-	throw new Error("chat-agent worker deployed without a url — set `url: true` or provide a custom domain")
+const resolvedChatUrl = domains.chat ? `https://${domains.chat}` : chatFlue.url
+if (!resolvedChatUrl) {
+	throw new Error("chat-flue worker deployed without a url — set `url: true` or provide a custom domain")
 }
 
 // ingest is not currently deployed via alchemy; for non-custom-domain stages,
@@ -54,7 +54,7 @@ const web = await createMapleWeb({
 	domains,
 	apiUrl: resolvedApiUrl,
 	ingestUrl: resolvedIngestUrl,
-	chatAgentUrl: resolvedChatAgentUrl,
+	flueChatUrl: resolvedChatUrl,
 })
 
 const landing = await createLandingWorker({ stage, domains })
@@ -63,15 +63,31 @@ const localUi = await createLocalUiWorker({ stage, domains })
 
 const alerting = await createAlertingWorker({ stage, domains, mapleDb })
 
-console.log({
+const summary = {
 	stage: app.stage,
 	apiUrl: resolvedApiUrl,
-	chatAgentUrl: resolvedChatAgentUrl,
+	chatUrl: resolvedChatUrl,
 	ingestUrl: resolvedIngestUrl,
 	webUrl: domains.web ? `https://${domains.web}` : web.url,
 	landingUrl: domains.landing ? `https://${domains.landing}` : landing.url,
 	localUiUrl: domains.local ? `https://${domains.local}` : localUi.url,
 	alertingWorker: alerting.name,
-})
+}
+
+console.log(summary)
+
+// In GitHub Actions, expose the deployed URLs as step outputs so the workflow
+// can attach the web preview to the PR as a clickable deployment.
+if (process.env.GITHUB_OUTPUT) {
+	appendFileSync(
+		process.env.GITHUB_OUTPUT,
+		`${[
+			`web_url=${summary.webUrl ?? ""}`,
+			`api_url=${summary.apiUrl ?? ""}`,
+			`chat_url=${summary.chatUrl ?? ""}`,
+			`landing_url=${summary.landingUrl ?? ""}`,
+		].join("\n")}\n`,
+	)
+}
 
 await app.finalize()

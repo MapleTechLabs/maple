@@ -20,7 +20,7 @@ describe("siblingUrl", () => {
 	it("swaps the app label in a main-worktree URL", () => {
 		process.env.PORTLESS_URL = "https://web.localhost"
 		expect(siblingUrl("api")).toBe("https://api.localhost")
-		expect(siblingUrl("chat-agent")).toBe("https://chat-agent.localhost")
+		expect(siblingUrl("chat-flue")).toBe("https://chat-flue.localhost")
 	})
 
 	it("preserves the branch prefix in a linked-worktree URL", () => {

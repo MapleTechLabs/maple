@@ -3,7 +3,6 @@ import { basename } from "node:path"
 import { siblingUrl } from "../packages/infra/src/dev-urls.ts"
 
 const overridesByApp: Record<string, Record<string, string>> = {
-	"chat-agent": { MAPLE_API_URL: "api" },
 	api: { MAPLE_APP_BASE_URL: "web" },
 	alerting: { MAPLE_APP_BASE_URL: "web" },
 }

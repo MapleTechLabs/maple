@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
 	if (process.env.PORTLESS_URL) {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
-		process.env.VITE_CHAT_AGENT_URL ??= siblingUrl("chat-agent")
+		process.env.VITE_FLUE_CHAT_URL ??= siblingUrl("chat-flue")
 	}
 
 	if (!process.env.VITE_MAPLE_AUTH_MODE) {
@@ -37,7 +37,7 @@ export default defineConfig(({ mode }) => {
 	const overrideKeys = [
 		"VITE_API_BASE_URL",
 		"VITE_INGEST_URL",
-		"VITE_CHAT_AGENT_URL",
+		"VITE_FLUE_CHAT_URL",
 		"VITE_MAPLE_AUTH_MODE",
 		"VITE_CLERK_PUBLISHABLE_KEY",
 		"VITE_MAPLE_INGEST_KEY",
