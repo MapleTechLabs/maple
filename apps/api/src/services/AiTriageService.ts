@@ -134,7 +134,6 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 			const settingsToDocument = (row: AiTriageSettingsRow | undefined): AiTriageSettingsDocument =>
 				new AiTriageSettingsDocument({
 					enabled: row?.enabled === 1,
-					modelOverride: row?.modelOverride ?? null,
 					maxRunsPerDay: row?.maxRunsPerDay ?? 20,
 					updatedAt: row?.updatedAt ? isoFromEpoch(row.updatedAt) : null,
 					updatedBy: row?.updatedBy ?? null,
@@ -162,14 +161,6 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 
 				const next = {
 					enabled: nextEnabled,
-					// TODO(openrouter-retirement): modelOverride is no longer consumed —
-					// the Flue workflow picks the model via MAPLE_TRIAGE_MODEL. Still
-					// read/written here + offered in the settings UI; remove it (and the
-					// rest of OrgOpenRouterSettingsService) when that feature is retired.
-					modelOverride:
-						request.modelOverride === undefined
-							? (existing?.modelOverride ?? null)
-							: request.modelOverride,
 					maxRunsPerDay: request.maxRunsPerDay ?? existing?.maxRunsPerDay ?? 20,
 					updatedAt: nowMs,
 					updatedBy: userId,

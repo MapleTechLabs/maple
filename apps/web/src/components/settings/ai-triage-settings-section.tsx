@@ -33,7 +33,6 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 
 	const [isSaving, setIsSaving] = useState(false)
 	const [maxRunsDraft, setMaxRunsDraft] = useState<string | null>(null)
-	const [modelDraft, setModelDraft] = useState<string | null>(null)
 
 	if (!isAdmin || !hasEntitlement) {
 		return null
@@ -53,9 +52,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 		if (Exit.isSuccess(result)) {
 			toast.success(successMessage)
 		} else {
-			toast.error(
-				"Failed to update AI triage settings. AI triage needs an OpenRouter API key configured above.",
-			)
+			toast.error("Failed to update AI triage settings.")
 		}
 	}
 
@@ -72,8 +69,8 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 				</CardTitle>
 				<CardDescription>
 					When a new error or anomaly incident opens, an AI agent automatically investigates it with
-					read-only tools and attaches a triage summary. Runs use your organization's OpenRouter
-					credits.
+					read-only tools and attaches a triage summary. Runs use Maple's managed AI — no setup
+					required.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
@@ -93,7 +90,7 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 								<div className="space-y-0.5">
 									<Label htmlFor="ai-triage-enabled">Auto-triage new incidents</Label>
 									<p className="text-xs text-muted-foreground">
-										Requires an OpenRouter API key (configured above).
+										Investigate each new incident automatically.
 									</p>
 								</div>
 								<Switch
@@ -109,65 +106,37 @@ export function AiTriageSettingsSection({ isAdmin, hasEntitlement }: AiTriageSet
 								/>
 							</div>
 
-							<div className="grid gap-4 sm:grid-cols-2">
-								<div className="space-y-2">
-									<Label htmlFor="ai-triage-max-runs">Max runs per day</Label>
-									<Input
-										id="ai-triage-max-runs"
-										type="number"
-										min={1}
-										max={500}
-										value={maxRunsDraft ?? String(current.maxRunsPerDay)}
-										onChange={(event) => setMaxRunsDraft(event.target.value)}
-										onBlur={() => {
-											if (maxRunsDraft === null) return
-											const parsed = Number.parseInt(maxRunsDraft, 10)
-											setMaxRunsDraft(null)
-											if (
-												Number.isFinite(parsed) &&
-												parsed >= 1 &&
-												parsed <= 500 &&
-												parsed !== current.maxRunsPerDay
-											) {
-												save(
-													new AiTriageSettingsUpdateRequest({
-														maxRunsPerDay: parsed,
-													}),
-													"Daily run cap updated",
-												)
-											}
-										}}
-									/>
-									<p className="text-xs text-muted-foreground">
-										Bounds LLM spend — additional incidents skip triage once reached.
-									</p>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="ai-triage-model">Model override</Label>
-									<Input
-										id="ai-triage-model"
-										placeholder="moonshotai/kimi-k2.7-code:nitro (default)"
-										value={modelDraft ?? current.modelOverride ?? ""}
-										onChange={(event) => setModelDraft(event.target.value)}
-										onBlur={() => {
-											if (modelDraft === null) return
-											const trimmed = modelDraft.trim()
-											setModelDraft(null)
-											const next = trimmed.length > 0 ? trimmed : null
-											if (next !== current.modelOverride) {
-												save(
-													new AiTriageSettingsUpdateRequest({
-														modelOverride: next,
-													}),
-													"Triage model updated",
-												)
-											}
-										}}
-									/>
-									<p className="text-xs text-muted-foreground">
-										Any OpenRouter model id. Leave empty for the default.
-									</p>
-								</div>
+							<div className="space-y-2 sm:max-w-xs">
+								<Label htmlFor="ai-triage-max-runs">Max runs per day</Label>
+								<Input
+									id="ai-triage-max-runs"
+									type="number"
+									min={1}
+									max={500}
+									value={maxRunsDraft ?? String(current.maxRunsPerDay)}
+									onChange={(event) => setMaxRunsDraft(event.target.value)}
+									onBlur={() => {
+										if (maxRunsDraft === null) return
+										const parsed = Number.parseInt(maxRunsDraft, 10)
+										setMaxRunsDraft(null)
+										if (
+											Number.isFinite(parsed) &&
+											parsed >= 1 &&
+											parsed <= 500 &&
+											parsed !== current.maxRunsPerDay
+										) {
+											save(
+												new AiTriageSettingsUpdateRequest({
+													maxRunsPerDay: parsed,
+												}),
+												"Daily run cap updated",
+											)
+										}
+									}}
+								/>
+								<p className="text-xs text-muted-foreground">
+									Bounds LLM spend — additional incidents skip triage once reached.
+								</p>
 							</div>
 
 							<div className="flex justify-end">

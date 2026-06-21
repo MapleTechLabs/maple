@@ -28,7 +28,6 @@ import {
 	oauthConnections,
 	orgClickHouseSettings,
 	orgIngestKeys,
-	orgOpenrouterSettings,
 	scrapeTargets,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
@@ -63,7 +62,6 @@ const ORG_SCOPED_TABLES = [
 	apiKeys,
 	orgIngestKeys,
 	orgClickHouseSettings,
-	orgOpenrouterSettings,
 	scrapeTargets,
 	oauthConnections,
 	oauthAuthStates,
