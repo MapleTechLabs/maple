@@ -23,7 +23,6 @@ import {
 	anomalyIncidents,
 	errorIncidents,
 	errorIssues,
-	orgOpenrouterSettings,
 } from "@maple/db"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { and, desc, eq } from "drizzle-orm"
@@ -148,17 +147,6 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 				},
 			)
 
-			const hasOpenRouterKey = Effect.fn("AiTriageService.hasOpenRouterKey")(function* (orgId: OrgId) {
-				const rows = yield* dbExecute((db) =>
-					db
-						.select({ orgId: orgOpenrouterSettings.orgId })
-						.from(orgOpenrouterSettings)
-						.where(eq(orgOpenrouterSettings.orgId, orgId))
-						.limit(1),
-				)
-				return rows.length > 0
-			})
-
 			const updateSettings: AiTriageServiceShape["updateSettings"] = Effect.fn(
 				"AiTriageService.updateSettings",
 			)(function* (orgId, userId, request) {
@@ -166,19 +154,18 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 				const nowMs = yield* Clock.currentTimeMillis
 				const existing = yield* loadSettingsRow(orgId)
 
+				// Triage runs on the chat-flue Flue workflow (Cloudflare Workers AI) since
+				// the Flue cutover — it no longer needs a per-org OpenRouter key, so
+				// enabling it is unconditional.
 				const nextEnabled =
 					request.enabled === undefined ? (existing?.enabled ?? 0) : request.enabled ? 1 : 0
-				if (nextEnabled === 1 && !(yield* hasOpenRouterKey(orgId))) {
-					return yield* Effect.fail(
-						new AiTriageValidationError({
-							message:
-								"AI triage needs an OpenRouter API key. Configure one under AI settings first.",
-						}),
-					)
-				}
 
 				const next = {
 					enabled: nextEnabled,
+					// TODO(openrouter-retirement): modelOverride is no longer consumed —
+					// the Flue workflow picks the model via MAPLE_TRIAGE_MODEL. Still
+					// read/written here + offered in the settings UI; remove it (and the
+					// rest of OrgOpenRouterSettingsService) when that feature is retired.
 					modelOverride:
 						request.modelOverride === undefined
 							? (existing?.modelOverride ?? null)
@@ -329,15 +316,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					})
 					const nowMs = yield* Clock.currentTimeMillis
 
-					if (!(yield* hasOpenRouterKey(orgId))) {
-						return yield* Effect.fail(
-							new AiTriageValidationError({
-								message:
-									"AI triage needs an OpenRouter API key. Configure one under AI settings first.",
-							}),
-						)
-					}
-
+					// No OpenRouter-key gate since the Flue cutover — triage runs on
+					// chat-flue (Cloudflare Workers AI).
 					const { issueId, context } = yield* buildContext(orgId, request)
 
 					// Manual re-run: replace any prior run for this incident.
