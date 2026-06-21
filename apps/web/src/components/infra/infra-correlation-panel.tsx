@@ -6,7 +6,7 @@ import { formatForTinybird, relativeToAbsolute } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 import { NodeDetailChart, PodDetailChart } from "./k8s-detail-chart"
-import { MetricStrip } from "./host-detail-chart"
+import { HostDetailChart } from "./host-detail-chart"
 import { getActiveInfraCorrelations, type InfraCorrelation } from "./infra-correlations"
 
 const DEFAULT_PAD_MINUTES = 15
@@ -137,22 +137,25 @@ function renderCharts(
 					))}
 				</div>
 			)
-		// Host strips carry their own label sidebar and internal dividers, so
-		// group them into one bordered card (their host-detail-page presentation).
+		// Host charts are multi-series (CPU by state, etc.), so the legend shows
+		// the states — give each its own full-width card with the metric name on
+		// top. (MetricStrip's 160px label sidebar is for the wide host detail
+		// page and would crowd/clip the legend in this narrow drawer.)
 		case "host":
 			return (
-				<div className="overflow-hidden rounded-lg border bg-card">
+				<div className="space-y-3">
 					{correlation.charts.map((c) => (
-						<MetricStrip
-							key={c.metric}
-							label={c.label}
-							hostName={correlation.identifier}
-							metric={c.metric}
-							startTime={startTime}
-							endTime={endTime}
-							bucketSeconds={BUCKET_SECONDS}
-							syncId={syncId}
-						/>
+						<div key={c.metric} className="rounded-lg border bg-card p-4">
+							<div className="mb-1 text-[12px] font-medium text-foreground">{c.label}</div>
+							<HostDetailChart
+								hostName={correlation.identifier}
+								metric={c.metric}
+								startTime={startTime}
+								endTime={endTime}
+								bucketSeconds={BUCKET_SECONDS}
+								syncId={syncId}
+							/>
+						</div>
 					))}
 				</div>
 			)

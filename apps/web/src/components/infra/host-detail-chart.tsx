@@ -46,7 +46,7 @@ const HOST_METRIC_LABELS: Record<HostInfraMetric, string> = {
 	load15: "Load (15m)",
 }
 
-function HostDetailChart({
+export function HostDetailChart({
 	hostName,
 	metric,
 	startTime,
