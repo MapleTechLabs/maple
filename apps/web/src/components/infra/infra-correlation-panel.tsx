@@ -1,4 +1,3 @@
-import type { ReactNode } from "react"
 import { addMinutes, subMinutes } from "date-fns"
 import { Link } from "@tanstack/react-router"
 
@@ -69,23 +68,26 @@ export function InfraCorrelationPanel({
 	const syncId = "infra-correlation"
 
 	return (
-		<div className="space-y-5">
+		<div className="space-y-6">
 			{correlations.map((correlation) => (
-				<section key={`${correlation.kind}:${correlation.identifier}`} className="space-y-1">
-					<div className="flex items-center justify-between gap-2">
-						<div className="flex items-baseline gap-2">
+				<section key={`${correlation.kind}:${correlation.identifier}`} className="space-y-2">
+					{/* Header: title + link share a row; the (often long) identifier
+					    gets its own truncating line so neither clips the other. */}
+					<div className="space-y-0.5">
+						<div className="flex items-center justify-between gap-2">
 							<span className="text-[12px] font-medium text-foreground">
 								{correlation.title}
 							</span>
-							<span className="truncate font-mono text-[11px] text-muted-foreground">
-								{correlation.identifier}
-							</span>
+							<CorrelationLink correlation={correlation} />
 						</div>
-						<CorrelationLink correlation={correlation} />
+						<div
+							className="truncate font-mono text-[11px] text-muted-foreground"
+							title={correlation.identifier}
+						>
+							{correlation.identifier}
+						</div>
 					</div>
-					<div className="rounded-lg border bg-background">
-						{renderCharts(correlation, startTime, endTime, syncId)}
-					</div>
+					{renderCharts(correlation, startTime, endTime, syncId)}
 				</section>
 			))}
 		</div>
@@ -99,66 +101,68 @@ function renderCharts(
 	syncId: string,
 ) {
 	switch (correlation.kind) {
+		// Pod/Node charts each render as a self-contained card whose legend
+		// already names the metric, so they just stack — no extra card/label
+		// wrapper (which previously double-bordered and duplicated the label).
 		case "pod":
-			return correlation.charts.map((c) => (
-				<LabeledChart key={c.metric} label={c.label}>
-					<PodDetailChart
-						podName={correlation.identifier}
-						namespace={correlation.namespace}
-						metric={c.metric}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={BUCKET_SECONDS}
-						syncId={syncId}
-					/>
-				</LabeledChart>
-			))
+			return (
+				<div className="space-y-3">
+					{correlation.charts.map((c) => (
+						<PodDetailChart
+							key={c.metric}
+							podName={correlation.identifier}
+							namespace={correlation.namespace}
+							metric={c.metric}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={BUCKET_SECONDS}
+							syncId={syncId}
+						/>
+					))}
+				</div>
+			)
 		case "node":
-			return correlation.charts.map((c) => (
-				<LabeledChart key={c.metric} label={c.label}>
-					<NodeDetailChart
-						nodeName={correlation.identifier}
-						metric={c.metric}
-						startTime={startTime}
-						endTime={endTime}
-						bucketSeconds={BUCKET_SECONDS}
-						syncId={syncId}
-					/>
-				</LabeledChart>
-			))
+			return (
+				<div className="space-y-3">
+					{correlation.charts.map((c) => (
+						<NodeDetailChart
+							key={c.metric}
+							nodeName={correlation.identifier}
+							metric={c.metric}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={BUCKET_SECONDS}
+							syncId={syncId}
+						/>
+					))}
+				</div>
+			)
+		// Host strips carry their own label sidebar and internal dividers, so
+		// group them into one bordered card (their host-detail-page presentation).
 		case "host":
-			return correlation.charts.map((c) => (
-				<MetricStrip
-					key={c.metric}
-					label={c.label}
-					hostName={correlation.identifier}
-					metric={c.metric}
-					startTime={startTime}
-					endTime={endTime}
-					bucketSeconds={BUCKET_SECONDS}
-					syncId={syncId}
-				/>
-			))
+			return (
+				<div className="overflow-hidden rounded-lg border bg-card">
+					{correlation.charts.map((c) => (
+						<MetricStrip
+							key={c.metric}
+							label={c.label}
+							hostName={correlation.identifier}
+							metric={c.metric}
+							startTime={startTime}
+							endTime={endTime}
+							bucketSeconds={BUCKET_SECONDS}
+							syncId={syncId}
+						/>
+					))}
+				</div>
+			)
 	}
-}
-
-/**
- * Label-above-chart wrapper mirroring `MetricStrip`'s narrow-width layout, so
- * pod/node charts (which render bare) read consistently with the host strips.
- */
-function LabeledChart({ label, children }: { label: string; children: ReactNode }) {
-	return (
-		<section className="border-t px-1 py-3 first:border-t-0">
-			<div className="px-2 text-[12px] font-medium text-foreground">{label}</div>
-			<div className="mt-2">{children}</div>
-		</section>
-	)
 }
 
 /** Typed SPA deep-link into the matching infra detail route, per kind. */
 function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 	const className =
-		"inline-flex items-center gap-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+		"inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground transition-colors hover:text-foreground"
 	const content = (
 		<>
 			View in Infrastructure

@@ -20,6 +20,7 @@ import {
 	COLOR_PALETTE,
 	formatValueWithUnit,
 	transformRows,
+	UNNAMED_SERIES_KEY,
 } from "./chart-utils"
 import { InfraTooltipItem } from "./chart-tooltip"
 import { formatBackendError } from "@/lib/error-messages"
@@ -101,7 +102,8 @@ function ChartView({ rows, unit, metric, seriesLabel, waiting, syncId }: ChartVi
 				series.map((name, idx) => [
 					name,
 					{
-						label: name || seriesLabel || "value",
+						// Swap the unnamed-series placeholder for the metric label.
+						label: name === UNNAMED_SERIES_KEY ? (seriesLabel ?? name) : name,
 						color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
 					},
 				]),

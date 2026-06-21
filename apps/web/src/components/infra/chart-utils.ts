@@ -56,6 +56,13 @@ export function formatValueWithUnit(value: number, unit: ChartUnit): string {
 /** Shown when a series query returns no points for the selected window. */
 export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."
 
+/**
+ * Series key for a gauge with no group-by attribute (a single line). Charts
+ * swap this placeholder for the metric's human `seriesLabel` in legends and
+ * tooltips so it never surfaces as a bare "value".
+ */
+export const UNNAMED_SERIES_KEY = "value"
+
 export interface TransformedPoint extends Record<string, string | number> {
 	bucket: string
 	time: string
@@ -73,7 +80,7 @@ export function transformRows(
 	const seriesSet = new Set<string>()
 	const byBucket = new Map<string, TransformedPoint>()
 	for (const row of rows) {
-		const series = row.attributeValue || "value"
+		const series = row.attributeValue || UNNAMED_SERIES_KEY
 		seriesSet.add(series)
 		const existing: TransformedPoint = byBucket.get(row.bucket) ?? {
 			bucket: row.bucket,
