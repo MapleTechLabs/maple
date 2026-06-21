@@ -102,6 +102,23 @@ export const verifyHs256 = async (
 	return { sub: payload.sub, org_id: payload.org_id }
 }
 
+const SERVICE_TOKEN_PREFIX = "maple_svc_"
+
+/**
+ * Verify an internal-service-token request (apps/api → chat-flue server-to-server,
+ * e.g. the headless triage workflow). The bearer value must equal
+ * `maple_svc_<INTERNAL_SERVICE_TOKEN>` — the same scheme the MCP connection uses
+ * (see lib/mcp.ts). Constant-time compared; fails closed when the token is unset.
+ */
+export const verifyInternalServiceToken = (request: Request, env: ChatFlueEnv): boolean => {
+	const configured = env.INTERNAL_SERVICE_TOKEN
+	if (!configured) return false
+	const provided = extractBearerToken(request)
+	if (!provided) return false
+	const enc = new TextEncoder()
+	return constantTimeEqual(enc.encode(provided), enc.encode(`${SERVICE_TOKEN_PREFIX}${configured}`))
+}
+
 let cachedClerk: ReturnType<typeof createClerkClient> | undefined
 const getClerk = (env: ChatFlueEnv) => {
 	if (!env.CLERK_SECRET_KEY) return undefined

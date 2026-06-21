@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { generateText } from "ai"
 import {
 	aiTriageRuns,
 	aiTriageSettings,
@@ -15,7 +14,7 @@ import { AiTriageRunId, AnomalyIncidentId, ErrorIssueId, OrgId } from "@maple/do
 import { eq } from "drizzle-orm"
 import { Schema } from "effect"
 import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
-import { runAiTriage, type AiTriageWorkflowPayload } from "./AiTriageWorkflow.run"
+import { type AiTriageRunDeps, runAiTriage, type AiTriageWorkflowPayload } from "./AiTriageWorkflow.run"
 import type { WorkflowStepLike } from "./ClickHouseSchemaApplyWorkflow.run"
 
 const createdTempDirs: string[] = []
@@ -56,12 +55,13 @@ const validResult = {
 	confidence: "high",
 }
 
-const fakeGenerate = (toolCalls: ReadonlyArray<{ toolName: string; input: unknown }>) =>
-	(async () => ({
-		steps: [{ toolCalls }],
-		totalUsage: { inputTokens: 120, outputTokens: 60 },
-		text: "",
-	})) as unknown as typeof generateText
+/** Stub the Flue triage invocation: return a fixed structured result + usage. */
+const fakeInvokeTriage = (result: unknown = validResult): AiTriageRunDeps["invokeTriage"] =>
+	async () => ({
+		result,
+		model: { provider: "cloudflare", id: "@cf/moonshotai/kimi-k2.6" },
+		usage: { input: 120, output: 60 },
+	})
 
 interface Harness {
 	readonly db: MapleD1Client
@@ -117,7 +117,14 @@ beforeEach(async () => {
 	}
 })
 
-const env = { MAPLE_DB: undefined, INTERNAL_SERVICE_TOKEN: "test-token" }
+// The gate checks for the CHAT_FLUE service binding (the investigation runs on
+// chat-flue); a stub `fetch` satisfies it. The actual call is stubbed via
+// `deps.invokeTriage`, so the binding is never exercised in these tests.
+const env = {
+	MAPLE_DB: undefined,
+	INTERNAL_SERVICE_TOKEN: "test-token",
+	CHAT_FLUE: { fetch: (async () => new Response("{}")) as typeof fetch },
+}
 
 const loadRun = async () => {
 	const rows = await harness.db
@@ -165,9 +172,7 @@ describe("runAiTriage", () => {
 	it("completes the run, stores the result, and writes the issue timeline event", async () => {
 		const result = await runAiTriage(env, { payload: harness.payload }, fakeStep, {
 			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
+			invokeTriage: fakeInvokeTriage(),
 		})
 		expect(result.status).toBe("completed")
 
@@ -175,6 +180,7 @@ describe("runAiTriage", () => {
 		expect(run?.status).toBe("completed")
 		expect(run?.inputTokens).toBe(120)
 		expect(run?.outputTokens).toBe(60)
+		expect(run?.model).toBe("@cf/moonshotai/kimi-k2.6")
 		expect(JSON.parse(run?.resultJson ?? "{}").summary).toContain("bad deploy")
 
 		const events = await harness.db
@@ -187,12 +193,7 @@ describe("runAiTriage", () => {
 	})
 
 	it("does not duplicate the timeline event when persist re-runs", async () => {
-		const deps = {
-			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
-		}
+		const deps = { db: harness.db, invokeTriage: fakeInvokeTriage() }
 		await runAiTriage(env, { payload: harness.payload }, fakeStep, deps)
 		// Simulate a replayed/retried execution reaching persist again for the
 		// same run: the deterministic event id + onConflictDoNothing must absorb
@@ -218,9 +219,7 @@ describe("runAiTriage", () => {
 
 		const result = await runAiTriage(env, { payload: harness.payload }, fakeStep, {
 			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
+			invokeTriage: fakeInvokeTriage(),
 		})
 		expect(result.status).toBe("skipped")
 	})
@@ -243,9 +242,7 @@ describe("runAiTriage", () => {
 
 		await runAiTriage(env, { payload: harness.payload }, fakeStep, {
 			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
+			invokeTriage: fakeInvokeTriage(),
 		})
 
 		const issues = await harness.db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId))
@@ -289,9 +286,7 @@ describe("runAiTriage", () => {
 
 		await runAiTriage(env, { payload: harness.payload }, fakeStep, {
 			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
+			invokeTriage: fakeInvokeTriage(),
 		})
 
 		const issues = await harness.db.select().from(errorIssues).where(eq(errorIssues.id, harness.issueId))
@@ -317,12 +312,7 @@ describe("runAiTriage", () => {
 			env,
 			{ payload: { ...harness.payload, incidentKind: "alert" } },
 			fakeStep,
-			{
-				db: harness.db,
-				resolveApiKey: async () => "test-key",
-				generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-				buildTools: async () => ({}),
-			},
+			{ db: harness.db, invokeTriage: fakeInvokeTriage() },
 		)
 		expect(result.status).toBe("completed")
 
@@ -346,9 +336,9 @@ describe("runAiTriage", () => {
 			fakeStep,
 			{
 				db: harness.db,
-				resolveApiKey: async () => undefined,
-				generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-				buildTools: async () => ({}),
+				invokeTriage: async () => {
+					throw new Error("flue_unreachable")
+				},
 				now: () => FIXED_NOW,
 			},
 		)
@@ -356,6 +346,7 @@ describe("runAiTriage", () => {
 
 		const run = await loadRun()
 		expect(run?.status).toBe("failed")
+		expect(run?.error).toBe("flue_unreachable")
 		expect(run?.completedAt).toBe(FIXED_NOW)
 		expect(run?.updatedAt).toBe(FIXED_NOW)
 
@@ -375,13 +366,7 @@ describe("runAiTriage", () => {
 			env,
 			{ payload: { ...harness.payload, incidentKind: "anomaly" } },
 			fakeStep,
-			{
-				db: harness.db,
-				resolveApiKey: async () => "test-key",
-				generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-				buildTools: async () => ({}),
-				now: () => FIXED_NOW,
-			},
+			{ db: harness.db, invokeTriage: fakeInvokeTriage(), now: () => FIXED_NOW },
 		)
 		expect(result.status).toBe("completed")
 
@@ -405,12 +390,7 @@ describe("runAiTriage", () => {
 			{ ...env, AUTUMN_SECRET_KEY: "autumn-test-key" },
 			{ payload: harness.payload },
 			fakeStep,
-			{
-				db: harness.db,
-				resolveApiKey: async () => "test-key",
-				generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-				buildTools: async () => ({}),
-			},
+			{ db: harness.db, invokeTriage: fakeInvokeTriage() },
 		)
 		expect(result.status).toBe("completed")
 
@@ -424,29 +404,29 @@ describe("runAiTriage", () => {
 		expect(byFeature.get("ai_output_tokens")?.idempotency_key).toBe(`${harness.runId}:triage:output`)
 	})
 
-	it("fails the run when the agent never calls submit_triage", async () => {
+	it("fails the run when the Flue investigation errors", async () => {
 		const result = await runAiTriage(env, { payload: harness.payload }, fakeStep, {
 			db: harness.db,
-			resolveApiKey: async () => "test-key",
-			generate: fakeGenerate([{ toolName: "diagnose_service", input: {} }]),
-			buildTools: async () => ({}),
+			invokeTriage: async () => {
+				throw new Error("flue_triage_no_result")
+			},
 		})
 		expect(result.status).toBe("failed")
 		const run = await loadRun()
 		expect(run?.status).toBe("failed")
-		expect(run?.error).toBe("no_structured_result")
+		expect(run?.error).toBe("flue_triage_no_result")
 	})
 
-	it("fails fast without an OpenRouter key", async () => {
-		const result = await runAiTriage(env, { payload: harness.payload }, fakeStep, {
-			db: harness.db,
-			resolveApiKey: async () => undefined,
-			generate: fakeGenerate([{ toolName: "submit_triage", input: validResult }]),
-			buildTools: async () => ({}),
-		})
+	it("fails the run when the CHAT_FLUE binding is unavailable", async () => {
+		const result = await runAiTriage(
+			{ MAPLE_DB: undefined, INTERNAL_SERVICE_TOKEN: "test-token" },
+			{ payload: harness.payload },
+			fakeStep,
+			{ db: harness.db, invokeTriage: fakeInvokeTriage() },
+		)
 		expect(result.status).toBe("failed")
 		const run = await loadRun()
 		expect(run?.status).toBe("failed")
-		expect(run?.error).toBe("no_openrouter_key")
+		expect(run?.error).toBe("chat_flue_unavailable")
 	})
 })

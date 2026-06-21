@@ -45,6 +45,7 @@
         "@clerk/backend": "^2.30.1",
         "@clickhouse/client-web": "catalog:clickhouse",
         "@effect/platform-bun": "catalog:effect",
+        "@flue/sdk": "1.0.0-beta.1",
         "@libsql/client": "0.15.15",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/db": "workspace:*",
