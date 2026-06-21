@@ -1,6 +1,9 @@
 // Shared helpers for the infra detail charts (host + k8s). The two chart files
 // keep their own <ChartView> (different units, container chrome, heights) but
-// share the row→series transform, palette, and grid/empty conventions.
+// share the row→series transform, palette, grid/empty conventions, and the
+// unit-aware value formatting used by tooltips, legend chips, and axes.
+
+import { formatBytesPerSecond, formatLoad, formatPercent } from "./format"
 
 export const COLOR_PALETTE = [
 	"var(--chart-1)",
@@ -13,6 +16,42 @@ export const COLOR_PALETTE = [
 
 /** Recharts grid dash — one value across every infra chart. */
 export const CHART_GRID_DASH = "3 3"
+
+/** Every value unit an infra chart can carry. Drives unit-aware formatting. */
+export type ChartUnit = "percent" | "cores" | "seconds" | "load" | "bytes_per_second"
+
+/** Compact, human duration ("45s", "12m", "3h 20m", "2d 4h"). */
+export function formatSeconds(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	if (seconds < 60) return `${Math.round(seconds)}s`
+	const m = Math.floor(seconds / 60)
+	if (m < 60) return `${m}m`
+	const h = Math.floor(m / 60)
+	if (h < 24) return `${h}h ${m % 60}m`
+	const d = Math.floor(h / 24)
+	return `${d}d ${h % 24}h`
+}
+
+/**
+ * Format a value WITH its unit so a tooltip/legend reads "9.5%", "0.067 cores",
+ * "12 MB/s" — never a bare, ambiguous number. This is the single place that
+ * decides how each unit renders.
+ */
+export function formatValueWithUnit(value: number, unit: ChartUnit): string {
+	if (!Number.isFinite(value)) return "—"
+	switch (unit) {
+		case "percent":
+			return formatPercent(value)
+		case "cores":
+			return `${value.toLocaleString(undefined, { maximumFractionDigits: 3 })} cores`
+		case "seconds":
+			return formatSeconds(value)
+		case "load":
+			return formatLoad(value)
+		case "bytes_per_second":
+			return formatBytesPerSecond(value)
+	}
+}
 
 /** Shown when a series query returns no points for the selected window. */
 export const CHART_EMPTY_MESSAGE = "No data for this metric in the selected window."

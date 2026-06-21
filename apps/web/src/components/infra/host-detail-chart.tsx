@@ -13,8 +13,15 @@ import { cn } from "@maple/ui/lib/utils"
 
 import { hostInfraTimeseriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import type { HostInfraMetric } from "@/api/warehouse/infra"
-import { formatBytesPerSecond, formatPercent } from "./format"
-import { CHART_EMPTY_MESSAGE, CHART_GRID_DASH, COLOR_PALETTE, transformRows } from "./chart-utils"
+import { formatBytesPerSecond } from "./format"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_GRID_DASH,
+	COLOR_PALETTE,
+	formatValueWithUnit,
+	transformRows,
+} from "./chart-utils"
+import { InfraTooltipItem } from "./chart-tooltip"
 import { formatBackendError } from "@/lib/error-messages"
 
 interface HostDetailChartProps {
@@ -27,6 +34,16 @@ interface HostDetailChartProps {
 }
 
 const CHART_HEIGHT = 220
+
+// Human label for each host metric, shown as the tooltip/legend "type" for the
+// single unnamed series.
+const HOST_METRIC_LABELS: Record<HostInfraMetric, string> = {
+	cpu: "CPU",
+	memory: "Memory",
+	filesystem: "Disk",
+	network: "Network",
+	load15: "Load (15m)",
+}
 
 function HostDetailChart({
 	hostName,
@@ -54,6 +71,7 @@ function HostDetailChart({
 				rows={response.data}
 				unit={response.unit}
 				metric={metric}
+				seriesLabel={HOST_METRIC_LABELS[metric]}
 				waiting={Boolean(holder.waiting)}
 				syncId={syncId}
 			/>
@@ -65,11 +83,14 @@ interface ChartViewProps {
 	rows: ReadonlyArray<{ bucket: string; attributeValue: string; value: number }>
 	unit: "percent" | "load" | "bytes_per_second"
 	metric: HostInfraMetric
+	// Label for the unnamed default series so the tooltip shows the metric type
+	// instead of a bare "value".
+	seriesLabel?: string
 	waiting: boolean
 	syncId?: string
 }
 
-function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
+function ChartView({ rows, unit, metric, seriesLabel, waiting, syncId }: ChartViewProps) {
 	const gradientPrefix = useId().replace(/:/g, "")
 
 	const { data, series } = useMemo(() => transformRows(rows), [rows])
@@ -80,12 +101,12 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 				series.map((name, idx) => [
 					name,
 					{
-						label: name || "value",
+						label: name || seriesLabel || "value",
 						color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
 					},
 				]),
 			),
-		[series],
+		[series, seriesLabel],
 	)
 
 	const lastValues = useMemo(() => {
@@ -113,14 +134,6 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 		return v.toLocaleString(undefined, { maximumFractionDigits: 2 })
 	}
 
-	const tooltipFormatter = (val: unknown): string => {
-		const num = typeof val === "number" ? val : Number(val)
-		if (!Number.isFinite(num)) return "—"
-		if (unit === "percent") return formatPercent(num)
-		if (unit === "bytes_per_second") return formatBytesPerSecond(num)
-		return num.toLocaleString(undefined, { maximumFractionDigits: 2 })
-	}
-
 	const isStacked = metric === "cpu" || metric === "memory"
 	const showThreshold = metric === "cpu" || metric === "memory"
 	const margin = { top: 12, right: 12, left: 0, bottom: 0 }
@@ -140,7 +153,7 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 							<span className="text-[11px] text-muted-foreground">{config[s]?.label ?? s}</span>
 							{value !== undefined && (
 								<span className="font-mono text-[11px] tabular-nums text-foreground/85">
-									{tooltipFormatter(value)}
+									{formatValueWithUnit(value, unit)}
 								</span>
 							)}
 						</div>
@@ -208,7 +221,17 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 						<ChartTooltip
 							cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
 							content={
-								<ChartTooltipContent indicator="dot" formatter={(v) => tooltipFormatter(v)} />
+								<ChartTooltipContent
+									indicator="dot"
+									formatter={(value, name) => (
+										<InfraTooltipItem
+											color={`var(--color-${name})`}
+											label={config[String(name)]?.label ?? String(name)}
+											value={Number(value)}
+											unit={unit}
+										/>
+									)}
+								/>
 							}
 						/>
 						{series.map((s) => {
@@ -256,7 +279,14 @@ function ChartView({ rows, unit, metric, waiting, syncId }: ChartViewProps) {
 							content={
 								<ChartTooltipContent
 									indicator="line"
-									formatter={(v) => tooltipFormatter(v)}
+									formatter={(value, name) => (
+										<InfraTooltipItem
+											color={`var(--color-${name})`}
+											label={config[String(name)]?.label ?? String(name)}
+											value={Number(value)}
+											unit={unit}
+										/>
+									)}
 								/>
 							}
 						/>

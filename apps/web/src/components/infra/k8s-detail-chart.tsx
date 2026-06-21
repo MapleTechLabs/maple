@@ -22,35 +22,55 @@ import type {
 	WorkloadInfraMetric,
 	WorkloadKind,
 } from "@/api/warehouse/infra"
-import { formatPercent } from "./format"
-import { CHART_EMPTY_MESSAGE, CHART_GRID_DASH, COLOR_PALETTE, transformRows } from "./chart-utils"
+import {
+	CHART_EMPTY_MESSAGE,
+	CHART_GRID_DASH,
+	COLOR_PALETTE,
+	formatSeconds,
+	formatValueWithUnit,
+	transformRows,
+} from "./chart-utils"
+import { InfraTooltipItem } from "./chart-tooltip"
 import { formatBackendError } from "@/lib/error-messages"
 
 const CHART_HEIGHT = 280
 
-function formatSeconds(seconds: number): string {
-	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
-	if (seconds < 60) return `${Math.round(seconds)}s`
-	const m = Math.floor(seconds / 60)
-	if (m < 60) return `${m}m`
-	const h = Math.floor(m / 60)
-	if (h < 24) return `${h}h ${m % 60}m`
-	const d = Math.floor(h / 24)
-	return `${d}d ${h % 24}h`
+type Unit = "percent" | "cores" | "seconds"
+
+// Human label for each metric, used as the tooltip/legend "type" for the single
+// unnamed series (gauges with no group-by attribute, e.g. a pod's CPU usage).
+const POD_METRIC_LABELS: Record<PodInfraMetric, string> = {
+	cpu_usage: "CPU usage",
+	cpu_limit: "CPU / limit",
+	cpu_request: "CPU / request",
+	memory_limit: "Memory / limit",
+	memory_request: "Memory / request",
 }
 
-type Unit = "percent" | "cores" | "seconds"
+const NODE_METRIC_LABELS: Record<NodeInfraMetric, string> = {
+	cpu_usage: "CPU usage",
+	uptime: "Uptime",
+}
+
+const WORKLOAD_METRIC_LABELS: Record<WorkloadInfraMetric, string> = {
+	cpu_usage: "CPU usage",
+	cpu_limit: "CPU / limit",
+	memory_limit: "Memory / limit",
+}
 
 interface ChartViewProps {
 	rows: ReadonlyArray<{ bucket: string; attributeValue: string; value: number }>
 	unit: Unit
+	// Label for the unnamed default series so the tooltip shows the metric type
+	// instead of a bare "value".
+	seriesLabel?: string
 	isStacked?: boolean
 	showThreshold?: boolean
 	waiting: boolean
 	syncId?: string
 }
 
-function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: ChartViewProps) {
+function ChartView({ rows, unit, seriesLabel, isStacked, showThreshold, waiting, syncId }: ChartViewProps) {
 	const gradientPrefix = useId().replace(/:/g, "")
 	const { data, series } = useMemo(() => transformRows(rows), [rows])
 
@@ -60,12 +80,12 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 				series.map((name, idx) => [
 					name,
 					{
-						label: name || "value",
+						label: name || seriesLabel || "value",
 						color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
 					},
 				]),
 			),
-		[series],
+		[series, seriesLabel],
 	)
 
 	const lastValues = useMemo(() => {
@@ -93,14 +113,6 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 		return v.toLocaleString(undefined, { maximumFractionDigits: 3 })
 	}
 
-	const tooltipFormatter = (val: unknown): string => {
-		const num = typeof val === "number" ? val : Number(val)
-		if (!Number.isFinite(num)) return "—"
-		if (unit === "percent") return formatPercent(num)
-		if (unit === "seconds") return formatSeconds(num)
-		return num.toLocaleString(undefined, { maximumFractionDigits: 3 })
-	}
-
 	const margin = { top: 12, right: 12, left: 0, bottom: 0 }
 
 	return (
@@ -120,7 +132,7 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 							<span className="font-medium text-foreground/80">{config[s]?.label ?? s}</span>
 							{value !== undefined && (
 								<span className="font-mono tabular-nums text-muted-foreground">
-									{tooltipFormatter(value)}
+									{formatValueWithUnit(value, unit)}
 								</span>
 							)}
 						</div>
@@ -188,7 +200,17 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 						<ChartTooltip
 							cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }}
 							content={
-								<ChartTooltipContent indicator="dot" formatter={(v) => tooltipFormatter(v)} />
+								<ChartTooltipContent
+									indicator="dot"
+									formatter={(value, name) => (
+										<InfraTooltipItem
+											color={`var(--color-${name})`}
+											label={config[String(name)]?.label ?? String(name)}
+											value={Number(value)}
+											unit={unit}
+										/>
+									)}
+								/>
 							}
 						/>
 						{series.map((s) => {
@@ -236,7 +258,14 @@ function ChartView({ rows, unit, isStacked, showThreshold, waiting, syncId }: Ch
 							content={
 								<ChartTooltipContent
 									indicator="line"
-									formatter={(v) => tooltipFormatter(v)}
+									formatter={(value, name) => (
+										<InfraTooltipItem
+											color={`var(--color-${name})`}
+											label={config[String(name)]?.label ?? String(name)}
+											value={Number(value)}
+											unit={unit}
+										/>
+									)}
 								/>
 							}
 						/>
@@ -294,6 +323,7 @@ export function PodDetailChart({
 			<ChartView
 				rows={response.data}
 				unit={response.unit}
+				seriesLabel={POD_METRIC_LABELS[metric]}
 				showThreshold={metric.startsWith("cpu_") || metric.startsWith("memory_")}
 				waiting={Boolean(holder.waiting)}
 				syncId={syncId}
@@ -336,6 +366,7 @@ export function NodeDetailChart({
 			<ChartView
 				rows={response.data}
 				unit={response.unit}
+				seriesLabel={NODE_METRIC_LABELS[metric]}
 				waiting={Boolean(holder.waiting)}
 				syncId={syncId}
 			/>
@@ -392,6 +423,7 @@ export function WorkloadDetailChart({
 			<ChartView
 				rows={response.data}
 				unit={response.unit}
+				seriesLabel={WORKLOAD_METRIC_LABELS[metric]}
 				showThreshold={metric === "cpu_limit" || metric === "memory_limit"}
 				waiting={Boolean(holder.waiting)}
 				syncId={syncId}
