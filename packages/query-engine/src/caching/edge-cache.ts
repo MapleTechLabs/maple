@@ -191,8 +191,13 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 		options: EdgeCacheInvalidateOptions,
 	) {
 		const hash = yield* Effect.promise(() => sha256Hex(options.key))
-		// Drop any in-flight single-flight awaiter so a concurrent recompute
-		// doesn't re-publish the value we're evicting.
+		// Drop any in-flight single-flight awaiter so NEW callers don't join an
+		// in-progress compute and get handed the value we're evicting. This does
+		// NOT stop a compute already past its get/inFlight check: its backend.put
+		// can still land after the backend.delete below and re-publish the evicted
+		// value, stale until the TTL (the next read then recomputes). Acceptable as
+		// best-effort display/gating state; closing the window fully would need an
+		// invalidation epoch, which is overkill for a 5-min-TTL hot-path cache.
 		inFlight.delete(`${options.bucket}:${hash}`)
 		yield* Effect.tryPromise({
 			try: () => backend.delete(options.bucket, hash),
