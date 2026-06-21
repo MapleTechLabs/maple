@@ -20,10 +20,12 @@ interface InfraCorrelationBase {
 	title: string
 	/** Resource-attribute key whose presence gated this group. */
 	detectAttribute: string
-	/** Resolved identity value (pod / node / host name). */
+	/**
+	 * Resolved identity value (pod / node / host name), kept raw — the deep-link
+	 * is built by `CorrelationLink` via TanStack `<Link to/params/search>`, which
+	 * owns URL encoding, so this value is passed through verbatim.
+	 */
 	identifier: string
-	/** Deep-link into the matching infra detail route. */
-	href: string
 }
 
 /**
@@ -93,15 +95,12 @@ export function getActiveInfraCorrelations(
 
 	const podName = attr(resourceAttributes, POD_NAME_KEY)
 	if (podName) {
-		const namespace = attr(resourceAttributes, POD_NAMESPACE_KEY)
-		const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ""
 		out.push({
 			kind: "pod",
 			title: "Pod",
 			detectAttribute: POD_NAME_KEY,
 			identifier: podName,
-			namespace,
-			href: `/infra/kubernetes/pods/${encodeURIComponent(podName)}${query}`,
+			namespace: attr(resourceAttributes, POD_NAMESPACE_KEY),
 			charts: POD_CHARTS,
 		})
 	}
@@ -113,7 +112,6 @@ export function getActiveInfraCorrelations(
 			title: "Node",
 			detectAttribute: NODE_NAME_KEY,
 			identifier: nodeName,
-			href: `/infra/kubernetes/nodes/${encodeURIComponent(nodeName)}`,
 			charts: NODE_CHARTS,
 		})
 	}
@@ -125,7 +123,6 @@ export function getActiveInfraCorrelations(
 			title: "Host",
 			detectAttribute: HOST_NAME_KEY,
 			identifier: hostName,
-			href: `/infra/${encodeURIComponent(hostName)}`,
 			charts: HOST_CHARTS,
 		})
 	}

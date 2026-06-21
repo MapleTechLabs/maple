@@ -29,12 +29,12 @@ describe("getActiveInfraCorrelations", () => {
 		expect(pod.kind).toBe("pod")
 		expect(pod.identifier).toBe("checkout-7c9f")
 		expect(pod).toMatchObject({ namespace: "prod" })
-		expect(pod.href).toBe("/infra/kubernetes/pods/checkout-7c9f?namespace=prod")
 	})
 
-	it("omits the namespace query param when no namespace is present", () => {
+	it("leaves namespace undefined when none is present", () => {
 		const [pod] = getActiveInfraCorrelations({ "k8s.pod.name": "checkout-7c9f" })
-		expect(pod.href).toBe("/infra/kubernetes/pods/checkout-7c9f")
+		expect(pod.kind).toBe("pod")
+		expect(pod).toMatchObject({ namespace: undefined })
 	})
 
 	it("detects a node", () => {
@@ -43,7 +43,6 @@ describe("getActiveInfraCorrelations", () => {
 		expect(groups[0]).toMatchObject({
 			kind: "node",
 			identifier: "ip-10-0-1-5",
-			href: "/infra/kubernetes/nodes/ip-10-0-1-5",
 		})
 	})
 
@@ -53,7 +52,6 @@ describe("getActiveInfraCorrelations", () => {
 		expect(groups[0]).toMatchObject({
 			kind: "host",
 			identifier: "ip-10-0-1-5.ec2.internal",
-			href: "/infra/ip-10-0-1-5.ec2.internal",
 		})
 	})
 
@@ -66,14 +64,15 @@ describe("getActiveInfraCorrelations", () => {
 		expect(groups.map((g) => g.kind)).toEqual(["pod", "node"])
 	})
 
-	it("url-encodes identifiers and namespaces in the deep-link", () => {
+	it("passes identifiers and namespaces through raw (Link owns URL encoding)", () => {
+		// The deep-link is built by CorrelationLink via TanStack <Link>, which
+		// encodes params itself — the detector must not pre-encode.
 		const [pod] = getActiveInfraCorrelations({
 			"k8s.pod.name": "weird/pod name",
 			"k8s.namespace.name": "team a/b",
 		})
-		expect(pod.href).toBe(
-			"/infra/kubernetes/pods/weird%2Fpod%20name?namespace=team%20a%2Fb",
-		)
+		expect(pod.identifier).toBe("weird/pod name")
+		expect(pod).toMatchObject({ namespace: "team a/b" })
 	})
 
 	it("each group carries at least one chart", () => {
