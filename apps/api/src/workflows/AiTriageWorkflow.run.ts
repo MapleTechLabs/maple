@@ -58,7 +58,7 @@ interface FlueTriageResult {
 	readonly usage: { readonly input: number; readonly output: number }
 }
 
-export interface InvokeTriageInput {
+interface InvokeTriageInput {
 	readonly env: AiTriageWorkflowEnv
 	readonly orgId: string
 	readonly incidentKind: "error" | "anomaly" | "alert"
@@ -72,7 +72,7 @@ export interface InvokeTriageInput {
  * so `baseUrl` is a placeholder; auth is the internal-service token the
  * chat-flue `/workflows/*` guard expects (`Bearer maple_svc_<token>`).
  */
-export const invokeTriageWorkflow = async ({
+const invokeTriageWorkflow = async ({
 	env,
 	orgId,
 	incidentKind,
