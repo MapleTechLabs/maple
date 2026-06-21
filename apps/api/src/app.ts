@@ -146,6 +146,7 @@ const DigestServiceLive = DigestService.layer.pipe(
 export const MainLive = Layer.mergeAll(
 	CoreServicesLive,
 	WarehouseQueryServiceLive,
+	EdgeCacheServiceLive,
 	QueryEngineServiceLive,
 	AlertsServiceLive,
 	AnomalyDetectionServiceLive,
