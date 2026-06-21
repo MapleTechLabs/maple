@@ -13,8 +13,6 @@
 
 import type { HostInfraMetric, NodeInfraMetric, PodInfraMetric } from "@/api/warehouse/infra"
 
-export type InfraCorrelationKind = "pod" | "node" | "host"
-
 interface InfraCorrelationBase {
 	/** Display heading for the group ("Pod" | "Node" | "Host"). */
 	title: string
