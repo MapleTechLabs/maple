@@ -42,6 +42,7 @@ import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
 import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets"
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
+import { registerRunCodeTool } from "./run-code"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
@@ -136,6 +137,10 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRegisterAgentTool(registrar)
 	registerListErrorIncidentsTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
+	// Code Mode: a single tool whose sandboxed snippet orchestrates the read-only
+	// tools above. Registered last so it can reference the full set at runtime
+	// (it dispatches via `mapleToolDefinitions`); inert unless MAPLE_CODE_MODE=1.
+	registerRunCodeTool(registrar)
 
 	return definitions
 }

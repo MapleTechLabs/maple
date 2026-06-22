@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { parseToolProposal } from "./tool-proposal"
+import { parseToolProposal, parseToolProposalBatch } from "./tool-proposal"
 
 describe("parseToolProposal", () => {
 	it("parses a JSON-string proposal (Flue's tool output)", () => {
@@ -26,5 +26,42 @@ describe("parseToolProposal", () => {
 		expect(parseToolProposal(null)).toBeNull()
 		expect(parseToolProposal(undefined)).toBeNull()
 		expect(parseToolProposal(42)).toBeNull()
+	})
+
+	it("does not treat a proposed_batch as a single proposal", () => {
+		const out = JSON.stringify({
+			status: "proposed_batch",
+			proposals: [{ tool: "create_dashboard", input: {} }],
+		})
+		expect(parseToolProposal(out)).toBeNull()
+	})
+})
+
+describe("parseToolProposalBatch", () => {
+	it("parses a run_code proposed_batch envelope into one proposal per change", () => {
+		const out = JSON.stringify({
+			status: "proposed_batch",
+			proposals: [
+				{ tool: "create_dashboard", input: { title: "x" } },
+				{ tool: "add_dashboard_widget", input: { id: "1" } },
+			],
+			text: "did stuff",
+		})
+		const batch = parseToolProposalBatch(out)
+		expect(batch).toHaveLength(2)
+		expect(batch?.[0]).toEqual({ status: "proposed", tool: "create_dashboard", input: { title: "x" } })
+		expect(batch?.[1]?.tool).toBe("add_dashboard_widget")
+	})
+
+	it("drops malformed entries and returns null when nothing valid remains", () => {
+		expect(
+			parseToolProposalBatch(JSON.stringify({ status: "proposed_batch", proposals: [{ no: "tool" }] })),
+		).toBeNull()
+	})
+
+	it("returns null for non-batch output", () => {
+		expect(parseToolProposalBatch("plain text")).toBeNull()
+		expect(parseToolProposalBatch(JSON.stringify({ status: "proposed", tool: "x" }))).toBeNull()
+		expect(parseToolProposalBatch(null)).toBeNull()
 	})
 })

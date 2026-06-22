@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 import alchemy from "alchemy"
-import { Ai, DurableObjectNamespace, Worker } from "alchemy/cloudflare"
+import { Ai, DurableObjectNamespace, Worker, WorkerLoader } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -104,6 +104,12 @@ export const createChatFlueWorker = async ({ stage, domains, mapleApiUrl }: Crea
 			...optionalPlain("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
 			...optionalPlain("MAPLE_CHAT_MODEL"),
 			...optionalPlain("MAPLE_TRIAGE_MODEL"),
+			// Code Mode (Cloudflare Dynamic Workers / Worker Loader). The `worker_loader`
+			// binding is added only when MAPLE_CODE_MODE is set, since it requires Worker
+			// Loader beta access on the account; otherwise deploys are unaffected and the
+			// agent no-ops Code Mode at runtime (LOADER absent → direct tools only).
+			...optionalPlain("MAPLE_CODE_MODE"),
+			...(process.env.MAPLE_CODE_MODE?.trim() ? { LOADER: WorkerLoader() } : {}),
 			...optionalPlain("MAPLE_AUTH_MODE", "self_hosted"),
 			...optionalSecret("MAPLE_ROOT_PASSWORD"),
 			...optionalSecret("CLERK_SECRET_KEY"),

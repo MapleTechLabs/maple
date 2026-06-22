@@ -4,7 +4,7 @@
 // mode + context in each request body; here `buildSystemPrompt` assembles the
 // instructions and the mode is derived from the agent instance id.
 
-import { DASHBOARD_BUILDER_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts.ts"
+import { DASHBOARD_BUILDER_SYSTEM_PROMPT, formatCodeModeBlock, SYSTEM_PROMPT } from "./prompts.ts"
 import { tabIdFromInstanceId } from "./org.ts"
 
 export type ChatMode = "default" | "dashboard-builder" | "alert" | "widget-fix"
@@ -229,6 +229,8 @@ export interface BuildSystemPromptArgs {
 	alertContext?: AlertContext
 	widgetFixContext?: WidgetFixContext
 	pageContext?: PageContextPayload
+	/** When set (Code Mode on), append the `run_code` instructions + `maple.*` API. */
+	codeMode?: { declaration: string }
 }
 
 /**
@@ -237,9 +239,13 @@ export interface BuildSystemPromptArgs {
  * apps/chat-agent/src/index.ts `runChatTurn`.
  */
 export const buildSystemPrompt = (args: BuildSystemPromptArgs): string => {
-	const { mode, alertContext, widgetFixContext, pageContext } = args
+	const { mode, alertContext, widgetFixContext, pageContext, codeMode } = args
 
 	let prompt = mode === "dashboard-builder" ? DASHBOARD_BUILDER_SYSTEM_PROMPT : SYSTEM_PROMPT
+
+	if (codeMode) {
+		prompt += `\n\n${formatCodeModeBlock(codeMode.declaration)}`
+	}
 
 	if (mode === "alert" && alertContext) {
 		prompt += `\n${formatAlertContextBlock(alertContext)}`

@@ -1,0 +1,19 @@
+{
+	"name": "@maple/codemode",
+	"private": true,
+	"type": "module",
+	"description": "Cloudflare 'Code Mode' building blocks: generate a typed TS API from tool specs, build the sandbox-isolate harness, and run model-written code in a dynamic worker. The root barrel is pure (no Workers runtime); `./sandbox` pulls in `cloudflare:workers`.",
+	"exports": {
+		".": "./src/index.ts",
+		"./sandbox": "./src/sandbox.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "4.20260603.1",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}
