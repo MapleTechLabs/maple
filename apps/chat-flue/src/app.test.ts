@@ -49,10 +49,7 @@ describe("chat-flue CORS", () => {
 
 describe("chat-flue /workflows/* internal-service guard", () => {
 	it("rejects an unauthenticated triage invocation with 401", async () => {
-		const res = await app.fetch(
-			new Request(TRIAGE_URL, { method: "POST", body: "{}" }),
-			serviceEnv,
-		)
+		const res = await app.fetch(new Request(TRIAGE_URL, { method: "POST", body: "{}" }), serviceEnv)
 		expect(res.status).toBe(401)
 	})
 
@@ -84,8 +81,16 @@ describe("chat-flue /workflows/* internal-service guard", () => {
 		const res = await app.fetch(
 			new Request(TRIAGE_URL, {
 				method: "POST",
-				headers: { Authorization: `Bearer maple_svc_${SERVICE_TOKEN}`, "content-type": "application/json" },
-				body: JSON.stringify({ orgId: "org_1", incidentKind: "error", incidentId: "i_1", context: {} }),
+				headers: {
+					Authorization: `Bearer maple_svc_${SERVICE_TOKEN}`,
+					"content-type": "application/json",
+				},
+				body: JSON.stringify({
+					orgId: "org_1",
+					incidentKind: "error",
+					incidentId: "i_1",
+					context: {},
+				}),
 			}),
 			serviceEnv,
 		)

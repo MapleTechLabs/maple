@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { compileCH } from "@maple-dev/clickhouse-builder"
-import {
-	activeOrgsByErrorEventsQuery,
-	activeOrgsByLogsQuery,
-	activeOrgsByTracesQuery,
-} from "./activity"
+import { activeOrgsByErrorEventsQuery, activeOrgsByLogsQuery, activeOrgsByTracesQuery } from "./activity"
 
 const params = { startTime: "2026-06-22 05:00:00" }
 

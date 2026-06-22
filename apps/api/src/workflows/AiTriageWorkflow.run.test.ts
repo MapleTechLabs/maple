@@ -56,7 +56,8 @@ const validResult = {
 }
 
 /** Stub the Flue triage invocation: return a fixed structured result + usage. */
-const fakeInvokeTriage = (result: unknown = validResult): AiTriageRunDeps["invokeTriage"] =>
+const fakeInvokeTriage =
+	(result: unknown = validResult): AiTriageRunDeps["invokeTriage"] =>
 	async () => ({
 		result,
 		model: { provider: "cloudflare", id: "@cf/moonshotai/kimi-k2.6" },

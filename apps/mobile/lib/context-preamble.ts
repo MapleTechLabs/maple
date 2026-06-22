@@ -8,8 +8,7 @@ import type { AlertContext } from "./alert-context"
  * preamble never shows in the user's bubble. Ported from the legacy agent's
  * `formatAlertContextBlock` so the model sees an identical context shape.
  */
-export const buildAlertPreamble = (alert: AlertContext): string =>
-	formatAlertContextBlock(alert).trim()
+export const buildAlertPreamble = (alert: AlertContext): string => formatAlertContextBlock(alert).trim()
 
 const formatAlertComparator = (c: string): string => {
 	switch (c) {

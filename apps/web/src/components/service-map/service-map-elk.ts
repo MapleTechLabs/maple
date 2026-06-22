@@ -23,27 +23,21 @@ function getElk(): Promise<ELK> {
 
 const ELK_CONTAINER_PREFIX = "elkns:"
 
-interface ElkEdgeRoute {
-	/** SVG path (absolute coords) through ELK's routed bend points. */
-	path: string
-	/** Absolute midpoint, for placing the edge label. */
-	labelX: number
-	labelY: number
-}
-
 export interface ElkLayoutResult {
 	positions: Map<string, { x: number; y: number }>
-	/** Per-edge orthogonal route (by edge id) for node-avoiding edge rendering. */
-	routes: Map<string, ElkEdgeRoute>
 }
 
 /**
  * Lay the service map out with ELK's layered algorithm. Each namespace becomes a
  * compound container node (so same-namespace services stay together and the
  * dotted boxes never overlap); databases and namespace-less services sit at the
- * top level. `hierarchyHandling: INCLUDE_CHILDREN` + orthogonal edge routing
- * means cross-namespace edges flow with the rest of the graph and route AROUND
- * node cards instead of cutting through them.
+ * top level. `hierarchyHandling: INCLUDE_CHILDREN` keeps cross-namespace edges
+ * flowing left→right with the rest of the graph.
+ *
+ * Only node POSITIONS are returned — edges are rendered as ReactFlow smooth-step
+ * curves (matching the non-namespaced flat layout). ELK's own orthogonal edge
+ * routing is intentionally not used: it turned long cross-namespace edges into a
+ * sprawl of rectangular detours.
  *
  * Deterministic: ELK layered uses no randomness, so the same topology yields the
  * same layout (callers memoize on a topology key).
@@ -99,16 +93,24 @@ export async function layoutServiceMapWithElk(
 			"elk.algorithm": "layered",
 			"elk.direction": "RIGHT",
 			"elk.hierarchyHandling": "INCLUDE_CHILDREN",
-			"elk.edgeRouting": "ORTHOGONAL",
+			// Edges are rendered as smooth-step curves by ReactFlow (matching the
+			// non-namespaced flat layout), not from ELK routes — so use POLYLINE here,
+			// which reserves far less inter-node space than ORTHOGONAL and keeps the
+			// graph compact instead of sprawling into long rectangular detours.
+			"elk.edgeRouting": "POLYLINE",
+			// Tighter layer gap: ORTHOGONAL routing needed wide channels; with curved
+			// edges we can pack columns much closer.
 			"elk.layered.spacing.nodeNodeBetweenLayers": String(
-				Math.max(60, config.layerGapX - config.nodeWidth),
+				Math.max(70, Math.round((config.layerGapX - config.nodeWidth) * 0.6)),
 			),
 			"elk.spacing.nodeNode": String(config.nodeGapY),
-			"elk.spacing.edgeNode": String(Math.max(16, Math.round(config.nodeGapY / 2))),
-			"elk.layered.spacing.edgeNodeBetweenLayers": String(
-				Math.max(16, Math.round(config.nodeGapY / 2)),
-			),
-			"elk.spacing.componentComponent": String(config.componentGapY),
+			"elk.spacing.edgeNode": "12",
+			"elk.layered.spacing.edgeNodeBetweenLayers": "12",
+			// Pack namespace containers close together.
+			"elk.spacing.componentComponent": String(Math.round(config.componentGapY * 0.6)),
+			// Network-simplex node placement compacts the graph vertically (less
+			// wasted whitespace between rows than the default).
+			"elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
 			// Stable, source-order-aware crossing minimization for deterministic output.
 			"elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
 		},
@@ -119,11 +121,9 @@ export async function layoutServiceMapWithElk(
 	const result = await elk.layout(graph)
 
 	const positions = new Map<string, { x: number; y: number }>()
-	const routes = new Map<string, ElkEdgeRoute>()
 
 	// Walk the result tree accumulating absolute offsets. Leaf nodes get
-	// positions; container nodes are synthetic (skip). Edges carry coordinates
-	// relative to the node they're nested under, so apply the same offset.
+	// positions; container nodes are synthetic (recurse into them).
 	const walk = (node: ElkNode, offsetX: number, offsetY: number) => {
 		for (const child of node.children ?? []) {
 			const ax = offsetX + (child.x ?? 0)
@@ -134,61 +134,8 @@ export async function layoutServiceMapWithElk(
 				positions.set(child.id, { x: ax, y: ay })
 			}
 		}
-		for (const edge of node.edges ?? []) {
-			const section = edge.sections?.[0]
-			if (!section) continue
-			const pts = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((p) => ({
-				x: p.x + offsetX,
-				y: p.y + offsetY,
-			}))
-			routes.set(edge.id, {
-				path: roundedPath(pts),
-				labelX: pts[Math.floor(pts.length / 2)]!.x,
-				labelY: pts[Math.floor(pts.length / 2)]!.y,
-			})
-		}
 	}
 	walk(result, 0, 0)
 
-	return { positions, routes }
-}
-
-/**
- * Build an SVG path through ELK's orthogonal bend points with small rounded
- * corners (matches the smooth-step look of the non-ELK edges).
- */
-function roundedPath(points: Array<{ x: number; y: number }>, radius = 10): string {
-	if (points.length === 0) return ""
-	if (points.length <= 2) {
-		return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ")
-	}
-	let d = `M ${points[0]!.x} ${points[0]!.y}`
-	for (let i = 1; i < points.length - 1; i++) {
-		const prev = points[i - 1]!
-		const curr = points[i]!
-		const next = points[i + 1]!
-		const r1 = Math.min(radius, dist(prev, curr) / 2)
-		const r2 = Math.min(radius, dist(curr, next) / 2)
-		const p1 = lerpTo(curr, prev, r1)
-		const p2 = lerpTo(curr, next, r2)
-		d += ` L ${p1.x} ${p1.y} Q ${curr.x} ${curr.y} ${p2.x} ${p2.y}`
-	}
-	const last = points[points.length - 1]!
-	d += ` L ${last.x} ${last.y}`
-	return d
-}
-
-function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
-	return Math.hypot(a.x - b.x, a.y - b.y)
-}
-
-/** Point `d` away from `from` toward `to`. */
-function lerpTo(
-	from: { x: number; y: number },
-	to: { x: number; y: number },
-	d: number,
-): { x: number; y: number } {
-	const len = dist(from, to) || 1
-	const t = d / len
-	return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t }
+	return { positions }
 }

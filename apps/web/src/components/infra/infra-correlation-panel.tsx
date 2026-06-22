@@ -94,12 +94,7 @@ export function InfraCorrelationPanel({
 	)
 }
 
-function renderCharts(
-	correlation: InfraCorrelation,
-	startTime: string,
-	endTime: string,
-	syncId: string,
-) {
+function renderCharts(correlation: InfraCorrelation, startTime: string, endTime: string, syncId: string) {
 	switch (correlation.kind) {
 		// Pod/Node charts each render as a self-contained card whose legend
 		// already names the metric, so they just stack — no extra card/label
@@ -197,7 +192,11 @@ function CorrelationLink({ correlation }: { correlation: InfraCorrelation }) {
 			)
 		case "host":
 			return (
-				<Link to="/infra/$hostName" params={{ hostName: correlation.identifier }} className={className}>
+				<Link
+					to="/infra/$hostName"
+					params={{ hostName: correlation.identifier }}
+					className={className}
+				>
 					{content}
 				</Link>
 			)

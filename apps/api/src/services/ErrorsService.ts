@@ -2568,8 +2568,7 @@ const make: Effect.Effect<
 			...stateOrgs.map((r) => r.orgId),
 			...issueOrgs.map((r) => r.orgId),
 		])
-		const isActive = (org: string) =>
-			activeOrgs === "all" || activeOrgs.has(org) || withState.has(org)
+		const isActive = (org: string) => activeOrgs === "all" || activeOrgs.has(org) || withState.has(org)
 
 		const emptyResult = {
 			issuesTouched: 0,

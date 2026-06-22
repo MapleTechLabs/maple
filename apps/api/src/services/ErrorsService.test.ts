@@ -157,10 +157,7 @@ const makeWarehouseStub = (
 	},
 })
 
-const makeErrorsLayer = (
-	scanRows?: () => ReadonlyArray<Record<string, unknown>>,
-	onScan?: () => void,
-) => {
+const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>, onScan?: () => void) => {
 	const { url } = makeTempDb("maple-errors-service-", createdTempDirs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig(url)))
 	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))

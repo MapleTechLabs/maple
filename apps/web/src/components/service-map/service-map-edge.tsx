@@ -61,7 +61,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 	const hasSampling = edgeData?.hasSampling ?? false
 	const services = edgeData?.services ?? []
 
-	const [smoothPath, smoothLabelX, smoothLabelY] = getSmoothStepPath({
+	const [edgePath, labelX, labelY] = getSmoothStepPath({
 		sourceX,
 		sourceY,
 		targetX,
@@ -70,12 +70,6 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 		targetPosition,
 		borderRadius: 12,
 	})
-
-	// Prefer ELK's node-avoiding orthogonal route when the layout engine supplied
-	// one (namespace mode); otherwise fall back to the smooth-step path.
-	const edgePath = edgeData?.elkPath ?? smoothPath
-	const labelX = edgeData?.elkPath ? (edgeData.elkLabelX ?? smoothLabelX) : smoothLabelX
-	const labelY = edgeData?.elkPath ? (edgeData.elkLabelY ?? smoothLabelY) : smoothLabelY
 
 	const sourceColor = isDbNodeId(source) ? dbEndpointColor(source) : getServiceLegendColor(source, services)
 	const targetColor = isDbNodeId(target) ? dbEndpointColor(target) : getServiceLegendColor(target, services)

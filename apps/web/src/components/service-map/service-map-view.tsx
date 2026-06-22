@@ -45,7 +45,14 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@maple/ui/components/ui/tabs"
 import { formatBucketLabel } from "@/lib/format"
-import { ArrowRightIcon, CubeIcon, ExternalLinkIcon, NetworkNodesIcon, XmarkIcon } from "@/components/icons"
+import {
+	ArrowRightIcon,
+	ArrowRotateAnticlockwiseIcon,
+	CubeIcon,
+	ExternalLinkIcon,
+	NetworkNodesIcon,
+	XmarkIcon,
+} from "@/components/icons"
 import {
 	getServiceDbQuerySummaryResultAtom,
 	getServiceMapDbEdgesResultAtom,
@@ -625,8 +632,7 @@ function ServiceMapEmptyState() {
 					className="pointer-events-none mb-1 w-[min(440px,76vw)] text-muted-foreground"
 					fill="none"
 					style={{
-						maskImage:
-							"radial-gradient(ellipse 62% 78% at 50% 50%, black 52%, transparent 100%)",
+						maskImage: "radial-gradient(ellipse 62% 78% at 50% 50%, black 52%, transparent 100%)",
 						WebkitMaskImage:
 							"radial-gradient(ellipse 62% 78% at 50% 50%, black 52%, transparent 100%)",
 					}}
@@ -655,9 +661,8 @@ function ServiceMapEmptyState() {
 						</EmptyMedia>
 						<EmptyTitle>No service map yet</EmptyTitle>
 						<EmptyDescription>
-							Maple builds this map from cross-service spans in your traces. Once your
-							services report calls to each other, they&rsquo;ll appear here as a connected
-							graph.
+							Maple builds this map from cross-service spans in your traces. Once your services
+							report calls to each other, they&rsquo;ll appear here as a connected graph.
 						</EmptyDescription>
 					</EmptyHeader>
 					<EmptyContent>
@@ -1320,11 +1325,30 @@ export function ServiceMapCanvas({
 	)
 	const layoutSignature = `${topoKey}|${nsKey}|${JSON.stringify(layoutConfig)}`
 
+	// Persisted drag positions / viewport are absolute coordinates tied to a
+	// specific layout. Honour them ONLY while their captured signature still
+	// matches the live layout — otherwise (topology / namespace / config change,
+	// or pre-signature localStorage data) the stale coords scatter nodes out of
+	// their namespace clusters and overlap the dotted boxes, so fall back to the
+	// clean ELK layout. Stable across metric refreshes (topoKey is the topology
+	// memo key), so ordinary refreshes keep manual arrangements.
+	const persisted = useMemo(
+		() =>
+			layout.signature === layoutSignature
+				? layout
+				: { positions: {}, viewport: null, signature: layoutSignature },
+		[layout, layoutSignature],
+	)
+	// Mirror the live signature into a ref so drag/viewport persistence callbacks
+	// can stamp it without being re-created on every signature change.
+	const sigRef = useRef(layoutSignature)
+	sigRef.current = layoutSignature
+
 	// When namespaces are defined, ELK's layered/compound layout (async) produces
-	// the final node positions + node-avoiding edge routes. Until it resolves we
-	// fall back to the synchronous swimlane layout below so first paint is instant;
-	// without namespaces ELK is skipped entirely (identical to today, perf bench
-	// unaffected).
+	// the final node positions. Until it resolves we fall back to the synchronous
+	// swimlane layout below so first paint is instant; without namespaces ELK is
+	// skipped entirely (identical to today, perf bench unaffected). Edges always
+	// render as smooth-step curves (ELK is used for positions only).
 	const hasNamespaces = useMemo(() => rawNodes.some((n) => Boolean(n.data.namespace)), [rawNodes])
 	const elk = useElkLayout(rawNodes, flowEdges, hasNamespaces, layoutConfig, layoutSignature)
 
@@ -1342,38 +1366,19 @@ export function ServiceMapCanvas({
 		return rawNodes.map((node) => ({ ...node, position: positions.get(node.id) ?? node.position }))
 	}, [rawNodes, flowEdges, layoutConfig, layoutSignature, elk])
 
-	// Inject ELK's routed paths into the edges so they render node-avoiding
-	// orthogonal routes instead of straight smooth-steps (no-op without ELK).
-	// An ELK route is computed for ELK's node positions, so if the user has dragged
-	// either endpoint the route is stale — fall back to smooth-step there so the
-	// edge keeps following its node.
-	const routedEdges = useMemo(() => {
-		const routes = elk?.routes
-		if (!routes || routes.size === 0) return flowEdges
-		const dragged = layout.positions
-		return flowEdges.map((edge) => {
-			const route = routes.get(edge.id)
-			if (!route || dragged[edge.source] || dragged[edge.target]) return edge
-			return {
-				...edge,
-				data: { ...edge.data, elkPath: route.path, elkLabelX: route.labelX, elkLabelY: route.labelY },
-			}
-		})
-	}, [flowEdges, elk, layout.positions])
-
 	// Merge layout positions with selection + color-mode state. Persisted drag
 	// positions (keyed by node id) override the deterministic auto-layout.
 	const nodesWithSelection = useMemo(() => {
 		return layoutedNodes.map((node) => ({
 			...node,
-			position: layout.positions[node.id] ?? node.position,
+			position: persisted.positions[node.id] ?? node.position,
 			data: {
 				...node.data,
 				selected: node.id === selectedServiceId,
 				colorMode,
 			},
 		}))
-	}, [layoutedNodes, selectedServiceId, colorMode, layout.positions])
+	}, [layoutedNodes, selectedServiceId, colorMode, persisted.positions])
 
 	// Track nodes with full ReactFlow state (dimensions, positions from drag, etc.)
 	const [nodes, setNodes] = useState(nodesWithSelection)
@@ -1401,21 +1406,21 @@ export function ServiceMapCanvas({
 	// Programmatic fitView after ALL nodes are measured (the fitView prop fires too early).
 	// Skip auto-fit entirely when a saved viewport exists so the restored camera survives.
 	const rfInstance = useRef<ReactFlowInstance | null>(null)
-	const hasFitView = useRef(layout.viewport != null)
+	const hasFitView = useRef(persisted.viewport != null)
 
 	// ELK repositions every node when it resolves (positions, not dimensions, so
 	// onNodesChange's measure-based fit won't fire). Refit once per ELK result —
 	// unless the user has a saved camera — after the new positions paint.
 	const elkFitKeyRef = useRef<string | null>(null)
 	useEffect(() => {
-		if (!elk || layout.viewport != null) return
+		if (!elk || persisted.viewport != null) return
 		if (elkFitKeyRef.current === layoutSignature) return
 		elkFitKeyRef.current = layoutSignature
 		const raf = requestAnimationFrame(() =>
 			requestAnimationFrame(() => rfInstance.current?.fitView({ duration: 300 })),
 		)
 		return () => cancelAnimationFrame(raf)
-	}, [elk, layoutSignature, layout.viewport])
+	}, [elk, layoutSignature, persisted.viewport])
 
 	const onNodesChange = useCallback(
 		(changes: NodeChange[]) => {
@@ -1445,11 +1450,14 @@ export function ServiceMapCanvas({
 			)
 			if (dragEnds.length > 0) {
 				setLayout((prev) => {
-					const positions = { ...prev.positions }
+					// Drop a stale base so we don't merge new drags onto positions from
+					// a different layout; stamp the current signature.
+					const base = prev.signature === sigRef.current ? prev.positions : {}
+					const positions = { ...base }
 					for (const c of dragEnds) {
 						positions[c.id] = { x: c.position!.x, y: c.position!.y }
 					}
-					return { ...prev, positions }
+					return { ...prev, positions, signature: sigRef.current }
 				})
 			}
 		},
@@ -1458,7 +1466,12 @@ export function ServiceMapCanvas({
 
 	const onMoveEnd = useCallback(
 		(_: unknown, viewport: Viewport) => {
-			setLayout((prev) => ({ ...prev, viewport }))
+			setLayout((prev) => {
+				// If the stored layout predates the current signature, drop its stale
+				// positions rather than reviving them alongside the new viewport.
+				const positions = prev.signature === sigRef.current ? prev.positions : {}
+				return { ...prev, positions, viewport, signature: sigRef.current }
+			})
 		},
 		[setLayout],
 	)
@@ -1473,6 +1486,27 @@ export function ServiceMapCanvas({
 	const handlePaneClick = useCallback(() => {
 		setSelectedServiceId(null)
 	}, [])
+
+	// "Re-sort": discard any manual drag positions + saved camera and snap every
+	// node back to the computed auto-layout, then fit the fresh layout into view.
+	// Clearing positions re-derives node positions AND the namespace boxes over a
+	// couple of render passes, so the fit is deferred to an effect that runs once
+	// the nodes have actually settled (a fixed timeout races that cascade).
+	const resortFitPending = useRef(false)
+	const handleResort = useCallback(() => {
+		resortFitPending.current = true
+		setLayout({ positions: {}, viewport: null, signature: sigRef.current })
+	}, [setLayout])
+
+	useEffect(() => {
+		if (!resortFitPending.current) return
+		// Wait until every node carries measured dimensions, else fitView frames a
+		// partial extent (unmeasured nodes are excluded from the bounds).
+		if (nodes.length === 0 || !nodes.every((n) => n.measured?.width)) return
+		resortFitPending.current = false
+		const raf = requestAnimationFrame(() => rfInstance.current?.fitView({ duration: 300 }))
+		return () => cancelAnimationFrame(raf)
+	}, [nodes])
 
 	// Derive a dotted box per namespace from the LIVE node positions/sizes, so the
 	// boxes follow drags and resize in real time. Only service nodes carrying a
@@ -1542,36 +1576,47 @@ export function ServiceMapCanvas({
 					<div className="flex flex-col h-full">
 						<div className="flex-1 min-h-0 relative">
 							<LayoutDebugPanel config={layoutConfig} onChange={setLayoutConfig} />
-							<div className="absolute top-2 left-2 z-50 flex items-center gap-2 bg-card/90 backdrop-blur-sm border border-border rounded-md px-2 py-1">
-								<span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
-									Color by
-								</span>
-								<Select
-									value={colorMode}
-									onValueChange={(v) => setColorMode(v as ServiceMapColorMode)}
-								>
-									<SelectTrigger
-										size="sm"
-										className="h-6 min-w-0 text-[11px] capitalize border-0 bg-transparent px-1.5"
+							<div className="absolute top-2 left-2 z-50 flex items-center gap-2">
+								<div className="flex items-center gap-2 bg-card/90 backdrop-blur-sm border border-border rounded-md px-2 py-1">
+									<span className="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+										Color by
+									</span>
+									<Select
+										value={colorMode}
+										onValueChange={(v) => setColorMode(v as ServiceMapColorMode)}
 									>
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="service">Service</SelectItem>
-										<SelectItem value="health">Health</SelectItem>
-										<SelectItem value="platform">Platform</SelectItem>
-									</SelectContent>
-								</Select>
+										<SelectTrigger
+											size="sm"
+											className="h-6 min-w-0 text-[11px] capitalize border-0 bg-transparent px-1.5"
+										>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="service">Service</SelectItem>
+											<SelectItem value="health">Health</SelectItem>
+											<SelectItem value="platform">Platform</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+								<button
+									type="button"
+									onClick={handleResort}
+									title="Re-sort — discard manual positions and auto-arrange"
+									className="flex h-[34px] items-center gap-1.5 bg-card/90 backdrop-blur-sm border border-border rounded-md px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+								>
+									<ArrowRotateAnticlockwiseIcon size={12} />
+									Re-sort
+								</button>
 							</div>
 							<ParticleRegistryProvider value={registry}>
 								<ReactFlow
 									nodes={renderedNodes}
-									edges={routedEdges}
+									edges={flowEdges}
 									onNodesChange={onNodesChange}
 									onNodeClick={handleNodeClick}
 									onPaneClick={handlePaneClick}
 									onMoveEnd={onMoveEnd}
-									defaultViewport={layout.viewport ?? undefined}
+									defaultViewport={persisted.viewport ?? undefined}
 									onInit={(instance) => {
 										rfInstance.current = instance as unknown as ReactFlowInstance
 									}}

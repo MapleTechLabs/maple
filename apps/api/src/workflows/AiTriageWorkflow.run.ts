@@ -94,7 +94,11 @@ const invokeTriageWorkflow = async ({
 	})
 
 	const inner = response.result as
-		| { result?: unknown; model?: { provider: string; id: string }; usage?: { input?: number; output?: number } }
+		| {
+				result?: unknown
+				model?: { provider: string; id: string }
+				usage?: { input?: number; output?: number }
+		  }
 		| null
 		| undefined
 	if (!inner || inner.result === undefined) throw new Error("flue_triage_no_result")

@@ -61,7 +61,9 @@ describe("mcp tool filtering", () => {
 			MAPLE_API_URL: "http://maple-test.invalid",
 			INTERNAL_SERVICE_TOKEN: "",
 		}
-		await expect(connectMapleMcp(env, "org_1")).rejects.toThrow("INTERNAL_SERVICE_TOKEN is not configured")
+		await expect(connectMapleMcp(env, "org_1")).rejects.toThrow(
+			"INTERNAL_SERVICE_TOKEN is not configured",
+		)
 	})
 })
 
@@ -79,9 +81,9 @@ describe("AiTriageResultSchema", () => {
 		expect(() => v.parse(AiTriageResultSchema, valid)).not.toThrow()
 	})
 	it("rejects an invalid severity", () => {
-		expect(v.safeParse(AiTriageResultSchema, { ...valid, severityAssessment: "catastrophic" }).success).toBe(
-			false,
-		)
+		expect(
+			v.safeParse(AiTriageResultSchema, { ...valid, severityAssessment: "catastrophic" }).success,
+		).toBe(false)
 	})
 	it("rejects a result missing required fields", () => {
 		expect(v.safeParse(AiTriageResultSchema, { summary: "only" }).success).toBe(false)

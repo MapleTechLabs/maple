@@ -18,7 +18,12 @@ import {
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { Schema } from "effect"
 import { escapeClickHouseString } from "@maple-dev/clickhouse-builder/sql"
-import { compileCH, unsafeCompiledQuery, type CompiledQuery, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import {
+	compileCH,
+	unsafeCompiledQuery,
+	type CompiledQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/clickhouse-builder"
 import { defineCondFn, defineFn } from "@maple-dev/clickhouse-builder"
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { param } from "@maple-dev/clickhouse-builder"

@@ -46,7 +46,7 @@ describe("context preamble", () => {
 	it("builds an alert block", () => {
 		const block = buildContextPreamble({ mode: "alert", alertContext: alert })
 		expect(block).toContain("## Attached Alert")
-		expect(block).toContain("group_key: \"checkout-api\"")
+		expect(block).toContain('group_key: "checkout-api"')
 	})
 
 	it("builds a widget-fix block", () => {
@@ -68,6 +68,8 @@ describe("context preamble", () => {
 
 	it("returns empty when there's no context", () => {
 		expect(buildContextPreamble({})).toBe("")
-		expect(buildContextPreamble({ mode: "widget-fix", pageContext: { pathname: "/x", contexts: [] } })).toBe("")
+		expect(
+			buildContextPreamble({ mode: "widget-fix", pageContext: { pathname: "/x", contexts: [] } }),
+		).toBe("")
 	})
 })

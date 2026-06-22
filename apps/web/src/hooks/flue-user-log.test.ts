@@ -10,7 +10,11 @@ const entry = (n: number, turnsBefore: number): UserLogEntry => ({
 })
 
 const shape = (messages: UIMessage[]) =>
-	messages.map((m) => ({ role: m.role, id: m.id, text: m.parts.map((p) => (p.type === "text" ? p.text : `<${p.type}>`)).join("") }))
+	messages.map((m) => ({
+		role: m.role,
+		id: m.id,
+		text: m.parts.map((p) => (p.type === "text" ? p.text : `<${p.type}>`)).join(""),
+	}))
 
 describe("mergeUserMessages", () => {
 	it("returns nothing for an empty conversation", () => {
@@ -35,12 +39,7 @@ describe("mergeUserMessages", () => {
 
 	it("keeps a user message before all assistant turns of a multi-turn (tool-using) submission", () => {
 		// u0 → 3 assistant turns (a0,a1,a2); u1 (turnsBefore=3) → a3
-		const flue = [
-			assistant("turn:a0"),
-			assistant("turn:a1"),
-			assistant("turn:a2"),
-			assistant("turn:a3"),
-		]
+		const flue = [assistant("turn:a0"), assistant("turn:a1"), assistant("turn:a2"), assistant("turn:a3")]
 		const log = [entry(0, 0), entry(1, 3)]
 		expect(shape(mergeUserMessages(flue, log)).map((m) => m.id)).toEqual([
 			"c:user:0",

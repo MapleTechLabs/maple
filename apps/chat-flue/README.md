@@ -9,12 +9,12 @@ the architecture before the full rebuild. See the plan at
 
 ## What's here
 
-| File | Role |
-| --- | --- |
-| `src/agents/maple-chat.ts` | The addressable chat agent. `export const route` exposes it at `POST/GET /agents/maple-chat/:id`; Workers AI model + `connectMcpServer` → Maple MCP tools (`mcp__maple__*`). |
-| `src/lib/env.ts` | Worker bindings/vars (`AI`, `MAPLE_API_URL`, `INTERNAL_SERVICE_TOKEN`). |
-| `src/lib/org.ts` | Recovers `orgId` from the `"<orgId>:<tabId>"` instance id. |
-| `flue.config.ts` / `wrangler.jsonc` | Flue + Cloudflare build config (Workers AI `AI` binding, DO migrations). |
+| File                                | Role                                                                                                                                                                         |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/agents/maple-chat.ts`          | The addressable chat agent. `export const route` exposes it at `POST/GET /agents/maple-chat/:id`; Workers AI model + `connectMcpServer` → Maple MCP tools (`mcp__maple__*`). |
+| `src/lib/env.ts`                    | Worker bindings/vars (`AI`, `MAPLE_API_URL`, `INTERNAL_SERVICE_TOKEN`).                                                                                                      |
+| `src/lib/org.ts`                    | Recovers `orgId` from the `"<orgId>:<tabId>"` instance id.                                                                                                                   |
+| `flue.config.ts` / `wrangler.jsonc` | Flue + Cloudflare build config (Workers AI `AI` binding, DO migrations).                                                                                                     |
 
 > No `src/app.ts` yet — it's **optional**, and without it Flue serves the agent
 > via its generated app. Phase 1 adds `src/app.ts` (a Hono app mounting
@@ -67,30 +67,30 @@ bun run connect          # flue connect maple-chat local
 ## Phase 1 progress
 
 - [x] **1a — Prompts + modes** (`src/lib/prompts.ts`, `src/lib/modes.ts`): ported
-  `SYSTEM_PROMPT` + `DASHBOARD_BUILDER_SYSTEM_PROMPT` and the alert /
-  widget-fix / page-context blocks. Mode is derived from the instance-id tab
-  prefix (`alert-`, `widget-fix-`, `dashboard-builder-`) via `modeFromInstanceId`;
-  `buildSystemPrompt` assembles the turn's instructions. 13 unit tests
-  (`src/lib/modes.test.ts`), `bun run test`.
+      `SYSTEM_PROMPT` + `DASHBOARD_BUILDER_SYSTEM_PROMPT` and the alert /
+      widget-fix / page-context blocks. Mode is derived from the instance-id tab
+      prefix (`alert-`, `widget-fix-`, `dashboard-builder-`) via `modeFromInstanceId`;
+      `buildSystemPrompt` assembles the turn's instructions. 13 unit tests
+      (`src/lib/modes.test.ts`), `bun run test`.
 - [x] **1b — Approval** (`src/lib/approval.ts`): propose-then-apply. Mutating tools
-  keep their name + schema but their `execute` returns a `{status:"proposed"}`
-  marker (no side effect) via `applyApprovalGates` (wired into the chat agent);
-  the UI applies on approve. `parseToolProposal` reads the marker. 6 unit tests.
+      keep their name + schema but their `execute` returns a `{status:"proposed"}`
+      marker (no side effect) via `applyApprovalGates` (wired into the chat agent);
+      the UI applies on approve. `parseToolProposal` reads the marker. 6 unit tests.
 - [x] **1c — Triage workflow** (`src/workflows/triage.ts`, `src/lib/{triage-prompt,triage-result,mcp}.ts`):
-  the agentic-investigation half of `AiTriageWorkflow` as a Flue workflow on
-  Workers AI. Read-only 18-tool MCP allowlist (shared `connectMapleMcp` helper,
-  also now used by the chat agent); structured `AiTriageResult` via Flue's native
-  `{ result }` (valibot mirror of `@maple/domain`) — replacing the `submit_triage`
-  tool. 8 unit tests. **Boundary:** `apps/api`'s `AiTriageService` keeps the D1
-  gate/persist lifecycle and invokes this workflow (`@flue/sdk`
-  `workflows.invoke("triage", …)`) for the LLM step — that rewiring is the
-  remaining `apps/api`-side follow-up.
+      the agentic-investigation half of `AiTriageWorkflow` as a Flue workflow on
+      Workers AI. Read-only 18-tool MCP allowlist (shared `connectMapleMcp` helper,
+      also now used by the chat agent); structured `AiTriageResult` via Flue's native
+      `{ result }` (valibot mirror of `@maple/domain`) — replacing the `submit_triage`
+      tool. 8 unit tests. **Boundary:** `apps/api`'s `AiTriageService` keeps the D1
+      gate/persist lifecycle and invokes this workflow (`@flue/sdk`
+      `workflows.invoke("triage", …)`) for the LLM step — that rewiring is the
+      remaining `apps/api`-side follow-up.
 - [x] **1d — `app.ts` + auth** (`src/app.ts`, `src/lib/auth.ts`): Hono app mounting
-  `flue()`, with auth middleware on `/agents/*` (ported Clerk + self-hosted HS256
-  verification; token from header or `?token=`) that checks the caller's org owns
-  the addressed `"<orgId>:<tabId>"` instance. Plus an `observe()` bridge logging
-  agent/tool/run failures (full OTLP export is a follow-up). 12 auth unit tests
-  (`src/lib/auth.test.ts`). Needs deps `hono` + `@clerk/backend`.
+      `flue()`, with auth middleware on `/agents/*` (ported Clerk + self-hosted HS256
+      verification; token from header or `?token=`) that checks the caller's org owns
+      the addressed `"<orgId>:<tabId>"` instance. Plus an `observe()` bridge logging
+      agent/tool/run failures (full OTLP export is a follow-up). 12 auth unit tests
+      (`src/lib/auth.test.ts`). Needs deps `hono` + `@clerk/backend`.
 
 > **Open integration point:** the rich per-conversation context payloads
 > (`alertContext`, `widgetFixContext`, `pageContext`) still need a delivery

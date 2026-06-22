@@ -44,11 +44,7 @@ export interface CreateChatFlueWorkerOptions {
  * Manual fallback (Flue-native): `cd apps/chat-flue && bun run build &&
  * wrangler deploy --config dist/maple_chat_flue/wrangler.json`.
  */
-export const createChatFlueWorker = async ({
-	stage,
-	domains,
-	mapleApiUrl,
-}: CreateChatFlueWorkerOptions) => {
+export const createChatFlueWorker = async ({ stage, domains, mapleApiUrl }: CreateChatFlueWorkerOptions) => {
 	// Flue generates the Worker entrypoint + DO classes; build before deploy.
 	execFileSync("bun", ["run", "build"], { cwd: import.meta.dirname, stdio: "inherit" })
 

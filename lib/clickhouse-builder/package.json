@@ -2,14 +2,14 @@
 	"name": "@maple-dev/clickhouse-builder",
 	"version": "0.1.0",
 	"description": "A type-safe, immutable ClickHouse SQL query builder for TypeScript",
-	"license": "MIT",
 	"keywords": [
 		"clickhouse",
-		"sql",
+		"effect",
 		"query-builder",
-		"typescript",
-		"effect"
+		"sql",
+		"typescript"
 	],
+	"license": "MIT",
 	"files": [
 		"dist",
 		"README.md"
@@ -39,9 +39,6 @@
 		"test": "vitest run",
 		"prepublishOnly": "bun run build"
 	},
-	"peerDependencies": {
-		"effect": ">=4.0.0-beta.33"
-	},
 	"devDependencies": {
 		"@effect/language-service": "catalog:effect",
 		"@types/node": "catalog:tooling",
@@ -50,5 +47,8 @@
 		"tsdown": "^0.21.7",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
+	},
+	"peerDependencies": {
+		"effect": ">=4.0.0-beta.33"
 	}
 }
