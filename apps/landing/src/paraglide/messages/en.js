@@ -263,6 +263,182 @@ export const nav_nodejs = () => `Node.js`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const nav_product = () => `Product`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_compare = () => `Compare`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_distributed_tracing = () => `Follow every request across services`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_browser_sessions = () => `Replay sessions, jump to the trace`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_metrics_dashboards = () => `Track every signal that matters`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_log_management = () => `Search and correlate logs instantly`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_service_catalog = () => `All your services at a glance`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_error_tracking = () => `Find and fix errors faster`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ai_mcp = () => `AI-powered diagnostics via MCP`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_kubernetes = () => `Pods, nodes, and workloads alongside spans`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ecommerce = () => `Catch checkout failures before customers do`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_microservices = () => `Trace latency across service boundaries`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_api_performance = () => `Find and fix slow endpoints`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nextjs = () => `Auto-instrument routes, RSC, and middleware`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_python = () => `Zero-code tracing for Flask, FastAPI, Django`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nodejs = () => `Full-stack tracing for Express and Fastify`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_datadog = () => `Open-source, no per-host billing`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_grafana = () => `One platform, nothing to assemble`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_new_relic = () => `OTel-native, predictable pricing`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_dash0 = () => `More signals, deeper tracing`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer = () => `Everything in one platform`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer_cta = () => `Explore all features →`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const hero_badge = () => `OpenTelemetry native`
 
 
@@ -519,7 +695,7 @@ export const mcp_lede = () => `Maple ships with a first-class MCP server. Any co
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const sessions_eyebrow = () => `06 · Sessions`
+export const sessions_eyebrow = () => `06 · Browser Sessions`
 
 
 /**
@@ -2559,6 +2735,14 @@ export const pricing_custom = () => `Custom`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const pricing_enterprise_price = () => `From $2,000`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const pricing_enterprise_desc = () => `Tailored pricing for high-volume teams with dedicated support and custom retention.`
 
 
@@ -2583,7 +2767,7 @@ export const pricing_custom_retention = () => `Custom retention`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_enterprise_alerting = () => `Enterprise alerting`
+export const pricing_otel_data_help = () => `Hands-on help improving your OTel data`
 
 
 /**
@@ -4552,179 +4736,3 @@ export const language_ja = () => `日本語`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const language_ko = () => `한국어`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product = () => `Product`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_compare = () => `Compare`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_distributed_tracing = () => `Follow every request across services`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_browser_sessions = () => `Replay sessions, jump to the trace`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_metrics_dashboards = () => `Track every signal that matters`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_log_management = () => `Search and correlate logs instantly`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_service_catalog = () => `All your services at a glance`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_error_tracking = () => `Find and fix errors faster`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_ai_mcp = () => `AI-powered diagnostics via MCP`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_kubernetes = () => `Pods, nodes, and workloads alongside spans`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_ecommerce = () => `Catch checkout failures before customers do`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_microservices = () => `Trace latency across service boundaries`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_api_performance = () => `Find and fix slow endpoints`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_nextjs = () => `Auto-instrument routes, RSC, and middleware`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_python = () => `Zero-code tracing for Flask, FastAPI, Django`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_nodejs = () => `Full-stack tracing for Express and Fastify`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_datadog = () => `Open-source, no per-host billing`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_grafana = () => `One platform, nothing to assemble`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_new_relic = () => `OTel-native, predictable pricing`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_dash0 = () => `More signals, deeper tracing`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product_footer = () => `Everything in one platform`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product_footer_cta = () => `Explore all features →`

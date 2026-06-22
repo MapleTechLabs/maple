@@ -3,14 +3,13 @@ import type { AiTriageRunId, ErrorIssueId, OrgId, UserId } from "@maple/domain/p
 import type { AiTriageIncidentKind, AiTriageRunStatus } from "@maple/domain/http"
 
 /**
- * Per-org AI auto-triage policy. Disabled by default: triage runs spend the
- * org's OpenRouter credits, so an admin must opt in (and an OpenRouter key
- * must be configured).
+ * Per-org AI auto-triage policy. Disabled by default, so an admin must opt in.
+ * Triage runs on Maple's managed AI (Cloudflare Workers AI via the chat-flue
+ * Flue workflow) — no per-org model or key configuration is needed.
  */
 export const aiTriageSettings = sqliteTable("ai_triage_settings", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
 	enabled: integer("enabled", { mode: "number" }).notNull().default(0),
-	modelOverride: text("model_override"),
 	maxRunsPerDay: integer("max_runs_per_day", { mode: "number" }).notNull().default(20),
 	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
 	updatedBy: text("updated_by").$type<UserId>(),

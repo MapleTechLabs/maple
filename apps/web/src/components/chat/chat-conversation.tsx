@@ -378,7 +378,9 @@ export function ChatConversation({
 																: null
 														if (proposal) {
 															flushTools()
-															const resolved = resolvedApprovals.get(tp.toolCallId)
+															const resolved = resolvedApprovals.get(
+																tp.toolCallId,
+															)
 															nodes.push(
 																<ApprovalCard
 																	key={tp.toolCallId ?? `approval-${i}`}
@@ -393,7 +395,10 @@ export function ChatConversation({
 																		)
 																	}
 																	onDeny={() =>
-																		resolveApproval(tp.toolCallId, "denied")
+																		resolveApproval(
+																			tp.toolCallId,
+																			"denied",
+																		)
 																	}
 																/>,
 															)

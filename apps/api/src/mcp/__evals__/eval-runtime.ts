@@ -35,7 +35,7 @@ export interface EvalRuntime {
 
 /**
  * Build a node runtime for the app services backed by a temp libsql DB + test
- * config (mirrors apps/api `getMapleAgentSetup`/buildSetup, swapping D1→libsql).
+ * config (mirrors the apps/api worker setup, swapping D1→libsql).
  * The warehouse client must be faked separately via `installFakeWarehouse` —
  * this runtime uses the REAL WarehouseQueryService. The returned `requestLayer`
  * carries an internal-service-token request so tool handlers resolve the tenant

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-	applyApprovalGates,
-	MUTATING_TOOL_NAMES,
-	parseToolProposal,
-	PROPOSAL_STATUS,
-} from "./approval.ts"
+import { applyApprovalGates, MUTATING_TOOL_NAMES, parseToolProposal, PROPOSAL_STATUS } from "./approval.ts"
 
 const fakeTool = (name: string, execute = async () => "real-result") => ({
 	name,

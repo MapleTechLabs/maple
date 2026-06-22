@@ -32,9 +32,7 @@ function CTAButton() {
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
-	return (
-		<span className="text-[11px] uppercase tracking-wider font-medium text-accent">{children}</span>
-	)
+	return <span className="text-[11px] uppercase tracking-wider font-medium text-accent">{children}</span>
 }
 
 function MegaLink({ link }: { link: MenuLink }) {

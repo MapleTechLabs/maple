@@ -63,10 +63,7 @@ export function useFlueChat({ tabId, context }: UseFlueChatOptions): UseFlueChat
 		setUserLog(loadUserLog(conversationId))
 	}, [conversationId])
 
-	const messages = useMemo(
-		() => mergeUserMessages(agent.messages, userLog),
-		[agent.messages, userLog],
-	)
+	const messages = useMemo(() => mergeUserMessages(agent.messages, userLog), [agent.messages, userLog])
 
 	// On a fresh (dormant) conversation, the first send schedules a stream reconnect,
 	// so Flue flips to `connecting` while the backend cold-starts — which the SDK does

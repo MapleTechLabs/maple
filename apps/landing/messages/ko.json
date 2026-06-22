@@ -225,10 +225,11 @@
 	"pricing_trial_notice": "{duration}\uc77c\uac04 \uacfc\uae08\ub418\uc9c0 \uc54a\uc2b5\ub2c8\ub2e4 \u00b7 \uc2e0\uc6a9\uce74\ub4dc \ud544\uc694",
 	"pricing_enterprise": "\uc5d4\ud130\ud504\ub77c\uc774\uc988",
 	"pricing_custom": "\ub9de\ucda4\ud615",
+	"pricing_enterprise_price": "$2,000\ubd80\ud130",
 	"pricing_enterprise_desc": "\ub300\uaddc\ubaa8 \ud300\uc744 \uc704\ud55c \ub9de\ucda4\ud615 \uc694\uae08. \uc804\ub2f4 \uc9c0\uc6d0\uacfc \ub9de\ucda4\ud615 \ubcf4\uc874 \uae30\uac04 \ud3ec\ud568.",
 	"pricing_talk_to_founder": "\ucc3d\uc5c5\uc790\uc640 \uc0c1\ub2f4",
 	"pricing_custom_retention": "\ub9de\ucda4\ud615 \ubcf4\uc874 \uae30\uac04",
-	"pricing_enterprise_alerting": "\uc5d4\ud130\ud504\ub77c\uc774\uc988 \uc54c\ub9bc",
+	"pricing_otel_data_help": "OTel \ub370\uc774\ud130 \uac1c\uc120 \uc9c1\uc811 \uc9c0\uc6d0",
 	"pricing_priority_support": "\uc6b0\uc120 \uc9c0\uc6d0",
 	"pricing_subscribe": "\uad6c\ub3c5",
 	"pricing_logs": "\ub85c\uadf8",
@@ -508,7 +509,7 @@
 	"mcp_title": "Your AI agent reads it too.",
 	"mcp_lede": "Maple ships with a first-class MCP server. Any compatible agent can list services, search traces, find errors, propose fixes, open PRs. The transcript on the right is real.",
 
-	"sessions_eyebrow": "06 \u00b7 Sessions",
+	"sessions_eyebrow": "06 \u00b7 Browser Sessions",
 	"sessions_title": "Watch what the user did.",
 	"sessions_lede": "Session replay with every click, route, console line, and failed request captured. Replay and your spans share one session id \u2014 so you jump from the moment it broke straight to the trace behind it.",
 

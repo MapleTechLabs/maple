@@ -42,11 +42,23 @@ interface DeferredAwaiter<A = unknown, E = unknown> {
 	readonly await: Effect.Effect<A, E>
 }
 
+export interface EdgeCacheInvalidateOptions {
+	readonly bucket: string
+	readonly key: string
+}
+
 export interface EdgeCacheServiceShape {
 	readonly getOrCompute: <A, E, R, I = unknown>(
 		options: EdgeCacheGetOrComputeOptions<A, I>,
 		compute: Effect.Effect<A, E, R>,
 	) => Effect.Effect<EdgeCacheResult<A>, E, R>
+	/**
+	 * Evict a `getOrCompute` entry. Pass the SAME `{ bucket, key }` used to
+	 * populate it — `invalidate` derives the storage hash identically
+	 * (`sha256Hex(key)`), so the keys line up. Best-effort: a backend delete
+	 * failure is logged and swallowed (the entry simply expires via its TTL).
+	 */
+	readonly invalidate: (options: EdgeCacheInvalidateOptions) => Effect.Effect<void>
 	readonly rawGet: <A>(bucket: string, key: string) => Effect.Effect<Option.Option<A>, EdgeCacheIOError>
 	readonly rawPut: (
 		bucket: string,
@@ -175,6 +187,36 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 		return { value, hit: false }
 	})
 
+	const invalidate = Effect.fn("EdgeCacheService.invalidate")(function* (
+		options: EdgeCacheInvalidateOptions,
+	) {
+		const hash = yield* Effect.promise(() => sha256Hex(options.key))
+		// Drop any in-flight single-flight awaiter so NEW callers don't join an
+		// in-progress compute and get handed the value we're evicting. This does
+		// NOT stop a compute already past its get/inFlight check: its backend.put
+		// can still land after the backend.delete below and re-publish the evicted
+		// value, stale until the TTL (the next read then recomputes). Acceptable as
+		// best-effort display/gating state; closing the window fully would need an
+		// invalidation epoch, which is overkill for a 5-min-TTL hot-path cache.
+		inFlight.delete(`${options.bucket}:${hash}`)
+		yield* Effect.tryPromise({
+			try: () => backend.delete(options.bucket, hash),
+			catch: (error) => error,
+		}).pipe(
+			Effect.tapError((error) =>
+				Effect.logWarning("Edge cache delete failed; entry will expire via TTL").pipe(
+					Effect.annotateLogs({
+						bucket: options.bucket,
+						key: options.key,
+						hash,
+						error: String(error),
+					}),
+				),
+			),
+			Effect.ignore,
+		)
+	})
+
 	const rawGet = <A>(bucket: string, key: string): Effect.Effect<Option.Option<A>, EdgeCacheIOError> =>
 		Effect.gen(function* () {
 			const nowMs = yield* Clock.currentTimeMillis
@@ -210,7 +252,7 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 			})
 		})
 
-	return { getOrCompute, rawGet, rawPut } satisfies EdgeCacheServiceShape
+	return { getOrCompute, invalidate, rawGet, rawPut } satisfies EdgeCacheServiceShape
 }
 
 export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceShape>()(

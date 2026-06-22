@@ -37,6 +37,9 @@ const makeWorkersBackend = (cache: Cache): EdgeCacheBackend => ({
 		})
 		await cache.put(buildCacheUrl(bucket, hash), response)
 	},
+	delete: async (bucket, hash) => {
+		await cache.delete(buildCacheUrl(bucket, hash))
+	},
 })
 
 export const CacheBackendLive = Layer.effect(

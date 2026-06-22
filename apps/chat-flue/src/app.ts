@@ -4,7 +4,7 @@ import { flue } from "@flue/runtime/routing"
 import { env } from "cloudflare:workers"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
-import { instanceIdFromAgentPath, verifyRequest } from "./lib/auth.ts"
+import { instanceIdFromAgentPath, verifyInternalServiceToken, verifyRequest } from "./lib/auth.ts"
 import type { ChatFlueEnv } from "./lib/env.ts"
 import { orgIdFromInstanceId } from "./lib/org.ts"
 import { CHAT_FLUE_SERVICE_NAME, rootContextFromRequest, setupTelemetry } from "./lib/telemetry.ts"
@@ -146,8 +146,20 @@ app.use("/agents/*", async (c, next) => {
 	await next()
 })
 
-// Everything else (agent prompt/stream routes, run reads, OpenAPI) is served by
-// Flue's generated application.
+// Internal-service guard for headless workflow invocations (apps/api → chat-flue,
+// e.g. the triage workflow over the CHAT_FLUE service binding). Unlike /agents/*
+// (which carry a user session token), /workflows/* is server-to-server, so it
+// requires the internal-service token. Without this guard the route — which can
+// run an org-scoped investigation for any org in the payload — is unauthenticated.
+app.use("/workflows/*", async (c, next) => {
+	if (!verifyInternalServiceToken(c.req.raw, c.env)) {
+		return c.json({ error: "Authentication required" }, 401)
+	}
+	await next()
+})
+
+// Everything else (agent prompt/stream routes, workflow invocations, run reads,
+// OpenAPI) is served by Flue's generated application.
 app.route("/", flue())
 
 export default app

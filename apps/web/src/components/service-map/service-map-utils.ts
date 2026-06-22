@@ -87,10 +87,6 @@ export interface ServiceEdgeData {
 	p95DurationMs: number
 	hasSampling: boolean
 	services: string[]
-	/** ELK-routed orthogonal SVG path (absolute flow coords); overrides the smooth-step path when present. */
-	elkPath?: string
-	elkLabelX?: number
-	elkLabelY?: number
 	[key: string]: unknown
 }
 
