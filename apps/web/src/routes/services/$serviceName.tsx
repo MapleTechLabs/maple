@@ -285,6 +285,13 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 
 	const isWaiting = Result.isSuccess(detailResult) && detailResult.waiting
 
+	// Cold load (no retained data yet) → drive each chart's loading skeleton so
+	// the grid shows `ChartSkeleton` until the warehouse query resolves, rather
+	// than rendering an empty chart with `[]` while the data is still in flight.
+	// On a refresh the retained hook returns `Success(waiting: true)` (not
+	// `Initial`), so this stays false and the stale-data dim (`opacity-60`) wins.
+	const isDetailLoading = Result.isInitial(detailResult)
+
 	// ServiceDetail points are typed structs; the chart grid consumes a
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
 	// so this is a safe widening (no `as unknown` round-trip needed).
@@ -310,6 +317,7 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		rateMode: chart.rateMode,
 		referenceLines: releaseMarkers,
 		renderReferenceMarker,
+		isLoading: isDetailLoading,
 	}))
 
 	return <MetricsGrid items={metrics} waiting={!!isWaiting} syncId={`service-${serviceName}`} />
