@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react"
 import { View } from "react-native"
 import { LegendList, type LegendListRef } from "@legendapp/list"
-import type { UIMessage } from "ai"
+import type { UIMessage } from "../../lib/chat-types"
 import { MessageBubble } from "./message-bubble"
 import { ThinkingIndicator } from "./thinking-indicator"
 

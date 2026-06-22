@@ -15,7 +15,7 @@
 	"dependencies": {
 		"@base-ui/react": "catalog:ui",
 		"@maple/domain": "workspace:*",
-		"@tanstack/react-virtual": "^3.13.23",
+		"@tanstack/react-virtual": "^3.14.3",
 		"@xyflow/react": "catalog:ui",
 		"class-variance-authority": "catalog:ui",
 		"clsx": "catalog:ui",

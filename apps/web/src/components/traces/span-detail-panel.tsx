@@ -6,6 +6,7 @@ import {
 	CircleWarningIcon,
 	CircleInfoIcon,
 	SquareTerminalIcon,
+	ServerIcon,
 	ChevronDownIcon,
 	ChevronUpIcon,
 	CopyIcon,
@@ -33,6 +34,8 @@ import { CopyableValue, AttributesTable, ResourceAttributesSection } from "@/com
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
+import { getActiveInfraCorrelations } from "@/components/infra/infra-correlations"
+import { InfraCorrelationPanel, infraCorrelationWindow } from "@/components/infra/infra-correlation-panel"
 
 interface SpanDetailPanelProps {
 	span: SpanNode
@@ -267,6 +270,11 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 	)
 	const detailAttrs = Result.isSuccess(detailResult) ? detailResult.value : null
 
+	// Prefer the lazily-loaded full resource map; fall back to the trimmed span
+	// map so the tab can appear before the detail query resolves.
+	const infraAttrs = detailAttrs?.resourceAttributes ?? span.resourceAttributes
+	const hasInfra = getActiveInfraCorrelations(infraAttrs).length > 0
+
 	return (
 		<div className="flex flex-col h-full border-l bg-background overflow-hidden">
 			{/* Header */}
@@ -367,6 +375,11 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 							</Badge>
 						)}
 					</TabsTrigger>
+					{hasInfra && (
+						<TabsTrigger value="infrastructure">
+							<ServerIcon size={14} /> Infrastructure
+						</TabsTrigger>
+					)}
 				</TabsList>
 
 				<TabsContent value="details" className="flex-1 min-h-0 mt-0">
@@ -477,6 +490,21 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 						<SpanLogs traceId={span.traceId} spanId={span.spanId} timeZone={effectiveTimezone} />
 					</ScrollArea>
 				</TabsContent>
+
+				{hasInfra && (
+					<TabsContent value="infrastructure" className="flex-1 min-h-0 mt-0">
+						<ScrollArea className="h-full">
+							<div className="p-3">
+								<InfraCorrelationPanel
+									resourceAttributes={infraAttrs}
+									{...infraCorrelationWindow(span.startTime, {
+										spanDurationMs: span.durationMs,
+									})}
+								/>
+							</div>
+						</ScrollArea>
+					</TabsContent>
+				)}
 			</Tabs>
 		</div>
 	)

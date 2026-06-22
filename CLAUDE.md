@@ -11,7 +11,7 @@ Maple is an OpenTelemetry observability platform built with TanStack Start (Reac
 Sign in at `https://web.localhost` with the Clerk test account:
 
 - Email: `david+clerk_test@gmail.com`
-- Password: `password1!`
+- Password: `Maple-Dev-Kx92qZ!`
 
 Use this when you need an authenticated browser session to verify UI flows end-to-end.
 

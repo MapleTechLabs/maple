@@ -1,0 +1,10 @@
+dist/
+node_modules/
+.flue-vite/
+.flue-vite.wrangler.jsonc
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env
+.env.*

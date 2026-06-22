@@ -10,6 +10,7 @@ import { HttpAnomaliesLive } from "./routes/anomalies.http"
 import { HttpErrorsLive } from "./routes/errors.http"
 import { HttpApiKeysLive } from "./routes/api-keys.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "./routes/auth.http"
+import { HttpChatLive } from "./routes/chat.http"
 import { HttpCloudflareLogpushLive } from "./routes/cloudflare-logpush.http"
 import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
@@ -20,7 +21,6 @@ import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
 import { HttpObservabilityLive } from "./routes/observability.http"
 import { HttpOnboardingLive } from "./routes/onboarding.http"
 import { OAuthDiscoveryRouter } from "./routes/oauth-discovery.http"
-import { HttpOrgOpenRouterSettingsLive } from "./routes/org-openrouter-settings.http"
 import { HttpOrgClickHouseSettingsLive } from "./routes/org-clickhouse-settings.http"
 import { HttpOrganizationsLive } from "./routes/organizations.http"
 import { PrometheusScrapeProxyRouter } from "./routes/prometheus-scrape-proxy.http"
@@ -51,7 +51,6 @@ import { EmailService } from "./lib/EmailService"
 import { Env } from "./lib/Env"
 import { IngestAttributeMappingService } from "./services/IngestAttributeMappingService"
 import { OrgIngestKeysService } from "./services/OrgIngestKeysService"
-import { OrgOpenRouterSettingsService } from "./services/OrgOpenRouterSettingsService"
 import { OrgClickHouseSettingsService } from "./services/OrgClickHouseSettingsService"
 import { OrganizationService } from "./services/OrganizationService"
 import { QueryEngineService } from "./services/QueryEngineService"
@@ -95,7 +94,6 @@ const CoreServicesLive = Layer.mergeAll(
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OrgIngestKeysService.layer,
-	OrgOpenRouterSettingsService.layer,
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
 	// Shared with ScrapeTargetsService via layer memoization so the proxy and
@@ -174,6 +172,7 @@ const VcsServicesLive = Layer.mergeAll(
 export const MainLive = Layer.mergeAll(
 	CoreServicesLive,
 	WarehouseQueryServiceLive,
+	EdgeCacheServiceLive,
 	QueryEngineServiceLive,
 	AlertsServiceLive,
 	AnomalyDetectionServiceLive,
@@ -189,7 +188,7 @@ export const MainLive = Layer.mergeAll(
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive)),
+	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive)),
 	Layer.provide(HttpApiKeysLive),
 	Layer.provide(HttpAlertsLive),
 	Layer.provide(HttpErrorsLive),
@@ -202,7 +201,6 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpObservabilityLive),
 	Layer.provide(HttpOnboardingLive),
-	Layer.provide(HttpOrgOpenRouterSettingsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpScrapeTargetsLive),

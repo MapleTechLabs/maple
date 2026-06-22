@@ -225,10 +225,11 @@
 	"pricing_trial_notice": "{duration}\u65e5\u9593\u306f\u8ab2\u91d1\u3055\u308c\u307e\u305b\u3093 \u00b7 \u30af\u30ec\u30b8\u30c3\u30c8\u30ab\u30fc\u30c9\u304c\u5fc5\u8981\u3067\u3059",
 	"pricing_enterprise": "\u30a8\u30f3\u30bf\u30fc\u30d7\u30e9\u30a4\u30ba",
 	"pricing_custom": "\u30ab\u30b9\u30bf\u30e0",
+	"pricing_enterprise_price": "$2,000\u304b\u3089",
 	"pricing_enterprise_desc": "\u5927\u898f\u6a21\u30c1\u30fc\u30e0\u5411\u3051\u306e\u30ab\u30b9\u30bf\u30e0\u6599\u91d1\u3002\u5c02\u4efb\u30b5\u30dd\u30fc\u30c8\u3068\u30ab\u30b9\u30bf\u30e0\u4fdd\u6301\u671f\u9593\u4ed8\u304d\u3002",
 	"pricing_talk_to_founder": "\u5275\u696d\u8005\u306b\u76f8\u8ac7",
 	"pricing_custom_retention": "\u30ab\u30b9\u30bf\u30e0\u4fdd\u6301\u671f\u9593",
-	"pricing_enterprise_alerting": "\u30a8\u30f3\u30bf\u30fc\u30d7\u30e9\u30a4\u30ba\u30a2\u30e9\u30fc\u30c8",
+	"pricing_otel_data_help": "OTel\u30c7\u30fc\u30bf\u6539\u5584\u306e\u30cf\u30f3\u30ba\u30aa\u30f3\u652f\u63f4",
 	"pricing_priority_support": "\u512a\u5148\u30b5\u30dd\u30fc\u30c8",
 	"pricing_subscribe": "\u8cfc\u8aad",
 	"pricing_logs": "\u30ed\u30b0",
@@ -508,7 +509,7 @@
 	"mcp_title": "Your AI agent reads it too.",
 	"mcp_lede": "Maple ships with a first-class MCP server. Any compatible agent can list services, search traces, find errors, propose fixes, open PRs. The transcript on the right is real.",
 
-	"sessions_eyebrow": "06 \u00b7 Sessions",
+	"sessions_eyebrow": "06 \u00b7 Browser Sessions",
 	"sessions_title": "Watch what the user did.",
 	"sessions_lede": "Session replay with every click, route, console line, and failed request captured. Replay and your spans share one session id \u2014 so you jump from the moment it broke straight to the trace behind it.",
 

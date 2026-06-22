@@ -24,6 +24,9 @@ const makeJsonRoundtripBackend = (): EdgeCacheBackend & {
 		put: async (bucket, hash, value) => {
 			store.set(composite(bucket, hash), JSON.stringify(value))
 		},
+		delete: async (bucket, hash) => {
+			store.delete(composite(bucket, hash))
+		},
 	}
 }
 
@@ -50,6 +53,57 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 			assert.strictEqual(second.hit, true)
 			assert.deepStrictEqual(second.value, { hello: "world", n: 42 })
 		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+})
+
+describe("EdgeCacheService.invalidate", () => {
+	it.effect("evicts an entry so the next getOrCompute recomputes", () => {
+		const backend = makeJsonRoundtripBackend()
+		let computeCalls = 0
+
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			const compute = Effect.sync(() => {
+				computeCalls += 1
+				return { n: computeCalls }
+			})
+			const opts = { bucket: "autumn-customer", key: "org_123", ttlSeconds: 300 }
+
+			const first = yield* cache.getOrCompute(opts, compute)
+			const cached = yield* cache.getOrCompute(opts, compute)
+			// Invalidate with the SAME { bucket, key } — must hash identically and hit.
+			yield* cache.invalidate({ bucket: opts.bucket, key: opts.key })
+			const afterInvalidate = yield* cache.getOrCompute(opts, compute)
+
+			assert.strictEqual(first.hit, false)
+			assert.strictEqual(cached.hit, true)
+			assert.strictEqual(afterInvalidate.hit, false)
+			assert.strictEqual(computeCalls, 2)
+			assert.deepStrictEqual(afterInvalidate.value, { n: 2 })
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	it.effect("is a no-op when the entry does not exist", () => {
+		const backend = makeJsonRoundtripBackend()
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			yield* cache.invalidate({ bucket: "autumn-customer", key: "missing" })
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
+
+	it.effect("swallows backend delete failures (best-effort)", () => {
+		const failing: EdgeCacheBackend = {
+			get: async () => undefined,
+			put: async () => {},
+			delete: async () => {
+				throw new Error("kv unavailable")
+			},
+		}
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			// Must not fail the effect — invalidate is best-effort.
+			yield* cache.invalidate({ bucket: "autumn-customer", key: "org_123" })
+		}).pipe(Effect.provide(makeLayer(failing)))
 	})
 })
 

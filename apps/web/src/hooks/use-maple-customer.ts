@@ -19,6 +19,11 @@ export function useMapleCustomer(params?: UseCustomerParams) {
 		queryOptions: {
 			retry: 3,
 			retryDelay: (attempt: number) => Math.min(250 * 2 ** attempt, 1000),
+			// getOrCreateCustomer is on the whole-app hot path; the API edge-caches
+			// it per org for 5 min and invalidates on billing mutations, so refetch
+			// on every navigation is wasted. Match that window here (autumn-js still
+			// force-refetches on its own attach/updateSubscription invalidations).
+			staleTime: 1000 * 60 * 5,
 			...params?.queryOptions,
 		},
 	})

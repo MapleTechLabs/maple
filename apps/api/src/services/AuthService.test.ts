@@ -360,3 +360,46 @@ describe("makeLoginSelfHosted", () => {
 		}),
 	)
 })
+
+describe("makeResolveMcpTenant", () => {
+	// Regression: a logged-in browser applying an approved chat proposal via
+	// POST /api/chat/apply sends a Clerk session_token. The MCP tenant fallback
+	// must accept it (not only api_key), or every Clerk-mode apply fails.
+	it.effect("accepts a Clerk session_token and resolves the caller's org", () =>
+		Effect.gen(function* () {
+			let seenAcceptsToken: unknown
+			const resolveMcpTenant = makeResolveMcpTenant(
+				{
+					...baseEnv,
+					MAPLE_AUTH_MODE: "clerk",
+					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+				},
+				async (_request, options) => {
+					seenAcceptsToken = (options as { acceptsToken?: unknown } | undefined)?.acceptsToken
+					return {
+						isAuthenticated: true,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "session_token",
+							userId: "user_123",
+							orgId: "org_123",
+							orgRole: "org:admin",
+						}),
+					}
+				},
+			)
+
+			const tenant = yield* resolveMcpTenant({ authorization: "Bearer session-token" })
+
+			assert.deepStrictEqual(seenAcceptsToken, ["api_key", "session_token"])
+			assert.deepStrictEqual(tenant, {
+				orgId: asOrgId("org_123"),
+				userId: asUserId("user_123"),
+				roles: [asRoleName("org:admin")],
+				authMode: "clerk",
+			})
+		}),
+	)
+})

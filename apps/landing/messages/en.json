@@ -92,7 +92,7 @@
 	"mcp_title": "Your AI agent reads it too.",
 	"mcp_lede": "Maple ships with a first-class MCP server. Any compatible agent can list services, search traces, find errors, propose fixes, open PRs. The transcript on the right is real.",
 
-	"sessions_eyebrow": "06 \u00b7 Sessions",
+	"sessions_eyebrow": "06 \u00b7 Browser Sessions",
 	"sessions_title": "Watch what the user did.",
 	"sessions_lede": "Session replay with every click, route, console line, and failed request captured. Replay and your spans share one session id \u2014 so you jump from the moment it broke straight to the trace behind it.",
 
@@ -366,10 +366,11 @@
 	"pricing_trial_notice": "You won't be charged for {duration} days \u00b7 Credit card required",
 	"pricing_enterprise": "Enterprise",
 	"pricing_custom": "Custom",
+	"pricing_enterprise_price": "From $2,000",
 	"pricing_enterprise_desc": "Tailored pricing for high-volume teams with dedicated support and custom retention.",
 	"pricing_talk_to_founder": "Talk to Founder",
 	"pricing_custom_retention": "Custom retention",
-	"pricing_enterprise_alerting": "Enterprise alerting",
+	"pricing_otel_data_help": "Hands-on help improving your OTel data",
 	"pricing_priority_support": "Priority support",
 	"pricing_subscribe": "Subscribe",
 	"pricing_logs": "Logs",

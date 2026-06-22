@@ -30,13 +30,45 @@ import {
 	DialogDescription,
 	DialogFooter,
 } from "@maple/ui/components/ui/dialog"
-import { FileIcon, PulseIcon, ChartLineIcon, CircleCheckIcon } from "@/components/icons"
+import {
+	FileIcon,
+	PulseIcon,
+	ChartLineIcon,
+	CircleCheckIcon,
+	ClockIcon,
+	GridIcon,
+	BellIcon,
+	CodeIcon,
+	ShieldIcon,
+	PlayRotateClockwiseIcon,
+} from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 
 const FEATURE_ICONS: Record<string, IconComponent> = {
 	logs: FileIcon,
 	traces: PulseIcon,
 	metrics: ChartLineIcon,
+	browser_sessions: PlayRotateClockwiseIcon,
+}
+
+// Display labels for the metered data rows, keyed by Autumn featureId (Autumn
+// returns the raw featureId — e.g. "browser_sessions" — when a feature has no
+// display name, so we title-case them here to match the marketing pricing page).
+const DATA_FEATURE_LABELS: Record<string, string> = {
+	logs: "Logs",
+	traces: "Traces",
+	metrics: "Metrics",
+	browser_sessions: "Browser Sessions",
+}
+
+// Per-feature icons for the platform-feature rows, keyed by the `icon` strings
+// in lib/billing/plans.ts. Falls back to CircleCheckIcon for any unmapped key.
+const PLATFORM_FEATURE_ICONS: Record<string, IconComponent> = {
+	clock: ClockIcon,
+	grid: GridIcon,
+	bell: BellIcon,
+	code: CodeIcon,
+	shield: ShieldIcon,
 }
 
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
@@ -67,7 +99,9 @@ function getPlanPrice(plan: Plan): {
 function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	if (item.included != null) {
-		return `${Number(item.included)} GB`
+		// browser_sessions is metered by count, not bytes — everything else is GB.
+		const unit = item.featureId === "browser_sessions" ? "sessions" : "GB"
+		return `${Number(item.included).toLocaleString()} ${unit}`
 	}
 	return ""
 }
@@ -81,7 +115,10 @@ function getFeatureRows(plan: Plan) {
 		.filter((item) => item.featureId && !HIDDEN_FEATURE_IDS.has(item.featureId))
 		.map((item) => ({
 			featureId: item.featureId,
-			label: item.feature?.name ?? item.featureId,
+			label:
+				(item.featureId ? DATA_FEATURE_LABELS[item.featureId] : undefined) ??
+				item.feature?.name ??
+				item.featureId,
 			value: formatIncludedUsage(item),
 			detail: item.display?.secondaryText ? normalizeDetailText(item.display.secondaryText) : undefined,
 		}))
@@ -91,6 +128,7 @@ const ENTERPRISE_DATA_FEATURES = [
 	{ featureId: "logs", label: "Logs", value: "Custom" },
 	{ featureId: "traces", label: "Traces", value: "Custom" },
 	{ featureId: "metrics", label: "Metrics", value: "Custom" },
+	{ featureId: "browser_sessions", label: "Browser Sessions", value: "Custom" },
 ]
 
 function getScenario(plan: Plan): string {
@@ -428,22 +466,26 @@ export function PricingCards() {
 										Platform features
 									</div>
 									<div className="space-y-2.5">
-										{planFeatures.map((feature) => (
-											<div
-												key={feature.label}
-												className="flex items-start gap-2.5 text-sm"
-											>
-												<CircleCheckIcon className="text-primary size-4 shrink-0 mt-0.5" />
-												<span className="text-muted-foreground leading-snug">
-													{feature.label}
-												</span>
-												{feature.value && (
-													<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-														{feature.value}
+										{planFeatures.map((feature) => {
+											const Icon =
+												PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+											return (
+												<div
+													key={feature.label}
+													className="flex items-start gap-2.5 text-sm"
+												>
+													<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+													<span className="text-muted-foreground leading-snug">
+														{feature.label}
 													</span>
-												)}
-											</div>
-										))}
+													{feature.value && (
+														<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+															{feature.value}
+														</span>
+													)}
+												</div>
+											)
+										})}
 									</div>
 								</div>
 							</CardContent>
@@ -523,19 +565,22 @@ export function PricingCards() {
 								Platform features
 							</div>
 							<div className="space-y-2.5">
-								{enterprisePlanFeatures.map((feature) => (
-									<div key={feature.label} className="flex items-start gap-2.5 text-sm">
-										<CircleCheckIcon className="text-primary size-4 shrink-0 mt-0.5" />
-										<span className="text-muted-foreground leading-snug">
-											{feature.label}
-										</span>
-										{feature.value && (
-											<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-												{feature.value}
+								{enterprisePlanFeatures.map((feature) => {
+									const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+									return (
+										<div key={feature.label} className="flex items-start gap-2.5 text-sm">
+											<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+											<span className="text-muted-foreground leading-snug">
+												{feature.label}
 											</span>
-										)}
-									</div>
-								))}
+											{feature.value && (
+												<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+													{feature.value}
+												</span>
+											)}
+										</div>
+									)
+								})}
 							</div>
 						</div>
 					</CardContent>

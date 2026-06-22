@@ -1,12 +1,12 @@
 import { useState } from "react"
-import { useClerk, useOrganization, useUser, useUserProfileModal } from "@clerk/expo"
+import { useClerk, useOrganization, useUser } from "@clerk/expo"
 import { UserButton } from "@clerk/expo/native"
 import { Alert, Linking, Pressable, Text, View } from "react-native"
 import { Screen } from "../../components/ui/screen"
 import { ScreenHeader } from "../../components/ui/screen-header"
 import { SectionHeader } from "../../components/ui/section-header"
 import { Card } from "../../components/ui/card"
-import { DestructiveButton, SecondaryButton } from "../../components/ui/button"
+import { DestructiveButton } from "../../components/ui/button"
 import { OrgSwitcherModal } from "../../components/org-switcher-modal"
 import { hapticWarning } from "../../lib/haptics"
 import { colors } from "../../lib/theme"
@@ -14,7 +14,6 @@ import { colors } from "../../lib/theme"
 export default function SettingsScreen() {
 	const { signOut } = useClerk()
 	const { user } = useUser()
-	const { presentUserProfile } = useUserProfileModal()
 	const { organization } = useOrganization()
 	const [orgModalVisible, setOrgModalVisible] = useState(false)
 
@@ -39,7 +38,6 @@ export default function SettingsScreen() {
 								</Text>
 							</View>
 						</View>
-						<SecondaryButton onPress={presentUserProfile}>Manage Profile</SecondaryButton>
 					</Card>
 				</View>
 
