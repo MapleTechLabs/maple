@@ -22,6 +22,7 @@ import {
 	errorIssueEvents,
 	errorIssueStates,
 	issueEscalations,
+	orgIngestKeys,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import type { CompiledQuery } from "@maple/query-engine/ch"
@@ -131,11 +132,24 @@ const testConfig = (url: string) =>
  */
 const makeWarehouseStub = (
 	scanRows: () => ReadonlyArray<Record<string, unknown>> = () => [],
+	onScan?: () => void,
 ): WarehouseQueryServiceShape => ({
 	query: () => Effect.die(new Error("unexpected warehouse query")),
 	sqlQuery: () => Effect.succeed([]),
-	compiledQuery: <T>(_tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) =>
-		Effect.sync(() => compiled.castRows(options?.context === "errorIssuesScan" ? scanRows() : [])),
+	compiledQuery: <T>(tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) =>
+		Effect.sync(() => {
+			if (options?.context === "errorIssuesScan") {
+				onScan?.()
+				return compiled.castRows(scanRows())
+			}
+			// Active-org discovery reads the same data the scan does, so model that
+			// consistency: surface the org iff it currently has error rows.
+			if (options?.context === "errorActiveOrgsDiscovery") {
+				const orgId = (tenant as { orgId?: string }).orgId ?? ""
+				return compiled.castRows(scanRows().length > 0 ? [{ orgId }] : [])
+			}
+			return compiled.castRows([])
+		}),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
 	ingest: () => Effect.void,
 	asExecutor: () => {
@@ -143,7 +157,10 @@ const makeWarehouseStub = (
 	},
 })
 
-const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>) => {
+const makeErrorsLayer = (
+	scanRows?: () => ReadonlyArray<Record<string, unknown>>,
+	onScan?: () => void,
+) => {
 	const { url } = makeTempDb("maple-errors-service-", createdTempDirs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig(url)))
 	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
@@ -155,7 +172,7 @@ const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>
 			Layer.mergeAll(
 				envLive,
 				databaseLive,
-				Layer.succeed(WarehouseQueryService, makeWarehouseStub(scanRows)),
+				Layer.succeed(WarehouseQueryService, makeWarehouseStub(scanRows, onScan)),
 				dispatcherStub,
 			),
 		),
@@ -191,6 +208,30 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.
 				createdAt: now,
 				updatedAt: now,
 				...overrides,
+			}),
+		)
+	})
+
+/** Make an org "known" via an ingest key only — no issues, no incident state. */
+const seedIngestKey = (orgId: string) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const now = yield* Clock.currentTimeMillis
+		yield* database.execute((db) =>
+			db.insert(orgIngestKeys).values({
+				orgId,
+				publicKey: `pk_${orgId}`,
+				publicKeyHash: `pkh_${orgId}`,
+				privateKeyCiphertext: "ct",
+				privateKeyIv: "iv",
+				privateKeyTag: "tag",
+				privateKeyHash: `prh_${orgId}`,
+				publicRotatedAt: now,
+				privateRotatedAt: now,
+				createdAt: now,
+				updatedAt: now,
+				createdBy: "test",
+				updatedBy: "test",
 			}),
 		)
 	})
@@ -458,6 +499,31 @@ describe("ErrorsService.runTick", () => {
 			})
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
+
+	it.effect("an ingest-only org with no recent errors and no issue state is not scanned", () => {
+		let scanCalls = 0
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			// Known via an ingest key, but no errors and no issue state — and
+			// discovery (empty scan rows) reports it inactive.
+			yield* seedIngestKey(ORG)
+
+			const result = yield* errors.runTick()
+			// Counted as known, but the expensive warehouse scan is skipped.
+			assert.strictEqual(result.orgsProcessed, 1)
+			assert.strictEqual(scanCalls, 0)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => [],
+					() => {
+						scanCalls += 1
+					},
+				),
+			),
+		)
+	})
 
 	it.effect(
 		"a fresh scan row creates a triage issue, opens a first_seen incident, and records the created event",
