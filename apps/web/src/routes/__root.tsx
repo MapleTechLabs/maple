@@ -13,6 +13,7 @@ import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
 import { AttributesProvider } from "@maple/ui/components/attributes"
+import { renderAttributeValue } from "@/components/attributes/commit-sha-attribute"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import type { RouterAuthContext } from "@/router"
@@ -54,7 +55,11 @@ function AppFrame() {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
-		<AttributesProvider notifyCopied={notifyCopied} highlightJson={highlightCode}>
+		<AttributesProvider
+			notifyCopied={notifyCopied}
+			highlightJson={highlightCode}
+			renderValue={renderAttributeValue}
+		>
 			<Outlet />
 			<Toaster />
 			{!PUBLIC_PATHS.has(pathname) && <GlobalShortcuts />}

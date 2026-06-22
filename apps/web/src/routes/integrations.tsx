@@ -3,6 +3,7 @@ import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import {
 	IntegrationCatalog,
@@ -20,7 +21,7 @@ import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/icons"
 
 const IntegrationsSearch = Schema.Struct({
 	integration: Schema.optional(
-		Schema.Literals(["cloudflare", "prometheus", "planetscale", "warpstream", "hazel"]),
+		Schema.Literals(["cloudflare", "prometheus", "planetscale", "warpstream", "hazel", "github"]),
 	),
 })
 
@@ -89,6 +90,8 @@ function IntegrationsPage() {
 					<CloudflareLogpushSection />
 				) : integration === "hazel" ? (
 					<HazelIntegrationCard />
+				) : integration === "github" ? (
+					<GithubIntegrationCard />
 				) : integration === "planetscale" ? (
 					<ScrapeTargetsSection sourceFilter="planetscale" />
 				) : (

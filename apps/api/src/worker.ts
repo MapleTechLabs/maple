@@ -1,5 +1,6 @@
+import type { MessageBatch, ScheduledController } from "@cloudflare/workers-types"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
+import { runScheduledEffect, WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
 import { Context, FileSystem, Layer, Path } from "effect"
 import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
@@ -218,7 +219,38 @@ const handle = async (
 export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
 export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 
+// VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
+// as the route graph above) to keep module-scope evaluation light.
+const handleQueue = async (
+	batch: MessageBatch<unknown>,
+	env: Record<string, unknown>,
+	ctx: ExecutionContext,
+): Promise<void> => {
+	const { buildVcsSyncLayer, processBatch, flushVcsTelemetry } = await import("./vcs-sync-runtime")
+	try {
+		await runScheduledEffect(buildVcsSyncLayer(env), processBatch(batch), ctx)
+	} finally {
+		ctx.waitUntil(flushVcsTelemetry(env))
+	}
+}
+
+// Cron handler (every 12h, see wrangler.jsonc `triggers.crons`): enqueue a
+// periodic VCS sync per installation. Single cron expression — no `event.cron`
+// dispatch needed.
+const handleScheduled = async (env: Record<string, unknown>, ctx: ExecutionContext): Promise<void> => {
+	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import("./vcs-sync-runtime")
+	try {
+		await runScheduledEffect(buildVcsScheduledLayer(env), runScheduledSync, ctx)
+	} finally {
+		ctx.waitUntil(flushVcsTelemetry(env))
+	}
+}
+
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handle(request, env, ctx),
+	queue: (batch: MessageBatch<unknown>, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		handleQueue(batch, env, ctx),
+	scheduled: (_event: ScheduledController, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		handleScheduled(env, ctx),
 }

@@ -25,6 +25,7 @@ import { HttpOrgClickHouseSettingsLive } from "./routes/org-clickhouse-settings.
 import { HttpOrganizationsLive } from "./routes/organizations.http"
 import { PrometheusScrapeProxyRouter } from "./routes/prometheus-scrape-proxy.http"
 import { ScraperInternalRouter } from "./routes/scraper-internal.http"
+import { VcsWebhookRouter } from "./routes/vcs-webhook.http"
 import { HttpQueryEngineLive } from "./routes/query-engine.http"
 import { HttpRecommendationIssuesLive } from "./routes/recommendation-issues.http"
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
@@ -58,6 +59,15 @@ import { RawSqlChartService } from "@maple/query-engine/runtime"
 import { PlanetScaleDiscoveryService } from "./services/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
+import { OAuthStateRepository } from "./services/OAuthStateRepository"
+import { GithubAppClient } from "./services/vcs/vendor/github/GithubAppClient"
+import { GithubConnectService } from "./services/vcs/vendor/github/GithubConnectService"
+import { GithubHttp } from "./services/vcs/vendor/github/GithubHttp"
+import { GithubProvider } from "./services/vcs/vendor/github/GithubProvider"
+import { VcsCommitService } from "./services/vcs/VcsCommitService"
+import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
+import { VcsRepository } from "./services/vcs/VcsRepository"
+import { VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
 
 const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
 
@@ -140,6 +150,25 @@ const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
 
+// VCS service wiring for the fetch-path worker. VcsSyncService (the sync
+// orchestrator) lives only in vcs-sync-runtime.ts — not here. Database /
+// WorkerEnvironment are provided at worker scope (like CoreServicesLive).
+const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
+const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))
+
+const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.layer, VcsSyncQueue.layer)
+
+const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
+
+const VcsServicesLive = Layer.mergeAll(
+	VcsDataLive,
+	VcsProviderRegistryLive,
+	// OAuth connect flow — needs VcsDataLive + GithubAppClient for App-JWT installation lookup.
+	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
+	// Routed via VcsProviderRegistry so no provider module is imported directly.
+	VcsCommitService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive))),
+).pipe(Layer.provideMerge(InfraLive))
+
 export const MainLive = Layer.mergeAll(
 	CoreServicesLive,
 	WarehouseQueryServiceLive,
@@ -152,6 +181,7 @@ export const MainLive = Layer.mergeAll(
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
+	VcsServicesLive,
 	RawSqlChartService.layer,
 )
 
@@ -191,6 +221,7 @@ export const AllRoutes = Layer.mergeAll(
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,
 	ScraperInternalRouter,
+	VcsWebhookRouter,
 	McpLive,
 	HealthRouter,
 	McpGetFallback,

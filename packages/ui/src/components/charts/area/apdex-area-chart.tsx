@@ -1,7 +1,8 @@
 import { useId, useMemo } from "react"
-import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
 import type { BaseChartProps } from "../_shared/chart-types"
+import { renderReferenceLines } from "../_shared/reference-markers"
 import { apdexTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -21,7 +22,15 @@ const baseChartConfig = {
 	apdexScore: { label: "Apdex", color: "var(--chart-apdex)" },
 } satisfies ChartConfig
 
-export function ApdexAreaChart({ data, className, legend, tooltip, referenceLines, syncId }: BaseChartProps) {
+export function ApdexAreaChart({
+	data,
+	className,
+	legend,
+	tooltip,
+	referenceLines,
+	renderReferenceMarker,
+	syncId,
+}: BaseChartProps) {
 	const id = useId()
 	const gradientId = `apdexGradient-${id.replace(/:/g, "")}`
 	const fadedGradientId = `apdexGradientFaded-${id.replace(/:/g, "")}`
@@ -61,15 +70,7 @@ export function ApdexAreaChart({ data, className, legend, tooltip, referenceLine
 					)}
 				</defs>
 				<CartesianGrid vertical={false} />
-				{referenceLines?.map((rl, i) => (
-					<ReferenceLine
-						key={`release-${i}`}
-						x={rl.x}
-						stroke={rl.color ?? "var(--muted-foreground)"}
-						strokeDasharray={rl.strokeDasharray ?? "6 4"}
-						strokeWidth={1}
-					/>
-				))}
+				{renderReferenceLines(referenceLines, renderReferenceMarker)}
 				<XAxis
 					dataKey="bucket"
 					tickLine={false}

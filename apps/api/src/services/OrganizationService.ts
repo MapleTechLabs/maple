@@ -29,6 +29,9 @@ import {
 	orgClickHouseSettings,
 	orgIngestKeys,
 	scrapeTargets,
+	vcsCommits,
+	vcsInstallations,
+	vcsRepositories,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -73,6 +76,9 @@ const ORG_SCOPED_TABLES = [
 	errorIssues,
 	errorNotificationPolicies,
 	actors,
+	vcsInstallations,
+	vcsRepositories,
+	vcsCommits,
 ] as const
 
 export interface OrganizationServiceShape {
