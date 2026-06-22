@@ -4,7 +4,8 @@
 	"ignore": ["**/routeTree.gen.ts", ".context/**", ".deepsec/**", "**/sst-env.d.ts"],
 	"workspaces": {
 		".": {
-			"entry": ["alchemy.run.ts", "scripts/**/*.ts"]
+			"entry": ["alchemy.run.ts", "scripts/**/*.ts"],
+			"ignoreBinaries": ["wrangler", "tb"]
 		},
 		"apps/web": {
 			"entry": [
