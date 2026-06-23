@@ -5,7 +5,7 @@
 	"workspaces": {
 		".": {
 			"entry": ["alchemy.run.ts", "scripts/**/*.ts"],
-			"ignoreBinaries": ["wrangler", "tb"]
+			"ignoreBinaries": ["wrangler", "tb", "pscale"]
 		},
 		"apps/web": {
 			"entry": [
@@ -41,7 +41,8 @@
 			"entry": ["scripts/**/*.ts"]
 		},
 		"packages/db": {
-			"entry": ["scripts/**/*.ts"]
+			"entry": ["scripts/**/*.ts"],
+			"ignoreBinaries": ["pscale"]
 		},
 		"packages/email": {
 			"entry": ["src/render-preview.tsx"]

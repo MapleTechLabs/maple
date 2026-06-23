@@ -58,7 +58,7 @@ export interface WorkflowEventLike<T> {
  * string. Workflows share the worker env, where `MAPLE_DB` is the Hyperdrive
  * binding the request-path `DatabasePgLive` layer also dials.
  */
-export const resolveMapleDbConnectionString = (binding: unknown): string => {
+const resolveMapleDbConnectionString = (binding: unknown): string => {
 	if (
 		typeof binding === "object" &&
 		binding !== null &&
