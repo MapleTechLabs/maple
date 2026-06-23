@@ -154,7 +154,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerUpdateErrorNotificationPolicyTool(registrar)
 	// Code Mode: a single tool whose sandboxed snippet orchestrates the read-only
 	// tools above. Registered last so it can reference the full set at runtime
-	// (it dispatches via `mapleToolDefinitions`); inert unless MAPLE_CODE_MODE=1.
+	// (it dispatches via `mapleToolDefinitions`); inert unless the LOADER sandbox
+	// binding is present.
 	registerRunCodeTool(registrar)
 
 	return definitions

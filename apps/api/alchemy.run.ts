@@ -153,12 +153,10 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 			...optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 			...optionalPlain("GITHUB_API_BASE_URL"),
-			// Code Mode (Cloudflare Dynamic Workers). The `run_code` MCP tool runs
-			// model-written code in a sandbox isolate via this `worker_loader` binding.
-			// Added only when MAPLE_CODE_MODE is set (the binding needs Worker Loader
-			// beta access); the tool stays inert at runtime without it.
-			...optionalPlain("MAPLE_CODE_MODE"),
-			...(process.env.MAPLE_CODE_MODE?.trim() ? { LOADER: WorkerLoader() } : {}),
+			// Code Mode sandbox (Cloudflare Dynamic Workers). The `run_code` MCP tool
+			// runs model-written code in an isolate via this `worker_loader` binding;
+			// its presence activates the tool. Requires Worker Loader beta access.
+			LOADER: WorkerLoader(),
 		},
 	})
 

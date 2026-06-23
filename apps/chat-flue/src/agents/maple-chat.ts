@@ -114,12 +114,13 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 		}
 	}
 
-	// Code Mode (hybrid, flag-gated): when enabled and the sandbox is bound, add a
-	// `run_code` tool backed by the SAME gated tools (so mutations still only
-	// propose) and inject the generated `maple.*` API into the prompt. The direct
-	// tools stay available as a fallback. No-ops without the LOADER binding.
+	// Code Mode: add a `run_code` tool backed by the SAME gated tools (so mutations
+	// still only propose) and inject the generated `maple.*` API into the prompt.
+	// The direct tools stay available alongside it. Active whenever the Worker
+	// Loader sandbox is bound — i.e. everywhere except local dev, where it degrades
+	// to the direct tools.
 	let codeModeApi: CodeModeApi | undefined
-	if (tools.length > 0 && ctx.env.MAPLE_CODE_MODE === "1" && ctx.env.LOADER) {
+	if (tools.length > 0 && ctx.env.LOADER) {
 		codeModeApi = buildCodeModeApi(tools)
 		tools = [...tools, createRunCodeTool(ctx.env, codeModeApi)]
 	}

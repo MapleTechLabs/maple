@@ -86,10 +86,10 @@ export const resolveCodeModeCall = async (
  * is identical to a direct tool call and the sandbox can never widen it. Mutating
  * tools are blocked inside code (they must go through the host's approval path).
  *
- * Flag-gated at runtime: returns an error result unless `MAPLE_CODE_MODE=1` and
- * the `LOADER` (worker_loader) binding is present. The Workers-only sandbox
- * driver is imported dynamically so this module's static graph stays Node-safe
- * (the tool registry is imported by node-based evals/tests).
+ * Active when the `LOADER` (worker_loader) binding is present; without it the
+ * tool returns an "unavailable" result (e.g. local/test runs). The Workers-only
+ * sandbox driver is imported dynamically so this module's static graph stays
+ * Node-safe (the tool registry is imported by node-based evals/tests).
  */
 export function registerRunCodeTool(server: McpToolRegistrar) {
 	server.tool(
@@ -106,9 +106,9 @@ export function registerRunCodeTool(server: McpToolRegistrar) {
 
 			const env = yield* WorkerEnvironment
 			const loader = env.LOADER as WorkerLoader | undefined
-			if (env.MAPLE_CODE_MODE !== "1" || !loader) {
+			if (!loader) {
 				return validationError(
-					"Code mode is not enabled on this deployment. Call the individual Maple tools directly instead.",
+					"Code mode is unavailable here (no sandbox runtime is bound). Call the individual Maple tools directly instead.",
 				)
 			}
 			if (!code.trim()) {

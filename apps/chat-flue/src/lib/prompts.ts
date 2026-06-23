@@ -13,7 +13,7 @@ Maple's tools are exposed over MCP and named \`mcp__maple__<tool>\` (for example
 call them by their full \`mcp__maple__\` name.`
 
 /**
- * Code Mode block (appended when `MAPLE_CODE_MODE=1` and the sandbox is bound).
+ * Code Mode block (appended when the `run_code` sandbox is bound).
  * Gives the model a `run_code` tool and the generated `maple.*` API surface so
  * it can write one snippet that chains/filters many tool calls instead of
  * round-tripping each. The direct `mcp__maple__*` tools remain available.
