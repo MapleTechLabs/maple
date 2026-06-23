@@ -148,10 +148,15 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		const layer = makeLayer(dbUrl)
 
 		let handler: ToolHandler | null = null
+		// Capture from both tool() and mutatingTool() — update_dashboard registers
+		// via mutatingTool (it's a mutating tool), but capturing both keeps this
+		// harness robust regardless of which a tool uses.
+		const capture = (_name: string, _description: string, _schema: unknown, h: unknown) => {
+			handler = h as ToolHandler
+		}
 		const registrar: McpToolRegistrar = {
-			tool: (_name, _description, _schema, h) => {
-				handler = h as ToolHandler
-			},
+			tool: capture as McpToolRegistrar["tool"],
+			mutatingTool: capture as McpToolRegistrar["mutatingTool"],
 		}
 		registerUpdateDashboardTool(registrar)
 		assert.isNotNull(handler)
