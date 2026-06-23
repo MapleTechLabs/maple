@@ -4,7 +4,7 @@ import { parseToolProposal } from "../approval.ts"
 import type { ChatFlueEnv } from "../env.ts"
 import type { CodeModeApi } from "./api-gen.ts"
 
-export const RUN_CODE_TOOL_NAME = "run_code"
+const RUN_CODE_TOOL_NAME = "run_code"
 
 /**
  * Build the `maple.<name>(input)` dispatch for a code run: look up the gated
