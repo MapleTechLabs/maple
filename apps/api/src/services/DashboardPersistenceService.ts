@@ -58,8 +58,8 @@ const parseTimestamp = (field: "createdAt" | "updatedAt", value: string) => {
 	return Effect.succeed(timestamp)
 }
 
-const parsePayload = (payloadJson: string) =>
-	Schema.decodeUnknownEffect(Schema.fromJsonString(DashboardDocument))(payloadJson).pipe(
+const parsePayload = (payloadJson: unknown) =>
+	Schema.decodeUnknownEffect(DashboardDocument)(payloadJson).pipe(
 		Effect.mapError(
 			() =>
 				new DashboardPersistenceError({
@@ -68,9 +68,14 @@ const parsePayload = (payloadJson: string) =>
 		),
 	)
 
-const stringifyPayload = (dashboard: DashboardDocument) =>
+// jsonb columns take the document object directly; this guard preserves the
+// pre-Postgres validation that the payload is JSON-serializable before write.
+const validatePayload = (dashboard: DashboardDocument) =>
 	Effect.try({
-		try: () => JSON.stringify(dashboard),
+		try: () => {
+			JSON.stringify(dashboard)
+			return dashboard
+		},
 		catch: () =>
 			new DashboardValidationError({
 				message: "Dashboard payload must be JSON serializable",
@@ -105,7 +110,7 @@ const versionRowToSummary = (row: DashboardVersionRow): DashboardVersionSummary 
 		changeKind: row.changeKind as DashboardVersionSummary["changeKind"],
 		changeSummary: row.changeSummary ?? null,
 		sourceVersionId: row.sourceVersionId ? decodeDashboardVersionIdSync(row.sourceVersionId) : null,
-		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
 		createdBy: decodeUserIdSync(row.createdBy),
 	})
 
@@ -124,7 +129,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 			const loadCurrent = (orgId: OrgId, dashboardId: DashboardId) =>
 				Effect.gen(function* () {
 					const rows: ReadonlyArray<{
-						readonly payloadJson: string
+						readonly payloadJson: unknown
 						readonly version: number
 					}> = yield* database
 						.execute((db) =>
@@ -155,7 +160,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 					const summary = summarizeDashboardChange(previous, dashboard)
 					const kind = options.forceKind ?? summary.kind
 					const summaryText = options.forceSummary ?? summary.summary
-					const snapshotJson = yield* stringifyPayload(dashboard)
+					const snapshotJson = yield* validatePayload(dashboard)
 					const now = yield* Clock.currentTimeMillis
 
 					const latest: ReadonlyArray<DashboardVersionRow> = yield* database
@@ -181,7 +186,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 						latestRow !== undefined &&
 						latestRow.createdBy === userId &&
 						latestRow.changeKind === kind &&
-						now - latestRow.createdAt < COALESCE_WINDOW_MS
+						now - latestRow.createdAt.getTime() < COALESCE_WINDOW_MS
 
 					if (canCoalesce && latestRow) {
 						yield* database
@@ -191,7 +196,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 									.set({
 										snapshotJson,
 										changeSummary: summaryText,
-										createdAt: now,
+										createdAt: new Date(now),
 									})
 									.where(
 										and(
@@ -217,7 +222,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 								changeKind: kind,
 								changeSummary: summaryText,
 								sourceVersionId: options.sourceVersionId ?? null,
-								createdAt: now,
+								createdAt: new Date(now),
 								createdBy: userId,
 							}),
 						)
@@ -225,7 +230,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				})
 
 			const list = Effect.fn("DashboardPersistenceService.list")(function* (orgId: OrgId) {
-				const rows: ReadonlyArray<{ readonly payloadJson: string }> = yield* database
+				const rows: ReadonlyArray<{ readonly payloadJson: unknown }> = yield* database
 					.execute((db) =>
 						db
 							.select({
@@ -254,7 +259,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				dashboard: DashboardDocument,
 				expectedVersion: number,
 				updatedAt: number,
-				payloadJson: string,
+				payloadJson: DashboardDocument,
 			) =>
 				Effect.gen(function* () {
 					const updated: ReadonlyArray<{ readonly id: string }> = yield* database
@@ -264,7 +269,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 								.set({
 									name: dashboard.name,
 									payloadJson,
-									updatedAt,
+									updatedAt: new Date(updatedAt),
 									updatedBy: userId,
 									version: expectedVersion + 1,
 								})
@@ -288,7 +293,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				dashboard: DashboardDocument,
 				createdAt: number,
 				updatedAt: number,
-				payloadJson: string,
+				payloadJson: DashboardDocument,
 			) =>
 				database
 					.execute((db) =>
@@ -297,8 +302,8 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 							id: dashboard.id,
 							name: dashboard.name,
 							payloadJson,
-							createdAt,
-							updatedAt,
+							createdAt: new Date(createdAt),
+							updatedAt: new Date(updatedAt),
 							createdBy: userId,
 							updatedBy: userId,
 							version: 1,
@@ -313,7 +318,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 				versionOptions: VersionOptions = {},
 			) =>
 				Effect.gen(function* () {
-					const payloadJson = yield* stringifyPayload(dashboard)
+					const payloadJson = yield* validatePayload(dashboard)
 					const createdAt = yield* parseTimestamp("createdAt", dashboard.createdAt)
 					const updatedAt = yield* parseTimestamp("updatedAt", dashboard.updatedAt)
 
@@ -407,7 +412,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 					}
 
 					const next = yield* transform(current.document)
-					const payloadJson = yield* stringifyPayload(next)
+					const payloadJson = yield* validatePayload(next)
 					const updatedAt = yield* parseTimestamp("updatedAt", next.updatedAt)
 
 					const won = yield* tryCasUpdate(
@@ -579,7 +584,7 @@ export class DashboardPersistenceService extends Context.Service<DashboardPersis
 					sourceVersionId: row.sourceVersionId
 						? decodeDashboardVersionIdSync(row.sourceVersionId)
 						: null,
-					createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+					createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
 					createdBy: decodeUserIdSync(row.createdBy),
 					snapshot,
 				})

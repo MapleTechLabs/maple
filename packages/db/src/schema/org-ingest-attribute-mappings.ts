@@ -1,7 +1,6 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
-import { sql } from "drizzle-orm"
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const orgIngestAttributeMappings = sqliteTable(
+export const orgIngestAttributeMappings = pgTable(
 	"org_ingest_attribute_mappings",
 	{
 		id: text("id").notNull().primaryKey(),
@@ -11,13 +10,9 @@ export const orgIngestAttributeMappings = sqliteTable(
 		sourceKey: text("source_key").notNull(),
 		targetKey: text("target_key").notNull(),
 		operation: text("operation").notNull(),
-		enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-		createdAt: integer("created_at")
-			.notNull()
-			.default(sql`(unixepoch('subsec') * 1000)`),
-		updatedAt: integer("updated_at")
-			.notNull()
-			.default(sql`(unixepoch('subsec') * 1000)`),
+		enabled: boolean("enabled").notNull().default(true),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
 	},
 	(table) => [index("org_ingest_attribute_mappings_org_idx").on(table.orgId)],
 )

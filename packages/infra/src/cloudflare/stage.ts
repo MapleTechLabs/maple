@@ -121,6 +121,40 @@ export function resolveD1Name(stage: MapleStage): string {
 	}
 }
 
+export function resolveHyperdriveName(stage: MapleStage): string {
+	switch (stage.kind) {
+		case "prd":
+			// Pre-configured in the Cloudflare dashboard (origin/credentials managed
+			// there); the prod deploy references it by this name. See alchemy.run.ts.
+			return "maple-prd"
+		case "stg":
+			return "maple-db-stg"
+		case "pr":
+			return `maple-db-pr-${stage.prNumber}`
+		case "dev":
+			return `maple-db-dev-${stage.name}`
+	}
+}
+
+/**
+ * PlanetScale Postgres branch backing a stage. One database (`maple-api`)
+ * with a fully-isolated branch per stage; pr branches are created/destroyed
+ * by scripts/planetscale-pr-branch.ts. Dev stages have no managed branch —
+ * local dev runs against the docker-compose Postgres.
+ */
+export function resolvePlanetScaleBranch(stage: MapleStage): string | undefined {
+	switch (stage.kind) {
+		case "prd":
+			return "main"
+		case "stg":
+			return "stg"
+		case "pr":
+			return `pr-${stage.prNumber}`
+		case "dev":
+			return undefined
+	}
+}
+
 export function resolveWorkerName(base: string, stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":

@@ -42,5 +42,12 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
+            # Schema migrations run against the PlanetScale branch over the
+            # DIRECT port (5432, never the PSBouncer/Hyperdrive poolers — DDL
+            # through a transaction pooler misbehaves). MAPLE_PG_URL is the
+            # single Doppler secret (direct 5432, admin role).
+            - name: Run database migrations
+              run: DATABASE_URL="$MAPLE_PG_URL" bun run --cwd packages/db db:migrate
+
             - name: Deploy STG stack with Alchemy
               run: bun run alchemy:deploy:stg

@@ -76,6 +76,17 @@ export const createChatFlueWorker = async ({ stage, domains, mapleApiUrl }: Crea
 		rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
 		compatibilityDate: "2026-06-01",
 		compatibilityFlags: ["nodejs_compat"],
+		// Workers Observability. `traces.enabled` is required for the `tracing.enterSpan`
+		// custom spans in src/agents/maple-chat.ts to emit; the `"maple"` destination
+		// forwards both logs and traces over Cloudflare's native pipeline → Maple ingest
+		// (the same path the existing auto-spans use, unlike the @flue/opentelemetry
+		// export which doesn't flush reliably from DO isolates). `"maple"` is the
+		// account-level telemetry destination id.
+		observability: {
+			enabled: true,
+			logs: { destinations: ["maple"] },
+			traces: { enabled: true, destinations: ["maple"] },
+		},
 		url: true,
 		adopt: true,
 		domains: domains.chat ? [{ domainName: domains.chat, adopt: true }] : undefined,

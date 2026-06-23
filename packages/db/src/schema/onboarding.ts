@@ -1,20 +1,20 @@
-import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const orgOnboardingState = sqliteTable("org_onboarding_state", {
+export const orgOnboardingState = pgTable("org_onboarding_state", {
 	orgId: text("org_id").notNull().primaryKey(),
 	userId: text("user_id"),
 	email: text("email"),
 	role: text("role"),
-	demoDataRequested: integer("demo_data_requested", { mode: "number" }).notNull().default(0),
-	onboardingCompletedAt: integer("onboarding_completed_at", { mode: "number" }),
-	checklistDismissedAt: integer("checklist_dismissed_at", { mode: "number" }),
-	firstDataReceivedAt: integer("first_data_received_at", { mode: "number" }),
-	welcomeEmailSentAt: integer("welcome_email_sent_at", { mode: "number" }),
-	connectNudgeEmailSentAt: integer("connect_nudge_email_sent_at", { mode: "number" }),
-	stalledEmailSentAt: integer("stalled_email_sent_at", { mode: "number" }),
-	activationEmailSentAt: integer("activation_email_sent_at", { mode: "number" }),
-	createdAt: integer("created_at", { mode: "number" }).notNull(),
-	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	demoDataRequested: boolean("demo_data_requested").notNull().default(false),
+	onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true, mode: "date" }),
+	checklistDismissedAt: timestamp("checklist_dismissed_at", { withTimezone: true, mode: "date" }),
+	firstDataReceivedAt: timestamp("first_data_received_at", { withTimezone: true, mode: "date" }),
+	welcomeEmailSentAt: timestamp("welcome_email_sent_at", { withTimezone: true, mode: "date" }),
+	connectNudgeEmailSentAt: timestamp("connect_nudge_email_sent_at", { withTimezone: true, mode: "date" }),
+	stalledEmailSentAt: timestamp("stalled_email_sent_at", { withTimezone: true, mode: "date" }),
+	activationEmailSentAt: timestamp("activation_email_sent_at", { withTimezone: true, mode: "date" }),
+	createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 })
 
 export type OrgOnboardingStateRow = typeof orgOnboardingState.$inferSelect

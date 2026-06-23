@@ -7,28 +7,20 @@ import {
 	OrgId,
 	UserId,
 } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
 import { CloudflareLogpushService } from "./CloudflareLogpushService"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb, queryFirstRow } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, queryFirstRow, type TestDb } from "../lib/test-pglite"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(trackedDbs))
 
-const createTempDbUrl = () => {
-	return makeTempDb("maple-cloudflare-logpush-", createdTempDirs)
-}
-
-const makeConfig = (url: string, ingestPublicUrl = "https://ingest.example.com") =>
+const makeConfig = (ingestPublicUrl = "https://ingest.example.com") =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -38,11 +30,11 @@ const makeConfig = (url: string, ingestPublicUrl = "https://ingest.example.com")
 		}),
 	)
 
-const makeLayer = (url: string, ingestPublicUrl?: string) =>
+const makeLayer = (testDb: TestDb, ingestPublicUrl?: string) =>
 	CloudflareLogpushService.layer.pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(makeConfig(url, ingestPublicUrl)),
+		Layer.provide(makeConfig(ingestPublicUrl)),
 	)
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -50,7 +42,7 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 
 describe("CloudflareLogpushService", () => {
 	it.effect("creates a connector with encrypted secret and generated setup", () => {
-		const { url, dbPath } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -72,8 +64,8 @@ describe("CloudflareLogpushService", () => {
 					secret_ciphertext: string
 					secret_hash: string
 				}>(
-					dbPath,
-					"SELECT secret_ciphertext, secret_hash FROM cloudflare_logpush_connectors WHERE id = ?",
+					testDb,
+					"SELECT secret_ciphertext, secret_hash FROM cloudflare_logpush_connectors WHERE id = $1",
 					[result.connector.id],
 				),
 			)
@@ -85,11 +77,11 @@ describe("CloudflareLogpushService", () => {
 				row?.secret_hash,
 				hashCloudflareLogpushSecret(secret, "maple-test-lookup-secret"),
 			)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("lists connectors without exposing secrets", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -102,11 +94,11 @@ describe("CloudflareLogpushService", () => {
 
 			assert.strictEqual(result.connectors.length, 1)
 			assert.strictEqual("secret" in result.connectors[0]!, false)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("returns deterministic setup payload for an existing connector", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -117,11 +109,11 @@ describe("CloudflareLogpushService", () => {
 			const setup = yield* service.getSetup(asOrgId("org_a"), created.connector.id)
 
 			assert.strictEqual(setup.destinationConf, created.setup.destinationConf)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("rotates only the secret", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -141,11 +133,11 @@ describe("CloudflareLogpushService", () => {
 			assert.notStrictEqual(rotated.destinationConf, created.setup.destinationConf)
 			assert.strictEqual(connector.name, created.connector.name)
 			assert.strictEqual(connector.zoneName, created.connector.zoneName)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("updates metadata without changing the secret", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -171,11 +163,11 @@ describe("CloudflareLogpushService", () => {
 			assert.strictEqual(updated.serviceName, "cloudflare/zone-a")
 			assert.strictEqual(updated.enabled, false)
 			assert.strictEqual(setup.destinationConf, created.setup.destinationConf)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("deletes a connector", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -187,11 +179,11 @@ describe("CloudflareLogpushService", () => {
 			const result = yield* service.list(asOrgId("org_a"))
 
 			assert.deepStrictEqual(result.connectors, [])
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("isolates connectors by org", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -203,11 +195,11 @@ describe("CloudflareLogpushService", () => {
 			const missing = yield* service.getSetup(asOrgId("org_b"), created.connector.id).pipe(Effect.flip)
 
 			assert.instanceOf(missing, CloudflareLogpushNotFoundError)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("rejects blank names and zone names", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
@@ -219,6 +211,6 @@ describe("CloudflareLogpushService", () => {
 				.pipe(Effect.flip)
 
 			assert.instanceOf(result, CloudflareLogpushValidationError)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

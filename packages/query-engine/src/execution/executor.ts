@@ -116,11 +116,15 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
 		yield* Effect.annotateCurrentSpan("db.system.name", peerService)
 		yield* Effect.annotateCurrentSpan("peer.service", peerService)
-		// Tinybird rejects some settings outright (e.g. max_block_size) — drop
-		// them there so a call site can request them for ClickHouse backends
-		// without branching on the resolved config.
+		// Tinybird's managed warehouse restricts some settings (e.g. max_block_size:
+		// "Usage of setting 'max_block_size' is restricted"). It is reached either via
+		// the Tinybird SDK (_tag "tinybird") or its ClickHouse-compatible gateway
+		// (_tag "clickhouse", when CLICKHOUSE_URL is set); both enforce that policy.
+		// Only a genuine per-org BYO ClickHouse (source "org_override") supports those
+		// settings, so strip everywhere except there. Gating on `source` (not `_tag`)
+		// is what fixes the managed CH-gateway path.
 		const settings =
-			resolved.config._tag === "clickhouse"
+			resolved.source === "org_override"
 				? resolveSettings(options)
 				: stripTinybirdRestrictedSettings(resolveSettings(options))
 		const sqlForClient =

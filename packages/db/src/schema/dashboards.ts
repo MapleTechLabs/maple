@@ -1,20 +1,20 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-export const dashboards = sqliteTable(
+export const dashboards = pgTable(
 	"dashboards",
 	{
 		orgId: text("org_id").notNull(),
 		id: text("id").notNull(),
 		name: text("name").notNull(),
-		payloadJson: text("payload_json").notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		payloadJson: jsonb("payload_json").$type<unknown>().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		updatedBy: text("updated_by").notNull(),
 		// Optimistic-concurrency token. Bumped on every upsert; mutations use a
 		// compare-and-swap on (id, version) and retry on conflict so concurrent
 		// writers can no longer silently clobber each other.
-		version: integer("version", { mode: "number" }).notNull().default(0),
+		version: integer("version").notNull().default(0),
 	},
 	(table) => [
 		primaryKey({ columns: [table.orgId, table.id] }),
@@ -31,18 +31,18 @@ export type DashboardInsert = typeof dashboards.$inferInsert
  * coalescing — back-to-back edits by the same actor of the same kind within
  * a short window update the latest row in place rather than appending.
  */
-export const dashboardVersions = sqliteTable(
+export const dashboardVersions = pgTable(
 	"dashboard_versions",
 	{
 		orgId: text("org_id").notNull(),
 		id: text("id").notNull(),
 		dashboardId: text("dashboard_id").notNull(),
-		versionNumber: integer("version_number", { mode: "number" }).notNull(),
-		snapshotJson: text("snapshot_json").notNull(),
+		versionNumber: integer("version_number").notNull(),
+		snapshotJson: jsonb("snapshot_json").$type<unknown>().notNull(),
 		changeKind: text("change_kind").notNull(),
 		changeSummary: text("change_summary"),
 		sourceVersionId: text("source_version_id"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 	},
 	(table) => [

@@ -2,8 +2,7 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { IntegrationsValidationError, type VcsSyncJob } from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
-import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { GithubAppClient } from "@/services/vcs/vendor/github/GithubAppClient"
 import { GithubConnectService } from "@/services/vcs/vendor/github/GithubConnectService"
 import type { GithubHttp } from "@/services/vcs/vendor/github/GithubHttp"
@@ -27,8 +26,8 @@ import {
 	upsertReposFor,
 } from "../../../__tests__/harness"
 
-const dirs: string[] = []
-afterEach(() => cleanupTempDirs(dirs))
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 const installationResponse = () =>
 	jsonResponse({
@@ -61,16 +60,15 @@ const connectResponders = (...rest: Array<() => Response>) => [
 	...rest,
 ]
 
-// Wire GithubConnectService over a temp sqlite (real repo + state repo), a real
-// GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
-const connectLayer = (url: string, http: Layer.Layer<GithubHttp>, sent: Array<VcsSyncJob>) => {
-	const env = testEnv(url, GITHUB_APP_CONFIG)
-	const database = DatabaseLibsqlLive.pipe(Layer.provide(env))
+// Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
+// real GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
+const connectLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>, sent: Array<VcsSyncJob>) => {
+	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = Layer.mergeAll(
 		VcsRepository.layer,
 		OAuthStateRepository.layer,
 		Layer.succeed(VcsSyncQueue, recordingQueue(sent)),
-	).pipe(Layer.provide(database), Layer.provide(env))
+	).pipe(Layer.provide(testDb.layer), Layer.provide(env))
 	const githubAppClient = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
 	const service = GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(env, githubAppClient, data)))
 	return Layer.mergeAll(service, data)
@@ -78,7 +76,7 @@ const connectLayer = (url: string, http: Layer.Layer<GithubHttp>, sent: Array<Vc
 
 describe("GithubConnectService", () => {
 	it.effect("startConnect mints a state row and returns the GitHub install URL with state", () => {
-		const { url } = createTempDbUrl("maple-gh-start-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -89,11 +87,11 @@ describe("GithubConnectService", () => {
 			assert.ok(state.length > 0)
 			assert.ok(redirectUrl.startsWith("https://github.com/apps/maple-test-app/installations/new"))
 			assert.ok(redirectUrl.includes(`state=${state}`))
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect upserts the installation and enqueues a created sync job", () => {
-		const { url } = createTempDbUrl("maple-gh-complete-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -128,11 +126,11 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(job.provider, "github")
 			assert.strictEqual(job.externalInstallationId, "42")
 			assert.strictEqual(job.reason, "created")
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect surfaces a 404 installation as a validation error", () => {
-		const { url } = createTempDbUrl("maple-gh-404-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(
 			connectResponders()
@@ -152,11 +150,11 @@ describe("GithubConnectService", () => {
 			const found = yield* repo.resolveInstallation("github", "42")
 			assert.ok(Option.isNone(found))
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect refuses a new binding when no OAuth code is supplied", () => {
-		const { url } = createTempDbUrl("maple-gh-no-code-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -171,11 +169,11 @@ describe("GithubConnectService", () => {
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect rejects when the user cannot administer the installation", () => {
-		const { url } = createTempDbUrl("maple-gh-not-admin-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		// User administers installation 99, not the requested 42.
 		const http = scriptedHttp([oauthTokenResponse, userInstallationsResponse([99]), installationResponse])
@@ -190,11 +188,11 @@ describe("GithubConnectService", () => {
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect allows a same-org reconnect without an OAuth code", () => {
-		const { url } = createTempDbUrl("maple-gh-reconnect-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -222,11 +220,11 @@ describe("GithubConnectService", () => {
 			// First connect enqueues "created"; the reconnect enqueues "updated".
 			const reasons = sent.flatMap((j) => (j.kind === "installation-sync" ? [j.reason] : []))
 			assert.deepStrictEqual(reasons, ["created", "updated"])
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect rejects an unrecognized state without calling GitHub", () => {
-		const { url } = createTempDbUrl("maple-gh-state-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -234,12 +232,12 @@ describe("GithubConnectService", () => {
 			const exit = yield* svc.completeConnect("42", "not-a-real-state").pipe(Effect.exit)
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	// State TTL is 10 min; it.effect freezes the clock so we advance with TestClock.
 	it.effect("completeConnect rejects an expired state and connects nothing", () => {
-		const { url } = createTempDbUrl("maple-gh-state-expired-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -256,11 +254,11 @@ describe("GithubConnectService", () => {
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.ok(Option.isNone(yield* repo.resolveInstallation("github", "42")))
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("completeConnect consumes the state — a replay is rejected", () => {
-		const { url } = createTempDbUrl("maple-gh-state-replay-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -277,11 +275,11 @@ describe("GithubConnectService", () => {
 			const exit = yield* svc.completeConnect("42", state, TEST_CODE).pipe(Effect.exit)
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.strictEqual(sent.length, 1)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect("disconnect purges the installation with its repos + commits and is idempotent", () => {
-		const { url } = createTempDbUrl("maple-gh-disconnect-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -336,13 +334,13 @@ describe("GithubConnectService", () => {
 			assert.strictEqual(status.state, "not_connected")
 			const second = yield* svc.disconnect(orgId)
 			assert.strictEqual(second.disconnected, false)
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect(
 		"getStatus surfaces a webhook-disconnected installation as deactivated (not deleted), keeping account + repos",
 		() => {
-			const { url } = createTempDbUrl("maple-gh-deactivated-", dirs)
+			const testDb = createTestDb(trackedDbs)
 			const sent: Array<VcsSyncJob> = []
 			const http = scriptedHttp(connectResponders())
 			return Effect.gen(function* () {
@@ -381,14 +379,14 @@ describe("GithubConnectService", () => {
 				assert.strictEqual(status.repositories.length, 1)
 				// The installation row is still present — nothing was hard-deleted.
 				assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
-			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)
 
 	it.effect(
 		"getStatus surfaces a suspended installation as state 'suspended' (distinct from disconnected), keeping account + repos",
 		() => {
-			const { url } = createTempDbUrl("maple-gh-suspended-", dirs)
+			const testDb = createTestDb(trackedDbs)
 			const sent: Array<VcsSyncJob> = []
 			const http = scriptedHttp(connectResponders())
 			return Effect.gen(function* () {
@@ -426,14 +424,14 @@ describe("GithubConnectService", () => {
 				assert.strictEqual(status.accountLogin, "octo")
 				assert.strictEqual(status.repositories.length, 1)
 				assert.ok(Option.isSome(yield* repo.resolveInstallation("github", "42")))
-			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)
 
 	it.effect(
 		"deleteRepository purges only that repo + its commits; getStatus surfaces removed repos",
 		() => {
-			const { url } = createTempDbUrl("maple-gh-del-repo-", dirs)
+			const testDb = createTestDb(trackedDbs)
 			const sent: Array<VcsSyncJob> = []
 			const http = scriptedHttp(connectResponders())
 			return Effect.gen(function* () {
@@ -513,12 +511,12 @@ describe("GithubConnectService", () => {
 				// Deleting the same (now-absent) id again is a no-op (idempotent).
 				const again = yield* svc.deleteRepository(orgId, repo7Id)
 				assert.strictEqual(again.deleted, false)
-			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)
 
 	it.effect("deleteRepository refuses to delete an active repo and leaves its data intact", () => {
-		const { url } = createTempDbUrl("maple-gh-del-active-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		const http = scriptedHttp(connectResponders())
 		return Effect.gen(function* () {
@@ -566,13 +564,13 @@ describe("GithubConnectService", () => {
 			assert.ok(findError(exit) instanceof IntegrationsValidationError)
 			assert.ok(Option.isSome(yield* repo.resolveRepository(orgId, "github", "7")))
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, SHA as never)))
-		}).pipe(Effect.provide(connectLayer(url, http, sent)))
+		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
 
 	it.effect(
 		"setTrackedBranch validates the branch, no-ops on the current one, and wipes+resyncs on change",
 		() => {
-			const { url } = createTempDbUrl("maple-gh-track-", dirs)
+			const testDb = createTestDb(trackedDbs)
 			const sent: Array<VcsSyncJob> = []
 			const http = scriptedHttp(connectResponders())
 			return Effect.gen(function* () {
@@ -644,7 +642,7 @@ describe("GithubConnectService", () => {
 					backfills[0]!.kind === "sync-commits" ? backfills[0]!.branch : "",
 					"release",
 				)
-			}).pipe(Effect.provide(connectLayer(url, http, sent)))
+			}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 		},
 	)
 })

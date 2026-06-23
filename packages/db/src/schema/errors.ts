@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type {
 	ActorId,
 	ErrorIncidentId,
@@ -24,7 +24,7 @@ import type {
  * LLM agents alike. A human's actor row is lazily created the first time they
  * interact with an issue; agents are registered explicitly.
  */
-export const actors = sqliteTable(
+export const actors = pgTable(
 	"actors",
 	{
 		id: text("id").$type<ActorId>().notNull().primaryKey(),
@@ -33,10 +33,10 @@ export const actors = sqliteTable(
 		userId: text("user_id").$type<UserId>(),
 		agentName: text("agent_name"),
 		model: text("model"),
-		capabilitiesJson: text("capabilities_json").notNull().default("[]"),
+		capabilitiesJson: jsonb("capabilities_json").$type<ReadonlyArray<string>>().notNull().default([]),
 		createdBy: text("created_by").$type<UserId>(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		lastActiveAt: integer("last_active_at", { mode: "number" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		lastActiveAt: timestamp("last_active_at", { withTimezone: true, mode: "date" }),
 	},
 	(table) => [
 		uniqueIndex("actors_org_user_idx").on(table.orgId, table.userId),
@@ -51,7 +51,7 @@ export const actors = sqliteTable(
  * computed in Tinybird error_events_mv and stored here as the decimal
  * UInt64 string (matches `toString(FingerprintHash)` in ClickHouse).
  */
-export const errorIssues = sqliteTable(
+export const errorIssues = pgTable(
 	"error_issues",
 	{
 		id: text("id").$type<ErrorIssueId>().notNull().primaryKey(),
@@ -61,7 +61,7 @@ export const errorIssues = sqliteTable(
 		// fingerprints are decimal UInt64 strings, so the prefix cannot collide),
 		// exceptionType = rule name, exceptionMessage = human summary, topFrame = "".
 		kind: text("kind").$type<IssueKind>().notNull().default("error"),
-		sourceRefJson: text("source_ref_json"),
+		sourceRefJson: jsonb("source_ref_json").$type<unknown>(),
 		fingerprintHash: text("fingerprint_hash").notNull(),
 		serviceName: text("service_name").notNull(),
 		exceptionType: text("exception_type").notNull(),
@@ -69,25 +69,25 @@ export const errorIssues = sqliteTable(
 		errorLabel: text("error_label").notNull().default(""),
 		topFrame: text("top_frame").notNull(),
 		workflowState: text("workflow_state").$type<WorkflowState>().notNull().default("triage"),
-		priority: integer("priority", { mode: "number" }).notNull().default(3),
+		priority: integer("priority").notNull().default(3),
 		// null = untriaged. Write precedence: manual > ai > detector — see
 		// IssueSeveritySource in @maple/domain/http.
 		severity: text("severity").$type<IssueSeverity>(),
 		severitySource: text("severity_source").$type<IssueSeveritySource>(),
 		assignedActorId: text("assigned_actor_id").$type<ActorId>(),
 		leaseHolderActorId: text("lease_holder_actor_id").$type<ActorId>(),
-		leaseExpiresAt: integer("lease_expires_at", { mode: "number" }),
-		claimedAt: integer("claimed_at", { mode: "number" }),
+		leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+		claimedAt: timestamp("claimed_at", { withTimezone: true, mode: "date" }),
 		notes: text("notes"),
-		firstSeenAt: integer("first_seen_at", { mode: "number" }).notNull(),
-		lastSeenAt: integer("last_seen_at", { mode: "number" }).notNull(),
-		occurrenceCount: integer("occurrence_count", { mode: "number" }).notNull().default(0),
-		resolvedAt: integer("resolved_at", { mode: "number" }),
+		firstSeenAt: timestamp("first_seen_at", { withTimezone: true, mode: "date" }).notNull(),
+		lastSeenAt: timestamp("last_seen_at", { withTimezone: true, mode: "date" }).notNull(),
+		occurrenceCount: integer("occurrence_count").notNull().default(0),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
 		resolvedByActorId: text("resolved_by_actor_id").$type<ActorId>(),
-		snoozeUntil: integer("snooze_until", { mode: "number" }),
-		archivedAt: integer("archived_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		snoozeUntil: timestamp("snooze_until", { withTimezone: true, mode: "date" }),
+		archivedAt: timestamp("archived_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("error_issues_org_fp_idx").on(table.orgId, table.fingerprintHash),
@@ -104,7 +104,7 @@ export const errorIssues = sqliteTable(
  * transitions, claims, releases, comments, agent reasoning notes, fix
  * proposals. Payload is a JSON blob whose shape depends on the event type.
  */
-export const errorIssueEvents = sqliteTable(
+export const errorIssueEvents = pgTable(
 	"error_issue_events",
 	{
 		id: text("id").$type<ErrorIssueEventId>().notNull().primaryKey(),
@@ -114,8 +114,8 @@ export const errorIssueEvents = sqliteTable(
 		type: text("type").$type<ErrorIssueEventType>().notNull(),
 		fromState: text("from_state").$type<WorkflowState>(),
 		toState: text("to_state").$type<WorkflowState>(),
-		payloadJson: text("payload_json").notNull().default("{}"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		payloadJson: jsonb("payload_json").$type<unknown>().notNull().default({}),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("error_issue_events_issue_idx").on(table.orgId, table.issueId, table.createdAt),
@@ -128,17 +128,18 @@ export const errorIssueEvents = sqliteTable(
  * Per-issue evaluator state used by the scheduled error tick to detect
  * regressions and auto-resolve quiet incidents.
  */
-export const errorIssueStates = sqliteTable(
+export const errorIssueStates = pgTable(
 	"error_issue_states",
 	{
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		issueId: text("issue_id").$type<ErrorIssueId>().notNull(),
-		lastObservedOccurrenceAt: integer("last_observed_occurrence_at", {
-			mode: "number",
+		lastObservedOccurrenceAt: timestamp("last_observed_occurrence_at", {
+			withTimezone: true,
+			mode: "date",
 		}),
-		lastEvaluatedAt: integer("last_evaluated_at", { mode: "number" }),
+		lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true, mode: "date" }),
 		openIncidentId: text("open_incident_id").$type<ErrorIncidentId>(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		primaryKey({ columns: [table.orgId, table.issueId] }),
@@ -151,7 +152,7 @@ export const errorIssueStates = sqliteTable(
  * (activity after the Issue was resolved), auto-resolves after configurable
  * silence (default 30m).
  */
-export const errorIncidents = sqliteTable(
+export const errorIncidents = pgTable(
 	"error_incidents",
 	{
 		id: text("id").$type<ErrorIncidentId>().notNull().primaryKey(),
@@ -159,12 +160,12 @@ export const errorIncidents = sqliteTable(
 		issueId: text("issue_id").$type<ErrorIssueId>().notNull(),
 		status: text("status").$type<ErrorIncidentStatus>().notNull(),
 		reason: text("reason").$type<ErrorIncidentReason>().notNull(),
-		firstTriggeredAt: integer("first_triggered_at", { mode: "number" }).notNull(),
-		lastTriggeredAt: integer("last_triggered_at", { mode: "number" }).notNull(),
-		resolvedAt: integer("resolved_at", { mode: "number" }),
-		occurrenceCount: integer("occurrence_count", { mode: "number" }).notNull().default(0),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		firstTriggeredAt: timestamp("first_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
+		occurrenceCount: integer("occurrence_count").notNull().default(0),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("error_incidents_org_issue_idx").on(table.orgId, table.issueId),
@@ -177,27 +178,19 @@ export const errorIncidents = sqliteTable(
  * notifications and under what conditions. Referenced by the scheduled
  * error tick when it opens or auto-resolves incidents.
  */
-export const errorNotificationPolicies = sqliteTable("error_notification_policies", {
+export const errorNotificationPolicies = pgTable("error_notification_policies", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
-	enabled: integer("enabled", { mode: "number" }).notNull().default(1),
-	destinationIdsJson: text("destination_ids_json").notNull().default("[]"),
-	notifyOnFirstSeen: integer("notify_on_first_seen", { mode: "number" }).notNull().default(1),
-	notifyOnRegression: integer("notify_on_regression", { mode: "number" }).notNull().default(1),
-	notifyOnResolve: integer("notify_on_resolve", { mode: "number" }).notNull().default(0),
-	notifyOnTransitionInReview: integer("notify_on_transition_in_review", {
-		mode: "number",
-	})
-		.notNull()
-		.default(0),
-	notifyOnTransitionDone: integer("notify_on_transition_done", {
-		mode: "number",
-	})
-		.notNull()
-		.default(0),
-	notifyOnClaim: integer("notify_on_claim", { mode: "number" }).notNull().default(0),
-	minOccurrenceCount: integer("min_occurrence_count", { mode: "number" }).notNull().default(1),
+	enabled: boolean("enabled").notNull().default(true),
+	destinationIdsJson: jsonb("destination_ids_json").$type<ReadonlyArray<string>>().notNull().default([]),
+	notifyOnFirstSeen: boolean("notify_on_first_seen").notNull().default(true),
+	notifyOnRegression: boolean("notify_on_regression").notNull().default(true),
+	notifyOnResolve: boolean("notify_on_resolve").notNull().default(false),
+	notifyOnTransitionInReview: boolean("notify_on_transition_in_review").notNull().default(false),
+	notifyOnTransitionDone: boolean("notify_on_transition_done").notNull().default(false),
+	notifyOnClaim: boolean("notify_on_claim").notNull().default(false),
+	minOccurrenceCount: integer("min_occurrence_count").notNull().default(1),
 	severity: text("severity").$type<AlertSeverity>().notNull().default("warning"),
-	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedBy: text("updated_by").notNull(),
 })
 

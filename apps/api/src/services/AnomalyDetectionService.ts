@@ -33,7 +33,7 @@ import {
 	orgClickHouseSettings,
 	orgIngestKeys,
 } from "@maple/db"
-import { and, desc, eq, gte, inArray, like, lt, lte, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/query-engine/caching"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Ref, Schedule, Schema } from "effect"
@@ -41,6 +41,7 @@ import type { TenantContext } from "./AuthService"
 import { AI_TRIAGE_WORKFLOW_BINDING, maybeEnqueueTriage } from "../lib/ai-triage-enqueue"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
+import { dateToMs, msToDate } from "../lib/time"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import {
 	evaluateErrorSpike,
@@ -60,7 +61,6 @@ import {
 	markFingerprintResolved,
 	parseFingerprints,
 	REOPEN_WINDOW_MS,
-	serializeFingerprints,
 	shouldReopen,
 	upsertFingerprintEntry,
 	type IncidentFingerprintEntry,
@@ -68,7 +68,6 @@ import {
 
 const decodeIncidentIdSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.id)
 const decodeMutedSignalResult = Schema.decodeUnknownResult(AnomalySignalType)
-const decodeMutedSignalsJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgIdSchema)
 const decodeIsoSync = Schema.decodeUnknownSync(AnomalyIncidentDocument.fields.firstTriggeredAt)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
@@ -128,6 +127,22 @@ const isBusyDatabaseError = (error: DatabaseError): boolean => {
 }
 
 const BUSY_RETRY_SCHEDULE = Schedule.exponential("50 millis", 2.0).pipe(Schedule.both(Schedule.recurs(3)))
+
+/**
+ * Adapt a drizzle incident row (timestamptz → Date, jsonb → unknown[]) to the
+ * ms-number/JSON-string shape the pure consolidation helpers operate on.
+ */
+const parseRowFingerprints = (row: AnomalyIncidentRow): IncidentFingerprintEntry[] =>
+	parseFingerprints({
+		detectorKey: row.detectorKey,
+		fingerprintHash: row.fingerprintHash,
+		errorIssueId: row.errorIssueId,
+		severity: row.severity,
+		openedValue: row.openedValue,
+		lastObservedValue: row.lastObservedValue,
+		firstTriggeredAt: row.firstTriggeredAt.getTime(),
+		fingerprintsJson: JSON.stringify(row.fingerprintsJson),
+	})
 
 interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly fingerprintHash: string
@@ -228,6 +243,8 @@ const make = Effect.gen(function* () {
 
 	const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
+	const isoFromDate = (date: Date) => decodeIsoSync(date.toISOString())
+
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
 		userId: decodeUserIdSync("system-anomaly"),
@@ -296,18 +313,15 @@ const make = Effect.gen(function* () {
 	// Settings
 	// -----------------------------------------------------------------
 
-	const parseMutedSignals = (raw: string): ReadonlyArray<AnomalySignalType> =>
-		Arr.filterMap(
-			Option.getOrElse(decodeMutedSignalsJson(raw), () => []),
-			(value) => decodeMutedSignalResult(value),
-		)
+	const parseMutedSignals = (raw: ReadonlyArray<string>): ReadonlyArray<AnomalySignalType> =>
+		Arr.filterMap(raw, (value) => decodeMutedSignalResult(value))
 
 	const settingsToDocument = (row: AnomalyDetectorSettingsRow): AnomalyDetectorSettingsDocument =>
 		new AnomalyDetectorSettingsDocument({
-			enabled: row.enabled === 1,
+			enabled: row.enabled,
 			sensitivity: row.sensitivity,
 			mutedSignals: parseMutedSignals(row.mutedSignalsJson),
-			updatedAt: row.updatedAt ? isoFromEpoch(row.updatedAt) : null,
+			updatedAt: isoFromDate(row.updatedAt),
 			updatedBy: row.updatedBy ?? null,
 		})
 
@@ -333,11 +347,11 @@ const make = Effect.gen(function* () {
 				.insert(anomalyDetectorSettings)
 				.values({
 					orgId,
-					enabled: 1,
+					enabled: true,
 					sensitivity: "normal",
-					mutedSignalsJson: "[]",
-					createdAt: nowMs,
-					updatedAt: nowMs,
+					mutedSignalsJson: [],
+					createdAt: new Date(nowMs),
+					updatedAt: new Date(nowMs),
 				})
 				.onConflictDoNothing(),
 		)
@@ -366,13 +380,11 @@ const make = Effect.gen(function* () {
 		const nowMs = yield* Clock.currentTimeMillis
 		const existing = yield* ensureSettingsRow(orgId, nowMs)
 		const next = {
-			enabled: request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0,
+			enabled: request.enabled === undefined ? existing.enabled : request.enabled,
 			sensitivity: request.sensitivity ?? existing.sensitivity,
 			mutedSignalsJson:
-				request.mutedSignals === undefined
-					? existing.mutedSignalsJson
-					: JSON.stringify(request.mutedSignals),
-			updatedAt: nowMs,
+				request.mutedSignals === undefined ? existing.mutedSignalsJson : request.mutedSignals,
+			updatedAt: new Date(nowMs),
 			updatedBy: userId,
 		}
 		yield* dbExecute((db) =>
@@ -403,15 +415,15 @@ const make = Effect.gen(function* () {
 			thresholdValue: row.thresholdValue,
 			lastObservedValue: row.lastObservedValue,
 			lastSampleCount: row.lastSampleCount,
-			firstTriggeredAt: isoFromEpoch(row.firstTriggeredAt),
-			lastTriggeredAt: isoFromEpoch(row.lastTriggeredAt),
-			resolvedAt: row.resolvedAt ? isoFromEpoch(row.resolvedAt) : null,
+			firstTriggeredAt: isoFromDate(row.firstTriggeredAt),
+			lastTriggeredAt: isoFromDate(row.lastTriggeredAt),
+			resolvedAt: row.resolvedAt ? isoFromDate(row.resolvedAt) : null,
 			resolveReason: row.resolveReason ?? null,
 			triageStatus: row.triageStatus,
 			fingerprints:
 				row.fingerprintHash === null
 					? []
-					: parseFingerprints(row).map(
+					: parseRowFingerprints(row).map(
 							(entry) =>
 								new AnomalyIncidentFingerprint({
 									fingerprintHash: entry.fingerprintHash,
@@ -428,7 +440,7 @@ const make = Effect.gen(function* () {
 								}),
 						),
 			reopenCount: row.reopenCount,
-			lastReopenedAt: row.lastReopenedAt ? isoFromEpoch(row.lastReopenedAt) : null,
+			lastReopenedAt: row.lastReopenedAt ? isoFromDate(row.lastReopenedAt) : null,
 		})
 
 	const listIncidents: AnomalyDetectionServiceShape["listIncidents"] = Effect.fn(
@@ -446,11 +458,12 @@ const make = Effect.gen(function* () {
 			opts.errorIssueId
 				? or(
 						eq(anomalyIncidents.errorIssueId, opts.errorIssueId),
-						like(anomalyIncidents.fingerprintsJson, `%"${opts.errorIssueId}"%`),
+						// jsonb has no LIKE operator; substring-match its text form.
+						sql`${anomalyIncidents.fingerprintsJson}::text LIKE ${`%"${opts.errorIssueId}"%`}`,
 					)
 				: undefined,
-			opts.startTime ? gte(anomalyIncidents.lastTriggeredAt, Date.parse(opts.startTime)) : undefined,
-			opts.endTime ? lte(anomalyIncidents.firstTriggeredAt, Date.parse(opts.endTime)) : undefined,
+			opts.startTime ? gte(anomalyIncidents.lastTriggeredAt, new Date(opts.startTime)) : undefined,
+			opts.endTime ? lte(anomalyIncidents.firstTriggeredAt, new Date(opts.endTime)) : undefined,
 		].filter((c): c is NonNullable<typeof c> => c !== undefined)
 		const rows = yield* dbExecute((db) =>
 			db
@@ -511,8 +524,8 @@ const make = Effect.gen(function* () {
 				.set({
 					status: "resolved",
 					resolveReason: "manual",
-					resolvedAt: nowMs,
-					updatedAt: nowMs,
+					resolvedAt: new Date(nowMs),
+					updatedAt: new Date(nowMs),
 				})
 				.where(
 					and(
@@ -533,11 +546,11 @@ const make = Effect.gen(function* () {
 				.update(anomalyDetectorStates)
 				.set({
 					openIncidentId: null,
-					lastResolvedAt: nowMs,
+					lastResolvedAt: new Date(nowMs),
 					lastIncidentId: incidentId,
 					consecutiveBreaches: 0,
 					consecutiveHealthy: 0,
-					updatedAt: nowMs,
+					updatedAt: new Date(nowMs),
 				})
 				.where(
 					and(
@@ -576,7 +589,7 @@ const make = Effect.gen(function* () {
 		yield* dbExecute((db) =>
 			db
 				.update(anomalyIncidents)
-				.set({ errorIssueId: issueId, updatedAt: nowMs })
+				.set({ errorIssueId: issueId, updatedAt: new Date(nowMs) })
 				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incidentId))),
 		)
 		const refreshed = yield* requireIncidentRow(orgId, incidentId)
@@ -601,8 +614,8 @@ const make = Effect.gen(function* () {
 		const row = yield* requireIncidentRow(orgId, incidentId)
 		const nowMs = yield* Clock.currentTimeMillis
 
-		const defaultStart = row.firstTriggeredAt - 24 * HOUR_MS
-		const defaultEnd = Math.min(nowMs, (row.resolvedAt ?? nowMs) + 2 * HOUR_MS)
+		const defaultStart = row.firstTriggeredAt.getTime() - 24 * HOUR_MS
+		const defaultEnd = Math.min(nowMs, (dateToMs(row.resolvedAt) ?? nowMs) + 2 * HOUR_MS)
 		const requestedStart = opts.startTime !== undefined ? Date.parse(opts.startTime) : defaultStart
 		const requestedEnd = opts.endTime !== undefined ? Date.parse(opts.endTime) : defaultEnd
 		const endMs = Math.min(Number.isFinite(requestedEnd) ? requestedEnd : defaultEnd, nowMs)
@@ -634,7 +647,7 @@ const make = Effect.gen(function* () {
 			// Consolidated incidents (several co-onset fingerprints) chart the
 			// service's full error-event series; a single-fingerprint series
 			// would under-represent the event.
-			const activeFingerprints = parseFingerprints(row).filter((e) => e.resolvedAt === null)
+			const activeFingerprints = parseRowFingerprints(row).filter((e) => e.resolvedAt === null)
 			const compiled =
 				activeFingerprints.length > 1
 					? CH.compile(CH.anomalyErrorSpikeServiceTimeseriesQuery(), {
@@ -1003,13 +1016,15 @@ const make = Effect.gen(function* () {
 		dbExecute((db) =>
 			db
 				.update(anomalyDetectorSettings)
-				.set({ lastTickAt: nowMs })
+				.set({ lastTickAt: new Date(nowMs) })
 				.where(
 					and(
 						eq(anomalyDetectorSettings.orgId, orgId),
-						sql`(${anomalyDetectorSettings.lastTickAt} IS NULL OR ${anomalyDetectorSettings.lastTickAt} < ${nowMs - ORG_LOCK_TTL_MS})`,
+						sql`(${anomalyDetectorSettings.lastTickAt} IS NULL OR ${anomalyDetectorSettings.lastTickAt} < ${new Date(nowMs - ORG_LOCK_TTL_MS)})`,
 					),
-				),
+				)
+				// The returned row is the claim: empty means another tick holds the lock.
+				.returning({ orgId: anomalyDetectorSettings.orgId }),
 		)
 
 	const newIncidentId = () => decodeIncidentIdSync(randomUUID())
@@ -1039,10 +1054,10 @@ const make = Effect.gen(function* () {
 		}
 
 		const settings = yield* ensureSettingsRow(orgId, nowMs)
-		if (settings.enabled !== 1) return stats
+		if (!settings.enabled) return stats
 
 		const claim = yield* claimOrg(orgId, nowMs)
-		if ((claim as { rowsAffected?: number }).rowsAffected === 0) return stats
+		if (claim.length === 0) return stats
 
 		const muted = new Set(parseMutedSignals(settings.mutedSignalsJson))
 		const sensitivity = SENSITIVITY[settings.sensitivity] ?? SENSITIVITY.normal
@@ -1082,7 +1097,7 @@ const make = Effect.gen(function* () {
 			),
 		)
 		const issueRows = issueRowChunks.flat()
-		const issueFirstSeenAt = new Map(issueRows.map((r) => [r.fingerprintHash, r.firstSeenAt]))
+		const issueFirstSeenAt = new Map(issueRows.map((r) => [r.fingerprintHash, r.firstSeenAt.getTime()]))
 		const issueIdByFingerprint = new Map(issueRows.map((r) => [r.fingerprintHash, r.issueId]))
 
 		const evaluations: AnomalyEvaluation[] = []
@@ -1122,10 +1137,10 @@ const make = Effect.gen(function* () {
 				.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.status, "open"))),
 		)
 		const incidentById = new Map<string, IncidentRuntime>(
-			openIncidentRows.map((r) => [r.id, { row: r, entries: parseFingerprints(r) }]),
+			openIncidentRows.map((r) => [r.id, { row: r, entries: parseRowFingerprints(r) }]),
 		)
 		const incidentOnset = (row: AnomalyIncidentRow) =>
-			Math.max(row.firstTriggeredAt, row.lastReopenedAt ?? 0)
+			Math.max(row.firstTriggeredAt.getTime(), dateToMs(row.lastReopenedAt) ?? 0)
 		// Attach target per service+env: the most recently onset open spike incident.
 		const openSpikeByServiceEnv = new Map<string, IncidentRuntime>()
 		for (const runtime of incidentById.values()) {
@@ -1151,7 +1166,7 @@ const make = Effect.gen(function* () {
 				consecutiveBreaches: state?.consecutiveBreaches ?? 0,
 				consecutiveHealthy: state?.consecutiveHealthy ?? 0,
 				openIncidentId: state?.openIncidentId ?? null,
-				lastResolvedAt: state?.lastResolvedAt ?? null,
+				lastResolvedAt: dateToMs(state?.lastResolvedAt ?? null),
 			}
 			const decision = decideTransition(
 				snapshot,
@@ -1187,7 +1202,9 @@ const make = Effect.gen(function* () {
 				const transition = decision.transition
 
 				let openIncidentId = decision.state?.openIncidentId ?? null
-				let lastResolvedAt = decision.state?.lastResolvedAt ?? null
+				// Kept in ms-number space for the reopen-window arithmetic below;
+				// converted back to Date at the detector-state write.
+				let lastResolvedAt = dateToMs(decision.state?.lastResolvedAt ?? null)
 				let lastIncidentId = decision.state?.lastIncidentId ?? null
 
 				if (transition === "open") {
@@ -1203,7 +1220,16 @@ const make = Effect.gen(function* () {
 					if (evaluation.signalType === "error_spike" && evaluation.fingerprintHash !== null) {
 						const attachKey = attachKeyFor(evaluation.serviceName, evaluation.deploymentEnv)
 						const target = openSpikeByServiceEnv.get(attachKey)
-						if (target !== undefined && canAttach(target.row, nowMs)) {
+						if (
+							target !== undefined &&
+							canAttach(
+								{
+									firstTriggeredAt: target.row.firstTriggeredAt.getTime(),
+									lastReopenedAt: dateToMs(target.row.lastReopenedAt),
+								},
+								nowMs,
+							)
+						) {
 							target.entries = upsertFingerprintEntry(target.entries, {
 								fingerprintHash: evaluation.fingerprintHash,
 								errorIssueId,
@@ -1215,15 +1241,15 @@ const make = Effect.gen(function* () {
 								resolvedAt: null,
 							})
 							const severity = headlineSeverity(target.entries, target.row.severity)
-							const fingerprintsJson = serializeFingerprints(target.entries)
+							const fingerprintsJson = target.entries
 							const updated = yield* dbExecute((db) =>
 								db
 									.update(anomalyIncidents)
 									.set({
 										fingerprintsJson,
 										severity,
-										lastTriggeredAt: nowMs,
-										updatedAt: nowMs,
+										lastTriggeredAt: new Date(nowMs),
+										updatedAt: new Date(nowMs),
 									})
 									.where(
 										and(
@@ -1233,9 +1259,10 @@ const make = Effect.gen(function* () {
 											// a resolved incident.
 											eq(anomalyIncidents.status, "open"),
 										),
-									),
+									)
+									.returning({ id: anomalyIncidents.id }),
 							)
-							if ((updated as { rowsAffected?: number }).rowsAffected === 0) {
+							if (updated.length === 0) {
 								incidentById.delete(target.row.id)
 								openSpikeByServiceEnv.delete(attachKey)
 							} else {
@@ -1243,7 +1270,7 @@ const make = Effect.gen(function* () {
 									...target.row,
 									fingerprintsJson,
 									severity,
-									lastTriggeredAt: nowMs,
+									lastTriggeredAt: new Date(nowMs),
 								}
 								openIncidentId = target.row.id
 								lastIncidentId = target.row.id
@@ -1278,7 +1305,7 @@ const make = Effect.gen(function* () {
 						)
 						const prior = priorRows[0]
 						if (prior !== undefined && shouldReopen(prior, lastResolvedAt, nowMs)) {
-							let entries = parseFingerprints(prior)
+							let entries = parseRowFingerprints(prior)
 							if (evaluation.fingerprintHash !== null) {
 								const existing = entries.find(
 									(e) => e.fingerprintHash === evaluation.fingerprintHash,
@@ -1295,7 +1322,7 @@ const make = Effect.gen(function* () {
 								})
 							}
 							const severity = headlineSeverity(entries, evaluation.severity)
-							const fingerprintsJson = serializeFingerprints(entries)
+							const fingerprintsJson = entries
 							// The reopening series becomes the incident's primary — a
 							// consolidated incident may be reopened by any of its
 							// fingerprints, and `detectorKey` must point at a live one.
@@ -1304,15 +1331,15 @@ const make = Effect.gen(function* () {
 								resolveReason: null,
 								resolvedAt: null,
 								reopenCount: prior.reopenCount + 1,
-								lastReopenedAt: nowMs,
+								lastReopenedAt: new Date(nowMs),
 								severity,
 								lastObservedValue: evaluation.value,
 								lastSampleCount: evaluation.sampleCount,
-								lastTriggeredAt: nowMs,
+								lastTriggeredAt: new Date(nowMs),
 								detectorKey: evaluation.detectorKey,
 								fingerprintHash: evaluation.fingerprintHash,
 								fingerprintsJson,
-								updatedAt: nowMs,
+								updatedAt: new Date(nowMs),
 							}
 							const updated = yield* dbExecute((db) =>
 								db
@@ -1324,9 +1351,10 @@ const make = Effect.gen(function* () {
 											eq(anomalyIncidents.id, prior.id),
 											eq(anomalyIncidents.status, "resolved"),
 										),
-									),
+									)
+									.returning({ id: anomalyIncidents.id }),
 							)
-							if ((updated as { rowsAffected?: number }).rowsAffected !== 0) {
+							if (updated.length !== 0) {
 								const runtime: IncidentRuntime = { row: { ...prior, ...reopenSet }, entries }
 								incidentById.set(prior.id, runtime)
 								if (prior.signalType === "error_spike") {
@@ -1379,15 +1407,15 @@ const make = Effect.gen(function* () {
 							thresholdValue: evaluation.threshold,
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
-							firstTriggeredAt: nowMs,
-							lastTriggeredAt: nowMs,
+							firstTriggeredAt: new Date(nowMs),
+							lastTriggeredAt: new Date(nowMs),
 							triageStatus: "none" as const,
 							dedupeKey: `${orgId}:${evaluation.detectorKey}`,
-							fingerprintsJson: serializeFingerprints(entries),
+							fingerprintsJson: entries,
 							reopenCount: 0,
 							lastReopenedAt: null,
-							createdAt: nowMs,
-							updatedAt: nowMs,
+							createdAt: new Date(nowMs),
+							updatedAt: new Date(nowMs),
 						}
 						yield* dbExecute((db) => db.insert(anomalyIncidents).values(insertValues))
 						const runtime: IncidentRuntime = {
@@ -1434,7 +1462,7 @@ const make = Effect.gen(function* () {
 							yield* dbExecute((db) =>
 								db
 									.update(anomalyIncidents)
-									.set({ triageStatus: "pending", updatedAt: nowMs })
+									.set({ triageStatus: "pending", updatedAt: new Date(nowMs) })
 									.where(
 										and(
 											eq(anomalyIncidents.orgId, orgId),
@@ -1469,8 +1497,7 @@ const make = Effect.gen(function* () {
 						runtime !== undefined && runtime.entries.length > 0
 							? headlineSeverity(runtime.entries, evaluation.severity)
 							: evaluation.severity
-					const fingerprintsJson =
-						runtime !== undefined ? serializeFingerprints(runtime.entries) : undefined
+					const fingerprintsJson = runtime !== undefined ? runtime.entries : undefined
 					// Only the primary series moves the headline value; an attached
 					// fingerprint still bumps lastTriggeredAt (and severity) so the
 					// no-data sweep can't resolve a still-firing shared incident.
@@ -1481,14 +1508,14 @@ const make = Effect.gen(function* () {
 								lastObservedValue: evaluation.value,
 								lastSampleCount: evaluation.sampleCount,
 								severity,
-								lastTriggeredAt: nowMs,
-								updatedAt: nowMs,
+								lastTriggeredAt: new Date(nowMs),
+								updatedAt: new Date(nowMs),
 								...(fingerprintsJson !== undefined ? { fingerprintsJson } : {}),
 							}
 						: {
 								severity,
-								lastTriggeredAt: nowMs,
-								updatedAt: nowMs,
+								lastTriggeredAt: new Date(nowMs),
+								updatedAt: new Date(nowMs),
 								...(fingerprintsJson !== undefined ? { fingerprintsJson } : {}),
 							}
 					const updated = yield* dbExecute((db) =>
@@ -1504,9 +1531,10 @@ const make = Effect.gen(function* () {
 									// resolved incident.
 									eq(anomalyIncidents.status, "open"),
 								),
-							),
+							)
+							.returning({ id: anomalyIncidents.id }),
 					)
-					if ((updated as { rowsAffected?: number }).rowsAffected === 0) {
+					if (updated.length === 0) {
 						// Externally resolved (manual resolve raced the tick): drop the
 						// pointer and start the cooldown locally so the state upsert
 						// below doesn't re-point at the resolved incident.
@@ -1556,10 +1584,10 @@ const make = Effect.gen(function* () {
 								.set({
 									status: "resolved",
 									resolveReason: "returned_to_baseline",
-									resolvedAt: nowMs,
-									updatedAt: nowMs,
+									resolvedAt: new Date(nowMs),
+									updatedAt: new Date(nowMs),
 									...(runtime !== undefined && runtime.entries.length > 0
-										? { fingerprintsJson: serializeFingerprints(runtime.entries) }
+										? { fingerprintsJson: runtime.entries }
 										: {}),
 								})
 								.where(
@@ -1586,10 +1614,10 @@ const make = Effect.gen(function* () {
 						const isPrimary =
 							runtime === undefined || runtime.row.detectorKey === evaluation.detectorKey
 						const detachSet = {
-							updatedAt: nowMs,
+							updatedAt: new Date(nowMs),
 							...(runtime !== undefined && runtime.entries.length > 0
 								? {
-										fingerprintsJson: serializeFingerprints(runtime.entries),
+										fingerprintsJson: runtime.entries,
 										severity: headlineSeverity(runtime.entries, runtime.row.severity),
 									}
 								: {}),
@@ -1633,11 +1661,11 @@ const make = Effect.gen(function* () {
 							lastValue: evaluation.value,
 							baselineMedian: evaluation.baselineMedian,
 							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: nowMs,
+							lastEvaluatedAt: new Date(nowMs),
 							openIncidentId,
-							lastResolvedAt,
+							lastResolvedAt: msToDate(lastResolvedAt),
 							lastIncidentId,
-							updatedAt: nowMs,
+							updatedAt: new Date(nowMs),
 						})
 						.onConflictDoUpdate({
 							target: [anomalyDetectorStates.orgId, anomalyDetectorStates.detectorKey],
@@ -1648,11 +1676,11 @@ const make = Effect.gen(function* () {
 								lastValue: evaluation.value,
 								baselineMedian: evaluation.baselineMedian,
 								lastSampleCount: evaluation.sampleCount,
-								lastEvaluatedAt: nowMs,
+								lastEvaluatedAt: new Date(nowMs),
 								openIncidentId,
-								lastResolvedAt,
+								lastResolvedAt: msToDate(lastResolvedAt),
 								lastIncidentId,
-								updatedAt: nowMs,
+								updatedAt: new Date(nowMs),
 							},
 						}),
 				)
@@ -1670,7 +1698,7 @@ const make = Effect.gen(function* () {
 					and(
 						eq(anomalyIncidents.orgId, orgId),
 						eq(anomalyIncidents.status, "open"),
-						lt(anomalyIncidents.lastTriggeredAt, nowMs - NO_DATA_RESOLVE_MS),
+						lt(anomalyIncidents.lastTriggeredAt, new Date(nowMs - NO_DATA_RESOLVE_MS)),
 					),
 				),
 		)
@@ -1683,8 +1711,8 @@ const make = Effect.gen(function* () {
 						.set({
 							status: "resolved",
 							resolveReason: "no_data",
-							resolvedAt: nowMs,
-							updatedAt: nowMs,
+							resolvedAt: new Date(nowMs),
+							updatedAt: new Date(nowMs),
 						})
 						.where(and(eq(anomalyIncidents.orgId, orgId), eq(anomalyIncidents.id, incident.id))),
 				)
@@ -1695,11 +1723,11 @@ const make = Effect.gen(function* () {
 						.update(anomalyDetectorStates)
 						.set({
 							openIncidentId: null,
-							lastResolvedAt: nowMs,
+							lastResolvedAt: new Date(nowMs),
 							lastIncidentId: incident.id,
 							consecutiveBreaches: 0,
 							consecutiveHealthy: 0,
-							updatedAt: nowMs,
+							updatedAt: new Date(nowMs),
 						})
 						.where(
 							and(
@@ -1720,7 +1748,7 @@ const make = Effect.gen(function* () {
 					.where(
 						and(
 							eq(anomalyDetectorStates.orgId, orgId),
-							lt(anomalyDetectorStates.lastEvaluatedAt, nowMs - STATE_RETENTION_MS),
+							lt(anomalyDetectorStates.lastEvaluatedAt, new Date(nowMs - STATE_RETENTION_MS)),
 						),
 					),
 			)

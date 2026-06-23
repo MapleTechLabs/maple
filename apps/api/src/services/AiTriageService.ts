@@ -98,10 +98,10 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 
 			const isoFromEpoch = (ms: number) => decodeIsoSync(new Date(ms).toISOString())
 
-			const parseResult = (raw: string | null): AiTriageResult | null => {
+			const parseResult = (raw: unknown): AiTriageResult | null => {
 				if (raw == null) return null
 				try {
-					return decodeResultSync(JSON.parse(raw))
+					return decodeResultSync(raw)
 				} catch {
 					return null
 				}
@@ -119,9 +119,9 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					inputTokens: row.inputTokens ?? null,
 					outputTokens: row.outputTokens ?? null,
 					error: row.error ?? null,
-					createdAt: isoFromEpoch(row.createdAt),
-					startedAt: row.startedAt ? isoFromEpoch(row.startedAt) : null,
-					completedAt: row.completedAt ? isoFromEpoch(row.completedAt) : null,
+					createdAt: isoFromEpoch(row.createdAt.getTime()),
+					startedAt: row.startedAt ? isoFromEpoch(row.startedAt.getTime()) : null,
+					completedAt: row.completedAt ? isoFromEpoch(row.completedAt.getTime()) : null,
 				})
 
 			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (orgId: OrgId) {
@@ -133,9 +133,9 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 
 			const settingsToDocument = (row: AiTriageSettingsRow | undefined): AiTriageSettingsDocument =>
 				new AiTriageSettingsDocument({
-					enabled: row?.enabled === 1,
+					enabled: row?.enabled ?? false,
 					maxRunsPerDay: row?.maxRunsPerDay ?? 20,
-					updatedAt: row?.updatedAt ? isoFromEpoch(row.updatedAt) : null,
+					updatedAt: row?.updatedAt ? isoFromEpoch(row.updatedAt.getTime()) : null,
 					updatedBy: row?.updatedBy ?? null,
 				})
 
@@ -157,12 +157,12 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 				// the Flue cutover — it no longer needs a per-org OpenRouter key, so
 				// enabling it is unconditional.
 				const nextEnabled =
-					request.enabled === undefined ? (existing?.enabled ?? 0) : request.enabled ? 1 : 0
+					request.enabled === undefined ? (existing?.enabled ?? false) : request.enabled
 
 				const next = {
 					enabled: nextEnabled,
 					maxRunsPerDay: request.maxRunsPerDay ?? existing?.maxRunsPerDay ?? 20,
-					updatedAt: nowMs,
+					updatedAt: new Date(nowMs),
 					updatedBy: userId,
 				}
 				yield* dbExecute((db) =>
@@ -241,8 +241,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 							baselineMedian: incident.baselineMedian,
 							baselineSigma: incident.baselineSigma,
 							thresholdValue: incident.thresholdValue,
-							firstTriggeredAt: new Date(incident.firstTriggeredAt).toISOString(),
-							lastTriggeredAt: new Date(incident.lastTriggeredAt).toISOString(),
+							firstTriggeredAt: incident.firstTriggeredAt.toISOString(),
+							lastTriggeredAt: incident.lastTriggeredAt.toISOString(),
 							status: incident.status,
 						},
 					}
@@ -291,8 +291,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 						topFrame: issue?.topFrame,
 						fingerprintHash: issue?.fingerprintHash,
 						occurrenceCount: incident.occurrenceCount,
-						firstTriggeredAt: new Date(incident.firstTriggeredAt).toISOString(),
-						lastTriggeredAt: new Date(incident.lastTriggeredAt).toISOString(),
+						firstTriggeredAt: incident.firstTriggeredAt.toISOString(),
+						lastTriggeredAt: incident.lastTriggeredAt.toISOString(),
 						issueId: incident.issueId,
 					},
 				}
@@ -333,9 +333,9 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 							incidentId: request.incidentId,
 							issueId: request.issueId ?? issueId ?? null,
 							status: "queued",
-							contextJson: JSON.stringify(context),
-							createdAt: nowMs,
-							updatedAt: nowMs,
+							contextJson: context,
+							createdAt: new Date(nowMs),
+							updatedAt: new Date(nowMs),
 						}),
 					)
 
@@ -353,7 +353,7 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 								.set({
 									status: "failed",
 									error: "workflow_binding_unavailable",
-									updatedAt: nowMs,
+									updatedAt: new Date(nowMs),
 								})
 								.where(eq(aiTriageRuns.id, runId)),
 						)
@@ -388,7 +388,7 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 										.set({
 											status: "failed",
 											error: `workflow_create_failed: ${error.message}`,
-											updatedAt: nowMs,
+											updatedAt: new Date(nowMs),
 										})
 										.where(eq(aiTriageRuns.id, runId)),
 								).pipe(Effect.ignore),

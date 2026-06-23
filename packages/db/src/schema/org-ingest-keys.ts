@@ -1,6 +1,6 @@
-import { integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-export const orgIngestKeys = sqliteTable(
+export const orgIngestKeys = pgTable(
 	"org_ingest_keys",
 	{
 		orgId: text("org_id").notNull(),
@@ -10,10 +10,10 @@ export const orgIngestKeys = sqliteTable(
 		privateKeyIv: text("private_key_iv").notNull(),
 		privateKeyTag: text("private_key_tag").notNull(),
 		privateKeyHash: text("private_key_hash").notNull(),
-		publicRotatedAt: integer("public_rotated_at", { mode: "number" }).notNull(),
-		privateRotatedAt: integer("private_rotated_at", { mode: "number" }).notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		publicRotatedAt: timestamp("public_rotated_at", { withTimezone: true, mode: "date" }).notNull(),
+		privateRotatedAt: timestamp("private_rotated_at", { withTimezone: true, mode: "date" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		updatedBy: text("updated_by").notNull(),
 	},

@@ -2,7 +2,7 @@ import { assert } from "@effect/vitest"
 import { createHmac, generateKeyPairSync } from "node:crypto"
 import { OrgId, UserId, type VcsSyncJob } from "@maple/domain/http"
 import { Cause, ConfigProvider, type Context, Effect, Exit, Layer, Option, Schema } from "effect"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
+import type { TestDb } from "@/lib/test-pglite"
 import { Env } from "@/lib/Env"
 import { GithubHttp, type GithubHttpShape } from "@/services/vcs/vendor/github/GithubHttp"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
@@ -54,17 +54,18 @@ const baseConfigValues = {
 	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
 } as const
 
-// ConfigProvider layer wired to a temp DB url; `extra` adds (or overrides) keys
-// such as the GitHub App config or the webhook secret.
-const testConfig = (url: string, extra?: Record<string, unknown>) =>
-	ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfigValues, MAPLE_DB_URL: url, ...extra }))
+// ConfigProvider layer; `extra` adds (or overrides) keys such as the GitHub App
+// config or the webhook secret. The DB comes from an in-memory PGlite TestDb, so
+// no connection string is needed here.
+const testConfig = (extra?: Record<string, unknown>) =>
+	ConfigProvider.layer(ConfigProvider.fromUnknown({ ...baseConfigValues, ...extra }))
 
-export const testEnv = (url: string, extra?: Record<string, unknown>) =>
-	Env.layer.pipe(Layer.provide(testConfig(url, extra)))
+export const testEnv = (extra?: Record<string, unknown>) =>
+	Env.layer.pipe(Layer.provide(testConfig(extra)))
 
-// VcsRepository over a real temp sqlite (DatabaseLibsqlLive) + Env.
-export const testRepoLayer = (url: string, extra?: Record<string, unknown>) =>
-	VcsRepository.layer.pipe(Layer.provide(DatabaseLibsqlLive), Layer.provide(testEnv(url, extra)))
+// VcsRepository over an in-memory PGlite TestDb + Env.
+export const testRepoLayer = (testDb: TestDb, extra?: Record<string, unknown>) =>
+	VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(testEnv(extra)))
 
 export const jsonResponse = (body: unknown, init?: { status?: number; headers?: Record<string, string> }) =>
 	new Response(JSON.stringify(body), {

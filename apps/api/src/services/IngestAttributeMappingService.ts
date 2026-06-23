@@ -83,8 +83,8 @@ const rowToResponse = (row: MappingRow): IngestAttributeMapping =>
 		targetKey: row.targetKey,
 		operation: decodeOperationSync(row.operation),
 		enabled: row.enabled,
-		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 	})
 
 const validateRule = Effect.fnUntraced(function* (rule: {
@@ -190,8 +190,8 @@ export class IngestAttributeMappingService extends Context.Service<
 						targetKey: request.targetKey.trim(),
 						operation: request.operation,
 						enabled: request.enabled ?? true,
-						createdAt: now,
-						updatedAt: now,
+						createdAt: new Date(now),
+						updatedAt: new Date(now),
 					}),
 				),
 			)
@@ -224,7 +224,7 @@ export class IngestAttributeMappingService extends Context.Service<
 			yield* validateRule(merged)
 
 			const now = yield* Clock.currentTimeMillis
-			const updates: Record<string, unknown> = { updatedAt: now }
+			const updates: Record<string, unknown> = { updatedAt: new Date(now) }
 			if (request.name !== undefined) updates.name = request.name.trim()
 			if (request.sourceContext !== undefined) updates.sourceContext = request.sourceContext
 			if (request.sourceKey !== undefined) updates.sourceKey = request.sourceKey.trim()

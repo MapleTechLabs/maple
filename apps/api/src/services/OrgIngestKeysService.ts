@@ -119,10 +119,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 				return new IngestKeysResponse({
 					publicKey: row.publicKey,
 					privateKey,
-					publicRotatedAt: decodeIsoDateTimeStringSync(new Date(row.publicRotatedAt).toISOString()),
-					privateRotatedAt: decodeIsoDateTimeStringSync(
-						new Date(row.privateRotatedAt).toISOString(),
-					),
+					publicRotatedAt: decodeIsoDateTimeStringSync(row.publicRotatedAt.toISOString()),
+					privateRotatedAt: decodeIsoDateTimeStringSync(row.privateRotatedAt.toISOString()),
 				})
 			})
 
@@ -152,10 +150,10 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 								privateKeyIv: encryptedPrivate.iv,
 								privateKeyTag: encryptedPrivate.tag,
 								privateKeyHash,
-								publicRotatedAt: now,
-								privateRotatedAt: now,
-								createdAt: now,
-								updatedAt: now,
+								publicRotatedAt: new Date(now),
+								privateRotatedAt: new Date(now),
+								createdAt: new Date(now),
+								updatedAt: new Date(now),
 								createdBy: userId,
 								updatedBy: userId,
 							})
@@ -200,8 +198,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 							.set({
 								publicKey,
 								publicKeyHash,
-								publicRotatedAt: now,
-								updatedAt: now,
+								publicRotatedAt: new Date(now),
+								updatedAt: new Date(now),
 								updatedBy: userId,
 							})
 							.where(eq(orgIngestKeys.orgId, orgId)),
@@ -240,8 +238,8 @@ export class OrgIngestKeysService extends Context.Service<OrgIngestKeysService>(
 								privateKeyIv: encryptedPrivate.iv,
 								privateKeyTag: encryptedPrivate.tag,
 								privateKeyHash,
-								privateRotatedAt: now,
-								updatedAt: now,
+								privateRotatedAt: new Date(now),
+								updatedAt: new Date(now),
 								updatedBy: userId,
 							})
 							.where(eq(orgIngestKeys.orgId, orgId)),

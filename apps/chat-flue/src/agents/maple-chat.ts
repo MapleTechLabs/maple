@@ -1,7 +1,9 @@
 import { createAgent, type AgentRouteHandler, type McpServerConnection } from "@flue/runtime"
+import { tracing } from "cloudflare:workers"
 import { applyApprovalGates } from "../lib/approval.ts"
+import { instanceIdFromAgentPath } from "../lib/auth.ts"
 import type { ChatFlueEnv } from "../lib/env.ts"
-import { connectMapleMcp } from "../lib/mcp.ts"
+import { connectMapleMcp, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
 import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
 import { orgIdFromInstanceId } from "../lib/org.ts"
 
@@ -40,7 +42,27 @@ const DEFAULT_MODEL = "cloudflare/@cf/zai-org/glm-5.2"
  * (verify the caller's token + match its org to this instance id), so this
  * per-agent handler stays a pass-through.
  */
-export const route: AgentRouteHandler = async (_c, next) => next()
+export const route: AgentRouteHandler = async (c, next) => {
+	// Only the prompt submission (POST) is wrapped in a `chat.turn` span. The GET
+	// event-stream is a long-poll that holds open ~30s by design; spanning it would
+	// swamp the data with idle-transport durations and bury the actual model latency.
+	if (c.req.method !== "POST") return next()
+
+	const env = c.env as unknown as ChatFlueEnv
+	const instanceId = instanceIdFromAgentPath(new URL(c.req.url).pathname)
+	const mode = instanceId ? modeFromInstanceId(instanceId) : "default"
+	const turnOrgId = instanceId ? orgIdFromInstanceId(instanceId) : undefined
+
+	// `enterSpan` nests by async context: the per-interaction agent factory (and its
+	// `chat.mcp_connect` child) plus the model `AI.run` fetch all run inside `next()`,
+	// so they attach under this span — finally attributing today's anonymous fetches.
+	return tracing.enterSpan("chat.turn", async (span) => {
+		span.setAttribute("maple.chat.mode", mode)
+		span.setAttribute("gen_ai.request.model", env.MAPLE_CHAT_MODEL ?? DEFAULT_MODEL)
+		if (turnOrgId) span.setAttribute("maple.org_id", turnOrgId)
+		return next()
+	})
+}
 
 export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 	const orgId = orgIdFromInstanceId(ctx.id)
@@ -62,7 +84,25 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 	let tools: McpServerConnection["tools"] = []
 	if (orgId) {
 		try {
-			const maple = await connectMapleMcp(ctx.env, orgId)
+			// `chat.mcp_connect` makes the per-interaction MCP connect (the leading
+			// "takes ages to start" suspect — no pooling, 12s timeout) a first-class,
+			// queryable span, and turns the previously-silent failure path into a
+			// span carrying `error`/`error.message` + `maple.mcp.connected=false`.
+			const maple = await tracing.enterSpan("chat.mcp_connect", async (span) => {
+				span.setAttribute("maple.org_id", orgId)
+				span.setAttribute("maple.mcp.timeout_ms", MCP_DEFAULT_TIMEOUT_MS)
+				try {
+					const connection = await connectMapleMcp(ctx.env, orgId)
+					span.setAttribute("maple.mcp.connected", true)
+					span.setAttribute("maple.mcp.tool_count", connection.tools.length)
+					return connection
+				} catch (error) {
+					span.setAttribute("maple.mcp.connected", false)
+					span.setAttribute("error", true)
+					span.setAttribute("error.message", error instanceof Error ? error.message : String(error))
+					throw error
+				}
+			})
 			// Propose-then-apply: mutating tools return a proposal the UI approves
 			// (Flue has no native human-in-the-loop interrupt).
 			tools = applyApprovalGates(maple.tools)

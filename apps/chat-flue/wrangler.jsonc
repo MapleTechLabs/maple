@@ -25,4 +25,18 @@
 		// Maple API worker that hosts the MCP server at `/mcp`.
 		"MAPLE_API_URL": "http://localhost:3472",
 	},
+	// Workers Observability — `traces.enabled` is required for `tracing.enterSpan`
+	// custom spans; the "maple" destination forwards logs + traces to Maple ingest.
+	// The real deploy is Alchemy-owned (alchemy.run.ts sets this too); kept here in
+	// sync for the Flue-native manual deploy + `wrangler dev`.
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"destinations": ["maple"],
+		},
+		"traces": {
+			"enabled": true,
+			"destinations": ["maple"],
+		},
+	},
 }

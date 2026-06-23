@@ -15,16 +15,40 @@ import { CHAT_FLUE_SERVICE_NAME, rootContextFromRequest, setupTelemetry } from "
 // `observe` is isolate-local, and this module's top-level body runs in every
 // isolate the Flue-generated entry loads — the worker AND the chat-agent /
 // triage Durable Objects — so the OTel observer is registered wherever the
-// model/tool/run events actually fire. When MAPLE_INGEST_KEY is set we ship Flue
-// events as OpenTelemetry spans to Maple's ingest (the Flue OTel adapter →
+// model/tool/run events actually fire. When MAPLE_INGEST_KEY is set we ALSO ship
+// Flue events as OpenTelemetry spans to Maple's ingest (the Flue OTel adapter →
 // `maple-chat-flue` service, GenAI `chat` spans, `flue.tool`/`flue.operation`,
-// etc.); otherwise we fall back to the original structured error logging so
-// local dev still surfaces failures with zero export noise.
+// etc.). Independently of that, structured error + per-turn outcome logging is
+// registered UNCONDITIONALLY (below): those lines reach Workers Observability logs
+// (→ Maple) and are the primary signal for the "chat did nothing" failure mode,
+// regardless of whether the OTel export is on.
 const cfEnv = env as unknown as ChatFlueEnv
 const tracerProvider = setupTelemetry({
 	ingestKey: cfEnv.MAPLE_INGEST_KEY,
 	endpoint: cfEnv.MAPLE_ENDPOINT,
 	environment: cfEnv.MAPLE_ENVIRONMENT,
+})
+
+// Structured error + per-turn outcome logging — registered for EVERY isolate,
+// telemetry on or off. `run_end` breadcrumbs pair with the `chat.turn` span to spot
+// empty / instant "did nothing" turns and to compare model behaviour over time;
+// error/tool-failure lines surface failures that the OTel spans were silently
+// dropping (they don't flush reliably from DO isolates).
+observe((event) => {
+	if (event.type === "log" && event.level === "error") {
+		console.error("[chat-flue]", event.message, event.attributes ?? {})
+		return
+	}
+	if (event.type === "run_end") {
+		const errored = "isError" in event ? Boolean(event.isError) : false
+		console.log(`[chat-flue] run_end errored=${errored}`)
+		return
+	}
+	if ("isError" in event && event.isError) {
+		const label = "toolName" in event ? `tool ${event.toolName}` : event.type
+		const detail = "error" in event ? event.error : undefined
+		console.error(`[chat-flue] ${label} failed`, detail ?? "")
+	}
 })
 
 if (tracerProvider) {
@@ -47,18 +71,6 @@ if (tracerProvider) {
 	observe((event) => {
 		if (event.type === "run_end" || event.type === "idle" || event.type === "agent_end") {
 			void tracerProvider.forceFlush()
-		}
-	})
-} else {
-	observe((event) => {
-		if (event.type === "log" && event.level === "error") {
-			console.error("[chat-flue]", event.message, event.attributes ?? {})
-			return
-		}
-		if ("isError" in event && event.isError) {
-			const label = "toolName" in event ? `tool ${event.toolName}` : event.type
-			const detail = "error" in event ? event.error : undefined
-			console.error(`[chat-flue] ${label} failed`, detail ?? "")
 		}
 	})
 }

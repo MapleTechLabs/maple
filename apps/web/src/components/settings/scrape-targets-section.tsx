@@ -43,7 +43,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
@@ -61,13 +60,14 @@ import {
 	HistoryIcon,
 	LoaderIcon,
 	PencilIcon,
-	PlanetScaleIcon,
 	PlusIcon,
 	PulseIcon,
 	TrashIcon,
 } from "@/components/icons"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { formatDuration, formatNumber, formatRelativeTime } from "@/lib/format"
+import { catalogEntry } from "../integrations/integration-catalog"
+import { IntegrationEmptyState } from "../integrations/integration-empty-state"
 
 type ScrapeTarget = ScrapeTargetResponse
 type ScrapeTargetCheck = ScrapeTargetCheckResponse
@@ -248,6 +248,9 @@ export function ScrapeTargetsSection({
 		.filter((target) => !sourceFilter || target.targetType === sourceFilter)
 	const selectedTarget = targets.find((target) => target.id === selectedTargetId) ?? null
 	const copy = SOURCE_COPY[sourceFilter ?? "all"]
+	// When empty, the centered empty state owns the primary action — hide the toolbar row.
+	const isEmpty = Result.isSuccess(listResult) && targets.length === 0
+	const emptyEntry = sourceFilter ? catalogEntry(sourceFilter) : null
 
 	async function handleProbe(target: ScrapeTarget) {
 		setProbingId(target.id)
@@ -440,13 +443,15 @@ export function ScrapeTargetsSection({
 	return (
 		<>
 			<div className="space-y-4">
-				<div className="flex items-center justify-between gap-3">
-					<p className="text-muted-foreground text-sm">{copy.description}</p>
-					<Button size="sm" className="shrink-0" onClick={openAddDialog}>
-						<PlusIcon size={14} />
-						Add Target
-					</Button>
-				</div>
+				{!isEmpty && (
+					<div className="flex items-center justify-between gap-3">
+						<p className="text-muted-foreground text-sm">{copy.description}</p>
+						<Button size="sm" className="shrink-0" onClick={openAddDialog}>
+							<PlusIcon size={14} />
+							Add Target
+						</Button>
+					</div>
+				)}
 
 				{Result.isInitial(listResult) ? (
 					<div className="space-y-2">
@@ -455,30 +460,28 @@ export function ScrapeTargetsSection({
 						<Skeleton className="h-[60px] w-full" />
 					</div>
 				) : !Result.isSuccess(listResult) ? (
-					<div className="text-muted-foreground py-8 text-center text-sm">
+					<div className="text-muted-foreground flex flex-col items-center gap-3 py-8 text-center text-sm">
 						Failed to load scrape targets.
+						<Button variant="outline" size="sm" onClick={() => refreshTargets()}>
+							Try again
+						</Button>
 					</div>
 				) : targets.length === 0 ? (
-					<Empty className="py-12">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								{sourceFilter === "planetscale" ? (
-									<PlanetScaleIcon size={16} />
-								) : (
-									<FireIcon size={16} />
-								)}
-							</EmptyMedia>
-							<EmptyTitle>{copy.emptyTitle}</EmptyTitle>
-							<EmptyDescription>{copy.emptyDescription}</EmptyDescription>
-						</EmptyHeader>
-						<Button size="sm" onClick={openAddDialog}>
-							<PlusIcon size={14} />
+					<IntegrationEmptyState
+						icon={emptyEntry?.icon ?? FireIcon}
+						accent={emptyEntry?.accent ?? "#E6522C"}
+						iconClassName={emptyEntry?.iconClassName}
+						title={copy.emptyTitle}
+						description={copy.emptyDescription}
+					>
+						<Button onClick={openAddDialog}>
+							<PlusIcon size={16} />
 							Add Target
 						</Button>
-					</Empty>
+					</IntegrationEmptyState>
 				) : (
 					<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-						<div className="divide-y overflow-hidden rounded-lg border bg-card/40">
+						<div className="divide-y overflow-hidden rounded-lg border bg-card">
 							{targets.map((target) => (
 								<ScrapeTargetRow
 									key={target.id}
@@ -506,7 +509,7 @@ export function ScrapeTargetsSection({
 								onDelete={setDeleteConfirmTarget}
 							/>
 						) : (
-							<div className="hidden rounded-lg border bg-card/40 p-4 lg:block">
+							<div className="hidden rounded-lg border bg-card p-4 lg:block">
 								<div className="text-muted-foreground flex h-full min-h-[260px] flex-col items-center justify-center gap-2 text-center text-xs">
 									<CircleInfoIcon size={18} />
 									<span>Click a target to inspect scheduled checks.</span>
@@ -755,12 +758,12 @@ export function ScrapeTargetsSection({
 					<AlertDialogFooter>
 						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
+							variant="destructive"
 							onClick={() => {
 								if (deleteConfirmTarget) {
 									void handleDelete(deleteConfirmTarget.id)
 								}
 							}}
-							className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
 						>
 							Delete
 						</AlertDialogAction>
@@ -954,7 +957,7 @@ function ScrapeTargetDetails({
 	const labels = labelEntries(target.labelsJson)
 
 	return (
-		<aside className="rounded-lg border bg-card/40">
+		<aside className="rounded-lg border bg-card">
 			<div className="space-y-3 border-b p-4">
 				<div className="flex items-start justify-between gap-3">
 					<div className="min-w-0">

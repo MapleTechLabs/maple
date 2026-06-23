@@ -5,14 +5,14 @@
 	"compatibility_date": "2026-04-08",
 	"compatibility_flags": ["nodejs_compat"],
 	"workers_dev": false,
-	"d1_databases": [
+	// Local dev: wrangler connects the binding straight to localConnectionString
+	// (the docker-compose Postgres; see `bun run db:up` + `bun run db:migrate:local`).
+	// Deployed stages get the real Hyperdrive config from alchemy.run.ts.
+	"hyperdrive": [
 		{
 			"binding": "MAPLE_DB",
-			"database_name": "maple-api-local",
-			"database_id": "00000000-0000-0000-0000-000000000000",
-			"preview_database_id": "00000000-0000-0000-0000-000000000000",
-			"migrations_dir": "../../packages/db/drizzle",
-			"migrations_table": "drizzle_migrations",
+			"id": "00000000000000000000000000000000",
+			"localConnectionString": "postgres://maple:maple@localhost:5499/maple",
 		},
 	],
 	"triggers": {

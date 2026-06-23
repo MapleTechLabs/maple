@@ -14,10 +14,13 @@ export const filterMcpTools = <T extends { name: string }>(
 	allowlist: ReadonlySet<string>,
 ): T[] => tools.filter((tool) => allowlist.has(baseToolName(tool.name)))
 
+/** Default MCP request timeout (ms): an unreachable endpoint fails fast rather than hanging the turn. */
+export const MCP_DEFAULT_TIMEOUT_MS = 12_000
+
 export interface ConnectMapleMcpOptions {
 	/** If set, keep only tools whose base name is in this allowlist (e.g. the triage subset). */
 	allowlist?: ReadonlySet<string>
-	/** MCP request timeout in ms. Defaults to 12s so an unreachable endpoint fails fast. */
+	/** MCP request timeout in ms. Defaults to {@link MCP_DEFAULT_TIMEOUT_MS}. */
 	timeoutMs?: number
 }
 
@@ -47,7 +50,7 @@ export const connectMapleMcp = async (
 			Authorization: `Bearer maple_svc_${token}`,
 			"x-org-id": orgId,
 		},
-		timeoutMs: options.timeoutMs ?? 12_000,
+		timeoutMs: options.timeoutMs ?? MCP_DEFAULT_TIMEOUT_MS,
 	})
 
 	if (!options.allowlist) return maple

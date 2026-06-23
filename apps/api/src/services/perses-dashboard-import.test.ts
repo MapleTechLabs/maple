@@ -1,31 +1,25 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { DashboardPersistenceService } from "./DashboardPersistenceService"
 import { Env } from "../lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../lib/test-pglite"
 import { convertPersesDashboardToPortable } from "./perses-dashboard-import"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
-const createTempDbUrl = () => makeTempDb("maple-perses-import-", createdTempDirs).url
-
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -34,11 +28,11 @@ const testConfig = (url: string) =>
 		}),
 	)
 
-const makePersistenceLayer = (url: string) =>
+const makePersistenceLayer = (testDb: TestDb) =>
 	DashboardPersistenceService.layer.pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		Layer.provide(Env.layer),
-		Layer.provide(testConfig(url)),
+		Layer.provide(testConfig()),
 	)
 
 function persesDashboard(overrides: Record<string, unknown> = {}) {
@@ -315,7 +309,7 @@ describe("convertPersesDashboardToPortable", () => {
 	)
 
 	it.effect("creates a persisted dashboard from the converted import payload", () => {
-		const dbUrl = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
 			const converted = yield* convertPersesDashboardToPortable(persesDashboard())
@@ -330,6 +324,6 @@ describe("convertPersesDashboardToPortable", () => {
 			assert.strictEqual(created.widgets.length, 1)
 			assert.strictEqual(listed.dashboards.length, 1)
 			assert.strictEqual(listed.dashboards[0]?.name, "System Overview")
-		}).pipe(Effect.provide(makePersistenceLayer(dbUrl)))
+		}).pipe(Effect.provide(makePersistenceLayer(testDb)))
 	})
 })

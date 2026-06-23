@@ -6,8 +6,7 @@ import {
 	VcsCommitShaInvalidError,
 } from "@maple/domain/http"
 import { Effect, Layer } from "effect"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
-import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { GithubAppClient } from "@/services/vcs/vendor/github/GithubAppClient"
 import { GithubHttp, type GithubHttpShape } from "@/services/vcs/vendor/github/GithubHttp"
 import { GithubProvider } from "@/services/vcs/vendor/github/GithubProvider"
@@ -25,8 +24,8 @@ import {
 	type VcsRepo,
 } from "./harness"
 
-const dirs: string[] = []
-afterEach(() => cleanupTempDirs(dirs))
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 const commitBody = (sha: string) => ({
 	sha,
@@ -64,12 +63,12 @@ const routedHttp = (resolvable: (repoName: string, sha: string) => boolean) => {
 	return { layer, calls }
 }
 
-// Full layer stack over a temp sqlite + stubbed GithubHttp. `data` appears in both
-// the service deps and the returned merge so Effect memoizes one shared repo instance.
-const commitLayer = (url: string, http: Layer.Layer<GithubHttp>) => {
-	const env = testEnv(url, GITHUB_APP_CONFIG)
-	const database = DatabaseLibsqlLive.pipe(Layer.provide(env))
-	const data = VcsRepository.layer.pipe(Layer.provide(database), Layer.provide(env))
+// Full layer stack over an in-memory PGlite + stubbed GithubHttp. `data` appears in
+// both the service deps and the returned merge so Effect memoizes one shared repo
+// instance.
+const commitLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>) => {
+	const env = testEnv(GITHUB_APP_CONFIG)
+	const data = VcsRepository.layer.pipe(Layer.provide(testDb.layer), Layer.provide(env))
 	const githubAppClient = GithubAppClient.layer.pipe(Layer.provide(http), Layer.provide(env))
 	const provider = GithubProvider.layer.pipe(Layer.provide(Layer.mergeAll(env, githubAppClient)))
 	const registry = VcsProviderRegistry.layer.pipe(Layer.provide(provider))
@@ -109,7 +108,7 @@ const seed = (repo: VcsRepo, orgId: OrgId, repos: ReadonlyArray<{ externalRepoId
 
 describe("VcsCommitService.resolveCommitDetail", () => {
 	it.effect("returns a stored commit without calling the provider", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-stored-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => false)
 		const SHA = "a".repeat(40)
 		return Effect.gen(function* () {
@@ -138,11 +137,11 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			assert.strictEqual(detail.message, "stored message")
 			assert.strictEqual(detail.repoFullName, "octo/repo")
 			assert.strictEqual(calls.commitGets, 0)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 
 	it.effect("uppercase SHA resolves the same stored commit (normalized)", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-case-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const { layer } = routedHttp(() => false)
 		const SHA = "a".repeat(40)
 		return Effect.gen(function* () {
@@ -167,13 +166,13 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const detail = yield* svc.resolveCommitDetail(orgId, "A".repeat(40))
 			assert.strictEqual(detail.resolved, "stored")
 			assert.strictEqual(detail.sha, SHA)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 
 	it.effect(
 		"fetches an unstored commit from the provider, persists it, then serves it from storage",
 		() => {
-			const { url } = createTempDbUrl("maple-vcs-commit-fetch-", dirs)
+			const testDb = createTestDb(trackedDbs)
 			const { layer, calls } = routedHttp((name) => name === "repo")
 			const SHA = "c".repeat(40)
 			return Effect.gen(function* () {
@@ -204,12 +203,12 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 				const second = yield* svc.resolveCommitDetail(orgId, SHA)
 				assert.strictEqual(second.resolved, "stored")
 				assert.strictEqual(calls.commitGets, before)
-			}).pipe(Effect.provide(commitLayer(url, layer)))
+			}).pipe(Effect.provide(commitLayer(testDb, layer)))
 		},
 	)
 
 	it.effect("returns VcsCommitNotFoundError when no repo has the SHA, and caches the miss", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-miss-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => false)
 		const SHA = "d".repeat(40)
 		return Effect.gen(function* () {
@@ -227,11 +226,11 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const exit2 = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
 			assert.ok(findError(exit2) instanceof VcsCommitNotFoundError)
 			assert.strictEqual(calls.commitGets, afterFirst)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 
 	it.effect("rejects a non-40-hex SHA with VcsCommitShaInvalidError before any provider call", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-invalid-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const { layer, calls } = routedHttp(() => true)
 		return Effect.gen(function* () {
 			const svc = yield* VcsCommitService
@@ -247,11 +246,11 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 				)
 			}
 			assert.strictEqual(calls.commitGets, 0)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 
 	it.effect("returns IntegrationsNotConnectedError when the org has no active installation", () => {
-		const { url } = createTempDbUrl("maple-vcs-commit-noconn-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const { layer } = routedHttp(() => true)
 		const SHA = "e".repeat(40)
 		return Effect.gen(function* () {
@@ -259,6 +258,6 @@ describe("VcsCommitService.resolveCommitDetail", () => {
 			const orgId = asOrgId("org_test")
 			const exit = yield* svc.resolveCommitDetail(orgId, SHA).pipe(Effect.exit)
 			assert.ok(findError(exit) instanceof IntegrationsNotConnectedError)
-		}).pipe(Effect.provide(commitLayer(url, layer)))
+		}).pipe(Effect.provide(commitLayer(testDb, layer)))
 	})
 })

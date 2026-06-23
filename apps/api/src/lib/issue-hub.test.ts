@@ -5,26 +5,22 @@ import { OrgId } from "@maple/domain/http"
 import { AlertIncidentId, AlertRuleId } from "@maple/domain/primitives"
 import { alertIncidents, errorIssues, errorIssueEvents } from "@maple/db"
 import { and, eq, sql } from "drizzle-orm"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Database } from "@/lib/DatabaseLive"
 import { Env } from "@/lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { alertIssueFingerprint, detectorSeverityFor, upsertAlertIssue } from "./issue-hub"
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3474",
 			MCP_PORT: "3475",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -35,8 +31,8 @@ const testConfig = (url: string) =>
 	)
 
 const makeLayer = () => {
-	const { url } = makeTempDb("maple-issue-hub-", createdTempDirs)
-	return DatabaseLibsqlLive.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig(url)))
+	const testDb = createTestDb(createdDbs)
+	return testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 }
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
@@ -113,11 +109,11 @@ describe("upsertAlertIssue", () => {
 					status: "open",
 					comparator: "gte",
 					threshold: 800,
-					firstTriggeredAt: T0,
-					lastTriggeredAt: T0,
+					firstTriggeredAt: new Date(T0),
+					lastTriggeredAt: new Date(T0),
 					dedupeKey: `${ORG}:${RULE_1}:checkout`,
-					createdAt: T0,
-					updatedAt: T0,
+					createdAt: new Date(T0),
+					updatedAt: new Date(T0),
 				}),
 			)
 
@@ -134,9 +130,12 @@ describe("upsertAlertIssue", () => {
 			assert.strictEqual(issue.severitySource, "detector")
 			assert.strictEqual(issue.exceptionType, "High p95 latency")
 			assert.strictEqual(issue.serviceName, "checkout")
-			const sourceRef = JSON.parse(issue.sourceRefJson ?? "{}")
-			assert.strictEqual(sourceRef.ruleId, RULE_1)
-			assert.strictEqual(sourceRef.latestIncidentId, INCIDENT_1)
+			assert.deepStrictEqual(issue.sourceRefJson, {
+				ruleId: RULE_1,
+				groupKey: "checkout",
+				signalType: "p95_latency",
+				latestIncidentId: INCIDENT_1,
+			})
 
 			const incidents = yield* database.execute((db) =>
 				db.select().from(alertIncidents).where(eq(alertIncidents.id, INCIDENT_1)),
@@ -164,8 +163,12 @@ describe("upsertAlertIssue", () => {
 			const issues = yield* loadIssue
 			assert.lengthOf(issues, 1)
 			assert.strictEqual(issues[0]?.occurrenceCount, 2)
-			const sourceRef = JSON.parse(issues[0]?.sourceRefJson ?? "{}")
-			assert.strictEqual(sourceRef.latestIncidentId, INCIDENT_2)
+			assert.deepStrictEqual(issues[0]?.sourceRefJson, {
+				ruleId: RULE_1,
+				groupKey: "checkout",
+				signalType: "p95_latency",
+				latestIncidentId: INCIDENT_2,
+			})
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -223,7 +226,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "done", resolvedAt: T0 + 50_000 })
+					.set({ workflowState: "done", resolvedAt: new Date(T0 + 50_000) })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
@@ -253,7 +256,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: T0 + 999_000 })
+					.set({ workflowState: "wontfix", snoozeUntil: new Date(T0 + 999_000) })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
@@ -302,7 +305,7 @@ describe("upsertAlertIssue", () => {
 			yield* database.execute((db) =>
 				db
 					.update(errorIssues)
-					.set({ workflowState: "wontfix", snoozeUntil: T0 + 50_000 })
+					.set({ workflowState: "wontfix", snoozeUntil: new Date(T0 + 50_000) })
 					.where(eq(errorIssues.id, first.issueId!)),
 			)
 
@@ -323,7 +326,7 @@ describe("upsertAlertIssue", () => {
 			const database = yield* Database
 			// Sabotage the schema so the very first select inside the upsert fails;
 			// the catchCause wrapper must swallow it and report `action: "error"`.
-			yield* database.execute((db) => db.run(sql`DROP TABLE error_issues`))
+			yield* database.execute((db) => db.execute(sql`DROP TABLE error_issues`))
 
 			const result = yield* upsertAlertIssue(baseInput())
 			assert.isNull(result.issueId)

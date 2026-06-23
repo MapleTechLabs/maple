@@ -40,7 +40,6 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -66,9 +65,10 @@ import {
 	LoaderIcon,
 	PencilIcon,
 	PlusIcon,
-	ShieldIcon,
 	TrashIcon,
 } from "@/components/icons"
+import { catalogEntry } from "../integrations/integration-catalog"
+import { IntegrationEmptyState } from "../integrations/integration-empty-state"
 
 type CloudflareConnector = CloudflareLogpushConnectorResponse
 type CloudflareSetup = CloudflareLogpushSetupResponse
@@ -151,6 +151,10 @@ export function CloudflareLogpushSection() {
 	const connectors = Result.builder(listResult)
 		.onSuccess((response) => [...response.connectors] as CloudflareConnector[])
 		.orElse(() => [])
+
+	// When empty, the centered empty state owns the primary action — hide the toolbar row.
+	const isEmpty = Result.isSuccess(listResult) && connectors.length === 0
+	const cloudflareEntry = catalogEntry("cloudflare")
 
 	const setup = useMemo(() => {
 		if (setupOverride && setupOverride.connectorId === setupConnectorId) {
@@ -311,15 +315,17 @@ export function CloudflareLogpushSection() {
 	return (
 		<>
 			<div className="space-y-4">
-				<div className="flex items-center justify-between">
-					<p className="text-muted-foreground text-sm">
-						Receive Cloudflare HTTP request logs over HTTPS and map them into Maple logs.
-					</p>
-					<Button size="sm" className="shrink-0" onClick={openAddDialog}>
-						<PlusIcon size={14} />
-						Add Connector
-					</Button>
-				</div>
+				{!isEmpty && (
+					<div className="flex items-center justify-between">
+						<p className="text-muted-foreground text-sm">
+							Receive Cloudflare HTTP request logs over HTTPS and map them into Maple logs.
+						</p>
+						<Button size="sm" className="shrink-0" onClick={openAddDialog}>
+							<PlusIcon size={14} />
+							Add Connector
+						</Button>
+					</div>
+				)}
 
 				{Result.isInitial(listResult) ? (
 					<div className="space-y-2">
@@ -328,30 +334,29 @@ export function CloudflareLogpushSection() {
 						<Skeleton className="h-[60px] w-full" />
 					</div>
 				) : !Result.isSuccess(listResult) ? (
-					<div className="text-muted-foreground py-8 text-center text-sm">
+					<div className="text-muted-foreground flex flex-col items-center gap-3 py-8 text-center text-sm">
 						Failed to load Cloudflare connectors.
+						<Button variant="outline" size="sm" onClick={() => refreshConnectors()}>
+							Try again
+						</Button>
 					</div>
 				) : connectors.length === 0 ? (
-					<Empty className="py-12">
-						<EmptyHeader>
-							<EmptyMedia variant="icon">
-								<ShieldIcon size={16} />
-							</EmptyMedia>
-							<EmptyTitle>No Cloudflare connectors</EmptyTitle>
-							<EmptyDescription>
-								Add a connector to generate the endpoint URL, secret, and Cloudflare Logpush
-								setup instructions.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button size="sm" onClick={openAddDialog}>
-							<PlusIcon size={14} />
+					<IntegrationEmptyState
+						icon={cloudflareEntry.icon}
+						accent={cloudflareEntry.accent}
+						iconClassName={cloudflareEntry.iconClassName}
+						title="No Cloudflare connectors"
+						description="Add a connector to generate the endpoint URL, secret, and Cloudflare Logpush setup instructions."
+					>
+						<Button onClick={openAddDialog}>
+							<PlusIcon size={16} />
 							Add Connector
 						</Button>
-					</Empty>
+					</IntegrationEmptyState>
 				) : (
-					<div className="divide-y">
+					<div className="divide-y overflow-hidden rounded-lg border bg-card">
 						{connectors.map((connector) => (
-							<div key={connector.id} className="flex items-center gap-3 px-1 py-3">
+							<div key={connector.id} className="flex items-center gap-3 px-4 py-3">
 								<div
 									className={cn(
 										"size-2 shrink-0 rounded-full",

@@ -42,5 +42,10 @@ jobs:
             - name: Install dependencies
               run: bun install --frozen-lockfile
 
+            # NOTE: prod schema migrations are applied OUT OF BAND (manually, via
+            # `bun run --cwd packages/db ps:apply-schema main` against the direct
+            # 5432 port), NOT by this workflow — so a deploy never touches the prod
+            # database and needs no MAPLE_PG_URL/admin credential. The worker binds
+            # to the pre-configured `maple-prd` Hyperdrive (see apps/api/alchemy.run.ts).
             - name: Deploy PRD stack with Alchemy
               run: bun run alchemy:deploy:prd
