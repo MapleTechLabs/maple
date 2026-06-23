@@ -206,6 +206,14 @@ export {
 	type AnomalyErrorSpikeTimeseriesOutput,
 } from "./queries/anomaly"
 
+// Queries — Active-org discovery (cross-org; gate per-org cron fan-out)
+export {
+	activeOrgsByErrorEventsQuery,
+	activeOrgsByTracesQuery,
+	activeOrgsByLogsQuery,
+	type ActiveOrgsOutput,
+} from "./queries/activity"
+
 // Queries — Service Map
 export {
 	serviceDependenciesSQL,

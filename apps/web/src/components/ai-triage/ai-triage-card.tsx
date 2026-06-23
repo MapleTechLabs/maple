@@ -28,7 +28,6 @@ const CONFIDENCE_TONE: Record<string, string> = {
 }
 
 const FAILURE_HINTS: Record<string, string> = {
-	no_openrouter_key: "No OpenRouter API key is configured for this organization.",
 	no_structured_result: "The agent did not produce a structured result within its budget.",
 	workflow_binding_unavailable: "The triage workflow is not available in this environment.",
 }

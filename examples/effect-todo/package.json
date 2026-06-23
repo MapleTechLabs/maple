@@ -24,7 +24,7 @@
 		"@types/node": "catalog:tooling",
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
-		"@vitejs/plugin-react": "^6.0.1",
+		"@vitejs/plugin-react": "^6.0.2",
 		"tailwindcss": "catalog:tailwind",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:"

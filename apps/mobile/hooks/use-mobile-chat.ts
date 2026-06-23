@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuth } from "@clerk/expo"
-import type { UIMessage } from "ai"
+import type { UIMessage } from "../lib/chat-types"
 import type { AlertContext } from "../lib/alert-context"
 import {
 	loadMessages,
@@ -10,6 +10,9 @@ import {
 	upsertThread,
 } from "../lib/chat-threads"
 import { streamChat } from "../lib/chat-stream"
+import { makeFlueChatClient } from "../lib/flue-chat-client"
+import { FLUE_AGENT_NAME, scopedAgentName } from "../lib/flue-chat-url"
+import { buildAlertPreamble } from "../lib/context-preamble"
 
 type Status = "idle" | "submitted" | "streaming" | "error"
 
@@ -34,12 +37,20 @@ function makeId(prefix: string): string {
 
 export function useMobileChat({ threadId, alertContext }: UseMobileChatOptions) {
 	const { orgId, getToken } = useAuth()
+	const client = useMemo(() => makeFlueChatClient(getToken), [getToken])
 	const [messages, setMessages] = useState<UIMessage[]>([])
 	const [status, setStatus] = useState<Status>("idle")
 	const [error, setError] = useState<string | null>(null)
 	const [hydrated, setHydrated] = useState(false)
 	const activeStream = useRef<{ abort: () => void } | null>(null)
 	const assistantIdRef = useRef<string | null>(null)
+	// Tracks whether the conversation already has messages, so `sendMessage`
+	// attaches the alert preamble only to a brand-new thread's first turn without
+	// taking `messages` as a dependency (which would rebuild it on every delta).
+	const hasMessagesRef = useRef(false)
+	useEffect(() => {
+		hasMessagesRef.current = messages.length > 0
+	}, [messages.length])
 
 	useEffect(() => {
 		let cancelled = false
@@ -107,15 +118,17 @@ export function useMobileChat({ threadId, alertContext }: UseMobileChatOptions) 
 
 			assistantIdRef.current = null
 
+			// Alert context is folded into the FIRST message of a fresh thread; the
+			// stored user bubble keeps the plain text, only the sent string carries it.
+			const isFirst = !hasMessagesRef.current
+			const preamble = isFirst && alertContext ? buildAlertPreamble(alertContext) : ""
+			const outgoing = preamble ? `${preamble}\n\n---\n\n${userText}` : userText
+
 			const stream = streamChat({
-				threadId,
-				body: {
-					orgId,
-					userText,
-					mode: alertContext ? "alert" : undefined,
-					alertContext,
-				},
-				getToken,
+				client,
+				agentName: FLUE_AGENT_NAME,
+				instanceId: scopedAgentName(orgId, threadId),
+				message: outgoing,
 				callbacks: {
 					onAssistantStart: (id) => {
 						const assistantId = id || makeId("asst")
@@ -198,7 +211,7 @@ export function useMobileChat({ threadId, alertContext }: UseMobileChatOptions) 
 			})
 			activeStream.current = stream
 		},
-		[orgId, status, threadId, alertContext, getToken, persist, updateSummary],
+		[orgId, status, threadId, alertContext, client, persist, updateSummary],
 	)
 
 	const stop = useCallback(() => {

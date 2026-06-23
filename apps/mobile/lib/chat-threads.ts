@@ -3,7 +3,7 @@
 // conversations offline.
 
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import type { UIMessage } from "ai"
+import type { UIMessage } from "./chat-types"
 import type { AlertContext } from "./alert-context"
 
 const THREADS_KEY = "maple.chat.threads.v1"

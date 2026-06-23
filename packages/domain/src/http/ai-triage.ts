@@ -73,7 +73,6 @@ export class AiTriageSettingsDocument extends Schema.Class<AiTriageSettingsDocum
 	"AiTriageSettingsDocument",
 )({
 	enabled: Schema.Boolean,
-	modelOverride: Schema.NullOr(Schema.String),
 	maxRunsPerDay: Schema.Number,
 	updatedAt: Schema.NullOr(IsoDateTimeString),
 	updatedBy: Schema.NullOr(UserId),
@@ -83,7 +82,6 @@ export class AiTriageSettingsUpdateRequest extends Schema.Class<AiTriageSettings
 	"AiTriageSettingsUpdateRequest",
 )({
 	enabled: Schema.optionalKey(Schema.Boolean),
-	modelOverride: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	maxRunsPerDay: Schema.optionalKey(
 		Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 500 })),
 	),

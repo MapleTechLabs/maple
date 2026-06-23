@@ -1,70 +1,22 @@
 import { lazy, Suspense, useState } from "react"
 import {
-	ChartBarIcon,
 	ChevronDownIcon,
 	ChevronRightIcon,
 	CircleCheckIcon,
-	CircleWarningIcon,
 	CircleXmarkIcon,
-	ClockIcon,
-	CodeIcon,
-	DatabaseIcon,
 	LoaderIcon,
-	MagnifierIcon,
-	NetworkNodesIcon,
-	PulseIcon,
 } from "@/components/icons"
-import type { IconComponent } from "@/components/icons"
 import type { StructuredToolOutput } from "@maple/domain"
 import { STRUCTURED_MARKER } from "./renderers"
+import { toolIcon, toolLabel } from "./tool-metadata"
+
+export { normalizeToolName, toolLabel } from "./tool-metadata"
 
 const LazyToolRenderer = lazy(() =>
 	import("./renderers/tool-renderer").then((m) => ({
 		default: m.ToolRenderer,
 	})),
 )
-
-// ---------------------------------------------------------------------------
-// Metadata
-// ---------------------------------------------------------------------------
-
-export function toolLabel(toolName: string): string {
-	return toolLabels[toolName] ?? toolName
-}
-
-const toolLabels: Record<string, string> = {
-	system_health: "System Health",
-	diagnose_service: "Diagnose Service",
-	find_errors: "Find Errors",
-	error_detail: "Error Detail",
-	search_traces: "Search Traces",
-	find_slow_traces: "Find Slow Traces",
-	inspect_trace: "Inspect Trace",
-	search_logs: "Search Logs",
-	list_metrics: "List Metrics",
-	chart_traces: "Chart Traces",
-	chart_logs: "Chart Logs",
-	chart_metrics: "Chart Metrics",
-	compare_periods: "Compare Periods",
-	explore_attributes: "Explore Attributes",
-}
-
-const toolIcons: Record<string, IconComponent> = {
-	system_health: PulseIcon,
-	diagnose_service: MagnifierIcon,
-	find_errors: CircleXmarkIcon,
-	error_detail: CircleWarningIcon,
-	search_traces: NetworkNodesIcon,
-	find_slow_traces: ClockIcon,
-	inspect_trace: MagnifierIcon,
-	search_logs: DatabaseIcon,
-	list_metrics: ChartBarIcon,
-	chart_traces: ChartBarIcon,
-	chart_logs: ChartBarIcon,
-	chart_metrics: ChartBarIcon,
-	compare_periods: ClockIcon,
-	explore_attributes: DatabaseIcon,
-}
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -87,10 +39,10 @@ function deriveStatus(state: string): ToolStatus {
 function StatusGlyph({ status }: { status: ToolStatus }) {
 	if (status === "running")
 		return (
-			<LoaderIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+			<LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
 		)
-	if (status === "error") return <CircleXmarkIcon className="size-3.5 shrink-0 text-destructive" />
-	return <CircleCheckIcon className="size-3.5 shrink-0 text-severity-info" />
+	if (status === "error") return <CircleXmarkIcon className="size-4 shrink-0 text-destructive" />
+	return <CircleCheckIcon className="size-4 shrink-0 text-severity-info" />
 }
 
 // Pick the most salient input field for a one-line row summary, e.g. `service=api`.
@@ -104,7 +56,24 @@ const SUMMARY_KEYS = [
 	"name",
 	"metric",
 	"errorId",
+	"issueId",
+	"dashboardId",
+	"ruleId",
 ]
+
+// Boilerplate args present on nearly every Maple tool — never use them as the summary.
+const SUMMARY_EXCLUDE = new Set([
+	"start_time",
+	"end_time",
+	"startTime",
+	"endTime",
+	"limit",
+	"offset",
+	"interval",
+	"granularity",
+	"org_id",
+	"orgId",
+])
 
 function truncate(value: string, max = 40): string {
 	const trimmed = value.trim()
@@ -124,6 +93,7 @@ function toolSummary(input: unknown): string | undefined {
 		if (formatted) return formatted
 	}
 	for (const [key, value] of Object.entries(obj)) {
+		if (SUMMARY_EXCLUDE.has(key)) continue
 		const formatted = format(key, value)
 		if (formatted) return formatted
 	}
@@ -208,8 +178,8 @@ interface ToolProps {
 export function ToolRow(props: ToolProps) {
 	const { toolName, state, input, output, errorText } = props
 	const status = deriveStatus(state)
-	const label = toolLabels[toolName] ?? toolName
-	const Icon = toolIcons[toolName] ?? CodeIcon
+	const label = toolLabel(toolName)
+	const Icon = toolIcon(toolName)
 	const summary = toolSummary(input)
 
 	const [open, setOpen] = useState(false)
@@ -221,18 +191,18 @@ export function ToolRow(props: ToolProps) {
 	const hasContent = hasInput || structuredData != null || outputText != null || errorText != null
 
 	return (
-		<div className="text-xs">
+		<div className="text-sm">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
+				className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/40 disabled:cursor-default disabled:hover:bg-transparent"
 				disabled={!hasContent}
 				onClick={() => setOpen((v) => !v)}
 			>
 				<StatusGlyph status={status} />
-				<Icon className="size-3.5 shrink-0 text-muted-foreground" />
-				<span className="shrink-0 font-medium">{label}</span>
+				<Icon className="size-4 shrink-0 text-muted-foreground" />
+				<span className="shrink-0 font-medium text-foreground">{label}</span>
 				{summary ? (
-					<span className="min-w-0 flex-1 truncate text-muted-foreground">
+					<span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
 						<span className="mr-1 text-muted-foreground/40">·</span>
 						<span className="font-mono">{summary}</span>
 					</span>
@@ -241,14 +211,14 @@ export function ToolRow(props: ToolProps) {
 				)}
 				{hasContent &&
 					(open ? (
-						<ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+						<ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
 					) : (
-						<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
+						<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
 					))}
 			</button>
 
 			{open && hasContent && (
-				<div className="space-y-2 border-t border-border/40 px-2 pb-2 pl-7 pt-2">
+				<div className="space-y-2 border-t border-border/40 px-3 pb-2.5 pl-[2.375rem] pt-2.5 text-xs">
 					{hasInput && (
 						<div>
 							<p className="mb-1 font-medium text-muted-foreground">Arguments</p>

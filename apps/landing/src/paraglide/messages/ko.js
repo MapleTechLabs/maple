@@ -263,6 +263,182 @@ export const nav_nodejs = () => `Node.js`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const nav_product = () => `제품`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_compare = () => `비교`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_distributed_tracing = () => `서비스 전반의 모든 요청 추적`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_browser_sessions = () => `세션을 재생하고 트레이스로 이동`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_metrics_dashboards = () => `중요한 모든 시그널 추적`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_log_management = () => `로그를 즉시 검색하고 연관`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_service_catalog = () => `모든 서비스를 한눈에`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_error_tracking = () => `에러를 더 빠르게 찾아 수정`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ai_mcp = () => `MCP 기반 AI 진단`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_kubernetes = () => `Pod, 노드, 워크로드를 스팬과 함께`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ecommerce = () => `고객보다 먼저 결제 실패 포착`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_microservices = () => `서비스 경계를 넘는 지연 추적`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_api_performance = () => `느린 엔드포인트를 찾아 개선`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nextjs = () => `라우트, RSC, 미들웨어 자동 계측`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_python = () => `Flask, FastAPI, Django를 코드 없이 트레이싱`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nodejs = () => `Express와 Fastify를 풀스택으로 트레이싱`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_datadog = () => `오픈소스, 호스트당 과금 없음`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_grafana = () => `조립이 필요 없는 올인원 플랫폼`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_new_relic = () => `OTel 네이티브, 예측 가능한 요금`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_dash0 = () => `더 많은 시그널과 깊은 트레이싱`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer = () => `모든 것을 하나의 플랫폼에서`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer_cta = () => `모든 기능 살펴보기 →`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const hero_badge = () => `OpenTelemetry 네이티브`
 
 
@@ -519,7 +695,7 @@ export const mcp_lede = () => `Maple ships with a first-class MCP server. Any co
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const sessions_eyebrow = () => `06 · Sessions`
+export const sessions_eyebrow = () => `06 · Browser Sessions`
 
 
 /**
@@ -2355,6 +2531,14 @@ export const pricing_custom = () => `맞춤형`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const pricing_enterprise_price = () => `$2,000부터`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const pricing_enterprise_desc = () => `대규모 팀을 위한 맞춤형 요금. 전담 지원과 맞춤형 보존 기간 포함.`
 
 
@@ -2379,7 +2563,7 @@ export const pricing_custom_retention = () => `맞춤형 보존 기간`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_enterprise_alerting = () => `엔터프라이즈 알림`
+export const pricing_otel_data_help = () => `OTel 데이터 개선 직접 지원`
 
 
 /**
@@ -4348,179 +4532,3 @@ export const language_ja = () => `日本語`
  */
 /* @__NO_SIDE_EFFECTS__ */
 export const language_ko = () => `한국어`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product = () => `제품`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_compare = () => `비교`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_distributed_tracing = () => `서비스 전반의 모든 요청 추적`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_browser_sessions = () => `세션을 재생하고 트레이스로 이동`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_metrics_dashboards = () => `중요한 모든 시그널 추적`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_log_management = () => `로그를 즉시 검색하고 연관`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_service_catalog = () => `모든 서비스를 한눈에`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_error_tracking = () => `에러를 더 빠르게 찾아 수정`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_ai_mcp = () => `MCP 기반 AI 진단`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_kubernetes = () => `Pod, 노드, 워크로드를 스팬과 함께`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_ecommerce = () => `고객보다 먼저 결제 실패 포착`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_microservices = () => `서비스 경계를 넘는 지연 추적`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_api_performance = () => `느린 엔드포인트를 찾아 개선`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_nextjs = () => `라우트, RSC, 미들웨어 자동 계측`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_python = () => `Flask, FastAPI, Django를 코드 없이 트레이싱`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_nodejs = () => `Express와 Fastify를 풀스택으로 트레이싱`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_datadog = () => `오픈소스, 호스트당 과금 없음`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_grafana = () => `조립이 필요 없는 올인원 플랫폼`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_new_relic = () => `OTel 네이티브, 예측 가능한 요금`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_desc_vs_dash0 = () => `더 많은 시그널과 깊은 트레이싱`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product_footer = () => `모든 것을 하나의 플랫폼에서`
-
-
-/**
- * 
- * @returns {string}
- */
-/* @__NO_SIDE_EFFECTS__ */
-export const nav_product_footer_cta = () => `모든 기능 살펴보기 →`

@@ -59,6 +59,7 @@ import {
 	issueEscalationPolicies,
 	type IssueEscalationPolicyRow,
 	issueEscalations,
+	orgClickHouseSettings,
 	orgIngestKeys,
 } from "@maple/db"
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
@@ -94,6 +95,10 @@ const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_EVENTS_LIMIT = 100
 const AUTO_RESOLVE_MINUTES = 30
 const TICK_WINDOW_MS = 2 * 60_000
+/** Active-org discovery window — a superset of the 2-min scan window so an org
+ *  with recent (but not last-2-min) errors still gets scanned, with slack for
+ *  cron jitter and MV write lag. */
+const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
 const RESOLVED_RETENTION_DAYS = 14
 const ARCHIVED_RETENTION_DAYS = 90
 const RETENTION_PHASE_EVERY_N_TICKS = 30
@@ -392,6 +397,55 @@ const make: Effect.Effect<
 		userId: decodeUserIdSync("system-errors"),
 		roles: [decodeRoleNameSync("root")],
 		authMode: "self_hosted",
+	})
+
+	// ---------------------------------------------------------------
+	// Active-org gating
+	//
+	// The tick historically scanned the warehouse for every org that ever held
+	// an ingest key — overwhelmingly idle orgs with zero recent errors, which
+	// dominated Tinybird CPU. Instead, run ONE cross-org scan of recent error
+	// events (pinned to managed Tinybird) and only scan orgs that show up.
+	// BYO-ClickHouse orgs are invisible to that scan, so they are always treated
+	// as active. Fails OPEN: if discovery errors, every known org is scanned (the
+	// prior behaviour), never silently dropped.
+	// ---------------------------------------------------------------
+
+	const resolveActiveOrgs = Effect.fn("ErrorsService.resolveActiveOrgs")(function* (
+		knownOrgs: ReadonlyArray<string>,
+		nowMs: number,
+	) {
+		const byoRows = yield* dbExecute((db) =>
+			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
+		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: string }>))
+		const byo = new Set<string>(byoRows.map((r) => r.orgId))
+
+		if (knownOrgs.length === 0) return byo as ReadonlySet<string>
+
+		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
+			startTime: toTinybirdDateTime(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
+		})
+		return yield* warehouse
+			.compiledQuery(systemTenant(knownOrgs[0] as OrgId), compiled, {
+				pinToIngestConfig: true,
+				context: "errorActiveOrgsDiscovery",
+			})
+			.pipe(
+				Effect.map((rows) => {
+					const active = new Set<string>(byo)
+					for (const row of rows) {
+						const orgId = String((row as { orgId?: unknown }).orgId ?? "")
+						if (orgId) active.add(orgId)
+					}
+					return active as ReadonlySet<string>
+				}),
+				Effect.catchCause((cause) =>
+					Effect.logWarning("Error active-org discovery failed; scanning all known orgs").pipe(
+						Effect.annotateLogs({ error: Cause.pretty(cause) }),
+						Effect.as("all" as const),
+					),
+				),
+			)
 	})
 
 	// ---------------------------------------------------------------
@@ -2030,8 +2084,9 @@ const make: Effect.Effect<
 		windowStartMs: number,
 		windowEndMs: number,
 		runRetention: boolean,
+		isActive: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, runRetention, isActive })
 		const tenant = systemTenant(orgId)
 		const systemActor = yield* ensureSystemActor(orgId)
 		const policy = (yield* loadPolicyRow(orgId)) ?? defaultPolicy(orgId, windowEndMs)
@@ -2061,14 +2116,21 @@ const make: Effect.Effect<
 		)
 		const issuesReopened = wakeCandidates.length
 
+		// `isActive` is false only for orgs with neither recent errors nor existing
+		// issue/incident state, so skipping the scan loses nothing: there is
+		// nothing to detect and nothing to resolve. The cheap D1 housekeeping above
+		// (lease expiry, snooze wakeup) and below (retention) still runs for every
+		// known org regardless.
 		const issuesCompiled = CH.compile(CH.errorIssuesQuery({ limit: 500 }), {
 			orgId,
 			startTime: toTinybirdDateTime(windowStartMs),
 			endTime: toTinybirdDateTime(windowEndMs),
 		})
-		const issuesRaw = yield* warehouse
-			.compiledQuery(tenant, issuesCompiled, { context: "errorIssuesScan" })
-			.pipe(Effect.mapError(makePersistenceError))
+		const issuesRaw = isActive
+			? yield* warehouse
+					.compiledQuery(tenant, issuesCompiled, { context: "errorIssuesScan" })
+					.pipe(Effect.mapError(makePersistenceError))
+			: []
 
 		const rows = issuesRaw.map((raw) => ({
 			fingerprintHash: String(raw.fingerprintHash ?? ""),
@@ -2497,6 +2559,17 @@ const make: Effect.Effect<
 			...ingestOrgs.map((r) => r.orgId),
 		])
 
+		const activeOrgs = yield* resolveActiveOrgs([...knownOrgs], endMs)
+		// Orgs that hold issue/incident state must be scanned even with no recent
+		// errors: the scan returning empty is what drives auto-resolution and
+		// aging. Only pure ingest-key-only orgs with neither recent errors nor
+		// existing state are skipped.
+		const withState = new Set<string>([
+			...stateOrgs.map((r) => r.orgId),
+			...issueOrgs.map((r) => r.orgId),
+		])
+		const isActive = (org: string) => activeOrgs === "all" || activeOrgs.has(org) || withState.has(org)
+
 		const emptyResult = {
 			issuesTouched: 0,
 			incidentsOpened: 0,
@@ -2511,7 +2584,7 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			[...knownOrgs],
 			(org) =>
-				processOrg(org as OrgId, startMs, endMs, retentionRan).pipe(
+				processOrg(org as OrgId, startMs, endMs, retentionRan, isActive(org)).pipe(
 					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
 							yield* Effect.logError("Error tick failed for org").pipe(
@@ -2543,6 +2616,7 @@ const make: Effect.Effect<
 
 		yield* Effect.annotateCurrentSpan({
 			orgsKnown: knownOrgs.size,
+			orgsScanned: activeOrgs === "all" ? knownOrgs.size : activeOrgs.size,
 			orgFailures: yield* Ref.get(orgFailures),
 			...totals,
 		})
