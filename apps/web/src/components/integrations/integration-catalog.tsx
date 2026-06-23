@@ -236,8 +236,13 @@ export function IntegrationIconPlate({
 			<span
 				className="absolute inset-0 rounded-[inherit] opacity-70"
 				style={{
-					background:
-						"radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--tile-accent) 16%, transparent), transparent 70%)",
+					// Brand-accent wash. Monochrome marks (iconClassName set, e.g. GitHub's near-black
+					// #181717) are darker than the card and leave no visible wash on the dark canvas, so
+					// derive theirs from --muted-foreground (warm-neutral, theme-aware) — the same visible
+					// neutral bloom PlanetScale's gray accent already produces.
+					background: iconClassName
+						? "radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--muted-foreground) 22%, transparent), transparent 70%)"
+						: "radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--tile-accent) 16%, transparent), transparent 70%)",
 				}}
 			/>
 			<span

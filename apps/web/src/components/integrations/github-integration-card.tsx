@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Exit } from "effect"
+import { Exit, Option } from "effect"
 import {
 	GithubSetTrackedBranchRequest,
 	GithubStartConnectRequest,
@@ -17,13 +17,14 @@ import {
 	AlertDialogHeader,
 	AlertDialogTitle,
 } from "@maple/ui/components/ui/alert-dialog"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@maple/ui/components/ui/popover"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toast } from "sonner"
 
 import {
-	ArrowPathIcon,
+	ArrowRotateClockwiseIcon,
 	CheckIcon,
 	ChevronDownIcon,
 	CircleCheckIcon,
@@ -123,8 +124,17 @@ export function GithubIntegrationCard() {
 
 	const status = Result.builder(statusResult)
 		.onSuccess((s) => s)
-		.orElse(() => null)
+		.orElse(() =>
+			// Keep the last loaded status visible if a refresh/poll fails, so a transient error
+			// doesn't blow away the connected view.
+			Result.isFailure(statusResult)
+				? Option.getOrNull(Option.map(statusResult.previousSuccess, (prev) => prev.value))
+				: null,
+		)
 	const isLoading = Result.isInitial(statusResult) && status === null
+	// A genuine load failure with nothing to fall back on — surface a retry instead of silently
+	// rendering the first-run "Connect" screen (which is indistinguishable from "never connected").
+	const loadFailed = Result.isFailure(statusResult) && status === null
 
 	// Repos backfill in the VcsSyncQueue worker after connect, so status keeps changing
 	// server-side with no push channel. Poll while the connect popup is open, for a grace
@@ -250,6 +260,8 @@ export function GithubIntegrationCard() {
 		<>
 			{isLoading ? (
 				<LoadingState />
+			) : loadFailed ? (
+				<LoadFailedState onRetry={handleManualRefresh} />
 			) : status?.connected ? (
 				<ConnectedView
 					status={status}
@@ -340,14 +352,26 @@ function LoadingState() {
 	return (
 		<div className="space-y-4">
 			<Skeleton className="h-16 w-full rounded-lg" />
-			<div className="rounded-lg border border-border/60">
-				<Skeleton className="h-11 w-full rounded-t-lg" />
-				<div className="divide-y divide-border/40">
+			<div className="overflow-hidden rounded-lg border">
+				<Skeleton className="h-11 w-full rounded-none" />
+				<div className="divide-y">
 					{[0, 1, 2].map((i) => (
 						<Skeleton key={i} className="m-3 h-9 rounded-md" />
 					))}
 				</div>
 			</div>
+		</div>
+	)
+}
+
+/** Shown when the status query fails outright (and there's no prior value to fall back on). */
+function LoadFailedState({ onRetry }: { onRetry: () => void }) {
+	return (
+		<div className="flex flex-col items-center gap-3 py-8 text-center text-sm text-muted-foreground">
+			Failed to load the GitHub integration.
+			<Button variant="outline" size="sm" onClick={onRetry}>
+				Try again
+			</Button>
 		</div>
 	)
 }
@@ -360,12 +384,7 @@ function NotConnectedState({ busy, onConnect }: { busy: boolean; onConnect: () =
 			accent={GITHUB_ACCENT}
 			iconClassName="text-foreground"
 			title="Connect your GitHub organization"
-			description="Install the Maple GitHub App to sync repositories and commit history. Backfill runs in the background once connected."
-			features={[
-				"Sync commit history across your repositories",
-				"Track one branch per repo, backfilled automatically",
-				"Share all repositories or only the ones you pick",
-			]}
+			description="Install the Maple GitHub App to sync repositories and commit history across your org. Track one branch per repo — backfill runs in the background once connected."
 			footer="You'll choose which repositories to share during install."
 		>
 			<Button onClick={onConnect} disabled={busy}>
@@ -448,7 +467,7 @@ function DeactivatedState({
 					{busy ? (
 						<LoaderIcon size={16} className="animate-spin" />
 					) : (
-						<ArrowPathIcon size={16} />
+						<ArrowRotateClockwiseIcon size={16} />
 					)}
 					Reconnect GitHub
 				</Button>
@@ -494,12 +513,9 @@ function ConnectedView({
 
 	return (
 		<div className="space-y-4">
-			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
+			<div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
 				<div className="flex items-center gap-3">
-					<span className="relative flex size-2.5 shrink-0" aria-hidden>
-						<span className="absolute inline-flex size-full rounded-full bg-success/60 motion-safe:animate-ping" />
-						<span className="relative inline-flex size-2.5 rounded-full bg-success" />
-					</span>
+					<span className="size-2 shrink-0 rounded-full bg-success" aria-hidden />
 					<div className="leading-tight">
 						<div className="text-sm font-medium">
 							Connected
@@ -530,16 +546,12 @@ function ConnectedView({
 				</div>
 
 				<div className="flex items-center gap-1.5">
-					<Button
-						size="sm"
-						variant="ghost"
-						onClick={onRefresh}
-						disabled={refreshing}
-						aria-label="Refresh status"
-						title="Refresh status"
-					>
-						<ArrowPathIcon size={14} className={refreshing ? "animate-spin" : ""} />
-						{refreshing ? "Refreshing…" : "Refresh"}
+					<Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
+						<ArrowRotateClockwiseIcon
+							size={14}
+							className={refreshing ? "animate-spin" : ""}
+						/>
+						Refresh
 					</Button>
 					<Button size="sm" variant="outline" onClick={onManage} disabled={busy !== null}>
 						{busy === "connect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
@@ -552,8 +564,8 @@ function ConnectedView({
 				</div>
 			</div>
 
-			<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-				<div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
+			<div className="overflow-hidden rounded-lg border bg-card">
+				<div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
 					<h3 className="text-sm font-medium">
 						Repositories
 						<span className="ml-1.5 text-muted-foreground">{activeRepos.length}</span>
@@ -588,7 +600,7 @@ function ConnectedView({
 						Syncing repositories from GitHub… this can take a moment.
 					</div>
 				) : (
-					<ul className="divide-y divide-border/40">
+					<ul className="divide-y">
 						{activeRepos.map((repo) => (
 							<RepoRow
 								key={repo.id}
@@ -602,14 +614,14 @@ function ConnectedView({
 
 			{/* Repos GitHub revoked access to — kept (with history) until explicitly deleted. */}
 			{removedRepos.length > 0 ? (
-				<div className="overflow-hidden rounded-lg border border-border/60 bg-card">
-					<div className="border-b border-border/60 px-4 py-2.5">
+				<div className="overflow-hidden rounded-lg border bg-card">
+					<div className="border-b px-4 py-2.5">
 						<h3 className="flex items-center gap-1.5 text-sm font-medium">
 							<CircleWarningIcon size={15} className="text-warning-foreground" />
 							Needs attention
 						</h3>
 					</div>
-					<ul className="divide-y divide-border/40">
+					<ul className="divide-y">
 						{removedRepos.map((repo) => (
 							<li key={repo.id} className="flex items-center gap-3 px-4 py-3">
 								<CircleWarningIcon size={17} className="shrink-0 text-warning-foreground" />
@@ -628,9 +640,9 @@ function ConnectedView({
 											/>
 										</a>
 										{repo.isPrivate ? (
-											<span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+											<Badge variant="outline" size="sm" className="shrink-0">
 												Private
-											</span>
+											</Badge>
 										) : null}
 									</div>
 									<div className="text-xs text-muted-foreground">
@@ -639,8 +651,8 @@ function ConnectedView({
 								</div>
 								<Button
 									size="sm"
-									variant="ghost"
-									className="shrink-0 text-destructive-foreground hover:bg-destructive/10"
+									variant="destructive-outline"
+									className="shrink-0"
 									onClick={() => onRequestDelete(repo)}
 									disabled={deletingRepoId !== null}
 								>
@@ -654,7 +666,7 @@ function ConnectedView({
 							</li>
 						))}
 					</ul>
-					<p className="border-t border-border/60 px-4 py-2.5 text-xs text-muted-foreground">
+					<p className="border-t px-4 py-2.5 text-xs text-muted-foreground">
 						Re-enable these in the{" "}
 						<a
 							href="https://github.com/settings/installations"
@@ -704,9 +716,9 @@ function RepoRow({
 						/>
 					</a>
 					{repo.isPrivate ? (
-						<span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+						<Badge variant="outline" size="sm" className="shrink-0">
 							Private
-						</span>
+						</Badge>
 					) : null}
 				</div>
 				<div className="flex items-center gap-1.5 text-xs">
@@ -804,26 +816,26 @@ function BranchSelector({
 					}
 				/>
 				<PopoverContent align="end" className="w-72 p-0">
-					<div className="border-b border-border/60 px-3 py-2.5">
+					<div className="border-b px-3 py-2.5">
 						<p className="text-xs font-medium text-foreground">Tracked branch</p>
-						<p className="mt-0.5 text-[11px] text-muted-foreground">
+						<p className="mt-0.5 text-xs text-muted-foreground">
 							Maple syncs commits from the one branch you track. Changing it re-syncs this
 							repo&apos;s commits from the new branch.
 						</p>
 					</div>
 					{repo.branches.length > 8 ? (
-						<div className="border-b border-border/60 p-2">
+						<div className="border-b p-2">
 							<input
 								value={query}
 								onChange={(e) => setQuery(e.target.value)}
 								placeholder="Search branches…"
-								className="w-full rounded-md border border-border/60 bg-transparent px-2 py-1 text-xs outline-none focus:border-border"
+								className="w-full rounded-md border bg-transparent px-2 py-1 text-xs outline-none focus:border-ring"
 							/>
 						</div>
 					) : null}
 					<div className="max-h-56 overflow-y-auto p-1">
 						{filtered.length === 0 ? (
-							<p className="px-2 py-1.5 text-[11px] text-muted-foreground">No matches.</p>
+							<p className="px-2 py-1.5 text-xs text-muted-foreground">No matches.</p>
 						) : (
 							filtered.map((b) => {
 								const selected = b.name === tracked
@@ -840,9 +852,9 @@ function BranchSelector({
 										/>
 										<span className="truncate">{b.name}</span>
 										{b.isDefault ? (
-											<span className="ml-auto text-[10px] uppercase tracking-wide text-muted-foreground">
+											<Badge variant="outline" size="sm" className="ml-auto">
 												default
-											</span>
+											</Badge>
 										) : null}
 									</button>
 								)
