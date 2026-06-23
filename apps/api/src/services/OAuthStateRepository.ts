@@ -31,7 +31,9 @@ export class OAuthStateRepository extends Context.Service<OAuthStateRepository, 
 
 			const purgeExpired = Effect.fn("OAuthStateRepository.purgeExpired")(function* (now: number) {
 				yield* database
-					.execute((db) => db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, now)))
+					.execute((db) =>
+						db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, new Date(now))),
+					)
 					.pipe(Effect.mapError(toPersistenceError))
 			})
 

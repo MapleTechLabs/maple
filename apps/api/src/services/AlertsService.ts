@@ -129,6 +129,7 @@ import {
 	type DestinationSecretConfig,
 	type EnrichedDestinationSecretConfig,
 } from "./AlertDestinationHydration"
+import { dateToMs } from "../lib/time"
 
 interface NormalizedRule {
 	readonly id: AlertRuleId
@@ -275,9 +276,6 @@ const StoredDeliveryPayloadSchema = Schema.Struct({
 const StringArraySchema = Schema.Array(Schema.String)
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 
-const DeliveryPayloadFromJson = Schema.fromJsonString(StoredDeliveryPayloadSchema)
-const StringArrayFromJson = Schema.fromJsonString(StringArraySchema)
-const DestinationIdArrayFromJson = Schema.fromJsonString(DestinationIdArraySchema)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
 
 const decodeAlertDestinationIdSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.id)
@@ -321,20 +319,17 @@ const resolveServiceLinkName = (
 	return null
 }
 const decodeQueryEngineAlertReducerSync = Schema.decodeUnknownSync(QueryEngineAlertReducer)
-const QueryBuilderDraftFromJson = Schema.fromJsonString(QueryBuilderQueryDraftSchema)
 
-/** Parse the stored query-builder draft JSON; returns null when absent/invalid. */
-const parseStoredQueryBuilderDraft = (raw: string | null): QueryBuilderQueryDraftPayload | null => {
+/** Parse the stored query-builder draft value; returns null when absent/invalid. */
+const parseStoredQueryBuilderDraft = (raw: unknown): QueryBuilderQueryDraftPayload | null => {
 	if (raw == null) return null
-	return Option.getOrElse(Schema.decodeUnknownOption(QueryBuilderDraftFromJson)(raw), () => null)
+	return Option.getOrElse(Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)(raw), () => null)
 }
 
-const NotificationTemplateFromJson = Schema.fromJsonString(AlertNotificationTemplate)
-
-/** Parse the stored notification-template JSON; returns null when absent/invalid. */
-const parseStoredNotificationTemplate = (raw: string | null): AlertNotificationTemplate | null => {
+/** Parse the stored notification-template value; returns null when absent/invalid. */
+const parseStoredNotificationTemplate = (raw: unknown): AlertNotificationTemplate | null => {
 	if (raw == null) return null
-	return Option.getOrElse(Schema.decodeUnknownOption(NotificationTemplateFromJson)(raw), () => null)
+	return Option.getOrElse(Schema.decodeUnknownOption(AlertNotificationTemplate)(raw), () => null)
 }
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
@@ -362,8 +357,8 @@ export class AlertRuntime extends Context.Reference<AlertRuntimeShape>("@maple/a
 	static readonly layer = Layer.succeed(this, this.defaultValue())
 }
 
-const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
-	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
+const toIso = (value: Date | null | undefined): IsoDateTimeValue | null =>
+	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
 
 const toTinybirdDateTime = (epochMs: number) => new Date(epochMs).toISOString().slice(0, 19).replace("T", " ")
 
@@ -458,7 +453,7 @@ const decryptSecret = (
 const parsePublicConfig = (
 	row: AlertDestinationRow,
 ): Effect.Effect<DestinationPublicConfig, AlertValidationError> =>
-	Schema.decodeUnknownEffect(PublicConfigFromJson)(row.configJson).pipe(
+	Schema.decodeUnknownEffect(PublicConfigFromJson)(JSON.stringify(row.configJson)).pipe(
 		Effect.mapError((cause) => makeValidationError("Stored destination config is invalid", [], cause)),
 	)
 
@@ -469,8 +464,8 @@ const parseSecretConfig = (json: string): Effect.Effect<DestinationSecretConfig,
 
 type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
 
-const parseDeliveryPayload = (json: string): Effect.Effect<StoredDeliveryPayloadType, AlertValidationError> =>
-	Schema.decodeUnknownEffect(DeliveryPayloadFromJson)(json).pipe(
+const parseDeliveryPayload = (value: unknown): Effect.Effect<StoredDeliveryPayloadType, AlertValidationError> =>
+	Schema.decodeUnknownEffect(StoredDeliveryPayloadSchema)(value).pipe(
 		Effect.mapError((cause) => makeValidationError("Stored delivery payload is invalid", [], cause)),
 	)
 
@@ -551,14 +546,14 @@ const buildSecretConfig = (request: AlertDestinationCreateRequest): DestinationS
 	)
 
 const safeParsePublicConfig = (row: AlertDestinationRow): DestinationPublicConfig =>
-	Option.getOrElse(Schema.decodeUnknownOption(PublicConfigFromJson)(row.configJson), () => ({
+	Option.getOrElse(Schema.decodeUnknownOption(PublicConfigFromJson)(JSON.stringify(row.configJson)), () => ({
 		summary: "Invalid destination config",
 		channelLabel: null,
 	}))
 
-const safeParseStringArray = (value: string): ReadonlyArray<string> =>
+const safeParseStringArray = (value: unknown): ReadonlyArray<string> =>
 	Option.getOrElse(
-		Schema.decodeUnknownOption(StringArrayFromJson)(value),
+		Schema.decodeUnknownOption(StringArraySchema)(value),
 		() => [] as ReadonlyArray<string>,
 	)
 
@@ -724,8 +719,6 @@ const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (ru
 	})
 })
 
-const QuerySpecFromJson = Schema.fromJsonString(QuerySpec)
-
 const parseCompiledPlan = (
 	row: Pick<
 		AlertRuleRow,
@@ -746,7 +739,7 @@ const parseCompiledPlan = (
 			),
 		)
 	}
-	return Schema.decodeUnknownEffect(QuerySpecFromJson)(row.querySpecJson ?? "").pipe(
+	return Schema.decodeUnknownEffect(QuerySpec)(row.querySpecJson).pipe(
 		Effect.flatMap((query) =>
 			Schema.decodeUnknownEffect(CompiledAlertQueryPlan)({
 				kind: "spec",
@@ -766,13 +759,13 @@ const rowToDestinationDocument = (row: AlertDestinationRow, publicConfig: Destin
 		id: decodeAlertDestinationIdSync(row.id),
 		name: row.name,
 		type: decodeAlertDestinationTypeSync(row.type),
-		enabled: row.enabled === 1,
+		enabled: row.enabled,
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
 		lastTestedAt: toIso(row.lastTestedAt),
 		lastTestError: row.lastTestError,
-		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 	})
 
 const serviceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
@@ -818,7 +811,7 @@ const rowToRuleDocument = (
 		name: row.name,
 		notes: row.notes ?? null,
 		notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
-		enabled: row.enabled === 1,
+		enabled: row.enabled,
 		severity: decodeAlertSeveritySync(row.severity),
 		serviceNames: [...serviceNames],
 		excludeServiceNames: [...excludeServiceNamesFromRow(row)],
@@ -848,8 +841,8 @@ const rowToRuleDocument = (
 			evaluationState?.evaluatedAt != null
 				? decodeIsoDateTimeStringSync(new Date(evaluationState.evaluatedAt).toISOString())
 				: null,
-		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 		createdBy: decodeUserIdSync(row.createdBy),
 		updatedBy: decodeUserIdSync(row.updatedBy),
 	})
@@ -867,8 +860,8 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,
 		thresholdUpper: row.thresholdUpper,
-		firstTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.firstTriggeredAt).toISOString()),
-		lastTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.lastTriggeredAt).toISOString()),
+		firstTriggeredAt: decodeIsoDateTimeStringSync(row.firstTriggeredAt.toISOString()),
+		lastTriggeredAt: decodeIsoDateTimeStringSync(row.lastTriggeredAt.toISOString()),
 		resolvedAt: toIso(row.resolvedAt),
 		lastObservedValue: row.lastObservedValue,
 		lastSampleCount: row.lastSampleCount,
@@ -1113,9 +1106,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			})
 
 			const parseDestinationIds = (
-				value: string,
+				value: unknown,
 			): Effect.Effect<ReadonlyArray<AlertDestinationId>, AlertValidationError> =>
-				Schema.decodeUnknownEffect(DestinationIdArrayFromJson)(value).pipe(
+				Schema.decodeUnknownEffect(DestinationIdArraySchema)(value).pipe(
 					Effect.mapError((cause) =>
 						makeValidationError("Stored rule destinations are invalid", [], cause),
 					),
@@ -1129,7 +1122,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					id: decodeAlertRuleIdSync(row.id),
 					name: row.name,
 					notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
-					enabled: row.enabled === 1,
+					enabled: row.enabled,
 					severity: decodeAlertSeveritySync(row.severity),
 					serviceName: serviceNames.length === 1 ? serviceNames[0] : null,
 					serviceNames,
@@ -1160,8 +1153,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							: null,
 					destinationIds: yield* parseDestinationIds(row.destinationIdsJson),
 					compiledPlan: yield* parseCompiledPlan(row),
-					createdAt: row.createdAt,
-					updatedAt: row.updatedAt,
+					createdAt: row.createdAt.getTime(),
+					updatedAt: row.updatedAt.getTime(),
 				}
 			})
 
@@ -1494,7 +1487,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						eventType,
 						attemptNumber,
 						status: "queued",
-						scheduledAt,
+						scheduledAt: new Date(scheduledAt),
 						claimedAt: null,
 						claimExpiresAt: null,
 						claimedBy: null,
@@ -1503,9 +1496,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						providerReference: null,
 						responseCode: null,
 						errorMessage: null,
-						payloadJson: JSON.stringify(payload),
-						createdAt: scheduledAt,
-						updatedAt: scheduledAt,
+						payloadJson: payload,
+						createdAt: new Date(scheduledAt),
+						updatedAt: new Date(scheduledAt),
 					})
 					.onConflictDoNothing()
 
@@ -1546,9 +1539,9 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					db
 						.update(alertDestinations)
 						.set({
-							lastTestedAt: timestamp,
+							lastTestedAt: new Date(timestamp),
 							lastTestError: errorMessage,
-							updatedAt: timestamp,
+							updatedAt: new Date(timestamp),
 						})
 						.where(
 							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
@@ -1707,7 +1700,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						rule.destinationIds,
 						(destinationId) => {
 							const destination = destinations.get(destinationId)
-							if (!destination || destination.enabled !== 1) return Effect.void
+							if (!destination || !destination.enabled) return Effect.void
 							return dbExecute((db) =>
 								insertDeliveryEventRecord(
 									db,
@@ -1837,15 +1830,15 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					orgId,
 					name: request.name.trim(),
 					type: request.type,
-					enabled: request.enabled === false ? 0 : 1,
-					configJson: JSON.stringify(publicConfig),
+					enabled: request.enabled !== false,
+					configJson: publicConfig,
 					secretCiphertext: encryptedSecret.ciphertext,
 					secretIv: encryptedSecret.iv,
 					secretTag: encryptedSecret.tag,
 					lastTestedAt: null,
 					lastTestError: null,
-					createdAt: timestamp,
-					updatedAt: timestamp,
+					createdAt: new Date(timestamp),
+					updatedAt: new Date(timestamp),
 					createdBy: userId,
 					updatedBy: userId,
 				}
@@ -2086,7 +2079,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				const encryptedSecret = yield* encryptSecret(JSON.stringify(nextSecretConfig), encryptionKey)
 				const timestamp = yield* now
 				const nextName = normalizeOptionalString(request.name) ?? existing.name
-				const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0
+				const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled
 
 				yield* dbExecute((db) =>
 					db
@@ -2094,11 +2087,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						.set({
 							name: nextName,
 							enabled: nextEnabled,
-							configJson: JSON.stringify(nextPublicConfig),
+							configJson: nextPublicConfig,
 							secretCiphertext: encryptedSecret.ciphertext,
 							secretIv: encryptedSecret.iv,
 							secretTag: encryptedSecret.tag,
-							updatedAt: timestamp,
+							updatedAt: new Date(timestamp),
 							updatedBy: userId,
 						})
 						.where(
@@ -2111,11 +2104,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						...existing,
 						name: nextName,
 						enabled: nextEnabled,
-						configJson: JSON.stringify(nextPublicConfig),
+						configJson: nextPublicConfig,
 						secretCiphertext: encryptedSecret.ciphertext,
 						secretIv: encryptedSecret.iv,
 						secretTag: encryptedSecret.tag,
-						updatedAt: timestamp,
+						updatedAt: new Date(timestamp),
 						updatedBy: userId,
 					},
 					nextPublicConfig,
@@ -2237,19 +2230,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				const ruleFields = {
 					name: normalized.name,
 					notes: normalizeOptionalString(request.notes),
-					notificationTemplateJson:
-						normalized.notificationTemplate != null
-							? JSON.stringify(normalized.notificationTemplate)
-							: null,
-					enabled: normalized.enabled ? 1 : 0,
+					notificationTemplateJson: normalized.notificationTemplate ?? null,
+					enabled: normalized.enabled,
 					severity: normalized.severity,
-					serviceNamesJson:
-						normalized.serviceNames.length > 0 ? JSON.stringify(normalized.serviceNames) : null,
+					serviceNamesJson: normalized.serviceNames.length > 0 ? normalized.serviceNames : null,
 					excludeServiceNamesJson:
-						normalized.excludeServiceNames.length > 0
-							? JSON.stringify(normalized.excludeServiceNames)
-							: null,
-					tagsJson: normalized.tags.length > 0 ? JSON.stringify(normalized.tags) : null,
+						normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
+					tagsJson: normalized.tags.length > 0 ? normalized.tags : null,
 					groupBy: normalized.groupBy != null ? JSON.stringify(normalized.groupBy) : null,
 					signalType: normalized.signalType,
 					comparator: normalized.comparator,
@@ -2264,20 +2251,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					metricType: normalized.metricType,
 					metricAggregation: normalized.metricAggregation,
 					apdexThresholdMs: normalized.apdexThresholdMs,
-					queryBuilderDraftJson:
-						normalized.queryBuilderDraft != null
-							? JSON.stringify(normalized.queryBuilderDraft)
-							: null,
+					queryBuilderDraftJson: normalized.queryBuilderDraft ?? null,
 					rawQuerySql: normalized.rawQuerySql,
-					destinationIdsJson: JSON.stringify(normalized.destinationIds),
-					querySpecJson:
-						normalized.compiledPlan.query != null
-							? JSON.stringify(normalized.compiledPlan.query)
-							: null,
+					destinationIdsJson: normalized.destinationIds,
+					querySpecJson: normalized.compiledPlan.query ?? null,
 					reducer: normalized.compiledPlan.reducer,
 					sampleCountStrategy: normalized.compiledPlan.sampleCountStrategy,
 					noDataBehavior: normalized.compiledPlan.noDataBehavior,
-					updatedAt: timestamp,
+					updatedAt: new Date(timestamp),
 					updatedBy: userId,
 				} as const
 
@@ -2287,7 +2268,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							id: ruleId,
 							orgId,
 							...ruleFields,
-							createdAt: timestamp,
+							createdAt: new Date(timestamp),
 							createdBy: userId,
 						}),
 					)
@@ -2331,10 +2312,13 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				for (const state of stateRows) {
 					if (state.lastError == null) continue
 					const existing = errorByRule.get(state.ruleId)
-					if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
+					if (
+						existing == null ||
+						(dateToMs(state.lastEvaluatedAt) ?? 0) > (existing.evaluatedAt ?? 0)
+					) {
 						errorByRule.set(state.ruleId, {
 							error: state.lastError,
-							evaluatedAt: state.lastEvaluatedAt,
+							evaluatedAt: dateToMs(state.lastEvaluatedAt),
 						})
 					}
 				}
@@ -2400,25 +2384,25 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				yield* requireAdmin(roles)
 				yield* requireRuleRow(orgId, ruleId)
 				yield* dbExecute((db) =>
-					db.batch([
-						db
+					db.transaction(async (tx) => {
+						await tx
 							.delete(alertDeliveryEvents)
 							.where(
 								and(
 									eq(alertDeliveryEvents.orgId, orgId),
 									eq(alertDeliveryEvents.ruleId, ruleId),
 								),
-							),
-						db
+							)
+						await tx
 							.delete(alertIncidents)
-							.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId))),
-						db
+							.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId)))
+						await tx
 							.delete(alertRuleStates)
-							.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId))),
-						db
+							.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
+						await tx
 							.delete(alertRules)
-							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId))),
-					]),
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
+					}),
 				)
 				return new AlertRuleDeleteResponse({ id: ruleId })
 			})
@@ -2518,7 +2502,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						.map((id) => ({ id, row: byId.get(id) }))
 						.filter(
 							(d): d is { id: AlertDestinationId; row: AlertDestinationRow } =>
-								d.row != null && d.row.enabled === 1,
+								d.row != null && d.row.enabled,
 						)
 
 					const sentAtMs = yield* now
@@ -2727,7 +2711,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						eventType: decodeAlertEventTypeSync(row.eventType),
 						attemptNumber: row.attemptNumber,
 						status: decodeAlertDeliveryStatusSync(row.status),
-						scheduledAt: decodeIsoDateTimeStringSync(new Date(row.scheduledAt).toISOString()),
+						scheduledAt: decodeIsoDateTimeStringSync(row.scheduledAt.toISOString()),
 						attemptedAt: toIso(row.attemptedAt),
 						providerMessage: row.providerMessage,
 						providerReference: row.providerReference,
@@ -2743,12 +2727,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				or(
 					and(
 						eq(alertDeliveryEvents.status, "queued"),
-						sql`${alertDeliveryEvents.scheduledAt} <= ${currentTime}`,
+						sql`${alertDeliveryEvents.scheduledAt} <= ${new Date(currentTime)}`,
 					),
 					and(
 						eq(alertDeliveryEvents.status, "processing"),
 						sql`${alertDeliveryEvents.claimExpiresAt} IS NOT NULL`,
-						sql`${alertDeliveryEvents.claimExpiresAt} <= ${currentTime}`,
+						sql`${alertDeliveryEvents.claimExpiresAt} <= ${new Date(currentTime)}`,
 					),
 				)
 
@@ -2758,17 +2742,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						.update(alertDeliveryEvents)
 						.set({
 							status: "processing",
-							claimedAt: currentTime,
-							claimExpiresAt: currentTime + DELIVERY_LEASE_TTL_MS,
+							claimedAt: new Date(currentTime),
+							claimExpiresAt: new Date(currentTime + DELIVERY_LEASE_TTL_MS),
 							claimedBy: workerId,
-							updatedAt: currentTime,
+							updatedAt: new Date(currentTime),
 						})
 						.where(
 							and(
 								eq(alertDeliveryEvents.id, deliveryEventId),
 								claimableDeliveryWhere(currentTime),
 							),
-						),
+						)
+						.returning({ id: alertDeliveryEvents.id }),
 				)
 
 			const finalizeClaimedDelivery = (
@@ -2786,7 +2771,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							claimedAt: null,
 							claimExpiresAt: null,
 							claimedBy: null,
-							updatedAt: currentTime,
+							updatedAt: new Date(currentTime),
 						})
 						.where(
 							and(
@@ -2804,7 +2789,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 			) {
 				yield* finalizeClaimedDelivery(row.id, currentTime, {
 					status: "failed",
-					attemptedAt: currentTime,
+					attemptedAt: new Date(currentTime),
 					errorMessage: failure.message,
 				})
 				yield* Effect.logWarning("Alert delivery attempt failed").pipe(
@@ -2876,7 +2861,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					row: AlertDeliveryEventRow,
 				) {
 					const claimed = yield* claimDeliveryEvent(row.id, currentTime)
-					if (claimed.rowsAffected === 0) return
+					if (claimed.length === 0) return
 
 					processedCount += 1
 					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, 1)
@@ -2893,7 +2878,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						return
 					}
 
-					if (destinationRow.enabled !== 1) {
+					if (!destinationRow.enabled) {
 						failureCount += 1
 						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
 						yield* recordDeliveryFailure(row, currentTime, {
@@ -2953,7 +2938,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							),
 							sentAtMs: deliveryStart,
 						},
-						row.payloadJson,
+						JSON.stringify(row.payloadJson),
 					)
 					yield* Metric.update(
 						AlertingMetrics.deliveryAttemptDurationMs,
@@ -2963,7 +2948,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 
 					yield* finalizeClaimedDelivery(row.id, currentTime, {
 						status: "success",
-						attemptedAt: currentTime,
+						attemptedAt: new Date(currentTime),
 						providerMessage: result.providerMessage,
 						providerReference: result.providerReference,
 						responseCode: result.responseCode,
@@ -2976,8 +2961,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								.update(alertIncidents)
 								.set({
 									lastDeliveredEventType: row.eventType,
-									lastNotifiedAt: currentTime,
-									updatedAt: currentTime,
+									lastNotifiedAt: new Date(currentTime),
+									updatedAt: new Date(currentTime),
 								})
 								.where(eq(alertIncidents.id, row.incidentId!)),
 						)
@@ -3003,7 +2988,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
 					yield* finalizeClaimedDelivery(row.id, currentTime, {
 						status: "failed",
-						attemptedAt: currentTime,
+						attemptedAt: new Date(currentTime),
 						errorMessage: failure.message,
 					})
 
@@ -3135,17 +3120,17 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									ruleId: row.id,
 									groupKey,
 									...fields,
-									lastEvaluatedAt: timestamp,
+									lastEvaluatedAt: new Date(timestamp),
 									lastError: null,
-									updatedAt: timestamp,
+									updatedAt: new Date(timestamp),
 								})
 								.onConflictDoUpdate({
 									target: stateConflictTarget,
 									set: {
 										...fields,
-										lastEvaluatedAt: timestamp,
+										lastEvaluatedAt: new Date(timestamp),
 										lastError: null,
-										updatedAt: timestamp,
+										updatedAt: new Date(timestamp),
 									},
 								}),
 						)
@@ -3201,18 +3186,18 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 							comparator: normalized.comparator,
 							threshold: normalized.threshold,
 							thresholdUpper: normalized.thresholdUpper,
-							firstTriggeredAt: timestamp,
-							lastTriggeredAt: timestamp,
+							firstTriggeredAt: new Date(timestamp),
+							lastTriggeredAt: new Date(timestamp),
 							resolvedAt: null,
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: timestamp,
+							lastEvaluatedAt: new Date(timestamp),
 							dedupeKey: `${row.orgId}:${row.id}:${groupKey}`,
 							lastDeliveredEventType: null,
 							lastNotifiedAt: null,
 							errorIssueId: null,
-							createdAt: timestamp,
-							updatedAt: timestamp,
+							createdAt: new Date(timestamp),
+							updatedAt: new Date(timestamp),
 						}
 
 						yield* dbExecute((db) => db.insert(alertIncidents).values(incident))
@@ -3236,28 +3221,28 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					if (evaluation.status === "breached" && openIncident != null) {
 						const refreshedIncident = {
 							...openIncident,
-							lastTriggeredAt: timestamp,
+							lastTriggeredAt: new Date(timestamp),
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: timestamp,
-							updatedAt: timestamp,
+							lastEvaluatedAt: new Date(timestamp),
+							updatedAt: new Date(timestamp),
 						}
 
 						yield* dbExecute((db) =>
 							db
 								.update(alertIncidents)
 								.set({
-									lastTriggeredAt: timestamp,
+									lastTriggeredAt: new Date(timestamp),
 									lastObservedValue: evaluation.value,
 									lastSampleCount: evaluation.sampleCount,
-									lastEvaluatedAt: timestamp,
-									updatedAt: timestamp,
+									lastEvaluatedAt: new Date(timestamp),
+									updatedAt: new Date(timestamp),
 								})
 								.where(eq(alertIncidents.id, openIncident.id)),
 						)
 
 						const renotifyDueAt =
-							(openIncident.lastNotifiedAt ?? openIncident.firstTriggeredAt) +
+							(openIncident.lastNotifiedAt ?? openIncident.firstTriggeredAt).getTime() +
 							normalized.renotifyIntervalMinutes * 60_000
 						if (renotifyDueAt <= timestamp) {
 							yield* queueIncidentNotifications(
@@ -3286,11 +3271,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						const resolvedIncident = {
 							...openIncident,
 							status: "resolved" as const,
-							resolvedAt: timestamp,
+							resolvedAt: new Date(timestamp),
 							lastObservedValue: evaluation.value,
 							lastSampleCount: evaluation.sampleCount,
-							lastEvaluatedAt: timestamp,
-							updatedAt: timestamp,
+							lastEvaluatedAt: new Date(timestamp),
+							updatedAt: new Date(timestamp),
 						}
 
 						yield* dbExecute((db) =>
@@ -3298,11 +3283,11 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								.update(alertIncidents)
 								.set({
 									status: "resolved",
-									resolvedAt: timestamp,
+									resolvedAt: new Date(timestamp),
 									lastObservedValue: evaluation.value,
 									lastSampleCount: evaluation.sampleCount,
-									lastEvaluatedAt: timestamp,
-									updatedAt: timestamp,
+									lastEvaluatedAt: new Date(timestamp),
+									updatedAt: new Date(timestamp),
 								})
 								.where(eq(alertIncidents.id, openIncident.id)),
 						)
@@ -3511,8 +3496,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						const resolvedIncident = {
 							...incident,
 							status: "resolved" as const,
-							resolvedAt: timestamp,
-							updatedAt: timestamp,
+							resolvedAt: new Date(timestamp),
+							updatedAt: new Date(timestamp),
 						}
 
 						yield* dbExecute((db) =>
@@ -3520,8 +3505,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								.update(alertIncidents)
 								.set({
 									status: "resolved",
-									resolvedAt: timestamp,
-									updatedAt: timestamp,
+									resolvedAt: new Date(timestamp),
+									updatedAt: new Date(timestamp),
 								})
 								.where(eq(alertIncidents.id, incident.id)),
 						)
@@ -3603,8 +3588,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									.update(alertIncidents)
 									.set({
 										status: "resolved",
-										resolvedAt: timestamp,
-										updatedAt: timestamp,
+										resolvedAt: new Date(timestamp),
+										updatedAt: new Date(timestamp),
 									})
 									.where(eq(alertIncidents.id, incident.id)),
 							)
@@ -3615,8 +3600,8 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 								{
 									...incident,
 									status: "resolved",
-									resolvedAt: timestamp,
-									updatedAt: timestamp,
+									resolvedAt: new Date(timestamp),
+									updatedAt: new Date(timestamp),
 								},
 								syntheticEvaluation,
 								"resolve",
@@ -3648,13 +3633,14 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				dbExecute((db) =>
 					db
 						.update(alertRules)
-						.set({ lastScheduledAt: timestamp })
+						.set({ lastScheduledAt: new Date(timestamp) })
 						.where(
 							and(
 								eq(alertRules.id, ruleId),
-								sql`(${alertRules.lastScheduledAt} IS NULL OR ${alertRules.lastScheduledAt} < ${timestamp - SCHEDULER_LOCK_TTL_MS})`,
+								sql`(${alertRules.lastScheduledAt} IS NULL OR ${alertRules.lastScheduledAt} < ${new Date(timestamp - SCHEDULER_LOCK_TTL_MS)})`,
 							),
-						),
+						)
+						.returning({ id: alertRules.id }),
 				)
 
 			const recordEvaluationStatus = (evaluation: EvaluatedRule) =>
@@ -3671,7 +3657,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 					db
 						.select()
 						.from(alertRules)
-						.where(eq(alertRules.enabled, 1))
+						.where(eq(alertRules.enabled, true))
 						.orderBy(asc(alertRules.updatedAt)),
 				)
 				yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
@@ -3719,7 +3705,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						Effect.gen(function* () {
 							const timestamp = yield* now
 							const claimed = yield* claimRule(row.id, timestamp)
-							if (claimed.rowsAffected === 0) return
+							if (claimed.length === 0) return
 
 							yield* Effect.gen(function* () {
 								const ruleStart = yield* now
@@ -3880,7 +3866,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						.selectDistinct({ ruleId: alertIncidents.ruleId, orgId: alertIncidents.orgId })
 						.from(alertIncidents)
 						.innerJoin(alertRules, eq(alertIncidents.ruleId, alertRules.id))
-						.where(and(eq(alertIncidents.status, "open"), eq(alertRules.enabled, 0))),
+						.where(and(eq(alertIncidents.status, "open"), eq(alertRules.enabled, false))),
 				)
 				yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
 					Effect.gen(function* () {
