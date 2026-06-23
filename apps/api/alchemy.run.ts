@@ -148,6 +148,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 			...optionalPlain("HAZEL_OAUTH_SCOPES"),
 			...optionalPlain("GITHUB_APP_ID"),
+			...optionalPlain("GITHUB_APP_SLUG"),
 			...optionalSecret("GITHUB_APP_PRIVATE_KEY"),
 			...optionalPlain("GITHUB_APP_CLIENT_ID"),
 			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),
