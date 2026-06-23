@@ -1,41 +1,15 @@
 import type { ToolDefinition } from "@flue/runtime"
+// Single source of truth shared with apps/api (apps/api re-exports the same set)
+// so the gated-tool lists can't drift. The legacy chat agent gated these with
+// `@cloudflare/ai-chat`'s approval interrupt — Flue's event stream has no
+// human-in-the-loop interrupt, so we use **propose-then-apply** instead: the
+// agent calls the tool, but its `execute` returns a proposal marker WITHOUT
+// performing the mutation. The web client renders an approval card from that
+// result and performs the real mutation (via Maple's existing API) on approve.
+import { MUTATING_TOOL_NAMES } from "@maple/codemode"
 import { baseToolName } from "./mcp.ts"
 
-/**
- * Mutating Maple tools (base names). The legacy chat agent gated these with
- * `@cloudflare/ai-chat`'s approval interrupt — Flue's event stream has no
- * human-in-the-loop interrupt, so we use **propose-then-apply** instead: the
- * agent calls the tool, but its `execute` returns a proposal marker WITHOUT
- * performing the mutation. The web client renders an approval card from that
- * result and performs the real mutation (via Maple's existing API) on approve.
- *
- * Keep in sync with the mutating tools in apps/api/src/mcp/tools.
- */
-export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
-	// dashboards
-	"create_dashboard",
-	"update_dashboard",
-	"add_dashboard_widget",
-	"update_dashboard_widget",
-	"remove_dashboard_widget",
-	"reorder_dashboard_widgets",
-	"replace_dashboard_widgets",
-	// alerts
-	"create_alert_rule",
-	"update_alert_rule",
-	"delete_alert_rule",
-	// error issues
-	"claim_error_issue",
-	"release_error_issue",
-	"transition_error_issue",
-	"comment_on_error_issue",
-	"heartbeat_error_issue",
-	"set_issue_severity",
-	"update_error_notification_policy",
-	// fixes / agents
-	"propose_fix",
-	"register_agent",
-])
+export { MUTATING_TOOL_NAMES }
 
 /** Marker an approval-gated tool returns instead of mutating. */
 export interface ToolProposal {
