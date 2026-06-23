@@ -19,7 +19,7 @@ function IntegrationEmptyMedia({
 	accent: string
 	iconClassName?: string
 }) {
-	const backer = "absolute bottom-px size-12 rounded-xl border border-border/60 bg-card shadow-none"
+	const backer = "absolute bottom-px size-12 rounded-xl border border-border/60 bg-card"
 	return (
 		<div className="relative mb-6 flex items-end justify-center">
 			<span
@@ -35,7 +35,7 @@ function IntegrationEmptyMedia({
 				accent={accent}
 				iconClassName={iconClassName}
 				size={24}
-				plateClassName="relative size-12 rounded-xl shadow-sm"
+				plateClassName="relative size-12 rounded-xl"
 			/>
 		</div>
 	)
