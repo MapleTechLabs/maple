@@ -1,5 +1,5 @@
 import { Effect, FiberSet, Schema } from "effect"
-import { formatRunOutput, type RpcCallResult } from "@maple/codemode"
+import { formatRunOutput, RUN_CODE_TOOL_NAME, type RpcCallResult } from "@maple/codemode"
 import { WorkerEnvironment } from "@/lib/WorkerEnvironment"
 import { resolveTenant } from "../lib/query-warehouse"
 // Type-only: a value import would create an eager require cycle with registry.ts
@@ -32,6 +32,15 @@ export const resolveCodeModeCall = async (
 	input: unknown,
 	invoke: (definition: MapleToolDefinition, decoded: unknown) => Promise<McpToolResult>,
 ): Promise<RpcCallResult> => {
+	if (name === RUN_CODE_TOOL_NAME) {
+		// `run_code` is in `mapleToolDefinitions` (registered last) and isn't a
+		// mutating tool, so without this guard a snippet calling maple.run_code(...)
+		// would nest a sandbox inside the running one.
+		return {
+			ok: false,
+			error: { name: "Blocked", message: "maple.run_code cannot be called from inside code mode." },
+		}
+	}
 	if (MUTATING_TOOL_NAMES.has(name)) {
 		return {
 			ok: false,
@@ -82,7 +91,7 @@ export const resolveCodeModeCall = async (
  */
 export function registerRunCodeTool(server: McpToolRegistrar) {
 	server.tool(
-		"run_code",
+		RUN_CODE_TOOL_NAME,
 		DESCRIPTION,
 		Schema.Struct({
 			code: requiredStringParam(

@@ -1,5 +1,5 @@
 import type { ToolDefinition } from "@flue/runtime"
-import { buildApiDeclaration, type CodeModeToolSpec, type JsonSchema } from "@maple/codemode"
+import { buildApiDeclaration, RUN_CODE_TOOL_NAME, type CodeModeToolSpec, type JsonSchema } from "@maple/codemode"
 import { baseToolName } from "../mcp.ts"
 
 export interface CodeModeApi {
@@ -26,7 +26,9 @@ export const buildCodeModeApi = (tools: ReadonlyArray<ToolDefinition>): CodeMode
 	const specs: CodeModeToolSpec[] = []
 	for (const tool of tools) {
 		const name = baseToolName(tool.name)
-		if (dispatch.has(name)) continue
+		// Never expose run_code to itself (the chat path appends run_code after this
+		// runs, so this is defense-in-depth against a future ordering change).
+		if (name === RUN_CODE_TOOL_NAME || dispatch.has(name)) continue
 		dispatch.set(name, tool.execute)
 		specs.push({
 			name,

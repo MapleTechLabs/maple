@@ -42,10 +42,19 @@ export const formatRunOutput = (result: CodeRunResult, cap = DEFAULT_OUTPUT_CAP_
 }
 
 /**
+ * Hard cap on proposals surfaced from a single code run. A run queuing more than
+ * this is almost certainly a mistake/runaway; bounding it keeps the returned
+ * envelope (and the number of approval cards) from growing without limit.
+ */
+export const MAX_PROPOSALS_PER_RUN = 25
+
+/**
  * The final string `run_code` returns to the model. When the run queued mutating
  * proposals (chat approval flow), wrap it as a `proposed_batch` envelope the web
  * client parses into one approval card per proposal; otherwise return the plain
- * summary so the model just reads its results.
+ * summary so the model just reads its results. Both the inner `text` (via
+ * `formatRunOutput`) and the proposal count are bounded so the envelope can't
+ * grow unboundedly with the model's run.
  */
 export const formatRunResult = (
 	result: CodeRunResult,
@@ -54,12 +63,15 @@ export const formatRunResult = (
 ): string => {
 	const text = formatRunOutput(result, cap)
 	if (proposals.length === 0) return text
-	const queueNote = `\n\nQueued ${proposals.length} change(s) for approval: ${proposals
-		.map((p) => p.tool)
-		.join(", ")}.`
+
+	const kept = proposals.slice(0, MAX_PROPOSALS_PER_RUN)
+	const dropped = proposals.length - kept.length
+	const queueNote =
+		`\n\nQueued ${kept.length} change(s) for approval: ${kept.map((p) => p.tool).join(", ")}.` +
+		(dropped > 0 ? ` (${dropped} more change(s) were dropped — keep code-mode runs to a few mutations.)` : "")
 	return JSON.stringify({
 		status: PROPOSED_BATCH_STATUS,
-		proposals,
+		proposals: kept,
 		text: text + queueNote,
 	})
 }

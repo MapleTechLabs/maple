@@ -47,6 +47,9 @@ export interface CodeProposal {
 	readonly input: unknown
 }
 
+/** Canonical name of the Code Mode tool — shared so dispatch can refuse self-calls. */
+export const RUN_CODE_TOOL_NAME = "run_code"
+
 export const PROPOSED_BATCH_STATUS = "proposed_batch" as const
 
 /** The `run_code` output envelope when a code run queued mutating proposals. */

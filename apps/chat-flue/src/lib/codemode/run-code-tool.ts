@@ -1,10 +1,8 @@
 import type { ToolDefinition } from "@flue/runtime"
-import { formatRunResult, type CodeProposal, type RpcCallResult } from "@maple/codemode"
+import { formatRunResult, RUN_CODE_TOOL_NAME, type CodeProposal, type RpcCallResult } from "@maple/codemode"
 import { parseToolProposal } from "../approval.ts"
 import type { ChatFlueEnv } from "../env.ts"
 import type { CodeModeApi } from "./api-gen.ts"
-
-const RUN_CODE_TOOL_NAME = "run_code"
 
 /**
  * Build the `maple.<name>(input)` dispatch for a code run: look up the gated

@@ -2,7 +2,7 @@
 // (`RpcTarget`) and the `WorkerLoader` binding, so it lives behind the
 // `@maple/codemode/sandbox` subpath — the root barrel stays Node/test-safe.
 import { RpcTarget } from "cloudflare:workers"
-import { buildHarnessModule } from "./harness.ts"
+import { buildSandboxModules, SANDBOX_MAIN_MODULE } from "./harness.ts"
 import type { CodeRunResult, RpcCallResult } from "./types.ts"
 import {
 	DEFAULT_COMPAT_DATE,
@@ -74,8 +74,8 @@ export const runCodeInSandbox = async (
 	try {
 		const stub = loader.get(options.id, async () => ({
 			compatibilityDate: options.compatibilityDate ?? DEFAULT_COMPAT_DATE,
-			mainModule: "main.js",
-			modules: { "main.js": buildHarnessModule(options.code, options.capBytes) },
+			mainModule: SANDBOX_MAIN_MODULE,
+			modules: buildSandboxModules(options.code, options.capBytes),
 			env: { MAPLE: supervisor },
 			globalOutbound: null,
 			limits: {

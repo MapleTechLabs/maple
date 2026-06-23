@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { formatRunOutput, formatRunResult } from "./format.ts"
+import { formatRunOutput, formatRunResult, MAX_PROPOSALS_PER_RUN } from "./format.ts"
 import { PROPOSED_BATCH_STATUS, type CodeRunResult } from "./types.ts"
 
 const base: CodeRunResult = { logs: [], returnValue: undefined, error: null }
@@ -42,5 +42,15 @@ describe("formatRunResult", () => {
 		expect(parsed.status).toBe(PROPOSED_BATCH_STATUS)
 		expect(parsed.proposals).toHaveLength(2)
 		expect(parsed.text).toContain("Queued 2 change(s) for approval: create_dashboard, add_dashboard_widget.")
+	})
+
+	it("caps the number of proposals surfaced from one run", () => {
+		const many = Array.from({ length: MAX_PROPOSALS_PER_RUN + 5 }, (_, i) => ({
+			tool: "create_dashboard",
+			input: { i },
+		}))
+		const parsed = JSON.parse(formatRunResult(base, many))
+		expect(parsed.proposals).toHaveLength(MAX_PROPOSALS_PER_RUN)
+		expect(parsed.text).toContain("5 more change(s) were dropped")
 	})
 })

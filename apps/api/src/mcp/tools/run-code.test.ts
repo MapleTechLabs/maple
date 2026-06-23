@@ -36,6 +36,14 @@ describe("resolveCodeModeCall", () => {
 		expect(invoke).not.toHaveBeenCalled()
 	})
 
+	it("refuses to call run_code from inside code mode (no nested sandbox)", async () => {
+		const invoke = vi.fn()
+		const r = await call("run_code", { code: "1" }, invoke)
+		expect(r.ok).toBe(false)
+		expect(r.error?.name).toBe("Blocked")
+		expect(invoke).not.toHaveBeenCalled()
+	})
+
 	it("rejects unknown tools", async () => {
 		const r = await call("not_a_tool", {}, vi.fn())
 		expect(r.ok).toBe(false)
