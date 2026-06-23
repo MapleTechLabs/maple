@@ -4,7 +4,6 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
-		"./agent": "./src/agent.ts",
 		"./alerting": "./src/alerting.ts"
 	},
 	"scripts": {
@@ -31,7 +30,6 @@
 		"@clickhouse/client-web": "catalog:clickhouse",
 		"@effect/platform-bun": "catalog:effect",
 		"@flue/sdk": "1.0.0-beta.1",
-		"@libsql/client": "0.15.15",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/codemode": "workspace:*",
 		"@maple/db": "workspace:*",
@@ -51,6 +49,7 @@
 		"@ai-sdk/openai-compatible": "^2.0.48",
 		"@cloudflare/workers-types": "4.20260603.1",
 		"@effect/language-service": "catalog:effect",
+		"@electric-sql/pglite": "^0.5.2",
 		"@types/node": "catalog:tooling",
 		"ai": "^6.0.196",
 		"atmn": "^1.0.1",

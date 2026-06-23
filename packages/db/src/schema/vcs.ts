@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
@@ -18,14 +18,14 @@ import type {
 // Vendor-agnostic VCS integration tables. Every row carries a `provider`
 // discriminator; GitHub-specific concepts never reach this layer. External
 // provider ids (installation/repo/account) are stored as TEXT for
-// cross-provider generality. Timestamps are epoch milliseconds.
+// cross-provider generality. Timestamps are stored as `timestamptz`.
 //
 // IMPORTANT: only `VcsRepository` (apps/api/src/services/vcs/VcsRepository.ts)
 // may import these tables. All other code goes through that repo service.
 // ---------------------------------------------------------------------------
 
 /** One row per provider App installation, owned by the initiating Maple org. */
-export const vcsInstallations = sqliteTable(
+export const vcsInstallations = pgTable(
 	"vcs_installations",
 	{
 		id: text("id").$type<VcsInstallationId>().notNull().primaryKey(),
@@ -38,10 +38,10 @@ export const vcsInstallations = sqliteTable(
 		accountAvatarUrl: text("account_avatar_url"),
 		repositorySelection: text("repository_selection").$type<VcsRepoSelection>().notNull().default("all"),
 		status: text("status").$type<VcsInstallStatus>().notNull().default("active"),
-		suspendedAt: integer("suspended_at", { mode: "number" }),
+		suspendedAt: timestamp("suspended_at", { withTimezone: true, mode: "date" }),
 		installedByUserId: text("installed_by_user_id").$type<UserId>().notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("vcs_installations_provider_external_idx").on(
@@ -53,7 +53,7 @@ export const vcsInstallations = sqliteTable(
 )
 
 /** Repositories accessible to an installation, plus per-repo sync state. */
-export const vcsRepositories = sqliteTable(
+export const vcsRepositories = pgTable(
 	"vcs_repositories",
 	{
 		id: text("id").$type<VcsRepositoryId>().notNull().primaryKey(),
@@ -73,17 +73,17 @@ export const vcsRepositories = sqliteTable(
 		// tracked branch is deleted.
 		trackedBranch: text("tracked_branch"),
 		htmlUrl: text("html_url").notNull(),
-		isPrivate: integer("is_private", { mode: "number" }).notNull().default(1),
-		isArchived: integer("is_archived", { mode: "number" }).notNull().default(0),
+		isPrivate: boolean("is_private").notNull().default(true),
+		isArchived: boolean("is_archived").notNull().default(false),
 		// Access lifecycle, distinct from sync_status: "active" (visible to the
 		// installation) or "removed" (provider revoked access → soft-deleted; row +
 		// commits kept, events ignored until re-granted). Hard delete is user-only.
 		status: text("status").$type<VcsRepoStatus>().notNull().default("active"),
 		syncStatus: text("sync_status").$type<VcsRepoSyncStatus>().notNull().default("pending"),
-		lastSyncedAt: integer("last_synced_at", { mode: "number" }),
+		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "date" }),
 		lastSyncError: text("last_sync_error"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("vcs_repositories_org_repo_idx").on(table.orgId, table.provider, table.externalRepoId),
@@ -101,7 +101,7 @@ export const vcsRepositories = sqliteTable(
  * `(org_id, sha)` — provider-agnostic, no join — so `org_id` stays denormalized
  * here. The row is self-contained (`html_url` + author fields).
  */
-export const vcsCommits = sqliteTable(
+export const vcsCommits = pgTable(
 	"vcs_commits",
 	{
 		id: text("id").$type<VcsCommitRowId>().notNull().primaryKey(),
@@ -116,10 +116,10 @@ export const vcsCommits = sqliteTable(
 		authorEmail: text("author_email"),
 		authorLogin: text("author_login"),
 		authorAvatarUrl: text("author_avatar_url"),
-		authoredAt: integer("authored_at", { mode: "number" }),
-		committedAt: integer("committed_at", { mode: "number" }).notNull(),
+		authoredAt: timestamp("authored_at", { withTimezone: true, mode: "date" }),
+		committedAt: timestamp("committed_at", { withTimezone: true, mode: "date" }).notNull(),
 		htmlUrl: text("html_url").notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		// One row per (repo, sha). repository_id is the leftmost column, so this
@@ -135,7 +135,7 @@ export const vcsCommits = sqliteTable(
  * tracked is named by `vcs_repositories.tracked_branch`, not a flag here.
  * `is_default` is a display hint (and the default seed for `tracked_branch`).
  */
-export const vcsRepositoryBranches = sqliteTable(
+export const vcsRepositoryBranches = pgTable(
 	"vcs_repository_branches",
 	{
 		id: text("id").$type<VcsBranchId>().notNull().primaryKey(),
@@ -143,10 +143,10 @@ export const vcsRepositoryBranches = sqliteTable(
 		provider: text("provider").$type<VcsProviderId>().notNull(),
 		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
 		name: text("name").notNull(),
-		isDefault: integer("is_default", { mode: "number" }).notNull().default(0),
+		isDefault: boolean("is_default").notNull().default(false),
 		headSha: text("head_sha").$type<GitCommitSha>(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		// One row per (repo, branch name). repository_id leftmost ⇒ also serves the

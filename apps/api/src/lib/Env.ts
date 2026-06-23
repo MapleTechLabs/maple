@@ -15,7 +15,6 @@ export interface EnvShape {
 	readonly CLICKHOUSE_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly CLICKHOUSE_DATABASE: string
 	readonly MAPLE_DB_URL: string
-	readonly MAPLE_DB_AUTH_TOKEN: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_AUTH_MODE: string
 	readonly MAPLE_ROOT_PASSWORD: Option.Option<Redacted.Redacted<string>>
 	readonly MAPLE_DEFAULT_ORG_ID: string
@@ -74,7 +73,6 @@ const envConfig = Config.all({
 	CLICKHOUSE_PASSWORD: optionalRedacted("CLICKHOUSE_PASSWORD"),
 	CLICKHOUSE_DATABASE: stringWithDefault("CLICKHOUSE_DATABASE", "default"),
 	MAPLE_DB_URL: stringWithDefault("MAPLE_DB_URL", ""),
-	MAPLE_DB_AUTH_TOKEN: optionalRedacted("MAPLE_DB_AUTH_TOKEN"),
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),

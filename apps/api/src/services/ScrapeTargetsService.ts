@@ -17,7 +17,7 @@ import {
 	type CreateScrapeTargetRequest,
 	type UpdateScrapeTargetRequest,
 } from "@maple/domain/http"
-import { chunkRowsForInsert, scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
+import { scrapeTargetChecks, scrapeTargets, type ScrapeTargetCheckRow } from "@maple/db"
 import { and, desc, eq, gte, inArray, lt, lte } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Redacted, Schema } from "effect"
 import { encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
@@ -199,10 +199,10 @@ const validateAuthCredentials = (authType: string, authCredentials: string | nul
 	)
 }
 
-const decodeDiscoveryConfig = (discoveryConfigJson: string | null) => {
+const decodeDiscoveryConfig = (discoveryConfigJson: unknown) => {
 	if (!discoveryConfigJson) return null
 	try {
-		return Schema.decodeUnknownSync(Schema.fromJsonString(DiscoveryConfigSchema))(discoveryConfigJson)
+		return Schema.decodeUnknownSync(DiscoveryConfigSchema)(discoveryConfigJson)
 	} catch {
 		return null
 	}
@@ -217,16 +217,16 @@ const rowToResponse = (row: ScrapeTargetRow): ScrapeTargetResponse =>
 		targetType: decodeScrapeTargetTypeSync(row.targetType),
 		organization: decodeDiscoveryConfig(row.discoveryConfigJson)?.organization ?? null,
 		scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
-		labelsJson: row.labelsJson,
+		labelsJson: row.labelsJson == null ? null : JSON.stringify(row.labelsJson),
 		authType: decodeScrapeAuthTypeSync(row.authType),
 		hasCredentials: row.authCredentialsCiphertext !== null,
-		enabled: row.enabled === 1,
+		enabled: row.enabled,
 		lastScrapeAt: row.lastScrapeAt
-			? decodeIsoDateTimeStringSync(new Date(row.lastScrapeAt).toISOString())
+			? decodeIsoDateTimeStringSync(row.lastScrapeAt.toISOString())
 			: null,
 		lastScrapeError: row.lastScrapeError,
-		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 	})
 
 const MIN_SCRAPE_INTERVAL = 5
@@ -265,6 +265,10 @@ const validateInterval = (seconds: number | undefined) => {
 	return Effect.succeed(seconds)
 }
 
+/**
+ * Validate the request's JSON-text labels and return the decoded record for
+ * the jsonb column write (null/undefined pass through unchanged).
+ */
 const validateLabelsJson = (labelsJson: string | null | undefined) => {
 	if (labelsJson === undefined || labelsJson === null) return Effect.succeed(labelsJson)
 	return Schema.decodeUnknownEffect(Schema.fromJsonString(ScrapeLabelsSchema))(labelsJson).pipe(
@@ -283,7 +287,7 @@ const validateLabelsJson = (labelsJson: string | null | undefined) => {
 					}),
 				)
 			}
-			return Effect.succeed(labelsJson)
+			return Effect.succeed(decoded)
 		}),
 	)
 }
@@ -370,7 +374,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const targetType = request.targetType ?? "prometheus"
 
 				let url: string
-				let discoveryConfigJson: string | null = null
+				let discoveryConfigJson: { organization: string } | null = null
 				let authType: string
 
 				if (targetType === "planetscale") {
@@ -399,7 +403,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						)
 					}
 					url = planetScaleDiscoveryUrl(organization)
-					discoveryConfigJson = JSON.stringify({ organization })
+					discoveryConfigJson = { organization }
 					authType = "token"
 				} else {
 					if (!request.url) {
@@ -412,7 +416,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				}
 
 				yield* validateInterval(request.scrapeIntervalSeconds)
-				yield* validateLabelsJson(request.labelsJson)
+				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const name = request.name.trim()
 				const serviceName = request.serviceName ?? null
@@ -452,12 +456,12 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							discoveryConfigJson,
 							scrapeIntervalSeconds:
 								request.scrapeIntervalSeconds ?? (targetType === "planetscale" ? 30 : 15),
-							labelsJson: request.labelsJson ?? null,
+							labelsJson: labels ?? null,
 							authType,
 							...credentialFields,
-							enabled: request.enabled === false ? 0 : 1,
-							createdAt: now,
-							updatedAt: now,
+							enabled: request.enabled !== false,
+							createdAt: new Date(now),
+							updatedAt: new Date(now),
 						}),
 					)
 					.pipe(Effect.mapError(toPersistenceError))
@@ -511,10 +515,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					yield* validateUrl(request.url)
 				}
 				yield* validateInterval(request.scrapeIntervalSeconds)
-				yield* validateLabelsJson(request.labelsJson)
+				const labels = yield* validateLabelsJson(request.labelsJson)
 
 				const now = yield* Clock.currentTimeMillis
-				const updates: Record<string, unknown> = { updatedAt: now }
+				const updates: Record<string, unknown> = { updatedAt: new Date(now) }
 
 				if (request.name !== undefined) updates.name = request.name.trim()
 				if (request.url !== undefined && request.url !== null) updates.url = request.url.trim()
@@ -529,13 +533,13 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						)
 					}
 					updates.url = planetScaleDiscoveryUrl(organization)
-					updates.discoveryConfigJson = JSON.stringify({ organization })
+					updates.discoveryConfigJson = { organization }
 				}
 				if (request.scrapeIntervalSeconds !== undefined) {
 					updates.scrapeIntervalSeconds = request.scrapeIntervalSeconds
 				}
-				if (request.labelsJson !== undefined) updates.labelsJson = request.labelsJson
-				if (request.enabled !== undefined) updates.enabled = request.enabled ? 1 : 0
+				if (request.labelsJson !== undefined) updates.labelsJson = labels ?? null
+				if (request.enabled !== undefined) updates.enabled = request.enabled
 				if (request.serviceName !== undefined) updates.serviceName = request.serviceName
 
 				if (request.authType !== undefined) {
@@ -629,9 +633,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							.from(scrapeTargets)
 							.where(
 								interval === undefined
-									? eq(scrapeTargets.enabled, 1)
+									? eq(scrapeTargets.enabled, true)
 									: and(
-											eq(scrapeTargets.enabled, 1),
+											eq(scrapeTargets.enabled, true),
 											eq(scrapeTargets.scrapeIntervalSeconds, interval),
 										),
 							),
@@ -646,7 +650,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				subTargetKey?: string,
 			) {
 				const row = yield* selectByIdForInternalScrape(targetId)
-				if (Option.isNone(row) || row.value.enabled !== 1) {
+				if (Option.isNone(row) || !row.value.enabled) {
 					return yield* Effect.fail(
 						new ScrapeTargetNotFoundError({
 							targetId,
@@ -718,7 +722,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							.where(
 								and(
 									inArray(scrapeTargetChecks.targetId, [...targetIds]),
-									lt(scrapeTargetChecks.checkedAt, cutoff),
+									lt(scrapeTargetChecks.checkedAt, new Date(cutoff)),
 								),
 							),
 					)
@@ -783,15 +787,15 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 								.set(
 									error === null
 										? {
-												lastScrapeAt: result.scrapedAt,
+												lastScrapeAt: new Date(result.scrapedAt),
 												lastScrapeError: null,
-												updatedAt: result.scrapedAt,
+												updatedAt: new Date(result.scrapedAt),
 											}
 										: // Failure keeps lastScrapeAt at the last good scrape so data
 											// gaps stay visible alongside the error.
 											{
 												lastScrapeError: error,
-												updatedAt: result.scrapedAt,
+												updatedAt: new Date(result.scrapedAt),
 											},
 								)
 								.where(eq(scrapeTargets.id, result.targetId)),
@@ -823,7 +827,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							targetId: result.targetId,
 							orgId,
 							subTargetKey: result.subTargetKey ?? "",
-							checkedAt: result.scrapedAt,
+							checkedAt: new Date(result.scrapedAt),
 							error: result.error,
 							durationMs: result.durationMs ?? null,
 							samplesScraped: result.samplesScraped ?? null,
@@ -832,15 +836,11 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					]
 				})
 
-				// Chunked so each INSERT stays within D1's 100 bound-parameter cap.
-				yield* Effect.forEach(
-					chunkRowsForInsert(scrapeTargetChecks, checkRows),
-					(chunk) =>
-						database
-							.execute((db) => db.insert(scrapeTargetChecks).values(chunk))
-							.pipe(Effect.mapError(toPersistenceError)),
-					{ discard: true },
-				)
+				if (checkRows.length > 0) {
+					yield* database
+						.execute((db) => db.insert(scrapeTargetChecks).values(checkRows))
+						.pipe(Effect.mapError(toPersistenceError))
+				}
 
 				yield* pruneChecks([...new Set(checkRows.map((row) => row.targetId))])
 			})
@@ -856,10 +856,10 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					eq(scrapeTargetChecks.targetId, targetId),
 					eq(scrapeTargetChecks.orgId, orgId),
 					...(query.startTime !== undefined
-						? [gte(scrapeTargetChecks.checkedAt, query.startTime)]
+						? [gte(scrapeTargetChecks.checkedAt, new Date(query.startTime))]
 						: []),
 					...(query.endTime !== undefined
-						? [lte(scrapeTargetChecks.checkedAt, query.endTime)]
+						? [lte(scrapeTargetChecks.checkedAt, new Date(query.endTime))]
 						: []),
 				]
 				return yield* database
@@ -933,7 +933,7 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				return new ScrapeTargetProbeResponse({
 					success: Exit.isSuccess(requestExit),
 					lastScrapeAt: updated.value.lastScrapeAt
-						? decodeIsoDateTimeStringSync(new Date(updated.value.lastScrapeAt).toISOString())
+						? decodeIsoDateTimeStringSync(updated.value.lastScrapeAt.toISOString())
 						: null,
 					lastScrapeError: updated.value.lastScrapeError ?? null,
 				})

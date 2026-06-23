@@ -377,6 +377,9 @@
 	"pricing_traces": "Traces",
 	"pricing_metrics": "Metrics",
 	"pricing_start_trial": "Start {duration}-day free trial",
+	"pricing_calc_label": "Cost calculator",
+	"pricing_calc_heading": "Estimate your bill",
+	"pricing_calc_sub": "Slide your monthly volume and compare your Maple cost against any vendor.",
 
 	"faq_badge": "FAQ",
 	"faq_heading": "Frequently asked questions",

@@ -2614,6 +2614,12 @@ export const pricing_metrics = () => `メトリクス`
 export const pricing_start_trial = (params) => `${params.duration}日間の無料トライアルを開始`
 
 
+export { pricing_calc_label } from "./en.js"
+
+export { pricing_calc_heading } from "./en.js"
+
+export { pricing_calc_sub } from "./en.js"
+
 /**
  * 
  * @returns {string}

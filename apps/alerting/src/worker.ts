@@ -3,7 +3,7 @@ import {
 	AnomalyDetectionService,
 	BucketCacheService,
 	CacheBackendLive,
-	DatabaseD1Live,
+	DatabasePgLive,
 	DigestService,
 	EdgeCacheService,
 	EmailService,
@@ -36,7 +36,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 	const ConfigLive = WorkerConfigProviderLayer
 	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 
-	const DatabaseLive = DatabaseD1Live.pipe(Layer.provide(WorkerEnvironment.layer))
+	const DatabaseLive = DatabasePgLive.pipe(Layer.provide(WorkerEnvironment.layer))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 

@@ -2823,6 +2823,30 @@ export const pricing_start_trial = (params) => `Start ${params.duration}-day fre
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const pricing_calc_label = () => `Cost calculator`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_calc_heading = () => `Estimate your bill`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_calc_sub = () => `Slide your monthly volume and compare your Maple cost against any vendor.`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const faq_badge = () => `FAQ`
 
 

@@ -4,27 +4,23 @@ import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
 import { ErrorIssueId, OrgId } from "@maple/domain/http"
 import { errorIssues, issueEscalationPolicies, issueEscalations } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
 import { Database } from "@/lib/DatabaseLive"
 import { Env } from "@/lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { EscalationService } from "./EscalationService"
 import { NotificationDispatcher, type NotificationRequest } from "./NotificationDispatcher"
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3476",
 			MCP_PORT: "3477",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -55,8 +51,8 @@ const makeHarness = (
 				return dispatchResult
 			}),
 	})
-	const { url } = makeTempDb("maple-escalation-", createdTempDirs)
-	const base = DatabaseLibsqlLive.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig(url)))
+	const testDb = createTestDb(createdDbs)
+	const base = testDb.layer.pipe(Layer.provideMerge(Env.layer), Layer.provide(testConfig()))
 	const layer = EscalationService.layer.pipe(Layer.provide(dispatcherStub), Layer.provideMerge(base))
 	return { calls, layer }
 }
@@ -84,10 +80,10 @@ const seedIssue = (issueId: ErrorIssueId) =>
 				topFrame: "",
 				severity: "high",
 				severitySource: "ai",
-				firstSeenAt: now,
-				lastSeenAt: now,
-				createdAt: now,
-				updatedAt: now,
+				firstSeenAt: new Date(now),
+				lastSeenAt: new Date(now),
+				createdAt: new Date(now),
+				updatedAt: new Date(now),
 			}),
 		)
 	})
@@ -107,17 +103,17 @@ const seedEscalation = (
 				severity: "high",
 				source: "ai",
 				reason: "severity_set",
-				payloadJson: JSON.stringify({ confidence: "medium" }),
+				payloadJson: { confidence: "medium" },
 				status: "queued",
 				attempts: 0,
 				dedupeKey: `esc:${ORG}:${issueId}:high`,
-				createdAt: now,
+				createdAt: new Date(now),
 				...overrides,
 			}),
 		)
 	})
 
-const seedPolicy = (rulesJson: string, enabled = 1) =>
+const seedPolicy = (rulesJson: ReadonlyArray<unknown>, enabled = true) =>
 	Effect.gen(function* () {
 		const database = yield* Database
 		const now = yield* Clock.currentTimeMillis
@@ -126,7 +122,7 @@ const seedPolicy = (rulesJson: string, enabled = 1) =>
 				orgId: ORG,
 				enabled,
 				rulesJson,
-				updatedAt: now,
+				updatedAt: new Date(now),
 				updatedBy: "user_test",
 			}),
 		)
@@ -139,8 +135,9 @@ const loadEscalations = Effect.gen(function* () {
 	)
 })
 
-const highRule = (overrides: Record<string, unknown> = {}) =>
-	JSON.stringify([{ severity: "high", destinationIds: [randomUUID()], ...overrides }])
+const highRule = (overrides: Record<string, unknown> = {}) => [
+	{ severity: "high", destinationIds: [randomUUID()], ...overrides },
+]
 
 describe("EscalationService.runEscalationTick", () => {
 	it.effect("dispatches a queued escalation through the policy and marks it sent", () => {
@@ -173,7 +170,7 @@ describe("EscalationService.runEscalationTick", () => {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
 			yield* seedEscalation(issueId)
-			yield* seedPolicy(highRule(), 0)
+			yield* seedPolicy(highRule(), false)
 
 			const service = yield* EscalationService
 			const result = yield* service.runEscalationTick()
@@ -192,7 +189,7 @@ describe("EscalationService.runEscalationTick", () => {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
 			yield* seedEscalation(issueId)
-			yield* seedPolicy(JSON.stringify([{ severity: "critical", destinationIds: [randomUUID()] }]))
+			yield* seedPolicy([{ severity: "critical", destinationIds: [randomUUID()] }])
 
 			const service = yield* EscalationService
 			const result = yield* service.runEscalationTick()
@@ -204,13 +201,13 @@ describe("EscalationService.runEscalationTick", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("treats malformed policy rulesJson as an empty rule set", () => {
+	it.effect("treats malformed policy rules as an empty rule set", () => {
 		const { calls, layer } = makeHarness()
 		return Effect.gen(function* () {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
 			yield* seedEscalation(issueId)
-			yield* seedPolicy("{not valid json")
+			yield* seedPolicy(["not a rule shape"])
 
 			const service = yield* EscalationService
 			const result = yield* service.runEscalationTick()
@@ -228,7 +225,7 @@ describe("EscalationService.runEscalationTick", () => {
 		return Effect.gen(function* () {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			yield* seedEscalation(issueId, { payloadJson: JSON.stringify({ confidence: "low" }) })
+			yield* seedEscalation(issueId, { payloadJson: { confidence: "low" } })
 			yield* seedPolicy(highRule({ minConfidence: "high" }))
 
 			const service = yield* EscalationService
@@ -246,7 +243,7 @@ describe("EscalationService.runEscalationTick", () => {
 		return Effect.gen(function* () {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			yield* seedEscalation(issueId, { source: "manual", payloadJson: "{}" })
+			yield* seedEscalation(issueId, { source: "manual", payloadJson: {} })
 			yield* seedPolicy(highRule({ minConfidence: "high" }))
 
 			const service = yield* EscalationService
@@ -257,12 +254,12 @@ describe("EscalationService.runEscalationTick", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
-	it.effect("falls back to an empty payload when payloadJson is malformed", () => {
+	it.effect("falls back to an empty payload when payloadJson is not a record", () => {
 		const { calls, layer } = makeHarness()
 		return Effect.gen(function* () {
 			const issueId = asIssueId(randomUUID())
 			yield* seedIssue(issueId)
-			yield* seedEscalation(issueId, { payloadJson: "{not valid json" })
+			yield* seedEscalation(issueId, { payloadJson: "not a record" })
 			yield* seedPolicy(highRule())
 
 			const service = yield* EscalationService

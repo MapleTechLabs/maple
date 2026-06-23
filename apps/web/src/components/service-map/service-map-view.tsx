@@ -72,6 +72,7 @@ import type { GetServiceOverviewInput, ServiceOverview } from "@/api/warehouse/s
 import type { ServiceWorkload } from "@/api/warehouse/service-infra"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { ServiceMapNode } from "./service-map-node"
+import { ServiceMapLoading } from "./service-map-loading"
 import { ServiceMapEdge } from "./service-map-edge"
 import { NamespaceGroupNode, type NamespaceGroupData } from "./service-map-namespace-group"
 import { layoutServiceMapWithElk, type ElkLayoutResult } from "./service-map-elk"
@@ -1871,11 +1872,7 @@ export function ServiceMapView({ startTime, endTime }: ServiceMapViewProps) {
 	const workloads = infraEnabled && Result.isSuccess(workloadsResult) ? workloadsResult.value.workloads : []
 
 	return Result.builder(mapResult)
-		.onInitial(() => (
-			<div className="flex items-center justify-center h-full">
-				<div className="text-sm text-muted-foreground animate-pulse">Loading service map…</div>
-			</div>
-		))
+		.onInitial(() => <ServiceMapLoading />)
 		.onError((error) => {
 			const formatted = formatBackendError(error)
 			return (

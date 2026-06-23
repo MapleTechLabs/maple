@@ -28,4 +28,21 @@ const docs = defineCollection({
 	}),
 })
 
-export const collections = { roadmap, docs }
+const blog = defineCollection({
+	loader: glob({ pattern: "**/*.{md,mdx}", base: "./src/content/blog" }),
+	schema: z.object({
+		title: z.string(),
+		description: z.string(),
+		date: z.coerce.date(),
+		author: z.string().default("Maple Team"),
+		category: z.enum(["engineering", "product", "guides", "company"]).optional(),
+		// Optional real cover screenshot served from /public/blog; falls back to a
+		// generated on-brand motif when omitted.
+		cover: z.string().optional(),
+		coverAlt: z.string().optional(),
+		featured: z.boolean().default(false),
+		draft: z.boolean().default(false),
+	}),
+})
+
+export const collections = { roadmap, docs, blog }

@@ -479,3 +479,83 @@
 		animation: none;
 	}
 }
+
+/* Service-map loading — the topology wires itself up */
+@keyframes service-map-load-node {
+	from {
+		opacity: 0;
+		transform: scale(0.92) translateY(4px);
+	}
+	to {
+		opacity: 1;
+		transform: scale(1) translateY(0);
+	}
+}
+
+@keyframes service-map-load-edge {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+/* A round traffic particle riding the link via CSS motion-path. */
+@keyframes service-map-load-flow {
+	from {
+		offset-distance: 0%;
+	}
+	to {
+		offset-distance: 100%;
+	}
+}
+
+@keyframes service-map-load-dot {
+	0%,
+	100% {
+		opacity: 0.35;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+.sm-load-node {
+	transform-box: fill-box;
+	transform-origin: center;
+	animation: service-map-load-node 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sm-load-edge {
+	animation: service-map-load-edge 0.7s ease-out both;
+}
+
+.sm-load-particle {
+	offset-rotate: 0deg;
+	animation: service-map-load-flow 1.9s linear infinite;
+}
+
+.sm-load-dot {
+	animation: service-map-load-dot 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	/* Settle to the end-state: graph drawn, no traveling pulse. */
+	.sm-load-node {
+		animation: none;
+		opacity: 1;
+		transform: none;
+	}
+	.sm-load-edge {
+		animation: none;
+		opacity: 1;
+	}
+	.sm-load-particle {
+		display: none;
+	}
+	.sm-load-dot {
+		animation: none;
+		opacity: 1;
+	}
+}

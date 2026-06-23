@@ -1,8 +1,23 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, KVNamespace, Queue, Worker, WorkerLoader, WorkerStub, Workflow } from "alchemy/cloudflare"
+import {
+	D1Database,
+	Hyperdrive,
+	HyperdriveRef,
+	KVNamespace,
+	Queue,
+	Worker,
+	WorkerLoader,
+	WorkerStub,
+	Workflow,
+} from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveD1Name, resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	resolveD1Name,
+	resolveDeploymentEnvironment,
+	resolveHyperdriveName,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 
 const requireEnv = (key: string): string => {
 	const value = process.env[key]?.trim()
@@ -22,18 +37,68 @@ const optionalSecret = (key: string): Record<string, ReturnType<typeof alchemy.s
 	return value ? { [key]: alchemy.secret(value) } : {}
 }
 
+// Managed Hyperdrive for non-prod stages (stg / per-PR preview / local dev): the
+// origin is pushed from MAPLE_PG_URL (a standard Postgres connection string, direct
+// port 5432) — the same env var the CI `drizzle-kit migrate` step + import scripts
+// use. Cloudflare Hyperdrive needs a STRUCTURED origin (discrete host/user/…), not a
+// URL, so we parse it here. Schema migrations run in CI before deploy, never at boot.
+const makeManagedHyperdrive = (stage: MapleStage) => {
+	const pgUrl = new URL(requireEnv("MAPLE_PG_URL"))
+	return Hyperdrive("maple-db", {
+		name: resolveHyperdriveName(stage),
+		adopt: true,
+		origin: {
+			host: pgUrl.hostname,
+			port: Number(pgUrl.port || "5432"),
+			// Connect-time db (`postgres`, the PlanetScale cluster default), not the
+			// PS resource name.
+			database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+			user: decodeURIComponent(pgUrl.username),
+			password: alchemy.secret(decodeURIComponent(pgUrl.password)),
+		},
+		// Read-after-write everywhere (alert state CAS, dashboard versioning) —
+		// revisit caching once read paths that tolerate staleness are identified.
+		caching: { disabled: true },
+		dev: {
+			origin: {
+				host: "localhost",
+				port: 5499,
+				database: "maple",
+				user: "maple",
+				password: "maple",
+			},
+		},
+	})
+}
+
 export interface CreateMapleApiOptions {
 	stage: MapleStage
 	domains: MapleDomains
 }
 
 export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) => {
-	const mapleDb = await D1Database("MAPLE_DB", {
-		name: resolveD1Name(stage),
-		adopt: true,
-		migrationsDir: path.resolve(import.meta.dirname, "../../packages/db/drizzle"),
-		migrationsTable: "drizzle_migrations",
-	})
+	// Legacy D1 — unbound rollback snapshot for the Postgres cutover. Kept with
+	// `delete: false` so removing this block later no-ops the API delete; the
+	// resource id MUST stay "MAPLE_DB" (renaming would orphan-delete the
+	// database). migrationsDir is gone: packages/db/drizzle now holds Postgres
+	// SQL. Remove this whole block after the post-cutover rollback window.
+	if (stage.kind === "prd" || stage.kind === "stg") {
+		await D1Database("MAPLE_DB", {
+			name: resolveD1Name(stage),
+			adopt: true,
+			delete: false,
+		})
+	}
+
+	// Prod binds to the PRE-CONFIGURED Hyperdrive `maple-prd` — its origin and
+	// credentials are managed directly in the Cloudflare dashboard, NOT pushed
+	// from MAPLE_PG_URL. Reference it by name so a deploy never rewrites (or needs
+	// to know) the prod database connection. Other stages manage their own
+	// Hyperdrive from MAPLE_PG_URL below.
+	const mapleDb =
+		stage.kind === "prd"
+			? await HyperdriveRef({ name: resolveHyperdriveName(stage) })
+			: await makeManagedHyperdrive(stage)
 
 	const mcpSessions = await KVNamespace("MCP_SESSIONS", {
 		title: resolveWorkerName("mcp-sessions", stage),
@@ -148,6 +213,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 			...optionalPlain("HAZEL_OAUTH_SCOPES"),
 			...optionalPlain("GITHUB_APP_ID"),
+			...optionalPlain("GITHUB_APP_SLUG"),
 			...optionalSecret("GITHUB_APP_PRIVATE_KEY"),
 			...optionalPlain("GITHUB_APP_CLIENT_ID"),
 			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),

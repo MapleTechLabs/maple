@@ -13,24 +13,25 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
-import { DashboardDocument, DashboardId, IsoDateTimeString, OrgId, UserId } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "@/lib/DatabaseLibsqlLive"
+import {
+	DashboardDocument,
+	DashboardId,
+	IsoDateTimeString,
+	OrgId,
+	UserId,
+} from "@maple/domain/http"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { AuthService } from "@/services/AuthService"
 import { ApiKeysService } from "@/services/ApiKeysService"
 import { Env } from "@/lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { withDashboardMutation } from "./dashboard-mutations"
 import { registerUpdateDashboardTool } from "@/mcp/tools/update-dashboard"
 import type { McpToolError, McpToolRegistrar, McpToolResult } from "@/mcp/tools/types"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
-
-const createTempDbUrl = () => makeTempDb("maple-dashboard-no-tags-", createdTempDirs).url
+afterEach(() => cleanupTestDbs(trackedDbs))
 
 // The dashboard-mutation tools resolve their tenant from the inbound HTTP
 // request. We take the internal-service auth branch (a `maple_svc_` bearer +
@@ -38,14 +39,13 @@ const createTempDbUrl = () => makeTempDb("maple-dashboard-no-tags-", createdTemp
 const INTERNAL_TOKEN = "test-internal-token"
 const ORG = "org_no_tags"
 
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -68,19 +68,19 @@ const requestLayer = Layer.succeed(
 	),
 )
 
-const makeLayer = (url: string) =>
+const makeLayer = (testDb: TestDb) =>
 	Layer.mergeAll(
 		DashboardPersistenceService.layer,
 		AuthService.layer,
 		ApiKeysService.layer,
 		requestLayer,
 	).pipe(
-		Layer.provide(DatabaseLibsqlLive),
+		Layer.provide(testDb.layer),
 		// `provideMerge` so `Env` is both satisfied for the services above and
 		// exposed in the output — `withDashboardMutation` → `resolveTenant` reads
 		// `Env` directly from the outer context.
 		Layer.provideMerge(Env.layer),
-		Layer.provide(testConfig(url)),
+		Layer.provide(testConfig()),
 	)
 
 const asDashboardId = Schema.decodeUnknownSync(DashboardId)
@@ -122,8 +122,8 @@ type ToolHandler = (params: {
 
 describe("dashboard mutations on tag-less / description-less dashboards", () => {
 	it.effect("withDashboardMutation adds a widget without crashing on the absent tags key", () => {
-		const dbUrl = createTempDbUrl()
-		const layer = makeLayer(dbUrl)
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
@@ -144,8 +144,8 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 	})
 
 	it.effect("update_dashboard renames a dashboard that has no tags or description", () => {
-		const dbUrl = createTempDbUrl()
-		const layer = makeLayer(dbUrl)
+		const testDb = createTestDb(trackedDbs)
+		const layer = makeLayer(testDb)
 
 		let handler: ToolHandler | null = null
 		// Capture from both tool() and mutatingTool() — update_dashboard registers

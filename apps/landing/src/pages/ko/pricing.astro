@@ -3,6 +3,7 @@ import Layout from "../../layouts/Layout.astro";
 import Nav from "../../components/Nav.astro";
 import FeatureHero from "../../components/FeatureHero.astro";
 import PricingTable from "../../components/PricingTable.astro";
+import PricingCalculatorSection from "../../components/PricingCalculatorSection.astro";
 import FAQ from "../../components/FAQ.astro";
 import BottomCTA from "../../components/BottomCTA.astro";
 import Footer from "../../components/Footer.astro";
@@ -48,6 +49,7 @@ const faqItems = [
         subtitle="Transparent, usage-based pricing — no per-seat fees, no hidden costs, no vendor lock-in. Trials available on every plan."
     />
     <PricingTable />
+    <PricingCalculatorSection />
     <FAQ items={faqItems} />
     <BottomCTA />
     <Footer />

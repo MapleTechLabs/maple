@@ -3,6 +3,7 @@ import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { strict as assert } from "node:assert"
 import { OrgId, UserId } from "@maple/domain"
 import type { QueryEngineEvaluateRequest } from "@maple/query-engine"
+import type { CompiledQuery } from "@maple/query-engine/ch"
 import { makeQueryEngineEvaluate } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
 import type { TenantContext } from "./AuthService"
@@ -65,10 +66,11 @@ const countRequest = (reducer: QueryEngineEvaluateRequest["reducer"]): QueryEngi
 		sampleCountStrategy: "trace_count",
 	}) as QueryEngineEvaluateRequest
 
-const evalStub = (rows: ReadonlyArray<Record<string, unknown>>) => ({
-	sqlQuery: () => Effect.succeed(rows as never),
-	compiledQuery: (_tenant, compiled) => compiled.decodeRows(rows).pipe(Effect.orDie),
-})
+const evalStub = (rows: ReadonlyArray<Record<string, unknown>>) =>
+	({
+		sqlQuery: () => Effect.succeed(rows as never),
+		compiledQuery: (_tenant, compiled) => compiled.decodeRows(rows).pipe(Effect.orDie),
+	}) satisfies Parameters<typeof makeQueryEngineEvaluate>[0]
 
 describe("makeQueryEngineEvaluate (shared bucket-encoding core)", () => {
 	it.effect("reduces per-bucket values with sum and sums sample counts", () =>
@@ -137,11 +139,11 @@ const makeFullStub = (
 			counter.n += 1
 			return Effect.succeed(rows as never)
 		},
-		compiledQuery: (_tenant, compiled) => {
+		compiledQuery: <Output>(_tenant: unknown, compiled: CompiledQuery<Output>) => {
 			counter.n += 1
 			return compiled.decodeRows(rows).pipe(Effect.orDie)
 		},
-		compiledQueryFirst: (_tenant, compiled) => {
+		compiledQueryFirst: <Output>(_tenant: unknown, compiled: CompiledQuery<Output>) => {
 			counter.n += 1
 			return compiled.decodeFirstRow(rows).pipe(Effect.orDie)
 		},

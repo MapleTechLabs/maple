@@ -21,7 +21,7 @@ import { createHash } from "node:crypto"
 import { createFlueClient } from "@flue/sdk"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { aiTriageRuns, anomalyIncidents, errorIssueEvents } from "@maple/db"
-import { createMapleD1Client, type CloudflareD1Database, type MapleD1Client } from "@maple/db/client"
+import { createMaplePgClient, type MaplePgClient } from "@maple/db/client"
 import { AiTriageResult } from "@maple/domain/http"
 import {
 	AiTriageRunId,
@@ -130,10 +130,8 @@ const decodeAnomalyIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
 /** Validate the Flue triage result against the canonical domain schema before persisting. */
 const decodeTriageResult = Schema.decodeUnknownSync(AiTriageResult)
 
-/** Lenient decode for the contextJson text column; failures fall back to {}. */
-const decodeContextJson = Schema.decodeUnknownOption(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
-)
+/** Lenient decode for the contextJson jsonb column; failures fall back to {}. */
+const decodeContextJson = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
 /**
  * One decode from the persisted resultJson string straight to AiTriageResult —
  * composing `fromJsonString` means a malformed string and a shape mismatch
@@ -195,9 +193,25 @@ interface AgentStepResult {
 	readonly outputTokens: number
 }
 
+/**
+ * Narrow the worker env's `MAPLE_DB` Hyperdrive binding to its connection
+ * string. (Local copy of the schema-apply workflow's helper so this dynamic
+ * chunk doesn't pull in the ClickHouse migration graph.)
+ */
+const resolveMapleDbConnectionString = (binding: unknown): string => {
+	if (
+		typeof binding === "object" &&
+		binding !== null &&
+		typeof (binding as { connectionString?: unknown }).connectionString === "string"
+	) {
+		return (binding as { connectionString: string }).connectionString
+	}
+	throw new Error("MAPLE_DB is not a Hyperdrive binding (missing connectionString)")
+}
+
 export interface AiTriageRunDeps {
-	/** Test seam: swap the D1 client (e.g. a libsql-backed drizzle). */
-	readonly db?: MapleD1Client
+	/** Test seam: swap the database client (e.g. a PGlite-backed drizzle). */
+	readonly db?: MaplePgClient
 	/**
 	 * Test seam: stub the Flue triage invocation so the test asserts the persist
 	 * path without crossing the `CHAT_FLUE` service binding. Production invokes
@@ -214,9 +228,28 @@ export async function runAiTriage(
 	step: WorkflowStepLike,
 	deps: AiTriageRunDeps = {},
 ): Promise<AiTriageWorkflowResult> {
+	// Injected test clients are owned by the caller; the workflow only ends the
+	// postgres.js connection it dialed itself.
+	const connection: { readonly db: MaplePgClient; readonly end?: () => Promise<void> } =
+		deps.db !== undefined
+			? { db: deps.db }
+			: createMaplePgClient(resolveMapleDbConnectionString(env.MAPLE_DB), { maxConnections: 1 })
+	try {
+		return await runAiTriageWithDb(connection.db, env, event, step, deps)
+	} finally {
+		await connection.end?.().catch(() => undefined)
+	}
+}
+
+async function runAiTriageWithDb(
+	db: MaplePgClient,
+	env: AiTriageWorkflowEnv,
+	event: WorkflowEventLike<AiTriageWorkflowPayload>,
+	step: WorkflowStepLike,
+	deps: AiTriageRunDeps,
+): Promise<AiTriageWorkflowResult> {
 	const { orgId, incidentKind, incidentId, issueId } = event.payload
 	const runId = decodeRunId(event.payload.runId)
-	const db = deps.db ?? createMapleD1Client(env.MAPLE_DB as CloudflareD1Database)
 	const invokeTriage = deps.invokeTriage ?? invokeTriageWorkflow
 	const clock = deps.now ?? Date.now
 
@@ -242,12 +275,12 @@ export async function runAiTriage(
 		try {
 			await db
 				.update(aiTriageRuns)
-				.set({ status: "failed", error, completedAt: now, updatedAt: now })
+				.set({ status: "failed", error, completedAt: new Date(now), updatedAt: new Date(now) })
 				.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 			if (incidentKind === "anomaly") {
 				await db
 					.update(anomalyIncidents)
-					.set({ triageStatus: "skipped", updatedAt: now })
+					.set({ triageStatus: "skipped", updatedAt: new Date(now) })
 					.where(
 						and(
 							eq(anomalyIncidents.orgId, decodeOrgId(orgId)),
@@ -278,7 +311,7 @@ export async function runAiTriage(
 		// Replay guard: a re-delivered event for a run that already progressed is
 		// a no-op (statuses other than queued mean another execution owns it).
 		if (!run || run.status !== "queued") {
-			return { proceed: false as const, contextJson: "{}" }
+			return { proceed: false as const, contextJson: {} }
 		}
 
 		// The investigation runs on chat-flue over the CHAT_FLUE service binding;
@@ -291,7 +324,7 @@ export async function runAiTriage(
 		const now = clock()
 		await db
 			.update(aiTriageRuns)
-			.set({ status: "running", startedAt: now, updatedAt: now })
+			.set({ status: "running", startedAt: new Date(now), updatedAt: new Date(now) })
 			.where(eq(aiTriageRuns.id, runId))
 
 		return { proceed: true as const, contextJson: run.contextJson }
@@ -385,13 +418,15 @@ export async function runAiTriage(
 			.update(aiTriageRuns)
 			.set({
 				status: "completed",
-				resultJson: agentResult.resultJson,
+				// The agent step's durable output stays a JSON string (1 MiB step
+				// cap bookkeeping); parse at the jsonb write boundary.
+				resultJson: JSON.parse(agentResult.resultJson),
 				model: agentResult.model,
 				inputTokens: agentResult.inputTokens,
 				outputTokens: agentResult.outputTokens,
 				error: null,
-				completedAt: now,
-				updatedAt: now,
+				completedAt: new Date(now),
+				updatedAt: new Date(now),
 			})
 			.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 
@@ -419,14 +454,14 @@ export async function runAiTriage(
 					issueId: decodeIssueId(issueId),
 					actorId: applied.actorId,
 					type: "ai_triage",
-					payloadJson: JSON.stringify({
+					payloadJson: {
 						runId,
 						summary: result.summary,
 						severityAssessment: result.severityAssessment,
 						confidence: result.confidence,
 						applied: applied.applied,
-					}),
-					createdAt: now,
+					},
+					createdAt: new Date(now),
 				})
 				.onConflictDoNothing()
 		}
@@ -434,7 +469,7 @@ export async function runAiTriage(
 		if (incidentKind === "anomaly") {
 			await db
 				.update(anomalyIncidents)
-				.set({ triageStatus: "completed", updatedAt: now })
+				.set({ triageStatus: "completed", updatedAt: new Date(now) })
 				.where(
 					and(
 						eq(anomalyIncidents.orgId, decodeOrgId(orgId)),
