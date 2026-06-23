@@ -4,7 +4,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "portless",
-		"dev:app": "flue dev --target cloudflare --port ${PORT:-3583}",
+		"dev:app": "flue dev --target cloudflare --port ${PORT:-3583} --env ../../.env.local",
 		"build": "flue build --target cloudflare",
 		"deploy": "flue build --target cloudflare && wrangler deploy --config dist/maple_chat_flue/wrangler.json",
 		"connect": "flue connect maple-chat local",
