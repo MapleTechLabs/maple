@@ -6,9 +6,10 @@
  *   bun scripts/planetscale-pr-branch.ts up   <pr-number>
  *   bun scripts/planetscale-pr-branch.ts down <pr-number>
  *
- * `up` creates (or reuses) an ephemeral PlanetScale branch `pr-<n>` (branches
- * are fully isolated Postgres databases, created EMPTY — exact parity with the
- * old per-PR empty D1), waits until it is ready, mints a branch credential,
+ * `up` (re)creates an ephemeral PlanetScale branch `pr-<n>` — deleting any
+ * existing one first so every deploy starts from an EMPTY, freshly-owned branch
+ * (exact parity with the old per-PR empty D1; see the reset rationale in `main`),
+ * waits until it is ready, mints a branch credential,
  * and exports `MAPLE_PG_URL` (one connection string, direct 5432) to $GITHUB_ENV
  * — alchemy.run.ts parses it into the pr Hyperdrive origin, and the
  * `drizzle-kit migrate` workflow step uses it as-is.
@@ -107,6 +108,20 @@ const waitUntilReady = async (database: string, branchName: string): Promise<voi
 	fail(`Timed out waiting for branch ${branchName} to become ready`)
 }
 
+const waitUntilGone = async (database: string, branchName: string): Promise<void> => {
+	const deadline = Date.now() + READY_TIMEOUT_MS
+	while (Date.now() < deadline) {
+		const show = runPscale(["branch", "show", database, branchName, "--format", "json"], { secret: true })
+		if (show.exitCode !== 0 && isNotFound(show)) {
+			console.log(`✓ Branch ${branchName} deleted`)
+			return
+		}
+		console.log(`… waiting for branch ${branchName} to finish deleting`)
+		await sleep(READY_POLL_MS)
+	}
+	fail(`Timed out waiting for branch ${branchName} to delete`)
+}
+
 interface BranchCredential {
 	readonly host: string
 	readonly username: string
@@ -123,9 +138,9 @@ interface BranchCredential {
  * have drifted across CLI releases, so accept the known spellings.
  */
 const createCredential = (database: string, branchName: string): BranchCredential => {
-	// Unique per run — the branch is reused across PR pushes, so a fixed role
-	// name would collide on the second synchronize. Roles carry a 24h TTL and
-	// are revoked when the branch is deleted on PR close.
+	// Unique per run so it never collides with a residual role on the freshly
+	// recreated branch. Roles carry a 24h TTL and are revoked when the branch is
+	// deleted (on the next deploy's reset, or on PR close).
 	const roleName = `ci-${branchName}-${process.pid}-${Date.now()}`
 	const result = runPscale(
 		[
@@ -193,6 +208,23 @@ const main = async () => {
 	const database = process.env.PLANETSCALE_DATABASE?.trim() || "maple"
 
 	if (subcommand === "up") {
+		// Reset to a clean, EMPTY branch on every deploy (parity with the old
+		// per-PR empty D1). A REUSED branch keeps the prior run's `drizzle` schema +
+		// `__drizzle_migrations`, owned by that run's ephemeral role — which carries
+		// a 24h TTL. Once it expires the objects are orphaned, and the next run's
+		// fresh role can no longer operate on them, so `drizzle-kit migrate` exits
+		// non-zero (after a bare "schema drizzle already exists" notice). Delete →
+		// recreate guarantees a fresh DB whose `drizzle` objects this run's role owns.
+		const existing = runPscale(["branch", "delete", database, branchName, "--force"])
+		if (existing.exitCode !== 0 && !isNotFound(existing)) {
+			fail(`Failed to reset (delete) existing branch ${branchName}`)
+		}
+		if (existing.exitCode === 0) {
+			// Deletion is async — wait until it's actually gone before recreating the
+			// same name, otherwise `branch create` races the teardown.
+			await waitUntilGone(database, branchName)
+		}
+
 		const create = runPscale(["branch", "create", database, branchName, "--wait"])
 		if (create.exitCode !== 0 && !isAlreadyExists(create)) {
 			fail(`Failed to create branch ${branchName}`)
