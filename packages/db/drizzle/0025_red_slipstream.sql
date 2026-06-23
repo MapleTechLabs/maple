@@ -1,1 +1,0 @@
-ALTER TABLE `alert_rules` ADD `tags_json` text;
