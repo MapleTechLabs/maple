@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useMemo, useState, type ReactNode } from "react"
+import { useHotkeys } from "@tanstack/react-hotkeys"
 import { cn } from "@maple/ui/utils"
 import { isEditableTarget, isOverlayOpen } from "@/lib/keyboard"
 import { ChartLegendSlotContext, type ChartLegendItem } from "@maple/ui/components/ui/chart"
@@ -82,36 +83,45 @@ export function WidgetShell({
 	const [legendItems, setLegendItems] = useState<ChartLegendItem[]>([])
 	const legendSlot = useMemo(() => ({ setItems: setLegendItems }), [])
 
-	// "F" opens the expand modal for the chart the mouse is currently over. The
-	// listener is owned by the hovered shell (attached on mouse-enter, removed on
-	// leave) so only that one widget responds — no shared hover registry needed.
+	// "F" opens the expand modal for the chart the user is currently pointing at
+	// or has keyboard focus within. Pointer hover and DOM focus are tracked
+	// independently so the shortcut works for both mouse and keyboard users and
+	// neither input clobbers the other; the hotkey fires while either is active.
 	const [hovered, setHovered] = useState(false)
-	const expandRef = useRef<() => void>(() => undefined)
-	expandRef.current = () => {
-		if (canExpand) setExpanded(true)
-	}
+	const [focused, setFocused] = useState(false)
 
-	useEffect(() => {
-		if (!hovered || !canExpand) return
-		const handler = (e: KeyboardEvent) => {
-			if (e.key !== "f" && e.key !== "F") return
-			if (e.metaKey || e.ctrlKey || e.altKey) return
-			if (isEditableTarget(e.target)) return
-			if (isEditableTarget(document.activeElement)) return
-			if (isOverlayOpen()) return
-			e.preventDefault()
-			e.stopPropagation()
-			expandRef.current()
-		}
-		window.addEventListener("keydown", handler, { capture: true })
-		return () => window.removeEventListener("keydown", handler, { capture: true })
-	}, [hovered, canExpand])
+	useHotkeys(
+		[
+			{
+				hotkey: "F",
+				callback: (e) => {
+					if (isEditableTarget(e.target) || isEditableTarget(document.activeElement)) return
+					if (isOverlayOpen()) return
+					if (canExpand) setExpanded(true)
+				},
+			},
+		],
+		{ enabled: (hovered || focused) && canExpand, stopPropagation: false },
+	)
 
 	return (
 		<Card
-			className="group/card h-full flex flex-col"
+			className={cn(
+				"group/card h-full flex flex-col",
+				canExpand &&
+					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+			)}
+			// Make the card a tab stop only when it can expand, so keyboard users
+			// can focus it and use "F" the same way pointer users hover it.
+			tabIndex={canExpand ? 0 : undefined}
 			onMouseEnter={() => setHovered(true)}
 			onMouseLeave={() => setHovered(false)}
+			onFocus={() => setFocused(true)}
+			onBlur={(e) => {
+				// Only blur when focus leaves the card entirely, not when it moves
+				// between children (where relatedTarget stays inside).
+				if (!e.currentTarget.contains(e.relatedTarget)) setFocused(false)
+			}}
 		>
 			<CardHeader className="py-2.5 items-center">
 				<div className="flex min-w-0 items-center gap-2">

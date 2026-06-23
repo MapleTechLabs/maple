@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react"
+import { useHotkeys, type UseHotkeyDefinition } from "@tanstack/react-hotkeys"
+import { useRef } from "react"
 import { isEditableTarget, isOverlayOpen } from "@/lib/keyboard"
 import { formatForTinybird } from "@/lib/time-utils"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
@@ -17,14 +18,7 @@ const PAN_FRACTION = { base: 0.2, shift: 1.0, fine: 0.04 } as const
 const ZOOM_FRACTION = { base: 0.2, shift: 0.5, fine: 0.04 } as const
 
 type Modifier = "base" | "shift" | "fine"
-
-function modifierOf(e: KeyboardEvent): Modifier {
-	// Control or Meta → fine. Shift → strong. (Shift loses to Ctrl/Meta if both
-	// are somehow held, which keeps fine-control predictable.)
-	if (e.ctrlKey || e.metaKey) return "fine"
-	if (e.shiftKey) return "shift"
-	return "base"
-}
+type ArrowKey = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown"
 
 function parseMs(warehouse: string): number {
 	return new Date(normalizeTimestampInput(warehouse)).getTime()
@@ -60,11 +54,7 @@ function clampToBand(startMs: number, endMs: number): ResolvedRange {
  * - the width never falls below MIN_WINDOW_MS.
  * Returns `null` when the action is a no-op (already clamped).
  */
-function applyKey(
-	key: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown",
-	mod: Modifier,
-	{ startMs, endMs }: ResolvedRange,
-): ResolvedRange | null {
+function applyKey(key: ArrowKey, mod: Modifier, { startMs, endMs }: ResolvedRange): ResolvedRange | null {
 	const width = Math.max(MIN_WINDOW_MS, endMs - startMs)
 
 	let nextStart: number
@@ -98,7 +88,7 @@ export interface UseTimeRangeKeyboardControls {
 	start: string
 	/** Resolved absolute end, warehouse format "YYYY-MM-DD HH:mm:ss" (UTC). */
 	end: string
-	/** When false, the listener stays detached. */
+	/** When false, the hotkeys stay registered but don't fire. */
 	enabled?: boolean
 	/** Receives the new absolute window in warehouse format. */
 	onChange: (range: { startTime: string; endTime: string }) => void
@@ -112,10 +102,11 @@ export interface UseTimeRangeKeyboardControls {
  * - Up / Down → zoom in / out around the window center (clamped).
  * - Shift → much larger step; Ctrl/Meta → much finer step.
  *
- * The listener runs on `window` in the capture phase so arrow keys reach the
- * page even when the browser/OS would otherwise act on them, and it
- * `preventDefault()`/`stopPropagation()`s only the keys it handles. It bails
- * out while an editable element is focused or a modal dialog owns the keyboard.
+ * Registered through TanStack Hotkeys. Because the matcher requires exact
+ * modifier state, each arrow key is registered three times — plain, `Shift+`,
+ * and `Ctrl+`/`Meta+` — mapping to the base / strong / fine step. The handler
+ * bails while an editable element is focused or any overlay (dialog, menu,
+ * listbox) owns the keyboard, so it never hijacks menu/select navigation.
  */
 export function useTimeRangeKeyboardControls({
 	start,
@@ -123,47 +114,40 @@ export function useTimeRangeKeyboardControls({
 	enabled = true,
 	onChange,
 }: UseTimeRangeKeyboardControls): void {
-	// Read the latest range/handler from a ref so the capture listener stays
-	// attached across range changes instead of re-binding on every keypress.
+	// Read the latest range/handler from a ref so the callbacks stay stable
+	// across range changes (TanStack Hotkeys syncs callbacks each render anyway,
+	// but this keeps the closure reading current values).
 	const stateRef = useRef({ start, end, onChange })
 	stateRef.current = { start, end, onChange }
 
-	useEffect(() => {
-		if (!enabled) return
+	const run = (key: ArrowKey, mod: Modifier, event: KeyboardEvent) => {
+		// Defer to editable fields and keyboard-owning overlays (menu / listbox /
+		// dialog) so their own arrow navigation keeps working.
+		if (isEditableTarget(event.target) || isEditableTarget(document.activeElement)) return
+		if (isOverlayOpen()) return
 
-		const handler = (e: KeyboardEvent) => {
-			if (e.altKey) return
-			if (
-				e.key !== "ArrowLeft" &&
-				e.key !== "ArrowRight" &&
-				e.key !== "ArrowUp" &&
-				e.key !== "ArrowDown"
-			) {
-				return
-			}
-			if (isEditableTarget(e.target)) return
-			if (isEditableTarget(document.activeElement)) return
-			if (isOverlayOpen()) return
+		const { start: s, end: en, onChange: emit } = stateRef.current
+		const startMs = parseMs(s)
+		const endMs = parseMs(en)
+		if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return
 
-			const { start: s, end: en, onChange: emit } = stateRef.current
-			const startMs = parseMs(s)
-			const endMs = parseMs(en)
-			if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return
+		const next = applyKey(key, mod, { startMs, endMs })
+		if (!next) return
+		emit({
+			startTime: formatForTinybird(new Date(next.startMs)),
+			endTime: formatForTinybird(new Date(next.endMs)),
+		})
+	}
 
-			// We own this key: stop the browser/OS (and capture-phase siblings)
-			// from acting on it before we apply the pan/zoom.
-			e.preventDefault()
-			e.stopPropagation()
+	const arrows: ArrowKey[] = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]
+	const definitions: UseHotkeyDefinition[] = arrows.flatMap((key) => [
+		{ hotkey: { key }, callback: (e) => run(key, "base", e) },
+		{ hotkey: { key, shift: true }, callback: (e) => run(key, "shift", e) },
+		// Ctrl and Meta both map to the fine step; register both since the
+		// matcher requires exact modifier state.
+		{ hotkey: { key, ctrl: true }, callback: (e) => run(key, "fine", e) },
+		{ hotkey: { key, meta: true }, callback: (e) => run(key, "fine", e) },
+	])
 
-			const next = applyKey(e.key, modifierOf(e), { startMs, endMs })
-			if (!next) return
-			emit({
-				startTime: formatForTinybird(new Date(next.startMs)),
-				endTime: formatForTinybird(new Date(next.endMs)),
-			})
-		}
-
-		window.addEventListener("keydown", handler, { capture: true })
-		return () => window.removeEventListener("keydown", handler, { capture: true })
-	}, [enabled])
+	useHotkeys(definitions, { enabled, ignoreInputs: true, stopPropagation: false })
 }
