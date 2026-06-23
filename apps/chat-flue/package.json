@@ -3,12 +3,17 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "flue dev --target cloudflare",
+		"dev": "portless",
+		"dev:app": "flue dev --target cloudflare --port ${PORT:-3583}",
 		"build": "flue build --target cloudflare",
 		"deploy": "flue build --target cloudflare && wrangler deploy --config dist/maple_chat_flue/wrangler.json",
 		"connect": "flue connect maple-chat local",
 		"test": "vitest run --passWithNoTests",
 		"typecheck": "tsc --noEmit"
+	},
+	"portless": {
+		"name": "chat-flue",
+		"script": "dev:app"
 	},
 	"dependencies": {
 		"@clerk/backend": "^2.30.1",
