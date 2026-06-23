@@ -27,9 +27,8 @@ import {
 import { eq } from "drizzle-orm"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { Database, DatabaseError } from "../lib/DatabaseLive"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../lib/test-pglite"
 import type { SqlQueryOptions, WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { describeCause, ErrorsService, isBusyDatabaseError, makePersistenceError } from "./ErrorsService"
@@ -101,20 +100,17 @@ describe("isBusyDatabaseError", () => {
 // libsql-backed integration harness (fresh temp DB per test)
 // ---------------------------------------------------------------------------
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(createdDbs))
 
-const testConfig = (url: string) =>
+const testConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3478",
 			MCP_PORT: "3479",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -158,9 +154,9 @@ const makeWarehouseStub = (
 })
 
 const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>, onScan?: () => void) => {
-	const { url } = makeTempDb("maple-errors-service-", createdTempDirs)
-	const envLive = Env.layer.pipe(Layer.provide(testConfig(url)))
-	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
+	const testDb = createTestDb(createdDbs)
+	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
+	const databaseLive = testDb.layer
 	const dispatcherStub = Layer.succeed(NotificationDispatcher, {
 		dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }),
 	})
@@ -183,6 +179,7 @@ const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 const asEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
+const asJsonRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))
 
 const ORG = asOrgId("org_errors_service_test")
 const USER = asUserId("user_errors_service_test")
@@ -200,10 +197,10 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.
 				exceptionType: "TimeoutError",
 				exceptionMessage: "upstream timed out",
 				topFrame: "",
-				firstSeenAt: now,
-				lastSeenAt: now,
-				createdAt: now,
-				updatedAt: now,
+				firstSeenAt: new Date(now),
+				lastSeenAt: new Date(now),
+				createdAt: new Date(now),
+				updatedAt: new Date(now),
 				...overrides,
 			}),
 		)
@@ -223,10 +220,10 @@ const seedIngestKey = (orgId: string) =>
 				privateKeyIv: "iv",
 				privateKeyTag: "tag",
 				privateKeyHash: `prh_${orgId}`,
-				publicRotatedAt: now,
-				privateRotatedAt: now,
-				createdAt: now,
-				updatedAt: now,
+				publicRotatedAt: new Date(now),
+				privateRotatedAt: new Date(now),
+				createdAt: new Date(now),
+				updatedAt: new Date(now),
 				createdBy: "test",
 				updatedBy: "test",
 			}),
@@ -257,10 +254,11 @@ describe("ErrorsService.setSeverity", () => {
 			)
 			const severityEvents = events.filter((e) => e.type === "severity_change")
 			assert.lengthOf(severityEvents, 1)
-			const payload = JSON.parse(severityEvents[0]?.payloadJson ?? "{}")
-			assert.strictEqual(payload.to, "critical")
-			assert.strictEqual(payload.source, "manual")
-			assert.strictEqual(payload.note, "paging-worthy")
+			expect(severityEvents[0]?.payloadJson).toMatchObject({
+				to: "critical",
+				source: "manual",
+				note: "paging-worthy",
+			})
 
 			const escalations = yield* database.execute((db) =>
 				db.select().from(issueEscalations).where(eq(issueEscalations.issueId, issueId)),
@@ -321,13 +319,13 @@ describe("ErrorsService.setSeverity", () => {
 					orgId: ORG,
 					name: "Primary webhook",
 					type: "webhook",
-					enabled: 1,
-					configJson: "{}",
+					enabled: true,
+					configJson: {},
 					secretCiphertext: "x",
 					secretIv: "x",
 					secretTag: "x",
-					createdAt: now,
-					updatedAt: now,
+					createdAt: new Date(now),
+					updatedAt: new Date(now),
 					createdBy: USER,
 					updatedBy: USER,
 				}),
@@ -389,10 +387,10 @@ describe("ErrorsService.setSeverity", () => {
 					exceptionType: "High latency",
 					exceptionMessage: "p95_latency gte 800",
 					topFrame: "",
-					firstSeenAt: now,
-					lastSeenAt: now,
-					createdAt: now,
-					updatedAt: now,
+					firstSeenAt: new Date(now),
+					lastSeenAt: new Date(now),
+					createdAt: new Date(now),
+					updatedAt: new Date(now),
 				}),
 			)
 
@@ -561,9 +559,9 @@ describe("ErrorsService.runTick", () => {
 				assert.strictEqual(issue.errorLabel, "TimeoutError: upstream timed out")
 				assert.strictEqual(issue.topFrame, "checkout/handler.ts:42")
 				assert.strictEqual(issue.occurrenceCount, 3)
-				assert.strictEqual(issue.firstSeenAt, TICK_MS - 60_000)
-				assert.strictEqual(issue.lastSeenAt, TICK_MS - 1_000)
-				assert.strictEqual(issue.createdAt, TICK_MS)
+				assert.strictEqual(issue.firstSeenAt.getTime(), TICK_MS - 60_000)
+				assert.strictEqual(issue.lastSeenAt.getTime(), TICK_MS - 1_000)
+				assert.strictEqual(issue.createdAt.getTime(), TICK_MS)
 
 				const events = yield* loadEventsForIssue(issue.id)
 				assert.deepStrictEqual(
@@ -703,7 +701,7 @@ describe("ErrorsService.runTick", () => {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
 			const issueId = asIssueId(randomUUID())
-			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: TICK_MS - 1_000 })
+			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: new Date(TICK_MS - 1_000) })
 
 			const result = yield* errors.runTick()
 			assert.strictEqual(result.issuesReopened, 1)
@@ -717,7 +715,7 @@ describe("ErrorsService.runTick", () => {
 
 			const events = yield* loadEventsForIssue(issueId)
 			const wakeups = events.filter(
-				(e) => e.type === "state_change" && JSON.parse(e.payloadJson).viaSnoozeWakeup === true,
+				(e) => e.type === "state_change" && asJsonRecord(e.payloadJson).viaSnoozeWakeup === true,
 			)
 			assert.lengthOf(wakeups, 1)
 			assert.strictEqual(wakeups[0]?.fromState, "wontfix")
@@ -782,7 +780,7 @@ describe("ErrorsService.runTick", () => {
 			const incidents = yield* loadIncidentsForIssue(issue.id)
 			assert.lengthOf(incidents, 1)
 			assert.strictEqual(incidents[0]?.status, "resolved")
-			assert.strictEqual(incidents[0]?.resolvedAt, resolveTickMs)
+			assert.strictEqual(incidents[0]?.resolvedAt?.getTime(), resolveTickMs)
 
 			const states = yield* database.execute((db) =>
 				db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, issue.id)),
@@ -837,7 +835,7 @@ describe("ErrorsService.runTick", () => {
 			const archiveCandidate = asIssueId(randomUUID())
 			yield* seedIssue(archiveCandidate, {
 				workflowState: "done",
-				resolvedAt: RETENTION_TICK_MS - 15 * DAY_MS,
+				resolvedAt: new Date(RETENTION_TICK_MS - 15 * DAY_MS),
 			})
 
 			// Archived 91 days ago (> 90-day archived retention): purged together
@@ -845,10 +843,10 @@ describe("ErrorsService.runTick", () => {
 			const purgeCandidate = asIssueId(randomUUID())
 			yield* seedIssue(purgeCandidate, {
 				workflowState: "done",
-				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
-				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
+				resolvedAt: new Date(RETENTION_TICK_MS - 120 * DAY_MS),
+				archivedAt: new Date(RETENTION_TICK_MS - 91 * DAY_MS),
 			})
-			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
+			const seededAt = new Date(RETENTION_TICK_MS - 120 * DAY_MS)
 			yield* database.execute((db) =>
 				db.insert(errorIssueEvents).values({
 					id: asEventId(randomUUID()),
@@ -856,7 +854,7 @@ describe("ErrorsService.runTick", () => {
 					issueId: purgeCandidate,
 					actorId: null,
 					type: "created",
-					payloadJson: "{}",
+					payloadJson: {},
 					createdAt: seededAt,
 				}),
 			)
@@ -895,7 +893,7 @@ describe("ErrorsService.runTick", () => {
 				db.select().from(errorIssues).where(eq(errorIssues.id, archiveCandidate)),
 			)
 			assert.lengthOf(archivedRows, 1)
-			assert.strictEqual(archivedRows[0]?.archivedAt, RETENTION_TICK_MS)
+			assert.strictEqual(archivedRows[0]?.archivedAt?.getTime(), RETENTION_TICK_MS)
 
 			const purgedIssues = yield* database.execute((db) =>
 				db.select().from(errorIssues).where(eq(errorIssues.id, purgeCandidate)),

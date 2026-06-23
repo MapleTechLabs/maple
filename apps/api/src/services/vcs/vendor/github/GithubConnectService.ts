@@ -188,8 +188,8 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						initiatedByUserId: userId,
 						redirectUri: options.callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: now,
-						expiresAt: now + STATE_TTL_MS,
+						createdAt: new Date(now),
+						expiresAt: new Date(now + STATE_TTL_MS),
 					}),
 				)
 				yield* Effect.annotateCurrentSpan({
@@ -232,7 +232,7 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						message: "Connect session provider mismatch — restart the connect flow",
 					})
 				}
-				if (stateRow.expiresAt < now) {
+				if (stateRow.expiresAt.getTime() < now) {
 					yield* Effect.annotateCurrentSpan({
 						orgId: stateRow.orgId,
 						"vcs.connect.outcome": "state_expired",

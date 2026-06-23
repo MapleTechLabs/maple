@@ -1,6 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { Worker, Workflow, type D1Database } from "alchemy/cloudflare"
+import { Worker, Workflow, type Hyperdrive } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
 
@@ -25,7 +25,7 @@ const optionalSecret = (key: string): Record<string, ReturnType<typeof alchemy.s
 export interface CreateAlertingWorkerOptions {
 	stage: MapleStage
 	domains: MapleDomains
-	mapleDb: D1Database
+	mapleDb: Hyperdrive
 }
 
 export const createAlertingWorker = async ({ stage, mapleDb }: CreateAlertingWorkerOptions) => {

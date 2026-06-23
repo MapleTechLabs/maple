@@ -4,34 +4,30 @@ import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/unstable/http"
 import { CreateScrapeTargetRequest, OrgId } from "@maple/domain/http"
-import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
-import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "../lib/test-pglite"
 import { PlanetScaleDiscoveryService } from "./PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "./ScrapeTargetsService"
 
-const createdTempDirs: string[] = []
+const trackedDbs: TestDb[] = []
 const originalFetch = globalThis.fetch
 
 // create() forks a detached probe that uses the global fetch; stub it so the
 // tests never touch the real network.
 globalThis.fetch = (async () => new Response("ok", { status: 200 })) as typeof fetch
 
-afterEach(() => {
+afterEach(async () => {
 	globalThis.fetch = originalFetch
-	cleanupTempDirs(createdTempDirs)
+	await cleanupTestDbs(trackedDbs)
 })
 
-const createTempDbUrl = () => makeTempDb("maple-ps-discovery-", createdTempDirs)
-
-const makeConfig = (url: string) =>
+const makeConfig = () =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3472",
 			MCP_PORT: "3473",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
-			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -41,11 +37,11 @@ const makeConfig = (url: string) =>
 	)
 
 // Single memoized discovery layer shared by both services, mirroring app.ts.
-const makeLayer = (url: string) =>
+const makeLayer = (testDb: TestDb) =>
 	Layer.mergeAll(
 		PlanetScaleDiscoveryService.layer,
 		ScrapeTargetsService.layer.pipe(Layer.provide(PlanetScaleDiscoveryService.layer)),
-	).pipe(Layer.provide(DatabaseLibsqlLive), Layer.provide(Env.layer), Layer.provide(makeConfig(url)))
+	).pipe(Layer.provide(testDb.layer), Layer.provide(Env.layer), Layer.provide(makeConfig()))
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 
@@ -106,7 +102,7 @@ const createPlanetScaleTargetRow = (organization: string) =>
 
 describe("PlanetScaleDiscoveryService", () => {
 	it.effect("discovers sub-targets with the token auth scheme and strips meta labels", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<RecordedRequest> = []
 		return Effect.gen(function* () {
 			const discovery = yield* PlanetScaleDiscoveryService
@@ -131,11 +127,11 @@ describe("PlanetScaleDiscoveryService", () => {
 				planetscale_database_branch_id: "branch-1",
 				planetscale_database: "mydb",
 			})
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("caches discovery for the TTL and refreshes after it elapses", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<RecordedRequest> = []
 		return Effect.gen(function* () {
 			const discovery = yield* PlanetScaleDiscoveryService
@@ -149,11 +145,11 @@ describe("PlanetScaleDiscoveryService", () => {
 			yield* TestClock.adjust(Duration.minutes(11))
 			yield* discovery.discover(row).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 			expect(recorded).toHaveLength(2)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("serves stale entries when a refresh fails and records the error", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<RecordedRequest> = []
 		return Effect.gen(function* () {
 			const discovery = yield* PlanetScaleDiscoveryService
@@ -177,11 +173,11 @@ describe("PlanetScaleDiscoveryService", () => {
 			expect(stale.map((entry) => entry.subTargetKey)).toEqual(["branch-1", "branch-2"])
 			const lastError = yield* discovery.lastError(row.id)
 			expect(lastError).toContain("HTTP 503")
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("fails with a clear token error when discovery is rejected and no cache exists", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const discovery = yield* PlanetScaleDiscoveryService
 			const row = yield* createPlanetScaleTargetRow("my-org")
@@ -195,11 +191,11 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			expect(error.message).toContain("read_metrics_endpoints")
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
 	it.effect("invalidate drops the cache so the next discover refetches", () => {
-		const { url } = createTempDbUrl()
+		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<RecordedRequest> = []
 		return Effect.gen(function* () {
 			const discovery = yield* PlanetScaleDiscoveryService
@@ -210,6 +206,6 @@ describe("PlanetScaleDiscoveryService", () => {
 			yield* discovery.invalidate(row.id)
 			yield* discovery.discover(row).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 			expect(recorded).toHaveLength(2)
-		}).pipe(Effect.provide(makeLayer(url)))
+		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

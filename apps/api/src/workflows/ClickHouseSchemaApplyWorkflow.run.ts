@@ -12,7 +12,7 @@
  */
 import { createDecipheriv } from "node:crypto"
 import { orgClickHouseSchemaApplyRuns, orgClickHouseSettings } from "@maple/db"
-import { createMapleD1Client, type CloudflareD1Database } from "@maple/db/client"
+import { createMaplePgClient, type MaplePgClient } from "@maple/db/client"
 import {
 	clickHouseSchemaVersion,
 	computeSchemaDiff,
@@ -51,6 +51,22 @@ export interface WorkflowStepLike {
 }
 export interface WorkflowEventLike<T> {
 	readonly payload: T
+}
+
+/**
+ * Narrow the worker env's `MAPLE_DB` Hyperdrive binding to its connection
+ * string. Workflows share the worker env, where `MAPLE_DB` is the Hyperdrive
+ * binding the request-path `DatabasePgLive` layer also dials.
+ */
+const resolveMapleDbConnectionString = (binding: unknown): string => {
+	if (
+		typeof binding === "object" &&
+		binding !== null &&
+		typeof (binding as { connectionString?: unknown }).connectionString === "string"
+	) {
+		return (binding as { connectionString: string }).connectionString
+	}
+	throw new Error("MAPLE_DB is not a Hyperdrive binding (missing connectionString)")
 }
 
 const STEP: StepConfig = { retries: { limit: 5, delay: "2 seconds", backoff: "exponential" } }
@@ -119,7 +135,7 @@ const recordVersion = (cfg: ChConfig, version: number, description: string) =>
 // --- config load + decrypt (imperative mirror of the service helper) --------
 
 const loadConfig = async (
-	db: ReturnType<typeof createMapleD1Client>,
+	db: MaplePgClient,
 	orgId: string,
 	encryptionKey: Buffer,
 ): Promise<ChConfig> => {
@@ -154,22 +170,17 @@ type RunPatch = Partial<{
 	currentMigration: number | null
 	stepsTotal: number | null
 	stepsDone: number | null
-	appliedVersions: string | null
-	skipped: string | null
+	appliedVersions: ReadonlyArray<number> | null
+	skipped: unknown
 	errorMessage: string | null
-	startedAt: number | null
-	finishedAt: number | null
+	startedAt: Date | null
+	finishedAt: Date | null
 }>
 
-const updateRun = async (
-	db: ReturnType<typeof createMapleD1Client>,
-	orgId: string,
-	patch: RunPatch,
-	now: number,
-): Promise<void> => {
+const updateRun = async (db: MaplePgClient, orgId: string, patch: RunPatch, now: number): Promise<void> => {
 	await db
 		.update(orgClickHouseSchemaApplyRuns)
-		.set({ ...patch, updatedAt: now })
+		.set({ ...patch, updatedAt: new Date(now) })
 		.where(eq(orgClickHouseSchemaApplyRuns.orgId, orgId))
 }
 
@@ -229,8 +240,23 @@ export async function runClickHouseSchemaApply(
 	event: WorkflowEventLike<SchemaApplyWorkflowPayload>,
 	step: WorkflowStepLike,
 ): Promise<SchemaApplyWorkflowResult> {
+	const connection = createMaplePgClient(resolveMapleDbConnectionString(env.MAPLE_DB), {
+		maxConnections: 1,
+	})
+	try {
+		return await runWithDb(connection.db, env, event, step)
+	} finally {
+		await connection.end().catch(() => undefined)
+	}
+}
+
+async function runWithDb(
+	db: MaplePgClient,
+	env: SchemaApplyWorkflowEnv,
+	event: WorkflowEventLike<SchemaApplyWorkflowPayload>,
+	step: WorkflowStepLike,
+): Promise<SchemaApplyWorkflowResult> {
 	const orgId = event.payload.orgId
-	const db = createMapleD1Client(env.MAPLE_DB as CloudflareD1Database)
 	const encryptionKey = Buffer.from(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY.trim(), "base64")
 	const startedAt = Date.now()
 	const appliedVersions: number[] = []
@@ -240,7 +266,7 @@ export async function runClickHouseSchemaApply(
 		await updateRun(
 			db,
 			orgId,
-			{ status: "running", phase: "connecting", errorMessage: null, startedAt },
+			{ status: "running", phase: "connecting", errorMessage: null, startedAt: new Date(startedAt) },
 			Date.now(),
 		)
 		return c
@@ -317,11 +343,11 @@ export async function runClickHouseSchemaApply(
 			await db
 				.update(orgClickHouseSettings)
 				.set({
-					lastSyncAt: finishedAt,
+					lastSyncAt: new Date(finishedAt),
 					lastSyncError: null,
 					syncStatus: "connected",
 					schemaVersion: clickHouseSchemaVersion,
-					updatedAt: finishedAt,
+					updatedAt: new Date(finishedAt),
 				})
 				.where(eq(orgClickHouseSettings.orgId, orgId))
 			await updateRun(
@@ -331,8 +357,8 @@ export async function runClickHouseSchemaApply(
 					status: "succeeded",
 					phase: "done",
 					currentMigration: null,
-					appliedVersions: JSON.stringify(appliedVersions),
-					finishedAt,
+					appliedVersions,
+					finishedAt: new Date(finishedAt),
 				},
 				finishedAt,
 			)
@@ -342,12 +368,15 @@ export async function runClickHouseSchemaApply(
 	} catch (error) {
 		const finishedAt = Date.now()
 		const message = error instanceof Error ? error.message : String(error)
-		await updateRun(db, orgId, { status: "failed", errorMessage: message, finishedAt }, finishedAt).catch(
-			() => undefined,
-		)
+		await updateRun(
+			db,
+			orgId,
+			{ status: "failed", errorMessage: message, finishedAt: new Date(finishedAt) },
+			finishedAt,
+		).catch(() => undefined)
 		await db
 			.update(orgClickHouseSettings)
-			.set({ syncStatus: "error", lastSyncError: message, updatedAt: finishedAt })
+			.set({ syncStatus: "error", lastSyncError: message, updatedAt: new Date(finishedAt) })
 			.where(eq(orgClickHouseSettings.orgId, orgId))
 			.catch(() => undefined)
 		throw error

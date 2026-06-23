@@ -24,9 +24,7 @@ const decodeScrapeIntervalSecondsSync = Schema.decodeUnknownSync(ScrapeIntervalS
 /** Audit identity for lazily-created ingest keys (org_ingest_keys.created_by). */
 const SCRAPER_SYSTEM_USER = Schema.decodeUnknownSync(UserId)("system-prometheus-scraper")
 const decodeScrapeResultsEffect = Schema.decodeUnknownEffect(ScrapeResultReportList)
-const decodeLabelsEffect = Schema.decodeUnknownEffect(
-	Schema.fromJsonString(Schema.Record(Schema.String, Schema.String)),
-)
+const decodeLabelsEffect = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
 
 const errorText = (message: string, status: number) =>
 	HttpServerResponse.text(message, {
@@ -41,7 +39,7 @@ export interface ScrapeTargetRowLike {
 	readonly serviceName: string | null
 	readonly url: string
 	readonly scrapeIntervalSeconds: number
-	readonly labelsJson: string | null
+	readonly labelsJson: Record<string, string> | null
 }
 
 export interface SubTargetOverride {

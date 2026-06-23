@@ -1,4 +1,15 @@
-import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import {
+	boolean,
+	doublePrecision,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	primaryKey,
+	text,
+	timestamp,
+	uniqueIndex,
+} from "drizzle-orm/pg-core"
 import type {
 	AlertDeliveryEventId,
 	AlertDestinationId,
@@ -8,22 +19,22 @@ import type {
 	OrgId,
 } from "@maple/domain/primitives"
 
-export const alertDestinations = sqliteTable(
+export const alertDestinations = pgTable(
 	"alert_destinations",
 	{
 		id: text("id").$type<AlertDestinationId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		name: text("name").notNull(),
 		type: text("type").notNull(),
-		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
-		configJson: text("config_json").notNull(),
+		enabled: boolean("enabled").notNull().default(true),
+		configJson: jsonb("config_json").$type<unknown>().notNull(),
 		secretCiphertext: text("secret_ciphertext").notNull(),
 		secretIv: text("secret_iv").notNull(),
 		secretTag: text("secret_tag").notNull(),
-		lastTestedAt: integer("last_tested_at", { mode: "number" }),
+		lastTestedAt: timestamp("last_tested_at", { withTimezone: true, mode: "date" }),
 		lastTestError: text("last_test_error"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		updatedBy: text("updated_by").notNull(),
 	},
@@ -34,52 +45,44 @@ export const alertDestinations = sqliteTable(
 	],
 )
 
-export const alertRules = sqliteTable(
+export const alertRules = pgTable(
 	"alert_rules",
 	{
 		id: text("id").$type<AlertRuleId>().notNull().primaryKey(),
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		name: text("name").notNull(),
 		notes: text("notes"),
-		notificationTemplateJson: text("notification_template_json"),
-		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
+		notificationTemplateJson: jsonb("notification_template_json").$type<unknown>(),
+		enabled: boolean("enabled").notNull().default(true),
 		severity: text("severity").notNull(),
-		serviceNamesJson: text("service_names_json"),
-		excludeServiceNamesJson: text("exclude_service_names_json"),
+		serviceNamesJson: jsonb("service_names_json").$type<ReadonlyArray<string>>(),
+		excludeServiceNamesJson: jsonb("exclude_service_names_json").$type<ReadonlyArray<string>>(),
 		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
-		tagsJson: text("tags_json"),
+		tagsJson: jsonb("tags_json").$type<ReadonlyArray<string>>(),
 		signalType: text("signal_type").notNull(),
 		comparator: text("comparator").notNull(),
-		threshold: real("threshold").notNull(),
-		thresholdUpper: real("threshold_upper"),
-		windowMinutes: integer("window_minutes", { mode: "number" }).notNull(),
-		minimumSampleCount: integer("minimum_sample_count", { mode: "number" }).notNull().default(0),
-		consecutiveBreachesRequired: integer("consecutive_breaches_required", { mode: "number" })
-			.notNull()
-			.default(2),
-		consecutiveHealthyRequired: integer("consecutive_healthy_required", { mode: "number" })
-			.notNull()
-			.default(2),
-		renotifyIntervalMinutes: integer("renotify_interval_minutes", {
-			mode: "number",
-		})
-			.notNull()
-			.default(30),
+		threshold: doublePrecision("threshold").notNull(),
+		thresholdUpper: doublePrecision("threshold_upper"),
+		windowMinutes: integer("window_minutes").notNull(),
+		minimumSampleCount: integer("minimum_sample_count").notNull().default(0),
+		consecutiveBreachesRequired: integer("consecutive_breaches_required").notNull().default(2),
+		consecutiveHealthyRequired: integer("consecutive_healthy_required").notNull().default(2),
+		renotifyIntervalMinutes: integer("renotify_interval_minutes").notNull().default(30),
 		metricName: text("metric_name"),
 		metricType: text("metric_type"),
 		metricAggregation: text("metric_aggregation"),
-		apdexThresholdMs: real("apdex_threshold_ms"),
-		queryBuilderDraftJson: text("query_builder_draft_json"),
+		apdexThresholdMs: doublePrecision("apdex_threshold_ms"),
+		queryBuilderDraftJson: jsonb("query_builder_draft_json").$type<unknown>(),
 		rawQuerySql: text("raw_query_sql"),
 		groupBy: text("group_by"),
-		destinationIdsJson: text("destination_ids_json").notNull(),
-		querySpecJson: text("query_spec_json"),
+		destinationIdsJson: jsonb("destination_ids_json").$type<ReadonlyArray<string>>().notNull(),
+		querySpecJson: jsonb("query_spec_json").$type<unknown>(),
 		reducer: text("reducer").notNull(),
 		sampleCountStrategy: text("sample_count_strategy"),
 		noDataBehavior: text("no_data_behavior").notNull(),
-		lastScheduledAt: integer("last_scheduled_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		lastScheduledAt: timestamp("last_scheduled_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
 		updatedBy: text("updated_by").notNull(),
 	},
@@ -90,20 +93,20 @@ export const alertRules = sqliteTable(
 	],
 )
 
-export const alertRuleStates = sqliteTable(
+export const alertRuleStates = pgTable(
 	"alert_rule_states",
 	{
 		orgId: text("org_id").$type<OrgId>().notNull(),
 		ruleId: text("rule_id").$type<AlertRuleId>().notNull(),
 		groupKey: text("group_key").notNull().default("__total__"),
-		consecutiveBreaches: integer("consecutive_breaches", { mode: "number" }).notNull().default(0),
-		consecutiveHealthy: integer("consecutive_healthy", { mode: "number" }).notNull().default(0),
+		consecutiveBreaches: integer("consecutive_breaches").notNull().default(0),
+		consecutiveHealthy: integer("consecutive_healthy").notNull().default(0),
 		lastStatus: text("last_status"),
-		lastValue: real("last_value"),
-		lastSampleCount: integer("last_sample_count", { mode: "number" }),
-		lastEvaluatedAt: integer("last_evaluated_at", { mode: "number" }),
+		lastValue: doublePrecision("last_value"),
+		lastSampleCount: integer("last_sample_count"),
+		lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true, mode: "date" }),
 		lastError: text("last_error"),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		primaryKey({ columns: [table.orgId, table.ruleId, table.groupKey] }),
@@ -111,7 +114,7 @@ export const alertRuleStates = sqliteTable(
 	],
 )
 
-export const alertIncidents = sqliteTable(
+export const alertIncidents = pgTable(
 	"alert_incidents",
 	{
 		id: text("id").$type<AlertIncidentId>().notNull().primaryKey(),
@@ -124,22 +127,22 @@ export const alertIncidents = sqliteTable(
 		severity: text("severity").notNull(),
 		status: text("status").notNull(),
 		comparator: text("comparator").notNull(),
-		threshold: real("threshold").notNull(),
-		thresholdUpper: real("threshold_upper"),
-		firstTriggeredAt: integer("first_triggered_at", { mode: "number" }).notNull(),
-		lastTriggeredAt: integer("last_triggered_at", { mode: "number" }).notNull(),
-		resolvedAt: integer("resolved_at", { mode: "number" }),
-		lastObservedValue: real("last_observed_value"),
-		lastSampleCount: integer("last_sample_count", { mode: "number" }),
-		lastEvaluatedAt: integer("last_evaluated_at", { mode: "number" }),
+		threshold: doublePrecision("threshold").notNull(),
+		thresholdUpper: doublePrecision("threshold_upper"),
+		firstTriggeredAt: timestamp("first_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		lastTriggeredAt: timestamp("last_triggered_at", { withTimezone: true, mode: "date" }).notNull(),
+		resolvedAt: timestamp("resolved_at", { withTimezone: true, mode: "date" }),
+		lastObservedValue: doublePrecision("last_observed_value"),
+		lastSampleCount: integer("last_sample_count"),
+		lastEvaluatedAt: timestamp("last_evaluated_at", { withTimezone: true, mode: "date" }),
 		dedupeKey: text("dedupe_key").notNull(),
 		lastDeliveredEventType: text("last_delivered_event_type"),
-		lastNotifiedAt: integer("last_notified_at", { mode: "number" }),
+		lastNotifiedAt: timestamp("last_notified_at", { withTimezone: true, mode: "date" }),
 		// Issue-hub link: the error_issues row (kind="alert") this incident
 		// feeds, mirroring anomalyIncidents.errorIssueId.
 		errorIssueId: text("error_issue_id").$type<ErrorIssueId>(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("alert_incidents_org_idx").on(table.orgId),
@@ -150,7 +153,7 @@ export const alertIncidents = sqliteTable(
 	],
 )
 
-export const alertDeliveryEvents = sqliteTable(
+export const alertDeliveryEvents = pgTable(
 	"alert_delivery_events",
 	{
 		id: text("id").$type<AlertDeliveryEventId>().notNull().primaryKey(),
@@ -160,20 +163,20 @@ export const alertDeliveryEvents = sqliteTable(
 		destinationId: text("destination_id").$type<AlertDestinationId>().notNull(),
 		deliveryKey: text("delivery_key").notNull(),
 		eventType: text("event_type").notNull(),
-		attemptNumber: integer("attempt_number", { mode: "number" }).notNull(),
+		attemptNumber: integer("attempt_number").notNull(),
 		status: text("status").notNull(),
-		scheduledAt: integer("scheduled_at", { mode: "number" }).notNull(),
-		claimedAt: integer("claimed_at", { mode: "number" }),
-		claimExpiresAt: integer("claim_expires_at", { mode: "number" }),
+		scheduledAt: timestamp("scheduled_at", { withTimezone: true, mode: "date" }).notNull(),
+		claimedAt: timestamp("claimed_at", { withTimezone: true, mode: "date" }),
+		claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true, mode: "date" }),
 		claimedBy: text("claimed_by"),
-		attemptedAt: integer("attempted_at", { mode: "number" }),
+		attemptedAt: timestamp("attempted_at", { withTimezone: true, mode: "date" }),
 		providerMessage: text("provider_message"),
 		providerReference: text("provider_reference"),
-		responseCode: integer("response_code", { mode: "number" }),
+		responseCode: integer("response_code"),
 		errorMessage: text("error_message"),
-		payloadJson: text("payload_json").notNull(),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		payloadJson: jsonb("payload_json").$type<unknown>().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("alert_delivery_events_org_idx").on(table.orgId),

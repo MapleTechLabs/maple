@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type { AiTriageRunId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
 import type { AiTriageIncidentKind, AiTriageRunStatus } from "@maple/domain/http"
 
@@ -7,11 +7,11 @@ import type { AiTriageIncidentKind, AiTriageRunStatus } from "@maple/domain/http
  * Triage runs on Maple's managed AI (Cloudflare Workers AI via the chat-flue
  * Flue workflow) — no per-org model or key configuration is needed.
  */
-export const aiTriageSettings = sqliteTable("ai_triage_settings", {
+export const aiTriageSettings = pgTable("ai_triage_settings", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
-	enabled: integer("enabled", { mode: "number" }).notNull().default(0),
-	maxRunsPerDay: integer("max_runs_per_day", { mode: "number" }).notNull().default(20),
-	updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+	enabled: boolean("enabled").notNull().default(false),
+	maxRunsPerDay: integer("max_runs_per_day").notNull().default(20),
+	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedBy: text("updated_by").$type<UserId>(),
 })
 
@@ -21,7 +21,7 @@ export const aiTriageSettings = sqliteTable("ai_triage_settings", {
  * instance). contextJson is written at enqueue time so the workflow needs no
  * kind-specific joins; resultJson holds the structured AiTriageResult.
  */
-export const aiTriageRuns = sqliteTable(
+export const aiTriageRuns = pgTable(
 	"ai_triage_runs",
 	{
 		id: text("id").$type<AiTriageRunId>().notNull().primaryKey(),
@@ -30,16 +30,16 @@ export const aiTriageRuns = sqliteTable(
 		incidentId: text("incident_id").notNull(),
 		issueId: text("issue_id").$type<ErrorIssueId>(),
 		status: text("status").$type<AiTriageRunStatus>().notNull().default("queued"),
-		contextJson: text("context_json").notNull().default("{}"),
-		resultJson: text("result_json"),
+		contextJson: jsonb("context_json").$type<unknown>().notNull().default({}),
+		resultJson: jsonb("result_json").$type<unknown>(),
 		model: text("model"),
-		inputTokens: integer("input_tokens", { mode: "number" }),
-		outputTokens: integer("output_tokens", { mode: "number" }),
+		inputTokens: integer("input_tokens"),
+		outputTokens: integer("output_tokens"),
 		error: text("error"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		startedAt: integer("started_at", { mode: "number" }),
-		completedAt: integer("completed_at", { mode: "number" }),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+		completedAt: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("ai_triage_runs_incident_idx").on(table.orgId, table.incidentKind, table.incidentId),

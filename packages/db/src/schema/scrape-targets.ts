@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { boolean, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
-export const scrapeTargets = sqliteTable(
+export const scrapeTargets = pgTable(
 	"scrape_targets",
 	{
 		id: text("id").notNull().primaryKey(),
@@ -9,18 +9,18 @@ export const scrapeTargets = sqliteTable(
 		serviceName: text("service_name"),
 		url: text("url").notNull(),
 		targetType: text("target_type").notNull().default("prometheus"),
-		discoveryConfigJson: text("discovery_config_json"),
-		scrapeIntervalSeconds: integer("scrape_interval_seconds", { mode: "number" }).notNull().default(15),
-		labelsJson: text("labels_json"),
+		discoveryConfigJson: jsonb("discovery_config_json").$type<unknown>(),
+		scrapeIntervalSeconds: integer("scrape_interval_seconds").notNull().default(15),
+		labelsJson: jsonb("labels_json").$type<Record<string, string>>(),
 		authType: text("auth_type").notNull().default("none"),
 		authCredentialsCiphertext: text("auth_credentials_ciphertext"),
 		authCredentialsIv: text("auth_credentials_iv"),
 		authCredentialsTag: text("auth_credentials_tag"),
-		enabled: integer("enabled", { mode: "number" }).notNull().default(1),
-		lastScrapeAt: integer("last_scrape_at", { mode: "number" }),
+		enabled: boolean("enabled").notNull().default(true),
+		lastScrapeAt: timestamp("last_scrape_at", { withTimezone: true, mode: "date" }),
 		lastScrapeError: text("last_scrape_error"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		index("scrape_targets_org_idx").on(table.orgId),
@@ -36,22 +36,24 @@ export type ScrapeTargetInsert = typeof scrapeTargets.$inferInsert
  * `POST /api/internal/scrape-results`. Durable check history for the
  * connectors UI — pruned to 24h with a per-target row cap.
  */
-export const scrapeTargetChecks = sqliteTable(
+export const scrapeTargetChecks = pgTable(
 	"scrape_target_checks",
 	{
-		id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+		// generatedByDefault (not generatedAlways) so the D1→Postgres import can
+		// carry over existing ids; setval() realigns the sequence afterwards.
+		id: integer("id").primaryKey().generatedByDefaultAsIdentity(),
 		targetId: text("target_id")
 			.notNull()
 			.references(() => scrapeTargets.id, { onDelete: "cascade" }),
 		orgId: text("org_id").notNull(),
 		/** Sub-target discriminator (e.g. PlanetScale branch); empty string for plain targets. */
 		subTargetKey: text("sub_target_key").notNull().default(""),
-		checkedAt: integer("checked_at", { mode: "number" }).notNull(),
+		checkedAt: timestamp("checked_at", { withTimezone: true, mode: "date" }).notNull(),
 		/** Null on success; pretty-printed failure otherwise. */
 		error: text("error"),
-		durationMs: integer("duration_ms", { mode: "number" }),
-		samplesScraped: integer("samples_scraped", { mode: "number" }),
-		samplesPostRelabel: integer("samples_post_relabel", { mode: "number" }),
+		durationMs: integer("duration_ms"),
+		samplesScraped: integer("samples_scraped"),
+		samplesPostRelabel: integer("samples_post_relabel"),
 	},
 	(table) => [index("scrape_target_checks_target_checked_idx").on(table.targetId, table.checkedAt)],
 )

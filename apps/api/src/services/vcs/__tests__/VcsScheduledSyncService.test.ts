@@ -1,7 +1,7 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { VcsQueueError, type OrgId, type VcsSyncJob } from "@maple/domain/http"
 import { Effect, Exit, Layer } from "effect"
-import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { VcsRepository } from "@/services/vcs/VcsRepository"
 import { VcsScheduledSyncService } from "@/services/vcs/VcsScheduledSyncService"
 import {
@@ -14,14 +14,14 @@ import {
 	type VcsRepo,
 } from "./harness"
 
-const dirs: string[] = []
-afterEach(() => cleanupTempDirs(dirs))
+const trackedDbs: TestDb[] = []
+afterEach(() => cleanupTestDbs(trackedDbs))
 
-// Wire VcsScheduledSyncService over a temp sqlite (real repo) and a recording
-// VcsSyncQueue that captures every enqueued job. When `failQueue` is set,
-// `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
-const schedulerLayer = (url: string, sent: Array<VcsSyncJob>, opts?: { readonly failQueue?: boolean }) => {
-	const data = testRepoLayer(url)
+// Wire VcsScheduledSyncService over an in-memory PGlite (real repo) and a
+// recording VcsSyncQueue that captures every enqueued job. When `failQueue` is
+// set, `sendBatch` fails with a VcsQueueError instead, to exercise propagation.
+const schedulerLayer = (testDb: TestDb, sent: Array<VcsSyncJob>, opts?: { readonly failQueue?: boolean }) => {
+	const data = testRepoLayer(testDb)
 	const queue = recordingQueueLayer(
 		sent,
 		opts?.failQueue ? { failBatch: () => new VcsQueueError({ message: "simulated queue outage" }) } : {},
@@ -49,7 +49,7 @@ const seedInstallation = (repo: VcsRepo, orgId: OrgId, externalInstallationId: s
 
 describe("VcsScheduledSyncService.runScheduledSync", () => {
 	it.effect("enqueues one scheduled installation-sync per installation across orgs", () => {
-		const { url } = createTempDbUrl("maple-vcs-sched-multi-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
 			const svc = yield* VcsScheduledSyncService
@@ -68,11 +68,11 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 				"every job is a scheduled installation-sync",
 			)
 			assert.deepStrictEqual(sent.map((j) => j.externalInstallationId).sort(), ["1", "2"])
-		}).pipe(Effect.provide(schedulerLayer(url, sent)))
+		}).pipe(Effect.provide(schedulerLayer(testDb, sent)))
 	})
 
 	it.effect("skips suspended and disconnected installations (the processable gate)", () => {
-		const { url } = createTempDbUrl("maple-vcs-sched-gate-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
 			const svc = yield* VcsScheduledSyncService
@@ -90,11 +90,11 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			assert.strictEqual(result.skipped, 2)
 			assert.strictEqual(sent.length, 1)
 			assert.strictEqual(sent[0]?.externalInstallationId, active.externalInstallationId)
-		}).pipe(Effect.provide(schedulerLayer(url, sent)))
+		}).pipe(Effect.provide(schedulerLayer(testDb, sent)))
 	})
 
 	it.effect("enqueues nothing when there are no installations", () => {
-		const { url } = createTempDbUrl("maple-vcs-sched-empty-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
 			const svc = yield* VcsScheduledSyncService
@@ -102,11 +102,11 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			assert.strictEqual(result.installationsTotal, 0)
 			assert.strictEqual(result.enqueued, 0)
 			assert.strictEqual(sent.length, 0)
-		}).pipe(Effect.provide(schedulerLayer(url, sent)))
+		}).pipe(Effect.provide(schedulerLayer(testDb, sent)))
 	})
 
 	it.effect("propagates a queue failure as VcsQueueError", () => {
-		const { url } = createTempDbUrl("maple-vcs-sched-qfail-", dirs)
+		const testDb = createTestDb(trackedDbs)
 		const sent: Array<VcsSyncJob> = []
 		return Effect.gen(function* () {
 			const svc = yield* VcsScheduledSyncService
@@ -115,6 +115,6 @@ describe("VcsScheduledSyncService.runScheduledSync", () => {
 			const exit = yield* Effect.exit(svc.runScheduledSync())
 			assert.ok(Exit.isFailure(exit), "the tick surfaces the queue failure")
 			assert.ok(findError(exit) instanceof VcsQueueError)
-		}).pipe(Effect.provide(schedulerLayer(url, sent, { failQueue: true })))
+		}).pipe(Effect.provide(schedulerLayer(testDb, sent, { failQueue: true })))
 	})
 })

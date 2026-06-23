@@ -1,6 +1,6 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
-export const oauthConnections = sqliteTable(
+export const oauthConnections = pgTable(
 	"oauth_connections",
 	{
 		id: text("id").notNull().primaryKey(),
@@ -16,9 +16,9 @@ export const oauthConnections = sqliteTable(
 		refreshTokenCiphertext: text("refresh_token_ciphertext"),
 		refreshTokenIv: text("refresh_token_iv"),
 		refreshTokenTag: text("refresh_token_tag"),
-		expiresAt: integer("expires_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
 		uniqueIndex("oauth_connections_org_provider_idx").on(table.orgId, table.provider),
@@ -26,7 +26,7 @@ export const oauthConnections = sqliteTable(
 	],
 )
 
-export const oauthAuthStates = sqliteTable(
+export const oauthAuthStates = pgTable(
 	"oauth_auth_states",
 	{
 		state: text("state").notNull().primaryKey(),
@@ -35,8 +35,8 @@ export const oauthAuthStates = sqliteTable(
 		initiatedByUserId: text("initiated_by_user_id").notNull(),
 		redirectUri: text("redirect_uri").notNull(),
 		returnTo: text("return_to"),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		expiresAt: integer("expires_at", { mode: "number" }).notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [index("oauth_auth_states_expires_idx").on(table.expiresAt)],
 )

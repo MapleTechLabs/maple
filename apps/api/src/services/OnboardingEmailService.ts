@@ -5,6 +5,7 @@ import { render } from "@react-email/components"
 import { ActivationEmail, ConnectAppEmail, StalledEmail, WelcomeEmail } from "@maple/email/onboarding"
 import { Cause, Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { EmailService } from "../lib/EmailService"
+import { dateToMs } from "../lib/time"
 import { Env } from "../lib/Env"
 import { OnboardingService } from "./OnboardingService"
 import type { OnboardingEmailField } from "./OnboardingService"
@@ -199,7 +200,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 					(row) =>
 						Effect.gen(function* () {
 							const orgId = OrgId.make(row.orgId)
-							let firstDataReceivedAt = row.firstDataReceivedAt
+							let firstDataReceivedAt = dateToMs(row.firstDataReceivedAt)
 							let firstDataDetected = false
 
 							if (firstDataReceivedAt == null) {
@@ -216,7 +217,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 							}
 
 							// Decide which single email (if any) is due this tick.
-							const ageMs = now - row.createdAt
+							const ageMs = now - row.createdAt.getTime()
 							let template: EmailNode | null = null
 							let subject = ""
 							let field: OnboardingEmailField | null = null

@@ -16,6 +16,7 @@ import { Clock, Context, Effect, Layer, Option, Redacted, Ref, Schema } from "ef
 import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey } from "../lib/Crypto"
 import { Database, type DatabaseClient } from "../lib/DatabaseLive"
 import { Env, type EnvShape } from "../lib/Env"
+import { msToDate } from "../lib/time"
 
 const HAZEL_PROVIDER = "hazel"
 const STATE_TTL_MS = 10 * 60_000 // 10 minutes
@@ -275,7 +276,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 
 			const purgeExpiredStates = (currentTime: number) =>
 				dbExecute((db) =>
-					db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, currentTime)),
+					db.delete(oauthAuthStates).where(lt(oauthAuthStates.expiresAt, new Date(currentTime))),
 				)
 
 			const fetchDiscoveryDocument = (
@@ -367,8 +368,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 						initiatedByUserId: userId,
 						redirectUri: callbackUrl,
 						returnTo: options.returnTo ?? null,
-						createdAt: currentTime,
-						expiresAt: currentTime + STATE_TTL_MS,
+						createdAt: new Date(currentTime),
+						expiresAt: new Date(currentTime + STATE_TTL_MS),
 					}),
 				)
 
@@ -398,7 +399,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 							}),
 						)
 					}
-					if (row.expiresAt < (yield* Clock.currentTimeMillis)) {
+					if (row.expiresAt.getTime() < (yield* Clock.currentTimeMillis)) {
 						yield* dbExecute((db) =>
 							db.delete(oauthAuthStates).where(eq(oauthAuthStates.state, state)),
 						)
@@ -603,8 +604,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 								refreshTokenCiphertext: refreshEnc?.ciphertext ?? null,
 								refreshTokenIv: refreshEnc?.iv ?? null,
 								refreshTokenTag: refreshEnc?.tag ?? null,
-								expiresAt,
-								updatedAt: currentTime,
+								expiresAt: msToDate(expiresAt),
+								updatedAt: new Date(currentTime),
 							})
 							.where(eq(oauthConnections.id, existing[0]!.id)),
 					)
@@ -624,9 +625,9 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 							refreshTokenCiphertext: refreshEnc?.ciphertext ?? null,
 							refreshTokenIv: refreshEnc?.iv ?? null,
 							refreshTokenTag: refreshEnc?.tag ?? null,
-							expiresAt,
-							createdAt: currentTime,
-							updatedAt: currentTime,
+							expiresAt: msToDate(expiresAt),
+							createdAt: new Date(currentTime),
+							updatedAt: new Date(currentTime),
 						}),
 					)
 				}
@@ -685,8 +686,8 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 								refreshTokenCiphertext: refreshEnc?.ciphertext ?? row.refreshTokenCiphertext,
 								refreshTokenIv: refreshEnc?.iv ?? row.refreshTokenIv,
 								refreshTokenTag: refreshEnc?.tag ?? row.refreshTokenTag,
-								expiresAt,
-								updatedAt: currentTime,
+								expiresAt: msToDate(expiresAt),
+								updatedAt: new Date(currentTime),
 							})
 							.where(eq(oauthConnections.id, row.id)),
 					)
@@ -700,7 +701,7 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 				const row = yield* requireConnection(orgId)
 				const isValid =
 					row.expiresAt == null ||
-					row.expiresAt - (yield* Clock.currentTimeMillis) > REFRESH_LEEWAY_MS
+					row.expiresAt.getTime() - (yield* Clock.currentTimeMillis) > REFRESH_LEEWAY_MS
 
 				if (isValid) {
 					const accessToken = yield* decryptValue({
@@ -956,9 +957,10 @@ export class HazelOAuthService extends Context.Service<HazelOAuthService, HazelO
 								eq(oauthConnections.orgId, orgId),
 								eq(oauthConnections.provider, HAZEL_PROVIDER),
 							),
-						),
+						)
+						.returning({ id: oauthConnections.id }),
 				)
-				return { disconnected: (result.rowsAffected ?? 0) > 0 }
+				return { disconnected: result.length > 0 }
 			})
 
 			return {

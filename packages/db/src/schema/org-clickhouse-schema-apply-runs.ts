@@ -1,4 +1,4 @@
-import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { integer, jsonb, pgTable, primaryKey, text, timestamp } from "drizzle-orm/pg-core"
 
 /**
  * One in-flight / last schema-apply run per org. The schema-apply Cloudflare
@@ -9,7 +9,7 @@ import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
  * progress. Durable migration bookkeeping still lives in ClickHouse's
  * `_maple_schema_migrations`; this table is only the UI-facing progress mirror.
  */
-export const orgClickHouseSchemaApplyRuns = sqliteTable(
+export const orgClickHouseSchemaApplyRuns = pgTable(
 	"org_clickhouse_schema_apply_runs",
 	{
 		orgId: text("org_id").notNull(),
@@ -20,17 +20,17 @@ export const orgClickHouseSchemaApplyRuns = sqliteTable(
 		// Human-readable current phase, e.g. "migration 4 · backfill service_overview_spans".
 		phase: text("phase"),
 		// Migration version currently being applied (null when between/!running).
-		currentMigration: integer("current_migration", { mode: "number" }),
-		stepsTotal: integer("steps_total", { mode: "number" }),
-		stepsDone: integer("steps_done", { mode: "number" }),
-		// JSON: migration versions applied this run, and skipped-object summary.
-		appliedVersions: text("applied_versions"),
-		skipped: text("skipped"),
+		currentMigration: integer("current_migration"),
+		stepsTotal: integer("steps_total"),
+		stepsDone: integer("steps_done"),
+		// Migration versions applied this run, and skipped-object summary.
+		appliedVersions: jsonb("applied_versions").$type<unknown>(),
+		skipped: jsonb("skipped").$type<unknown>(),
 		errorMessage: text("error_message"),
-		startedAt: integer("started_at", { mode: "number" }),
-		finishedAt: integer("finished_at", { mode: "number" }),
-		createdAt: integer("created_at", { mode: "number" }).notNull(),
-		updatedAt: integer("updated_at", { mode: "number" }).notNull(),
+		startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+		finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [primaryKey({ columns: [table.orgId] })],
 )

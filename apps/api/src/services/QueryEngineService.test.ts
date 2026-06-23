@@ -1,7 +1,7 @@
 import { describe, it } from "@effect/vitest"
 import { Effect, Exit, Option, Schema } from "effect"
 import { strict as nodeAssert } from "node:assert"
-import { OrgId, UserId } from "@maple/domain"
+import { MetricName, OrgId, ServiceName, UserId } from "@maple/domain"
 import type {
 	QueryEngineEvaluateRequest,
 	QueryEngineExecuteRequest,
@@ -27,6 +27,8 @@ const assert: typeof nodeAssert & {
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
+const asServiceName = Schema.decodeUnknownSync(ServiceName)
+const asMetricName = Schema.decodeUnknownSync(MetricName)
 
 const tenant: TenantContext = {
 	orgId: asOrgId("org_test"),
@@ -446,7 +448,7 @@ describe("makeQueryEngineExecute", () => {
 					groupBy: ["none"],
 					bucketSeconds: 300,
 					filters: {
-						metricName: "request.duration",
+						metricName: asMetricName("request.duration"),
 						metricType: "histogram",
 					},
 				},
@@ -511,7 +513,7 @@ describe("makeQueryEngineExecute", () => {
 					groupBy: ["service"],
 					bucketSeconds: 300,
 					filters: {
-						metricName: "cpu.usage",
+						metricName: asMetricName("cpu.usage"),
 						metricType: "gauge",
 					},
 				},
@@ -553,7 +555,7 @@ describe("makeQueryEngineExecute", () => {
 						source: "traces",
 						metric: "count",
 						groupBy: "service",
-						filters: { serviceName: "checkout" },
+						filters: { serviceName: asServiceName("checkout") },
 					},
 				}),
 			)
@@ -618,7 +620,7 @@ describe("makeQueryEngineExecute", () => {
 						source: "traces",
 						metric: "count",
 						groupBy: "service",
-						filters: { serviceName: "checkout" },
+						filters: { serviceName: asServiceName("checkout") },
 					},
 				}),
 			)
@@ -755,7 +757,7 @@ describe("makeQueryEngineEvaluate", () => {
 					metric: "avg",
 					groupBy: ["none"],
 					filters: {
-						metricName: "cpu.usage",
+						metricName: asMetricName("cpu.usage"),
 						metricType: "gauge",
 					},
 				},
@@ -788,7 +790,7 @@ describe("makeQueryEngineEvaluate", () => {
 					metric: "sum",
 					groupBy: ["none"],
 					filters: {
-						metricName: "requests",
+						metricName: asMetricName("requests"),
 						metricType: "sum",
 					},
 				},
@@ -828,7 +830,7 @@ describe("makeQueryEngineEvaluate", () => {
 					metric: "count",
 					groupBy: ["none"],
 					filters: {
-						serviceName: "checkout",
+						serviceName: asServiceName("checkout"),
 						severity: "error",
 					},
 				},

@@ -3,17 +3,20 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { AiTriageResult } from "@maple/domain/http"
 import { ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import { actors, errorIssues, errorIssueEvents, issueEscalations, runMigrations } from "@maple/db"
-import { createMapleLibsqlClient, type MapleD1Client } from "@maple/db/client"
+import { createMaplePgliteClient, type MaplePgClient } from "@maple/db/client"
 import { eq } from "drizzle-orm"
 import { Schema } from "effect"
-import { cleanupTempDirs, createTempDbUrl } from "@/lib/test-sqlite"
-import { applyTriageSeverity, escalationReasonFor, severityRank, TRIAGE_AGENT_NAME } from "./issue-severity"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
+import {
+	applyTriageSeverity,
+	escalationReasonFor,
+	severityRank,
+	TRIAGE_AGENT_NAME,
+} from "./issue-severity"
 
-const createdTempDirs: string[] = []
+const createdDbs: TestDb[] = []
 
-afterEach(() => {
-	cleanupTempDirs(createdTempDirs)
-})
+afterEach(() => cleanupTestDbs(createdDbs))
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
@@ -21,16 +24,16 @@ const decodeTriageResult = Schema.decodeUnknownSync(AiTriageResult)
 
 const ORG = asOrgId("org_severity_test")
 
-let db: MapleD1Client
+let db: MaplePgClient
 let issueId: ErrorIssueId
 
 beforeEach(async () => {
-	const { url } = createTempDbUrl("maple-issue-severity-", createdTempDirs)
-	await runMigrations({ url })
-	// Same shared drizzle query-builder surface as the D1 client.
-	db = createMapleLibsqlClient({ url }) as unknown as MapleD1Client
+	const testDb = createTestDb(createdDbs)
+	await runMigrations(testDb.pglite)
+	// Same shared drizzle query-builder surface as the postgres.js client.
+	db = createMaplePgliteClient(testDb.pglite) as unknown as MaplePgClient
 	issueId = asIssueId(randomUUID())
-	const now = Date.now()
+	const now = new Date()
 	await db.insert(errorIssues).values({
 		id: issueId,
 		orgId: ORG,
@@ -90,10 +93,7 @@ describe("applyTriageSeverity", () => {
 		const events = await db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId))
 		expect(events).toHaveLength(1)
 		expect(events[0]?.type).toBe("severity_change")
-		const payload = JSON.parse(events[0]?.payloadJson ?? "{}")
-		expect(payload.from).toBeNull()
-		expect(payload.to).toBe("high")
-		expect(payload.source).toBe("ai")
+		expect(events[0]?.payloadJson).toMatchObject({ from: null, to: "high", source: "ai" })
 
 		const escalations = await db
 			.select()
@@ -114,8 +114,8 @@ describe("applyTriageSeverity", () => {
 
 		const agentRows = await db.select().from(actors).where(eq(actors.orgId, ORG))
 		expect(agentRows).toHaveLength(1)
-		expect(agentRows[0]?.createdAt).toBe(timestamp)
-		expect(agentRows[0]?.lastActiveAt).toBe(timestamp)
+		expect(agentRows[0]?.createdAt.getTime()).toBe(timestamp)
+		expect(agentRows[0]?.lastActiveAt?.getTime()).toBe(timestamp)
 	})
 
 	it("is idempotent across persist retries", async () => {
@@ -220,9 +220,10 @@ describe("applyTriageSeverity", () => {
 			.from(issueEscalations)
 			.where(eq(issueEscalations.issueId, issueId))
 		expect(escalations).toHaveLength(1)
-		const payload = JSON.parse(escalations[0]?.payloadJson ?? "{}")
-		expect(payload.confidence).toBe("medium")
-		expect(payload.triage).toEqual(plainResult)
+		expect(escalations[0]?.payloadJson).toMatchObject({
+			confidence: "medium",
+			triage: plainResult,
+		})
 	})
 
 	it("returns applied=false when the issue does not exist", async () => {

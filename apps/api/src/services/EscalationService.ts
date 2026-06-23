@@ -32,11 +32,9 @@ import { NotificationDispatcher, type NotificationRequest } from "./Notification
 const ESCALATIONS_PER_TICK = 50
 const MAX_ATTEMPTS = 3
 
-const PolicyRulesFromJson = Schema.fromJsonString(Schema.Array(IssueEscalationPolicyRule))
-const decodePolicyRules = Schema.decodeUnknownOption(PolicyRulesFromJson)
+const decodePolicyRules = Schema.decodeUnknownOption(Schema.Array(IssueEscalationPolicyRule))
 const decodeSignalType = Schema.decodeUnknownOption(AlertSignalType)
-const JsonRecordFromString = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
-const decodeJsonRecord = Schema.decodeUnknownOption(JsonRecordFromString)
+const decodeJsonRecord = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
 const decodeConfidence = Schema.decodeUnknownOption(EscalationConfidence)
 
 const CONFIDENCE_RANK: Record<EscalationConfidence, number> = { low: 1, medium: 2, high: 3 }
@@ -90,7 +88,7 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 					.set({
 						status,
 						error: error ?? null,
-						...(status === "queued" ? {} : { processedAt: timestamp }),
+						...(status === "queued" ? {} : { processedAt: new Date(timestamp) }),
 					})
 					.where(eq(issueEscalations.id, row.id)),
 			)
@@ -113,9 +111,11 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 							eq(issueEscalations.status, "queued"),
 							eq(issueEscalations.attempts, row.attempts),
 						),
-					),
+					)
+					// The returned row is the claim: empty means the CAS lost.
+					.returning({ id: issueEscalations.id }),
 			)
-			if (((claimed as { rowsAffected?: number }).rowsAffected ?? 0) === 0) {
+			if (claimed.length === 0) {
 				return "contended" as const
 			}
 
@@ -124,7 +124,7 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 				policy = yield* loadPolicy(row.orgId)
 				policyCache.set(row.orgId, policy)
 			}
-			if (policy == null || policy.enabled !== 1) {
+			if (policy == null || !policy.enabled) {
 				yield* finalize(row, "skipped", timestamp, "policy_disabled")
 				return "skipped" as const
 			}
