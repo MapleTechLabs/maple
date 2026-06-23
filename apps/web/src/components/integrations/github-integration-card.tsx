@@ -24,7 +24,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { toast } from "sonner"
 
 import {
-	ArrowPathIcon,
+	ArrowRotateClockwiseIcon,
 	CheckIcon,
 	ChevronDownIcon,
 	CircleCheckIcon,
@@ -467,7 +467,7 @@ function DeactivatedState({
 					{busy ? (
 						<LoaderIcon size={16} className="animate-spin" />
 					) : (
-						<ArrowPathIcon size={16} />
+						<ArrowRotateClockwiseIcon size={16} />
 					)}
 					Reconnect GitHub
 				</Button>
@@ -547,7 +547,10 @@ function ConnectedView({
 
 				<div className="flex items-center gap-1.5">
 					<Button size="sm" variant="outline" onClick={onRefresh} disabled={refreshing}>
-						<ArrowPathIcon size={14} className={refreshing ? "animate-spin" : ""} />
+						<ArrowRotateClockwiseIcon
+							size={14}
+							className={refreshing ? "animate-spin" : ""}
+						/>
 						Refresh
 					</Button>
 					<Button size="sm" variant="outline" onClick={onManage} disabled={busy !== null}>

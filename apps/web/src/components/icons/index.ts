@@ -7,6 +7,7 @@ export {
 	ArrowDownIcon,
 	ArrowLeftIcon,
 	ArrowRightIcon,
+	ArrowRotateClockwiseIcon,
 	CheckIcon,
 	ChevronDownIcon,
 	ChevronExpandYIcon,
