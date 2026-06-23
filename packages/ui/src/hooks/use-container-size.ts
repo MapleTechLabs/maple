@@ -16,6 +16,12 @@ export function useContainerSize(ref: React.RefObject<HTMLElement | null>): Cont
 		const el = ref.current
 		if (!el) return
 
+		// Measure synchronously up front. ResizeObserver is specced to deliver an initial
+		// callback, but that fire can be throttled (e.g. background tabs), which would leave
+		// consumers stuck at 0 until the next real resize. Reading the box now avoids that.
+		const rect = el.getBoundingClientRect()
+		setSize({ width: rect.width, height: rect.height })
+
 		const observer = new ResizeObserver((entries) => {
 			for (const entry of entries) {
 				setSize({

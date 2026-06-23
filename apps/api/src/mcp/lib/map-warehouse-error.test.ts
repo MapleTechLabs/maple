@@ -12,8 +12,7 @@ describe("toMcpQueryError", () => {
 
 	it("appends the schema-apply hint for a WarehouseSchemaDriftError", () => {
 		const err = new WarehouseSchemaDriftError({
-			message:
-				"Unknown expression or function identifier 'SampleRate' in scope SELECT ServiceName ...",
+			message: "Unknown expression or function identifier 'SampleRate' in scope SELECT ServiceName ...",
 			pipe: "service_overview",
 			clickhouseType: "UNKNOWN_IDENTIFIER",
 		})

@@ -6,13 +6,13 @@
 // ---------------------------------------------------------------------------
 
 import type { MetricType } from "../../query-engine"
-import * as CH from "../expr"
-import * as T from "../types"
-import { param } from "../param"
-import { from, type CHQuery } from "../query"
-import { table } from "../table"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type CHQuery } from "@maple-dev/clickhouse-builder"
+import { table } from "@maple-dev/clickhouse-builder"
 import { MetricsSum, MetricCatalog, SpanMetricsCallsHourly } from "../tables"
-import { compileCH } from "../compile"
+import { compileCH } from "@maple-dev/clickhouse-builder"
 import { resolveMetricTable, metricsSelectExprs } from "./query-helpers"
 
 // ---------------------------------------------------------------------------
@@ -114,9 +114,15 @@ function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean 
 function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 	opts: MetricsRateTimeseriesOpts,
 ): CHQuery<any, MetricsRateTimeseriesOutput, {}> {
-	const bucket = CH.toStartOfInterval(CH.toDateTime(param.dateTime("startTime")), param.int("bucketSeconds"))
+	const bucket = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("startTime")),
+		param.int("bucketSeconds"),
+	)
 	const previousBucket = CH.intervalSub(bucket, param.int("bucketSeconds"))
-	const endBucket = CH.toStartOfInterval(CH.toDateTime(param.dateTime("endTime")), param.int("bucketSeconds"))
+	const endBucket = CH.toStartOfInterval(
+		CH.toDateTime(param.dateTime("endTime")),
+		param.int("bucketSeconds"),
+	)
 
 	const hourlySql = compileCH(
 		from(SpanMetricsCallsHourly)
@@ -212,9 +218,10 @@ function metricsTimeseriesRateFromSpanMetricsCallsHourly(
 		}))
 		.where(($) => [$.Hour.gte(bucket), $.Hour.lte(endBucket)])
 
-	return (opts.groupByAttributeKey === "span.kind"
-		? q.groupBy("bucket", "serviceName", "attributeValue")
-		: q.groupBy("bucket", "serviceName")
+	return (
+		opts.groupByAttributeKey === "span.kind"
+			? q.groupBy("bucket", "serviceName", "attributeValue")
+			: q.groupBy("bucket", "serviceName")
 	)
 		.orderBy(["bucket", "asc"])
 		.format("JSON")

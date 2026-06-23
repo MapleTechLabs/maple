@@ -3,11 +3,11 @@ import { Atom, ScopedAtom, useAtom } from "@/lib/effect-atom"
 import type { TimeRange } from "@/components/dashboard-builder/types"
 import { relativeToAbsolute } from "@/lib/time-utils"
 
-export type ResolvedTimeRange = { startTime: string; endTime: string }
+type ResolvedTimeRange = { startTime: string; endTime: string }
 
 const DEFAULT_RELATIVE_FALLBACK = "1h"
 
-export function resolveTimeRange(timeRange: TimeRange): ResolvedTimeRange | null {
+function resolveTimeRange(timeRange: TimeRange): ResolvedTimeRange | null {
 	if (timeRange.type === "absolute") {
 		return { startTime: timeRange.startTime, endTime: timeRange.endTime }
 	}

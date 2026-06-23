@@ -521,7 +521,9 @@ export function OrgClickHouseSettingsSection({ isAdmin, hasEntitlement }: OrgCli
 									{isApplying ? (
 										<>
 											<LoaderIcon size={12} className="mr-1 animate-spin" />
-											{runActive && applyStatus?.stepsTotal != null && applyStatus?.stepsDone != null
+											{runActive &&
+											applyStatus?.stepsTotal != null &&
+											applyStatus?.stepsDone != null
 												? `Applying… (${applyStatus.stepsDone}/${applyStatus.stepsTotal})`
 												: "Applying…"}
 										</>

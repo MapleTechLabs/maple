@@ -1,49 +1,28 @@
 /**
- * This module provides utilities for Higher-Kinded Types (HKT) in TypeScript.
+ * Provides type-level helpers for generic code over container-like types.
  *
- * Higher-Kinded Types are types that take other types as parameters, similar to how
- * functions take values as parameters. They enable generic programming over type
- * constructors, allowing you to write code that works with any container type
- * (like Array, Option, Effect, etc.) in a uniform way.
- *
- * The HKT system in Effect uses TypeLambdas to encode type-level functions that
- * can represent complex type relationships with multiple type parameters, including
- * contravariant, covariant, and invariant positions.
- *
- * **Example** (Encoding type lambdas)
- *
- * ```ts
- * import type { HKT } from "effect"
- *
- * // Define a TypeLambda for Array
- * interface ArrayTypeLambda extends HKT.TypeLambda {
- *   readonly type: Array<this["Target"]>
- * }
- *
- * // Use Kind to get the concrete type
- * type MyArray = HKT.Kind<ArrayTypeLambda, never, never, never, string>
- * // MyArray is Array<string>
- *
- * // Define a TypeClass that works with any HKT
- * interface Functor<F extends HKT.TypeLambda> extends HKT.TypeClass<F> {
- *   map<A, B>(
- *     fa: HKT.Kind<F, never, never, never, A>,
- *     f: (a: A) => B
- *   ): HKT.Kind<F, never, never, never, B>
- * }
- * ```
+ * TypeScript cannot directly abstract over shapes such as `Option<A>`,
+ * `ReadonlyArray<A>`, or `Effect<A, E, R>`. This module represents those shapes
+ * with `TypeLambda` and applies concrete type arguments with `Kind`. It is
+ * mostly useful when defining generic helpers or type classes that should work
+ * across several data types.
  *
  * @since 2.0.0
  */
 import type * as Types from "./Types.ts"
 
 /**
- * A unique symbol used to associate `TypeClass` implementations with their `TypeLambda`.
+ * Defines the unique symbol used to associate `TypeClass` implementations with their `TypeLambda`.
+ *
+ * **When to use**
+ *
+ * Use when you need to define a custom type class that exposes the `TypeLambda`
+ * it operates on.
  *
  * **Details**
  *
- * This symbol is used internally by the HKT system to link runtime type class
- * instances with their compile-time type information.
+ * This symbol links a type class shape with its compile-time type lambda. It is
+ * intended for type-class definitions and has no runtime behavior.
  *
  * **Example** (Linking a type class to a type lambda)
  *
@@ -76,6 +55,10 @@ export declare const URI: unique symbol
 
 /**
  * Base interface for type classes that work with Higher-Kinded Types.
+ *
+ * **When to use**
+ *
+ * Use to define type class interfaces parameterized by a `TypeLambda`.
  *
  * **Details**
  *
@@ -114,6 +97,10 @@ export interface TypeClass<F extends TypeLambda> {
 
 /**
  * Base interface for defining Higher-Kinded Type parameters.
+ *
+ * **When to use**
+ *
+ * Use to encode a type constructor for higher-kinded generic programming.
  *
  * **Details**
  *
@@ -156,6 +143,10 @@ export interface TypeLambda {
 
 /**
  * Applies type parameters to a `TypeLambda` to get the concrete type.
+ *
+ * **When to use**
+ *
+ * Use to apply a `TypeLambda` to type parameters and obtain its concrete type.
  *
  * **Details**
  *
@@ -202,7 +193,7 @@ export interface TypeLambda {
  * >
  * ```
  *
- * @category type utils
+ * @category utility types
  * @since 2.0.0
  */
 export type Kind<F extends TypeLambda, In, Out2, Out1, Target> = F extends {

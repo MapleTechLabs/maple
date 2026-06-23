@@ -1,17 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { useAgent } from "agents/react"
-import { useAgentChat } from "@cloudflare/ai-chat/react"
-import { autoTransformMessages } from "@cloudflare/ai-chat/ai-chat-v5-migration"
-import { useAuth } from "@clerk/clerk-react"
-import { chatAgentUrl } from "@/lib/services/common/chat-agent-url"
+import { Exit } from "effect"
+import { toast } from "sonner"
+import { useAtomSet } from "@/lib/effect-atom"
+import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { useFlueChat } from "@/hooks/use-flue-chat"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
 import { alertPromptSuggestions, type AlertContext } from "./alert-context"
 import { AlertAttachmentCard } from "./alert-attachment-card"
-import {
-	widgetFixAutoPrompt,
-	widgetFixSuggestions,
-	type WidgetFixContext,
-} from "./widget-fix-context"
+import { widgetFixAutoPrompt, widgetFixSuggestions, type WidgetFixContext } from "./widget-fix-context"
 import { WidgetFixAttachmentCard } from "./widget-fix-attachment-card"
 import {
 	deriveAutoContexts,
@@ -20,6 +16,8 @@ import {
 	type AutoContext,
 	type PageContextPayload,
 } from "./auto-contexts"
+import type { ChatContext } from "./context-preamble"
+import { parseToolProposal } from "./tool-proposal"
 import { PageContextChips } from "./page-context-chips"
 import {
 	Conversation,
@@ -41,7 +39,7 @@ import { ThinkingIndicator } from "@/components/ai-elements/thinking-indicator"
 import { Tool, ToolRow, toolLabel } from "@/components/ai-elements/tool"
 import { ToolGroup } from "@/components/ai-elements/tool-group"
 import { ApprovalCard } from "./approval-card"
-import type { UIMessage } from "ai"
+import type { UIMessage } from "@/components/ai-elements/types"
 
 type ToolPart = {
 	type: string
@@ -51,7 +49,6 @@ type ToolPart = {
 	input?: unknown
 	output?: unknown
 	errorText?: string
-	approval?: { id: string }
 }
 
 function isToolPart(part: UIMessage["parts"][number]): boolean {
@@ -61,10 +58,6 @@ function isToolPart(part: UIMessage["parts"][number]): boolean {
 function toolNameFor(part: ToolPart): string {
 	if (part.type.startsWith("tool-")) return part.type.replace(/^tool-/, "")
 	return part.toolName ?? "unknown"
-}
-
-function isPendingApproval(part: ToolPart): boolean {
-	return part.state === "approval-requested" && part.approval?.id != null
 }
 
 function deriveToolStatus(state: string): "running" | "completed" | "error" {
@@ -115,7 +108,6 @@ export function ChatConversation({
 	widgetFixContext,
 	readOnly = false,
 }: ChatConversationProps) {
-	const { orgId, getToken } = useAuth()
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	useTypeAnywhereFocus(textareaRef, isActive && !readOnly)
 
@@ -139,31 +131,10 @@ export function ChatConversation({
 			return next
 		})
 
-	const agentName = orgId ? `${orgId}:${tabId}` : tabId
-	const agent = useAgent({
-		agent: "ChatAgent",
-		name: agentName,
-		host: chatAgentUrl,
-		query: async () => ({ token: (await getToken()) ?? null }),
-		queryDeps: [orgId],
-	})
-
-	const prepareSendMessagesRequest = useMemo(
-		() => async (opts: { headers?: HeadersInit }) => {
-			const token = await getToken()
-			const headers = new Headers(opts.headers ?? {})
-			if (token) headers.set("Authorization", `Bearer ${token}`)
-			const out: Record<string, string> = {}
-			headers.forEach((value, key) => {
-				out[key] = value
-			})
-			return { headers: out }
-		},
-		[getToken],
-	)
-
-	const body = useMemo<Record<string, unknown>>(() => {
-		const base: Record<string, unknown> = { orgId }
+	// Per-conversation context, folded into the first message preamble by the
+	// adapter (Flue's `agents.send` carries only a message string).
+	const context = useMemo<ChatContext>(() => {
+		const base: ChatContext = {}
 		if (mode === "alert" && alertContext) {
 			base.mode = "alert"
 			base.alertContext = alertContext
@@ -180,48 +151,41 @@ export function ChatConversation({
 			base.pageContext = payload
 		}
 		return base
-	}, [orgId, mode, alertContext, widgetFixContext, activeContexts, referrerPath])
+	}, [mode, alertContext, widgetFixContext, activeContexts, referrerPath])
 
-	const getInitialMessages = useMemo(
-		() =>
-			async ({
-				url,
-			}: {
-				agent: string
-				name: string
-				url?: string
-			}) => {
-				const token = await getToken()
-				const baseUrl = url ?? agent.getHttpUrl()
-				const getMessagesUrl = new URL(baseUrl)
-				getMessagesUrl.pathname += "/get-messages"
-				const response = await fetch(getMessagesUrl.toString(), {
-					headers: token ? { Authorization: `Bearer ${token}` } : {},
-				})
-				if (!response.ok) return []
-				const text = await response.text()
-				if (!text.trim()) return []
-				try {
-					const parsed = JSON.parse(text) as unknown
-					return Array.isArray(parsed) ? autoTransformMessages(parsed) : []
-				} catch {
-					return []
-				}
-			},
-		[agent, getToken],
-	)
+	const { messages, status, isLoading, sendMessage } = useFlueChat({ tabId, context })
 
-	const { messages, sendMessage, status, addToolApprovalResponse } = useAgentChat({
-		agent,
-		body,
-		getInitialMessages,
-		prepareSendMessagesRequest,
+	// Apply an approved proposal via Maple's authenticated API (propose-then-apply).
+	const applyProposal = useAtomSet(MapleApiAtomClient.mutation("chat", "apply"), {
+		mode: "promiseExit",
 	})
+	const [resolvedApprovals, setResolvedApprovals] = useState<Map<string, "applied" | "denied">>(
+		() => new Map(),
+	)
+	const resolveApproval = (toolCallId: string, outcome: "applied" | "denied") =>
+		setResolvedApprovals((prev) => {
+			const next = new Map(prev)
+			next.set(toolCallId, outcome)
+			return next
+		})
+	const handleApprove = async (toolCallId: string, tool: string, input: unknown) => {
+		const exit = await applyProposal({ payload: { tool, input } })
+		if (Exit.isSuccess(exit)) {
+			if (exit.value.isError) {
+				toast.error(exit.value.content || `Couldn't apply ${tool}`)
+				return
+			}
+			resolveApproval(toolCallId, "applied")
+			toast.success("Change applied")
+		} else {
+			toast.error(`Failed to apply ${tool}`)
+		}
+	}
 
 	const [hasSettled, setHasSettled] = useState(false)
 	useEffect(() => {
 		setHasSettled(false)
-	}, [agentName])
+	}, [tabId])
 	useEffect(() => {
 		if (messages.length > 0) {
 			setHasSettled(true)
@@ -229,9 +193,8 @@ export function ChatConversation({
 		}
 		const t = setTimeout(() => setHasSettled(true), 600)
 		return () => clearTimeout(t)
-	}, [messages.length, agentName])
+	}, [messages.length, tabId])
 
-	const isLoading = status === "streaming" || status === "submitted"
 	useEffect(() => {
 		onLoadingChange?.(tabId, isLoading)
 	}, [tabId, isLoading, onLoadingChange])
@@ -252,7 +215,7 @@ export function ChatConversation({
 		if (messages.length === 0 && onFirstMessage) {
 			onFirstMessage(tabId, text.trim().slice(0, 40))
 		}
-		sendMessage({ text: text.trim() })
+		sendMessage(text.trim())
 	}
 
 	const widgetFixAutoSentRef = useRef<string | null>(null)
@@ -282,8 +245,9 @@ export function ChatConversation({
 									Shared conversation
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									This shared conversation is unavailable or empty. It may have been deleted, or
-									belong to a different workspace than the one you're signed in to.
+									This shared conversation is unavailable or empty. It may have been
+									deleted, or belong to a different workspace than the one you're signed in
+									to.
 								</p>
 							</div>
 						) : isAlertMode ? (
@@ -302,8 +266,8 @@ export function ChatConversation({
 									Diagnosing widget…
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									Maple AI is reading the broken widget config and the validation error.
-									It will propose a corrected widget JSON for you to approve.
+									Maple AI is reading the broken widget config and the validation error. It
+									will propose a corrected widget JSON for you to approve.
 								</p>
 							</div>
 						) : (
@@ -399,30 +363,42 @@ export function ChatConversation({
 													const part = message.parts[i]!
 													if (part.type === "text") {
 														flushTools()
-														nodes.push(<RichText key={`text-${i}`}>{part.text}</RichText>)
+														nodes.push(
+															<RichText key={`text-${i}`}>
+																{part.text}
+															</RichText>,
+														)
 														continue
 													}
 													if (isToolPart(part)) {
 														const tp = part as ToolPart
-														if (isPendingApproval(tp)) {
+														const proposal =
+															tp.state === "output-available"
+																? parseToolProposal(tp.output)
+																: null
+														if (proposal) {
 															flushTools()
+															const resolved = resolvedApprovals.get(
+																tp.toolCallId,
+															)
 															nodes.push(
 																<ApprovalCard
 																	key={tp.toolCallId ?? `approval-${i}`}
-																	toolName={toolNameFor(tp)}
-																	input={tp.input}
-																	approvalId={tp.approval!.id}
-																	onApprove={(id) =>
-																		addToolApprovalResponse({
-																			id,
-																			approved: true,
-																		})
+																	toolName={proposal.tool}
+																	input={proposal.input}
+																	resolved={resolved}
+																	onApprove={() =>
+																		handleApprove(
+																			tp.toolCallId,
+																			proposal.tool,
+																			proposal.input,
+																		)
 																	}
-																	onDeny={(id) =>
-																		addToolApprovalResponse({
-																			id,
-																			approved: false,
-																		})
+																	onDeny={() =>
+																		resolveApproval(
+																			tp.toolCallId,
+																			"denied",
+																		)
 																	}
 																/>,
 															)
@@ -485,7 +461,10 @@ export function ChatConversation({
 							disabled={isLoading}
 						/>
 						<PromptInputFooter>
-							<PromptInputSubmit status={status} disabled={isLoading && status !== "streaming"} />
+							<PromptInputSubmit
+								status={status}
+								disabled={isLoading && status !== "streaming"}
+							/>
 						</PromptInputFooter>
 					</PromptInput>
 				</div>
@@ -494,7 +473,7 @@ export function ChatConversation({
 	)
 }
 
-export function ConversationLoadingSkeleton() {
+function ConversationLoadingSkeleton() {
 	return (
 		<div className="flex flex-col gap-3 py-6" aria-hidden>
 			<div className="h-3 w-1/2 animate-pulse rounded bg-muted" />

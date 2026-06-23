@@ -53,6 +53,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							...row,
 							sessionId: decodeSessionId(row.sessionId),
 							userId: row.userId ? decodeUserId(row.userId) : null,
+							// `length()` is UInt64; the ClickHouse path JSON-quotes it as a
+							// string while the Tinybird path returns a number. Coerce before
+							// Schema.Number validates the response (see the facets handler).
+							traceCount: Number(row.traceCount),
 						})),
 					})
 				}),
@@ -188,6 +192,9 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						data: rows.map((row) => ({
 							...row,
 							traceId: decodeTraceId(row.traceId),
+							// `count()` is UInt64 — same ClickHouse JSON-string coercion as
+							// listReplays' traceCount; coerce before Schema.Number validates.
+							spanCount: Number(row.spanCount),
 						})),
 					})
 				}),

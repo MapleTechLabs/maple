@@ -1,60 +1,11 @@
 /**
- * The `Channel` module provides a powerful abstraction for bi-directional communication
- * and streaming operations. A `Channel` is a nexus of I/O operations that supports both
- * reading and writing, forming the foundation for Effect's Stream and Sink abstractions.
+ * Provides low-level building blocks for streaming data through Effect.
  *
- * ## What is a Channel?
- *
- * A `Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>` represents:
- * - **OutElem**: The type of elements the channel outputs
- * - **OutErr**: The type of errors the channel can produce
- * - **OutDone**: The type of the final value when the channel completes
- * - **InElem**: The type of elements the channel reads
- * - **InErr**: The type of errors the channel can receive
- * - **InDone**: The type of the final value from upstream
- * - **Env**: The environment/context required by the channel
- *
- * ## Key Features
- *
- * - **Bi-directional**: Channels can both read and write
- * - **Composable**: Channels can be piped, sequenced, and concatenated
- * - **Resource-safe**: Automatic cleanup and resource management
- * - **Error-handling**: Built-in error propagation and handling
- * - **Concurrent**: Support for concurrent operations
- *
- * ## Composition Patterns
- *
- * 1. **Piping**: Connect channels where output of one becomes input of another
- * 2. **Sequencing**: Use the result of one channel to create another
- * 3. **Concatenating**: Combine multiple channels into a single channel
- *
- * **Example** (Creating a simple channel)
- *
- * ```ts
- * import { Channel } from "effect"
- *
- * // Simple channel that outputs numbers
- * const numberChannel = Channel.succeed(42)
- *
- * // Transform channel that doubles values
- * const doubleChannel = Channel.map(numberChannel, (n) => n * 2)
- *
- * // Running the channel would output: 84
- * ```
- *
- * **Example** (Transforming array-backed channels)
- *
- * ```ts
- * import { Channel } from "effect"
- *
- * // Channel from an array of values
- * const arrayChannel = Channel.fromArray([1, 2, 3, 4, 5])
- *
- * // Transform the channel by mapping over values
- * const transformedChannel = Channel.map(arrayChannel, (n) => n * 2)
- *
- * // This channel will output: 2, 4, 6, 8, 10
- * ```
+ * A `Channel` can read input elements, write output elements, fail with a typed
+ * error, and finish with a typed result while managing resources safely.
+ * Streams and sinks are built on channels, so most application code uses those
+ * higher-level modules instead. This module is useful when implementing stream
+ * operators or specialized streaming workflows.
  *
  * @since 2.0.0
  */
@@ -97,7 +48,7 @@ import type * as Unify from "./Unify.ts"
 /**
  * String literal type used as the unique brand for `Channel` values.
  *
- * @category Type Identifiers
+ * @category type IDs
  * @since 4.0.0
  */
 export type TypeId = "~effect/Channel"
@@ -106,13 +57,13 @@ export type TypeId = "~effect/Channel"
  * Runtime identifier stored on `Channel` values and used by `isChannel` to
  * recognize them.
  *
- * @category Type Identifiers
+ * @category type IDs
  * @since 4.0.0
  */
 export const TypeId: TypeId = "~effect/Channel"
 
 /**
- * Tests if a value is a `Channel`.
+ * Checks whether a value is a `Channel`.
  *
  * **Example** (Checking for channels)
  *
@@ -424,6 +375,13 @@ export const fromPull = <OutElem, OutErr, OutDone, EX, EnvX, Env>(
  * pulls, but also provides a forked scope that closes when the resulting
  * Channel completes.
  *
+ * **When to use**
+ *
+ * Use when building channels that require scoped resource lifecycle management,
+ * providing both the channel scope and a forked scope that automatically closes
+ * when the channel completes.
+ *
+ * @see {@link fromTransform} for a simpler transformation without a forked scope
  * @category constructors
  * @since 4.0.0
  */
@@ -907,9 +865,9 @@ export const endSync = <A>(evaluate: LazyArg<A>): Channel<never, never, A> =>
 export const sync = <A>(evaluate: LazyArg<A>): Channel<A> => fromEffect(Effect.sync(evaluate))
 
 /**
- * Represents an Channel that emits no elements
+ * Represents a `Channel` that emits no elements.
  *
- * **Example** (Using empty channels)
+ * **Example** (Creating empty channels)
  *
  * ```ts
  * import { Channel } from "effect"
@@ -932,9 +890,9 @@ export const sync = <A>(evaluate: LazyArg<A>): Channel<A> => fromEffect(Effect.s
 export const empty: Channel<never> = fromPull(Effect.succeed(Cause.done()))
 
 /**
- * Represents an Channel that never completes
+ * Represents a `Channel` that never completes.
  *
- * **Example** (Using non-terminating channels)
+ * **Example** (Creating non-terminating channels)
  *
  * ```ts
  * import { Channel } from "effect"
@@ -994,6 +952,11 @@ export const fail = <E>(error: E): Channel<never, E, never> => fromPull(Effect.s
  * Constructs a channel that fails immediately with the specified lazily
  * evaluated error.
  *
+ * **When to use**
+ *
+ * Use when the error value should be computed each time the channel runs instead
+ * of when the channel is constructed.
+ *
  * **Example** (Failing with a lazy error)
  *
  * ```ts
@@ -1026,6 +989,11 @@ export const failSync = <E>(evaluate: LazyArg<E>): Channel<never, E, never> => f
 
 /**
  * Constructs a channel that fails immediately with the specified `Cause`.
+ *
+ * **When to use**
+ *
+ * Use when the channel failure must preserve a full `Cause`, such as defects,
+ * interruptions, or combined failures.
  *
  * **Example** (Failing with causes)
  *
@@ -1107,7 +1075,7 @@ export const failCauseSync = <E>(
 export const die = (defect: unknown): Channel<never, never, never> => failCause(Cause.die(defect))
 
 /**
- * Use an effect to write a single value to the channel.
+ * Uses an effect to write a single value to the channel.
  *
  * **Example** (Creating channels from effects)
  *
@@ -1174,7 +1142,7 @@ export const fromEffectDone = <A, E, R>(
   fromPull(Effect.succeed(Effect.flatMap(effect, Cause.done)))
 
 /**
- * Use an effect and discard its result.
+ * Uses an effect and discards its result.
  *
  * @category constructors
  * @since 4.0.0
@@ -1201,7 +1169,7 @@ export const fromEffectTake = <A, E, Done, E2, R>(
   fromPull(Effect.succeed(Effect.flatMap(effect, Take.toPull)))
 
 /**
- * Create a channel from a queue
+ * Creates a channel from a queue.
  *
  * **Example** (Creating channels from queues)
  *
@@ -1244,7 +1212,7 @@ export const fromQueue = <A, E>(
 ): Channel<A, Exclude<E, Cause.Done>> => fromPull(Effect.succeed(Queue.take(queue)))
 
 /**
- * Create a channel from a queue that emits arrays of elements
+ * Creates a channel from a queue that emits arrays of elements.
  *
  * **Example** (Creating batched channels from queues)
  *
@@ -1301,7 +1269,7 @@ export const identity = <Elem, Err, Done>(): Channel<Elem, Err, Done, Elem, Err,
   fromTransform((upstream, _scope) => Effect.succeed(upstream))
 
 /**
- * Create a channel from a PubSub subscription
+ * Creates a channel from a PubSub subscription.
  *
  * **Example** (Creating channels from subscriptions)
  *
@@ -1349,7 +1317,7 @@ export const fromSubscription = <A>(
 ): Channel<A> => fromPull(Effect.succeed(Effect.onInterrupt(PubSub.take(subscription), () => Cause.done())))
 
 /**
- * Create a channel from a PubSub subscription that outputs arrays of values.
+ * Creates a channel from a PubSub subscription that outputs arrays of values.
  *
  * **Details**
  *
@@ -1456,7 +1424,7 @@ export const fromSubscriptionArray = <A>(
   fromPull(Effect.succeed(Effect.onInterrupt(PubSub.takeAll(subscription), () => Cause.done())))
 
 /**
- * Create a channel from a PubSub that outputs individual values.
+ * Creates a channel from a PubSub that outputs individual values.
  *
  * **Details**
  *
@@ -1553,7 +1521,7 @@ export const fromPubSub = <A>(
 ): Channel<A> => unwrap(Effect.map(PubSub.subscribe(pubsub), fromSubscription))
 
 /**
- * Create a channel from a PubSub that outputs arrays of values.
+ * Creates a channel from a PubSub that outputs arrays of values.
  *
  * **Details**
  *
@@ -1841,6 +1809,11 @@ export const mapDone: {
 /**
  * Maps the done value of this channel using the specified effectful function.
  *
+ * **When to use**
+ *
+ * Use when the terminal done value transformation needs services or can fail,
+ * while emitted elements should pass through unchanged.
+ *
  * @category sequencing
  * @since 4.0.0
  */
@@ -1874,6 +1847,11 @@ const concurrencyIsSequential = (
 /**
  * Maps each output element with an effectful function, preserving the source
  * channel's done value.
+ *
+ * **When to use**
+ *
+ * Use when transforming each channel output needs an Effect, service
+ * dependency, failure channel, or configured concurrency.
  *
  * **Details**
  *
@@ -2208,7 +2186,7 @@ export const tap: {
  * sequentially. Use `options.concurrency` and `options.bufferSize` to run child
  * channels concurrently.
  *
- * **Example** (FlatMapping channel output)
+ * **Example** (Flat mapping channel output)
  *
  * ```ts
  * import { Channel, Data } from "effect"
@@ -2619,11 +2597,18 @@ export const concat: {
 > => concatWith(self, (_) => that))
 
 /**
- * Combines the elements from this channel and the specified channel by
- * repeatedly applying the function `f` to extract an element using both sides
- * and conceptually "offer" it to the destination channel. `f` can maintain
- * some internal state to control the combining process, with the initial
- * state being specified by `s`.
+ * Combines two channels with a stateful pull function.
+ *
+ * **When to use**
+ *
+ * Use to coordinate pulling from two channels when each output element depends
+ * on both sides and local state.
+ *
+ * **Details**
+ *
+ * The combining function receives the current state and pull functions for the
+ * left and right channels. It returns the next output element together with the
+ * next state.
  *
  * @category sequencing
  * @since 4.0.0
@@ -2842,7 +2827,7 @@ export const orElseIfEmpty: {
   ))
 
 /**
- * Flatten a channel of channels.
+ * Flattens a channel of channels.
  *
  * **Example** (Flattening nested channels)
  *
@@ -2921,7 +2906,7 @@ export const flatten = <
  * // Outputs: 1, 2, 3, 4, 5, 6, 7, 8, 9
  * ```
  *
- * @category utils
+ * @category transforming
  * @since 4.0.0
  */
 export const flattenArray = <
@@ -2972,7 +2957,7 @@ export const flattenArray = <
  * Output `Take` values are emitted as non-empty arrays. Failed `Take` values
  * fail the returned channel. Done `Take` values complete the returned channel.
  *
- * @category utils
+ * @category transforming
  * @since 4.0.0
  */
 export const flattenTake = <
@@ -3036,7 +3021,7 @@ export const drain = <
 /**
  * Repeats this channel according to the provided schedule.
  *
- * @category utils
+ * @category repetition
  * @since 4.0.0
  */
 export const repeat: {
@@ -3096,7 +3081,7 @@ export const repeat: {
 /**
  * Repeats this channel forever.
  *
- * @category utils
+ * @category repetition
  * @since 4.0.0
  */
 export const forever = <OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>(
@@ -3114,7 +3099,7 @@ export const forever = <OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>(
  * fails. If the schedule finishes, the returned channel completes with the
  * schedule output.
  *
- * @category utils
+ * @category sequencing
  * @since 4.0.0
  */
 export const schedule: {
@@ -3214,11 +3199,20 @@ export const filter: {
 /**
  * Filters and maps output elements using a `Filter`.
  *
+ * **When to use**
+ *
+ * Use to keep only channel output elements accepted by a `Filter` and emit
+ * each filter success value.
+ *
  * **Details**
  *
  * Successful filter results are emitted as mapped values. Failed filter
  * results are discarded. The source channel's errors and done value are
  * preserved.
+ *
+ * @see {@link filter} for keeping original output elements with a predicate
+ * @see {@link filterMapEffect} for using an effectful `Filter`
+ * @see {@link filterMapArray} for filtering arrays of output elements
  *
  * @category filtering
  * @since 4.0.0
@@ -3252,6 +3246,11 @@ export const filterMap: {
 
 /**
  * Filters output elements with an effectful predicate.
+ *
+ * **When to use**
+ *
+ * Use when the keep/discard decision depends on an Effect or service and
+ * predicate failures should fail the returned channel.
  *
  * **Details**
  *
@@ -3295,11 +3294,21 @@ export const filterEffect: {
 /**
  * Filters and maps output elements using an effectful `Filter`.
  *
+ * **When to use**
+ *
+ * Use to apply effectful logic that can discard channel output elements and
+ * emit transformed values for the elements that pass.
+ *
  * **Details**
  *
  * Successful filter results are emitted as mapped values. Failed filter
  * results are discarded. Failures from the effectful filter fail the returned
  * channel.
+ *
+ * @see {@link filterMap} for using a synchronous `Filter`
+ * @see {@link filterEffect} for effectfully keeping original output elements
+ * @see {@link mapEffect} for effectfully transforming every output element
+ * @see {@link filterMapArrayEffect} for effectful filtering of array outputs
  *
  * @category filtering
  * @since 4.0.0
@@ -3456,6 +3465,11 @@ export const filterMapArray: {
  * Filters each element inside emitted non-empty arrays with an effectful
  * predicate.
  *
+ * **When to use**
+ *
+ * Use when filtering array-valued channel outputs requires Effects or services,
+ * and arrays that become empty should be skipped.
+ *
  * **Details**
  *
  * The predicate receives the element and its index within the array. Elements
@@ -3492,6 +3506,11 @@ export const filterArrayEffect: {
 /**
  * Filters and maps each element inside emitted non-empty arrays using an
  * effectful `Filter`.
+ *
+ * **When to use**
+ *
+ * Use when array-valued channel outputs need an effectful filter-map that can
+ * fail and can discard arrays that become empty.
  *
  * **Details**
  *
@@ -3531,7 +3550,7 @@ export const filterMapArrayEffect: {
     ))))
 
 /**
- * Statefully maps over a channel with an accumulator, where each element can produce multiple output values.
+ * Maps over a channel statefully with an accumulator, where each element can produce multiple output values.
  *
  * **Example** (Mapping with accumulated state)
  *
@@ -3672,7 +3691,7 @@ export const mapAccum: {
 )
 
 /**
- * Statefully transforms a channel by scanning over its output with an accumulator function.
+ * Transforms a channel statefully by scanning over its output with an accumulator function.
  * Emits the intermediate results of the scan operation.
  *
  * **Example** (Scanning channel output)
@@ -3731,8 +3750,13 @@ export const scan: {
   scanEffect(self, initial, (s, a) => Effect.succeed(f(s, a))))
 
 /**
- * Statefully transforms a channel by scanning over its output with an effectful accumulator function.
+ * Transforms a channel statefully by scanning over its output with an effectful accumulator function.
  * Emits the intermediate results of the scan operation.
+ *
+ * **When to use**
+ *
+ * Use when maintaining accumulated state over channel output requires Effects
+ * or can fail, while still emitting each intermediate state.
  *
  * **Example** (Scanning channel output with effects)
  *
@@ -3958,6 +3982,11 @@ export const catchCause: {
  * Runs an effect with the full failure `Cause` when the channel fails, then
  * fails the returned channel with the original cause.
  *
+ * **When to use**
+ *
+ * Use when observing the full channel failure `Cause` is needed without
+ * changing successful output or replacing the original cause.
+ *
  * **Details**
  *
  * Use this for observing failures, such as logging or metrics. If the observer
@@ -4035,6 +4064,21 @@ export const tapCause: {
 /**
  * Catches causes of failure that match a specific filter, allowing
  * conditional error recovery based on the type of failure.
+ *
+ * **When to use**
+ *
+ * Use to recover a channel only when its full `Cause` satisfies a boolean
+ * predicate.
+ *
+ * **Details**
+ *
+ * When the predicate matches, the recovery function receives the original
+ * cause. When it does not match, the returned channel fails with the original
+ * cause.
+ *
+ * @see {@link catchCauseFilter} for selecting causes with a `Filter`
+ * @see {@link catchCause} for recovering from every cause
+ * @see {@link catchIf} for recovering from typed channel errors
  *
  * @category error handling
  * @since 4.0.0
@@ -4146,11 +4190,21 @@ export const catchCauseIf: {
 /**
  * Recovers from channel failures whose full `Cause` is selected by a `Filter`.
  *
+ * **When to use**
+ *
+ * Use when you need to recover a channel only from causes selected by a
+ * `Filter`, while giving the recovery both the selected value and the original
+ * `Cause`.
+ *
  * **Details**
  *
  * When the filter succeeds, the recovery function receives the selected value
  * and the original cause. When the filter fails, the returned channel fails
  * with the residual cause produced by the filter.
+ *
+ * @see {@link catchCauseIf} for selecting causes with a predicate
+ * @see {@link catchFilter} for selecting typed errors with a `Filter`
+ * @see {@link catchCause} for recovering from every cause
  *
  * @category error handling
  * @since 4.0.0
@@ -4448,11 +4502,21 @@ export const tapError: {
 /**
  * Recovers from typed channel errors that match a predicate or refinement.
  *
+ * **When to use**
+ *
+ * Use to recover from typed channel errors when a predicate or refinement
+ * selects the failures that should switch to a recovery channel.
+ *
  * **Details**
  *
  * Matching errors are handled by the recovery function. Non-matching errors
  * are handled by `orElse` when provided. Without `orElse`, non-matching errors
  * are re-failed.
+ *
+ * @see {@link catch_ catch} for recovering from every typed channel error
+ * @see {@link catchFilter} for selecting typed errors with a `Filter`
+ * @see {@link catchTag} for selecting tagged typed errors
+ * @see {@link catchCauseFilter} for selecting full causes with a `Filter`
  *
  * @category error handling
  * @since 4.0.0
@@ -4468,8 +4532,8 @@ export const catchIf: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = Exclude<OutErr, EB>,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4491,8 +4555,8 @@ export const catchIf: {
     InDone,
     Env
   >(self: Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>) => Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? Exclude<OutErr, EB> : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4508,8 +4572,8 @@ export const catchIf: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = OutErr,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4531,8 +4595,8 @@ export const catchIf: {
     InDone,
     Env
   >(self: Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>) => Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? OutErr : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4555,8 +4619,8 @@ export const catchIf: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = Exclude<OutErr, EB>,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4572,8 +4636,8 @@ export const catchIf: {
       ) => Channel<OutElem2, OutErr2, OutDone2, InElem2, InErr2, InDone2, Env2>)
       | undefined
   ): Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? Exclude<OutErr, EB> : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4595,8 +4659,8 @@ export const catchIf: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = OutErr,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4612,8 +4676,8 @@ export const catchIf: {
       ) => Channel<OutElem2, OutErr2, OutDone2, InElem2, InErr2, InDone2, Env2>)
       | undefined
   ): Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? OutErr : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4682,11 +4746,20 @@ export const catchIf: {
 /**
  * Recovers from typed channel errors selected by a `Filter`.
  *
+ * **When to use**
+ *
+ * Use to recover from channel errors with a reusable `Filter` when matching
+ * can also narrow or transform the error before choosing the recovery channel.
+ *
  * **Details**
  *
  * Successful filter results are handled by the recovery function. Failed
  * filter results are handled by `orElse` when provided. Without `orElse`,
  * failed filter results are re-failed.
+ *
+ * @see {@link catchIf} for selecting typed errors with a predicate
+ * @see {@link catchTag} for selecting tagged typed errors
+ * @see {@link catchCauseFilter} for selecting full causes with a `Filter`
  *
  * @category error handling
  * @since 4.0.0
@@ -4703,8 +4776,8 @@ export const catchFilter: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = X,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4726,8 +4799,8 @@ export const catchFilter: {
     InDone,
     Env
   >(self: Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>) => Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? X : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4751,8 +4824,8 @@ export const catchFilter: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = X,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4768,8 +4841,8 @@ export const catchFilter: {
       ) => Channel<OutElem2, OutErr2, OutDone2, InElem2, InErr2, InDone2, Env2>)
       | undefined
   ): Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    OutErr1 | OutErr2 | (OutElem2 extends Types.unassigned ? X : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4861,8 +4934,8 @@ export const catchTag: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = Types.ExcludeTag<OutErr, K extends Arr.NonEmptyReadonlyArray<string> ? K[number] : K>,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4886,8 +4959,12 @@ export const catchTag: {
     InDone,
     Env
   >(self: Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>) => Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    | OutErr1
+    | OutErr2
+    | (OutElem2 extends Types.unassigned
+      ? Types.ExcludeTag<OutErr, K extends Arr.NonEmptyReadonlyArray<string> ? K[number] : K>
+      : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -4910,8 +4987,8 @@ export const catchTag: {
     InErr1,
     InDone1,
     Env1,
-    OutElem2 = never,
-    OutErr2 = Types.ExcludeTag<OutErr, K extends Arr.NonEmptyReadonlyArray<string> ? K[number] : K>,
+    OutElem2 = Types.unassigned,
+    OutErr2 = never,
     OutDone2 = never,
     InElem2 = unknown,
     InErr2 = unknown,
@@ -4929,8 +5006,12 @@ export const catchTag: {
       ) => Channel<OutElem2, OutErr2, OutDone2, InElem2, InErr2, InDone2, Env2>)
       | undefined
   ): Channel<
-    OutElem | OutElem1 | OutElem2,
-    OutErr1 | OutErr2,
+    OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
+    | OutErr1
+    | OutErr2
+    | (OutElem2 extends Types.unassigned
+      ? Types.ExcludeTag<OutErr, K extends Arr.NonEmptyReadonlyArray<string> ? K[number] : K>
+      : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -5063,7 +5144,10 @@ export const catchReason: {
     self: Channel<OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>
   ) => Channel<
     OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
-    (OutElem2 extends Types.unassigned ? OutErr : Types.ExcludeTag<OutErr, K>) | OutErr1 | OutErr2,
+    | Types.ExcludeTag<OutErr, K>
+    | OutErr1
+    | OutErr2
+    | (OutElem2 extends Types.unassigned ? Types.ExtractTag<OutErr, K> : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -5110,7 +5194,10 @@ export const catchReason: {
       | undefined
   ): Channel<
     OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
-    (OutElem2 extends Types.unassigned ? OutErr : Types.ExcludeTag<OutErr, K>) | OutErr1 | OutErr2,
+    | Types.ExcludeTag<OutErr, K>
+    | OutErr1
+    | OutErr2
+    | (OutElem2 extends Types.unassigned ? Types.ExtractTag<OutErr, K> : never),
     OutDone | OutDone1 | OutDone2,
     InElem & InElem1 & InElem2,
     InErr & InErr1 & InErr2,
@@ -5157,7 +5244,10 @@ export const catchReason: {
     | undefined
 ): Channel<
   OutElem | OutElem1 | Exclude<OutElem2, Types.unassigned>,
-  (OutElem2 extends Types.unassigned ? OutErr : Types.ExcludeTag<OutErr, K>) | OutErr1 | OutErr2,
+  | Types.ExcludeTag<OutErr, K>
+  | OutErr1
+  | OutErr2
+  | (OutElem2 extends Types.unassigned ? Types.ExtractTag<OutErr, K> : never),
   OutDone | OutDone1 | OutDone2,
   InElem & InElem1 & InElem2,
   InErr & InErr1 & InErr2,
@@ -5227,8 +5317,9 @@ export const catchReasons: {
       [RK in keyof Cases]: Cases[RK] extends
         (...args: Array<any>) => Channel<infer OutElem1, any, any, any, any, any, any> ? OutElem1 : never
     }[keyof Cases],
-    | (OutElem2 extends Types.unassigned ? OutErr : Types.ExcludeTag<OutErr, K>)
+    | Types.ExcludeTag<OutErr, K>
     | OutErr2
+    | (OutElem2 extends Types.unassigned ? Types.ExtractTag<OutErr, K> : never)
     | {
       [RK in keyof Cases]: Cases[RK] extends
         (...args: Array<any>) => Channel<any, infer OutErr1, any, any, any, any, any> ? OutErr1 : never
@@ -5303,8 +5394,9 @@ export const catchReasons: {
       [RK in keyof Cases]: Cases[RK] extends
         (...args: Array<any>) => Channel<infer OutElem1, any, any, any, any, any, any> ? OutElem1 : never
     }[keyof Cases],
-    | (OutElem2 extends Types.unassigned ? OutErr : Types.ExcludeTag<OutErr, K>)
+    | Types.ExcludeTag<OutErr, K>
     | OutErr2
+    | (OutElem2 extends Types.unassigned ? Types.ExtractTag<OutErr, K> : never)
     | {
       [RK in keyof Cases]: Cases[RK] extends
         (...args: Array<any>) => Channel<any, infer OutErr1, any, any, any, any, any> ? OutErr1 : never
@@ -5576,6 +5668,11 @@ const ignoreCause_ = <
 /**
  * Ignores all errors in the channel including defects, converting them to an empty channel.
  *
+ * **When to use**
+ *
+ * Use when a channel should become best-effort and all failure causes, including
+ * defects and interruptions, can be converted to empty output.
+ *
  * **Details**
  *
  * Use the `log` option to emit the full {@link Cause} when the channel fails.
@@ -5615,7 +5712,7 @@ export const ignoreCause: <
  * Returns a new channel that retries this channel according to the specified
  * schedule whenever it fails.
  *
- * @category utils
+ * @category error handling
  * @since 4.0.0
  */
 export const retry: {
@@ -5811,6 +5908,11 @@ export const switchMap: {
 /**
  * Merges multiple channels with specified concurrency and buffering options.
  *
+ * **When to use**
+ *
+ * Use when channel outputs are themselves channels and multiple inner channels
+ * should run with configured concurrency and buffering.
+ *
  * **Example** (Merging nested channels)
  *
  * ```ts
@@ -5836,7 +5938,7 @@ export const switchMap: {
  * // Outputs: 1, 2, 3, 4, 5, 6 (order may vary due to concurrency)
  * ```
  *
- * @category utils
+ * @category combining
  * @since 2.0.0
  */
 export const mergeAll: {
@@ -6022,7 +6124,7 @@ export type HaltStrategy = "left" | "right" | "both" | "either"
  * // Order may vary: 1, "a", 2, "b", 3, "c"
  * ```
  *
- * @category utils
+ * @category combining
  * @since 4.0.0
  */
 export const merge: {
@@ -6165,12 +6267,17 @@ export const merge: {
  * Runs an effect concurrently with a channel while emitting only the channel's
  * output elements.
  *
+ * **When to use**
+ *
+ * Use when a side effect should run for the lifetime of a channel and only the
+ * channel's output elements should be emitted.
+ *
  * **Details**
  *
  * The effect's successful value is ignored. If the effect fails while the
  * channel is running, the returned channel fails with that error.
  *
- * @category utils
+ * @category combining
  * @since 4.0.0
  */
 export const mergeEffect: {
@@ -6402,7 +6509,7 @@ export const encodeText = <Err, Done>(): Channel<
  * // Outputs: 2, 4, 6
  * ```
  *
- * @category utils
+ * @category sequencing
  * @since 2.0.0
  */
 export const pipeTo: {
@@ -6450,7 +6557,7 @@ export const pipeTo: {
  * // Source errors are preserved and not sent to transform channel
  * ```
  *
- * @category utils
+ * @category sequencing
  * @since 2.0.0
  */
 export const pipeToOrFail: {
@@ -6535,7 +6642,7 @@ export const unwrap = <OutElem, OutErr, OutDone, InElem, InErr, InDone, R2, E, R
  * Runs a channel with a scope provided for the duration of the channel
  * execution, removing the channel's `Scope` requirement.
  *
- * @category utils
+ * @category resource management
  * @since 2.0.0
  */
 export const scoped = <OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>(
@@ -6579,7 +6686,7 @@ export const scoped = <OutElem, OutErr, OutDone, InElem, InErr, InDone, Env>(
  * )
  * ```
  *
- * @category utils
+ * @category sequencing
  * @since 2.0.0
  */
 export const embedInput: {
@@ -6613,8 +6720,26 @@ export const embedInput: {
 )
 
 /**
- * Allows a faster producer to progress independently of a slower consumer by
- * buffering up to `capacity` elements in a queue.
+ * Buffers individual output elements in a queue with the configured `capacity`
+ * so a faster producer can progress independently of a slower consumer.
+ *
+ * **When to use**
+ *
+ * Use when output elements can be decoupled from downstream demand and the
+ * configured backpressure or loss strategy is acceptable.
+ *
+ * **Details**
+ *
+ * Finite queues use the `strategy` option. The default `"suspend"` strategy
+ * applies backpressure, while `"dropping"` and `"sliding"` can discard output
+ * elements when the queue is full. `"unbounded"` capacity does not use a finite
+ * capacity strategy.
+ *
+ * **Gotchas**
+ *
+ * Dropping and sliding strategies can lose output elements under backpressure.
+ *
+ * @see {@link bufferArray} for buffering elements from array outputs
  *
  * @category Buffering
  * @since 2.0.0
@@ -6659,8 +6784,28 @@ export const buffer: {
   })))
 
 /**
- * Allows a faster producer to progress independently of a slower consumer by
- * buffering up to `capacity` elements in a queue.
+ * Buffers array output elements in a queue with the configured `capacity` so a
+ * faster producer can progress independently of a slower consumer.
+ *
+ * **When to use**
+ *
+ * Use when emitted arrays are batches of elements and it is acceptable for
+ * buffering to flatten and rebuild those batches.
+ *
+ * **Details**
+ *
+ * Finite queues use the `strategy` option. The default `"suspend"` strategy
+ * applies backpressure, while `"dropping"` and `"sliding"` can discard output
+ * elements when the queue is full. `"unbounded"` capacity does not use a finite
+ * capacity strategy.
+ *
+ * **Gotchas**
+ *
+ * Input arrays are offered to the queue element-by-element and outputs are
+ * rebuilt from the currently available queued elements, so upstream array
+ * boundaries are not preserved.
+ *
+ * @see {@link buffer} for buffering output elements without flattening arrays
  *
  * @category Buffering
  * @since 4.0.0
@@ -6705,15 +6850,20 @@ export const bufferArray: {
   })))
 
 /**
- * Returns a new channel, which is the same as this one, except it will be
- * interrupted when the specified effect completes. If the effect completes
- * successfully before the underlying channel is done, then the returned
- * channel will yield the success value of the effect as its terminal value.
- * On the other hand, if the underlying channel finishes first, then the
- * returned channel will yield the success value of the underlying channel as
- * its terminal value.
+ * Interrupts a channel when another effect completes.
  *
- * @category utils
+ * **When to use**
+ *
+ * Use to race channel execution against an external effect whose success can
+ * become the channel's done value.
+ *
+ * **Details**
+ *
+ * If the effect completes first, its success value becomes the returned
+ * channel's done value. If the channel completes first, the original channel's
+ * done value is preserved.
+ *
+ * @category interruption
  * @since 2.0.0
  */
 export const interruptWhen: {
@@ -6737,7 +6887,7 @@ export const interruptWhen: {
   ))
 
 /**
- * Halts a channel when the specified effect completes or fails.
+ * Stops a channel when the specified effect completes or fails.
  *
  * **Details**
  *
@@ -6746,7 +6896,7 @@ export const interruptWhen: {
  * fails with that error. If the channel completes first, the channel's done
  * value is preserved.
  *
- * @category utils
+ * @category interruption
  * @since 4.0.0
  */
 export const haltWhen: {
@@ -6786,7 +6936,7 @@ export const haltWhen: {
  * The finalizer receives the failure `Cause`. The original channel failure is
  * preserved. The finalizer itself must not fail.
  *
- * @category utils
+ * @category error handling
  * @since 4.0.0
  */
 export const onError: {
@@ -6806,9 +6956,8 @@ export const onError: {
   onExit(self, (exit) => Exit.isFailure(exit) ? finalizer(exit.cause) : Effect.void))
 
 /**
- * Returns a new channel with an attached finalizer. The finalizer is
- * guaranteed to be executed so long as the channel begins execution (and
- * regardless of whether or not it completes).
+ * Returns a channel with an exit-aware finalizer that is guaranteed to run once
+ * the channel begins execution, whether it succeeds or fails.
  *
  * **Example** (Running exit finalizers)
  *
@@ -6832,7 +6981,7 @@ export const onError: {
  * })
  * ```
  *
- * @category utils
+ * @category resource management
  * @since 4.0.0
  */
 export const onExit: {
@@ -6863,7 +7012,7 @@ export const onExit: {
  * The effect's successful value is ignored. If the effect fails, the returned
  * channel fails before running the source channel.
  *
- * @category utils
+ * @category hooks
  * @since 4.0.0
  */
 export const onStart: {
@@ -6884,13 +7033,18 @@ export const onStart: {
 /**
  * Runs an effect the first time the channel emits an output element.
  *
+ * **When to use**
+ *
+ * Use when initialization depends on the first output element rather than only
+ * on channel startup.
+ *
  * **Details**
  *
  * The effect receives the first emitted element. The first element is still
  * emitted unchanged. The effect is not run if the channel completes without
  * emitting an element.
  *
- * @category utils
+ * @category hooks
  * @since 4.0.0
  */
 export const onFirst: {
@@ -6926,7 +7080,7 @@ export const onFirst: {
  * not run when the channel fails. If the effect fails, the returned channel
  * fails with that error.
  *
- * @category utils
+ * @category hooks
  * @since 4.0.0
  */
 export const onEnd: {
@@ -6950,9 +7104,8 @@ export const onEnd: {
     ))))
 
 /**
- * Returns a new channel with an attached finalizer. The finalizer is
- * guaranteed to be executed so long as the channel begins execution (and
- * regardless of whether or not it completes).
+ * Returns a channel with a finalizer effect that is guaranteed to run once the
+ * channel begins execution, whether it succeeds or fails.
  *
  * **Example** (Ensuring cleanup runs)
  *
@@ -6973,7 +7126,7 @@ export const onEnd: {
  * )
  * ```
  *
- * @category utils
+ * @category resource management
  * @since 2.0.0
  */
 export const ensuring: {
@@ -7015,7 +7168,7 @@ const runWith = <
   })
 
 /**
- * Create a channel from the specified services.
+ * Creates a channel from the specified services.
  *
  * @category services
  * @since 2.0.0
@@ -7087,8 +7240,12 @@ export const provideService: {
   ))
 
 /**
- * Evaluates an effect to obtain a service, then provides that service to the
- * channel.
+ * Provides a service to the channel after obtaining it from an effect.
+ *
+ * **When to use**
+ *
+ * Use to supply a channel dependency when constructing the service itself is
+ * effectful or can fail.
  *
  * **Details**
  *
@@ -7292,7 +7449,7 @@ const withSpanImpl = <OutElem, OutErr, OutDone, InElem, InErr, InDone, R>(
 /**
  * The starting channel for Do notation, emitting an empty object.
  *
- * @category Do notation
+ * @category do notation
  * @since 4.0.0
  */
 export const Do: Channel<{}> = succeed({})
@@ -7346,7 +7503,7 @@ export {
   /**
    * Adds a computed field to each object emitted by a channel.
    *
-   * @category Do notation
+   * @category do notation
    * @since 4.0.0
    */
   let_ as let
@@ -7362,7 +7519,7 @@ export {
  * channel's output becomes the value of the new field. `options.concurrency`
  * and `options.bufferSize` control how derived channels are flattened.
  *
- * @category Do notation
+ * @category do notation
  * @since 4.0.0
  */
 export const bind: {
@@ -7459,7 +7616,16 @@ export const bind: {
 /**
  * Wraps each output element in an object under the specified field name.
  *
- * @category Do notation
+ * **When to use**
+ *
+ * Use when you need to start a Channel Do-notation chain from an existing
+ * output value by assigning that value to a field name.
+ *
+ * @see {@link Do} for starting Do notation from an empty object
+ * @see {@link bind} for adding a field produced by another channel
+ * @see {@link let_ let} for adding a computed field
+ *
+ * @category do notation
  * @since 4.0.0
  */
 export const bindTo: {
@@ -7801,6 +7967,11 @@ export const runFold: {
 
 /**
  * Runs a channel and effectfully folds all output elements with an accumulator.
+ *
+ * **When to use**
+ *
+ * Use when folding channel output needs effects, services, or an additional
+ * failure channel during accumulation.
  *
  * **Details**
  *

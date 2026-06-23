@@ -1,41 +1,11 @@
 /**
- * The `Tracer` module defines the low-level tracing model used by Effect to
- * describe and propagate spans. A span records the lifetime of an operation,
- * including its name, parent, attributes, links, annotations, sampling decision,
- * kind, and completion status.
+ * Defines the low-level tracing model used by Effect.
  *
- * **Mental model**
- *
- * - `Tracer` is the backend interface responsible for creating spans
- * - `Span` values represent Effect-managed operations with mutable lifecycle
- *   hooks for ending spans and adding attributes, events, or links
- * - `ExternalSpan` represents trace context imported from another tracing
- *   system so Effect spans can be parented by or linked to external work
- * - `ParentSpan`, `Tracer`, and related context references control propagation,
- *   sampling, and trace-level filtering through the Effect context
- *
- * **Common tasks**
- *
- * - Implement a custom tracing backend with {@link make}
- * - Provide or inspect parent span context with {@link ParentSpan}
- * - Convert external trace identifiers into Effect span values with
- *   {@link externalSpan}
- * - Configure span metadata with {@link SpanOptions}, {@link SpanKind}, and
- *   {@link SpanLink}
- * - Disable propagation or adjust trace filtering with
- *   {@link DisablePropagation}, {@link CurrentTraceLevel}, and
- *   {@link MinimumTraceLevel}
- *
- * **Gotchas**
- *
- * - This module exposes the tracing data model and backend hooks; most
- *   application code should create spans through higher-level Effect APIs such
- *   as `Effect.withSpan`
- * - `ExternalSpan` only carries identity and metadata from another system; it
- *   does not have lifecycle methods like `Span`
- * - Propagation and sampling are context-dependent, so parent selection can be
- *   affected by disabled propagation, root span options, and trace-level
- *   thresholds
+ * A span records the lifetime of an operation, including its name, parent,
+ * attributes, links, annotations, sampling decision, kind, and completion
+ * status. The module also defines the tracer service, parent-span context,
+ * external span support, trace propagation settings, and the default in-memory
+ * span implementation.
  *
  * @since 2.0.0
  */
@@ -155,7 +125,12 @@ export type SpanStatus = {
 export type AnySpan = Span | ExternalSpan
 
 /**
- * The string key used to identify the `ParentSpan` context service.
+ * Defines the string key for the parent-span context service.
+ *
+ * **When to use**
+ *
+ * Use when you need the raw context key for parent span lookup in lower-level
+ * tracing code.
  *
  * **Example** (Reading the parent span key)
  *
@@ -166,7 +141,7 @@ export type AnySpan = Span | ExternalSpan
  * console.log(Tracer.ParentSpanKey) // "effect/Tracer/ParentSpan"
  * ```
  *
- * @category tags
+ * @category constants
  * @since 4.0.0
  */
 export const ParentSpanKey = "effect/Tracer/ParentSpan"
@@ -187,7 +162,7 @@ export const ParentSpanKey = "effect/Tracer/ParentSpan"
  * })
  * ```
  *
- * @category tags
+ * @category services
  * @since 2.0.0
  */
 export class ParentSpan extends Context.Service<ParentSpan, AnySpan>()(ParentSpanKey) {}
@@ -250,7 +225,7 @@ export interface ExternalSpan {
  * )
  * ```
  *
- * @category models
+ * @category options
  * @since 3.1.0
  */
 export interface SpanOptions extends SpanOptionsNoTrace, TraceOptions {}
@@ -260,7 +235,7 @@ export interface SpanOptions extends SpanOptionsNoTrace, TraceOptions {}
  * attributes, links, parent or root selection, annotations, span kind,
  * sampling, and the trace level used for filtering.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface SpanOptionsNoTrace {
@@ -278,7 +253,7 @@ export interface SpanOptionsNoTrace {
  * Options that control stack trace capture for tracing wrappers.
  * `captureStackTrace` can disable capture or provide a lazy stack string.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface TraceOptions {
@@ -425,6 +400,19 @@ export interface SpanLink {
 /**
  * Creates a `Tracer` value from a tracer implementation object.
  *
+ * **When to use**
+ *
+ * Use to create a custom tracing backend value that Effect can use when
+ * creating spans.
+ *
+ * **Details**
+ *
+ * `make` returns the supplied implementation object unchanged. The object must
+ * satisfy the `Tracer` contract, including a `span` method that returns a
+ * `Span`.
+ *
+ * @see {@link Span} for the span values returned by tracer implementations
+ *
  * @category constructors
  * @since 2.0.0
  */
@@ -472,9 +460,17 @@ export const externalSpan = (
 })
 
 /**
- * Reference used to disable trace propagation. When set on the fiber or span
- * annotations, new spans are created as non-propagating no-op spans and
- * disabled spans are skipped when deriving a parent span.
+ * Context reference for disabling trace propagation.
+ *
+ * **When to use**
+ *
+ * Use to prevent spans in a scope from propagating tracing context.
+ *
+ * **Details**
+ *
+ * When enabled on fiber or span annotations, new spans are created as
+ * non-propagating no-op spans and disabled spans are skipped when deriving a
+ * parent span.
  *
  * **Example** (Disabling span propagation)
  *
@@ -498,7 +494,19 @@ export const DisablePropagation = Context.Reference<boolean>(
 )
 
 /**
- * Reference for controlling the current trace level for dynamic filtering.
+ * Context reference for controlling the current trace level for dynamic filtering.
+ *
+ * **When to use**
+ *
+ * Use to set the default trace level for spans in a scope when span options do
+ * not provide `level`.
+ *
+ * **Details**
+ *
+ * The default value is `"Info"`. Span creation uses `options.level ??
+ * CurrentTraceLevel` before applying `MinimumTraceLevel`.
+ *
+ * @see {@link MinimumTraceLevel} for the threshold that decides whether spans at that level are sampled
  *
  * @category references
  * @since 4.0.0
@@ -509,9 +517,25 @@ export const CurrentTraceLevel: Context.Reference<LogLevel> = Context.Reference<
 )
 
 /**
- * Reference for setting the minimum trace level threshold. Spans and their
+ * Context reference for setting the minimum trace level threshold. Spans and their
  * descendants below this level will have their sampling decision forced to
  * false, preventing them from being exported.
+ *
+ * **When to use**
+ *
+ * Use to set the trace-level threshold that controls whether spans are sampled
+ * by default.
+ *
+ * **Details**
+ *
+ * The default value is `"All"`. Span creation compares the span level from
+ * `options.level ?? CurrentTraceLevel` against this threshold.
+ *
+ * **Gotchas**
+ *
+ * Explicit `options.sampled` bypasses threshold computation.
+ *
+ * @see {@link CurrentTraceLevel} for the default span level used when options do not specify one
  *
  * @category references
  * @since 4.0.0
@@ -521,7 +545,12 @@ export const MinimumTraceLevel = Context.Reference<
 >("effect/Tracer/MinimumTraceLevel", { defaultValue: () => "All" })
 
 /**
- * The string key used to identify the active `Tracer` context reference.
+ * Defines the string key for the active tracer context reference.
+ *
+ * **When to use**
+ *
+ * Use when you need the raw context key for active tracer lookup in lower-level
+ * tracing code.
  *
  * @category references
  * @since 4.0.0
@@ -564,6 +593,14 @@ export const Tracer: Context.Reference<Tracer> = Context.Reference<Tracer>(Trace
  * Default in-memory `Span` implementation used by the native tracer. It
  * generates span and trace identifiers, stores attributes, events, and links,
  * and records `Started` or `Ended` status.
+ *
+ * **Details**
+ *
+ * The constructor initializes the span with `Started` status, inherits the
+ * parent trace id or generates a new one, and always generates a new span id.
+ * Attributes, events, links, and status are then mutated through `Span` methods.
+ *
+ * @see {@link Span} for the interface implemented by native spans
  *
  * @category native tracer
  * @since 4.0.0

@@ -1,27 +1,12 @@
 /**
- * Client-side worker primitives shared by browser, Node, and Bun platform
- * packages.
+ * Client-side worker primitives shared by browser, Node, and Bun adapters.
  *
- * A `WorkerPlatform` turns a numeric worker id into a long-lived `Worker`
- * client using a runtime-specific `Spawner`. This module is the low-level
- * building block used by worker-backed RPC clients and by platform adapters
- * that need to communicate with dedicated workers, shared workers,
- * `MessagePort`s, worker threads, or child-process transports while keeping
- * setup, message handling, and cleanup inside `Effect` scopes.
- *
- * The worker protocol separates spawning from message delivery. Calls to
- * `send` made before the platform reports readiness are buffered and flushed
- * after `run` receives the ready signal, so a spawned worker must eventually be
- * run or buffered messages will never leave the client. Message values are
- * passed through `postMessage`, which means callers are responsible for
- * encoding payloads into values supported by the selected runtime's structured
- * clone implementation. Transfer lists can avoid copies for buffers, ports, or
- * other transferable values, but ownership moves to the worker and invalid
- * transfer lists surface as `WorkerSendError`s. Incoming messages are handled
- * by forking each handler invocation into the worker run's `FiberSet`, so
- * processing is concurrent rather than serialized; use an explicit queue,
- * semaphore, or protocol-level acknowledgement when ordering or back pressure
- * matters.
+ * This module defines the platform-neutral `Worker` client, the `WorkerPlatform`
+ * service that creates workers by numeric id, and the `Spawner` service used to
+ * find platform-specific worker instances. `makePlatform` wraps platform setup
+ * and listen hooks into a `WorkerPlatform`, buffers outgoing messages until the
+ * worker is ready, runs incoming messages with Effect handlers, and ties worker
+ * cleanup to scope lifetime.
  *
  * @since 4.0.0
  */
@@ -118,9 +103,9 @@ export interface Spawner {
 }
 
 /**
- * Context service tag for the worker `SpawnerFn`.
+ * Service tag for the worker `SpawnerFn`.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const Spawner: Context.Service<

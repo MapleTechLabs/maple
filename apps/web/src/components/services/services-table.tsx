@@ -19,6 +19,7 @@ import { Sparkline } from "@maple/ui/components/ui/gradient-chart"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/utils"
 import { formatErrorRate } from "@maple/ui/lib/format"
+import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { type ServiceOverview, type CommitBreakdown } from "@/api/warehouse/services"
 import {
@@ -60,6 +61,23 @@ function errorRateToneClass(rate: number): string {
 	return "text-muted-foreground"
 }
 
+/**
+ * Search params for the per-service detail link. Carries the row's environment
+ * so the detail page scopes its charts to the same environment the table row
+ * measured (rows are grouped per environment; the synthetic `"unknown"` label is
+ * remapped to the raw warehouse value server-side). Shared by all four
+ * navigation sites (desktop row click + keydown + cell link, mobile link) so
+ * they can't drift apart.
+ */
+function serviceDetailSearch(filters: ServicesSearchParams | undefined, environment: string) {
+	return {
+		startTime: filters?.startTime,
+		endTime: filters?.endTime,
+		timePreset: filters?.timePreset,
+		environments: [environment],
+	}
+}
+
 const ENVIRONMENT_PRIORITY: Record<string, number> = {
 	production: 0,
 	staging: 1,
@@ -96,38 +114,27 @@ function CommitsList({ commits }: { commits: CommitBreakdown[] }) {
 
 	if (commits.length === 1) {
 		const sha = commits[0].commitSha
-		return <span>{truncateCommitSha(sha)}</span>
+		return (
+			<CommitShaHoverCard sha={sha} className="font-mono">
+				{truncateCommitSha(sha)}
+			</CommitShaHoverCard>
+		)
 	}
 
-	const top2 = commits.slice(0, 2)
-	const remaining = commits.length - 2
-
+	// Each SHA gets its own hover card — avoids nesting a popup inside a popup.
 	return (
-		<Tooltip>
-			<TooltipTrigger className="flex flex-wrap items-center gap-1">
-				{top2.map((c) => (
-					<span key={c.commitSha} className="inline-flex items-center gap-0.5">
-						<span>{truncateCommitSha(c.commitSha)}</span>
-						<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
-							{c.percentage}%
-						</Badge>
-					</span>
-				))}
-				{remaining > 0 && (
-					<span className="text-muted-foreground text-[10px]">+{remaining} more</span>
-				)}
-			</TooltipTrigger>
-			<TooltipContent side="bottom" align="start">
-				<div className="flex flex-col gap-1">
-					{commits.map((c) => (
-						<div key={c.commitSha} className="flex items-center justify-between gap-3">
-							<span className="font-mono">{truncateCommitSha(c.commitSha)}</span>
-							<span>{c.percentage}%</span>
-						</div>
-					))}
-				</div>
-			</TooltipContent>
-		</Tooltip>
+		<div className="flex flex-wrap items-center gap-1.5">
+			{commits.map((c) => (
+				<span key={c.commitSha} className="inline-flex items-center gap-0.5">
+					<CommitShaHoverCard sha={c.commitSha} className="font-mono">
+						{truncateCommitSha(c.commitSha)}
+					</CommitShaHoverCard>
+					<Badge variant="secondary" className="px-1 py-0 text-[10px] leading-tight">
+						{c.percentage}%
+					</Badge>
+				</span>
+			))}
+		</div>
 	)
 }
 
@@ -351,11 +358,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 															navigate({
 																to: "/services/$serviceName",
 																params: { serviceName: service.serviceName },
-																search: {
-																	startTime: filters?.startTime,
-																	endTime: filters?.endTime,
-																	timePreset: filters?.timePreset,
-																},
+																search: serviceDetailSearch(
+																	filters,
+																	service.environment,
+																),
 															})
 														}
 														onKeyDown={(e) => {
@@ -366,11 +372,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 																	params: {
 																		serviceName: service.serviceName,
 																	},
-																	search: {
-																		startTime: filters?.startTime,
-																		endTime: filters?.endTime,
-																		timePreset: filters?.timePreset,
-																	},
+																	search: serviceDetailSearch(
+																		filters,
+																		service.environment,
+																	),
 																})
 															}
 														}}
@@ -379,11 +384,10 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 															<Link
 																to="/services/$serviceName"
 																params={{ serviceName: service.serviceName }}
-																search={{
-																	startTime: filters?.startTime,
-																	endTime: filters?.endTime,
-																	timePreset: filters?.timePreset,
-																}}
+																search={serviceDetailSearch(
+																	filters,
+																	service.environment,
+																)}
 																className="font-medium text-primary hover:underline"
 																onClick={(e) => e.stopPropagation()}
 															>
@@ -504,11 +508,7 @@ export function ServicesTable({ filters }: ServicesTableProps) {
 											key={`${service.serviceName}-${service.serviceNamespace}-${service.environment}`}
 											to="/services/$serviceName"
 											params={{ serviceName: service.serviceName }}
-											search={{
-												startTime: filters?.startTime,
-												endTime: filters?.endTime,
-												timePreset: filters?.timePreset,
-											}}
+											search={serviceDetailSearch(filters, service.environment)}
 											className="flex min-h-11 items-center justify-between gap-3 border-b px-3 py-2.5 last:border-b-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
 										>
 											<div className="min-w-0 flex-1">

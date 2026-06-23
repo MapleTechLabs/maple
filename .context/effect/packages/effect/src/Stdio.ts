@@ -1,19 +1,13 @@
 /**
- * The `Stdio` module defines the service interface used by Effect programs to
- * interact with process standard I/O. It models command-line arguments,
- * standard output, standard error, and standard input as Effects, Sinks, and
- * Streams so programs can depend on console I/O through `Context` instead of
- * directly coupling to a specific runtime.
+ * Service contract for command-line arguments and standard input, output, and
+ * error output. It lets programs depend on standard I/O through the Effect
+ * environment instead of reading from or writing to global process handles
+ * directly.
  *
- * Use this module when building command-line programs, tests, or platform
- * integrations that need to read bytes from stdin, write text or bytes to
- * stdout/stderr, or provide deterministic replacements for those capabilities.
- * The `layerTest` helper is useful for tests because it supplies inert defaults
- * and lets individual fields be overridden.
- *
- * Standard I/O operations are platform capabilities and may fail with
- * `PlatformError`; handle those failures in the Effect error channel rather than
- * assuming writes or reads are infallible.
+ * The service exposes arguments as an `Effect`, stdout and stderr as `Sink`s
+ * that accept strings or bytes, and stdin as a byte `Stream`. This module also
+ * provides a constructor for service values and a small test layer with
+ * overridable defaults.
  *
  * @since 4.0.0
  */
@@ -27,6 +21,10 @@ import * as Stream from "./Stream.ts"
 /**
  * String literal type used as the unique brand for the `Stdio` service.
  *
+ * **When to use**
+ *
+ * Use to type the runtime identifier stored on `Stdio` service implementations.
+ *
  * @category type IDs
  * @since 4.0.0
  */
@@ -35,13 +33,23 @@ export type TypeId = "~effect/Stdio"
 /**
  * Runtime identifier stored on `Stdio` service implementations.
  *
+ * **Details**
+ *
+ * This marker is part of the runtime representation of `Stdio` service
+ * implementations.
+ *
  * @category type IDs
  * @since 4.0.0
  */
 export const TypeId: TypeId = "~effect/Stdio"
 
 /**
- * Service interface for process standard I/O.
+ * Defines the service interface for process standard I/O.
+ *
+ * **When to use**
+ *
+ * Use to depend on command-line arguments and standard I/O through the Effect
+ * environment.
  *
  * **Details**
  *
@@ -64,7 +72,15 @@ export interface Stdio {
   readonly stdin: Stream.Stream<Uint8Array, PlatformError>
 }
 /**
- * Context service tag for the `Stdio` service.
+ * Service tag for process standard I/O.
+ *
+ * **When to use**
+ *
+ * Use when you need command-line arguments or standard I/O streams supplied by
+ * an effect's environment.
+ *
+ * @see {@link make} for constructing a `Stdio` service directly
+ * @see {@link layerTest} for a test layer with defaults and overrides
  *
  * @category services
  * @since 4.0.0
@@ -74,6 +90,18 @@ export const Stdio: Context.Service<Stdio, Stdio> = Context.Service<Stdio>(TypeI
 /**
  * Creates a `Stdio` service implementation from the provided fields and
  * attaches the `Stdio` type identifier.
+ *
+ * **When to use**
+ *
+ * Use when you need to assemble a concrete `Stdio` service from command-line
+ * arguments and standard I/O implementations.
+ *
+ * **Details**
+ *
+ * The returned service reuses the supplied fields unchanged and only adds the
+ * `Stdio` type identifier; it does not create a `Layer` or provide defaults.
+ *
+ * @see {@link layerTest} for a test layer with default fields that can be overridden
  *
  * @category constructors
  * @since 4.0.0
@@ -86,11 +114,18 @@ export const make = (options: Omit<Stdio, TypeId>): Stdio => ({
 /**
  * Creates a test layer for `Stdio`.
  *
+ * **When to use**
+ *
+ * Use to provide deterministic standard I/O in tests while overriding only the
+ * command-line arguments, input stream, or output sinks relevant to the case.
+ *
  * **Details**
  *
  * Any provided fields override defaults. By default, arguments are empty,
  * standard output and error are draining sinks, and standard input is an empty
  * stream.
+ *
+ * @see {@link make} for constructing a `Stdio` service directly without a `Layer` or defaults
  *
  * @category layers
  * @since 4.0.0

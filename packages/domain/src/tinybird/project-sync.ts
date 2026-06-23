@@ -115,12 +115,10 @@ export interface TinybirdInstanceHealth {
 const SqlResponseSchema = Schema.Struct({
 	data: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
 })
-type SqlResponse = typeof SqlResponseSchema.Type
 
 const WorkspaceProbeSchema = Schema.Struct({
 	name: Schema.optional(Schema.String),
 })
-type WorkspaceProbe = typeof WorkspaceProbeSchema.Type
 
 export class TinybirdSyncRejectedError extends Schema.TaggedErrorClass<TinybirdSyncRejectedError>()(
 	"@maple/tinybird/errors/SyncRejected",

@@ -57,7 +57,10 @@ function AttributeRow({
 	/** Label shown in the key column; defaults to `attrKey`. Copies still use the full `attrKey`. */
 	displayKey?: string
 }) {
+	const { renderValue } = useAttributesConfig()
 	const parsed = tryParseJson(value)
+	// Only non-JSON values are overridable; JSON keeps its collapsible renderer.
+	const override = parsed === null ? renderValue?.(attrKey, value) : null
 	return (
 		<div className="grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40">
 			<CopyableValue
@@ -69,6 +72,8 @@ function AttributeRow({
 			<div className="min-w-0 font-mono text-[11px] leading-relaxed text-foreground break-all">
 				{parsed !== null ? (
 					<CollapsibleJsonValue value={value} parsed={parsed} />
+				) : override != null ? (
+					override
 				) : (
 					<CopyableValue value={value}>{value}</CopyableValue>
 				)}

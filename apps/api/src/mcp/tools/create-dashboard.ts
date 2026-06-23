@@ -3,10 +3,7 @@ import { Effect, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
-import {
-	DashboardTemplateParameterKey,
-	PortableDashboardDocument,
-} from "@maple/domain/http"
+import { DashboardTemplateParameterKey, PortableDashboardDocument } from "@maple/domain/http"
 import { DASHBOARD_TEMPLATES, getTemplate } from "@/dashboard-templates"
 import { formatValidationSummary, inspectWidgetsAfterMutation } from "../lib/inspect-widget"
 import {
@@ -27,7 +24,8 @@ const decodeParamKey = Schema.decodeUnknownSync(DashboardTemplateParameterKey)
 // ---------------------------------------------------------------------------
 
 function inferUnit(metric: string): string {
-	if (["avg_duration", "p50_duration", "p95_duration", "p99_duration"].includes(metric)) return "duration_ms"
+	if (["avg_duration", "p50_duration", "p95_duration", "p99_duration"].includes(metric))
+		return "duration_ms"
 	if (metric === "error_rate") return "percent"
 	return "number"
 }
@@ -303,7 +301,7 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 			"Custom JSON: provide dashboard_json with full widget definitions (use get_dashboard to see schema). " +
 			"For raw widget JSON, trace/log queries omit the metric-only fields (`metricName`/`metricType`/`isMonotonic`); `whereClause` is a custom grammar (use `exists` not SQL `IS NULL`). See `maple://instructions` for the full widget JSON shape.\n\n" +
 			"After persistence, automatically validates every inspectable widget (custom_query_builder_timeseries/breakdown) and includes a per-widget verdict (looks_healthy/suspicious/broken) + sanity flags in the response. " +
-			"Pass `validate: \"false\"` to skip validation when creating dashboards with many widgets.",
+			'Pass `validate: "false"` to skip validation when creating dashboards with many widgets.',
 		Schema.Struct({
 			name: requiredStringParam("Dashboard name"),
 			template: optionalStringParam(

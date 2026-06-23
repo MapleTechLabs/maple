@@ -67,8 +67,14 @@ export function latencySeverity(
 	if (spanCount !== undefined && spanCount < MIN_CURRENT_SPANS) return "ok"
 
 	if (baseline !== undefined && baseline.spanCount >= MIN_BASELINE_SPANS && baseline.p95LatencyMs > 0) {
-		const unhealthyAt = Math.max(LATENCY_ABS_FLOOR_MS, baseline.p95LatencyMs * LATENCY_BASELINE_UNHEALTHY_RATIO)
-		const degradedAt = Math.max(LATENCY_ABS_FLOOR_MS, baseline.p95LatencyMs * LATENCY_BASELINE_DEGRADED_RATIO)
+		const unhealthyAt = Math.max(
+			LATENCY_ABS_FLOOR_MS,
+			baseline.p95LatencyMs * LATENCY_BASELINE_UNHEALTHY_RATIO,
+		)
+		const degradedAt = Math.max(
+			LATENCY_ABS_FLOOR_MS,
+			baseline.p95LatencyMs * LATENCY_BASELINE_DEGRADED_RATIO,
+		)
 		if (p95LatencyMs >= unhealthyAt) return "crit"
 		if (p95LatencyMs >= degradedAt) return "warn"
 		return "ok"

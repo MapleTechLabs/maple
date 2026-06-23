@@ -1,5 +1,6 @@
 /** @effect-diagnostics missingEffectContext:skip-file */
-import { Effect, Schema } from "effect"
+import { Effect, hole, Schema, type Stream } from "effect"
+import type * as Sse from "effect/unstable/encoding/Sse"
 import { FetchHttpClient, HttpClient, type HttpClientError, type HttpClientResponse } from "effect/unstable/http"
 import {
   HttpApi,
@@ -300,6 +301,189 @@ describe("HttpApiClient", () => {
         >
       >()
 
+      expect(f({ responseMode: "response-only" })).type.toBe<
+        Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>
+      >()
+    })
+
+    it("should return decoded streams for StreamSse successes", () => {
+      const Api = HttpApi.make("Api")
+        .add(
+          HttpApiGroup.make("group")
+            .add(
+              HttpApiEndpoint.get("a", "/a", {
+                success: HttpApiSchema.StreamSse({
+                  events: Schema.Struct({
+                    event: Schema.Literal("user.created"),
+                    data: Schema.String
+                  }),
+                  error: Schema.Struct({ reason: Schema.String })
+                })
+              })
+            )
+        )
+      const client = Effect.runSync(
+        HttpApiClient.make(Api).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+      const f = client.group.a
+
+      type Event = { readonly event: "user.created"; readonly data: string }
+      type StreamError = { readonly reason: string }
+      type ClientStream = Stream.Stream<
+        Event,
+        StreamError | HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry
+      >
+
+      expect(f()).type.toBe<
+        Effect.Effect<ClientStream, HttpClientError.HttpClientError | Schema.SchemaError>
+      >()
+      expect(f({ responseMode: "decoded-only" })).type.toBe<
+        Effect.Effect<ClientStream, HttpClientError.HttpClientError | Schema.SchemaError>
+      >()
+      expect(f({ responseMode: "decoded-and-response" })).type.toBe<
+        Effect.Effect<
+          [ClientStream, HttpClientResponse.HttpClientResponse],
+          HttpClientError.HttpClientError | Schema.SchemaError
+        >
+      >()
+      expect(f({ responseMode: "response-only" })).type.toBe<
+        Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>
+      >()
+    })
+
+    it("should return decoded data streams for StreamSse data successes", () => {
+      const Api = HttpApi.make("Api")
+        .add(
+          HttpApiGroup.make("group")
+            .add(
+              HttpApiEndpoint.get("a", "/a", {
+                success: HttpApiSchema.StreamSse({
+                  data: Schema.Struct({ id: Schema.String }),
+                  error: Schema.Struct({ reason: Schema.String })
+                })
+              })
+            )
+        )
+      const client = Effect.runSync(
+        HttpApiClient.make(Api).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+      const f = client.group.a
+
+      type Data = { readonly id: string }
+      type StreamError = { readonly reason: string }
+      type ClientStream = Stream.Stream<
+        Data,
+        StreamError | HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry
+      >
+
+      expect(f()).type.toBe<
+        Effect.Effect<ClientStream, HttpClientError.HttpClientError | Schema.SchemaError>
+      >()
+      expect(f({ responseMode: "decoded-and-response" })).type.toBe<
+        Effect.Effect<
+          [ClientStream, HttpClientResponse.HttpClientResponse],
+          HttpClientError.HttpClientError | Schema.SchemaError
+        >
+      >()
+    })
+
+    it("should return decoded streams without typed stream errors when StreamSse error is omitted", () => {
+      const Api = HttpApi.make("Api")
+        .add(
+          HttpApiGroup.make("group")
+            .add(
+              HttpApiEndpoint.get("a", "/a", {
+                success: HttpApiSchema.StreamSse({
+                  data: Schema.Struct({ id: Schema.String })
+                })
+              })
+            )
+        )
+      const client = Effect.runSync(
+        HttpApiClient.make(Api).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+      const f = client.group.a
+
+      type Data = { readonly id: string }
+      type ClientStream = Stream.Stream<
+        Data,
+        HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry
+      >
+
+      expect(f()).type.toBe<
+        Effect.Effect<ClientStream, HttpClientError.HttpClientError | Schema.SchemaError>
+      >()
+      expect(f({ responseMode: "decoded-and-response" })).type.toBe<
+        Effect.Effect<
+          [ClientStream, HttpClientResponse.HttpClientResponse],
+          HttpClientError.HttpClientError | Schema.SchemaError
+        >
+      >()
+    })
+
+    it("should return decoded streams for StreamUint8Array successes", () => {
+      const Api = HttpApi.make("Api")
+        .add(
+          HttpApiGroup.make("group")
+            .add(
+              HttpApiEndpoint.get("a", "/a", {
+                success: HttpApiSchema.StreamUint8Array()
+              })
+            )
+        )
+      const client = Effect.runSync(
+        HttpApiClient.make(Api).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+      const f = client.group.a
+
+      type ClientStream = Stream.Stream<Uint8Array, HttpClientError.HttpClientError>
+
+      expect(f()).type.toBe<
+        Effect.Effect<ClientStream, HttpClientError.HttpClientError | Schema.SchemaError>
+      >()
+      expect(f({ responseMode: "decoded-and-response" })).type.toBe<
+        Effect.Effect<
+          [ClientStream, HttpClientResponse.HttpClientResponse],
+          HttpClientError.HttpClientError | Schema.SchemaError
+        >
+      >()
+      expect(f({ responseMode: "response-only" })).type.toBe<
+        Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>
+      >()
+    })
+
+    it("should not require StreamSse success decoding services in response-only mode", () => {
+      type Event = { readonly event: "user.created"; readonly data: string }
+      type StreamError = { readonly reason: string }
+
+      const Events = hole<Schema.Codec<Event, Event, "EventsDecoding", never>>()
+      const Error = hole<Schema.Codec<StreamError, StreamError, "ErrorDecoding", never>>()
+      const Api = HttpApi.make("Api")
+        .add(
+          HttpApiGroup.make("group")
+            .add(
+              HttpApiEndpoint.get("a", "/a", {
+                success: HttpApiSchema.StreamSse({ events: Events, error: Error })
+              })
+            )
+        )
+      const client = Effect.runSync(
+        HttpApiClient.make(Api).pipe(Effect.provide(FetchHttpClient.layer))
+      )
+      const f = client.group.a
+
+      type ClientStream = Stream.Stream<
+        Event,
+        StreamError | HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry
+      >
+
+      expect(f({ responseMode: "decoded-only" })).type.toBe<
+        Effect.Effect<
+          ClientStream,
+          HttpClientError.HttpClientError | Schema.SchemaError,
+          "EventsDecoding" | "ErrorDecoding"
+        >
+      >()
       expect(f({ responseMode: "response-only" })).type.toBe<
         Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>
       >()

@@ -30,6 +30,7 @@ import {
 	anomalyIncidents,
 	type AnomalyIncidentRow,
 	errorIssues,
+	orgClickHouseSettings,
 	orgIngestKeys,
 } from "@maple/db"
 import { and, desc, eq, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm"
@@ -86,6 +87,12 @@ const STATE_RETENTION_MS = 14 * 24 * HOUR_MS
 const RETENTION_PHASE_EVERY_N_TICKS = 36
 const TICK_CADENCE_MS = 5 * 60 * 1000
 const ERROR_SPIKE_BASELINE_CACHE_BUCKET = "anomaly-errbase"
+/** KV buckets for the cached 7-day matched-hours baselines (golden + logs). */
+const GOLDEN_BASELINE_CACHE_BUCKET = "anomaly-goldenbase"
+const LOG_BASELINE_CACHE_BUCKET = "anomaly-logbase"
+/** Active-org discovery window — covers the in-progress hour plus the prior one
+ *  so an org that just started sending telemetry is picked up within a tick. */
+const ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS = 2 * HOUR_MS
 /** D1 caps bound parameters per statement (~100); mirror ErrorsService's chunking. */
 const D1_INARRAY_CHUNK_SIZE = 90
 
@@ -142,7 +149,7 @@ interface ErrorSpikeBaselineEntry extends ErrorSpikeBaseline {
 	readonly deploymentEnv: string
 }
 
-export interface AnomalyTickResult {
+interface AnomalyTickResult {
 	readonly orgsProcessed: number
 	readonly seriesEvaluated: number
 	readonly incidentsOpened: number
@@ -243,6 +250,63 @@ const make = Effect.gen(function* () {
 		userId: decodeUserIdSync("system-anomaly"),
 		roles: [decodeRoleNameSync("root")],
 		authMode: "self_hosted",
+	})
+
+	// -----------------------------------------------------------------
+	// Active-org gating
+	//
+	// The tick historically evaluated every org with an ingest key, scanning a
+	// 7-day window for each — overwhelmingly idle orgs, which dominated Tinybird
+	// CPU. Instead, run ONE cross-org scan of the recent hourly MVs (pinned to
+	// managed Tinybird) and only evaluate orgs that produced telemetry. Idle orgs
+	// have no series to evaluate. BYO-ClickHouse orgs are invisible to that scan
+	// and are always evaluated. Fails OPEN: if discovery errors, every known org
+	// is evaluated (the prior behaviour).
+	// -----------------------------------------------------------------
+
+	const resolveActiveOrgs = Effect.fn("AnomalyDetectionService.resolveActiveOrgs")(function* (
+		knownOrgs: ReadonlyArray<OrgId>,
+		nowMs: number,
+	) {
+		const byoRows = yield* dbExecute((db) =>
+			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
+		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: string }>))
+		const byo = new Set<string>(byoRows.map((r) => r.orgId))
+
+		if (knownOrgs.length === 0) return byo as ReadonlySet<string>
+
+		const startTime = toTinybirdDateTime(nowMs - ANOMALY_ACTIVE_DISCOVERY_WINDOW_MS)
+		const routingTenant = systemTenant(knownOrgs[0])
+		return yield* Effect.all(
+			[
+				warehouse.compiledQuery(
+					routingTenant,
+					CH.compile(CH.activeOrgsByTracesQuery(), { startTime }),
+					{ pinToIngestConfig: true, profile: "list", context: "anomalyActiveOrgsTraces" },
+				),
+				warehouse.compiledQuery(
+					routingTenant,
+					CH.compile(CH.activeOrgsByLogsQuery(), { startTime }),
+					{ pinToIngestConfig: true, profile: "list", context: "anomalyActiveOrgsLogs" },
+				),
+			],
+			{ concurrency: 2 },
+		).pipe(
+			Effect.map(([tracesRows, logsRows]) => {
+				const active = new Set<string>(byo)
+				for (const row of [...tracesRows, ...logsRows]) {
+					const orgId = String((row as { orgId?: unknown }).orgId ?? "")
+					if (orgId) active.add(orgId)
+				}
+				return active as ReadonlySet<string>
+			}),
+			Effect.catchCause((cause) =>
+				Effect.logWarning("Anomaly active-org discovery failed; evaluating all known orgs").pipe(
+					Effect.annotateLogs({ error: Cause.pretty(cause) }),
+					Effect.as("all" as const),
+				),
+			),
+		)
 	})
 
 	// -----------------------------------------------------------------
@@ -718,20 +782,58 @@ const make = Effect.gen(function* () {
 		nowMs: number,
 		currentHourStartMs: number,
 	) {
-		const compiled = CH.compile(
-			CH.anomalyTraceSignalsQuery({
-				hoursOfDay: CH.matchedHoursOfDay(new Date(nowMs).getUTCHours()),
-			}),
+		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
+		const hourBucket = Math.floor(nowMs / HOUR_MS)
+
+		// The 7-day matched-hours baseline only changes when the hour rolls over,
+		// so compute it once per org per hour and share the blob from KV. Only the
+		// in-progress hour is fetched fresh each tick (a single-hour scan) — this
+		// cuts the heavy 7-day scan from 12×/hour to 1×/hour per org.
+		const { value: baselineRows } = yield* edgeCache.getOrCompute(
 			{
-				orgId: tenant.orgId,
-				startTime: toTinybirdDateTime(nowMs - BASELINE_WINDOW_MS),
-				endTime: toTinybirdDateTime(nowMs),
+				bucket: GOLDEN_BASELINE_CACHE_BUCKET,
+				key: `${tenant.orgId}:${hourBucket}`,
+				ttlSeconds: 3600,
 			},
+			Effect.gen(function* () {
+				const compiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
+					orgId: tenant.orgId,
+					startTime: toTinybirdDateTime(nowMs - BASELINE_WINDOW_MS),
+					endTime: toTinybirdDateTime(currentHourStartMs),
+				})
+				const rows = yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "anomalyTraceSignalsBaseline",
+					})
+					.pipe(Effect.mapError(makePersistenceError))
+				// `Hour <= currentHourStart` includes the in-progress hour; drop it so
+				// the cached blob is purely sealed baseline.
+				return rows
+					.map((r) => ({
+						hour: String(r.hour ?? ""),
+						serviceName: String(r.serviceName ?? ""),
+						deploymentEnv: String(r.deploymentEnv ?? ""),
+						requestCount: Number(r.requestCount ?? 0),
+						errorCount: Number(r.errorCount ?? 0),
+						p95Ms: Number(r.p95Ms ?? 0),
+					}))
+					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+			}),
 		)
-		const rows = yield* warehouse
-			.compiledQuery(tenant, compiled, { profile: "list", context: "anomalyTraceSignals" })
+
+		const currentCompiled = CH.compile(CH.anomalyTraceSignalsQuery({ hoursOfDay }), {
+			orgId: tenant.orgId,
+			startTime: toTinybirdDateTime(currentHourStartMs),
+			endTime: toTinybirdDateTime(nowMs),
+		})
+		const currentRows = yield* warehouse
+			.compiledQuery(tenant, currentCompiled, {
+				profile: "list",
+				context: "anomalyTraceSignalsCurrent",
+			})
 			.pipe(Effect.mapError(makePersistenceError))
-		const normalized = rows.map((r) => ({
+		const currentNormalized = currentRows.map((r) => ({
 			hour: String(r.hour ?? ""),
 			serviceName: String(r.serviceName ?? ""),
 			deploymentEnv: String(r.deploymentEnv ?? ""),
@@ -739,7 +841,8 @@ const make = Effect.gen(function* () {
 			errorCount: Number(r.errorCount ?? 0),
 			p95Ms: Number(r.p95Ms ?? 0),
 		}))
-		const { current, baseline } = splitRows(normalized, currentHourStartMs)
+
+		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
 
 		const keys = new Set([...current.keys(), ...baseline.keys()])
 		const series: GoldenSignalSeries[] = []
@@ -772,26 +875,59 @@ const make = Effect.gen(function* () {
 		nowMs: number,
 		currentHourStartMs: number,
 	) {
-		const compiled = CH.compile(
-			CH.anomalyLogVolumeQuery({
-				hoursOfDay: CH.matchedHoursOfDay(new Date(nowMs).getUTCHours()),
-			}),
+		const hoursOfDay = CH.matchedHoursOfDay(new Date(nowMs).getUTCHours())
+		const hourBucket = Math.floor(nowMs / HOUR_MS)
+
+		// Same split as fetchGoldenSeries: cache the sealed 7-day baseline per
+		// hour, fetch only the in-progress hour fresh.
+		const { value: baselineRows } = yield* edgeCache.getOrCompute(
 			{
-				orgId: tenant.orgId,
-				startTime: toTinybirdDateTime(nowMs - BASELINE_WINDOW_MS),
-				endTime: toTinybirdDateTime(nowMs),
+				bucket: LOG_BASELINE_CACHE_BUCKET,
+				key: `${tenant.orgId}:${hourBucket}`,
+				ttlSeconds: 3600,
 			},
+			Effect.gen(function* () {
+				const compiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
+					orgId: tenant.orgId,
+					startTime: toTinybirdDateTime(nowMs - BASELINE_WINDOW_MS),
+					endTime: toTinybirdDateTime(currentHourStartMs),
+				})
+				const rows = yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "anomalyLogVolumeBaseline",
+					})
+					.pipe(Effect.mapError(makePersistenceError))
+				return rows
+					.map((r) => ({
+						hour: String(r.hour ?? ""),
+						serviceName: String(r.serviceName ?? ""),
+						deploymentEnv: String(r.deploymentEnv ?? ""),
+						errorLogCount: Number(r.errorLogCount ?? 0),
+					}))
+					.filter((r) => parseWarehouseDateTime(r.hour) < currentHourStartMs)
+			}),
 		)
-		const rows = yield* warehouse
-			.compiledQuery(tenant, compiled, { profile: "list", context: "anomalyLogVolume" })
+
+		const currentCompiled = CH.compile(CH.anomalyLogVolumeQuery({ hoursOfDay }), {
+			orgId: tenant.orgId,
+			startTime: toTinybirdDateTime(currentHourStartMs),
+			endTime: toTinybirdDateTime(nowMs),
+		})
+		const currentRows = yield* warehouse
+			.compiledQuery(tenant, currentCompiled, {
+				profile: "list",
+				context: "anomalyLogVolumeCurrent",
+			})
 			.pipe(Effect.mapError(makePersistenceError))
-		const normalized = rows.map((r) => ({
+		const currentNormalized = currentRows.map((r) => ({
 			hour: String(r.hour ?? ""),
 			serviceName: String(r.serviceName ?? ""),
 			deploymentEnv: String(r.deploymentEnv ?? ""),
 			errorLogCount: Number(r.errorLogCount ?? 0),
 		}))
-		const { current, baseline } = splitRows(normalized, currentHourStartMs)
+
+		const { current, baseline } = splitRows([...baselineRows, ...currentNormalized], currentHourStartMs)
 		const keys = new Set([...current.keys(), ...baseline.keys()])
 		const series: LogVolumeSeries[] = []
 		for (const key of keys) {
@@ -1636,6 +1772,23 @@ const make = Effect.gen(function* () {
 				[...ingestOrgs, ...settingsOrgs].map((r) => decodeOrgIdSync(r.orgId)),
 			)
 
+			// Orgs with an OPEN incident must be processed even when idle so the
+			// no-data sweep (NO_DATA_RESOLVE_MS) can resolve incidents whose series
+			// went silent.
+			const openIncidentRows = yield* dbExecute((db) =>
+				db
+					.selectDistinct({ orgId: anomalyIncidents.orgId })
+					.from(anomalyIncidents)
+					.where(eq(anomalyIncidents.status, "open")),
+			)
+			const mustProcess = new Set<OrgId>(openIncidentRows.map((r) => decodeOrgIdSync(r.orgId)))
+			const candidates = new Set<OrgId>([...knownOrgs, ...mustProcess])
+
+			const activeOrgs = yield* resolveActiveOrgs([...candidates], nowMs)
+			const orgsToProcess = [...candidates].filter(
+				(org) => activeOrgs === "all" || activeOrgs.has(org) || mustProcess.has(org),
+			)
+
 			const orgFailures = yield* Ref.make(0)
 			const emptyStats = {
 				seriesEvaluated: 0,
@@ -1646,7 +1799,7 @@ const make = Effect.gen(function* () {
 				incidentsResolved: 0,
 			}
 			const results = yield* Effect.forEach(
-				[...knownOrgs],
+				orgsToProcess,
 				(org) =>
 					processOrg(org, nowMs, runRetention).pipe(
 						Effect.catchCause((cause) =>
@@ -1677,11 +1830,12 @@ const make = Effect.gen(function* () {
 			const failureCount = yield* Ref.get(orgFailures)
 			yield* Effect.annotateCurrentSpan({
 				orgsKnown: knownOrgs.size,
+				orgsProcessed: orgsToProcess.length,
 				orgFailures: failureCount,
 				...totals,
 			})
 
-			return { orgsProcessed: knownOrgs.size, orgFailures: failureCount, ...totals }
+			return { orgsProcessed: orgsToProcess.length, orgFailures: failureCount, ...totals }
 		},
 	)
 

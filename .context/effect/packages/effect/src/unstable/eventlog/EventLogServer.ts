@@ -1,19 +1,10 @@
 /**
- * Server-side RPC handlers for accepting remote event-log writes and streaming
- * changes back to authenticated clients.
+ * Builds server-side handlers for the event-log remote protocol.
  *
- * This module is the protocol glue used by concrete event-log servers: it
- * performs the hello / authenticate challenge flow, attaches the authenticated
- * `EventLog.Identity` to subsequent RPC requests, reassembles chunked writes,
- * and chunks large change payloads before they are sent to clients. It is useful
- * when exposing an event-log replica over HTTP-backed RPC, for example to sync
- * browser, edge, or service replicas with a central journal.
- *
- * The authentication state is tied to the RPC client session annotations, so the
- * transport must preserve a stable client session between `Hello`,
- * `Authenticate`, writes, and change streams. Deployments should run the endpoint
- * over TLS, avoid exposing unauthenticated write or changes routes, and persist
- * session-auth key bindings with the same trust boundary as the event-log data.
+ * Transport modules use these handlers to expose an event journal to remote
+ * replicas. The handlers run the hello/authenticate challenge flow, attach the
+ * authenticated `EventLog.Identity` to later requests, accept single or chunked
+ * writes, and stream changes back as single or chunked messages.
  *
  * @since 4.0.0
  */
@@ -215,10 +206,15 @@ export const layerRpcHandlers = (options: {
   )
 
 /**
- * Client annotation storing partial `ChunkedMessage` data while chunked writes are
+ * Annotation that stores partial `ChunkedMessage` data while chunked writes are
  * being reassembled.
  *
- * @category ChunkedMessage state
+ * **When to use**
+ *
+ * Use to keep per-client chunk assembly state while handling chunked event-log
+ * writes.
+ *
+ * @category chunked message state
  * @since 4.0.0
  */
 export class ChunkedMessageState extends Context.Reference<

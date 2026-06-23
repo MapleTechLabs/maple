@@ -1,9 +1,6 @@
 import * as React from "react"
 import { Area, AreaChart, CartesianGrid, ReferenceArea, ReferenceLine, XAxis, YAxis } from "recharts"
-import type {
-	AnomalyIncidentDocument,
-	AnomalyIncidentTimeseriesResponse,
-} from "@maple/domain/http"
+import type { AnomalyIncidentDocument, AnomalyIncidentTimeseriesResponse } from "@maple/domain/http"
 import {
 	type ChartConfig,
 	ChartContainer,

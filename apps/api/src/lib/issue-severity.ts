@@ -37,7 +37,7 @@ export const escalationDedupeKey = (orgId: string, issueId: string, severity: Is
  * id and the primary key (+ onConflictDoNothing) absorbs the duplicate.
  * Same construction as the ai_triage timeline event id in AiTriageWorkflow.run.
  */
-export const deterministicUuid = (seed: string): string => {
+const deterministicUuid = (seed: string): string => {
 	const hex = createHash("sha256").update(seed).digest("hex")
 	return [
 		hex.slice(0, 8),
@@ -72,7 +72,11 @@ const ensureTriageAgentActor = async (
 			.select()
 			.from(actors)
 			.where(
-				and(eq(actors.orgId, orgId), eq(actors.type, "agent"), eq(actors.agentName, TRIAGE_AGENT_NAME)),
+				and(
+					eq(actors.orgId, orgId),
+					eq(actors.type, "agent"),
+					eq(actors.agentName, TRIAGE_AGENT_NAME),
+				),
 			)
 			.limit(1)
 	const existing = await select()

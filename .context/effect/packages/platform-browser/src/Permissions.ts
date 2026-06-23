@@ -1,20 +1,11 @@
 /**
- * Browser Permissions API support for Effect programs.
+ * Effect service for the browser Permissions API.
  *
- * This module provides a `Permissions` service and browser-backed layer for
- * querying `navigator.permissions` from Effect code. Use it to check whether a
- * browser capability is currently `granted`, `prompt`, or `denied` before
- * showing UI for flows such as geolocation, notifications, clipboard access,
- * camera, microphone, or persistent storage.
- *
- * Permission queries do not request access by themselves and should not replace
- * the feature API that actually performs the operation. Browser support for
- * permission names and states is uneven, queries may reject for unsupported or
- * invalid descriptors, and some permissions are only meaningful in secure
- * contexts or after user activation. Returned `PermissionStatus` objects can
- * change when the user updates browser settings or responds to prompts; when
- * watching `change` or `onchange`, account for browser differences and clean up
- * listeners when the surrounding Effect scope ends.
+ * This module defines a `Permissions` service backed by
+ * `navigator.permissions`. The service exposes `query`, which returns the
+ * browser `PermissionStatus` for a permission name. Failed browser operations
+ * are represented as `PermissionsError` values with `InvalidStateError` or
+ * `TypeError` reasons, and `layer` provides the browser-backed service.
  *
  * @since 4.0.0
  */
@@ -109,7 +100,12 @@ export class PermissionsError extends Data.TaggedError("PermissionsError")<{
 }
 
 /**
- * Service tag for the browser `Permissions` service.
+ * Service tag for browser permission querying.
+ *
+ * **When to use**
+ *
+ * Use when you need to require or provide browser permission querying through
+ * Effect's context.
  *
  * @category services
  * @since 4.0.0
@@ -117,7 +113,17 @@ export class PermissionsError extends Data.TaggedError("PermissionsError")<{
 export const Permissions: Context.Service<Permissions, Permissions> = Context.Service<Permissions>(TypeId)
 
 /**
- * A layer that directly interfaces with the `navigator.permissions` api
+ * Provides the `Permissions` service using the browser `navigator.permissions` API.
+ *
+ * **When to use**
+ *
+ * Use when you need a live browser `Permissions` service backed by the ambient
+ * `navigator.permissions` implementation.
+ *
+ * **Details**
+ *
+ * `query` delegates to `navigator.permissions.query({ name })` and wraps
+ * rejected browser operations in `PermissionsError`.
  *
  * @category layers
  * @since 4.0.0

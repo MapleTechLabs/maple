@@ -1,21 +1,11 @@
 /**
- * Bun runtime support for Effect worker runners.
+ * Worker-entrypoint support for Bun worker runners.
  *
- * This module is intended for code that is already executing inside a Bun
- * `Worker`. It provides the `WorkerRunnerPlatform` used by `WorkerRunner` to
- * receive request messages from the parent, run the registered Effect handler,
- * and send responses back over Bun's worker `postMessage` channel.
- *
- * Use it with `BunWorker` when a Bun program needs to move RPC handlers,
- * CPU-bound computations, or Bun-only services into an isolated worker while
- * communicating through the Effect worker protocol. The runner must be started
- * from the worker entrypoint, not the parent process; startup fails when the
- * current global worker scope does not expose `postMessage`. Shutdown is driven
- * by the parent protocol message, which closes the worker port, so long-running
- * handlers should remain interruptible and keep resource cleanup in scopes.
- * Messages follow Bun's worker cloning and transfer semantics, so payload
- * schemas, transfer lists, `messageerror` events, and worker `error` events
- * should be considered at the boundary.
+ * This module exports a `layer` that provides `WorkerRunnerPlatform` for code
+ * already running inside a Bun `Worker`. The platform receives request messages
+ * from the parent-side `BunWorker` platform, runs the registered handler, sends
+ * responses through the worker `postMessage` channel, and closes when the
+ * parent sends the close message.
  *
  * @since 4.0.0
  */

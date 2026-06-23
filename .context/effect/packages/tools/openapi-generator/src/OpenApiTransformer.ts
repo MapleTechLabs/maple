@@ -459,7 +459,7 @@ export const make = (
  *
  * **When to use**
  *
- * Use this layer when generated HttpClient code should perform runtime response
+ * Use when you use this layer when generated HttpClient code should perform runtime response
  * decoding with generated Effect Schema values.
  *
  * @category code generation
@@ -869,7 +869,7 @@ export const make = (
  *
  * **When to use**
  *
- * Use this layer for the `httpclient-type-only` generator format, where the
+ * Use when you use this layer for the `httpclient-type-only` generator format, where the
  * generated client relies on TypeScript types instead of runtime Schema
  * decoding.
  *

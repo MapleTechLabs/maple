@@ -17,7 +17,7 @@ Maple is now organized as a monorepo with a SPA frontend and an Effect-based bac
 - `apps/ingest`: OTLP ingest gateway (key auth + org enrichment + collector forwarding)
 - `apps/landing`: Astro landing site
 - `apps/alerting`: Alert evaluation worker
-- `apps/chat-agent`: Cloudflare Worker chat surface
+- `apps/chat-flue`: Flue + Workers AI chat backend (agent + triage workflow)
 - `apps/cli`: CLI utilities
 - `apps/mobile`: Expo mobile app
 - `packages/domain`: Shared Effect HTTP contracts and domain types

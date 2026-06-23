@@ -1,8 +1,12 @@
 /**
- * A module providing a generic service interface for spawning child processes.
+ * Service boundary for starting and controlling child processes.
  *
- * This module provides the `ChildProcessSpawner` service tag which can be
- * implemented by platform-specific packages (e.g., Node.js).
+ * `ChildProcessSpawner` is the service used by `ChildProcess` commands to start
+ * operating-system processes. A spawner turns a command description into a
+ * handle that can write to stdin, read stdout and stderr, wait for exit, kill
+ * the process, and manage whether the process keeps its parent alive. Platform
+ * backends implement this service, while most application code uses the higher
+ * level `ChildProcess` module.
  *
  * @since 4.0.0
  */
@@ -25,7 +29,7 @@ import type { Command, KillOptions } from "./ChildProcess.ts"
 export type ExitCode = Brand.Branded<number, "ExitCode">
 
 /**
- * Brand constructor for child process `ExitCode` values.
+ * Constructs branded child process `ExitCode` values.
  *
  * @category constructors
  * @since 4.0.0
@@ -42,7 +46,7 @@ export const ExitCode: Brand.Constructor<ExitCode> = Brand.nominal<ExitCode>()
 export type ProcessId = Brand.Branded<number, "ProcessId">
 
 /**
- * Brand constructor for child process `ProcessId` values.
+ * Constructs branded child process `ProcessId` values.
  *
  * @category constructors
  * @since 4.0.0

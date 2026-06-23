@@ -17,12 +17,17 @@ import {
 	presentableStatementSql,
 } from "@maple/domain/tinybird/db-query-shape-sql"
 import { Schema } from "effect"
-import { escapeClickHouseString } from "../../sql/sql-fragment"
-import { compileCH, unsafeCompiledQuery, type CompiledQuery, type CompiledQueryRowSchema } from "../compile"
-import { defineCondFn, defineFn } from "../define-fn"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromQuery, fromUnion } from "../query"
+import { escapeClickHouseString } from "@maple-dev/clickhouse-builder/sql"
+import {
+	compileCH,
+	unsafeCompiledQuery,
+	type CompiledQuery,
+	type CompiledQueryRowSchema,
+} from "@maple-dev/clickhouse-builder"
+import { defineCondFn, defineFn } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery, fromUnion } from "@maple-dev/clickhouse-builder"
 import {
 	ServiceMapChildren,
 	ServiceMapDbEdgesHourly,
@@ -31,7 +36,7 @@ import {
 	ServicePlatformsHourly,
 	Traces,
 } from "../tables"
-import { unionAll } from "../union"
+import { unionAll } from "@maple-dev/clickhouse-builder"
 
 // Local CH function declarations used by the live topology-join branch's
 // sample-weighting math. Kept here (not promoted to ch/functions/) because
@@ -112,9 +117,7 @@ export function serviceMapEdgeJoinSQL(params: {
 }): string {
 	const esc = escapeClickHouseString
 	const orgFilter = params.orgId ? `AND OrgId = '${esc(params.orgId)}'` : ""
-	const envFilter = params.deploymentEnv
-		? `AND DeploymentEnv = '${esc(params.deploymentEnv)}'`
-		: ""
+	const envFilter = params.deploymentEnv ? `AND DeploymentEnv = '${esc(params.deploymentEnv)}'` : ""
 	const parentServiceFilter = params.parentServiceName
 		? `AND ServiceName = '${esc(params.parentServiceName)}'`
 		: ""
@@ -210,11 +213,11 @@ export function serviceDependenciesSQL(
       sum(SampleRateSum) AS bucketEstimatedSpanCount
     FROM (
       ${serviceMapEdgeJoinSQL({
-				orgId: params.orgId,
-				startExpr: `toStartOfHour(toDateTime('${esc(params.endTime)}'))`,
-				endExpr: `toDateTime('${esc(params.endTime)}')`,
-				deploymentEnv: opts.deploymentEnv,
-			})}
+			orgId: params.orgId,
+			startExpr: `toStartOfHour(toDateTime('${esc(params.endTime)}'))`,
+			endExpr: `toDateTime('${esc(params.endTime)}')`,
+			deploymentEnv: opts.deploymentEnv,
+		})}
     )
     GROUP BY sourceService, targetService`
 
@@ -355,9 +358,7 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 	// In a join, the main subquery's columns are auto-qualified with its alias
 	// (`p.ServiceName`), and joined columns are reached via `$.<alias>.Column`.
 	const liveJoinBranch = fromQuery(parentSpans, "p")
-		.innerJoinQuery(childSpans, "c", (p, c) =>
-			p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)),
-		)
+		.innerJoinQuery(childSpans, "c", (p, c) => p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)))
 		.select(($) => ({
 			sourceService: $.ServiceName,
 			targetService: $.c.ServiceName,
@@ -379,9 +380,7 @@ export function serviceDependenciesForServiceQuery(opts: ServiceDependenciesForS
 			targetService: $.targetService,
 			callCount: CH.sum($.bucketCallCount),
 			errorCount: CH.sum($.bucketErrorCount),
-			avgDurationMs: CH.sum($.bucketDurationSumMs).div(
-				CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0)),
-			),
+			avgDurationMs: CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
 			p95DurationMs: CH.max_($.bucketMaxDurationMs),
 			estimatedSpanCount: CH.sum($.bucketEstimatedSpanCount),
 		}))
@@ -434,9 +433,7 @@ export function serviceDbEdgesSQL(
 	params: { orgId: string; startTime: string; endTime: string },
 ): CompiledQuery<ServiceDbEdgesOutput> {
 	const esc = escapeClickHouseString
-	const envFilterMv = opts.deploymentEnv
-		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
-		: ""
+	const envFilterMv = opts.deploymentEnv ? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'` : ""
 	const envFilterRaw = opts.deploymentEnv
 		? `AND ResourceAttributes['deployment.environment'] = '${esc(opts.deploymentEnv)}'`
 		: ""
@@ -590,9 +587,7 @@ export function serviceDbEdgesForServiceQuery(opts: ServiceDbEdgesForServiceOpts
 			dbSystem: $.dbSystem,
 			callCount: CH.sum($.bucketCallCount),
 			errorCount: CH.sum($.bucketErrorCount),
-			avgDurationMs: CH.sum($.bucketDurationSumMs).div(
-				CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0)),
-			),
+			avgDurationMs: CH.sum($.bucketDurationSumMs).div(CH.nullIf(CH.sum($.bucketCallCount), CH.lit(0))),
 			p95DurationMs: CH.max_($.bucketMaxDurationMs),
 			estimatedSpanCount: CH.sum($.bucketEstimatedSpanCount),
 		}))
@@ -638,18 +633,17 @@ export interface ServiceDbQuerySummaryOutput {
 	readonly activeServiceCount: number
 }
 
-const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySummaryOutput> =
-	Schema.Struct({
-		queryCount: CHNumber,
-		estimatedQueryCount: CHNumber,
-		errorCount: CHNumber,
-		estimatedErrorCount: CHNumber,
-		errorRate: CHNumber,
-		avgDurationMs: CHNumber,
-		p50DurationMs: CHNumber,
-		p95DurationMs: CHNumber,
-		activeServiceCount: CHNumber,
-	})
+const ServiceDbQuerySummaryOutputSchema: CompiledQueryRowSchema<ServiceDbQuerySummaryOutput> = Schema.Struct({
+	queryCount: CHNumber,
+	estimatedQueryCount: CHNumber,
+	errorCount: CHNumber,
+	estimatedErrorCount: CHNumber,
+	errorRate: CHNumber,
+	avgDurationMs: CHNumber,
+	p50DurationMs: CHNumber,
+	p95DurationMs: CHNumber,
+	activeServiceCount: CHNumber,
+})
 
 export interface ServiceDbQueryTimeseriesOutput {
 	readonly bucket: string
@@ -732,9 +726,7 @@ const clampTopN = (value: number | undefined): number => {
 // from the raw branch below.
 function shapesHourlyWhere(params: ServiceDbQuerySummaryParams): string {
 	const esc = escapeClickHouseString
-	const sourceServiceFilter = params.sourceService
-		? `AND ServiceName = '${esc(params.sourceService)}'`
-		: ""
+	const sourceServiceFilter = params.sourceService ? `AND ServiceName = '${esc(params.sourceService)}'` : ""
 	const envFilter = params.deploymentEnv ? `AND DeploymentEnv = '${esc(params.deploymentEnv)}'` : ""
 
 	return `OrgId = '${esc(params.orgId)}'
@@ -750,14 +742,9 @@ function shapesHourlyWhere(params: ServiceDbQuerySummaryParams): string {
 //    (UNION-ed with the sealed rollup branch)
 //  - "fullWindow":  the whole [start, end] window (sub-hour timeseries, which
 //    the hourly rollup can't express)
-function serviceDbRawWhere(
-	params: ServiceDbQuerySummaryParams,
-	scope: "currentHour" | "fullWindow",
-): string {
+function serviceDbRawWhere(params: ServiceDbQuerySummaryParams, scope: "currentHour" | "fullWindow"): string {
 	const esc = escapeClickHouseString
-	const sourceServiceFilter = params.sourceService
-		? `AND ServiceName = '${esc(params.sourceService)}'`
-		: ""
+	const sourceServiceFilter = params.sourceService ? `AND ServiceName = '${esc(params.sourceService)}'` : ""
 	const envFilter = params.deploymentEnv
 		? `AND ResourceAttributes['deployment.environment'] = '${esc(params.deploymentEnv)}'`
 		: ""
@@ -1025,33 +1012,28 @@ export interface ServiceExternalEdgesOutput {
 	readonly estimatedSpanCount: number
 }
 
-const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEdgesOutput> =
-	Schema.Struct({
-		sourceService: Schema.String,
-		targetType: Schema.Literals(["http", "messaging", "rpc"]),
-		targetSystem: Schema.String,
-		targetName: Schema.String,
-		callCount: CHNumber,
-		errorCount: CHNumber,
-		avgDurationMs: CHNumber,
-		p95DurationMs: CHNumber,
-		estimatedSpanCount: CHNumber,
-	})
+const ServiceExternalEdgesOutputSchema: CompiledQueryRowSchema<ServiceExternalEdgesOutput> = Schema.Struct({
+	sourceService: Schema.String,
+	targetType: Schema.Literals(["http", "messaging", "rpc"]),
+	targetSystem: Schema.String,
+	targetName: Schema.String,
+	callCount: CHNumber,
+	errorCount: CHNumber,
+	avgDurationMs: CHNumber,
+	p95DurationMs: CHNumber,
+	estimatedSpanCount: CHNumber,
+})
 
 export function serviceExternalEdgesSQL(
 	opts: ServiceExternalEdgesOpts,
 	params: { orgId: string; startTime: string; endTime: string },
 ): CompiledQuery<ServiceExternalEdgesOutput> {
 	const esc = escapeClickHouseString
-	const envFilterMv = opts.deploymentEnv
-		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
-		: ""
+	const envFilterMv = opts.deploymentEnv ? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'` : ""
 	const envFilterRaw = opts.deploymentEnv
 		? `AND ResourceAttributes['deployment.environment'] = '${esc(opts.deploymentEnv)}'`
 		: ""
-	const envFilterRes = opts.deploymentEnv
-		? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'`
-		: ""
+	const envFilterRes = opts.deploymentEnv ? `AND DeploymentEnv = '${esc(opts.deploymentEnv)}'` : ""
 
 	// Hourly branch: sealed buckets from the MV-fed table. Carries
 	// `bucket*` aliases so the outer aggregate can't collide with inner ones

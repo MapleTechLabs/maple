@@ -1,18 +1,10 @@
 /**
- * Template literal helpers for rendering HTTP-oriented text with Effect values.
+ * Builds HTTP response text from template literals.
  *
- * This module powers response helpers that accept template tags, such as HTML
- * responses with dynamic fragments, deferred service lookups, or streaming
- * sections. Use `make` when the whole rendered value should be assembled before
- * building the response, and `stream` when parts of the template can be emitted
- * incrementally from effects or streams.
- *
- * Interpolation is intentionally simple: primitive values are converted to
- * strings, arrays are concatenated without separators, and `Option.none`,
- * `null`, and `undefined` render as empty text. The module does not escape HTML,
- * encode bytes, set content types, or compute content lengths, so callers should
- * escape or encode untrusted values and choose the appropriate response
- * constructor for the rendered output.
+ * Template interpolations can be plain values, optional values, effects, or
+ * streams. The resulting effect or stream keeps the errors and service
+ * requirements from any effectful interpolations, which lets response helpers
+ * assemble dynamic text without losing type information.
  *
  * @since 4.0.0
  */

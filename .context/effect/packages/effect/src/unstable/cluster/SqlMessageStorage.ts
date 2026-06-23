@@ -1,19 +1,12 @@
 /**
- * SQL-backed message storage for the unstable cluster runtime.
+ * Persists cluster mailbox messages and replies in SQL.
  *
- * This module persists encoded cluster envelopes and replies in SQL tables so
- * shards can resume work after process restarts, redeliver unprocessed messages,
- * deduplicate requests by primary key, and replay outstanding reply chunks until
- * they are acknowledged. It is the storage implementation to use when a cluster
- * needs durable request / reply state backed by `SqlClient` rather than an
- * in-memory store.
- *
- * The storage layer runs its own migrations and creates messages, replies, and
- * migration tables using the configured prefix (`cluster` by default). Choose a
- * stable prefix before deploying, because changing it points the runtime at a
- * different set of tables. Existing deployments should also keep the generated
- * migration history table with the message tables so future schema changes can
- * be applied consistently across supported SQL dialects.
+ * The SQL-backed `MessageStorage` stores encoded cluster envelopes and reply
+ * chunks so runners can recover mailbox state after restarts. It supports
+ * redelivering unprocessed messages, deduplicating requests by primary key, and
+ * replaying reply chunks until they are acknowledged. This module includes the
+ * storage constructor, layers, migrations, optional table prefixes, and the row
+ * mapping needed by encoded message storage.
  *
  * @since 4.0.0
  */
@@ -41,6 +34,24 @@ const withTracerDisabled = Effect.withTracerEnabled(false)
 /**
  * Creates a SQL-backed `MessageStorage` implementation, running its migrations
  * and using the optional table prefix.
+ *
+ * **When to use**
+ *
+ * Use when you need the SQL-backed `MessageStorage` service directly, such as
+ * when composing a custom layer or providing your own `Snowflake.Generator`.
+ *
+ * **Details**
+ *
+ * The optional `prefix` controls the table names for messages, replies, and
+ * migrations; when omitted, `cluster` is used.
+ *
+ * **Gotchas**
+ *
+ * Changing `prefix` after deployment points the runtime at a different set of
+ * tables, including the migration history table.
+ *
+ * @see {@link layer} for a ready-made layer using the default prefix and generator
+ * @see {@link layerWith} for a ready-made layer with a custom table prefix
  *
  * @category constructors
  * @since 4.0.0
@@ -624,6 +635,26 @@ export const make: (options?: {
 /**
  * Layer that provides SQL-backed `MessageStorage` using the default table prefix
  * and the default snowflake generator.
+ *
+ * **When to use**
+ *
+ * Use when a cluster should persist mailbox messages and replies in SQL using
+ * the default `cluster` table prefix and the standard snowflake generator.
+ *
+ * **Details**
+ *
+ * The layer runs the SQL migrations through `make`, provides `MessageStorage`,
+ * and supplies `Snowflake.layerGenerator` internally. Callers still provide
+ * `SqlClient` and `ShardingConfig`.
+ *
+ * **Gotchas**
+ *
+ * This layer always uses the `cluster` table prefix. Use `layerWith` before
+ * deployment if you need a different stable prefix, because changing prefixes
+ * later points the runtime at a different set of tables.
+ *
+ * @see {@link layerWith} for the same SQL storage layer with a custom table prefix
+ * @see {@link make} for the lower-level service constructor that uses an existing `Snowflake.Generator`
  *
  * @category layers
  * @since 4.0.0

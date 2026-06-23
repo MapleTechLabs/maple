@@ -1,52 +1,11 @@
 /**
- * The `Toolkit` module allows for creating and implementing a collection of
- * `Tool`s which can be used to enhance the capabilities of a large language
- * model beyond simple text generation.
+ * Groups AI tools together with their handlers.
  *
- * **Example** (Creating and implementing toolkits)
- *
- * ```ts
- * import { Effect, Schema, Stream } from "effect"
- * import { Tool, Toolkit } from "effect/unstable/ai"
- *
- * const GetCurrentTime = Tool.make("GetCurrentTime", {
- *   description: "Get the current timestamp",
- *   success: Schema.Number
- * })
- *
- * const GetWeather = Tool.make("GetWeather", {
- *   description: "Get weather for a location",
- *   parameters: Schema.Struct({ location: Schema.String }),
- *   success: Schema.Struct({
- *     temperature: Schema.Number,
- *     condition: Schema.String
- *   })
- * })
- *
- * const MyToolkit = Toolkit.make(GetCurrentTime, GetWeather)
- *
- * const MyToolkitLayer = MyToolkit.toLayer({
- *   GetCurrentTime: () => Effect.succeed(1_704_067_200_000),
- *   GetWeather: ({ location }) =>
- *     Effect.succeed({
- *       temperature: 72,
- *       condition: `sunny in ${location}`
- *     })
- * })
- *
- * const program = Effect.gen(function*() {
- *   const toolkit = yield* MyToolkit
- *   const stream = yield* toolkit.handle("GetWeather", {
- *     location: "San Francisco"
- *   })
- *   const results = yield* Stream.runCollect(stream)
- *
- *   return Array.from(results, ({ result }) => result)
- * }).pipe(Effect.provide(MyToolkitLayer))
- *
- * console.log(Effect.runSync(program))
- * // [{ temperature: 72, condition: "sunny in San Francisco" }]
- * ```
+ * A toolkit connects `Tool` schemas to the handler functions an application
+ * provides for a language model workflow. It can build a handler context or
+ * layer and execute tool calls by name. Execution validates parameters, runs the
+ * handler, encodes the result, supports preliminary streamed results, and
+ * applies the tool's failure mode.
  *
  * @since 4.0.0
  */
@@ -469,8 +428,8 @@ const resolveInput = <Tools extends ReadonlyArray<Tool.Any>>(
  *
  * **When to use**
  *
- * Useful as a starting point for building toolkits or as a default value. Can
- * be extended using the merge function to add tools.
+ * Use when you need an empty starting point for building toolkits or a default
+ * toolkit value that can be extended with `merge`.
  *
  * @category constructors
  * @since 4.0.0

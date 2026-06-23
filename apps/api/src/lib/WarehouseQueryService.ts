@@ -1,6 +1,6 @@
 import { createClient as createClickHouseClient } from "@clickhouse/client-web"
 import { Tinybird } from "@tinybirdco/sdk"
-import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Context, Effect, Layer, Option, Redacted } from "effect"
 import type { WarehouseQueryRequest } from "@maple/domain/http"
 import {
 	makeWarehouseExecutor,
@@ -10,7 +10,6 @@ import {
 	type WarehouseExecutorDeps,
 	type WarehouseQueryServiceShape,
 	type WarehouseSqlClient,
-	type WarehouseSqlError,
 } from "@maple/query-engine/execution"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { WarehouseExecutor } from "@maple/query-engine/observability"
@@ -30,7 +29,7 @@ import { OrgClickHouseSettingsService } from "../services/OrgClickHouseSettingsS
 // ---------------------------------------------------------------------------
 
 // Re-export the executor types so existing import sites stay stable.
-export type { WarehouseQueryServiceShape, SqlQueryOptions, WarehouseSqlError }
+export type { WarehouseQueryServiceShape, SqlQueryOptions }
 
 type ClickHouseConfig = Extract<ResolvedWarehouseConfig, { _tag: "clickhouse" }>
 type TinybirdConfig = Extract<ResolvedWarehouseConfig, { _tag: "tinybird" }>
@@ -117,36 +116,34 @@ export class WarehouseQueryService extends Context.Service<
 		// otherwise the managed Tinybird pipeline. This is the canonical WRITE
 		// target — demo-seed, service-map rollups and alert-check inserts all land
 		// here — and the read-path fallback when an org has no BYO override.
-		const resolveManagedConfig = Effect.fn("WarehouseQueryService.resolveManagedConfig")(
-			function* () {
-				if (Option.isSome(env.CLICKHOUSE_URL)) {
-					yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
-					return {
-						config: {
-							_tag: "clickhouse" as const,
-							url: env.CLICKHOUSE_URL.value,
-							username: env.CLICKHOUSE_USER,
-							password: Option.match(env.CLICKHOUSE_PASSWORD, {
-								onNone: () => Redacted.value(env.TINYBIRD_TOKEN),
-								onSome: Redacted.value,
-							}),
-							database: env.CLICKHOUSE_DATABASE,
-						},
-						source: "managed" as const,
-					}
-				}
-
-				yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+		const resolveManagedConfig = Effect.fn("WarehouseQueryService.resolveManagedConfig")(function* () {
+			if (Option.isSome(env.CLICKHOUSE_URL)) {
+				yield* Effect.annotateCurrentSpan("db.client", "clickhouse")
 				return {
 					config: {
-						_tag: "tinybird" as const,
-						host: env.TINYBIRD_HOST,
-						token: Redacted.value(env.TINYBIRD_TOKEN),
+						_tag: "clickhouse" as const,
+						url: env.CLICKHOUSE_URL.value,
+						username: env.CLICKHOUSE_USER,
+						password: Option.match(env.CLICKHOUSE_PASSWORD, {
+							onNone: () => Redacted.value(env.TINYBIRD_TOKEN),
+							onSome: Redacted.value,
+						}),
+						database: env.CLICKHOUSE_DATABASE,
 					},
 					source: "managed" as const,
 				}
-			},
-		)
+			}
+
+			yield* Effect.annotateCurrentSpan("db.client", "tinybird-sdk")
+			return {
+				config: {
+					_tag: "tinybird" as const,
+					host: env.TINYBIRD_HOST,
+					token: Redacted.value(env.TINYBIRD_TOKEN),
+				},
+				source: "managed" as const,
+			}
+		})
 
 		/**
 		 * Read-path config. A per-org BYO ClickHouse row (`org_clickhouse_settings`)

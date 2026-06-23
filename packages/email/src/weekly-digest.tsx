@@ -1,17 +1,4 @@
-import {
-	Body,
-	Column,
-	Container,
-	Head,
-	Hr,
-	Html,
-	Link,
-	Preview,
-	Row,
-	Section,
-	Tailwind,
-	Text,
-} from "@react-email/components"
+import { Body, Container, Head, Html, Link, Preview, Section, Tailwind, Text } from "@react-email/components"
 
 export interface WeeklyDigestProps {
 	orgName: string
@@ -426,5 +413,3 @@ export function WeeklyDigest({
 		</Html>
 	)
 }
-
-export default WeeklyDigest

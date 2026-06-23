@@ -126,9 +126,9 @@ describe("CloudflareLogpushService", () => {
 				created.connector.id,
 				asUserId("user_b"),
 			)
-			const connector = yield* service.list(asOrgId("org_a")).pipe(
-				Effect.map((rows) => rows.connectors[0]!),
-			)
+			const connector = yield* service
+				.list(asOrgId("org_a"))
+				.pipe(Effect.map((rows) => rows.connectors[0]!))
 
 			assert.notStrictEqual(rotated.destinationConf, created.setup.destinationConf)
 			assert.strictEqual(connector.name, created.connector.name)
@@ -192,9 +192,7 @@ describe("CloudflareLogpushService", () => {
 				zoneName: "example.com",
 			})
 
-			const missing = yield* service.getSetup(asOrgId("org_b"), created.connector.id).pipe(
-				Effect.flip,
-			)
+			const missing = yield* service.getSetup(asOrgId("org_b"), created.connector.id).pipe(Effect.flip)
 
 			assert.instanceOf(missing, CloudflareLogpushNotFoundError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
@@ -205,10 +203,12 @@ describe("CloudflareLogpushService", () => {
 
 		return Effect.gen(function* () {
 			const service = yield* CloudflareLogpushService
-			const result = yield* service.create(asOrgId("org_a"), asUserId("user_a"), {
-				name: " ",
-				zoneName: " ",
-			}).pipe(Effect.flip)
+			const result = yield* service
+				.create(asOrgId("org_a"), asUserId("user_a"), {
+					name: " ",
+					zoneName: " ",
+				})
+				.pipe(Effect.flip)
 
 			assert.instanceOf(result, CloudflareLogpushValidationError)
 		}).pipe(Effect.provide(makeLayer(testDb)))

@@ -83,7 +83,10 @@ export function AnomalyGroup({
 				<span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground">
 					{isOpen ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}
 				</span>
-				<span aria-hidden className={cn("size-2 shrink-0 rounded-full", SEVERITY_TONE[group].accent)} />
+				<span
+					aria-hidden
+					className={cn("size-2 shrink-0 rounded-full", SEVERITY_TONE[group].accent)}
+				/>
 				<span className="shrink-0 text-sm font-medium text-foreground">{GROUP_LABEL[group]}</span>
 				<span className="text-xs text-muted-foreground tabular-nums">{incidents.length}</span>
 			</button>
@@ -100,7 +103,9 @@ export function AnomalyGroup({
 											getServiceColorClass(cluster.serviceName),
 										)}
 									/>
-									<span className="font-medium text-foreground/80">{cluster.serviceName}</span>
+									<span className="font-medium text-foreground/80">
+										{cluster.serviceName}
+									</span>
 									{cluster.deploymentEnv ? <span>{cluster.deploymentEnv}</span> : null}
 									<span className="tabular-nums">{cluster.incidents.length} anomalies</span>
 								</div>

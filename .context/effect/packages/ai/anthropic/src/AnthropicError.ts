@@ -10,6 +10,14 @@
 /**
  * Anthropic-specific error metadata fields.
  *
+ * **Details**
+ *
+ * Contains the Anthropic error type and request identifier copied from provider
+ * error responses when available. Either field may be `null` when Anthropic
+ * does not include it or the response cannot be decoded.
+ *
+ * @see {@link AnthropicRateLimitMetadata} for rate-limit responses that also include parsed Anthropic rate-limit headers
+ *
  * @category models
  * @since 4.0.0
  */

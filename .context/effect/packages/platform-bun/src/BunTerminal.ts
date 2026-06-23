@@ -1,17 +1,9 @@
 /**
  * Bun-backed implementation of Effect's `Terminal` service.
  *
- * This module provides a scoped, process-backed terminal for Bun programs by
- * adapting the runtime's Node-compatible stdin, stdout, and `readline` support.
- * It is useful for CLIs, prompts, REPLs, and terminal interfaces that need
- * prompt output, line input, keypress input, or terminal dimensions.
- *
- * The service uses the current process streams, so acquire it with a scope or
- * provide `layer` to ensure cleanup. When stdin is attached to a TTY, raw mode
- * is enabled while the terminal is active and restored when the scope closes;
- * this changes how keys are delivered and can affect other consumers of stdin.
- * In pipes, redirected input, or CI, raw mode may be unavailable, keypress input
- * is limited, and stdout dimensions may be reported as zero.
+ * This module reuses the shared Node terminal implementation for Bun. `make`
+ * creates a scoped process-backed `Terminal` service, and `layer` provides the
+ * default terminal service with the standard quit behavior for key input.
  *
  * @since 4.0.0
  */

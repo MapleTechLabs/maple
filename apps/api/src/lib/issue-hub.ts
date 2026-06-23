@@ -31,8 +31,7 @@ const decodeActorId = Schema.decodeUnknownSync(ActorId)
  * decimal UInt64 strings from ClickHouse, so the `alert:` prefix can never
  * collide with them inside the UNIQUE(orgId, fingerprintHash) index.
  */
-export const alertIssueFingerprint = (ruleId: string, groupKey: string) =>
-	`alert:${ruleId}:${groupKey}`
+export const alertIssueFingerprint = (ruleId: string, groupKey: string) => `alert:${ruleId}:${groupKey}`
 
 /** Detection-time severity mapping; refined later by AI triage or a human. */
 export const detectorSeverityFor = (severity: AlertSeverity): IssueSeverity =>
@@ -66,16 +65,12 @@ export interface UpsertAlertIssueResult {
 const describeIncident = (input: UpsertAlertIssueInput): string => {
 	const observed = input.observedValue == null ? "no data" : `observed ${input.observedValue}`
 	const bound =
-		input.thresholdUpper == null
-			? `${input.threshold}`
-			: `${input.threshold}..${input.thresholdUpper}`
+		input.thresholdUpper == null ? `${input.threshold}` : `${input.threshold}..${input.thresholdUpper}`
 	const group = input.groupKey === "__total__" ? "" : ` (group ${input.groupKey})`
 	return `${input.signalType} ${input.comparator} ${bound} — ${observed}${group}`
 }
 
-const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(function* (
-	orgId: OrgId,
-) {
+const ensureSystemAlertsActor = Effect.fn("issueHub.ensureSystemAlertsActor")(function* (orgId: OrgId) {
 	const database = yield* Database
 	const select = () =>
 		database.execute((db) =>

@@ -79,7 +79,7 @@ export interface OpenApiGeneratorWarning {
 /**
  * Options that control one OpenAPI generation run.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface OpenApiGenerateOptions {
@@ -348,11 +348,11 @@ const parseOpenApi = (
         return Number(status) < 400
       })
 
-      if (isHttpApi && hasSuccessfulSseResponse(resolvedResponses, hasExplicitSuccessResponse)) {
+      if (isHttpApi && hasUnsupportedSuccessfulSseResponse(resolvedResponses, hasExplicitSuccessResponse)) {
         warnForOperation(emitWarning, op, {
           code: "sse-operation-skipped",
           message:
-            "Operation was skipped because successful text/event-stream responses are not supported in HttpApi generation."
+            "Operation was skipped because a successful SSE response is missing x-effect-stream metadata required for HttpApi generation."
         })
         continue
       }
@@ -511,7 +511,46 @@ const parseOpenApi = (
             if (contentType === "application/json") {
               continue
             }
-            if (!Predicate.isObject(mediaType) || Predicate.isUndefined(mediaType.schema)) {
+            if (!Predicate.isObject(mediaType)) {
+              continue
+            }
+
+            const statusMajorNumber = Number(parsedStatus[0])
+            const streamEncoding = !Number.isNaN(statusMajorNumber) && statusMajorNumber < 4
+              ? getEffectStreamEncoding(mediaType)
+              : undefined
+            if (streamEncoding === "uint8array") {
+              representable.push({
+                contentType,
+                encoding: "binary",
+                effectStream: "uint8array"
+              })
+              continue
+            }
+            if (streamEncoding === "sse") {
+              const errorSchema = getEffectStreamErrorSchema(mediaType)
+              if (Predicate.isUndefined(mediaType.schema) || Predicate.isUndefined(errorSchema)) {
+                continue
+              }
+              representable.push({
+                contentType,
+                encoding: "text",
+                effectStream: "sse",
+                schema: addSchema(
+                  `${schemaId}${status}Sse`,
+                  mediaType.schema as JsonSchema.JsonSchema,
+                  op
+                ),
+                errorSchema: addSchema(
+                  `${schemaId}${status}SseError`,
+                  errorSchema,
+                  op
+                )
+              })
+              continue
+            }
+
+            if (Predicate.isUndefined(mediaType.schema)) {
               continue
             }
             const encoding = getResponseMediaTypeEncoding(contentType)
@@ -566,7 +605,7 @@ const parseOpenApi = (
         }
 
         const sseResponseSchema = content?.["text/event-stream"]?.schema
-        if (Predicate.isUndefined(op.sseSchema) && Predicate.isNotUndefined(sseResponseSchema)) {
+        if (!isHttpApi && Predicate.isUndefined(op.sseSchema) && Predicate.isNotUndefined(sseResponseSchema)) {
           const statusMajorNumber = Number(parsedStatus[0])
           if (!Number.isNaN(statusMajorNumber) && statusMajorNumber < 4) {
             op.sseSchema = addSchema(`${schemaId}${status}Sse`, sseResponseSchema, op)
@@ -924,6 +963,22 @@ const getResponseMediaTypeEncoding = (
   return
 }
 
+const getEffectStreamEncoding = (mediaType: object): "uint8array" | "sse" | undefined => {
+  const stream = (mediaType as Record<string, unknown>)["x-effect-stream"]
+  if (!Predicate.isObject(stream)) {
+    return
+  }
+  return stream.encoding === "uint8array" || stream.encoding === "sse" ? stream.encoding : undefined
+}
+
+const getEffectStreamErrorSchema = (mediaType: object): JsonSchema.JsonSchema | undefined => {
+  const stream = (mediaType as Record<string, unknown>)["x-effect-stream"]
+  if (!Predicate.isObject(stream) || !Predicate.isObject(stream.errorSchema)) {
+    return
+  }
+  return stream.errorSchema as JsonSchema.JsonSchema
+}
+
 const resolveReference = (input: unknown, resolveRef: (ref: string) => unknown): any => {
   let current = input
   while (Predicate.isObject(current) && typeof current.$ref === "string") {
@@ -954,7 +1009,7 @@ const parseSecuritySchemes = (
       continue
     }
 
-    if (scheme.type === "http") {
+    if (scheme.type === "http" && typeof scheme.scheme === "string") {
       const normalizedScheme = scheme.scheme.toLowerCase()
       if (normalizedScheme === "basic") {
         parsed.push({
@@ -962,6 +1017,7 @@ const parseSecuritySchemes = (
           type: "basic",
           description: Utils.nonEmptyString(scheme.description),
           bearerFormat: undefined,
+          scheme: undefined,
           key: undefined,
           in: undefined
         })
@@ -971,6 +1027,17 @@ const parseSecuritySchemes = (
           type: "bearer",
           description: Utils.nonEmptyString(scheme.description),
           bearerFormat: Utils.nonEmptyString(scheme.bearerFormat),
+          scheme: undefined,
+          key: undefined,
+          in: undefined
+        })
+      } else {
+        parsed.push({
+          name,
+          type: "http",
+          description: Utils.nonEmptyString(scheme.description),
+          bearerFormat: Utils.nonEmptyString(scheme.bearerFormat),
+          scheme: scheme.scheme,
           key: undefined,
           in: undefined
         })
@@ -988,6 +1055,7 @@ const parseSecuritySchemes = (
         type: "apiKey",
         description: Utils.nonEmptyString(scheme.description),
         bearerFormat: undefined,
+        scheme: undefined,
         key: scheme.name,
         in: scheme.in
       })
@@ -1018,7 +1086,7 @@ const warnForAndSecurityRequirements = (
   }
 }
 
-const hasSuccessfulSseResponse = (
+const hasUnsupportedSuccessfulSseResponse = (
   responses: ReadonlyArray<readonly [string, unknown]>,
   hasExplicitSuccessResponse: boolean
 ): boolean => {
@@ -1026,17 +1094,33 @@ const hasSuccessfulSseResponse = (
     if (!Predicate.isObject(response)) {
       continue
     }
-    const content = Predicate.isObject(response.content)
-      ? response.content as Record<string, any>
-      : undefined
-    if (Predicate.isUndefined(content?.["text/event-stream"]?.schema)) {
+    const remappedStatus = remapDefaultResponseStatusForHttpApi(status, hasExplicitSuccessResponse)
+    const statusCode = Number(remappedStatus)
+    if (Number.isNaN(statusCode) || statusCode >= 400) {
       continue
     }
 
-    const remappedStatus = remapDefaultResponseStatusForHttpApi(status, hasExplicitSuccessResponse)
-    const statusCode = Number(remappedStatus)
-    if (!Number.isNaN(statusCode) && statusCode < 400) {
-      return true
+    const content = Predicate.isObject(response.content)
+      ? response.content as Record<string, any>
+      : undefined
+    if (Predicate.isUndefined(content)) {
+      continue
+    }
+
+    for (const [contentType, mediaType] of Object.entries(content)) {
+      if (!Predicate.isObject(mediaType)) {
+        continue
+      }
+      const streamEncoding = getEffectStreamEncoding(mediaType)
+      if (streamEncoding === "sse") {
+        if (Predicate.isUndefined(mediaType.schema) || Predicate.isUndefined(getEffectStreamErrorSchema(mediaType))) {
+          return true
+        }
+        continue
+      }
+      if (contentType === "text/event-stream") {
+        return true
+      }
     }
   }
   return false

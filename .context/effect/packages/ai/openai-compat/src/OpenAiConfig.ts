@@ -1,23 +1,8 @@
 /**
- * The `OpenAiConfig` module provides shared configuration for clients that
- * talk to OpenAI-compatible APIs. It is used to customize the HTTP client
- * wiring around a provider without changing the higher-level model,
- * embeddings, or tool-calling APIs that consume the client.
- *
- * **Common tasks**
- *
- * - Install a client transform with {@link withClientTransform}
- * - Add provider-specific HTTP behavior, such as headers, retries, proxies, or
- *   instrumentation
- * - Read the active configuration from the Effect context when implementing
- *   OpenAI-compatible integrations
- *
- * **Gotchas**
- *
- * - The transform receives and returns an `HttpClient`, so it should preserve
- *   the existing client behavior unless it intentionally replaces it
- * - Configuration is provided through Effect context and is scoped to the
- *   effect that receives the service
+ * The `OpenAiConfig` module lets a workflow temporarily customize the HTTP
+ * client used by OpenAI-compatible request helpers. Model, embedding, and
+ * tool-calling code can use this scoped configuration to add middleware,
+ * instrumentation, or routing without rebuilding the client layer.
  *
  * @since 4.0.0
  */
@@ -27,8 +12,15 @@ import { dual } from "effect/Function"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
 
 /**
- * Context service used to carry OpenAI-compatible client configuration for the
- * current Effect scope.
+ * Context service for OpenAI-compatible client configuration in the current
+ * Effect scope.
+ *
+ * **When to use**
+ *
+ * Use as the context service for scoped OpenAI-compatible client configuration
+ * and HTTP client transforms.
+ *
+ * @see {@link withClientTransform} for scoping an HTTP client transformation
  *
  * @category services
  * @since 4.0.0
@@ -71,7 +63,7 @@ export declare namespace OpenAiConfig {
  *
  * **When to use**
  *
- * Use this to add provider-specific OpenAI-compatible HTTP behavior, such as
+ * Use to add provider-specific OpenAI-compatible HTTP behavior, such as
  * headers, retries, instrumentation, or proxy routing.
  *
  * **Details**

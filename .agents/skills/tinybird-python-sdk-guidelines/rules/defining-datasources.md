@@ -29,32 +29,27 @@ page_views = define_datasource(
 The `t` object provides type definitions:
 
 ### String Types
-
 - `t.string()` - Variable-length string
 - `t.fixed_string(n)` - Fixed-length string
 - `t.uuid()` - UUID type
 
 ### Numeric Types
-
 - `t.int32()`, `t.int64()` - Signed integers
 - `t.uint32()`, `t.uint64()` - Unsigned integers
 - `t.float32()`, `t.float64()` - Floating point
 - `t.decimal(precision, scale)` - Decimal type
 
 ### Date/Time Types
-
 - `t.date_time()` - DateTime type
 - `t.date_time64(precision)` - DateTime64 with precision (0-9)
 - `t.date()` - Date type
 
 ### Other Types
-
 - `t.bool()` - Boolean type (stored as UInt8)
 - `t.array(inner_type)` - Array of any type
 - `t.map(key_type, value_type)` - Map/dictionary type
 
 ### Aggregate Types
-
 - `t.simple_aggregate_function(func, inner_type)` - For summing merge tree
 - `t.aggregate_function(func, inner_type)` - For aggregating merge tree
 
@@ -67,7 +62,6 @@ Chain modifiers on types:
 - `.default(value)` - Set default value
 
 Example:
-
 ```python
 schema = {
     "tags": t.array(t.string()),
@@ -80,7 +74,6 @@ schema = {
 ## Engine Configuration
 
 ### MergeTree
-
 ```python
 engine.merge_tree(
     {
@@ -92,7 +85,6 @@ engine.merge_tree(
 ```
 
 ### ReplacingMergeTree
-
 ```python
 engine.replacing_merge_tree(
     {
@@ -103,7 +95,6 @@ engine.replacing_merge_tree(
 ```
 
 ### SummingMergeTree
-
 ```python
 engine.summing_merge_tree(
     {
@@ -114,7 +105,6 @@ engine.summing_merge_tree(
 ```
 
 ### AggregatingMergeTree
-
 ```python
 engine.aggregating_merge_tree(
     {

@@ -4,7 +4,6 @@ import {
 	type ActorId,
 	ActorId as ActorIdSchema,
 	ActorNotFoundError,
-	type ActorType,
 	ActorsListResponse,
 	type AlertDestinationId,
 	ErrorIncidentDocument,
@@ -12,7 +11,6 @@ import {
 	type ErrorIncidentReason,
 	ErrorIssueDetailResponse,
 	ErrorIssueDocument,
-	type ErrorIssueEventId,
 	ErrorIssueEventId as ErrorIssueEventIdSchema,
 	ErrorIssueEventDocument,
 	ErrorIssueEventsResponse,
@@ -61,6 +59,7 @@ import {
 	issueEscalationPolicies,
 	type IssueEscalationPolicyRow,
 	issueEscalations,
+	orgClickHouseSettings,
 	orgIngestKeys,
 } from "@maple/db"
 import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm"
@@ -72,7 +71,6 @@ import { escalationDedupeKey, escalationReasonFor } from "../lib/issue-severity"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
-import { dateToMs, msToDate } from "../lib/time"
 import { NotificationDispatcher } from "./NotificationDispatcher"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 
@@ -86,18 +84,21 @@ const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 const decodeTraceIdSync = Schema.decodeUnknownSync(TraceIdSchema)
 const decodeSpanIdSync = Schema.decodeUnknownSync(SpanIdSchema)
 
-// Lenient decoders for JSON stored in jsonb columns. Decode failures fall back
+// Lenient decoders for JSON stored in text columns. Decode failures fall back
 // to an empty/null value at each call site — stored blobs are best-effort.
 const decodeStoredJsonRecord = Schema.decodeUnknownOption(
-	Schema.Record(Schema.String, Schema.Unknown),
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
 )
-const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown))
+const decodeStoredJsonArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.Unknown)))
 
-const DEFAULT_LIST_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_DETAIL_WINDOW_MS = 24 * 60 * 60 * 1000
 const DEFAULT_EVENTS_LIMIT = 100
 const AUTO_RESOLVE_MINUTES = 30
 const TICK_WINDOW_MS = 2 * 60_000
+/** Active-org discovery window — a superset of the 2-min scan window so an org
+ *  with recent (but not last-2-min) errors still gets scanned, with slack for
+ *  cron jitter and MV write lag. */
+const ERROR_ACTIVE_DISCOVERY_WINDOW_MS = 15 * 60_000
 const RESOLVED_RETENTION_DAYS = 14
 const ARCHIVED_RETENTION_DAYS = 90
 const RETENTION_PHASE_EVERY_N_TICKS = 30
@@ -149,9 +150,7 @@ export const isBusyDatabaseError = (error: DatabaseError): boolean => {
 	return false
 }
 
-const BUSY_RETRY_SCHEDULE = Schedule.exponential("50 millis", 2.0).pipe(
-	Schedule.both(Schedule.recurs(3)),
-)
+const BUSY_RETRY_SCHEDULE = Schedule.exponential("50 millis", 2.0).pipe(Schedule.both(Schedule.recurs(3)))
 
 // ---------------------------------------------------------------------------
 // Transition matrix. Rows = from, values = set of allowed "to" states.
@@ -391,7 +390,7 @@ const make: Effect.Effect<
 	const toTinybirdDateTime = (epochMs: number) =>
 		new Date(epochMs).toISOString().slice(0, 19).replace("T", " ")
 
-	const isoFromDate = (date: Date) => decodeIsoDateTimeStringSync(date.toISOString())
+	const isoFromEpoch = (ms: number) => decodeIsoDateTimeStringSync(new Date(ms).toISOString())
 
 	const systemTenant = (orgId: OrgId): TenantContext => ({
 		orgId,
@@ -401,10 +400,59 @@ const make: Effect.Effect<
 	})
 
 	// ---------------------------------------------------------------
+	// Active-org gating
+	//
+	// The tick historically scanned the warehouse for every org that ever held
+	// an ingest key — overwhelmingly idle orgs with zero recent errors, which
+	// dominated Tinybird CPU. Instead, run ONE cross-org scan of recent error
+	// events (pinned to managed Tinybird) and only scan orgs that show up.
+	// BYO-ClickHouse orgs are invisible to that scan, so they are always treated
+	// as active. Fails OPEN: if discovery errors, every known org is scanned (the
+	// prior behaviour), never silently dropped.
+	// ---------------------------------------------------------------
+
+	const resolveActiveOrgs = Effect.fn("ErrorsService.resolveActiveOrgs")(function* (
+		knownOrgs: ReadonlyArray<string>,
+		nowMs: number,
+	) {
+		const byoRows = yield* dbExecute((db) =>
+			db.selectDistinct({ orgId: orgClickHouseSettings.orgId }).from(orgClickHouseSettings),
+		).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<{ orgId: string }>))
+		const byo = new Set<string>(byoRows.map((r) => r.orgId))
+
+		if (knownOrgs.length === 0) return byo as ReadonlySet<string>
+
+		const compiled = CH.compile(CH.activeOrgsByErrorEventsQuery(), {
+			startTime: toTinybirdDateTime(nowMs - ERROR_ACTIVE_DISCOVERY_WINDOW_MS),
+		})
+		return yield* warehouse
+			.compiledQuery(systemTenant(knownOrgs[0] as OrgId), compiled, {
+				pinToIngestConfig: true,
+				context: "errorActiveOrgsDiscovery",
+			})
+			.pipe(
+				Effect.map((rows) => {
+					const active = new Set<string>(byo)
+					for (const row of rows) {
+						const orgId = String((row as { orgId?: unknown }).orgId ?? "")
+						if (orgId) active.add(orgId)
+					}
+					return active as ReadonlySet<string>
+				}),
+				Effect.catchCause((cause) =>
+					Effect.logWarning("Error active-org discovery failed; scanning all known orgs").pipe(
+						Effect.annotateLogs({ error: Cause.pretty(cause) }),
+						Effect.as("all" as const),
+					),
+				),
+			)
+	})
+
+	// ---------------------------------------------------------------
 	// Actors
 	// ---------------------------------------------------------------
 
-	const parseCapabilities = (raw: unknown): ReadonlyArray<string> =>
+	const parseCapabilities = (raw: string): ReadonlyArray<string> =>
 		Option.getOrElse(decodeStoredJsonArray(raw), (): ReadonlyArray<unknown> => []).filter(
 			(v): v is string => typeof v === "string",
 		)
@@ -417,7 +465,7 @@ const make: Effect.Effect<
 			agentName: row.agentName ?? null,
 			model: row.model ?? null,
 			capabilities: parseCapabilities(row.capabilitiesJson),
-			lastActiveAt: row.lastActiveAt == null ? null : isoFromDate(row.lastActiveAt),
+			lastActiveAt: row.lastActiveAt == null ? null : isoFromEpoch(row.lastActiveAt),
 		})
 
 	const selectActorRow = (orgId: OrgId, actorId: ActorId) =>
@@ -450,7 +498,7 @@ const make: Effect.Effect<
 		dbExecute((db) =>
 			db
 				.update(actors)
-				.set({ lastActiveAt: new Date(timestamp) })
+				.set({ lastActiveAt: timestamp })
 				.where(and(eq(actors.orgId, orgId), eq(actors.id, actorId))),
 		).pipe(
 			Effect.tapCause((cause) =>
@@ -461,64 +509,13 @@ const make: Effect.Effect<
 			Effect.ignore,
 		)
 
-	const ensureUserActor: ErrorsServiceShape["ensureUserActor"] = Effect.fn(
-		"ErrorsService.ensureUserActor",
-	)(function* (orgId, userId) {
-		const existing = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
-				.limit(1),
-		)
-		if (existing[0]) return rowToActor(existing[0])
-
-		const timestamp = yield* Clock.currentTimeMillis
-		const id = newActorId()
-		const insert: ActorInsert = {
-			id,
-			orgId,
-			type: "user",
-			userId,
-			agentName: null,
-			model: null,
-			capabilitiesJson: [],
-			createdBy: userId,
-			createdAt: new Date(timestamp),
-			lastActiveAt: new Date(timestamp),
-		}
-		yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
-		const after = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(actors)
-				.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
-				.limit(1),
-		)
-		const row = after[0]
-		if (!row) {
-			return yield* Effect.fail(
-				new ErrorPersistenceError({
-					message: "Failed to ensure user actor row",
-				}),
-			)
-		}
-		return rowToActor(row)
-	})
-
-	const ensureSystemActor = Effect.fn("ErrorsService.ensureSystemActor")(
-		function* (orgId: OrgId) {
+	const ensureUserActor: ErrorsServiceShape["ensureUserActor"] = Effect.fn("ErrorsService.ensureUserActor")(
+		function* (orgId, userId) {
 			const existing = yield* dbExecute((db) =>
 				db
 					.select()
 					.from(actors)
-					.where(
-						and(
-							eq(actors.orgId, orgId),
-							eq(actors.type, "agent"),
-							eq(actors.agentName, SYSTEM_AGENT_NAME),
-						),
-					)
+					.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
 					.limit(1),
 			)
 			if (existing[0]) return rowToActor(existing[0])
@@ -528,40 +525,89 @@ const make: Effect.Effect<
 			const insert: ActorInsert = {
 				id,
 				orgId,
-				type: "agent",
-				userId: null,
-				agentName: SYSTEM_AGENT_NAME,
+				type: "user",
+				userId,
+				agentName: null,
 				model: null,
-				capabilitiesJson: ["system", "auto-triage"],
-				createdBy: null,
-				createdAt: new Date(timestamp),
-				lastActiveAt: new Date(timestamp),
+				capabilitiesJson: "[]",
+				createdBy: userId,
+				createdAt: timestamp,
+				lastActiveAt: timestamp,
 			}
 			yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
 			const after = yield* dbExecute((db) =>
 				db
 					.select()
 					.from(actors)
-					.where(
-						and(
-							eq(actors.orgId, orgId),
-							eq(actors.type, "agent"),
-							eq(actors.agentName, SYSTEM_AGENT_NAME),
-						),
-					)
+					.where(and(eq(actors.orgId, orgId), eq(actors.type, "user"), eq(actors.userId, userId)))
 					.limit(1),
 			)
 			const row = after[0]
 			if (!row) {
 				return yield* Effect.fail(
 					new ErrorPersistenceError({
-						message: "Failed to ensure system actor row",
+						message: "Failed to ensure user actor row",
 					}),
 				)
 			}
 			return rowToActor(row)
 		},
 	)
+
+	const ensureSystemActor = Effect.fn("ErrorsService.ensureSystemActor")(function* (orgId: OrgId) {
+		const existing = yield* dbExecute((db) =>
+			db
+				.select()
+				.from(actors)
+				.where(
+					and(
+						eq(actors.orgId, orgId),
+						eq(actors.type, "agent"),
+						eq(actors.agentName, SYSTEM_AGENT_NAME),
+					),
+				)
+				.limit(1),
+		)
+		if (existing[0]) return rowToActor(existing[0])
+
+		const timestamp = yield* Clock.currentTimeMillis
+		const id = newActorId()
+		const insert: ActorInsert = {
+			id,
+			orgId,
+			type: "agent",
+			userId: null,
+			agentName: SYSTEM_AGENT_NAME,
+			model: null,
+			capabilitiesJson: JSON.stringify(["system", "auto-triage"]),
+			createdBy: null,
+			createdAt: timestamp,
+			lastActiveAt: timestamp,
+		}
+		yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
+		const after = yield* dbExecute((db) =>
+			db
+				.select()
+				.from(actors)
+				.where(
+					and(
+						eq(actors.orgId, orgId),
+						eq(actors.type, "agent"),
+						eq(actors.agentName, SYSTEM_AGENT_NAME),
+					),
+				)
+				.limit(1),
+		)
+		const row = after[0]
+		if (!row) {
+			return yield* Effect.fail(
+				new ErrorPersistenceError({
+					message: "Failed to ensure system actor row",
+				}),
+			)
+		}
+		return rowToActor(row)
+	})
 
 	const registerAgent: ErrorsServiceShape["registerAgent"] = Effect.fn("ErrorsService.registerAgent")(
 		function* (orgId, byUserId, request) {
@@ -593,10 +639,10 @@ const make: Effect.Effect<
 				userId: null,
 				agentName: name,
 				model: request.model ?? null,
-				capabilitiesJson: capabilities,
+				capabilitiesJson: JSON.stringify(capabilities),
 				createdBy: byUserId,
-				createdAt: new Date(timestamp),
-				lastActiveAt: new Date(timestamp),
+				createdAt: timestamp,
+				lastActiveAt: timestamp,
 			}
 
 			yield* dbExecute((db) => db.insert(actors).values(insert).onConflictDoNothing())
@@ -605,13 +651,7 @@ const make: Effect.Effect<
 				db
 					.select()
 					.from(actors)
-					.where(
-						and(
-							eq(actors.orgId, orgId),
-							eq(actors.type, "agent"),
-							eq(actors.agentName, name),
-						),
-					)
+					.where(and(eq(actors.orgId, orgId), eq(actors.type, "agent"), eq(actors.agentName, name)))
 					.limit(1),
 			)
 			const row = rows[0]
@@ -674,7 +714,7 @@ const make: Effect.Effect<
 		)
 	}
 
-	const parseSourceRef = (json: unknown): Record<string, unknown> | null => {
+	const parseSourceRef = (json: string | null): Record<string, unknown> | null => {
 		if (json == null) return null
 		return Option.match(decodeStoredJsonRecord(json), {
 			onNone: () => null,
@@ -701,19 +741,18 @@ const make: Effect.Effect<
 			severity: row.severity ?? null,
 			severitySource: row.severitySource ?? null,
 			sourceRef: parseSourceRef(row.sourceRefJson),
-			assignedActor:
-				row.assignedActorId == null ? null : (actorMap.get(row.assignedActorId) ?? null),
+			assignedActor: row.assignedActorId == null ? null : (actorMap.get(row.assignedActorId) ?? null),
 			leaseHolder:
 				row.leaseHolderActorId == null ? null : (actorMap.get(row.leaseHolderActorId) ?? null),
-			leaseExpiresAt: row.leaseExpiresAt == null ? null : isoFromDate(row.leaseExpiresAt),
-			claimedAt: row.claimedAt == null ? null : isoFromDate(row.claimedAt),
+			leaseExpiresAt: row.leaseExpiresAt == null ? null : isoFromEpoch(row.leaseExpiresAt),
+			claimedAt: row.claimedAt == null ? null : isoFromEpoch(row.claimedAt),
 			notes: row.notes ?? null,
-			firstSeenAt: isoFromDate(row.firstSeenAt),
-			lastSeenAt: isoFromDate(row.lastSeenAt),
+			firstSeenAt: isoFromEpoch(row.firstSeenAt),
+			lastSeenAt: isoFromEpoch(row.lastSeenAt),
 			occurrenceCount: row.occurrenceCount,
-			resolvedAt: row.resolvedAt == null ? null : isoFromDate(row.resolvedAt),
-			snoozeUntil: row.snoozeUntil == null ? null : isoFromDate(row.snoozeUntil),
-			archivedAt: row.archivedAt == null ? null : isoFromDate(row.archivedAt),
+			resolvedAt: row.resolvedAt == null ? null : isoFromEpoch(row.resolvedAt),
+			snoozeUntil: row.snoozeUntil == null ? null : isoFromEpoch(row.snoozeUntil),
+			archivedAt: row.archivedAt == null ? null : isoFromEpoch(row.archivedAt),
 			hasOpenIncident,
 		})
 
@@ -723,9 +762,9 @@ const make: Effect.Effect<
 			issueId: row.issueId,
 			status: row.status,
 			reason: row.reason,
-			firstTriggeredAt: isoFromDate(row.firstTriggeredAt),
-			lastTriggeredAt: isoFromDate(row.lastTriggeredAt),
-			resolvedAt: row.resolvedAt == null ? null : isoFromDate(row.resolvedAt),
+			firstTriggeredAt: isoFromEpoch(row.firstTriggeredAt),
+			lastTriggeredAt: isoFromEpoch(row.lastTriggeredAt),
+			resolvedAt: row.resolvedAt == null ? null : isoFromEpoch(row.resolvedAt),
 			occurrenceCount: row.occurrenceCount,
 		})
 
@@ -744,7 +783,7 @@ const make: Effect.Effect<
 				onNone: (): Record<string, unknown> => ({}),
 				onSome: (parsed) => ({ ...parsed }),
 			}),
-			createdAt: isoFromDate(row.createdAt),
+			createdAt: isoFromEpoch(row.createdAt),
 		})
 
 	const requireIssue = Effect.fn("ErrorsService.requireIssue")(function* (
@@ -854,8 +893,8 @@ const make: Effect.Effect<
 			type,
 			fromState: opts.fromState ?? null,
 			toState: opts.toState ?? null,
-			payloadJson: opts.payload ?? {},
-			createdAt: new Date(timestamp),
+			payloadJson: JSON.stringify(opts.payload ?? {}),
+			createdAt: timestamp,
 		}
 		return yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
 	})
@@ -867,28 +906,28 @@ const make: Effect.Effect<
 		yield* recordEvent(orgId, issueId, actorId, "anomaly_linked", { payload: { ...payload } })
 	})
 
-	const listIssueEvents: ErrorsServiceShape["listIssueEvents"] = Effect.fn(
-		"ErrorsService.listIssueEvents",
-	)(function* (orgId, issueId, opts) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId })
-		yield* requireIssue(orgId, issueId)
-		const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_EVENTS_LIMIT, 1), 500)
-		const rows = yield* dbExecute((db) =>
-			db
-				.select()
-				.from(errorIssueEvents)
-				.where(and(eq(errorIssueEvents.orgId, orgId), eq(errorIssueEvents.issueId, issueId)))
-				.orderBy(desc(errorIssueEvents.createdAt))
-				.limit(limit),
-		)
-		const actorMap = yield* collectActorDocs(
-			orgId,
-			rows.map((r) => r.actorId ?? null),
-		)
-		return new ErrorIssueEventsResponse({
-			events: rows.map((row) => rowToEvent(row, actorMap)),
-		})
-	})
+	const listIssueEvents: ErrorsServiceShape["listIssueEvents"] = Effect.fn("ErrorsService.listIssueEvents")(
+		function* (orgId, issueId, opts) {
+			yield* Effect.annotateCurrentSpan({ orgId, issueId })
+			yield* requireIssue(orgId, issueId)
+			const limit = Math.min(Math.max(opts?.limit ?? DEFAULT_EVENTS_LIMIT, 1), 500)
+			const rows = yield* dbExecute((db) =>
+				db
+					.select()
+					.from(errorIssueEvents)
+					.where(and(eq(errorIssueEvents.orgId, orgId), eq(errorIssueEvents.issueId, issueId)))
+					.orderBy(desc(errorIssueEvents.createdAt))
+					.limit(limit),
+			)
+			const actorMap = yield* collectActorDocs(
+				orgId,
+				rows.map((r) => r.actorId ?? null),
+			)
+			return new ErrorIssueEventsResponse({
+				events: rows.map((row) => rowToEvent(row, actorMap)),
+			})
+		},
+	)
 
 	// ---------------------------------------------------------------
 	// Issue list + detail
@@ -907,16 +946,15 @@ const make: Effect.Effect<
 			else if (opts.severity) conditions.push(eq(errorIssues.severity, opts.severity))
 			if (opts.kind) conditions.push(eq(errorIssues.kind, opts.kind))
 			if (opts.service) conditions.push(eq(errorIssues.serviceName, opts.service))
-			if (opts.assignedActorId)
-				conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
+			if (opts.assignedActorId) conditions.push(eq(errorIssues.assignedActorId, opts.assignedActorId))
 			if (!opts.includeArchived) conditions.push(isNull(errorIssues.archivedAt))
 			if (opts.endTime) {
 				const endMs = parseWarehouseDateTime(opts.endTime)
-				if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, new Date(endMs)))
+				if (Number.isFinite(endMs)) conditions.push(lt(errorIssues.firstSeenAt, endMs))
 			}
 			if (opts.startTime) {
 				const startMs = parseWarehouseDateTime(opts.startTime)
-				if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, new Date(startMs)))
+				if (Number.isFinite(startMs)) conditions.push(gt(errorIssues.lastSeenAt, startMs))
 			}
 
 			const rows = yield* dbExecute((db) =>
@@ -945,10 +983,10 @@ const make: Effect.Effect<
 		function* (orgId, issueId, opts) {
 			yield* Effect.annotateCurrentSpan({ orgId, issueId })
 			const issueRow = yield* requireIssue(orgId, issueId)
-			const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : (yield* Clock.currentTimeMillis)
+			const endMs = opts.endTime ? parseWarehouseDateTime(opts.endTime) : yield* Clock.currentTimeMillis
 			const startMs = opts.startTime
-					? parseWarehouseDateTime(opts.startTime)
-					: endMs - DEFAULT_DETAIL_WINDOW_MS
+				? parseWarehouseDateTime(opts.startTime)
+				: endMs - DEFAULT_DETAIL_WINDOW_MS
 			const bucketSeconds = opts.bucketSeconds ?? 3600
 			const sampleLimit = opts.sampleLimit ?? 25
 
@@ -969,9 +1007,7 @@ const make: Effect.Effect<
 			const timeseriesEffect = isErrorKind
 				? warehouse
 						.compiledQuery(tenant, timeseriesCompiled, { context: "errorIssueTimeseries" })
-						.pipe(
-							Effect.mapError((e) => makePersistenceError(e)),
-						)
+						.pipe(Effect.mapError((e) => makePersistenceError(e)))
 				: Effect.succeed([])
 
 			const samplesCompiled = CH.compile(CH.errorIssueSampleTracesQuery({ limit: sampleLimit }), {
@@ -983,9 +1019,7 @@ const make: Effect.Effect<
 			const samplesEffect = isErrorKind
 				? warehouse
 						.compiledQuery(tenant, samplesCompiled, { context: "errorIssueSampleTraces" })
-						.pipe(
-							Effect.mapError((e) => makePersistenceError(e)),
-						)
+						.pipe(Effect.mapError((e) => makePersistenceError(e)))
 				: Effect.succeed([])
 
 			const incidentsEffect = dbExecute((db) =>
@@ -1022,9 +1056,7 @@ const make: Effect.Effect<
 						traceId: decodeTraceIdSync(String(row.traceId ?? "")),
 						spanId: decodeSpanIdSync(String(row.spanId ?? "")),
 						serviceName: String(row.serviceName ?? ""),
-						timestamp: decodeIsoDateTimeStringSync(
-							warehouseDateTimeToIso(String(row.timestamp)),
-						),
+						timestamp: decodeIsoDateTimeStringSync(warehouseDateTimeToIso(String(row.timestamp))),
 						exceptionMessage: String(row.exceptionMessage ?? ""),
 						durationMicros: Number(row.durationMicros ?? 0),
 					}),
@@ -1079,11 +1111,11 @@ const make: Effect.Effect<
 
 		const update: Partial<ErrorIssueRow> = {
 			workflowState: toState,
-			updatedAt: new Date(timestamp),
+			updatedAt: timestamp,
 		}
 
 		if (toState === "done") {
-			update.resolvedAt = new Date(timestamp)
+			update.resolvedAt = timestamp
 			update.resolvedByActorId = actorId ?? null
 		} else if (fromState === "done") {
 			update.resolvedAt = null
@@ -1092,7 +1124,7 @@ const make: Effect.Effect<
 
 		if (toState === "wontfix") {
 			if (opts.snoozeUntilMs !== undefined) {
-				update.snoozeUntil = msToDate(opts.snoozeUntilMs)
+				update.snoozeUntil = opts.snoozeUntilMs
 			}
 		} else if (fromState === "wontfix") {
 			update.snoozeUntil = null
@@ -1117,8 +1149,8 @@ const make: Effect.Effect<
 					.update(errorIncidents)
 					.set({
 						status: "resolved",
-						resolvedAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
+						resolvedAt: timestamp,
+						updatedAt: timestamp,
 					})
 					.where(
 						and(
@@ -1131,7 +1163,7 @@ const make: Effect.Effect<
 			yield* dbExecute((db) =>
 				db
 					.update(errorIssueStates)
-					.set({ openIncidentId: null, updatedAt: new Date(timestamp) })
+					.set({ openIncidentId: null, updatedAt: timestamp })
 					.where(and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, row.id))),
 			)
 		}
@@ -1152,39 +1184,39 @@ const make: Effect.Effect<
 		return next
 	})
 
-	const transitionIssue: ErrorsServiceShape["transitionIssue"] = Effect.fn(
-		"ErrorsService.transitionIssue",
-	)(function* (orgId, actorId, issueId, toState, opts) {
-		yield* Effect.annotateCurrentSpan({ orgId, issueId, toState })
-		const current = yield* requireIssue(orgId, issueId)
+	const transitionIssue: ErrorsServiceShape["transitionIssue"] = Effect.fn("ErrorsService.transitionIssue")(
+		function* (orgId, actorId, issueId, toState, opts) {
+			yield* Effect.annotateCurrentSpan({ orgId, issueId, toState })
+			const current = yield* requireIssue(orgId, issueId)
 
-		let snoozeUntilMs: number | null | undefined
-		if (opts?.snoozeUntil !== undefined) {
-			if (opts.snoozeUntil === null) {
-				snoozeUntilMs = null
-			} else {
-				const parsed = parseWarehouseDateTime(opts.snoozeUntil)
-				if (!Number.isFinite(parsed)) {
-					return yield* Effect.fail(
-						new ErrorValidationError({
-							message: "Invalid snoozeUntil timestamp",
-							details: [String(opts.snoozeUntil)],
-						}),
-					)
+			let snoozeUntilMs: number | null | undefined
+			if (opts?.snoozeUntil !== undefined) {
+				if (opts.snoozeUntil === null) {
+					snoozeUntilMs = null
+				} else {
+					const parsed = parseWarehouseDateTime(opts.snoozeUntil)
+					if (!Number.isFinite(parsed)) {
+						return yield* Effect.fail(
+							new ErrorValidationError({
+								message: "Invalid snoozeUntil timestamp",
+								details: [String(opts.snoozeUntil)],
+							}),
+						)
+					}
+					snoozeUntilMs = parsed
 				}
-				snoozeUntilMs = parsed
 			}
-		}
 
-		const updated = yield* applyTransition(orgId, actorId, current, toState, {
-			note: opts?.note,
-			snoozeUntilMs,
-		})
+			const updated = yield* applyTransition(orgId, actorId, current, toState, {
+				note: opts?.note,
+				snoozeUntilMs,
+			})
 
-		yield* maybeNotifyTransition(orgId, actorId, updated, current.workflowState)
+			yield* maybeNotifyTransition(orgId, actorId, updated, current.workflowState)
 
-		return yield* hydrateIssue(orgId, updated)
-	})
+			return yield* hydrateIssue(orgId, updated)
+		},
+	)
 
 	// ---------------------------------------------------------------
 	// Claim / lease
@@ -1195,7 +1227,7 @@ const make: Effect.Effect<
 			message: "Issue is held by another actor",
 			issueId,
 			currentHolderActorId: row?.leaseHolderActorId ?? null,
-			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromDate(row.leaseExpiresAt),
+			leaseExpiresAt: row?.leaseExpiresAt == null ? null : isoFromEpoch(row.leaseExpiresAt),
 		})
 
 	const claimIssue: ErrorsServiceShape["claimIssue"] = Effect.fn("ErrorsService.claimIssue")(
@@ -1222,9 +1254,9 @@ const make: Effect.Effect<
 					.update(errorIssues)
 					.set({
 						leaseHolderActorId: actorId,
-						leaseExpiresAt: new Date(leaseExpiresAt),
-						claimedAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
+						leaseExpiresAt,
+						claimedAt: timestamp,
+						updatedAt: timestamp,
 					})
 					.where(
 						and(
@@ -1233,7 +1265,7 @@ const make: Effect.Effect<
 							or(
 								isNull(errorIssues.leaseHolderActorId),
 								eq(errorIssues.leaseHolderActorId, actorId),
-								lt(errorIssues.leaseExpiresAt, new Date(timestamp)),
+								lt(errorIssues.leaseExpiresAt, timestamp),
 							),
 						),
 					)
@@ -1289,36 +1321,33 @@ const make: Effect.Effect<
 		},
 	)
 
-	const heartbeatIssue: ErrorsServiceShape["heartbeatIssue"] = Effect.fn(
-		"ErrorsService.heartbeatIssue",
-	)(function* (orgId, actorId, issueId) {
-		const timestamp = yield* Clock.currentTimeMillis
-		const current = yield* requireIssue(orgId, issueId)
-		if (current.leaseHolderActorId !== actorId) {
-			return yield* Effect.fail(leaseConflict(issueId, current))
-		}
-		const previous = dateToMs(current.leaseExpiresAt) ?? timestamp
-		const leaseMs = Math.max(
-			DEFAULT_LEASE_DURATION_MS,
-			previous - (dateToMs(current.claimedAt) ?? previous),
-		)
-		const leaseExpiresAt = timestamp + leaseMs
-		yield* dbExecute((db) =>
-			db
-				.update(errorIssues)
-				.set({ leaseExpiresAt: new Date(leaseExpiresAt), updatedAt: new Date(timestamp) })
-				.where(
-					and(
-						eq(errorIssues.orgId, orgId),
-						eq(errorIssues.id, issueId),
-						eq(errorIssues.leaseHolderActorId, actorId),
+	const heartbeatIssue: ErrorsServiceShape["heartbeatIssue"] = Effect.fn("ErrorsService.heartbeatIssue")(
+		function* (orgId, actorId, issueId) {
+			const timestamp = yield* Clock.currentTimeMillis
+			const current = yield* requireIssue(orgId, issueId)
+			if (current.leaseHolderActorId !== actorId) {
+				return yield* Effect.fail(leaseConflict(issueId, current))
+			}
+			const previous = current.leaseExpiresAt ?? timestamp
+			const leaseMs = Math.max(DEFAULT_LEASE_DURATION_MS, previous - (current.claimedAt ?? previous))
+			const leaseExpiresAt = timestamp + leaseMs
+			yield* dbExecute((db) =>
+				db
+					.update(errorIssues)
+					.set({ leaseExpiresAt, updatedAt: timestamp })
+					.where(
+						and(
+							eq(errorIssues.orgId, orgId),
+							eq(errorIssues.id, issueId),
+							eq(errorIssues.leaseHolderActorId, actorId),
+						),
 					),
-				),
-		)
-		yield* touchActor(orgId, actorId, timestamp)
-		const next = yield* requireIssue(orgId, issueId)
-		return yield* hydrateIssue(orgId, next)
-	})
+			)
+			yield* touchActor(orgId, actorId, timestamp)
+			const next = yield* requireIssue(orgId, issueId)
+			return yield* hydrateIssue(orgId, next)
+		},
+	)
 
 	const releaseIssue: ErrorsServiceShape["releaseIssue"] = Effect.fn("ErrorsService.releaseIssue")(
 		function* (orgId, actorId, issueId, opts) {
@@ -1335,7 +1364,7 @@ const make: Effect.Effect<
 						leaseHolderActorId: null,
 						leaseExpiresAt: null,
 						claimedAt: null,
-						updatedAt: new Date(timestamp),
+						updatedAt: timestamp,
 					})
 					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId))),
 			)
@@ -1380,7 +1409,7 @@ const make: Effect.Effect<
 			yield* dbExecute((db) =>
 				db
 					.update(errorIssues)
-					.set({ assignedActorId: toActorId, updatedAt: new Date(timestamp) })
+					.set({ assignedActorId: toActorId, updatedAt: timestamp })
 					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId))),
 			)
 			yield* recordEvent(orgId, issueId, byActorId, "assignment", {
@@ -1399,40 +1428,38 @@ const make: Effect.Effect<
 	// Inserts an escalation-outbox row when severity is newly set or strictly
 	// escalates; the alerting worker's escalation tick drains the outbox.
 	// Detector-initial severity never escalates — only triage outcomes do.
-	const enqueueSeverityEscalation = Effect.fn("ErrorsService.enqueueSeverityEscalation")(
-		function* (
-			orgId: OrgId,
-			issueId: ErrorIssueId,
-			from: IssueSeverity | null,
-			to: IssueSeverity,
-			source: "ai" | "manual",
-		) {
-			const reason = escalationReasonFor(from, to)
-			if (reason === null) return
-			const timestamp = yield* Clock.currentTimeMillis
-			yield* dbExecute((db) =>
-				db
-					.insert(issueEscalations)
-					.values({
-						id: randomUUID(),
-						orgId,
-						issueId,
-						severity: to,
-						source,
-						reason,
-						runId: null,
-						payloadJson: {},
-						status: "queued",
-						attempts: 0,
-						dedupeKey: escalationDedupeKey(orgId, issueId, to),
-						error: null,
-						createdAt: new Date(timestamp),
-						processedAt: null,
-					})
-					.onConflictDoNothing(),
-			)
-		},
-	)
+	const enqueueSeverityEscalation = Effect.fn("ErrorsService.enqueueSeverityEscalation")(function* (
+		orgId: OrgId,
+		issueId: ErrorIssueId,
+		from: IssueSeverity | null,
+		to: IssueSeverity,
+		source: "ai" | "manual",
+	) {
+		const reason = escalationReasonFor(from, to)
+		if (reason === null) return
+		const timestamp = yield* Clock.currentTimeMillis
+		yield* dbExecute((db) =>
+			db
+				.insert(issueEscalations)
+				.values({
+					id: randomUUID(),
+					orgId,
+					issueId,
+					severity: to,
+					source,
+					reason,
+					runId: null,
+					payloadJson: "{}",
+					status: "queued",
+					attempts: 0,
+					dedupeKey: escalationDedupeKey(orgId, issueId, to),
+					error: null,
+					createdAt: timestamp,
+					processedAt: null,
+				})
+				.onConflictDoNothing(),
+		)
+	})
 
 	const setSeverity: ErrorsServiceShape["setSeverity"] = Effect.fn("ErrorsService.setSeverity")(
 		function* (orgId, actorId, issueId, severity, opts) {
@@ -1456,7 +1483,7 @@ const make: Effect.Effect<
 			yield* dbExecute((db) =>
 				db
 					.update(errorIssues)
-					.set({ severity, severitySource: nextSource, updatedAt: new Date(timestamp) })
+					.set({ severity, severitySource: nextSource, updatedAt: timestamp })
 					.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, issueId))),
 			)
 
@@ -1483,33 +1510,17 @@ const make: Effect.Effect<
 		},
 	)
 
-	const commentOnIssue: ErrorsServiceShape["commentOnIssue"] = Effect.fn(
-		"ErrorsService.commentOnIssue",
-	)(function* (orgId, actorId, issueId, body, opts) {
-		const timestamp = yield* Clock.currentTimeMillis
-		yield* requireIssue(orgId, issueId)
-		const type: ErrorIssueEventType = opts?.kind === "agent_note" ? "agent_note" : "comment"
-		const payload: Record<string, unknown> = {
-			body,
-			visibility: opts?.visibility ?? "internal",
-		}
-		const id = newEventId()
-		const insert: ErrorIssueEventInsert = {
-			id,
-			orgId,
-			issueId,
-			actorId,
-			type,
-			fromState: null,
-			toState: null,
-			payloadJson: payload,
-			createdAt: new Date(timestamp),
-		}
-		yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
-		yield* touchActor(orgId, actorId, timestamp)
-		const actorMap = yield* collectActorDocs(orgId, [actorId])
-		return rowToEvent(
-			{
+	const commentOnIssue: ErrorsServiceShape["commentOnIssue"] = Effect.fn("ErrorsService.commentOnIssue")(
+		function* (orgId, actorId, issueId, body, opts) {
+			const timestamp = yield* Clock.currentTimeMillis
+			yield* requireIssue(orgId, issueId)
+			const type: ErrorIssueEventType = opts?.kind === "agent_note" ? "agent_note" : "comment"
+			const payload: Record<string, unknown> = {
+				body,
+				visibility: opts?.visibility ?? "internal",
+			}
+			const id = newEventId()
+			const insert: ErrorIssueEventInsert = {
 				id,
 				orgId,
 				issueId,
@@ -1517,12 +1528,28 @@ const make: Effect.Effect<
 				type,
 				fromState: null,
 				toState: null,
-				payloadJson: payload,
-				createdAt: new Date(timestamp),
-			},
-			actorMap,
-		)
-	})
+				payloadJson: JSON.stringify(payload),
+				createdAt: timestamp,
+			}
+			yield* dbExecute((db) => db.insert(errorIssueEvents).values(insert))
+			yield* touchActor(orgId, actorId, timestamp)
+			const actorMap = yield* collectActorDocs(orgId, [actorId])
+			return rowToEvent(
+				{
+					id,
+					orgId,
+					issueId,
+					actorId,
+					type,
+					fromState: null,
+					toState: null,
+					payloadJson: JSON.stringify(payload),
+					createdAt: timestamp,
+				},
+				actorMap,
+			)
+		},
+	)
 
 	const proposeFix: ErrorsServiceShape["proposeFix"] = Effect.fn("ErrorsService.proposeFix")(
 		function* (orgId, actorId, issueId, request) {
@@ -1602,21 +1629,21 @@ const make: Effect.Effect<
 
 	const defaultPolicy = (orgId: OrgId, timestamp: number): ErrorNotificationPolicyRow => ({
 		orgId,
-		enabled: false,
-		destinationIdsJson: [],
-		notifyOnFirstSeen: true,
-		notifyOnRegression: true,
-		notifyOnResolve: false,
-		notifyOnTransitionInReview: false,
-		notifyOnTransitionDone: false,
-		notifyOnClaim: false,
+		enabled: 0,
+		destinationIdsJson: "[]",
+		notifyOnFirstSeen: 1,
+		notifyOnRegression: 1,
+		notifyOnResolve: 0,
+		notifyOnTransitionInReview: 0,
+		notifyOnTransitionDone: 0,
+		notifyOnClaim: 0,
 		minOccurrenceCount: 1,
 		severity: "warning",
-		updatedAt: new Date(timestamp),
+		updatedAt: timestamp,
 		updatedBy: "system",
 	})
 
-	const parsePolicyDestinations = (raw: unknown): ReadonlyArray<AlertDestinationId> =>
+	const parsePolicyDestinations = (raw: string): ReadonlyArray<AlertDestinationId> =>
 		Option.getOrElse(
 			Option.flatMap(decodeStoredJsonArray(raw), (parsed) =>
 				decodeAlertDestinationIds(parsed.filter((v) => typeof v === "string")),
@@ -1626,17 +1653,17 @@ const make: Effect.Effect<
 
 	const rowToPolicy = (row: ErrorNotificationPolicyRow) =>
 		new ErrorNotificationPolicyDocument({
-			enabled: row.enabled,
+			enabled: row.enabled === 1,
 			destinationIds: parsePolicyDestinations(row.destinationIdsJson),
-			notifyOnFirstSeen: row.notifyOnFirstSeen,
-			notifyOnRegression: row.notifyOnRegression,
-			notifyOnResolve: row.notifyOnResolve,
-			notifyOnTransitionInReview: row.notifyOnTransitionInReview,
-			notifyOnTransitionDone: row.notifyOnTransitionDone,
-			notifyOnClaim: row.notifyOnClaim,
+			notifyOnFirstSeen: row.notifyOnFirstSeen === 1,
+			notifyOnRegression: row.notifyOnRegression === 1,
+			notifyOnResolve: row.notifyOnResolve === 1,
+			notifyOnTransitionInReview: row.notifyOnTransitionInReview === 1,
+			notifyOnTransitionDone: row.notifyOnTransitionDone === 1,
+			notifyOnClaim: row.notifyOnClaim === 1,
 			minOccurrenceCount: row.minOccurrenceCount,
 			severity: row.severity,
-			updatedAt: isoFromDate(row.updatedAt),
+			updatedAt: isoFromEpoch(row.updatedAt),
 			updatedBy: decodeUserIdSync(row.updatedBy),
 		})
 
@@ -1669,10 +1696,12 @@ const make: Effect.Effect<
 		const base = existing ?? defaultPolicy(orgId, timestamp)
 
 		const nextDestinations =
-			request.destinationIds !== undefined ? request.destinationIds : base.destinationIdsJson
+			request.destinationIds !== undefined
+				? JSON.stringify(request.destinationIds)
+				: base.destinationIdsJson
 
-		const toFlag = (value: boolean | undefined, fallback: boolean): boolean =>
-			value === undefined ? fallback : value
+		const toFlag = (value: boolean | undefined, fallback: number): number =>
+			value === undefined ? fallback : value ? 1 : 0
 
 		const merged: ErrorNotificationPolicyRow = {
 			orgId,
@@ -1692,7 +1721,7 @@ const make: Effect.Effect<
 					? request.minOccurrenceCount
 					: base.minOccurrenceCount,
 			severity: request.severity !== undefined ? request.severity : base.severity,
-			updatedAt: new Date(timestamp),
+			updatedAt: timestamp,
 			updatedBy: userId,
 		}
 
@@ -1727,14 +1756,14 @@ const make: Effect.Effect<
 	// ---------------------------------------------------------------
 
 	const decodeEscalationRules = Schema.decodeUnknownOption(
-		Schema.Array(IssueEscalationPolicyRule),
+		Schema.fromJsonString(Schema.Array(IssueEscalationPolicyRule)),
 	)
 
 	const escalationRowToDocument = (row: IssueEscalationPolicyRow | null) =>
 		new IssueEscalationPolicyDocument({
-			enabled: row?.enabled ?? false,
+			enabled: row?.enabled === 1,
 			rules: row == null ? [] : Option.getOrElse(decodeEscalationRules(row.rulesJson), () => []),
-			updatedAt: row == null ? null : isoFromDate(row.updatedAt),
+			updatedAt: row == null ? null : isoFromEpoch(row.updatedAt),
 			updatedBy: row == null || row.updatedBy === "system" ? null : decodeUserIdSync(row.updatedBy),
 		})
 
@@ -1783,9 +1812,7 @@ const make: Effect.Effect<
 			// Dispatch re-filters by org anyway (no cross-org leak), but a typo'd
 			// or foreign ID would otherwise only surface much later as a silently
 			// "skipped" escalation with reason no_enabled_destinations.
-			const referencedIds = Array.from(
-				new Set(request.rules.flatMap((rule) => rule.destinationIds)),
-			)
+			const referencedIds = Array.from(new Set(request.rules.flatMap((rule) => rule.destinationIds)))
 			if (referencedIds.length > 0) {
 				const ownedRows = yield* Effect.forEach(
 					Arr.chunksOf(referencedIds, D1_INARRAY_CHUNK_SIZE),
@@ -1817,9 +1844,10 @@ const make: Effect.Effect<
 
 		const merged: IssueEscalationPolicyRow = {
 			orgId,
-			enabled: request.enabled !== undefined ? request.enabled : (existing?.enabled ?? false),
-			rulesJson: request.rules !== undefined ? request.rules : (existing?.rulesJson ?? []),
-			updatedAt: new Date(timestamp),
+			enabled: request.enabled !== undefined ? (request.enabled ? 1 : 0) : (existing?.enabled ?? 0),
+			rulesJson:
+				request.rules !== undefined ? JSON.stringify(request.rules) : (existing?.rulesJson ?? "[]"),
+			updatedAt: timestamp,
 			updatedBy: userId,
 		}
 
@@ -1856,10 +1884,10 @@ const make: Effect.Effect<
 			readonly count: number
 		},
 	) => {
-		if (!policy.enabled) return Effect.void
+		if (policy.enabled !== 1) return Effect.void
 		if (params.count < policy.minOccurrenceCount) return Effect.void
-		if (params.reason === "first_seen" && !policy.notifyOnFirstSeen) return Effect.void
-		if (params.reason === "regression" && !policy.notifyOnRegression) return Effect.void
+		if (params.reason === "first_seen" && policy.notifyOnFirstSeen !== 1) return Effect.void
+		if (params.reason === "regression" && policy.notifyOnRegression !== 1) return Effect.void
 
 		const destinationIds = parsePolicyDestinations(policy.destinationIdsJson)
 		if (destinationIds.length === 0) return Effect.void
@@ -1897,8 +1925,8 @@ const make: Effect.Effect<
 			readonly occurrenceCount: number
 		},
 	) => {
-		if (!policy.enabled) return Effect.void
-		if (!policy.notifyOnResolve) return Effect.void
+		if (policy.enabled !== 1) return Effect.void
+		if (policy.notifyOnResolve !== 1) return Effect.void
 
 		const destinationIds = parsePolicyDestinations(policy.destinationIdsJson)
 		if (destinationIds.length === 0) return Effect.void
@@ -1925,78 +1953,78 @@ const make: Effect.Effect<
 			.pipe(Effect.asVoid)
 	}
 
-	const maybeNotifyTransition = Effect.fn("ErrorsService.maybeNotifyTransition")(
-		function* (
-			orgId: OrgId,
-			actorId: ActorId | null,
-			row: ErrorIssueRow,
-			fromState: WorkflowState,
-		) {
-			const policyRow = yield* loadPolicyRow(orgId)
-			if (!policyRow || !policyRow.enabled) return
-			const toState = row.workflowState
-			if (toState === fromState) return
-			const destinationIds = parsePolicyDestinations(policyRow.destinationIdsJson)
-			if (destinationIds.length === 0) return
+	const maybeNotifyTransition = Effect.fn("ErrorsService.maybeNotifyTransition")(function* (
+		orgId: OrgId,
+		actorId: ActorId | null,
+		row: ErrorIssueRow,
+		fromState: WorkflowState,
+	) {
+		const policyRow = yield* loadPolicyRow(orgId)
+		if (!policyRow || policyRow.enabled !== 1) return
+		const toState = row.workflowState
+		if (toState === fromState) return
+		const destinationIds = parsePolicyDestinations(policyRow.destinationIdsJson)
+		if (destinationIds.length === 0) return
 
-			const shouldNotify =
-				(toState === "in_review" && policyRow.notifyOnTransitionInReview) ||
-				(toState === "done" && policyRow.notifyOnTransitionDone)
-			if (!shouldNotify) return
+		const shouldNotify =
+			(toState === "in_review" && policyRow.notifyOnTransitionInReview === 1) ||
+			(toState === "done" && policyRow.notifyOnTransitionDone === 1)
+		if (!shouldNotify) return
 
-			yield* dispatcher
-				.dispatch(orgId, destinationIds, {
-					deliveryKey: `err:${orgId}:${row.id}:transition:${toState}:${row.updatedAt.getTime()}`,
-					ruleId: row.id,
-					ruleName: `${row.exceptionType} in ${row.serviceName}`,
-					groupKey: row.serviceName,
-					signalType: "error_rate",
-					severity: policyRow.severity,
-					comparator: "gte",
-					threshold: policyRow.minOccurrenceCount,
-					eventType: toState === "done" ? "resolve" : "trigger",
-					incidentId: row.id,
-					incidentStatus: toState === "done" ? "resolved" : "open",
-					dedupeKey: `error:${orgId}:${row.id}`,
-					windowMinutes: 2,
-					value: row.occurrenceCount,
-					sampleCount: row.occurrenceCount,
-					linkUrl: issueLinkUrl(row.id),
-				})
-				.pipe(Effect.asVoid)
-		},
-	)
+		yield* dispatcher
+			.dispatch(orgId, destinationIds, {
+				deliveryKey: `err:${orgId}:${row.id}:transition:${toState}:${row.updatedAt}`,
+				ruleId: row.id,
+				ruleName: `${row.exceptionType} in ${row.serviceName}`,
+				groupKey: row.serviceName,
+				signalType: "error_rate",
+				severity: policyRow.severity,
+				comparator: "gte",
+				threshold: policyRow.minOccurrenceCount,
+				eventType: toState === "done" ? "resolve" : "trigger",
+				incidentId: row.id,
+				incidentStatus: toState === "done" ? "resolved" : "open",
+				dedupeKey: `error:${orgId}:${row.id}`,
+				windowMinutes: 2,
+				value: row.occurrenceCount,
+				sampleCount: row.occurrenceCount,
+				linkUrl: issueLinkUrl(row.id),
+			})
+			.pipe(Effect.asVoid)
+	})
 
-	const maybeNotifyClaim = Effect.fn("ErrorsService.maybeNotifyClaim")(
-		function* (orgId: OrgId, actorId: ActorId, row: ErrorIssueRow) {
-			const policyRow = yield* loadPolicyRow(orgId)
-			if (!policyRow || !policyRow.enabled) return
-			if (!policyRow.notifyOnClaim) return
-			const destinationIds = parsePolicyDestinations(policyRow.destinationIdsJson)
-			if (destinationIds.length === 0) return
+	const maybeNotifyClaim = Effect.fn("ErrorsService.maybeNotifyClaim")(function* (
+		orgId: OrgId,
+		actorId: ActorId,
+		row: ErrorIssueRow,
+	) {
+		const policyRow = yield* loadPolicyRow(orgId)
+		if (!policyRow || policyRow.enabled !== 1) return
+		if (policyRow.notifyOnClaim !== 1) return
+		const destinationIds = parsePolicyDestinations(policyRow.destinationIdsJson)
+		if (destinationIds.length === 0) return
 
-			yield* dispatcher
-				.dispatch(orgId, destinationIds, {
-					deliveryKey: `err:${orgId}:${row.id}:claim:${(row.claimedAt ?? row.updatedAt).getTime()}`,
-					ruleId: row.id,
-					ruleName: `${row.exceptionType} in ${row.serviceName}`,
-					groupKey: row.serviceName,
-					signalType: "error_rate",
-					severity: policyRow.severity,
-					comparator: "gte",
-					threshold: policyRow.minOccurrenceCount,
-					eventType: "trigger",
-					incidentId: row.id,
-					incidentStatus: "open",
-					dedupeKey: `error:${orgId}:${row.id}:claim`,
-					windowMinutes: 2,
-					value: row.occurrenceCount,
-					sampleCount: row.occurrenceCount,
-					linkUrl: issueLinkUrl(row.id),
-				})
-				.pipe(Effect.asVoid)
-		},
-	)
+		yield* dispatcher
+			.dispatch(orgId, destinationIds, {
+				deliveryKey: `err:${orgId}:${row.id}:claim:${row.claimedAt ?? row.updatedAt}`,
+				ruleId: row.id,
+				ruleName: `${row.exceptionType} in ${row.serviceName}`,
+				groupKey: row.serviceName,
+				signalType: "error_rate",
+				severity: policyRow.severity,
+				comparator: "gte",
+				threshold: policyRow.minOccurrenceCount,
+				eventType: "trigger",
+				incidentId: row.id,
+				incidentStatus: "open",
+				dedupeKey: `error:${orgId}:${row.id}:claim`,
+				windowMinutes: 2,
+				value: row.occurrenceCount,
+				sampleCount: row.occurrenceCount,
+				linkUrl: issueLinkUrl(row.id),
+			})
+			.pipe(Effect.asVoid)
+	})
 
 	// ---------------------------------------------------------------
 	// Scheduled tick
@@ -2014,7 +2042,7 @@ const make: Effect.Effect<
 					and(
 						eq(errorIssues.orgId, orgId),
 						isNotNull(errorIssues.leaseExpiresAt),
-						lt(errorIssues.leaseExpiresAt, new Date(nowMs)),
+						lt(errorIssues.leaseExpiresAt, nowMs),
 					),
 				),
 		)
@@ -2031,7 +2059,7 @@ const make: Effect.Effect<
 							leaseHolderActorId: null,
 							leaseExpiresAt: null,
 							claimedAt: null,
-							updatedAt: new Date(nowMs),
+							updatedAt: nowMs,
 						})
 						.where(eq(errorIssues.id, row.id)),
 				)
@@ -2056,8 +2084,9 @@ const make: Effect.Effect<
 		windowStartMs: number,
 		windowEndMs: number,
 		runRetention: boolean,
+		isActive: boolean,
 	) {
-		yield* Effect.annotateCurrentSpan({ orgId, runRetention })
+		yield* Effect.annotateCurrentSpan({ orgId, runRetention, isActive })
 		const tenant = systemTenant(orgId)
 		const systemActor = yield* ensureSystemActor(orgId)
 		const policy = (yield* loadPolicyRow(orgId)) ?? defaultPolicy(orgId, windowEndMs)
@@ -2075,7 +2104,7 @@ const make: Effect.Effect<
 						eq(errorIssues.orgId, orgId),
 						eq(errorIssues.workflowState, "wontfix"),
 						isNotNull(errorIssues.snoozeUntil),
-						lt(errorIssues.snoozeUntil, new Date(windowEndMs)),
+						lt(errorIssues.snoozeUntil, windowEndMs),
 					),
 				),
 		)
@@ -2087,14 +2116,21 @@ const make: Effect.Effect<
 		)
 		const issuesReopened = wakeCandidates.length
 
+		// `isActive` is false only for orgs with neither recent errors nor existing
+		// issue/incident state, so skipping the scan loses nothing: there is
+		// nothing to detect and nothing to resolve. The cheap D1 housekeeping above
+		// (lease expiry, snooze wakeup) and below (retention) still runs for every
+		// known org regardless.
 		const issuesCompiled = CH.compile(CH.errorIssuesQuery({ limit: 500 }), {
 			orgId,
 			startTime: toTinybirdDateTime(windowStartMs),
 			endTime: toTinybirdDateTime(windowEndMs),
 		})
-		const issuesRaw = yield* warehouse
-			.compiledQuery(tenant, issuesCompiled, { context: "errorIssuesScan" })
-			.pipe(Effect.mapError(makePersistenceError))
+		const issuesRaw = isActive
+			? yield* warehouse
+					.compiledQuery(tenant, issuesCompiled, { context: "errorIssuesScan" })
+					.pipe(Effect.mapError(makePersistenceError))
+			: []
 
 		const rows = issuesRaw.map((raw) => ({
 			fingerprintHash: String(raw.fingerprintHash ?? ""),
@@ -2136,7 +2172,7 @@ const make: Effect.Effect<
 					// If the issue is in wontfix with an active snooze, skip entirely.
 					if (
 						prior.workflowState === "wontfix" &&
-						(prior.snoozeUntil == null || prior.snoozeUntil.getTime() > windowEndMs)
+						(prior.snoozeUntil == null || prior.snoozeUntil > windowEndMs)
 					) {
 						return { touched: 0, opened: 0 }
 					}
@@ -2145,10 +2181,10 @@ const make: Effect.Effect<
 						db
 							.update(errorIssues)
 							.set({
-								lastSeenAt: new Date(lastSeenMs),
+								lastSeenAt: lastSeenMs,
 								occurrenceCount: sql`${errorIssues.occurrenceCount} + ${row.count}`,
 								errorLabel: row.errorLabel,
-								updatedAt: new Date(windowEndMs),
+								updatedAt: windowEndMs,
 							})
 							.where(eq(errorIssues.id, prior.id)),
 					)
@@ -2185,15 +2221,15 @@ const make: Effect.Effect<
 							leaseExpiresAt: null,
 							claimedAt: null,
 							notes: null,
-							firstSeenAt: new Date(firstSeenMs),
-							lastSeenAt: new Date(lastSeenMs),
+							firstSeenAt: firstSeenMs,
+							lastSeenAt: lastSeenMs,
 							occurrenceCount: row.count,
 							resolvedAt: null,
 							resolvedByActorId: null,
 							snoozeUntil: null,
 							archivedAt: null,
-							createdAt: new Date(windowEndMs),
-							updatedAt: new Date(windowEndMs),
+							createdAt: windowEndMs,
+							updatedAt: windowEndMs,
 						}),
 					)
 					yield* recordEvent(orgId, issueId, systemActor.id, "created", {
@@ -2211,9 +2247,7 @@ const make: Effect.Effect<
 					db
 						.select()
 						.from(errorIssueStates)
-						.where(
-							and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, issueId)),
-						)
+						.where(and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, issueId)))
 						.limit(1),
 				)
 				const openIncidentIdRaw = stateRow[0]?.openIncidentId ?? null
@@ -2232,12 +2266,12 @@ const make: Effect.Effect<
 							issueId,
 							status: "open",
 							reason,
-							firstTriggeredAt: new Date(firstSeenMs),
-							lastTriggeredAt: new Date(lastSeenMs),
+							firstTriggeredAt: firstSeenMs,
+							lastTriggeredAt: lastSeenMs,
 							resolvedAt: null,
 							occurrenceCount: row.count,
-							createdAt: new Date(windowEndMs),
-							updatedAt: new Date(windowEndMs),
+							createdAt: windowEndMs,
+							updatedAt: windowEndMs,
 						}),
 					)
 
@@ -2247,18 +2281,18 @@ const make: Effect.Effect<
 							.values({
 								orgId,
 								issueId,
-								lastObservedOccurrenceAt: new Date(lastSeenMs),
-								lastEvaluatedAt: new Date(windowEndMs),
+								lastObservedOccurrenceAt: lastSeenMs,
+								lastEvaluatedAt: windowEndMs,
 								openIncidentId: incidentId,
-								updatedAt: new Date(windowEndMs),
+								updatedAt: windowEndMs,
 							})
 							.onConflictDoUpdate({
 								target: [errorIssueStates.orgId, errorIssueStates.issueId],
 								set: {
-									lastObservedOccurrenceAt: new Date(lastSeenMs),
-									lastEvaluatedAt: new Date(windowEndMs),
+									lastObservedOccurrenceAt: lastSeenMs,
+									lastEvaluatedAt: windowEndMs,
 									openIncidentId: incidentId,
-									updatedAt: new Date(windowEndMs),
+									updatedAt: windowEndMs,
 								},
 							}),
 					)
@@ -2302,9 +2336,9 @@ const make: Effect.Effect<
 						db
 							.update(errorIncidents)
 							.set({
-								lastTriggeredAt: new Date(lastSeenMs),
+								lastTriggeredAt: lastSeenMs,
 								occurrenceCount: sql`${errorIncidents.occurrenceCount} + ${row.count}`,
-								updatedAt: new Date(windowEndMs),
+								updatedAt: windowEndMs,
 							})
 							.where(eq(errorIncidents.id, openIncidentIdRaw)),
 					)
@@ -2312,15 +2346,12 @@ const make: Effect.Effect<
 						db
 							.update(errorIssueStates)
 							.set({
-								lastObservedOccurrenceAt: new Date(lastSeenMs),
-								lastEvaluatedAt: new Date(windowEndMs),
-								updatedAt: new Date(windowEndMs),
+								lastObservedOccurrenceAt: lastSeenMs,
+								lastEvaluatedAt: windowEndMs,
+								updatedAt: windowEndMs,
 							})
 							.where(
-								and(
-									eq(errorIssueStates.orgId, orgId),
-									eq(errorIssueStates.issueId, issueId),
-								),
+								and(eq(errorIssueStates.orgId, orgId), eq(errorIssueStates.issueId, issueId)),
 							),
 					)
 					return { touched: 1, opened: 0 }
@@ -2341,7 +2372,7 @@ const make: Effect.Effect<
 					and(
 						eq(errorIncidents.orgId, orgId),
 						eq(errorIncidents.status, "open"),
-						lt(errorIncidents.lastTriggeredAt, new Date(cutoffMs)),
+						lt(errorIncidents.lastTriggeredAt, cutoffMs),
 					),
 				),
 		)
@@ -2352,15 +2383,15 @@ const make: Effect.Effect<
 						.update(errorIncidents)
 						.set({
 							status: "resolved",
-							resolvedAt: new Date(windowEndMs),
-							updatedAt: new Date(windowEndMs),
+							resolvedAt: windowEndMs,
+							updatedAt: windowEndMs,
 						})
 						.where(eq(errorIncidents.id, incident.id)),
 				)
 				yield* dbExecute((db) =>
 					db
 						.update(errorIssueStates)
-						.set({ openIncidentId: null, updatedAt: new Date(windowEndMs) })
+						.set({ openIncidentId: null, updatedAt: windowEndMs })
 						.where(
 							and(
 								eq(errorIssueStates.orgId, orgId),
@@ -2369,7 +2400,7 @@ const make: Effect.Effect<
 						),
 				)
 
-				if (policy.enabled && policy.notifyOnResolve) {
+				if (policy.enabled === 1 && policy.notifyOnResolve === 1) {
 					const issueRows = yield* dbExecute((db) =>
 						db
 							.select({
@@ -2377,9 +2408,7 @@ const make: Effect.Effect<
 								exceptionType: errorIssues.exceptionType,
 							})
 							.from(errorIssues)
-							.where(
-								and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, incident.issueId)),
-							)
+							.where(and(eq(errorIssues.orgId, orgId), eq(errorIssues.id, incident.issueId)))
 							.limit(1),
 					)
 					const issueRow = issueRows[0]
@@ -2405,14 +2434,14 @@ const make: Effect.Effect<
 			const archivedRows = yield* dbExecute((db) =>
 				db
 					.update(errorIssues)
-					.set({ archivedAt: new Date(windowEndMs), updatedAt: new Date(windowEndMs) })
+					.set({ archivedAt: windowEndMs, updatedAt: windowEndMs })
 					.where(
 						and(
 							eq(errorIssues.orgId, orgId),
 							eq(errorIssues.workflowState, "done"),
 							isNull(errorIssues.archivedAt),
 							isNotNull(errorIssues.resolvedAt),
-							lt(errorIssues.resolvedAt, new Date(resolvedCutoff)),
+							lt(errorIssues.resolvedAt, resolvedCutoff),
 						),
 					)
 					.returning({ id: errorIssues.id }),
@@ -2428,7 +2457,7 @@ const make: Effect.Effect<
 						and(
 							eq(errorIssues.orgId, orgId),
 							isNotNull(errorIssues.archivedAt),
-							lt(errorIssues.archivedAt, new Date(archivedCutoff)),
+							lt(errorIssues.archivedAt, archivedCutoff),
 						),
 					)
 					.limit(500),
@@ -2530,6 +2559,17 @@ const make: Effect.Effect<
 			...ingestOrgs.map((r) => r.orgId),
 		])
 
+		const activeOrgs = yield* resolveActiveOrgs([...knownOrgs], endMs)
+		// Orgs that hold issue/incident state must be scanned even with no recent
+		// errors: the scan returning empty is what drives auto-resolution and
+		// aging. Only pure ingest-key-only orgs with neither recent errors nor
+		// existing state are skipped.
+		const withState = new Set<string>([
+			...stateOrgs.map((r) => r.orgId),
+			...issueOrgs.map((r) => r.orgId),
+		])
+		const isActive = (org: string) => activeOrgs === "all" || activeOrgs.has(org) || withState.has(org)
+
 		const emptyResult = {
 			issuesTouched: 0,
 			incidentsOpened: 0,
@@ -2544,7 +2584,7 @@ const make: Effect.Effect<
 		const results = yield* Effect.forEach(
 			[...knownOrgs],
 			(org) =>
-				processOrg(org as OrgId, startMs, endMs, retentionRan).pipe(
+				processOrg(org as OrgId, startMs, endMs, retentionRan, isActive(org)).pipe(
 					Effect.catchCause((cause) =>
 						Effect.gen(function* () {
 							yield* Effect.logError("Error tick failed for org").pipe(
@@ -2576,6 +2616,7 @@ const make: Effect.Effect<
 
 		yield* Effect.annotateCurrentSpan({
 			orgsKnown: knownOrgs.size,
+			orgsScanned: activeOrgs === "all" ? knownOrgs.size : activeOrgs.size,
 			orgFailures: yield* Ref.get(orgFailures),
 			...totals,
 		})

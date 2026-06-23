@@ -1,21 +1,10 @@
 /**
- * Utilities for authenticating event log sessions with short-lived challenges
- * and Ed25519 signatures.
+ * Signs and verifies event-log session authentication payloads.
  *
- * This module builds and verifies the canonical payload that a remote peer signs
- * when proving control of a session signing key. It is used by event log
- * transports that need to bind a connection attempt to a remote identifier,
- * session challenge, advertised event log public key, and signing public key
- * before accepting session traffic.
- *
- * Callers are responsible for issuing fresh challenges, enforcing the challenge
- * time-to-live, and tracking whether a challenge has already been consumed. The
- * helpers here provide deterministic payload encoding, algorithm checks,
- * signature validation, and Web Crypto integration; they do not establish peer
- * trust by themselves. Trust decisions still need to compare the supplied keys
- * and remote identity against the application's authorization policy, and
- * signed payloads should be treated as bearer authentication material until the
- * challenge expires.
+ * Remote peers use this challenge-response flow to prove that they control a
+ * session signing key before sending session traffic. The signed payload
+ * includes the remote id, a short-lived challenge, the event-log public key, and
+ * the signing public key in a stable byte format.
  *
  * @since 4.0.0
  */
@@ -28,7 +17,13 @@ const textDecoder = new TextDecoder("utf-8", { fatal: true })
 const constLengthPrefixBytes = 4
 
 /**
- * Domain-separation string embedded in canonical session authentication payloads.
+ * Defines the domain-separation string embedded in canonical session
+ * authentication payloads.
+ *
+ * **When to use**
+ *
+ * Use when you need the domain-separation string used to build canonical
+ * event-log session authentication payloads.
  *
  * @category constants
  * @since 4.0.0
@@ -36,8 +31,13 @@ const constLengthPrefixBytes = 4
 export const AuthPayloadContext = "eventlog-auth-v1"
 
 /**
- * Required byte length for raw Ed25519 public keys used in session
+ * Defines the required byte length for raw Ed25519 public keys used in session
  * authentication.
+ *
+ * **When to use**
+ *
+ * Use when implementing session-auth serialization or validation that must
+ * reject public keys with a non-canonical raw byte length.
  *
  * @category constants
  * @since 4.0.0
@@ -45,7 +45,12 @@ export const AuthPayloadContext = "eventlog-auth-v1"
 export const Ed25519PublicKeyLength = 32
 
 /**
- * Required byte length for Ed25519 signatures used in session authentication.
+ * Defines the required byte length for Ed25519 signatures used in session authentication.
+ *
+ * **When to use**
+ *
+ * Use when implementing session-auth verification that must reject signatures
+ * with a non-canonical byte length before cryptographic checking.
  *
  * @category constants
  * @since 4.0.0
@@ -53,7 +58,12 @@ export const Ed25519PublicKeyLength = 32
 export const Ed25519SignatureLength = 64
 
 /**
- * Number of random bytes generated for a session authentication challenge.
+ * Defines the number of random bytes generated for a session authentication
+ * challenge.
+ *
+ * **When to use**
+ *
+ * Use when you need the challenge size for event-log session authentication.
  *
  * @category constants
  * @since 4.0.0
@@ -61,7 +71,13 @@ export const Ed25519SignatureLength = 64
 export const SessionAuthChallengeLength = 32
 
 /**
- * Time-to-live, in milliseconds, for a pending session authentication challenge.
+ * Defines the time-to-live, in milliseconds, for a pending session
+ * authentication challenge.
+ *
+ * **When to use**
+ *
+ * Use when you need the timeout for pending event-log session authentication
+ * challenges.
  *
  * @category constants
  * @since 4.0.0
@@ -329,8 +345,7 @@ export const decodeSessionAuthPayload = Effect.fnUntraced(
 )
 
 /**
- * Signs canonical session authentication payload bytes with an Ed25519 private
- * key.
+ * Creates a canonical session authentication signature with an Ed25519 private key.
  *
  * **Details**
  *

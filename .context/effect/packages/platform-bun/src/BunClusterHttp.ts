@@ -1,36 +1,10 @@
 /**
- * The `BunClusterHttp` module provides the Bun HTTP and WebSocket transports
- * for Effect Cluster runners. It wires `HttpRunner` to the Bun HTTP server,
- * supplies Fetch and Bun WebSocket client protocols, and builds a complete
- * sharding layer with serialization, runner health, runner storage, and message
- * storage.
+ * Bun HTTP and WebSocket layers for Effect Cluster runners.
  *
- * **Common tasks**
- *
- * - Run a Bun process as a cluster runner over HTTP or WebSocket with
- *   {@link layer}
- * - Connect a client-only process to an existing HTTP cluster without starting
- *   a runner server
- * - Use SQL-backed storage for durable multi-process clusters, `local` storage
- *   for short-lived development, or `byo` storage when the deployment owns the
- *   persistence boundary
- * - Check runner health with protocol pings or Kubernetes pod readiness through
- *   {@link layerK8sHttpClient}
- *
- * **Gotchas**
- *
- * - `runnerAddress` is the host and port advertised to other runners; set
- *   `runnerListenAddress` when the local bind address differs from the
- *   externally reachable address
- * - The HTTP and WebSocket transports serve runner RPCs at the default
- *   `HttpRunner` route, so proxies and load balancers must preserve the path
- *   and allow WebSocket upgrades when `transport` is `"websocket"`
- * - `clientOnly` does not start an HTTP server or receive shard assignments
- * - SQL storage is the default; `local` storage is in-memory/noop and `byo`
- *   requires the surrounding application to provide both runner and message
- *   storage services
- * - Ping health checks use the selected transport and serialization, so route,
- *   port, proxy, or codec mismatches can make a runner appear unhealthy
+ * `layerHttpServer` provides the Bun HTTP server used by cluster runners. The
+ * main `layer` builds a sharding layer for HTTP or WebSocket transport,
+ * choosing serialization, runner health checks, runner storage, message
+ * storage, and optional client-only mode from the supplied options.
  *
  * @since 4.0.0
  */
@@ -62,7 +36,7 @@ import * as BunSocket from "./BunSocket.ts"
 
 export {
   /**
-   * Kubernetes HTTP client layer used for runner health checks.
+   * Layer that provides a Kubernetes HTTP client for runner health checks.
    *
    * @category re-exports
    * @since 4.0.0
@@ -71,7 +45,7 @@ export {
 }
 
 /**
- * Bun HTTP server layer for cluster runners, using `ShardingConfig.runnerListenAddress` or `runnerAddress` as the listen address.
+ * Layer that provides a Bun HTTP server for cluster runners.
  *
  * @category layers
  * @since 4.0.0
@@ -94,6 +68,30 @@ export const layerHttpServer: Layer.Layer<
 
 /**
  * Creates Bun cluster layers for HTTP or WebSocket transport, configuring serialization, storage, runner health, and optional client-only mode.
+ *
+ * **When to use**
+ *
+ * Use to install the complete Bun HTTP or WebSocket cluster layer, including
+ * client-only cluster access when a process should connect without serving
+ * runner RPCs.
+ *
+ * **Details**
+ *
+ * `serialization` defaults to MessagePack, `runnerHealth` defaults to ping
+ * checks, SQL-backed storage is used by default, and `shardingConfig` is
+ * overlaid on environment-loaded sharding configuration. `local` storage uses
+ * no-op message storage plus in-memory runner storage, while `byo` leaves both
+ * message and runner storage for the caller to provide.
+ *
+ * **Gotchas**
+ *
+ * `clientOnly` does not start the HTTP server or receive shard assignments.
+ * Non-client-only mode listens with `runnerListenAddress` when present, falling
+ * back to `runnerAddress`. HTTP and WebSocket runner RPCs use the default
+ * `HttpRunner` route.
+ *
+ * @see {@link layerHttpServer} for the server layer used by non-client-only transports
+ * @see {@link layerK8sHttpClient} for Kubernetes runner health support
  *
  * @category layers
  * @since 4.0.0

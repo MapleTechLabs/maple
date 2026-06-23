@@ -1,20 +1,11 @@
 /**
- * Layer-based server-side HTTP routing for Effect applications.
+ * Builds server-side routers for Effect HTTP applications.
  *
- * This module provides the `HttpRouter` service and helpers for registering
- * method/path handlers, grouping routes under prefixes, decoding request
- * schemas from route and search parameters, and turning an application layer
- * into an `HttpServer` or Fetch-compatible handler. It is intended for HTTP
- * APIs, webhooks, and other server endpoints that want request-scoped services
- * and typed middleware to be composed through `Layer`.
- *
- * Route paths must be absolute paths beginning with `/`, or the wildcard `*`.
- * Prefixed routes remove the matched prefix from the request URL seen by the
- * handler, `HEAD` requests fall back to matching `GET` routes, and wildcard
- * paths ending in `/*` also match the prefix path itself. Use router middleware
- * when you need to provide request dependencies, handle configured route errors,
- * or modify route responses; server middleware wraps the wider server chain and
- * is not the right hook for changing the final response body or headers.
+ * `HttpRouter` collects routes and middleware while an application layer is
+ * being built. Once the router is complete, it handles each
+ * `HttpServerRequest` by finding a matching route and producing an
+ * `HttpServerResponse`. The module also includes helpers for route definitions,
+ * prefixes, parameters, request decoding, CORS, and running the router.
  *
  * @since 4.0.0
  */
@@ -42,7 +33,7 @@ import * as HttpServerResponse from "./HttpServerResponse.ts"
 const TypeId = "~effect/http/HttpRouter"
 
 /**
- * Service interface for registering HTTP routes and middleware.
+ * Defines the service interface for registering HTTP routes and middleware.
  *
  * **Details**
  *
@@ -267,14 +258,19 @@ export const RouterConfig = Context.Reference<Partial<FindMyWay.RouterConfig>>(
 )
 
 /**
- * Request-scoped service containing information about the matched route.
+ * Service for the matched HTTP route in the current request.
+ *
+ * **When to use**
+ *
+ * Use to read captured path parameters and route metadata while handling a
+ * request matched by the router.
  *
  * **Details**
  *
  * It provides the route definition and the path parameters captured by the route
  * matcher.
  *
- * @category RouteContext
+ * @category services
  * @since 4.0.0
  */
 export class RouteContext extends Context.Service<RouteContext, {
@@ -285,7 +281,7 @@ export class RouteContext extends Context.Service<RouteContext, {
 /**
  * Effect that returns the path parameters captured for the current matched route.
  *
- * @category RouteContext
+ * @category getters
  * @since 4.0.0
  */
 export const params: Effect.Effect<
@@ -447,7 +443,7 @@ export const schemaPathParams = <A, I extends Readonly<Record<string, string | u
  *
  * **When to use**
  *
- * Use it to register routes or middleware with the router during layer
+ * Use when you need to register routes or middleware with the router during layer
  * construction.
  *
  * **Example** (Registering routes during layer construction)
@@ -818,7 +814,7 @@ const MiddlewareTypeId = "~effect/http/HttpRouter/Middleware"
  * while tracking provided services, handled errors, and remaining requirements at
  * the type level.
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export interface Middleware<
@@ -919,7 +915,7 @@ export interface Middleware<
  * )
  * ```
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export const middleware:
@@ -1057,7 +1053,7 @@ export declare namespace middleware {
    * layer that installs middleware for all routes. The type tracks provided
    * services, handled errors, middleware failures, and remaining requirements.
    *
-   * @category Middleware
+   * @category middleware
    * @since 4.0.0
    */
   export type Make<Provides = never, Handles = never> = {
@@ -1142,7 +1138,7 @@ export declare namespace middleware {
    * Function that transforms an HTTP response effect into another HTTP response
    * effect.
    *
-   * @category Middleware
+   * @category middleware
    * @since 4.0.0
    */
   export type Fn = (
@@ -1151,9 +1147,9 @@ export declare namespace middleware {
 }
 
 /**
- * A middleware that applies CORS headers to the HTTP response.
+ * Middleware that applies CORS headers to the HTTP response.
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export const cors = (
@@ -1168,7 +1164,7 @@ export const cors = (
 ): Layer.Layer<never, never, HttpRouter> => middleware(HttpMiddleware.cors(options), { global: true })
 
 /**
- * A middleware that disables the logger for some routes.
+ * Middleware that disables the logger for some routes.
  *
  * **Example** (Disabling route logging)
  *
@@ -1186,7 +1182,7 @@ export const cors = (
  * )
  * ```
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export const disableLogger: Layer.Layer<never> = middleware(HttpMiddleware.withLoggerDisabled).layer
@@ -1194,7 +1190,7 @@ export const disableLogger: Layer.Layer<never> = middleware(HttpMiddleware.withL
 /**
  * Provides request-level dependencies to some routes.
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export const provideRequest =
@@ -1217,9 +1213,9 @@ export const provideRequest =
     )
 
 /**
- * Serves the provided application layer as an HTTP server.
+ * Runs the provided application layer as an HTTP server.
  *
- * @category Server
+ * @category server
  * @since 4.0.0
  */
 export const serve = <A, E, R, HE, HR = Request.Only<"Requires", R> | Request.Only<"GlobalRequires", R>>(
@@ -1283,7 +1279,7 @@ export const serve = <A, E, R, HE, HR = Request.Only<"Requires", R> | Request.On
  * Web `Response` values and a `dispose` function for releasing the layer
  * resources.
  *
- * @category Server
+ * @category server
  * @since 4.0.0
  */
 export const toWebHandler = <

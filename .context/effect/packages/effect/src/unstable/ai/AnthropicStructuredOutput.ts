@@ -1,17 +1,13 @@
 /**
- * Provides a codec transformation for Anthropic structured output.
+ * Adapts Effect Schema codecs to the JSON Schema subset accepted by Anthropic
+ * structured output.
  *
- * Anthropic's API has specific constraints on JSON schema support that differ
- * from the full JSON Schema specification. This module transforms Effect
- * `Schema.Codec` types into a form compatible with Anthropic's structured
- * output requirements by:
- *
- * - Converting tuples to objects with string keys (tuples are unsupported)
- * - Converting optional properties to nullable unions (`T | null`)
- * - Converting index signatures (records) to arrays of key-value pairs
- * - Converting `oneOf` unions to `anyOf` unions
- * - Stripping unsupported annotations and preserving only Anthropic-compatible
- *   formats and descriptions
+ * The main entry point returns the JSON Schema to send to Anthropic and a codec
+ * for decoding the model response back into the original application type. When
+ * Anthropic cannot express the original schema shape directly, the conversion
+ * rewrites supported cases such as tuples, records, optional properties, and
+ * `oneOf` unions. Schema kinds that cannot be represented throw during
+ * conversion instead of producing a lossy schema.
  *
  * @since 4.0.0
  */
@@ -20,31 +16,39 @@ import * as JsonSchema from "../../JsonSchema.ts"
 import * as Option from "../../Option.ts"
 import * as Predicate from "../../Predicate.ts"
 import * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
-import * as Transformation from "../../SchemaTransformation.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
+import * as SchemaTransformation from "../../SchemaTransformation.ts"
+import * as LanguageModel from "./LanguageModel.ts"
+import * as OpenAiStructuredOutput from "./OpenAiStructuredOutput.ts"
 import * as Tool from "./Tool.ts"
 
 /**
- * Transforms a `Schema.Codec` into a form compatible with Anthropic's structured output constraints.
+ * Converts a `Schema.Codec` to Anthropic structured-output JSON Schema and a
+ * matching codec for model output.
+ *
+ * **When to use**
+ *
+ * Use when you send Effect Schema-backed structured output requests to
+ * Anthropic and need provider-compatible JSON Schema without losing the decoded
+ * application type.
  *
  * **Details**
  *
- * The transformation walks the schema AST and rewrites constructs that Anthropic does not support natively:
+ * Returns the JSON Schema to include in the request and the codec to use when
+ * decoding the model response. If the input schema already fits Anthropic's
+ * supported JSON Schema subset, the original codec is returned unchanged.
  *
- * - **Tuples** are converted to objects with numeric string keys (e.g.
- *   `"0"`, `"1"`) since Anthropic does not support tuple schemas. Rest
- *   elements are placed under a `"__rest__"` key.
- * - **Optional properties** are replaced with `T | null` unions, because
- *   Anthropic requires all properties to be present.
- * - **Records** (index signatures) are converted to arrays of `[key, value]`
- *   pairs.
- * - **`oneOf` unions** are rewritten as `anyOf` unions.
- * - **Filters and annotations** are preserved where compatible (e.g.
- *   `description`, supported `format` values like `"date-time"`, `"email"`,
- *   `"uuid"`, etc.), and stripped otherwise.
+ * **Gotchas**
  *
- * If the schema is already compatible, the original codec is returned
- * unchanged.
+ * - Some schemas use a provider-safe encoded shape: tuples become objects with
+ *   numeric string keys, records become arrays of `[key, value]` pairs, and
+ *   optional properties become required nullable properties.
+ * - `oneOf` unions are emitted as `anyOf` unions.
+ * - Unsupported schema kinds throw during conversion instead of producing a
+ *   lossy schema.
+ *
+ * @see {@link LanguageModel.CodecTransformer} for the structured-output transformer contract
+ * @see {@link OpenAiStructuredOutput.toCodecOpenAI} for the OpenAI-specific transformer
  *
  * @category Codec Transformation
  * @since 4.0.0
@@ -56,8 +60,10 @@ export function toCodecAnthropic<T, E, RD, RE>(
   readonly jsonSchema: JsonSchema.JsonSchema
 } {
   const to = schema.ast
-  const from = recur(AST.toEncoded(to))
-  const codec = from === to ? schema : Schema.make<typeof schema>(AST.decodeTo(from, to, Transformation.passthrough()))
+  const from = recur(SchemaAST.toEncoded(to))
+  const codec = from === to
+    ? schema
+    : Schema.make<typeof schema>(SchemaAST.decodeTo(from, to, SchemaTransformation.passthrough()))
   const document = JsonSchema.resolveTopLevel$ref(Schema.toJsonSchemaDocument(codec))
   const jsonSchema = { ...document.schema }
   if (Object.keys(document.definitions).length > 0) {
@@ -66,7 +72,7 @@ export function toCodecAnthropic<T, E, RD, RE>(
   return { codec, jsonSchema }
 }
 
-function recur(ast: AST.AST): AST.AST {
+function recur(ast: SchemaAST.AST): SchemaAST.AST {
   switch (ast._tag) {
     case "Declaration":
     case "Void":
@@ -94,14 +100,14 @@ function recur(ast: AST.AST): AST.AST {
     case "String": {
       const { annotations, filters } = get(ast)
       if (annotations !== undefined || filters !== undefined) {
-        return new AST.String(annotations, filters)
+        return new SchemaAST.String(annotations, filters)
       }
       return ast
     }
     case "Number": {
       const { annotations, filters } = get(ast)
       if (annotations !== undefined || filters !== undefined) {
-        return new AST.Number(annotations, filters)
+        return new SchemaAST.Number(annotations, filters)
       }
       return ast
     }
@@ -112,7 +118,7 @@ function recur(ast: AST.AST): AST.AST {
       if (typeof literal === "string" || typeof literal === "number" || typeof literal === "boolean") {
         const { annotations, filters } = get(ast)
         if (annotations !== undefined || filters !== undefined) {
-          return new AST.Literal(ast.literal, annotations, filters)
+          return new SchemaAST.Literal(ast.literal, annotations, filters)
         }
         return ast
       }
@@ -124,12 +130,12 @@ function recur(ast: AST.AST): AST.AST {
     }
     case "Union": {
       if (ast.mode === "oneOf") {
-        return new AST.Union(ast.types, "anyOf", ast.annotations, ast.checks)
+        return new SchemaAST.Union(ast.types, "anyOf", ast.annotations, ast.checks)
       }
-      const types = AST.mapOrSame(ast.types, recur)
+      const types = SchemaAST.mapOrSame(ast.types, recur)
       const { annotations, filters } = get(ast)
       if (types !== ast.types || annotations !== undefined || filters !== undefined) {
-        return new AST.Union(types, "anyOf", annotations, filters)
+        return new SchemaAST.Union(types, "anyOf", annotations, filters)
       }
       return ast
     }
@@ -149,15 +155,17 @@ function recur(ast: AST.AST): AST.AST {
           annotations.description = TUPLE_DESCRIPTION
         }
         const propertySignatures = ast.elements.map((e, i) => {
-          return new AST.PropertySignature(String(i), e)
+          return new SchemaAST.PropertySignature(String(i), e)
         })
         if (ast.rest.length === 1) {
-          propertySignatures.push(new AST.PropertySignature(REST_PROPERTY_NAME, new AST.Arrays(false, [], ast.rest)))
+          propertySignatures.push(
+            new SchemaAST.PropertySignature(REST_PROPERTY_NAME, new SchemaAST.Arrays(false, [], ast.rest))
+          )
         }
-        return AST.decodeTo(
-          recur(new AST.Objects(propertySignatures, [], annotations, filters)),
+        return SchemaAST.decodeTo(
+          recur(new SchemaAST.Objects(propertySignatures, [], annotations, filters)),
           ast,
-          Transformation.transform({
+          SchemaTransformation.transform({
             decode: (o) => {
               let t: Array<unknown> = []
               for (let i = 0; i < ast.elements.length; i++) {
@@ -186,9 +194,9 @@ function recur(ast: AST.AST): AST.AST {
           })
         )
       } else {
-        const rest = AST.mapOrSame(ast.rest, recur)
+        const rest = SchemaAST.mapOrSame(ast.rest, recur)
         if (rest !== ast.rest || annotations !== undefined || filters !== undefined) {
-          return new AST.Arrays(false, [], rest, annotations, filters)
+          return new SchemaAST.Arrays(false, [], rest, annotations, filters)
         }
         return ast
       }
@@ -196,7 +204,7 @@ function recur(ast: AST.AST): AST.AST {
     case "Objects": {
       let { annotations, filters } = get(ast)
       if (ast.indexSignatures.length === 0) {
-        const propertySignatures = AST.mapOrSame(ast.propertySignatures, (ps) => {
+        const propertySignatures = SchemaAST.mapOrSame(ast.propertySignatures, (ps) => {
           if (typeof ps.name !== "string") {
             throw new Error(
               `${errorPrefix}: Property names must be strings (got ${typeof ps.name})`
@@ -204,11 +212,11 @@ function recur(ast: AST.AST): AST.AST {
           }
           let type = recur(ps.type)
           // opttional properties are not supported by Anthropic, so we translate them to nullable unions
-          if (AST.isOptional(ps.type)) {
-            type = AST.decodeTo(
-              new AST.Union([type, AST.null], "anyOf"),
-              AST.optionalKey(type),
-              Transformation.transformOptional({
+          if (SchemaAST.isOptional(ps.type)) {
+            type = SchemaAST.decodeTo(
+              new SchemaAST.Union([type, SchemaAST.null], "anyOf"),
+              SchemaAST.optionalKey(type),
+              SchemaTransformation.transformOptional({
                 decode: Option.filter(Predicate.isNotNull),
                 encode: Option.orElseSome(() => null)
               })
@@ -217,12 +225,12 @@ function recur(ast: AST.AST): AST.AST {
           if (type === ps.type) {
             return ps
           }
-          return new AST.PropertySignature(ps.name, type)
+          return new SchemaAST.PropertySignature(ps.name, type)
         })
         if (
           propertySignatures !== ast.propertySignatures || annotations !== undefined || filters !== undefined
         ) {
-          return new AST.Objects(propertySignatures, [], annotations, filters)
+          return new SchemaAST.Objects(propertySignatures, [], annotations, filters)
         }
       } else if (ast.indexSignatures.length === 1 && ast.propertySignatures.length === 0) {
         const is = ast.indexSignatures[0]
@@ -236,10 +244,12 @@ function recur(ast: AST.AST): AST.AST {
           annotations ??= {}
           annotations.description = RECORD_DESCRIPTION
         }
-        return AST.decodeTo(
-          recur(new AST.Arrays(false, [], [new AST.Arrays(false, [is.parameter, is.type], [])], annotations)),
+        return SchemaAST.decodeTo(
+          recur(
+            new SchemaAST.Arrays(false, [], [new SchemaAST.Arrays(false, [is.parameter, is.type], [])], annotations)
+          ),
           ast,
-          Transformation.transform({
+          SchemaTransformation.transform({
             decode: Object.fromEntries,
             encode: Object.entries
           })
@@ -256,7 +266,7 @@ function recur(ast: AST.AST): AST.AST {
 
 const errorPrefix = "AnthropicStructuredOutput"
 
-function unsupportedAst(ast: AST.AST, details?: string): never {
+function unsupportedAst(ast: SchemaAST.AST, details?: string): never {
   const base = `Unsupported AST ${ast._tag}`
   const full = `${errorPrefix}: ${base}`
   throw new Error(details !== undefined ? `${full} (${details})` : full)
@@ -276,14 +286,14 @@ type Annotation =
 
 type Filter =
   | Annotation
-  | { readonly _tag: "filter"; readonly filter: AST.Filter<any> }
+  | { readonly _tag: "filter"; readonly filter: SchemaAST.Filter<any> }
 
-const get = (ast: AST.AST): {
+const get = (ast: SchemaAST.AST): {
   annotations: Record<string, string> | undefined
-  filters: [AST.Check<any>, ...AST.Check<any>[]] | undefined
+  filters: [SchemaAST.Check<any>, ...SchemaAST.Check<any>[]] | undefined
 } => {
   const annotations: Record<string, string> = {}
-  const filters: Array<AST.Filter<any>> = []
+  const filters: Array<SchemaAST.Filter<any>> = []
   const checks = getChecks(ast)
   if (checks.length > 0) {
     for (const check of checks) {
@@ -313,7 +323,7 @@ const get = (ast: AST.AST): {
   }
 }
 
-const getChecks = (ast: AST.AST): Array<Filter> => [
+const getChecks = (ast: SchemaAST.AST): Array<Filter> => [
   ...(ast.checks !== undefined ? getFilters(ast.checks) : []),
   ...getAnnotations(ast.annotations)
 ]
@@ -340,7 +350,7 @@ const getAnnotations = (annotations: Schema.Annotations.Filter | undefined): Arr
   return out
 }
 
-function getFilter(filter: AST.Filter<any>): Array<Filter> {
+function getFilter(filter: SchemaAST.Filter<any>): Array<Filter> {
   let out: Array<Filter> = []
   const annotations = getAnnotations(filter.annotations)
   const meta = filter.annotations?.meta
@@ -364,7 +374,7 @@ function getFilter(filter: AST.Filter<any>): Array<Filter> {
   return out
 }
 
-function resetFilter(filter: AST.Filter<any>): AST.Filter<any> {
+function resetFilter(filter: SchemaAST.Filter<any>): SchemaAST.Filter<any> {
   return filter.annotate({
     description: undefined,
     expected: undefined,
@@ -373,7 +383,7 @@ function resetFilter(filter: AST.Filter<any>): AST.Filter<any> {
   })
 }
 
-function getFilters(checks: readonly [AST.Check<any>, ...AST.Check<any>[]]): Array<Filter> {
+function getFilters(checks: readonly [SchemaAST.Check<any>, ...SchemaAST.Check<any>[]]): Array<Filter> {
   return checks.flatMap((check) => {
     switch (check._tag) {
       case "Filter":

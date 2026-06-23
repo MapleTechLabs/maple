@@ -1,8 +1,4 @@
-import {
-	optionalNumberParam,
-	optionalStringParam,
-	type McpToolRegistrar,
-} from "./types"
+import { optionalNumberParam, optionalStringParam, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, resolveTenant } from "../lib/query-warehouse"
 import { resolveTimeRange, formatClampNote } from "../lib/time"
@@ -58,9 +54,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 					limit: lim,
 					offset: off,
 				}),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("search_sessions")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("search_sessions")))
 
 			yield* Effect.annotateCurrentSpan("resultCount", sessions.length)
 			if (sessions.length === 0) {

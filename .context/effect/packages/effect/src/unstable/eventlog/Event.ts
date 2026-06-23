@@ -1,19 +1,12 @@
 /**
- * Defines typed event-log events for use with `EventLog` and event groups.
+ * Typed event definitions for the unstable event-log system.
  *
- * An event definition names a durable domain event with a tag, derives the
- * aggregate or entity primary key from the payload, and records the schemas used
- * to encode the payload and decode handler success or failure values. These
- * definitions are the shared contract between clients that write events and
- * servers that register handlers, so they are useful for command-style writes,
- * replicated logs, audit trails, and workflows that need replayable domain
- * facts.
- *
- * Payloads are serialized with MessagePack, while success and error values are
- * described separately for the handler result. Keep payload schemas stable once
- * events have been persisted or replicated, prefer explicit versioned event tags
- * or backward-compatible schemas for changes, and make primary keys deterministic
- * so related entries are grouped consistently across stores and remotes.
+ * An `Event` is the durable contract shared by writers, handlers, journals, and
+ * replicas. It gives an event a stable tag, derives the aggregate or entity
+ * primary key from the decoded payload, and records the schemas used for the
+ * payload, handler result, and handler errors. The payload schema is also used
+ * to derive the MessagePack encoding for journal entries and remote
+ * replication.
  *
  * @since 4.0.0
  */

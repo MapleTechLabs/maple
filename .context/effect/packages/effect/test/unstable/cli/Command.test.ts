@@ -1422,6 +1422,233 @@ describe("Command", () => {
         assert.strictEqual(actions.length, 0)
       }).pipe(Effect.provide(TestLayer)))
 
+    it.effect("should let global flags before subcommands override non-shared parent locals", () =>
+      Effect.gen(function*() {
+        const captured: Array<boolean> = []
+        let childInvoked = false
+        const child = Command.make("child", {}, () =>
+          Effect.sync(() => {
+            childInvoked = true
+          }))
+        const command = Command.make("tool", {
+          version: Flag.boolean("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config.version)
+          })).pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "child"])
+
+        assert.deepStrictEqual(captured, [])
+        assert.isFalse(childInvoked)
+
+        const output = yield* TestConsole.logLines
+        assert.isTrue(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should keep shared flags before subcommands over globals", () =>
+      Effect.gen(function*() {
+        const captured: Array<boolean> = []
+        const root = Command.make("tool", {}, () => Effect.void).pipe(
+          Command.withSharedFlags({
+            version: Flag.boolean("version")
+          })
+        )
+        const child = Command.make("child", {}, () =>
+          Effect.gen(function*() {
+            const parent = yield* root
+            captured.push(parent.version)
+          }))
+        const command = root.pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "child"])
+
+        assert.deepStrictEqual(captured, [true])
+
+        const output = yield* TestConsole.logLines
+        assert.isFalse(output.some((line) => String(line).includes("1.0.0")))
+
+        yield* runCommand(["child", "--version"])
+
+        assert.deepStrictEqual(captured, [true, true])
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should keep root local flags over globals when no subcommand is selected", () =>
+      Effect.gen(function*() {
+        const captured: Array<string> = []
+        const child = Command.make("child", {}, () => Effect.void)
+        const command = Command.make("tool", {
+          version: Flag.string("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config.version)
+          })).pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "canary"])
+
+        assert.deepStrictEqual(captured, ["canary"])
+
+        const output = yield* TestConsole.logLines
+        assert.isFalse(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should skip intervening local flag values before selecting subcommands", () =>
+      Effect.gen(function*() {
+        const captured: Array<{ name: string; version: boolean }> = []
+        let childInvoked = false
+        const child = Command.make("child", {}, () =>
+          Effect.sync(() => {
+            childInvoked = true
+          }))
+        const command = Command.make("tool", {
+          name: Flag.string("name"),
+          version: Flag.boolean("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config)
+          })).pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "--name", "child"])
+
+        assert.deepStrictEqual(captured, [{ name: "child", version: true }])
+        assert.isFalse(childInvoked)
+
+        const output = yield* TestConsole.logLines
+        assert.isFalse(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should stop looking for subcommands after the first positional argument", () =>
+      Effect.gen(function*() {
+        const captured: Array<{ files: ReadonlyArray<string>; version: boolean }> = []
+        let childInvoked = false
+        const child = Command.make("child", {}, () =>
+          Effect.sync(() => {
+            childInvoked = true
+          }))
+        const command = Command.make("tool", {
+          files: Argument.string("file").pipe(Argument.variadic()),
+          version: Flag.boolean("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config)
+          })).pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "file", "child"])
+
+        assert.deepStrictEqual(captured, [{ files: ["file", "child"], version: true }])
+        assert.isFalse(childInvoked)
+
+        const output = yield* TestConsole.logLines
+        assert.isFalse(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should still select subcommands after skipped flag values", () =>
+      Effect.gen(function*() {
+        const captured: Array<{ name: string; version: boolean }> = []
+        let childInvoked = false
+        const child = Command.make("child", {}, () =>
+          Effect.sync(() => {
+            childInvoked = true
+          }))
+        const command = Command.make("tool", {
+          name: Flag.string("name"),
+          version: Flag.boolean("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config)
+          })).pipe(Command.withSubcommands([child]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["--version", "--name", "value", "child"])
+
+        assert.deepStrictEqual(captured, [])
+        assert.isFalse(childInvoked)
+
+        const output = yield* TestConsole.logLines
+        assert.isTrue(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should let local flags override global flags on the selected command", () =>
+      Effect.gen(function*() {
+        const captured: Array<string> = []
+        const release = Command.make("release", {
+          version: Flag.string("version")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config.version)
+          }))
+        const packageCommand = Command.make("package").pipe(Command.withSubcommands([release]))
+        const command = Command.make("tool").pipe(Command.withSubcommands([packageCommand]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["package", "release", "--version", "canary"])
+
+        assert.deepStrictEqual(captured, ["canary"])
+
+        const output = yield* TestConsole.logLines
+        assert.isFalse(output.some((line) => String(line).includes("1.0.0")))
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should let local short aliases override global short aliases on the selected command", () =>
+      Effect.gen(function*() {
+        const Output = GlobalFlag.setting("output")({
+          flag: Flag.choice("output", ["pretty", "json", "yaml"] as const).pipe(
+            Flag.withAlias("o"),
+            Flag.withDefault("pretty")
+          )
+        })
+        const captured: Array<"summary" | "json" | "csv"> = []
+        const report = Command.make("report", {
+          output: Flag.choice("output", ["summary", "json", "csv"] as const).pipe(
+            Flag.withAlias("o"),
+            Flag.withDefault("summary")
+          )
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config.output)
+          }))
+        const command = Command.make("tool").pipe(
+          Command.withSubcommands([report]),
+          Command.withGlobalFlags([Output])
+        )
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["report", "-o", "csv"])
+
+        assert.deepStrictEqual(captured, ["csv"])
+      }).pipe(Effect.provide(TestLayer)))
+
+    it.effect("should let local flags override scoped global flags from another command branch", () =>
+      Effect.gen(function*() {
+        const Region = GlobalFlag.setting("region")({
+          flag: Flag.choice("region", ["us", "eu"] as const).pipe(Flag.withDefault("us"))
+        })
+        const captured: Array<string> = []
+        let deployInvoked = false
+        const deploy = Command.make("deploy", {}, () =>
+          Effect.sync(() => {
+            deployInvoked = true
+          })).pipe(Command.withGlobalFlags([Region]))
+        const status = Command.make("status", {
+          region: Flag.string("region")
+        }, (config) =>
+          Effect.sync(() => {
+            captured.push(config.region)
+          }))
+        const command = Command.make("app").pipe(Command.withSubcommands([deploy, status]))
+
+        const runCommand = Command.runWith(command, { version: "1.0.0" })
+        yield* runCommand(["status", "--region", "local"])
+
+        assert.deepStrictEqual(captured, ["local"])
+        assert.isFalse(deployInvoked)
+      }).pipe(Effect.provide(TestLayer)))
+
     it.effect("should print help when invoked with no arguments", () =>
       Effect.gen(function*() {
         yield* Cli.run([]).pipe(Effect.catchTag("ShowHelp", () => Effect.void))

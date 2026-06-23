@@ -29,7 +29,6 @@ import {
 	AlertIncidentDocument,
 	AlertIncidentsListResponse,
 	AlertIncidentStatus,
-	AlertIncidentTransition,
 	AlertIncidentTransition as AlertIncidentTransitionSchema,
 	AlertMetricAggregation as AlertMetricAggregationSchema,
 	AlertMetricType as AlertMetricTypeSchema,
@@ -101,15 +100,19 @@ import { AI_TRIAGE_WORKFLOW_BINDING } from "../lib/ai-triage-enqueue"
 import { upsertAlertIssue } from "../lib/issue-hub"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import type { TenantContext } from "./AuthService"
-import { decryptAes256Gcm, encryptAes256Gcm, parseBase64Aes256GcmKey, type EncryptedValue } from "../lib/Crypto"
+import {
+	decryptAes256Gcm,
+	encryptAes256Gcm,
+	parseBase64Aes256GcmKey,
+	type EncryptedValue,
+} from "../lib/Crypto"
 import { Database, type DatabaseClient } from "../lib/DatabaseLive"
 import {
 	buildAlertChatUrl,
 	dispatchDelivery as dispatchDeliveryImpl,
 	formatComparator,
-	formatSignalLabel,
-	formatEventTypeLabel,
-	formatSignalMetric,
+	PAGERDUTY_ROUTING_KEY_PATTERN,
+	verifyPagerDutyRoutingKey,
 } from "./AlertDeliveryDispatch"
 import { Env } from "../lib/Env"
 import { describeCause } from "./ErrorsService"
@@ -120,13 +123,12 @@ import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { validateExternalUrl } from "../lib/url-validator"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import {
-	DestinationPublicConfigSchema,
+	PublicConfigFromJson,
 	SecretConfigFromJson,
 	type DestinationPublicConfig,
 	type DestinationSecretConfig,
 	type EnrichedDestinationSecretConfig,
 } from "./AlertDestinationHydration"
-import { dateToMs } from "../lib/time"
 
 interface NormalizedRule {
 	readonly id: AlertRuleId
@@ -137,6 +139,7 @@ interface NormalizedRule {
 	readonly serviceName: string | null
 	readonly serviceNames: ReadonlyArray<string>
 	readonly excludeServiceNames: ReadonlyArray<string>
+	readonly tags: ReadonlyArray<string>
 	readonly groupBy: AlertGroupBy | null
 	readonly signalType: AlertSignalType
 	readonly comparator: AlertComparator
@@ -272,6 +275,9 @@ const StoredDeliveryPayloadSchema = Schema.Struct({
 const StringArraySchema = Schema.Array(Schema.String)
 const DestinationIdArraySchema = Schema.Array(AlertDestinationDocument.fields.id)
 
+const DeliveryPayloadFromJson = Schema.fromJsonString(StoredDeliveryPayloadSchema)
+const StringArrayFromJson = Schema.fromJsonString(StringArraySchema)
+const DestinationIdArrayFromJson = Schema.fromJsonString(DestinationIdArraySchema)
 const AlertGroupByFromJson = Schema.fromJsonString(AlertGroupBySchema)
 
 const decodeAlertDestinationIdSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.id)
@@ -294,7 +300,7 @@ const decodeAlertIncidentStatusSync = Schema.decodeUnknownSync(AlertIncidentStat
 const decodeAlertEventTypeSync = Schema.decodeUnknownSync(AlertEventTypeSchema)
 const decodeErrorIssueIdSync = Schema.decodeUnknownSync(AlertIncidentDocument.fields.errorIssueId)
 const decodeAlertDeliveryStatusSync = Schema.decodeUnknownSync(AlertDeliveryStatus)
-const decodeAlertGroupBySync = Schema.decodeUnknownSync(AlertGroupBySchema)
+
 const decodeAlertGroupByFromJsonSync = Schema.decodeUnknownSync(AlertGroupByFromJson)
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 
@@ -315,17 +321,20 @@ const resolveServiceLinkName = (
 	return null
 }
 const decodeQueryEngineAlertReducerSync = Schema.decodeUnknownSync(QueryEngineAlertReducer)
+const QueryBuilderDraftFromJson = Schema.fromJsonString(QueryBuilderQueryDraftSchema)
 
-/** Parse the stored query-builder draft value; returns null when absent/invalid. */
-const parseStoredQueryBuilderDraft = (raw: unknown): QueryBuilderQueryDraftPayload | null => {
+/** Parse the stored query-builder draft JSON; returns null when absent/invalid. */
+const parseStoredQueryBuilderDraft = (raw: string | null): QueryBuilderQueryDraftPayload | null => {
 	if (raw == null) return null
-	return Option.getOrElse(Schema.decodeUnknownOption(QueryBuilderQueryDraftSchema)(raw), () => null)
+	return Option.getOrElse(Schema.decodeUnknownOption(QueryBuilderDraftFromJson)(raw), () => null)
 }
 
-/** Parse the stored notification-template value; returns null when absent/invalid. */
-const parseStoredNotificationTemplate = (raw: unknown): AlertNotificationTemplate | null => {
+const NotificationTemplateFromJson = Schema.fromJsonString(AlertNotificationTemplate)
+
+/** Parse the stored notification-template JSON; returns null when absent/invalid. */
+const parseStoredNotificationTemplate = (raw: string | null): AlertNotificationTemplate | null => {
 	if (raw == null) return null
-	return Option.getOrElse(Schema.decodeUnknownOption(AlertNotificationTemplate)(raw), () => null)
+	return Option.getOrElse(Schema.decodeUnknownOption(NotificationTemplateFromJson)(raw), () => null)
 }
 
 type IsoDateTimeValue = Schema.Schema.Type<typeof AlertDestinationDocument.fields.createdAt>
@@ -353,8 +362,8 @@ export class AlertRuntime extends Context.Reference<AlertRuntimeShape>("@maple/a
 	static readonly layer = Layer.succeed(this, this.defaultValue())
 }
 
-const toIso = (value: Date | null | undefined): IsoDateTimeValue | null =>
-	value == null ? null : decodeIsoDateTimeStringSync(value.toISOString())
+const toIso = (value: number | null | undefined): IsoDateTimeValue | null =>
+	value == null ? null : decodeIsoDateTimeStringSync(new Date(value).toISOString())
 
 const toTinybirdDateTime = (epochMs: number) => new Date(epochMs).toISOString().slice(0, 19).replace("T", " ")
 
@@ -371,11 +380,10 @@ const compareThreshold = (
 		Match.when("lte", () => value <= threshold),
 		Match.when("eq", () => value === threshold),
 		Match.when("neq", () => value !== threshold),
-		Match.when("between", () =>
-			thresholdUpper != null && value >= threshold && value <= thresholdUpper,
-		),
-		Match.when("not_between", () =>
-			thresholdUpper != null && (value < threshold || value > thresholdUpper),
+		Match.when("between", () => thresholdUpper != null && value >= threshold && value <= thresholdUpper),
+		Match.when(
+			"not_between",
+			() => thresholdUpper != null && (value < threshold || value > thresholdUpper),
 		),
 		Match.exhaustive,
 	)
@@ -393,11 +401,8 @@ const makePersistenceError = (error: unknown) => {
 	})
 }
 
-const makeValidationError = (
-	message: string,
-	details: ReadonlyArray<string> = [],
-	cause?: unknown,
-) => new AlertValidationError({ message, details, ...(cause === undefined ? {} : { cause }) })
+const makeValidationError = (message: string, details: ReadonlyArray<string> = [], cause?: unknown) =>
+	new AlertValidationError({ message, details, ...(cause === undefined ? {} : { cause }) })
 
 const makeDeliveryError = (message: string, destinationType?: AlertDestinationType) =>
 	new AlertDeliveryError({
@@ -407,10 +412,7 @@ const makeDeliveryError = (message: string, destinationType?: AlertDestinationTy
 
 const isAdmin = (roles: ReadonlyArray<RoleName>) => roles.some((role) => adminRoles.includes(role))
 
-const validateDestinationUrl = (
-	rawUrl: string,
-	field: string,
-): Effect.Effect<string, AlertValidationError> =>
+const validateDestinationUrl = (rawUrl: string, field: string): Effect.Effect<string, AlertValidationError> =>
 	validateExternalUrl(rawUrl).pipe(
 		Effect.as(rawUrl.trim()),
 		Effect.mapError((error) => makeValidationError(`${field}: ${error.message}`)),
@@ -456,7 +458,7 @@ const decryptSecret = (
 const parsePublicConfig = (
 	row: AlertDestinationRow,
 ): Effect.Effect<DestinationPublicConfig, AlertValidationError> =>
-	Schema.decodeUnknownEffect(DestinationPublicConfigSchema)(row.configJson).pipe(
+	Schema.decodeUnknownEffect(PublicConfigFromJson)(row.configJson).pipe(
 		Effect.mapError((cause) => makeValidationError("Stored destination config is invalid", [], cause)),
 	)
 
@@ -467,8 +469,8 @@ const parseSecretConfig = (json: string): Effect.Effect<DestinationSecretConfig,
 
 type StoredDeliveryPayloadType = Schema.Schema.Type<typeof StoredDeliveryPayloadSchema>
 
-const parseDeliveryPayload = (value: unknown): Effect.Effect<StoredDeliveryPayloadType, AlertValidationError> =>
-	Schema.decodeUnknownEffect(StoredDeliveryPayloadSchema)(value).pipe(
+const parseDeliveryPayload = (json: string): Effect.Effect<StoredDeliveryPayloadType, AlertValidationError> =>
+	Schema.decodeUnknownEffect(DeliveryPayloadFromJson)(json).pipe(
 		Effect.mapError((cause) => makeValidationError("Stored delivery payload is invalid", [], cause)),
 	)
 
@@ -549,14 +551,14 @@ const buildSecretConfig = (request: AlertDestinationCreateRequest): DestinationS
 	)
 
 const safeParsePublicConfig = (row: AlertDestinationRow): DestinationPublicConfig =>
-	Option.getOrElse(Schema.decodeUnknownOption(DestinationPublicConfigSchema)(row.configJson), () => ({
+	Option.getOrElse(Schema.decodeUnknownOption(PublicConfigFromJson)(row.configJson), () => ({
 		summary: "Invalid destination config",
 		channelLabel: null,
 	}))
 
-const safeParseStringArray = (value: unknown): ReadonlyArray<string> =>
+const safeParseStringArray = (value: string): ReadonlyArray<string> =>
 	Option.getOrElse(
-		Schema.decodeUnknownOption(StringArraySchema)(value),
+		Schema.decodeUnknownOption(StringArrayFromJson)(value),
 		() => [] as ReadonlyArray<string>,
 	)
 
@@ -647,9 +649,7 @@ const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (ru
 	} else if (rule.signalType === "metric") {
 		if (rule.metricName == null || rule.metricType == null || rule.metricAggregation == null) {
 			return yield* Effect.fail(
-				makeValidationError(
-					"metric alerts require metricName, metricType, and metricAggregation",
-				),
+				makeValidationError("metric alerts require metricName, metricType, and metricAggregation"),
 			)
 		}
 		const groupResolved = yield* resolveRuleGroupBy("metrics")
@@ -675,16 +675,12 @@ const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (ru
 		// Reuse the exact compiler that dashboard query-builder charts use, so
 		// an alert and a chart built from the same draft evaluate identically.
 		if (rule.queryBuilderDraft == null) {
-			return yield* Effect.fail(
-				makeValidationError("builder_query alerts require a queryBuilderDraft"),
-			)
+			return yield* Effect.fail(makeValidationError("builder_query alerts require a queryBuilderDraft"))
 		}
 		const built = buildTimeseriesQuerySpec(rule.queryBuilderDraft)
 		if (built.error != null || built.query == null) {
 			return yield* Effect.fail(
-				makeValidationError(built.error ?? "Failed to build query builder spec", [
-					...built.warnings,
-				]),
+				makeValidationError(built.error ?? "Failed to build query builder spec", [...built.warnings]),
 			)
 		}
 		// Force the evaluation window's bucket size; the draft's stepInterval is
@@ -728,6 +724,8 @@ const compileRulePlan = Effect.fn("AlertsService.compileRulePlan")(function* (ru
 	})
 })
 
+const QuerySpecFromJson = Schema.fromJsonString(QuerySpec)
+
 const parseCompiledPlan = (
 	row: Pick<
 		AlertRuleRow,
@@ -748,7 +746,7 @@ const parseCompiledPlan = (
 			),
 		)
 	}
-	return Schema.decodeUnknownEffect(QuerySpec)(row.querySpecJson).pipe(
+	return Schema.decodeUnknownEffect(QuerySpecFromJson)(row.querySpecJson ?? "").pipe(
 		Effect.flatMap((query) =>
 			Schema.decodeUnknownEffect(CompiledAlertQueryPlan)({
 				kind: "spec",
@@ -759,9 +757,7 @@ const parseCompiledPlan = (
 				noDataBehavior: row.noDataBehavior,
 			}),
 		),
-		Effect.mapError((cause) =>
-			makeValidationError("Stored compiled alert plan is invalid", [], cause),
-		),
+		Effect.mapError((cause) => makeValidationError("Stored compiled alert plan is invalid", [], cause)),
 	)
 }
 
@@ -770,13 +766,13 @@ const rowToDestinationDocument = (row: AlertDestinationRow, publicConfig: Destin
 		id: decodeAlertDestinationIdSync(row.id),
 		name: row.name,
 		type: decodeAlertDestinationTypeSync(row.type),
-		enabled: row.enabled,
+		enabled: row.enabled === 1,
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
 		lastTestedAt: toIso(row.lastTestedAt),
 		lastTestError: row.lastTestError,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 	})
 
 const serviceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
@@ -784,6 +780,26 @@ const serviceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
 
 const excludeServiceNamesFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
 	row.excludeServiceNamesJson ? safeParseStringArray(row.excludeServiceNamesJson) : []
+
+const tagsFromRow = (row: AlertRuleRow): ReadonlyArray<string> =>
+	row.tagsJson ? safeParseStringArray(row.tagsJson) : []
+
+/**
+ * Canonical tag form: trim, lowercase, drop empties, dedupe (order preserved).
+ * Lowercasing keeps `Prod` and `prod` from splitting into two groups in the UI.
+ */
+const normalizeTags = (tags: ReadonlyArray<string> | undefined): ReadonlyArray<string> => {
+	if (!tags || tags.length === 0) return []
+	const seen = new Set<string>()
+	const result: string[] = []
+	for (const raw of tags) {
+		const tag = raw.trim().toLowerCase()
+		if (tag.length === 0 || seen.has(tag)) continue
+		seen.add(tag)
+		result.push(tag)
+	}
+	return result
+}
 
 /** Most recent evaluation error for a rule, aggregated across its group states. */
 interface RuleEvaluationState {
@@ -802,10 +818,11 @@ const rowToRuleDocument = (
 		name: row.name,
 		notes: row.notes ?? null,
 		notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
-		enabled: row.enabled,
+		enabled: row.enabled === 1,
 		severity: decodeAlertSeveritySync(row.severity),
 		serviceNames: [...serviceNames],
 		excludeServiceNames: [...excludeServiceNamesFromRow(row)],
+		tags: [...tagsFromRow(row)],
 		groupBy: parseStoredGroupBy(row.groupBy),
 		signalType: decodeAlertSignalTypeSync(row.signalType),
 		comparator: decodeAlertComparatorSync(row.comparator),
@@ -831,8 +848,8 @@ const rowToRuleDocument = (
 			evaluationState?.evaluatedAt != null
 				? decodeIsoDateTimeStringSync(new Date(evaluationState.evaluatedAt).toISOString())
 				: null,
-		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
-		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
+		createdAt: decodeIsoDateTimeStringSync(new Date(row.createdAt).toISOString()),
+		updatedAt: decodeIsoDateTimeStringSync(new Date(row.updatedAt).toISOString()),
 		createdBy: decodeUserIdSync(row.createdBy),
 		updatedBy: decodeUserIdSync(row.updatedBy),
 	})
@@ -850,8 +867,8 @@ const rowToIncidentDocument = (row: AlertIncidentRow) =>
 		comparator: decodeAlertComparatorSync(row.comparator),
 		threshold: row.threshold,
 		thresholdUpper: row.thresholdUpper,
-		firstTriggeredAt: decodeIsoDateTimeStringSync(row.firstTriggeredAt.toISOString()),
-		lastTriggeredAt: decodeIsoDateTimeStringSync(row.lastTriggeredAt.toISOString()),
+		firstTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.firstTriggeredAt).toISOString()),
+		lastTriggeredAt: decodeIsoDateTimeStringSync(new Date(row.lastTriggeredAt).toISOString()),
 		resolvedAt: toIso(row.resolvedAt),
 		lastObservedValue: row.lastObservedValue,
 		lastSampleCount: row.lastSampleCount,
@@ -979,1395 +996,1501 @@ export interface AlertsServiceShape {
 	>
 }
 
-export class AlertsService extends Context.Service<AlertsService, AlertsServiceShape>()("@maple/api/services/AlertsService", {
-	make: Effect.gen(function* () {
-		const database = yield* Database
-		const env = yield* Env
-		const queryEngine = yield* QueryEngineService
-		const warehouse = yield* WarehouseQueryService
-		const runtime = yield* AlertRuntime
-		const hazelOAuth = yield* HazelOAuthService
-		const encryptionKey = yield* parseEncryptionKey(Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY))
-		// Optional: present only inside a Worker isolate. Used to kick off the
-		// AI triage Workflow for issues created from freshly opened incidents.
-		const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-		const aiTriageWorkflowBinding = Option.match(workerEnv, {
-			onNone: () => undefined,
-			onSome: (e) => e[AI_TRIAGE_WORKFLOW_BINDING],
-		})
-		const now = runtime.now
-		const makeUuid = () => runtime.makeUuid()
-		const deliveryTimeoutMs = () => runtime.deliveryTimeoutMs()
-		const workerId = makeUuid()
-
-		const dbExecute = <T>(fn: (db: DatabaseClient) => Promise<T>) =>
-			database.execute(fn).pipe(
-				Effect.tapError((error) =>
-					Effect.logError("AlertsService dbExecute failed").pipe(
-						Effect.annotateLogs({
-							message: error.message,
-							cause: describeCause(error.cause) ?? "(none)",
-						}),
-					),
-				),
-				Effect.mapError(makePersistenceError),
+export class AlertsService extends Context.Service<AlertsService, AlertsServiceShape>()(
+	"@maple/api/services/AlertsService",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
+			const env = yield* Env
+			const queryEngine = yield* QueryEngineService
+			const warehouse = yield* WarehouseQueryService
+			const runtime = yield* AlertRuntime
+			const hazelOAuth = yield* HazelOAuthService
+			const encryptionKey = yield* parseEncryptionKey(
+				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 			)
+			// Optional: present only inside a Worker isolate. Used to kick off the
+			// AI triage Workflow for issues created from freshly opened incidents.
+			const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+			const aiTriageWorkflowBinding = Option.match(workerEnv, {
+				onNone: () => undefined,
+				onSome: (e) => e[AI_TRIAGE_WORKFLOW_BINDING],
+			})
+			const now = runtime.now
+			const makeUuid = () => runtime.makeUuid()
+			const deliveryTimeoutMs = () => runtime.deliveryTimeoutMs()
+			const workerId = makeUuid()
 
-		const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (
-			roles: ReadonlyArray<RoleName>,
-		) {
-			if (isAdmin(roles)) return
-			return yield* Effect.fail(
-				new AlertForbiddenError({
-					message: "Only org admins can manage alerts",
-					...(roles.length > 0 ? { roles: [...roles] } : {}),
-				}),
-			)
-		})
-
-		const requireDestinationRow = Effect.fn("AlertsService.requireDestinationRow")(function* (
-			orgId: OrgId,
-			destinationId: AlertDestinationDocument["id"],
-		) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)))
-					.limit(1),
-			)
-			if (rows[0]) return rows[0]
-			return yield* Effect.fail(
-				new AlertNotFoundError({
-					message: "Alert destination not found",
-					resourceType: "destination",
-					resourceId: destinationId,
-				}),
-			)
-		})
-
-		const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
-			row: AlertDestinationRow,
-		) {
-			const publicConfig = yield* parsePublicConfig(row)
-			const secretJson = yield* decryptSecret(row, encryptionKey)
-			const secretConfig = yield* parseSecretConfig(secretJson)
-			return {
-				row,
-				publicConfig,
-				secretConfig,
-				document: rowToDestinationDocument(row, publicConfig),
-			} as const
-		})
-
-		const enrichSecretForDispatch = (
-			_row: AlertDestinationRow,
-			secretConfig: DestinationSecretConfig,
-		): Effect.Effect<EnrichedDestinationSecretConfig, AlertDeliveryError> =>
-			// Hazel-OAuth webhooks embed their delivery token in the URL path, so
-			// there's nothing to enrich at dispatch time.
-			Effect.succeed(secretConfig)
-
-		const requireRuleRow = Effect.fn("AlertsService.requireRuleRow")(function* (
-			orgId: OrgId,
-			ruleId: AlertRuleDocument["id"],
-		) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertRules)
-					.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-					.limit(1),
-			)
-			if (rows[0]) return rows[0]
-			return yield* Effect.fail(
-				new AlertNotFoundError({
-					message: "Alert rule not found",
-					resourceType: "rule",
-					resourceId: ruleId,
-				}),
-			)
-		})
-
-		const parseDestinationIds = (
-			value: unknown,
-		): Effect.Effect<ReadonlyArray<AlertDestinationId>, AlertValidationError> =>
-			Schema.decodeUnknownEffect(DestinationIdArraySchema)(value).pipe(
-				Effect.mapError((cause) =>
-					makeValidationError("Stored rule destinations are invalid", [], cause),
-				),
-			)
-
-		const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
-			row: AlertRuleRow,
-		): Effect.fn.Return<NormalizedRule, AlertValidationError> {
-			const serviceNames = serviceNamesFromRow(row)
-			return {
-				id: decodeAlertRuleIdSync(row.id),
-				name: row.name,
-				notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
-				enabled: row.enabled,
-				severity: decodeAlertSeveritySync(row.severity),
-				serviceName: serviceNames.length === 1 ? serviceNames[0] : null,
-				serviceNames,
-				excludeServiceNames: excludeServiceNamesFromRow(row),
-				groupBy: parseStoredGroupBy(row.groupBy),
-				signalType: decodeAlertSignalTypeSync(row.signalType),
-				comparator: decodeAlertComparatorSync(row.comparator),
-				threshold: row.threshold,
-				thresholdUpper: row.thresholdUpper,
-				windowMinutes: row.windowMinutes,
-				minimumSampleCount: row.minimumSampleCount,
-				consecutiveBreachesRequired: row.consecutiveBreachesRequired,
-				consecutiveHealthyRequired: row.consecutiveHealthyRequired,
-				renotifyIntervalMinutes: row.renotifyIntervalMinutes,
-				metricName: row.metricName,
-				metricType: row.metricType != null ? decodeAlertMetricTypeSync(row.metricType) : null,
-				metricAggregation:
-					row.metricAggregation != null
-						? decodeAlertMetricAggregationSync(row.metricAggregation)
-						: null,
-				apdexThresholdMs: row.apdexThresholdMs,
-				queryBuilderDraft: parseStoredQueryBuilderDraft(row.queryBuilderDraftJson),
-				rawQuerySql: row.rawQuerySql ?? null,
-				rawQueryReducer:
-					row.signalType === "raw_query" ? decodeQueryEngineAlertReducerSync(row.reducer) : null,
-				destinationIds: yield* parseDestinationIds(row.destinationIdsJson),
-				compiledPlan: yield* parseCompiledPlan(row),
-				createdAt: row.createdAt.getTime(),
-				updatedAt: row.updatedAt.getTime(),
-			}
-		})
-
-		const normalizeRule = Effect.fn("AlertsService.normalizeRule")(function* (
-			request: AlertRuleUpsertRequest,
-		): Effect.fn.Return<NormalizedRule, AlertValidationError> {
-			const name = request.name.trim()
-			const serviceNames =
-				request.serviceNames && request.serviceNames.length > 0
-					? request.serviceNames.map((s) => s.trim()).filter((s) => s.length > 0)
-					: []
-			const serviceName = serviceNames.length === 1 ? serviceNames[0] : null
-			const excludeServiceNames = request.excludeServiceNames
-				? request.excludeServiceNames.map((s) => s.trim()).filter((s) => s.length > 0)
-				: []
-			const metricName = normalizeOptionalString(request.metricName)
-			// Dedupe while preserving selection order — a destination listed twice still
-			// notifies once, so we persist each id at most once. This is the authoritative
-			// fix; the editor also dedupes on submit for UX (see buildRuleRequest).
-			const destinationIds = [...new Set(request.destinationIds)]
-
-			const details: string[] = []
-			if (name.length === 0) details.push("name is required")
-			if (destinationIds.length === 0) {
-				details.push("at least one destination must be selected")
-			}
-			if (request.threshold == null || !Number.isFinite(request.threshold)) {
-				details.push("threshold must be a finite number")
-			}
-			const isRange = request.comparator === "between" || request.comparator === "not_between"
-			if (isRange) {
-				if (request.thresholdUpper == null || !Number.isFinite(request.thresholdUpper)) {
-					details.push("thresholdUpper is required for between / not_between comparators")
-				} else if (request.threshold != null && request.thresholdUpper < request.threshold) {
-					details.push("thresholdUpper must be greater than or equal to threshold")
-				}
-			} else if (request.thresholdUpper != null) {
-				details.push("thresholdUpper is only supported for between / not_between comparators")
-			}
-			if (request.signalType === "metric") {
-				if (!metricName) details.push("metricName is required for metric alerts")
-				if (!request.metricType) details.push("metricType is required for metric alerts")
-				if (!request.metricAggregation) {
-					details.push("metricAggregation is required for metric alerts")
-				}
-			}
-			if (request.signalType === "builder_query") {
-				if (!request.queryBuilderDraft) {
-					details.push("queryBuilderDraft is required for builder_query alerts")
-				}
-			}
-			if (request.signalType === "raw_query") {
-				const sql = request.rawQuerySql?.trim() ?? ""
-				if (sql.length === 0) {
-					details.push("rawQuerySql is required for raw_query alerts")
-				} else if (!sql.includes("$__orgFilter")) {
-					details.push("rawQuerySql must reference $__orgFilter for org scoping")
-				}
-			}
-			const allowsMetricFields = request.signalType === "metric"
-			if (!allowsMetricFields && request.metricType) {
-				details.push("metricType is only supported for metric alerts")
-			}
-			if (!allowsMetricFields && metricName) {
-				details.push("metricName is only supported for metric alerts")
-			}
-			if (request.signalType !== "metric" && request.metricAggregation) {
-				details.push("metricAggregation is only supported for metric alerts")
-			}
-			const groupBy = request.groupBy ?? null
-			if (groupBy != null && serviceNames.length > 0) {
-				details.push("groupBy is only supported when no service is specified")
-			}
-			if (excludeServiceNames.length > 0 && serviceNames.length > 0) {
-				details.push("excludeServiceNames is only supported when no specific services are selected")
-			}
-			if (excludeServiceNames.length > 0 && !isServiceGroupBy(groupBy)) {
-				details.push('excludeServiceNames requires groupBy=["service.name"]')
-			}
-
-			if (details.length > 0) {
-				return yield* Effect.fail(makeValidationError("Invalid alert rule", details))
-			}
-
-			const nowMs = yield* now
-			const normalizedBase = {
-				id: decodeAlertRuleIdSync(makeUuid()),
-				name,
-				notificationTemplate: request.notificationTemplate ?? null,
-				enabled: request.enabled ?? true,
-				severity: request.severity,
-				serviceName,
-				serviceNames,
-				excludeServiceNames,
-				groupBy,
-				signalType: request.signalType,
-				comparator: request.comparator,
-				threshold: request.threshold,
-				thresholdUpper: request.thresholdUpper ?? null,
-				windowMinutes: request.windowMinutes,
-				minimumSampleCount: request.minimumSampleCount ?? 0,
-				consecutiveBreachesRequired: request.consecutiveBreachesRequired ?? 2,
-				consecutiveHealthyRequired: request.consecutiveHealthyRequired ?? 2,
-				renotifyIntervalMinutes: request.renotifyIntervalMinutes ?? 30,
-				metricName,
-				metricType: request.metricType ?? null,
-				metricAggregation: request.metricAggregation ?? null,
-				apdexThresholdMs: request.apdexThresholdMs ?? (request.signalType === "apdex" ? 500 : null),
-				queryBuilderDraft: request.queryBuilderDraft ?? null,
-				rawQuerySql: normalizeOptionalString(request.rawQuerySql),
-				rawQueryReducer: request.rawQueryReducer ?? null,
-				destinationIds,
-				createdAt: nowMs,
-				updatedAt: nowMs,
-			}
-			const compiledPlan = yield* compileRulePlan(normalizedBase)
-
-			return {
-				...normalizedBase,
-				compiledPlan,
-			}
-		})
-
-		const requireDestinationIds = Effect.fn("AlertsService.requireDestinationIds")(function* (
-			orgId: OrgId,
-			destinationIds: ReadonlyArray<AlertDestinationId>,
-		) {
-			if (destinationIds.length === 0) return
-
-			const rows = yield* dbExecute((db) =>
-				db
-					.select({ id: alertDestinations.id })
-					.from(alertDestinations)
-					.where(
-						and(
-							eq(alertDestinations.orgId, orgId),
-							inArray(alertDestinations.id, [...destinationIds]),
+			const dbExecute = <T>(fn: (db: DatabaseClient) => Promise<T>) =>
+				database.execute(fn).pipe(
+					Effect.tapError((error) =>
+						Effect.logError("AlertsService dbExecute failed").pipe(
+							Effect.annotateLogs({
+								message: error.message,
+								cause: describeCause(error.cause) ?? "(none)",
+							}),
 						),
 					),
-			)
+					Effect.mapError(makePersistenceError),
+				)
 
-			const existingIds = new Set(rows.map((row) => row.id))
-			const missing = destinationIds.filter((id) => !existingIds.has(id))
-			if (missing.length > 0) {
-				return yield* Effect.fail(makeValidationError("Unknown destination IDs", missing))
-			}
-		})
+			const requireAdmin = Effect.fn("AlertsService.requireAdmin")(function* (
+				roles: ReadonlyArray<RoleName>,
+			) {
+				if (isAdmin(roles)) return
+				return yield* Effect.fail(
+					new AlertForbiddenError({
+						message: "Only org admins can manage alerts",
+						...(roles.length > 0 ? { roles: [...roles] } : {}),
+					}),
+				)
+			})
 
-		const systemTenant = (orgId: OrgId): TenantContext => ({
-			orgId,
-			userId: decodeUserIdSync("system-alerting"),
-			roles: [decodeRoleNameSync("root")],
-			authMode: "self_hosted",
-		})
+			const requireDestinationRow = Effect.fn("AlertsService.requireDestinationRow")(function* (
+				orgId: OrgId,
+				destinationId: AlertDestinationDocument["id"],
+			) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertDestinations)
+						.where(
+							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
+						)
+						.limit(1),
+				)
+				if (rows[0]) return rows[0]
+				return yield* Effect.fail(
+					new AlertNotFoundError({
+						message: "Alert destination not found",
+						resourceType: "destination",
+						resourceId: destinationId,
+					}),
+				)
+			})
 
-		// Collapse alert-domain semantic errors (validation/execution/timeout from
-		// the query engine layer) into AlertValidation/AlertDelivery, but let the
-		// Tinybird tagged errors (WarehouseQueryError + WarehouseQuotaExceededError)
-		// propagate so the client receives the tag + structured fields
-		// (upstreamStatus, setting, pipe). formatBackendError on the frontend
-		// handles them.
-		const catchQueryEngineErrors = <A, R>(
-			effect: Effect.Effect<
-				A,
-				| QueryEngineValidationError
-				| QueryEngineExecutionError
-				| QueryEngineTimeoutError
-				| WarehouseError,
-				R
-			>,
-		) =>
-			effect.pipe(
-				Effect.catchTags({
-					"@maple/http/errors/QueryEngineValidationError": (e) =>
-						Effect.fail(makeValidationError(e.message, e.details)),
-					"@maple/http/errors/QueryEngineExecutionError": (e) =>
-						Effect.fail(makeDeliveryError(e.message)),
-					"@maple/http/errors/QueryEngineTimeoutError": (e) =>
-						Effect.fail(makeDeliveryError(e.message ?? "Alert evaluation timed out")),
-				}),
-			)
+			const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
+				row: AlertDestinationRow,
+			) {
+				const publicConfig = yield* parsePublicConfig(row)
+				const secretJson = yield* decryptSecret(row, encryptionKey)
+				const secretConfig = yield* parseSecretConfig(secretJson)
+				return {
+					row,
+					publicConfig,
+					secretConfig,
+					document: rowToDestinationDocument(row, publicConfig),
+				} as const
+			})
 
-		/**
-		 * Evaluate the alert rule and return one outcome per group. For
-		 * ungrouped rules the array always has length 1 with `groupKey = "all"`.
-		 * For grouped rules every distinct value (or composite value, when
-		 * multiple dimensions are picked) becomes its own entry that is
-		 * processed and dedup'd independently downstream.
-		 */
-		const evaluateRule = Effect.fn("AlertsService.evaluateRule")(function* (
-			orgId: OrgId,
-			rule: NormalizedRule,
-		): Effect.fn.Return<
-			ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
-			| AlertValidationError
-			| AlertDeliveryError
-			| WarehouseError
-		> {
-			const endMs = yield* now
-			const startMs = endMs - rule.windowMinutes * 60_000
-			const plan = rule.compiledPlan
-			let observations: ReadonlyArray<GroupedAlertObservation>
-			if (plan.kind === "raw_sql") {
-				observations = yield* queryEngine
-					.evaluateRawSql(systemTenant(orgId), {
-						startTime: toTinybirdDateTime(startMs),
-						endTime: toTinybirdDateTime(endMs),
-						sql: plan.rawSql ?? "",
-						reducer: plan.reducer,
-						windowMinutes: rule.windowMinutes,
-					})
-					.pipe(catchQueryEngineErrors)
-			} else {
-				if (plan.query == null || plan.sampleCountStrategy == null) {
-					return yield* Effect.fail(
-						makeValidationError("Compiled alert plan is missing its query spec"),
+			const enrichSecretForDispatch = (
+				_row: AlertDestinationRow,
+				secretConfig: DestinationSecretConfig,
+			): Effect.Effect<EnrichedDestinationSecretConfig, AlertDeliveryError> =>
+				// Hazel-OAuth webhooks embed their delivery token in the URL path, so
+				// there's nothing to enrich at dispatch time.
+				Effect.succeed(secretConfig)
+
+			const requireRuleRow = Effect.fn("AlertsService.requireRuleRow")(function* (
+				orgId: OrgId,
+				ruleId: AlertRuleDocument["id"],
+			) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertRules)
+						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
+						.limit(1),
+				)
+				if (rows[0]) return rows[0]
+				return yield* Effect.fail(
+					new AlertNotFoundError({
+						message: "Alert rule not found",
+						resourceType: "rule",
+						resourceId: ruleId,
+					}),
+				)
+			})
+
+			const parseDestinationIds = (
+				value: string,
+			): Effect.Effect<ReadonlyArray<AlertDestinationId>, AlertValidationError> =>
+				Schema.decodeUnknownEffect(DestinationIdArrayFromJson)(value).pipe(
+					Effect.mapError((cause) =>
+						makeValidationError("Stored rule destinations are invalid", [], cause),
+					),
+				)
+
+			const normalizeRuleRow = Effect.fn("AlertsService.normalizeRuleRow")(function* (
+				row: AlertRuleRow,
+			): Effect.fn.Return<NormalizedRule, AlertValidationError> {
+				const serviceNames = serviceNamesFromRow(row)
+				return {
+					id: decodeAlertRuleIdSync(row.id),
+					name: row.name,
+					notificationTemplate: parseStoredNotificationTemplate(row.notificationTemplateJson),
+					enabled: row.enabled === 1,
+					severity: decodeAlertSeveritySync(row.severity),
+					serviceName: serviceNames.length === 1 ? serviceNames[0] : null,
+					serviceNames,
+					excludeServiceNames: excludeServiceNamesFromRow(row),
+					tags: tagsFromRow(row),
+					groupBy: parseStoredGroupBy(row.groupBy),
+					signalType: decodeAlertSignalTypeSync(row.signalType),
+					comparator: decodeAlertComparatorSync(row.comparator),
+					threshold: row.threshold,
+					thresholdUpper: row.thresholdUpper,
+					windowMinutes: row.windowMinutes,
+					minimumSampleCount: row.minimumSampleCount,
+					consecutiveBreachesRequired: row.consecutiveBreachesRequired,
+					consecutiveHealthyRequired: row.consecutiveHealthyRequired,
+					renotifyIntervalMinutes: row.renotifyIntervalMinutes,
+					metricName: row.metricName,
+					metricType: row.metricType != null ? decodeAlertMetricTypeSync(row.metricType) : null,
+					metricAggregation:
+						row.metricAggregation != null
+							? decodeAlertMetricAggregationSync(row.metricAggregation)
+							: null,
+					apdexThresholdMs: row.apdexThresholdMs,
+					queryBuilderDraft: parseStoredQueryBuilderDraft(row.queryBuilderDraftJson),
+					rawQuerySql: row.rawQuerySql ?? null,
+					rawQueryReducer:
+						row.signalType === "raw_query"
+							? decodeQueryEngineAlertReducerSync(row.reducer)
+							: null,
+					destinationIds: yield* parseDestinationIds(row.destinationIdsJson),
+					compiledPlan: yield* parseCompiledPlan(row),
+					createdAt: row.createdAt,
+					updatedAt: row.updatedAt,
+				}
+			})
+
+			const normalizeRule = Effect.fn("AlertsService.normalizeRule")(function* (
+				request: AlertRuleUpsertRequest,
+			): Effect.fn.Return<NormalizedRule, AlertValidationError> {
+				const name = request.name.trim()
+				const serviceNames =
+					request.serviceNames && request.serviceNames.length > 0
+						? request.serviceNames.map((s) => s.trim()).filter((s) => s.length > 0)
+						: []
+				const serviceName = serviceNames.length === 1 ? serviceNames[0] : null
+				const excludeServiceNames = request.excludeServiceNames
+					? request.excludeServiceNames.map((s) => s.trim()).filter((s) => s.length > 0)
+					: []
+				const tags = normalizeTags(request.tags)
+				const metricName = normalizeOptionalString(request.metricName)
+				// Dedupe while preserving selection order — a destination listed twice still
+				// notifies once, so we persist each id at most once. This is the authoritative
+				// fix; the editor also dedupes on submit for UX (see buildRuleRequest).
+				const destinationIds = [...new Set(request.destinationIds)]
+
+				const details: string[] = []
+				if (name.length === 0) details.push("name is required")
+				if (destinationIds.length === 0) {
+					details.push("at least one destination must be selected")
+				}
+				if (request.threshold == null || !Number.isFinite(request.threshold)) {
+					details.push("threshold must be a finite number")
+				}
+				const isRange = request.comparator === "between" || request.comparator === "not_between"
+				if (isRange) {
+					if (request.thresholdUpper == null || !Number.isFinite(request.thresholdUpper)) {
+						details.push("thresholdUpper is required for between / not_between comparators")
+					} else if (request.threshold != null && request.thresholdUpper < request.threshold) {
+						details.push("thresholdUpper must be greater than or equal to threshold")
+					}
+				} else if (request.thresholdUpper != null) {
+					details.push("thresholdUpper is only supported for between / not_between comparators")
+				}
+				if (request.signalType === "metric") {
+					if (!metricName) details.push("metricName is required for metric alerts")
+					if (!request.metricType) details.push("metricType is required for metric alerts")
+					if (!request.metricAggregation) {
+						details.push("metricAggregation is required for metric alerts")
+					}
+				}
+				if (request.signalType === "builder_query") {
+					if (!request.queryBuilderDraft) {
+						details.push("queryBuilderDraft is required for builder_query alerts")
+					}
+				}
+				if (request.signalType === "raw_query") {
+					const sql = request.rawQuerySql?.trim() ?? ""
+					if (sql.length === 0) {
+						details.push("rawQuerySql is required for raw_query alerts")
+					} else if (!sql.includes("$__orgFilter")) {
+						details.push("rawQuerySql must reference $__orgFilter for org scoping")
+					}
+				}
+				const allowsMetricFields = request.signalType === "metric"
+				if (!allowsMetricFields && request.metricType) {
+					details.push("metricType is only supported for metric alerts")
+				}
+				if (!allowsMetricFields && metricName) {
+					details.push("metricName is only supported for metric alerts")
+				}
+				if (request.signalType !== "metric" && request.metricAggregation) {
+					details.push("metricAggregation is only supported for metric alerts")
+				}
+				const groupBy = request.groupBy ?? null
+				if (groupBy != null && serviceNames.length > 0) {
+					details.push("groupBy is only supported when no service is specified")
+				}
+				if (excludeServiceNames.length > 0 && serviceNames.length > 0) {
+					details.push(
+						"excludeServiceNames is only supported when no specific services are selected",
 					)
 				}
-				observations = yield* queryEngine
-					.evaluate(systemTenant(orgId), {
-						startTime: toTinybirdDateTime(startMs),
-						endTime: toTinybirdDateTime(endMs),
-						query: plan.query,
-						reducer: plan.reducer,
-						sampleCountStrategy: plan.sampleCountStrategy,
-					})
-					.pipe(catchQueryEngineErrors)
-			}
-
-			return observations.map((obs) => ({
-				evaluation: applyEvaluationLogic(rule, obs),
-				groupKey: obs.groupKey,
-			}))
-		})
-
-		const applyEvaluationLogic = (
-			rule: NormalizedRule,
-			obs: Pick<GroupedAlertObservation, "value" | "sampleCount" | "hasData">,
-			reasonOverride?: string,
-		): EvaluatedRule => {
-			const noDataBehavior = rule.compiledPlan.noDataBehavior
-			const sampleCount = obs.sampleCount
-			const value = obs.hasData ? obs.value : noDataBehavior === "zero" ? 0 : null
-
-			if (!obs.hasData && noDataBehavior === "skip") {
-				return {
-					status: "skipped",
-					value: null,
-					sampleCount,
-					threshold: rule.threshold,
-					thresholdUpper: rule.thresholdUpper,
-					comparator: rule.comparator,
-					reason:
-						rule.signalType === "metric"
-							? "No metric data in the selected window"
-							: "No data in the selected window",
+				if (excludeServiceNames.length > 0 && !isServiceGroupBy(groupBy)) {
+					details.push('excludeServiceNames requires groupBy=["service.name"]')
 				}
-			}
 
-			if (sampleCount < rule.minimumSampleCount) {
+				if (details.length > 0) {
+					return yield* Effect.fail(makeValidationError("Invalid alert rule", details))
+				}
+
+				const nowMs = yield* now
+				const normalizedBase = {
+					id: decodeAlertRuleIdSync(makeUuid()),
+					name,
+					notificationTemplate: request.notificationTemplate ?? null,
+					enabled: request.enabled ?? true,
+					severity: request.severity,
+					serviceName,
+					serviceNames,
+					excludeServiceNames,
+					tags,
+					groupBy,
+					signalType: request.signalType,
+					comparator: request.comparator,
+					threshold: request.threshold,
+					thresholdUpper: request.thresholdUpper ?? null,
+					windowMinutes: request.windowMinutes,
+					minimumSampleCount: request.minimumSampleCount ?? 0,
+					consecutiveBreachesRequired: request.consecutiveBreachesRequired ?? 2,
+					consecutiveHealthyRequired: request.consecutiveHealthyRequired ?? 2,
+					renotifyIntervalMinutes: request.renotifyIntervalMinutes ?? 30,
+					metricName,
+					metricType: request.metricType ?? null,
+					metricAggregation: request.metricAggregation ?? null,
+					apdexThresholdMs:
+						request.apdexThresholdMs ?? (request.signalType === "apdex" ? 500 : null),
+					queryBuilderDraft: request.queryBuilderDraft ?? null,
+					rawQuerySql: normalizeOptionalString(request.rawQuerySql),
+					rawQueryReducer: request.rawQueryReducer ?? null,
+					destinationIds,
+					createdAt: nowMs,
+					updatedAt: nowMs,
+				}
+				const compiledPlan = yield* compileRulePlan(normalizedBase)
+
 				return {
-					status: "skipped",
+					...normalizedBase,
+					compiledPlan,
+				}
+			})
+
+			const requireDestinationIds = Effect.fn("AlertsService.requireDestinationIds")(function* (
+				orgId: OrgId,
+				destinationIds: ReadonlyArray<AlertDestinationId>,
+			) {
+				if (destinationIds.length === 0) return
+
+				const rows = yield* dbExecute((db) =>
+					db
+						.select({ id: alertDestinations.id })
+						.from(alertDestinations)
+						.where(
+							and(
+								eq(alertDestinations.orgId, orgId),
+								inArray(alertDestinations.id, [...destinationIds]),
+							),
+						),
+				)
+
+				const existingIds = new Set(rows.map((row) => row.id))
+				const missing = destinationIds.filter((id) => !existingIds.has(id))
+				if (missing.length > 0) {
+					return yield* Effect.fail(makeValidationError("Unknown destination IDs", missing))
+				}
+			})
+
+			const systemTenant = (orgId: OrgId): TenantContext => ({
+				orgId,
+				userId: decodeUserIdSync("system-alerting"),
+				roles: [decodeRoleNameSync("root")],
+				authMode: "self_hosted",
+			})
+
+			// Collapse alert-domain semantic errors (validation/execution/timeout from
+			// the query engine layer) into AlertValidation/AlertDelivery, but let the
+			// Tinybird tagged errors (WarehouseQueryError + WarehouseQuotaExceededError)
+			// propagate so the client receives the tag + structured fields
+			// (upstreamStatus, setting, pipe). formatBackendError on the frontend
+			// handles them.
+			const catchQueryEngineErrors = <A, R>(
+				effect: Effect.Effect<
+					A,
+					| QueryEngineValidationError
+					| QueryEngineExecutionError
+					| QueryEngineTimeoutError
+					| WarehouseError,
+					R
+				>,
+			) =>
+				effect.pipe(
+					Effect.catchTags({
+						"@maple/http/errors/QueryEngineValidationError": (e) =>
+							Effect.fail(makeValidationError(e.message, e.details)),
+						"@maple/http/errors/QueryEngineExecutionError": (e) =>
+							Effect.fail(makeDeliveryError(e.message)),
+						"@maple/http/errors/QueryEngineTimeoutError": (e) =>
+							Effect.fail(makeDeliveryError(e.message ?? "Alert evaluation timed out")),
+					}),
+				)
+
+			/**
+			 * Evaluate the alert rule and return one outcome per group. For
+			 * ungrouped rules the array always has length 1 with `groupKey = "all"`.
+			 * For grouped rules every distinct value (or composite value, when
+			 * multiple dimensions are picked) becomes its own entry that is
+			 * processed and dedup'd independently downstream.
+			 */
+			const evaluateRule = Effect.fn("AlertsService.evaluateRule")(function* (
+				orgId: OrgId,
+				rule: NormalizedRule,
+			): Effect.fn.Return<
+				ReadonlyArray<{ evaluation: EvaluatedRule; groupKey: string }>,
+				AlertValidationError | AlertDeliveryError | WarehouseError
+			> {
+				const endMs = yield* now
+				const startMs = endMs - rule.windowMinutes * 60_000
+				const plan = rule.compiledPlan
+				let observations: ReadonlyArray<GroupedAlertObservation>
+				if (plan.kind === "raw_sql") {
+					observations = yield* queryEngine
+						.evaluateRawSql(systemTenant(orgId), {
+							startTime: toTinybirdDateTime(startMs),
+							endTime: toTinybirdDateTime(endMs),
+							sql: plan.rawSql ?? "",
+							reducer: plan.reducer,
+							windowMinutes: rule.windowMinutes,
+						})
+						.pipe(catchQueryEngineErrors)
+				} else {
+					if (plan.query == null || plan.sampleCountStrategy == null) {
+						return yield* Effect.fail(
+							makeValidationError("Compiled alert plan is missing its query spec"),
+						)
+					}
+					observations = yield* queryEngine
+						.evaluate(systemTenant(orgId), {
+							startTime: toTinybirdDateTime(startMs),
+							endTime: toTinybirdDateTime(endMs),
+							query: plan.query,
+							reducer: plan.reducer,
+							sampleCountStrategy: plan.sampleCountStrategy,
+						})
+						.pipe(catchQueryEngineErrors)
+				}
+
+				return observations.map((obs) => ({
+					evaluation: applyEvaluationLogic(rule, obs),
+					groupKey: obs.groupKey,
+				}))
+			})
+
+			const applyEvaluationLogic = (
+				rule: NormalizedRule,
+				obs: Pick<GroupedAlertObservation, "value" | "sampleCount" | "hasData">,
+				reasonOverride?: string,
+			): EvaluatedRule => {
+				const noDataBehavior = rule.compiledPlan.noDataBehavior
+				const sampleCount = obs.sampleCount
+				const value = obs.hasData ? obs.value : noDataBehavior === "zero" ? 0 : null
+
+				if (!obs.hasData && noDataBehavior === "skip") {
+					return {
+						status: "skipped",
+						value: null,
+						sampleCount,
+						threshold: rule.threshold,
+						thresholdUpper: rule.thresholdUpper,
+						comparator: rule.comparator,
+						reason:
+							rule.signalType === "metric"
+								? "No metric data in the selected window"
+								: "No data in the selected window",
+					}
+				}
+
+				if (sampleCount < rule.minimumSampleCount) {
+					return {
+						status: "skipped",
+						value,
+						sampleCount,
+						threshold: rule.threshold,
+						thresholdUpper: rule.thresholdUpper,
+						comparator: rule.comparator,
+						reason: `Sample count ${sampleCount} is below minimum ${rule.minimumSampleCount}`,
+					}
+				}
+
+				if (value == null) {
+					return {
+						status: "skipped",
+						value: null,
+						sampleCount,
+						threshold: rule.threshold,
+						thresholdUpper: rule.thresholdUpper,
+						comparator: rule.comparator,
+						reason: "Alert evaluation did not return a scalar value",
+					}
+				}
+
+				return {
+					status: compareThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
+						? "breached"
+						: "healthy",
 					value,
 					sampleCount,
 					threshold: rule.threshold,
 					thresholdUpper: rule.thresholdUpper,
 					comparator: rule.comparator,
-					reason: `Sample count ${sampleCount} is below minimum ${rule.minimumSampleCount}`,
+					reason:
+						reasonOverride ??
+						`${rule.signalType} ${formatComparator(rule.comparator, rule.threshold, rule.thresholdUpper)}`,
 				}
 			}
 
-			if (value == null) {
-				return {
-					status: "skipped",
-					value: null,
-					sampleCount,
-					threshold: rule.threshold,
-					thresholdUpper: rule.thresholdUpper,
-					comparator: rule.comparator,
-					reason: "Alert evaluation did not return a scalar value",
-				}
-			}
+			const buildDeliveryKey = (
+				incidentId: string,
+				destinationId: string,
+				eventType: AlertEventTypeValue,
+				scheduledAt: number,
+			) => [incidentId, destinationId, eventType, scheduledAt].join(":")
 
-			return {
-				status: compareThreshold(value, rule.comparator, rule.threshold, rule.thresholdUpper)
-					? "breached"
-					: "healthy",
-				value,
-				sampleCount,
-				threshold: rule.threshold,
-				thresholdUpper: rule.thresholdUpper,
-				comparator: rule.comparator,
-				reason:
-					reasonOverride ??
-					`${rule.signalType} ${formatComparator(rule.comparator, rule.threshold, rule.thresholdUpper)}`,
-			}
-		}
-
-		const buildDeliveryKey = (
-			incidentId: string,
-			destinationId: string,
-			eventType: AlertEventTypeValue,
-			scheduledAt: number,
-		) => [incidentId, destinationId, eventType, scheduledAt].join(":")
-
-		const insertDeliveryEventRecord = (
-			db: DatabaseExecutor,
-			orgId: OrgId,
-			incidentId: AlertIncidentId | null,
-			ruleId: AlertRuleId,
-			destinationId: AlertDestinationId,
-			eventType: AlertEventTypeValue,
-			payload: Record<string, unknown>,
-			scheduledAt: number,
-			deliveryKey: string,
-			attemptNumber: number,
-		) =>
-			db
-				.insert(alertDeliveryEvents)
-				.values({
-					id: decodeAlertDeliveryEventIdSync(makeUuid()),
-					orgId,
-					incidentId,
-					ruleId,
-					destinationId,
-					deliveryKey,
-					eventType,
-					attemptNumber,
-					status: "queued",
-					scheduledAt: new Date(scheduledAt),
-					claimedAt: null,
-					claimExpiresAt: null,
-					claimedBy: null,
-					attemptedAt: null,
-					providerMessage: null,
-					providerReference: null,
-					responseCode: null,
-					errorMessage: null,
-					payloadJson: payload,
-					createdAt: new Date(scheduledAt),
-					updatedAt: new Date(scheduledAt),
-				})
-				.onConflictDoNothing()
-
-		const insertDeliveryEvent = Effect.fn("AlertsService.insertDeliveryEvent")(function* (
-			orgId: OrgId,
-			incidentId: AlertIncidentId | null,
-			ruleId: AlertRuleId,
-			destinationId: AlertDestinationId,
-			eventType: AlertEventTypeValue,
-			payload: Record<string, unknown>,
-			scheduledAt: number,
-			deliveryKey: string,
-			attemptNumber: number,
-		) {
-			yield* dbExecute((db) =>
-				insertDeliveryEventRecord(
-					db,
-					orgId,
-					incidentId,
-					ruleId,
-					destinationId,
-					eventType,
-					payload,
-					scheduledAt,
-					deliveryKey,
-					attemptNumber,
-				),
-			)
-		})
-
-		const markDestinationTest = Effect.fn("AlertsService.markDestinationTest")(function* (
-			orgId: OrgId,
-			destinationId: AlertDestinationId,
-			errorMessage: string | null,
-		) {
-			const timestamp = yield* now
-			yield* dbExecute((db) =>
+			const insertDeliveryEventRecord = (
+				db: DatabaseExecutor,
+				orgId: OrgId,
+				incidentId: AlertIncidentId | null,
+				ruleId: AlertRuleId,
+				destinationId: AlertDestinationId,
+				eventType: AlertEventTypeValue,
+				payload: Record<string, unknown>,
+				scheduledAt: number,
+				deliveryKey: string,
+				attemptNumber: number,
+			) =>
 				db
-					.update(alertDestinations)
-					.set({
-						lastTestedAt: new Date(timestamp),
-						lastTestError: errorMessage,
-						updatedAt: new Date(timestamp),
+					.insert(alertDeliveryEvents)
+					.values({
+						id: decodeAlertDeliveryEventIdSync(makeUuid()),
+						orgId,
+						incidentId,
+						ruleId,
+						destinationId,
+						deliveryKey,
+						eventType,
+						attemptNumber,
+						status: "queued",
+						scheduledAt,
+						claimedAt: null,
+						claimExpiresAt: null,
+						claimedBy: null,
+						attemptedAt: null,
+						providerMessage: null,
+						providerReference: null,
+						responseCode: null,
+						errorMessage: null,
+						payloadJson: JSON.stringify(payload),
+						createdAt: scheduledAt,
+						updatedAt: scheduledAt,
 					})
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId))),
-			)
-		})
+					.onConflictDoNothing()
 
-		const composeLinkUrl = (serviceLinkName: string | null) =>
-			serviceLinkName
-				? `${env.MAPLE_APP_BASE_URL}/services/${encodeURIComponent(serviceLinkName)}`
-				: `${env.MAPLE_APP_BASE_URL}/alerts`
-
-		const resolveNotificationLinkUrl = (
-			rule: Pick<NormalizedRule, "serviceNames" | "groupBy">,
-			groupKey: string | null,
-		) => composeLinkUrl(resolveServiceLinkName(rule, groupKey))
-
-		const composeChatUrl = (context: DispatchContext): string =>
-			buildAlertChatUrl(env.MAPLE_APP_BASE_URL, context)
-
-		const dispatchDelivery = (
-			context: DispatchContext,
-			payloadJson: string,
-		): Effect.Effect<DispatchResult, AlertDeliveryError> =>
-			dispatchDeliveryImpl(
-				context,
-				payloadJson,
-				runtime.fetch,
-				deliveryTimeoutMs(),
-				context.linkUrl,
-				composeChatUrl(context),
-			)
-
-		const buildPayload = (context: DeliveryPayloadContext) => ({
-			eventType: context.eventType,
-			incidentId: context.incidentId,
-			incidentStatus: context.incidentStatus,
-			dedupeKey: context.dedupeKey,
-			rule: {
-				id: context.ruleId,
-				name: context.ruleName,
-				signalType: context.signalType,
-				severity: context.severity,
-				groupKey: context.groupKey,
-				comparator: context.comparator,
-				threshold: context.threshold,
-				thresholdUpper: context.thresholdUpper,
-				windowMinutes: context.windowMinutes,
-			},
-			observed: {
-				value: context.value,
-				sampleCount: context.sampleCount,
-			},
-			template: context.template ?? null,
-			linkUrl: context.linkUrl,
-			chatUrl: buildAlertChatUrl(env.MAPLE_APP_BASE_URL, context),
-			sentAt: new Date(context.sentAtMs).toISOString(),
-		})
-
-		const toDeliveryAttemptFailure = (
-			error:
-				| AlertValidationError
-				| AlertDeliveryError
-				| AlertNotFoundError
-				| AlertPersistenceError,
-		): DeliveryAttemptFailure =>
-			Match.value(error).pipe(
-				Match.discriminatorsExhaustive("_tag")({
-					"@maple/http/errors/AlertValidationError": (e) => ({
-						message: e.message,
-						kind: "payload" as const,
-						retryable: false,
-					}),
-					"@maple/http/errors/AlertDeliveryError": (e) => ({
-						message: e.message,
-						kind: e.message.includes("timed out") ? ("timeout" as const) : ("transport" as const),
-						retryable: true,
-					}),
-					"@maple/http/errors/AlertNotFoundError": (e) => ({
-						message: e.message,
-						kind: "destination" as const,
-						retryable: false,
-					}),
-					"@maple/http/errors/AlertPersistenceError": (e) => ({
-						message: e.message,
-						kind: "unknown" as const,
-						retryable: false,
-					}),
-				}),
-			)
-
-		const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
-			destinationRow: AlertDestinationRow,
-			context: Omit<DispatchContext, "destination" | "publicConfig" | "secretConfig">,
-		) {
-			const hydrated = yield* hydrateDestination(destinationRow)
-			const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
-			const fullContext: DispatchContext = {
-				destination: hydrated.row,
-				publicConfig: hydrated.publicConfig,
-				secretConfig: enrichedSecret,
-				...context,
-			}
-			const payload = buildPayload(fullContext)
-			const payloadJson = JSON.stringify(payload)
-			return yield* dispatchDelivery(fullContext, payloadJson)
-		})
-
-		const queueIncidentNotifications = Effect.fn("AlertsService.queueIncidentNotifications")(function* (
-			orgId: OrgId,
-			rule: NormalizedRule,
-			incident: AlertIncidentRow,
-			evaluation: EvaluatedRule,
-			eventType: AlertEventTypeValue,
-			scheduledAt: number,
-		) {
-			if (rule.destinationIds.length === 0) return
-
-			const rows = yield* dbExecute((db) =>
-				db
-					.select({
-						id: alertDestinations.id,
-						enabled: alertDestinations.enabled,
-					})
-					.from(alertDestinations)
-					.where(
-						and(
-							eq(alertDestinations.orgId, orgId),
-							inArray(alertDestinations.id, [...rule.destinationIds]),
-						),
+			const insertDeliveryEvent = Effect.fn("AlertsService.insertDeliveryEvent")(function* (
+				orgId: OrgId,
+				incidentId: AlertIncidentId | null,
+				ruleId: AlertRuleId,
+				destinationId: AlertDestinationId,
+				eventType: AlertEventTypeValue,
+				payload: Record<string, unknown>,
+				scheduledAt: number,
+				deliveryKey: string,
+				attemptNumber: number,
+			) {
+				yield* dbExecute((db) =>
+					insertDeliveryEventRecord(
+						db,
+						orgId,
+						incidentId,
+						ruleId,
+						destinationId,
+						eventType,
+						payload,
+						scheduledAt,
+						deliveryKey,
+						attemptNumber,
 					),
-			)
-
-			const destinations = new Map(rows.map((row) => [row.id, row]))
-			const payload = buildPayload({
-				eventType,
-				incidentId: incident.id,
-				incidentStatus: decodeAlertIncidentStatusSync(incident.status),
-				dedupeKey: incident.dedupeKey,
-				ruleId: rule.id,
-				ruleName: rule.name,
-				groupKey: incident.groupKey,
-				signalType: rule.signalType,
-				severity: rule.severity,
-				comparator: rule.comparator,
-				threshold: rule.threshold,
-				thresholdUpper: rule.thresholdUpper,
-				windowMinutes: rule.windowMinutes,
-				value: evaluation.value,
-				sampleCount: evaluation.sampleCount,
-				template: rule.notificationTemplate,
-				linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
-				sentAtMs: scheduledAt,
+				)
 			})
 
-			yield* Effect.forEach(
-				rule.destinationIds,
-				(destinationId) => {
-					const destination = destinations.get(destinationId)
-					if (!destination || !destination.enabled) return Effect.void
-					return dbExecute((db) =>
-						insertDeliveryEventRecord(
-							db,
-							orgId,
-							incident.id,
-							rule.id,
-							destinationId,
-							eventType,
-							payload,
-							scheduledAt,
-							buildDeliveryKey(incident.id, destinationId, eventType, scheduledAt),
-							1,
+			const markDestinationTest = Effect.fn("AlertsService.markDestinationTest")(function* (
+				orgId: OrgId,
+				destinationId: AlertDestinationId,
+				errorMessage: string | null,
+			) {
+				const timestamp = yield* now
+				yield* dbExecute((db) =>
+					db
+						.update(alertDestinations)
+						.set({
+							lastTestedAt: timestamp,
+							lastTestError: errorMessage,
+							updatedAt: timestamp,
+						})
+						.where(
+							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
 						),
-					)
+				)
+			})
+
+			const composeLinkUrl = (serviceLinkName: string | null) =>
+				serviceLinkName
+					? `${env.MAPLE_APP_BASE_URL}/services/${encodeURIComponent(serviceLinkName)}`
+					: `${env.MAPLE_APP_BASE_URL}/alerts`
+
+			const resolveNotificationLinkUrl = (
+				rule: Pick<NormalizedRule, "serviceNames" | "groupBy">,
+				groupKey: string | null,
+			) => composeLinkUrl(resolveServiceLinkName(rule, groupKey))
+
+			const composeChatUrl = (context: DispatchContext): string =>
+				buildAlertChatUrl(env.MAPLE_APP_BASE_URL, context)
+
+			const dispatchDelivery = (
+				context: DispatchContext,
+				payloadJson: string,
+			): Effect.Effect<DispatchResult, AlertDeliveryError> =>
+				dispatchDeliveryImpl(
+					context,
+					payloadJson,
+					runtime.fetch,
+					deliveryTimeoutMs(),
+					context.linkUrl,
+					composeChatUrl(context),
+				)
+
+			const buildPayload = (context: DeliveryPayloadContext) => ({
+				eventType: context.eventType,
+				incidentId: context.incidentId,
+				incidentStatus: context.incidentStatus,
+				dedupeKey: context.dedupeKey,
+				rule: {
+					id: context.ruleId,
+					name: context.ruleName,
+					signalType: context.signalType,
+					severity: context.severity,
+					groupKey: context.groupKey,
+					comparator: context.comparator,
+					threshold: context.threshold,
+					thresholdUpper: context.thresholdUpper,
+					windowMinutes: context.windowMinutes,
 				},
-				{ discard: true },
-			)
-		})
+				observed: {
+					value: context.value,
+					sampleCount: context.sampleCount,
+				},
+				template: context.template ?? null,
+				linkUrl: context.linkUrl,
+				chatUrl: buildAlertChatUrl(env.MAPLE_APP_BASE_URL, context),
+				sentAt: new Date(context.sentAtMs).toISOString(),
+			})
 
-		// Exponential backoff up to 15 min, plus 0–999 ms jitter sourced from
-		// Effect's `Random` service so tests can fix the seed deterministically.
-		const computeRetryDelayMs = Effect.fn("AlertsService.computeRetryDelayMs")(function* (
-			attemptNumber: number,
-		) {
-			const base = Math.min(60_000 * Math.pow(2, attemptNumber - 1), 15 * 60_000)
-			const jitter = yield* Random.nextIntBetween(0, 1_000)
-			return base + jitter
-		})
+			const toDeliveryAttemptFailure = (
+				error: AlertValidationError | AlertDeliveryError | AlertNotFoundError | AlertPersistenceError,
+			): DeliveryAttemptFailure =>
+				Match.value(error).pipe(
+					Match.discriminatorsExhaustive("_tag")({
+						"@maple/http/errors/AlertValidationError": (e) => ({
+							message: e.message,
+							kind: "payload" as const,
+							retryable: false,
+						}),
+						"@maple/http/errors/AlertDeliveryError": (e) => ({
+							message: e.message,
+							kind: e.message.includes("timed out")
+								? ("timeout" as const)
+								: ("transport" as const),
+							retryable: true,
+						}),
+						"@maple/http/errors/AlertNotFoundError": (e) => ({
+							message: e.message,
+							kind: "destination" as const,
+							retryable: false,
+						}),
+						"@maple/http/errors/AlertPersistenceError": (e) => ({
+							message: e.message,
+							kind: "unknown" as const,
+							retryable: false,
+						}),
+					}),
+				)
 
-		const listDestinations = Effect.fn("AlertsService.listDestinations")(function* (orgId: OrgId) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDestinations)
-					.where(eq(alertDestinations.orgId, orgId))
-					.orderBy(desc(alertDestinations.updatedAt)),
-			)
+			const sendImmediateNotification = Effect.fn("AlertsService.sendImmediateNotification")(function* (
+				destinationRow: AlertDestinationRow,
+				context: Omit<DispatchContext, "destination" | "publicConfig" | "secretConfig">,
+			) {
+				const hydrated = yield* hydrateDestination(destinationRow)
+				const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
+				const fullContext: DispatchContext = {
+					destination: hydrated.row,
+					publicConfig: hydrated.publicConfig,
+					secretConfig: enrichedSecret,
+					...context,
+				}
+				const payload = buildPayload(fullContext)
+				const payloadJson = JSON.stringify(payload)
+				return yield* dispatchDelivery(fullContext, payloadJson)
+			})
 
-			const destinations = rows.map((row) => rowToDestinationDocument(row, safeParsePublicConfig(row)))
+			const queueIncidentNotifications = Effect.fn("AlertsService.queueIncidentNotifications")(
+				function* (
+					orgId: OrgId,
+					rule: NormalizedRule,
+					incident: AlertIncidentRow,
+					evaluation: EvaluatedRule,
+					eventType: AlertEventTypeValue,
+					scheduledAt: number,
+				) {
+					if (rule.destinationIds.length === 0) return
 
-			return new AlertDestinationsListResponse({ destinations })
-		})
-
-		const createDestination = Effect.fn("AlertsService.createDestination")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			request: AlertDestinationCreateRequest,
-		) {
-			yield* requireAdmin(roles)
-			// Reject URLs pointing at internal/loopback/metadata networks before we
-			// persist them. The dispatcher will later POST to whatever we store.
-			if (request.type === "slack") {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			} else if (request.type === "webhook") {
-				yield* validateDestinationUrl(request.url, "url")
-			} else if (request.type === "hazel") {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			} else if (request.type === "discord") {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			}
-			const destinationId = decodeAlertDestinationIdSync(makeUuid())
-			const publicConfig = buildPublicConfig(request)
-			const secretConfig: DestinationSecretConfig =
-				request.type === "hazel-oauth"
-					? yield* hazelOAuth
-							.createChannelWebhook(orgId, {
-								channelId: request.hazelChannelId.trim(),
-								name: request.name.trim(),
+					const rows = yield* dbExecute((db) =>
+						db
+							.select({
+								id: alertDestinations.id,
+								enabled: alertDestinations.enabled,
 							})
-							.pipe(
-								Effect.map((webhook) => ({
-									type: "hazel-oauth" as const,
-									hazelOrganizationId: request.hazelOrganizationId.trim(),
-									hazelOrganizationName: request.hazelOrganizationName.trim(),
-									hazelChannelId: request.hazelChannelId.trim(),
-									hazelChannelName: request.hazelChannelName.trim(),
-									webhookId: webhook.id,
-									webhookUrl: webhook.webhookUrl,
-									webhookToken: webhook.token,
-								})),
-								Effect.mapError((error) =>
-									makeValidationError(
-										`Could not provision Hazel channel webhook: ${error.message}`,
-									),
+							.from(alertDestinations)
+							.where(
+								and(
+									eq(alertDestinations.orgId, orgId),
+									inArray(alertDestinations.id, [...rule.destinationIds]),
+								),
+							),
+					)
+
+					const destinations = new Map(rows.map((row) => [row.id, row]))
+					const payload = buildPayload({
+						eventType,
+						incidentId: incident.id,
+						incidentStatus: decodeAlertIncidentStatusSync(incident.status),
+						dedupeKey: incident.dedupeKey,
+						ruleId: rule.id,
+						ruleName: rule.name,
+						groupKey: incident.groupKey,
+						signalType: rule.signalType,
+						severity: rule.severity,
+						comparator: rule.comparator,
+						threshold: rule.threshold,
+						thresholdUpper: rule.thresholdUpper,
+						windowMinutes: rule.windowMinutes,
+						value: evaluation.value,
+						sampleCount: evaluation.sampleCount,
+						template: rule.notificationTemplate,
+						linkUrl: resolveNotificationLinkUrl(rule, incident.groupKey),
+						sentAtMs: scheduledAt,
+					})
+
+					yield* Effect.forEach(
+						rule.destinationIds,
+						(destinationId) => {
+							const destination = destinations.get(destinationId)
+							if (!destination || destination.enabled !== 1) return Effect.void
+							return dbExecute((db) =>
+								insertDeliveryEventRecord(
+									db,
+									orgId,
+									incident.id,
+									rule.id,
+									destinationId,
+									eventType,
+									payload,
+									scheduledAt,
+									buildDeliveryKey(incident.id, destinationId, eventType, scheduledAt),
+									1,
 								),
 							)
-					: buildSecretConfig(request)
-			const encryptedSecret = yield* encryptSecret(JSON.stringify(secretConfig), encryptionKey)
-			const timestamp = yield* now
+						},
+						{ discard: true },
+					)
+				},
+			)
 
-			const row = {
-				id: destinationId,
-				orgId,
-				name: request.name.trim(),
-				type: request.type,
-				enabled: request.enabled !== false,
-				configJson: publicConfig,
-				secretCiphertext: encryptedSecret.ciphertext,
-				secretIv: encryptedSecret.iv,
-				secretTag: encryptedSecret.tag,
-				lastTestedAt: null,
-				lastTestError: null,
-				createdAt: new Date(timestamp),
-				updatedAt: new Date(timestamp),
-				createdBy: userId,
-				updatedBy: userId,
-			}
-
-			yield* dbExecute((db) => db.insert(alertDestinations).values(row))
-
-			return rowToDestinationDocument(row, publicConfig)
-		})
-
-		const updateDestination = Effect.fn("AlertsService.updateDestination")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			destinationId: AlertDestinationDocument["id"],
-			request: AlertDestinationUpdateRequest,
-		) {
-			yield* requireAdmin(roles)
-			const existing = yield* requireDestinationRow(orgId, destinationId)
-			if (existing.type !== request.type) {
-				return yield* Effect.fail(makeValidationError("Destination type cannot be changed"))
-			}
-
-			const hydrated = yield* hydrateDestination(existing)
-
-			// Validate any URL the request supplies before we persist it. Each
-			// branch only validates when the field is non-empty so the existing
-			// (already-validated) stored URL can stay unchanged on partial updates.
-			if (request.type === "slack" && request.webhookUrl != null && request.webhookUrl.trim().length > 0) {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			} else if (request.type === "webhook" && request.url != null && request.url.trim().length > 0) {
-				yield* validateDestinationUrl(request.url, "url")
-			} else if (request.type === "hazel" && request.webhookUrl != null && request.webhookUrl.trim().length > 0) {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			} else if (
-				request.type === "discord" &&
-				request.webhookUrl != null &&
-				request.webhookUrl.trim().length > 0
+			// Exponential backoff up to 15 min, plus 0–999 ms jitter sourced from
+			// Effect's `Random` service so tests can fix the seed deterministically.
+			const computeRetryDelayMs = Effect.fn("AlertsService.computeRetryDelayMs")(function* (
+				attemptNumber: number,
 			) {
-				yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
-			}
+				const base = Math.min(60_000 * Math.pow(2, attemptNumber - 1), 15 * 60_000)
+				const jitter = yield* Random.nextIntBetween(0, 1_000)
+				return base + jitter
+			})
 
-			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
-				Match.discriminatorsExhaustive("type")({
-					slack: (r) =>
-						Effect.succeed({
-							nextPublicConfig: {
-								summary:
-									normalizeOptionalString(r.channelLabel) ?? hydrated.publicConfig.summary,
-								channelLabel:
-									normalizeOptionalString(r.channelLabel) ??
-									hydrated.publicConfig.channelLabel,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "slack" as const,
-								webhookUrl:
-									normalizeOptionalString(r.webhookUrl) ??
-									(hydrated.secretConfig.type === "slack"
-										? hydrated.secretConfig.webhookUrl
-										: ""),
-							} satisfies DestinationSecretConfig,
-						}),
-					pagerduty: (r) =>
-						Effect.succeed({
-							nextPublicConfig: hydrated.publicConfig,
-							nextSecretConfig: {
-								type: "pagerduty" as const,
-								integrationKey:
-									normalizeOptionalString(r.integrationKey) ??
-									(hydrated.secretConfig.type === "pagerduty"
-										? hydrated.secretConfig.integrationKey
-										: ""),
-							} satisfies DestinationSecretConfig,
-						}),
-					webhook: (r) =>
-						Effect.succeed({
-							nextPublicConfig: {
-								summary:
-									r.url != null && r.url.trim().length > 0
-										? summarizeWebhookUrl(r.url)
-										: hydrated.publicConfig.summary,
-								channelLabel: null,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "webhook" as const,
-								url:
-									normalizeOptionalString(r.url) ??
-									(hydrated.secretConfig.type === "webhook" ? hydrated.secretConfig.url : ""),
-								signingSecret:
-									r.signingSecret === undefined
-										? hydrated.secretConfig.type === "webhook"
-											? hydrated.secretConfig.signingSecret
-											: null
-										: normalizeOptionalString(r.signingSecret),
-							} satisfies DestinationSecretConfig,
-						}),
-					hazel: (r) =>
-						Effect.succeed({
-							nextPublicConfig: {
-								summary:
-									r.webhookUrl != null && r.webhookUrl.trim().length > 0
-										? summarizeWebhookUrl(r.webhookUrl)
-										: hydrated.publicConfig.summary,
-								channelLabel: null,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "hazel" as const,
-								webhookUrl:
-									normalizeOptionalString(r.webhookUrl) ??
-									(hydrated.secretConfig.type === "hazel"
-										? hydrated.secretConfig.webhookUrl
-										: ""),
-								signingSecret:
-									r.signingSecret === undefined
-										? hydrated.secretConfig.type === "hazel"
-											? hydrated.secretConfig.signingSecret
-											: null
-										: normalizeOptionalString(r.signingSecret),
-							} satisfies DestinationSecretConfig,
-						}),
-					"hazel-oauth": (r) =>
-						Effect.gen(function* () {
-							const previousSecret =
-								hydrated.secretConfig.type === "hazel-oauth" ? hydrated.secretConfig : null
-							const nextOrganizationId =
-								normalizeOptionalString(r.hazelOrganizationId) ??
-								previousSecret?.hazelOrganizationId ??
-								""
-							const nextOrganizationName =
-								normalizeOptionalString(r.hazelOrganizationName) ??
-								previousSecret?.hazelOrganizationName ??
-								""
-							const requestLogoUrl = r.hazelOrganizationLogoUrl
-							const nextOrganizationLogoUrl =
-								requestLogoUrl === undefined
-									? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
-									: requestLogoUrl
-							const nextChannelId =
-								normalizeOptionalString(r.hazelChannelId) ??
-								previousSecret?.hazelChannelId ??
-								""
-							const nextChannelName =
-								normalizeOptionalString(r.hazelChannelName) ??
-								previousSecret?.hazelChannelName ??
-								""
-							const nextName = normalizeOptionalString(r.name) ?? existing.name
-							const channelChanged =
-								previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
+			const listDestinations = Effect.fn("AlertsService.listDestinations")(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertDestinations)
+						.where(eq(alertDestinations.orgId, orgId))
+						.orderBy(desc(alertDestinations.updatedAt)),
+				)
 
-							// TODO: when Hazel exposes DELETE /api/v1/channel-webhooks/:id,
-							// revoke the old webhook here on channel change.
-							const provisioned = channelChanged
-								? yield* hazelOAuth
-										.createChannelWebhook(orgId, {
-											channelId: nextChannelId,
-											name: nextName,
-										})
-										.pipe(
-											Effect.mapError((error) =>
-												makeValidationError(
-													`Could not provision Hazel channel webhook: ${error.message}`,
-												),
-											),
-										)
-								: null
+				const destinations = rows.map((row) =>
+					rowToDestinationDocument(row, safeParsePublicConfig(row)),
+				)
 
-							const webhookId = provisioned?.id ?? previousSecret!.webhookId
-							const webhookUrl = provisioned?.webhookUrl ?? previousSecret!.webhookUrl
-							const webhookToken = provisioned?.token ?? previousSecret!.webhookToken
+				return new AlertDestinationsListResponse({ destinations })
+			})
 
-							return {
-								nextPublicConfig: {
-									summary: `${nextOrganizationName} · #${nextChannelName}`,
-									channelLabel: `#${nextChannelName}`,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-								} satisfies DestinationPublicConfig,
-								nextSecretConfig: {
-									type: "hazel-oauth" as const,
-									hazelOrganizationId: nextOrganizationId,
-									hazelOrganizationName: nextOrganizationName,
-									hazelChannelId: nextChannelId,
-									hazelChannelName: nextChannelName,
-									webhookId,
-									webhookUrl,
-									webhookToken,
-								} satisfies DestinationSecretConfig,
-							}
-						}),
-					discord: (r) =>
-						Effect.succeed({
-							nextPublicConfig: {
-								summary:
-									r.webhookUrl != null && r.webhookUrl.trim().length > 0
-										? summarizeWebhookUrl(r.webhookUrl)
-										: hydrated.publicConfig.summary,
-								channelLabel: null,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "discord" as const,
-								webhookUrl:
-									normalizeOptionalString(r.webhookUrl) ??
-									(hydrated.secretConfig.type === "discord"
-										? hydrated.secretConfig.webhookUrl
-										: ""),
-							} satisfies DestinationSecretConfig,
-						}),
-				}),
-			)
+			// Reject a PagerDuty routing key that can't possibly work before we persist
+			// it, so a wrong key surfaces at connect time instead of at first page.
+			// Format check is instant; the live check enqueues a no-op resolve event and
+			// only rejects on a definitive "invalid key" — it fails open on outages.
+			const validatePagerDutyKey = Effect.fn("AlertsService.validatePagerDutyKey")(function* (
+				integrationKey: string,
+			) {
+				if (!PAGERDUTY_ROUTING_KEY_PATTERN.test(integrationKey)) {
+					return yield* Effect.fail(
+						makeValidationError(
+							"PagerDuty integration key must be a 32-character Events API v2 routing key — a REST API token won't work.",
+						),
+					)
+				}
+				const result = yield* verifyPagerDutyRoutingKey(
+					integrationKey,
+					runtime.fetch,
+					deliveryTimeoutMs(),
+					`maple-keycheck-${makeUuid()}`,
+				)
+				if (result.status === "invalid") {
+					return yield* Effect.fail(
+						makeValidationError(`PagerDuty rejected this routing key: ${result.reason}`),
+					)
+				}
+			})
 
-			const encryptedSecret = yield* encryptSecret(JSON.stringify(nextSecretConfig), encryptionKey)
-			const timestamp = yield* now
-			const nextName = normalizeOptionalString(request.name) ?? existing.name
-			const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled
+			const createDestination = Effect.fn("AlertsService.createDestination")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				request: AlertDestinationCreateRequest,
+			) {
+				yield* requireAdmin(roles)
+				// Reject URLs pointing at internal/loopback/metadata networks before we
+				// persist them. The dispatcher will later POST to whatever we store.
+				if (request.type === "slack") {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				} else if (request.type === "webhook") {
+					yield* validateDestinationUrl(request.url, "url")
+				} else if (request.type === "hazel") {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				} else if (request.type === "discord") {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				}
+				const destinationId = decodeAlertDestinationIdSync(makeUuid())
+				const publicConfig = buildPublicConfig(request)
+				const secretConfig: DestinationSecretConfig =
+					request.type === "hazel-oauth"
+						? yield* hazelOAuth
+								.createChannelWebhook(orgId, {
+									channelId: request.hazelChannelId.trim(),
+									name: request.name.trim(),
+								})
+								.pipe(
+									Effect.map((webhook) => ({
+										type: "hazel-oauth" as const,
+										hazelOrganizationId: request.hazelOrganizationId.trim(),
+										hazelOrganizationName: request.hazelOrganizationName.trim(),
+										hazelChannelId: request.hazelChannelId.trim(),
+										hazelChannelName: request.hazelChannelName.trim(),
+										webhookId: webhook.id,
+										webhookUrl: webhook.webhookUrl,
+										webhookToken: webhook.token,
+									})),
+									Effect.mapError((error) =>
+										makeValidationError(
+											`Could not provision Hazel channel webhook: ${error.message}`,
+										),
+									),
+								)
+						: buildSecretConfig(request)
+				if (secretConfig.type === "pagerduty") {
+					yield* validatePagerDutyKey(secretConfig.integrationKey)
+				}
+				const encryptedSecret = yield* encryptSecret(JSON.stringify(secretConfig), encryptionKey)
+				const timestamp = yield* now
 
-			yield* dbExecute((db) =>
-				db
-					.update(alertDestinations)
-					.set({
-						name: nextName,
-						enabled: nextEnabled,
-						configJson: nextPublicConfig,
-						secretCiphertext: encryptedSecret.ciphertext,
-						secretIv: encryptedSecret.iv,
-						secretTag: encryptedSecret.tag,
-						updatedAt: new Date(timestamp),
-						updatedBy: userId,
-					})
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId))),
-			)
-
-			return rowToDestinationDocument(
-				{
-					...existing,
-					name: nextName,
-					enabled: nextEnabled,
-					configJson: nextPublicConfig,
+				const row = {
+					id: destinationId,
+					orgId,
+					name: request.name.trim(),
+					type: request.type,
+					enabled: request.enabled === false ? 0 : 1,
+					configJson: JSON.stringify(publicConfig),
 					secretCiphertext: encryptedSecret.ciphertext,
 					secretIv: encryptedSecret.iv,
 					secretTag: encryptedSecret.tag,
-					updatedAt: new Date(timestamp),
+					lastTestedAt: null,
+					lastTestError: null,
+					createdAt: timestamp,
+					updatedAt: timestamp,
+					createdBy: userId,
 					updatedBy: userId,
-				},
-				nextPublicConfig,
-			)
-		})
+				}
 
-		const deleteDestination = Effect.fn("AlertsService.deleteDestination")(function* (
-			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
-			destinationId: AlertDestinationDocument["id"],
-		) {
-			yield* requireAdmin(roles)
-			yield* requireDestinationRow(orgId, destinationId)
-			const dependentRules = yield* dbExecute((db) =>
-				db
-					.select({
-						id: alertRules.id,
-						name: alertRules.name,
-						destinationIdsJson: alertRules.destinationIdsJson,
-					})
-					.from(alertRules)
-					.where(eq(alertRules.orgId, orgId)),
-			).pipe(
-				Effect.map((rows) =>
-					rows.filter((row) =>
-						safeParseStringArray(row.destinationIdsJson).includes(destinationId),
-					),
-				),
-			)
+				yield* dbExecute((db) => db.insert(alertDestinations).values(row))
 
-			if (dependentRules.length > 0) {
-				const ruleIds = dependentRules.map((row) => decodeAlertRuleIdSync(row.id))
-				const ruleNames = dependentRules.map((row) => row.name)
-				return yield* Effect.fail(
-					new AlertDestinationInUseError({
-						message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
-						destinationId,
-						ruleIds,
-						ruleNames,
-					}),
-				)
-			}
-
-			yield* dbExecute((db) =>
-				db
-					.delete(alertDestinations)
-					.where(and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId))),
-			)
-			return new AlertDestinationDeleteResponse({ id: destinationId })
-		})
-
-		const testDestination = Effect.fn("AlertsService.testDestination")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			destinationId: AlertDestinationDocument["id"],
-		) {
-			yield* requireAdmin(roles)
-			const row = yield* requireDestinationRow(orgId, destinationId)
-			const result = yield* sendImmediateNotification(row, {
-				deliveryKey: `${orgId}:${destinationId}:test`,
-				ruleId: decodeAlertRuleIdSync(makeUuid()),
-				ruleName: "Test alert",
-				groupKey: null,
-				signalType: "throughput",
-				severity: "warning",
-				comparator: "lt",
-				threshold: 1,
-				thresholdUpper: null,
-				windowMinutes: 5,
-				eventType: "test",
-				incidentId: null,
-				incidentStatus: "resolved",
-				dedupeKey: `${orgId}:${destinationId}:test`,
-				value: 0,
-				sampleCount: 0,
-				linkUrl: composeLinkUrl(null),
-				sentAtMs: yield* now,
-			}).pipe(
-				Effect.tapError((error) => {
-					const message =
-						error instanceof AlertDeliveryError
-							? error.message
-							: error instanceof Error
-								? error.message
-								: "Destination test failed"
-					return markDestinationTest(orgId, destinationId, message)
-				}),
-				Effect.mapError((error) =>
-					error instanceof AlertDeliveryError
-						? error
-						: makeDeliveryError(
-								error instanceof Error ? error.message : "Destination test failed",
-								decodeAlertDestinationTypeSync(row.type),
-							),
-				),
-			)
-
-			yield* markDestinationTest(orgId, destinationId, null)
-			return new AlertDestinationTestResponse({
-				success: true,
-				message: "Test notification sent",
+				return rowToDestinationDocument(row, publicConfig)
 			})
-		})
 
-		const upsertRuleRow = Effect.fn("AlertsService.upsertRuleRow")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			existingId: AlertRuleId | null,
-			request: AlertRuleUpsertRequest,
-		) {
-			const normalized = yield* normalizeRule(request)
-			yield* requireDestinationIds(orgId, normalized.destinationIds)
-			const ruleId = existingId ?? normalized.id
-			const timestamp = yield* now
+			const updateDestination = Effect.fn("AlertsService.updateDestination")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				destinationId: AlertDestinationDocument["id"],
+				request: AlertDestinationUpdateRequest,
+			) {
+				yield* requireAdmin(roles)
+				const existing = yield* requireDestinationRow(orgId, destinationId)
+				if (existing.type !== request.type) {
+					return yield* Effect.fail(makeValidationError("Destination type cannot be changed"))
+				}
 
-			const ruleFields = {
-				name: normalized.name,
-				notes: normalizeOptionalString(request.notes),
-				notificationTemplateJson: normalized.notificationTemplate ?? null,
-				enabled: normalized.enabled,
-				severity: normalized.severity,
-				serviceNamesJson: normalized.serviceNames.length > 0 ? normalized.serviceNames : null,
-				excludeServiceNamesJson:
-					normalized.excludeServiceNames.length > 0 ? normalized.excludeServiceNames : null,
-				groupBy: normalized.groupBy != null ? JSON.stringify(normalized.groupBy) : null,
-				signalType: normalized.signalType,
-				comparator: normalized.comparator,
-				threshold: normalized.threshold,
-				thresholdUpper: normalized.thresholdUpper,
-				windowMinutes: normalized.windowMinutes,
-				minimumSampleCount: normalized.minimumSampleCount,
-				consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
-				consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
-				renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
-				metricName: normalized.metricName,
-				metricType: normalized.metricType,
-				metricAggregation: normalized.metricAggregation,
-				apdexThresholdMs: normalized.apdexThresholdMs,
-				queryBuilderDraftJson: normalized.queryBuilderDraft ?? null,
-				rawQuerySql: normalized.rawQuerySql,
-				destinationIdsJson: normalized.destinationIds,
-				querySpecJson: normalized.compiledPlan.query ?? null,
-				reducer: normalized.compiledPlan.reducer,
-				sampleCountStrategy: normalized.compiledPlan.sampleCountStrategy,
-				noDataBehavior: normalized.compiledPlan.noDataBehavior,
-				updatedAt: new Date(timestamp),
-				updatedBy: userId,
-			} as const
+				const hydrated = yield* hydrateDestination(existing)
 
-			if (existingId == null) {
-				yield* dbExecute((db) =>
-					db.insert(alertRules).values({
-						id: ruleId,
-						orgId,
-						...ruleFields,
-						createdAt: new Date(timestamp),
-						createdBy: userId,
+				// Validate any URL the request supplies before we persist it. Each
+				// branch only validates when the field is non-empty so the existing
+				// (already-validated) stored URL can stay unchanged on partial updates.
+				if (
+					request.type === "slack" &&
+					request.webhookUrl != null &&
+					request.webhookUrl.trim().length > 0
+				) {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				} else if (
+					request.type === "webhook" &&
+					request.url != null &&
+					request.url.trim().length > 0
+				) {
+					yield* validateDestinationUrl(request.url, "url")
+				} else if (
+					request.type === "hazel" &&
+					request.webhookUrl != null &&
+					request.webhookUrl.trim().length > 0
+				) {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				} else if (
+					request.type === "discord" &&
+					request.webhookUrl != null &&
+					request.webhookUrl.trim().length > 0
+				) {
+					yield* validateDestinationUrl(request.webhookUrl, "webhookUrl")
+				}
+
+				const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
+					Match.discriminatorsExhaustive("type")({
+						slack: (r) =>
+							Effect.succeed({
+								nextPublicConfig: {
+									summary:
+										normalizeOptionalString(r.channelLabel) ??
+										hydrated.publicConfig.summary,
+									channelLabel:
+										normalizeOptionalString(r.channelLabel) ??
+										hydrated.publicConfig.channelLabel,
+								} satisfies DestinationPublicConfig,
+								nextSecretConfig: {
+									type: "slack" as const,
+									webhookUrl:
+										normalizeOptionalString(r.webhookUrl) ??
+										(hydrated.secretConfig.type === "slack"
+											? hydrated.secretConfig.webhookUrl
+											: ""),
+								} satisfies DestinationSecretConfig,
+							}),
+						pagerduty: (r) =>
+							Effect.succeed({
+								nextPublicConfig: hydrated.publicConfig,
+								nextSecretConfig: {
+									type: "pagerduty" as const,
+									integrationKey:
+										normalizeOptionalString(r.integrationKey) ??
+										(hydrated.secretConfig.type === "pagerduty"
+											? hydrated.secretConfig.integrationKey
+											: ""),
+								} satisfies DestinationSecretConfig,
+							}),
+						webhook: (r) =>
+							Effect.succeed({
+								nextPublicConfig: {
+									summary:
+										r.url != null && r.url.trim().length > 0
+											? summarizeWebhookUrl(r.url)
+											: hydrated.publicConfig.summary,
+									channelLabel: null,
+								} satisfies DestinationPublicConfig,
+								nextSecretConfig: {
+									type: "webhook" as const,
+									url:
+										normalizeOptionalString(r.url) ??
+										(hydrated.secretConfig.type === "webhook"
+											? hydrated.secretConfig.url
+											: ""),
+									signingSecret:
+										r.signingSecret === undefined
+											? hydrated.secretConfig.type === "webhook"
+												? hydrated.secretConfig.signingSecret
+												: null
+											: normalizeOptionalString(r.signingSecret),
+								} satisfies DestinationSecretConfig,
+							}),
+						hazel: (r) =>
+							Effect.succeed({
+								nextPublicConfig: {
+									summary:
+										r.webhookUrl != null && r.webhookUrl.trim().length > 0
+											? summarizeWebhookUrl(r.webhookUrl)
+											: hydrated.publicConfig.summary,
+									channelLabel: null,
+								} satisfies DestinationPublicConfig,
+								nextSecretConfig: {
+									type: "hazel" as const,
+									webhookUrl:
+										normalizeOptionalString(r.webhookUrl) ??
+										(hydrated.secretConfig.type === "hazel"
+											? hydrated.secretConfig.webhookUrl
+											: ""),
+									signingSecret:
+										r.signingSecret === undefined
+											? hydrated.secretConfig.type === "hazel"
+												? hydrated.secretConfig.signingSecret
+												: null
+											: normalizeOptionalString(r.signingSecret),
+								} satisfies DestinationSecretConfig,
+							}),
+						"hazel-oauth": (r) =>
+							Effect.gen(function* () {
+								const previousSecret =
+									hydrated.secretConfig.type === "hazel-oauth"
+										? hydrated.secretConfig
+										: null
+								const nextOrganizationId =
+									normalizeOptionalString(r.hazelOrganizationId) ??
+									previousSecret?.hazelOrganizationId ??
+									""
+								const nextOrganizationName =
+									normalizeOptionalString(r.hazelOrganizationName) ??
+									previousSecret?.hazelOrganizationName ??
+									""
+								const requestLogoUrl = r.hazelOrganizationLogoUrl
+								const nextOrganizationLogoUrl =
+									requestLogoUrl === undefined
+										? (hydrated.publicConfig.hazelOrganizationLogoUrl ?? null)
+										: requestLogoUrl
+								const nextChannelId =
+									normalizeOptionalString(r.hazelChannelId) ??
+									previousSecret?.hazelChannelId ??
+									""
+								const nextChannelName =
+									normalizeOptionalString(r.hazelChannelName) ??
+									previousSecret?.hazelChannelName ??
+									""
+								const nextName = normalizeOptionalString(r.name) ?? existing.name
+								const channelChanged =
+									previousSecret == null || previousSecret.hazelChannelId !== nextChannelId
+
+								// TODO: when Hazel exposes DELETE /api/v1/channel-webhooks/:id,
+								// revoke the old webhook here on channel change.
+								const provisioned = channelChanged
+									? yield* hazelOAuth
+											.createChannelWebhook(orgId, {
+												channelId: nextChannelId,
+												name: nextName,
+											})
+											.pipe(
+												Effect.mapError((error) =>
+													makeValidationError(
+														`Could not provision Hazel channel webhook: ${error.message}`,
+													),
+												),
+											)
+									: null
+
+								const webhookId = provisioned?.id ?? previousSecret!.webhookId
+								const webhookUrl = provisioned?.webhookUrl ?? previousSecret!.webhookUrl
+								const webhookToken = provisioned?.token ?? previousSecret!.webhookToken
+
+								return {
+									nextPublicConfig: {
+										summary: `${nextOrganizationName} · #${nextChannelName}`,
+										channelLabel: `#${nextChannelName}`,
+										hazelOrganizationId: nextOrganizationId,
+										hazelOrganizationName: nextOrganizationName,
+										hazelOrganizationLogoUrl: nextOrganizationLogoUrl,
+										hazelChannelId: nextChannelId,
+										hazelChannelName: nextChannelName,
+									} satisfies DestinationPublicConfig,
+									nextSecretConfig: {
+										type: "hazel-oauth" as const,
+										hazelOrganizationId: nextOrganizationId,
+										hazelOrganizationName: nextOrganizationName,
+										hazelChannelId: nextChannelId,
+										hazelChannelName: nextChannelName,
+										webhookId,
+										webhookUrl,
+										webhookToken,
+									} satisfies DestinationSecretConfig,
+								}
+							}),
+						discord: (r) =>
+							Effect.succeed({
+								nextPublicConfig: {
+									summary:
+										r.webhookUrl != null && r.webhookUrl.trim().length > 0
+											? summarizeWebhookUrl(r.webhookUrl)
+											: hydrated.publicConfig.summary,
+									channelLabel: null,
+								} satisfies DestinationPublicConfig,
+								nextSecretConfig: {
+									type: "discord" as const,
+									webhookUrl:
+										normalizeOptionalString(r.webhookUrl) ??
+										(hydrated.secretConfig.type === "discord"
+											? hydrated.secretConfig.webhookUrl
+											: ""),
+								} satisfies DestinationSecretConfig,
+							}),
 					}),
 				)
-			} else {
+
+				// Validate only a newly-supplied key; a blank key keeps the stored one.
+				if (
+					request.type === "pagerduty" &&
+					normalizeOptionalString(request.integrationKey) != null &&
+					nextSecretConfig.type === "pagerduty"
+				) {
+					yield* validatePagerDutyKey(nextSecretConfig.integrationKey)
+				}
+				const encryptedSecret = yield* encryptSecret(JSON.stringify(nextSecretConfig), encryptionKey)
+				const timestamp = yield* now
+				const nextName = normalizeOptionalString(request.name) ?? existing.name
+				const nextEnabled = request.enabled === undefined ? existing.enabled : request.enabled ? 1 : 0
+
 				yield* dbExecute((db) =>
 					db
-						.update(alertRules)
-						.set(ruleFields)
-						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, existingId))),
-				)
-			}
-
-			const row = yield* requireRuleRow(orgId, ruleId)
-			const destinationIds = safeParseStringArray(row.destinationIdsJson)
-			return rowToRuleDocument(row, destinationIds)
-		})
-
-		const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertRules)
-					.where(eq(alertRules.orgId, orgId))
-					.orderBy(desc(alertRules.updatedAt)),
-			)
-
-			// Surface the most recent evaluation error per rule. `lastError` is
-			// cleared to null on a healthy evaluation, so a non-null value means
-			// that group is currently failing; pick the freshest one.
-			const stateRows = yield* dbExecute((db) =>
-				db
-					.select({
-						ruleId: alertRuleStates.ruleId,
-						lastError: alertRuleStates.lastError,
-						lastEvaluatedAt: alertRuleStates.lastEvaluatedAt,
-					})
-					.from(alertRuleStates)
-					.where(eq(alertRuleStates.orgId, orgId)),
-			)
-			const errorByRule = new Map<string, RuleEvaluationState>()
-			for (const state of stateRows) {
-				if (state.lastError == null) continue
-				const existing = errorByRule.get(state.ruleId)
-				if (existing == null || (dateToMs(state.lastEvaluatedAt) ?? 0) > (existing.evaluatedAt ?? 0)) {
-					errorByRule.set(state.ruleId, {
-						error: state.lastError,
-						evaluatedAt: dateToMs(state.lastEvaluatedAt),
-					})
-				}
-			}
-
-			const rules = rows.map((row) =>
-				rowToRuleDocument(row, safeParseStringArray(row.destinationIdsJson), errorByRule.get(row.id)),
-			)
-
-			return new AlertRulesListResponse({ rules })
-		})
-
-		const createRule = Effect.fn("AlertsService.createRule")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			request: AlertRuleUpsertRequest,
-		) {
-			yield* requireAdmin(roles)
-			return yield* upsertRuleRow(orgId, userId, null, request)
-		})
-
-		const updateRule = Effect.fn("AlertsService.updateRule")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			ruleId: AlertRuleDocument["id"],
-			request: AlertRuleUpsertRequest,
-		) {
-			yield* requireAdmin(roles)
-			const oldRow = yield* requireRuleRow(orgId, ruleId)
-			const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
-
-			// Resolve stale incidents caused by the configuration change
-			const oldNormalized = yield* normalizeRuleRow(oldRow)
-			const newNormalized = yield* normalizeRule(request)
-
-			if (oldNormalized.enabled && !newNormalized.enabled) {
-				// Rule was disabled — resolve all open incidents
-				yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { resolveAll: true })
-			} else if (ruleStructureChanged(oldNormalized, newNormalized)) {
-				// Evaluation mode changed — resolve all and let scheduler re-evaluate fresh
-				yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { resolveAll: true })
-			} else {
-				// Check for services that fell out of scope
-				const staleGroupKeys = computeStaleGroupKeys(oldNormalized, newNormalized)
-				if (HashSet.size(staleGroupKeys) > 0) {
-					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { staleGroupKeys })
-				}
-			}
-
-			return result
-		})
-
-		const deleteRule = Effect.fn("AlertsService.deleteRule")(function* (
-			orgId: OrgId,
-			roles: ReadonlyArray<RoleName>,
-			ruleId: AlertRuleDocument["id"],
-		) {
-			yield* requireAdmin(roles)
-			yield* requireRuleRow(orgId, ruleId)
-			yield* dbExecute((db) =>
-				db.transaction(async (tx) => {
-					await tx
-						.delete(alertDeliveryEvents)
+						.update(alertDestinations)
+						.set({
+							name: nextName,
+							enabled: nextEnabled,
+							configJson: JSON.stringify(nextPublicConfig),
+							secretCiphertext: encryptedSecret.ciphertext,
+							secretIv: encryptedSecret.iv,
+							secretTag: encryptedSecret.tag,
+							updatedAt: timestamp,
+							updatedBy: userId,
+						})
 						.where(
-							and(eq(alertDeliveryEvents.orgId, orgId), eq(alertDeliveryEvents.ruleId, ruleId)),
-						)
-					await tx
-						.delete(alertIncidents)
-						.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId)))
-					await tx
-						.delete(alertRuleStates)
-						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId)))
-					await tx
-						.delete(alertRules)
-						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-				}),
-			)
-			return new AlertRuleDeleteResponse({ id: ruleId })
-		})
-
-		const testRule = Effect.fn("AlertsService.testRule")(function* (
-			orgId: OrgId,
-			userId: UserId,
-			roles: ReadonlyArray<RoleName>,
-			request: AlertRuleUpsertRequest,
-			sendNotification = false,
-		) {
-			yield* requireAdmin(roles)
-			const normalized = yield* normalizeRule(request)
-			yield* requireDestinationIds(orgId, normalized.destinationIds)
-
-			let evaluation: EvaluatedRule
-			if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
-				const allResults = yield* evaluateRule(orgId, normalized)
-				const excludeSet = new Set(normalized.excludeServiceNames)
-				const results = allResults.filter((r) => !excludeSet.has(r.groupKey))
-				const breached = results.find((r) => r.evaluation.status === "breached")
-				evaluation = breached?.evaluation ??
-					results[0]?.evaluation ?? {
-						status: "skipped" as const,
-						value: null,
-						sampleCount: 0,
-						threshold: normalized.threshold,
-						thresholdUpper: normalized.thresholdUpper,
-						comparator: normalized.comparator,
-						reason: "No groups found",
-					}
-			} else if (normalized.serviceNames.length > 1) {
-				const results = yield* Effect.forEach(
-					normalized.serviceNames,
-					(svcName) =>
-						Effect.gen(function* () {
-							const perServicePlan = yield* compileRulePlan({
-								...normalized,
-								serviceName: svcName,
-							})
-							const observations = yield* evaluateRule(orgId, {
-								...normalized,
-								serviceName: svcName,
-								compiledPlan: perServicePlan,
-							})
-							return (
-								observations[0]?.evaluation ?? {
-									status: "skipped" as const,
-									value: null,
-									sampleCount: 0,
-									threshold: normalized.threshold,
-									thresholdUpper: normalized.thresholdUpper,
-									comparator: normalized.comparator,
-									reason: "No data",
-								}
-							)
-						}),
-					{ concurrency: 5 },
+							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
+						),
 				)
-				evaluation = results.find((r) => r.status === "breached") ??
-					results[0] ?? {
+
+				return rowToDestinationDocument(
+					{
+						...existing,
+						name: nextName,
+						enabled: nextEnabled,
+						configJson: JSON.stringify(nextPublicConfig),
+						secretCiphertext: encryptedSecret.ciphertext,
+						secretIv: encryptedSecret.iv,
+						secretTag: encryptedSecret.tag,
+						updatedAt: timestamp,
+						updatedBy: userId,
+					},
+					nextPublicConfig,
+				)
+			})
+
+			const deleteDestination = Effect.fn("AlertsService.deleteDestination")(function* (
+				orgId: OrgId,
+				roles: ReadonlyArray<RoleName>,
+				destinationId: AlertDestinationDocument["id"],
+			) {
+				yield* requireAdmin(roles)
+				yield* requireDestinationRow(orgId, destinationId)
+				const dependentRules = yield* dbExecute((db) =>
+					db
+						.select({
+							id: alertRules.id,
+							name: alertRules.name,
+							destinationIdsJson: alertRules.destinationIdsJson,
+						})
+						.from(alertRules)
+						.where(eq(alertRules.orgId, orgId)),
+				).pipe(
+					Effect.map((rows) =>
+						rows.filter((row) =>
+							safeParseStringArray(row.destinationIdsJson).includes(destinationId),
+						),
+					),
+				)
+
+				if (dependentRules.length > 0) {
+					const ruleIds = dependentRules.map((row) => decodeAlertRuleIdSync(row.id))
+					const ruleNames = dependentRules.map((row) => row.name)
+					return yield* Effect.fail(
+						new AlertDestinationInUseError({
+							message: `Destination is still used by alert rules: ${ruleNames.join(", ")}`,
+							destinationId,
+							ruleIds,
+							ruleNames,
+						}),
+					)
+				}
+
+				yield* dbExecute((db) =>
+					db
+						.delete(alertDestinations)
+						.where(
+							and(eq(alertDestinations.orgId, orgId), eq(alertDestinations.id, destinationId)),
+						),
+				)
+				return new AlertDestinationDeleteResponse({ id: destinationId })
+			})
+
+			const testDestination = Effect.fn("AlertsService.testDestination")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				destinationId: AlertDestinationDocument["id"],
+			) {
+				yield* requireAdmin(roles)
+				const row = yield* requireDestinationRow(orgId, destinationId)
+				yield* sendImmediateNotification(row, {
+					deliveryKey: `${orgId}:${destinationId}:test`,
+					ruleId: decodeAlertRuleIdSync(makeUuid()),
+					ruleName: "Test alert",
+					groupKey: null,
+					signalType: "throughput",
+					severity: "warning",
+					comparator: "lt",
+					threshold: 1,
+					thresholdUpper: null,
+					windowMinutes: 5,
+					eventType: "test",
+					incidentId: null,
+					incidentStatus: "resolved",
+					dedupeKey: `${orgId}:${destinationId}:test`,
+					value: 0,
+					sampleCount: 0,
+					linkUrl: composeLinkUrl(null),
+					sentAtMs: yield* now,
+				}).pipe(
+					Effect.tapError((error) => {
+						const message =
+							error instanceof AlertDeliveryError
+								? error.message
+								: error instanceof Error
+									? error.message
+									: "Destination test failed"
+						return markDestinationTest(orgId, destinationId, message)
+					}),
+					Effect.mapError((error) =>
+						error instanceof AlertDeliveryError
+							? error
+							: makeDeliveryError(
+									error instanceof Error ? error.message : "Destination test failed",
+									decodeAlertDestinationTypeSync(row.type),
+								),
+					),
+				)
+
+				yield* markDestinationTest(orgId, destinationId, null)
+				return new AlertDestinationTestResponse({
+					success: true,
+					message: "Test notification sent",
+				})
+			})
+
+			const upsertRuleRow = Effect.fn("AlertsService.upsertRuleRow")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				existingId: AlertRuleId | null,
+				request: AlertRuleUpsertRequest,
+			) {
+				const normalized = yield* normalizeRule(request)
+				yield* requireDestinationIds(orgId, normalized.destinationIds)
+				const ruleId = existingId ?? normalized.id
+				const timestamp = yield* now
+
+				const ruleFields = {
+					name: normalized.name,
+					notes: normalizeOptionalString(request.notes),
+					notificationTemplateJson:
+						normalized.notificationTemplate != null
+							? JSON.stringify(normalized.notificationTemplate)
+							: null,
+					enabled: normalized.enabled ? 1 : 0,
+					severity: normalized.severity,
+					serviceNamesJson:
+						normalized.serviceNames.length > 0 ? JSON.stringify(normalized.serviceNames) : null,
+					excludeServiceNamesJson:
+						normalized.excludeServiceNames.length > 0
+							? JSON.stringify(normalized.excludeServiceNames)
+							: null,
+					tagsJson: normalized.tags.length > 0 ? JSON.stringify(normalized.tags) : null,
+					groupBy: normalized.groupBy != null ? JSON.stringify(normalized.groupBy) : null,
+					signalType: normalized.signalType,
+					comparator: normalized.comparator,
+					threshold: normalized.threshold,
+					thresholdUpper: normalized.thresholdUpper,
+					windowMinutes: normalized.windowMinutes,
+					minimumSampleCount: normalized.minimumSampleCount,
+					consecutiveBreachesRequired: normalized.consecutiveBreachesRequired,
+					consecutiveHealthyRequired: normalized.consecutiveHealthyRequired,
+					renotifyIntervalMinutes: normalized.renotifyIntervalMinutes,
+					metricName: normalized.metricName,
+					metricType: normalized.metricType,
+					metricAggregation: normalized.metricAggregation,
+					apdexThresholdMs: normalized.apdexThresholdMs,
+					queryBuilderDraftJson:
+						normalized.queryBuilderDraft != null
+							? JSON.stringify(normalized.queryBuilderDraft)
+							: null,
+					rawQuerySql: normalized.rawQuerySql,
+					destinationIdsJson: JSON.stringify(normalized.destinationIds),
+					querySpecJson:
+						normalized.compiledPlan.query != null
+							? JSON.stringify(normalized.compiledPlan.query)
+							: null,
+					reducer: normalized.compiledPlan.reducer,
+					sampleCountStrategy: normalized.compiledPlan.sampleCountStrategy,
+					noDataBehavior: normalized.compiledPlan.noDataBehavior,
+					updatedAt: timestamp,
+					updatedBy: userId,
+				} as const
+
+				if (existingId == null) {
+					yield* dbExecute((db) =>
+						db.insert(alertRules).values({
+							id: ruleId,
+							orgId,
+							...ruleFields,
+							createdAt: timestamp,
+							createdBy: userId,
+						}),
+					)
+				} else {
+					yield* dbExecute((db) =>
+						db
+							.update(alertRules)
+							.set(ruleFields)
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, existingId))),
+					)
+				}
+
+				const row = yield* requireRuleRow(orgId, ruleId)
+				const destinationIds = safeParseStringArray(row.destinationIdsJson)
+				return rowToRuleDocument(row, destinationIds)
+			})
+
+			const listRules = Effect.fn("AlertsService.listRules")(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertRules)
+						.where(eq(alertRules.orgId, orgId))
+						.orderBy(desc(alertRules.updatedAt)),
+				)
+
+				// Surface the most recent evaluation error per rule. `lastError` is
+				// cleared to null on a healthy evaluation, so a non-null value means
+				// that group is currently failing; pick the freshest one.
+				const stateRows = yield* dbExecute((db) =>
+					db
+						.select({
+							ruleId: alertRuleStates.ruleId,
+							lastError: alertRuleStates.lastError,
+							lastEvaluatedAt: alertRuleStates.lastEvaluatedAt,
+						})
+						.from(alertRuleStates)
+						.where(eq(alertRuleStates.orgId, orgId)),
+				)
+				const errorByRule = new Map<string, RuleEvaluationState>()
+				for (const state of stateRows) {
+					if (state.lastError == null) continue
+					const existing = errorByRule.get(state.ruleId)
+					if (existing == null || (state.lastEvaluatedAt ?? 0) > (existing.evaluatedAt ?? 0)) {
+						errorByRule.set(state.ruleId, {
+							error: state.lastError,
+							evaluatedAt: state.lastEvaluatedAt,
+						})
+					}
+				}
+
+				const rules = rows.map((row) =>
+					rowToRuleDocument(
+						row,
+						safeParseStringArray(row.destinationIdsJson),
+						errorByRule.get(row.id),
+					),
+				)
+
+				return new AlertRulesListResponse({ rules })
+			})
+
+			const createRule = Effect.fn("AlertsService.createRule")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				request: AlertRuleUpsertRequest,
+			) {
+				yield* requireAdmin(roles)
+				return yield* upsertRuleRow(orgId, userId, null, request)
+			})
+
+			const updateRule = Effect.fn("AlertsService.updateRule")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				ruleId: AlertRuleDocument["id"],
+				request: AlertRuleUpsertRequest,
+			) {
+				yield* requireAdmin(roles)
+				const oldRow = yield* requireRuleRow(orgId, ruleId)
+				const result = yield* upsertRuleRow(orgId, userId, ruleId, request)
+
+				// Resolve stale incidents caused by the configuration change
+				const oldNormalized = yield* normalizeRuleRow(oldRow)
+				const newNormalized = yield* normalizeRule(request)
+
+				if (oldNormalized.enabled && !newNormalized.enabled) {
+					// Rule was disabled — resolve all open incidents
+					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { resolveAll: true })
+				} else if (ruleStructureChanged(oldNormalized, newNormalized)) {
+					// Evaluation mode changed — resolve all and let scheduler re-evaluate fresh
+					yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { resolveAll: true })
+				} else {
+					// Check for services that fell out of scope
+					const staleGroupKeys = computeStaleGroupKeys(oldNormalized, newNormalized)
+					if (HashSet.size(staleGroupKeys) > 0) {
+						yield* resolveStaleIncidents(orgId, ruleId, newNormalized, { staleGroupKeys })
+					}
+				}
+
+				return result
+			})
+
+			const deleteRule = Effect.fn("AlertsService.deleteRule")(function* (
+				orgId: OrgId,
+				roles: ReadonlyArray<RoleName>,
+				ruleId: AlertRuleDocument["id"],
+			) {
+				yield* requireAdmin(roles)
+				yield* requireRuleRow(orgId, ruleId)
+				yield* dbExecute((db) =>
+					db.batch([
+						db
+							.delete(alertDeliveryEvents)
+							.where(
+								and(
+									eq(alertDeliveryEvents.orgId, orgId),
+									eq(alertDeliveryEvents.ruleId, ruleId),
+								),
+							),
+						db
+							.delete(alertIncidents)
+							.where(and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.ruleId, ruleId))),
+						db
+							.delete(alertRuleStates)
+							.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId))),
+						db
+							.delete(alertRules)
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId))),
+					]),
+				)
+				return new AlertRuleDeleteResponse({ id: ruleId })
+			})
+
+			const testRule = Effect.fn("AlertsService.testRule")(function* (
+				orgId: OrgId,
+				userId: UserId,
+				roles: ReadonlyArray<RoleName>,
+				request: AlertRuleUpsertRequest,
+				sendNotification = false,
+			) {
+				yield* requireAdmin(roles)
+				const normalized = yield* normalizeRule(request)
+				yield* requireDestinationIds(orgId, normalized.destinationIds)
+
+				let evaluation: EvaluatedRule
+				if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
+					const allResults = yield* evaluateRule(orgId, normalized)
+					const excludeSet = new Set(normalized.excludeServiceNames)
+					const results = allResults.filter((r) => !excludeSet.has(r.groupKey))
+					const breached = results.find((r) => r.evaluation.status === "breached")
+					evaluation = breached?.evaluation ??
+						results[0]?.evaluation ?? {
+							status: "skipped" as const,
+							value: null,
+							sampleCount: 0,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							comparator: normalized.comparator,
+							reason: "No groups found",
+						}
+				} else if (normalized.serviceNames.length > 1) {
+					const results = yield* Effect.forEach(
+						normalized.serviceNames,
+						(svcName) =>
+							Effect.gen(function* () {
+								const perServicePlan = yield* compileRulePlan({
+									...normalized,
+									serviceName: svcName,
+								})
+								const observations = yield* evaluateRule(orgId, {
+									...normalized,
+									serviceName: svcName,
+									compiledPlan: perServicePlan,
+								})
+								return (
+									observations[0]?.evaluation ?? {
+										status: "skipped" as const,
+										value: null,
+										sampleCount: 0,
+										threshold: normalized.threshold,
+										thresholdUpper: normalized.thresholdUpper,
+										comparator: normalized.comparator,
+										reason: "No data",
+									}
+								)
+							}),
+						{ concurrency: 5 },
+					)
+					evaluation = results.find((r) => r.status === "breached") ??
+						results[0] ?? {
+							status: "skipped" as const,
+							value: null,
+							sampleCount: 0,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							comparator: normalized.comparator,
+							reason: "No data",
+						}
+				} else {
+					const observations = yield* evaluateRule(orgId, normalized)
+					evaluation = observations[0]?.evaluation ?? {
 						status: "skipped" as const,
 						value: null,
 						sampleCount: 0,
@@ -2376,531 +2499,314 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						comparator: normalized.comparator,
 						reason: "No data",
 					}
-			} else {
-				const observations = yield* evaluateRule(orgId, normalized)
-				evaluation = observations[0]?.evaluation ?? {
-					status: "skipped" as const,
-					value: null,
-					sampleCount: 0,
-					threshold: normalized.threshold,
-					thresholdUpper: normalized.thresholdUpper,
-					comparator: normalized.comparator,
-					reason: "No data",
 				}
-			}
 
-			if (sendNotification) {
-				const rows = yield* dbExecute((db) =>
-					db
-						.select()
-						.from(alertDestinations)
-						.where(
-							and(
-								eq(alertDestinations.orgId, orgId),
-								inArray(alertDestinations.id, [...normalized.destinationIds]),
-							),
-						),
-				)
-				const byId = new Map(rows.map((row) => [row.id, row]))
-				const enabledDestinations = normalized.destinationIds
-					.map((id) => ({ id, row: byId.get(id) }))
-					.filter(
-						(d): d is { id: AlertDestinationId; row: AlertDestinationRow } =>
-							d.row != null && d.row.enabled,
-					)
-
-				const sentAtMs = yield* now
-				yield* Effect.forEach(
-					enabledDestinations,
-					({ id: destinationId, row: destination }) =>
-						sendImmediateNotification(destination, {
-							deliveryKey: `${orgId}:${destinationId}:rule-test`,
-							ruleId: decodeAlertRuleIdSync(makeUuid()),
-							ruleName: normalized.name,
-							groupKey: null,
-							signalType: normalized.signalType,
-							severity: normalized.severity,
-							comparator: normalized.comparator,
-							threshold: normalized.threshold,
-							thresholdUpper: normalized.thresholdUpper,
-							windowMinutes: normalized.windowMinutes,
-							eventType: "test",
-							incidentId: null,
-							incidentStatus: "resolved",
-							dedupeKey: `${orgId}:${destinationId}:rule-test`,
-							value: evaluation.value,
-							sampleCount: evaluation.sampleCount,
-							template: normalized.notificationTemplate,
-							linkUrl: resolveNotificationLinkUrl(normalized, null),
-							sentAtMs,
-						}),
-					{ concurrency: "unbounded" },
-				)
-			}
-
-			return new AlertEvaluationResult(evaluation)
-		})
-
-		const listIncidents = Effect.fn("AlertsService.listIncidents")(function* (orgId: OrgId) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertIncidents)
-					.where(eq(alertIncidents.orgId, orgId))
-					.orderBy(desc(alertIncidents.status), desc(alertIncidents.lastTriggeredAt))
-					.limit(100),
-			)
-			return new AlertIncidentsListResponse({
-				incidents: rows.map(rowToIncidentDocument),
-			})
-		})
-
-		const toTinybirdSqlDateTime64 = (iso: string) => {
-			const d = new Date(iso)
-			if (Number.isNaN(d.getTime())) return null
-			const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
-			return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
-		}
-
-		const listRuleChecks = Effect.fn("AlertsService.listRuleChecks")(function* (
-			orgId: OrgId,
-			ruleId: AlertRuleId,
-			options: {
-				readonly groupKey?: string
-				readonly since?: string
-				readonly until?: string
-				readonly limit?: number
-			},
-		) {
-			// Verify the rule exists and belongs to this org before querying Tinybird.
-			const ruleRow = yield* dbExecute((db) =>
-				db
-					.select({ id: alertRules.id })
-					.from(alertRules)
-					.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
-					.limit(1),
-			)
-			if (ruleRow.length === 0) {
-				return yield* new AlertNotFoundError({
-					message: "Alert rule not found",
-					resourceType: "alert_rule",
-					resourceId: ruleId,
-				})
-			}
-
-			const clamp = (n: number | undefined, min: number, max: number, fallback: number) => {
-				if (n == null || Number.isNaN(n)) return fallback
-				return Math.min(max, Math.max(min, Math.trunc(n)))
-			}
-			const limit = clamp(options.limit, 1, 2000, 500)
-
-			const since = options.since != null ? toTinybirdSqlDateTime64(options.since) : null
-			const until = options.until != null ? toTinybirdSqlDateTime64(options.until) : null
-			const hasGroupKey = options.groupKey != null && options.groupKey !== ""
-
-			const compiled = CH.compile(
-				CH.listRuleChecksQuery({
-					limit,
-					groupKey: hasGroupKey ? options.groupKey : undefined,
-					since: since ?? undefined,
-					until: until ?? undefined,
-				}),
-				{
-					orgId,
-					ruleId,
-					...(hasGroupKey ? { groupKey: options.groupKey } : {}),
-					...(since != null ? { since } : {}),
-					...(until != null ? { until } : {}),
-				},
-			)
-
-			const tenant = systemTenant(orgId)
-			const rows = yield* warehouse
-				.compiledQuery(tenant, compiled, { profile: "list", context: "listAlertChecks" })
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new AlertPersistenceError({
-								message: `Failed to list alert checks: ${error.message}`,
-							}),
-					),
-				)
-
-			const checks = yield* Effect.try({
-				try: () =>
-					rows.map((r) => {
-						const rawTransition =
-							r.incidentTransition == null || r.incidentTransition === ""
-								? "none"
-								: String(r.incidentTransition)
-						return new AlertCheckDocument({
-							timestamp: decodeIsoDateTimeStringSync(String(r.timestamp)),
-							groupKey: String(r.groupKey ?? ""),
-							status: decodeAlertEvaluationStatusSync(String(r.status)),
-							signalType: decodeAlertSignalTypeSync(String(r.signalType)),
-							comparator: decodeAlertComparatorSync(String(r.comparator)),
-							threshold: Number(r.threshold),
-							// thresholdUpper not yet recorded in the Tinybird alert_checks
-							// datasource — schema column will be backfilled with the
-							// datasource update; for now always null in the audit log.
-							thresholdUpper: null,
-							observedValue: r.observedValue == null ? null : Number(r.observedValue),
-							sampleCount: Number(r.sampleCount ?? 0),
-							windowMinutes: Number(r.windowMinutes ?? 0),
-							windowStart: decodeIsoDateTimeStringSync(String(r.windowStart)),
-							windowEnd: decodeIsoDateTimeStringSync(String(r.windowEnd)),
-							consecutiveBreaches: Number(r.consecutiveBreaches ?? 0),
-							consecutiveHealthy: Number(r.consecutiveHealthy ?? 0),
-							incidentId:
-								r.incidentId == null || r.incidentId === ""
-									? null
-									: decodeAlertIncidentIdSync(String(r.incidentId)),
-							incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
-							evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
-						})
-					}),
-				catch: (error) =>
-					new AlertPersistenceError({
-						message: `Failed to decode alert check row: ${error instanceof Error ? error.message : String(error)}`,
-					}),
-			})
-
-			return new AlertChecksListResponse({ checks })
-		})
-
-		const listDeliveryEvents = Effect.fn("AlertsService.listDeliveryEvents")(function* (orgId: OrgId) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDeliveryEvents)
-					.where(eq(alertDeliveryEvents.orgId, orgId))
-					.orderBy(desc(alertDeliveryEvents.createdAt))
-					.limit(100),
-			)
-
-			const destinationRows = yield* dbExecute((db) =>
-				db
-					.select({
-						id: alertDestinations.id,
-						name: alertDestinations.name,
-						type: alertDestinations.type,
-					})
-					.from(alertDestinations)
-					.where(eq(alertDestinations.orgId, orgId)),
-			)
-			const destinationMap = new Map(destinationRows.map((row) => [row.id, row]))
-
-			const events = rows.map((row) => {
-				const destination = destinationMap.get(row.destinationId)
-				return new AlertDeliveryEventDocument({
-					id: decodeAlertDeliveryEventIdSync(row.id),
-					incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
-					ruleId: decodeAlertRuleIdSync(row.ruleId),
-					destinationId: decodeAlertDestinationIdSync(row.destinationId),
-					destinationName: destination?.name ?? "Deleted destination",
-					destinationType:
-						destination?.type != null
-							? decodeAlertDestinationTypeSync(destination.type)
-							: decodeAlertDestinationTypeSync("webhook"),
-					deliveryKey: row.deliveryKey,
-					eventType: decodeAlertEventTypeSync(row.eventType),
-					attemptNumber: row.attemptNumber,
-					status: decodeAlertDeliveryStatusSync(row.status),
-					scheduledAt: decodeIsoDateTimeStringSync(row.scheduledAt.toISOString()),
-					attemptedAt: toIso(row.attemptedAt),
-					providerMessage: row.providerMessage,
-					providerReference: row.providerReference,
-					responseCode: row.responseCode,
-					errorMessage: row.errorMessage,
-				})
-			})
-
-			return new AlertDeliveryEventsListResponse({ events })
-		})
-
-		const claimableDeliveryWhere = (currentTime: number) =>
-			or(
-				and(
-					eq(alertDeliveryEvents.status, "queued"),
-					sql`${alertDeliveryEvents.scheduledAt} <= ${new Date(currentTime)}`,
-				),
-				and(
-					eq(alertDeliveryEvents.status, "processing"),
-					sql`${alertDeliveryEvents.claimExpiresAt} IS NOT NULL`,
-					sql`${alertDeliveryEvents.claimExpiresAt} <= ${new Date(currentTime)}`,
-				),
-			)
-
-		const claimDeliveryEvent = (deliveryEventId: AlertDeliveryEventRow["id"], currentTime: number) =>
-			dbExecute((db) =>
-				db
-					.update(alertDeliveryEvents)
-					.set({
-						status: "processing",
-						claimedAt: new Date(currentTime),
-						claimExpiresAt: new Date(currentTime + DELIVERY_LEASE_TTL_MS),
-						claimedBy: workerId,
-						updatedAt: new Date(currentTime),
-					})
-					.where(
-						and(eq(alertDeliveryEvents.id, deliveryEventId), claimableDeliveryWhere(currentTime)),
-					)
-					.returning({ id: alertDeliveryEvents.id }),
-			)
-
-		const finalizeClaimedDelivery = (
-			deliveryEventId: AlertDeliveryEventRow["id"],
-			currentTime: number,
-			fields: Partial<AlertDeliveryEventRow> & {
-				readonly status: "success" | "failed"
-			},
-		) =>
-			dbExecute((db) =>
-				db
-					.update(alertDeliveryEvents)
-					.set({
-						...fields,
-						claimedAt: null,
-						claimExpiresAt: null,
-						claimedBy: null,
-						updatedAt: new Date(currentTime),
-					})
-					.where(
-						and(
-							eq(alertDeliveryEvents.id, deliveryEventId),
-							eq(alertDeliveryEvents.status, "processing"),
-							eq(alertDeliveryEvents.claimedBy, workerId),
-						),
-					),
-			)
-
-		const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
-			row: AlertDeliveryEventRow,
-			currentTime: number,
-			failure: DeliveryAttemptFailure,
-		) {
-			yield* finalizeClaimedDelivery(row.id, currentTime, {
-				status: "failed",
-				attemptedAt: new Date(currentTime),
-				errorMessage: failure.message,
-			})
-			yield* Effect.logWarning("Alert delivery attempt failed").pipe(
-				Effect.annotateLogs({
-					workerId,
-					deliveryKey: row.deliveryKey,
-					attemptNumber: row.attemptNumber,
-					destinationId: row.destinationId,
-					failureKind: failure.kind,
-					errorMessage: failure.message,
-				}),
-			)
-		})
-
-		const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
-			const currentTime = yield* now
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertDeliveryEvents)
-					.where(claimableDeliveryWhere(currentTime))
-					.orderBy(asc(alertDeliveryEvents.scheduledAt)),
-			)
-
-			if (rows.length === 0) {
-				return {
-					processedCount: 0,
-					failureCount: 0,
-				}
-			}
-
-			const uniqueDestinationIds = [...new Set(rows.map((r) => r.destinationId))]
-			const uniqueRuleIds = [...new Set(rows.map((r) => r.ruleId))]
-			const uniqueIncidentIds = [
-				...new Set(rows.filter((r) => r.incidentId != null).map((r) => r.incidentId!)),
-			]
-
-			const [allDestinations, allRules, allIncidents] = yield* Effect.all(
-				[
-					dbExecute((db) =>
+				if (sendNotification) {
+					const rows = yield* dbExecute((db) =>
 						db
 							.select()
 							.from(alertDestinations)
-							.where(inArray(alertDestinations.id, uniqueDestinationIds)),
-					),
-					dbExecute((db) =>
-						db.select().from(alertRules).where(inArray(alertRules.id, uniqueRuleIds)),
-					),
-					uniqueIncidentIds.length > 0
-						? dbExecute((db) =>
-								db
-									.select()
-									.from(alertIncidents)
-									.where(inArray(alertIncidents.id, uniqueIncidentIds)),
-							)
-						: Effect.succeed([] as AlertIncidentRow[]),
-				],
-				{ concurrency: "unbounded" },
-			)
+							.where(
+								and(
+									eq(alertDestinations.orgId, orgId),
+									inArray(alertDestinations.id, [...normalized.destinationIds]),
+								),
+							),
+					)
+					const byId = new Map(rows.map((row) => [row.id, row]))
+					const enabledDestinations = normalized.destinationIds
+						.map((id) => ({ id, row: byId.get(id) }))
+						.filter(
+							(d): d is { id: AlertDestinationId; row: AlertDestinationRow } =>
+								d.row != null && d.row.enabled === 1,
+						)
 
-			const destinationMap = new Map(allDestinations.map((r) => [r.id, r]))
-			const ruleMap = new Map(allRules.map((r) => [r.id, r]))
-			const incidentMap = new Map(allIncidents.map((r) => [r.id, r]))
-
-			let processedCount = 0
-			let failureCount = 0
-
-			const processOneDelivery = Effect.fn("AlertsService.processOneDelivery")(function* (
-				row: AlertDeliveryEventRow,
-			) {
-				const claimed = yield* claimDeliveryEvent(row.id, currentTime)
-				if (claimed.length === 0) return
-
-				processedCount += 1
-				yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, 1)
-
-				const destinationRow = destinationMap.get(row.destinationId)
-				if (!destinationRow) {
-					failureCount += 1
-					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-					yield* recordDeliveryFailure(row, currentTime, {
-						message: "Destination not found",
-						kind: "destination",
-						retryable: false,
-					})
-					return
-				}
-
-				if (!destinationRow.enabled) {
-					failureCount += 1
-					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-					yield* recordDeliveryFailure(row, currentTime, {
-						message: "Destination disabled",
-						kind: "destination",
-						retryable: false,
-					})
-					return
-				}
-
-				const payload = yield* parseDeliveryPayload(row.payloadJson)
-				const hydrated = yield* hydrateDestination(destinationRow)
-				const incidentRow: AlertIncidentRow | null =
-					row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
-				const ruleRow = ruleMap.get(row.ruleId) ?? null
-				const payloadRule = payload.rule
-				const ruleServiceNames = ruleRow ? serviceNamesFromRow(ruleRow) : []
-				const ruleGroupBy = ruleRow ? parseStoredGroupBy(ruleRow.groupBy) : null
-				const groupKey = incidentRow?.groupKey ?? payloadRule?.groupKey ?? null
-
-				const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
-				const deliveryStart = yield* now
-				const result = yield* dispatchDelivery(
-					{
-						deliveryKey: row.deliveryKey,
-						destination: hydrated.row,
-						publicConfig: hydrated.publicConfig,
-						secretConfig: enrichedSecret,
-						ruleId: decodeAlertRuleIdSync(row.ruleId),
-						ruleName: ruleRow?.name ?? String(payloadRule?.name ?? "Alert"),
-						groupKey,
-						signalType: decodeAlertSignalTypeSync(
-							incidentRow?.signalType ?? payloadRule?.signalType ?? "throughput",
-						),
-						severity: decodeAlertSeveritySync(
-							incidentRow?.severity ?? payloadRule?.severity ?? "warning",
-						),
-						comparator: decodeAlertComparatorSync(
-							incidentRow?.comparator ?? payloadRule?.comparator ?? "gt",
-						),
-						threshold: incidentRow?.threshold ?? payloadRule?.threshold ?? 0,
-						thresholdUpper:
-							incidentRow?.thresholdUpper ?? payloadRule?.thresholdUpper ?? null,
-						windowMinutes: ruleRow?.windowMinutes ?? payloadRule?.windowMinutes ?? 5,
-						eventType: decodeAlertEventTypeSync(row.eventType),
-						incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
-						incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
-						dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
-						value: payload.observed?.value ?? null,
-						sampleCount: payload.observed?.sampleCount ?? null,
-						template:
-							payload.template ?? parseStoredNotificationTemplate(ruleRow?.notificationTemplateJson ?? null),
-						linkUrl: resolveNotificationLinkUrl(
-							{ serviceNames: ruleServiceNames, groupBy: ruleGroupBy },
-							groupKey,
-						),
-						sentAtMs: deliveryStart,
-					},
-					JSON.stringify(row.payloadJson),
-				)
-				yield* Metric.update(AlertingMetrics.deliveryAttemptDurationMs, (yield* now) - deliveryStart)
-				yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, 1)
-
-				yield* finalizeClaimedDelivery(row.id, currentTime, {
-					status: "success",
-					attemptedAt: new Date(currentTime),
-					providerMessage: result.providerMessage,
-					providerReference: result.providerReference,
-					responseCode: result.responseCode,
-					errorMessage: null,
-				})
-
-				if (row.incidentId) {
-					yield* dbExecute((db) =>
-						db
-							.update(alertIncidents)
-							.set({
-								lastDeliveredEventType: row.eventType,
-								lastNotifiedAt: new Date(currentTime),
-								updatedAt: new Date(currentTime),
-							})
-							.where(eq(alertIncidents.id, row.incidentId!)),
+					const sentAtMs = yield* now
+					yield* Effect.forEach(
+						enabledDestinations,
+						({ id: destinationId, row: destination }) =>
+							sendImmediateNotification(destination, {
+								deliveryKey: `${orgId}:${destinationId}:rule-test`,
+								ruleId: decodeAlertRuleIdSync(makeUuid()),
+								ruleName: normalized.name,
+								groupKey: null,
+								signalType: normalized.signalType,
+								severity: normalized.severity,
+								comparator: normalized.comparator,
+								threshold: normalized.threshold,
+								thresholdUpper: normalized.thresholdUpper,
+								windowMinutes: normalized.windowMinutes,
+								eventType: "test",
+								incidentId: null,
+								incidentStatus: "resolved",
+								dedupeKey: `${orgId}:${destinationId}:rule-test`,
+								value: evaluation.value,
+								sampleCount: evaluation.sampleCount,
+								template: normalized.notificationTemplate,
+								linkUrl: resolveNotificationLinkUrl(normalized, null),
+								sentAtMs,
+							}),
+						{ concurrency: "unbounded" },
 					)
 				}
 
-				yield* Effect.logInfo("Alert delivery attempt succeeded").pipe(
-					Effect.annotateLogs({
-						workerId,
-						deliveryKey: row.deliveryKey,
-						attemptNumber: row.attemptNumber,
-						destinationId: row.destinationId,
-						responseCode: result.responseCode,
-					}),
-				)
+				return new AlertEvaluationResult(evaluation)
 			})
 
-			const recoverDeliveryFailure = Effect.fnUntraced(function* (
-				row: AlertDeliveryEventRow,
-				error: AlertValidationError | AlertDeliveryError | AlertPersistenceError,
-			) {
-				const failure = toDeliveryAttemptFailure(error)
-				failureCount += 1
-				yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
-				yield* finalizeClaimedDelivery(row.id, currentTime, {
-					status: "failed",
-					attemptedAt: new Date(currentTime),
-					errorMessage: failure.message,
+			const listIncidents = Effect.fn("AlertsService.listIncidents")(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertIncidents)
+						.where(eq(alertIncidents.orgId, orgId))
+						.orderBy(desc(alertIncidents.status), desc(alertIncidents.lastTriggeredAt))
+						.limit(100),
+				)
+				return new AlertIncidentsListResponse({
+					incidents: rows.map(rowToIncidentDocument),
 				})
+			})
 
-				if (failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS) {
-					// Carry the original delivery payload through the retry. Empty
-					// payloads here would force the next attempt to fall back on
-					// rule-row defaults, losing observed value, sample count,
-					// dedupe context, and links.
-					const retryPayload = (yield* parseDeliveryPayload(row.payloadJson).pipe(
-						Effect.orElseSucceed(() => ({})),
-					)) as Record<string, unknown>
-					yield* insertDeliveryEvent(
-						row.orgId,
-						row.incidentId,
-						row.ruleId,
-						row.destinationId,
-						decodeAlertEventTypeSync(row.eventType),
-						retryPayload,
-						currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
-						row.deliveryKey,
-						row.attemptNumber + 1,
-					)
+			const toTinybirdSqlDateTime64 = (iso: string) => {
+				const d = new Date(iso)
+				if (Number.isNaN(d.getTime())) return null
+				const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
+				return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
+			}
+
+			const listRuleChecks = Effect.fn("AlertsService.listRuleChecks")(function* (
+				orgId: OrgId,
+				ruleId: AlertRuleId,
+				options: {
+					readonly groupKey?: string
+					readonly since?: string
+					readonly until?: string
+					readonly limit?: number
+				},
+			) {
+				// Verify the rule exists and belongs to this org before querying Tinybird.
+				const ruleRow = yield* dbExecute((db) =>
+					db
+						.select({ id: alertRules.id })
+						.from(alertRules)
+						.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, ruleId)))
+						.limit(1),
+				)
+				if (ruleRow.length === 0) {
+					return yield* new AlertNotFoundError({
+						message: "Alert rule not found",
+						resourceType: "alert_rule",
+						resourceId: ruleId,
+					})
 				}
 
+				const clamp = (n: number | undefined, min: number, max: number, fallback: number) => {
+					if (n == null || Number.isNaN(n)) return fallback
+					return Math.min(max, Math.max(min, Math.trunc(n)))
+				}
+				const limit = clamp(options.limit, 1, 2000, 500)
+
+				const since = options.since != null ? toTinybirdSqlDateTime64(options.since) : null
+				const until = options.until != null ? toTinybirdSqlDateTime64(options.until) : null
+				const hasGroupKey = options.groupKey != null && options.groupKey !== ""
+
+				const compiled = CH.compile(
+					CH.listRuleChecksQuery({
+						limit,
+						groupKey: hasGroupKey ? options.groupKey : undefined,
+						since: since ?? undefined,
+						until: until ?? undefined,
+					}),
+					{
+						orgId,
+						ruleId,
+						...(hasGroupKey ? { groupKey: options.groupKey } : {}),
+						...(since != null ? { since } : {}),
+						...(until != null ? { until } : {}),
+					},
+				)
+
+				const tenant = systemTenant(orgId)
+				const rows = yield* warehouse
+					// alert_checks is written via `ingest` (Tinybird-pinned) with no
+					// per-org MV, so read it from the same managed Tinybird — otherwise a
+					// BYO-ClickHouse org reads an empty table from its own ClickHouse.
+					.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "listAlertChecks",
+						pinToIngestConfig: true,
+					})
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new AlertPersistenceError({
+									message: `Failed to list alert checks: ${error.message}`,
+								}),
+						),
+					)
+
+				const checks = yield* Effect.try({
+					try: () =>
+						rows.map((r) => {
+							const rawTransition =
+								r.incidentTransition == null || r.incidentTransition === ""
+									? "none"
+									: String(r.incidentTransition)
+							return new AlertCheckDocument({
+								timestamp: decodeIsoDateTimeStringSync(String(r.timestamp)),
+								groupKey: String(r.groupKey ?? ""),
+								status: decodeAlertEvaluationStatusSync(String(r.status)),
+								signalType: decodeAlertSignalTypeSync(String(r.signalType)),
+								comparator: decodeAlertComparatorSync(String(r.comparator)),
+								threshold: Number(r.threshold),
+								// thresholdUpper not yet recorded in the Tinybird alert_checks
+								// datasource — schema column will be backfilled with the
+								// datasource update; for now always null in the audit log.
+								thresholdUpper: null,
+								observedValue: r.observedValue == null ? null : Number(r.observedValue),
+								sampleCount: Number(r.sampleCount ?? 0),
+								windowMinutes: Number(r.windowMinutes ?? 0),
+								windowStart: decodeIsoDateTimeStringSync(String(r.windowStart)),
+								windowEnd: decodeIsoDateTimeStringSync(String(r.windowEnd)),
+								consecutiveBreaches: Number(r.consecutiveBreaches ?? 0),
+								consecutiveHealthy: Number(r.consecutiveHealthy ?? 0),
+								incidentId:
+									r.incidentId == null || r.incidentId === ""
+										? null
+										: decodeAlertIncidentIdSync(String(r.incidentId)),
+								incidentTransition: decodeAlertIncidentTransitionSync(rawTransition),
+								evaluationDurationMs: Number(r.evaluationDurationMs ?? 0),
+							})
+						}),
+					catch: (error) =>
+						new AlertPersistenceError({
+							message: `Failed to decode alert check row: ${error instanceof Error ? error.message : String(error)}`,
+						}),
+				})
+
+				return new AlertChecksListResponse({ checks })
+			})
+
+			const listDeliveryEvents = Effect.fn("AlertsService.listDeliveryEvents")(function* (
+				orgId: OrgId,
+			) {
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertDeliveryEvents)
+						.where(eq(alertDeliveryEvents.orgId, orgId))
+						.orderBy(desc(alertDeliveryEvents.createdAt))
+						.limit(100),
+				)
+
+				const destinationRows = yield* dbExecute((db) =>
+					db
+						.select({
+							id: alertDestinations.id,
+							name: alertDestinations.name,
+							type: alertDestinations.type,
+						})
+						.from(alertDestinations)
+						.where(eq(alertDestinations.orgId, orgId)),
+				)
+				const destinationMap = new Map(destinationRows.map((row) => [row.id, row]))
+
+				const events = rows.map((row) => {
+					const destination = destinationMap.get(row.destinationId)
+					return new AlertDeliveryEventDocument({
+						id: decodeAlertDeliveryEventIdSync(row.id),
+						incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
+						ruleId: decodeAlertRuleIdSync(row.ruleId),
+						destinationId: decodeAlertDestinationIdSync(row.destinationId),
+						destinationName: destination?.name ?? "Deleted destination",
+						destinationType:
+							destination?.type != null
+								? decodeAlertDestinationTypeSync(destination.type)
+								: decodeAlertDestinationTypeSync("webhook"),
+						deliveryKey: row.deliveryKey,
+						eventType: decodeAlertEventTypeSync(row.eventType),
+						attemptNumber: row.attemptNumber,
+						status: decodeAlertDeliveryStatusSync(row.status),
+						scheduledAt: decodeIsoDateTimeStringSync(new Date(row.scheduledAt).toISOString()),
+						attemptedAt: toIso(row.attemptedAt),
+						providerMessage: row.providerMessage,
+						providerReference: row.providerReference,
+						responseCode: row.responseCode,
+						errorMessage: row.errorMessage,
+					})
+				})
+
+				return new AlertDeliveryEventsListResponse({ events })
+			})
+
+			const claimableDeliveryWhere = (currentTime: number) =>
+				or(
+					and(
+						eq(alertDeliveryEvents.status, "queued"),
+						sql`${alertDeliveryEvents.scheduledAt} <= ${currentTime}`,
+					),
+					and(
+						eq(alertDeliveryEvents.status, "processing"),
+						sql`${alertDeliveryEvents.claimExpiresAt} IS NOT NULL`,
+						sql`${alertDeliveryEvents.claimExpiresAt} <= ${currentTime}`,
+					),
+				)
+
+			const claimDeliveryEvent = (deliveryEventId: AlertDeliveryEventRow["id"], currentTime: number) =>
+				dbExecute((db) =>
+					db
+						.update(alertDeliveryEvents)
+						.set({
+							status: "processing",
+							claimedAt: currentTime,
+							claimExpiresAt: currentTime + DELIVERY_LEASE_TTL_MS,
+							claimedBy: workerId,
+							updatedAt: currentTime,
+						})
+						.where(
+							and(
+								eq(alertDeliveryEvents.id, deliveryEventId),
+								claimableDeliveryWhere(currentTime),
+							),
+						),
+				)
+
+			const finalizeClaimedDelivery = (
+				deliveryEventId: AlertDeliveryEventRow["id"],
+				currentTime: number,
+				fields: Partial<AlertDeliveryEventRow> & {
+					readonly status: "success" | "failed"
+				},
+			) =>
+				dbExecute((db) =>
+					db
+						.update(alertDeliveryEvents)
+						.set({
+							...fields,
+							claimedAt: null,
+							claimExpiresAt: null,
+							claimedBy: null,
+							updatedAt: currentTime,
+						})
+						.where(
+							and(
+								eq(alertDeliveryEvents.id, deliveryEventId),
+								eq(alertDeliveryEvents.status, "processing"),
+								eq(alertDeliveryEvents.claimedBy, workerId),
+							),
+						),
+				)
+
+			const recordDeliveryFailure = Effect.fn("AlertsService.recordDeliveryFailure")(function* (
+				row: AlertDeliveryEventRow,
+				currentTime: number,
+				failure: DeliveryAttemptFailure,
+			) {
+				yield* finalizeClaimedDelivery(row.id, currentTime, {
+					status: "failed",
+					attemptedAt: currentTime,
+					errorMessage: failure.message,
+				})
 				yield* Effect.logWarning("Alert delivery attempt failed").pipe(
 					Effect.annotateLogs({
 						workerId,
@@ -2909,123 +2815,365 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						destinationId: row.destinationId,
 						failureKind: failure.kind,
 						errorMessage: failure.message,
-						willRetry: failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS,
 					}),
 				)
 			})
 
-			yield* Effect.forEach(rows, (row) =>
-				processOneDelivery(row).pipe(
-					Effect.catchTags({
-						"@maple/http/errors/AlertValidationError": (error) =>
-							recoverDeliveryFailure(row, error),
-						"@maple/http/errors/AlertDeliveryError": (error) =>
-							recoverDeliveryFailure(row, error),
-						"@maple/http/errors/AlertPersistenceError": (error) =>
-							recoverDeliveryFailure(row, error),
-					}),
-				),
-			)
+			const processQueuedDeliveries = Effect.fn("AlertsService.processQueuedDeliveries")(function* () {
+				const currentTime = yield* now
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertDeliveryEvents)
+						.where(claimableDeliveryWhere(currentTime))
+						.orderBy(asc(alertDeliveryEvents.scheduledAt)),
+				)
 
-			return {
-				processedCount,
-				failureCount,
-			}
-		})
+				if (rows.length === 0) {
+					return {
+						processedCount: 0,
+						failureCount: 0,
+					}
+				}
 
-		const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
-			row: AlertRuleRow,
-			normalized: NormalizedRule,
-			evaluation: EvaluatedRule,
-			groupKey: string,
-			timestamp: number,
-			pendingChecks: Ref.Ref<AlertChecksRow[]>,
-			issueBudget: Ref.Ref<number>,
-		) {
-			const stateConflictTarget: [
-				typeof alertRuleStates.orgId,
-				typeof alertRuleStates.ruleId,
-				typeof alertRuleStates.groupKey,
-			] = [alertRuleStates.orgId, alertRuleStates.ruleId, alertRuleStates.groupKey]
+				const uniqueDestinationIds = [...new Set(rows.map((r) => r.destinationId))]
+				const uniqueRuleIds = [...new Set(rows.map((r) => r.ruleId))]
+				const uniqueIncidentIds = [
+					...new Set(rows.filter((r) => r.incidentId != null).map((r) => r.incidentId!)),
+				]
 
-			// Serialized per rule via the claim lock at runSchedulerTick (SCHEDULER_LOCK_TTL_MS
-			// CAS on alertRules.lastScheduledAt). The statements below are separate
-			// sequential writes (no transaction) and stay idempotent on retry: state
-			// upsert via onConflictDoUpdate, incident insert keyed on unique
-			// incidentKey, delivery events via onConflictDoNothing on deliveryKey.
-			const outcome = yield* Effect.gen(function* () {
-				const state =
-					(yield* dbExecute((db) =>
-						db
-							.select()
-							.from(alertRuleStates)
-							.where(
-								and(
-									eq(alertRuleStates.orgId, row.orgId),
-									eq(alertRuleStates.ruleId, row.id),
-									eq(alertRuleStates.groupKey, groupKey),
-								),
-							)
-							.limit(1),
-					))[0] ?? null
+				const [allDestinations, allRules, allIncidents] = yield* Effect.all(
+					[
+						dbExecute((db) =>
+							db
+								.select()
+								.from(alertDestinations)
+								.where(inArray(alertDestinations.id, uniqueDestinationIds)),
+						),
+						dbExecute((db) =>
+							db.select().from(alertRules).where(inArray(alertRules.id, uniqueRuleIds)),
+						),
+						uniqueIncidentIds.length > 0
+							? dbExecute((db) =>
+									db
+										.select()
+										.from(alertIncidents)
+										.where(inArray(alertIncidents.id, uniqueIncidentIds)),
+								)
+							: Effect.succeed([] as AlertIncidentRow[]),
+					],
+					{ concurrency: "unbounded" },
+				)
 
-				// Look up the open incident for this group via the unique
-				// (orgId, ruleId, status, groupKey) combination. The legacy
-				// serviceName-based filter is gone — composite group keys make
-				// serviceName ambiguous, and we now persist groupKey directly.
-				const openIncident =
-					(yield* dbExecute((db) =>
-						db
-							.select()
-							.from(alertIncidents)
-							.where(
-								and(
-									eq(alertIncidents.orgId, row.orgId),
-									eq(alertIncidents.ruleId, row.id),
-									eq(alertIncidents.status, "open"),
-									eq(alertIncidents.groupKey, groupKey),
-								),
-							)
-							.limit(1),
-					))[0] ?? null
+				const destinationMap = new Map(allDestinations.map((r) => [r.id, r]))
+				const ruleMap = new Map(allRules.map((r) => [r.id, r]))
+				const incidentMap = new Map(allIncidents.map((r) => [r.id, r]))
 
-				// Default for check-history ingest: carry open-incident linkage (if any),
-				// transition remains "none" unless a branch below overrides it.
-				const carriedIncidentId = openIncident?.id ?? null
+				let processedCount = 0
+				let failureCount = 0
 
-				const upsertState = (fields: {
-					consecutiveBreaches: number
-					consecutiveHealthy: number
-					lastStatus: string
-					lastValue: number | null
-					lastSampleCount: number
-				}) =>
-					dbExecute((db) =>
-						db
-							.insert(alertRuleStates)
-							.values({
-								orgId: row.orgId,
-								ruleId: row.id,
+				const processOneDelivery = Effect.fn("AlertsService.processOneDelivery")(function* (
+					row: AlertDeliveryEventRow,
+				) {
+					const claimed = yield* claimDeliveryEvent(row.id, currentTime)
+					if (claimed.rowsAffected === 0) return
+
+					processedCount += 1
+					yield* Metric.update(AlertingMetrics.deliveriesAttemptedTotal, 1)
+
+					const destinationRow = destinationMap.get(row.destinationId)
+					if (!destinationRow) {
+						failureCount += 1
+						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
+						yield* recordDeliveryFailure(row, currentTime, {
+							message: "Destination not found",
+							kind: "destination",
+							retryable: false,
+						})
+						return
+					}
+
+					if (destinationRow.enabled !== 1) {
+						failureCount += 1
+						yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
+						yield* recordDeliveryFailure(row, currentTime, {
+							message: "Destination disabled",
+							kind: "destination",
+							retryable: false,
+						})
+						return
+					}
+
+					const payload = yield* parseDeliveryPayload(row.payloadJson)
+					const hydrated = yield* hydrateDestination(destinationRow)
+					const incidentRow: AlertIncidentRow | null =
+						row.incidentId != null ? (incidentMap.get(row.incidentId) ?? null) : null
+					const ruleRow = ruleMap.get(row.ruleId) ?? null
+					const payloadRule = payload.rule
+					const ruleServiceNames = ruleRow ? serviceNamesFromRow(ruleRow) : []
+					const ruleGroupBy = ruleRow ? parseStoredGroupBy(ruleRow.groupBy) : null
+					const groupKey = incidentRow?.groupKey ?? payloadRule?.groupKey ?? null
+
+					const enrichedSecret = yield* enrichSecretForDispatch(hydrated.row, hydrated.secretConfig)
+					const deliveryStart = yield* now
+					const result = yield* dispatchDelivery(
+						{
+							deliveryKey: row.deliveryKey,
+							destination: hydrated.row,
+							publicConfig: hydrated.publicConfig,
+							secretConfig: enrichedSecret,
+							ruleId: decodeAlertRuleIdSync(row.ruleId),
+							ruleName: ruleRow?.name ?? String(payloadRule?.name ?? "Alert"),
+							groupKey,
+							signalType: decodeAlertSignalTypeSync(
+								incidentRow?.signalType ?? payloadRule?.signalType ?? "throughput",
+							),
+							severity: decodeAlertSeveritySync(
+								incidentRow?.severity ?? payloadRule?.severity ?? "warning",
+							),
+							comparator: decodeAlertComparatorSync(
+								incidentRow?.comparator ?? payloadRule?.comparator ?? "gt",
+							),
+							threshold: incidentRow?.threshold ?? payloadRule?.threshold ?? 0,
+							thresholdUpper:
+								incidentRow?.thresholdUpper ?? payloadRule?.thresholdUpper ?? null,
+							windowMinutes: ruleRow?.windowMinutes ?? payloadRule?.windowMinutes ?? 5,
+							eventType: decodeAlertEventTypeSync(row.eventType),
+							incidentId: row.incidentId ? decodeAlertIncidentIdSync(row.incidentId) : null,
+							incidentStatus: decodeAlertIncidentStatusSync(incidentRow?.status ?? "resolved"),
+							dedupeKey: incidentRow?.dedupeKey ?? String(payload.dedupeKey ?? row.deliveryKey),
+							value: payload.observed?.value ?? null,
+							sampleCount: payload.observed?.sampleCount ?? null,
+							template:
+								payload.template ??
+								parseStoredNotificationTemplate(ruleRow?.notificationTemplateJson ?? null),
+							linkUrl: resolveNotificationLinkUrl(
+								{ serviceNames: ruleServiceNames, groupBy: ruleGroupBy },
 								groupKey,
-								...fields,
-								lastEvaluatedAt: new Date(timestamp),
-								lastError: null,
-								updatedAt: new Date(timestamp),
-							})
-							.onConflictDoUpdate({
-								target: stateConflictTarget,
-								set: {
-									...fields,
-									lastEvaluatedAt: new Date(timestamp),
-									lastError: null,
-									updatedAt: new Date(timestamp),
-								},
-							}),
+							),
+							sentAtMs: deliveryStart,
+						},
+						row.payloadJson,
 					)
+					yield* Metric.update(
+						AlertingMetrics.deliveryAttemptDurationMs,
+						(yield* now) - deliveryStart,
+					)
+					yield* Metric.update(AlertingMetrics.deliveriesSucceededTotal, 1)
 
-				if (evaluation.status === "skipped") {
-					const consecutiveBreaches = state?.consecutiveBreaches ?? 0
-					const consecutiveHealthy = state?.consecutiveHealthy ?? 0
+					yield* finalizeClaimedDelivery(row.id, currentTime, {
+						status: "success",
+						attemptedAt: currentTime,
+						providerMessage: result.providerMessage,
+						providerReference: result.providerReference,
+						responseCode: result.responseCode,
+						errorMessage: null,
+					})
+
+					if (row.incidentId) {
+						yield* dbExecute((db) =>
+							db
+								.update(alertIncidents)
+								.set({
+									lastDeliveredEventType: row.eventType,
+									lastNotifiedAt: currentTime,
+									updatedAt: currentTime,
+								})
+								.where(eq(alertIncidents.id, row.incidentId!)),
+						)
+					}
+
+					yield* Effect.logInfo("Alert delivery attempt succeeded").pipe(
+						Effect.annotateLogs({
+							workerId,
+							deliveryKey: row.deliveryKey,
+							attemptNumber: row.attemptNumber,
+							destinationId: row.destinationId,
+							responseCode: result.responseCode,
+						}),
+					)
+				})
+
+				const recoverDeliveryFailure = Effect.fnUntraced(function* (
+					row: AlertDeliveryEventRow,
+					error: AlertValidationError | AlertDeliveryError | AlertPersistenceError,
+				) {
+					const failure = toDeliveryAttemptFailure(error)
+					failureCount += 1
+					yield* Metric.update(AlertingMetrics.deliveriesFailedTotal, 1)
+					yield* finalizeClaimedDelivery(row.id, currentTime, {
+						status: "failed",
+						attemptedAt: currentTime,
+						errorMessage: failure.message,
+					})
+
+					if (failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS) {
+						// Carry the original delivery payload through the retry. Empty
+						// payloads here would force the next attempt to fall back on
+						// rule-row defaults, losing observed value, sample count,
+						// dedupe context, and links.
+						const retryPayload = (yield* parseDeliveryPayload(row.payloadJson).pipe(
+							Effect.orElseSucceed(() => ({})),
+						)) as Record<string, unknown>
+						yield* insertDeliveryEvent(
+							row.orgId,
+							row.incidentId,
+							row.ruleId,
+							row.destinationId,
+							decodeAlertEventTypeSync(row.eventType),
+							retryPayload,
+							currentTime + (yield* computeRetryDelayMs(row.attemptNumber)),
+							row.deliveryKey,
+							row.attemptNumber + 1,
+						)
+					}
+
+					yield* Effect.logWarning("Alert delivery attempt failed").pipe(
+						Effect.annotateLogs({
+							workerId,
+							deliveryKey: row.deliveryKey,
+							attemptNumber: row.attemptNumber,
+							destinationId: row.destinationId,
+							failureKind: failure.kind,
+							errorMessage: failure.message,
+							willRetry: failure.retryable && row.attemptNumber < MAX_DELIVERY_ATTEMPTS,
+						}),
+					)
+				})
+
+				yield* Effect.forEach(rows, (row) =>
+					processOneDelivery(row).pipe(
+						Effect.catchTags({
+							"@maple/http/errors/AlertValidationError": (error) =>
+								recoverDeliveryFailure(row, error),
+							"@maple/http/errors/AlertDeliveryError": (error) =>
+								recoverDeliveryFailure(row, error),
+							"@maple/http/errors/AlertPersistenceError": (error) =>
+								recoverDeliveryFailure(row, error),
+						}),
+					),
+				)
+
+				return {
+					processedCount,
+					failureCount,
+				}
+			})
+
+			const processEvaluation = Effect.fn("AlertsService.processEvaluation")(function* (
+				row: AlertRuleRow,
+				normalized: NormalizedRule,
+				evaluation: EvaluatedRule,
+				groupKey: string,
+				timestamp: number,
+				pendingChecks: Ref.Ref<AlertChecksRow[]>,
+				issueBudget: Ref.Ref<number>,
+			) {
+				const stateConflictTarget: [
+					typeof alertRuleStates.orgId,
+					typeof alertRuleStates.ruleId,
+					typeof alertRuleStates.groupKey,
+				] = [alertRuleStates.orgId, alertRuleStates.ruleId, alertRuleStates.groupKey]
+
+				// Serialized per rule via the claim lock at runSchedulerTick (SCHEDULER_LOCK_TTL_MS
+				// CAS on alertRules.lastScheduledAt). The statements below are separate
+				// sequential writes (no transaction) and stay idempotent on retry: state
+				// upsert via onConflictDoUpdate, incident insert keyed on unique
+				// incidentKey, delivery events via onConflictDoNothing on deliveryKey.
+				const outcome = yield* Effect.gen(function* () {
+					const state =
+						(yield* dbExecute((db) =>
+							db
+								.select()
+								.from(alertRuleStates)
+								.where(
+									and(
+										eq(alertRuleStates.orgId, row.orgId),
+										eq(alertRuleStates.ruleId, row.id),
+										eq(alertRuleStates.groupKey, groupKey),
+									),
+								)
+								.limit(1),
+						))[0] ?? null
+
+					// Look up the open incident for this group via the unique
+					// (orgId, ruleId, status, groupKey) combination. The legacy
+					// serviceName-based filter is gone — composite group keys make
+					// serviceName ambiguous, and we now persist groupKey directly.
+					const openIncident =
+						(yield* dbExecute((db) =>
+							db
+								.select()
+								.from(alertIncidents)
+								.where(
+									and(
+										eq(alertIncidents.orgId, row.orgId),
+										eq(alertIncidents.ruleId, row.id),
+										eq(alertIncidents.status, "open"),
+										eq(alertIncidents.groupKey, groupKey),
+									),
+								)
+								.limit(1),
+						))[0] ?? null
+
+					// Default for check-history ingest: carry open-incident linkage (if any),
+					// transition remains "none" unless a branch below overrides it.
+					const carriedIncidentId = openIncident?.id ?? null
+
+					const upsertState = (fields: {
+						consecutiveBreaches: number
+						consecutiveHealthy: number
+						lastStatus: string
+						lastValue: number | null
+						lastSampleCount: number
+					}) =>
+						dbExecute((db) =>
+							db
+								.insert(alertRuleStates)
+								.values({
+									orgId: row.orgId,
+									ruleId: row.id,
+									groupKey,
+									...fields,
+									lastEvaluatedAt: timestamp,
+									lastError: null,
+									updatedAt: timestamp,
+								})
+								.onConflictDoUpdate({
+									target: stateConflictTarget,
+									set: {
+										...fields,
+										lastEvaluatedAt: timestamp,
+										lastError: null,
+										updatedAt: timestamp,
+									},
+								}),
+						)
+
+					if (evaluation.status === "skipped") {
+						const consecutiveBreaches = state?.consecutiveBreaches ?? 0
+						const consecutiveHealthy = state?.consecutiveHealthy ?? 0
+						yield* upsertState({
+							consecutiveBreaches,
+							consecutiveHealthy,
+							lastStatus: evaluation.status,
+							lastValue: evaluation.value,
+							lastSampleCount: evaluation.sampleCount,
+						})
+						return {
+							transition: "none" as const,
+							incidentId: carriedIncidentId,
+							openedIncidentId: null,
+							consecutiveBreaches,
+							consecutiveHealthy,
+						}
+					}
+
+					const consecutiveBreaches =
+						evaluation.status === "breached" ? (state?.consecutiveBreaches ?? 0) + 1 : 0
+					const consecutiveHealthy =
+						evaluation.status === "healthy" ? (state?.consecutiveHealthy ?? 0) + 1 : 0
+
 					yield* upsertState({
 						consecutiveBreaches,
 						consecutiveHealthy,
@@ -3033,6 +3181,149 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						lastValue: evaluation.value,
 						lastSampleCount: evaluation.sampleCount,
 					})
+
+					if (
+						evaluation.status === "breached" &&
+						openIncident == null &&
+						consecutiveBreaches >= normalized.consecutiveBreachesRequired
+					) {
+						const incidentId = decodeAlertIncidentIdSync(makeUuid())
+						const incident: AlertIncidentRow = {
+							id: incidentId,
+							orgId: row.orgId,
+							ruleId: row.id,
+							incidentKey: incidentId,
+							ruleName: row.name,
+							groupKey,
+							signalType: normalized.signalType,
+							severity: normalized.severity,
+							status: "open",
+							comparator: normalized.comparator,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							firstTriggeredAt: timestamp,
+							lastTriggeredAt: timestamp,
+							resolvedAt: null,
+							lastObservedValue: evaluation.value,
+							lastSampleCount: evaluation.sampleCount,
+							lastEvaluatedAt: timestamp,
+							dedupeKey: `${row.orgId}:${row.id}:${groupKey}`,
+							lastDeliveredEventType: null,
+							lastNotifiedAt: null,
+							errorIssueId: null,
+							createdAt: timestamp,
+							updatedAt: timestamp,
+						}
+
+						yield* dbExecute((db) => db.insert(alertIncidents).values(incident))
+						yield* queueIncidentNotifications(
+							row.orgId,
+							normalized,
+							incident,
+							evaluation,
+							"trigger",
+							timestamp,
+						)
+						return {
+							transition: "opened" as const,
+							incidentId,
+							openedIncidentId: incidentId,
+							consecutiveBreaches,
+							consecutiveHealthy,
+						}
+					}
+
+					if (evaluation.status === "breached" && openIncident != null) {
+						const refreshedIncident = {
+							...openIncident,
+							lastTriggeredAt: timestamp,
+							lastObservedValue: evaluation.value,
+							lastSampleCount: evaluation.sampleCount,
+							lastEvaluatedAt: timestamp,
+							updatedAt: timestamp,
+						}
+
+						yield* dbExecute((db) =>
+							db
+								.update(alertIncidents)
+								.set({
+									lastTriggeredAt: timestamp,
+									lastObservedValue: evaluation.value,
+									lastSampleCount: evaluation.sampleCount,
+									lastEvaluatedAt: timestamp,
+									updatedAt: timestamp,
+								})
+								.where(eq(alertIncidents.id, openIncident.id)),
+						)
+
+						const renotifyDueAt =
+							(openIncident.lastNotifiedAt ?? openIncident.firstTriggeredAt) +
+							normalized.renotifyIntervalMinutes * 60_000
+						if (renotifyDueAt <= timestamp) {
+							yield* queueIncidentNotifications(
+								row.orgId,
+								normalized,
+								refreshedIncident,
+								evaluation,
+								"renotify",
+								timestamp,
+							)
+						}
+						return {
+							transition: "continued" as const,
+							incidentId: openIncident.id,
+							openedIncidentId: null,
+							consecutiveBreaches,
+							consecutiveHealthy,
+						}
+					}
+
+					if (
+						evaluation.status === "healthy" &&
+						openIncident != null &&
+						consecutiveHealthy >= normalized.consecutiveHealthyRequired
+					) {
+						const resolvedIncident = {
+							...openIncident,
+							status: "resolved" as const,
+							resolvedAt: timestamp,
+							lastObservedValue: evaluation.value,
+							lastSampleCount: evaluation.sampleCount,
+							lastEvaluatedAt: timestamp,
+							updatedAt: timestamp,
+						}
+
+						yield* dbExecute((db) =>
+							db
+								.update(alertIncidents)
+								.set({
+									status: "resolved",
+									resolvedAt: timestamp,
+									lastObservedValue: evaluation.value,
+									lastSampleCount: evaluation.sampleCount,
+									lastEvaluatedAt: timestamp,
+									updatedAt: timestamp,
+								})
+								.where(eq(alertIncidents.id, openIncident.id)),
+						)
+
+						yield* queueIncidentNotifications(
+							row.orgId,
+							normalized,
+							resolvedIncident,
+							evaluation,
+							"resolve",
+							timestamp,
+						)
+						return {
+							transition: "resolved" as const,
+							incidentId: openIncident.id,
+							openedIncidentId: null,
+							consecutiveBreaches,
+							consecutiveHealthy,
+						}
+					}
+
 					return {
 						transition: "none" as const,
 						incidentId: carriedIncidentId,
@@ -3040,407 +3331,147 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						consecutiveBreaches,
 						consecutiveHealthy,
 					}
-				}
-
-				const consecutiveBreaches =
-					evaluation.status === "breached" ? (state?.consecutiveBreaches ?? 0) + 1 : 0
-				const consecutiveHealthy =
-					evaluation.status === "healthy" ? (state?.consecutiveHealthy ?? 0) + 1 : 0
-
-				yield* upsertState({
-					consecutiveBreaches,
-					consecutiveHealthy,
-					lastStatus: evaluation.status,
-					lastValue: evaluation.value,
-					lastSampleCount: evaluation.sampleCount,
 				})
 
-				if (
-					evaluation.status === "breached" &&
-					openIncident == null &&
-					consecutiveBreaches >= normalized.consecutiveBreachesRequired
-				) {
-					const incidentId = decodeAlertIncidentIdSync(makeUuid())
-					const incident: AlertIncidentRow = {
-						id: incidentId,
-						orgId: row.orgId,
-						ruleId: row.id,
-						incidentKey: incidentId,
-						ruleName: row.name,
-						groupKey,
-						signalType: normalized.signalType,
-						severity: normalized.severity,
-						status: "open",
-						comparator: normalized.comparator,
-						threshold: normalized.threshold,
-						thresholdUpper: normalized.thresholdUpper,
-						firstTriggeredAt: new Date(timestamp),
-						lastTriggeredAt: new Date(timestamp),
-						resolvedAt: null,
-						lastObservedValue: evaluation.value,
-						lastSampleCount: evaluation.sampleCount,
-						lastEvaluatedAt: new Date(timestamp),
-						dedupeKey: `${row.orgId}:${row.id}:${groupKey}`,
-						lastDeliveredEventType: null,
-						lastNotifiedAt: null,
-						errorIssueId: null,
-						createdAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
-					}
-
-					yield* dbExecute((db) => db.insert(alertIncidents).values(incident))
-					yield* queueIncidentNotifications(
-						row.orgId,
-						normalized,
-						incident,
-						evaluation,
-						"trigger",
-						timestamp,
-					)
-					return {
-						transition: "opened" as const,
-						incidentId,
-						openedIncidentId: incidentId,
-						consecutiveBreaches,
-						consecutiveHealthy,
-					}
+				if (outcome.transition === "opened") {
+					yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
+				}
+				if (outcome.transition === "resolved") {
+					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
 				}
 
-				if (evaluation.status === "breached" && openIncident != null) {
-					const refreshedIncident = {
-						...openIncident,
-						lastTriggeredAt: new Date(timestamp),
-						lastObservedValue: evaluation.value,
-						lastSampleCount: evaluation.sampleCount,
-						lastEvaluatedAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
-					}
-
-					yield* dbExecute((db) =>
-						db
-							.update(alertIncidents)
-							.set({
-								lastTriggeredAt: new Date(timestamp),
-								lastObservedValue: evaluation.value,
-								lastSampleCount: evaluation.sampleCount,
-								lastEvaluatedAt: new Date(timestamp),
-								updatedAt: new Date(timestamp),
-							})
-							.where(eq(alertIncidents.id, openIncident.id)),
+				// Issue-hub: a freshly opened incident creates/refreshes its issue
+				// (kind="alert") so it lands in the unified triage queue. Budgeted per
+				// tick as a storm fuse for pathological group-by rules; upsertAlertIssue
+				// never fails, so the scheduler tick is isolated from issue problems.
+				if (outcome.openedIncidentId != null) {
+					const incidentId = outcome.openedIncidentId
+					const allowed = yield* Ref.modify(issueBudget, (remaining): [boolean, number] =>
+						remaining > 0 ? [true, remaining - 1] : [false, remaining],
 					)
-
-					const renotifyDueAt =
-						(openIncident.lastNotifiedAt ?? openIncident.firstTriggeredAt).getTime() +
-						normalized.renotifyIntervalMinutes * 60_000
-					if (renotifyDueAt <= timestamp) {
-						yield* queueIncidentNotifications(
-							row.orgId,
-							normalized,
-							refreshedIncident,
-							evaluation,
-							"renotify",
+					if (allowed) {
+						yield* upsertAlertIssue({
+							orgId: row.orgId,
+							ruleId: row.id,
+							ruleName: row.name,
+							groupKey,
+							signalType: normalized.signalType,
+							severity: normalized.severity,
+							comparator: normalized.comparator,
+							threshold: normalized.threshold,
+							thresholdUpper: normalized.thresholdUpper,
+							windowMinutes: normalized.windowMinutes,
+							observedValue: evaluation.value,
+							sampleCount: evaluation.sampleCount,
+							incidentId,
+							serviceName:
+								normalized.groupBy?.[0] === "service.name"
+									? groupKey
+									: (normalized.serviceNames[0] ?? ""),
 							timestamp,
-						)
-					}
-					return {
-						transition: "continued" as const,
-						incidentId: openIncident.id,
-						openedIncidentId: null,
-						consecutiveBreaches,
-						consecutiveHealthy,
+							workflowBinding: aiTriageWorkflowBinding,
+						}).pipe(Effect.provideService(Database, database))
+					} else {
+						yield* Effect.logWarning(
+							"Alert issue upsert budget exhausted; skipping issue link",
+						).pipe(Effect.annotateLogs({ ruleId: row.id, incidentId, groupKey }))
 					}
 				}
 
-				if (
-					evaluation.status === "healthy" &&
-					openIncident != null &&
-					consecutiveHealthy >= normalized.consecutiveHealthyRequired
-				) {
-					const resolvedIncident = {
-						...openIncident,
-						status: "resolved" as const,
-						resolvedAt: new Date(timestamp),
-						lastObservedValue: evaluation.value,
-						lastSampleCount: evaluation.sampleCount,
-						lastEvaluatedAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
-					}
-
-					yield* dbExecute((db) =>
-						db
-							.update(alertIncidents)
-							.set({
-								status: "resolved",
-								resolvedAt: new Date(timestamp),
-								lastObservedValue: evaluation.value,
-								lastSampleCount: evaluation.sampleCount,
-								lastEvaluatedAt: new Date(timestamp),
-								updatedAt: new Date(timestamp),
-							})
-							.where(eq(alertIncidents.id, openIncident.id)),
-					)
-
-					yield* queueIncidentNotifications(
-						row.orgId,
-						normalized,
-						resolvedIncident,
-						evaluation,
-						"resolve",
-						timestamp,
-					)
-					return {
-						transition: "resolved" as const,
-						incidentId: openIncident.id,
-						openedIncidentId: null,
-						consecutiveBreaches,
-						consecutiveHealthy,
-					}
+				// Record one audit row per evaluation to the Tinybird alert_checks datasource.
+				// Tinybird DateTime64(3) wire format: "YYYY-MM-DD HH:MM:SS.SSS" (UTC, no timezone).
+				const toIngestDateTime64 = (epochMs: number) => {
+					const d = new Date(epochMs)
+					const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
+					return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
 				}
-
-				return {
-					transition: "none" as const,
-					incidentId: carriedIncidentId,
-					openedIncidentId: null,
-					consecutiveBreaches,
-					consecutiveHealthy,
+				const evaluationEndMs = yield* now
+				const checkRow: AlertChecksRow = {
+					OrgId: row.orgId,
+					RuleId: row.id,
+					GroupKey: groupKey,
+					Timestamp: toIngestDateTime64(timestamp),
+					Status: evaluation.status,
+					SignalType: normalized.signalType,
+					Comparator: normalized.comparator,
+					Threshold: normalized.threshold,
+					ObservedValue: evaluation.value,
+					SampleCount: evaluation.sampleCount,
+					WindowMinutes: normalized.windowMinutes,
+					WindowStart: toIngestDateTime64(timestamp - normalized.windowMinutes * 60_000),
+					WindowEnd: toIngestDateTime64(timestamp),
+					ConsecutiveBreaches: outcome.consecutiveBreaches,
+					ConsecutiveHealthy: outcome.consecutiveHealthy,
+					IncidentId: outcome.incidentId,
+					IncidentTransition: outcome.transition,
+					EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
 				}
+				// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
+				// all rows once at the end (one POST per orgId). Awaited flush keeps
+				// the Cloudflare Worker isolate alive across the batch write.
+				yield* Ref.update(pendingChecks, (rows) => {
+					rows.push(checkRow)
+					return rows
+				})
 			})
 
-			if (outcome.transition === "opened") {
-				yield* Metric.update(AlertingMetrics.incidentsOpenedTotal, 1)
-			}
-			if (outcome.transition === "resolved") {
-				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, 1)
+			/* -------------------------------------------------------------------------- */
+			/*  Stale incident resolution                                               */
+			/* -------------------------------------------------------------------------- */
+
+			const computeStaleGroupKeys = (
+				oldRule: NormalizedRule,
+				newRule: NormalizedRule,
+			): HashSet.HashSet<string> => {
+				const removedServices = HashSet.difference(
+					HashSet.fromIterable(oldRule.serviceNames),
+					HashSet.fromIterable(newRule.serviceNames),
+				)
+				const newlyExcluded = HashSet.difference(
+					HashSet.fromIterable(newRule.excludeServiceNames),
+					HashSet.fromIterable(oldRule.excludeServiceNames),
+				)
+				return HashSet.union(removedServices, newlyExcluded)
 			}
 
-			// Issue-hub: a freshly opened incident creates/refreshes its issue
-			// (kind="alert") so it lands in the unified triage queue. Budgeted per
-			// tick as a storm fuse for pathological group-by rules; upsertAlertIssue
-			// never fails, so the scheduler tick is isolated from issue problems.
-			if (outcome.openedIncidentId != null) {
-				const incidentId = outcome.openedIncidentId
-				const allowed = yield* Ref.modify(issueBudget, (remaining): [boolean, number] =>
-					remaining > 0 ? [true, remaining - 1] : [false, remaining],
-				)
-				if (allowed) {
-					yield* upsertAlertIssue({
-						orgId: row.orgId,
-						ruleId: row.id,
-						ruleName: row.name,
-						groupKey,
-						signalType: normalized.signalType,
-						severity: normalized.severity,
-						comparator: normalized.comparator,
-						threshold: normalized.threshold,
-						thresholdUpper: normalized.thresholdUpper,
-						windowMinutes: normalized.windowMinutes,
-						observedValue: evaluation.value,
-						sampleCount: evaluation.sampleCount,
-						incidentId,
-						serviceName:
-							normalized.groupBy?.[0] === "service.name"
-								? groupKey
-								: (normalized.serviceNames[0] ?? ""),
-						timestamp,
-						workflowBinding: aiTriageWorkflowBinding,
-					}).pipe(Effect.provideService(Database, database))
-				} else {
-					yield* Effect.logWarning("Alert issue upsert budget exhausted; skipping issue link").pipe(
-						Effect.annotateLogs({ ruleId: row.id, incidentId, groupKey }),
-					)
+			const groupByEqual = (a: AlertGroupBy | null, b: AlertGroupBy | null): boolean => {
+				if (a == null || b == null) return a == null && b == null
+				if (a.length !== b.length) return false
+				for (let i = 0; i < a.length; i++) {
+					if (a[i] !== b[i]) return false
 				}
+				return true
 			}
 
-			// Record one audit row per evaluation to the Tinybird alert_checks datasource.
-			// Tinybird DateTime64(3) wire format: "YYYY-MM-DD HH:MM:SS.SSS" (UTC, no timezone).
-			const toIngestDateTime64 = (epochMs: number) => {
-				const d = new Date(epochMs)
-				const pad = (n: number, w = 2) => n.toString().padStart(w, "0")
-				return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}`
+			const ruleStructureChanged = (oldRule: NormalizedRule, newRule: NormalizedRule): boolean => {
+				if (!groupByEqual(oldRule.groupBy, newRule.groupBy)) return true
+				if (oldRule.signalType !== newRule.signalType) return true
+				const mode = (r: NormalizedRule) =>
+					r.groupBy != null ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
+				return mode(oldRule) !== mode(newRule)
 			}
-			const evaluationEndMs = yield* now
-			const checkRow: AlertChecksRow = {
-				OrgId: row.orgId,
-				RuleId: row.id,
-				GroupKey: groupKey,
-				Timestamp: toIngestDateTime64(timestamp),
-				Status: evaluation.status,
-				SignalType: normalized.signalType,
-				Comparator: normalized.comparator,
-				Threshold: normalized.threshold,
-				ObservedValue: evaluation.value,
-				SampleCount: evaluation.sampleCount,
-				WindowMinutes: normalized.windowMinutes,
-				WindowStart: toIngestDateTime64(timestamp - normalized.windowMinutes * 60_000),
-				WindowEnd: toIngestDateTime64(timestamp),
-				ConsecutiveBreaches: outcome.consecutiveBreaches,
-				ConsecutiveHealthy: outcome.consecutiveHealthy,
-				IncidentId: outcome.incidentId,
-				IncidentTransition: outcome.transition,
-				EvaluationDurationMs: Math.max(0, evaluationEndMs - timestamp),
-			}
-			// Buffer instead of POSTing per-evaluation; the scheduler tick flushes
-			// all rows once at the end (one POST per orgId). Awaited flush keeps
-			// the Cloudflare Worker isolate alive across the batch write.
-			yield* Ref.update(pendingChecks, (rows) => {
-				rows.push(checkRow)
-				return rows
+
+			const makeSyntheticResolveEvaluation = (
+				normalized: NormalizedRule,
+				reason: string,
+			): EvaluatedRule => ({
+				status: "healthy",
+				value: null,
+				sampleCount: 0,
+				threshold: normalized.threshold,
+				thresholdUpper: normalized.thresholdUpper,
+				comparator: normalized.comparator,
+				reason,
 			})
-		})
 
-		/* -------------------------------------------------------------------------- */
-		/*  Stale incident resolution                                               */
-		/* -------------------------------------------------------------------------- */
-
-		const computeStaleGroupKeys = (
-			oldRule: NormalizedRule,
-			newRule: NormalizedRule,
-		): HashSet.HashSet<string> => {
-			const removedServices = HashSet.difference(
-				HashSet.fromIterable(oldRule.serviceNames),
-				HashSet.fromIterable(newRule.serviceNames),
-			)
-			const newlyExcluded = HashSet.difference(
-				HashSet.fromIterable(newRule.excludeServiceNames),
-				HashSet.fromIterable(oldRule.excludeServiceNames),
-			)
-			return HashSet.union(removedServices, newlyExcluded)
-		}
-
-		const groupByEqual = (a: AlertGroupBy | null, b: AlertGroupBy | null): boolean => {
-			if (a == null || b == null) return a == null && b == null
-			if (a.length !== b.length) return false
-			for (let i = 0; i < a.length; i++) {
-				if (a[i] !== b[i]) return false
-			}
-			return true
-		}
-
-		const ruleStructureChanged = (oldRule: NormalizedRule, newRule: NormalizedRule): boolean => {
-			if (!groupByEqual(oldRule.groupBy, newRule.groupBy)) return true
-			if (oldRule.signalType !== newRule.signalType) return true
-			const mode = (r: NormalizedRule) =>
-				r.groupBy != null ? "grouped" : r.serviceNames.length > 1 ? "multi" : "single"
-			return mode(oldRule) !== mode(newRule)
-		}
-
-		const makeSyntheticResolveEvaluation = (
-			normalized: NormalizedRule,
-			reason: string,
-		): EvaluatedRule => ({
-			status: "healthy",
-			value: null,
-			sampleCount: 0,
-			threshold: normalized.threshold,
-			thresholdUpper: normalized.thresholdUpper,
-			comparator: normalized.comparator,
-			reason,
-		})
-
-		const resolveStaleIncidents = Effect.fn("AlertsService.resolveStaleIncidents")(function* (
-			orgId: OrgId,
-			ruleId: AlertRuleId,
-			normalized: NormalizedRule,
-			opts: {
-				readonly staleGroupKeys?: HashSet.HashSet<string>
-				readonly resolveAll?: boolean
-			},
-		) {
-			const openIncidents = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertIncidents)
-					.where(
-						and(
-							eq(alertIncidents.orgId, orgId),
-							eq(alertIncidents.ruleId, ruleId),
-							eq(alertIncidents.status, "open"),
-						),
-					),
-			)
-
-			const toResolve = opts.resolveAll
-				? openIncidents
-				: Arr.filter(
-						openIncidents,
-						(i) =>
-							i.groupKey != null &&
-							(opts.staleGroupKeys ? HashSet.has(opts.staleGroupKeys, i.groupKey) : false),
-					)
-
-			if (toResolve.length === 0) return
-
-			const timestamp = yield* now
-			const syntheticEvaluation = makeSyntheticResolveEvaluation(
-				normalized,
-				"Auto-resolved: rule configuration changed",
-			)
-			const staleGroupKeys = Arr.map(toResolve, (i) => i.groupKey ?? "__total__")
-
-			// Serialized per rule via the claim lock + idempotent writes
-			// (incident status update converges; delivery events onConflictDoNothing).
-			yield* Effect.forEach(toResolve, (incident) =>
-				Effect.gen(function* () {
-					const resolvedIncident = {
-						...incident,
-						status: "resolved" as const,
-						resolvedAt: new Date(timestamp),
-						updatedAt: new Date(timestamp),
-					}
-
-					yield* dbExecute((db) =>
-						db
-							.update(alertIncidents)
-							.set({
-								status: "resolved",
-								resolvedAt: new Date(timestamp),
-								updatedAt: new Date(timestamp),
-							})
-							.where(eq(alertIncidents.id, incident.id)),
-					)
-
-					yield* queueIncidentNotifications(
-						orgId,
-						normalized,
-						resolvedIncident,
-						syntheticEvaluation,
-						"resolve",
-						timestamp,
-					)
-				}),
-			)
-
-			if (opts.resolveAll) {
-				yield* dbExecute((db) =>
-					db
-						.delete(alertRuleStates)
-						.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId))),
-				)
-			} else if (staleGroupKeys.length > 0) {
-				yield* dbExecute((db) =>
-					db
-						.delete(alertRuleStates)
-						.where(
-							and(
-								eq(alertRuleStates.orgId, orgId),
-								eq(alertRuleStates.ruleId, ruleId),
-								inArray(alertRuleStates.groupKey, staleGroupKeys),
-							),
-						),
-				)
-			}
-
-			yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, toResolve.length)
-			yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, toResolve.length)
-		})
-
-		const resolveOrphanedGroupIncidents = Effect.fn("AlertsService.resolveOrphanedGroupIncidents")(
-			function* (
+			const resolveStaleIncidents = Effect.fn("AlertsService.resolveStaleIncidents")(function* (
 				orgId: OrgId,
 				ruleId: AlertRuleId,
 				normalized: NormalizedRule,
-				evaluatedGroups: HashSet.HashSet<string>,
-				timestamp: number,
+				opts: {
+					readonly staleGroupKeys?: HashSet.HashSet<string>
+					readonly resolveAll?: boolean
+				},
 			) {
 				const openIncidents = yield* dbExecute((db) =>
 					db
@@ -3455,29 +3486,42 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						),
 				)
 
-				const orphaned = Arr.filter(
-					openIncidents,
-					(i) => !HashSet.has(evaluatedGroups, i.groupKey ?? "__total__"),
-				)
+				const toResolve = opts.resolveAll
+					? openIncidents
+					: Arr.filter(
+							openIncidents,
+							(i) =>
+								i.groupKey != null &&
+								(opts.staleGroupKeys ? HashSet.has(opts.staleGroupKeys, i.groupKey) : false),
+						)
 
-				if (orphaned.length === 0) return
+				if (toResolve.length === 0) return
 
+				const timestamp = yield* now
 				const syntheticEvaluation = makeSyntheticResolveEvaluation(
 					normalized,
-					"Auto-resolved: group no longer appears in evaluation results",
+					"Auto-resolved: rule configuration changed",
 				)
+				const staleGroupKeys = Arr.map(toResolve, (i) => i.groupKey ?? "__total__")
 
-				// Serialized per rule via claim lock + idempotent writes.
-				yield* Effect.forEach(orphaned, (incident) => {
-					const groupKey = incident.groupKey ?? "__total__"
-					return Effect.gen(function* () {
+				// Serialized per rule via the claim lock + idempotent writes
+				// (incident status update converges; delivery events onConflictDoNothing).
+				yield* Effect.forEach(toResolve, (incident) =>
+					Effect.gen(function* () {
+						const resolvedIncident = {
+							...incident,
+							status: "resolved" as const,
+							resolvedAt: timestamp,
+							updatedAt: timestamp,
+						}
+
 						yield* dbExecute((db) =>
 							db
 								.update(alertIncidents)
 								.set({
 									status: "resolved",
-									resolvedAt: new Date(timestamp),
-									updatedAt: new Date(timestamp),
+									resolvedAt: timestamp,
+									updatedAt: timestamp,
 								})
 								.where(eq(alertIncidents.id, incident.id)),
 						)
@@ -3485,337 +3529,436 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						yield* queueIncidentNotifications(
 							orgId,
 							normalized,
-							{
-								...incident,
-								status: "resolved",
-								resolvedAt: new Date(timestamp),
-								updatedAt: new Date(timestamp),
-							},
+							resolvedIncident,
 							syntheticEvaluation,
 							"resolve",
 							timestamp,
 						)
-
-						yield* dbExecute((db) =>
-							db
-								.delete(alertRuleStates)
-								.where(
-									and(
-										eq(alertRuleStates.orgId, orgId),
-										eq(alertRuleStates.ruleId, ruleId),
-										eq(alertRuleStates.groupKey, groupKey),
-									),
-								),
-						)
-					})
-				})
-
-				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, orphaned.length)
-				yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, orphaned.length)
-			},
-		)
-
-		const SCHEDULER_LOCK_TTL_MS = 30_000
-
-		const claimRule = (ruleId: AlertRuleId, timestamp: number) =>
-			dbExecute((db) =>
-				db
-					.update(alertRules)
-					.set({ lastScheduledAt: new Date(timestamp) })
-					.where(
-						and(
-							eq(alertRules.id, ruleId),
-							sql`(${alertRules.lastScheduledAt} IS NULL OR ${alertRules.lastScheduledAt} < ${new Date(timestamp - SCHEDULER_LOCK_TTL_MS)})`,
-						),
-					)
-					.returning({ id: alertRules.id }),
-			)
-
-		const recordEvaluationStatus = (evaluation: EvaluatedRule) =>
-			Match.value(evaluation.status).pipe(
-				Match.when("breached", () => Metric.update(AlertingMetrics.rulesBreachedTotal, 1)),
-				Match.when("healthy", () => Metric.update(AlertingMetrics.rulesHealthyTotal, 1)),
-				Match.when("skipped", () => Metric.update(AlertingMetrics.rulesSkippedTotal, 1)),
-				Match.exhaustive,
-			)
-
-		const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* () {
-			const tickStart = yield* now
-			const rows = yield* dbExecute((db) =>
-				db
-					.select()
-					.from(alertRules)
-					.where(eq(alertRules.enabled, true))
-					.orderBy(asc(alertRules.updatedAt)),
-			)
-			yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
-
-			// Incremented from fibers running under the concurrent per-rule forEach
-			// below, so it must be a Ref rather than a mutable closure variable.
-			const evaluationFailureCount = yield* Ref.make(0)
-			const pendingChecks = yield* Ref.make<AlertChecksRow[]>([])
-			const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
-
-			const recordEvaluationFailure = Effect.fnUntraced(function* (
-				row: AlertRuleRow,
-				error:
-					| AlertValidationError
-					| AlertDeliveryError
-					| AlertNotFoundError
-					| AlertPersistenceError
-					| WarehouseError,
-				failureCategory: string,
-				fields?: {
-					readonly upstreamStatus?: number
-					readonly quotaSetting?: string
-					readonly pipe?: string
-				},
-			) {
-				yield* Ref.update(evaluationFailureCount, (count) => count + 1)
-				yield* Metric.update(AlertingMetrics.evaluationFailuresTotal, 1)
-				yield* Effect.logError("Alert rule evaluation failed").pipe(
-					Effect.annotateLogs({
-						workerId,
-						ruleId: row.id,
-						orgId: row.orgId,
-						failureCategory,
-						errorMessage: error.message,
-						upstreamStatus: fields?.upstreamStatus,
-						quotaSetting: fields?.quotaSetting,
-						pipe: fields?.pipe,
 					}),
 				)
-			})
 
-			yield* Effect.forEach(
-				rows,
-				(row) =>
-					Effect.gen(function* () {
-						const timestamp = yield* now
-						const claimed = yield* claimRule(row.id, timestamp)
-						if (claimed.length === 0) return
-
-						yield* Effect.gen(function* () {
-							const ruleStart = yield* now
-							const normalized = yield* normalizeRuleRow(row)
-
-							if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
-								const results = yield* evaluateRule(row.orgId, normalized)
-								const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
-								const eligible = Arr.filter(
-									results,
-									(r) => !HashSet.has(excludeSet, r.groupKey),
-								)
-
-								yield* Effect.forEach(eligible, ({ evaluation, groupKey }) =>
-									Effect.gen(function* () {
-										yield* recordEvaluationStatus(evaluation)
-										yield* processEvaluation(
-											row,
-											normalized,
-											evaluation,
-											groupKey,
-											timestamp,
-											pendingChecks,
-											issueBudget,
-										)
-									}),
-								)
-
-								const evaluatedGroups = HashSet.fromIterable(
-									Arr.map(eligible, (r) => r.groupKey),
-								)
-								yield* resolveOrphanedGroupIncidents(
-									row.orgId,
-									normalized.id,
-									normalized,
-									evaluatedGroups,
-									timestamp,
-								)
-								yield* Metric.update(
-									AlertingMetrics.ruleEvaluationDurationMs,
-									(yield* now) - ruleStart,
-								)
-								return
-							}
-
-							if (normalized.serviceNames.length > 1) {
-								yield* Effect.forEach(normalized.serviceNames, (svcName) =>
-									Effect.gen(function* () {
-										const perServicePlan = yield* compileRulePlan({
-											...normalized,
-											serviceName: svcName,
-										})
-										const perService = {
-											...normalized,
-											serviceName: svcName,
-											compiledPlan: perServicePlan,
-										}
-										const observations = yield* evaluateRule(
-											row.orgId,
-											perService,
-										)
-										const evaluation = observations[0]?.evaluation
-										if (evaluation == null) return
-										yield* recordEvaluationStatus(evaluation)
-										yield* processEvaluation(
-											row,
-											normalized,
-											evaluation,
-											svcName,
-											timestamp,
-											pendingChecks,
-											issueBudget,
-										)
-									}),
-								)
-
-								yield* resolveOrphanedGroupIncidents(
-									row.orgId,
-									normalized.id,
-									normalized,
-									HashSet.fromIterable(normalized.serviceNames),
-									timestamp,
-								)
-								yield* Metric.update(
-									AlertingMetrics.ruleEvaluationDurationMs,
-									(yield* now) - ruleStart,
-								)
-								return
-							}
-
-							const observations = yield* evaluateRule(row.orgId, normalized)
-							const evaluation = observations[0]?.evaluation
-							if (evaluation != null) {
-								yield* recordEvaluationStatus(evaluation)
-								yield* processEvaluation(
-									row,
-									normalized,
-									evaluation,
-									"__total__",
-									timestamp,
-									pendingChecks,
-									issueBudget,
-								)
-							}
-							yield* Metric.update(AlertingMetrics.ruleEvaluationDurationMs, (yield* now) - ruleStart)
-						}).pipe(
-							Effect.catchTags({
-								"@maple/http/errors/AlertValidationError": (error) =>
-									recordEvaluationFailure(row, error, "validation"),
-								"@maple/http/errors/AlertDeliveryError": (error) =>
-									recordEvaluationFailure(row, error, "evaluation"),
-								"@maple/http/errors/AlertPersistenceError": (error) =>
-									recordEvaluationFailure(row, error, "unknown"),
-								"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_quota", {
-										quotaSetting: error.setting,
-										pipe: error.pipe,
-									}),
-								"@maple/http/errors/WarehouseUpstreamError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_upstream", {
-										upstreamStatus: error.upstreamStatus,
-										pipe: error.pipe,
-									}),
-								"@maple/http/errors/WarehouseAuthError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_auth", {
-										upstreamStatus: error.upstreamStatus,
-										pipe: error.pipe,
-									}),
-								"@maple/http/errors/WarehouseConfigError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_config", { pipe: error.pipe }),
-								"@maple/http/errors/WarehouseClientError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_client", { pipe: error.pipe }),
-								"@maple/http/errors/WarehouseSchemaDriftError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_schema_drift", { pipe: error.pipe }),
-								"@maple/http/errors/WarehouseValidationError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_validation", { pipe: error.pipe }),
-								"@maple/http/errors/WarehouseQueryError": (error) =>
-									recordEvaluationFailure(row, error, "tinybird_query", { pipe: error.pipe }),
-							}),
-						)
-					}),
-				{ concurrency: 5 },
-			)
-
-			// Resolve stale incidents for disabled rules
-			const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
-				db
-					.selectDistinct({ ruleId: alertIncidents.ruleId, orgId: alertIncidents.orgId })
-					.from(alertIncidents)
-					.innerJoin(alertRules, eq(alertIncidents.ruleId, alertRules.id))
-					.where(and(eq(alertIncidents.status, "open"), eq(alertRules.enabled, false))),
-			)
-			yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
-				Effect.gen(function* () {
-					const ruleRow = (yield* dbExecute((db) =>
-						db.select().from(alertRules).where(eq(alertRules.id, ruleId)).limit(1),
-					))[0]
-					if (!ruleRow) return
-					const normalized = yield* normalizeRuleRow(ruleRow)
-					yield* resolveStaleIncidents(orgId, normalized.id, normalized, {
-						resolveAll: true,
-					})
-				}),
-			)
-
-			// Flush accumulated alert_check audit rows to Tinybird, one POST per
-			// orgId. Awaited so the Cloudflare Worker isolate stays alive until
-			// the writes complete; errors are logged then swallowed because the
-			// authoritative state already lives in Postgres above.
-			const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, [])
-			if (accumulatedChecks.length > 0) {
-				const byOrg = new Map<string, AlertChecksRow[]>()
-				for (const check of accumulatedChecks) {
-					const bucket = byOrg.get(check.OrgId)
-					if (bucket) bucket.push(check)
-					else byOrg.set(check.OrgId, [check])
-				}
-				yield* Effect.forEach(
-					Array.from(byOrg.entries()),
-					([orgId, checks]) =>
-						warehouse.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks).pipe(
-							Effect.tapCause((cause) =>
-								Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
-									Effect.annotateLogs({ orgId, rowCount: checks.length, cause: Cause.pretty(cause) }),
+				if (opts.resolveAll) {
+					yield* dbExecute((db) =>
+						db
+							.delete(alertRuleStates)
+							.where(and(eq(alertRuleStates.orgId, orgId), eq(alertRuleStates.ruleId, ruleId))),
+					)
+				} else if (staleGroupKeys.length > 0) {
+					yield* dbExecute((db) =>
+						db
+							.delete(alertRuleStates)
+							.where(
+								and(
+									eq(alertRuleStates.orgId, orgId),
+									eq(alertRuleStates.ruleId, ruleId),
+									inArray(alertRuleStates.groupKey, staleGroupKeys),
 								),
 							),
-							Effect.ignore,
+					)
+				}
+
+				yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, toResolve.length)
+				yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, toResolve.length)
+			})
+
+			const resolveOrphanedGroupIncidents = Effect.fn("AlertsService.resolveOrphanedGroupIncidents")(
+				function* (
+					orgId: OrgId,
+					ruleId: AlertRuleId,
+					normalized: NormalizedRule,
+					evaluatedGroups: HashSet.HashSet<string>,
+					timestamp: number,
+				) {
+					const openIncidents = yield* dbExecute((db) =>
+						db
+							.select()
+							.from(alertIncidents)
+							.where(
+								and(
+									eq(alertIncidents.orgId, orgId),
+									eq(alertIncidents.ruleId, ruleId),
+									eq(alertIncidents.status, "open"),
+								),
+							),
+					)
+
+					const orphaned = Arr.filter(
+						openIncidents,
+						(i) => !HashSet.has(evaluatedGroups, i.groupKey ?? "__total__"),
+					)
+
+					if (orphaned.length === 0) return
+
+					const syntheticEvaluation = makeSyntheticResolveEvaluation(
+						normalized,
+						"Auto-resolved: group no longer appears in evaluation results",
+					)
+
+					// Serialized per rule via claim lock + idempotent writes.
+					yield* Effect.forEach(orphaned, (incident) => {
+						const groupKey = incident.groupKey ?? "__total__"
+						return Effect.gen(function* () {
+							yield* dbExecute((db) =>
+								db
+									.update(alertIncidents)
+									.set({
+										status: "resolved",
+										resolvedAt: timestamp,
+										updatedAt: timestamp,
+									})
+									.where(eq(alertIncidents.id, incident.id)),
+							)
+
+							yield* queueIncidentNotifications(
+								orgId,
+								normalized,
+								{
+									...incident,
+									status: "resolved",
+									resolvedAt: timestamp,
+									updatedAt: timestamp,
+								},
+								syntheticEvaluation,
+								"resolve",
+								timestamp,
+							)
+
+							yield* dbExecute((db) =>
+								db
+									.delete(alertRuleStates)
+									.where(
+										and(
+											eq(alertRuleStates.orgId, orgId),
+											eq(alertRuleStates.ruleId, ruleId),
+											eq(alertRuleStates.groupKey, groupKey),
+										),
+									),
+							)
+						})
+					})
+
+					yield* Metric.update(AlertingMetrics.incidentsResolvedTotal, orphaned.length)
+					yield* Metric.update(AlertingMetrics.staleIncidentsResolvedTotal, orphaned.length)
+				},
+			)
+
+			const SCHEDULER_LOCK_TTL_MS = 30_000
+
+			const claimRule = (ruleId: AlertRuleId, timestamp: number) =>
+				dbExecute((db) =>
+					db
+						.update(alertRules)
+						.set({ lastScheduledAt: timestamp })
+						.where(
+							and(
+								eq(alertRules.id, ruleId),
+								sql`(${alertRules.lastScheduledAt} IS NULL OR ${alertRules.lastScheduledAt} < ${timestamp - SCHEDULER_LOCK_TTL_MS})`,
+							),
 						),
-					{ concurrency: "unbounded" },
 				)
-			}
 
-			const deliveryResult = yield* processQueuedDeliveries()
-			yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, rows.length)
-			yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
+			const recordEvaluationStatus = (evaluation: EvaluatedRule) =>
+				Match.value(evaluation.status).pipe(
+					Match.when("breached", () => Metric.update(AlertingMetrics.rulesBreachedTotal, 1)),
+					Match.when("healthy", () => Metric.update(AlertingMetrics.rulesHealthyTotal, 1)),
+					Match.when("skipped", () => Metric.update(AlertingMetrics.rulesSkippedTotal, 1)),
+					Match.exhaustive,
+				)
+
+			const runSchedulerTick = Effect.fn("AlertsService.runSchedulerTick")(function* () {
+				const tickStart = yield* now
+				const rows = yield* dbExecute((db) =>
+					db
+						.select()
+						.from(alertRules)
+						.where(eq(alertRules.enabled, 1))
+						.orderBy(asc(alertRules.updatedAt)),
+				)
+				yield* Metric.update(AlertingMetrics.activeRulesGauge, rows.length)
+
+				// Incremented from fibers running under the concurrent per-rule forEach
+				// below, so it must be a Ref rather than a mutable closure variable.
+				const evaluationFailureCount = yield* Ref.make(0)
+				const pendingChecks = yield* Ref.make<AlertChecksRow[]>([])
+				const issueBudget = yield* Ref.make(ISSUE_UPSERTS_PER_TICK)
+
+				const recordEvaluationFailure = Effect.fnUntraced(function* (
+					row: AlertRuleRow,
+					error:
+						| AlertValidationError
+						| AlertDeliveryError
+						| AlertNotFoundError
+						| AlertPersistenceError
+						| WarehouseError,
+					failureCategory: string,
+					fields?: {
+						readonly upstreamStatus?: number
+						readonly quotaSetting?: string
+						readonly pipe?: string
+					},
+				) {
+					yield* Ref.update(evaluationFailureCount, (count) => count + 1)
+					yield* Metric.update(AlertingMetrics.evaluationFailuresTotal, 1)
+					yield* Effect.logError("Alert rule evaluation failed").pipe(
+						Effect.annotateLogs({
+							workerId,
+							ruleId: row.id,
+							orgId: row.orgId,
+							failureCategory,
+							errorMessage: error.message,
+							upstreamStatus: fields?.upstreamStatus,
+							quotaSetting: fields?.quotaSetting,
+							pipe: fields?.pipe,
+						}),
+					)
+				})
+
+				yield* Effect.forEach(
+					rows,
+					(row) =>
+						Effect.gen(function* () {
+							const timestamp = yield* now
+							const claimed = yield* claimRule(row.id, timestamp)
+							if (claimed.rowsAffected === 0) return
+
+							yield* Effect.gen(function* () {
+								const ruleStart = yield* now
+								const normalized = yield* normalizeRuleRow(row)
+
+								if (normalized.groupBy != null && normalized.serviceNames.length === 0) {
+									const results = yield* evaluateRule(row.orgId, normalized)
+									const excludeSet = HashSet.fromIterable(normalized.excludeServiceNames)
+									const eligible = Arr.filter(
+										results,
+										(r) => !HashSet.has(excludeSet, r.groupKey),
+									)
+
+									yield* Effect.forEach(eligible, ({ evaluation, groupKey }) =>
+										Effect.gen(function* () {
+											yield* recordEvaluationStatus(evaluation)
+											yield* processEvaluation(
+												row,
+												normalized,
+												evaluation,
+												groupKey,
+												timestamp,
+												pendingChecks,
+												issueBudget,
+											)
+										}),
+									)
+
+									const evaluatedGroups = HashSet.fromIterable(
+										Arr.map(eligible, (r) => r.groupKey),
+									)
+									yield* resolveOrphanedGroupIncidents(
+										row.orgId,
+										normalized.id,
+										normalized,
+										evaluatedGroups,
+										timestamp,
+									)
+									yield* Metric.update(
+										AlertingMetrics.ruleEvaluationDurationMs,
+										(yield* now) - ruleStart,
+									)
+									return
+								}
+
+								if (normalized.serviceNames.length > 1) {
+									yield* Effect.forEach(normalized.serviceNames, (svcName) =>
+										Effect.gen(function* () {
+											const perServicePlan = yield* compileRulePlan({
+												...normalized,
+												serviceName: svcName,
+											})
+											const perService = {
+												...normalized,
+												serviceName: svcName,
+												compiledPlan: perServicePlan,
+											}
+											const observations = yield* evaluateRule(row.orgId, perService)
+											const evaluation = observations[0]?.evaluation
+											if (evaluation == null) return
+											yield* recordEvaluationStatus(evaluation)
+											yield* processEvaluation(
+												row,
+												normalized,
+												evaluation,
+												svcName,
+												timestamp,
+												pendingChecks,
+												issueBudget,
+											)
+										}),
+									)
+
+									yield* resolveOrphanedGroupIncidents(
+										row.orgId,
+										normalized.id,
+										normalized,
+										HashSet.fromIterable(normalized.serviceNames),
+										timestamp,
+									)
+									yield* Metric.update(
+										AlertingMetrics.ruleEvaluationDurationMs,
+										(yield* now) - ruleStart,
+									)
+									return
+								}
+
+								const observations = yield* evaluateRule(row.orgId, normalized)
+								const evaluation = observations[0]?.evaluation
+								if (evaluation != null) {
+									yield* recordEvaluationStatus(evaluation)
+									yield* processEvaluation(
+										row,
+										normalized,
+										evaluation,
+										"__total__",
+										timestamp,
+										pendingChecks,
+										issueBudget,
+									)
+								}
+								yield* Metric.update(
+									AlertingMetrics.ruleEvaluationDurationMs,
+									(yield* now) - ruleStart,
+								)
+							}).pipe(
+								Effect.catchTags({
+									"@maple/http/errors/AlertValidationError": (error) =>
+										recordEvaluationFailure(row, error, "validation"),
+									"@maple/http/errors/AlertDeliveryError": (error) =>
+										recordEvaluationFailure(row, error, "evaluation"),
+									"@maple/http/errors/AlertPersistenceError": (error) =>
+										recordEvaluationFailure(row, error, "unknown"),
+									"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_quota", {
+											quotaSetting: error.setting,
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseUpstreamError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_upstream", {
+											upstreamStatus: error.upstreamStatus,
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseAuthError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_auth", {
+											upstreamStatus: error.upstreamStatus,
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseConfigError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_config", {
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseClientError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_client", {
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseSchemaDriftError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_schema_drift", {
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseValidationError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_validation", {
+											pipe: error.pipe,
+										}),
+									"@maple/http/errors/WarehouseQueryError": (error) =>
+										recordEvaluationFailure(row, error, "tinybird_query", {
+											pipe: error.pipe,
+										}),
+								}),
+							)
+						}),
+					{ concurrency: 5 },
+				)
+
+				// Resolve stale incidents for disabled rules
+				const disabledRulesWithOpenIncidents = yield* dbExecute((db) =>
+					db
+						.selectDistinct({ ruleId: alertIncidents.ruleId, orgId: alertIncidents.orgId })
+						.from(alertIncidents)
+						.innerJoin(alertRules, eq(alertIncidents.ruleId, alertRules.id))
+						.where(and(eq(alertIncidents.status, "open"), eq(alertRules.enabled, 0))),
+				)
+				yield* Effect.forEach(disabledRulesWithOpenIncidents, ({ ruleId, orgId }) =>
+					Effect.gen(function* () {
+						const ruleRow = (yield* dbExecute((db) =>
+							db.select().from(alertRules).where(eq(alertRules.id, ruleId)).limit(1),
+						))[0]
+						if (!ruleRow) return
+						const normalized = yield* normalizeRuleRow(ruleRow)
+						yield* resolveStaleIncidents(orgId, normalized.id, normalized, {
+							resolveAll: true,
+						})
+					}),
+				)
+
+				// Flush accumulated alert_check audit rows to Tinybird, one POST per
+				// orgId. Awaited so the Cloudflare Worker isolate stays alive until
+				// the writes complete; errors are logged then swallowed because the
+				// authoritative state already lives in Postgres above.
+				const accumulatedChecks = yield* Ref.getAndSet(pendingChecks, [])
+				if (accumulatedChecks.length > 0) {
+					const byOrg = new Map<string, AlertChecksRow[]>()
+					for (const check of accumulatedChecks) {
+						const bucket = byOrg.get(check.OrgId)
+						if (bucket) bucket.push(check)
+						else byOrg.set(check.OrgId, [check])
+					}
+					yield* Effect.forEach(
+						Array.from(byOrg.entries()),
+						([orgId, checks]) =>
+							warehouse
+								.ingest(systemTenant(decodeOrgIdSync(orgId)), "alert_checks", checks)
+								.pipe(
+									Effect.tapCause((cause) =>
+										Effect.logWarning("Failed to ingest alert_checks audit rows").pipe(
+											Effect.annotateLogs({
+												orgId,
+												rowCount: checks.length,
+												cause: Cause.pretty(cause),
+											}),
+										),
+									),
+									Effect.ignore,
+								),
+						{ concurrency: "unbounded" },
+					)
+				}
+
+				const deliveryResult = yield* processQueuedDeliveries()
+				yield* Metric.update(AlertingMetrics.rulesEvaluatedTotal, rows.length)
+				yield* Metric.update(AlertingMetrics.tickDurationMs, (yield* now) - tickStart)
+				return {
+					evaluatedCount: rows.length,
+					processedCount: deliveryResult.processedCount,
+					evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
+					deliveryFailureCount: deliveryResult.failureCount,
+				}
+			})
+
+			// `AlertsService.of(...)` can't be used here — referencing the class inside
+			// its own `make` is a TS2506 circular base-expression error.
 			return {
-				evaluatedCount: rows.length,
-				processedCount: deliveryResult.processedCount,
-				evaluationFailureCount: yield* Ref.get(evaluationFailureCount),
-				deliveryFailureCount: deliveryResult.failureCount,
-			}
-		})
-
-		// `AlertsService.of(...)` can't be used here — referencing the class inside
-		// its own `make` is a TS2506 circular base-expression error.
-		return {
-			listDestinations,
-			createDestination,
-			updateDestination,
-			deleteDestination,
-			testDestination,
-			listRules,
-			createRule,
-			updateRule,
-			deleteRule,
-			testRule,
-			listIncidents,
-			listRuleChecks,
-			listDeliveryEvents,
-			runSchedulerTick,
-		} satisfies AlertsServiceShape
-	}),
-}) {
+				listDestinations,
+				createDestination,
+				updateDestination,
+				deleteDestination,
+				testDestination,
+				listRules,
+				createRule,
+				updateRule,
+				deleteRule,
+				testRule,
+				listIncidents,
+				listRuleChecks,
+				listDeliveryEvents,
+				runSchedulerTick,
+			} satisfies AlertsServiceShape
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

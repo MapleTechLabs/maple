@@ -1,76 +1,11 @@
 /**
- * The `HashMap` module provides an immutable key-value data structure with
- * efficient lookup, insertion, removal, and transformation operations. A
- * `HashMap<Key, Value>` stores entries by hashing keys and resolving matches
- * with Effect's structural equality semantics.
+ * Stores key/value entries in an immutable hash map.
  *
- * **Mental model**
- *
- * - A `HashMap<Key, Value>` is an immutable collection of key-value pairs
- * - Operations such as {@link set}, {@link remove}, and {@link modifyAt} return
- *   new maps; existing maps are not mutated
- * - Keys are compared using the `Equal` protocol and are grouped by hashes from
- *   the `Hash` protocol
- * - Plain JavaScript primitives work as keys, and custom objects can define
- *   `Equal` / `Hash` behavior for structural lookup
- * - Lookups with {@link get} return an `Option`, making missing keys explicit
- * - Iteration order is based on the map's internal hash structure and should
- *   not be treated as insertion order
- *
- * **Common tasks**
- *
- * - Create maps: {@link empty}, {@link make}, {@link fromIterable}
- * - Read values: {@link get}, {@link getUnsafe}, {@link has}, {@link hasBy}
- * - Add or update entries: {@link set}, {@link modify}, {@link modifyAt}, {@link setMany}
- * - Remove entries: {@link remove}, {@link removeMany}
- * - Combine maps: {@link union}
- * - Iterate or convert: {@link keys}, {@link values}, {@link entries}, {@link toValues}, {@link toEntries}
- * - Transform values: {@link map}, {@link flatMap}, {@link filter}, {@link filterMap}, {@link compact}
- * - Fold and search: {@link reduce}, {@link findFirst}, {@link some}, {@link every}
- * - Batch updates efficiently: {@link mutate}, {@link beginMutation}, {@link endMutation}
- *
- * **Gotchas**
- *
- * - {@link getUnsafe} throws when the key is absent; prefer {@link get} unless
- *   absence is impossible by construction
- * - Mutating a key object after insertion can make future lookups fail if its
- *   equality or hash changes
- * - Hash collisions are handled by equality checks, so matching hashes alone do
- *   not make two keys equal
- * - Use {@link getHash} and {@link hasHash} only when you already have the
- *   correct hash for the same key
- * - Convert entries to an array and sort them when deterministic presentation is
- *   required
- *
- * **Quickstart**
- *
- * **Example** (Working with immutable maps)
- *
- * ```ts
- * import { HashMap, Option } from "effect"
- *
- * const scores = HashMap.make(["alice", 10], ["bob", 15])
- *
- * const updated = scores.pipe(
- *   HashMap.set("carol", 20),
- *   HashMap.modify("alice", (score) => score + 1)
- * )
- *
- * console.log(HashMap.get(updated, "alice"))
- * // Output: Option.some(11)
- *
- * console.log(HashMap.get(scores, "carol"))
- * // Output: Option.none()
- *
- * console.log(Option.getOrElse(HashMap.get(updated, "dave"), () => 0))
- * // Output: 0
- * ```
- *
- * **See also**
- *
- * - {@link HashSet} for immutable sets backed by hash semantics
- * - {@link Equal} for structural equality
- * - {@link Hash} for hash implementations used by hashed collections
+ * A `HashMap<Key, Value>` hashes keys and resolves matches with Effect's
+ * structural equality rules. Lookup, insertion, removal, and transformation
+ * operations return new maps, while temporary mutation helpers support efficient
+ * batch updates. This module also includes constructors, iteration, conversion,
+ * mapping, filtering, and reducing helpers.
  *
  * @since 2.0.0
  */
@@ -199,7 +134,7 @@ export declare namespace HashMap {
    * console.log(getUserById("alice")) // Option.some({ name: "Alice", age: 30 })
    * ```
    *
-   * @category type-level
+   * @category utility types
    * @since 2.0.0
    */
   export type Key<T extends HashMap<any, any>> = [T] extends [HashMap<infer _K, infer _V>] ? _K : never
@@ -230,7 +165,7 @@ export declare namespace HashMap {
    * // alice has type Option<User> thanks to type extraction
    * ```
    *
-   * @category type-level
+   * @category utility types
    * @since 2.0.0
    */
   export type Value<T extends HashMap<any, any>> = [T] extends [HashMap<infer _K, infer _V>] ? _V : never
@@ -262,14 +197,14 @@ export declare namespace HashMap {
    * console.log(descriptions) // ["book: $29 (education)", "laptop: $999 (electronics)"]
    * ```
    *
-   * @category type-level
+   * @category utility types
    * @since 3.9.0
    */
   export type Entry<T extends HashMap<any, any>> = [Key<T>, Value<T>]
 }
 
 /**
- * Checks if a value is a HashMap.
+ * Checks whether a value is a HashMap.
  *
  * **Example** (Checking HashMap values)
  *
@@ -373,7 +308,7 @@ export const fromIterable: <K, V>(entries: Iterable<readonly [K, V]>) => HashMap
 export const isEmpty: <K, V>(self: HashMap<K, V>) => boolean = internal.isEmpty
 
 /**
- * Safely lookup the value for the specified key in the `HashMap` using the
+ * Looks up the value for the specified key in the `HashMap` safely using the
  * internal hashing function.
  *
  * **Example** (Looking up values)
@@ -400,7 +335,7 @@ export const get: {
 } = internal.get
 
 /**
- * Lookup the value for the specified key in the `HashMap` using a custom hash.
+ * Looks up the value for the specified key in the `HashMap` safely using a custom hash.
  *
  * **Example** (Looking up values with a hash)
  *
@@ -435,8 +370,13 @@ export const getHash: {
 } = internal.getHash
 
 /**
- * Unsafely lookup the value for the specified key in the `HashMap` using the
+ * Looks up the value for the specified key in the `HashMap` unsafely using the
  * internal hashing function.
+ *
+ * **When to use**
+ *
+ * Use when reading from a `HashMap` by a key known to exist, and throwing is an
+ * acceptable programming error for a missing key.
  *
  * **Gotchas**
  *
@@ -477,7 +417,7 @@ export const getUnsafe: {
 } = internal.getUnsafe
 
 /**
- * Checks if the specified key has an entry in the `HashMap`.
+ * Checks whether the specified key has an entry in the `HashMap`.
  *
  * **Example** (Checking for keys)
  *
@@ -503,7 +443,7 @@ export const has: {
 } = internal.has
 
 /**
- * Checks if the specified key has an entry in the `HashMap` using a custom
+ * Checks whether the specified key has an entry in the `HashMap` using a custom
  * hash.
  *
  * **Example** (Checking keys with a hash)
@@ -538,7 +478,7 @@ export const hasHash: {
 } = internal.hasHash
 
 /**
- * Checks if an element matching the given predicate exists in the given `HashMap`.
+ * Checks whether an element matching the given predicate exists in the given `HashMap`.
  *
  * **Example** (Checking entries by predicate)
  *
@@ -975,7 +915,7 @@ export const union: {
 } = internal.union
 
 /**
- * Remove the entry for the specified key in the `HashMap` using the internal
+ * Removes the entry for the specified key in the `HashMap` using the internal
  * hashing function.
  *
  * **Example** (Removing a key)
@@ -1072,13 +1012,13 @@ export const map: {
 } = internal.map
 
 /**
- * Chains over the entries of the `HashMap` using the specified function.
+ * Maps each entry to a `HashMap` and flattens the results.
  *
  * **Gotchas**
  *
  * The hash and equality behavior of both maps have to be the same.
  *
- * **Example** (FlatMapping values)
+ * **Example** (Flat mapping values)
  *
  * ```ts
  * import { HashMap } from "effect"
@@ -1252,7 +1192,7 @@ export const findFirst: {
 } = internal.findFirst
 
 /**
- * Checks if any entry in a hashmap meets a specific condition.
+ * Checks whether any entry in a hashmap meets a specific condition.
  *
  * **Example** (Checking for any matching entry)
  *
@@ -1274,7 +1214,7 @@ export const some: {
 } = internal.some
 
 /**
- * Checks if all entries in a hashmap meets a specific condition.
+ * Checks whether all entries in a hashmap meets a specific condition.
  *
  * **Example** (Checking all entries)
  *

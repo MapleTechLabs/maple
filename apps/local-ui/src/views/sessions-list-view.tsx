@@ -22,13 +22,9 @@ import {
 	SingleCheckboxFilter,
 	type FilterOption,
 } from "../components/filter-section"
-import {
-	FilterSidebarBody,
-	FilterSidebarFrame,
-	FilterSidebarHeader,
-} from "../components/filter-sidebar"
+import { FilterSidebarBody, FilterSidebarFrame, FilterSidebarHeader } from "../components/filter-sidebar"
 import { PageShell } from "../components/page-shell"
-import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect } from "../components/toolbar"
+import { Toolbar, ToolbarSearch, ToolbarStat, TimeRangeSelect, RefreshButton } from "../components/toolbar"
 import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
 
 interface SessionsListViewProps {
@@ -129,6 +125,7 @@ export function SessionsListView({ onSelectSession }: SessionsListViewProps) {
 						dot
 					/>
 					<ToolbarStat value={facetData?.errorCount ?? 0} label="with errors" danger />
+					<RefreshButton />
 					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
 				</>
 			}
@@ -192,13 +189,7 @@ export function SessionsListView({ onSelectSession }: SessionsListViewProps) {
 	)
 }
 
-function SessionCard({
-	session,
-	onSelect,
-}: {
-	session: SessionReplaysListOutput
-	onSelect: () => void
-}) {
+function SessionCard({ session, onSelect }: { session: SessionReplaysListOutput; onSelect: () => void }) {
 	const label = session.userId || "Anonymous"
 	const initial = (label[0] ?? "?").toUpperCase()
 	const isActive = session.status === "active"

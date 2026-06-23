@@ -32,7 +32,10 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 		{
 			input: `What are the top operations for the ${SVC.stripe} service by request count?`,
 			expectedTools: [
-				{ name: "get_service_top_operations", arguments: { service_name: SVC.stripe, metric: "count" } },
+				{
+					name: "get_service_top_operations",
+					arguments: { service_name: SVC.stripe, metric: "count" },
+				},
 			],
 		},
 		{
@@ -61,7 +64,11 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 			expectedTools: [
 				{
 					name: "search_traces",
-					arguments: { span_name: "PublicApiKeyAuthn", service: SVC.subscriptions, has_error: true },
+					arguments: {
+						span_name: "PublicApiKeyAuthn",
+						service: SVC.subscriptions,
+						has_error: true,
+					},
 				},
 			],
 		},
@@ -76,7 +83,10 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 		{
 			input: `Find traces where ${ATTR.key} is ${ATTR.value}.`,
 			expectedTools: [
-				{ name: "search_traces", arguments: { attribute_key: ATTR.key, attribute_value: ATTR.value } },
+				{
+					name: "search_traces",
+					arguments: { attribute_key: ATTR.key, attribute_value: ATTR.value },
+				},
 			],
 		},
 		{
@@ -99,9 +109,7 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 		},
 		{
 			input: "What are some recent values of the deviceId attribute on traces?",
-			expectedTools: [
-				{ name: "explore_attributes", arguments: { source: "traces", key: "deviceId" } },
-			],
+			expectedTools: [{ name: "explore_attributes", arguments: { source: "traces", key: "deviceId" } }],
 		},
 
 		// § 5 · Error investigation (list, no service filter)
@@ -116,7 +124,12 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 			expectedTools: [
 				{
 					name: "query_data",
-					arguments: { source: "traces", kind: "breakdown", metric: "error_rate", group_by: "service" },
+					arguments: {
+						source: "traces",
+						kind: "breakdown",
+						metric: "error_rate",
+						group_by: "service",
+					},
 				},
 			],
 		},
@@ -178,9 +191,7 @@ describeMapleEval("CLI investigation scenarios (ported from EVALS.md)", {
 		// § 9 · Attribute discovery
 		{
 			input: "List the span-level attribute keys available on traces.",
-			expectedTools: [
-				{ name: "explore_attributes", arguments: { source: "traces", scope: "span" } },
-			],
+			expectedTools: [{ name: "explore_attributes", arguments: { source: "traces", scope: "span" } }],
 		},
 		{
 			input: "What resource-level attribute keys do my traces have?",

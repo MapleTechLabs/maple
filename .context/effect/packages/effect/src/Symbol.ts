@@ -1,11 +1,8 @@
 /**
- * The `Symbol` module provides a small runtime guard for working with
- * JavaScript `symbol` values. Use {@link isSymbol} when validating unknown
- * input, narrowing union types, or building predicates that need to recognize
- * primitive symbols such as those created by `Symbol()` or `Symbol.for`.
- *
- * The guard checks for the primitive `symbol` type; boxed objects created with
- * `Object(Symbol())` are objects and do not satisfy this predicate.
+ * The `Symbol` module contains the runtime predicate for JavaScript primitive
+ * `symbol` values. It is most useful at boundaries where a value is `unknown`
+ * and must be narrowed before it can be used as a symbol key, identifier, or
+ * discriminant.
  *
  * @since 2.0.0
  */
@@ -13,7 +10,11 @@
 import * as predicate from "./Predicate.ts"
 
 /**
- * Tests if a value is a `symbol`.
+ * Checks whether a value is a `symbol`.
+ *
+ * **When to use**
+ *
+ * Use to validate unknown input before treating it as a JavaScript `symbol`.
  *
  * **Example** (Checking for symbols)
  *

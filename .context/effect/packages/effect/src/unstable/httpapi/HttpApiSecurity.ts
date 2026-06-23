@@ -1,27 +1,10 @@
 /**
- * The `HttpApiSecurity` module defines the security scheme values used by
- * declarative HTTP APIs.
+ * Defines security scheme declarations for declarative HTTP APIs.
  *
- * Use these constructors when an API group or endpoint needs authentication
- * middleware for bearer tokens, API keys, or HTTP Basic credentials. The values
- * are intentionally small declarations: `HttpApiMiddleware.Service` attaches
- * them to middleware, `HttpApiBuilder` decodes the matching credential shape from
- * each request, and OpenAPI generation emits the corresponding
- * `components.securitySchemes` and operation security requirements.
- *
- * Common uses include modeling `Authorization: Bearer ...` tokens, Basic
- * username/password credentials, and API keys passed through headers, query
- * parameters, or cookies. Bearer tokens and API-key values are exposed to
- * middleware as `Redacted` values; Basic credentials expose the username with a
- * redacted password. Cookie API keys can also be written to responses with
- * `HttpApiBuilder.securitySetCookie`.
- *
- * A security scheme does not authenticate by itself: middleware must reject empty
- * or invalid credentials. Bearer and Basic schemes read the `Authorization`
- * header, while API-key headers use HTTP header name normalization and API-key
- * query or cookie names are matched exactly. OpenAPI annotations such as
- * descriptions and bearer formats affect generated documentation only; they do
- * not change runtime decoding.
+ * Security schemes describe where credentials are read from and which credential
+ * type is passed to security middleware. They are consumed by
+ * `HttpApiMiddleware.Service`, `HttpApiBuilder`, generated clients, and OpenAPI
+ * generation, but they do not authenticate requests by themselves.
  *
  * @since 4.0.0
  */
@@ -39,7 +22,7 @@ const TypeId = "~effect/httpapi/HttpApiSecurity"
  * @category models
  * @since 4.0.0
  */
-export type HttpApiSecurity = Bearer | ApiKey | Basic
+export type HttpApiSecurity = Http | ApiKey | Basic
 
 /**
  * Helper types for HTTP API security schemes.
@@ -70,13 +53,16 @@ export declare namespace HttpApiSecurity {
 }
 
 /**
- * Bearer token security scheme whose decoded credential is a redacted token.
+ * Http token security scheme whose decoded credential is a redacted token.
  *
  * @category models
  * @since 4.0.0
  */
-export interface Bearer extends HttpApiSecurity.Proto<Redacted> {
-  readonly _tag: "Bearer"
+export interface Http extends HttpApiSecurity.Proto<Redacted> {
+  readonly _tag: "Http"
+  readonly scheme: string
+  /** @internal */
+  readonly schemeLength: number
 }
 
 /**
@@ -120,34 +106,71 @@ const Proto = {
 }
 
 /**
- * Creates a Bearer token security scheme.
+ * Creates a Http token security scheme.
  *
  * **When to use**
+ *
+ * Use to require `Authorization: scheme ...` credentials for an HTTP API group
+ * or endpoint.
+ *
+ * **Details**
  *
  * Use `HttpApiBuilder.middlewareSecurity` to implement API middleware for this
  * security scheme.
  *
+ * @see {@link apiKey} for an API-key security scheme
+ * @see {@link basic} for an HTTP Basic security scheme
  * @category constructors
  * @since 4.0.0
  */
-export const bearer: Bearer = Object.assign(Object.create(Proto), {
-  _tag: "Bearer",
-  annotations: Context.empty()
-})
+export const http = (options: {
+  readonly scheme: string
+}): Http =>
+  Object.assign(Object.create(Proto), {
+    _tag: "Http",
+    scheme: options.scheme,
+    schemeLength: options.scheme.length,
+    annotations: Context.empty()
+  })
+
+/**
+ * Creates a Bearer token security scheme.
+ *
+ * **When to use**
+ *
+ * Use to require `Authorization: Bearer ...` credentials for an HTTP API group
+ * or endpoint.
+ *
+ * **Details**
+ *
+ * Use `HttpApiBuilder.middlewareSecurity` to implement API middleware for this
+ * security scheme.
+ *
+ * @see {@link apiKey} for an API-key security scheme
+ * @see {@link basic} for an HTTP Basic security scheme
+ * @category constructors
+ * @since 4.0.0
+ */
+export const bearer: Http = http({ scheme: "Bearer" })
 
 /**
  * Creates an API key security scheme.
  *
  * **When to use**
  *
- * Use `HttpApiBuilder.middlewareSecurity` to implement API middleware for this
- * security scheme.
+ * Use to require API key credentials passed through a header, query parameter,
+ * or cookie.
  *
  * **Details**
+ *
+ * Use `HttpApiBuilder.middlewareSecurity` to implement API middleware for this
+ * security scheme.
  *
  * Use `HttpApiBuilder.securitySetCookie` to set the correct cookie in a
  * handler. By default, `in` is `"header"`.
  *
+ * @see {@link bearer} for a Bearer token security scheme
+ * @see {@link basic} for an HTTP Basic security scheme
  * @category constructors
  * @since 4.0.0
  */
@@ -167,9 +190,15 @@ export const apiKey = (options: {
  *
  * **When to use**
  *
+ * Use to require HTTP Basic username/password credentials.
+ *
+ * **Details**
+ *
  * Use `HttpApiBuilder.middlewareSecurity` to implement API middleware for this
  * security scheme.
  *
+ * @see {@link bearer} for a Bearer token security scheme
+ * @see {@link apiKey} for an API-key security scheme
  * @category constructors
  * @since 4.0.0
  */

@@ -54,7 +54,7 @@ export class BundleStats extends Data.TaggedClass("BundleStats")<{
 /**
  * Options for bundling one entry file, optionally writing a minified output and generating a visualization.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface BundleOptions {
@@ -66,7 +66,7 @@ export interface BundleOptions {
 /**
  * Options for bundling multiple entry files with shared visualization and output-directory settings.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface BundleAllOptions {

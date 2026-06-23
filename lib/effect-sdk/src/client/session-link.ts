@@ -26,20 +26,22 @@ interface SessionSink {
 export const withSessionLink = <ROut, E, RIn>(base: Layer.Layer<ROut, E, RIn>) =>
 	Layer.effect(
 		Tracer.Tracer,
-		Effect.map(Effect.tracer, (inner): Tracer.Tracer =>
-			Tracer.make({
-				context: inner.context,
-				span(options) {
-					const span = inner.span(options)
-					const sink = (globalThis as Record<string, unknown>)[SESSION_SINK_KEY] as
-						| SessionSink
-						| undefined
-					if (sink) {
-						sink.recordTraceId(span.traceId)
-						span.attribute("session.id", sink.sessionId)
-					}
-					return span
-				},
-			}),
+		Effect.map(
+			Effect.tracer,
+			(inner): Tracer.Tracer =>
+				Tracer.make({
+					context: inner.context,
+					span(options) {
+						const span = inner.span(options)
+						const sink = (globalThis as Record<string, unknown>)[SESSION_SINK_KEY] as
+							| SessionSink
+							| undefined
+						if (sink) {
+							sink.recordTraceId(span.traceId)
+							span.attribute("session.id", sink.sessionId)
+						}
+						return span
+					},
+				}),
 		),
 	).pipe(Layer.provideMerge(base))

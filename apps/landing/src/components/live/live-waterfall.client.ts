@@ -53,10 +53,7 @@ export function startWaterfall(root: HTMLElement) {
 	})
 	if (rows.length === 0) return
 
-	const slowestIdx = rows.reduce(
-		(best, r, i, all) => (r.durationMs > all[best].durationMs ? i : best),
-		0,
-	)
+	const slowestIdx = rows.reduce((best, r, i, all) => (r.durationMs > all[best].durationMs ? i : best), 0)
 
 	let trackOffsetX = 0
 	let trackWidth = 0
@@ -79,7 +76,9 @@ export function startWaterfall(root: HTMLElement) {
 
 	const stopInflight = () => {
 		inflight.forEach((a) => {
-			try { a.stop() } catch {}
+			try {
+				a.stop()
+			} catch {}
 		})
 		inflight = []
 	}

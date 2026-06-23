@@ -1156,6 +1156,322 @@ export const CreatePayloadRequestText = Schema.String`,
         ]
       ))
 
+    it.effect("maps explicit SSE stream responses to HttpApiSchema.StreamSse", () =>
+      assertHttpApiIncludes(
+        {
+          openapi: "3.1.0",
+          info: {
+            title: "Test API",
+            version: "1.0.0"
+          },
+          paths: {
+            "/events": {
+              get: {
+                operationId: "streamEvents",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Events",
+                    content: {
+                      "text/event-stream": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            event: { const: "message" },
+                            data: { type: "string" }
+                          },
+                          required: ["event", "data"],
+                          additionalProperties: false
+                        },
+                        "x-effect-stream": {
+                          encoding: "sse",
+                          errorSchema: {
+                            type: "object",
+                            properties: {
+                              message: { type: "string" }
+                            },
+                            required: ["message"],
+                            additionalProperties: false
+                          },
+                          causeSchema: {
+                            type: "object"
+                          },
+                          failureEvent: "effect/httpapi/stream/failure"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Events"],
+                security: []
+              }
+            },
+            "/events/custom": {
+              get: {
+                operationId: "streamEventsCustom",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Custom events",
+                    content: {
+                      "application/custom-sse": {
+                        schema: {
+                          type: "object",
+                          properties: {
+                            event: { const: "message" },
+                            data: { type: "string" }
+                          },
+                          required: ["event", "data"],
+                          additionalProperties: false
+                        },
+                        "x-effect-stream": {
+                          encoding: "sse",
+                          errorSchema: {
+                            type: "object",
+                            properties: {
+                              message: { type: "string" }
+                            },
+                            required: ["message"],
+                            additionalProperties: false
+                          },
+                          causeSchema: {
+                            type: "object"
+                          },
+                          failureEvent: "effect/httpapi/stream/failure"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Events"],
+                security: []
+              }
+            }
+          },
+          components: {
+            schemas: {},
+            securitySchemes: {}
+          },
+          security: [],
+          tags: [{ name: "Events" }]
+        },
+        [
+          `HttpApiEndpoint.get("streamEvents", "/events", { success: HttpApiSchema.StreamSse({ events: StreamEvents200Sse, error: StreamEvents200SseError }) })`,
+          `HttpApiEndpoint.get("streamEventsCustom", "/events/custom", { success: HttpApiSchema.StreamSse({ contentType: "application/custom-sse", events: StreamEventsCustom200Sse, error: StreamEventsCustom200SseError }) })`
+        ],
+        [
+          `StreamEvents200Sse.pipe(HttpApiSchema.asText())`,
+          `StreamEventsCustom200ApplicationCustomSse.pipe(HttpApiSchema.asText({ contentType: "application/custom-sse" }))`
+        ]
+      ))
+
+    it.effect("warns and skips unannotated successful SSE responses in HttpApi generation", () =>
+      assertHttpApiWithWarnings(
+        {
+          openapi: "3.1.0",
+          info: {
+            title: "Test API",
+            version: "1.0.0"
+          },
+          paths: {
+            "/events": {
+              get: {
+                operationId: "streamEvents",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Events",
+                    content: {
+                      "text/event-stream": {
+                        schema: {
+                          type: "string"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Events"],
+                security: []
+              }
+            },
+            "/events/cause-only": {
+              get: {
+                operationId: "streamEventsCauseOnly",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Events",
+                    content: {
+                      "text/event-stream": {
+                        schema: {
+                          type: "string"
+                        },
+                        "x-effect-stream": {
+                          encoding: "sse",
+                          causeSchema: {
+                            type: "object"
+                          },
+                          failureEvent: "effect/httpapi/stream/failure"
+                        } as any
+                      }
+                    }
+                  }
+                },
+                tags: ["Events"],
+                security: []
+              }
+            }
+          },
+          components: {
+            schemas: {},
+            securitySchemes: {}
+          },
+          security: [],
+          tags: [{ name: "Events" }]
+        },
+        {
+          excludes: [
+            `HttpApiEndpoint.get("streamEvents", "/events"`,
+            `HttpApiEndpoint.get("streamEventsCauseOnly", "/events/cause-only"`
+          ],
+          warnings: [
+            {
+              code: "sse-operation-skipped",
+              path: "/events",
+              method: "get",
+              operationId: "streamEvents"
+            },
+            {
+              code: "sse-operation-skipped",
+              path: "/events/cause-only",
+              method: "get",
+              operationId: "streamEventsCauseOnly"
+            }
+          ]
+        }
+      ))
+
+    it.effect("maps explicit uint8array stream responses to HttpApiSchema.StreamUint8Array", () =>
+      assertHttpApiIncludes(
+        {
+          openapi: "3.1.0",
+          info: {
+            title: "Test API",
+            version: "1.0.0"
+          },
+          paths: {
+            "/download": {
+              get: {
+                operationId: "download",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Download",
+                    content: {
+                      "application/octet-stream": {
+                        schema: {
+                          type: "string",
+                          format: "binary"
+                        },
+                        "x-effect-stream": {
+                          encoding: "uint8array"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Downloads"],
+                security: []
+              }
+            },
+            "/download/custom": {
+              get: {
+                operationId: "downloadCustom",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Custom download",
+                    content: {
+                      "application/custom-bytes": {
+                        schema: {
+                          type: "string",
+                          format: "binary"
+                        },
+                        "x-effect-stream": {
+                          encoding: "uint8array"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Downloads"],
+                security: []
+              }
+            }
+          },
+          components: {
+            schemas: {},
+            securitySchemes: {}
+          },
+          security: [],
+          tags: [{ name: "Downloads" }]
+        },
+        [
+          `HttpApiEndpoint.get("download", "/download", { success: HttpApiSchema.StreamUint8Array() })`,
+          `HttpApiEndpoint.get("downloadCustom", "/download/custom", { success: HttpApiSchema.StreamUint8Array({ contentType: "application/custom-bytes" }) })`
+        ],
+        [
+          `Download200Binary.pipe(HttpApiSchema.asUint8Array())`,
+          `DownloadCustom200ApplicationCustomBytes.pipe(HttpApiSchema.asUint8Array({ contentType: "application/custom-bytes" }))`
+        ]
+      ))
+
+    it.effect("keeps unannotated octet-stream responses as buffered Uint8Array schemas", () =>
+      assertHttpApiIncludes(
+        {
+          openapi: "3.1.0",
+          info: {
+            title: "Test API",
+            version: "1.0.0"
+          },
+          paths: {
+            "/download/buffered": {
+              get: {
+                operationId: "downloadBuffered",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Buffered download",
+                    content: {
+                      "application/octet-stream": {
+                        schema: {
+                          type: "string",
+                          format: "binary"
+                        }
+                      }
+                    }
+                  }
+                },
+                tags: ["Downloads"],
+                security: []
+              }
+            }
+          },
+          components: {
+            schemas: {},
+            securitySchemes: {}
+          },
+          security: [],
+          tags: [{ name: "Downloads" }]
+        },
+        [
+          `HttpApiEndpoint.get("downloadBuffered", "/download/buffered", { success: DownloadBuffered200Binary.pipe(HttpApiSchema.asUint8Array()) })`
+        ],
+        [
+          `HttpApiSchema.StreamUint8Array()`
+        ]
+      ))
+
     it.effect("maps multipart schemas referenced through components to Multipart file schemas", () =>
       assertHttpApiIncludes(
         {
@@ -1375,6 +1691,52 @@ export const __HttpApiMultipartFiles = Multipart.FilesSchema`,
               operationId: "getSecure"
             }
           ]
+        }
+      ))
+
+    it.effect("generates custom http security schemes", () =>
+      assertHttpApiWithWarnings(
+        {
+          openapi: "3.1.0",
+          info: {
+            title: "Custom Security API",
+            version: "1.0.0"
+          },
+          paths: {
+            "/secure": {
+              get: {
+                operationId: "getSecure",
+                parameters: [],
+                responses: {
+                  200: {
+                    description: "Secure"
+                  }
+                },
+                tags: ["Security"],
+                security: [{ digestAuth: [] }]
+              }
+            }
+          },
+          components: {
+            schemas: {},
+            securitySchemes: {
+              digestAuth: {
+                type: "http",
+                scheme: "Digest",
+                bearerFormat: "DigestToken",
+                description: "Digest token"
+              }
+            }
+          },
+          security: [],
+          tags: [{ name: "Security" }]
+        },
+        {
+          includes: [
+            `const DigestAuthSecurity = HttpApiSecurity.http({ scheme: "Digest" }).pipe(HttpApiSecurity.annotate(OpenApi.Description, "Digest token")).pipe(HttpApiSecurity.annotate(OpenApi.Format, "DigestToken"))`,
+            `class DigestAuthSecurityMiddleware extends HttpApiMiddleware.Service<DigestAuthSecurityMiddleware>()("digestAuth security", { security: { "digestAuth": DigestAuthSecurity } }) {}`
+          ],
+          warnings: []
         }
       ))
 

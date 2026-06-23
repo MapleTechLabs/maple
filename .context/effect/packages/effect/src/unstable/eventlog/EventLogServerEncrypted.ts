@@ -1,23 +1,12 @@
 /**
- * Server-side RPC layers and storage contracts for encrypted event-log
- * replication.
+ * Serves encrypted event-log replication.
  *
- * This module is used by encrypted `EventLogRemote` clients that need a remote
- * synchronization endpoint without exposing plaintext events to the server. The
- * server stores ciphertext, initialization vectors, entry ids, and remote
- * sequence numbers keyed by the client's public key and store id, then streams
- * encrypted changes back to clients so they can decrypt locally with their
- * identity private key material. This makes it suitable for offline-first
- * synchronization, multi-device replication, and hosted backends where the
- * transport or storage layer should not inspect event payloads.
- *
- * The server does not derive or hold encryption keys. It treats public keys as
- * log identities, persists one session authentication binding per public key,
- * and reuses the initialization vector supplied with each encrypted write
- * request for the entries in that batch. Persisted remote ids, session signing
- * key bindings, ciphertext, IVs, and sequence numbers are therefore part of the
- * encrypted replication protocol and should be kept stable by durable storage
- * implementations.
+ * Encrypted `EventLogRemote` clients use this module when they need a remote
+ * synchronization endpoint that never sees plaintext events. The server stores
+ * encrypted entries and replication metadata keyed by client public key and
+ * store id, then streams encrypted changes back to clients for local
+ * decryption. This module defines the RPC handlers, server layer, storage
+ * contract, and in-memory storage layer for that encrypted server path.
  *
  * @since 4.0.0
  */
@@ -101,6 +90,22 @@ export const layerRpcHandlers = Layer.unwrap(Effect.gen(function*() {
  * Provides an encrypted event-log RPC server using `EventLogRemoteRpcs` and the
  * encrypted server RPC handlers.
  *
+ * **When to use**
+ *
+ * Use when you need an encrypted event-log RPC server for encrypted
+ * `EventLogRemote` replication over an existing `RpcServer.Protocol`.
+ *
+ * **Details**
+ *
+ * This layer installs `EventLogRemoteRpcs` on the provided RPC server protocol
+ * and wires those RPCs to `layerRpcHandlers`. Encrypted entries, session
+ * authentication bindings, remote ids, and change streams are delegated to
+ * `Storage`.
+ *
+ * @see {@link layerRpcHandlers} for the encrypted handler layer without installing an RPC server protocol
+ * @see {@link Storage} for the storage service required by this layer
+ * @see {@link layerStorageMemory} for the process-local in-memory storage layer
+ *
  * @category layers
  * @since 4.0.0
  */
@@ -109,7 +114,7 @@ export const layer: Layer.Layer<never, never, RpcServer.Protocol | Storage> = Rp
 )
 
 /**
- * Encrypted entry representation persisted by the encrypted event-log server.
+ * Schema for encrypted entries persisted by the encrypted event-log server.
  *
  * @category storage
  * @since 4.0.0
@@ -132,7 +137,12 @@ export class PersistedEntry extends Schema.Class<PersistedEntry>(
 }
 
 /**
- * Storage service used by the encrypted event-log server.
+ * Defines the backing store service used by the encrypted event-log server.
+ *
+ * **When to use**
+ *
+ * Use to provide durable encrypted event-log persistence for an encrypted
+ * event-log server layer.
  *
  * **Details**
  *

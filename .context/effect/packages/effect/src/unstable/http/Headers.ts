@@ -1,19 +1,10 @@
 /**
- * Utilities for representing and transforming HTTP headers.
+ * Models HTTP headers for the unstable HTTP client and server modules.
  *
- * This module provides an immutable `Headers` collection for request and
- * response metadata, along with constructors and combinators for common header
- * workflows such as reading values, checking for presence, setting or merging
- * header sets, removing names, and redacting sensitive headers before
- * inspection.
- *
- * Header names are normalized to lowercase by the safe constructors and
- * lookups, matching HTTP's case-insensitive header-name semantics. Each stored
- * header name maps to a single string value: array values in record input are
- * joined with `", "`, iterable input keeps the last value for duplicate names,
- * and later values override earlier ones when setting or merging. Be careful
- * with headers that require distinct field lines, such as `set-cookie`, because
- * this representation does not preserve multiple values separately.
+ * `Headers` values are immutable maps keyed by lowercase header name. This
+ * module converts common header inputs into that shape, provides helpers for
+ * reading and updating header values, and redacts configured sensitive headers
+ * when values are inspected.
  *
  * @since 4.0.0
  */
@@ -29,11 +20,11 @@ import * as Record from "../../Record.ts"
 import * as Redactable from "../../Redactable.ts"
 import * as Redacted from "../../Redacted.ts"
 import * as Schema from "../../Schema.ts"
-import * as Transformation from "../../SchemaTransformation.ts"
+import * as SchemaTransformation from "../../SchemaTransformation.ts"
 import type { Mutable } from "../../Types.ts"
 
 /**
- * This is a symbol to allow direct access of keys without conflicts.
+ * Runtime type identifier for `Headers` values.
  *
  * @category type IDs
  * @since 4.0.0
@@ -71,9 +62,10 @@ export interface Headers extends Redactable.Redactable {
   readonly [key: string]: string
 }
 
-const Proto = Object.create(null)
-
-Object.defineProperties(Proto, {
+// the properties are folded into the initializer (rather than a separate
+// `Object.defineProperties(Proto, ...)` statement) so the whole definition
+// is pure-annotated by the build and tree-shakable.
+const Proto = Object.defineProperties(Object.create(null), {
   [TypeId]: {
     value: TypeId
   },
@@ -109,9 +101,10 @@ const make = (input: Record.ReadonlyRecord<string, string>): Mutable<Headers> =>
   Object.assign(Object.create(Proto), input) as Headers
 
 /**
- * Equivalence instance that compares `Headers` by their header names and string values.
+ * Provides an `Equivalence` instance that compares `Headers` by header names
+ * and string values.
  *
- * @category Equivalence
+ * @category instances
  * @since 4.0.0
  */
 export const Equivalence: Equ.Equivalence<Headers> = Record.makeEquivalence(Equ.strictEqual<string>())
@@ -151,7 +144,7 @@ export const HeadersSchema: HeadersSchema = Schema.declare(
     toCodec: () =>
       Schema.link<Headers>()(
         Schema.Record(Schema.String, Schema.String),
-        Transformation.transform({
+        SchemaTransformation.transform({
           decode: (input) => fromInput(input),
           encode: (headers) => ({ ...headers })
         })
@@ -213,7 +206,7 @@ export const fromInput: (input?: Input) => Headers = (input) => {
 }
 
 /**
- * Unsafely treats an existing record as `Headers`.
+ * Treats an existing record as `Headers` unsafely.
  *
  * **Gotchas**
  *
@@ -244,7 +237,7 @@ export const has: {
 >(2, (self, key) => key.toLowerCase() in self)
 
 /**
- * Gets a header value by name.
+ * Gets a header value by name safely.
  *
  * **Details**
  *

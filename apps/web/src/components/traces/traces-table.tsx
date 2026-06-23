@@ -16,7 +16,7 @@ import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
 import { useInfiniteTraces, FETCH_THRESHOLD } from "@/hooks/use-infinite-traces"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 
-export interface TracesTableViewProps {
+interface TracesTableViewProps {
 	allData: Trace[]
 	isFetchingNextPage: boolean
 	hasNextPage: boolean
@@ -131,7 +131,7 @@ function LoadingState() {
 	)
 }
 
-export function TracesTableView({
+function TracesTableView({
 	allData,
 	isFetchingNextPage,
 	hasNextPage,

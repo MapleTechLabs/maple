@@ -5,9 +5,9 @@
 // from the `alert_checks` datasource.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { param } from "../param"
-import { from } from "../query"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from } from "@maple-dev/clickhouse-builder"
 import { AlertChecks } from "../tables"
 
 const ISO_Z_FORMAT = "%Y-%m-%dT%H:%i:%S.%fZ"

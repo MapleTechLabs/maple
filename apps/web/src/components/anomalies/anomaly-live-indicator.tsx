@@ -13,7 +13,9 @@ export function AnomalyLiveIndicator({
 			role="switch"
 			aria-checked={live}
 			onClick={() => onToggle(!live)}
-			title={live ? "Auto-refreshing every 15s — click to pause" : "Paused — click to resume auto-refresh"}
+			title={
+				live ? "Auto-refreshing every 15s — click to pause" : "Paused — click to resume auto-refresh"
+			}
 			className={cn(
 				"inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
 				live

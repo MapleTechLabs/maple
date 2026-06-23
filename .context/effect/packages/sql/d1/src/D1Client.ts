@@ -3,22 +3,10 @@
  *
  * This module adapts a Cloudflare D1 database binding into both the
  * D1-specific `D1Client` service and the generic Effect `SqlClient` service.
- * Use it in Workers, Pages Functions, and tests that provide a D1 binding to
- * run SQLite-compatible queries through Effect services and layers, including
- * repositories, migrations, request handlers, and local development against
- * Wrangler or Miniflare-backed D1 databases.
- *
- * The client prepares statements with D1, caches them by SQL string, and uses
- * the SQLite statement compiler for query and result name transforms. D1
- * commits individual statements automatically, and native `D1Database.batch`
- * is the D1 API for sequential, transactional multi-statement work; this
- * adapter does not expose Effect SQL transactions because it cannot map
- * `withTransaction` onto a connection-scoped D1 transaction. D1 databases are
- * serverless SQLite storage with platform limits and single-database serialized
- * execution, so keep queries small and indexed, batch large maintenance work
- * at the D1 API level, and use D1 sessions outside this client when an
- * application needs bookmark-based sequential consistency or read replicas.
- * Streaming queries and `updateValues` are not supported.
+ * It uses the SQLite statement compiler, caches prepared statements, maps D1
+ * failures to `SqlError`, and provides direct or config-backed layers.
+ * Transactions, streaming queries, and `updateValues` are not supported by this
+ * driver.
  *
  * @since 4.0.0
  */
@@ -74,9 +62,14 @@ export interface D1Client extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the `D1Client` service.
+ * Service tag for the Cloudflare D1 SQL client.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a Cloudflare D1 SQL client through the Effect
+ * context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const D1Client = Context.Service<D1Client>("@effect/sql-d1/D1Client")

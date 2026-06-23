@@ -12,11 +12,7 @@ const ROW_HEIGHT = 33
 
 /** Flatten the tree into the ordered list of rows currently visible (i.e. every
  *  ancestor is expanded). `node.depth` already carries the indentation level. */
-function flattenVisible(
-	nodes: SpanNode[],
-	expanded: Set<string>,
-	out: SpanNode[] = [],
-): SpanNode[] {
+function flattenVisible(nodes: SpanNode[], expanded: Set<string>, out: SpanNode[] = []): SpanNode[] {
 	for (const node of nodes) {
 		out.push(node)
 		if (expanded.has(node.spanId) && node.children.length > 0) {
@@ -46,10 +42,7 @@ export function SpanHierarchy() {
 		})
 	}, [])
 
-	const flat = React.useMemo(
-		() => flattenVisible(rootSpans, expandedSpans),
-		[rootSpans, expandedSpans],
-	)
+	const flat = React.useMemo(() => flattenVisible(rootSpans, expandedSpans), [rootSpans, expandedSpans])
 
 	const scrollRef = React.useRef<HTMLDivElement>(null)
 

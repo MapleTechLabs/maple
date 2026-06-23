@@ -107,7 +107,7 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 								search: { t: session.startTime },
 							})
 						}
-						className="group flex w-full items-center gap-4 rounded-xl border border-border bg-card px-4 py-3 text-left transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						className="group flex w-full items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-all hover:-translate-y-px hover:border-primary/40 hover:bg-accent/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:gap-4"
 					>
 						<div
 							className={`grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br ${id.gradient} text-sm font-semibold text-white shadow-sm`}
@@ -126,7 +126,9 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 							<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
 								<span className="flex min-w-0 items-center gap-1.5">
 									<GlobeIcon className="size-3.5 shrink-0 opacity-60" />
-									<span className="max-w-[18rem] truncate">{hostFromUrl(session.urlInitial)}</span>
+									<span className="max-w-[18rem] truncate">
+										{hostFromUrl(session.urlInitial)}
+									</span>
 								</span>
 								<span className="hidden items-center gap-1.5 sm:flex">
 									<DeviceIcon className="size-3.5 shrink-0 opacity-60" />
@@ -141,13 +143,21 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 							</div>
 						</div>
 
-						<div className="flex shrink-0 items-center gap-2.5 text-xs text-muted-foreground">
-							<Stat icon={<PulseIcon className="size-3.5" />} value={session.clickCount} title="clicks" />
-							<Stat
-								icon={<EyeIcon className="size-3.5" />}
-								value={session.pageViews || 1}
-								title="page views"
-							/>
+						<div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground sm:gap-2.5">
+							{/* Click/page-view counts are low-signal — drop them on phones and
+							    keep the load-bearing trace/error badges. */}
+							<span className="hidden items-center gap-2.5 sm:flex">
+								<Stat
+									icon={<PulseIcon className="size-3.5" />}
+									value={session.clickCount}
+									title="clicks"
+								/>
+								<Stat
+									icon={<EyeIcon className="size-3.5" />}
+									value={session.pageViews || 1}
+									title="page views"
+								/>
+							</span>
 							{session.traceCount > 0 && (
 								<span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 font-medium tabular-nums text-primary">
 									{session.traceCount} trace{session.traceCount === 1 ? "" : "s"}
@@ -161,15 +171,16 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 							)}
 						</div>
 
-						<div className="flex shrink-0 items-center gap-3">
+						<div className="flex shrink-0 items-center gap-2 sm:gap-3">
 							<span
 								className="inline-flex items-center gap-1.5 whitespace-nowrap text-sm text-muted-foreground"
 								title={absoluteTs(session.startTime)}
 							>
-								<ClockIcon className="size-3.5 opacity-60" />
+								<ClockIcon className="hidden size-3.5 opacity-60 sm:inline" />
 								{formatRelative(session.startTime)}
 							</span>
-							<span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary opacity-0 transition-opacity group-hover:opacity-100">
+							{/* Tap affordance: hover-revealed on desktop, always shown on touch. */}
+							<span className="grid size-7 place-items-center rounded-full bg-primary/10 text-primary opacity-0 transition-opacity group-hover:opacity-100 pointer-coarse:opacity-100">
 								<PlayGlyph />
 							</span>
 						</div>

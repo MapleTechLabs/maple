@@ -1,4 +1,4 @@
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, type Layer, Schema } from "effect"
 import type { FileSystem } from "effect/FileSystem"
 import type { Path } from "effect/Path"
 import type { Generator } from "effect/unstable/http/Etag"
@@ -12,11 +12,36 @@ import {
   HttpApiEndpoint,
   HttpApiGroup,
   HttpApiMiddleware,
+  HttpApiSchema,
   HttpApiSecurity
 } from "effect/unstable/httpapi"
 import { describe, expect, it } from "tstyche"
 
 describe("HttpApiBuilder", () => {
+  describe("group", () => {
+    it("does not require unknown services for status annotations piped onto errors", () => {
+      class NotFound extends Schema.TaggedErrorClass<NotFound>()("NotFound", {}) {}
+      const Api = HttpApi.make("api").add(
+        HttpApiGroup.make("group").add(
+          HttpApiEndpoint.get("get", "/", {
+            success: Schema.String,
+            error: NotFound.pipe(HttpApiSchema.status(404))
+          })
+        )
+      )
+
+      const handlers = HttpApiBuilder.group(
+        Api,
+        "group",
+        Effect.fn(function*(handlers) {
+          return handlers.handle("get", () => Effect.succeed("ok"))
+        })
+      )
+
+      expect(handlers).type.toBe<Layer.Layer<HttpApiGroup.ApiGroup<"api", "group">>>()
+    })
+  })
+
   describe("endpoint", () => {
     it("middleware & services", () => {
       const api = HttpApi.make("api").add(

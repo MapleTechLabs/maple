@@ -17,7 +17,7 @@ import { Database } from "../lib/DatabaseLive"
 import { Env } from "../lib/Env"
 import { dateToMs, msToDate } from "../lib/time"
 
-export interface ResolvedApiKey {
+interface ResolvedApiKey {
 	readonly orgId: OrgId
 	readonly userId: UserId
 	readonly keyId: ApiKeyId

@@ -1,6 +1,6 @@
 import { snapTimestamp } from "@/lib/time-utils"
 
-export function normalizeForKey(value: unknown): unknown {
+function normalizeForKey(value: unknown): unknown {
 	if (value === null || typeof value !== "object") {
 		if (typeof value === "string") return snapTimestamp(value)
 		return value

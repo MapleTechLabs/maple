@@ -420,6 +420,202 @@ export const chartScenarios: ChartScenario[] = [
 ]
 
 // ---------------------------------------------------------------------------
+// Stress / edge cases — high cardinality, long names, null/zero data.
+// These exercise the palette (distinct colors past series 5), legend overflow,
+// and the pie/bar "Other" bucketing.
+// ---------------------------------------------------------------------------
+
+/** N synthetic timeseries with smooth, deterministic, distinct shapes. */
+function makeManySeries(seriesCount: number, points = 14, namePrefix = "service"): Record<string, unknown>[] {
+	const base = new Date("2026-01-01T00:00:00Z").getTime()
+	return Array.from({ length: points }, (_, p) => {
+		const row: Record<string, unknown> = {
+			bucket: new Date(base + p * 3_600_000).toISOString(),
+		}
+		for (let s = 0; s < seriesCount; s++) {
+			const phase = (s * 0.7) % (Math.PI * 2)
+			const amp = 20 + (s % 7) * 8
+			row[`${namePrefix}-${s + 1}`] = Math.max(
+				0,
+				Math.round(amp + amp * Math.sin(p / 2 + phase) + (s % 5) * 3),
+			)
+		}
+		return row
+	})
+}
+
+/** A long-tail (Zipf-ish) categorical distribution for pie stress tests. */
+function makePieSlices(count: number, namePrefix = "service"): { name: string; value: number }[] {
+	return Array.from({ length: count }, (_, i) => ({
+		name: `${namePrefix}-${i + 1}`,
+		value: Math.round(120 + 6000 / (i + 1)),
+	}))
+}
+
+const longNameSeries: Record<string, unknown>[] = makeManySeries(3, 12).map((row, i) => {
+	const base = new Date("2026-01-01T00:00:00Z").getTime()
+	return {
+		bucket: new Date(base + i * 3_600_000).toISOString(),
+		"checkout-service @ us-east-1 (primary cluster, canary v2)": row["service-1"],
+		"notification-worker @ eu-west-1 (overflow pool, spot instances)": row["service-2"],
+		"analytics-ingest @ ap-southeast-2 (batch tier, reserved capacity)": row["service-3"],
+	}
+})
+
+// Mixed null / NaN / numbers — verifies asFiniteNumber coercion (renders, no crash).
+const nullySeries: Record<string, unknown>[] = [
+	{ bucket: "2026-01-01T00:00:00Z", a: 12, b: null, c: 5 },
+	{ bucket: "2026-01-01T01:00:00Z", a: null, b: 8, c: Number.NaN },
+	{ bucket: "2026-01-01T02:00:00Z", a: 18, b: 11, c: 7 },
+	{ bucket: "2026-01-01T03:00:00Z", a: 9, b: null, c: 4 },
+	{ bucket: "2026-01-01T04:00:00Z", a: 14, b: 6, c: null },
+]
+
+// All-zero series — verifies flat-line handling and pie "No data".
+const allZeroSeries: Record<string, unknown>[] = [
+	{ bucket: "2026-01-01T00:00:00Z", a: 0, b: 0 },
+	{ bucket: "2026-01-01T01:00:00Z", a: 0, b: 0 },
+	{ bucket: "2026-01-01T02:00:00Z", a: 0, b: 0 },
+	{ bucket: "2026-01-01T03:00:00Z", a: 0, b: 0 },
+]
+
+export const stressScenarios: ChartScenario[] = [
+	{
+		label: "Line — 25 series (compact legend)",
+		chartId: "query-builder-line",
+		chartName: "Query Builder Line",
+		category: "line",
+		dataState: ready(makeManySeries(25)),
+		display: {
+			title: "Latency by service (25)",
+			chartId: "query-builder-line",
+			unit: "duration_ms",
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Line — 50 series (stats legend)",
+		chartId: "query-builder-line",
+		chartName: "Query Builder Line",
+		category: "line",
+		dataState: ready(makeManySeries(50)),
+		display: {
+			title: "Latency by service (50)",
+			chartId: "query-builder-line",
+			unit: "duration_ms",
+			chartPresentation: { legend: "visible", seriesStats: true },
+		},
+	},
+	{
+		label: "Area — 25 series (stacked)",
+		chartId: "query-builder-area",
+		chartName: "Query Builder Area",
+		category: "area",
+		dataState: ready(makeManySeries(25)),
+		display: {
+			title: "Throughput by service (25)",
+			chartId: "query-builder-area",
+			stacked: true,
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Bar — 25 series → Other (stacked)",
+		chartId: "query-builder-bar",
+		chartName: "Query Builder Bar",
+		category: "bar",
+		dataState: ready(makeManySeries(25)),
+		display: {
+			title: "Requests by service (25 → Other)",
+			chartId: "query-builder-bar",
+			stacked: true,
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Bar — 50 series → Other (right legend)",
+		chartId: "query-builder-bar",
+		chartName: "Query Builder Bar",
+		category: "bar",
+		dataState: ready(makeManySeries(50)),
+		display: {
+			title: "Requests by service (50 → Other)",
+			chartId: "query-builder-bar",
+			stacked: true,
+			chartPresentation: { legend: "right", seriesStats: false },
+		},
+	},
+	{
+		label: "Pie — 20 slices → Other",
+		chartId: "query-builder-pie",
+		chartName: "Query Builder Pie",
+		category: "pie",
+		dataState: ready(makePieSlices(20)),
+		display: { title: "Traffic by service (20 → Other)", chartId: "query-builder-pie", pie: {} },
+	},
+	{
+		label: "Pie — 50 slices → Other",
+		chartId: "query-builder-pie",
+		chartName: "Query Builder Pie",
+		category: "pie",
+		dataState: ready(makePieSlices(50)),
+		display: {
+			title: "Traffic by service (50 → Other)",
+			chartId: "query-builder-pie",
+			pie: {},
+		},
+	},
+	{
+		label: "Line — long series names",
+		chartId: "query-builder-line",
+		chartName: "Query Builder Line",
+		category: "line",
+		dataState: ready(longNameSeries),
+		display: {
+			title: "Latency (long names)",
+			chartId: "query-builder-line",
+			unit: "duration_ms",
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Line — null / NaN values",
+		chartId: "query-builder-line",
+		chartName: "Query Builder Line",
+		category: "line",
+		dataState: ready(nullySeries),
+		display: {
+			title: "Sparse series (null/NaN)",
+			chartId: "query-builder-line",
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Area — all-zero series",
+		chartId: "query-builder-area",
+		chartName: "Query Builder Area",
+		category: "area",
+		dataState: ready(allZeroSeries),
+		display: {
+			title: "Flat at zero",
+			chartId: "query-builder-area",
+			chartPresentation: { legend: "visible", seriesStats: false },
+		},
+	},
+	{
+		label: "Pie — all-zero (No data)",
+		chartId: "query-builder-pie",
+		chartName: "Query Builder Pie",
+		category: "pie",
+		dataState: ready([
+			{ name: "a", value: 0 },
+			{ name: "b", value: 0 },
+		]),
+		display: { title: "Empty distribution", chartId: "query-builder-pie", pie: {} },
+	},
+]
+
+// ---------------------------------------------------------------------------
 // Table
 // ---------------------------------------------------------------------------
 
@@ -522,8 +718,7 @@ export const tableScenarios: WidgetScenario[] = [
 		dataState: ready([
 			{
 				name: "billing-service @ us-east-1 with a very long descriptor",
-				detail:
-					"Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
+				detail: "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore.",
 			},
 			{
 				name: "auth-service",

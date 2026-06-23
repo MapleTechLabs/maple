@@ -1,36 +1,12 @@
 /**
- * The `NodeClusterHttp` module provides the Node.js HTTP and WebSocket
- * transports for Effect Cluster runners. It wires `HttpRunner` to the Node HTTP
- * server, supplies Undici and WebSocket client protocols, and builds a complete
- * sharding layer with serialization, runner health, runner storage, and message
- * storage.
+ * Node.js HTTP and WebSocket layers for Effect Cluster runners.
  *
- * **Common tasks**
- *
- * - Run a Node process as a cluster runner over HTTP or WebSocket with
- *   {@link layer}
- * - Connect a client-only process to an existing HTTP cluster without starting
- *   a runner server
- * - Use SQL-backed storage for durable multi-process clusters, `local` storage
- *   for short-lived development, or `byo` storage when the deployment owns the
- *   persistence boundary
- * - Check runner health with protocol pings or Kubernetes pod readiness through
- *   {@link layerK8sHttpClient}
- *
- * **Gotchas**
- *
- * - `runnerAddress` is the host and port advertised to other runners; set
- *   `runnerListenAddress` when the local bind address differs from the
- *   externally reachable address
- * - The HTTP and WebSocket transports serve runner RPCs at the default
- *   `HttpRunner` route, so proxies and load balancers must preserve the path
- *   and allow WebSocket upgrades when `transport` is `"websocket"`
- * - `clientOnly` does not start an HTTP server or receive shard assignments
- * - SQL storage is the default; `local` storage is in-memory/noop and `byo`
- *   requires the surrounding application to provide both runner and message
- *   storage services
- * - Ping health checks use the selected transport and serialization, so route,
- *   port, proxy, or codec mismatches can make a runner appear unhealthy
+ * The main `layer` builds a sharding layer for HTTP or WebSocket transport,
+ * choosing serialization, runner health checks, runner storage, message
+ * storage, and optional client-only mode from the supplied options.
+ * `layerHttpServer` provides the Node HTTP server used by cluster runners, and
+ * this module re-exports the Kubernetes HTTP client layer used by runner health
+ * checks.
  *
  * @since 4.0.0
  */

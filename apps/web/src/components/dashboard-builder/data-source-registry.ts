@@ -31,7 +31,7 @@ import { getRawSqlChart } from "@/api/warehouse/raw-sql-chart"
  * requirement channel is `never` — each function self-provides its layers via
  * `runWarehouseQuery` / `executeQueryEngine`.
  */
-export type ServerFunctionError = WarehouseApiError | BackendError
+type ServerFunctionError = WarehouseApiError | BackendError
 
 // The success channel stays `any`: each endpoint resolves a distinct response
 // shape, and the registry is consumed through a single structural `{ data }`

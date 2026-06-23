@@ -77,14 +77,12 @@ export const deriveCoverageGaps = (
 	resourceKeys: ReadonlyArray<{ readonly key: string }>,
 ): ReadonlyArray<CoverageGap> => {
 	const present = new Set(resourceKeys.map((row) => row.key))
-	return COVERAGE_CHECKS.filter((check) => !check.keys.some((key) => present.has(key))).map(
-		(check) => ({
-			checkId: check.checkId,
-			attribute: check.label,
-			severity: "warn" as const,
-			reason: check.reason,
-		}),
-	)
+	return COVERAGE_CHECKS.filter((check) => !check.keys.some((key) => present.has(key))).map((check) => ({
+		checkId: check.checkId,
+		attribute: check.label,
+		severity: "warn" as const,
+		reason: check.reason,
+	}))
 }
 
 // v2 candidates (each needs a new warehouse aggregate, deliberately not in v1):
@@ -107,10 +105,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 				"Set to false to skip the resource-attribute coverage section (default: included)",
 			),
 		}),
-		Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({
-			status,
-			include_coverage,
-		}) {
+		Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({ status, include_coverage }) {
 			const tenant = yield* resolveTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,

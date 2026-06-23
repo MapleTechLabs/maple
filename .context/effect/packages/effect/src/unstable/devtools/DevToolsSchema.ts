@@ -1,20 +1,11 @@
 /**
- * Schemas and TypeScript types for the Effect devtools protocol.
+ * Defines the experimental wire schema used by the Effect devtools protocol.
  *
- * This module defines the wire format used by devtools clients and servers to
- * exchange telemetry, including spans, span events, metric snapshots, fiber
- * dumps, heartbeat messages, and request/response payloads. Use these schemas
- * when encoding or decoding messages at the devtools boundary, validating
- * custom transports, or building integrations that need to inspect the same
- * protocol data as the built-in devtools implementation.
- *
- * The exported values describe serialized protocol payloads rather than the
- * full in-memory runtime data structures. Some fields intentionally normalize
- * runtime values for transport, for example ended span exits are encoded with
- * successful values erased via `Exit.asVoid`, timestamps are represented as
- * `bigint`s, and arbitrary attributes are accepted as unknown schema values.
- * The module lives under `unstable`, so consumers should treat the protocol
- * shape as experimental.
+ * The module contains the serialized message shapes exchanged between devtools
+ * clients and servers: span snapshots, span events, metric snapshots,
+ * heartbeats, and request/response unions. Use these schemas at protocol
+ * boundaries to encode, decode, or validate custom transports that need to
+ * interoperate with the built-in unstable devtools client and server.
  *
  * @since 4.0.0
  */
@@ -56,7 +47,7 @@ export const SpanStatusEnded = Schema.Struct({
   _tag: Schema.tag("Ended"),
   startTime: Schema.BigInt,
   endTime: Schema.BigInt,
-  exit: Schema.Exit(Schema.Void, Schema.DefectWithStack, Schema.DefectWithStack).pipe(
+  exit: Schema.Exit(Schema.Void, Schema.Defect({ includeStack: true }), Schema.Defect({ includeStack: true })).pipe(
     Schema.decodeTo(
       Schema.Exit(Schema.Unknown, Schema.Unknown, Schema.Unknown),
       SchemaTransformation.transform({

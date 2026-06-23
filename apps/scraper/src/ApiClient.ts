@@ -1,12 +1,19 @@
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
-import { InternalScrapeTargetList, type InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
+import {
+	InternalScrapeTargetList,
+	type InternalScrapeTarget,
+	type ScrapeResultReport,
+} from "@maple/domain/http"
 import { ScraperEnv } from "./Env"
 
-export class ApiRequestError extends Schema.TaggedErrorClass<ApiRequestError>()("@maple/scraper/ApiRequestError", {
-	message: Schema.String,
-	status: Schema.NullOr(Schema.Number),
-}) {}
+export class ApiRequestError extends Schema.TaggedErrorClass<ApiRequestError>()(
+	"@maple/scraper/ApiRequestError",
+	{
+		message: Schema.String,
+		status: Schema.NullOr(Schema.Number),
+	},
+) {}
 
 export interface ScrapeProxyResponse {
 	readonly status: number
@@ -26,7 +33,9 @@ export interface ApiClientShape {
 		subTargetKey?: string | null,
 	) => Effect.Effect<ScrapeProxyResponse, ApiRequestError>
 	/** Report scrape outcomes to `/api/internal/scrape-results`. */
-	readonly reportResults: (results: ReadonlyArray<ScrapeResultReport>) => Effect.Effect<void, ApiRequestError>
+	readonly reportResults: (
+		results: ReadonlyArray<ScrapeResultReport>,
+	) => Effect.Effect<void, ApiRequestError>
 }
 
 const decodeTargets = Schema.decodeUnknownEffect(InternalScrapeTargetList)
@@ -59,7 +68,8 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientShape>()("@ma
 			}
 			return yield* Effect.try({
 				try: () => JSON.parse(text) as unknown,
-				catch: () => new ApiRequestError({ message: "scrape-targets returned invalid JSON", status: null }),
+				catch: () =>
+					new ApiRequestError({ message: "scrape-targets returned invalid JSON", status: null }),
 			}).pipe(
 				Effect.flatMap((json) =>
 					decodeTargets(json).pipe(

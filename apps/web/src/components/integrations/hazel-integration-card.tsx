@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react"
 import { Exit } from "effect"
 import { HazelStartConnectRequest } from "@maple/domain/http"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { toast } from "sonner"
 
 import { HazelIcon, LoaderIcon } from "@/components/icons"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-
-const HAZEL_DOCS_URL = "https://hazel.sh/docs/integrations/maple"
-/** Hazel's brand orange — third-party brand color, no app token applies. */
-export const HAZEL_ACCENT = "#F46F0F"
+import { HAZEL_ACCENT, IntegrationIconPlate } from "./integration-catalog"
+import { IntegrationEmptyState } from "./integration-empty-state"
 
 export function HazelIntegrationCard() {
 	const statusResult = useAtomValue(
@@ -79,58 +78,44 @@ export function HazelIntegrationCard() {
 
 	const isConnected = status?.connected === true
 
-	return (
-		<div
-			className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4"
-			style={{ ["--tile-accent" as string]: HAZEL_ACCENT }}
-		>
-			<span
-				className="relative inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card"
-				aria-hidden
+	if (!isConnected) {
+		return (
+			<IntegrationEmptyState
+				icon={HazelIcon}
+				accent={HAZEL_ACCENT}
+				title="Connect Hazel"
+				description="Forward Maple alerts into a Hazel workspace via OAuth. Once connected, create a Hazel destination to pick which workspace receives notifications."
+				footer="You'll authorize Maple in your Hazel workspace."
 			>
-				<span
-					className="absolute inset-0 rounded-lg opacity-70"
-					style={{
-						background:
-							"radial-gradient(circle at 30% 20%, rgba(244,111,15,0.16), transparent 70%)",
-					}}
-				/>
-				<span className="relative" style={{ color: HAZEL_ACCENT }}>
-					<HazelIcon size={22} />
-				</span>
-			</span>
+				<Button onClick={handleConnect} disabled={busy !== null}>
+					{busy === "connect" ? (
+						<LoaderIcon size={16} className="animate-spin" />
+					) : (
+						<HazelIcon size={16} />
+					)}
+					Connect Hazel
+				</Button>
+			</IntegrationEmptyState>
+		)
+	}
+
+	return (
+		<div className="flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4">
+			<IntegrationIconPlate icon={HazelIcon} accent={HAZEL_ACCENT} />
 
 			<div className="flex flex-1 flex-col gap-2">
-				<div className="flex items-start justify-between gap-3">
-					<div>
-						<div className="flex items-center gap-2">
-							<h3 className="text-sm font-semibold">Hazel</h3>
-							{isConnected ? (
-								<span className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-success-foreground">
-									Connected
-								</span>
-							) : (
-								<span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-									Not connected
-								</span>
-							)}
-						</div>
-						<p className="mt-1 text-xs text-muted-foreground">
-							Forward Maple alerts into a Hazel workspace via OAuth. Once connected, create a
-							Hazel destination to pick which workspace receives notifications.
-						</p>
+				<div>
+					<div className="flex items-center gap-2">
+						<h3 className="text-sm font-semibold">Hazel</h3>
+						<Badge variant="success">Connected</Badge>
 					</div>
-					<a
-						href={HAZEL_DOCS_URL}
-						target="_blank"
-						rel="noreferrer"
-						className="text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-					>
-						Docs ↗
-					</a>
+					<p className="mt-1 text-xs text-muted-foreground">
+						Forward Maple alerts into a Hazel workspace via OAuth. Once connected, create a
+						Hazel destination to pick which workspace receives notifications.
+					</p>
 				</div>
 
-				{isConnected && status ? (
+				{status ? (
 					<div className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground">
 						{status.externalUserEmail ? (
 							<div>
@@ -145,42 +130,16 @@ export function HazelIntegrationCard() {
 				) : null}
 
 				<div className="flex flex-wrap gap-2">
-					{isConnected ? (
-						<>
-							<Button
-								size="sm"
-								onClick={handleConnect}
-								disabled={busy !== null}
-								variant="outline"
-							>
-								{busy === "connect" ? (
-									<LoaderIcon size={14} className="animate-spin" />
-								) : null}
-								Reconnect
-							</Button>
-							<Button
-								size="sm"
-								onClick={handleDisconnect}
-								disabled={busy !== null}
-								variant="outline"
-							>
-								{busy === "disconnect" ? (
-									<LoaderIcon size={14} className="animate-spin" />
-								) : null}
-								Disconnect
-							</Button>
-						</>
-					) : (
-						<Button
-							size="sm"
-							onClick={handleConnect}
-							disabled={busy !== null}
-							style={{ background: HAZEL_ACCENT, borderColor: HAZEL_ACCENT, color: "#fff" }}
-						>
-							{busy === "connect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
-							Connect Hazel
-						</Button>
-					)}
+					<Button size="sm" onClick={handleConnect} disabled={busy !== null} variant="outline">
+						{busy === "connect" ? <LoaderIcon size={14} className="animate-spin" /> : null}
+						Reconnect
+					</Button>
+					<Button size="sm" onClick={handleDisconnect} disabled={busy !== null} variant="outline">
+						{busy === "disconnect" ? (
+							<LoaderIcon size={14} className="animate-spin" />
+						) : null}
+						Disconnect
+					</Button>
 				</div>
 			</div>
 		</div>

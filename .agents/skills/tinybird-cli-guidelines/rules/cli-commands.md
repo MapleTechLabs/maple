@@ -64,11 +64,13 @@
 
 - `tb pipe ls`: List all pipes
 - `tb endpoint ls`: List all endpoints
-- `tb endpoint data <pipe_name>`: Get data from endpoint
+- `tb endpoint data <pipe_name>`: Get data from endpoint (use this to test endpoints)
 - `tb endpoint data <pipe_name> --param_name value`: Get data with parameters
 - `tb endpoint stats <pipe_name>`: Show endpoint stats for last 7 days
 - `tb endpoint url <pipe_name>`: Print endpoint URL
 - `tb endpoint token <pipe_name>`: Get token to read endpoint
+
+Note: use `tb endpoint data` to test endpoints, not `tb pipe data`. The `endpoint data` command calls the endpoint as a consumer would, with parameter validation and output formatting.
 
 ## SQL Queries
 
@@ -114,9 +116,12 @@
 ## Branches
 
 - `tb branch ls`: List all branches
-- `tb branch create <name>`: Create a new branch
+- `tb branch create <name>`: Create a new branch (starts empty)
+- `tb branch create <name> --last-partition`: Create a branch with latest production data partition
 - `tb branch rm <name>`: Remove a branch
 - `tb branch clear`: Clear branch state
+- `tb --branch <name> token ls`: List tokens for a specific branch
+- `tb --branch <name> endpoint data <pipe>`: Test endpoint on a specific branch
 
 ## Tinybird Local
 

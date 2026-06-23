@@ -101,9 +101,7 @@ export class RecommendationIssueService extends Context.Service<
 
 		const listResponse = (orgId: string) =>
 			selectAll(orgId).pipe(
-				Effect.map(
-					(rows) => new RecommendationIssuesListResponse({ issues: rows.map(rowToIssue) }),
-				),
+				Effect.map((rows) => new RecommendationIssuesListResponse({ issues: rows.map(rowToIssue) })),
 			)
 
 		// Reads the org's live span attribute keys (last 24h) from the warehouse.
@@ -252,7 +250,9 @@ export class RecommendationIssueService extends Context.Service<
 					db
 						.select({ id: orgRecommendationIssues.id })
 						.from(orgRecommendationIssues)
-						.where(and(eq(orgRecommendationIssues.orgId, orgId), eq(orgRecommendationIssues.id, id)))
+						.where(
+							and(eq(orgRecommendationIssues.orgId, orgId), eq(orgRecommendationIssues.id, id)),
+						)
 						.limit(1),
 				),
 			)
@@ -260,7 +260,10 @@ export class RecommendationIssueService extends Context.Service<
 				yield* Effect.logWarning("Recommendation issue not found").pipe(
 					Effect.annotateLogs({ issueId: id, orgId }),
 				)
-				return yield* new RecommendationIssueNotFoundError({ id, message: "Recommendation not found" })
+				return yield* new RecommendationIssueNotFoundError({
+					id,
+					message: "Recommendation not found",
+				})
 			}
 
 			const now = yield* Clock.currentTimeMillis

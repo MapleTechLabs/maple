@@ -9,7 +9,13 @@ interface HttpSpanLabelProps {
 	textClassName?: string
 }
 
-export function HttpSpanLabel({ spanName, spanAttributes, spanKind, className, textClassName }: HttpSpanLabelProps) {
+export function HttpSpanLabel({
+	spanName,
+	spanAttributes,
+	spanKind,
+	className,
+	textClassName,
+}: HttpSpanLabelProps) {
 	const httpInfo = getHttpInfo({ spanName, spanAttributes, spanKind })
 
 	if (!httpInfo) {

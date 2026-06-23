@@ -1,5 +1,5 @@
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router"
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 import { Result } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
@@ -19,12 +19,15 @@ import {
 	getServiceReleasesTimelineResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { detectReleaseMarkers } from "@/lib/services/release-markers"
+import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { Button } from "@maple/ui/components/ui/button"
 import { BellIcon } from "@/components/icons"
 import { ServiceDependenciesTab } from "@/components/services/service-dependencies-tab"
+import { ServiceEnvironmentSwitcher } from "@/components/services/service-environment-switcher"
+import { OptionalStringArrayParam } from "@/lib/search-params"
 
 const ServiceDetailTab = Schema.Literals(["overview", "dependencies"])
 type ServiceDetailTabValue = Schema.Schema.Type<typeof ServiceDetailTab>
@@ -34,6 +37,11 @@ const serviceDetailSearchSchema = Schema.Struct({
 	endTime: Schema.optional(Schema.String),
 	timePreset: Schema.optional(Schema.String),
 	tab: Schema.optional(ServiceDetailTab),
+	// Scopes the Overview charts to a single deployment environment (carried from
+	// the clicked service-list row, or chosen via the env switcher). Single-element
+	// by convention; `undefined` = all environments. Uses the JSON-string-tolerant
+	// param so a serialized array URL survives TanStack Router's parseSearch.
+	environments: OptionalStringArrayParam,
 })
 
 export const Route = effectRoute(createFileRoute("/services/$serviceName"))({
@@ -130,6 +138,15 @@ function ServiceDetailContent() {
 		})
 	}
 
+	const handleEnvironmentChange = (environment: string | undefined) => {
+		navigate({
+			search: (prev: Record<string, unknown>) => ({
+				...prev,
+				environments: environment ? [environment] : undefined,
+			}),
+		})
+	}
+
 	return (
 		<DashboardLayout
 			breadcrumbs={[{ label: "Services", href: "/services" }, { label: serviceName }]}
@@ -156,6 +173,17 @@ function ServiceDetailContent() {
 							</TabsTrigger>
 						</TabsList>
 					</Tabs>
+					{/* Env scope only applies to the Overview charts; hide it on the
+					    Dependencies tab so it can't imply a filter it doesn't drive. */}
+					{activeTab === "overview" && (
+						<ServiceEnvironmentSwitcher
+							serviceName={serviceName}
+							startTime={effectiveStartTime}
+							endTime={effectiveEndTime}
+							value={search.environments?.[0]}
+							onChange={handleEnvironmentChange}
+						/>
+					)}
 					<div className="flex items-center gap-2">
 						<TimeRangeHeaderControls
 							startTime={search.startTime}
@@ -180,6 +208,7 @@ function ServiceDetailContent() {
 					serviceName={serviceName}
 					effectiveStartTime={effectiveStartTime}
 					effectiveEndTime={effectiveEndTime}
+					environments={search.environments}
 				/>
 			) : (
 				<ServiceDependenciesTab
@@ -199,15 +228,17 @@ interface OverviewTabProps {
 	serviceName: string
 	effectiveStartTime: string
 	effectiveEndTime: string
+	environments?: string[]
 }
 
-function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: OverviewTabProps) {
+function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
 	const detailResult = useRetainedRefreshableResultValue(
 		getCustomChartServiceDetailResultAtom({
 			data: {
 				serviceName,
 				startTime: effectiveStartTime,
 				endTime: effectiveEndTime,
+				environments,
 			},
 		}),
 	)
@@ -229,12 +260,37 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: Over
 		return detectReleaseMarkers(timeline).map((m) => ({
 			x: m.bucket,
 			label: m.label,
+			// Full SHA so the marker's hover card can resolve the commit; `label`
+			// stays the short form rendered on the flag.
+			sha: m.commitSha,
 			color: "var(--muted-foreground)",
 			strokeDasharray: "6 4",
 		}))
 	}, [releasesResult])
 
+	// A deploy marker's flag is a commit hover card: hovering it resolves the
+	// release's commit (when the repo is connected/synced) and otherwise falls back
+	// to the short SHA as plain text. Shared across all four synced charts.
+	const renderReferenceMarker = useCallback(
+		(line: ChartReferenceLine) => (
+			<CommitShaHoverCard
+				sha={line.sha ?? ""}
+				className="rounded-full border border-border/60 bg-card/95 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
+			>
+				{line.label}
+			</CommitShaHoverCard>
+		),
+		[],
+	)
+
 	const isWaiting = Result.isSuccess(detailResult) && detailResult.waiting
+
+	// Cold load (no retained data yet) → drive each chart's loading skeleton so
+	// the grid shows `ChartSkeleton` until the warehouse query resolves, rather
+	// than rendering an empty chart with `[]` while the data is still in flight.
+	// On a refresh the retained hook returns `Success(waiting: true)` (not
+	// `Initial`), so this stays false and the stale-data dim (`opacity-60`) wins.
+	const isDetailLoading = Result.isInitial(detailResult)
 
 	// ServiceDetail points are typed structs; the chart grid consumes a
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
@@ -260,6 +316,8 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime }: Over
 		tooltip: chart.tooltip,
 		rateMode: chart.rateMode,
 		referenceLines: releaseMarkers,
+		renderReferenceMarker,
+		isLoading: isDetailLoading,
 	}))
 
 	return <MetricsGrid items={metrics} waiting={!!isWaiting} syncId={`service-${serviceName}`} />

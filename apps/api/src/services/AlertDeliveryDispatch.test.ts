@@ -1,8 +1,13 @@
+import type { AlertDestinationRow } from "@maple/db"
+import { AlertDeliveryError } from "@maple/domain/http"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import {
 	buildDiscordEmbedsFromTemplate,
 	buildSlackBlocksFromTemplate,
 	buildTemplateContext,
+	dispatchDelivery,
+	type DispatchContext,
 	type TemplateRenderContext,
 } from "./AlertDeliveryDispatch"
 import { renderTemplate } from "./alert-templating/renderer"
@@ -107,5 +112,65 @@ describe("buildDiscordEmbedsFromTemplate", () => {
 		expect(embed.url).toBe(LINK)
 		// critical (non-resolve) → red
 		expect(embed.color).toBe(0xe01e5a)
+	})
+})
+
+describe("dispatchDelivery", () => {
+	const destinationRow: AlertDestinationRow = {
+		id: "dest_1" as AlertDestinationRow["id"],
+		orgId: "org_1" as AlertDestinationRow["orgId"],
+		name: "PagerDuty",
+		type: "pagerduty",
+		enabled: 1,
+		configJson: "{}",
+		secretCiphertext: "",
+		secretIv: "",
+		secretTag: "",
+		lastTestedAt: null,
+		lastTestError: null,
+		createdAt: 0,
+		updatedAt: 0,
+		createdBy: "user_1",
+		updatedBy: "user_1",
+	}
+
+	const pagerdutyContext: DispatchContext = {
+		deliveryKey: "org_1:dest_1:test",
+		destination: destinationRow,
+		publicConfig: { summary: "Test alert", channelLabel: null },
+		secretConfig: { type: "pagerduty", integrationKey: "not-a-valid-routing-key" },
+		ruleId: "rule_1",
+		ruleName: "Test alert",
+		groupKey: null,
+		signalType: "throughput",
+		severity: "warning",
+		comparator: "lt",
+		threshold: 1,
+		thresholdUpper: null,
+		eventType: "test",
+		incidentId: null,
+		incidentStatus: "resolved",
+		dedupeKey: "org_1:dest_1:test",
+		windowMinutes: 5,
+		value: 0,
+		sampleCount: 0,
+		template: null,
+		sentAtMs: Date.parse("2026-06-02T00:00:00.000Z"),
+	}
+
+	it("includes the provider's response body in the delivery error", async () => {
+		const body =
+			'{"status":"invalid event","message":"Event object is invalid","errors":["routing_key is invalid"]}'
+		const fetchFn: typeof fetch = async () => new Response(body, { status: 400 })
+
+		const error = await Effect.runPromise(
+			Effect.flip(dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT)),
+		)
+
+		expect(error).toBeInstanceOf(AlertDeliveryError)
+		expect(error.destinationType).toBe("pagerduty")
+		expect(error.message).toContain("PagerDuty delivery failed with 400")
+		// The PagerDuty rejection reason is now surfaced instead of swallowed.
+		expect(error.message).toContain("routing_key is invalid")
 	})
 })

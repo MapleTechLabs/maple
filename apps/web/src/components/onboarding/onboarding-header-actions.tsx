@@ -124,15 +124,7 @@ function SelfHostedUserMenu() {
 	)
 }
 
-function UserAvatar({
-	imageUrl,
-	initial,
-	name,
-}: {
-	imageUrl?: string
-	initial: string
-	name: string
-}) {
+function UserAvatar({ imageUrl, initial, name }: { imageUrl?: string; initial: string; name: string }) {
 	return imageUrl ? (
 		<img src={imageUrl} alt={name} className="size-5 shrink-0 rounded-md object-cover" />
 	) : (

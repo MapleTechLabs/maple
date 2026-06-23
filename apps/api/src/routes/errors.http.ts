@@ -145,10 +145,16 @@ export const HttpErrorsLive = HttpApiBuilder.group(MapleApi, "errors", (handlers
 						issueId: params.issueId,
 						severity: payload.severity ?? "null",
 					})
-					return yield* errors.setSeverity(tenant.orgId, actor.id, params.issueId, payload.severity, {
-						note: payload.note,
-						source: "manual",
-					})
+					return yield* errors.setSeverity(
+						tenant.orgId,
+						actor.id,
+						params.issueId,
+						payload.severity,
+						{
+							note: payload.note,
+							source: "manual",
+						},
+					)
 				}).pipe(Effect.withSpan("HttpErrors.setIssueSeverity")),
 			)
 			.handle("listIssueEvents", ({ params, query }) =>

@@ -1,28 +1,12 @@
 /**
- * Schema-aware persisted queues for background work.
+ * Stores schema-encoded queue work in persistent storage.
  *
- * A `PersistedQueue` stores JSON-encoded values in a named queue and lets
- * workers `take` one value at a time inside a scoped processing window. It is
+ * A `PersistedQueue<A>` keeps JSON-encoded values in a named queue and lets
+ * workers take one value at a time inside a scoped processing window. It is
  * useful for durable handoffs, background jobs, outbox-style integrations, and
- * workloads where failed work should be retried across fibers, process
- * restarts, or multiple workers sharing Redis or SQL.
- *
- * Delivery is at-least-once: a handler that fails, is interrupted, or loses its
- * backing-store lock may see the same element again until `maxAttempts` is
- * reached. Use stable custom ids when offering idempotent work, and choose ids
- * that are collision-free for the backing store because stores can enforce
- * uniqueness at the queue, prefix, or table level. Ordering is intentionally a
- * store-level concern; retries, lock expiration, polling, and multiple workers
- * can move entries behind newer work, so handlers should not rely on strict
- * FIFO processing.
- *
- * Values are encoded and decoded with the supplied schema using the JSON codec,
- * so schema services must be available when offering and taking values. Changing
- * a queue name, schema, Redis prefix, SQL table, or id format is a persistence
- * migration: old entries may decode differently, stop being visible, or collide
- * with new entries. The memory store is process-local and volatile, while Redis
- * and SQL stores use leases that should be tuned for the expected processing
- * time.
+ * work that should retry across fibers, process restarts, or multiple workers.
+ * This module includes a queue factory, store service, id-based de-duplication,
+ * retry handling, and in-memory, Redis, and SQL-backed store layers.
  *
  * @since 4.0.0
  */
@@ -114,7 +98,7 @@ export interface PersistedQueue<in out A, out R = never> {
 /**
  * Service for constructing named `PersistedQueue` instances from schemas.
  *
- * @category Factory
+ * @category services
  * @since 4.0.0
  */
 export class PersistedQueueFactory extends Context.Service<
@@ -131,7 +115,7 @@ export class PersistedQueueFactory extends Context.Service<
  * Accesses `PersistedQueueFactory` to create a named persisted queue for a
  * schema.
  *
- * @category Accessors
+ * @category accessors
  * @since 4.0.0
  */
 export const make = <S extends Schema.Top>(options: {
@@ -152,7 +136,7 @@ export const make = <S extends Schema.Top>(options: {
  * assigned an id when needed, and acknowledged or retried according to the
  * `take` handler's exit.
  *
- * @category Factory
+ * @category constructors
  * @since 4.0.0
  */
 export const makeFactory = Effect.gen(function*() {
@@ -208,7 +192,7 @@ export const makeFactory = Effect.gen(function*() {
 /**
  * Provides `PersistedQueueFactory` using the current `PersistedQueueStore`.
  *
- * @category Factory
+ * @category layers
  * @since 4.0.0
  */
 export const layer: Layer.Layer<
@@ -220,7 +204,7 @@ export const layer: Layer.Layer<
 /**
  * Runtime type identifier for `PersistedQueueError`.
  *
- * @category errors
+ * @category type IDs
  * @since 4.0.0
  */
 export const ErrorTypeId: ErrorTypeId = "~@effect/experimental/PersistedQueue/PersistedQueueError"
@@ -228,7 +212,7 @@ export const ErrorTypeId: ErrorTypeId = "~@effect/experimental/PersistedQueue/Pe
 /**
  * Type-level identifier used to brand `PersistedQueueError` values.
  *
- * @category errors
+ * @category type IDs
  * @since 4.0.0
  */
 export type ErrorTypeId = "~@effect/experimental/PersistedQueue/PersistedQueueError"
@@ -244,7 +228,7 @@ export class PersistedQueueError extends Schema.ErrorClass<PersistedQueueError>(
 )({
   _tag: Schema.tag("PersistedQueueError"),
   message: Schema.String,
-  cause: Schema.optional(Schema.Defect)
+  cause: Schema.optional(Schema.Defect())
 }) {
   /**
    * Marks this value as a persisted queue error for runtime guards.
@@ -255,14 +239,19 @@ export class PersistedQueueError extends Schema.ErrorClass<PersistedQueueError>(
 }
 
 /**
- * Low-level backing store service used by `PersistedQueue`.
+ * Defines the low-level backing store service used by `PersistedQueue`.
+ *
+ * **When to use**
+ *
+ * Use to provide the persistence backend that stores queued elements, scoped
+ * takes, retry attempts, and acknowledgements.
  *
  * **Details**
  *
  * The store persists offered elements and returns taken elements in a scope so
  * the finalizer can complete or retry them based on the processing exit.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export class PersistedQueueStore extends Context.Service<
@@ -300,7 +289,7 @@ export class PersistedQueueStore extends Context.Service<
  * The store is process-local and volatile; failed takes are requeued until the
  * configured maximum attempts is reached.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export const layerStoreMemory: Layer.Layer<
@@ -374,7 +363,7 @@ export const layerStoreMemory: Layer.Layer<
  * refreshes locks while items are being processed, and moves exhausted items
  * to a failed queue.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export const makeStoreRedis = Effect.fnUntraced(function*(
@@ -519,7 +508,7 @@ export const makeStoreRedis = Effect.fnUntraced(function*(
             id,
             JSON.stringify({ id, element, attempts: 0 })
           )
-          : redis.send("LPUSH", `${prefix}${name}`, JSON.stringify({ id, element, attempts: 0 })),
+          : redis.send("RPUSH", `${prefix}${name}`, JSON.stringify({ id, element, attempts: 0 })),
         ({ cause }) =>
           new PersistedQueueError({
             message: "Failed to offer element to persisted queue",
@@ -735,7 +724,7 @@ end
 /**
  * Provides a Redis-backed `PersistedQueueStore` using `makeStoreRedis`.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export const layerStoreRedis: (
@@ -760,7 +749,7 @@ export const layerStoreRedis: (
  * per-worker locks, refreshes active locks while scoped takes are running, and
  * retries or completes rows according to the processing exit.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export const makeStoreSql: (
@@ -1190,7 +1179,7 @@ class QueueKey extends Data.Class<{
 /**
  * Provides a SQL-backed `PersistedQueueStore` using `makeStoreSql`.
  *
- * @category Store
+ * @category store
  * @since 4.0.0
  */
 export const layerStoreSql: (

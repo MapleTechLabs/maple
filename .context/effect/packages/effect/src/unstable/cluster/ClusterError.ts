@@ -1,24 +1,10 @@
 /**
- * The `ClusterError` module defines the typed error values used by the
- * unstable cluster runtime when routing messages to entities, coordinating
- * runners, and persisting mailbox work.
+ * Defines the structured errors used by the unstable cluster runtime.
  *
- * These errors are useful when implementing cluster transports, runner
- * supervision, mailbox storage, and entity request handling. They make common
- * distributed-system failures explicit: a message may reach a runner that no
- * longer owns the entity, a runner may be unavailable or unregistered, a
- * payload may fail to decode, persistence may fail, a mailbox may be at
- * capacity, or an envelope may already be in progress.
- *
- * **Gotchas**
- *
- * - Entity ownership and runner availability can change while messages are in
- *   flight, so routing errors should generally be treated as retryable or
- *   recoverable by higher-level cluster logic.
- * - `MalformedMessage` points to a schema/serialization boundary failure,
- *   while `PersistenceError` preserves failures from durable mailbox storage.
- * - `AlreadyProcessingMessage` protects an entity mailbox from processing the
- *   same envelope concurrently.
+ * These tagged, schema-backed errors describe failures at routing, runner
+ * membership, serialization, persistence, mailbox capacity, and duplicate
+ * envelope boundaries. Cluster clients, runners, and storage adapters use these
+ * shared error values to report failures through typed Effect errors.
  *
  * @since 4.0.0
  */
@@ -34,7 +20,7 @@ const TypeId = "~effect/cluster/ClusterError"
 
 /**
  * Represents an error that occurs when a Runner receives a message for an entity
- * that it is not assigned to it.
+ * that is not assigned to the receiving runner.
  *
  * @category errors
  * @since 4.0.0
@@ -63,15 +49,20 @@ export class EntityNotAssignedToRunner
 }
 
 /**
- * Represents an error that occurs when a message fails to be properly
- * deserialized by an entity.
+ * Represents an error that occurs when a message fails at a schema
+ * serialization or deserialization boundary.
+ *
+ * **Details**
+ *
+ * `cause` carries the underlying failure. `refail` maps encode and decode
+ * failures into `MalformedMessage` values.
  *
  * @category errors
  * @since 4.0.0
  */
 export class MalformedMessage extends Schema.ErrorClass<MalformedMessage>(`${TypeId}/MalformedMessage`)({
   _tag: Schema.tag("MalformedMessage"),
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {
   /**
    * Marks this value as a cluster error for runtime guards.
@@ -110,7 +101,7 @@ export class MalformedMessage extends Schema.ErrorClass<MalformedMessage>(`${Typ
  */
 export class PersistenceError extends Schema.ErrorClass<PersistenceError>(`${TypeId}/PersistenceError`)({
   _tag: Schema.tag("PersistenceError"),
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {
   /**
    * Marks this value as a cluster error for runtime guards.
@@ -176,7 +167,16 @@ export class RunnerUnavailable extends Schema.ErrorClass<RunnerUnavailable>(`${T
 }
 
 /**
- * Represents an error that occurs when the entities mailbox is full.
+ * Represents an error that occurs when the entity mailbox is full.
+ *
+ * **Details**
+ *
+ * Carries the `address` whose bounded mailbox is at capacity.
+ *
+ * **Gotchas**
+ *
+ * Volatile requests fail immediately. Persisted or durable messages are retried
+ * or resumed from storage when the mailbox is full.
  *
  * @category errors
  * @since 4.0.0
@@ -203,8 +203,12 @@ export class MailboxFull extends Schema.ErrorClass<MailboxFull>(`${TypeId}/Mailb
 }
 
 /**
- * Represents an error that occurs when the entity is already processing a
- * request.
+ * Represents an error that occurs when the same request envelope is already
+ * being processed.
+ *
+ * **Details**
+ *
+ * Carries the `address` and `envelopeId` for the affected request envelope.
  *
  * @category errors
  * @since 4.0.0

@@ -37,6 +37,18 @@ export const logs = defineDatasource("logs", {
 			jsonPath: "$.log_attributes",
 		}),
 	},
+	// `TraceId` is not in the sorting key and a trace spans many services (so
+	// `ServiceName` isn't fixed either) — a `WHERE TraceId = ...` lookup would
+	// otherwise scan whole daily partitions. The bloom filter lets ClickHouse
+	// skip granules that don't contain the trace, mirroring `traces.idx_trace_id`.
+	indexes: [
+		{
+			name: "idx_trace_id",
+			expr: "TraceId",
+			type: "bloom_filter(0.01)",
+			granularity: 1,
+		},
+	],
 	engine: engine.mergeTree({
 		partitionKey: "toDate(TimestampTime)",
 		sortingKey: ["OrgId", "ServiceName", "TimestampTime", "Timestamp"],
@@ -359,6 +371,12 @@ export const serviceMapDbEdgesHourly = defineDatasource("service_map_db_edges_ho
 		UnsampledSpanCount: t.simpleAggregateFunction("sum", t.uint64()),
 		SampleRateSum: t.simpleAggregateFunction("sum", t.float64()),
 	},
+	// The 90d rollup TTL outlives the 30d `traces` source, so a deploy that
+	// re-points the MV can't reconstruct the full window from `traces`. Carry
+	// existing rows forward (non-destructive) instead — same pattern as the other
+	// hourly rollups (`service_map_db_query_shapes_hourly`, `logs_aggregates_hourly`,
+	// `service_platforms_hourly`).
+	forwardQuery: `SELECT *`,
 	engine: engine.aggregatingMergeTree({
 		partitionKey: "toDate(Hour)",
 		sortingKey: ["OrgId", "Hour", "DeploymentEnv", "ServiceName", "DbSystem"],
@@ -419,6 +437,11 @@ export const serviceMapDbQueryShapesHourly = defineDatasource("service_map_db_qu
 		sortingKey: ["OrgId", "Hour", "DeploymentEnv", "ServiceName", "DbSystem", "QueryKey"],
 		ttl: "toDate(Hour) + INTERVAL 90 DAY",
 	}),
+	// The 90d rollup TTL outlives the 30d `traces` source, so a backfill from
+	// `traces` can't reconstruct the full window. Carry existing rows forward
+	// (non-destructive deploy) instead — same pattern as the other hourly
+	// rollups (`logs_aggregates_hourly`, `service_usage_hourly`).
+	forwardQuery: `SELECT *`,
 })
 
 export type ServiceMapDbQueryShapesHourlyRow = InferRow<typeof serviceMapDbQueryShapesHourly>
@@ -494,34 +517,31 @@ export type ServiceExternalEdgesHourlyRow = InferRow<typeof serviceExternalEdges
  * operation that an incremental MV cannot express. Same caveat as
  * `service_map_edges_hourly`.
  */
-export const serviceAddressResolutionsHourly = defineDatasource(
-	"service_address_resolutions_hourly",
-	{
-		description:
-			"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
-		jsonPaths: false,
-		schema: {
-			OrgId: t.string().lowCardinality(),
-			Hour: t.dateTime(),
-			SourceService: t.string().lowCardinality(),
-			ParentServerAddress: t.string(),
-			ResolvedTargetService: t.string().lowCardinality(),
-			DeploymentEnv: t.string().lowCardinality(),
-		},
-		engine: engine.replacingMergeTree({
-			partitionKey: "toDate(Hour)",
-			sortingKey: [
-				"OrgId",
-				"Hour",
-				"DeploymentEnv",
-				"SourceService",
-				"ParentServerAddress",
-				"ResolvedTargetService",
-			],
-			ttl: "toDate(Hour) + INTERVAL 90 DAY",
-		}),
+export const serviceAddressResolutionsHourly = defineDatasource("service_address_resolutions_hourly", {
+	description:
+		"Resolved (sourceService, parent.server.address) → resolved targetService facts emitted by the ServiceMapRollupService rollup. Used to anti-join internal-service overlap out of the external-edges query.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Hour: t.dateTime(),
+		SourceService: t.string().lowCardinality(),
+		ParentServerAddress: t.string(),
+		ResolvedTargetService: t.string().lowCardinality(),
+		DeploymentEnv: t.string().lowCardinality(),
 	},
-)
+	engine: engine.replacingMergeTree({
+		partitionKey: "toDate(Hour)",
+		sortingKey: [
+			"OrgId",
+			"Hour",
+			"DeploymentEnv",
+			"SourceService",
+			"ParentServerAddress",
+			"ResolvedTargetService",
+		],
+		ttl: "toDate(Hour) + INTERVAL 90 DAY",
+	}),
+})
 
 export type ServiceAddressResolutionsHourlyRow = InferRow<typeof serviceAddressResolutionsHourly>
 

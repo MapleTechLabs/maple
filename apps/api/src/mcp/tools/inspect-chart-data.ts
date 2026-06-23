@@ -94,10 +94,7 @@ function unsupportedEndpointResult(
 	return { content: [{ type: "text" as const, text }] }
 }
 
-function renderInspectionMarkdown(
-	data: InspectChartDataData,
-	dashboardName: string,
-): string {
+function renderInspectionMarkdown(data: InspectChartDataData, dashboardName: string): string {
 	const lines: string[] = []
 	lines.push(`## Widget inspection: ${data.widget.title ?? data.widget.id}`)
 	lines.push(`Dashboard: ${dashboardName}`)

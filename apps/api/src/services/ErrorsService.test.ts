@@ -22,12 +22,14 @@ import {
 	errorIssueEvents,
 	errorIssueStates,
 	issueEscalations,
+	orgIngestKeys,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import type { CompiledQuery } from "@maple/query-engine/ch"
 import { Database, DatabaseError } from "../lib/DatabaseLive"
+import { DatabaseLibsqlLive } from "../lib/DatabaseLibsqlLive"
 import { Env } from "../lib/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "../lib/test-pglite"
+import { cleanupTempDirs, createTempDbUrl as makeTempDb } from "../lib/test-sqlite"
 import type { SqlQueryOptions, WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
 import { WarehouseQueryService } from "../lib/WarehouseQueryService"
 import { describeCause, ErrorsService, isBusyDatabaseError, makePersistenceError } from "./ErrorsService"
@@ -74,8 +76,7 @@ describe("describeCause", () => {
 })
 
 describe("isBusyDatabaseError", () => {
-	const makeError = (message: string, cause: unknown = null) =>
-		new DatabaseError({ message, cause })
+	const makeError = (message: string, cause: unknown = null) => new DatabaseError({ message, cause })
 
 	it("matches SQLITE_BUSY in message", () => {
 		expect(isBusyDatabaseError(makeError("SQLITE_BUSY: database is locked"))).toBe(true)
@@ -97,20 +98,23 @@ describe("isBusyDatabaseError", () => {
 })
 
 // ---------------------------------------------------------------------------
-// PGlite-backed integration harness (fresh embedded Postgres per test)
+// libsql-backed integration harness (fresh temp DB per test)
 // ---------------------------------------------------------------------------
 
-const createdDbs: TestDb[] = []
+const createdTempDirs: string[] = []
 
-afterEach(() => cleanupTestDbs(createdDbs))
+afterEach(() => {
+	cleanupTempDirs(createdTempDirs)
+})
 
-const testConfig = () =>
+const testConfig = (url: string) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
 			PORT: "3478",
 			MCP_PORT: "3479",
 			TINYBIRD_HOST: "https://api.tinybird.co",
 			TINYBIRD_TOKEN: "test-token",
+			MAPLE_DB_URL: url,
 			MAPLE_AUTH_MODE: "self_hosted",
 			MAPLE_ROOT_PASSWORD: "test-root-password",
 			MAPLE_DEFAULT_ORG_ID: "default",
@@ -128,11 +132,24 @@ const testConfig = () =>
  */
 const makeWarehouseStub = (
 	scanRows: () => ReadonlyArray<Record<string, unknown>> = () => [],
+	onScan?: () => void,
 ): WarehouseQueryServiceShape => ({
 	query: () => Effect.die(new Error("unexpected warehouse query")),
 	sqlQuery: () => Effect.succeed([]),
-	compiledQuery: <T>(_tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) =>
-		Effect.sync(() => compiled.castRows(options?.context === "errorIssuesScan" ? scanRows() : [])),
+	compiledQuery: <T>(tenant: unknown, compiled: CompiledQuery<T>, options?: SqlQueryOptions) =>
+		Effect.sync(() => {
+			if (options?.context === "errorIssuesScan") {
+				onScan?.()
+				return compiled.castRows(scanRows())
+			}
+			// Active-org discovery reads the same data the scan does, so model that
+			// consistency: surface the org iff it currently has error rows.
+			if (options?.context === "errorActiveOrgsDiscovery") {
+				const orgId = (tenant as { orgId?: string }).orgId ?? ""
+				return compiled.castRows(scanRows().length > 0 ? [{ orgId }] : [])
+			}
+			return compiled.castRows([])
+		}),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected warehouse query")),
 	ingest: () => Effect.void,
 	asExecutor: () => {
@@ -140,10 +157,10 @@ const makeWarehouseStub = (
 	},
 })
 
-const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>) => {
-	const testDb = createTestDb(createdDbs)
-	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
-	const databaseLive = testDb.layer
+const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>, onScan?: () => void) => {
+	const { url } = makeTempDb("maple-errors-service-", createdTempDirs)
+	const envLive = Env.layer.pipe(Layer.provide(testConfig(url)))
+	const databaseLive = DatabaseLibsqlLive.pipe(Layer.provide(envLive))
 	const dispatcherStub = Layer.succeed(NotificationDispatcher, {
 		dispatch: () => Effect.succeed({ delivered: 0, failed: 0 }),
 	})
@@ -152,7 +169,7 @@ const makeErrorsLayer = (scanRows?: () => ReadonlyArray<Record<string, unknown>>
 			Layer.mergeAll(
 				envLive,
 				databaseLive,
-				Layer.succeed(WarehouseQueryService, makeWarehouseStub(scanRows)),
+				Layer.succeed(WarehouseQueryService, makeWarehouseStub(scanRows, onScan)),
 				dispatcherStub,
 			),
 		),
@@ -166,7 +183,6 @@ const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const asIncidentId = Schema.decodeUnknownSync(ErrorIncidentId)
 const asEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const asDestinationId = Schema.decodeUnknownSync(AlertDestinationId)
-const asJsonRecord = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))
 
 const ORG = asOrgId("org_errors_service_test")
 const USER = asUserId("user_errors_service_test")
@@ -184,11 +200,35 @@ const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.
 				exceptionType: "TimeoutError",
 				exceptionMessage: "upstream timed out",
 				topFrame: "",
-				firstSeenAt: new Date(now),
-				lastSeenAt: new Date(now),
-				createdAt: new Date(now),
-				updatedAt: new Date(now),
+				firstSeenAt: now,
+				lastSeenAt: now,
+				createdAt: now,
+				updatedAt: now,
 				...overrides,
+			}),
+		)
+	})
+
+/** Make an org "known" via an ingest key only — no issues, no incident state. */
+const seedIngestKey = (orgId: string) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const now = yield* Clock.currentTimeMillis
+		yield* database.execute((db) =>
+			db.insert(orgIngestKeys).values({
+				orgId,
+				publicKey: `pk_${orgId}`,
+				publicKeyHash: `pkh_${orgId}`,
+				privateKeyCiphertext: "ct",
+				privateKeyIv: "iv",
+				privateKeyTag: "tag",
+				privateKeyHash: `prh_${orgId}`,
+				publicRotatedAt: now,
+				privateRotatedAt: now,
+				createdAt: now,
+				updatedAt: now,
+				createdBy: "test",
+				updatedBy: "test",
 			}),
 		)
 	})
@@ -217,11 +257,10 @@ describe("ErrorsService.setSeverity", () => {
 			)
 			const severityEvents = events.filter((e) => e.type === "severity_change")
 			assert.lengthOf(severityEvents, 1)
-			expect(severityEvents[0]?.payloadJson).toMatchObject({
-				to: "critical",
-				source: "manual",
-				note: "paging-worthy",
-			})
+			const payload = JSON.parse(severityEvents[0]?.payloadJson ?? "{}")
+			assert.strictEqual(payload.to, "critical")
+			assert.strictEqual(payload.source, "manual")
+			assert.strictEqual(payload.note, "paging-worthy")
 
 			const escalations = yield* database.execute((db) =>
 				db.select().from(issueEscalations).where(eq(issueEscalations.issueId, issueId)),
@@ -282,13 +321,13 @@ describe("ErrorsService.setSeverity", () => {
 					orgId: ORG,
 					name: "Primary webhook",
 					type: "webhook",
-					enabled: true,
-					configJson: {},
+					enabled: 1,
+					configJson: "{}",
 					secretCiphertext: "x",
 					secretIv: "x",
 					secretTag: "x",
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
+					createdAt: now,
+					updatedAt: now,
 					createdBy: USER,
 					updatedBy: USER,
 				}),
@@ -350,10 +389,10 @@ describe("ErrorsService.setSeverity", () => {
 					exceptionType: "High latency",
 					exceptionMessage: "p95_latency gte 800",
 					topFrame: "",
-					firstSeenAt: new Date(now),
-					lastSeenAt: new Date(now),
-					createdAt: new Date(now),
-					updatedAt: new Date(now),
+					firstSeenAt: now,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
 				}),
 			)
 
@@ -458,6 +497,31 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
 
+	it.effect("an ingest-only org with no recent errors and no issue state is not scanned", () => {
+		let scanCalls = 0
+		return Effect.gen(function* () {
+			const errors = yield* ErrorsService
+			yield* TestClock.setTime(TICK_MS)
+			// Known via an ingest key, but no errors and no issue state — and
+			// discovery (empty scan rows) reports it inactive.
+			yield* seedIngestKey(ORG)
+
+			const result = yield* errors.runTick()
+			// Counted as known, but the expensive warehouse scan is skipped.
+			assert.strictEqual(result.orgsProcessed, 1)
+			assert.strictEqual(scanCalls, 0)
+		}).pipe(
+			Effect.provide(
+				makeErrorsLayer(
+					() => [],
+					() => {
+						scanCalls += 1
+					},
+				),
+			),
+		)
+	})
+
 	it.effect(
 		"a fresh scan row creates a triage issue, opens a first_seen incident, and records the created event",
 		() => {
@@ -497,9 +561,9 @@ describe("ErrorsService.runTick", () => {
 				assert.strictEqual(issue.errorLabel, "TimeoutError: upstream timed out")
 				assert.strictEqual(issue.topFrame, "checkout/handler.ts:42")
 				assert.strictEqual(issue.occurrenceCount, 3)
-				assert.strictEqual(issue.firstSeenAt.getTime(), TICK_MS - 60_000)
-				assert.strictEqual(issue.lastSeenAt.getTime(), TICK_MS - 1_000)
-				assert.strictEqual(issue.createdAt.getTime(), TICK_MS)
+				assert.strictEqual(issue.firstSeenAt, TICK_MS - 60_000)
+				assert.strictEqual(issue.lastSeenAt, TICK_MS - 1_000)
+				assert.strictEqual(issue.createdAt, TICK_MS)
 
 				const events = yield* loadEventsForIssue(issue.id)
 				assert.deepStrictEqual(
@@ -556,49 +620,53 @@ describe("ErrorsService.runTick", () => {
 		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
 	})
 
-	it.effect("a re-fired fingerprint on a done issue reopens it to triage with a regression incident", () => {
-		const rows = [scanRow()]
-		return Effect.gen(function* () {
-			const errors = yield* ErrorsService
-			yield* TestClock.setTime(TICK_MS)
-			yield* seedIssue(asIssueId(randomUUID()))
-			yield* errors.runTick()
-			const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+	it.effect(
+		"a re-fired fingerprint on a done issue reopens it to triage with a regression incident",
+		() => {
+			const rows = [scanRow()]
+			return Effect.gen(function* () {
+				const errors = yield* ErrorsService
+				yield* TestClock.setTime(TICK_MS)
+				yield* seedIssue(asIssueId(randomUUID()))
+				yield* errors.runTick()
+				const issue = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
 
-			// Resolve through the public workflow (triage -> done is not a legal
-			// direct transition).
-			const actor = yield* errors.ensureUserActor(ORG, USER)
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_progress")
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
-			yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
+				// Resolve through the public workflow (triage -> done is not a legal
+				// direct transition).
+				const actor = yield* errors.ensureUserActor(ORG, USER)
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_progress")
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "in_review")
+				yield* errors.transitionIssue(ORG, actor.id, issue.id, "done")
 
-			const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
-			assert.strictEqual(resolved.workflowState, "done")
-			assert.isNotNull(resolved.resolvedAt)
+				const resolved = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				assert.strictEqual(resolved.workflowState, "done")
+				assert.isNotNull(resolved.resolvedAt)
 
-			yield* TestClock.setTime(TICK_MS + 120_000)
-			const second = yield* errors.runTick()
-			assert.strictEqual(second.issuesTouched, 1)
-			assert.strictEqual(second.incidentsOpened, 1)
+				yield* TestClock.setTime(TICK_MS + 120_000)
+				const second = yield* errors.runTick()
+				assert.strictEqual(second.issuesTouched, 1)
+				assert.strictEqual(second.incidentsOpened, 1)
 
-			// A done issue reopens immediately on re-observation — the errors tick
-			// has no reopen cool-down window.
-			const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
-			assert.strictEqual(reopened.workflowState, "triage")
-			assert.isNull(reopened.resolvedAt)
+				// A done issue reopens immediately on re-observation — the errors tick
+				// has no reopen cool-down window.
+				const reopened = (yield* loadIssuesByFingerprint(SCAN_FINGERPRINT))[0]!
+				assert.strictEqual(reopened.workflowState, "triage")
+				assert.isNull(reopened.resolvedAt)
 
-			const events = yield* loadEventsForIssue(issue.id)
-			assert.lengthOf(
-				events.filter((e) => e.type === "regression"),
-				1,
-			)
+				const events = yield* loadEventsForIssue(issue.id)
+				assert.lengthOf(
+					events.filter((e) => e.type === "regression"),
+					1,
+				)
 
-			const incidents = yield* loadIncidentsForIssue(issue.id)
-			const open = incidents.filter((i) => i.status === "open")
-			assert.lengthOf(open, 1)
-			assert.strictEqual(open[0]?.reason, "regression")
-		}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
-	}, 15_000)
+				const incidents = yield* loadIncidentsForIssue(issue.id)
+				const open = incidents.filter((i) => i.status === "open")
+				assert.lengthOf(open, 1)
+				assert.strictEqual(open[0]?.reason, "regression")
+			}).pipe(Effect.provide(makeErrorsLayer(() => rows)))
+		},
+		15_000,
+	)
 
 	it.effect("a wontfix issue with an indefinite snooze is skipped entirely by the scan", () => {
 		const rows = [scanRow()]
@@ -635,7 +703,7 @@ describe("ErrorsService.runTick", () => {
 			const errors = yield* ErrorsService
 			yield* TestClock.setTime(TICK_MS)
 			const issueId = asIssueId(randomUUID())
-			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: new Date(TICK_MS - 1_000) })
+			yield* seedIssue(issueId, { workflowState: "wontfix", snoozeUntil: TICK_MS - 1_000 })
 
 			const result = yield* errors.runTick()
 			assert.strictEqual(result.issuesReopened, 1)
@@ -649,7 +717,7 @@ describe("ErrorsService.runTick", () => {
 
 			const events = yield* loadEventsForIssue(issueId)
 			const wakeups = events.filter(
-				(e) => e.type === "state_change" && asJsonRecord(e.payloadJson).viaSnoozeWakeup === true,
+				(e) => e.type === "state_change" && JSON.parse(e.payloadJson).viaSnoozeWakeup === true,
 			)
 			assert.lengthOf(wakeups, 1)
 			assert.strictEqual(wakeups[0]?.fromState, "wontfix")
@@ -714,7 +782,7 @@ describe("ErrorsService.runTick", () => {
 			const incidents = yield* loadIncidentsForIssue(issue.id)
 			assert.lengthOf(incidents, 1)
 			assert.strictEqual(incidents[0]?.status, "resolved")
-			assert.strictEqual(incidents[0]?.resolvedAt?.getTime(), resolveTickMs)
+			assert.strictEqual(incidents[0]?.resolvedAt, resolveTickMs)
 
 			const states = yield* database.execute((db) =>
 				db.select().from(errorIssueStates).where(eq(errorIssueStates.issueId, issue.id)),
@@ -769,7 +837,7 @@ describe("ErrorsService.runTick", () => {
 			const archiveCandidate = asIssueId(randomUUID())
 			yield* seedIssue(archiveCandidate, {
 				workflowState: "done",
-				resolvedAt: new Date(RETENTION_TICK_MS - 15 * DAY_MS),
+				resolvedAt: RETENTION_TICK_MS - 15 * DAY_MS,
 			})
 
 			// Archived 91 days ago (> 90-day archived retention): purged together
@@ -777,10 +845,10 @@ describe("ErrorsService.runTick", () => {
 			const purgeCandidate = asIssueId(randomUUID())
 			yield* seedIssue(purgeCandidate, {
 				workflowState: "done",
-				resolvedAt: new Date(RETENTION_TICK_MS - 120 * DAY_MS),
-				archivedAt: new Date(RETENTION_TICK_MS - 91 * DAY_MS),
+				resolvedAt: RETENTION_TICK_MS - 120 * DAY_MS,
+				archivedAt: RETENTION_TICK_MS - 91 * DAY_MS,
 			})
-			const seededAt = new Date(RETENTION_TICK_MS - 120 * DAY_MS)
+			const seededAt = RETENTION_TICK_MS - 120 * DAY_MS
 			yield* database.execute((db) =>
 				db.insert(errorIssueEvents).values({
 					id: asEventId(randomUUID()),
@@ -788,7 +856,7 @@ describe("ErrorsService.runTick", () => {
 					issueId: purgeCandidate,
 					actorId: null,
 					type: "created",
-					payloadJson: {},
+					payloadJson: "{}",
 					createdAt: seededAt,
 				}),
 			)
@@ -827,7 +895,7 @@ describe("ErrorsService.runTick", () => {
 				db.select().from(errorIssues).where(eq(errorIssues.id, archiveCandidate)),
 			)
 			assert.lengthOf(archivedRows, 1)
-			assert.strictEqual(archivedRows[0]?.archivedAt?.getTime(), RETENTION_TICK_MS)
+			assert.strictEqual(archivedRows[0]?.archivedAt, RETENTION_TICK_MS)
 
 			const purgedIssues = yield* database.execute((db) =>
 				db.select().from(errorIssues).where(eq(errorIssues.id, purgeCandidate)),

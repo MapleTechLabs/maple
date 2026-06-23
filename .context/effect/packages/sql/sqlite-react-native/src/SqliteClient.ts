@@ -1,18 +1,13 @@
 /**
- * Provides a React Native SQLite `SqlClient` backed by `@op-engineering/op-sqlite`.
+ * Connects Effect SQL to SQLite in React Native using
+ * `@op-engineering/op-sqlite`.
  *
- * Use this module to open an on-device SQLite database, expose it as both the
- * React Native-specific `SqliteClient` and the generic Effect `SqlClient`, and
- * run application queries, migrations, and transactional reads or writes from
- * Effect services and layers.
- *
- * The client uses one serialized connection. Regular queries and transactions
- * share that handle, and a transaction holds it for the lifetime of its scope,
- * so keep mobile transactions short and wrap multi-statement writes in a
- * transaction to avoid partial updates. By default statements use the driver's
- * synchronous API, which can block the JavaScript thread; `withAsyncQuery`
- * switches a fiber to the asynchronous driver API when UI responsiveness is more
- * important than sync execution.
+ * This module opens an on-device SQLite database and exposes it as both
+ * `SqliteClient` and the generic Effect SQL client. It serializes access,
+ * supports normal and value-based queries, and uses the driver's synchronous
+ * query API by default. `AsyncQuery` and `withAsyncQuery` switch a scoped effect
+ * to the driver's asynchronous query API. Streaming queries and `updateValues`
+ * are not supported by this driver.
  *
  * @since 4.0.0
  */
@@ -68,9 +63,9 @@ export interface SqliteClient extends Client.SqlClient {
 }
 
 /**
- * Context service tag for the React Native SQLite client.
+ * Service tag for the React Native SQLite client.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const SqliteClient = Context.Service<SqliteClient>("@effect/sql-sqlite-react-native/SqliteClient")
@@ -91,7 +86,12 @@ export interface SqliteClientConfig {
 }
 
 /**
- * Fiber-local flag that makes the React Native SQLite client run queries through the asynchronous `execute` API instead of `executeSync`.
+ * Fiber reference that makes the React Native SQLite client run queries through the asynchronous `execute` API instead of `executeSync`.
+ *
+ * **When to use**
+ *
+ * Use to switch React Native SQLite query execution to the asynchronous driver
+ * API for a scoped effect.
  *
  * @category fiber refs
  * @since 4.0.0

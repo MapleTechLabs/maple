@@ -1,15 +1,11 @@
 /**
- * The `Scope` module provides functionality for managing resource lifecycles
- * and cleanup operations in a functional and composable manner.
+ * Controls how long resources stay open.
  *
- * A `Scope` represents a context where resources can be acquired and automatically
- * cleaned up when the scope is closed. This is essential for managing resources
- * like file handles, database connections, or any other resources that need
- * proper cleanup.
- *
- * Scopes support both sequential and parallel finalization strategies:
- * - Sequential: Finalizers run one after another in reverse order of registration
- * - Parallel: Finalizers run concurrently for better performance
+ * A scope is a lifetime boundary. Code can register cleanup effects on it, and
+ * closing the scope runs those cleanups with the `Exit` value that ended the
+ * work. Most application code uses higher-level APIs such as `Effect.scoped`
+ * and `Layer`, while this module is useful when code needs to create, provide,
+ * fork, close, or inspect scopes directly.
  *
  * @since 2.0.0
  */
@@ -198,7 +194,12 @@ export declare namespace State {
 }
 
 /**
- * The service tag for `Scope`, used for dependency injection in the Effect system.
+ * Service tag for the active resource lifetime.
+ *
+ * **When to use**
+ *
+ * Use to access the active lifetime when registering finalizers or sharing
+ * resources with the surrounding scope.
  *
  * **Example** (Accessing the scope service)
  *
@@ -217,7 +218,7 @@ export declare namespace State {
  * const scoped = Effect.scoped(program)
  * ```
  *
- * @category tags
+ * @category services
  * @since 2.0.0
  */
 export const Scope: Context.Service<Scope, Scope> = effect.scopeTag
@@ -254,6 +255,11 @@ export const make: (finalizerStrategy?: "sequential" | "parallel") => Effect<Clo
  * This is useful when you need a scope immediately but should be used with caution
  * as it doesn't provide the same safety guarantees as the `Effect`-wrapped version.
  *
+ * **When to use**
+ *
+ * Use when a scope must be allocated synchronously and the caller will close it
+ * manually.
+ *
  * **Example** (Creating a scope synchronously)
  *
  * ```ts
@@ -275,8 +281,16 @@ export const make: (finalizerStrategy?: "sequential" | "parallel") => Effect<Clo
 export const makeUnsafe: (finalizerStrategy?: "sequential" | "parallel") => Closeable = effect.scopeMakeUnsafe
 
 /**
- * Provides a `Scope` to an `Effect`, removing the `Scope` requirement from its context.
- * This allows you to run effects that require a scope by explicitly providing one.
+ * Provides a concrete `Scope` to an effect.
+ *
+ * **When to use**
+ *
+ * Use to run an effect that requires `Scope` with a scope managed by the
+ * caller.
+ *
+ * **Details**
+ *
+ * Providing the scope removes the `Scope` requirement from the effect context.
  *
  * **Example** (Providing a scope)
  *
@@ -307,6 +321,11 @@ export const provide: {
 
 /**
  * Registers an exit-aware finalizer on a scope.
+ *
+ * **When to use**
+ *
+ * Use when cleanup needs to know whether the scope closed with success,
+ * failure, or interruption.
  *
  * **Details**
  *
@@ -423,7 +442,12 @@ export const fork: (
 ) => Effect<Closeable> = effect.scopeFork
 
 /**
- * Synchronously creates a closeable child scope registered with a parent scope.
+ * Creates a closeable child scope synchronously and registers it with a parent scope.
+ *
+ * **When to use**
+ *
+ * Use when a child scope must be created synchronously and the caller controls
+ * both parent and child scope lifetimes.
  *
  * **Details**
  *
@@ -457,8 +481,16 @@ export const forkUnsafe: (scope: Scope, finalizerStrategy?: "sequential" | "para
   effect.scopeForkUnsafe
 
 /**
- * Closes a scope, running all registered finalizers in the appropriate order.
- * The exit value is passed to each finalizer.
+ * Closes a scope and runs its registered finalizers.
+ *
+ * **When to use**
+ *
+ * Use to close a scope manually with a specific exit value.
+ *
+ * **Details**
+ *
+ * Finalizers run in the scope's configured order and receive the supplied
+ * `Exit`.
  *
  * **Example** (Running scope finalizers)
  *
@@ -488,14 +520,24 @@ export const forkUnsafe: (scope: Scope, finalizerStrategy?: "sequential" | "para
 export const close: <A, E>(self: Scope, exit: Exit<A, E>) => Effect<void> = effect.scopeClose
 
 /**
- * Unsafely transitions a scope to `Closed` with the provided exit value.
+ * Closes a scope unsafely with the provided exit value.
+ *
+ * **When to use**
+ *
+ * Use when implementing lower-level scope machinery that must transition a
+ * scope to `Closed` immediately and can run the returned finalizer effect when
+ * one is produced.
  *
  * **Details**
  *
  * Returns an effect that runs registered finalizers, or `undefined` when the
- * scope was already closed or no finalizers need to run. Prefer `close` unless
- * you are implementing lower-level scope machinery and can correctly run the
- * returned effect.
+ * scope was already closed or no finalizers need to run.
+ *
+ * **Gotchas**
+ *
+ * Ignoring the returned effect skips registered finalizers.
+ *
+ * @see {@link close} for the usual effectful close operation that always returns an `Effect`
  *
  * @category unsafe
  * @since 4.0.0
@@ -507,11 +549,19 @@ export const closeUnsafe: <A, E>(self: Scope, exit_: Exit<A, E>) => Effect<void,
  * Runs an effect with the provided closeable scope in its context and closes
  * that scope when the effect exits.
  *
+ * **When to use**
+ *
+ * Use when you already have a `Closeable` scope and want to run an effect that
+ * requires `Scope` while automatically closing that scope when the effect exits.
+ *
  * **Details**
  *
  * The scope is closed with the same exit value as the effect, so registered
  * finalizers can observe whether the effect succeeded, failed, or was
  * interrupted.
+ *
+ * @see `provide` for providing a scope without closing it automatically
+ * @see `Effect.scoped` for creating and closing a fresh scope around a workflow
  *
  * @category combinators
  * @since 2.0.0

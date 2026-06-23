@@ -29,7 +29,7 @@ import {
 } from "@/lib/alerts/form-utils"
 import { applyTemplate } from "@/lib/alerts/templates"
 import type { WidgetAlertPrefillNotice } from "@/lib/alerts/widget-prefill"
-import { useAtomSet } from "@/lib/effect-atom"
+import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 
 export function AlertCreateFormSurface({
@@ -83,6 +83,19 @@ export function AlertCreateFormSurface({
 	)
 
 	const suggestedName = useMemo(() => makeSuggestedName(ruleForm), [ruleForm])
+
+	// Tags already in use across the org's rules, offered as autocomplete so
+	// teams converge on a shared vocabulary instead of typo-forking groups.
+	const rulesResult = useAtomValue(
+		MapleApiAtomClient.query("alerts", "listRules", { reactivityKeys: ["alertRules"] }),
+	)
+	const tagSuggestions = useMemo(
+		() =>
+			Result.builder(rulesResult)
+				.onSuccess((response) => [...new Set(response.rules.flatMap((rule) => rule.tags))].sort())
+				.orElse(() => [] as string[]),
+		[rulesResult],
+	)
 
 	async function handleSave() {
 		setSavingRule(true)
@@ -178,6 +191,7 @@ export function AlertCreateFormSurface({
 							form={ruleForm}
 							onChange={setRuleForm}
 							suggestedName={suggestedName}
+							tagSuggestions={tagSuggestions}
 						/>
 					</div>
 				</div>
@@ -255,8 +269,8 @@ function makeSuggestedName(form: RuleFormState): string | null {
 				? `${form.serviceNames.length} services`
 				: queryGroupBy.length > 0
 					? `per ${queryGroupBy.join(" · ")}`
-				: form.groupBy.length > 0
-					? `per ${form.groupBy.join(" · ")}`
-					: null
+					: form.groupBy.length > 0
+						? `per ${form.groupBy.join(" · ")}`
+						: null
 	return scope ? `${base} — ${scope}` : base
 }

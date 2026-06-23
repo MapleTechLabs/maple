@@ -1,25 +1,19 @@
 import { cn } from "@maple/ui/lib/utils"
 import type { HostStatus } from "../format"
-
-const DOT_COLOR: Record<HostStatus, string> = {
-	active: "bg-[var(--severity-info)]",
-	idle: "bg-muted-foreground/60",
-	down: "bg-[var(--severity-error)]",
-}
-
-const RING_COLOR: Record<HostStatus, string> = {
-	active: "ring-[color-mix(in_oklab,var(--severity-info)_45%,transparent)]",
-	idle: "ring-border",
-	down: "ring-[color-mix(in_oklab,var(--severity-error)_45%,transparent)]",
-}
+import { STATUS_DOT, STATUS_PULSE, STATUS_RING } from "../severity-tokens"
 
 interface SeverityDotProps {
 	status: HostStatus
 	size?: "sm" | "md"
+	/**
+	 * Visually-hidden status word. Pass when the dot stands alone so screen
+	 * readers get the status; omit when an adjacent text label already names it.
+	 */
+	label?: string
 	className?: string
 }
 
-export function SeverityDot({ status, size = "sm", className }: SeverityDotProps) {
+export function SeverityDot({ status, size = "sm", label, className }: SeverityDotProps) {
 	const dim = size === "sm" ? "size-1.5" : "size-2"
 	const wrap = size === "sm" ? "size-2.5" : "size-3"
 	return (
@@ -27,20 +21,15 @@ export function SeverityDot({ status, size = "sm", className }: SeverityDotProps
 			className={cn(
 				"relative inline-flex items-center justify-center rounded-full ring-1 ring-inset",
 				wrap,
-				RING_COLOR[status],
+				STATUS_RING[status],
 				className,
 			)}
 		>
 			{status === "active" && (
-				<span
-					aria-hidden
-					className={cn(
-						"infra-pulse absolute inset-0 rounded-full",
-						"bg-[color-mix(in_oklab,var(--severity-info)_55%,transparent)]",
-					)}
-				/>
+				<span aria-hidden className={cn("infra-pulse absolute inset-0 rounded-full", STATUS_PULSE)} />
 			)}
-			<span className={cn("relative rounded-full", dim, DOT_COLOR[status])} />
+			<span className={cn("relative rounded-full", dim, STATUS_DOT[status])} />
+			{label ? <span className="sr-only">{label}</span> : null}
 		</span>
 	)
 }

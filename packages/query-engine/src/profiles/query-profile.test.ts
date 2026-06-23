@@ -50,9 +50,7 @@ describe("appendSettings", () => {
 	})
 
 	it("appends max_block_size", () => {
-		expect(appendSettings("SELECT 1", { maxBlockSize: 512 })).toBe(
-			"SELECT 1 SETTINGS max_block_size=512",
-		)
+		expect(appendSettings("SELECT 1", { maxBlockSize: 512 })).toBe("SELECT 1 SETTINGS max_block_size=512")
 	})
 })
 
@@ -67,9 +65,9 @@ describe("stripTinybirdRestrictedSettings", () => {
 	})
 
 	it("drops maxBlockSize and keeps the rest", () => {
-		expect(
-			stripTinybirdRestrictedSettings({ maxExecutionTime: 15, maxBlockSize: 512 }),
-		).toEqual({ maxExecutionTime: 15 })
+		expect(stripTinybirdRestrictedSettings({ maxExecutionTime: 15, maxBlockSize: 512 })).toEqual({
+			maxExecutionTime: 15,
+		})
 	})
 
 	it("strips the body-search settings down to profile-safe values", () => {

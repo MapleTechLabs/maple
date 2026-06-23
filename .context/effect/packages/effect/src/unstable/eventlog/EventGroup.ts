@@ -1,18 +1,11 @@
 /**
- * Defines typed groups of event-log event definitions.
+ * Defines groups of typed events for the unstable event-log system.
  *
- * Event groups describe the events that belong to one event-log domain, such as
- * commands for an aggregate, application workflow, or synced local store. Start
- * from `empty`, add event tags with their payload, success, and error schemas,
- * then use the group with `EventLog.group` to provide the handlers that execute
- * and commit those events.
- *
- * Each event tag becomes the key in the group's events record, so tags should be
- * unique within a group. The `primaryKey` function is part of the event
- * definition and should derive the stable partition key from the decoded
- * payload. Omitted schemas default to `Schema.Void` for payload and success, and
- * `Schema.Never` for errors; use `addError` when every event in the group shares
- * an additional error schema.
+ * An `EventGroup` collects event definitions that belong together. Start with
+ * `empty`, add events with their payload, success, and error schemas, then use
+ * the group to build clients with `EventLog.schema` and server handlers with
+ * `EventLog.group`. The group only describes events; it does not write or run
+ * them.
  *
  * @since 4.0.0
  */
@@ -52,7 +45,7 @@ export const isEventGroup = (u: unknown): u is Any => Predicate.hasProperty(u, T
  *
  * **When to use**
  *
- * Build groups from `empty.add(...)`, then provide implementations for the events
+ * Use when build groups from `empty.add(...)`, then provide implementations for the events
  * with `EventLog.group`.
  *
  * @category models
@@ -187,11 +180,12 @@ const makeProto = <
 }
 
 /**
- * Empty event group used as the starting point for defining a group.
+ * Creates an empty event group used as the starting point for defining a group.
  *
  * **When to use**
  *
- * Call `.add(...)` to add event definitions and build a typed `EventGroup`.
+ * Use when you need the starting `EventGroup` value before adding event
+ * definitions with `.add(...)`.
  *
  * @category constructors
  * @since 4.0.0

@@ -1,17 +1,11 @@
 /**
- * Assertion utilities for `@effect/vitest` test suites.
+ * Provides assertion helpers used by `@effect/vitest` tests.
  *
- * This module collects small assertion helpers for common Effect testing
- * scenarios: Node-style equality checks, `Equal.equals` comparisons, string
- * matching, thrown error validation, and focused assertions for `Option`,
- * `Result`, and `Exit` values. They are intended to be imported as `assert`
- * helpers from `@effect/vitest` and used in both regular Vitest tests and
- * `it.effect` tests after the value under test has already been produced.
- *
- * These helpers throw assertion errors synchronously; they do not run Effects,
- * provide services, or advance test environments such as `TestClock`. In
- * Effect-based tests, yield the effect first and then assert on the resulting
- * value so failures are reported through the surrounding Vitest test.
+ * This module defines small assertion functions built on Node's `assert`,
+ * Vitest's instance checks, and Effect's equality support. The helpers cover
+ * basic equality, thrown errors, defined and undefined values, strings, regular
+ * expressions, class instances, `Option`, `Result`, and `Exit`. Most helpers are
+ * synchronous; `throwsAsync` handles rejected promises.
  *
  * @since 4.0.0
  */
@@ -29,7 +23,7 @@ import { assert as vassert } from "vitest"
 // ----------------------------
 
 /**
- * Throws an `AssertionError` with the provided error message.
+ * Fails the current test with the provided error message.
  *
  * @category testing
  * @since 4.0.0

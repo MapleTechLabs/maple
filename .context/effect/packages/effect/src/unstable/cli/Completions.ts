@@ -1,5 +1,8 @@
 /**
- * Shell completion descriptors and script generation for the unstable CLI API.
+ * The `Completions` module turns a plain description of an Effect CLI command
+ * tree into shell completion scripts for Bash, Zsh, and Fish. It is the
+ * low-level script generation surface used by the unstable CLI package and by
+ * the built-in completions global flag.
  *
  * @since 4.0.0
  */
@@ -87,6 +90,19 @@ export type ArgumentType =
 
 /**
  * Generates a shell completion script for a command descriptor.
+ *
+ * **When to use**
+ *
+ * Use when you need an installable completion script from an existing
+ * `CommandDescriptor`.
+ *
+ * **Details**
+ *
+ * Dispatches by `shell` to Bash, Zsh, or Fish generation and returns a static
+ * script string for `executableName`.
+ *
+ * @see {@link Shell} for supported shell names
+ * @see {@link CommandDescriptor} for the command shape used by completion generation
  *
  * @category constructors
  * @since 4.0.0

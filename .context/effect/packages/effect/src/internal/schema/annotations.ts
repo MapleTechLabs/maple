@@ -1,15 +1,15 @@
 import { memoize } from "../../Function.ts"
 import type * as Schema from "../../Schema.ts"
-import type * as AST from "../../SchemaAST.ts"
+import type * as SchemaAST from "../../SchemaAST.ts"
 
 /** @internal */
-export function resolve(ast: AST.AST): Schema.Annotations.Annotations | undefined {
+export function resolve(ast: SchemaAST.AST): Schema.Annotations.Annotations | undefined {
   return ast.checks ? ast.checks[ast.checks.length - 1].annotations : ast.annotations
 }
 
 /** @internal */
 export function resolveAt<A>(key: string) {
-  return (ast: AST.AST): A | undefined => resolve(ast)?.[key] as A | undefined
+  return (ast: SchemaAST.AST): A | undefined => resolve(ast)?.[key] as A | undefined
 }
 
 /** @internal */
@@ -25,7 +25,7 @@ export const resolveDescription = resolveAt<string>("description")
 export const resolveBrands = resolveAt<ReadonlyArray<string>>("brands")
 
 /** @internal */
-export const getExpected = memoize((ast: AST.AST): string => {
+export const getExpected = memoize((ast: SchemaAST.AST): string => {
   const identifier = resolveIdentifier(ast)
   if (typeof identifier === "string") return identifier
   return ast.getExpected(getExpected)

@@ -96,7 +96,13 @@ export function resolveMapleDomains(stage: MapleStage): MapleDomains {
 		case "stg":
 			return STG_DOMAINS
 		case "pr":
-			return {}
+			// Give PR previews a stable, secret-free web URL so GitHub can attach it
+			// to the PR as a clickable deployment. The default workers.dev URL embeds
+			// the Cloudflare account subdomain, which Doppler masks as a secret —
+			// GitHub then refuses to set the environment URL. A custom domain under the
+			// `maple.dev` zone has no secret in it. api/chat/ingest stay on workers.dev
+			// (the API allows all origins, so cross-origin calls keep working).
+			return { web: `app-pr-${stage.prNumber}.maple.dev` }
 		case "dev":
 			return {}
 	}

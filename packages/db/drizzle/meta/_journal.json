@@ -8,6 +8,27 @@
       "when": 1781306960498,
       "tag": "0000_windy_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1781619161427,
+      "tag": "0025_red_slipstream",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1782080033645,
+      "tag": "0026_special_silver_surfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1782139371627,
+      "tag": "0027_late_otto_octavius",
+      "breakpoints": true
     }
   ]
 }

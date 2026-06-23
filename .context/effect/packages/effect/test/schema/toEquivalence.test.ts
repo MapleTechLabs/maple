@@ -194,6 +194,13 @@ describe("toEquivalence", () => {
       assertFalse(equivalence({ a: 1 }, { a: 1, b: undefined }))
     })
 
+    it("Record(String.check, Number) should use the key checks to select keys", () => {
+      const schema = Schema.Record(Schema.String.check(Schema.isPattern(/^a/)), Schema.Number)
+      const equivalence = Schema.toEquivalence(schema)
+      assertTrue(equivalence({ a: 1, b: 1 }, { a: 1, b: 2 }))
+      assertFalse(equivalence({ a: 1 }, { a: 2 }))
+    })
+
     it("Record(Symbol, Number)", () => {
       const a = Symbol.for("a")
       const b = Symbol.for("b")

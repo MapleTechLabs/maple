@@ -107,7 +107,7 @@ describe("Schema.toDifferJsonPatch", () => {
     })
 
     it("Defect: diff encodes an Error to a plain object; patch decodes back to Error", () => {
-      const differ = Schema.toDifferJsonPatch(Schema.Defect)
+      const differ = Schema.toDifferJsonPatch(Schema.Defect())
 
       deepStrictEqual(differ.diff("", new Error("b")), [{
         op: "replace",
@@ -224,9 +224,9 @@ describe("Schema.toDifferJsonPatch", () => {
       roundtrip(Schema.Option(Schema.String))
       roundtrip(Schema.Result(Schema.Number, Schema.String))
       roundtrip(Schema.ReadonlyMap(Schema.String, Schema.Number))
-      roundtrip(Schema.Error)
-      roundtrip(Schema.Defect)
-      roundtrip(Schema.Exit(Schema.Number, Schema.String, Schema.Defect))
+      roundtrip(Schema.Error())
+      roundtrip(Schema.Json)
+      roundtrip(Schema.Exit(Schema.Number, Schema.String, Schema.Json))
 
       class A extends Schema.Class<A>("A")({ value: Schema.Number }) {}
       class B extends Schema.Class<B>("B")({ a: A }) {}

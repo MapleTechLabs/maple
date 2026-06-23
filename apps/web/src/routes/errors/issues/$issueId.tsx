@@ -6,10 +6,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
-import {
-	OpenAnomalyBadge,
-	RelatedAnomaliesSection,
-} from "@/components/anomalies/related-anomalies-section"
+import { OpenAnomalyBadge, RelatedAnomaliesSection } from "@/components/anomalies/related-anomalies-section"
 import { AlertSourceCard } from "@/components/errors/alert-source-card"
 import { IssueKindBadge } from "@/components/errors/kind-badge"
 import { SeverityBadge } from "@/components/errors/severity-badge"
@@ -249,7 +246,8 @@ function IssueDetailPage() {
 										? typeof issue.sourceRef?.latestIncidentId === "string"
 											? issue.sourceRef.latestIncidentId
 											: null
-										: ((incidents.find((i) => i.status === "open") ?? incidents[0])?.id ?? null)
+										: ((incidents.find((i) => i.status === "open") ?? incidents[0])?.id ??
+											null)
 								}
 								issueId={issueId}
 							/>

@@ -1,75 +1,11 @@
 /**
- * The `Console` module provides a functional interface for console operations within
- * the Effect ecosystem. It offers type-safe logging, debugging, and console manipulation
- * capabilities with built-in support for testing and environment isolation.
+ * Wraps console operations in Effect.
  *
- * ## Key Features
- *
- * - **Type-safe logging**: All console operations return Effects for composability
- * - **Testable**: Mock console output for testing scenarios
- * - **Service-based**: Integrated with Effect's dependency injection system
- * - **Environment isolation**: Different console implementations per environment
- * - **Rich API**: Support for all standard console methods (log, error, debug, etc.)
- * - **Performance tracking**: Built-in timing and profiling capabilities
- *
- * ## Core Operations
- *
- * - **Basic logging**: `log`, `error`, `warn`, `info`, `debug`
- * - **Assertions**: `assert` for conditional logging
- * - **Grouping**: `group`, `groupCollapsed`, `groupEnd` for organized output
- * - **Timing**: `time`, `timeEnd`, `timeLog` for performance measurement
- * - **Data display**: `table`, `dir`, `dirxml` for structured data visualization
- * - **Utilities**: `clear`, `count`, `countReset`, `trace`
- *
- * **Example** (Logging basic messages)
- *
- * ```ts
- * import { Console, Effect } from "effect"
- *
- * // Basic logging
- * const program = Effect.gen(function*() {
- *   yield* Console.log("Hello, World!")
- *   yield* Console.error("Something went wrong")
- *   yield* Console.warn("This is a warning")
- *   yield* Console.info("Information message")
- * })
- * ```
- *
- * **Example** (Grouping timed logs)
- *
- * ```ts
- * import { Console, Effect } from "effect"
- *
- * // Grouped logging with timing
- * const debugProgram = Console.withGroup(
- *   Effect.gen(function*() {
- *     yield* Console.log("Step 1: Loading...")
- *     yield* Effect.sleep("100 millis")
- *
- *     yield* Console.log("Step 2: Processing...")
- *     yield* Effect.sleep("200 millis")
- *   }),
- *   { label: "Processing Data" }
- * )
- * ```
- *
- * **Example** (Displaying structured data)
- *
- * ```ts
- * import { Console, Effect } from "effect"
- *
- * // Data visualization and debugging
- * const dataProgram = Effect.gen(function*() {
- *   const users = [
- *     { id: 1, name: "Alice", age: 30 },
- *     { id: 2, name: "Bob", age: 25 }
- *   ]
- *
- *   yield* Console.table(users)
- *   yield* Console.dir(users[0], { depth: 2 })
- *   yield* Console.assert(users.length > 0, "Users array should not be empty")
- * })
- * ```
+ * The `Console` service exposes common console methods such as logging,
+ * warnings, errors, groups, counters, tables, and timers. Because console access
+ * goes through a service, programs can use custom console implementations in
+ * tests or other environments. This module also includes scoped helpers that
+ * close console groups or timers automatically.
  *
  * @since 2.0.0
  */
@@ -109,7 +45,16 @@ export interface Console {
 }
 
 /**
- * A reference to the current console service in the Effect system, allowing access to the active console implementation from within the Effect context.
+ * Context reference for the current console service in the Effect system, allowing access to the active console implementation from within the Effect context.
+ *
+ * **When to use**
+ *
+ * Use when you need an effect to run against a provided console implementation,
+ * such as tests or alternate runtimes, rather than the default console.
+ *
+ * **Details**
+ *
+ * When no override is provided, the reference resolves to `globalThis.console`.
  *
  * **Example** (Accessing the current console)
  *
@@ -123,6 +68,8 @@ export interface Console {
  * )
  * ```
  *
+ * @see {@link consoleWith} for using the current console service inside an effect
+ *
  * @category references
  * @since 2.0.0
  */
@@ -131,7 +78,7 @@ export const Console: Context.Reference<Console> = effect.ConsoleRef
 /**
  * Creates an Effect that provides access to the current console service and lets you perform operations with it within an Effect context.
  *
- * **Example** (Using the current console service)
+ * **Example** (Accessing the current console service)
  *
  * ```ts
  * import { Console, Effect } from "effect"
@@ -175,7 +122,17 @@ export const assert = (condition: boolean, ...args: ReadonlyArray<any>): Effect.
   )
 
 /**
- * Clears all previously logged messages from the console.
+ * Runs the current console service's clear operation.
+ *
+ * **When to use**
+ *
+ * Use to request that the active console implementation clear its visible
+ * output.
+ *
+ * **Gotchas**
+ *
+ * The clearing behavior depends on the active console implementation and host
+ * environment.
  *
  * **Example** (Clearing console output)
  *
@@ -331,7 +288,8 @@ export const dirxml = (...args: ReadonlyArray<any>): Effect.Effect<void> =>
   )
 
 /**
- * Outputs an error-level message to the console, typically displayed with error styling by the active console implementation.
+ * Writes an error-level message to the console, typically displayed with error
+ * styling by the active console implementation.
  *
  * **Example** (Writing error messages)
  *
@@ -400,7 +358,8 @@ export const group = (
   )
 
 /**
- * Outputs an informational message to the console, typically displayed with info styling by the active console implementation.
+ * Writes an informational message to the console, typically displayed with info
+ * styling by the active console implementation.
  *
  * **Example** (Writing informational messages)
  *
@@ -427,7 +386,7 @@ export const info = (...args: ReadonlyArray<any>): Effect.Effect<void> =>
   )
 
 /**
- * Outputs a general-purpose message to the console for ordinary logging.
+ * Logs a general-purpose message to the console.
  *
  * **Example** (Writing log messages)
  *
@@ -548,7 +507,8 @@ export const timeLog = (label?: string, ...args: ReadonlyArray<any>): Effect.Eff
   )
 
 /**
- * Outputs the current stack trace to the console to show how the current point in the code was reached.
+ * Writes the current stack trace to the console to show how the current point in
+ * the code was reached.
  *
  * **Example** (Writing stack traces)
  *
@@ -572,7 +532,8 @@ export const trace = (...args: ReadonlyArray<any>): Effect.Effect<void> =>
   )
 
 /**
- * Outputs a warning-level message to the console, typically displayed with warning styling by the active console implementation.
+ * Writes a warning-level message to the console, typically displayed with
+ * warning styling by the active console implementation.
  *
  * **Example** (Writing warning messages)
  *

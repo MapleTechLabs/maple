@@ -76,11 +76,8 @@ interface RecordedRequest {
 const stubFetch =
 	(recorded: Array<RecordedRequest>, respond: () => Response): typeof fetch =>
 	async (input, init) => {
-		const url =
-			typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-		const headers = new Headers(
-			init?.headers ?? (input instanceof Request ? input.headers : undefined),
-		)
+		const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+		const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
 		recorded.push({ url, authorization: headers.get("authorization") })
 		return respond()
 	}
@@ -88,15 +85,15 @@ const stubFetch =
 const createPlanetScaleTargetRow = (organization: string) =>
 	Effect.gen(function* () {
 		const service = yield* ScrapeTargetsService
-	const created = yield* service.create(
-		asOrgId("org_1"),
-		new CreateScrapeTargetRequest({
-			name: "PlanetScale Prod",
-			targetType: "planetscale",
-			organization,
-			authCredentials: JSON.stringify({ tokenId: "tok_id", tokenSecret: "tok_secret" }),
-		}),
-	)
+		const created = yield* service.create(
+			asOrgId("org_1"),
+			new CreateScrapeTargetRequest({
+				name: "PlanetScale Prod",
+				targetType: "planetscale",
+				organization,
+				authCredentials: JSON.stringify({ tokenId: "tok_id", tokenSecret: "tok_secret" }),
+			}),
+		)
 		const rows = yield* service.listAllEnabled()
 		const row = rows.find((candidate) => candidate.id === created.id)
 		if (!row) return yield* Effect.die("created row not found")
@@ -111,14 +108,12 @@ describe("PlanetScaleDiscoveryService", () => {
 			const discovery = yield* PlanetScaleDiscoveryService
 			const row = yield* createPlanetScaleTargetRow("my-org")
 
-			const entries = yield* discovery
-				.discover(row)
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => Response.json(SD_PAYLOAD)),
-					),
-				)
+			const entries = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(SD_PAYLOAD)),
+				),
+			)
 
 			expect(recorded[0]?.url).toBe("https://api.planetscale.com/v1/organizations/my-org/metrics")
 			expect(recorded[0]?.authorization).toBe("token tok_id:tok_secret")
@@ -160,24 +155,20 @@ describe("PlanetScaleDiscoveryService", () => {
 			const discovery = yield* PlanetScaleDiscoveryService
 			const row = yield* createPlanetScaleTargetRow("my-org")
 
-			yield* discovery
-				.discover(row)
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => Response.json(SD_PAYLOAD)),
-					),
-				)
+			yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(SD_PAYLOAD)),
+				),
+			)
 
 			yield* TestClock.adjust(Duration.minutes(11))
-			const stale = yield* discovery
-				.discover(row)
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch(recorded, () => new Response("nope", { status: 503 })),
-					),
-				)
+			const stale = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => new Response("nope", { status: 503 })),
+				),
+			)
 
 			expect(stale.map((entry) => entry.subTargetKey)).toEqual(["branch-1", "branch-2"])
 			const lastError = yield* discovery.lastError(row.id)
@@ -191,15 +182,13 @@ describe("PlanetScaleDiscoveryService", () => {
 			const discovery = yield* PlanetScaleDiscoveryService
 			const row = yield* createPlanetScaleTargetRow("my-org")
 
-			const error = yield* discovery
-				.discover(row)
-				.pipe(
-					Effect.provideService(
-						FetchHttpClient.Fetch,
-						stubFetch([], () => new Response("unauthorized", { status: 401 })),
-					),
-					Effect.flip,
-				)
+			const error = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch([], () => new Response("unauthorized", { status: 401 })),
+				),
+				Effect.flip,
+			)
 
 			expect(error.message).toContain("read_metrics_endpoints")
 		}).pipe(Effect.provide(makeLayer(testDb)))

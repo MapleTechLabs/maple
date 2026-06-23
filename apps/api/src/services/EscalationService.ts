@@ -42,7 +42,7 @@ const CONFIDENCE_RANK: Record<EscalationConfidence, number> = { low: 1, medium: 
 const chatSeverityFor = (severity: IssueSeverity): AlertSeverity =>
 	severity === "critical" || severity === "high" ? "critical" : "warning"
 
-export interface EscalationTickResult {
+interface EscalationTickResult {
 	readonly processed: number
 	readonly sent: number
 	readonly skipped: number
@@ -178,7 +178,10 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 				ruleId: typeof sourceRef?.ruleId === "string" ? sourceRef.ruleId : issue.id,
 				ruleName: issue.exceptionType || "Issue escalation",
 				groupKey: null,
-				signalType: Option.getOrElse(decodeSignalType(sourceRef?.signalType), () => "error_rate" as const),
+				signalType: Option.getOrElse(
+					decodeSignalType(sourceRef?.signalType),
+					() => "error_rate" as const,
+				),
 				severity: chatSeverityFor(row.severity),
 				comparator: "gt",
 				threshold: 0,
@@ -270,8 +273,7 @@ const make: Effect.Effect<EscalationServiceShape, never, Database | Notification
 					),
 				),
 			)
-			const count = (outcome: (typeof outcomes)[number]) =>
-				outcomes.filter((o) => o === outcome).length
+			const count = (outcome: (typeof outcomes)[number]) => outcomes.filter((o) => o === outcome).length
 			return {
 				processed: outcomes.length - count("contended"),
 				sent: count("sent"),

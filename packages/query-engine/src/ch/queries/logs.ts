@@ -4,13 +4,15 @@
 // DSL-based query definitions for logs timeseries and breakdown.
 // ---------------------------------------------------------------------------
 
-import { compileCH } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromUnion, type CHQuery, type ColumnAccessor } from "../query"
-import type { ColumnDefs } from "../types"
-import { unionAll, type CHUnionQuery } from "../union"
+import { compileCH } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import type { ColumnDefs } from "@maple-dev/clickhouse-builder/types"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { Logs, LogsAggregatesHourly } from "../tables"
+import { finalizeTimeseries } from "./series-cap"
 
 // ---------------------------------------------------------------------------
 // Shared options
@@ -96,12 +98,25 @@ export interface LogsTimeseriesOpts extends LogsQueryOpts {
 	 * absent (or sub-hour), the raw `logs` table is used.
 	 */
 	bucketSeconds?: number
+	/**
+	 * Opt-in top-N series cap for group-by charts. When set, only the N groups
+	 * with the largest total count (across all buckets) are fetched.
+	 */
+	seriesLimit?: number
 }
 
 export interface LogsTimeseriesOutput {
 	readonly bucket: string
 	readonly groupName: string
 	readonly count: number
+}
+
+// Synthetic column defs matching LogsTimeseriesOutput, used to wrap the inner
+// query in a CTE when the top-N series cap is applied.
+const LOGS_TS_COLUMNS: ColumnDefs = {
+	bucket: T.string,
+	groupName: T.string,
+	count: T.float64,
 }
 
 /**
@@ -146,9 +161,7 @@ function mvNamespaceCondition(
 	return CH.inList($.ServiceNamespace, opts.namespaces)
 }
 
-export function logsTimeseriesQuery(
-	opts: LogsTimeseriesOpts,
-): CHQuery<ColumnDefs, LogsTimeseriesOutput, {}> {
+export function logsTimeseriesQuery(opts: LogsTimeseriesOpts): CHQuery<ColumnDefs, LogsTimeseriesOutput, {}> {
 	const groupByService = opts.groupBy?.includes("service")
 	const groupBySeverity = opts.groupBy?.includes("severity")
 
@@ -178,8 +191,11 @@ export function logsTimeseriesQuery(
 			])
 			.groupBy("bucket", "groupName")
 			.orderBy(["bucket", "asc"], ["groupName", "asc"])
-			.format("JSON")
-		return mv as unknown as CHQuery<ColumnDefs, LogsTimeseriesOutput, {}>
+		return finalizeTimeseries(mv, LOGS_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+			ColumnDefs,
+			LogsTimeseriesOutput,
+			{}
+		>
 	}
 
 	const raw = from(Logs)
@@ -203,8 +219,11 @@ export function logsTimeseriesQuery(
 		])
 		.groupBy("bucket", "groupName")
 		.orderBy(["bucket", "asc"], ["groupName", "asc"])
-		.format("JSON")
-	return raw as unknown as CHQuery<ColumnDefs, LogsTimeseriesOutput, {}>
+	return finalizeTimeseries(raw, LOGS_TS_COLUMNS, "count", opts) as unknown as CHQuery<
+		ColumnDefs,
+		LogsTimeseriesOutput,
+		{}
+	>
 }
 
 function buildLogsGroupNameExpr(
@@ -528,11 +547,7 @@ export function errorRateByServiceQuery() {
 			bucketErrorLogs: CH.countIf(CH.inList($.SeverityText, ["ERROR", "FATAL"])),
 			errorRate: CH.lit(0),
 		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			...rawLogsTimeRange($),
-			rawLogEdgeCondition(),
-		])
+		.where(($) => [$.OrgId.eq(param.string("orgId")), ...rawLogsTimeRange($), rawLogEdgeCondition()])
 		.groupBy("serviceName")
 
 	const mvInterior = from(LogsAggregatesHourly)

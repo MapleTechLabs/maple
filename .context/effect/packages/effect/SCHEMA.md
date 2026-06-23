@@ -252,6 +252,8 @@ If you want to validate only valid dates, use `Schema.DateValid` instead.
 
 You can use `Schema.TemplateLiteral` to define structured string patterns made of multiple parts. Each part can be a literal or a schema, and **additional constraints** (such as `isMinLength` or `isMaxLength`) can be applied to individual parts.
 
+Template literal matching is based on the semantics of each part rather than only a generated regular expression. Checks on string, number, and bigint schema parts are applied while matching each segment.
+
 **Example** (Constraining parts of an email-like string)
 
 ```ts
@@ -280,8 +282,7 @@ Success("a@b.com")
 
 console.log(String(Schema.decodeUnknownExit(email)("@b.com")))
 /*
-Failure(Cause([Fail(SchemaError(Expected a value with a length of at least 1, got ""
-  at [0]))]))
+Failure(Cause([Fail(SchemaError(Expected a string matching template literal parts, got "@b.com"))]))
 */
 ```
 
@@ -1614,11 +1615,15 @@ console.log(String(Schema.decodeUnknownExit(schema)(["a", "b", "a"])))
 
 ## Records
 
-A record schema describes an object whose keys are dynamic (not known ahead of time). Every key must satisfy a key schema, and every value must satisfy a value schema.
+A record schema describes an object whose keys are dynamic (not known ahead of time). The key schema selects which own properties belong to the record, and the value schema validates the selected property values.
+
+Properties that are not selected by the key schema are ignored by that record. For example, `Schema.Record(Schema.String.check(Schema.isPattern(/^a/)), Schema.Number)` decodes only string keys that start with `"a"`.
 
 ### Key Transformations
 
 `Schema.Record` supports transforming keys during decoding and encoding. This can be useful when working with different naming conventions.
+
+When a key schema has a transformation, dynamic property selection is based on the encoded property names. The selected keys are then decoded using the key schema.
 
 **Example** (Transforming snake_case keys to camelCase)
 
@@ -1658,7 +1663,7 @@ import { Schema, SchemaTransformation } from "effect"
 const SnakeToCamel = Schema.String.pipe(Schema.decode(SchemaTransformation.snakeToCamel()))
 
 const schema = Schema.Record(SnakeToCamel, Schema.Number, {
-  key: {
+  keyValueCombiner: {
     decode: {
       // When decoding, combine values of conflicting keys by summing them
       combine: ([_, v1], [k2, v2]) => [k2, v1 + v2] // you can pass a Semigroup to combine keys
@@ -1691,9 +1696,12 @@ const schema = Schema.Record(Schema.Int, Schema.String)
 console.log(String(Schema.decodeUnknownExit(schema)({ 1: "a", 2: "b" })))
 // Success({"1":"a","2":"b"})
 
-console.log(String(Schema.decodeUnknownExit(schema)({ 1.1: "a" })))
-// Failure(Cause([Fail(SchemaError(Expected an integer, got 1.1
-//  at ["1.1"]))]))
+console.log(String(Schema.decodeUnknownExit(schema)({ 1.1: "ignored" })))
+// Success({})
+
+console.log(String(Schema.decodeUnknownExit(schema)({ 1: null })))
+// Failure(Cause([Fail(SchemaError(Expected string, got null
+//  at ["1"]))]))
 ```
 
 ### Mutability
@@ -2761,7 +2769,7 @@ export const makeGreaterThan = <T>(options: {
 
 A constructor creates a value of the schema's type, running all validations at the time of creation. If the value does not satisfy the schema, the constructor throws an error. Every schema exposes a `make` method for this purpose.
 
-For a non-throwing alternative, use `Schema.makeOption` (or `SchemaParser.makeOption`), which returns `Option.Some` on success and `Option.None` on failure.
+For an alternative that does not throw on schema validation failures, use `Schema.makeOption` (or `SchemaParser.makeOption`), which returns `Option.Some` on success and `Option.None` for schema issues. Non-schema failures, such as defects, still throw.
 
 ```ts
 import { Schema, SchemaParser } from "effect"
@@ -3506,7 +3514,7 @@ Schema.flip(schema).make
 
 # Classes and Opaque Types
 
-Schema supports two kinds of nominal types: _opaque structs_ for lightweight distinct types, and _classes_ for full-featured types with methods and equality.
+Schema supports two kinds of nominal types: _opaque structs_ for lightweight distinct types, and _classes_ for full-featured types with methods and prototype-backed instances.
 
 ## Opaque Structs
 
@@ -3524,7 +3532,7 @@ This is not enforced at the type level, but it may be enforced through a linter 
 `Schema.Class` also wraps a `Struct`, **but** it turns the wrapper into a proper class:
 
 - You can add instance methods, getters, setters, custom constructors.
-- The generated class automatically implements `Equal` so structural equality works out of the box.
+- Instances compare structurally with `Equal.equals`, but they do not implement `Equal`.
 - Instances carry the class prototype at runtime, so `instanceof` checks succeed and methods are callable.
 
 **Example** (Creating an Opaque Struct)
@@ -3813,7 +3821,7 @@ g(A.make({ a: "a" })) // error: Argument of type 'A' is not assignable to parame
 
 `Schema.asClass` turns any schema into a class that can be extended with `extends`. The resulting class inherits the full schema API (e.g. `annotate`) and supports static methods that reference `this`.
 
-Unlike `Schema.Opaque`, it does **not** make the decoded type nominally distinct, and unlike `Schema.Class`, it does **not** add `Equal` or prototype-based features. It is a lightweight way to attach custom static helpers to a schema.
+Unlike `Schema.Opaque`, it does **not** make the decoded type nominally distinct, and unlike `Schema.Class`, it does **not** create prototype-backed instances with methods or constructors. It is a lightweight way to attach custom static helpers to a schema.
 
 ### Wrapping a Primitive Schema
 
@@ -5555,186 +5563,352 @@ console.log(JSON.stringify(document, null, 2))
 
 ### Generating an Arbitrary from a Schema
 
-Property-based testing checks your code against many randomly generated inputs. An Arbitrary is a generator that produces random values matching your schema. Schema can derive an Arbitrary automatically, so you do not need to write generators by hand.
+Property-based tests need generators. `Schema.toArbitrary` derives a
+`fast-check` `Arbitrary` that generates decoded `Type` values accepted by the
+schema.
 
-#### Basic Conversion
-
-You can convert any non-declaration, non-`never` schema to a Fast-Check `Arbitrary<T>`.
-
-**Example** (Tuple schema to Fast-Check Arbitrary)
+Most schemas do not need any extra work:
 
 ```ts
 import { Schema } from "effect"
 import { FastCheck } from "effect/testing"
 
-// Build a tuple schema: [string, number]
-const schema = Schema.Tuple([Schema.String, Schema.Number])
-
-// Create Arbitrary<readonly [string, number]>
-const arb = Schema.toArbitrary(schema)
-
-// Sample 10 values from the arbitrary
-console.log(FastCheck.sample(arb, 10))
-/*
-Example Output:
-[
-  [ '', 0 ],
-  [ ' /pABDyx+4', -5.147705743113717e+24 ],
-  [ 'Sw\\', -163415396714545150 ],
-  [ 'h', 484085596160000 ],
-  [ 'bind-+$__p', -2.802596928649634e-44 ],
-  [ 'ref', 3.402820424023848e+38 ],
-  [ ' <', 4.2045513795681537e-22 ],
-  [ '!n', 5.894371773718808e+34 ],
-  [ '&x~', 8580584439808 ],
-  [ '(# x@', 1.97658453148482e-36 ]
-]
-*/
-```
-
-If you want to avoid bundling Fast-Check automatically, use `makeLazy`.
-
-**Example** (Lazy creation to control bundling)
-
-```ts
-import { Schema } from "effect"
-import { FastCheck } from "effect/testing"
-
-// Create a factory that needs FastCheck passed in at call time
-const lazyArb = Schema.toArbitraryLazy(Schema.String)
-
-// Later, provide FastCheck (and an optional context) to get the Arbitrary<string>
-const arb = lazyArb(FastCheck, {}) // same result as make(...)
-```
-
-Under the hood, the library traverses the schema AST and, for each node:
-
-- Emits constants (`null`, `undefined`)
-- Maps primitives: `fc.boolean()`, `fc.integer()`, `fc.string()`, `fc.bigInt()`
-- Builds tuples via `fc.tuple(...)` with support for optional/rest elements
-- Builds structs/records via `fc.record(...)`, including index signatures
-- Builds unions via `fc.oneof(...)`
-- Handles template literals via `fc.stringMatching(...)`
-- Handles recursion (`Schema.suspend`) with depth-limited `fc.oneof(...)`
-
-It also collects any `.check(...)` filters and applies them to the result via `.filter(...)`.
-
-#### Adding support for Custom Types
-
-For a custom type, provide an `arbitrary` annotation to teach the generator how to build values.
-
-**Example** (Custom Arbitrary for `URL`)
-
-```ts
-import { Schema } from "effect"
-import { FastCheck } from "effect/testing"
-
-const URL = Schema.instanceOf(globalThis.URL, {
-  title: "URL",
-  arbitrary:
-    // Build a URL by first generating a valid web URL string with Fast-Check
-    () => (fc) => fc.webUrl().map((s) => new globalThis.URL(s))
+const Person = Schema.Struct({
+  name: Schema.String,
+  age: Schema.Int.check(Schema.isBetween({ minimum: 18, maximum: 80 }))
 })
 
-console.log(FastCheck.sample(Schema.toArbitrary(URL), 3))
-/*
-Example Output:
-[
-  new URL('http://g2v.7wk9w96penc.sek/'),
-  new URL('http://jfeilqoq-ee5.zeenw6cvv.ox'),
-  new URL('https://g0iubr-ks.rz00c8.fn')
-]
-*/
+const PersonArbitrary = Schema.toArbitrary(Person)
+
+console.log(FastCheck.sample(PersonArbitrary, 3))
 ```
 
-#### Overriding the default generated Arbitrary
-
-You can adjust the generated Arbitrary by adding an `arbitrary` annotation.
-
-```ts
-interface Context {
-  /**
-   * This flag is set to `true` when the current schema is a suspend. The goal
-   * is to avoid infinite recursion when generating arbitrary values for
-   * suspends, so implementations should try to avoid excessive recursion.
-   */
-  readonly isSuspend?: boolean | undefined
-  readonly constraints?: Annotation.Constraints["constraints"] | undefined
-}
-
-export interface ToArbitrary<T, TypeParameters extends ReadonlyArray<Schema.Top>> {
-  (
-    /* Arbitraries for any type parameters of the schema (if present) */
-    typeParameters: { readonly [K in keyof TypeParameters]: FastCheck.Arbitrary<TypeParameters[K]["Type"]> }
-  ): (fc: typeof FastCheck, context: Context) => FastCheck.Arbitrary<T>
-}
-```
-
-**Example** (Override number generator range)
+Use `Schema.toArbitraryLazy` only when you want the caller to provide
+`fast-check`:
 
 ```ts
 import { Schema } from "effect"
 import { FastCheck } from "effect/testing"
 
-// Default number schema (no override)
-console.log(FastCheck.sample(Schema.toArbitrary(Schema.Number), 3))
-/*
-Example Output:
-[
-  1.401298464324817e-44,
-  1.1210387714598537e-44,
-  -3.4028234663852886e+38
-]
-*/
+const makeStringArbitrary = Schema.toArbitraryLazy(Schema.String)
 
-// Add an override to restrict numbers to integers 10..20
-const schema = Schema.Number.annotate({
-  toArbitrary: () => (fc) => fc.integer({ min: 10, max: 20 }) // custom generator
-})
-
-console.log(FastCheck.sample(Schema.toArbitrary(schema), 3))
-/*
-Example Output:
-[ 12, 12, 18 ]
-*/
+const StringArbitrary = makeStringArbitrary(FastCheck)
 ```
 
-#### Adding support for custom filters
+`Schema.Never` and declaration schemas without a `toArbitrary` annotation cannot
+be derived automatically.
 
-Filters created with `.check(...)` can include Arbitrary hints so generators respect the same constraints.
+#### Filters
 
-**Example** (Declare Arbitrary constraints for a custom `nonEmpty` filter)
+Generated values are always checked by the schema filters before they are
+returned. The important question is whether a filter can also help choose a good
+generator.
+
+Built-in filters already do this:
 
 ```ts
 import { Schema } from "effect"
-import { FastCheck } from "effect/testing"
 
-// A reusable 'isNonEmpty' filter for strings and arrays
-const isNonEmpty = Schema.makeFilter((s: string) => s.length > 0, {
-  arbitraryConstraint: {
-    string: {
-      minLength: 1
-    },
-    array: {
-      minLength: 1
+const Username = Schema.String.check(
+  Schema.isMinLength(3),
+  Schema.isMaxLength(20),
+  Schema.isPattern(/^[a-z0-9_]+$/)
+)
+
+const PositiveInteger = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1)
+)
+
+const Tags = Schema.Array(Schema.String).check(
+  Schema.isMinLength(1),
+  Schema.isUnique()
+)
+```
+
+For these schemas, `toArbitrary` does not generate random unconstrained strings,
+numbers, or arrays and then hope the filters pass. It uses the length, range,
+pattern, and uniqueness metadata to build a better generator first.
+
+A custom filter without metadata is still correct, but may be inefficient:
+
+```ts
+import { Schema } from "effect"
+
+const isPalindrome = (s: string) => s === Array.from(s).reverse().join("")
+
+const Palindrome = Schema.String.check(
+  Schema.makeFilter(isPalindrome, {
+    expected: "a palindrome"
+  })
+)
+```
+
+This works because the final predicate check rejects strings that are not
+palindromes. It may need many attempts, because the base string generator has no
+reason to produce mirrored strings.
+
+#### Reports
+
+Use `{ report: true }` when you want to know which filters did not guide
+generation:
+
+```ts
+import { Schema } from "effect"
+
+const isPalindrome = (s: string) => s === Array.from(s).reverse().join("")
+
+const Palindrome = Schema.String.check(
+  Schema.makeFilter(isPalindrome, {
+    expected: "a palindrome"
+  })
+)
+
+const result = Schema.toArbitrary(Palindrome, { report: true })
+
+result.value
+result.report.warnings
+```
+
+An `OpaqueFilter` warning means: "this filter is still checked, but it did not
+help build the generator."
+
+Reports contain warnings only. Unsupported schemas, impossible constraints,
+invalid candidates, and recursive schemas without a finite terminal path still
+fail immediately.
+
+#### Custom Filters With Constraints
+
+If part of a custom filter can be described as a normal generation constraint,
+attach `arbitrary.constraint` to the filter. The constraint does not have to
+prove the whole predicate; it just makes the base generator closer to the values
+the predicate accepts.
+
+```ts
+import { Order, Schema } from "effect"
+
+const isPrimeNumber = (n: number) => {
+  if (!Number.isInteger(n) || n < 2) {
+    return false
+  }
+  for (let divisor = 2; divisor * divisor <= n; divisor++) {
+    if (n % divisor === 0) {
+      return false
+    }
+  }
+  return true
+}
+
+const prime = Schema.makeFilter(isPrimeNumber, {
+  expected: "a prime number",
+  arbitrary: {
+    constraint: {
+      integer: true,
+      ordered: {
+        order: Order.Number,
+        minimum: 2
+      }
     }
   }
 })
 
-const schema = Schema.String.check(isNonEmpty)
-
-console.log(FastCheck.sample(Schema.toArbitrary(schema), 3))
-/*
-Example Output:
-[ 'R|I6', 'q#" Z', 'qc= f' ]
-*/
+const Prime = Schema.Number.check(prime)
 ```
 
-#### Integration with synthetic data generation tools
+The filter still checks primality. The constraint only tells `toArbitrary` not
+to waste time on non-integers or numbers below `2`.
 
-You can integrate `@faker-js/faker` by adding an `arbitrary` override to your schemas. The helper below ties Faker's randomness to Fast-Check's RNG so samples are reproducible and shrink well.
+Think of `constraint` as a small vocabulary that the current schema node can
+understand:
 
-**Example** (Faker-powered override tied to Fast-Check's RNG)
+- On strings, `minLength` and `maxLength` mean string length.
+- On arrays, `minLength` and `maxLength` mean array length.
+- On objects, `minLength` and `maxLength` mean final own-property count.
+- On sets, maps, hash collections, and chunks, `minLength` and `maxLength` mean final collection size.
+- `patterns` apply to string generation.
+- `integer`, `noNaN`, `noInfinity`, `valid`, and `unique` are enabled when any contributing filter sets them.
+- `ordered` stores bounds for ordered values such as numbers, bigints, dates, `DateTime`, and `BigDecimal`.
+
+Fields that do not make sense for the current node are ignored. The final filter
+check still validates every generated value.
+
+#### Custom Filters With Candidates
+
+Use a candidate when the filter cannot be expressed with the constraint
+vocabulary.
+
+```ts
+import { Schema } from "effect"
+
+const reverse = (s: string) => Array.from(s).reverse().join("")
+
+const isPalindrome = (s: string) => s === reverse(s)
+
+const palindrome = Schema.makeFilter(
+  isPalindrome,
+  {
+    expected: "a palindrome",
+    arbitrary: {
+      candidate: {
+        weight: 5,
+        make: (fc) => fc.string().map((half) => `${half}${reverse(half)}`)
+      }
+    }
+  }
+)
+
+const Palindrome = Schema.String.check(palindrome)
+```
+
+A candidate is an extra source used together with the schema node's base
+generator. The base generator has weight `1`. A candidate has weight `1` unless
+you set another positive integer weight.
+
+With one candidate at weight `5`, fast-check tries the candidate roughly five
+times as often as the base generator. Candidate values are still checked by all
+filters, so a bad candidate can waste attempts but cannot produce invalid
+values.
+
+`make` receives the arbitrary context and may return `undefined` when the
+candidate should not be used for that context.
+
+#### Schema-Level Overrides
+
+Use a `toArbitrary` annotation when you want to replace the generator for a
+schema node.
+
+The annotation is not limited to declaration schemas. You can attach it to a
+normal schema with `.annotate(...)`:
+
+```ts
+import { Schema } from "effect"
+
+const Name = Schema.String.annotate({
+  toArbitrary: () => (fc) => fc.constantFrom("Alice", "Bob", "Carol")
+})
+```
+
+Put override annotations on base schemas when possible, before adding filters:
+
+```ts
+const Name = Schema.String.annotate({
+  toArbitrary: () => (fc) => fc.constantFrom("Alice", "Bob", "Carol")
+}).check(Schema.isMinLength(1))
+```
+
+This shape is easier to reason about. The override provides the base generator;
+the filter remains a normal filter. Schema still checks generated values at the
+end.
+
+Avoid putting an override on a schema that already has filters unless the
+override intentionally handles those filters too:
+
+```ts
+const Name = Schema.String.check(Schema.isMinLength(1)).annotate({
+  toArbitrary: () => (fc) => fc.constant("")
+})
+```
+
+This is valid TypeScript, but it is a bad generator: it always generates a value
+that the filter rejects.
+
+The second argument of a `toArbitrary` hook is the arbitrary context. Its
+`constraint` field contains constraints collected from filters on the same
+schema node as the override. If the override is placed before `.check(...)`, the
+context does not include the later filters. If the override is placed after
+`.check(...)`, the context includes those filters and the override must respect
+them.
+
+`context.recursion` is present while deriving inside a recursive schema.
+
+#### Declaration Schemas
+
+Declaration schemas are opaque to Schema. If you define one, provide a
+`toArbitrary` hook.
+
+For an atomic declaration, return a normal `fast-check` arbitrary:
+
+```ts
+import { Schema } from "effect"
+
+const Url = Schema.instanceOf(globalThis.URL, {
+  title: "URL",
+  toArbitrary: () => (fc) => fc.webUrl().map((s) => new globalThis.URL(s))
+})
+```
+
+Generic declarations receive one derivation per type parameter:
+
+- `arbitrary`: the normal generator for the type parameter.
+- `terminal`: a finite generator for the type parameter, used to close recursive generation.
+
+For an opaque wrapper type, you usually map both sources in the same way:
+
+```ts
+import { Effect, Option, Schema, SchemaIssue, SchemaParser } from "effect"
+
+class Box<A> {
+  private constructor(private readonly value: A) {}
+
+  static make<A>(value: A): Box<A> {
+    return new Box(value)
+  }
+
+  static unbox<A>(box: Box<A>): A {
+    return box.value
+  }
+}
+
+const isBox = (u: unknown): u is Box<unknown> => u instanceof Box
+
+const BoxSchema = <A extends Schema.Top>(value: A) =>
+  Schema.declareConstructor<Box<A["Type"]>, Box<A["Encoded"]>>()(
+    [value],
+    ([valueCodec]) => (input, ast, options) => {
+      if (!isBox(input)) {
+        return Effect.fail(new SchemaIssue.InvalidType(ast, Option.some(input)))
+      }
+      return Effect.map(
+        SchemaParser.decodeUnknownEffect(valueCodec)(Box.unbox(input), options),
+        Box.make
+      )
+    },
+    {
+      toArbitrary: ([value]) => () => ({
+        arbitrary: value.arbitrary.map(Box.make),
+        terminal: value.terminal?.map(Box.make)
+      })
+    }
+  )
+```
+
+This looks like duplicated code, but it is not the same generator twice. It is
+the same opaque constructor applied to two different sources.
+
+Suppose someone later builds a recursive schema like this:
+
+```ts
+interface Tree<A> {
+  readonly value: A
+  readonly children: ReadonlyArray<Tree<A>>
+}
+
+type BoxedTree<A> = Box<Tree<A>>
+```
+
+`Box` does not know whether `A` is recursive. If `A` is `Tree<A>`, then
+`value.arbitrary` may generate a recursive tree, while `value.terminal` is the
+finite tree generator used when the recursion budget is exhausted. Mapping both
+sources through `Box.make` preserves that information. If `Box` returned only
+`arbitrary`, it would hide the finite path from outer recursive schemas.
+
+If the type parameter has no finite terminal generator, `value.terminal` is
+`undefined`, and the wrapper cannot provide a terminal branch either.
+
+#### Integration with Synthetic Data Generation Tools
+
+Synthetic data libraries such as `@faker-js/faker` are useful when the generated
+values should look realistic. Put them behind a Fast-Check arbitrary instead of
+calling them directly, so Fast-Check still controls randomness and shrinking.
 
 ```ts
 import { faker } from "@faker-js/faker"
@@ -5742,67 +5916,56 @@ import { Schema } from "effect"
 import { FastCheck } from "effect/testing"
 
 /**
- * Make it easy to plug a Faker generator into a Schema's `arbitrary` override.
+ * Make it easy to plug a Faker generator into a Schema's `toArbitrary` override.
  * The seed comes from Fast-Check so data is reproducible and shrinks correctly.
  */
 function fake<A>(
-  gen: (f: typeof faker, ctx: Schema.Annotations.ToArbitrary.Context) => A
+  gen: (f: typeof faker) => A
 ): Schema.Annotations.ToArbitrary.Declaration<A, readonly []> {
-  return () => (fc, ctx) =>
+  return () => (fc) =>
     fc.nat().map((seed) => {
       faker.seed(seed)
-      return gen(faker, ctx)
+      return gen(faker)
     })
 }
 
-/** Leaf fields use Faker through the `arbitrary` override */
 const FirstName = Schema.String.annotate({
-  toArbitrary: fake((f) => f.person.firstName())
+  toArbitrary: fake((faker) => faker.person.firstName())
 })
 
 const LastName = Schema.String.annotate({
-  toArbitrary: fake((f) => f.person.lastName())
+  toArbitrary: fake((faker) => faker.person.lastName())
 })
 
-const Age = Schema.Int.check(Schema.isBetween({ minimum: 18, maximum: 80 })).annotate({
-  toArbitrary: fake((f, ctx) => {
-    // Use the constraints from the schema to generate a random age
-    const min = ctx.constraints?.number?.min ?? 0
-    const max = ctx.constraints?.number?.max ?? Number.MAX_SAFE_INTEGER
-    return f.number.int({ min, max })
-  })
+const JobTitle = Schema.String.annotate({
+  toArbitrary: fake((faker) => faker.person.jobTitle())
 })
 
-/** Compose leaves with regular Schema combinators */
-const FullName = Schema.Struct({
+const Company = Schema.String.annotate({
+  toArbitrary: fake((faker) => faker.company.name())
+})
+
+const Person = Schema.Struct({
   firstName: FirstName,
   lastName: LastName,
-  age: Age
+  jobTitle: JobTitle,
+  company: Company
 })
 
-/** Build and sample an Arbitrary for the composed schema */
-console.log(JSON.stringify(FastCheck.sample(Schema.toArbitrary(FullName), 3), null, 2))
-/*
-Example Output:
-[
-  {
-    "firstName": "Kiana",
-    "lastName": "Balistreri",
-    "age": 18
-  },
-  {
-    "firstName": "Wendy",
-    "lastName": "Baumbach",
-    "age": 51
-  },
-  {
-    "firstName": "Kelton",
-    "lastName": "Kshlerin",
-    "age": 72
-  }
-]
-*/
+console.log(FastCheck.sample(Schema.toArbitrary(Person), 3))
 ```
+
+These overrides are useful because the values have domain shape: names look like
+names, job titles look like job titles, and companies look like companies. For
+plain numeric ranges, prefer Schema constraints and the default arbitrary
+derivation.
+
+If you combine a Faker source with filters, put the override on the base schema
+first and add filters afterwards. This keeps the responsibilities simple: the
+override chooses a realistic source, and the filter remains the final validation
+rule. If you put the override after `.check(...)`, the override must respect
+those filters itself, or generation will spend time producing values that are
+rejected.
 
 ### Generating an Equivalence from a Schema
 

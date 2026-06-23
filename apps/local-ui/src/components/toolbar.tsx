@@ -2,7 +2,9 @@
 // app's `ReplaysToolbar` so the chrome reads identically in local mode.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
-import { ClockIcon, MagnifierIcon, XmarkIcon } from "@maple/ui/components/icons"
+import { useQueryClient } from "@tanstack/react-query"
+import { ArrowRotateClockwiseIcon, ClockIcon, MagnifierIcon, XmarkIcon } from "@maple/ui/components/icons"
+import { Button } from "@maple/ui/components/ui/button"
 import {
 	InputGroup,
 	InputGroupAddon,
@@ -19,6 +21,36 @@ export function Toolbar({ search, stats }: { search: ReactNode; stats: ReactNode
 			{search}
 			<div className="flex items-center gap-4">{stats}</div>
 		</div>
+	)
+}
+
+/**
+ * Manual reload for the active view. Every local hook keys off `["local", …]`,
+ * so invalidating that prefix refetches exactly the mounted view's queries
+ * (list + facets) — React Query only refetches active observers. Self-contained
+ * so it can drop into any toolbar or detail header.
+ */
+export function RefreshButton({ className }: { className?: string }) {
+	const queryClient = useQueryClient()
+	const [spinning, setSpinning] = useState(false)
+
+	const onClick = useCallback(() => {
+		setSpinning(true)
+		queryClient.invalidateQueries({ queryKey: ["local"] }).finally(() => setSpinning(false))
+	}, [queryClient])
+
+	return (
+		<Button
+			variant="ghost"
+			size="icon-sm"
+			aria-label="Reload"
+			title="Reload"
+			onClick={onClick}
+			disabled={spinning}
+			className={className}
+		>
+			<ArrowRotateClockwiseIcon className={cn("size-3.5", spinning && "animate-spin")} />
+		</Button>
 	)
 }
 
@@ -101,13 +133,7 @@ const RANGE_LABELS: Record<string, string> = {
 	"30d": "Last 30 days",
 }
 
-export function TimeRangeSelect({
-	value,
-	onChange,
-}: {
-	value: string
-	onChange: (next: string) => void
-}) {
+export function TimeRangeSelect({ value, onChange }: { value: string; onChange: (next: string) => void }) {
 	return (
 		<div className="flex items-center gap-1.5">
 			<ClockIcon strokeWidth={2} className="size-3.5 text-muted-foreground" />

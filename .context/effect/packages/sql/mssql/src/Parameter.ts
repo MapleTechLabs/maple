@@ -1,23 +1,13 @@
 /**
- * Typed metadata for SQL Server stored procedure parameters.
+ * Typed SQL Server stored procedure parameter metadata.
  *
- * This module records the bare parameter name, Tedious `DataType`, Tedious
- * `ParameterOptions`, and phantom TypeScript value type used by
- * `Procedure.param` and `Procedure.outputParam`. `MssqlClient.call` later
- * forwards input parameters to Tedious with `Request.addParameter` and output
- * parameters with `Request.addOutputParameter`, so names should match the
- * stored procedure parameter name without a leading `@`.
+ * This module builds {@link Parameter} values that pair a stored procedure
+ * parameter name with a Tedious `DataType`, Tedious `ParameterOptions`, and a
+ * phantom TypeScript value type. `Procedure.param` and
+ * `Procedure.outputParam` use this metadata, and `MssqlClient.call` forwards it
+ * to Tedious when registering input and output parameters.
  *
- * Use these values when defining stored procedures that need explicit SQL
- * Server parameter metadata, such as sized strings or binary values, decimal
- * precision/scale, table-valued parameters, and output parameters. The generic
- * type parameter is only a compile-time guide for the value record accepted by
- * `Procedure.compile`; Tedious still validates and encodes the runtime value.
- * In particular, TVP values must use Tedious' table shape with `name`,
- * optional `schema`, `columns`, and `rows`, and output parameters are registered
- * with no initial value, so SQL Server input-output parameters need separate
- * care rather than assuming an output parameter is populated from compiled
- * input values.
+ * @see {@link make} for constructing parameter metadata directly.
  *
  * @since 4.0.0
  */
@@ -28,7 +18,7 @@ import type { ParameterOptions } from "tedious/lib/request.ts"
 /**
  * Runtime type identifier used to mark SQL Server stored procedure parameter metadata.
  *
- * @category type id
+ * @category type IDs
  * @since 4.0.0
  */
 export const TypeId: TypeId = "~@effect/sql-mssql/Parameter"
@@ -36,7 +26,7 @@ export const TypeId: TypeId = "~@effect/sql-mssql/Parameter"
 /**
  * Type-level identifier used to mark SQL Server stored procedure parameter metadata.
  *
- * @category type id
+ * @category type IDs
  * @since 4.0.0
  */
 export type TypeId = "~@effect/sql-mssql/Parameter"

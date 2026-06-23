@@ -331,7 +331,15 @@ const widgetFetchAtom = (input: { endpoint: string; params: Record<string, unkno
  * widgets (via `useWidgetData`) and secondary fetches such as a stat widget's
  * sparkline. Pass `undefined` to render a disabled state without a fetch.
  */
-export function useWidgetDataSource(dataSource: WidgetDataSourceLike | undefined) {
+export function useWidgetDataSource(
+	dataSource: WidgetDataSourceLike | undefined,
+	/**
+	 * When false, the data source is "paused": no query is issued and the widget
+	 * renders a loading state. Used to gate dashboard tiles on viewport
+	 * visibility (lazy-load) so off-screen tiles don't fire queries on mount.
+	 */
+	enabled = true,
+) {
 	const {
 		state: { resolvedTimeRange },
 	} = useDashboardTimeRange()
@@ -370,14 +378,14 @@ export function useWidgetDataSource(dataSource: WidgetDataSourceLike | undefined
 	// where useAtomValue / useAtomRefresh re-subscribe and drop an in-flight
 	// fetch (the user-visible symptom: widgets stuck on the loading skeleton).
 	const fetchAtom = useMemo(() => {
-		if (disableReason !== null || isStatic || !dataSource) {
+		if (disableReason !== null || isStatic || !dataSource || !enabled) {
 			return disabledResultAtom<unknown, WidgetFetchError>()
 		}
 		return widgetFetchAtom({
 			endpoint: dataSource.endpoint,
 			params: resolvedParams,
 		})
-	}, [disableReason, isStatic, dataSource, resolvedParams])
+	}, [disableReason, isStatic, dataSource, resolvedParams, enabled])
 
 	const result = useRefreshableAtomValue(fetchAtom)
 
@@ -386,6 +394,11 @@ export function useWidgetDataSource(dataSource: WidgetDataSourceLike | undefined
 	const dataState: WidgetDataState = useMemo(() => {
 		if (isStatic) {
 			return { status: "ready", data: null } as const
+		}
+		// Paused (off-screen) tiles read as "loading", not "error" — the query is
+		// simply deferred until the tile scrolls into view.
+		if (!enabled) {
+			return { status: "loading" } as const
 		}
 		if (disableReason) {
 			return { status: "error", message: disableReason } as const
@@ -405,15 +418,15 @@ export function useWidgetDataSource(dataSource: WidgetDataSourceLike | undefined
 			})
 			.onSuccess((rawData) => ({ status: "ready", data: applyTransform(rawData, transform) }) as const)
 			.orElse(() => ({ status: "error", message: "Unknown error" }) as const)
-	}, [result, transform, disableReason, isStatic])
+	}, [result, transform, disableReason, isStatic, enabled])
 
 	return {
 		dataState,
 	}
 }
 
-export function useWidgetData(widget: DashboardWidget) {
-	return useWidgetDataSource(widget.dataSource)
+export function useWidgetData(widget: DashboardWidget, enabled = true) {
+	return useWidgetDataSource(widget.dataSource, enabled)
 }
 
 export const __testables = {

@@ -28,6 +28,7 @@ import {
 	gaugeScenarios,
 	sparklineSamples,
 	chartScenarios,
+	stressScenarios,
 	tableScenarios,
 	listScenarios,
 	pieScenarios,
@@ -96,6 +97,7 @@ const NAV_ITEMS = [
 	{ id: "gauge", label: "Gauge" },
 	{ id: "sparkline", label: "Sparkline" },
 	{ id: "chart", label: "Chart" },
+	{ id: "stress", label: "Stress" },
 	{ id: "table", label: "Table" },
 	{ id: "list", label: "List" },
 	{ id: "pie", label: "Pie" },
@@ -190,6 +192,16 @@ export function WidgetLab() {
 				>
 					{chartScenarios.map((s, i) => (
 						<ChartScenarioCard key={`chart-${i}`} scenario={s} mode={mode} />
+					))}
+				</Section>
+
+				<Section
+					id="stress"
+					title="Stress / edge cases"
+					description="High-cardinality (10–50 series/slices), long series names, and null/zero data. Confirms distinct colors past series 5, scrollable legends that don't crush the plot, and pie/bar 'Other' bucketing."
+				>
+					{stressScenarios.map((s, i) => (
+						<ChartScenarioCard key={`stress-${i}`} scenario={s} mode={mode} />
 					))}
 				</Section>
 

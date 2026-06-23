@@ -7,7 +7,7 @@
  * `skippedLineCount`), never thrown.
  */
 
-export type PromMetricType = "counter" | "gauge" | "histogram" | "summary" | "untyped"
+type PromMetricType = "counter" | "gauge" | "histogram" | "summary" | "untyped"
 
 export interface PromSample {
 	readonly name: string
@@ -95,7 +95,8 @@ const parseSampleValue = (token: string): number | null => {
  * epoch *seconds* (possibly fractional) in OpenMetrics. Disambiguate by
  * magnitude: anything below 1e11 (~5138-11-16 in ms) is treated as seconds.
  */
-const normalizeTimestamp = (raw: number): number => (Math.abs(raw) < 1e11 ? Math.round(raw * 1000) : Math.round(raw))
+const normalizeTimestamp = (raw: number): number =>
+	Math.abs(raw) < 1e11 ? Math.round(raw * 1000) : Math.round(raw)
 
 interface ParsedLabels {
 	readonly labels: Record<string, string>
@@ -197,7 +198,10 @@ const COMPONENT_SUFFIXES = ["_bucket", "_count", "_sum", "_total"] as const
  * with a known component suffix stripped (histogram `_bucket`/`_sum`/`_count`,
  * summary `_sum`/`_count`, OpenMetrics counter `_total`).
  */
-const familyForSample = (families: Map<string, MutableFamily>, sampleName: string): MutableFamily | undefined => {
+const familyForSample = (
+	families: Map<string, MutableFamily>,
+	sampleName: string,
+): MutableFamily | undefined => {
 	const exact = families.get(sampleName)
 	if (exact) return exact
 	for (const suffix of COMPONENT_SUFFIXES) {
@@ -279,7 +283,10 @@ export const parsePrometheusText = (body: string): PromParseResult => {
 
 		// OpenMetrics `_created` series carry start timestamps for counters /
 		// histograms / summaries — metadata we do not store; drop silently.
-		if (sample.name.endsWith("_created") && familyForSample(families, sample.name.slice(0, -8)) !== undefined) {
+		if (
+			sample.name.endsWith("_created") &&
+			familyForSample(families, sample.name.slice(0, -8)) !== undefined
+		) {
 			continue
 		}
 

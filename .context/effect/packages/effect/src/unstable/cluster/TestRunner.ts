@@ -1,20 +1,10 @@
 /**
- * The `TestRunner` module provides a lightweight in-memory cluster layer for
- * tests that need the cluster sharding services without starting real runners
- * or relying on external storage.
- *
- * Use it when exercising sharding behavior, message storage, or code that
- * depends on the cluster runner services in unit and integration tests. The
- * layer wires the normal sharding service to in-memory message and runner
- * storage, along with no-op runner and health implementations.
- *
- * **Testing gotchas**
- *
- * - State is held in memory and scoped to the layer lifetime; it is not shared
- *   across independently constructed layers or persisted between test runs
- * - Runner execution and health checks are no-ops, so this layer is best suited
- *   for testing coordination and storage behavior rather than real distributed
- *   runner processes
+ * The `TestRunner` module assembles the smallest cluster runtime useful in
+ * tests: `Sharding` backed by in-memory message storage, in-memory runner
+ * storage, no-op runner transport, and always-healthy runner checks. It lets
+ * code that depends on cluster services exercise registration, shard
+ * coordination, and mailbox persistence without starting RPC servers or
+ * external databases.
  *
  * @since 4.0.0
  */
@@ -27,7 +17,7 @@ import * as Sharding from "./Sharding.ts"
 import * as ShardingConfig from "./ShardingConfig.ts"
 
 /**
- * An in-memory cluster that can be used for testing purposes.
+ * Layer that provides an in-memory cluster for testing.
  *
  * **Details**
  *

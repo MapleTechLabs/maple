@@ -1,10 +1,9 @@
 import type { Effect } from "effect"
 import { Schema } from "effect"
 
-export class McpTenantError extends Schema.TaggedErrorClass<McpTenantError>()(
-	"@maple/mcp/errors/McpTenantError",
-	{ message: Schema.String },
-) {}
+class McpTenantError extends Schema.TaggedErrorClass<McpTenantError>()("@maple/mcp/errors/McpTenantError", {
+	message: Schema.String,
+}) {}
 
 export class McpAuthMissingError extends Schema.TaggedErrorClass<McpAuthMissingError>()(
 	"@maple/mcp/errors/McpAuthMissingError",
@@ -23,7 +22,7 @@ export class McpInvalidTenantError extends Schema.TaggedErrorClass<McpInvalidTen
 
 export class McpQueryError extends Schema.TaggedErrorClass<McpQueryError>()(
 	"@maple/mcp/errors/McpQueryError",
-	{ message: Schema.String, pipe: Schema.String, cause: Schema.optionalKey(Schema.Defect) },
+	{ message: Schema.String, pipe: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
 ) {}
 
 export type McpToolError =
@@ -57,6 +56,8 @@ export const optionalNumberParam = (description: string) =>
 
 export const optionalBooleanParam = (description: string) =>
 	Schema.optional(Schema.Boolean).annotate({ description })
+
+export const requiredBooleanParam = (description: string) => Schema.Boolean.annotate({ description })
 
 /**
  * Create a validation error response with an optional usage example.

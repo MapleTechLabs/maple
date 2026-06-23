@@ -34,7 +34,7 @@ import { PlanetScaleDiscoveryService, planetScaleDiscoveryUrl } from "./PlanetSc
 
 type ScrapeTargetRow = typeof scrapeTargets.$inferSelect
 
-export interface ScrapeTargetProxyResponse {
+interface ScrapeTargetProxyResponse {
 	readonly status: number
 	readonly body: string
 	readonly contentType: string
@@ -335,17 +335,17 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				)
 			})
 
-			const selectByIdForInternalScrape = Effect.fn(
-				"ScrapeTargetsService.selectByIdForInternalScrape",
-			)(function* (targetId: ScrapeTargetId) {
-				const rows = yield* database
-					.execute((db) =>
-						db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
-					)
-					.pipe(Effect.mapError(toPersistenceError))
+			const selectByIdForInternalScrape = Effect.fn("ScrapeTargetsService.selectByIdForInternalScrape")(
+				function* (targetId: ScrapeTargetId) {
+					const rows = yield* database
+						.execute((db) =>
+							db.select().from(scrapeTargets).where(eq(scrapeTargets.id, targetId)).limit(1),
+						)
+						.pipe(Effect.mapError(toPersistenceError))
 
-				return Option.fromNullishOr(rows[0])
-			})
+					return Option.fromNullishOr(rows[0])
+				},
+			)
 
 			const authHeadersForRow = (row: ScrapeTargetRow) => buildScrapeAuthHeaders(row, encryptionKey)
 
@@ -397,7 +397,8 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					if (request.authType !== undefined && request.authType !== "token") {
 						return yield* Effect.fail(
 							new ScrapeTargetValidationError({
-								message: 'PlanetScale targets use auth type "token" (service token id + secret)',
+								message:
+									'PlanetScale targets use auth type "token" (service token id + secret)',
 							}),
 						)
 					}

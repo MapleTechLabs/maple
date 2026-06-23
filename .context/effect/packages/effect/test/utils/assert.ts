@@ -81,7 +81,6 @@ export function assertMatch(actual: string, regExp: RegExp, ..._: Array<never>) 
 export function throws(thunk: () => void, error?: string | Error | ((u: unknown) => undefined), ..._: Array<never>) {
   try {
     thunk()
-    fail("Expected to throw an error")
   } catch (e) {
     if (error !== undefined) {
       if (Predicate.isString(error)) {
@@ -93,7 +92,9 @@ export function throws(thunk: () => void, error?: string | Error | ((u: unknown)
         error(e)
       }
     }
+    return
   }
+  fail("Expected to throw an error")
 }
 
 export async function throwsAsync(
@@ -103,7 +104,6 @@ export async function throwsAsync(
 ) {
   try {
     await thunk()
-    fail("Expected to throw an error")
   } catch (e) {
     if (error !== undefined) {
       if (Predicate.isFunction(error)) {
@@ -112,7 +112,9 @@ export async function throwsAsync(
         deepStrictEqual(e, error)
       }
     }
+    return
   }
+  fail("Expected to throw an error")
 }
 
 // ----------------------------

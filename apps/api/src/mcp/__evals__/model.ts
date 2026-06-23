@@ -6,9 +6,9 @@ import type { LanguageModel } from "ai"
  * (`DEFAULT_MODEL_ID` in apps/chat-agent/src/lib/openrouter.ts), so evals
  * reflect what real users run. Override with `MCP_EVAL_MODEL`.
  */
-export const DEFAULT_EVAL_MODEL = "moonshotai/kimi-k2.7-code"
+const DEFAULT_EVAL_MODEL = "moonshotai/kimi-k2.7-code"
 
-export const evalModelId = (): string => process.env.MCP_EVAL_MODEL ?? DEFAULT_EVAL_MODEL
+const evalModelId = (): string => process.env.MCP_EVAL_MODEL ?? DEFAULT_EVAL_MODEL
 
 /** Evals require an OpenRouter key; without one the suites skip rather than fail. */
 export const hasEvalCredentials = (): boolean => Boolean(process.env.OPENROUTER_API_KEY)

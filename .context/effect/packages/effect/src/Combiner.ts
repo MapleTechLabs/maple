@@ -1,62 +1,11 @@
 /**
- * A module for combining two values of the same type into one.
+ * Defines reusable rules for merging two values of the same type.
  *
- * A `Combiner<A>` wraps a single binary function `(self: A, that: A) => A`.
- * It describes *how* two values merge but carries no initial/empty value
- * (for that, see {@link Reducer} which extends `Combiner` with an
- * `initialValue`).
- *
- * ## Mental model
- *
- * - **Combiner** – an object with a `combine(self, that)` method that returns
- *   a value of the same type.
- * - **Argument order** – `self` is the "left" / accumulator side, `that` is
- *   the "right" / incoming side.
- * - **No identity element** – unlike a monoid, a `Combiner` does not require
- *   a neutral element. Use {@link Reducer} when you need one.
- * - **Purity** – all combiners produced by this module are pure; they never
- *   mutate their arguments.
- * - **Composability** – combiners can be lifted into `Option`, `Struct`,
- *   `Tuple`, and other container types via helpers in those modules.
- *
- * ## Common tasks
- *
- * - Create a combiner from any binary function → {@link make}
- * - Swap argument order → {@link flip}
- * - Pick the smaller / larger of two values → {@link min} / {@link max}
- * - Always keep the first or last value → {@link first} / {@link last}
- * - Ignore both values and return a fixed result → {@link constant}
- * - Insert a separator between combined values → {@link intercalate}
- *
- * ## Gotchas
- *
- * - `min` and `max` require an `Order<A>`, not a raw comparator. Import from
- *   e.g. `Number.Order` or `String.Order`.
- * - `intercalate` is curried: call it with the separator first, then pass the
- *   base combiner.
- * - A `Reducer` (which adds `initialValue`) is also a valid `Combiner` — you
- *   can pass a `Reducer` anywhere a `Combiner` is expected.
- *
- * ## Quickstart
- *
- * **Example** (combining strings with a separator)
- *
- * ```ts
- * import { Combiner, String } from "effect"
- *
- * const csv = Combiner.intercalate(",")(String.ReducerConcat)
- *
- * console.log(csv.combine("a", "b"))
- * // Output: "a,b"
- *
- * console.log(csv.combine(csv.combine("a", "b"), "c"))
- * // Output: "a,b,c"
- * ```
- *
- * ## See also
- *
- * - {@link make} – the primary constructor
- * - {@link Combiner} – the core interface
+ * A `Combiner<A>` contains one operation, `combine(self, that)`, which returns
+ * the merged value. It does not define an initial value for reducing a
+ * collection; use a `Reducer` when you need that. This module includes the
+ * `Combiner` interface, a constructor for custom combining logic, and common
+ * combiners for choosing or ordering values.
  *
  * @since 4.0.0
  */
@@ -70,12 +19,12 @@ import type * as Order from "./Order.ts"
  *
  * **When to use**
  *
- * Use `Combiner` when you need to describe how two values of the same type
+ * Use when you need to describe how two values of the same type
  * merge, pass a reusable combining strategy to library functions like
  * `Struct.makeCombiner` or `Option.makeCombinerFailFast`, or define the
  * combining step for a `Reducer`.
  *
- * **Example** (number addition combiner)
+ * **Example** (Combining numbers with addition)
  *
  * ```ts
  * import { Combiner } from "effect"
@@ -93,6 +42,10 @@ import type * as Order from "./Order.ts"
 export interface Combiner<A> {
   /**
    * Combines two values into a new value.
+   *
+   * **When to use**
+   *
+   * Use to merge two values according to this combining strategy.
    */
   readonly combine: (self: A, that: A) => A
 }
@@ -102,7 +55,7 @@ export interface Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you have a custom combining operation that is not covered by
+ * Use when you have a custom combining operation that is not covered by
  * the built-in constructors (`min`, `max`, `first`, `last`, `constant`).
  *
  * **Details**
@@ -110,7 +63,7 @@ export interface Combiner<A> {
  * The returned combiner's `combine` method delegates to the provided function.
  * Any purity, associativity, or mutation behavior comes from that function.
  *
- * **Example** (multiplying numbers)
+ * **Example** (Multiplying numbers)
  *
  * ```ts
  * import { Combiner } from "effect"
@@ -134,16 +87,15 @@ export function make<A>(combine: (self: A, that: A) => A): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when the "right" value should act as the accumulator side, or when
- * you want to reverse the natural direction of a non-commutative combiner such
- * as string concatenation.
+ * Use when you want the right-hand value to act as the accumulator, or need to
+ * reverse a non-commutative combiner such as string concatenation.
  *
  * **Details**
  *
  * Returns a new `Combiner` where `combine(self, that)` calls the original
- * combiner as `combine(that, self)`. The input combiner is not mutated.
+ * combiner as `combine(that, self)`.
  *
- * **Example** (reversing string concatenation)
+ * **Example** (Reversing string concatenation)
  *
  * ```ts
  * import { Combiner, String } from "effect"
@@ -168,15 +120,15 @@ export function flip<A>(combiner: Combiner<A>): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you want to accumulate the minimum value across a collection or
+ * Use when you want to accumulate the minimum value across a collection or
  * build a `Reducer` that tracks the running minimum.
  *
  * **Details**
  *
  * The combiner compares values using the given `Order`. When values are equal,
- * it returns `that` (the second argument). It does not mutate either argument.
+ * it returns `that` (the second argument).
  *
- * **Example** (minimum of two numbers)
+ * **Example** (Selecting the minimum of two numbers)
  *
  * ```ts
  * import { Combiner, Number } from "effect"
@@ -204,15 +156,15 @@ export function min<A>(order: Order.Order<A>): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you want to accumulate the maximum value across a collection or
+ * Use when you want to accumulate the maximum value across a collection or
  * build a `Reducer` that tracks the running maximum.
  *
  * **Details**
  *
  * The combiner compares values using the given `Order`. When values are equal,
- * it returns `that` (the second argument). It does not mutate either argument.
+ * it returns `that` (the second argument).
  *
- * **Example** (maximum of two numbers)
+ * **Example** (Selecting the maximum of two numbers)
  *
  * ```ts
  * import { Combiner, Number } from "effect"
@@ -239,15 +191,13 @@ export function max<A>(order: Order.Order<A>): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you want "first write wins" semantics while merging values, or
- * when the combining logic should keep the existing value.
+ * Use when you want "first write wins" semantics while merging values.
  *
  * **Details**
  *
- * `combine(self, that)` returns `self` and ignores `that`. The second argument
- * is discarded, not mutated.
+ * `combine(self, that)` returns `self` and ignores `that`.
  *
- * **Example** (keeping the first value)
+ * **Example** (Keeping the first value)
  *
  * ```ts
  * import { Combiner } from "effect"
@@ -271,15 +221,13 @@ export function first<A>(): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you want "last write wins" semantics while merging values, or
- * when each new value should replace the accumulator.
+ * Use when you want "last write wins" semantics while merging values.
  *
  * **Details**
  *
- * `combine(self, that)` returns `that` and ignores `self`. The first argument
- * is discarded, not mutated.
+ * `combine(self, that)` returns `that` and ignores `self`.
  *
- * **Example** (keeping the last value)
+ * **Example** (Keeping the last value)
  *
  * ```ts
  * import { Combiner } from "effect"
@@ -304,16 +252,14 @@ export function last<A>(): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when a combiner should produce a fixed result regardless of input,
- * or when a generic API needs a combiner but the combined value is
- * predetermined.
+ * Use when you need a combiner that always returns a fixed value, including
+ * when a generic API requires a combiner but the result is predetermined.
  *
  * **Details**
  *
  * `combine(self, that)` returns the constant `a` and ignores both arguments.
- * No mutation occurs.
  *
- * **Example** (always returning zero)
+ * **Example** (Always returning zero)
  *
  * ```ts
  * import { Combiner } from "effect"
@@ -339,18 +285,17 @@ export function constant<A>(a: A): Combiner<A> {
  *
  * **When to use**
  *
- * Use this when you are building delimited strings (CSV, paths, etc.) by
- * repeated combination, or when you need to inject a fixed separator between
- * accumulated values.
+ * Use when you need to inject a fixed separator between accumulated values,
+ * such as when building delimited strings, paths, or CSV-like output by
+ * repeated combination.
  *
  * **Details**
  *
  * `intercalate(middle)(combiner).combine(self, that)` is equivalent to
  * `combiner.combine(self, combiner.combine(middle, that))`. This function is
- * curried: first provide the separator, then the base combiner. It returns a
- * new combiner and does not mutate the input combiner.
+ * curried: first provide the separator, then the base combiner.
  *
- * **Example** (joining strings with a separator)
+ * **Example** (Joining strings with a separator)
  *
  * ```ts
  * import { Combiner, String } from "effect"

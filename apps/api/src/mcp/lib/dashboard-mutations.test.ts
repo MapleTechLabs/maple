@@ -128,10 +128,8 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			const result = yield* withDashboardMutation(
-				DASHBOARD,
-				"update_dashboard_widget",
-				(widgets) => Effect.succeed([...widgets, widget("w-new")]),
+			const result = yield* withDashboardMutation(DASHBOARD, "update_dashboard_widget", (widgets) =>
+				Effect.succeed([...widgets, widget("w-new")]),
 			)
 
 			assert.strictEqual(result.ok, true)

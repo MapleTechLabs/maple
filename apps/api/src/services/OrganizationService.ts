@@ -28,8 +28,10 @@ import {
 	oauthConnections,
 	orgClickHouseSettings,
 	orgIngestKeys,
-	orgOpenrouterSettings,
 	scrapeTargets,
+	vcsCommits,
+	vcsInstallations,
+	vcsRepositories,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
@@ -63,7 +65,6 @@ const ORG_SCOPED_TABLES = [
 	apiKeys,
 	orgIngestKeys,
 	orgClickHouseSettings,
-	orgOpenrouterSettings,
 	scrapeTargets,
 	oauthConnections,
 	oauthAuthStates,
@@ -75,6 +76,9 @@ const ORG_SCOPED_TABLES = [
 	errorIssues,
 	errorNotificationPolicies,
 	actors,
+	vcsInstallations,
+	vcsRepositories,
+	vcsCommits,
 ] as const
 
 export interface OrganizationServiceShape {

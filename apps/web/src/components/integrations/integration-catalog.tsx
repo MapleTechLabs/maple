@@ -1,9 +1,11 @@
-import { motion } from "motion/react"
+import { motion, useReducedMotion } from "motion/react"
 
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { cn } from "@maple/ui/lib/utils"
 import {
 	CloudflareIcon,
+	GithubIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
@@ -11,9 +13,15 @@ import {
 } from "@/components/icons"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { HAZEL_ACCENT } from "./hazel-integration-card"
 
-export type IntegrationId = "cloudflare" | "prometheus" | "planetscale" | "warpstream" | "hazel"
+export type IntegrationId = "cloudflare" | "prometheus" | "planetscale" | "warpstream" | "hazel" | "github"
+
+/**
+ * Third-party brand accents for the icon-plate wash — no app token applies.
+ * Owned here (catalog data) and consumed by the per-integration cards.
+ */
+export const GITHUB_ACCENT = "#181717"
+export const HAZEL_ACCENT = "#F46F0F"
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -22,10 +30,15 @@ export interface CatalogEntry {
 	readonly icon: React.ComponentType<{ size?: number; className?: string }>
 	/** Brand accent for the icon plate wash (third-party colors, no app token applies). */
 	readonly accent: string
+	/**
+	 * Class override for the icon glyph when the brand mark is monochrome and would
+	 * vanish on the card at `accent` (e.g. GitHub's near-black). The wash still uses `accent`.
+	 */
+	readonly iconClassName?: string
 	readonly docsUrl?: string
 }
 
-export const CATALOG: ReadonlyArray<CatalogEntry> = [
+const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		name: "Cloudflare Logpush",
@@ -54,8 +67,7 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "warpstream",
 		name: "WarpStream",
-		description:
-			"Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
+		description: "Monitor WarpStream clusters via agent metrics or the hosted Prometheus endpoint.",
 		icon: WarpStreamIcon,
 		// WarpStream's brand crimson (fill of the official mark).
 		accent: "#E52344",
@@ -68,11 +80,21 @@ export const CATALOG: ReadonlyArray<CatalogEntry> = [
 			"Forward Maple alerts into a Hazel workspace via OAuth — pick destinations per notification.",
 		icon: HazelIcon,
 		accent: HAZEL_ACCENT,
+		docsUrl: "https://hazel.sh/docs/integrations/maple",
+	},
+	{
+		id: "github",
+		name: "GitHub",
+		description: "Install the Maple GitHub App to sync repositories and commits from your org.",
+		icon: GithubIcon,
+		accent: GITHUB_ACCENT,
+		// GitHub's mark is near-black — render the glyph in the foreground token so it reads on the card.
+		iconClassName: "text-foreground",
+		docsUrl: "https://maple.dev/docs/integrations/github",
 	},
 ]
 
-export const catalogEntry = (id: IntegrationId): CatalogEntry =>
-	CATALOG.find((entry) => entry.id === id)!
+export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
 interface CardStatus {
 	readonly label: string
@@ -91,6 +113,11 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 	const hazelResult = useAtomValue(
 		MapleApiAtomClient.query("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
+		}),
+	)
+	const githubResult = useAtomValue(
+		MapleApiAtomClient.query("integrations", "githubStatus", {
+			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
 
@@ -129,6 +156,23 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		)
 		.orElse(() => (Result.isInitial(hazelResult) ? null : NOT_CONNECTED))
 
+	const github: CardStatus | null = Result.builder(githubResult)
+		.onSuccess((status): CardStatus => {
+			// Deactivated on GitHub's side (uninstalled / suspended) — the install row is
+			// kept, so flag it for attention rather than showing a bare "Not connected".
+			if (status.state === "disconnected") return { label: "Deactivated", variant: "warning" }
+			if (status.state === "suspended") return { label: "Suspended", variant: "warning" }
+			if (!status.connected) return NOT_CONNECTED
+			// Count only active repos; provider-removed ones are shown in the card
+			// with a re-enable/delete affordance, not as live synced repos.
+			const count = status.repositories.filter((r) => r.status === "active").length
+			return {
+				label: count > 0 ? `${count} repo${count === 1 ? "" : "s"}` : "Connected",
+				variant: "success",
+			}
+		})
+		.orElse(() => (Result.isInitial(githubResult) ? null : NOT_CONNECTED))
+
 	return {
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
@@ -136,6 +180,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		// WarpStream rides the generic Prometheus pipeline — no own target type.
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
+		github,
 	}
 }
 
@@ -155,47 +200,69 @@ const ITEM_VARIANTS = {
 	},
 }
 
+/**
+ * The canonical integration icon tile: a bordered plate with a soft brand-accent
+ * wash behind the glyph. Used by the catalog grid, the drill-in header, and the
+ * per-integration cards so the tile is identical everywhere.
+ */
 export function IntegrationIconPlate({
-	entry,
+	icon: Icon,
+	accent,
+	iconClassName,
 	size = 22,
-	className,
+	plateClassName,
+	overlay,
 }: {
-	entry: CatalogEntry
+	icon: React.ComponentType<{ size?: number; className?: string }>
+	/** Brand accent driving the wash (and the glyph, unless `iconClassName` overrides it). */
+	accent: string
+	/** Class override for the glyph color (e.g. `text-foreground` for monochrome marks). */
+	iconClassName?: string
 	size?: number
-	className?: string
+	/** Overrides the plate footprint + rounding (default `size-12 rounded-lg`). */
+	plateClassName?: string
+	/** Optional status marker pinned to the bottom-right of the plate. */
+	overlay?: React.ReactNode
 }) {
-	const Icon = entry.icon
 	return (
 		<span
-			className={`relative inline-flex size-12 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card ${className ?? ""}`}
-			style={{ ["--tile-accent" as string]: entry.accent }}
+			className={cn(
+				"relative inline-flex shrink-0 items-center justify-center border border-border/60 bg-card",
+				plateClassName ?? "size-12 rounded-lg",
+			)}
+			style={{ ["--tile-accent" as string]: accent }}
 			aria-hidden
 		>
 			<span
-				className="absolute inset-0 rounded-lg opacity-70"
+				className="absolute inset-0 rounded-[inherit] opacity-70"
 				style={{
-					background: `radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--tile-accent) 16%, transparent), transparent 70%)`,
+					background:
+						"radial-gradient(circle at 30% 20%, color-mix(in srgb, var(--tile-accent) 16%, transparent), transparent 70%)",
 				}}
 			/>
-			<span className="relative" style={{ color: entry.accent }}>
+			<span
+				className={cn("relative", iconClassName)}
+				style={iconClassName ? undefined : { color: accent }}
+			>
 				<Icon size={size} />
 			</span>
+			{overlay}
 		</span>
 	)
 }
 
-export function IntegrationCatalog({
-	onSelect,
-}: {
-	onSelect: (id: IntegrationId) => void
-}) {
+export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const statuses = useIntegrationStatuses()
+	const reduceMotion = useReducedMotion()
 
 	return (
 		<motion.div
-			className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+			// 3 columns only at 2xl — the page nests under two sidebars, so the content
+			// region is far narrower than the viewport; at xl, 3 cols crush the names.
+			className="grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-3"
 			variants={GRID_VARIANTS}
-			initial="hidden"
+			// Reduced motion: render the cards in place with no staggered transform.
+			initial={reduceMotion ? false : "hidden"}
 			animate="show"
 		>
 			{CATALOG.map((entry) => {
@@ -208,7 +275,11 @@ export function IntegrationCatalog({
 						onClick={() => onSelect(entry.id)}
 						className="group flex items-start gap-4 rounded-lg border border-border/60 bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
 					>
-						<IntegrationIconPlate entry={entry} />
+						<IntegrationIconPlate
+							icon={entry.icon}
+							accent={entry.accent}
+							iconClassName={entry.iconClassName}
+						/>
 						<span className="flex min-w-0 flex-1 flex-col gap-1">
 							<span className="flex items-center justify-between gap-2">
 								<span className="truncate text-sm font-semibold">{entry.name}</span>

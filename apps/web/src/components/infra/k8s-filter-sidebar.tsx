@@ -56,9 +56,7 @@ export function PodsFilterSidebarView({
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <FilterSidebarLoading sectionCount={6} />)
-		.onError((error) => (
-			<FilterSidebarError message={formatBackendError(error).description} />
-		))
+		.onError((error) => <FilterSidebarError message={formatBackendError(error).description} />)
 		.onSuccess((facetsResponse, result) => {
 			const f = facetsResponse.data
 
@@ -68,7 +66,7 @@ export function PodsFilterSidebarView({
 					<FilterSidebarBody>
 						<SearchableFilterSection
 							title="Pod"
-							options={f.pods as Array<{ name: string; count: number }>}
+							options={f.pods}
 							selected={filters.podNames ? [...filters.podNames] : []}
 							onChange={(val) => onFilterChange("podNames", val)}
 							defaultOpen
@@ -76,7 +74,7 @@ export function PodsFilterSidebarView({
 						<Separator className="my-2" />
 						<FilterSection
 							title="Namespace"
-							options={f.namespaces as Array<{ name: string; count: number }>}
+							options={f.namespaces}
 							selected={filters.namespaces ? [...filters.namespaces] : []}
 							onChange={(val) => onFilterChange("namespaces", val)}
 						/>
@@ -85,7 +83,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<SearchableFilterSection
 									title="Node"
-									options={f.nodes as Array<{ name: string; count: number }>}
+									options={f.nodes}
 									selected={filters.nodeNames ? [...filters.nodeNames] : []}
 									onChange={(val) => onFilterChange("nodeNames", val)}
 									defaultOpen={false}
@@ -97,7 +95,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Cluster"
-									options={f.clusters as Array<{ name: string; count: number }>}
+									options={f.clusters}
 									selected={filters.clusters ? [...filters.clusters] : []}
 									onChange={(val) => onFilterChange("clusters", val)}
 									defaultOpen={false}
@@ -109,7 +107,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<SearchableFilterSection
 									title="Deployment"
-									options={f.deployments as Array<{ name: string; count: number }>}
+									options={f.deployments}
 									selected={filters.deployments ? [...filters.deployments] : []}
 									onChange={(val) => onFilterChange("deployments", val)}
 									defaultOpen={false}
@@ -121,7 +119,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<SearchableFilterSection
 									title="StatefulSet"
-									options={f.statefulsets as Array<{ name: string; count: number }>}
+									options={f.statefulsets}
 									selected={filters.statefulsets ? [...filters.statefulsets] : []}
 									onChange={(val) => onFilterChange("statefulsets", val)}
 									defaultOpen={false}
@@ -133,7 +131,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<SearchableFilterSection
 									title="DaemonSet"
-									options={f.daemonsets as Array<{ name: string; count: number }>}
+									options={f.daemonsets}
 									selected={filters.daemonsets ? [...filters.daemonsets] : []}
 									onChange={(val) => onFilterChange("daemonsets", val)}
 									defaultOpen={false}
@@ -145,7 +143,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<SearchableFilterSection
 									title="Job"
-									options={f.jobs as Array<{ name: string; count: number }>}
+									options={f.jobs}
 									selected={filters.jobs ? [...filters.jobs] : []}
 									onChange={(val) => onFilterChange("jobs", val)}
 									defaultOpen={false}
@@ -157,7 +155,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Environment"
-									options={f.environments as Array<{ name: string; count: number }>}
+									options={f.environments}
 									selected={filters.environments ? [...filters.environments] : []}
 									onChange={(val) => onFilterChange("environments", val)}
 									defaultOpen={false}
@@ -169,7 +167,7 @@ export function PodsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Compute Type"
-									options={f.computeTypes as Array<{ name: string; count: number }>}
+									options={f.computeTypes}
 									selected={filters.computeTypes ? [...filters.computeTypes] : []}
 									onChange={(val) => onFilterChange("computeTypes", val)}
 									defaultOpen={false}
@@ -213,9 +211,7 @@ export function NodesFilterSidebarView({
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <FilterSidebarLoading sectionCount={3} />)
-		.onError((error) => (
-			<FilterSidebarError message={formatBackendError(error).description} />
-		))
+		.onError((error) => <FilterSidebarError message={formatBackendError(error).description} />)
 		.onSuccess((facetsResponse, result) => {
 			const f = facetsResponse.data
 
@@ -225,7 +221,7 @@ export function NodesFilterSidebarView({
 					<FilterSidebarBody>
 						<SearchableFilterSection
 							title="Node"
-							options={f.nodes as Array<{ name: string; count: number }>}
+							options={f.nodes}
 							selected={filters.nodeNames ? [...filters.nodeNames] : []}
 							onChange={(val) => onFilterChange("nodeNames", val)}
 							defaultOpen
@@ -235,7 +231,7 @@ export function NodesFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Cluster"
-									options={f.clusters as Array<{ name: string; count: number }>}
+									options={f.clusters}
 									selected={filters.clusters ? [...filters.clusters] : []}
 									onChange={(val) => onFilterChange("clusters", val)}
 								/>
@@ -246,7 +242,7 @@ export function NodesFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Environment"
-									options={f.environments as Array<{ name: string; count: number }>}
+									options={f.environments}
 									selected={filters.environments ? [...filters.environments] : []}
 									onChange={(val) => onFilterChange("environments", val)}
 								/>
@@ -295,9 +291,7 @@ export function WorkloadsFilterSidebarView({
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <FilterSidebarLoading sectionCount={4} />)
-		.onError((error) => (
-			<FilterSidebarError message={formatBackendError(error).description} />
-		))
+		.onError((error) => <FilterSidebarError message={formatBackendError(error).description} />)
 		.onSuccess((facetsResponse, result) => {
 			const f = facetsResponse.data
 
@@ -307,7 +301,7 @@ export function WorkloadsFilterSidebarView({
 					<FilterSidebarBody>
 						<SearchableFilterSection
 							title={workloadLabel}
-							options={f.workloads as Array<{ name: string; count: number }>}
+							options={f.workloads}
 							selected={filters.workloadNames ? [...filters.workloadNames] : []}
 							onChange={(val) => onFilterChange("workloadNames", val)}
 							defaultOpen
@@ -315,7 +309,7 @@ export function WorkloadsFilterSidebarView({
 						<Separator className="my-2" />
 						<FilterSection
 							title="Namespace"
-							options={f.namespaces as Array<{ name: string; count: number }>}
+							options={f.namespaces}
 							selected={filters.namespaces ? [...filters.namespaces] : []}
 							onChange={(val) => onFilterChange("namespaces", val)}
 						/>
@@ -324,7 +318,7 @@ export function WorkloadsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Cluster"
-									options={f.clusters as Array<{ name: string; count: number }>}
+									options={f.clusters}
 									selected={filters.clusters ? [...filters.clusters] : []}
 									onChange={(val) => onFilterChange("clusters", val)}
 									defaultOpen={false}
@@ -336,7 +330,7 @@ export function WorkloadsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Environment"
-									options={f.environments as Array<{ name: string; count: number }>}
+									options={f.environments}
 									selected={filters.environments ? [...filters.environments] : []}
 									onChange={(val) => onFilterChange("environments", val)}
 									defaultOpen={false}
@@ -348,7 +342,7 @@ export function WorkloadsFilterSidebarView({
 								<Separator className="my-2" />
 								<FilterSection
 									title="Compute Type"
-									options={f.computeTypes as Array<{ name: string; count: number }>}
+									options={f.computeTypes}
 									selected={filters.computeTypes ? [...filters.computeTypes] : []}
 									onChange={(val) => onFilterChange("computeTypes", val)}
 									defaultOpen={false}

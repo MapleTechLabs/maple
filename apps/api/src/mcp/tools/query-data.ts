@@ -154,8 +154,11 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 
 			const rawSpec: QuerySpecType = Match.value(params.source).pipe(
 				Match.when("traces", (): QuerySpecType => {
-					const attributeFilters: Array<{ key: string; value?: string; mode: "equals" | "exists" }> =
-						[]
+					const attributeFilters: Array<{
+						key: string
+						value?: string
+						mode: "equals" | "exists"
+					}> = []
 					if (params.attribute_key) {
 						attributeFilters.push({
 							key: params.attribute_key,
@@ -170,7 +173,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						...(params.span_name && { spanName: asSpanName(params.span_name) }),
 						...(params.root_spans_only && { rootSpansOnly: params.root_spans_only }),
 						...(params.environments && {
-							environments: splitCsv(params.environments).map((env) => asDeploymentEnvironment(env)),
+							environments: splitCsv(params.environments).map((env) =>
+								asDeploymentEnvironment(env),
+							),
 						}),
 						...(params.commit_shas && {
 							commitShas: splitCsv(params.commit_shas).map((sha) => asCommitSha(sha)),
@@ -233,7 +238,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							LogsTimeseriesQuery["groupBy"]
 						>
 						if (!params.group_by)
-							decisions.push(`group_by: defaulted to "none" (available: service, severity, none)`)
+							decisions.push(
+								`group_by: defaulted to "none" (available: service, severity, none)`,
+							)
 						return {
 							kind: "timeseries",
 							source: "logs",
@@ -280,7 +287,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						...(params.service_name && { serviceName: asServiceName(params.service_name) }),
 						...(params.group_by === "attribute" &&
 							params.attribute_key && { groupByAttributeKey: params.attribute_key }),
-						...(metricsAttributeFilters.length > 0 && { attributeFilters: metricsAttributeFilters }),
+						...(metricsAttributeFilters.length > 0 && {
+							attributeFilters: metricsAttributeFilters,
+						}),
 					}
 
 					if (!params.metric)
@@ -294,7 +303,9 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 							MetricsTimeseriesQuery["groupBy"]
 						>
 						if (!params.group_by)
-							decisions.push(`group_by: defaulted to "none" (available: service, attribute, none)`)
+							decisions.push(
+								`group_by: defaulted to "none" (available: service, attribute, none)`,
+							)
 						return {
 							kind: "timeseries",
 							source: "metrics",

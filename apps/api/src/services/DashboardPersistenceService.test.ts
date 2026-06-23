@@ -25,9 +25,7 @@ const failingDatabaseLayer = Layer.succeed(
 	Database,
 	Database.of({
 		execute: () =>
-			Effect.fail(
-				new DatabaseError({ message: "simulated query failure", cause: new Error("boom") }),
-			),
+			Effect.fail(new DatabaseError({ message: "simulated query failure", cause: new Error("boom") })),
 	}),
 )
 

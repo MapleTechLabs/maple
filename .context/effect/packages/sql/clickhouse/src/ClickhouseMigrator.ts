@@ -1,20 +1,11 @@
 /**
- * Utilities for applying Effect SQL migrations to ClickHouse databases.
+ * ClickHouse adapter for the shared Effect SQL migration runner.
  *
- * This module re-exports the shared `Migrator` loaders and error types, then
- * provides `run` and `layer` helpers for applying ordered migrations through
- * the current ClickHouse `SqlClient`. It is typically used during application
- * startup, deployment, or integration tests that need to prepare analytical
- * tables before dependent services begin reading or writing data.
- *
- * Applied migrations are stored in `effect_sql_migrations` by default and use
- * the shared `<id>_<name>` loader convention. Only migrations with ids greater
- * than the latest recorded id are run. ClickHouse schema changes often depend
- * on engine, `ORDER BY`, database, and cluster settings, and many deployments
- * rely on explicit `ON CLUSTER` clauses or coordinated rollout tooling. This
- * adapter does not add a ClickHouse-specific table lock or schema dumper, so
- * coordinate concurrent migrators and do not expect `schemaDirectory` to emit a
- * ClickHouse schema snapshot.
+ * This module re-exports the common `Migrator` loaders and error types, then
+ * provides `run` and `layer` helpers that apply ordered migrations through the
+ * current ClickHouse `SqlClient`. `run` returns the applied migration IDs and
+ * names, while `layer` runs the migrations during layer construction and
+ * provides no services.
  *
  * @since 4.0.0
  */

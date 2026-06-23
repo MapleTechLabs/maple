@@ -1,17 +1,9 @@
 /**
- * The `ShardingRegistrationEvent` module defines the events emitted by
- * `Sharding` when the local runner registers entity handlers or singleton
- * workloads. These events are useful for observing the set of capabilities a
- * runner has made available, coordinating startup hooks, and writing tests or
- * integrations that need to react when registrations are complete.
- *
- * Registration events describe local registration, not shard ownership or
- * execution. A runner may register an entity or singleton before it owns the
- * shard that will run it, and the events are in-memory notifications from the
- * `Sharding` service rather than persisted cluster state. For persisted
- * messages, treat registration as the point where the handler is available to
- * the runner; it does not imply that existing storage work has already been
- * read or processed.
+ * The `ShardingRegistrationEvent` module models the live notifications emitted
+ * by `Sharding` when the local runner registers an entity handler or singleton.
+ * Consumers can use these events to wait for registrations during startup,
+ * inspect which capabilities a runner made available, or assert registration
+ * behavior in tests.
  *
  * @since 4.0.0
  */
@@ -53,8 +45,7 @@ export interface SingletonRegistered {
 }
 
 /**
- * Generated helpers for pattern matching and constructing sharding registration
- * events.
+ * Constructors and matchers for sharding registration events.
  *
  * @category pattern matching
  * @since 4.0.0

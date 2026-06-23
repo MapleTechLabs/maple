@@ -8,8 +8,11 @@
  *
  * Tinybird restricts row/byte caps (`max_rows_to_read`, `max_result_rows`,
  * `max_bytes_to_read`) — they error with "restricted" if used. `maxBlockSize`
- * is also Tinybird-restricted; the executor strips it on the Tinybird backend
- * (see `stripTinybirdRestrictedSettings`).
+ * is also Tinybird-restricted; the executor strips it on the managed Tinybird
+ * backend — whether reached via the Tinybird SDK or its ClickHouse-compatible
+ * gateway (`CLICKHOUSE_URL`) — and keeps it only for a genuine per-org BYO
+ * ClickHouse (see `stripTinybirdRestrictedSettings` and the strip gate in the
+ * executor, which keys on the config `source`, not its `_tag`).
  */
 export type WarehouseQuerySettings = {
 	maxExecutionTime?: number
@@ -24,7 +27,8 @@ export type WarehouseQuerySettings = {
 	 * the column (`Body ILIKE '%…%'`). Capping rows-per-block bounds peak
 	 * memory while keeping full read parallelism: benchmarked on the superwall
 	 * cluster, `512` turned both OOMing log-search shapes into sub-2s queries
-	 * at ~260-420MB peak. ClickHouse-only — stripped for Tinybird.
+	 * at ~260-420MB peak. BYO-ClickHouse-only — stripped for the managed Tinybird
+	 * backend (Tinybird SDK or its ClickHouse-compatible gateway).
 	 */
 	maxBlockSize?: number
 }
@@ -72,8 +76,10 @@ const settingToCh: Record<keyof WarehouseQuerySettings, string> = {
 
 /**
  * Settings Tinybird's `/v0/sql` rejects with "Usage of setting '…' is
- * restricted". The executor drops them when the resolved backend is Tinybird
- * so the same call site works against both backends.
+ * restricted". The executor drops them for the managed Tinybird backend
+ * (reached via the Tinybird SDK or its ClickHouse-compatible gateway) and keeps
+ * them only for a genuine per-org BYO ClickHouse, so the same call site works
+ * against both backends.
  */
 const TINYBIRD_RESTRICTED_SETTINGS: ReadonlyArray<keyof WarehouseQuerySettings> = ["maxBlockSize"]
 

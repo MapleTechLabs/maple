@@ -26,10 +26,6 @@ export interface ServiceEdge {
 	samplingWeight: number
 }
 
-export interface ServiceMapResponse {
-	edges: ServiceEdge[]
-}
-
 export interface ServiceDbEdge {
 	sourceService: string
 	dbSystem: string
@@ -43,11 +39,7 @@ export interface ServiceDbEdge {
 	samplingWeight: number
 }
 
-export interface ServiceDbEdgesResponse {
-	edges: ServiceDbEdge[]
-}
-
-export interface ServiceDbQuerySummary {
+interface ServiceDbQuerySummary {
 	queryCount: number
 	estimatedQueryCount: number
 	errorCount: number
@@ -59,7 +51,7 @@ export interface ServiceDbQuerySummary {
 	activeServiceCount: number
 }
 
-export interface ServiceDbQueryTimeseriesPoint {
+interface ServiceDbQueryTimeseriesPoint {
 	bucket: string
 	queryCount: number
 	estimatedQueryCount: number
@@ -70,7 +62,7 @@ export interface ServiceDbQueryTimeseriesPoint {
 	p95DurationMs: number
 }
 
-export interface ServiceDbTopQuery {
+interface ServiceDbTopQuery {
 	queryKey: string
 	queryLabel: string
 	sampleStatement: string
@@ -93,21 +85,6 @@ export interface ServiceDbQuerySummaryResponse {
 }
 
 export type ServicePlatform = "kubernetes" | "cloudflare" | "lambda" | "web" | "unknown"
-
-export interface ServicePlatformInfo {
-	serviceName: string
-	platform: ServicePlatform
-	k8sCluster: string
-	cloudPlatform: string
-	cloudProvider: string
-	faasName: string
-	mapleSdkType: string
-	runtime: string
-}
-
-export interface ServicePlatformsResponse {
-	platforms: ServicePlatformInfo[]
-}
 
 const GetServiceMapInputSchema = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
@@ -203,11 +180,7 @@ export const getServiceMapForService = Effect.fn("QueryEngine.getServiceMapForSe
 }: {
 	data: GetServiceMapForServiceInput
 }) {
-	const input = yield* decodeInput(
-		GetServiceMapForServiceInputSchema,
-		data,
-		"getServiceMapForService",
-	)
+	const input = yield* decodeInput(GetServiceMapForServiceInputSchema, data, "getServiceMapForService")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDependenciesForService", () =>
@@ -324,11 +297,7 @@ export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuery
 }: {
 	data: GetServiceDbQuerySummaryInput
 }) {
-	const input = yield* decodeInput(
-		GetServiceDbQuerySummaryInputSchema,
-		data,
-		"getServiceDbQuerySummary",
-	)
+	const input = yield* decodeInput(GetServiceDbQuerySummaryInputSchema, data, "getServiceDbQuerySummary")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 
 	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>

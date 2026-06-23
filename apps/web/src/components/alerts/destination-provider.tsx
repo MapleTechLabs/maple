@@ -45,8 +45,8 @@ export const PROVIDERS: Record<AlertDestinationType, DestinationProvider> = {
 		accent: "#06AC38",
 		accentBg: "rgba(6,172,56,0.16)",
 		brandfetchDomain: "pagerduty.com",
-		docsUrl: "https://support.pagerduty.com/main/docs/services-and-integrations",
-		docsLabel: "PagerDuty integration guide",
+		docsUrl: "https://maple.dev/docs/alerting/notification-destinations#pagerduty",
+		docsLabel: "PagerDuty setup guide",
 	},
 	webhook: {
 		type: "webhook",

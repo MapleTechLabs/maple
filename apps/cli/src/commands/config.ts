@@ -19,7 +19,9 @@ export const use = Command.make("use", {
 			const config = yield* MapleConfig
 			if (a.mode === "auto") {
 				yield* config.clearDefaultMode()
-				yield* Console.log("Default mode cleared — Maple will auto-detect (use --local/--remote to override).")
+				yield* Console.log(
+					"Default mode cleared — Maple will auto-detect (use --local/--remote to override).",
+				)
 				return
 			}
 			yield* config.setDefaultMode(a.mode)

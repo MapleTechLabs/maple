@@ -1,5 +1,6 @@
+import type { MessageBatch, ScheduledController } from "@cloudflare/workers-types"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
+import { runScheduledEffect, WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
 import { Context, FileSystem, Layer, Path } from "effect"
 import { HttpMiddleware, HttpRouter } from "effect/unstable/http"
 import * as Etag from "effect/unstable/http/Etag"
@@ -44,6 +45,17 @@ const telemetry = MapleCloudflareSDK.make({
 	repositoryUrl: "https://github.com/Makisuo/maple",
 	dropSpanNames: ["McpServer/Notifications."],
 })
+
+// `HttpMiddleware.tracer` ends the root server span on a deferred macrotask
+// (`scheduleTask(span.end, 0)`), but `telemetry.flush` drains synchronously.
+// Flushing immediately after the response loses the server span — its macrotask
+// hasn't fired yet. Isolated requests (e.g. a GitHub webhook) freeze the isolate
+// before a subsequent request rescues it, so the trace is silently dropped.
+// Yield one macrotask first so `span.end` runs before we drain.
+const flushTelemetry = async (env: Record<string, unknown>): Promise<void> => {
+	await new Promise<void>((resolve) => setTimeout(resolve, 0))
+	await telemetry.flush(env)
+}
 
 // POST /mcp hangs indefinitely on Cloudflare Workers when `toWebHandler` is
 // called with no middleware (1101 in prod, miniflare "worker hung" locally).
@@ -115,8 +127,7 @@ const peekMcpFrame = (body: string): McpFrame => {
 		const parsed = JSON.parse(body)
 		const first = Array.isArray(parsed) ? parsed[0] : parsed
 		const method = typeof first?.method === "string" ? first.method : "-"
-		const id =
-			first?.id === undefined || first?.id === null ? "-" : String(first.id)
+		const id = first?.id === undefined || first?.id === null ? "-" : String(first.id)
 		return { method, id }
 	} catch {
 		return { method: "-", id: "-" }
@@ -187,17 +198,16 @@ const handle = async (
 					` resp_sid=${response.headers.get("mcp-session-id") ?? "-"}`,
 			)
 		}
-		ctx.waitUntil(telemetry.flush(env))
+		ctx.waitUntil(flushTelemetry(env))
 		return response
 	} catch (err) {
 		console.error("[worker] handler failed:", err)
 		if (isMcp && mcpFrame) {
 			console.error(
-				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` +
-					` dur=${Date.now() - startedAt}ms`,
+				`[mcp-err] method=${mcpFrame.method} id=${mcpFrame.id}` + ` dur=${Date.now() - startedAt}ms`,
 			)
 		}
-		ctx.waitUntil(telemetry.flush(env))
+		ctx.waitUntil(flushTelemetry(env))
 		const message = err instanceof Error ? err.message : String(err)
 		return new Response(`worker handler error: ${message}`, { status: 504 })
 	}
@@ -209,7 +219,38 @@ const handle = async (
 export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
 export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 
+// VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
+// as the route graph above) to keep module-scope evaluation light.
+const handleQueue = async (
+	batch: MessageBatch<unknown>,
+	env: Record<string, unknown>,
+	ctx: ExecutionContext,
+): Promise<void> => {
+	const { buildVcsSyncLayer, processBatch, flushVcsTelemetry } = await import("./vcs-sync-runtime")
+	try {
+		await runScheduledEffect(buildVcsSyncLayer(env), processBatch(batch), ctx)
+	} finally {
+		ctx.waitUntil(flushVcsTelemetry(env))
+	}
+}
+
+// Cron handler (every 12h, see wrangler.jsonc `triggers.crons`): enqueue a
+// periodic VCS sync per installation. Single cron expression — no `event.cron`
+// dispatch needed.
+const handleScheduled = async (env: Record<string, unknown>, ctx: ExecutionContext): Promise<void> => {
+	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import("./vcs-sync-runtime")
+	try {
+		await runScheduledEffect(buildVcsScheduledLayer(env), runScheduledSync, ctx)
+	} finally {
+		ctx.waitUntil(flushVcsTelemetry(env))
+	}
+}
+
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handle(request, env, ctx),
+	queue: (batch: MessageBatch<unknown>, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		handleQueue(batch, env, ctx),
+	scheduled: (_event: ScheduledController, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		handleScheduled(env, ctx),
 }

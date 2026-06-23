@@ -19,7 +19,7 @@ export interface FilterOption {
 
 interface FilterSectionBaseProps {
 	title: string
-	options: FilterOption[]
+	options: ReadonlyArray<FilterOption>
 	selected: string[]
 	onChange: (selected: string[]) => void
 	defaultOpen?: boolean

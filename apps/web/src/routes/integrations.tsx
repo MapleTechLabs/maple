@@ -3,6 +3,7 @@ import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import {
 	IntegrationCatalog,
@@ -13,17 +14,15 @@ import {
 } from "@/components/integrations/integration-catalog"
 import { CloudflareLogpushSection } from "@/components/settings/cloudflare-logpush-section"
 import { ScrapeTargetsSection } from "@/components/settings/scrape-targets-section"
-import {
-	SettingsNav,
-	useVisibleSettingsSections,
-} from "@/components/settings/settings-nav"
+import { SettingsNav, useVisibleSettingsSections } from "@/components/settings/settings-nav"
+import { Alert, AlertDescription } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
-import { ArrowLeftIcon, ExternalLinkIcon } from "@/components/icons"
+import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon } from "@/components/icons"
 
 const IntegrationsSearch = Schema.Struct({
 	integration: Schema.optional(
-		Schema.Literals(["cloudflare", "prometheus", "planetscale", "warpstream", "hazel"]),
+		Schema.Literals(["cloudflare", "prometheus", "planetscale", "warpstream", "hazel", "github"]),
 	),
 })
 
@@ -55,9 +54,7 @@ function IntegrationsPage() {
 				description="Connect external data sources and services to Maple."
 				filterSidebar={settingsSidebar}
 			>
-				<IntegrationCatalog
-					onSelect={(id) => navigate({ search: { integration: id } })}
-				/>
+				<IntegrationCatalog onSelect={(id) => navigate({ search: { integration: id } })} />
 			</DashboardLayout>
 		)
 	}
@@ -76,24 +73,29 @@ function IntegrationsPage() {
 		>
 			<div className="space-y-4">
 				{integration === "warpstream" && (
-					<div className="rounded-md border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
-						WarpStream clusters are scraped as Prometheus targets — point a target at an
-						agent&apos;s <code className="font-mono text-xs">:8080/metrics</code> endpoint or the
-						hosted Prometheus endpoint with Basic auth.{" "}
-						<a
-							href="https://maple.dev/docs/integrations/warpstream"
-							target="_blank"
-							rel="noreferrer"
-							className="text-foreground underline underline-offset-2 hover:no-underline"
-						>
-							Setup guide
-						</a>
-					</div>
+					<Alert variant="info">
+						<CircleInfoIcon />
+						<AlertDescription>
+							WarpStream clusters are scraped as Prometheus targets — point a target at an
+							agent&apos;s <code className="font-mono text-xs">:8080/metrics</code> endpoint
+							or the hosted Prometheus endpoint with Basic auth.{" "}
+							<a
+								href="https://maple.dev/docs/integrations/warpstream"
+								target="_blank"
+								rel="noreferrer"
+								className="text-foreground underline underline-offset-2 hover:no-underline"
+							>
+								Setup guide
+							</a>
+						</AlertDescription>
+					</Alert>
 				)}
 				{integration === "cloudflare" ? (
 					<CloudflareLogpushSection />
 				) : integration === "hazel" ? (
 					<HazelIntegrationCard />
+				) : integration === "github" ? (
+					<GithubIntegrationCard />
 				) : integration === "planetscale" ? (
 					<ScrapeTargetsSection sourceFilter="planetscale" />
 				) : (
@@ -120,7 +122,13 @@ function IntegrationHeader({ integration }: { integration: IntegrationId }) {
 			>
 				<ArrowLeftIcon size={16} />
 			</Button>
-			<IntegrationIconPlate entry={entry} size={18} className="size-9!" />
+			<IntegrationIconPlate
+				icon={entry.icon}
+				accent={entry.accent}
+				iconClassName={entry.iconClassName}
+				size={18}
+				plateClassName="size-9 rounded-lg"
+			/>
 			<div className="flex items-center gap-2">
 				<h1 className="text-lg font-semibold">{entry.name}</h1>
 				{status ? <Badge variant={status.variant}>{status.label}</Badge> : null}

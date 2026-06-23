@@ -92,8 +92,7 @@ export function getFeatureQuotas(customer: Customer | null | undefined): Feature
 		const granted = balance.granted ?? 0
 		const usage = balance.usage ?? 0
 		const ratio = granted > 0 ? usage / granted : 0
-		const level: QuotaLevel =
-			ratio >= 1 ? "over" : ratio >= APPROACHING_RATIO ? "approaching" : "ok"
+		const level: QuotaLevel = ratio >= 1 ? "over" : ratio >= APPROACHING_RATIO ? "approaching" : "ok"
 		quotas.push({ featureId, usage, granted, ratio, level })
 	}
 	return quotas

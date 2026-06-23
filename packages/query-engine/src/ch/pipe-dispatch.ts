@@ -17,7 +17,7 @@
 import * as CH from "./index"
 import type { TracesMetric, AttributeFilter } from "../query-engine"
 import type { OrgId } from "@maple/domain"
-import { unsafeCompiledQuery, type CompiledQuery } from "./compile"
+import { unsafeCompiledQuery, type CompiledQuery } from "@maple-dev/clickhouse-builder"
 import { Array as A, Match, Result } from "effect"
 
 type CompileTarget = Parameters<typeof CH.compile>[0]
@@ -561,7 +561,9 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							matchModes:
-								str("span_name_match_mode") === "contains" ? { spanName: "contains" } : undefined,
+								str("span_name_match_mode") === "contains"
+									? { spanName: "contains" }
+									: undefined,
 							errorsOnly: bool("has_error"),
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),

@@ -1,20 +1,11 @@
 /**
- * Sink adapters for writing Effect stream chunks into Node writable streams.
+ * Sink adapters for writing Effect chunks into Node writable streams.
  *
- * This module is used at the boundary where Effect `Stream`s or `Channel`s need
- * to push data into Node's writable side: file streams, HTTP request or
- * response bodies, process stdio, sockets, and transform inputs such as
- * compression or encryption streams. It exposes both a `Sink` constructor for
- * ordinary stream pipelines and lower-level `Channel` and pull helpers used by
- * other Node stream adapters.
- *
- * The implementation follows Node writable semantics. Chunks are written in
- * order; when `write` returns `false`, pulling pauses until `drain` so upstream
- * producers do not overrun the writable buffer. Writable `error` events are
- * mapped through `onError`, and the writable is ended and awaited via `finish`
- * when upstream completes unless `endOnDone` is `false`. Use `endOnDone: false`
- * for externally owned or long-lived writables, and make sure `onError` keeps
- * Node's untyped errors meaningful for the calling Effect workflow.
+ * `fromWritable` creates a `Sink`, `fromWritableChannel` creates a lower-level
+ * `Channel`, and `pullIntoWritable` writes from an existing pull loop. All
+ * three adapters respect writable-stream backpressure, map writable errors with
+ * the supplied `onError` function, and can end the writable when the upstream
+ * data is done.
  *
  * @since 4.0.0
  */
@@ -67,9 +58,17 @@ export const fromWritableChannel = <IE, E, A = Uint8Array | string>(
   })
 
 /**
- * Repeatedly pulls non-empty chunks and writes them to a Node writable stream,
- * waiting for `drain` when needed, failing on writable errors, and ending the
- * writable on upstream completion unless disabled.
+ * Writes Effect chunks into a Node writable stream.
+ *
+ * **When to use**
+ *
+ * Use to implement custom Node stream adapters that already have an upstream
+ * pull and need direct control over a writable stream.
+ *
+ * **Details**
+ *
+ * The loop waits for `drain` when needed, fails on writable errors, and ends
+ * the writable on upstream completion unless `endOnDone` is `false`.
  *
  * @category converting
  * @since 4.0.0

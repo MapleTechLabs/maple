@@ -10,6 +10,7 @@ import {
 	SpanName,
 } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import {
 	WarehouseDateTimeString,
 	WarehouseTransformError,
@@ -92,7 +93,7 @@ const LIST_PROJECTED_COLUMNS = [
 	"spanAttributes.net.peer.name",
 ] as const
 
-export interface TraceRootSpanSummary {
+interface TraceRootSpanSummary {
 	name: string
 	kind: string
 	statusCode: string
@@ -314,20 +315,6 @@ const GetSpanHierarchyInputSchema = Schema.Struct({
 
 export type GetSpanHierarchyInput = Schema.Schema.Type<typeof GetSpanHierarchyInputSchema>
 
-const SPAN_HIERARCHY_RANGE_HOURS = 1
-const tinybirdDateTime = (d: Date): string => d.toISOString().replace("T", " ").slice(0, 19)
-
-function computeSpanHierarchyRange(timestamp: string | undefined): { startTime: string; endTime: string } | undefined {
-	if (!timestamp) return undefined
-	const t = new Date(timestamp.includes("T") ? timestamp : `${timestamp.replace(" ", "T")}Z`)
-	if (Number.isNaN(t.getTime())) return undefined
-	const halfWidthMs = SPAN_HIERARCHY_RANGE_HOURS * 60 * 60 * 1000
-	return {
-		startTime: tinybirdDateTime(new Date(t.getTime() - halfWidthMs)),
-		endTime: tinybirdDateTime(new Date(t.getTime() + halfWidthMs)),
-	}
-}
-
 export function getSpanHierarchy({ data }: { data: GetSpanHierarchyInput }) {
 	return getSpanHierarchyEffect({ data })
 }
@@ -342,7 +329,7 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 	yield* Effect.annotateCurrentSpan("traceId", input.traceId)
 	if (input.spanId) yield* Effect.annotateCurrentSpan("spanId", input.spanId)
 
-	const range = computeSpanHierarchyRange(input.timestamp)
+	const range = computeTraceTimeWindow(input.timestamp)
 
 	const result = yield* runWarehouseQuery("spanHierarchy", () =>
 		Effect.gen(function* () {
@@ -404,7 +391,7 @@ const getSpanDetailEffect = Effect.fn("QueryEngine.getSpanDetail")(function* ({
 	yield* Effect.annotateCurrentSpan("traceId", input.traceId)
 	yield* Effect.annotateCurrentSpan("spanId", input.spanId)
 
-	const range = computeSpanHierarchyRange(input.timestamp)
+	const range = computeTraceTimeWindow(input.timestamp)
 
 	const result = yield* runWarehouseQuery("spanDetail", () =>
 		Effect.gen(function* () {
@@ -425,12 +412,12 @@ const getSpanDetailEffect = Effect.fn("QueryEngine.getSpanDetail")(function* ({
 	} satisfies SpanDetailResult
 })
 
-export interface FacetItem {
+interface FacetItem {
 	name: string
 	count: number
 }
 
-export interface TracesFacets {
+interface TracesFacets {
 	services: FacetItem[]
 	spanNames: FacetItem[]
 	httpMethods: FacetItem[]
@@ -448,15 +435,6 @@ export interface TracesFacets {
 
 export interface TracesFacetsResponse {
 	data: TracesFacets
-}
-
-export interface TracesDurationStatsResponse {
-	data: Array<{
-		minDurationMs: number
-		maxDurationMs: number
-		p50DurationMs: number
-		p95DurationMs: number
-	}>
 }
 
 const GetTracesFacetsInputSchema = Schema.Struct({
@@ -600,10 +578,6 @@ const GetSpanAttributeKeysInputSchema = Schema.Struct({
 
 export type GetSpanAttributeKeysInput = Schema.Schema.Type<typeof GetSpanAttributeKeysInputSchema>
 
-export interface SpanAttributeKeysResponse {
-	data: Array<{ attributeKey: string; usageCount: number }>
-}
-
 export function getSpanAttributeKeys({ data }: { data: GetSpanAttributeKeysInput }) {
 	return getSpanAttributeKeysEffect({ data })
 }
@@ -644,10 +618,6 @@ const GetSpanAttributeValuesInputSchema = Schema.Struct({
 })
 
 export type GetSpanAttributeValuesInput = Schema.Schema.Type<typeof GetSpanAttributeValuesInputSchema>
-
-export interface SpanAttributeValuesResponse {
-	data: Array<{ attributeValue: string; usageCount: number }>
-}
 
 export function getSpanAttributeValues({ data }: { data: GetSpanAttributeValuesInput }) {
 	return getSpanAttributeValuesEffect({ data })
@@ -696,10 +666,6 @@ const GetResourceAttributeKeysInputSchema = Schema.Struct({
 
 export type GetResourceAttributeKeysInput = Schema.Schema.Type<typeof GetResourceAttributeKeysInputSchema>
 
-export interface ResourceAttributeKeysResponse {
-	data: Array<{ attributeKey: string; usageCount: number }>
-}
-
 export function getResourceAttributeKeys({ data }: { data: GetResourceAttributeKeysInput }) {
 	return getResourceAttributeKeysEffect({ data })
 }
@@ -739,10 +705,6 @@ const GetResourceAttributeValuesInputSchema = Schema.Struct({
 })
 
 export type GetResourceAttributeValuesInput = Schema.Schema.Type<typeof GetResourceAttributeValuesInputSchema>
-
-export interface ResourceAttributeValuesResponse {
-	data: Array<{ attributeValue: string; usageCount: number }>
-}
 
 export function getResourceAttributeValues({ data }: { data: GetResourceAttributeValuesInput }) {
 	return getResourceAttributeValuesEffect({ data })

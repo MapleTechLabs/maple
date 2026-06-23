@@ -35,9 +35,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 
 			const result = yield* withTenantExecutor(
 				spanDetail({ traceId: trace_id, spanId: span_id, timestampHint }),
-			).pipe(
-				Effect.catchTags(warehouseToMcpHandlers("span_detail")),
-			)
+			).pipe(Effect.catchTags(warehouseToMcpHandlers("span_detail")))
 
 			if (!result.found) {
 				const hint = timestampHint

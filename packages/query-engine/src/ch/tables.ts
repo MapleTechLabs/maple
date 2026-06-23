@@ -5,8 +5,8 @@
 // These define the ClickHouse table schemas used by the query DSL.
 // ---------------------------------------------------------------------------
 
-import * as T from "./types"
-import { table } from "./table"
+import * as T from "@maple-dev/clickhouse-builder/types"
+import { table } from "@maple-dev/clickhouse-builder"
 
 export const Traces = table("traces", {
 	OrgId: T.string,

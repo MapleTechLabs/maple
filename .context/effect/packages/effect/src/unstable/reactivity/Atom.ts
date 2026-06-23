@@ -1,26 +1,12 @@
 /**
- * The `Atom` module defines reactive values and the helpers for constructing,
- * composing, running, and persisting them with an `AtomRegistry`. Atoms are
- * small read functions whose regular `get` reads form a dependency graph, so
- * derived values are cached by the registry and invalidated when their
- * dependencies, writable state, refresh hooks, or subscriptions change.
+ * Reactive state primitives for values managed by an `AtomRegistry`.
  *
- * Use atoms for application and UI state, derived data, `Effect` or `Stream`
- * queries exposed as `AsyncResult`, writable function atoms for commands,
- * subscription refs, pull-based streams, optimistic updates, URL search
- * parameters, `KeyValueStore` entries, and serializable or server-specific
- * hydration.
- *
- * The cache belongs to the registry, not the atom object: the same atom can have
- * different values in different registries, and serializable atoms are keyed by
- * their serialization key. Stable atom identity matters for dependency tracking
- * and cache reuse, so use `family` for parameterized atoms. Unobserved atoms are
- * disposed unless kept alive or retained by an idle TTL, which can cause derived
- * state, effects, streams, and finalizers to be rebuilt later. Runtime-backed
- * atoms run effects and streams with the registry scheduler, scope, and
- * `AtomRuntime` layer context; `runtime.withReactivity` only refreshes after
- * explicit `Reactivity` invalidations, while one-shot reads such as `once` do
- * not create dependency edges.
+ * An `Atom` describes how to produce or update one piece of reactive state. The
+ * registry runs atom reads, remembers current values, tracks dependencies
+ * between atoms, starts effects and streams, and cleans up atoms that are no
+ * longer used. This module includes the atom constructors and update helpers
+ * used for cached values, effect-backed values, streams, browser state, stored
+ * values, and server-rendered values.
  *
  * @since 4.0.0
  */
@@ -807,10 +793,15 @@ export const defaultMemoMap: Layer.MemoMap = Layer.makeMemoMapUnsafe()
 export const runtime: RuntimeFactory = context({ memoMap: defaultMemoMap })
 
 /**
- * An alias to `Rx.runtime.withReactivity`, for refreshing an atom whenever the
+ * Returns `Rx.runtime.withReactivity` for refreshing an atom whenever the
  * keys change in the `Reactivity` service.
  *
- * @category Reactivity
+ * **When to use**
+ *
+ * Use to refresh an atom whenever one or more invalidation keys change in the
+ * default reactivity runtime.
+ *
+ * @category reactivity
  * @since 4.0.0
  */
 export const withReactivity: (
@@ -1085,7 +1076,12 @@ export interface AtomResultFn<Arg, A, E = never>
 {}
 
 /**
- * Control symbol that can be written to an `AtomResultFn` to reset it to its initial state.
+ * Defines the control symbol that can be written to an `AtomResultFn` to reset it to its initial state.
+ *
+ * **When to use**
+ *
+ * Use when you need an `AtomResultFn` write value that clears the current async
+ * result and returns it to the initial state.
  *
  * @category symbols
  * @since 4.0.0
@@ -1101,7 +1097,12 @@ export const Reset = Symbol.for("effect/reactivity/atom/Atom/Reset")
 export type Reset = typeof Reset
 
 /**
- * Control symbol that can be written to an `AtomResultFn` to interrupt the current asynchronous computation.
+ * Defines the control symbol that can be written to an `AtomResultFn` to interrupt the current asynchronous computation.
+ *
+ * **When to use**
+ *
+ * Use when you need an `AtomResultFn` write value that interrupts the currently
+ * running async computation.
  *
  * @category symbols
  * @since 4.0.0
@@ -1469,7 +1470,7 @@ export const keepAlive = <A extends Atom<any>>(self: A): A =>
   })
 
 /**
- * Reverts the `keepAlive` behavior of a reactive value, allowing it to be disposed of when not in use.
+ * Allows a reactive value to be disposed of when it is not in use.
  *
  * **Details**
  *
@@ -1529,6 +1530,10 @@ export const withLabel: {
 
 /**
  * Pairs an atom with an initial value for registry initialization.
+ *
+ * **When to use**
+ *
+ * Use to preload an atom value when constructing or seeding a registry.
  *
  * **Details**
  *
@@ -2024,7 +2029,7 @@ export const batch: (f: () => void) => void = Registry.batch
 // -----------------------------------------------------------------------------
 
 /**
- * A browser-only signal atom that increments when the document becomes visible.
+ * Creates a browser-only signal atom that increments when the document becomes visible.
  *
  * **Details**
  *
@@ -2161,7 +2166,7 @@ export const kvs = <S extends Schema.Codec<any, any>, const Mode extends "sync" 
  *
  * If you pass a schema, it has to be synchronous and have no context.
  *
- * @category URL search params
+ * @category search params
  * @since 4.0.0
  */
 export const searchParam = <S extends Schema.Codec<any, string> = never>(name: string, options?: {
@@ -2346,7 +2351,12 @@ export const getResult = <A, E>(
 ): Effect.Effect<A, E, AtomRegistry> => AtomRegistry.use(Registry.getResult(self, options))
 
 /**
- * Requests a refresh of an atom through the `AtomRegistry` service.
+ * Runs a refresh request for an atom through the `AtomRegistry` service.
+ *
+ * **When to use**
+ *
+ * Use to invalidate and recompute an atom from an Effect that has access to the
+ * active registry.
  *
  * @category converting
  * @since 4.0.0
@@ -2375,7 +2385,7 @@ export const mount = <A>(self: Atom<A>): Effect.Effect<void, never, AtomRegistry
 /**
  * The type id used to mark atoms that carry serialization metadata.
  *
- * @category Serializable
+ * @category type IDs
  * @since 4.0.0
  */
 export const SerializableTypeId: SerializableTypeId = "~effect-atom/atom/Atom/Serializable"
@@ -2383,7 +2393,7 @@ export const SerializableTypeId: SerializableTypeId = "~effect-atom/atom/Atom/Se
 /**
  * The literal type of the serializable atom marker.
  *
- * @category Serializable
+ * @category type IDs
  * @since 4.0.0
  */
 export type SerializableTypeId = "~effect-atom/atom/Atom/Serializable"
@@ -2454,13 +2464,13 @@ export const serializable: {
 /**
  * The type id used to mark atoms with a server-side read override.
  *
- * @category ServerValue
+ * @category type IDs
  * @since 4.0.0
  */
 export const ServerValueTypeId = "~effect-atom/atom/Atom/ServerValue" as const
 
 /**
- * Overrides the value of an Atom when read on the server.
+ * Sets the value of an Atom when read on the server.
  *
  * @category ServerValue
  * @since 4.0.0

@@ -11,7 +11,7 @@ import {
 	UserId,
 	RoleName,
 } from "@maple/domain/http"
-import type { OrgId as OrgIdType, RoleName as RoleNameType } from "@maple/domain/http"
+import type { RoleName as RoleNameType } from "@maple/domain/http"
 import { createClerkClient } from "@clerk/backend"
 import { render } from "@react-email/components"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"

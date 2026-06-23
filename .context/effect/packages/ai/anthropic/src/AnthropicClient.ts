@@ -1,8 +1,8 @@
 /**
- * Anthropic Client module for interacting with Anthropic's API.
- *
- * Provides a type-safe, Effect-based client for Anthropic operations including
- * messages and streaming responses.
+ * The `AnthropicClient` module defines the low-level Effect service for
+ * Anthropic's Messages API. It builds a generated Anthropic HTTP client with
+ * authentication headers, API version headers, response decoding, and error
+ * mapping, then exposes helpers for regular and streaming message requests.
  *
  * @since 4.0.0
  */
@@ -48,19 +48,12 @@ export interface Service {
   /**
    * Executes a low-level streaming HTTP request and decodes the Server-Sent Events response using the provided schema.
    */
-  readonly streamRequest: <
-    Type extends {
-      readonly id?: string | undefined
-      readonly event: string
-      readonly data: string
-    },
-    DecodingServices
-  >(
-    schema: Schema.Decoder<Type, DecodingServices>
+  readonly streamRequest: <S extends Sse.EventCodec>(
+    schema: S
   ) => (request: HttpClientRequest.HttpClientRequest) => Stream.Stream<
-    Type,
+    S["Type"],
     HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry,
-    DecodingServices
+    S["DecodingServices"]
   >
 
   /**
@@ -122,7 +115,16 @@ export type MessageStreamEvent =
 // =============================================================================
 
 /**
- * Service identifier for the Anthropic client.
+ * Service tag for the Anthropic client.
+ *
+ * **When to use**
+ *
+ * Use when accessing or providing the Anthropic client service through Effect's
+ * context.
+ *
+ * @see {@link make} for constructing an Anthropic client effectfully
+ * @see {@link layer} for providing a client from explicit options
+ * @see {@link layerConfig} for providing a client from `Config`
  *
  * @category services
  * @since 4.0.0
@@ -136,9 +138,24 @@ export class AnthropicClient extends Context.Service<AnthropicClient, Service>()
 // =============================================================================
 
 /**
- * Configuration options for creating an Anthropic client.
+ * Configuration for creating an Anthropic client.
  *
- * @category models
+ * **When to use**
+ *
+ * Use when the Anthropic client settings are already available as values and
+ * should be passed directly to `make` or `layer`.
+ *
+ * **Details**
+ *
+ * These options configure the base Anthropic URL, the `x-api-key`
+ * authentication header, the `anthropic-version` header, and an optional
+ * transformation of the underlying `HttpClient`.
+ *
+ * @see {@link make} for constructing an Anthropic client from explicit options
+ * @see {@link layer} for providing an Anthropic client from explicit options
+ * @see {@link layerConfig} for loading Anthropic client settings from `Config`
+ *
+ * @category options
  * @since 4.0.0
  */
 export type Options = {
@@ -180,11 +197,19 @@ const RedactedAnthropicHeaders = {
 /**
  * Creates an Anthropic client service with the given options.
  *
+ * **When to use**
+ *
+ * Use when you have explicit configuration values and need an `Effect` that
+ * constructs the Anthropic client service, rather than providing it as a `Layer`.
+ *
  * **Details**
  *
  * The client handles API key authentication via the `x-api-key` header, API versioning via the `anthropic-version`
  * header, error mapping to the unified `AiError` type, and request/response transformations via `AnthropicConfig`. It
  * requires an `HttpClient` in the context.
+ *
+ * @see {@link layer} for providing the client as a `Layer` from explicit options
+ * @see {@link layerConfig} for providing the client as a `Layer` with `Config`-based settings
  *
  * @category constructors
  * @since 4.0.0
@@ -225,25 +250,19 @@ export const make = Effect.fnUntraced(
 
     const httpClientOk = HttpClient.filterStatusOk(httpClient)
 
-    const streamRequest = <
-      Type extends {
-        readonly id?: string | undefined
-        readonly event: string
-        readonly data: string
-      },
-      DecodingServices
-    >(schema: Schema.Decoder<Type, DecodingServices>) =>
-    (request: HttpClientRequest.HttpClientRequest): Stream.Stream<
-      Type,
-      HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry,
-      DecodingServices
-    > =>
-      httpClientOk.execute(request).pipe(
-        Effect.map((response) => response.stream),
-        Stream.unwrap,
-        Stream.decodeText,
-        Stream.pipeThroughChannel(Sse.decodeSchema(schema))
-      )
+    const streamRequest =
+      <S extends Sse.EventCodec>(schema: S) =>
+      (request: HttpClientRequest.HttpClientRequest): Stream.Stream<
+        S["Type"],
+        HttpClientError.HttpClientError | Schema.SchemaError | Sse.Retry,
+        S["DecodingServices"]
+      > =>
+        httpClientOk.execute(request).pipe(
+          Effect.map((response) => response.stream),
+          Stream.unwrap,
+          Stream.decodeText,
+          Stream.pipeThroughChannel(Sse.decodeSchema(schema))
+        )
 
     const createMessage = (options: {
       readonly payload: typeof Generated.BetaCreateMessageParams.Encoded
@@ -334,6 +353,14 @@ export const make = Effect.fnUntraced(
 /**
  * Creates a layer for the Anthropic client with the given options.
  *
+ * **When to use**
+ *
+ * Use when you already have explicit `Options` values, such as an API key or
+ * custom API URL, and want to provide `AnthropicClient` as a `Layer`.
+ *
+ * @see {@link make} for constructing the client service effectfully
+ * @see {@link layerConfig} for loading client settings from `Config`
+ *
  * @category layers
  * @since 4.0.0
  */
@@ -343,6 +370,15 @@ export const layer = (options: Options): Layer.Layer<AnthropicClient, never, Htt
 /**
  * Creates a layer for the Anthropic client, loading the requisite configuration
  * via Effect's `Config` module.
+ *
+ * **When to use**
+ *
+ * Use when you want to provide the Anthropic client as a `Layer` with
+ * configuration loaded from Effect's `Config` module, such as from environment
+ * variables or a secrets provider.
+ *
+ * @see {@link layer} for providing the client from explicit options instead of `Config`
+ * @see {@link make} for constructing the client service effectfully
  *
  * @category layers
  * @since 4.0.0

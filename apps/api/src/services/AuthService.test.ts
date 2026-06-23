@@ -1,7 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Option, Redacted, Schema } from "effect"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
-import { makeGetCustomerData, makeLoginSelfHosted, makeResolveMcpTenant, makeResolveTenant } from "./AuthService"
+import {
+	makeGetCustomerData,
+	makeLoginSelfHosted,
+	makeResolveMcpTenant,
+	makeResolveTenant,
+} from "./AuthService"
 
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -352,6 +357,49 @@ describe("makeLoginSelfHosted", () => {
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(failure?._tag, "@maple/http/errors/SelfHostedInvalidPasswordError")
 			assert.strictEqual(failure?.message, "Invalid root password")
+		}),
+	)
+})
+
+describe("makeResolveMcpTenant", () => {
+	// Regression: a logged-in browser applying an approved chat proposal via
+	// POST /api/chat/apply sends a Clerk session_token. The MCP tenant fallback
+	// must accept it (not only api_key), or every Clerk-mode apply fails.
+	it.effect("accepts a Clerk session_token and resolves the caller's org", () =>
+		Effect.gen(function* () {
+			let seenAcceptsToken: unknown
+			const resolveMcpTenant = makeResolveMcpTenant(
+				{
+					...baseEnv,
+					MAPLE_AUTH_MODE: "clerk",
+					CLERK_SECRET_KEY: Option.some(Redacted.make("sk_test_123")),
+					CLERK_JWT_KEY: Option.some(Redacted.make("jwt_test_123")),
+				},
+				async (_request, options) => {
+					seenAcceptsToken = (options as { acceptsToken?: unknown } | undefined)?.acceptsToken
+					return {
+						isAuthenticated: true,
+						message: null,
+						toAuth: () => ({
+							isAuthenticated: true,
+							tokenType: "session_token",
+							userId: "user_123",
+							orgId: "org_123",
+							orgRole: "org:admin",
+						}),
+					}
+				},
+			)
+
+			const tenant = yield* resolveMcpTenant({ authorization: "Bearer session-token" })
+
+			assert.deepStrictEqual(seenAcceptsToken, ["api_key", "session_token"])
+			assert.deepStrictEqual(tenant, {
+				orgId: asOrgId("org_123"),
+				userId: asUserId("user_123"),
+				roles: [asRoleName("org:admin")],
+				authMode: "clerk",
+			})
 		}),
 	)
 })

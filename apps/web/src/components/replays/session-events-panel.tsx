@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Link } from "@tanstack/react-router"
+import { cn } from "@maple/ui/utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getSessionTranscriptResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -38,10 +39,13 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 export function SessionEventsPanel({
 	sessionId,
 	previewEvents,
+	className,
 }: {
 	sessionId: string
 	/** Placeholder-data preview: render these events instead of fetching them. */
 	previewEvents?: ReadonlyArray<EventRow>
+	/** Sizing handed down by the layout (the panel fills/scrolls within it). */
+	className?: string
 }) {
 	const result = useAtomValue(getSessionTranscriptResultAtom({ data: { sessionId } }))
 	const [tab, setTab] = React.useState<Tab>("console")
@@ -65,8 +69,10 @@ export function SessionEventsPanel({
 		}
 		const rows = events.filter((e) => e.type === tab)
 		return (
-			<>
-				<div className="flex shrink-0 border-b border-border bg-muted/30">
+			// The panel body is the scroll container so the tab bar can stick to its
+			// top while the event rows scroll underneath.
+			<div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+				<div className="sticky top-0 z-10 flex shrink-0 border-b border-border bg-card">
 					{TABS.map((t) => (
 						<button
 							key={t.id}
@@ -90,18 +96,23 @@ export function SessionEventsPanel({
 						No {tab} events in this session.
 					</div>
 				) : (
-					<ul className="min-h-0 flex-1 divide-y divide-border overflow-y-auto font-mono text-xs">
+					<ul className="divide-y divide-border font-mono text-xs">
 						{rows.map((ev, i) => (
 							<EventLine key={i} ev={ev} onSeek={() => seekTo(ev.timestamp)} />
 						))}
 					</ul>
 				)}
-			</>
+			</div>
 		)
 	}
 
 	return (
-		<section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
+		<section
+			className={cn(
+				"flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card",
+				className,
+			)}
+		>
 			{previewEvents
 				? renderBody(previewEvents)
 				: Result.builder(result)

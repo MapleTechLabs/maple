@@ -1,11 +1,12 @@
 /**
- * TxChunk is a transactional chunk data structure that provides Software Transactional Memory (STM)
- * semantics for chunk operations. It uses a `TxRef<Chunk<A>>` internally to ensure all operations
- * are performed atomically within transactions.
+ * Stores a `Chunk` inside transactional state.
  *
- * Accessed values are tracked by the transaction in order to detect conflicts and to track changes.
- * A transaction will retry whenever a conflict is detected or whenever the transaction explicitly
- * calls `Effect.txRetry` and any of the accessed TxChunk values change.
+ * A `TxChunk<A>` keeps its current `Chunk<A>` in a `TxRef`, so reads and
+ * updates can be committed atomically with other transactional operations. This
+ * module offers a transactional version of common chunk workflows, including
+ * creating collections, reading or replacing the current chunk, adding or
+ * removing values, checking size, slicing, mapping, filtering, and combining
+ * chunks.
  *
  * @since 4.0.0
  */
@@ -469,7 +470,7 @@ export const size = <A>(self: TxChunk<A>): Effect.Effect<number> =>
   modify(self, (current) => [Chunk.size(current), current])
 
 /**
- * Checks if the `TxChunk` is empty.
+ * Checks whether the `TxChunk` is empty.
  *
  * **Example** (Checking for an empty chunk)
  *
@@ -496,7 +497,7 @@ export const isEmpty = <A>(self: TxChunk<A>): Effect.Effect<boolean> =>
   modify(self, (current) => [Chunk.isEmpty(current), current])
 
 /**
- * Checks if the `TxChunk` is non-empty.
+ * Checks whether the `TxChunk` is non-empty.
  *
  * **Example** (Checking for a non-empty chunk)
  *

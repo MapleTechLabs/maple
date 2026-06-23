@@ -106,6 +106,25 @@ const makeProto = <Tables extends IndexedDbTable.AnyWithProps>(options: {
 /**
  * Creates an `IndexedDbVersion` from one or more table definitions.
  *
+ * **When to use**
+ *
+ * Use when you need a typed description of the target IndexedDB schema that a
+ * database migration will materialize.
+ *
+ * **Details**
+ *
+ * The returned version exposes a `tables` map keyed by each table's
+ * `tableName`, and its type is the union of the supplied table definitions.
+ *
+ * **Gotchas**
+ *
+ * This constructor only describes the target schema; object stores and indexes
+ * still need to be created in the corresponding `IndexedDbDatabase` migration.
+ * Duplicate table names are not rejected, and the runtime map keeps the later
+ * table for a repeated key.
+ *
+ * @see {@link IndexedDbTable.make} for creating table definitions consumed by this constructor
+ *
  * @category constructors
  * @since 4.0.0
  */

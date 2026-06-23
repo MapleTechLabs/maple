@@ -55,10 +55,10 @@ describe("Command help output", () => {
           --quiet, -q          Suppress non-error output
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
 
         SUBCOMMANDS
           admin            Administrative commands
@@ -247,10 +247,10 @@ describe("Command help output", () => {
           login [flags]
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
 
         EXAMPLES
           # Log in with browser OAuth
@@ -291,10 +291,10 @@ describe("Command help output", () => {
           --buffer-size integer    Buffer size in KB
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
       `)
     }).pipe(Effect.provide(TestLayer)))
 
@@ -321,10 +321,10 @@ describe("Command help output", () => {
           --verbose, -v        Explain what is being done
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
       `)
     }).pipe(Effect.provide(TestLayer)))
 
@@ -349,10 +349,10 @@ describe("Command help output", () => {
           --verbose, -v        Show detailed information
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
       `)
     }).pipe(Effect.provide(TestLayer)))
 
@@ -380,10 +380,10 @@ describe("Command help output", () => {
           --notify, -n         Send notification email
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
       `)
     }).pipe(Effect.provide(TestLayer)))
 
@@ -406,10 +406,10 @@ describe("Command help output", () => {
           --profile, -p string    Configuration profile to use
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
 
         SUBCOMMANDS
           set    Set configuration values
@@ -440,10 +440,10 @@ describe("Command help output", () => {
           --config-file, -f file    Write to specific config file
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)"
       `)
     }).pipe(Effect.provide(TestLayer)))
 
@@ -518,10 +518,10 @@ describe("Command help output", () => {
           tool <subcommand> [flags]
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
 
         SUBCOMMANDS
           ungrouped    This command is not in a group
@@ -560,10 +560,10 @@ describe("Command help output", () => {
           tool <subcommand> [flags]
 
         GLOBAL FLAGS
-          --help, -h              Show help information
-          --version               Show version information
-          --completions choice    Print shell completion script (choices: bash, zsh, fish, sh)
-          --log-level choice      Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
+          --help, -h                                                          Show help information
+          --version, -v                                                       Show version information
+          --completions <bash|zsh|fish|sh>                                    Print shell completion script (choices: bash, zsh, fish, sh)
+          --log-level <all|trace|debug|info|warn|warning|error|fatal|none>    Sets the minimum log level (choices: all, trace, debug, info, warn, warning, error, fatal, none)
 
         SUBCOMMANDS
           plan, p    Draft a plan in your editor"

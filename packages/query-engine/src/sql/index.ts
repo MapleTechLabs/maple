@@ -1,14 +1,4 @@
-export {
-	type SqlFragment,
-	escapeClickHouseString,
-	raw,
-	str,
-	int,
-	ident,
-	join,
-	as_,
-	when,
-	compile,
-} from "./sql-fragment"
-
-export { type SqlQuery, compileQuery } from "./sql-query"
+// The SQL-fragment AST now lives in the standalone @maple-dev/clickhouse-builder
+// package. This re-export preserves the existing `@maple/query-engine/sql` entry
+// point for internal consumers.
+export * from "@maple-dev/clickhouse-builder/sql"

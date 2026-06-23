@@ -7,8 +7,6 @@ interface PageHeroProps {
 	meta?: React.ReactNode
 	actions?: React.ReactNode
 	trailing?: React.ReactNode
-	/** @deprecated retained for back-compat — no longer rendered. */
-	eyebrow?: string
 	className?: string
 }
 

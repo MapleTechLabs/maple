@@ -1,23 +1,12 @@
 /**
- * Server-side HTTP response values and constructors for Effect HTTP handlers.
+ * Describes immutable responses returned by Effect HTTP handlers.
  *
- * This module defines `HttpServerResponse`, the immutable response model returned
- * from routers and server effects, together with constructors for empty,
- * redirect, text, HTML, JSON, URL-encoded, raw, form-data, stream, and file
- * bodies. It also includes combinators for adjusting status, headers, cookies,
- * and bodies, plus conversions to and from Web `Response` and client responses.
- *
- * Response constructors choose status defaults for common cases: `204` for
- * `empty`, `302` for `redirect`, and `200` for responses with bodies. Body
- * metadata is mirrored into headers, so content type and content length carried
- * by the body are written to `content-type` and `content-length`, overriding
- * existing values when present. JSON helpers can fail while encoding or
- * serializing unless the unsafe constructor is used.
- *
- * Cookies are tracked separately from the normal header map so they can be
- * encoded as `Set-Cookie` headers when converting to platform responses. Use the
- * effectful cookie helpers when invalid cookie names, values, or options should
- * stay in the Effect error channel.
+ * An `HttpServerResponse` stores the status, optional status text, headers,
+ * cookies, and body that the server runtime later turns into a platform
+ * response such as a Web `Response`. This module includes constructors for
+ * common response bodies, helpers for updating response data, file response
+ * support through `HttpPlatform`, and conversions to or from Web and Effect
+ * HTTP client responses.
  *
  * @since 4.0.0
  */
@@ -73,7 +62,7 @@ export interface HttpServerResponse extends Inspectable.Inspectable, Pipeable, E
 /**
  * Common options accepted by HTTP server response constructors.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface Options {
@@ -96,7 +85,7 @@ export declare namespace Options {
    * Response options for constructors whose body determines its own content type
    * and content length.
    *
-   * @category models
+   * @category options
    * @since 4.0.0
    */
   export interface WithContent extends Omit<Options, "contentType" | "contentLength"> {}
@@ -105,7 +94,7 @@ export declare namespace Options {
    * Response options for constructors that allow overriding the content type while
    * deriving the content length from the body.
    *
-   * @category models
+   * @category options
    * @since 4.0.0
    */
   export interface WithContentType extends Omit<Options, "contentLength"> {}
@@ -348,6 +337,11 @@ export const schemaJson = <A, I, RD, RE>(
 /**
  * Creates a JSON HTTP response synchronously.
  *
+ * **When to use**
+ *
+ * Use when the response body is known to be JSON-serializable and you need a
+ * synchronous `HttpServerResponse`.
+ *
  * **Gotchas**
  *
  * Unlike `json`, serialization errors from `JSON.stringify` are not captured in
@@ -399,8 +393,8 @@ export const urlParams = (
  *
  * **When to use**
  *
- * Use this when the underlying runtime already understands the body value, such
- * as a Web `Response`, `Blob`, or `ReadableStream`; the body is passed through
+ * Use when you want to pass through a body value already understood by the
+ * underlying runtime, such as a Web `Response`, `Blob`, or `ReadableStream`,
  * for later platform conversion.
  *
  * @category constructors
@@ -636,7 +630,7 @@ export const setCookie: {
 )
 
 /**
- * Expires a cookie on an `HttpServerResponse`.
+ * Sets an expired cookie on an `HttpServerResponse`.
  *
  * **Details**
  *
@@ -681,8 +675,8 @@ export const expireCookie: {
  *
  * **When to use**
  *
- * Use `setCookie` when cookie errors should be represented as `CookiesError`
- * failures.
+ * Use when you need to set one trusted cookie and want encoding failures to
+ * throw instead of being represented as `CookiesError` failures.
  *
  * @category combinators
  * @since 4.0.0
@@ -714,13 +708,13 @@ export const setCookieUnsafe: {
 )
 
 /**
- * Expires a cookie on an `HttpServerResponse`, throwing if the expiration cookie
+ * Sets an expired cookie on an `HttpServerResponse`, throwing if the expiration cookie
  * cannot be encoded.
  *
  * **When to use**
  *
- * Use `expireCookie` when cookie errors should be represented as `CookiesError`
- * failures.
+ * Use when you need to expire one trusted cookie and want encoding failures to
+ * throw instead of being represented as `CookiesError` failures.
  *
  * @category combinators
  * @since 4.0.0
@@ -859,8 +853,8 @@ export const setCookies: {
  *
  * **When to use**
  *
- * Use `setCookies` when cookie errors should be represented as `CookiesError`
- * failures.
+ * Use when you need to set multiple trusted cookies and want encoding failures
+ * to throw instead of being represented as `CookiesError` failures.
  *
  * @category combinators
  * @since 4.0.0

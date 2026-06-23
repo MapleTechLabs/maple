@@ -9,10 +9,10 @@
 // Plain MergeTree, immutable append; no ReplacingMergeTree dedup needed.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { compileFnCall } from "../define-fn"
-import { param } from "../param"
-import { from } from "../query"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { compileFnCall } from "@maple-dev/clickhouse-builder"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from } from "@maple-dev/clickhouse-builder"
 import { SessionEvents } from "../tables"
 
 function count(): CH.Expr<number> {

@@ -47,7 +47,9 @@ describe("deriveServiceHealth (absolute fallback — no baseline)", () => {
 	})
 
 	it("forces unhealthy when an incident is open, regardless of metrics", () => {
-		expect(deriveServiceHealth({ errorRate: 0, p95LatencyMs: 1, spanCount: SPANS }, true)).toBe("unhealthy")
+		expect(deriveServiceHealth({ errorRate: 0, p95LatencyMs: 1, spanCount: SPANS }, true)).toBe(
+			"unhealthy",
+		)
 	})
 })
 

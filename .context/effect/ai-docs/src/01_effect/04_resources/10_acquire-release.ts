@@ -9,7 +9,7 @@ import { Config, Context, Effect, Layer, Redacted, Schema } from "effect"
 import * as NodeMailer from "nodemailer"
 
 export class SmtpError extends Schema.ErrorClass<SmtpError>("SmtpError")({
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 export class Smtp extends Context.Service<Smtp, {

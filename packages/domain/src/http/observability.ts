@@ -219,7 +219,7 @@ export class ObservabilityApiError extends Schema.TaggedErrorClass<Observability
 	{
 		message: Schema.String,
 		pipe: Schema.optionalKey(Schema.String),
-		cause: Schema.optionalKey(Schema.Defect),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 	{ httpApiStatus: 500 },
 ) {}

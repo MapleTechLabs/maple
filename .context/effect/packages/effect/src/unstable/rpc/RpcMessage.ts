@@ -1,20 +1,12 @@
 /**
- * Defines the protocol message envelopes shared by unstable RPC clients,
- * servers, and transports.
+ * Message envelopes shared by unstable RPC clients, servers, serializers, and
+ * transports.
  *
- * This module is used when implementing or testing RPC transports, codecs, and
- * protocol handlers. It separates decoded messages, which carry typed RPC tags,
- * payloads, headers, exits, and branded request identifiers, from encoded
- * messages, which are suitable for transport boundaries where request ids and
- * payloads have already been serialized.
- *
- * Request identifiers are the correlation point for requests, response chunks,
- * terminal exits, acknowledgements, and interrupts, so transports must preserve
- * them across the encoded string form and the decoded branded form. Streaming
- * responses can send one or more `Chunk` batches before a terminal `Exit`; use
- * `Ack` messages only for transports that require backpressure, treat `Eof` as
- * the end of client input, and reserve `Ping`/`Pong` for connection liveness
- * rather than RPC completion.
+ * `RpcMessage` is the protocol vocabulary below `RpcClient` and `RpcServer`.
+ * It defines decoded messages for in-process channels and encoded messages for
+ * transport boundaries, so custom protocols can move the same request,
+ * streaming, acknowledgement, interrupt, keepalive, and defect signals as the
+ * built-in HTTP, socket, worker, and test transports.
  *
  * @since 4.0.0
  */
@@ -164,7 +156,7 @@ export interface Ping {
 }
 
 /**
- * The reusable `Eof` message value.
+ * Represents the reusable `Eof` message value.
  *
  * @category request
  * @since 4.0.0
@@ -172,7 +164,7 @@ export interface Ping {
 export const constEof: Eof = { _tag: "Eof" }
 
 /**
- * The reusable `Ping` message value.
+ * Represents the reusable `Ping` message value.
  *
  * @category request
  * @since 4.0.0
@@ -207,7 +199,7 @@ export type FromServerEncoded =
 /**
  * The brand identifier used by the `ResponseId` type.
  *
- * @category response
+ * @category type IDs
  * @since 4.0.0
  */
 export const ResponseIdTypeId = "~effect//rpc/RpcServer/ResponseId"
@@ -215,7 +207,7 @@ export const ResponseIdTypeId = "~effect//rpc/RpcServer/ResponseId"
 /**
  * The literal type of the `ResponseId` brand identifier.
  *
- * @category response
+ * @category type IDs
  * @since 4.0.0
  */
 export type ResponseIdTypeId = typeof ResponseIdTypeId
@@ -332,11 +324,11 @@ export interface ResponseDefectEncoded {
   readonly defect: unknown
 }
 
-const encodeDefect = Schema.encodeSync(Schema.Defect)
+const encodeDefect = Schema.encodeSync(Schema.Defect())
 
 /**
  * Creates an encoded terminal response for a request whose exit is a defect
- * encoded with `Schema.Defect`.
+ * encoded with `Schema.Defect()`.
  *
  * @category response
  * @since 4.0.0
@@ -358,7 +350,7 @@ export const ResponseExitDieEncoded = (options: {
 
 /**
  * Creates a transport-encoded defect response by encoding the input with
- * `Schema.Defect`.
+ * `Schema.Defect()`.
  *
  * @category response
  * @since 4.0.0
@@ -402,7 +394,7 @@ export interface Pong {
 }
 
 /**
- * The reusable `Pong` message value.
+ * Represents the reusable `Pong` message value.
  *
  * @category response
  * @since 4.0.0

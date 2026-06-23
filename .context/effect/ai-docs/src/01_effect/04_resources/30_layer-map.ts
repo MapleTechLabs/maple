@@ -8,7 +8,7 @@ import { Context, Effect, Layer, LayerMap, Schema } from "effect"
 
 class DatabaseQueryError extends Schema.TaggedErrorClass<DatabaseQueryError>()("DatabaseQueryError", {
   tenantId: Schema.String,
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {}
 
 type UserRecord = {

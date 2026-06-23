@@ -1,39 +1,12 @@
 /**
- * The `Tokenizer` module provides tokenization and text truncation capabilities
- * for large language model text processing workflows.
+ * Service for model-specific token counting and prompt truncation. Tokenization
+ * depends on the target provider, model, and encoding rules, so this module
+ * leaves the actual tokenization function to the service implementation.
  *
- * This module offers services for converting text into tokens and truncating
- * prompts based on token limits, essential for managing context length
- * constraints in large language models.
- *
- * **Example** (Tokenizing text)
- *
- * ```ts
- * import { Effect } from "effect"
- * import { Tokenizer } from "effect/unstable/ai"
- *
- * const tokenizeText = Effect.gen(function*() {
- *   const tokenizer = yield* Tokenizer.Tokenizer
- *   const tokens = yield* tokenizer.tokenize("Hello, world!")
- *   console.log(`Token count: ${tokens.length}`)
- *   return tokens
- * })
- * ```
- *
- * **Example** (Truncating a prompt)
- *
- * ```ts
- * import { Effect } from "effect"
- * import { Tokenizer } from "effect/unstable/ai"
- *
- * // Truncate a prompt to fit within token limits
- * const truncatePrompt = Effect.gen(function*() {
- *   const tokenizer = yield* Tokenizer.Tokenizer
- *   const longPrompt = "This is a very long prompt..."
- *   const truncated = yield* tokenizer.truncate(longPrompt, 100)
- *   return truncated
- * })
- * ```
+ * The `Tokenizer` service can count tokens for raw prompt input and shorten a
+ * prompt to a token limit by keeping the newest messages that fit. This module
+ * defines the service tag, the service interface, and a `make` constructor that
+ * builds a full tokenizer service from a token-counting function.
  *
  * @since 4.0.0
  */
@@ -44,7 +17,12 @@ import type * as AiError from "./AiError.ts"
 import * as Prompt from "./Prompt.ts"
 
 /**
- * The `Tokenizer` service tag for dependency injection.
+ * Service tag for model tokenization services.
+ *
+ * **When to use**
+ *
+ * Use to access or provide model-specific token counting and prompt truncation
+ * operations.
  *
  * **Details**
  *

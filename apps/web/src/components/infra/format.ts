@@ -11,6 +11,16 @@ export function formatLoad(load: number): string {
 	return load.toFixed(2)
 }
 
+export function formatUptime(seconds: number): string {
+	if (!Number.isFinite(seconds) || seconds <= 0) return "—"
+	const m = Math.floor(seconds / 60)
+	if (m < 60) return `${m}m`
+	const h = Math.floor(m / 60)
+	if (h < 24) return `${h}h`
+	const d = Math.floor(h / 24)
+	return `${d}d ${h % 24}h`
+}
+
 export function formatBytesPerSecond(bytes: number): string {
 	if (!Number.isFinite(bytes) || bytes === 0) return "0 B/s"
 	const units = ["B/s", "KB/s", "MB/s", "GB/s"]

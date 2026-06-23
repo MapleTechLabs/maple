@@ -136,13 +136,8 @@
 										"timeUnixNano": "1750000000000000000",
 										"count": 10,
 										"sum": 42.5,
-										"bucketCounts": [
-											1,
-											9
-										],
-										"explicitBounds": [
-											0.1
-										]
+										"bucketCounts": [1, 9],
+										"explicitBounds": [0.1]
 									}
 								],
 								"aggregationTemporality": 2

@@ -4,7 +4,7 @@ import type { BaseChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
 import { formatNumber, formatValueByUnit } from "../../../lib/format"
 import { funnelSampleData } from "../_shared/sample-data"
-import { getSemanticSeriesColor } from "../../../lib/semantic-series-colors"
+import { resolveSeriesColor } from "../../../lib/semantic-series-colors"
 
 interface Row {
 	name: string
@@ -67,7 +67,7 @@ export function QueryBuilderFunnelChart({ data, className, unit, funnel }: BaseC
 		if (max <= 0) return [] as Stage[]
 		return rows.map((row, idx): Stage => {
 			const prev = rows[idx - 1]?.value
-			const color = getSemanticSeriesColor(row.name) ?? `var(--chart-${(idx % 5) + 1})`
+			const color = resolveSeriesColor(row.name, idx)
 			return {
 				...row,
 				color,

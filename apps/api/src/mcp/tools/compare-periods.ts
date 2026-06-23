@@ -60,7 +60,10 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				// Resolve previous period: default to same duration before current
 				const currentStartDate = new Date(current.st.replace(" ", "T") + "Z")
 				const currentEndDate = new Date(current.et.replace(" ", "T") + "Z")
-				if (!Number.isFinite(currentStartDate.getTime()) || !Number.isFinite(currentEndDate.getTime())) {
+				if (
+					!Number.isFinite(currentStartDate.getTime()) ||
+					!Number.isFinite(currentEndDate.getTime())
+				) {
 					return yield* new McpQueryError({
 						message: `Invalid current period: ${current_start ?? "(default)"} to ${current_end ?? "(default)"}`,
 						pipe: "compare_periods",

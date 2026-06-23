@@ -1,17 +1,10 @@
 /**
- * Shared Node socket constructors for adapting `node:net` connections and
- * other Node `Duplex` streams to Effect's `Socket.Socket` interface.
+ * Node socket adapters for Effect sockets.
  *
- * Use this module when building TCP clients, Unix domain socket clients, or
- * higher-level protocols that already expose a Node `Duplex`. Connections are
- * scoped, so finalizers close or destroy the underlying stream, open timeouts
- * are reported as socket open errors, and Node read, write, and close events
- * are translated into `SocketError` values.
- *
- * Node sockets have a few operational details worth keeping in mind: Unix
- * socket paths are supplied through `NetConnectOpts.path`, writes complete only
- * after Node accepts or flushes the chunk, and abnormal close events are
- * surfaced as close errors while normal remote ends complete the socket run.
+ * This module opens `node:net` connections or wraps existing Node `Duplex`
+ * streams and presents them as `Socket.Socket` values, socket channels, or
+ * layers. It also exposes the current underlying `NetSocket` service for code
+ * running inside a socket handler and re-exports the `ws` package namespace.
  *
  * @since 4.0.0
  */
@@ -41,7 +34,7 @@ export * as NodeWS from "ws"
  * Service tag for the underlying Node `net.Socket` associated with the current
  * socket connection.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class NetSocket extends Context.Service<NetSocket, Net.Socket>()(
@@ -49,9 +42,16 @@ export class NetSocket extends Context.Service<NetSocket, Net.Socket>()(
 ) {}
 
 /**
- * Opens a TCP connection with Node `net.createConnection` and exposes it as a
- * `Socket.Socket`, supporting `openTimeout` and closing or destroying the
- * socket when the enclosing scope is finalized.
+ * Opens a Node TCP connection as an Effect socket.
+ *
+ * **When to use**
+ *
+ * Use to create a scoped `Socket.Socket` from Node `net.createConnection`.
+ *
+ * **Details**
+ *
+ * Supports `openTimeout` and closes or destroys the underlying socket when the
+ * enclosing scope is finalized.
  *
  * @category constructors
  * @since 4.0.0

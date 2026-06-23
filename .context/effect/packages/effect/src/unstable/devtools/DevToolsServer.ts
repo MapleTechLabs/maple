@@ -1,17 +1,11 @@
 /**
- * Server-side helpers for exposing the Effect devtools protocol over a socket.
+ * Runs the server side of the unstable Effect devtools socket protocol.
  *
- * This module is used by runtime integrations that want to accept devtools
- * clients, decode newline-delimited JSON protocol messages, and hand each
- * connected client to application-specific handling logic. It is most useful
- * for building a devtools endpoint that can inspect running fibers, spans, and
- * other telemetry described by `DevToolsSchema`.
- *
- * The server automatically responds to protocol `Ping` requests with `Pong`
- * responses. All other requests are delivered through the connected `Client`
- * queue, while responses should be written with `Client.send`. The queue is
- * shut down when the socket processing fiber terminates, so handlers should
- * treat it as connection-scoped state rather than a long-lived global channel.
+ * Use this module when an integration needs to accept devtools clients over a
+ * `SocketServer`, decode newline-delimited JSON messages, and handle each
+ * connection with application-specific logic. It does not interpret spans or
+ * metrics itself; it gives handlers a typed surface for the telemetry described
+ * by `DevToolsSchema`.
  *
  * @since 4.0.0
  */

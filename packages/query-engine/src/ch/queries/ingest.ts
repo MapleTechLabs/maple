@@ -14,11 +14,11 @@
 // and yields a stable ClickHouse datetime literal the UI can parse.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { param } from "../param"
-import { from } from "../query"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from } from "@maple-dev/clickhouse-builder"
 import { Logs, ServiceOverviewSpans } from "../tables"
-import { unionAll, type CHUnionQuery } from "../union"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 
 export interface LocalIngestPulseOutput {
 	readonly signal: string

@@ -1,21 +1,11 @@
 /**
- * SQL-backed storage for an unencrypted event-log server.
+ * SQL-backed storage for unencrypted event-log servers.
  *
- * This module provides the persistence layer used by
+ * This module provides the durable `Storage` implementation used by
  * `EventLogServerUnencrypted` when remote entries should be stored in a SQL
- * database and streamed back to clients by store sequence. It creates and uses
+ * database and streamed back to clients by store sequence. It creates
  * dialect-specific tables for the server remote id, per-store sequence state,
- * plaintext entries, and session authentication bindings, which makes it useful
- * for durable local or service-side event-log deployments where database
- * backup, replication, and transactional ordering are desired.
- *
- * Entry payloads are intentionally written as plaintext bytes. Use this storage
- * only when the database, transport, backups, logs, and operators are trusted,
- * or when encryption is handled outside this module. Table names are derived
- * from the provided prefixes, and writes rely on SQL transactions plus
- * store-level sequence rows, so deployments should provision compatible
- * isolation/locking behavior and account for dialect-specific binary and text
- * column limits.
+ * plaintext entries, and session authentication bindings.
  *
  * @since 4.0.0
  */

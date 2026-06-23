@@ -153,6 +153,7 @@ function ChartTooltipContent({
 	nameKey,
 	labelKey,
 	coordinate,
+	resolveHighlightKey,
 }: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
 	React.ComponentProps<"div"> & {
 		hideLabel?: boolean
@@ -160,6 +161,16 @@ function ChartTooltipContent({
 		indicator?: "line" | "dot" | "dashed"
 		nameKey?: string
 		labelKey?: string
+		/**
+		 * Optional resolver that returns the `dataKey` of the row to emphasise
+		 * (rendered bold) given the cursor position and the active payload —
+		 * used to bold the series whose line is nearest the pointer. Returning
+		 * `undefined` emphasises nothing.
+		 */
+		resolveHighlightKey?: (
+			coordinate: { x?: number; y?: number } | undefined,
+			payload: ReadonlyArray<{ dataKey?: string | number }>,
+		) => string | undefined
 	}) {
 	const { config, containerRef, chartId } = useChart()
 
@@ -190,6 +201,8 @@ function ChartTooltipContent({
 	if (!active || !payload?.length) {
 		return null
 	}
+
+	const highlightKey = resolveHighlightKey?.(coordinate, payload)
 
 	const nestLabel = payload.length === 1 && indicator !== "dot"
 
@@ -259,6 +272,9 @@ function ChartTooltipContent({
 														className={cn(
 															"[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5",
 															indicator === "dot" && "items-center",
+															highlightKey != null &&
+																item.dataKey === highlightKey &&
+																"[&_*]:font-semibold",
 														)}
 													>
 														{formatted}
@@ -272,6 +288,9 @@ function ChartTooltipContent({
 													className={cn(
 														"[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5",
 														indicator === "dot" && "items-center",
+														highlightKey != null &&
+															item.dataKey === highlightKey &&
+															"[&_*]:font-semibold",
 													)}
 												>
 													{itemConfig?.icon ? (

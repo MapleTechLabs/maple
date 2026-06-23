@@ -1,27 +1,12 @@
 /**
- * The `MessageStorage` module defines the persistence boundary used by Effect
- * Cluster to store mailbox messages and replies. Storage implementations keep
- * requests, envelopes, and reply chunks durable enough for runners to recover
- * work after restarts, replay unprocessed messages for assigned shards, and
- * deliver replies back to locally registered handlers.
+ * Stores Effect Cluster messages and replies behind a pluggable backend.
  *
- * **Common use cases**
- *
- * - Persist outgoing requests and control envelopes before delivery
- * - Detect duplicate requests by primary key and resume from an existing reply
- * - Query unprocessed messages when shards are assigned to a runner
- * - Store, load, and clear replies for request streams and completions
- * - Reset or clear mailbox state during shard or address lifecycle changes
- *
- * **Gotchas**
- *
- * - Implementations should make save and reply operations transactional when
- *   possible so recovery does not observe partial mailbox state
- * - Duplicate detection depends on stable request primary keys and persisted
- *   request ids
- * - Reply handlers are local process state; persisted replies may need to be
- *   loaded again after restarts or reassignment
- * - Concurrent runners must only process messages for shards they currently own
+ * `MessageStorage` is the boundary between cluster runner logic and the storage
+ * system that keeps mailbox state recoverable. It saves requests, control
+ * envelopes, and replies; finds unprocessed messages for assigned shards;
+ * tracks duplicate requests; and manages reply handlers waiting for responses.
+ * This module also includes the encoded storage-driver contract and no-op or
+ * in-memory implementations for local use and tests.
  *
  * @since 4.0.0
  */
@@ -201,7 +186,7 @@ export class MessageStorage extends Context.Service<MessageStorage, {
 export type SaveResult<R extends Rpc.Any> = SaveResult.Success | SaveResult.Duplicate<R>
 
 /**
- * Tagged enum constructor for creating and matching `SaveResult` values.
+ * Constructors and matchers for decoded save results.
  *
  * @category SaveResult
  * @since 4.0.0
@@ -209,7 +194,7 @@ export type SaveResult<R extends Rpc.Any> = SaveResult.Success | SaveResult.Dupl
 export const SaveResult = Data.taggedEnum<SaveResult.Constructor>()
 
 /**
- * Tagged enum constructor for encoded save results returned by encoded storage
+ * Constructors and matchers for encoded save results returned by storage
  * drivers.
  *
  * @category SaveResult
@@ -808,7 +793,7 @@ export const noop: MessageStorage["Service"] = Effect.runSync(make({
  * It stores the encoded envelope, last acknowledged chunk, accumulated replies,
  * and optional delivery time.
  *
- * @category Memory
+ * @category memory
  * @since 4.0.0
  */
 export type MemoryEntry = {
@@ -819,9 +804,9 @@ export type MemoryEntry = {
 }
 
 /**
- * Can be used in tests to simulate a transaction.
+ * Provides a context reference used in tests to simulate a transaction.
  *
- * @category Memory
+ * @category memory
  * @since 4.0.0
  */
 export const MemoryTransaction = Context.Reference<boolean>("effect/cluster/MessageStorage/MemoryTransaction", {
@@ -829,7 +814,7 @@ export const MemoryTransaction = Context.Reference<boolean>("effect/cluster/Mess
 })
 
 /**
- * In-memory message storage driver with inspectable backing state.
+ * Service that provides an in-memory message storage driver with inspectable backing state.
  *
  * **Details**
  *
@@ -837,7 +822,7 @@ export const MemoryTransaction = Context.Reference<boolean>("effect/cluster/Mess
  * maps used to track requests, primary keys, unprocessed envelopes, reply IDs,
  * and the journal.
  *
- * @category Memory
+ * @category memory
  * @since 4.0.0
  */
 export class MemoryDriver extends Context.Service<MemoryDriver>()("effect/cluster/MessageStorage/MemoryDriver", {

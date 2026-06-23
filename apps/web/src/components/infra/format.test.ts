@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { deriveHostStatus, formatPercent, formatBytesPerSecond, formatLoad, severityLevel } from "./format"
+import {
+	deriveHostStatus,
+	formatPercent,
+	formatBytesPerSecond,
+	formatLoad,
+	formatUptime,
+	severityLevel,
+} from "./format"
 
 describe("deriveHostStatus", () => {
 	const now = new Date("2026-04-24T12:00:00Z").getTime()
@@ -60,6 +67,29 @@ describe("formatLoad", () => {
 
 	it("returns em-dash for NaN", () => {
 		expect(formatLoad(Number.NaN)).toBe("—")
+	})
+})
+
+describe("formatUptime", () => {
+	it("returns em-dash for zero or negative", () => {
+		expect(formatUptime(0)).toBe("—")
+		expect(formatUptime(-5)).toBe("—")
+	})
+
+	it("formats minutes under an hour", () => {
+		expect(formatUptime(125)).toBe("2m")
+	})
+
+	it("formats hours under a day", () => {
+		expect(formatUptime(3 * 3600 + 200)).toBe("3h")
+	})
+
+	it("formats days with remaining hours", () => {
+		expect(formatUptime(2 * 86_400 + 5 * 3600)).toBe("2d 5h")
+	})
+
+	it("returns em-dash for non-finite input", () => {
+		expect(formatUptime(Number.NaN)).toBe("—")
 	})
 })
 

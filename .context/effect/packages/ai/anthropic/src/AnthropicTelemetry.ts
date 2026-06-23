@@ -1,9 +1,8 @@
 /**
- * Anthropic telemetry attributes for OpenTelemetry integration.
- *
- * Provides Anthropic-specific GenAI telemetry attributes following OpenTelemetry
- * semantic conventions, extending the base GenAI attributes with Anthropic-specific
- * request and response metadata.
+ * The `AnthropicTelemetry` module defines Anthropic-specific telemetry
+ * attributes and a helper for adding them to a tracing span. It keeps the
+ * standard GenAI telemetry attributes and adds request and response metadata
+ * under the `gen_ai.anthropic.*` OpenTelemetry namespaces.
  *
  * @since 4.0.0
  */
@@ -17,7 +16,12 @@ import * as Telemetry from "effect/unstable/ai/Telemetry"
  * The attributes used to describe telemetry in the context of Generative
  * Artificial Intelligence (GenAI) Models requests and responses.
  *
- * @see https://opentelemetry.io/docs/specs/semconv/attributes-registry/gen-ai/
+ * **Details**
+ *
+ * These attributes follow the OpenTelemetry generative AI semantic
+ * conventions:
+ * https://opentelemetry.io/docs/specs/semconv/attributes-registry/gen-ai/
+ *
  * @category models
  * @since 4.0.0
  */
@@ -79,7 +83,7 @@ export interface ResponseAttributes {
 /**
  * Options accepted by `addGenAIAnnotations`, combining standard GenAI telemetry attributes with optional Anthropic request and response attributes.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type AnthropicTelemetryAttributeOptions = Telemetry.GenAITelemetryAttributeOptions & {
@@ -100,11 +104,16 @@ const addAnthropicResponseAttributes = Telemetry.addSpanAttributes("gen_ai.anthr
  * Applies the specified Anthropic GenAI telemetry attributes to the provided
  * `Span`.
  *
+ * **When to use**
+ *
+ * Use to annotate an Anthropic model span with standard GenAI telemetry
+ * attributes and Anthropic-specific request or response metadata.
+ *
  * **Gotchas**
  *
  * This method mutates the `Span` in place.
  *
- * @category utils
+ * @category annotations
  * @since 4.0.0
  */
 export const addGenAIAnnotations: {

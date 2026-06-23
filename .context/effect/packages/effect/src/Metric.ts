@@ -1,85 +1,12 @@
 /**
- * The `Metric` module provides tools for defining, updating, tagging, and
- * reading application metrics from Effect programs. A `Metric<Input, State>`
- * accepts typed input values and aggregates them into a typed state that can be
- * read directly or exported from a snapshot.
+ * Records and reads measurements from Effect programs.
  *
- * **Mental model**
- *
- * - A metric has an identifier, a type, an optional description, optional attributes, and mutable aggregate state
- * - Use counters for cumulative values such as requests, errors, retries, or bytes processed
- * - Use gauges for point-in-time values that can rise or fall, such as active connections or queue size
- * - Use frequencies to count occurrences of discrete string values, such as status codes or action names
- * - Use histograms to bucket numeric observations and inspect count, min, max, and sum
- * - Use summaries to calculate quantiles over a bounded, time-based observation window
- * - Metrics are updated from effects with {@link update} and {@link modify}, and read with {@link value}
- * - Attributes tag metrics with key-value dimensions so the same logical metric can be grouped by service, endpoint, method, or other labels
- * - Snapshots capture the currently registered metrics and their aggregate states for reporting or export
- *
- * **Common tasks**
- *
- * - Create counters: {@link counter}
- * - Create gauges: {@link gauge}
- * - Create frequencies: {@link frequency}
- * - Create histograms: {@link histogram}, {@link linearBoundaries}, {@link exponentialBoundaries}
- * - Create summaries: {@link summary}, {@link summaryWithTimestamp}
- * - Measure effect duration: {@link timer}
- * - Update a metric: {@link update}
- * - Apply relative updates where supported: {@link modify}
- * - Read one metric: {@link value}
- * - Tag a metric: {@link withAttributes}
- * - Transform accepted input values: {@link mapInput}
- * - Record a constant input for repeated events: {@link withConstantInput}
- * - Inspect all registered metrics: {@link snapshot}, {@link dump}
- * - Enable fiber runtime metrics: {@link enableRuntimeMetrics}
- *
- * **Gotchas**
- *
- * - Counter and gauge metrics can use `number` inputs by default or `bigint` inputs with the `bigint` option
- * - Incremental counters ignore negative updates; use non-incremental counters only when decreases are meaningful
- * - {@link update} sets a gauge to an absolute value, while {@link modify} changes it relative to its current value
- * - Histogram buckets are cumulative and depend on the boundaries supplied when the metric is created
- * - Summary quantiles are calculated from the configured sliding window, so old observations expire
- * - Prefer low-cardinality attributes; using unbounded values such as request IDs can create too many metric series
- *
- * **Quickstart**
- *
- * **Example** (Creating and updating metrics)
- *
- * ```ts
- * import { Effect, Metric } from "effect"
- *
- * const requestCount = Metric.counter("http_requests_total", {
- *   description: "Total number of HTTP requests"
- * })
- *
- * const responseTime = Metric.histogram("http_response_time", {
- *   description: "HTTP response time in milliseconds",
- *   boundaries: Metric.linearBoundaries({ start: 0, width: 50, count: 20 })
- * })
- *
- * const handleRequest = Effect.gen(function*() {
- *   yield* Metric.update(
- *     Metric.withAttributes(requestCount, {
- *       endpoint: "/api/users",
- *       method: "GET"
- *     }),
- *     1
- *   )
- *
- *   yield* Metric.update(responseTime, 125)
- *
- *   return yield* Metric.value(requestCount)
- * })
- * ```
- *
- * **See also**
- *
- * - {@link counter} / {@link gauge} / {@link frequency} for common metric types
- * - {@link histogram} / {@link summary} for distribution metrics
- * - {@link update} / {@link modify} / {@link value} for working with metric state
- * - {@link withAttributes} for adding dimensions
- * - {@link snapshot} for exporting all registered metric values
+ * A `Metric<Input, State>` accepts typed update values and stores an aggregated
+ * state that can be read directly or included in a snapshot. Metrics are used
+ * for counters, gauges, frequencies, histograms, summaries, and timers. This
+ * module includes metric constructors, update and read helpers, attributes,
+ * histogram boundaries, registry snapshots, text dumps, and controls for
+ * enabling runtime metrics.
  *
  * @since 2.0.0
  */
@@ -195,7 +122,7 @@ export interface Metric<in Input, out State> extends Pipeable {
  *
  * **When to use**
  *
- * Counters are useful for tracking monotonically increasing values like request counts,
+ * Use when counters are useful for tracking monotonically increasing values like request counts,
  * bytes processed, errors encountered, or any value that accumulates over time.
  *
  * **Example** (Using counter metrics)
@@ -253,7 +180,7 @@ export interface Metric<in Input, out State> extends Pipeable {
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 2.0.0
  */
 export interface Counter<in Input extends number | bigint> extends Metric<Input, CounterState<Input>> {}
@@ -328,7 +255,7 @@ export interface CounterState<in Input extends number | bigint> {
  *
  * **When to use**
  *
- * Frequency metrics are ideal for tracking categorical data where you want to count
+ * Use when frequency metrics are ideal for tracking categorical data where you want to count
  * how many times specific string values occur, such as HTTP status codes, user actions,
  * error types, or any discrete string-based events.
  *
@@ -403,7 +330,7 @@ export interface CounterState<in Input extends number | bigint> {
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 2.0.0
  */
 export interface Frequency extends Metric<string, FrequencyState> {}
@@ -488,7 +415,7 @@ export interface Frequency extends Metric<string, FrequencyState> {}
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export interface FrequencyState {
@@ -500,7 +427,7 @@ export interface FrequencyState {
  *
  * **When to use**
  *
- * Gauges are useful for tracking current state values like memory usage, CPU load,
+ * Use when gauges are useful for tracking current state values like memory usage, CPU load,
  * active connections, queue sizes, or any value that represents a current level.
  *
  * **Example** (Using gauge metrics)
@@ -551,7 +478,7 @@ export interface FrequencyState {
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 2.0.0
  */
 export interface Gauge<in Input extends number | bigint> extends Metric<Input, GaugeState<Input>> {}
@@ -620,7 +547,7 @@ export interface Gauge<in Input extends number | bigint> extends Metric<Input, G
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export interface GaugeState<in Input extends number | bigint> {
@@ -632,7 +559,7 @@ export interface GaugeState<in Input extends number | bigint> {
  *
  * **When to use**
  *
- * Histograms are ideal for measuring request durations, response sizes, and other continuous values
+ * Use when histograms are ideal for measuring request durations, response sizes, and other continuous values
  * where you need to understand the distribution of values rather than just aggregates.
  *
  * **Example** (Using histogram metrics)
@@ -711,7 +638,7 @@ export interface GaugeState<in Input extends number | bigint> {
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 2.0.0
  */
 export interface Histogram<Input> extends Metric<Input, HistogramState> {}
@@ -798,7 +725,7 @@ export interface Histogram<Input> extends Metric<Input, HistogramState> {}
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export interface HistogramState {
@@ -814,7 +741,7 @@ export interface HistogramState {
  *
  * **When to use**
  *
- * Summaries provide statistical insights into value distributions by tracking specific quantiles
+ * Use when summaries provide statistical insights into value distributions by tracking specific quantiles
  * (percentiles) such as median (50th), 95th percentile, 99th percentile, etc. They're ideal for
  * understanding performance characteristics like response time distributions.
  *
@@ -904,7 +831,7 @@ export interface HistogramState {
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 2.0.0
  */
 export interface Summary<Input> extends Metric<Input, SummaryState> {}
@@ -986,7 +913,7 @@ export interface Summary<Input> extends Metric<Input, SummaryState> {}
  * })
  * ```
  *
- * @category Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export interface SummaryState {
@@ -1659,7 +1586,7 @@ export declare namespace Metric {
 /**
  * Service key for the current metric attributes context.
  *
- * **Example** (Using the current attributes key)
+ * **Example** (Accessing the current metric attributes key)
  *
  * ```ts
  * import { Data, Effect, Metric } from "effect"
@@ -1708,8 +1635,13 @@ export declare namespace Metric {
 export const CurrentMetricAttributesKey = "effect/Metric/CurrentMetricAttributes" as const
 
 /**
- * `Context.Reference` for metric attributes applied from the current Effect
+ * Context reference for metric attributes applied from the current Effect
  * context.
+ *
+ * **When to use**
+ *
+ * Use to provide default attributes that should be merged into metric updates
+ * and reads in a scoped part of a program.
  *
  * **Details**
  *
@@ -1756,12 +1688,27 @@ export const CurrentMetricAttributes = Context.Reference<Metric.AttributeSet>(Cu
 const MetricRegistryKey = "~effect/observability/Metric/MetricRegistryKey"
 
 /**
- * `Context.Reference` for the metric registry in the current context.
+ * Context reference for the metric registry in the current context.
+ *
+ * **When to use**
+ *
+ * Use when you need a custom metric registry for an isolated program or test
+ * instead of the default registry.
  *
  * **Details**
  *
- * The default registry is an empty `Map`. Metrics register their metadata and
- * hooks lazily in this map when they are read or updated.
+ * By default, the reference creates an empty `Map` the first time it is
+ * resolved. Metrics register their metadata and hooks lazily in this map when
+ * they are read or updated.
+ *
+ * **Gotchas**
+ *
+ * Because `Context.Reference` caches default values, the default `Map` is
+ * shared by contexts that do not provide an override. Provide `MetricRegistry`
+ * with a fresh `Map` when isolation matters.
+ *
+ * @see {@link snapshot} for reading all registered metrics from the current `Effect` context
+ * @see {@link snapshotUnsafe} for reading all registered metrics from an explicit `Context`
  *
  * @category references
  * @since 4.0.0
@@ -2142,7 +2089,7 @@ class MetricTransform<in Input, out State, in Input2> extends Metric$<Input2, St
  *
  * **When to use**
  *
- * This function is useful for runtime type checking and ensuring that a value
+ * Use when you need runtime type checking and ensuring that a value
  * conforms to the Metric interface before performing metric operations.
  *
  * **Example** (Checking metric values)
@@ -2173,11 +2120,10 @@ export const isMetric = (u: unknown): u is Metric<unknown, never> =>
  *
  * **Details**
  *
- * - `description` - A description of the `Counter`.
- * - `attributes`  - The attributes to associate with the `Counter`.
- * - `bigint`      - Indicates if the `Counter` should use the `bigint` type.
- * - `incremental` - Set to `true` to create a `Counter` that can only ever be
- *                   incremented.
+ * The optional `description` describes the counter, and `attributes` attach
+ * dimensions to it. Set `bigint` to create a counter that accepts `bigint`
+ * inputs. Set `incremental` to `true` to create a counter that can only ever be
+ * incremented.
  *
  * **Example** (Creating counter metrics)
  *
@@ -2252,14 +2198,14 @@ export const counter: {
  *
  * **When to use**
  *
- * Gauges are most suitable for metrics that represent instantaneous values,
- * such as memory usage or CPU load.
+ * Use when you need a metric for instantaneous values, such as memory usage or
+ * CPU load.
  *
  * **Details**
  *
- * - `description` - A description of the `Gauge`.
- * - `attributes`  - The attributes to associate with the `Gauge`.
- * - `bigint`      - Indicates if the `Gauge` should use the `bigint` type.
+ * The optional `description` describes the gauge, and `attributes` attach
+ * dimensions to it. Set `bigint` to create a gauge that accepts `bigint`
+ * inputs.
  *
  * **Example** (Creating gauge metrics)
  *
@@ -2331,15 +2277,14 @@ export const gauge: {
  *
  * **When to use**
  *
- * Frequency metrics are most suitable for counting the number of times a
- * specific event or incident occurs.
+ * Use when you need a metric for counting how often a specific event or
+ * incident occurs.
  *
  * **Details**
  *
- * - `description` - A description of the `Frequency`.
- * - `attributes`  - The attributes to associate with the `Frequency`.
- * - `preregisteredWords` - Occurrences which are pre-registered with the
- *                          `Frequency` metric occurrences.
+ * The optional `description` describes the frequency, and `attributes` attach
+ * dimensions to it. Use `preregisteredWords` to initialize occurrence counts
+ * for known string values before updates arrive.
  *
  * **Example** (Creating frequency metrics)
  *
@@ -2414,14 +2359,14 @@ export const frequency = (name: string, options?: {
  *
  * **When to use**
  *
- * Histogram metrics are most suitable for measuring the distribution of values
- * within a range.
+ * Use when you need a metric for measuring the distribution of values within a
+ * range.
  *
  * **Details**
  *
- * - `description` - A description of the `Histogram`.
- * - `attributes`  - The attributes to associate with the `Histogram`.
- * - `boundaries`  - The bucket boundaries of the `Histogram`
+ * The optional `description` describes the histogram, and `attributes` attach
+ * dimensions to it. The required `boundaries` option defines the histogram
+ * bucket boundaries.
  *
  * **Example** (Creating histogram metrics)
  *
@@ -2494,16 +2439,15 @@ export const histogram = (name: string, options: {
  *
  * **When to use**
  *
- * Summary metrics are most suitable for providing statistical information about
- * a set of values, including quantiles.
+ * Use when you need a metric that records statistical information about a set
+ * of values, including quantiles.
  *
  * **Details**
  *
- * - `description` - An description of the `Summary`.
- * - `attributes`  - The attributes to associate with the `Summary`.
- * - `maxAge`      - The maximum age of observations to retain.
- * - `maxSize`     - The maximum number of observations to keep.
- * - `quantiles`   - An array of quantiles to calculate (e.g., [0.5, 0.9]).
+ * The optional `description` describes the summary, and `attributes` attach
+ * dimensions to it. `maxAge` controls how long observations are retained,
+ * `maxSize` controls how many observations are kept, and `quantiles` lists the
+ * quantiles to calculate, such as `[0.5, 0.9]`.
  *
  * **Example** (Creating summary metrics)
  *
@@ -2590,19 +2534,18 @@ export const summary = (name: string, options: {
  *
  * **When to use**
  *
- * Summary metrics are most suitable for statistical information about a set of
- * values.
+ * Use when you need a metric that records statistical information about a set
+ * of values together with timestamps.
  *
  * **Details**
  *
  * Inputs to this metric are `[value, timestamp]` pairs; the current clock is
  * used when reading quantiles against the configured `maxAge`.
  *
- * - `description` - An description of the `Summary`.
- * - `attributes`  - The attributes to associate with the `Summary`.
- * - `maxAge`      - The maximum age of observations to retain.
- * - `maxSize`     - The maximum number of observations to keep.
- * - `quantiles`   - An array of quantiles to calculate (e.g., [0.5, 0.9]).
+ * The optional `description` describes the summary, and `attributes` attach
+ * dimensions to it. `maxAge` controls how long observations are retained,
+ * `maxSize` controls how many observations are kept, and `quantiles` lists the
+ * quantiles to calculate, such as `[0.5, 0.9]`.
  *
  * **Example** (Creating summaries with explicit timestamps)
  *
@@ -2694,13 +2637,12 @@ export const timer = (name: string, options?: {
  *
  * **Details**
  *
- * The returned state depends on the metric type:
- *
- * - Counter: `CounterState<number | bigint>` with `count` and `incremental`
- * - Gauge: `GaugeState<number | bigint>` with `value`
- * - Frequency: `FrequencyState` with `occurrences`
- * - Histogram: `HistogramState` with buckets, count, min, max, and sum
- * - Summary: `SummaryState` with quantiles, count, min, max, and sum
+ * The returned state depends on the metric type. Counters return
+ * `CounterState<number | bigint>` with `count` and `incremental`, gauges return
+ * `GaugeState<number | bigint>` with `value`, frequencies return
+ * `FrequencyState` with `occurrences`, histograms return `HistogramState` with
+ * buckets, count, min, max, and sum, and summaries return `SummaryState` with
+ * quantiles, count, min, max, and sum.
  *
  * **Example** (Reading metric state)
  *
@@ -2731,7 +2673,7 @@ export const timer = (name: string, options?: {
  * })
  * ```
  *
- * @category utils
+ * @category getters
  * @since 2.0.0
  */
 export const value = <Input, State>(
@@ -2747,13 +2689,11 @@ export const value = <Input, State>(
  *
  * **Details**
  *
- * The behavior of `modify` depends on the metric type:
- *
- * - **Counter**: Adds the input value to the current count
- * - **Gauge**: Adds the input value to the current gauge value
- * - **Frequency**: Same as `update` - increments the occurrence count for the input string
- * - **Histogram**: Same as `update` - records the input value in the appropriate bucket
- * - **Summary**: Same as `update` - records the input observation
+ * The behavior of `modify` depends on the metric type. Counters add the input
+ * value to the current count, gauges add the input value to the current gauge
+ * value, frequencies increment the occurrence count for the input string,
+ * histograms record the input value in the appropriate bucket, and summaries
+ * record the input observation.
  *
  * **Example** (Modifying metric values)
  *
@@ -2783,7 +2723,7 @@ export const value = <Input, State>(
  * })
  * ```
  *
- * @category utils
+ * @category mutations
  * @since 3.6.5
  */
 export const modify: {
@@ -2803,13 +2743,11 @@ export const modify: {
  *
  * **Details**
  *
- * The behavior of `update` depends on the metric type:
- *
- * - **Counter**: Adds the input value to the current count (same as `modify`)
- * - **Gauge**: Sets the gauge to the specified value (replaces current value)
- * - **Frequency**: Increments the occurrence count for the input string by 1
- * - **Histogram**: Records the input value in the appropriate bucket
- * - **Summary**: Records the input value as a new observation
+ * The behavior of `update` depends on the metric type. Counters add the input
+ * value to the current count, gauges replace the current value with the input
+ * value, frequencies increment the occurrence count for the input string,
+ * histograms record the input value in the appropriate bucket, and summaries
+ * record the input value as a new observation.
  *
  * **Example** (Updating metric values)
  *
@@ -2848,7 +2786,7 @@ export const modify: {
  * })
  * ```
  *
- * @category utils
+ * @category mutations
  * @since 2.0.0
  */
 export const update: {
@@ -3199,8 +3137,13 @@ export const dump: Effect<string> = InternalEffect.flatMap(InternalEffect.contex
 })
 
 /**
- * Synchronously captures a snapshot of all registered metrics using the provided
+ * Captures a snapshot of all registered metrics synchronously using the provided
  * service context.
+ *
+ * **When to use**
+ *
+ * Use to read metric snapshots from an explicit `Context` in low-level
+ * integrations, exporters, or debugging tools that already have the context.
  *
  * **Details**
  *
@@ -3332,8 +3275,7 @@ const attributesToString = (attributes: Metric.AttributeSet): string => {
 // Metric Boundaries
 
 /**
- * A helper method to create histogram bucket boundaries from an iterable set
- * of values.
+ * Creates histogram bucket boundaries from an iterable set of values.
  *
  * **Details**
  *
@@ -3396,7 +3338,7 @@ const attributesToString = (attributes: Metric.AttributeSet): string => {
  * })
  * ```
  *
- * @category Boundaries
+ * @category boundaries
  * @since 4.0.0
  */
 export const boundariesFromIterable = (iterable: Iterable<number>): ReadonlyArray<number> =>
@@ -3447,7 +3389,7 @@ export const boundariesFromIterable = (iterable: Iterable<number>): ReadonlyArra
  * })
  * ```
  *
- * @category Boundaries
+ * @category boundaries
  * @since 4.0.0
  */
 export const linearBoundaries = (options: {
@@ -3458,8 +3400,7 @@ export const linearBoundaries = (options: {
   boundariesFromIterable(Arr.makeBy(options.count - 1, (n) => options.start + n + options.width))
 
 /**
- * A helper method to create histogram bucket boundaries with exponentially
- * increasing values.
+ * Creates histogram bucket boundaries with exponentially increasing values.
  *
  * **Details**
  *
@@ -3508,7 +3449,7 @@ export const linearBoundaries = (options: {
  * })
  * ```
  *
- * @category Boundaries
+ * @category boundaries
  * @since 4.0.0
  */
 export const exponentialBoundaries = (options: {
@@ -3539,7 +3480,7 @@ const fiberFailures = counter("child_fiber_failures", {
 /**
  * Service key for the fiber runtime metrics service.
  *
- * **Example** (Using the fiber runtime metrics key)
+ * **Example** (Accessing the fiber runtime metrics key)
  *
  * ```ts
  * import { Data, Effect, Layer, Metric } from "effect"
@@ -3570,7 +3511,7 @@ const fiberFailures = counter("child_fiber_failures", {
  * })
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const FiberRuntimeMetricsKey: "effect/observability/Metric/FiberRuntimeMetricsKey" =
@@ -3612,7 +3553,7 @@ export const FiberRuntimeMetricsKey: "effect/observability/Metric/FiberRuntimeMe
  * })
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export interface FiberRuntimeMetricsService {
@@ -3621,7 +3562,13 @@ export interface FiberRuntimeMetricsService {
 }
 
 /**
- * `Context.Reference` for the optional fiber runtime metrics service.
+ * Context reference for the optional service that records fiber runtime
+ * metrics.
+ *
+ * **When to use**
+ *
+ * Use to provide or inspect the service that receives fiber start and end
+ * notifications for automatic runtime metrics.
  *
  * **Details**
  *
@@ -3669,7 +3616,7 @@ export interface FiberRuntimeMetricsService {
  * })
  * ```
  *
- * @category Runtime Metrics
+ * @category runtime metrics
  * @since 4.0.0
  */
 export const FiberRuntimeMetrics = Context.Reference<FiberRuntimeMetricsService | undefined>(
@@ -3680,7 +3627,7 @@ export const FiberRuntimeMetrics = Context.Reference<FiberRuntimeMetricsService 
 /**
  * Default implementation of the fiber runtime metrics service.
  *
- * **Example** (Using the default fiber metrics implementation)
+ * **Example** (Accessing the default fiber metrics implementation)
  *
  * ```ts
  * import { Data, Effect, Layer, Metric } from "effect"
@@ -3719,7 +3666,7 @@ export const FiberRuntimeMetrics = Context.Reference<FiberRuntimeMetricsService 
  * })
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const FiberRuntimeMetricsImpl: FiberRuntimeMetricsService = {
@@ -3738,15 +3685,13 @@ export const FiberRuntimeMetricsImpl: FiberRuntimeMetricsService = {
 }
 
 /**
- * A Layer that enables automatic collection of fiber runtime metrics across
+ * Layer that enables automatic collection of fiber runtime metrics across
  * an entire Effect application.
  *
  * **When to use**
  *
- * Unlike the function version which wraps individual Effects, this layer provides
- * runtime metrics collection to all Effects in the application context. This is
- * the recommended approach for production applications that need comprehensive
- * fiber monitoring.
+ * Use when you need runtime metrics collection for all Effects in the
+ * application context rather than wrapping individual Effects.
  *
  * **Example** (Enabling runtime metrics with a layer)
  *
@@ -3834,13 +3779,13 @@ export const FiberRuntimeMetricsImpl: FiberRuntimeMetricsService = {
  * )
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const enableRuntimeMetricsLayer = Layer.succeed(FiberRuntimeMetrics)(FiberRuntimeMetricsImpl)
 
 /**
- * A Layer that disables automatic collection of fiber runtime metrics.
+ * Layer that disables automatic collection of fiber runtime metrics.
  *
  * **Example** (Disabling runtime metrics with a layer)
  *
@@ -3875,7 +3820,7 @@ export const enableRuntimeMetricsLayer = Layer.succeed(FiberRuntimeMetrics)(Fibe
  * })
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const disableRuntimeMetricsLayer = Layer.succeed(FiberRuntimeMetrics)(undefined)
@@ -3959,7 +3904,7 @@ export const disableRuntimeMetricsLayer = Layer.succeed(FiberRuntimeMetrics)(und
  * )
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const enableRuntimeMetrics: <A, E, R>(self: Effect<A, E, R>) => Effect<A, E, R> = InternalEffect.provideService(
@@ -3972,9 +3917,8 @@ export const enableRuntimeMetrics: <A, E, R>(self: Effect<A, E, R>) => Effect<A,
  *
  * **When to use**
  *
- * This is useful when you want to selectively disable runtime metrics for specific
- * parts of your application while keeping them enabled elsewhere, or when you need
- * to avoid the overhead of metrics collection in performance-critical sections.
+ * Use when you need to disable runtime metrics for a specific effect while
+ * keeping them enabled elsewhere.
  *
  * **Example** (Disabling runtime metrics for an effect)
  *
@@ -4047,7 +3991,7 @@ export const enableRuntimeMetrics: <A, E, R>(self: Effect<A, E, R>) => Effect<A,
  * )
  * ```
  *
- * @category Runtime Metrics
+ * @category metrics
  * @since 4.0.0
  */
 export const disableRuntimeMetrics: <A, E, R>(self: Effect<A, E, R>) => Effect<A, E, R> = InternalEffect.provideService(

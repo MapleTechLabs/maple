@@ -1,17 +1,10 @@
 /**
- * Durable workflow clocks provide workflow-safe timers and sleep operations.
+ * Durable timers for workflow sleeps.
  *
- * Use this module when a workflow needs to pause until a timeout, reminder,
- * deadline, retry delay, or other scheduled wake-up. Short sleeps can run as
- * in-memory activities, while longer sleeps are scheduled with the workflow
- * engine and resumed through a durable deferred signal when the timer fires.
- *
- * Because workflows may be replayed, timer names and durations should be
- * deterministic and stable for a given workflow path. Avoid deriving them from
- * ambient wall-clock state, and give distinct sleeps distinct names so replayed
- * executions can be matched with the correct scheduled wake-up. Lower the
- * in-memory threshold when a delay must be handled by the workflow engine
- * rather than the current process.
+ * `make` creates a `DurableClock` with a name, duration, and deferred wake-up
+ * signal. `sleep` ignores zero durations, runs short sleeps through an
+ * in-memory activity, and schedules longer sleeps through the `WorkflowEngine`
+ * before awaiting the durable deferred tied to the clock.
  *
  * @since 4.0.0
  */
@@ -68,10 +61,10 @@ const InstanceTag = Context.Service<
 )
 
 /**
- * Sleeps inside a workflow, using an in-memory activity for durations at or
+ * Waits inside a workflow, using an in-memory activity for durations at or
  * below the threshold and scheduling a durable clock for longer durations.
  *
- * @category Sleeping
+ * @category sleeping
  * @since 4.0.0
  */
 export const sleep: (

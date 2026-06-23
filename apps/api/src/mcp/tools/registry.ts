@@ -3,6 +3,8 @@ import { registerAddDashboardWidgetTool } from "./add-dashboard-widget"
 import { registerDescribeWarehouseTablesTool } from "./describe-warehouse-tables"
 import { registerComparePeriodsTool } from "./compare-periods"
 import { registerCreateAlertRuleTool } from "./create-alert-rule"
+import { registerUpdateAlertRuleTool } from "./update-alert-rule"
+import { registerDeleteAlertRuleTool } from "./delete-alert-rule"
 import { registerCreateDashboardTool } from "./create-dashboard"
 import { registerDiagnoseServiceTool } from "./diagnose-service"
 import { registerErrorDetailTool } from "./error-detail"
@@ -70,7 +72,7 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 		: document.schema
 }
 
-export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
+const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
 	const registrar: McpToolRegistrar = {
 		tool(name, description, schema, handler) {
@@ -104,6 +106,8 @@ export const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition
 	registerListAlertChecksTool(registrar)
 	registerGetIncidentTimelineTool(registrar)
 	registerCreateAlertRuleTool(registrar)
+	registerUpdateAlertRuleTool(registrar)
+	registerDeleteAlertRuleTool(registrar)
 	registerListDashboardsTool(registrar)
 	registerGetDashboardTool(registrar)
 	registerCreateDashboardTool(registrar)

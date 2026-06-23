@@ -1,12 +1,6 @@
 import { Badge } from "@maple/ui/components/ui/badge"
 import { cn } from "@maple/ui/utils"
-import {
-	DatabaseIcon,
-	GlobeIcon,
-	NetworkNodesIcon,
-	PaperPlaneIcon,
-	ServerIcon,
-} from "@/components/icons"
+import { DatabaseIcon, GlobeIcon, NetworkNodesIcon, PaperPlaneIcon, ServerIcon } from "@/components/icons"
 
 /**
  * Visual identity for one downstream-dependency category surfaced on the

@@ -24,6 +24,7 @@ import {
 import { formatRelativeTime } from "../lib/time"
 import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "../lib/replay-format"
 import { ErrorState } from "../components/view-states"
+import { RefreshButton } from "../components/toolbar"
 
 interface SessionDetailViewProps {
 	sessionId: string
@@ -52,6 +53,7 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 				<span className="truncate font-mono text-xs text-muted-foreground" title={sessionId}>
 					{sessionId}
 				</span>
+				<RefreshButton className="ml-auto" />
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-auto">
@@ -102,11 +104,7 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 							/>
 							<StatTile label="Page views" value={String(session.pageViews)} />
 							<StatTile label="Clicks" value={String(session.clickCount)} />
-							<StatTile
-								label="Errors"
-								value={String(session.errorCount)}
-								danger={hasError}
-							/>
+							<StatTile label="Errors" value={String(session.errorCount)} danger={hasError} />
 							<StatTile label="Traces" value={String(traceIds.length)} />
 						</div>
 
@@ -135,7 +133,9 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 
 								<Card title={`Correlated traces · ${traceIds.length}`}>
 									{traceIds.length === 0 ? (
-										<p className="text-sm text-muted-foreground">No backend traces correlated.</p>
+										<p className="text-sm text-muted-foreground">
+											No backend traces correlated.
+										</p>
 									) : traces.isPending ? (
 										<Spinner className="size-4" />
 									) : (
@@ -150,15 +150,19 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 														<span
 															className={cn(
 																"size-1.5 shrink-0 rounded-full",
-																trace.hasError ? "bg-destructive" : "bg-muted-foreground/40",
+																trace.hasError
+																	? "bg-destructive"
+																	: "bg-muted-foreground/40",
 															)}
 														/>
 														<span className="min-w-0 flex-1">
 															<span className="block truncate text-sm">
-																{trace.rootSpanName || trace.traceId.slice(0, 12)}
+																{trace.rootSpanName ||
+																	trace.traceId.slice(0, 12)}
 															</span>
 															<span className="block truncate text-xs text-muted-foreground">
-																{trace.rootServiceName || "unknown"} · {trace.spanCount} spans
+																{trace.rootServiceName || "unknown"} ·{" "}
+																{trace.spanCount} spans
 															</span>
 														</span>
 														<span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
@@ -182,9 +186,14 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 								) : transcript.isError ? (
 									<ErrorState label="transcript" error={transcript.error} />
 								) : (transcript.data?.length ?? 0) === 0 ? (
-									<p className="text-sm text-muted-foreground">No distilled events for this session.</p>
+									<p className="text-sm text-muted-foreground">
+										No distilled events for this session.
+									</p>
 								) : (
-									<Transcript events={transcript.data ?? []} startTime={session.startTime} />
+									<Transcript
+										events={transcript.data ?? []}
+										startTime={session.startTime}
+									/>
 								)}
 							</Card>
 						</div>
@@ -256,7 +265,9 @@ function Transcript({
 						<span
 							className={cn(
 								"mt-0.5 grid size-6 shrink-0 place-items-center rounded-full",
-								danger ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground",
+								danger
+									? "bg-destructive/10 text-destructive"
+									: "bg-muted text-muted-foreground",
 							)}
 						>
 							<EventIcon event={event} />

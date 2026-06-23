@@ -2,23 +2,26 @@
  * Headless AI triage workflow logic (heavy import graph lives here, NOT in the
  * thin class shell — see the dynamic import in `AiTriageWorkflow.ts`).
  *
- * Investigates a freshly opened incident (error or anomaly) with a read-only
- * subset of the Maple tool registry driven by `generateText`, and persists a
+ * Investigates a freshly opened incident (error or anomaly) and persists a
  * structured triage result onto `ai_triage_runs` (+ the error-issue timeline).
  *
+ * The LLM investigation itself runs on the Flue `triage` workflow (Cloudflare
+ * Workers AI + the read-only Maple MCP tools), reached over the `CHAT_FLUE`
+ * service binding. This workflow stays the durable orchestrator: it owns the
+ * incident lifecycle (gate/claim, D1 persistence, issue severity + timeline,
+ * Autumn token tracking) and delegates only the "brain" to Flue.
+ *
  * Step layout:
- *   1. gate-and-claim — replay guard, settings re-check, OpenRouter key check
- *   2. run-agent      — the whole agent loop in ONE durable step (I/O-bound;
- *                       splitting per LLM round would push the growing message
- *                       array through the 1 MiB step-output cap for no benefit)
+ *   1. gate-and-claim — replay guard, chat-flue binding check
+ *   2. run-agent      — invoke the Flue triage workflow (one durable I/O-bound
+ *                       step) and map its structured result
  *   3. persist        — run row + issue timeline + usage tracking
  */
 import { createHash } from "node:crypto"
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible"
+import { createFlueClient } from "@flue/sdk"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { generateText, hasToolCall, stepCountIs, type ToolSet } from "ai"
-import { aiTriageRuns, aiTriageSettings, anomalyIncidents, errorIssueEvents } from "@maple/db"
-import { createMaplePgClient, type MaplePgClient } from "@maple/db/client"
+import { aiTriageRuns, anomalyIncidents, errorIssueEvents } from "@maple/db"
+import { createMapleD1Client, type CloudflareD1Database, type MapleD1Client } from "@maple/db/client"
 import { AiTriageResult } from "@maple/domain/http"
 import {
 	AiTriageRunId,
@@ -29,16 +32,82 @@ import {
 } from "@maple/domain/primitives"
 import { and, eq } from "drizzle-orm"
 import { Cause, Data, Effect, Exit, Option, Schema } from "effect"
-import { getMapleAgentSetup, resolveOrgOpenrouterKey } from "../agent"
 import { trackTokenUsage } from "../lib/autumn-tracker"
 import { applyTriageSeverity } from "../lib/issue-severity"
-import { buildTriageContextMessage, TRIAGE_SYSTEM_PROMPT } from "./triage-prompt"
-import { buildTriageToolSet, decodeTriageResult, SUBMIT_TRIAGE_TOOL_NAME } from "./triage-tools"
 import type { WorkflowEventLike, WorkflowStepLike } from "./ClickHouseSchemaApplyWorkflow.run"
+
+/** Minimal shape of the `CHAT_FLUE` service binding (a Cloudflare `Fetcher`). */
+interface ChatFlueBinding {
+	readonly fetch: typeof fetch
+}
+
+const isChatFlueBinding = (value: unknown): value is ChatFlueBinding =>
+	typeof value === "object" && value !== null && typeof (value as { fetch?: unknown }).fetch === "function"
 
 export interface AiTriageWorkflowEnv extends Record<string, unknown> {
 	readonly MAPLE_DB: unknown
 	readonly INTERNAL_SERVICE_TOKEN?: string
+	/** Service binding to the chat-flue worker that hosts the Flue `triage` workflow. */
+	readonly CHAT_FLUE?: ChatFlueBinding
+}
+
+/** Structured result the Flue `triage` workflow's `run()` returns. */
+interface FlueTriageResult {
+	readonly result: unknown
+	readonly model: { readonly provider: string; readonly id: string }
+	readonly usage: { readonly input: number; readonly output: number }
+}
+
+interface InvokeTriageInput {
+	readonly env: AiTriageWorkflowEnv
+	readonly orgId: string
+	readonly incidentKind: "error" | "anomaly" | "alert"
+	readonly incidentId: string
+	readonly context: Record<string, unknown>
+}
+
+/**
+ * Run the Flue `triage` workflow to completion over the `CHAT_FLUE` service
+ * binding and return its terminal result. The binding routes by name (not host)
+ * so `baseUrl` is a placeholder; auth is the internal-service token the
+ * chat-flue `/workflows/*` guard expects (`Bearer maple_svc_<token>`).
+ */
+const invokeTriageWorkflow = async ({
+	env,
+	orgId,
+	incidentKind,
+	incidentId,
+	context,
+}: InvokeTriageInput): Promise<FlueTriageResult> => {
+	const binding = env.CHAT_FLUE
+	if (!isChatFlueBinding(binding)) throw new Error("chat_flue_unavailable")
+
+	const client = createFlueClient({
+		baseUrl: "https://chat-flue.internal",
+		fetch: binding.fetch.bind(binding),
+		token: `maple_svc_${env.INTERNAL_SERVICE_TOKEN ?? ""}`,
+	})
+
+	const response = await client.workflows.invoke("triage", {
+		payload: { orgId, incidentKind, incidentId, context },
+		wait: "result",
+	})
+
+	const inner = response.result as
+		| {
+				result?: unknown
+				model?: { provider: string; id: string }
+				usage?: { input?: number; output?: number }
+		  }
+		| null
+		| undefined
+	if (!inner || inner.result === undefined) throw new Error("flue_triage_no_result")
+
+	return {
+		result: inner.result,
+		model: inner.model ?? { provider: "cloudflare", id: "unknown" },
+		usage: { input: inner.usage?.input ?? 0, output: inner.usage?.output ?? 0 },
+	}
 }
 
 export interface AiTriageWorkflowPayload {
@@ -58,9 +127,13 @@ const decodeRunId = Schema.decodeUnknownSync(AiTriageRunId)
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
 const decodeAnomalyIncidentId = Schema.decodeUnknownSync(AnomalyIncidentId)
+/** Validate the Flue triage result against the canonical domain schema before persisting. */
+const decodeTriageResult = Schema.decodeUnknownSync(AiTriageResult)
 
-/** Lenient decode for the contextJson jsonb column; failures fall back to {}. */
-const decodeContextJson = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Unknown))
+/** Lenient decode for the contextJson text column; failures fall back to {}. */
+const decodeContextJson = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
 /**
  * One decode from the persisted resultJson string straight to AiTriageResult —
  * composing `fromJsonString` means a malformed string and a shape mismatch
@@ -107,12 +180,8 @@ const triageTelemetry = MapleCloudflareSDK.make({
 	repositoryUrl: "https://github.com/Makisuo/maple",
 })
 
-const DEFAULT_TRIAGE_MODEL = "moonshotai/kimi-k2.7-code:nitro"
-const MAX_AGENT_STEPS = 12
-const MAX_OUTPUT_TOKENS = 4096
-
 const GATE_STEP = { retries: { limit: 3, delay: "2 seconds", backoff: "exponential" } }
-// One LLM retry at most — a retried step re-spends the whole agent loop.
+// One retry at most — a retried step re-runs the whole Flue investigation.
 const AGENT_STEP = {
 	retries: { limit: 1, delay: "10 seconds" },
 	timeout: "10 minutes",
@@ -126,33 +195,15 @@ interface AgentStepResult {
 	readonly outputTokens: number
 }
 
-/**
- * Narrow the worker env's `MAPLE_DB` Hyperdrive binding to its connection
- * string. (Local copy of the schema-apply workflow's helper so this dynamic
- * chunk doesn't pull in the ClickHouse migration graph.)
- */
-const resolveMapleDbConnectionString = (binding: unknown): string => {
-	if (
-		typeof binding === "object" &&
-		binding !== null &&
-		typeof (binding as { connectionString?: unknown }).connectionString === "string"
-	) {
-		return (binding as { connectionString: string }).connectionString
-	}
-	throw new Error("MAPLE_DB is not a Hyperdrive binding (missing connectionString)")
-}
-
 export interface AiTriageRunDeps {
-	/** Test seam: swap the database client (e.g. a PGlite-backed drizzle) and model wiring. */
-	readonly db?: MaplePgClient
-	readonly generate?: typeof generateText
-	readonly resolveApiKey?: typeof resolveOrgOpenrouterKey
+	/** Test seam: swap the D1 client (e.g. a libsql-backed drizzle). */
+	readonly db?: MapleD1Client
 	/**
-	 * Test seam: skip `getMapleAgentSetup` (which dynamic-imports the whole app
-	 * graph — too slow for the vitest budget on CI runners) and supply the
-	 * ToolSet directly. Production always builds from the registry.
+	 * Test seam: stub the Flue triage invocation so the test asserts the persist
+	 * path without crossing the `CHAT_FLUE` service binding. Production invokes
+	 * the deployed Flue `triage` workflow.
 	 */
-	readonly buildTools?: () => Promise<ToolSet>
+	readonly invokeTriage?: typeof invokeTriageWorkflow
 	/** Test seam: fixed clock for timestamp assertions. Production uses Date.now. */
 	readonly now?: () => number
 }
@@ -163,30 +214,10 @@ export async function runAiTriage(
 	step: WorkflowStepLike,
 	deps: AiTriageRunDeps = {},
 ): Promise<AiTriageWorkflowResult> {
-	// Injected test clients are owned by the caller; the workflow only ends the
-	// postgres.js connection it dialed itself.
-	const connection: { readonly db: MaplePgClient; readonly end?: () => Promise<void> } =
-		deps.db !== undefined
-			? { db: deps.db }
-			: createMaplePgClient(resolveMapleDbConnectionString(env.MAPLE_DB), { maxConnections: 1 })
-	try {
-		return await runAiTriageWithDb(connection.db, env, event, step, deps)
-	} finally {
-		await connection.end?.().catch(() => undefined)
-	}
-}
-
-async function runAiTriageWithDb(
-	db: MaplePgClient,
-	env: AiTriageWorkflowEnv,
-	event: WorkflowEventLike<AiTriageWorkflowPayload>,
-	step: WorkflowStepLike,
-	deps: AiTriageRunDeps,
-): Promise<AiTriageWorkflowResult> {
 	const { orgId, incidentKind, incidentId, issueId } = event.payload
 	const runId = decodeRunId(event.payload.runId)
-	const generate = deps.generate ?? generateText
-	const resolveApiKey = deps.resolveApiKey ?? resolveOrgOpenrouterKey
+	const db = deps.db ?? createMapleD1Client(env.MAPLE_DB as CloudflareD1Database)
+	const invokeTriage = deps.invokeTriage ?? invokeTriageWorkflow
 	const clock = deps.now ?? Date.now
 
 	/**
@@ -211,12 +242,12 @@ async function runAiTriageWithDb(
 		try {
 			await db
 				.update(aiTriageRuns)
-				.set({ status: "failed", error, completedAt: new Date(now), updatedAt: new Date(now) })
+				.set({ status: "failed", error, completedAt: now, updatedAt: now })
 				.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 			if (incidentKind === "anomaly") {
 				await db
 					.update(anomalyIncidents)
-					.set({ triageStatus: "skipped", updatedAt: new Date(now) })
+					.set({ triageStatus: "skipped", updatedAt: now })
 					.where(
 						and(
 							eq(anomalyIncidents.orgId, decodeOrgId(orgId)),
@@ -247,36 +278,23 @@ async function runAiTriageWithDb(
 		// Replay guard: a re-delivered event for a run that already progressed is
 		// a no-op (statuses other than queued mean another execution owns it).
 		if (!run || run.status !== "queued") {
-			return { proceed: false as const, contextJson: {}, modelOverride: null }
+			return { proceed: false as const, contextJson: "{}" }
 		}
 
-		const key = await resolveApiKey(env, orgId)
-		if (key === undefined) {
-			return {
-				proceed: false as const,
-				failure: "no_openrouter_key",
-				contextJson: run.contextJson,
-				modelOverride: null,
-			}
+		// The investigation runs on chat-flue over the CHAT_FLUE service binding;
+		// without it (e.g. a worker deployed before the binding existed) the run
+		// can't proceed — fail it explicitly rather than hang.
+		if (!isChatFlueBinding(env.CHAT_FLUE)) {
+			return { proceed: false as const, failure: "chat_flue_unavailable", contextJson: run.contextJson }
 		}
-
-		const settingsRows = await db
-			.select()
-			.from(aiTriageSettings)
-			.where(eq(aiTriageSettings.orgId, run.orgId))
-			.limit(1)
 
 		const now = clock()
 		await db
 			.update(aiTriageRuns)
-			.set({ status: "running", startedAt: new Date(now), updatedAt: new Date(now) })
+			.set({ status: "running", startedAt: now, updatedAt: now })
 			.where(eq(aiTriageRuns.id, runId))
 
-		return {
-			proceed: true as const,
-			contextJson: run.contextJson,
-			modelOverride: settingsRows[0]?.modelOverride ?? null,
-		}
+		return { proceed: true as const, contextJson: run.contextJson }
 	})
 
 	if (!gate.proceed) {
@@ -300,70 +318,31 @@ async function runAiTriageWithDb(
 	let agentResult: AgentStepResult
 	try {
 		agentResult = await step.do("run-agent", AGENT_STEP, async () => {
-			// The key is re-resolved inside the step (instead of returned from
-			// gate-and-claim) so it never persists in durable workflow state.
-			const apiKey = await resolveApiKey(env, orgId)
-			if (apiKey === undefined) throw new Error("no_openrouter_key")
-
-			const tools = deps.buildTools
-				? await deps.buildTools()
-				: buildTriageToolSet({
-						setup: await getMapleAgentSetup(env),
-						orgId,
-						internalServiceToken: String(env.INTERNAL_SERVICE_TOKEN ?? ""),
-					})
-
-			const modelId = gate.modelOverride ?? DEFAULT_TRIAGE_MODEL
-			const openrouter = createOpenAICompatible({
-				name: "openrouter",
-				baseURL: "https://openrouter.ai/api/v1",
-				apiKey,
-				headers: { "X-OpenRouter-Title": "Maple AI Triage" },
-			})
-
 			const context: Record<string, unknown> = Option.getOrElse(
 				decodeContextJson(gate.contextJson),
 				() => ({}),
 			)
 
-			// gen_ai.* semconv span around the LLM loop (no cost math — Maple's
-			// central pricing layer derives cost from the token counts).
+			// Delegate the investigation to the Flue `triage` workflow. The Flue side
+			// emits its own gen_ai.* spans (service `maple-chat-flue`); this span
+			// records the delegation + token counts on the api side for correlation.
 			const generateExit = await Effect.runPromiseExit(
 				Effect.tryPromise({
-					try: () =>
-						generate({
-							model: openrouter.chatModel(modelId),
-							system: TRIAGE_SYSTEM_PROMPT,
-							prompt: buildTriageContextMessage(incidentKind, context),
-							tools,
-							stopWhen: [hasToolCall(SUBMIT_TRIAGE_TOOL_NAME), stepCountIs(MAX_AGENT_STEPS)],
-							maxOutputTokens: MAX_OUTPUT_TOKENS,
-							providerOptions: {
-								openrouter: {
-									trace: {
-										trace_id: runId,
-										trace_name: "Maple AI Triage",
-										generation_name: "Triage Investigation",
-										orgId,
-										operation: "auto_triage",
-									},
-								},
-							},
-						}),
+					try: () => invokeTriage({ env, orgId, incidentKind, incidentId, context }),
 					catch: (error) => new TriageGenerateError({ cause: error }),
 				}).pipe(
 					Effect.tap((r) =>
 						Effect.annotateCurrentSpan({
-							"gen_ai.usage.input_tokens": r.totalUsage.inputTokens ?? 0,
-							"gen_ai.usage.output_tokens": r.totalUsage.outputTokens ?? 0,
+							"gen_ai.usage.input_tokens": r.usage.input,
+							"gen_ai.usage.output_tokens": r.usage.output,
+							"gen_ai.request.model": r.model.id,
 						}),
 					),
 					Effect.withSpan("ai_triage.generate", {
 						kind: "client",
 						attributes: {
 							"gen_ai.operation.name": "chat",
-							"gen_ai.provider.name": "openrouter",
-							"gen_ai.request.model": modelId,
+							"gen_ai.provider.name": "cloudflare.workers_ai",
 							orgId,
 						},
 					}),
@@ -374,26 +353,22 @@ async function runAiTriageWithDb(
 			// Re-throw the original error so the step's failure handling (and the
 			// message persisted by markFailed) is unchanged by the span wrapper:
 			// unwrap the TriageGenerateError envelope back to its cause; defects
-			// (non-generate failures) are squashed and thrown as before.
+			// are squashed and thrown as before.
 			if (Exit.isFailure(generateExit)) {
 				const squashed = Cause.squash(generateExit.cause)
 				throw squashed instanceof TriageGenerateError ? squashed.cause : squashed
 			}
-			const result = generateExit.value
-
-			const submitCall = result.steps
-				.flatMap((s) => s.toolCalls ?? [])
-				.find((call) => call.toolName === SUBMIT_TRIAGE_TOOL_NAME)
-			if (!submitCall) {
-				throw new Error("no_structured_result")
-			}
-			const decoded = decodeTriageResult(submitCall.input)
+			const flue = generateExit.value
+			// Validate the Flue result against the canonical domain schema before it
+			// reaches the DB (Flue already validated its Valibot mirror, but this is
+			// the source of truth for persistence).
+			const decoded = decodeTriageResult(flue.result)
 
 			return {
 				resultJson: JSON.stringify(decoded),
-				model: modelId,
-				inputTokens: result.totalUsage.inputTokens ?? 0,
-				outputTokens: result.totalUsage.outputTokens ?? 0,
+				model: flue.model.id,
+				inputTokens: flue.usage.input,
+				outputTokens: flue.usage.output,
 			}
 		})
 	} catch (error) {
@@ -410,15 +385,13 @@ async function runAiTriageWithDb(
 			.update(aiTriageRuns)
 			.set({
 				status: "completed",
-				// The agent step's durable output stays a JSON string (1 MiB step
-				// cap bookkeeping); parse at the jsonb write boundary.
-				resultJson: JSON.parse(agentResult.resultJson),
+				resultJson: agentResult.resultJson,
 				model: agentResult.model,
 				inputTokens: agentResult.inputTokens,
 				outputTokens: agentResult.outputTokens,
 				error: null,
-				completedAt: new Date(now),
-				updatedAt: new Date(now),
+				completedAt: now,
+				updatedAt: now,
 			})
 			.where(and(eq(aiTriageRuns.orgId, decodeOrgId(orgId)), eq(aiTriageRuns.id, runId)))
 
@@ -446,14 +419,14 @@ async function runAiTriageWithDb(
 					issueId: decodeIssueId(issueId),
 					actorId: applied.actorId,
 					type: "ai_triage",
-					payloadJson: {
+					payloadJson: JSON.stringify({
 						runId,
 						summary: result.summary,
 						severityAssessment: result.severityAssessment,
 						confidence: result.confidence,
 						applied: applied.applied,
-					},
-					createdAt: new Date(now),
+					}),
+					createdAt: now,
 				})
 				.onConflictDoNothing()
 		}
@@ -461,7 +434,7 @@ async function runAiTriageWithDb(
 		if (incidentKind === "anomaly") {
 			await db
 				.update(anomalyIncidents)
-				.set({ triageStatus: "completed", updatedAt: new Date(now) })
+				.set({ triageStatus: "completed", updatedAt: now })
 				.where(
 					and(
 						eq(anomalyIncidents.orgId, decodeOrgId(orgId)),

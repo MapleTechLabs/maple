@@ -10,11 +10,7 @@ import { Effect, Option, Schema } from "effect"
 import { createDualContent } from "../lib/structured-output"
 import { resolveTenant } from "../lib/query-warehouse"
 import { ErrorsService } from "@/services/ErrorsService"
-import {
-	AlertDestinationId,
-	AlertSeverity,
-	ErrorNotificationPolicyUpsertRequest,
-} from "@maple/domain/http"
+import { AlertDestinationId, AlertSeverity, ErrorNotificationPolicyUpsertRequest } from "@maple/domain/http"
 
 const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 const decodeDestinationId = Schema.decodeUnknownEffect(AlertDestinationId)
@@ -53,7 +49,9 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			if (severity !== undefined) {
 				const parsed = decodeSeverity(severity)
 				if (Option.isNone(parsed)) {
-					return validationError(`Invalid severity: ${severity}. Must be one of: warning, critical.`)
+					return validationError(
+						`Invalid severity: ${severity}. Must be one of: warning, critical.`,
+					)
 				}
 				decodedSeverity = parsed.value
 			}
@@ -95,7 +93,9 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 			if (min_occurrence_count !== undefined) patch.minOccurrenceCount = min_occurrence_count
 			if (decodedSeverity !== undefined) patch.severity = decodedSeverity
 
-			const decodedPatch = yield* Schema.decodeUnknownEffect(ErrorNotificationPolicyUpsertRequest)(patch).pipe(
+			const decodedPatch = yield* Schema.decodeUnknownEffect(ErrorNotificationPolicyUpsertRequest)(
+				patch,
+			).pipe(
 				Effect.mapError(
 					(error) =>
 						new McpQueryError({

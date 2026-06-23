@@ -8,8 +8,10 @@ Example:
 
 ```json
 {
-	"dev_mode": "branch",
-	"include": ["tinybird"]
+  "dev_mode": "branch",
+  "include": [
+    "tinybird"
+  ]
 }
 ```
 
@@ -26,8 +28,11 @@ Example:
 
 ## `tb deploy` Targeting
 
-- `tb deploy` targets Tinybird Cloud production.
+- `tb --cloud deploy` deploys to Tinybird Cloud production. It creates a staging deployment, migrates data, and promotes to live.
+- `tb deploy` is equivalent to `tb --cloud deploy`.
 - Do not treat `tb build` as a production deployment.
+- Use `tb --cloud deploy --check` to validate a deployment without applying it. Recommended for CI.
+- For explicit confirmation, use `tb --cloud deployment create --wait` followed by `tb --cloud deployment promote`.
 
 ## Non-Build Command Targeting
 

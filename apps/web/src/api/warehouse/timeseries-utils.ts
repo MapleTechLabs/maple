@@ -20,10 +20,7 @@ function ceilToBucketMs(epochMs: number, bucketSeconds: number): number {
  * query response directly) can use this to drop the partial leading bucket
  * the query returned for `Timestamp >= startTime`.
  */
-export function firstFullBucketIso(
-	startTime: string | undefined,
-	bucketSeconds: number,
-): string | null {
+export function firstFullBucketIso(startTime: string | undefined, bucketSeconds: number): string | null {
 	if (!startTime) return null
 	const startMs = toEpochMs(startTime)
 	if (Number.isNaN(startMs)) return null

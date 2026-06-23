@@ -1,29 +1,12 @@
 /**
- * The `Param` module defines the shared parser tree used by the unstable CLI
- * `Argument` and `Flag` modules. A `Param<Kind, A>` describes how to consume
- * either positional arguments or named flags from parsed command-line input and
- * return a typed value.
+ * Defines the shared parameter model for CLI arguments and flags.
  *
- * **Common tasks**
- *
- * - Build primitive CLI inputs such as strings, booleans, numbers, choices,
- *   paths, files, and redacted values
- * - Attach help metadata with aliases and descriptions
- * - Transform parsed values with pure or effectful validation
- * - Model missing inputs with `Option`, defaults, config fallbacks, or prompts
- * - Accept repeated inputs with variadic, bounded, and non-empty parameters
- *
- * **Gotchas**
- *
- * - The `Kind` type parameter (`"argument"` or `"flag"`) keeps positional
- *   arguments and flags separate while allowing the implementation and
- *   combinators to be shared.
- * - Combinators preserve the parameter kind, so an argument parameter cannot be
- *   accidentally composed into a flag parameter or the reverse.
- * - Parsers return both the remaining positional arguments and the parsed
- *   value; this is important for argument ordering and variadic parameters.
- * - Some parsers require CLI services such as filesystem, path, terminal, or
- *   child-process support through the parsing environment.
+ * A `Param<Kind, A>` describes how to consume parsed command-line input and
+ * return a typed value. The `Kind` decides whether the parameter reads
+ * positional arguments or named flags. `Argument` and `Flag` build on this
+ * module to share parsing structure, primitive constructors, help metadata,
+ * aliases, defaults, prompts, configuration fallbacks, validation, schema
+ * decoding, fallback parameters, and traversal helpers.
  *
  * @since 4.0.0
  */
@@ -83,7 +66,15 @@ export type ParamKind = "argument" | "flag"
 export type Environment = FileSystem.FileSystem | Path.Path | Terminal.Terminal | ChildProcessSpawner
 
 /**
- * Kind discriminator for positional argument parameters.
+ * Defines the kind discriminator for positional argument parameters.
+ *
+ * **When to use**
+ *
+ * Use to build low-level `Param` constructors or type positions for positional
+ * argument parameters.
+ *
+ * @see {@link flagKind} for the named flag parameter discriminator
+ * @see {@link ParamKind} for the full parameter kind union
  *
  * @category constants
  * @since 4.0.0
@@ -91,7 +82,14 @@ export type Environment = FileSystem.FileSystem | Path.Path | Terminal.Terminal 
 export const argumentKind: "argument" = "argument" as const
 
 /**
- * Kind discriminator for flag parameters.
+ * Defines the kind discriminator for flag parameters.
+ *
+ * **When to use**
+ *
+ * Use to build low-level `Param` constructors or type positions for named flag
+ * parameters.
+ *
+ * @see {@link argumentKind} for the positional argument parameter discriminator
  *
  * @category constants
  * @since 4.0.0
@@ -875,7 +873,8 @@ export const fileSchema = <Kind extends ParamKind, A>(
  *
  * **When to use**
  *
- * Use it for options that accept configuration values.
+ * Use when you need command-line options or arguments that collect `key=value`
+ * configuration entries.
  *
  * **Details**
  *
@@ -920,7 +919,8 @@ export const keyValuePair = <Kind extends ParamKind>(
  *
  * **When to use**
  *
- * This is useful for creating placeholder parameters or for combinators.
+ * Use when you need an empty CLI parameter sentinel for optional parameter
+ * construction or internal combinators.
  *
  * **Example** (Creating sentinel parameters)
  *
@@ -955,8 +955,8 @@ const FLAG_DASH_REGEXP = /^-+/
  *
  * **When to use**
  *
- * Aliases allow params to be specified with alternative names,
- * typically single-character shortcuts like "-f" for "--force".
+ * Use when you need a CLI parameter to accept an alternate name, such as "-f"
+ * for "--force".
  *
  * **Details**
  *
@@ -1037,8 +1037,8 @@ export const withDescription: {
  *
  * **When to use**
  *
- * Useful for experimental, internal, or deprecated flags that should be
- * accepted but not advertised.
+ * Use when experimental, internal, or deprecated flags should be accepted but
+ * not advertised.
  *
  * **Example** (Hiding a flag from help)
  *
@@ -1338,6 +1338,24 @@ export const withDefault: {
 /**
  * Adds a fallback config that is loaded when a required parameter is missing.
  *
+ * **When to use**
+ *
+ * Use when you need config to provide a fallback source for required flags or
+ * arguments that are absent from CLI input.
+ *
+ * **Details**
+ *
+ * Provided CLI values win. Config is loaded only after a missing option or
+ * missing argument error.
+ *
+ * **Gotchas**
+ *
+ * Missing config preserves the original missing-parameter error. Config parse
+ * failure becomes `CliError.InvalidValue`.
+ *
+ * @see {@link withDefault} for a pure default value
+ * @see {@link withFallbackPrompt} for prompting interactively when input is missing
+ *
  * @category combinators
  * @since 4.0.0
  */
@@ -1378,6 +1396,25 @@ export const withFallbackConfig: {
 /**
  * Adds a fallback prompt that is shown when a required parameter is missing.
  *
+ * **When to use**
+ *
+ * Use when a CLI should ask interactively for a missing required flag or
+ * argument.
+ *
+ * **Details**
+ *
+ * `FallbackPrompt` accepts either a `Prompt` or an effect that builds one.
+ * Effectful prompt creation is lazy and runs only when the fallback is needed.
+ *
+ * **Gotchas**
+ *
+ * This only handles missing options and missing arguments. Invalid values do not
+ * prompt, and prompt cancellation re-fails with the original missing error.
+ *
+ * @see {@link FallbackPrompt} for accepted fallback prompt forms
+ * @see {@link withFallbackConfig} for loading a fallback from config
+ * @see {@link withDefault} for a pure default value
+ *
  * @category combinators
  * @since 4.0.0
  */
@@ -1405,7 +1442,7 @@ export const withFallbackPrompt: {
 /**
  * Represent options which can be used to configure variadic parameters.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export type VariadicParamOptions = {
@@ -1425,8 +1462,8 @@ export type VariadicParamOptions = {
  * **Details**
  *
  * This is the base combinator for creating parameters that accept multiple values.
- * The min and max parameters are optional - if not provided, the parameter can be
- * specified any number of times (0 to infinity).
+ * The `min` and `max` parameters are optional. When they are not provided, the
+ * parameter can be specified any number of times, from 0 to infinity.
  *
  * **Example** (Accepting multiple values)
  *
@@ -1607,7 +1644,8 @@ export const atLeast: {
  *
  * **When to use**
  *
- * Use this combinator for validation and transformation in a single step.
+ * Use when you need validation and transformation in a single parameter
+ * combinator.
  *
  * **Example** (Filtering and transforming values)
  *

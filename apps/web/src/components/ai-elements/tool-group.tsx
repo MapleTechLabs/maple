@@ -33,42 +33,44 @@ export function ToolGroup({
 	const running = runningCount > 0
 
 	return (
-		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/20 text-xs">
+		<div className="my-2 overflow-hidden rounded-lg border border-border/60 bg-muted/20 text-sm">
 			<button
 				type="button"
-				className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-muted/40"
+				className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-muted/40"
 				onClick={() => setOpen((v) => !v)}
 			>
 				{running ? (
-					<LoaderIcon className="size-3.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
+					<LoaderIcon className="size-4 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
 				) : errorCount > 0 ? (
-					<CircleXmarkIcon className="size-3.5 shrink-0 text-destructive" />
+					<CircleXmarkIcon className="size-4 shrink-0 text-destructive" />
 				) : (
-					<CircleCheckIcon className="size-3.5 shrink-0 text-severity-info" />
+					<CircleCheckIcon className="size-4 shrink-0 text-severity-info" />
 				)}
-				<CodeIcon className="size-3.5 shrink-0 text-muted-foreground" />
+				<CodeIcon className="size-4 shrink-0 text-muted-foreground" />
 				{running ? (
-					<span className="min-w-0 flex-1 truncate font-medium">
+					<span className="min-w-0 flex-1 truncate font-medium text-foreground">
 						Running…
 						{currentLabel ? (
-							<span className="ml-1 text-muted-foreground">{currentLabel}</span>
+							<span className="ml-1 font-normal text-muted-foreground">{currentLabel}</span>
 						) : null}
-						<span className="ml-1 text-muted-foreground/60 tabular-nums">
+						<span className="ml-1 font-normal text-muted-foreground/60 tabular-nums">
 							· {completedCount}/{count}
 						</span>
 					</span>
 				) : (
-					<span className="min-w-0 flex-1 truncate font-medium">
+					<span className="min-w-0 flex-1 truncate font-medium text-foreground">
 						Used {count} tools
 						{errorCount > 0 ? (
-							<span className="ml-1 text-destructive tabular-nums">· {errorCount} failed</span>
+							<span className="ml-1 font-normal text-destructive tabular-nums">
+								· {errorCount} failed
+							</span>
 						) : null}
 					</span>
 				)}
 				{open ? (
-					<ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
+					<ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				) : (
-					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground" />
+					<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
 				)}
 			</button>
 			{open && (

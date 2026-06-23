@@ -2,7 +2,7 @@
 
 Pre-releases to npm from smol repo
 
-- [ ] Add AI Embeddings module
+- [x] Add AI Embeddings module
 - [ ] Comprehensive JSDoc on every exported function
 - [ ] Codemod CLI for v3 migration
 

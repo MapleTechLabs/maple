@@ -52,22 +52,28 @@ describe("getServiceOverview throughput resolution", () => {
 	})
 
 	it.effect(
-		"extrapolates list throughput from the SpanMetrics `calls` counter when it exceeds the traced count",
+		"extrapolates list throughput from the env-scoped sum(SampleRate) estimate, ignoring the SpanMetrics `calls` counter",
 		() =>
 			Effect.gen(function* () {
-				// Distinct org → fresh SpanMetrics-availability cache entry.
 				setActiveOrgId("overview-metrics-present")
+				// The SpanMetrics `calls` counter is deliberately NOT consulted on the
+				// overview (it's all-environment and would over-report per-env rows), so
+				// even if the catalog advertises it and a query would return a value,
+				// throughput must come from the env-scoped estimate below.
 				listMetricsMock.mockReturnValue(
 					Effect.succeed({ data: [{ metricName: "span.metrics.calls", metricType: "sum" }] }),
 				)
-				// SpanMetrics connector saw 1000 calls (pre-sampling) for `frontend`.
 				executeQueryEngineMock.mockImplementation(() =>
 					Effect.succeed({
 						result: {
 							kind: "timeseries",
-							data: [{ bucket: START, series: { frontend: 1000 } }],
+							data: [{ bucket: START, series: { frontend: 99999 } }],
 						},
 					}),
+				)
+				// 100 traced spans, but sum(SampleRate) estimates 1000 pre-sampling spans → 10x weight.
+				runWarehouseQueryMock.mockReturnValue(
+					Effect.succeed({ data: [{ ...overviewRow, estimatedSpanCount: 1000 }] }),
 				)
 
 				const { data } = yield* getServiceOverview({
@@ -77,15 +83,21 @@ describe("getServiceOverview throughput resolution", () => {
 				assert.strictEqual(data.length, 1)
 				const svc = data[0]
 				assert.strictEqual(svc.hasSampling, true)
-				// throughput = metrics calls / durationSeconds = 1000 / 3600
+				// throughput = estimated spans / durationSeconds = 1000 / 3600
 				assert.ok(Math.abs(svc.throughput - 1000 / 3600) < 1e-9, `throughput=${svc.throughput}`)
 				// traced = raw spans / durationSeconds = 100 / 3600
 				assert.ok(
 					Math.abs(svc.tracedThroughput - 100 / 3600) < 1e-9,
 					`traced=${svc.tracedThroughput}`,
 				)
-				// weight = metrics / raw = 10x
+				// weight = estimated / raw = 10x
 				assert.ok(Math.abs(svc.samplingWeight - 10) < 1e-9, `weight=${svc.samplingWeight}`)
+
+				// The SpanMetrics `calls` counter must not be queried for the overview.
+				const spanMetricsCalls = executeQueryEngineMock.mock.calls.filter((call) =>
+					String(call[0]).includes("spanMetricsCalls"),
+				)
+				assert.strictEqual(spanMetricsCalls.length, 0)
 			}),
 	)
 

@@ -1,15 +1,11 @@
 /**
- * Browser-backed persistence layers for Effect's persistence service.
+ * IndexedDB-backed persistence layers for browser Effect programs.
  *
- * This module provides IndexedDB implementations of the Effect persistence services for applications that need a
- * durable client-side cache, such as remembered query results, offline-capable workflows, or values that should survive
- * page reloads. Entries are stored by persistence store id and key in a shared IndexedDB object store, with optional
- * expiration timestamps for TTL-based invalidation.
- *
- * Because this storage depends on browser IndexedDB, operations can fail when storage is unavailable, quota is exceeded,
- * data is cleared by the user or browser, or the payload cannot be structured-cloned by IndexedDB. Expired entries are
- * removed lazily when they are read, so this module is best suited for application-managed cached objects rather than
- * security-sensitive or authoritative data.
+ * This module provides a low-level `BackingPersistence` layer and a higher-level
+ * `Persistence` layer that store object values in IndexedDB. Values are stored
+ * by persistence store id and key, and reads check TTL expiration before
+ * returning stored data. The database name can be customized and defaults to
+ * `"effect_persistence"`.
  *
  * @since 4.0.0
  */
@@ -22,6 +18,25 @@ import * as Persistence from "effect/unstable/persistence/Persistence"
 
 /**
  * Creates a `BackingPersistence` layer backed by IndexedDB, optionally using the provided database name.
+ *
+ * **When to use**
+ *
+ * Use when composing persistence manually and the lower-level
+ * `BackingPersistence` service should be backed by browser IndexedDB.
+ *
+ * **Details**
+ *
+ * The database name defaults to `"effect_persistence"`. Entries are stored by
+ * persistence store id and key in a shared object store, and TTL expiration is
+ * checked when values are read.
+ *
+ * **Gotchas**
+ *
+ * Opening the database is defected during layer acquisition if IndexedDB is
+ * unavailable or cannot be opened. Store operations report `PersistenceError`
+ * for IndexedDB request, transaction, quota, and structured-clone failures.
+ *
+ * @see {@link layerIndexedDb} for providing the higher-level `Persistence` service
  *
  * @category layers
  * @since 4.0.0

@@ -10,12 +10,12 @@ The PR-preview pipeline (`.github/workflows/deploy-pr-preview.yml`) wraps the ex
 deploy with two extra steps backed by `scripts/tinybird-pr-branch.ts`:
 
 1. **`up <pr>`** (on `opened` / `synchronize` / `reopened`)
-   - `tb branch create pr_<n> --last-partition` — creates the branch with the latest production
-     partition of each datasource. Idempotent: re-running on a new commit reuses the branch.
-   - `tb --branch=pr_<n> deploy` — deploys *this PR's* datasources/materialized views into the
-     branch.
-   - Resolves the branch's admin token and writes `TINYBIRD_HOST` / `TINYBIRD_TOKEN` to
-     `$GITHUB_ENV`, **overriding** the Doppler `pr` values for the steps that follow.
+    - `tb branch create pr_<n> --last-partition` — creates the branch with the latest production
+      partition of each datasource. Idempotent: re-running on a new commit reuses the branch.
+    - `tb --branch=pr_<n> deploy` — deploys _this PR's_ datasources/materialized views into the
+      branch.
+    - Resolves the branch's admin token and writes `TINYBIRD_HOST` / `TINYBIRD_TOKEN` to
+      `$GITHUB_ENV`, **overriding** the Doppler `pr` values for the steps that follow.
 2. **`alchemy:deploy:pr`** then binds the whole preview stack (api / web / alerting / chat-agent
    and, if pointed at it, the Rust ingest gateway) to the branch — no app code changes, because
    every `alchemy.run.ts` already reads `TINYBIRD_HOST` / `TINYBIRD_TOKEN` from `process.env`

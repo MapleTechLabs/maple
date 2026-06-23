@@ -52,9 +52,7 @@ export async function applyMigrations(config: ClickHouseConfig): Promise<ApplyRe
 		// Expand backfills into day-window chunks so a single huge INSERT…SELECT
 		// never holds one connection for minutes (which also trips port-forward /
 		// proxy idle timeouts). Structural DDL stays 1:1.
-		const steps = await expandMigrationToSteps(migration, config.database, (sql) =>
-			exec(config, sql),
-		)
+		const steps = await expandMigrationToSteps(migration, config.database, (sql) => exec(config, sql))
 		for (const step of steps) {
 			await exec(config, step.sql)
 		}
@@ -128,10 +126,7 @@ async function ensureMigrationsTable(config: ClickHouseConfig): Promise<void> {
 }
 
 async function readAppliedVersions(config: ClickHouseConfig): Promise<Set<number>> {
-	const text = await exec(
-		config,
-		`SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`,
-	)
+	const text = await exec(config, `SELECT version FROM ${quote(MIGRATIONS_TABLE)} FORMAT JSONEachRow`)
 	const rows = parseJsonEachRow<{ version: number }>(text)
 	return new Set(rows.map((r) => r.version))
 }

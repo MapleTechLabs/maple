@@ -18,8 +18,8 @@ Call `MapleBrowser.init` once, as early as possible in your app's entrypoint:
 import { MapleBrowser } from "@maple-dev/browser"
 
 MapleBrowser.init({
-  ingestKey: "maple_pk_...", // public ingest key
-  serviceName: "acme-web",
+	ingestKey: "maple_pk_...", // public ingest key
+	serviceName: "acme-web",
 })
 ```
 
@@ -37,34 +37,34 @@ The SDK is **best-effort**: network failures in telemetry never throw into your 
 
 Every field accepted by `MapleBrowser.init`:
 
-| Option                    | Type      | Default                     | Description                                                                                                                                  |
-| ------------------------- | --------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ingestKey`               | `string`  | —                           | **Required.** Public ingest key (`maple_pk_...`).                                                                                             |
-| `serviceName`             | `string`  | —                           | **Required.** Service name reported on traces and stored on replay sessions.                                                                 |
-| `endpoint`                | `string`  | `https://ingest.maple.dev`  | Maple ingest base URL. Override for self-hosted / regional ingest.                                                                            |
-| `serviceNamespace`        | `string`  | —                           | Logical group this service belongs to, emitted as the OTel `service.namespace` resource attribute on traces.                                  |
-| `serviceVersion`          | `string`  | —                           | Service version or commit SHA, attached to traces.                                                                                           |
-| `environment`             | `string`  | —                           | Deployment environment, e.g. `"production"`.                                                                                                 |
-| `userId`                  | `string`  | —                           | User id attached to the replay session for correlation. See [Identifying users](#identifying-users).                                         |
-| `tracing.enabled`         | `boolean` | `true`                      | Enable OTel browser tracing.                                                                                                                  |
-| `tracing.instrumentFetch` | `boolean` | `true`                      | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests — those spans feed the session via the published sink, and disabling this avoids duplicate network spans. |
-| `replay.enabled`          | `boolean` | `true`                      | Enable rrweb session recording.                                                                                                              |
-| `replay.sampleRate`       | `number`  | `1`                         | Fraction of sessions to record, `0`–`1`. See [Sampling](#sampling).                                                                          |
-| `privacy.maskAllInputs`   | `boolean` | `true`                      | Mask all `<input>` values in the recording.                                                                                                  |
-| `privacy.maskAllText`     | `boolean` | `false`                     | Mask all text in the rrweb recording and omit captured click-target text from session events.                                                |
+| Option                    | Type      | Default                    | Description                                                                                                                                                                                                                                            |
+| ------------------------- | --------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ingestKey`               | `string`  | —                          | **Required.** Public ingest key (`maple_pk_...`).                                                                                                                                                                                                      |
+| `serviceName`             | `string`  | —                          | **Required.** Service name reported on traces and stored on replay sessions.                                                                                                                                                                           |
+| `endpoint`                | `string`  | `https://ingest.maple.dev` | Maple ingest base URL. Override for self-hosted / regional ingest.                                                                                                                                                                                     |
+| `serviceNamespace`        | `string`  | —                          | Logical group this service belongs to, emitted as the OTel `service.namespace` resource attribute on traces.                                                                                                                                           |
+| `serviceVersion`          | `string`  | —                          | Service version or commit SHA, attached to traces.                                                                                                                                                                                                     |
+| `environment`             | `string`  | —                          | Deployment environment, e.g. `"production"`.                                                                                                                                                                                                           |
+| `userId`                  | `string`  | —                          | User id attached to the replay session for correlation. See [Identifying users](#identifying-users).                                                                                                                                                   |
+| `tracing.enabled`         | `boolean` | `true`                     | Enable OTel browser tracing.                                                                                                                                                                                                                           |
+| `tracing.instrumentFetch` | `boolean` | `true`                     | Auto-instrument `fetch()` to create network spans. Set `false` when another tracer (e.g. the Effect client SDK) already instruments requests — those spans feed the session via the published sink, and disabling this avoids duplicate network spans. |
+| `replay.enabled`          | `boolean` | `true`                     | Enable rrweb session recording.                                                                                                                                                                                                                        |
+| `replay.sampleRate`       | `number`  | `1`                        | Fraction of sessions to record, `0`–`1`. See [Sampling](#sampling).                                                                                                                                                                                    |
+| `privacy.maskAllInputs`   | `boolean` | `true`                     | Mask all `<input>` values in the recording.                                                                                                                                                                                                            |
+| `privacy.maskAllText`     | `boolean` | `false`                    | Mask all text in the rrweb recording and omit captured click-target text from session events.                                                                                                                                                          |
 
 A fully-specified call:
 
 ```ts
 MapleBrowser.init({
-  ingestKey: "maple_pk_...",
-  serviceName: "acme-web",
-  environment: "production",
-  serviceVersion: "1.4.2",
-  userId: currentUser?.id,
-  tracing: { enabled: true, instrumentFetch: true },
-  replay: { enabled: true, sampleRate: 1.0 },
-  privacy: { maskAllInputs: true, maskAllText: false },
+	ingestKey: "maple_pk_...",
+	serviceName: "acme-web",
+	environment: "production",
+	serviceVersion: "1.4.2",
+	userId: currentUser?.id,
+	tracing: { enabled: true, instrumentFetch: true },
+	replay: { enabled: true, sampleRate: 1.0 },
+	privacy: { maskAllInputs: true, maskAllText: false },
 })
 ```
 
@@ -118,8 +118,8 @@ correlating Maple sessions with your own backend logs:
 
 ```ts
 const { sessionId } = MapleBrowser.init({
-  ingestKey: "maple_pk_...",
-  serviceName: "acme-web",
+	ingestKey: "maple_pk_...",
+	serviceName: "acme-web",
 })
 
 // e.g. forward it on your own requests for correlation
@@ -164,8 +164,8 @@ For finer control, use rrweb's attribute hooks to block specific elements or sub
 
 ```html
 <div class="rr-block">
-  <!-- never captured in the replay -->
-  <CreditCardForm />
+	<!-- never captured in the replay -->
+	<CreditCardForm />
 </div>
 ```
 
@@ -175,9 +175,9 @@ To record only a fraction of sessions, set `replay.sampleRate` between `0` and `
 
 ```ts
 MapleBrowser.init({
-  ingestKey: "maple_pk_...",
-  serviceName: "acme-web",
-  replay: { sampleRate: 0.1 },
+	ingestKey: "maple_pk_...",
+	serviceName: "acme-web",
+	replay: { sampleRate: 0.1 },
 })
 ```
 
@@ -187,12 +187,12 @@ MapleBrowser.init({
 
 ```html
 <script type="module">
-  import { MapleBrowser } from "https://esm.sh/@maple-dev/browser"
+	import { MapleBrowser } from "https://esm.sh/@maple-dev/browser"
 
-  MapleBrowser.init({
-    ingestKey: "maple_pk_...",
-    serviceName: "acme-web",
-  })
+	MapleBrowser.init({
+		ingestKey: "maple_pk_...",
+		serviceName: "acme-web",
+	})
 </script>
 ```
 
@@ -205,9 +205,9 @@ Initialize at the top of your client entrypoint (e.g. `main.tsx`, or a client-on
 import { MapleBrowser } from "@maple-dev/browser"
 
 MapleBrowser.init({
-  ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
-  serviceName: "acme-web",
-  environment: import.meta.env.MODE,
+	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
+	serviceName: "acme-web",
+	environment: import.meta.env.MODE,
 })
 ```
 

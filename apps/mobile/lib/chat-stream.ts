@@ -1,21 +1,10 @@
-// Streams a single chat turn from the Maple chat-agent Worker and parses the
-// Vercel AI SDK v6 UI message stream (SSE) into UIMessage-part updates.
-//
-// Relies on `expo/fetch` so the response body can be read as a ReadableStream
-// on iOS/Android (RN's built-in fetch cannot).
+// Streams a single chat turn from the Flue chat backend (`apps/chat-flue`) via
+// `@flue/sdk`: `agents.send` admits the prompt, then `agents.stream` tails the
+// agent's events from that prompt's offset until `idle`. The Flue events are
+// mapped onto the same callbacks the mobile reducer consumes, so the message
+// rendering is unchanged from the legacy SSE transport.
 
-import { fetch as expoFetch } from "expo/fetch"
-import type { AlertContext } from "./alert-context"
-import { mobileChatUrl } from "./chat-agent-url"
-
-type StreamChunk = Record<string, unknown> & { type: string }
-
-export interface ChatStreamBody {
-	orgId: string
-	userText: string
-	mode?: "alert" | "dashboard_builder"
-	alertContext?: AlertContext
-}
+import type { AttachedAgentEvent, FlueClient } from "@flue/sdk"
 
 export interface ChatStreamCallbacks {
 	onAssistantStart?: (messageId: string) => void
@@ -34,76 +23,54 @@ interface StreamController {
 }
 
 export interface StreamChatOptions {
-	threadId: string
-	body: ChatStreamBody
-	getToken: () => Promise<string | null>
+	client: FlueClient
+	/** Flue agent module name (`maple-chat`). */
+	agentName: string
+	/** Agent instance id (`<orgId>:<threadId>`). */
+	instanceId: string
+	/** The full message string to send (context preamble already folded in). */
+	message: string
 	callbacks: ChatStreamCallbacks
 }
 
+const isAbort = (err: unknown): boolean => (err as Error)?.name === "AbortError"
+
+const errorText = (value: unknown): string => {
+	if (value == null) return "Tool error"
+	if (typeof value === "string") return value
+	if (value instanceof Error) return value.message
+	try {
+		return JSON.stringify(value)
+	} catch {
+		return String(value)
+	}
+}
+
 export function streamChat({
-	threadId,
-	body,
-	getToken,
+	client,
+	agentName,
+	instanceId,
+	message,
 	callbacks,
 }: StreamChatOptions): StreamController {
 	const controller = new AbortController()
 
 	const completion = (async () => {
-		let response: Response
 		try {
-			const token = await getToken()
-			const headers: Record<string, string> = { "content-type": "application/json" }
-			if (token) headers.authorization = `Bearer ${token}`
-			response = (await expoFetch(mobileChatUrl(body.orgId, threadId), {
-				method: "POST",
-				headers,
-				body: JSON.stringify(body),
+			const sent = await client.agents.send(agentName, instanceId, {
+				message,
 				signal: controller.signal,
-			})) as unknown as Response
-		} catch (err) {
-			if ((err as Error)?.name === "AbortError") return
-			callbacks.onError?.(err instanceof Error ? err.message : String(err))
-			return
-		}
+			})
 
-		if (!response.ok) {
-			const text = await response.text().catch(() => "")
-			callbacks.onError?.(`chat-agent ${response.status}: ${text || response.statusText}`)
-			return
-		}
-
-		const reader = (response.body as ReadableStream<Uint8Array> | null)?.getReader()
-		if (!reader) {
-			callbacks.onError?.("No response body from chat-agent")
-			return
-		}
-
-		const decoder = new TextDecoder()
-		let buffer = ""
-
-		try {
-			while (true) {
-				const { value, done } = await reader.read()
-				if (done) break
-				buffer += decoder.decode(value, { stream: true })
-
-				let idx: number
-				while ((idx = buffer.indexOf("\n")) >= 0) {
-					const line = buffer.slice(0, idx).replace(/\r$/, "")
-					buffer = buffer.slice(idx + 1)
-					if (!line.startsWith("data:")) continue
-					const payload = line.slice(5).trim()
-					if (!payload || payload === "[DONE]") continue
-					try {
-						const chunk = JSON.parse(payload) as StreamChunk
-						dispatchChunk(chunk, callbacks)
-					} catch {
-						// malformed chunk — skip
-					}
-				}
+			for await (const event of client.agents.stream(agentName, instanceId, {
+				offset: sent.offset,
+				live: true,
+				signal: controller.signal,
+			})) {
+				if (dispatchEvent(event, callbacks)) break
 			}
 		} catch (err) {
-			if ((err as Error)?.name !== "AbortError") {
+			if (!isAbort(err)) {
 				callbacks.onError?.(err instanceof Error ? err.message : String(err))
 			}
 		} finally {
@@ -117,53 +84,42 @@ export function streamChat({
 	}
 }
 
-function dispatchChunk(chunk: StreamChunk, cb: ChatStreamCallbacks): void {
-	const type = chunk.type
-	switch (type) {
-		case "start": {
-			const id = typeof chunk.messageId === "string" ? chunk.messageId : ""
-			cb.onAssistantStart?.(id || `msg-${Date.now()}`)
-			return
+/** Map one Flue agent event onto the reducer callbacks. Returns true to stop (turn idle). */
+function dispatchEvent(event: AttachedAgentEvent, cb: ChatStreamCallbacks): boolean {
+	switch (event.type) {
+		case "message_start": {
+			// Open an assistant bubble as soon as the model turn begins (covers
+			// tool-first turns that emit no leading text delta).
+			if (event.message.role === "assistant") {
+				cb.onAssistantStart?.(event.turnId ?? `asst-${event.eventIndex}`)
+			}
+			return false
 		}
-		case "text-start":
-		case "text-end":
-			return
-		case "text-delta": {
-			const delta = typeof chunk.delta === "string" ? chunk.delta : ""
-			const id = typeof chunk.id === "string" ? chunk.id : undefined
-			if (delta) cb.onTextDelta?.(-1, delta, id)
-			return
+		case "text_delta": {
+			if (event.text) cb.onTextDelta?.(-1, event.text)
+			return false
 		}
-		case "tool-input-start": {
-			const toolCallId = typeof chunk.toolCallId === "string" ? chunk.toolCallId : ""
-			const toolName = typeof chunk.toolName === "string" ? chunk.toolName : "tool"
-			if (toolCallId) cb.onToolInputStart?.(toolCallId, toolName)
-			return
+		case "tool_start": {
+			// Flue delivers tool input complete (no streaming) → input-available.
+			cb.onToolInputAvailable?.(event.toolCallId, event.toolName, event.args)
+			return false
 		}
-		case "tool-input-available": {
-			const toolCallId = typeof chunk.toolCallId === "string" ? chunk.toolCallId : ""
-			const toolName = typeof chunk.toolName === "string" ? chunk.toolName : "tool"
-			if (toolCallId) cb.onToolInputAvailable?.(toolCallId, toolName, chunk.input)
-			return
+		case "tool": {
+			if (event.isError) cb.onToolError?.(event.toolCallId, errorText(event.result))
+			else cb.onToolOutputAvailable?.(event.toolCallId, event.result)
+			return false
 		}
-		case "tool-output-available": {
-			const toolCallId = typeof chunk.toolCallId === "string" ? chunk.toolCallId : ""
-			if (toolCallId) cb.onToolOutputAvailable?.(toolCallId, chunk.output)
-			return
+		case "turn": {
+			if (event.isError) cb.onError?.(errorText(event.error))
+			return false
 		}
-		case "tool-output-error":
-		case "tool-error": {
-			const toolCallId = typeof chunk.toolCallId === "string" ? chunk.toolCallId : ""
-			const errText = typeof chunk.errorText === "string" ? chunk.errorText : "Tool error"
-			if (toolCallId) cb.onToolError?.(toolCallId, errText)
-			return
+		case "submission_settled": {
+			if (event.outcome === "failed") cb.onError?.(event.error ?? "Turn failed")
+			return true
 		}
-		case "error": {
-			const errText = typeof chunk.errorText === "string" ? chunk.errorText : "Unknown error"
-			cb.onError?.(errText)
-			return
-		}
+		case "idle":
+			return true
 		default:
-			return
+			return false
 	}
 }

@@ -121,74 +121,74 @@ export const makeExpandMacros = Effect.fn("RawSqlChartService.expandMacros")(fun
 ) {
 	let sql = input.sql
 
-		if (!sql.includes("$__orgFilter")) {
+	if (!sql.includes("$__orgFilter")) {
+		return yield* fail(
+			"MissingOrgFilter",
+			"SQL must reference $__orgFilter so the query is scoped to your org.",
+		)
+	}
+
+	const orgLiteral = `'${escapeClickHouseString(input.orgId)}'`
+	const startLiteral = `toDateTime('${escapeClickHouseString(input.startTime)}')`
+	const endLiteral = `toDateTime('${escapeClickHouseString(input.endTime)}')`
+	const granularity = Math.max(1, Math.round(input.granularitySeconds))
+
+	sql = sql.replaceAll("$__orgFilter", `OrgId = ${orgLiteral}`)
+	sql = sql.replaceAll("$__startTime", startLiteral)
+	sql = sql.replaceAll("$__endTime", endLiteral)
+	sql = sql.replaceAll("$__interval_s", String(granularity))
+
+	// $__timeFilter(Column) -> Column >= <start> AND Column <= <end>
+	// Match anything inside the parens (greedy up to next `)`), then strictly
+	// validate the captured argument is a single column identifier. Catching
+	// the whole inner string lets us return InvalidMacro for injection
+	// attempts like `$__timeFilter(1 OR 1=1)` instead of letting them slip
+	// through to the UnresolvedMacro fallback.
+	const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
+	for (const match of timeFilterMatches) {
+		const column = match[1].trim()
+		if (!COLUMN_IDENT_RE.test(column)) {
 			return yield* fail(
-				"MissingOrgFilter",
-				"SQL must reference $__orgFilter so the query is scoped to your org.",
+				"InvalidMacro",
+				`$__timeFilter argument '${column}' must be a column identifier (letters, digits, underscores, dots).`,
 			)
 		}
+		sql = sql.replace(match[0], `${column} >= ${startLiteral} AND ${column} <= ${endLiteral}`)
+	}
 
-		const orgLiteral = `'${escapeClickHouseString(input.orgId)}'`
-		const startLiteral = `toDateTime('${escapeClickHouseString(input.startTime)}')`
-		const endLiteral = `toDateTime('${escapeClickHouseString(input.endTime)}')`
-		const granularity = Math.max(1, Math.round(input.granularitySeconds))
+	if (sql.includes("$__")) {
+		const leftover = sql.match(/\$__\w+/)?.[0] ?? "$__?"
+		return yield* fail(
+			"UnresolvedMacro",
+			`Unknown macro ${leftover}. Supported: $__orgFilter, $__timeFilter(col), $__startTime, $__endTime, $__interval_s.`,
+		)
+	}
 
-		sql = sql.replaceAll("$__orgFilter", `OrgId = ${orgLiteral}`)
-		sql = sql.replaceAll("$__startTime", startLiteral)
-		sql = sql.replaceAll("$__endTime", endLiteral)
-		sql = sql.replaceAll("$__interval_s", String(granularity))
+	const masked = maskLiteralsAndComments(sql)
 
-		// $__timeFilter(Column) -> Column >= <start> AND Column <= <end>
-		// Match anything inside the parens (greedy up to next `)`), then strictly
-		// validate the captured argument is a single column identifier. Catching
-		// the whole inner string lets us return InvalidMacro for injection
-		// attempts like `$__timeFilter(1 OR 1=1)` instead of letting them slip
-		// through to the UnresolvedMacro fallback.
-		const timeFilterMatches = [...sql.matchAll(/\$__timeFilter\(([^)]*)\)/g)]
-		for (const match of timeFilterMatches) {
-			const column = match[1].trim()
-			if (!COLUMN_IDENT_RE.test(column)) {
-				return yield* fail(
-					"InvalidMacro",
-					`$__timeFilter argument '${column}' must be a column identifier (letters, digits, underscores, dots).`,
-				)
-			}
-			sql = sql.replace(match[0], `${column} >= ${startLiteral} AND ${column} <= ${endLiteral}`)
-		}
+	if (masked.includes(";")) {
+		return yield* fail(
+			"MultipleStatements",
+			"Multiple SQL statements are not allowed. Remove ';' separators.",
+		)
+	}
 
-		if (sql.includes("$__")) {
-			const leftover = sql.match(/\$__\w+/)?.[0] ?? "$__?"
-			return yield* fail(
-				"UnresolvedMacro",
-				`Unknown macro ${leftover}. Supported: $__orgFilter, $__timeFilter(col), $__startTime, $__endTime, $__interval_s.`,
-			)
-		}
+	const denyMatch = masked.match(DENY_LIST_RE)
+	if (denyMatch) {
+		return yield* fail(
+			"DisallowedStatement",
+			`Statement keyword '${denyMatch[1].toUpperCase()}' is not allowed in raw SQL charts.`,
+		)
+	}
 
-		const masked = maskLiteralsAndComments(sql)
+	if (!/\blimit\b/i.test(masked)) {
+		sql = `${sql.trimEnd()}\nLIMIT ${DEFAULT_ROW_CAP}`
+	}
 
-		if (masked.includes(";")) {
-			return yield* fail(
-				"MultipleStatements",
-				"Multiple SQL statements are not allowed. Remove ';' separators.",
-			)
-		}
-
-		const denyMatch = masked.match(DENY_LIST_RE)
-		if (denyMatch) {
-			return yield* fail(
-				"DisallowedStatement",
-				`Statement keyword '${denyMatch[1].toUpperCase()}' is not allowed in raw SQL charts.`,
-			)
-		}
-
-		if (!/\blimit\b/i.test(masked)) {
-			sql = `${sql.trimEnd()}\nLIMIT ${DEFAULT_ROW_CAP}`
-		}
-
-		return {
-			sql,
-			granularitySeconds: granularity,
-		} satisfies ExpandMacrosResult
+	return {
+		sql,
+		granularitySeconds: granularity,
+	} satisfies ExpandMacrosResult
 })
 
 export class RawSqlChartService extends Context.Service<RawSqlChartService, RawSqlChartServiceShape>()(

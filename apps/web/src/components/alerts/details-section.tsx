@@ -7,6 +7,7 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 
 import { SectionLabel } from "@/components/alerts/signal-and-threshold-section"
+import { TagInput } from "@/components/alerts/tag-input"
 import { PlusIcon } from "@/components/icons"
 import type { RuleFormState } from "@/lib/alerts/form-utils"
 
@@ -14,6 +15,8 @@ interface DetailsSectionProps {
 	form: RuleFormState
 	onChange: Dispatch<SetStateAction<RuleFormState>>
 	suggestedName: string | null
+	/** Tags already used across the org's rules, offered as autocomplete. */
+	tagSuggestions?: string[]
 }
 
 /**
@@ -21,9 +24,8 @@ interface DetailsSectionProps {
  * from signal + scope) and a free-text runbook field that stays collapsed
  * until the user opts in, because most rules ship without notes.
  */
-export function DetailsSection({ form, onChange, suggestedName }: DetailsSectionProps) {
-	const showSuggest =
-		form.name.trim().length === 0 && suggestedName !== null && suggestedName.length > 0
+export function DetailsSection({ form, onChange, suggestedName, tagSuggestions }: DetailsSectionProps) {
+	const showSuggest = form.name.trim().length === 0 && suggestedName !== null && suggestedName.length > 0
 	const hasExistingNotes = form.notes.trim().length > 0
 	const [notesOpen, setNotesOpen] = useState(hasExistingNotes)
 
@@ -42,9 +44,7 @@ export function DetailsSection({ form, onChange, suggestedName }: DetailsSection
 								type="button"
 								variant="ghost"
 								size="sm"
-								onClick={() =>
-									onChange((c) => ({ ...c, name: suggestedName! }))
-								}
+								onClick={() => onChange((c) => ({ ...c, name: suggestedName! }))}
 								className="h-6 px-1.5 text-[11px]"
 							>
 								Suggest: {suggestedName}
@@ -57,6 +57,22 @@ export function DetailsSection({ form, onChange, suggestedName }: DetailsSection
 						onChange={(e) => onChange((c) => ({ ...c, name: e.target.value }))}
 						placeholder="Error Rate — Payments"
 					/>
+				</div>
+
+				<div className="space-y-1.5">
+					<Label htmlFor="rule-tags" className="text-xs">
+						Tags
+					</Label>
+					<TagInput
+						id="rule-tags"
+						value={form.tags}
+						onChange={(tags) => onChange((c) => ({ ...c, tags }))}
+						suggestions={tagSuggestions}
+						placeholder="prod, payments, team-checkout…"
+					/>
+					<p className="text-[11px] text-muted-foreground">
+						Group and filter rules in the alerts list. Press Enter to add.
+					</p>
 				</div>
 
 				{notesOpen ? (

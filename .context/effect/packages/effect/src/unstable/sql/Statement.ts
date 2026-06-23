@@ -1,20 +1,12 @@
 /**
- * Building blocks for Effect's unstable SQL statement API.
+ * Low-level SQL statement and fragment primitives.
  *
- * This module defines the low-level `Statement` and `Fragment` model used by
- * SQL clients, the tagged-template `Constructor` for creating executable
- * parameterized statements, and dialect compilers that turn statement segments
- * into SQL text plus bind parameters. It also provides helpers for escaped
- * identifiers, `IN` lists, comma-separated clause fragments, record inserts and
- * updates, custom segments, and row or identifier transforms.
- *
- * In tagged templates, interpolated `Fragment`s and known `Segment`s are
- * spliced into the statement, while ordinary values become bound parameters. Use
- * identifiers for table and column names and the record helpers for generated
- * column lists; `literal` and `unsafe` insert SQL text directly and should only
- * be used with trusted SQL. Compilation is dialect-specific, caches rendered SQL
- * on the statement, and has a `withoutTransform` path for bypassing identifier
- * transforms, so compiled output can differ from normal transformed execution.
+ * `SqlClient` uses this module to build executable, parameterized SQL from
+ * reusable fragments. A statement can be executed, streamed, run without row
+ * transformation, or compiled to SQL text and parameters for a specific
+ * dialect. The module also contains helpers for identifiers, parameters,
+ * inserts, updates, custom dialect fragments, statement compilation, and row
+ * transformation.
  *
  * @since 4.0.0
  */
@@ -115,7 +107,7 @@ export const CurrentTransformer = Context.Reference<Transformer | undefined>("ef
 /**
  * Returns `true` when a value is a SQL `Fragment`.
  *
- * @category guard
+ * @category guards
  * @since 4.0.0
  */
 export const isFragment = (u: unknown): u is Fragment => hasProperty(u, FragmentTypeId)
@@ -123,7 +115,7 @@ export const isFragment = (u: unknown): u is Fragment => hasProperty(u, Fragment
 /**
  * Creates a type guard for custom SQL segments with the specified custom kind.
  *
- * @category guard
+ * @category guards
  * @since 4.0.0
  */
 export const isCustom = <A extends Custom<any, any, any, any>>(
@@ -497,7 +489,7 @@ export interface Constructor {
    *
    * **When to use**
    *
-   * Useful for `ORDER BY` and `GROUP BY` clauses.
+   * Use when `ORDER BY` and `GROUP BY` clauses.
    */
   readonly csv: {
     (values: ReadonlyArray<string | Fragment>): Fragment

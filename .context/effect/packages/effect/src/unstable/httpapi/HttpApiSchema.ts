@@ -1,47 +1,21 @@
 /**
- * Helpers for attaching HTTP API metadata to Effect Schema values.
+ * Attaches HTTP API metadata to Effect Schema values.
  *
- * This module is the schema-side bridge used by the unstable HttpApi endpoint
- * builder, generated clients, and OpenAPI support. It does not define routes or
- * perform IO. Instead, helpers such as {@link status}, {@link asJson},
- * {@link asMultipart}, and {@link asNoContent} annotate schemas so downstream
- * HTTP tooling can choose response status codes, content types, body codecs, and
- * no-body handling while the original schema remains usable for validation and
- * transformation.
- *
- * Common use cases:
- * - Mark success or error schemas with explicit HTTP statuses using
- *   {@link status}, {@link NoContent}, {@link Created}, {@link Accepted}, or
- *   {@link Empty}.
- * - Override the default JSON encoding for request payloads or responses with
- *   {@link asFormUrlEncoded}, {@link asText}, {@link asUint8Array}, or
- *   {@link asJson}.
- * - Describe buffered or streaming multipart request payloads with
- *   {@link asMultipart} and {@link asMultipartStream}.
- * - Represent an HTTP response with no body while still decoding a client-side
- *   value through {@link asNoContent}.
- *
- * Status and encoding details:
- * - {@link status} only stores an annotation. The same annotation is interpreted
- *   by the surrounding HttpApi context; unannotated success responses default to
- *   `200`, and unannotated error responses default to `500`.
- * - Missing encodings default to JSON for bodies and responses. Payload schemas
- *   used with methods that have no request body fall back to form-url-encoded
- *   metadata for parameter encoding.
- * - {@link asFormUrlEncoded} expects the schema's encoded side to be a record
- *   of strings. {@link asText} expects `string`, and {@link asUint8Array}
- *   expects `Uint8Array`.
- * - Multipart encodings are payload-only; response multipart is rejected when
- *   response encoding is resolved.
- * - These helpers attach annotations consumed by HttpApi internals. They do not
- *   validate, encode, decode, or send data by themselves.
+ * This module is the schema-side bridge for HttpApi endpoint builders,
+ * generated clients, and OpenAPI support. It does not define routes or perform
+ * IO. Instead, the helpers annotate schemas so the surrounding HTTP API tooling
+ * can choose response status codes, content types, body codecs, multipart
+ * handling, and no-body response behavior.
  *
  * @since 4.0.0
  */
 import { constVoid, type LazyArg } from "../../Function.ts"
+import * as Predicate from "../../Predicate.ts"
 import * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
-import * as Transformation from "../../SchemaTransformation.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
+import * as SchemaTransformation from "../../SchemaTransformation.ts"
+import * as Stream from "../../Stream.ts"
+import type * as Sse from "../encoding/Sse.ts"
 import { hasBody, type HttpMethod } from "../http/HttpMethod.ts"
 import type * as Multipart_ from "../http/Multipart.ts"
 
@@ -60,13 +34,18 @@ declare module "../../Schema.ts" {
 }
 
 /**
- * @internal
+ * HTTP API body encoding metadata used by payloads and responses.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export type Encoding = PayloadEncoding | ResponseEncoding
 
 /**
- * Encodings for payloads
- * @internal
+ * HTTP API request payload encoding metadata.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export type PayloadEncoding =
   | {
@@ -81,8 +60,10 @@ export type PayloadEncoding =
   }
 
 /**
- * Encodings for responses
- * @internal
+ * HTTP API response body encoding metadata.
+ *
+ * @category models
+ * @since 4.0.0
  */
 export type ResponseEncoding = {
   readonly _tag: "Json" | "FormUrlEncoded" | "Uint8Array" | "Text"
@@ -154,6 +135,8 @@ const statusCodeByLiteral = {
   NetworkAuthenticationRequired: 511
 } as const
 
+const StreamSchemaTypeId = "~effect/httpapi/HttpApiSchema/Stream"
+
 /**
  * Common HTTP status code literals accepted by {@link status}.
  *
@@ -163,7 +146,7 @@ const statusCodeByLiteral = {
 export type StatusLiteral = keyof typeof statusCodeByLiteral
 
 /**
- * A convenience function to set the HTTP status code of a schema.
+ * Sets the HTTP status code of a schema.
  *
  * **Details**
  *
@@ -174,13 +157,15 @@ export type StatusLiteral = keyof typeof statusCodeByLiteral
  * @category status
  * @since 4.0.0
  */
-export function status(code: number): <S extends Schema.Top>(self: S) => S["Rebuild"]
-export function status(code: StatusLiteral): <S extends Schema.Top>(self: S) => S["Rebuild"]
+export function status(code: number): {
+  <S extends Schema.Top>(self: S): S["Rebuild"]
+}
+export function status(code: StatusLiteral): {
+  <S extends Schema.Top>(self: S): S["Rebuild"]
+}
 export function status(code: number | StatusLiteral) {
   const statusCode = typeof code === "string" ? statusCodeByLiteral[code] : code
-  return <S extends Schema.Top>(self: S): S["Rebuild"] => {
-    return self.annotate({ httpApiStatus: statusCode })
-  }
+  return <S extends Schema.Top>(self: S): S["Rebuild"] => self.annotate({ httpApiStatus: statusCode })
 }
 
 /**
@@ -203,8 +188,7 @@ export const Empty = (code: number): Schema.Void => Schema.Void.pipe(status(code
 export interface NoContent extends Schema.Void {}
 
 /**
- * A void schema with the HTTP status code 204.
- * This is used to represent empty responses with the status code 204.
+ * Schema for empty HTTP responses with status code 204.
  *
  * @category Empty
  * @since 4.0.0
@@ -220,8 +204,7 @@ export const NoContent: NoContent = Empty(204)
 export interface Created extends Schema.Void {}
 
 /**
- * A void schema with the HTTP status code 201.
- * This is used to represent empty responses with the status code 201.
+ * Schema for empty HTTP responses with status code 201.
  *
  * @category Empty
  * @since 4.0.0
@@ -237,8 +220,7 @@ export const Created: Created = Empty(201)
 export interface Accepted extends Schema.Void {}
 
 /**
- * A void schema with the HTTP status code 202.
- * This is used to represent empty responses with the status code 202.
+ * Schema for empty HTTP responses with status code 202.
  *
  * @category Empty
  * @since 4.0.0
@@ -274,12 +256,233 @@ export function asNoContent<S extends Schema.Top>(options: {
     return Schema.Void.pipe(
       Schema.decodeTo(
         Schema.toType(self),
-        Transformation.transform({
+        SchemaTransformation.transform({
           decode: options.decode,
           encode: constVoid
         })
       )
     )
+  }
+}
+
+type StreamMode = "sse" | "uint8array"
+
+/**
+ * Mode describing whether an SSE stream emits full events or raw data values.
+ *
+ * @category models
+ * @since 4.0.0
+ */
+export type StreamSseMode = "events" | "data"
+
+/**
+ * Schema for a Server-Sent Events success response.
+ *
+ * **Details**
+ *
+ * `events` describes successful application events emitted by the stream, and
+ * `error` describes typed stream failures that will be encoded by later
+ * endpoint/server/client integrations using the reserved failure event. If
+ * `error` is omitted, it defaults to `Schema.Never`. When `StreamSse` is
+ * constructed from `data`, handlers and clients expose raw data values while
+ * the server and client still use an SSE event schema internally.
+ *
+ * @category models
+ * @since 4.0.0
+ */
+export interface StreamSse<
+  Events extends Sse.EventCodec,
+  Error extends Schema.Top,
+  Value = Events["Type"]
+> extends
+  Schema.Bottom<
+    Stream.Stream<Value, Error["Type"], never>,
+    Stream.Stream<Value, Error["Type"], never>,
+    Events["DecodingServices"] | Error["DecodingServices"],
+    Events["EncodingServices"] | Error["EncodingServices"],
+    SchemaAST.Declaration,
+    StreamSse<Events, Error, Value>
+  >
+{
+  readonly "Rebuild": StreamSse<Events, Error, Value>
+  readonly [StreamSchemaTypeId]: typeof StreamSchemaTypeId
+  readonly _tag: "StreamSse"
+  readonly mode: "sse"
+  readonly sseMode: StreamSseMode
+  readonly contentType: string
+  readonly events: Events
+  readonly error: Error
+  readonly "~Value"?: Value | undefined
+}
+
+/**
+ * Event schema produced when {@link StreamSse} is constructed from a JSON data schema.
+ *
+ * @category models
+ * @since 4.0.0
+ */
+export interface SseEventFromData<Data extends Schema.Top> extends
+  Schema.Codec<
+    {
+      readonly id: string | undefined
+      readonly event: string
+      readonly data: Data["Type"]
+    },
+    {
+      readonly id?: string | undefined
+      readonly event?: string | undefined
+      readonly data: string
+    },
+    Data["DecodingServices"],
+    Data["EncodingServices"]
+  >
+{}
+
+/**
+ * Schema for a streaming `Uint8Array` success response.
+ *
+ * **Details**
+ *
+ * This declaration stores the response content type for later endpoint,
+ * server, client, and OpenAPI integrations. It is intentionally separate from
+ * the buffered `asUint8Array` response encoding.
+ *
+ * @category models
+ * @since 4.0.0
+ */
+export interface StreamUint8Array extends
+  Schema.Bottom<
+    Stream.Stream<Uint8Array, unknown, never>,
+    Stream.Stream<Uint8Array, unknown, never>,
+    never,
+    never,
+    SchemaAST.Declaration,
+    StreamUint8Array
+  >
+{
+  readonly "Rebuild": StreamUint8Array
+  readonly [StreamSchemaTypeId]: typeof StreamSchemaTypeId
+  readonly _tag: "StreamUint8Array"
+  readonly mode: "uint8array"
+  readonly contentType: string
+}
+
+/**
+ * Schema for a streaming HTTP API success response.
+ *
+ * @category models
+ * @since 4.0.0
+ */
+export type StreamSchema = StreamSse<Sse.EventCodec, Schema.Top, unknown> | StreamUint8Array
+
+/** @internal */
+export type StreamMetadata =
+  | {
+    readonly mode: "sse"
+    readonly sseMode: StreamSseMode
+    readonly contentType: string
+    readonly events: Sse.EventCodec
+    readonly error: Schema.Top
+  }
+  | {
+    readonly mode: "uint8array"
+    readonly contentType: string
+  }
+
+const streamSchema = Schema.declare(Stream.isStream)
+
+/**
+ * Creates a Server-Sent Events streaming success response schema.
+ *
+ * @category constructors
+ * @since 4.0.0
+ */
+export const StreamSse: {
+  <Events extends Sse.EventCodec, Error extends Schema.Top = Schema.Never>(options: {
+    readonly contentType?: string | undefined
+    readonly events: Events
+    readonly error?: Error | undefined
+  }): StreamSse<Events, Error, Events["Type"]>
+  <Data extends Schema.Top, Error extends Schema.Top = Schema.Never>(options: {
+    readonly contentType?: string | undefined
+    readonly data: Data
+    readonly error?: Error | undefined
+  }): StreamSse<SseEventFromData<Data>, Error, Data["Type"]>
+} = (options: {
+  readonly contentType?: string | undefined
+  readonly events?: Sse.EventCodec | undefined
+  readonly data?: Schema.Top | undefined
+  readonly error?: Schema.Top | undefined
+}): StreamSse<Sse.EventCodec, Schema.Top, unknown> => {
+  const events = options.events ?? (options.data === undefined ? undefined : Schema.Struct({
+    id: Schema.UndefinedOr(Schema.String),
+    event: Schema.String,
+    data: Schema.fromJsonString(options.data)
+  }))
+  if (events === undefined) {
+    throw new Error("StreamSse requires either an events schema or a data schema")
+  }
+  return Schema.make<StreamSse<Sse.EventCodec, Schema.Top, unknown>>(streamSchema.ast, {
+    [StreamSchemaTypeId]: StreamSchemaTypeId,
+    _tag: "StreamSse",
+    mode: "sse",
+    sseMode: options.events === undefined ? "data" : "events",
+    contentType: options.contentType ?? defaultStreamContentType("sse"),
+    events,
+    error: options.error ?? Schema.Never
+  })
+}
+
+/**
+ * Creates a streaming `Uint8Array` success response schema.
+ *
+ * @category constructors
+ * @since 4.0.0
+ */
+export const StreamUint8Array = (options?: {
+  readonly contentType?: string | undefined
+}): StreamUint8Array =>
+  Schema.make<StreamUint8Array>(streamSchema.ast, {
+    [StreamSchemaTypeId]: StreamSchemaTypeId,
+    _tag: "StreamUint8Array",
+    mode: "uint8array",
+    contentType: options?.contentType ?? defaultStreamContentType("uint8array")
+  })
+
+/** @internal */
+export const isStreamSchema = (u: unknown): u is StreamSchema =>
+  Schema.isSchema(u) && Predicate.hasProperty(u, StreamSchemaTypeId)
+
+/** @internal */
+export const isStreamSse = (u: unknown): u is StreamSse<Sse.EventCodec, Schema.Top, unknown> =>
+  isStreamSchema(u) && u._tag === "StreamSse"
+
+/** @internal */
+export const isStreamUint8Array = (u: unknown): u is StreamUint8Array =>
+  isStreamSchema(u) && u._tag === "StreamUint8Array"
+
+/** @internal */
+export function getStreamMetadata(self: StreamSchema): StreamMetadata {
+  return self._tag === "StreamSse" ?
+    {
+      mode: self.mode,
+      sseMode: self.sseMode,
+      contentType: self.contentType,
+      events: self.events,
+      error: self.error
+    } :
+    {
+      mode: self.mode,
+      contentType: self.contentType
+    }
+}
+
+function defaultStreamContentType(mode: StreamMode): string {
+  switch (mode) {
+    case "sse":
+      return "text/event-stream"
+    case "uint8array":
+      return "application/octet-stream"
   }
 }
 
@@ -472,18 +675,18 @@ export function asUint8Array(options?: {
  * @category predicates
  * @since 4.0.0
  */
-export const isNoContent = (ast: AST.AST): boolean => {
-  if (AST.isVoid(ast)) return true
-  const encoded = AST.toEncoded(ast)
-  if (AST.isVoid(encoded)) return true
+export const isNoContent = (ast: SchemaAST.AST): boolean => {
+  if (SchemaAST.isVoid(ast)) return true
+  const encoded = SchemaAST.toEncoded(ast)
+  if (SchemaAST.isVoid(encoded)) return true
   const target = ast.encoding?.[0].to
   if (target === undefined) return false
-  return AST.isVoid(target)
+  return SchemaAST.isVoid(target)
 }
 
-const resolveHttpApiEncoding = AST.resolveAt<Encoding>("~httpApiEncoding")
+const resolveHttpApiEncoding = SchemaAST.resolveAt<Encoding>("~httpApiEncoding")
 
-const resolveHttpApiStatus = AST.resolveAt<number>("httpApiStatus")
+const resolveHttpApiStatus = SchemaAST.resolveAt<number>("httpApiStatus")
 
 const defaultJsonEncoding: Encoding = {
   _tag: "Json",
@@ -494,19 +697,19 @@ const defaultUrlEncodedEncoding: Encoding = {
   contentType: "application/x-www-form-urlencoded"
 }
 
-function getEncoding(ast: AST.AST): Encoding {
+function getEncoding(ast: SchemaAST.AST): Encoding {
   return resolveHttpApiEncoding(ast) ?? defaultJsonEncoding
 }
 
 /** @internal */
-export function getPayloadEncoding(ast: AST.AST, method: HttpMethod): PayloadEncoding {
+export function getPayloadEncoding(ast: SchemaAST.AST, method: HttpMethod): PayloadEncoding {
   const encoding = resolveHttpApiEncoding(ast)
   if (encoding) return encoding
   return hasBody(method) ? defaultJsonEncoding : defaultUrlEncodedEncoding
 }
 
 /** @internal */
-export function getResponseEncoding(ast: AST.AST): ResponseEncoding {
+export function getResponseEncoding(ast: SchemaAST.AST): ResponseEncoding {
   const out = getEncoding(ast)
   if (out._tag === "Multipart") {
     throw new Error("Multipart is not supported in response")
@@ -515,11 +718,16 @@ export function getResponseEncoding(ast: AST.AST): ResponseEncoding {
 }
 
 /** @internal */
-export function getStatusSuccess(self: AST.AST): number {
+export function getStatusSuccess(self: SchemaAST.AST): number {
   return resolveHttpApiStatus(self) ?? 200
 }
 
 /** @internal */
-export function getStatusError(self: AST.AST): number {
+export function getStatusStream(self: StreamSchema): number {
+  return getStatusSuccess(self.ast)
+}
+
+/** @internal */
+export function getStatusError(self: SchemaAST.AST): number {
   return resolveHttpApiStatus(self) ?? 500
 }

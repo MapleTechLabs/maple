@@ -331,6 +331,11 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
  */
 const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 
+/** A single rule tag. Free-form, bounded so the list/group UI stays legible. */
+const TagString = Schema.String.check(Schema.isMaxLength(32))
+/** The tags array on a rule — capped to keep grouping and filtering manageable. */
+const RuleTags = Schema.Array(TagString).check(Schema.isMaxLength(20))
+
 export const AlertNotificationTemplateOverride = Schema.Struct({
 	title: Schema.optionalKey(Schema.NullOr(TemplateString)),
 	body: Schema.optionalKey(Schema.NullOr(TemplateString)),
@@ -394,6 +399,8 @@ export class AlertRuleDocument extends Schema.Class<AlertRuleDocument>("AlertRul
 	severity: AlertSeverity,
 	serviceNames: Schema.Array(Schema.String),
 	excludeServiceNames: Schema.Array(Schema.String),
+	/** Free-form tags used to group and filter rules in the alerts list. */
+	tags: Schema.Array(Schema.String),
 	groupBy: Schema.NullOr(AlertGroupBy),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
@@ -429,6 +436,7 @@ export class AlertRuleUpsertRequest extends Schema.Class<AlertRuleUpsertRequest>
 	severity: AlertSeverity,
 	serviceNames: Schema.optionalKey(Schema.Array(Schema.String)),
 	excludeServiceNames: Schema.optionalKey(Schema.Array(Schema.String)),
+	tags: Schema.optionalKey(RuleTags),
 	groupBy: Schema.optionalKey(Schema.NullOr(AlertGroupBy)),
 	signalType: AlertSignalType,
 	comparator: AlertComparator,
@@ -550,7 +558,7 @@ export class AlertValidationError extends Schema.TaggedErrorClass<AlertValidatio
 	{
 		message: Schema.String,
 		details: Schema.Array(Schema.String),
-		cause: Schema.optionalKey(Schema.Defect),
+		cause: Schema.optionalKey(Schema.Defect()),
 	},
 	{ httpApiStatus: 400 },
 ) {}

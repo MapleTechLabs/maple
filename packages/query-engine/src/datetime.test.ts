@@ -96,9 +96,11 @@ describe("bucketTimeline", () => {
 	})
 
 	it("keeps the trailing partial bucket (floors the end)", () => {
-		expect(bucketTimeline(Date.UTC(2026, 1, 1, 0, 0, 0), Date.UTC(2026, 1, 1, 0, 12, 30), 300)).toEqual(
-			["2026-02-01T00:00:00.000Z", "2026-02-01T00:05:00.000Z", "2026-02-01T00:10:00.000Z"],
-		)
+		expect(bucketTimeline(Date.UTC(2026, 1, 1, 0, 0, 0), Date.UTC(2026, 1, 1, 0, 12, 30), 300)).toEqual([
+			"2026-02-01T00:00:00.000Z",
+			"2026-02-01T00:05:00.000Z",
+			"2026-02-01T00:10:00.000Z",
+		])
 	})
 
 	it("returns a single bucket when the window is narrower than one bucket", () => {
@@ -108,8 +110,6 @@ describe("bucketTimeline", () => {
 	})
 
 	it("returns [] when the end precedes the start", () => {
-		expect(bucketTimeline(Date.UTC(2026, 1, 1, 0, 10, 0), Date.UTC(2026, 1, 1, 0, 0, 0), 300)).toEqual(
-			[],
-		)
+		expect(bucketTimeline(Date.UTC(2026, 1, 1, 0, 10, 0), Date.UTC(2026, 1, 1, 0, 0, 0), 300)).toEqual([])
 	})
 })

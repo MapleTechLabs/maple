@@ -7,7 +7,6 @@ import { resolveColorValue, isStatusCodePreset, type ColorByField } from "./colo
 
 interface TraceTimelineMinimapProps {
 	rootSpans: SpanNode[]
-	totalDurationMs: number
 	traceStartMs: number
 	traceEndMs: number
 	services: string[]
@@ -29,7 +28,7 @@ const NEUTRAL_MINIMAP_BG = "oklch(0.50 0.02 0)"
 function collectMinimapSpans(
 	rootSpans: SpanNode[],
 	traceStartMs: number,
-	totalDurationMs: number,
+	traceDurationMs: number,
 	services: string[],
 	colorBy: ColorByField,
 ): { spans: MinimapSpan[]; maxDepth: number } {
@@ -39,8 +38,10 @@ function collectMinimapSpans(
 
 	function visit(node: SpanNode) {
 		const startMs = new Date(node.startTime).getTime()
-		const leftPercent = ((startMs - traceStartMs) / totalDurationMs) * 100
-		const widthPercent = (node.durationMs / totalDurationMs) * 100
+		// traceDurationMs spans the full extent of the trace (max end − min start), so every
+		// span maps into 0–100% — no skewed span flies off the minimap.
+		const leftPercent = ((startMs - traceStartMs) / traceDurationMs) * 100
+		const widthPercent = (node.durationMs / traceDurationMs) * 100
 		maxDepth = Math.max(maxDepth, node.depth)
 
 		const isError = node.statusCode === "Error"
@@ -57,11 +58,12 @@ function collectMinimapSpans(
 			bgColor = hue === null ? NEUTRAL_MINIMAP_BG : `oklch(0.50 0.14 ${hue})`
 		}
 
+		const clampedLeft = Math.max(0, leftPercent)
 		spans.push({
 			spanId: node.spanId,
 			depth: node.depth,
-			leftPercent: Math.max(0, leftPercent),
-			widthPercent: Math.min(widthPercent, 100 - Math.max(0, leftPercent)),
+			leftPercent: clampedLeft,
+			widthPercent: Math.min(widthPercent, 100 - clampedLeft),
 			bgColor,
 		})
 
@@ -74,7 +76,6 @@ function collectMinimapSpans(
 
 export function TraceTimelineMinimap({
 	rootSpans,
-	totalDurationMs,
 	traceStartMs,
 	traceEndMs,
 	services,
@@ -89,15 +90,16 @@ export function TraceTimelineMinimap({
 		startViewport: ViewportState
 	} | null>(null)
 
+	const traceDuration = traceEndMs - traceStartMs
+
 	const { spans } = React.useMemo(
-		() => collectMinimapSpans(rootSpans, traceStartMs, totalDurationMs, services, colorBy),
-		[rootSpans, traceStartMs, totalDurationMs, services, colorBy],
+		() => collectMinimapSpans(rootSpans, traceStartMs, traceDuration, services, colorBy),
+		[rootSpans, traceStartMs, traceDuration, services, colorBy],
 	)
 
 	const ROW_H = 3
 
 	// Viewport rectangle position
-	const traceDuration = traceEndMs - traceStartMs
 	const vpLeftPercent = ((viewport.startMs - traceStartMs) / traceDuration) * 100
 	const vpWidthPercent = ((viewport.endMs - viewport.startMs) / traceDuration) * 100
 

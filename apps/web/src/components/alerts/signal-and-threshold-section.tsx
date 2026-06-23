@@ -11,13 +11,7 @@ import type { AlertComparator, AlertSeverity, AlertSignalType } from "@maple/dom
 import { Card } from "@maple/ui/components/ui/card"
 import { Input } from "@maple/ui/components/ui/input"
 import { Label } from "@maple/ui/components/ui/label"
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@maple/ui/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { cn } from "@maple/ui/utils"
 
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
@@ -162,7 +156,8 @@ const SEVERITY_OPTIONS: ReadonlyArray<{
 		label: "Warning",
 		selectedClass:
 			"border-severity-warn/60 bg-severity-warn/10 text-severity-warn hover:bg-severity-warn/15 focus-visible:ring-severity-warn/40",
-		dotClass: "bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--severity-warn)_25%,transparent)]",
+		dotClass:
+			"bg-severity-warn shadow-[0_0_0_2px_color-mix(in_oklch,var(--severity-warn)_25%,transparent)]",
 	},
 	{
 		value: "critical",
@@ -201,8 +196,7 @@ export function SignalAndThresholdSection({
 			signalType:
 				next === "builtin"
 					? "error_rate"
-					: (next as Exclude<SignalKind, "builtin"> &
-							AlertSignalType),
+					: (next as Exclude<SignalKind, "builtin"> & AlertSignalType),
 		}))
 	}
 
@@ -229,11 +223,7 @@ export function SignalAndThresholdSection({
 					/>
 				)}
 
-				<SignalSubConfig
-					form={form}
-					onChange={onChange}
-					autocompleteValues={autocompleteValues}
-				/>
+				<SignalSubConfig form={form} onChange={onChange} autocompleteValues={autocompleteValues} />
 
 				{/* Threshold row — comparator + value(s). Upper threshold stays mounted but
 				    disabled outside range mode so the grid never reflows. The
@@ -285,10 +275,7 @@ export function SignalAndThresholdSection({
 					<div className="min-w-0 space-y-1.5">
 						<Label
 							htmlFor="rule-threshold-upper"
-							className={cn(
-								"text-xs",
-								!rangeMode && "text-muted-foreground/60",
-							)}
+							className={cn("text-xs", !rangeMode && "text-muted-foreground/60")}
 						>
 							Upper
 							{isErrorRate && <span className="text-muted-foreground"> (%)</span>}
@@ -301,9 +288,7 @@ export function SignalAndThresholdSection({
 							type="number"
 							inputMode="decimal"
 							value={form.thresholdUpper}
-							onChange={(e) =>
-								onChange((c) => ({ ...c, thresholdUpper: e.target.value }))
-							}
+							onChange={(e) => onChange((c) => ({ ...c, thresholdUpper: e.target.value }))}
 							disabled={!rangeMode}
 							className={NUMERIC_INPUT_CLASS}
 							placeholder={rangeMode ? "0" : "—"}
@@ -328,20 +313,15 @@ export function SignalAndThresholdSection({
 						className="flex w-full items-center justify-between gap-2 text-left text-xs text-muted-foreground hover:text-foreground"
 						aria-expanded={advancedOpen}
 					>
-						<span className="font-medium uppercase tracking-wide">
-							Evaluation timing
-						</span>
+						<span className="font-medium uppercase tracking-wide">Evaluation timing</span>
 						<span className="flex items-center gap-1.5">
 							<span className="font-mono">
-								{form.windowMinutes}min · {form.consecutiveBreachesRequired}× ·
-								renotify {form.renotifyIntervalMinutes}min
+								{form.windowMinutes}min · {form.consecutiveBreachesRequired}× · renotify{" "}
+								{form.renotifyIntervalMinutes}min
 							</span>
 							<ChevronDownIcon
 								size={12}
-								className={cn(
-									"transition-transform",
-									advancedOpen && "rotate-180",
-								)}
+								className={cn("transition-transform", advancedOpen && "rotate-180")}
 							/>
 						</span>
 					</button>
@@ -352,9 +332,7 @@ export function SignalAndThresholdSection({
 								label="Window (min)"
 								hint="Aggregate window each check."
 								value={form.windowMinutes}
-								onChange={(value) =>
-									onChange((c) => ({ ...c, windowMinutes: value }))
-								}
+								onChange={(value) => onChange((c) => ({ ...c, windowMinutes: value }))}
 							/>
 							<NumericField
 								id="rule-consecutive-breaches"
@@ -373,9 +351,7 @@ export function SignalAndThresholdSection({
 								label="Min samples"
 								hint="Skip below this count."
 								value={form.minimumSampleCount}
-								onChange={(value) =>
-									onChange((c) => ({ ...c, minimumSampleCount: value }))
-								}
+								onChange={(value) => onChange((c) => ({ ...c, minimumSampleCount: value }))}
 							/>
 							<NumericField
 								id="rule-renotify"
@@ -482,9 +458,7 @@ function SeverityToggle({
 							"inline-flex h-7 items-center gap-1.5 rounded-[5px] border border-transparent px-2.5 text-xs font-medium",
 							"transition-[background-color,border-color,color] duration-150",
 							"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-							selected
-								? opt.selectedClass
-								: "text-muted-foreground hover:text-foreground",
+							selected ? opt.selectedClass : "text-muted-foreground hover:text-foreground",
 						)}
 					>
 						<span
@@ -503,11 +477,7 @@ function SeverityToggle({
 }
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
-	return (
-		<h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-			{children}
-		</h3>
-	)
+	return <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{children}</h3>
 }
 
 function NumericField({
@@ -565,13 +535,9 @@ function applyQueryDraftToForm(
 		queryAggregation: queryBuilderDraft.aggregation,
 		queryWhereClause: queryBuilderDraft.whereClause,
 		metricName:
-			queryBuilderDraft.dataSource === "metrics"
-				? queryBuilderDraft.metricName
-				: current.metricName,
+			queryBuilderDraft.dataSource === "metrics" ? queryBuilderDraft.metricName : current.metricName,
 		metricType:
-			queryBuilderDraft.dataSource === "metrics"
-				? queryBuilderDraft.metricType
-				: current.metricType,
+			queryBuilderDraft.dataSource === "metrics" ? queryBuilderDraft.metricType : current.metricType,
 	}
 }
 
@@ -619,11 +585,7 @@ function useAlertMetricSelectionOptions(query: QueryBuilderQueryDraft) {
 	return { metricSelectionOptions, setMetricSearch }
 }
 
-function AlertQueryPanel({
-	form,
-	onChange,
-	autocompleteValues,
-}: SignalAndThresholdSectionProps) {
+function AlertQueryPanel({ form, onChange, autocompleteValues }: SignalAndThresholdSectionProps) {
 	const query = form.queryBuilderDraft as QueryBuilderQueryDraft
 	const { metricSelectionOptions, setMetricSearch } = useAlertMetricSelectionOptions(query)
 
@@ -642,9 +604,7 @@ function AlertQueryPanel({
 			onMetricSearch={setMetricSearch}
 			autocompleteValues={autocompleteValues}
 			onUpdate={updateQuery}
-			onAggregationChange={(aggregation) =>
-				updateQuery((current) => ({ ...current, aggregation }))
-			}
+			onAggregationChange={(aggregation) => updateQuery((current) => ({ ...current, aggregation }))}
 			onMetricSelectionChange={(selection) =>
 				updateQuery((current) =>
 					current.dataSource === "metrics"
@@ -673,11 +633,7 @@ function AlertQueryPanel({
 	)
 }
 
-function SignalSubConfig({
-	form,
-	onChange,
-	autocompleteValues,
-}: SignalAndThresholdSectionProps) {
+function SignalSubConfig({ form, onChange, autocompleteValues }: SignalAndThresholdSectionProps) {
 	switch (form.signalType) {
 		case "apdex":
 			return (
@@ -690,9 +646,7 @@ function SignalSubConfig({
 							id="apdex-threshold"
 							type="number"
 							value={form.apdexThresholdMs}
-							onChange={(e) =>
-								onChange((c) => ({ ...c, apdexThresholdMs: e.target.value }))
-							}
+							onChange={(e) => onChange((c) => ({ ...c, apdexThresholdMs: e.target.value }))}
 							className={cn("w-[180px]", NUMERIC_INPUT_CLASS)}
 						/>
 					</div>
@@ -729,8 +683,7 @@ function SignalSubConfig({
 									value &&
 									onChange((c) => ({
 										...c,
-										rawQueryReducer:
-											value as RuleFormState["rawQueryReducer"],
+										rawQueryReducer: value as RuleFormState["rawQueryReducer"],
 									}))
 								}
 							>
@@ -738,13 +691,11 @@ function SignalSubConfig({
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
-									{Object.entries(RAW_QUERY_REDUCER_LABELS).map(
-										([val, label]) => (
-											<SelectItem key={val} value={val}>
-												{label}
-											</SelectItem>
-										),
-									)}
+									{Object.entries(RAW_QUERY_REDUCER_LABELS).map(([val, label]) => (
+										<SelectItem key={val} value={val}>
+											{label}
+										</SelectItem>
+									))}
 								</SelectContent>
 							</Select>
 						</div>

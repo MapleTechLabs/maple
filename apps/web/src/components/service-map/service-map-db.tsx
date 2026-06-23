@@ -11,7 +11,7 @@ import {
 	RedisIcon,
 } from "@/components/icons"
 
-export type DbCategory = "database" | "cache" | "queue" | "search"
+type DbCategory = "database" | "cache" | "queue" | "search"
 
 export interface DbDescriptor {
 	/** Coarse classification used for the node's silhouette label + fallback icon. */

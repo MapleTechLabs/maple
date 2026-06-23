@@ -14,12 +14,12 @@
 // ---------------------------------------------------------------------------
 
 import { Schema } from "effect"
-import type { CompiledQuery, CompiledQueryRowSchema } from "../compile"
-import { compileCH, unsafeCompiledQuery } from "../compile"
-import * as CH from "../expr"
-import { param } from "../param"
-import { from, fromQuery } from "../query"
-import { escapeClickHouseString } from "../../sql/sql-fragment"
+import type { CompiledQuery, CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
+import { compileCH, unsafeCompiledQuery } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery } from "@maple-dev/clickhouse-builder"
+import { escapeClickHouseString } from "@maple-dev/clickhouse-builder/sql"
 import { ServiceMapEdgesHourly, Traces } from "../tables"
 import { serviceMapEdgeJoinSQL } from "./service-map"
 
@@ -42,21 +42,20 @@ export interface ServiceMapEdgesHourlyOutput {
 	readonly SampleRateSum: number
 }
 
-const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesHourlyOutput> =
-	Schema.Struct({
-		OrgId: Schema.String,
-		Hour: Schema.String,
-		SourceService: Schema.String,
-		TargetService: Schema.String,
-		DeploymentEnv: Schema.String,
-		CallCount: CHNumber,
-		ErrorCount: CHNumber,
-		DurationSumMs: CHNumber,
-		MaxDurationMs: CHNumber,
-		SampledSpanCount: CHNumber,
-		UnsampledSpanCount: CHNumber,
-		SampleRateSum: CHNumber,
-	})
+const ServiceMapEdgesHourlyOutputSchema: CompiledQueryRowSchema<ServiceMapEdgesHourlyOutput> = Schema.Struct({
+	OrgId: Schema.String,
+	Hour: Schema.String,
+	SourceService: Schema.String,
+	TargetService: Schema.String,
+	DeploymentEnv: Schema.String,
+	CallCount: CHNumber,
+	ErrorCount: CHNumber,
+	DurationSumMs: CHNumber,
+	MaxDurationMs: CHNumber,
+	SampledSpanCount: CHNumber,
+	UnsampledSpanCount: CHNumber,
+	SampleRateSum: CHNumber,
+})
 
 export interface ServiceMapEdgesRollupParams {
 	readonly orgId: string
@@ -71,10 +70,9 @@ export interface ServiceMapEdgesExistingHour {
 	readonly hourTs: number
 }
 
-const ServiceMapEdgesExistingHourSchema: CompiledQueryRowSchema<ServiceMapEdgesExistingHour> =
-	Schema.Struct({
-		hourTs: CHNumber,
-	})
+const ServiceMapEdgesExistingHourSchema: CompiledQueryRowSchema<ServiceMapEdgesExistingHour> = Schema.Struct({
+	hourTs: CHNumber,
+})
 
 /**
  * SQL listing the distinct hours already present in `service_map_edges_hourly`
@@ -209,9 +207,7 @@ export function serviceMapResolutionsRollupSQL(
 		])
 
 	const query = fromQuery(parents, "p")
-		.innerJoinQuery(children, "c", (p, c) =>
-			p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)),
-		)
+		.innerJoinQuery(children, "c", (p, c) => p.SpanId.eq(c.ParentSpanId).and(p.TraceId.eq(c.TraceId)))
 		.select(($) => ({
 			OrgId: $.OrgId,
 			Hour: CH.toStartOfHour($.Timestamp),

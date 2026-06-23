@@ -1,19 +1,11 @@
 /**
- * Low-level Redis integration for the persistence modules.
+ * Redis support shared by persistence modules.
  *
- * This module defines the `Redis` service used by Redis-backed persistence,
- * persisted queues, and rate limiter stores. It adapts an external Redis
- * connection to Effect through `send` for raw commands and `eval` for typed
- * Lua scripts that are loaded with `SCRIPT LOAD` and executed with `EVALSHA`.
- *
- * The service does not create or manage Redis connections; callers provide a
- * command sender from their Redis client or pool. Higher-level stores layer on
- * key prefixes and store ids, so choose stable prefixes to avoid collisions
- * and remember that schema or primary-key changes can make previously persisted
- * JSON values fail to decode. Finite TTLs in the persistence stores are applied
- * with millisecond Redis expirations, while non-finite TTLs are stored without
- * expiration. Script parameters are stringified before execution, and the
- * script descriptor's key count controls how Redis splits `KEYS` from `ARGV`.
+ * This module defines a `Redis` service that can send Redis commands and run
+ * Lua scripts. It does not create a Redis client itself; callers provide a
+ * `send` function from their client or connection pool. The module also
+ * provides helpers for describing Lua scripts, loading them once, and running
+ * them later by their cached Redis id.
  *
  * @since 4.0.0
  */
@@ -71,14 +63,22 @@ export const make = Effect.fnUntraced(function*(
   >(
     script: Script<Config>
   ) =>
-  (...params: Config["params"]): Effect.Effect<Config["result"], RedisError> =>
-    Effect.flatMap(Cache.get(scriptCache, script), (sha) =>
+  (...params: Config["params"]): Effect.Effect<Config["result"], RedisError> => {
+    const evalSha = (sha: string) =>
       options.send<Config["result"]>(
         "EVALSHA",
         sha,
         script.numberOfKeys(...params).toString(),
         ...script.params(...params).map((param) => String(param))
-      ))
+      )
+    return Cache.get(scriptCache, script).pipe(
+      Effect.flatMap(evalSha),
+      Effect.catchIf(
+        (error) => String(error.cause).includes("NOSCRIPT"),
+        () => Cache.refresh(scriptCache, script).pipe(Effect.flatMap(evalSha))
+      )
+    )
+  }
 
   return identity<Redis["Service"]>({
     send: options.send,
@@ -97,7 +97,7 @@ const ErrorTypeId: ErrorTypeId = "~effect/persistence/Redis/RedisError"
  */
 export class RedisError extends Schema.ErrorClass<RedisError>(ErrorTypeId)({
   _tag: Schema.tag("RedisError"),
-  cause: Schema.Defect
+  cause: Schema.Defect()
 }) {
   /**
    * Marks this value as a Redis persistence error for runtime guards.

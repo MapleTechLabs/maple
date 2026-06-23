@@ -1,4 +1,4 @@
-import { Schema, SchemaRepresentation } from "effect"
+import { Redacted, Schema, SchemaRepresentation } from "effect"
 import { describe, it } from "vitest"
 import { deepStrictEqual, strictEqual } from "../../utils/assert.ts"
 
@@ -43,6 +43,13 @@ describe("toSchema", () => {
         assertToSchemaRoundtrip(
           { schema: Schema.String.check(Schema.isULID()) },
           `Schema.String.check(Schema.isULID())`
+        )
+      })
+
+      it("isGUID", () => {
+        assertToSchemaRoundtrip(
+          { schema: Schema.String.check(Schema.isGUID()) },
+          `Schema.String.check(Schema.isGUID())`
         )
       })
     })
@@ -90,10 +97,10 @@ describe("toSchema", () => {
     assertToSchemaRoundtrip(
       {
         schema: Schema.StructWithRest(Schema.Struct({ a: Schema.Number }), [
-          Schema.Record(Schema.String, Schema.Boolean)
+          Schema.Record(Schema.String, Schema.Number)
         ])
       },
-      `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Boolean)])`
+      `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Number)])`
     )
   })
 
@@ -228,6 +235,28 @@ describe("toSchema", () => {
       )
     })
 
+    it("Redacted options", () => {
+      const schema = Schema.Redacted(Schema.String, {
+        label: "password",
+        disallowJsonEncode: true
+      })
+      const document = SchemaRepresentation.fromAST(schema.ast)
+      const roundtrip = SchemaRepresentation.toSchema<typeof schema>(document, {
+        reviver: SchemaRepresentation.toSchemaDefaultReviver
+      })
+      const encode = Schema.encodeUnknownExit(Schema.toCodecJson(roundtrip))
+
+      strictEqual(
+        String(encode(Redacted.make("secret", { label: "password" }))),
+        `Failure(Cause([Fail(SchemaError(Cannot serialize Redacted with label: "password"))]))`
+      )
+      strictEqual(
+        String(encode(Redacted.make("secret", { label: "other" }))),
+        `Failure(Cause([Fail(SchemaError(Expected "password", got "other"
+  at ["label"]))]))`
+      )
+    })
+
     it("CauseReason", () => {
       assertToSchemaWithReviver(
         Schema.CauseReason(Schema.String, Schema.Number),
@@ -239,13 +268,6 @@ describe("toSchema", () => {
       assertToSchemaWithReviver(
         Schema.Cause(Schema.String, Schema.Number),
         `Schema.Cause(Schema.String, Schema.Number)`
-      )
-    })
-
-    it("Error", () => {
-      assertToSchemaWithReviver(
-        Schema.Error,
-        `Schema.Error`
       )
     })
 
@@ -379,10 +401,31 @@ describe("toSchema", () => {
       )
     })
 
-    it("ErrorWithStack", () => {
+    it("Error", () => {
       assertToSchemaWithReviver(
-        Schema.ErrorWithStack,
-        `Schema.ErrorWithStack`
+        Schema.Error(),
+        `Schema.Error()`
+      )
+    })
+
+    it("Error with stack", () => {
+      assertToSchemaWithReviver(
+        Schema.Error({ includeStack: true }),
+        `Schema.Error({"includeStack":true})`
+      )
+    })
+
+    it("Error with excluded cause", () => {
+      assertToSchemaWithReviver(
+        Schema.Error({ excludeCause: true }),
+        `Schema.Error({"excludeCause":true})`
+      )
+    })
+
+    it("Defect", () => {
+      assertToSchemaWithReviver(
+        Schema.Defect(),
+        `Schema.Json`
       )
     })
 

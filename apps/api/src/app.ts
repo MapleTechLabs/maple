@@ -10,6 +10,7 @@ import { HttpAnomaliesLive } from "./routes/anomalies.http"
 import { HttpErrorsLive } from "./routes/errors.http"
 import { HttpApiKeysLive } from "./routes/api-keys.http"
 import { HttpAuthLive, HttpAuthPublicLive } from "./routes/auth.http"
+import { HttpChatLive } from "./routes/chat.http"
 import { HttpCloudflareLogpushLive } from "./routes/cloudflare-logpush.http"
 import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
@@ -20,11 +21,11 @@ import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
 import { HttpObservabilityLive } from "./routes/observability.http"
 import { HttpOnboardingLive } from "./routes/onboarding.http"
 import { OAuthDiscoveryRouter } from "./routes/oauth-discovery.http"
-import { HttpOrgOpenRouterSettingsLive } from "./routes/org-openrouter-settings.http"
 import { HttpOrgClickHouseSettingsLive } from "./routes/org-clickhouse-settings.http"
 import { HttpOrganizationsLive } from "./routes/organizations.http"
 import { PrometheusScrapeProxyRouter } from "./routes/prometheus-scrape-proxy.http"
 import { ScraperInternalRouter } from "./routes/scraper-internal.http"
+import { VcsWebhookRouter } from "./routes/vcs-webhook.http"
 import { HttpQueryEngineLive } from "./routes/query-engine.http"
 import { HttpRecommendationIssuesLive } from "./routes/recommendation-issues.http"
 import { HttpScrapeTargetsLive } from "./routes/scrape-targets.http"
@@ -50,7 +51,6 @@ import { EmailService } from "./lib/EmailService"
 import { Env } from "./lib/Env"
 import { IngestAttributeMappingService } from "./services/IngestAttributeMappingService"
 import { OrgIngestKeysService } from "./services/OrgIngestKeysService"
-import { OrgOpenRouterSettingsService } from "./services/OrgOpenRouterSettingsService"
 import { OrgClickHouseSettingsService } from "./services/OrgClickHouseSettingsService"
 import { OrganizationService } from "./services/OrganizationService"
 import { QueryEngineService } from "./services/QueryEngineService"
@@ -59,12 +59,19 @@ import { RawSqlChartService } from "@maple/query-engine/runtime"
 import { PlanetScaleDiscoveryService } from "./services/PlanetScaleDiscoveryService"
 import { ScrapeTargetsService } from "./services/ScrapeTargetsService"
 import { WarehouseQueryService } from "./lib/WarehouseQueryService"
+import { OAuthStateRepository } from "./services/OAuthStateRepository"
+import { GithubAppClient } from "./services/vcs/vendor/github/GithubAppClient"
+import { GithubConnectService } from "./services/vcs/vendor/github/GithubConnectService"
+import { GithubHttp } from "./services/vcs/vendor/github/GithubHttp"
+import { GithubProvider } from "./services/vcs/vendor/github/GithubProvider"
+import { VcsCommitService } from "./services/vcs/VcsCommitService"
+import { VcsProviderRegistry } from "./services/vcs/VcsProviderRegistry"
+import { VcsRepository } from "./services/vcs/VcsRepository"
+import { VcsSyncQueue } from "./services/vcs/VcsSyncQueue"
 
-export const HealthRouter = HttpRouter.use((router) =>
-	router.add("GET", "/health", HttpServerResponse.text("OK")),
-)
+const HealthRouter = HttpRouter.use((router) => router.add("GET", "/health", HttpServerResponse.text("OK")))
 
-export const McpGetFallback = HttpRouter.use((router) =>
+const McpGetFallback = HttpRouter.use((router) =>
 	router.add("GET", "/mcp", HttpServerResponse.empty({ status: 405 })),
 )
 
@@ -73,13 +80,13 @@ export const McpGetFallback = HttpRouter.use((router) =>
 // script out of the deployed bundle (guards the 3 MB worker size limit, error
 // 10027). The `/docs` page now depends on jsDelivr being reachable from the
 // client browser.
-export const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
+const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
 	path: "/docs",
 })
 
-export const InfraLive = Env.layer
+const InfraLive = Env.layer
 
-export const CoreServicesLive = Layer.mergeAll(
+const CoreServicesLive = Layer.mergeAll(
 	AuthService.layer,
 	ApiKeysService.layer,
 	CloudflareLogpushService.layer,
@@ -87,7 +94,6 @@ export const CoreServicesLive = Layer.mergeAll(
 	HazelOAuthService.layer,
 	OnboardingService.layer,
 	OrgIngestKeysService.layer,
-	OrgOpenRouterSettingsService.layer,
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
 	// Shared with ScrapeTargetsService via layer memoization so the proxy and
@@ -97,64 +103,76 @@ export const CoreServicesLive = Layer.mergeAll(
 	IngestAttributeMappingService.layer,
 ).pipe(Layer.provideMerge(InfraLive))
 
-export const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const DemoServiceLive = DemoService.layer.pipe(
+const DemoServiceLive = DemoService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive)),
 )
 
 // EdgeCacheService's storage backend (Workers KV / in-memory) is injected via
 // the CacheBackend port. Define the wired layer once so it memoizes to a single
 // instance shared by the bucket cache and the direct edge cache.
-export const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
+const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 
-export const BucketCacheServiceLive = BucketCacheService.layer.pipe(
-	Layer.provideMerge(EdgeCacheServiceLive),
-)
+const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provideMerge(EdgeCacheServiceLive))
 
-export const QueryEngineServiceLive = QueryEngineService.layer.pipe(
+const QueryEngineServiceLive = QueryEngineService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
 	Layer.provideMerge(EdgeCacheServiceLive),
 	Layer.provideMerge(BucketCacheServiceLive),
 )
 
-export const AlertsServiceLive = AlertsService.layer.pipe(
+const AlertsServiceLive = AlertsService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, QueryEngineServiceLive, AlertRuntime.layer)),
 )
 
-export const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const ErrorsServiceLive = ErrorsService.layer.pipe(
+const ErrorsServiceLive = ErrorsService.layer.pipe(
 	Layer.provideMerge(
 		Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, NotificationDispatcherLive),
 	),
 )
 
-export const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
+const RecommendationIssueServiceLive = RecommendationIssueService.layer.pipe(
 	Layer.provideMerge(WarehouseQueryServiceLive),
 )
 
-export const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
+const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(CoreServicesLive, WarehouseQueryServiceLive, EdgeCacheServiceLive)),
 )
 
-export const AiTriageServiceLive = AiTriageService.layer.pipe(
-	Layer.provideMerge(CoreServicesLive),
-)
+const AiTriageServiceLive = AiTriageService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
-export const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
+const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
-export const DigestServiceLive = DigestService.layer.pipe(
+const DigestServiceLive = DigestService.layer.pipe(
 	Layer.provideMerge(Layer.mergeAll(InfraLive, WarehouseQueryServiceLive, EmailServiceLive)),
 )
+
+// VCS service wiring for the fetch-path worker. VcsSyncService (the sync
+// orchestrator) lives only in vcs-sync-runtime.ts — not here. Database /
+// WorkerEnvironment are provided at worker scope (like CoreServicesLive).
+const GithubAppClientLive = GithubAppClient.layer.pipe(Layer.provide(GithubHttp.layer))
+const GithubProviderLive = GithubProvider.layer.pipe(Layer.provide(GithubAppClientLive))
+
+const VcsDataLive = Layer.mergeAll(VcsRepository.layer, OAuthStateRepository.layer, VcsSyncQueue.layer)
+
+const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
+
+const VcsServicesLive = Layer.mergeAll(
+	VcsDataLive,
+	VcsProviderRegistryLive,
+	// OAuth connect flow — needs VcsDataLive + GithubAppClient for App-JWT installation lookup.
+	GithubConnectService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, GithubAppClientLive))),
+	// Routed via VcsProviderRegistry so no provider module is imported directly.
+	VcsCommitService.layer.pipe(Layer.provide(Layer.mergeAll(VcsDataLive, VcsProviderRegistryLive))),
+).pipe(Layer.provideMerge(InfraLive))
 
 export const MainLive = Layer.mergeAll(
 	CoreServicesLive,
 	WarehouseQueryServiceLive,
+	EdgeCacheServiceLive,
 	QueryEngineServiceLive,
 	AlertsServiceLive,
 	AnomalyDetectionServiceLive,
@@ -163,13 +181,14 @@ export const MainLive = Layer.mergeAll(
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
 	DemoServiceLive,
+	VcsServicesLive,
 	RawSqlChartService.layer,
 )
 
-export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
+const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive)),
+	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive)),
 	Layer.provide(HttpApiKeysLive),
 	Layer.provide(HttpAlertsLive),
 	Layer.provide(HttpErrorsLive),
@@ -182,7 +201,6 @@ export const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpObservabilityLive),
 	Layer.provide(HttpOnboardingLive),
-	Layer.provide(HttpOrgOpenRouterSettingsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpScrapeTargetsLive),
@@ -203,6 +221,7 @@ export const AllRoutes = Layer.mergeAll(
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,
 	ScraperInternalRouter,
+	VcsWebhookRouter,
 	McpLive,
 	HealthRouter,
 	McpGetFallback,

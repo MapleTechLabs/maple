@@ -1,23 +1,10 @@
 /**
- * Parent-side browser support for Effect workers.
+ * Parent-side browser platform for Effect workers.
  *
- * This module provides the `WorkerPlatform` used by browser applications that
- * spawn or connect to `Worker`, `SharedWorker`, and `MessagePort` endpoints
- * through Effect's worker protocol. Pair it with `BrowserWorkerRunner` in the
- * worker entrypoint when building worker-backed RPC clients, moving CPU-bound
- * work off the main thread, isolating browser-only services, or adapting an
- * existing `MessageChannel` in tests and custom transports.
- *
- * Dedicated workers communicate through the worker object itself, while shared
- * workers communicate through `worker.port`; raw `MessagePort` values are also
- * accepted and are started when supported. Messages are posted with the browser
- * structured-clone algorithm, so payloads must be cloneable by the target
- * runtime. Transfer lists can avoid copying values such as `ArrayBuffer` or
- * `MessagePort`, but transferring moves ownership away from the sender and
- * invalid or mismatched transferables can fail the send. Scope finalization
- * sends the worker close signal over the port; the application that created a
- * dedicated `Worker` remains responsible for any broader lifecycle such as
- * terminating it.
+ * `layerPlatform` provides the `WorkerPlatform` used to communicate with a
+ * browser `Worker`, `SharedWorker`, or `MessagePort` through Effect's worker
+ * protocol. `layer` combines that platform with a `Spawner` built from a
+ * callback that creates or returns the worker endpoint for each worker id.
  *
  * @since 4.0.0
  */
@@ -30,6 +17,23 @@ import { WorkerError, WorkerReceiveError } from "effect/unstable/workers/WorkerE
 
 /**
  * Creates browser worker layers by combining the default `WorkerPlatform` with a spawner for `Worker`, `SharedWorker`, or `MessagePort` instances.
+ *
+ * **When to use**
+ *
+ * Use when you need both the browser `WorkerPlatform` and a `Spawner` from one
+ * layer.
+ *
+ * **Details**
+ *
+ * The `spawn` callback receives the numeric worker id and may return a
+ * `Worker`, `SharedWorker`, or `MessagePort`.
+ *
+ * **Gotchas**
+ *
+ * Scope finalization sends the worker close protocol over the port. Dedicated
+ * workers created by `spawn` are not terminated by this layer.
+ *
+ * @see {@link layerPlatform} for providing only the browser worker platform
  *
  * @category layers
  * @since 4.0.0

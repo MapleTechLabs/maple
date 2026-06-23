@@ -133,7 +133,9 @@ describe("MapleFlush.make (client)", () => {
 		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
 		const attrs = (
 			traceCall.body as {
-				resourceSpans: Array<{ resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> } }>
+				resourceSpans: Array<{
+					resource: { attributes: Array<{ key: string; value: { stringValue?: string } }> }
+				}>
 			}
 		).resourceSpans[0].resource.attributes
 		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
@@ -165,7 +167,11 @@ describe("MapleFlush.make (client)", () => {
 		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))!
 		const span = (
 			traceCall.body as {
-				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }> }> }>
+				resourceSpans: Array<{
+					scopeSpans: Array<{
+						spans: Array<{ attributes: Array<{ key: string; value: { stringValue?: string } }> }>
+					}>
+				}>
 			}
 		).resourceSpans[0].scopeSpans[0].spans[0]
 		const sessionAttr = span.attributes.find((a) => a.key === "session.id")

@@ -1,21 +1,13 @@
 /**
- * The `RcMap` module provides a scoped, reference-counted map for sharing
- * resources by key. It is useful when many fibers may request the same
- * resource, such as a connection, client, session, or cached handle, and the
- * resource should be acquired once, reused while it has active references, and
- * released automatically when it is no longer needed.
+ * Shares scoped resources by key and releases them when no one is using them.
  *
- * Each key is resolved with a user-provided lookup effect on first access via
- * {@link get}. Further accesses to the same key share the in-flight or acquired
- * resource and increment its reference count for the caller's current
- * `Scope`. When those scopes close, references are released; resources can be
- * closed immediately, kept alive for an idle time-to-live, invalidated
- * explicitly, or bounded by a maximum capacity.
- *
- * `RcMap` is designed for Effect resource lifecycles rather than general
- * mutable caching. The map itself is scoped, lookups require a `Scope`, and
- * complex keys should provide `Equal` / `Hash` behavior when they need
- * value-based lookup semantics.
+ * An `RcMap` runs a lookup effect the first time a key is requested, shares the
+ * in-progress or acquired resource with other callers for the same key, and
+ * tracks each caller through its current `Scope`. When the last scope for a key
+ * closes, the resource can be released, kept alive for an idle time, or removed
+ * by capacity limits or explicit invalidation. It is meant for resource
+ * lifecycles such as clients, sessions, and connections, not as a general
+ * mutable cache.
  *
  * @since 3.5.0
  */
@@ -39,6 +31,11 @@ const TypeId = "~effect/RcMap"
  * An `RcMap` is a reference-counted map data structure that manages the lifecycle
  * of resources indexed by keys. Resources are lazily acquired and automatically
  * released when no longer in use.
+ *
+ * **When to use**
+ *
+ * Use to share scoped resources by key while automatically releasing them after
+ * their last active reference is gone.
  *
  * **Example** (Inspecting a reference-counted map)
  *
@@ -67,6 +64,9 @@ const TypeId = "~effect/RcMap"
  * }).pipe(Effect.scoped)
  * ```
  *
+ * @see {@link make} for creating an `RcMap`
+ * @see {@link get} for acquiring or retaining a resource by key
+ *
  * @category models
  * @since 3.5.0
  */
@@ -84,6 +84,15 @@ export interface RcMap<in out K, in out A, in out E = never> extends Pipeable {
  * Represents the internal state of an RcMap, which can be either Open (active)
  * or Closed (shutdown and no longer accepting operations).
  *
+ * **When to use**
+ *
+ * Use when typing code that inspects an `RcMap`'s `state` field and narrows
+ * between open and closed lifecycle states.
+ *
+ * @see {@link RcMap} for the map value that exposes this state
+ * @see {@link State.Open} for the active state with entries
+ * @see {@link State.Closed} for the shutdown state
+ *
  * @category models
  * @since 4.0.0
  */
@@ -92,12 +101,22 @@ export type State<K, A, E> = State.Open<K, A, E> | State.Closed
 /**
  * Namespace containing the internal state types for RcMap.
  *
+ * **When to use**
+ *
+ * Use when referring to the concrete open, closed, and entry state shapes used
+ * by `RcMap`.
+ *
  * @since 4.0.0
  */
 export declare namespace State {
   /**
    * Represents the open/active state of an RcMap, containing the actual
    * resource map that stores entries.
+   *
+   * **When to use**
+   *
+   * Use when handling an `RcMap` that can still accept operations and contains
+   * stored entries.
    *
    * @category models
    * @since 4.0.0
@@ -111,6 +130,10 @@ export declare namespace State {
    * Represents the closed state of an RcMap, indicating that the map has been
    * shut down and will no longer accept new operations.
    *
+   * **When to use**
+   *
+   * Use when handling an `RcMap` after its owning scope has closed.
+   *
    * @category models
    * @since 4.0.0
    */
@@ -121,6 +144,11 @@ export declare namespace State {
   /**
    * Represents an individual entry in the RcMap, containing the resource's
    * metadata including reference count, expiration time, and lifecycle management.
+   *
+   * **When to use**
+   *
+   * Use when inspecting the stored resource, reference count, and idle lifecycle
+   * metadata for a single key.
    *
    * @category models
    * @since 4.0.0
@@ -159,9 +187,14 @@ const makeUnsafe = <K, A, E>(options: {
 })
 
 /**
- * An `RcMap` can contain multiple reference counted resources that can be indexed
+ * Creates an `RcMap` that can contain multiple reference counted resources that can be indexed
  * by a key. The resources are lazily acquired on the first call to `get` and
  * released when the last reference is released.
+ *
+ * **When to use**
+ *
+ * Use to create a scoped reference-counted map for resources that should be
+ * acquired once per key and shared while in use.
  *
  * **Details**
  *
@@ -192,6 +225,9 @@ const makeUnsafe = <K, A, E>(options: {
  *   )
  * })
  * ```
+ *
+ * @see {@link get} for acquiring or retaining a resource by key
+ * @see {@link invalidate} for removing a resource from the map
  *
  * @category models
  * @since 3.5.0
@@ -250,6 +286,10 @@ export const make: {
  * Gets the resource for a key, acquiring it with the map's lookup function when
  * the key is not already cached.
  *
+ * **When to use**
+ *
+ * Use to acquire or retain the resource for a key within the current scope.
+ *
  * **Details**
  *
  * The resource's reference count is incremented for the current `Scope`, and a
@@ -276,6 +316,9 @@ export const make: {
  *   console.log(resource) // "Resource: database"
  * }).pipe(Effect.scoped)
  * ```
+ *
+ * @see {@link make} for creating the reference-counted map
+ * @see {@link invalidate} for removing a resource by key
  *
  * @category combinators
  * @since 3.5.0
@@ -374,6 +417,10 @@ const release = <K, A, E>(self: RcMap<K, A, E>, key: K, entry: State.Entry<A, E>
 /**
  * Returns an iterable of all keys currently stored in the `RcMap`.
  *
+ * **When to use**
+ *
+ * Use to inspect which keys currently have stored resources in an `RcMap`.
+ *
  * **Details**
  *
  * If the `RcMap` has been closed, the effect is interrupted.
@@ -399,6 +446,8 @@ const release = <K, A, E>(self: RcMap<K, A, E>, key: K, entry: State.Entry<A, E>
  * }).pipe(Effect.scoped)
  * ```
  *
+ * @see {@link has} for checking one key without enumerating all keys
+ *
  * @category combinators
  * @since 3.8.0
  */
@@ -411,6 +460,10 @@ export const keys = <K, A, E>(self: RcMap<K, A, E>): Effect.Effect<Iterable<K>> 
 /**
  * Invalidates and removes a specific key from the RcMap. If the resource is not
  * currently in use (reference count is 0), it will be immediately released.
+ *
+ * **When to use**
+ *
+ * Use to remove a resource by key so the next access performs a fresh lookup.
  *
  * **Example** (Invalidating a resource)
  *
@@ -438,6 +491,9 @@ export const keys = <K, A, E>(self: RcMap<K, A, E>): Effect.Effect<Iterable<K>> 
  * }).pipe(Effect.scoped)
  * ```
  *
+ * @see {@link get} for acquiring or retaining the resource for a key
+ * @see {@link touch} for extending the idle lifetime without removing the entry
+ *
  * @category combinators
  * @since 3.13.0
  */
@@ -462,10 +518,22 @@ export const invalidate: {
  * Returns whether the `RcMap` currently contains an entry for the specified
  * key.
  *
+ * **When to use**
+ *
+ * Use to check whether a key is already present in an `RcMap` without running
+ * the lookup function or acquiring a missing resource.
+ *
  * **Details**
  *
- * This operation only checks the current map state; it does not run the lookup
- * function or acquire a missing resource. Closed maps return `false`.
+ * This operation only checks the current map state.
+ *
+ * **Gotchas**
+ *
+ * Closed maps return `false`, so `false` does not distinguish a missing key
+ * from a closed map.
+ *
+ * @see {@link get} for acquiring or retaining the resource for a key
+ * @see {@link keys} for enumerating all currently stored keys
  *
  * @category combinators
  * @since 3.17.7
@@ -486,6 +554,10 @@ export const has: {
  * Extends the idle time for a resource in the RcMap. If the RcMap has an
  * `idleTimeToLive` configured, calling `touch` will reset the expiration
  * timer for the specified key.
+ *
+ * **When to use**
+ *
+ * Use to keep an idle resource alive longer without acquiring a new reference.
  *
  * **Example** (Extending resource idle time)
  *
@@ -513,6 +585,8 @@ export const has: {
  *   // from the time it was touched
  * }).pipe(Effect.scoped)
  * ```
+ *
+ * @see {@link invalidate} for removing the resource instead of extending it
  *
  * @category combinators
  * @since 3.13.0

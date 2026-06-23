@@ -13,7 +13,6 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
-import type { HttpServerError } from "effect/unstable/http/HttpServerError"
 import * as Socket from "effect/unstable/socket/Socket"
 import type { HttpEffect } from "./http.ts"
 import { fromCloudflareFetcher } from "./fetcher.ts"
@@ -60,7 +59,7 @@ export class RpcCallError extends Data.TaggedError("@maple/effect-cloudflare/Rpc
 	}
 }
 
-export class RpcRemoteError extends Data.TaggedError("@maple/effect-cloudflare/RpcRemoteError")<{
+class RpcRemoteError extends Data.TaggedError("@maple/effect-cloudflare/RpcRemoteError")<{
 	readonly error: unknown
 }> {}
 
@@ -412,7 +411,3 @@ export const toRpcStream = (stream: Stream.Stream<any, any, any>) =>
 			return Effect.die(Cause.squash(cause))
 		}),
 	)
-
-// The HttpServerError import is kept for consumers that need it in type
-// positions (e.g. DurableObjectStub signatures). Export re-exports below.
-export type { HttpServerError }

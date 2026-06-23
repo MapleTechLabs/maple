@@ -80,13 +80,17 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 							</TableCell>
 							<TableCell
 								className="tabular-nums text-muted-foreground"
-								title={new Date(normalizeTimestampInput(incident.firstTriggeredAt)).toLocaleString()}
+								title={new Date(
+									normalizeTimestampInput(incident.firstTriggeredAt),
+								).toLocaleString()}
 							>
 								{formatRelativeTime(incident.firstTriggeredAt)}
 							</TableCell>
 							<TableCell
 								className="tabular-nums"
-								title={new Date(normalizeTimestampInput(incident.lastTriggeredAt)).toLocaleString()}
+								title={new Date(
+									normalizeTimestampInput(incident.lastTriggeredAt),
+								).toLocaleString()}
 							>
 								{formatRelativeTime(incident.lastTriggeredAt)}
 							</TableCell>

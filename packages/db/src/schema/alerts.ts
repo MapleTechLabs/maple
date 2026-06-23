@@ -57,6 +57,8 @@ export const alertRules = pgTable(
 		severity: text("severity").notNull(),
 		serviceNamesJson: jsonb("service_names_json").$type<ReadonlyArray<string>>(),
 		excludeServiceNamesJson: jsonb("exclude_service_names_json").$type<ReadonlyArray<string>>(),
+		/** JSON-encoded `string[]` of free-form tags used to group and filter rules. */
+		tagsJson: jsonb("tags_json").$type<ReadonlyArray<string>>(),
 		signalType: text("signal_type").notNull(),
 		comparator: text("comparator").notNull(),
 		threshold: doublePrecision("threshold").notNull(),

@@ -203,10 +203,7 @@ function statsToData(stats: QueryStats): InspectChartQueryStats {
 // A real grouping was requested when the draft enables groupBy and lists at
 // least one token that isn't the ungrouped sentinel (`none`/`all`). Used to
 // distinguish an intentional ungrouped chart from a grouping that collapsed.
-function isGroupByRequested(draft: {
-	addOns?: { groupBy?: boolean }
-	groupBy?: readonly string[]
-}): boolean {
+function isGroupByRequested(draft: { addOns?: { groupBy?: boolean }; groupBy?: readonly string[] }): boolean {
 	if (!draft.addOns?.groupBy) return false
 	return (draft.groupBy ?? []).some((g) => {
 		const t = g.trim().toLowerCase()
@@ -258,7 +255,9 @@ const metricExistsInCatalog = Effect.fn("metricExistsInCatalog")(function* (
 		})
 		.pipe(
 			Effect.map((resp) =>
-				(resp.data as ReadonlyArray<{ metricName?: string }>).some((m) => m.metricName === metricName),
+				(resp.data as ReadonlyArray<{ metricName?: string }>).some(
+					(m) => m.metricName === metricName,
+				),
 			),
 			Effect.orElseSucceed(() => true),
 		)

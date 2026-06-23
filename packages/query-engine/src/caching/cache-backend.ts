@@ -16,6 +16,7 @@ export interface EdgeCacheBackend {
 		ttlSeconds: number,
 		nowMs: number,
 	) => Promise<void>
+	readonly delete: (bucket: string, hash: string) => Promise<void>
 }
 
 /** Injected edge-cache storage backend (Workers KV in prod, in-memory in tests/dev). */
@@ -48,6 +49,9 @@ export const makeMemoryBackend = (): EdgeCacheBackend => {
 				value,
 				expiresAt: nowMs + ttlSeconds * 1000,
 			})
+		},
+		delete: async (bucket, hash) => {
+			store.delete(composite(bucket, hash))
 		},
 	}
 }

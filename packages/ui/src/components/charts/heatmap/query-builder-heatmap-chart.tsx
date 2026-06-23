@@ -221,10 +221,7 @@ function computeLayout(
 	if (containerW <= 0 || containerH <= 0) return null
 	if (xValues.length === 0 || yValues.length === 0) return null
 
-	const longestYChars = yValues.reduce(
-		(m, v) => Math.max(m, shortenYLabel(v, allYIso).length),
-		0,
-	)
+	const longestYChars = yValues.reduce((m, v) => Math.max(m, shortenYLabel(v, allYIso).length), 0)
 	const yLabelW = clamp(longestYChars * LABEL_CHAR_PX + 10, Y_LABEL_MIN_PX, Y_LABEL_MAX_PX)
 
 	const availW = containerW - yLabelW - PLOT_PAD_X * 2

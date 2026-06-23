@@ -79,16 +79,26 @@ export function ParameterDialog({
 								type="text"
 								placeholder={param.placeholder}
 								value={values[param.key] ?? ""}
-								onChange={(e) => setValues((prev) => ({ ...prev, [param.key]: e.target.value }))}
+								onChange={(e) =>
+									setValues((prev) => ({ ...prev, [param.key]: e.target.value }))
+								}
 								disabled={submitting}
 							/>
 							{param.description && (
-								<span className="text-[10px] text-dim leading-relaxed">{param.description}</span>
+								<span className="text-[10px] text-dim leading-relaxed">
+									{param.description}
+								</span>
 							)}
 						</div>
 					))}
 					<DialogFooter>
-						<Button type="button" variant="outline" size="sm" onClick={onCancel} disabled={submitting}>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={onCancel}
+							disabled={submitting}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" size="sm" disabled={!canSubmit}>

@@ -73,9 +73,9 @@ export interface CodeGenerator {
 }
 
 /**
- * Context service tag for generating Effect client code from OpenAPI specifications.
+ * Service tag for generating Effect client code from OpenAPI specifications.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const CodeGenerator: Context.Service<CodeGenerator, CodeGenerator> = Context.Service(

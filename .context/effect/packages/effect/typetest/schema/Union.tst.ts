@@ -1,4 +1,4 @@
-import { Effect, Schema, Tuple } from "effect"
+import { Effect, hole, Schema, Tuple } from "effect"
 import type { Array as Arr } from "effect"
 import { describe, expect, it } from "tstyche"
 
@@ -124,6 +124,23 @@ describe("Union", () => {
         expect(A).type.toBe<Schema.TaggedStruct<"A", { readonly a: Schema.String }>>()
         expect(B).type.toBe<Schema.TaggedStruct<"B", { readonly b: Schema.FiniteFromString }>>()
         expect(C).type.toBe<Schema.TaggedStruct<"C", { readonly c: Schema.Boolean }>>()
+      })
+
+      it("isAnyOf should narrow custom tags", () => {
+        const schema = Schema.Union([
+          Schema.Struct({ kind: Schema.tag("a"), a: Schema.Number }),
+          Schema.Struct({ kind: Schema.tag("b"), b: Schema.String }),
+          Schema.Struct({ kind: Schema.tag("c"), c: Schema.Boolean })
+        ]).pipe(Schema.toTaggedUnion("kind"))
+
+        const value = hole<Schema.Schema.Type<typeof schema>>()
+
+        if (schema.isAnyOf(["a", "b"])(value)) {
+          expect(value).type.toBe<
+            | { readonly kind: "a"; readonly a: number }
+            | { readonly kind: "b"; readonly b: string }
+          >()
+        }
       })
     })
 

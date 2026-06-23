@@ -4,13 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@maple/ui/components/ui/sidebar"
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "@maple/ui/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { Button } from "@maple/ui/components/ui/button"
 import { useIsMobile } from "@maple/ui/hooks/use-mobile"
 import { ChevronDownIcon, LinkIcon, PlusIcon } from "@/components/icons"
@@ -18,12 +12,9 @@ import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { useChatTabs, type ChatTab } from "@/hooks/use-chat-tabs"
 import { ChatSidebar } from "./chat-sidebar"
 import { ChatConversation } from "./chat-conversation"
+import { FlueClientProvider } from "./flue-client-provider"
 import { alertTabId, alertTabTitle, type AlertContext } from "./alert-context"
-import {
-	widgetFixTabId,
-	widgetFixTabTitle,
-	type WidgetFixContext,
-} from "./widget-fix-context"
+import { widgetFixTabId, widgetFixTabTitle, type WidgetFixContext } from "./widget-fix-context"
 
 interface ChatPageProps {
 	urlTabId?: string
@@ -45,17 +36,20 @@ export function ChatPage({
 }: ChatPageProps) {
 	const { orgId } = useAuth()
 	if (!orgId) return null
-	if (sharedTabId) {
-		return <SharedChatView tabId={sharedTabId} title={sharedTitle} />
-	}
 	return (
-		<ChatPageInner
-			orgId={orgId}
-			urlTabId={urlTabId}
-			mode={mode}
-			alertContext={alertContext}
-			widgetFixContext={widgetFixContext}
-		/>
+		<FlueClientProvider>
+			{sharedTabId ? (
+				<SharedChatView tabId={sharedTabId} title={sharedTitle} />
+			) : (
+				<ChatPageInner
+					orgId={orgId}
+					urlTabId={urlTabId}
+					mode={mode}
+					alertContext={alertContext}
+					widgetFixContext={widgetFixContext}
+				/>
+			)}
+		</FlueClientProvider>
 	)
 }
 
@@ -67,15 +61,11 @@ interface ChatPageInnerProps {
 	widgetFixContext?: WidgetFixContext
 }
 
-function ChatPageInner({
-	orgId,
-	urlTabId,
-	mode,
-	alertContext,
-	widgetFixContext,
-}: ChatPageInnerProps) {
-	const { tabs, activeTabId, createTab, closeTab, setActiveTab, renameTab, ensureTab } =
-		useChatTabs(orgId, urlTabId)
+function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }: ChatPageInnerProps) {
+	const { tabs, activeTabId, createTab, closeTab, setActiveTab, renameTab, ensureTab } = useChatTabs(
+		orgId,
+		urlTabId,
+	)
 
 	const isMobile = useIsMobile()
 	const [convListOpen, setConvListOpen] = useState(false)
@@ -160,10 +150,7 @@ function ChatPageInner({
 				const isAlertTab = tab.id === alertTab
 				const isWidgetFixTab = tab.id === widgetFixTab
 				return (
-					<div
-						key={tab.id}
-						className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}
-					>
+					<div key={tab.id} className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}>
 						<Suspense fallback={<ChatConversationFallback />}>
 							<ChatConversation
 								tabId={tab.id}

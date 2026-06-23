@@ -16,10 +16,10 @@
 		"@expo-google-fonts/geist-mono": "^0.4.1",
 		"@expo/metro-runtime": "^55.0.9",
 		"@expo/ui": "~55.0.10",
+		"@flue/sdk": "1.0.0-beta.1",
 		"@legendapp/list": "^2.0.19",
 		"@react-native-async-storage/async-storage": "2.2.0",
 		"@tanstack/react-query": "^5.95.2",
-		"ai": "^6.0.196",
 		"expo": "~55.0.12",
 		"expo-auth-session": "~55.0.12",
 		"expo-constants": "~55.0.12",
@@ -47,6 +47,6 @@
 	"devDependencies": {
 		"@types/react": "~19.2.14",
 		"babel-preset-expo": "^55.0.16",
-		"typescript": "~5.9.2"
+		"typescript": "^6.0.3"
 	}
 }

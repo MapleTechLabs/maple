@@ -42,9 +42,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				}
 
 				if (info.sortingKey) {
-					const key = Array.isArray(info.sortingKey)
-						? info.sortingKey.join(", ")
-						: info.sortingKey
+					const key = Array.isArray(info.sortingKey) ? info.sortingKey.join(", ") : info.sortingKey
 					lines.push("", `### Sorting key`, `\`(${key})\` — filter on these for fast queries.`)
 				}
 
@@ -64,10 +62,7 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				"",
 				"| Table | Description | Columns |",
 				"|---|---|---|",
-				...tables.map(
-					(t) =>
-						`| \`${t.name}\` | ${t.description ?? "—"} | ${t.columnCount} |`,
-				),
+				...tables.map((t) => `| \`${t.name}\` | ${t.description ?? "—"} | ${t.columnCount} |`),
 				"",
 				`Call this tool with \`table: "<name>"\` to get the full column list and notes for one table.`,
 			]

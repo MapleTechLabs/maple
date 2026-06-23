@@ -111,3 +111,46 @@ export function getSemanticSeriesColor(seriesKey: string): string | null {
 
 	return null
 }
+
+/** The five theme-aware named chart colors (light/dark variants live in CSS). */
+const NAMED_CHART_COLORS = [
+	"var(--chart-1)",
+	"var(--chart-2)",
+	"var(--chart-3)",
+	"var(--chart-4)",
+	"var(--chart-5)",
+] as const
+
+// Golden angle (≈137.508°) maximizes hue separation between consecutive indices.
+const GOLDEN_ANGLE = 137.508
+
+/**
+ * Resolve a perceptually-distinct color for the Nth series in a chart, with no
+ * upper bound on the number of series. Indices 0–4 use the theme-aware
+ * `--chart-1..5` CSS variables; beyond that we synthesize OKLCH colors by
+ * rotating the hue by the golden angle and alternating lightness in "rings",
+ * so even 50 series stay visually separable. Mid-tone L/C keeps the generated
+ * colors legible on both light and dark backgrounds (mirrors
+ * {@link getServiceLegendColor} in `colors.ts`).
+ */
+export function getSeriesColorByIndex(index: number): string {
+	const i = Math.max(0, Math.floor(index))
+	if (i < NAMED_CHART_COLORS.length) return NAMED_CHART_COLORS[i]
+
+	const offset = i - NAMED_CHART_COLORS.length
+	const hue = (offset * GOLDEN_ANGLE) % 360
+	// Alternate lightness every full turn so colors that land on a similar hue
+	// after wrapping 360° are still distinguishable by brightness.
+	const ring = Math.floor((offset * GOLDEN_ANGLE) / 360)
+	const lightness = ring % 2 === 0 ? 0.66 : 0.56
+	return `oklch(${lightness.toFixed(3)} 0.15 ${hue.toFixed(1)})`
+}
+
+/**
+ * Resolve the color for a chart series: a semantic color when the series name
+ * matches a known pattern (status code, severity, HTTP method/code), otherwise
+ * a stable per-index color from {@link getSeriesColorByIndex}.
+ */
+export function resolveSeriesColor(name: string, index: number): string {
+	return getSemanticSeriesColor(name) ?? getSeriesColorByIndex(index)
+}

@@ -1,20 +1,13 @@
 /**
- * PostgreSQL client implementation for Effect SQL, backed by `pg`.
+ * Connects Effect SQL to PostgreSQL using the `pg` package.
  *
- * This module exposes constructors for creating a scoped `PgClient` from a
- * managed `pg` pool, a single managed `pg` client, or lower-level connection
- * acquirers. The resulting service can be provided as both `PgClient` and the
- * generic `SqlClient`, and is intended for application database access,
- * migrations, transactional workflows, row streaming, JSON parameters, and
- * PostgreSQL LISTEN/NOTIFY integration.
- *
- * Pool-backed clients acquire connections per operation and reserve dedicated
- * connections for transactions and cursor streams. Clients built from one
- * `pg.Client` serialize shared access; enable `acquireForStream` when streams
- * or listeners need their own client instead of sharing the query connection.
- * LISTEN uses a scoped long-lived client and automatically issues `UNLISTEN`
- * when the stream scope closes, so listeners should be scoped for as long as
- * notifications are needed.
+ * This module provides constructors and layers for building a PostgreSQL
+ * client from pool settings, a managed `pg.Client`, an existing `pg.Pool`, or
+ * custom connection code. The client runs Effect SQL queries against
+ * PostgreSQL, including transactions and streamed results, and adds helpers for
+ * JSON values and LISTEN/NOTIFY messages. It also maps common PostgreSQL
+ * failures, such as connection, authentication, constraint, timeout, and
+ * deadlock errors, into Effect SQL errors.
  *
  * @since 4.0.0
  */
@@ -92,9 +85,13 @@ export interface PgClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the `PgClient` service.
+ * Service tag for the PostgreSQL client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a PostgreSQL client through the Effect context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const PgClient = Context.Service<PgClient>("@effect/sql-pg/PgClient")
@@ -550,7 +547,12 @@ export const fromClient = Effect.fnUntraced(function*(
 })
 
 /**
- * Low-level constructor for a `PgClient` from SQL connection acquirers, a LISTEN acquirer, client configuration, and transformation options.
+ * Creates a `PgClient` from SQL connection acquirers, a LISTEN acquirer, client configuration, and transformation options.
+ *
+ * **When to use**
+ *
+ * Use to build a PostgreSQL client from custom connection acquisition logic
+ * instead of the built-in pool or single-client constructors.
  *
  * @category constructors
  * @since 4.0.0

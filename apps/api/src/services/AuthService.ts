@@ -429,7 +429,15 @@ export const makeResolveTenant = (
 export const makeResolveMcpTenant = (
 	env: AuthEnv,
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
-) => makeResolveTenant(env, authenticateClerkRequest, "api_key")
+	// Accept both api_key (programmatic agents) and session_token: this is the
+	// "Clerk / self-hosted session auth" fallback in resolveMcpTenantContext, used
+	// by a logged-in browser applying an approved chat proposal via
+	// POST /api/chat/apply. Both resolve to the caller's own org (and a session
+	// token keeps the human userId for attribution). The internal-service and
+	// api-key paths run before this fallback, so this only widens the
+	// already-last-resort branch; self-hosted HS256 mode already ignored
+	// acceptsToken, so this just brings Clerk mode to parity.
+) => makeResolveTenant(env, authenticateClerkRequest, ["api_key", "session_token"])
 
 type ClerkUser = Awaited<ReturnType<ReturnType<typeof createClerkClient>["users"]["getUser"]>>
 
@@ -451,7 +459,7 @@ const makeClerkClient = (
 	})
 }
 
-export const makeGetUserEmail = (
+const makeGetUserEmail = (
 	env: Pick<AuthEnv, "MAPLE_AUTH_MODE" | "CLERK_SECRET_KEY" | "CLERK_PUBLISHABLE_KEY" | "CLERK_JWT_KEY">,
 ) => {
 	const clerkClient = makeClerkClient(env)
@@ -509,23 +517,26 @@ export const makeGetCustomerData = (
 	})
 }
 
-export class AuthService extends Context.Service<AuthService, AuthServiceShape>()("@maple/api/services/AuthService", {
-	make: Effect.gen(function* () {
-		const env = yield* Env
-		const resolveTenant = makeResolveTenant(env)
-		const resolveMcpTenant = makeResolveMcpTenant(env)
-		const loginSelfHosted = makeLoginSelfHosted(env)
-		const getUserEmail = makeGetUserEmail(env)
-		const getCustomerData = makeGetCustomerData(env)
+export class AuthService extends Context.Service<AuthService, AuthServiceShape>()(
+	"@maple/api/services/AuthService",
+	{
+		make: Effect.gen(function* () {
+			const env = yield* Env
+			const resolveTenant = makeResolveTenant(env)
+			const resolveMcpTenant = makeResolveMcpTenant(env)
+			const loginSelfHosted = makeLoginSelfHosted(env)
+			const getUserEmail = makeGetUserEmail(env)
+			const getCustomerData = makeGetCustomerData(env)
 
-		return {
-			resolveTenant,
-			resolveMcpTenant,
-			loginSelfHosted,
-			getUserEmail,
-			getCustomerData,
-		} satisfies AuthServiceShape
-	}),
-}) {
+			return {
+				resolveTenant,
+				resolveMcpTenant,
+				loginSelfHosted,
+				getUserEmail,
+				getCustomerData,
+			} satisfies AuthServiceShape
+		}),
+	},
+) {
 	static readonly layer = Layer.effect(this, this.make)
 }

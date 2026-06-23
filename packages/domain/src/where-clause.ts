@@ -147,7 +147,9 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 		}
 
 		// Try comparison operators: !=, <=, >=, <, >, =
-		const compMatch = part.match(/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/)
+		const compMatch = part.match(
+			/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/,
+		)
 		if (compMatch) {
 			const unquotedToken = compMatch[5]
 			// Detect unclosed quote in unquoted capture

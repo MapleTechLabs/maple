@@ -1,23 +1,12 @@
 /**
- * The `AsyncResult` module models the state of an asynchronous value inside the
- * reactivity APIs. It represents whether a computation has not produced a
- * result yet, has succeeded, or has failed, while keeping `waiting` as a
- * separate flag for first loads, refreshes, retries, and other in-flight work.
+ * Represents observable state for asynchronous values.
  *
- * This is useful for atoms and UI integrations that need to render async
- * queries, background refreshes, optimistic transitions, stream pulls, or RPC
- * and HTTP calls without losing track of the current value. `Success` contains
- * the latest value and timestamp, and `Failure` contains a `Cause` plus an
- * optional `previousSuccess` so callers can keep showing stale data after a
- * refresh fails.
- *
- * Treat `waiting` as an overlay rather than a fourth state: an `Initial` result
- * can be waiting with no value, and a `Success` or `Failure` can also be waiting
- * while a newer computation is running. Accessors such as `value` and
- * `getOrElse` may return the previous success stored in a failure, so inspect
- * `cause` or `error` when the difference between a current success and stale
- * data matters. Matchers such as `matchWithWaiting` prioritize the waiting flag,
- * while `match` and `matchWithError` expose the underlying state.
+ * `AsyncResult<A, E>` records whether asynchronous work has no value yet,
+ * succeeded with an `A`, or failed with an `E`. Every state also carries a
+ * `waiting` flag, so callers can keep showing the current value while newer
+ * work is loading, refreshing, retrying, or recovering. This module includes
+ * constructors, checks, accessors, mapping and matching helpers, ways to combine
+ * several results, and schemas for encoding or decoding results.
  *
  * @since 4.0.0
  */
@@ -401,9 +390,10 @@ export const touch = <A extends AsyncResult<any, any>>(result: A): A => {
 }
 
 /**
- * For a `Failure`, replaces its stored previous success with the latest success found in another result; non-failures are returned unchanged.
+ * Replaces a `Failure` value's stored previous success with the latest success
+ * found in another result.
  *
- * @category constructors
+ * @category combinators
  * @since 4.0.0
  */
 export const replacePrevious = <R extends AsyncResult<any, any>, XE, A>(
@@ -515,7 +505,17 @@ export const map: {
 })
 
 /**
- * Flat maps a success result with a function returning another `AsyncResult`, leaves initial results unchanged, and preserves failure causes while remapping stored previous successes when possible.
+ * Maps the success value of an `AsyncResult` and flattens the result.
+ *
+ * **When to use**
+ *
+ * Use to sequence computations that may return another `AsyncResult` while
+ * preserving initial and failure states.
+ *
+ * **Details**
+ *
+ * Initial results are left unchanged. Failures preserve their cause and remap
+ * the stored previous success when the mapping function returns a success.
  *
  * @category combinators
  * @since 4.0.0
@@ -710,7 +710,7 @@ export const all = <const Arg extends Iterable<any> | Record<string, any>>(
 /**
  * Creates a typed builder for rendering an `AsyncResult` by handling waiting, initial, success, error, defect, interrupt, and failure cases.
  *
- * @category Builder
+ * @category constructors
  * @since 4.0.0
  */
 export const builder = <A extends AsyncResult<any, any>>(self: A): Builder<
@@ -724,7 +724,7 @@ export const builder = <A extends AsyncResult<any, any>>(self: A): Builder<
 /**
  * Type marker used by `Builder` to track whether defect failures still need to be handled.
  *
- * @category Builder
+ * @category models
  * @since 4.0.0
  */
 export interface Defect {
@@ -734,7 +734,7 @@ export interface Defect {
 /**
  * Type marker used by `Builder` to track whether interrupt failures still need to be handled.
  *
- * @category Builder
+ * @category models
  * @since 4.0.0
  */
 export interface Interrupt {
@@ -744,7 +744,7 @@ export interface Interrupt {
 /**
  * Fluent renderer for `AsyncResult` values that tracks unhandled cases at the type level and exposes `exhaustive` only after all possible cases are handled.
  *
- * @category Builder
+ * @category models
  * @since 4.0.0
  */
 export type Builder<Out, A, E, I, F> =
@@ -957,7 +957,7 @@ export const Schema = <
     AsyncResult<A["Type"], E["Type"]>,
     AsyncResult<A["Encoded"], E["Encoded"]>
   >()(
-    [success_, Schema_.Cause(error, Schema_.Defect)],
+    [success_, Schema_.Cause(error, Schema_.Defect())],
     ([value, cause]) => (input, ast, options) => {
       if (!isAsyncResult(input)) {
         return Effect.fail(new SchemaIssue.InvalidType(ast, Option.some(input)))

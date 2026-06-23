@@ -11,7 +11,7 @@ import { AlertPreviewChart } from "@/components/alerts/alert-preview-chart"
 import { CheckHistorySparkline } from "@/components/alerts/check-history-sparkline"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
-import { AlertStatCard } from "@/components/alerts/alert-stat-card"
+import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
 import {
 	signalLabels,
@@ -520,49 +520,48 @@ function RuleDetailPage() {
 								/>
 							</div>
 
-							<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-								<AlertStatCard label="Total triggered" value={stats.totalTriggered} />
-								<AlertStatCard label="Avg resolution" value={stats.avgResolution} />
-								<Card>
-									<CardContent className="p-5">
-										<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-											Top contributors
-										</span>
-										<div className="mt-3 space-y-2">
-											{stats.topContributors.length === 0 ? (
-												<span className="text-3xl font-bold">–</span>
-											) : (
-												stats.topContributors.map(([groupKey, count]) => (
-													<div key={groupKey} className="flex items-center gap-2">
-														<Badge
-															variant="outline"
-															className="text-xs shrink-0 truncate max-w-[160px]"
-														>
-															{groupKey}
-														</Badge>
-														<div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-															<div
-																className={cn(
-																	"h-full rounded-full",
-																	count === maxContributorCount
-																		? "bg-destructive"
-																		: "bg-amber-500",
-																)}
-																style={{
-																	width: `${(count / maxContributorCount) * 100}%`,
-																}}
-															/>
-														</div>
-														<span className="text-xs text-muted-foreground tabular-nums shrink-0">
-															{count}/{stats.totalTriggered}
-														</span>
+							<AlertStatStrip
+								items={[
+									{ label: "Total triggered", value: stats.totalTriggered },
+									{ label: "Avg resolution", value: stats.avgResolution },
+								]}
+							/>
+
+							{stats.topContributors.length > 0 && (
+								<div className="space-y-2">
+									<h3 className="text-sm font-semibold">Top contributors</h3>
+									<Card>
+										<CardContent className="space-y-2 p-5">
+											{stats.topContributors.map(([groupKey, count]) => (
+												<div key={groupKey} className="flex items-center gap-2">
+													<Badge
+														variant="outline"
+														className="text-xs shrink-0 truncate max-w-[160px]"
+													>
+														{groupKey}
+													</Badge>
+													<div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+														<div
+															className={cn(
+																"h-full rounded-full",
+																count === maxContributorCount
+																	? "bg-destructive"
+																	: "bg-amber-500",
+															)}
+															style={{
+																width: `${(count / maxContributorCount) * 100}%`,
+															}}
+														/>
 													</div>
-												))
-											)}
-										</div>
-									</CardContent>
-								</Card>
-							</div>
+													<span className="text-xs text-muted-foreground tabular-nums shrink-0">
+														{count}/{stats.totalTriggered}
+													</span>
+												</div>
+											))}
+										</CardContent>
+									</Card>
+								</div>
+							)}
 
 							{filteredIncidents.length === 0 ? (
 								<Empty className="py-12">
@@ -792,16 +791,18 @@ function ChecksPanel({
 
 	return (
 		<div className="space-y-6">
-			<div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-				<AlertStatCard label="Total checks" value={totals.total} />
-				<AlertStatCard
-					label="Breached"
-					value={totals.breached}
-					tone={totals.breached > 0 ? "critical" : "default"}
-				/>
-				<AlertStatCard label="Healthy" value={totals.healthy} tone="emerald" />
-				<AlertStatCard label="Transitions" value={totals.transitions} />
-			</div>
+			<AlertStatStrip
+				items={[
+					{ label: "Total checks", value: totals.total },
+					{
+						label: "Breached",
+						value: totals.breached,
+						tone: totals.breached > 0 ? "critical" : "default",
+					},
+					{ label: "Healthy", value: totals.healthy, tone: "emerald" },
+					{ label: "Transitions", value: totals.transitions },
+				]}
+			/>
 
 			<div className="space-y-2">
 				<div className="flex items-center justify-between">

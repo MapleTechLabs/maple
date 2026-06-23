@@ -500,6 +500,26 @@ describe.concurrent("Sharding", () => {
       expect(state.layerBuilds.current).toEqual(2)
     }).pipe(Effect.provide(TestSharding)))
 
+  it.effect("replays in-flight requests when restarting after a defect", () =>
+    Effect.gen(function*() {
+      yield* TestClock.adjust(1)
+      const state = yield* TestEntityState
+      const makeClient = yield* TestEntity.client
+      const client = makeClient("1")
+
+      yield* client.NeverFork().pipe(Effect.forkChild({ startImmediately: true }))
+      yield* TestClock.adjust(1)
+      assert.strictEqual(Queue.sizeUnsafe(state.envelopes), 1)
+
+      MutableRef.set(state.defectTrigger, true)
+      const result = yield* client.GetUser({ id: 123 })
+      assert.deepStrictEqual(result, new User({ id: 123, name: "User 123" }))
+      assert.strictEqual(state.layerBuilds.current, 2)
+
+      yield* TestClock.adjust(1)
+      assert.strictEqual(Queue.sizeUnsafe(state.envelopes), 4)
+    }).pipe(Effect.provide(TestSharding)))
+
   it.effect("WithTransaction is propagated to the entity handler", () =>
     Effect.gen(function*() {
       let isTransaction = false

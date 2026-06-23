@@ -308,6 +308,14 @@ export interface CreateAlertRuleData {
 	rule: AlertRuleRow
 }
 
+export interface UpdateAlertRuleData {
+	rule: AlertRuleRow
+}
+
+export interface DeleteAlertRuleData {
+	id: string
+}
+
 export interface AlertRuleDetailRow extends AlertRuleRow {
 	serviceNames: string[]
 	excludeServiceNames: string[]
@@ -886,6 +894,8 @@ export type StructuredToolOutput =
 	| { tool: "list_alert_incidents"; data: ListAlertIncidentsData }
 	| { tool: "list_alert_checks"; data: ListAlertChecksData }
 	| { tool: "create_alert_rule"; data: CreateAlertRuleData }
+	| { tool: "update_alert_rule"; data: UpdateAlertRuleData }
+	| { tool: "delete_alert_rule"; data: DeleteAlertRuleData }
 	| { tool: "get_alert_rule"; data: GetAlertRuleData }
 	| { tool: "list_dashboards"; data: ListDashboardsData }
 	| { tool: "get_dashboard"; data: GetDashboardData }

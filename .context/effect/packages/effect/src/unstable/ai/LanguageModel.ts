@@ -1,52 +1,13 @@
 /**
- * The `LanguageModel` module provides AI text generation capabilities with tool
- * calling support.
+ * Defines the shared service for language model providers.
  *
- * This module offers a comprehensive interface for interacting with large
- * language models, supporting both streaming and non-streaming text generation,
- * structured output generation, and tool calling functionality. It provides a
- * unified API that can be implemented by different AI providers while
- * maintaining type safety and effect management.
- *
- * **Example** (Generating text)
- *
- * ```ts
- * import { Effect } from "effect"
- * import { LanguageModel } from "effect/unstable/ai"
- *
- * // Basic text generation
- * const program = Effect.gen(function*() {
- *   const response = yield* LanguageModel.generateText({
- *     prompt: "Explain quantum computing"
- *   })
- *
- *   console.log(response.text)
- *
- *   return response
- * })
- * ```
- *
- * **Example** (Generating structured output)
- *
- * ```ts
- * import { Effect, Schema } from "effect"
- * import { LanguageModel } from "effect/unstable/ai"
- *
- * // Structured output generation
- * const ContactSchema = Schema.Struct({
- *   name: Schema.String,
- *   email: Schema.String
- * })
- *
- * const extractContact = Effect.gen(function*() {
- *   const response = yield* LanguageModel.generateObject({
- *     prompt: "Extract contact: John Doe, john@example.com",
- *     schema: ContactSchema
- *   })
- *
- *   return response.value
- * })
- * ```
+ * The `LanguageModel` service lets application code ask for generated text,
+ * streamed text, or structured output without depending on a specific provider.
+ * Requests can include tools, and the service can resolve tool calls while the
+ * model is generating a response. This module contains the service contract,
+ * request and response types, structured-output support, and the constructor
+ * used by provider packages to adapt their own generate and stream functions to
+ * the shared interface.
  *
  * @since 4.0.0
  */
@@ -61,7 +22,7 @@ import * as Predicate from "../../Predicate.ts"
 import * as Queue from "../../Queue.ts"
 import { CurrentConcurrency } from "../../References.ts"
 import * as Schema from "../../Schema.ts"
-import * as AST from "../../SchemaAST.ts"
+import * as SchemaAST from "../../SchemaAST.ts"
 import * as Sink from "../../Sink.ts"
 import * as Stream from "../../Stream.ts"
 import type { Span } from "../../Tracer.ts"
@@ -82,7 +43,12 @@ import * as Toolkit from "./Toolkit.ts"
 // =============================================================================
 
 /**
- * The `LanguageModel` service key for dependency injection, providing access to text generation, streaming, and structured output capabilities throughout an application.
+ * Service tag for AI model services.
+ *
+ * **When to use**
+ *
+ * Use to access or provide text generation, streaming generation, structured
+ * output, and tool-calling capabilities through the Effect context.
  *
  * **Example** (Accessing the language model service)
  *
@@ -234,6 +200,20 @@ export type CodecTransformer = <T, E, RD, RE>(schema: Schema.Codec<T, E, RD, RE>
  * The default codec transformer that passes schemas through without
  * provider-specific rewrites.
  *
+ * **When to use**
+ *
+ * Use as the codec transformer for provider implementations when the provider
+ * accepts the JSON Schema generated from an `Effect` Schema codec without
+ * provider-specific rewrites.
+ *
+ * **Details**
+ *
+ * The transformer returns the original codec, resolves a top-level `$ref`, and
+ * copies schema definitions into `$defs`.
+ *
+ * @see {@link CodecTransformer} for the structured-output transformer contract
+ * @see {@link make} for where this transformer is used as the default
+ *
  * @category services
  * @since 4.0.0
  */
@@ -242,7 +222,7 @@ export const defaultCodecTransformer: CodecTransformer = InternalCodecTransforme
 /**
  * Configuration options for text generation.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface GenerateTextOptions<Tools extends Record<string, Tool.Any>> {
@@ -286,7 +266,7 @@ export interface GenerateTextOptions<Tools extends Record<string, Tool.Any>> {
    *
    * **When to use**
    *
-   * Use this when you want to include tool call definitions from an `AiToolkit`
+   * Use when you want to include tool call definitions from an `AiToolkit`
    * in requests to the large language model, while controlling tool call
    * resolver execution yourself.
    */
@@ -300,7 +280,7 @@ type GenerateTextOptionsWithoutToolkit = Omit<GenerateTextOptions<{}>, "toolkit"
 /**
  * Configuration options for structured object generation.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface GenerateObjectOptions<
@@ -665,7 +645,7 @@ export type ExtractServices<Options> = Options extends {
  * underlying provider implementation, regardless of the specific provider being
  * used.
  *
- * @category models
+ * @category options
  * @since 4.0.0
  */
 export interface ProviderOptions {
@@ -734,7 +714,33 @@ export interface ProviderOptions {
 }
 
 /**
- * Creates a LanguageModel service from provider-specific text generation and streaming implementations.
+ * Creates a LanguageModel service from provider-specific text generation and
+ * streaming implementations.
+ *
+ * **When to use**
+ *
+ * Use when you are implementing a provider adapter and need to expose the
+ * standard language-model service while keeping provider-specific request hooks
+ * behind it.
+ *
+ * **Details**
+ *
+ * The returned service implements `generateText`, `generateObject`, and
+ * `streamText`. It prepares `ProviderOptions` for each request, including the
+ * normalized prompt, tools, tool choice, response format, tracing span, and
+ * incremental response fields, before calling the supplied provider hook.
+ * Structured object generation uses the `generateText` hook and the configured
+ * `codecTransformer`, or `defaultCodecTransformer` when none is supplied.
+ *
+ * **Gotchas**
+ *
+ * Provider hooks must return encoded response parts that match the toolkit and
+ * response format prepared in `ProviderOptions`; invalid parts fail decoding as
+ * `AiError.InvalidOutputError`.
+ *
+ * @see {@link Service} for the returned service contract
+ * @see {@link ProviderOptions} for the normalized options passed to provider hooks
+ * @see {@link defaultCodecTransformer} for the default structured-output schema transformer
  *
  * @category constructors
  * @since 4.0.0
@@ -1582,7 +1588,7 @@ export const make: (params: {
 // =============================================================================
 
 /**
- * Generate text using a language model.
+ * Generates text using a language model.
  *
  * **Example** (Generating text with options)
  *
@@ -1651,7 +1657,7 @@ export const generateText: {
   )
 
 /**
- * Generate a structured object from a schema using a language model.
+ * Generates a structured object from a schema using a language model.
  *
  * **Example** (Generating an object)
  *
@@ -1703,7 +1709,7 @@ export const generateObject = <
   ) as any
 
 /**
- * Generate text using a language model with streaming output.
+ * Generates text using a language model with streaming output.
  *
  * **Details**
  *
@@ -2165,7 +2171,7 @@ export const getObjectName = <StructuredOutputSchema extends Schema.Top>(
   if ("identifier" in schema && typeof schema.identifier === "string") {
     return schema.identifier
   }
-  const identifier = AST.resolveIdentifier(schema.ast)
+  const identifier = SchemaAST.resolveIdentifier(schema.ast)
   if (typeof identifier === "string") {
     return identifier
   }

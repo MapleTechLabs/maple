@@ -140,4 +140,4 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 	}
 }
 
-export { PAGE_SIZE, FETCH_THRESHOLD }
+export { FETCH_THRESHOLD }

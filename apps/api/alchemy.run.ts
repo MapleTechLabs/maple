@@ -1,6 +1,14 @@
 import path from "node:path"
 import alchemy from "alchemy"
-import { D1Database, Hyperdrive, KVNamespace, Worker, Workflow } from "alchemy/cloudflare"
+import {
+	D1Database,
+	Hyperdrive,
+	KVNamespace,
+	Queue,
+	Worker,
+	WorkerStub,
+	Workflow,
+} from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
 	resolveD1Name,
@@ -105,6 +113,26 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		className: "AiTriageWorkflow",
 	})
 
+	// Vendor-agnostic VCS sync queue (commit backfill + webhook deltas). The same
+	// `api` worker is both producer (binding) and consumer (eventSources). Local
+	// dev is wired separately in wrangler.jsonc so miniflare runs it in-process.
+	const vcsSyncQueue = await Queue("vcs-sync", {
+		name: resolveWorkerName("vcs-sync", stage),
+		adopt: true,
+	})
+
+	// Service binding to the chat-flue worker that hosts the Flue `triage`
+	// workflow (the AI triage agent's investigation step). chat-flue is created
+	// AFTER api in the root alchemy.run.ts (it needs api's URL), so a plain
+	// service-binding ref to its name fails the api upload with CF error 10143
+	// ("references Worker ... which was not found"). Reserve the name with an
+	// empty WorkerStub first; chat-flue's real deploy adopts it (adopt: true).
+	// This breaks the api↔chat-flue cycle without a URL dependency.
+	const chatFlue = await WorkerStub("chat-flue-stub", {
+		name: resolveWorkerName("chat-flue", stage),
+		url: false,
+	})
+
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -114,11 +142,26 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,
+		// Periodic VCS sync backstop (every 12h) — enqueues a refresh per installation; see worker.ts `scheduled`.
+		crons: ["0 */12 * * *"],
+		eventSources: [
+			{
+				queue: vcsSyncQueue,
+				settings: {
+					batchSize: 10,
+					maxConcurrency: 2,
+					maxRetries: 3,
+					maxWaitTimeMs: 5000,
+				},
+			},
+		],
 		bindings: {
 			MAPLE_DB: mapleDb,
 			MCP_SESSIONS: mcpSessions,
+			VCS_SYNC_QUEUE: vcsSyncQueue,
 			CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: schemaApplyWorkflow,
 			AI_TRIAGE_WORKFLOW: aiTriageWorkflow,
+			CHAT_FLUE: chatFlue,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			...optionalPlain("CLICKHOUSE_URL"),
@@ -155,6 +198,12 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 			...optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 			...optionalPlain("HAZEL_OAUTH_SCOPES"),
+			...optionalPlain("GITHUB_APP_ID"),
+			...optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+			...optionalPlain("GITHUB_APP_CLIENT_ID"),
+			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),
+			...optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
+			...optionalPlain("GITHUB_API_BASE_URL"),
 		},
 	})
 

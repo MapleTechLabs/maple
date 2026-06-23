@@ -1,17 +1,10 @@
 /**
- * Defines the wire messages used by event-log remotes to authenticate clients,
- * write event batches, and stream changes back to replicas.
+ * Defines protocol messages for event-log remote clients and servers.
  *
- * This module is the protocol boundary between `EventLogRemote` clients and
- * event-log servers: it provides schemas for store identifiers, protocol
- * errors, session handshake payloads, authenticated RPCs, and the msgpack
- * payloads used to carry encrypted or plaintext journal entries.
- *
- * Event batches are serialized as binary payloads before transport. Small
- * payloads can be sent as a single frame, while larger payloads are split into
- * `ChunkedMessage` parts and must be reassembled by message id after every part
- * has arrived. Transports should preserve `Uint8Array` bytes exactly and avoid
- * treating msgpack data as text.
+ * This module is the shared boundary between `EventLogRemote` clients and
+ * event-log servers. It defines store ids, protocol errors, the
+ * hello/authenticate session handshake, remote calls for writes and changes,
+ * and message formats for encrypted or plaintext journal entries.
  *
  * @since 4.0.0
  */
@@ -30,7 +23,7 @@ import { EncryptedEntry, EncryptedRemoteEntry } from "./EventLogEncryption.ts"
 /**
  * Type-level identifier used to brand event-log store ids.
  *
- * @category StoreId
+ * @category type IDs
  * @since 4.0.0
  */
 export type StoreIdTypeId = "effect/eventlog/EventLog/StoreId"
@@ -38,7 +31,7 @@ export type StoreIdTypeId = "effect/eventlog/EventLog/StoreId"
 /**
  * Runtime brand identifier for event-log store ids.
  *
- * @category StoreId
+ * @category type IDs
  * @since 4.0.0
  */
 export const StoreIdTypeId: StoreIdTypeId = "effect/eventlog/EventLog/StoreId"
@@ -60,14 +53,14 @@ export type StoreId = string & Brand<StoreIdTypeId>
 export const StoreId = Schema.String.pipe(Schema.brand(StoreIdTypeId))
 
 /**
- * Structured error returned by event-log remote RPCs.
+ * Error returned by event-log remote RPCs.
  *
  * **Details**
  *
  * It records the request tag, optional identity and store information, a protocol
  * error code, and a human-readable message.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class EventLogProtocolError extends Schema.TaggedErrorClass<EventLogProtocolError>(
@@ -84,7 +77,7 @@ export class EventLogProtocolError extends Schema.TaggedErrorClass<EventLogProto
  * RPC middleware that authenticates event-log requests and provides the client
  * `Identity` to authenticated handlers.
  *
- * @category Middleware
+ * @category middleware
  * @since 4.0.0
  */
 export class EventLogAuthentication extends RpcMiddleware.Service<EventLogAuthentication, {
@@ -101,7 +94,7 @@ export class EventLogAuthentication extends RpcMiddleware.Service<EventLogAuthen
  * It contains the server remote id and a challenge that must be signed by the
  * client.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class HelloResponse extends Schema.Class<HelloResponse>("effect/eventlog/EventLogRemote/HelloResponse")({
@@ -112,7 +105,7 @@ export class HelloResponse extends Schema.Class<HelloResponse>("effect/eventlog/
 /**
  * RPC used to start an event-log remote session and receive a `HelloResponse`.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class HelloRpc extends Rpc.make("EventLog.Hello", {
@@ -120,10 +113,11 @@ export class HelloRpc extends Rpc.make("EventLog.Hello", {
 }) {}
 
 /**
- * Authentication request containing the client public key, Ed25519 signing public
- * key, signature over the session challenge payload, and algorithm name.
+ * Schema for an authentication request containing the client public key,
+ * Ed25519 signing public key, signature over the session challenge payload, and
+ * algorithm name.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class Authenticate extends Schema.Class<Authenticate>("effect/eventlog/EventLogRemote/Authenticate")({
@@ -136,7 +130,7 @@ export class Authenticate extends Schema.Class<Authenticate>("effect/eventlog/Ev
 /**
  * RPC used to authenticate a remote event-log session after `HelloRpc`.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class AuthenticateRpc extends Rpc.make("EventLog.Authenticate", {
@@ -145,9 +139,9 @@ export class AuthenticateRpc extends Rpc.make("EventLog.Authenticate", {
 }) {}
 
 /**
- * Transport message containing an entire encoded event-log payload in one frame.
+ * Represents an entire encoded event-log payload in one transport frame.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class SingleMessage
@@ -157,14 +151,14 @@ export class SingleMessage
 {}
 
 /**
- * Transport message for one part of a large encoded event-log payload.
+ * Represents one part of a large encoded event-log payload.
  *
  * **When to use**
  *
- * Use `split` to divide data into chunks and `join` to reassemble all chunks with
+ * Use to divide data into chunks and `join` to reassemble all chunks with
  * the same id once every part has arrived.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class ChunkedMessage
@@ -245,9 +239,9 @@ export class ChunkedMessage
 }
 
 /**
- * Authenticated RPC for sending one chunk of a large encoded write payload.
+ * RPC used to send one chunk of a large encoded write payload.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class WriteChunkedRpc extends Rpc.make("EventLog.WriteChunked", {
@@ -256,14 +250,14 @@ export class WriteChunkedRpc extends Rpc.make("EventLog.WriteChunked", {
 }).middleware(EventLogAuthentication) {}
 
 /**
- * Msgpack-encodable payload for writing encrypted entries to a remote store.
+ * Schema for encrypted event-log write payloads sent to a remote store.
  *
  * **Details**
  *
  * It includes the client public key, target store id, AES-GCM initialization
  * vector, and encrypted entries.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class WriteEntries extends Schema.Class<WriteEntries>("effect/eventlog/EventLogRemote/WriteEntries")({
@@ -281,9 +275,9 @@ export class WriteEntries extends Schema.Class<WriteEntries>("effect/eventlog/Ev
 }
 
 /**
- * Msgpack-encodable payload for writing plaintext entries to a remote store.
+ * Schema for plaintext event-log write payloads sent to a remote store.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class WriteEntriesUnencrypted
@@ -302,10 +296,9 @@ export class WriteEntriesUnencrypted
 }
 
 /**
- * Authenticated RPC for sending an encoded write payload that fits in one
- * message.
+ * RPC used to send an encoded write payload that fits in one message.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class WriteSingleRpc extends Rpc.make("EventLog.WriteSingle", {
@@ -316,15 +309,15 @@ export class WriteSingleRpc extends Rpc.make("EventLog.WriteSingle", {
 }).middleware(EventLogAuthentication) {}
 
 /**
- * Authenticated streaming RPC for reading remote event-log changes for a public
- * key and store id starting at a sequence number.
+ * RPC used to stream remote event-log changes for a public key and store id
+ * starting at a sequence number.
  *
  * **Details**
  *
  * Responses are encoded as either `SingleMessage` values or `ChunkedMessage`
  * parts.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class ChangesRpc extends Rpc.make("EventLog.Changes", {
@@ -349,7 +342,7 @@ export class ChangesRpc extends Rpc.make("EventLog.Changes", {
  * RPC group containing the event-log remote handshake, authentication, write, and
  * changes endpoints.
  *
- * @category protocol
+ * @category protocols
  * @since 4.0.0
  */
 export class EventLogRemoteRpcs extends RpcGroup.make(

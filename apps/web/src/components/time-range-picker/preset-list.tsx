@@ -29,7 +29,9 @@ export function PresetList({ selectedValue, onSelect, onCustomClick }: PresetLis
 								!active && "text-foreground/80",
 							)}
 						>
-							<span className={cn("tabular-nums", active && "font-medium")}>{preset.label}</span>
+							<span className={cn("tabular-nums", active && "font-medium")}>
+								{preset.label}
+							</span>
 						</button>
 					)
 				})}

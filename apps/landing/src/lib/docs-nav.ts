@@ -3,7 +3,7 @@
 // header category bar (DocsCategoryNav) all read from here so group order and
 // icons never drift apart.
 
-export const SDK_OVERVIEW_SLUG = "sdks/overview";
+export const SDK_OVERVIEW_SLUG = "sdks/overview"
 
 /** Order of non-SDK ("universal") doc groups in the sidebar + index page. */
 export const UNIVERSAL_GROUP_ORDER = [
@@ -12,25 +12,26 @@ export const UNIVERSAL_GROUP_ORDER = [
 	"Session Replay",
 	"Infrastructure",
 	"Integrations",
+	"Alerting",
 	"Local Mode",
-] as const;
+] as const
 
 /** Order of SDK-scoped groups (Effect SDK pages). */
-export const SDK_GROUP_ORDER = ["Effect SDK", "Platforms", "Instrumentation"] as const;
+export const SDK_GROUP_ORDER = ["Effect SDK", "Platforms", "Instrumentation"] as const
 
 /**
  * Universal groups omitted from the sidebar's "General" section when a language
  * (SDK) is selected — e.g. "Getting Started" is redundant on a language page.
  * They remain reachable via the header category bar and on non-SDK pages.
  */
-export const SDK_HIDDEN_UNIVERSAL_GROUPS = new Set<string>(["Getting Started"]);
+export const SDK_HIDDEN_UNIVERSAL_GROUPS = new Set<string>(["Getting Started"])
 
 export type HeaderNavItem = {
 	/** Display label (also the icon id for `kind: "group"`). */
-	key: string;
-	icon: string;
-	kind: "group" | "sdks";
-};
+	key: string
+	icon: string
+	kind: "group" | "sdks"
+}
 
 /**
  * Left-to-right order of the header category bar. Each `group` entry links to
@@ -44,8 +45,9 @@ export const HEADER_NAV: HeaderNavItem[] = [
 	{ key: "Session Replay", icon: "Session Replay", kind: "group" },
 	{ key: "Infrastructure", icon: "Infrastructure", kind: "group" },
 	{ key: "Integrations", icon: "Integrations", kind: "group" },
+	{ key: "Alerting", icon: "Alerting", kind: "group" },
 	{ key: "Local Mode", icon: "Local Mode", kind: "group" },
-];
+]
 
 /** Group names (and the synthetic `sdks` key) that have a DocsCategoryIcon glyph. */
 const CATEGORY_ICON_KEYS = new Set<string>([
@@ -54,8 +56,9 @@ const CATEGORY_ICON_KEYS = new Set<string>([
 	"Session Replay",
 	"Infrastructure",
 	"Integrations",
+	"Alerting",
 	"Local Mode",
 	"sdks",
-]);
+])
 
-export const hasCategoryIcon = (name: string): boolean => CATEGORY_ICON_KEYS.has(name);
+export const hasCategoryIcon = (name: string): boolean => CATEGORY_ICON_KEYS.has(name)

@@ -1,5 +1,5 @@
 import { useAuth } from "@clerk/clerk-react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
@@ -37,7 +37,7 @@ function SelectPlanPage() {
 
 function SelectPlanPageInner() {
 	const { isLoaded, isSignedIn, orgId } = useAuth()
-	const { data: customer, isLoading: isCustomerLoading } = useCustomer()
+	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { redirect_url } = Route.useSearch()
 
 	if (!isLoaded || isCustomerLoading) {
@@ -80,8 +80,8 @@ function SelectPlanPageInner() {
 						Start your free trial
 					</h1>
 					<p className="text-muted-foreground mt-4 text-sm md:text-base leading-relaxed max-w-lg mx-auto [text-wrap:balance]">
-						Try any paid plan free for {TRIAL_DURATION_DAYS} days. You won't be charged until the
-						trial ends. Cancel anytime.
+						Try Maple free for {TRIAL_DURATION_DAYS} days. You won't be charged until the trial
+						ends. Cancel anytime.
 					</p>
 				</div>
 

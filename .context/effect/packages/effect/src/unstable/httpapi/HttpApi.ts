@@ -1,26 +1,10 @@
 /**
- * The `HttpApi` module defines the top-level contract for an Effect HTTP API.
- * An `HttpApi` names an API and collects one or more `HttpApiGroup`s, whose
- * endpoints describe the request inputs, response schemas, middleware, and
- * annotations that later drive server builders, clients, and OpenAPI
- * generation.
+ * Describes an Effect HTTP API as groups of endpoints.
  *
- * Use this module when you want to compose a domain API from endpoint groups,
- * combine APIs from multiple modules, apply a shared path prefix or middleware,
- * attach annotations, or reflect over the final route shape. Implementations are
- * provided separately with `HttpApiBuilder.group`, and the completed API is
- * registered with `HttpApiBuilder.layer`.
- *
- * A few composition details are worth keeping in mind: group identifiers are
- * used as keys, so adding another group with the same identifier replaces the
- * previous one; `prefix` and `middleware` are applied to the groups and
- * endpoints already present when they are called; and `addHttpApi` merges the
- * added API's annotations into its groups. During reflection, success and error
- * schemas are grouped by the HTTP status recorded on their `HttpApiSchema`
- * annotations, endpoints without an explicit success schema default to
- * `NoContent`, and middleware error schemas are included with endpoint errors.
- * Extra schemas supplied through `AdditionalSchemas` must have an `identifier`
- * annotation so they can be emitted as OpenAPI components.
+ * An `HttpApi` value is data: it has an identifier, annotations, and groups of
+ * endpoints that describe request inputs, responses, middleware, and route
+ * metadata. The same description can be used by server builders, generated
+ * clients, URL builders, OpenAPI generation, and reflection tools.
  *
  * @since 4.0.0
  */
@@ -30,7 +14,7 @@ import { type Pipeable, pipeArguments } from "../../Pipeable.ts"
 import * as Predicate from "../../Predicate.ts"
 import * as Record from "../../Record.ts"
 import type * as Schema from "../../Schema.ts"
-import type * as AST from "../../SchemaAST.ts"
+import type * as SchemaAST from "../../SchemaAST.ts"
 import type { Mutable } from "../../Types.ts"
 import type { PathInput } from "../http/HttpRouter.ts"
 import * as HttpApiEndpoint from "./HttpApiEndpoint.ts"
@@ -54,7 +38,7 @@ export const isHttpApi = (u: unknown): u is Any => Predicate.hasProperty(u, Type
  *
  * **When to use**
  *
- * Endpoint implementations can be provided with `HttpApiBuilder.group`, and the
+ * Use when endpoint implementations can be provided with `HttpApiBuilder.group`, and the
  * completed API can be registered with `HttpApiBuilder.layer`.
  *
  * @category models
@@ -73,7 +57,7 @@ export interface HttpApi<
   /**
    * Add a `HttpApiGroup` to the `HttpApi`.
    */
-  add<A extends NonEmptyReadonlyArray<HttpApiGroup.Any>>(...groups: A): HttpApi<Id, Groups | A[number]>
+  add<const A extends NonEmptyReadonlyArray<HttpApiGroup.Any>>(...groups: A): HttpApi<Id, Groups | A[number]>
 
   /**
    * Add another `HttpApi` to the `HttpApi`.
@@ -212,8 +196,9 @@ const makeProto = <Id extends string, Groups extends HttpApiGroup.Any>(
  *
  * **When to use**
  *
- * Add groups with `add` or `addHttpApi`, provide endpoint implementations with
- * `HttpApiBuilder.group`, and register the API with `HttpApiBuilder.layer`.
+ * Use when you need to start defining an HTTP API, add groups with `add` or
+ * `addHttpApi`, provide endpoint implementations with `HttpApiBuilder.group`,
+ * and register the API with `HttpApiBuilder.layer`.
  *
  * @category constructors
  * @since 4.0.0
@@ -226,14 +211,14 @@ export const make = <const Id extends string>(identifier: Id): HttpApi<Id, never
   })
 
 /**
- * Walks the groups and endpoints in an `HttpApi`.
+ * Describes the groups and endpoints in an `HttpApi`.
  *
  * **Details**
  *
  * The callbacks receive each group or endpoint with merged annotations, endpoint
  * middleware, and response schemas grouped by HTTP status.
  *
- * @category Reflection
+ * @category reflection
  * @since 4.0.0
  */
 export const reflect = <Id extends string, Groups extends HttpApiGroup.Any>(
@@ -297,7 +282,7 @@ export const reflect = <Id extends string, Groups extends HttpApiGroup.Any>(
 
 const extractResponseContent = (
   schemas: Array<Schema.Top>,
-  getStatus: (ast: AST.AST) => number
+  getStatus: (ast: SchemaAST.AST) => number
 ): ReadonlyMap<number, [Schema.Top, ...Array<Schema.Top>]> => {
   const map = new Map<number, [Schema.Top, ...Array<Schema.Top>]>()
 
@@ -306,6 +291,7 @@ const extractResponseContent = (
   return map
 
   function add(schema: Schema.Top) {
+    if (HttpApiSchema.isStreamSchema(schema)) return
     const ast = schema.ast
     const status = getStatus(ast)
     const schemas = map.get(status)
@@ -321,7 +307,7 @@ const extractResponseContent = (
  * Adds additional schemas to components/schemas.
  * The provided schemas must have a `identifier` annotation.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class AdditionalSchemas extends Context.Service<

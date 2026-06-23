@@ -9,10 +9,7 @@ import type { CompiledQuery } from "@maple/query-engine/ch"
 import { Effect, type Option } from "effect"
 import { localApiBase } from "./constants"
 
-export function executeLocalQuery<T = Record<string, unknown>>(
-	sql: string,
-	signal?: AbortSignal,
-): Promise<T[]> {
+function executeLocalQuery<T = Record<string, unknown>>(sql: string, signal?: AbortSignal): Promise<T[]> {
 	return run<T>(sql, localApiBase(), signal)
 }
 

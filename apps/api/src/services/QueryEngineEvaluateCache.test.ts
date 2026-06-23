@@ -76,9 +76,7 @@ describe("makeQueryEngineEvaluate (shared bucket-encoding core)", () => {
 	it.effect("reduces per-bucket values with sum and sums sample counts", () =>
 		Effect.gen(function* () {
 			const result = yield* makeQueryEngineEvaluate(evalStub(COUNT_ROWS))(tenant, countRequest("sum"))
-			assert.deepStrictEqual(result, [
-				{ groupKey: "all", value: 10, sampleCount: 10, hasData: true },
-			])
+			assert.deepStrictEqual(result, [{ groupKey: "all", value: 10, sampleCount: 10, hasData: true }])
 		}),
 	)
 
@@ -113,9 +111,7 @@ describe("makeQueryEngineEvaluate (shared bucket-encoding core)", () => {
 	it.effect("emits a single no-data observation when there are no rows", () =>
 		Effect.gen(function* () {
 			const result = yield* makeQueryEngineEvaluate(evalStub([]))(tenant, countRequest("sum"))
-			assert.deepStrictEqual(result, [
-				{ groupKey: "all", value: null, sampleCount: 0, hasData: false },
-			])
+			assert.deepStrictEqual(result, [{ groupKey: "all", value: null, sampleCount: 0, hasData: false }])
 		}),
 	)
 })
@@ -197,9 +193,7 @@ describe("QueryEngineService.evaluate via bucket cache", () => {
 			const qe = yield* QueryEngineService
 			const result = yield* qe.evaluate(tenant, countRequest("sum"))
 			// Same answer as the bucket path.
-			assert.deepStrictEqual(result, [
-				{ groupKey: "all", value: 10, sampleCount: 10, hasData: true },
-			])
+			assert.deepStrictEqual(result, [{ groupKey: "all", value: 10, sampleCount: 10, hasData: true }])
 		}).pipe(Effect.provide(layer))
 	})
 })

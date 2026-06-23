@@ -18,11 +18,11 @@
 // not exposed as SQL filters since the DSL has no HAVING clause.
 // ---------------------------------------------------------------------------
 
-import * as CH from "../expr"
-import { compileFnCall, compileFnCallCond } from "../define-fn"
-import { param } from "../param"
-import { from, type ColumnAccessor } from "../query"
-import { unionAll, type CHUnionQuery } from "../union"
+import * as CH from "@maple-dev/clickhouse-builder/expr"
+import { compileFnCall, compileFnCallCond } from "@maple-dev/clickhouse-builder"
+import { param } from "@maple-dev/clickhouse-builder"
+import { from, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
@@ -359,6 +359,10 @@ export interface SessionTraceSummaryOutput {
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootServiceName: string
+	/** Root span's OTel kind (e.g. SPAN_KIND_CLIENT), so the UI can format the HTTP label. */
+	readonly rootSpanKind: string
+	/** Root span's attribute map, JSON-encoded — parsed by the UI for `getHttpInfo`. */
+	readonly rootSpanAttributes: string
 	readonly spanCount: number
 	readonly hasError: number
 }
@@ -377,14 +381,17 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 				traceId: $.TraceId,
 				startTime: CH.min_($.Timestamp),
 				durationMs: CH.if_(entryDurationMs.gt(0), entryDurationMs, fallbackDurationMs),
-				rootSpanName: CH.coalesce(
-					CH.nullIf(CH.anyIf($.SpanName, isRoot), ""),
-					CH.any_($.SpanName),
-				),
+				rootSpanName: CH.coalesce(CH.nullIf(CH.anyIf($.SpanName, isRoot), ""), CH.any_($.SpanName)),
 				rootServiceName: CH.coalesce(
 					CH.nullIf(CH.anyIf($.ServiceName, isRoot), ""),
 					CH.any_($.ServiceName),
 				),
+				// Root span's kind + attributes let the UI render the canonical HTTP
+				// label (`POST /api/foo`) instead of the raw span name. Traces with no
+				// ingested root span yield empty strings — the UI's getHttpInfo then
+				// falls back to name-only parsing.
+				rootSpanKind: CH.anyIf($.SpanKind, isRoot),
+				rootSpanAttributes: CH.anyIf(CH.toJSONString($.SpanAttributes), isRoot),
 				spanCount: CH.count(),
 				hasError: CH.if_(CH.countIf($.StatusCode.eq("Error")).gt(0), CH.lit(1), CH.lit(0)),
 			}

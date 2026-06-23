@@ -20,7 +20,9 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		"error_detail",
 		"Get sample traces and correlated logs for a specific error, identified by its `fingerprint` (from find_errors or list_error_issues). Optionally include a timeseries to see if the error is getting worse. Use inspect_trace on a trace_id for the full span tree.",
 		Schema.Struct({
-			fingerprint: requiredStringParam("The error FingerprintHash (from find_errors / list_error_issues)"),
+			fingerprint: requiredStringParam(
+				"The error FingerprintHash (from find_errors / list_error_issues)",
+			),
 			start_time: optionalStringParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
 			end_time: optionalStringParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
 			service: optionalStringParam("Filter by service name"),

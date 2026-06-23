@@ -102,15 +102,29 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			)
 		}
 
-		const resolved = yield* deps.resolveConfig(tenant, pipe)
+		// Control-plane datasources (e.g. alert_checks) are written via `ingest`,
+		// which is hard-pinned to the managed Tinybird pipeline. They do NOT exist
+		// in a per-org BYO ClickHouse, so their reads must pin to the same ingest
+		// config to stay symmetric with the write — otherwise a BYO-CH org reads an
+		// empty table from its own ClickHouse.
+		const resolveFn =
+			options?.pinToIngestConfig && deps.resolveIngestConfig
+				? deps.resolveIngestConfig
+				: deps.resolveConfig
+		const resolved = yield* resolveFn(tenant, pipe)
+		if (options?.pinToIngestConfig) yield* Effect.annotateCurrentSpan("query.routing", "ingest")
 		const peerService = resolved.config._tag === "clickhouse" ? "clickhouse" : "tinybird"
 		yield* Effect.annotateCurrentSpan("db.system.name", peerService)
 		yield* Effect.annotateCurrentSpan("peer.service", peerService)
-		// Tinybird rejects some settings outright (e.g. max_block_size) — drop
-		// them there so a call site can request them for ClickHouse backends
-		// without branching on the resolved config.
+		// Tinybird's managed warehouse restricts some settings (e.g. max_block_size:
+		// "Usage of setting 'max_block_size' is restricted"). It is reached either via
+		// the Tinybird SDK (_tag "tinybird") or its ClickHouse-compatible gateway
+		// (_tag "clickhouse", when CLICKHOUSE_URL is set); both enforce that policy.
+		// Only a genuine per-org BYO ClickHouse (source "org_override") supports those
+		// settings, so strip everywhere except there. Gating on `source` (not `_tag`)
+		// is what fixes the managed CH-gateway path.
 		const settings =
-			resolved.config._tag === "clickhouse"
+			resolved.source === "org_override"
 				? resolveSettings(options)
 				: stripTinybirdRestrictedSettings(resolveSettings(options))
 		const sqlForClient =
@@ -351,5 +365,12 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			),
 	})
 
-	return { query, sqlQuery, compiledQuery, compiledQueryFirst, ingest, asExecutor } satisfies WarehouseQueryServiceShape
+	return {
+		query,
+		sqlQuery,
+		compiledQuery,
+		compiledQueryFirst,
+		ingest,
+		asExecutor,
+	} satisfies WarehouseQueryServiceShape
 }

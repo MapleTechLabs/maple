@@ -1,12 +1,22 @@
 import { describe, expect, it } from "vitest"
 import insertMappings from "../schema/local-inserts.json"
-import { anyValueString, bytesHex, encodeLogs, encodeMetrics, encodeTraces, formatTimestampNano, statusCode } from "./encode"
+import {
+	anyValueString,
+	bytesHex,
+	encodeLogs,
+	encodeMetrics,
+	encodeTraces,
+	formatTimestampNano,
+	statusCode,
+} from "./encode"
 import { decodeMetricsRequest, decodeTraceRequest, encodeMetricsRequest, encodeTraceRequest } from "./proto"
 
 // Field-name set per datasource, parsed from the generated inputSchema string.
 // "start_time DateTime64(9), trace_id String, …" → { start_time, trace_id, … }
 const schemaFields = (datasource: string): Set<string> => {
-	const ds = (insertMappings as { datasources: Record<string, { inputSchema: string }> }).datasources[datasource]!
+	const ds = (insertMappings as { datasources: Record<string, { inputSchema: string }> }).datasources[
+		datasource
+	]!
 	const fields = new Set<string>()
 	// Split top-level commas only (types like Map(K, V) / Array(…) contain commas).
 	let depth = 0
@@ -53,8 +63,21 @@ const sampleTraceReq = () => ({
 							startTimeUnixNano: "1700000000000000000",
 							endTimeUnixNano: "1700000001500000000",
 							attributes: [attr("http.method", "GET")],
-							events: [{ timeUnixNano: "1700000000500000000", name: "ev", attributes: [attr("a", "b")] }],
-							links: [{ traceId: b64(hex), spanId: b64("b7ad6b7169203331"), traceState: "", attributes: [attr("l", "1")] }],
+							events: [
+								{
+									timeUnixNano: "1700000000500000000",
+									name: "ev",
+									attributes: [attr("a", "b")],
+								},
+							],
+							links: [
+								{
+									traceId: b64(hex),
+									spanId: b64("b7ad6b7169203331"),
+									traceState: "",
+									attributes: [attr("l", "1")],
+								},
+							],
 							status: { code: 1, message: "" },
 						},
 					],
@@ -70,7 +93,15 @@ const sampleMetricsReq = () => {
 		attributes: [attr("k", "v")],
 		startTimeUnixNano: "1700000000000000000",
 		timeUnixNano: "1700000001000000000",
-		exemplars: [{ traceId: b64(hex), spanId: b64("b7ad6b7169203331"), timeUnixNano: "1700000000500000000", asDouble: 1.5, filteredAttributes: [attr("e", "1")] }],
+		exemplars: [
+			{
+				traceId: b64(hex),
+				spanId: b64("b7ad6b7169203331"),
+				timeUnixNano: "1700000000500000000",
+				asDouble: 1.5,
+				filteredAttributes: [attr("e", "1")],
+			},
+		],
 		flags: 0,
 	}
 	return {
@@ -84,12 +115,47 @@ const sampleMetricsReq = () => {
 						schemaUrl: "",
 						metrics: [
 							{ ...common, gauge: { dataPoints: [{ ...point, asDouble: 3.14 }] } },
-							{ ...common, sum: { dataPoints: [{ ...point, asInt: "42" }], aggregationTemporality: 2, isMonotonic: true } },
-							{ ...common, histogram: { dataPoints: [{ ...point, count: "10", sum: 5.5, bucketCounts: ["1", "2", "3"], explicitBounds: [1, 2], min: 0.1, max: 9.9 }], aggregationTemporality: 2 } },
+							{
+								...common,
+								sum: {
+									dataPoints: [{ ...point, asInt: "42" }],
+									aggregationTemporality: 2,
+									isMonotonic: true,
+								},
+							},
+							{
+								...common,
+								histogram: {
+									dataPoints: [
+										{
+											...point,
+											count: "10",
+											sum: 5.5,
+											bucketCounts: ["1", "2", "3"],
+											explicitBounds: [1, 2],
+											min: 0.1,
+											max: 9.9,
+										},
+									],
+									aggregationTemporality: 2,
+								},
+							},
 							{
 								...common,
 								exponentialHistogram: {
-									dataPoints: [{ ...point, count: "7", sum: 2.2, scale: 1, zeroCount: "0", positive: { offset: 0, bucketCounts: ["1", "2"] }, negative: { offset: 0, bucketCounts: [] }, min: 0, max: 1 }],
+									dataPoints: [
+										{
+											...point,
+											count: "7",
+											sum: 2.2,
+											scale: 1,
+											zeroCount: "0",
+											positive: { offset: 0, bucketCounts: ["1", "2"] },
+											negative: { offset: 0, bucketCounts: [] },
+											min: 0,
+											max: 1,
+										},
+									],
 									aggregationTemporality: 1,
 								},
 							},
@@ -111,7 +177,16 @@ const sampleLogsReq = () => ({
 					scope: { name: "logger" },
 					schemaUrl: "",
 					logRecords: [
-						{ timeUnixNano: "1700000000000000000", severityNumber: 9, severityText: "", body: { stringValue: "hello" }, attributes: [attr("k", "v")], traceId: b64(hex), spanId: b64("b7ad6b7169203331"), flags: 1 },
+						{
+							timeUnixNano: "1700000000000000000",
+							severityNumber: 9,
+							severityText: "",
+							body: { stringValue: "hello" },
+							attributes: [attr("k", "v")],
+							traceId: b64(hex),
+							spanId: b64("b7ad6b7169203331"),
+							flags: 1,
+						},
 					],
 				},
 			],
@@ -136,7 +211,12 @@ describe("encoder output matches the chDB inputSchema", () => {
 	it("each metric type's row keys == its inputSchema", () => {
 		const batches = encodeMetrics(sampleMetricsReq())
 		const byDs = new Map(batches.map((b) => [b.datasource, b]))
-		for (const ds of ["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]) {
+		for (const ds of [
+			"metrics_gauge",
+			"metrics_sum",
+			"metrics_histogram",
+			"metrics_exponential_histogram",
+		]) {
 			expect(byDs.has(ds), `missing datasource ${ds}`).toBe(true)
 			expect(keysOf(byDs.get(ds)!), `keys for ${ds}`).toEqual(schemaFields(ds))
 		}
@@ -163,7 +243,9 @@ describe("value-level spot checks", () => {
 		expect(statusCode(2)).toBe("Error")
 		expect(anyValueString({ boolValue: true })).toBe("true")
 		expect(anyValueString({ intValue: "7" })).toBe("7")
-		expect(anyValueString({ arrayValue: { values: [{ stringValue: "a" }, { intValue: 1 }] } })).toBe('["a","1"]')
+		expect(anyValueString({ arrayValue: { values: [{ stringValue: "a" }, { intValue: 1 }] } })).toBe(
+			'["a","1"]',
+		)
 	})
 })
 
@@ -183,7 +265,9 @@ describe("protobuf round-trip (proves vendored .proto field numbers)", () => {
 		const bytes = encodeMetricsRequest(sampleMetricsReq())
 		const decoded = decodeMetricsRequest(bytes)
 		const datasources = new Set(encodeMetrics(decoded).map((b) => b.datasource))
-		expect(datasources).toEqual(new Set(["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]))
+		expect(datasources).toEqual(
+			new Set(["metrics_gauge", "metrics_sum", "metrics_histogram", "metrics_exponential_histogram"]),
+		)
 	})
 })
 

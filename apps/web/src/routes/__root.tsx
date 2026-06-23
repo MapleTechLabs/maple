@@ -1,6 +1,6 @@
 import { useEffect } from "react"
 import { useAuth } from "@clerk/clerk-react"
-import { useCustomer } from "autumn-js/react"
+import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import {
 	Navigate,
 	Outlet,
@@ -13,6 +13,7 @@ import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
 import { AttributesProvider } from "@maple/ui/components/attributes"
+import { renderAttributeValue } from "@/components/attributes/commit-sha-attribute"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import type { RouterAuthContext } from "@/router"
@@ -54,7 +55,11 @@ function AppFrame() {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
-		<AttributesProvider notifyCopied={notifyCopied} highlightJson={highlightCode}>
+		<AttributesProvider
+			notifyCopied={notifyCopied}
+			highlightJson={highlightCode}
+			renderValue={renderAttributeValue}
+		>
 			<Outlet />
 			<Toaster />
 			{!PUBLIC_PATHS.has(pathname) && <GlobalShortcuts />}
@@ -92,7 +97,7 @@ function ClerkReverseRedirects() {
 		data: customer,
 		isLoading: isCustomerLoading,
 		error: customerError,
-	} = useCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) } })
+	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) } })
 
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)
@@ -124,17 +129,23 @@ function ClerkReverseRedirects() {
 		// review; render the shell without waiting on the customer query (which
 		// may stall when Autumn isn't configured locally).
 		const quotaPreview =
-			import.meta.env.DEV && typeof window !== "undefined" && window.location.search.includes("quota_preview")
-		if (isCustomerLoading && !quotaPreview) {
-			return null
-		}
-		const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start"]
-		if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
-			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
-		}
-		if (selectedPlan && pathname === "/select-plan") {
-			const target = getRedirectTarget(searchStr)
-			return <Navigate to={target.pathname} search={target.search} replace />
+			import.meta.env.DEV &&
+			typeof window !== "undefined" &&
+			window.location.search.includes("quota_preview")
+		// Apply plan-gating only once the customer query has settled. While it's
+		// still loading/retrying, fall through and render the dashboard instead of
+		// blanking the screen (`return null`) — the redirect, if any, fires on the
+		// next render once we actually know the plan, so we never bounce a paying
+		// user to /quick-start before their plan is known.
+		if (!isCustomerLoading || quotaPreview) {
+			const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start"]
+			if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
+				return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+			}
+			if (selectedPlan && pathname === "/select-plan") {
+				const target = getRedirectTarget(searchStr)
+				return <Navigate to={target.pathname} search={target.search} replace />
+			}
 		}
 	}
 

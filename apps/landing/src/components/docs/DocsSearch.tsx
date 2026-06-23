@@ -16,7 +16,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { SearchDoc } from "../../lib/docs-search"
 
 /** Flat browse order — mirrors the sidebar group order (DocsSidebar.astro). */
-const GROUP_ORDER = ["Getting Started", "Concepts", "Infrastructure", "Integrations", "Local Mode", "Effect SDK", "Platforms", "Instrumentation"]
+const GROUP_ORDER = [
+	"Getting Started",
+	"Concepts",
+	"Infrastructure",
+	"Integrations",
+	"Local Mode",
+	"Effect SDK",
+	"Platforms",
+	"Instrumentation",
+]
 
 const MAX_RESULTS = 8
 
@@ -157,7 +166,9 @@ export default function DocsSearch() {
 			>
 				<MagnifierIcon className="size-3.5" />
 				<span className="hidden sm:inline">Search docs</span>
-				<kbd className="hidden font-medium text-[10px] text-fg-muted/70 tracking-widest sm:inline">⌘K</kbd>
+				<kbd className="hidden font-medium text-[10px] text-fg-muted/70 tracking-widest sm:inline">
+					⌘K
+				</kbd>
 			</button>
 
 			{/* Gate the popup on `open` so it unmounts cleanly — base-ui leaves the

@@ -7,6 +7,7 @@ import type { Log, LogsResponse } from "@/api/warehouse/logs"
 import type { SpanHierarchyResponse } from "@/api/warehouse/traces"
 import { listLogsResultAtom, getSpanHierarchyResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
+import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 
 function formatRelativeMs(ms: number): string {
 	if (ms < 1) return "+0ms"
@@ -34,9 +35,13 @@ interface LogTraceTimelineProps {
  * `/logs/$logId` page alike.
  */
 export function LogTraceTimeline({ currentLog, onLogSelect }: LogTraceTimelineProps) {
+	// Bound the trace's logs to a window around this log so ClickHouse can prune
+	// partitions (and so logs older than the default 24h window still resolve),
+	// mirroring the span-hierarchy query below.
+	const window = computeTraceTimeWindow(currentLog.timestamp)
 	const logsResult = useAtomValue(
 		currentLog.traceId
-			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: 200 } })
+			? listLogsResultAtom({ data: { traceId: currentLog.traceId, limit: 200, ...window } })
 			: disabledResultAtom<LogsResponse>(),
 	)
 	const spansResult = useAtomValue(

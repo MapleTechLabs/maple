@@ -1,7 +1,8 @@
 import { useMemo } from "react"
-import { CartesianGrid, Line, LineChart, ReferenceLine, XAxis, YAxis } from "recharts"
+import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
 import type { BaseChartProps } from "../_shared/chart-types"
+import { renderReferenceLines } from "../_shared/reference-markers"
 import { latencyTimeSeriesData } from "../_shared/sample-data"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
 import {
@@ -28,6 +29,7 @@ export function LatencyLineChart({
 	legend,
 	tooltip,
 	referenceLines,
+	renderReferenceMarker,
 	syncId,
 }: BaseChartProps) {
 	const chartData = data ?? latencyTimeSeriesData
@@ -55,15 +57,7 @@ export function LatencyLineChart({
 		<ChartContainer config={chartConfig} className={className}>
 			<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<CartesianGrid vertical={false} />
-				{referenceLines?.map((rl, i) => (
-					<ReferenceLine
-						key={`release-${i}`}
-						x={rl.x}
-						stroke={rl.color ?? "var(--muted-foreground)"}
-						strokeDasharray={rl.strokeDasharray ?? "6 4"}
-						strokeWidth={1}
-					/>
-				))}
+				{renderReferenceLines(referenceLines, renderReferenceMarker)}
 				<XAxis
 					dataKey="bucket"
 					tickLine={false}

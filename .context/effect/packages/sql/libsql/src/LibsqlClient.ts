@@ -1,20 +1,11 @@
 /**
- * libSQL client implementation for Effect SQL, backed by `@libsql/client`.
+ * libSQL adapter for Effect SQL, backed by `@libsql/client`.
  *
- * This module creates or wraps a libSQL SDK client and exposes it as both the
- * libSQL-specific `LibsqlClient` service and the generic Effect `SqlClient`.
- * Use it for Turso-hosted libSQL databases, local `file:` databases, embedded
- * replicas configured with `syncUrl`, migrations, tests, and application code
- * that wants SQLite-compatible SQL through Effect services and layers.
- *
- * When connection options are supplied the SDK client is scoped and closed by
- * the layer; when `liveClient` is supplied ownership stays with the caller.
- * Top-level `withTransaction` blocks open a libSQL write transaction, nested
- * transactions use SQLite savepoints, and only statements run through the same
- * Effect client participate in that transaction. Keep Turso or remote libSQL
- * transactions short, because the transaction holds the client reservation
- * until commit or rollback; direct SDK calls made outside this service are not
- * coordinated with Effect SQL transactions. Row streaming is not implemented.
+ * This module provides a {@link LibsqlClient} and the generic SQL client
+ * service for `@libsql/client`. It uses Effect SQL's SQLite compiler, supports
+ * managed SDK clients or caller-owned live clients, classifies libSQL and
+ * SQLite failures as `SqlError`s, and provides transaction support with
+ * savepoints. Streaming queries are not implemented by this driver.
  *
  * @since 4.0.0
  */
@@ -67,9 +58,13 @@ export interface LibsqlClient extends Client.SqlClient {
 }
 
 /**
- * Context tag used to access the `LibsqlClient` service.
+ * Service tag for the libSQL client service.
  *
- * @category tags
+ * **When to use**
+ *
+ * Use to access or provide a libSQL client through the Effect context.
+ *
+ * @category services
  * @since 4.0.0
  */
 export const LibsqlClient = Context.Service<LibsqlClient>("@effect/sql-libsql/LibsqlClient")

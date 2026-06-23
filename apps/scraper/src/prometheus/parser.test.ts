@@ -95,9 +95,12 @@ describe("parsePrometheusText", () => {
 	})
 
 	it("parses +Inf, -Inf and NaN values", () => {
-		const body = ["# TYPE extremes gauge", "extremes{kind=\"pos\"} +Inf", "extremes{kind=\"neg\"} -Inf", "extremes{kind=\"nan\"} NaN"].join(
-			"\n",
-		)
+		const body = [
+			"# TYPE extremes gauge",
+			'extremes{kind="pos"} +Inf',
+			'extremes{kind="neg"} -Inf',
+			'extremes{kind="nan"} NaN',
+		].join("\n")
 		const result = parsePrometheusText(body)
 		const family = familyByName(result.families, "extremes")
 		expect(family.samples[0]?.value).toBe(Number.POSITIVE_INFINITY)
@@ -108,8 +111,8 @@ describe("parsePrometheusText", () => {
 	it("parses optional timestamps (ms for text format, seconds for OpenMetrics)", () => {
 		const body = [
 			"# TYPE ts_metric gauge",
-			"ts_metric{src=\"prom\"} 1 1712345678901",
-			"ts_metric{src=\"om\"} 2 1712345678.5",
+			'ts_metric{src="prom"} 1 1712345678901',
+			'ts_metric{src="om"} 2 1712345678.5',
 		].join("\n")
 		const result = parsePrometheusText(body)
 		const family = familyByName(result.families, "ts_metric")

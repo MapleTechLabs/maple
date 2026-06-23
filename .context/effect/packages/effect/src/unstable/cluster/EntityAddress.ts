@@ -4,19 +4,6 @@
  * messages, persisted envelopes, workflow executions, and entity managers can
  * agree on the same routing target.
  *
- * **Common tasks**
- *
- * - Build an address after resolving an entity id to a shard with `Sharding`
- * - Attach an address to cluster envelopes and persisted messages
- * - Compare or hash addresses when tracking active or resuming entities
- *
- * **Gotchas**
- *
- * - The shard id is part of the address identity; the same entity type and id
- *   on a different shard is a different address.
- * - Entity ids should be routed through the same shard group logic used by the
- *   entity definition so messages are sent to the runner that owns the shard.
- *
  * @since 4.0.0
  */
 import * as Equal from "../../Equal.ts"
@@ -76,6 +63,25 @@ export class EntityAddress extends Schema.Class<EntityAddress>(TypeId)({
 }
 /**
  * Constructs an `EntityAddress` from a shard ID, entity type, and entity ID.
+ *
+ * **When to use**
+ *
+ * Use to create the routing target for a known entity type and entity id after
+ * resolving that id to the `ShardId` assigned by the entity's shard group.
+ *
+ * **Details**
+ *
+ * The returned `EntityAddress` stores the supplied `shardId`, `entityType`, and
+ * `entityId`. Equality and hashing include all three fields.
+ *
+ * **Gotchas**
+ *
+ * `make` does not choose the shard for an entity. Use the same shard group
+ * logic as the entity definition; a different `shardId` makes a different
+ * address even when the entity type and entity id match.
+ *
+ * @see {@link EntityAddress} for the equality, hashing, and string formatting behavior of constructed addresses
+ * @see {@link ShardId} for the shard identifier included in the address
  *
  * @category constructors
  * @since 4.0.0

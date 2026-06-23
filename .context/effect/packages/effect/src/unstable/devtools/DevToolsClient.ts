@@ -1,15 +1,10 @@
 /**
- * Provides the low-level client used by the unstable devtools integration to
- * exchange telemetry with an Effect devtools server over the current `Socket`.
+ * Low-level devtools client and tracer wiring over the current `Socket`.
  *
- * The client speaks the devtools NDJSON protocol, publishes span starts, span
- * events, span completions, and metric snapshots, and exposes layers for
- * installing a tracer that mirrors the current tracer while forwarding data to
- * devtools. Most applications should use the higher-level devtools layers
- * instead of constructing this service directly. When using this module
- * directly, provide a live `Socket`, keep the layer scoped so the background
- * ping and stream fibers are finalized, and prefer `layerTracer` when the goal
- * is to observe an application's Effect traces.
+ * `DevToolsClient` speaks the devtools NDJSON protocol used by the unstable
+ * devtools integration. It sends span starts, span events, span completions,
+ * ping messages, and metric snapshots through a socket, then exposes tracer
+ * layers that forward telemetry while preserving the current tracer's behavior.
  *
  * @since 4.0.0
  */
@@ -36,7 +31,7 @@ const ResponseSchema = Schema.toCodecJson(DevToolsSchema.Response)
  * Service for sending span and span-event telemetry to the Effect devtools
  * connection.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export class DevToolsClient extends Context.Service<
@@ -122,6 +117,24 @@ const toMetricsSnapshot = (
  * NDJSON protocol, sending periodic pings, and responding to metrics snapshot
  * requests.
  *
+ * **When to use**
+ *
+ * Use when you already have a `Socket` and need the low-level `DevToolsClient`
+ * service to exchange devtools telemetry directly.
+ *
+ * **Details**
+ *
+ * The effect requires `Scope` because it starts background fibers for the socket
+ * stream and heartbeat.
+ *
+ * **Gotchas**
+ *
+ * `make` creates only the client service; tracing is installed separately.
+ *
+ * @see {@link layer} for providing the client as a layer
+ * @see {@link makeTracer} for creating a tracer after a `DevToolsClient` is available
+ * @see {@link layerTracer} for creating the client from the current `Socket` and installing the tracer as a layer
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -138,6 +151,26 @@ export const make: Effect.Effect<
 
 /**
  * Layer that provides `DevToolsClient` using the current `Socket`.
+ *
+ * **When to use**
+ *
+ * Use to provide the low-level `DevToolsClient` service over an existing
+ * `Socket` for custom devtools integrations that send telemetry through the
+ * client directly.
+ *
+ * **Details**
+ *
+ * It delegates to `make`, so it speaks the devtools NDJSON protocol over the
+ * provided `Socket`, sends periodic pings, responds to metrics snapshot
+ * requests, and finalizes its background fibers when the layer scope closes.
+ *
+ * **Gotchas**
+ *
+ * This layer only provides the client. It does not install the devtools tracer
+ * by itself.
+ *
+ * @see {@link make} for constructing the client as a scoped effect instead of a layer
+ * @see {@link layerTracer} for a higher-level layer that creates the client and installs the devtools tracer
  *
  * @category layers
  * @since 4.0.0

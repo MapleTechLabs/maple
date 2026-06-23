@@ -185,6 +185,65 @@ describe("AnthropicLanguageModel", () => {
         assert.deepStrictEqual(dynamicTool.input_schema, inputSchema)
       }))
   })
+
+  describe("generateObject", () => {
+    // A model that supports native structured output requests it via `output_config.format` (json_schema)
+    // rather than falling back to a forced JSON tool.
+    const assertNativeStructuredOutput = (model: string) =>
+      Effect.gen(function*() {
+        let capturedRequest: HttpClientRequest.HttpClientRequest | undefined = undefined
+        const layer = AnthropicClient.layer({ apiKey: Redacted.make("sk-test-key") }).pipe(
+          Layer.provide(Layer.succeed(
+            HttpClient.HttpClient,
+            makeHttpClient((request) => {
+              capturedRequest = request
+              return Effect.succeed(jsonResponse(request, {
+                id: "msg_test_1",
+                type: "message",
+                role: "assistant",
+                model,
+                content: [{ type: "text", text: JSON.stringify({ name: "John", age: 30 }) }],
+                stop_reason: "end_turn",
+                stop_sequence: null,
+                usage: {
+                  cache_creation: null,
+                  cache_creation_input_tokens: null,
+                  cache_read_input_tokens: null,
+                  inference_geo: null,
+                  input_tokens: 10,
+                  output_tokens: 5,
+                  service_tier: null
+                }
+              }))
+            })
+          ))
+        )
+
+        // Assert the request shape; the response outcome is irrelevant here.
+        yield* LanguageModel.generateObject({
+          prompt: "Give me a person",
+          schema: Schema.Struct({ name: Schema.String, age: Schema.Number })
+        }).pipe(
+          Effect.provide(AnthropicLanguageModel.model(model)),
+          Effect.provide(layer),
+          Effect.ignore
+        )
+
+        assert.isDefined(capturedRequest)
+        if (capturedRequest === undefined) {
+          return
+        }
+
+        const body = yield* getRequestBody(capturedRequest)
+        assert.strictEqual(body.output_config?.format?.type, "json_schema")
+      })
+
+    it.effect("uses native json_schema output for claude-opus-4-6", () =>
+      assertNativeStructuredOutput("claude-opus-4-6"))
+
+    it.effect("uses native json_schema output for claude-sonnet-4-6", () =>
+      assertNativeStructuredOutput("claude-sonnet-4-6"))
+  })
 })
 
 const makeHttpClient = (

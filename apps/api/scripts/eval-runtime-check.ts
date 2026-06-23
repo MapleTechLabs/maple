@@ -8,10 +8,7 @@
  * Exits non-zero on failure. Keep it as a dev utility — the LLM path
  * (execution.eval.ts) only adds tool *selection* on top of what this exercises.
  */
-import {
-	installFakeWarehouse,
-	restoreWarehouse,
-} from "@/mcp/__evals__/fake-warehouse"
+import { installFakeWarehouse, restoreWarehouse } from "@/mcp/__evals__/fake-warehouse"
 import { makeEvalRuntime, runToolDirect } from "@/mcp/__evals__/eval-runtime"
 import { FIXTURES } from "@/mcp/__evals__/utils"
 import { LARGE_TRACE_SPAN_COUNT } from "@/mcp/__evals__/fixtures"
@@ -21,9 +18,7 @@ const main = async () => {
 	const rt = makeEvalRuntime()
 	try {
 		const result = await runToolDirect(rt, "inspect_trace", { trace_id: FIXTURES.traceId })
-		const text: string = (result?.content ?? [])
-			.map((c: { text?: string }) => c.text ?? "")
-			.join("\n")
+		const text: string = (result?.content ?? []).map((c: { text?: string }) => c.text ?? "").join("\n")
 
 		const expected = `of ${LARGE_TRACE_SPAN_COUNT} spans (errors and longest first)`
 		const checks: Array<[string, boolean]> = [

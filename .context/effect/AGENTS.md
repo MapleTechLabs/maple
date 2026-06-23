@@ -7,28 +7,97 @@ This is the Effect library repository, focusing on functional programming patter
 - Keep changes focused and follow established patterns in the repository.
 - Before writing code, read the relevant files in `./.patterns/` and inspect similar existing code.
 
+## Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform tasks into verifiable goals:
+
+- "Add validation" → "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" → "Write a test that reproduces it, then make it pass"
+- "Refactor X" → "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
 ## Workflow
 
 1. Inspect nearby implementation, tests, and pattern docs before editing.
-2. Make the smallest focused change that solves the task.
-3. Prefer existing abstractions and conventions over introducing new ones.
-4. For ad hoc runnable code, create a temporary file in `scratchpad/`, run it with `node scratchpad/<file>.ts`, and delete it when done.
-5. Run the validation appropriate to the change type.
-6. Report which validation commands were run and any commands that could not be run.
+2. Prefer existing abstractions and conventions over introducing new ones.
+3. For ad hoc runnable code, create a temporary file in `scratchpad/`, run it with `node scratchpad/<file>.ts`, and delete it when done.
+   The local runtime is Node 24, which can run TypeScript files directly; use plain `node` for local TypeScript probes instead of `tsx` unless `node` fails.
+4. Run the validation appropriate to the change type.
+5. Report which validation commands were run and any commands that could not be run.
 
 ## Validation
 
 Use the narrowest validation that still covers the change:
 
-| Change type                 | Validation                                                                                                  |
-| --------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| Code changes                | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                                     |
-| Tests-only changes          | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                                     |
-| Type-level/API type changes | Targeted `pnpm test-types <filename>`, plus `pnpm check:tsgo` when source types changed                     |
-| JSDoc/example changes       | From the changed package directory, run `pnpm docgen`; also run `pnpm check:tsgo` when source types changed |
-| Docs-only changes           | `pnpm lint-fix`; no tests required unless examples or code changed                                          |
+| Change type                      | Validation                                                                              |
+| -------------------------------- | --------------------------------------------------------------------------------------- |
+| Code changes                     | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                 |
+| Tests-only changes               | `pnpm lint-fix`, targeted `pnpm test <test_file.ts>`, `pnpm check:tsgo`                 |
+| Type-level/API type changes      | Targeted `pnpm test-types <filename>`, plus `pnpm check:tsgo` when source types changed |
+| JSDoc text/category/link changes | `pnpm lint`                                                                             |
+| JSDoc example changes            | `pnpm lint`; from the changed package directory, run `pnpm docgen`                      |
+| Docs-only changes                | `pnpm lint-fix`; no tests required unless examples or code changed                      |
 
-If `pnpm check:tsgo` continues to fail unexpectedly, run `pnpm clean` and then re-run `pnpm check:tsgo`.
+## Bundle Size Preview
+
+When asked to show bundle-size impact for a commit, use the existing bundle comparison workflow:
+
+1. For the latest commit, run `pnpm bundle-compare HEAD~1`.
+   For another base, run `pnpm bundle-compare <base-ref>`.
+2. Read the Markdown report from `tmp/bundle-stats.txt` and summarize the non-zero differences.
+3. Leave `tmp/bundle-base` in place unless cleanup is requested. To clean it up, run `git worktree remove --force tmp/bundle-base`.
 
 ## Coding Patterns
 
@@ -77,7 +146,3 @@ A description of the change.
 ```
 
 Tests-only changes, internal refactors, docs-only changes, and JSDoc-only maintenance may skip changesets by maintainer decision.
-
-## Asking Before Risky Changes
-
-Ask before proceeding with broad refactors, public API changes, dependency or configuration changes, unclear requirements, or destructive operations.

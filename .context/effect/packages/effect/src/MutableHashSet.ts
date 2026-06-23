@@ -1,72 +1,11 @@
 /**
- * The `MutableHashSet` module provides a mutable hash set for storing unique
- * values with efficient membership checks, insertion, removal, and iteration.
- * It is built on {@link MutableHashMap}: each set value is stored as a map key,
- * so uniqueness follows the same hashing and equality rules as the underlying
- * mutable hash map.
+ * Stores unique values in a mutable hash set.
  *
- * **Mental model**
- *
- * - `MutableHashSet<V>` is a mutable collection of unique values of type `V`
- * - Operations such as {@link add}, {@link remove}, and {@link clear} mutate
- *   the set in place
- * - Duplicate values are ignored according to Effect equality and hashing semantics
- * - Values that implement `Equal` / `Hash` are compared structurally
- * - Primitive values and references that do not implement Effect equality use
- *   the normal hash map behavior
- * - The set is iterable, so `Array.from(set)` or `for...of` can be used to
- *   inspect its values
- *
- * **Common tasks**
- *
- * - Create an empty set: {@link empty}
- * - Create from values: {@link make}
- * - Create from any iterable: {@link fromIterable}
- * - Add a value: {@link add}
- * - Check membership: {@link has}
- * - Remove a value: {@link remove}
- * - Remove all values: {@link clear}
- * - Count unique values: {@link size}
- * - Narrow unknown values: {@link isMutableHashSet}
- *
- * **Gotchas**
- *
- * - This data structure is intentionally mutable; keep ownership clear when
- *   sharing it between callers
- * - Mutating operations return the same set instance for convenient piping, not
- *   a copy
- * - Iteration order should not be used as a stable sorting mechanism
- * - For immutable set operations, use Effect's immutable collection modules
- *   instead
- *
- * **Performance**
- *
- * - Add, membership checks, and removal are O(1) on average and O(n) in the
- *   presence of hash collisions
- * - Clearing and reading the size are O(1)
- * - Iteration is O(n)
- *
- * **Quickstart**
- *
- * **Example** (Tracking unique values)
- *
- * ```ts
- * import { MutableHashSet } from "effect"
- *
- * const set = MutableHashSet.make("apple", "banana", "apple")
- *
- * MutableHashSet.add(set, "cherry")
- * MutableHashSet.remove(set, "banana")
- *
- * console.log(MutableHashSet.has(set, "apple"))
- * // Output: true
- *
- * console.log(MutableHashSet.size(set))
- * // Output: 2
- *
- * console.log(Array.from(set))
- * // Output: ["apple", "cherry"]
- * ```
+ * `MutableHashSet` updates the same collection in place and supports fast
+ * membership checks, insertion, removal, clearing, and iteration. It is built
+ * on `MutableHashMap`: each set value is stored as a map key, so uniqueness
+ * follows the same hashing and equality rules as the underlying mutable hash
+ * map.
  *
  * @since 2.0.0
  */
@@ -83,6 +22,11 @@ const TypeId = "~effect/collections/MutableHashSet"
 /**
  * A mutable hash set for storing unique values with Effect structural equality
  * support.
+ *
+ * **When to use**
+ *
+ * Use to store and mutate a collection of unique values with Effect hashing and
+ * equality semantics.
  *
  * **Details**
  *
@@ -126,7 +70,21 @@ export interface MutableHashSet<out V> extends Iterable<V>, Pipeable, Inspectabl
 }
 
 /**
- * Checks if the specified value is a `MutableHashSet`, `false` otherwise.
+ * Checks whether the specified value is a `MutableHashSet`, `false` otherwise.
+ *
+ * **When to use**
+ *
+ * Use to narrow an unknown value before treating it as a mutable hash set.
+ *
+ * **Details**
+ *
+ * The check looks for the `MutableHashSet` runtime marker.
+ *
+ * **Gotchas**
+ *
+ * Native `Set` values do not satisfy this check.
+ *
+ * @see {@link MutableHashSet} for the mutable hash set interface
  *
  * @category refinements
  * @since 4.0.0
@@ -164,6 +122,14 @@ const fromHashMap = <V>(keyMap: MutableHashMap.MutableHashMap<V, boolean>): Muta
 /**
  * Creates an empty MutableHashSet.
  *
+ * **When to use**
+ *
+ * Use to create a fresh mutable set before adding values over time.
+ *
+ * **Details**
+ *
+ * Each call returns a new empty set backed by an empty `MutableHashMap`.
+ *
  * **Example** (Creating an empty set)
  *
  * ```ts
@@ -180,6 +146,10 @@ const fromHashMap = <V>(keyMap: MutableHashMap.MutableHashMap<V, boolean>): Muta
  * console.log(Array.from(set)) // ["apple", "banana"]
  * ```
  *
+ * @see {@link make} for creating a set from explicit values
+ * @see {@link fromIterable} for creating a set from an iterable of values
+ * @see {@link clear} for emptying an existing mutable set
+ *
  * @category constructors
  * @since 2.0.0
  */
@@ -188,6 +158,10 @@ export const empty = <K = never>(): MutableHashSet<K> => fromHashMap(MutableHash
 /**
  * Creates a MutableHashSet from an iterable collection of values.
  * Duplicates are automatically removed.
+ *
+ * **When to use**
+ *
+ * Use to build a mutable hash set from any iterable of values.
  *
  * **Example** (Creating a set from an iterable)
  *
@@ -219,6 +193,10 @@ export const fromIterable = <K = never>(keys: Iterable<K>): MutableHashSet<K> =>
  * Creates a MutableHashSet from a variable number of values.
  * Duplicates are automatically removed.
  *
+ * **When to use**
+ *
+ * Use to build a mutable hash set from explicit values.
+ *
  * **Example** (Creating a set from values)
  *
  * ```ts
@@ -249,6 +227,10 @@ export const make = <Keys extends ReadonlyArray<unknown>>(
 /**
  * Adds a value to the MutableHashSet, mutating the set in place.
  * If the value already exists, the set remains unchanged.
+ *
+ * **When to use**
+ *
+ * Use to insert a value into a mutable set while keeping uniqueness.
  *
  * **Example** (Adding values)
  *
@@ -286,7 +268,16 @@ export const add: {
 >(2, (self, key) => (MutableHashMap.set(self.keyMap, key, true), self))
 
 /**
- * Checks if the MutableHashSet contains the specified value.
+ * Checks whether the MutableHashSet contains the specified value.
+ *
+ * **When to use**
+ *
+ * Use to test whether a mutable set currently contains a value.
+ *
+ * **Details**
+ *
+ * Membership follows the same hashing and equality rules as the underlying
+ * `MutableHashMap`.
  *
  * **Example** (Checking for a value)
  *
@@ -307,6 +298,9 @@ export const add: {
  * console.log(MutableHashSet.has(set, "grape")) // true
  * ```
  *
+ * @see {@link add} for adding a value to the set
+ * @see {@link remove} for removing a value from the set
+ *
  * @category elements
  * @since 2.0.0
  */
@@ -321,6 +315,10 @@ export const has: {
 /**
  * Removes the specified value from the MutableHashSet, mutating the set in place.
  * If the value doesn't exist, the set remains unchanged.
+ *
+ * **When to use**
+ *
+ * Use to delete a value from a mutable set if it is present.
  *
  * **Example** (Removing a value)
  *
@@ -360,6 +358,10 @@ export const remove: {
 /**
  * Returns the number of unique values in the MutableHashSet.
  *
+ * **When to use**
+ *
+ * Use to read how many unique values are currently stored in the set.
+ *
  * **Example** (Checking set size)
  *
  * ```ts
@@ -388,6 +390,10 @@ export const size = <V>(self: MutableHashSet<V>): number => MutableHashMap.size(
 /**
  * Removes all values from the MutableHashSet, mutating the set in place.
  * The set becomes empty after this operation.
+ *
+ * **When to use**
+ *
+ * Use to empty a mutable set while keeping the same set instance.
  *
  * **Example** (Clearing all values)
  *

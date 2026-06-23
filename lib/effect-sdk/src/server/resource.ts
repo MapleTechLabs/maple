@@ -8,7 +8,7 @@ import { getAutoPlatformAttributes } from "./platform.js"
  * `OTEL_EXPORTER_OTLP_ENDPOINT` — so end users only need to supply an ingest
  * key, not an URL.
  */
-export const DEFAULT_MAPLE_ENDPOINT = "https://ingest.maple.dev"
+const DEFAULT_MAPLE_ENDPOINT = "https://ingest.maple.dev"
 
 const stringOrUndefined = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined
@@ -110,7 +110,9 @@ export const resolveResource = (config: ResourceConfigInput): Effect.Effect<Reso
 		const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
 		// Prefer the platform-provided commit SHA; fall back to serviceVersion only
 		// when it is itself SHA-shaped. Never shell out to git at runtime.
-		const headRevision = Option.getOrUndefined(envServiceVersion) ?? (isCommitSha(serviceVersion) ? serviceVersion : undefined)
+		const headRevision =
+			Option.getOrUndefined(envServiceVersion) ??
+			(isCommitSha(serviceVersion) ? serviceVersion : undefined)
 
 		const envEnvironment = yield* EnvConfig.environment
 		const environment = config.environment ?? envEnvironment

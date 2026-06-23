@@ -263,6 +263,182 @@ export const nav_nodejs = () => `Node.js`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const nav_product = () => `プロダクト`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_compare = () => `比較`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_distributed_tracing = () => `サービスをまたいで全リクエストを追跡`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_browser_sessions = () => `セッションを再生し、トレースへ移動`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_metrics_dashboards = () => `重要なシグナルをすべて計測`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_log_management = () => `ログを即座に検索・相関`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_service_catalog = () => `すべてのサービスを一目で把握`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_error_tracking = () => `エラーを素早く発見して修正`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ai_mcp = () => `MCPによるAI診断`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_kubernetes = () => `Pod・ノード・ワークロードをスパンと並べて監視`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_ecommerce = () => `決済の失敗を顧客より先に検知`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_microservices = () => `サービス境界をまたぐレイテンシを追跡`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_api_performance = () => `遅いエンドポイントを発見して改善`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nextjs = () => `ルート・RSC・ミドルウェアを自動計装`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_python = () => `Flask・FastAPI・Djangoをコードレスでトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_nodejs = () => `Express・Fastifyをフルスタックでトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_datadog = () => `オープンソース、ホスト課金なし`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_grafana = () => `組み立て不要のオールインワン`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_new_relic = () => `OTelネイティブ、明朗な料金`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_desc_vs_dash0 = () => `より多くのシグナルと深いトレース`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer = () => `すべてを一つのプラットフォームで`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const nav_product_footer_cta = () => `すべての機能を見る →`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const hero_badge = () => `OpenTelemetryネイティブ`
 
 
@@ -519,7 +695,7 @@ export const mcp_lede = () => `Maple ships with a first-class MCP server. Any co
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const sessions_eyebrow = () => `06 · Sessions`
+export const sessions_eyebrow = () => `06 · Browser Sessions`
 
 
 /**
@@ -1015,7 +1191,7 @@ export const cta_bookend_title = () => `Run it yourself.`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const cta_bookend_lede = () => `14-day trial on Starter. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
+export const cta_bookend_lede = () => `14-day free trial. Self-host is supported. The dashboard ships with the same live waterfall you just watched.`
 
 
 /**
@@ -2227,7 +2403,31 @@ export const pricing_advanced_alerting = () => `高度なアラート`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_full_api = () => `フルAPI`
+export const pricing_full_api = () => `フルAPIアクセス`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_mcp_server = () => `MCPサーバー`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_chat = () => `AIチャット`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
+export const pricing_ai_triage = () => `AIエラートリアージ`
 
 
 /**
@@ -2331,6 +2531,14 @@ export const pricing_custom = () => `カスタム`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
+export const pricing_enterprise_price = () => `$2,000から`
+
+
+/**
+ * 
+ * @returns {string}
+ */
+/* @__NO_SIDE_EFFECTS__ */
 export const pricing_enterprise_desc = () => `大規模チーム向けのカスタム料金。専任サポートとカスタム保持期間付き。`
 
 
@@ -2355,7 +2563,7 @@ export const pricing_custom_retention = () => `カスタム保持期間`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const pricing_enterprise_alerting = () => `エンタープライズアラート`
+export const pricing_otel_data_help = () => `OTelデータ改善のハンズオン支援`
 
 
 /**
@@ -2406,6 +2614,12 @@ export const pricing_metrics = () => `メトリクス`
 export const pricing_start_trial = (params) => `${params.duration}日間の無料トライアルを開始`
 
 
+export { pricing_calc_label } from "./en.js"
+
+export { pricing_calc_heading } from "./en.js"
+
+export { pricing_calc_sub } from "./en.js"
+
 /**
  * 
  * @returns {string}
@@ -2451,7 +2665,7 @@ export const faq_limits_q = () => `プランの制限を超えた場合は？`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_limits_a = () => `制限に近づくと通知します。Starterプランでは上限に達すると取り込みが一時停止します。Startupプランでは、追加使用量は透明なGB単価で課金されます。`
+export const faq_limits_a = () => `制限に近づくと通知します。Startupプランでは、追加使用量は透明なGB単価で課金されます。`
 
 
 /**
@@ -2467,7 +2681,7 @@ export const faq_retention_q = () => `データの保持期間は？`
  * @returns {string}
  */
 /* @__NO_SIDE_EFFECTS__ */
-export const faq_retention_a = () => `保持期間はプランにより異なります。Starterプランは14日、Startupは30日、Enterpriseプランはカスタム保持期間を提供します。すべてのプランで保持データへの完全なクエリアクセスが含まれます。`
+export const faq_retention_a = () => `保持期間はプランにより異なります。Startupは30日、Enterpriseプランはカスタム保持期間を提供します。すべてのプランで保持データへの完全なクエリアクセスが含まれます。`
 
 
 /**

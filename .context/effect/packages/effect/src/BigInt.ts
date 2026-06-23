@@ -1,6 +1,10 @@
 /**
- * This module provides utility functions and type class instances for working with the `bigint` type in TypeScript.
- * It includes functions for basic arithmetic operations.
+ * Works with JavaScript `bigint` values.
+ *
+ * This module exposes the native `BigInt` constructor together with helpers for
+ * checking, arithmetic, comparison, range checks, safe parsing and conversions
+ * that return `Option`, integer square roots, aggregation, ordering,
+ * equivalence, reducers, and combiners.
  *
  * @since 2.0.0
  */
@@ -15,7 +19,20 @@ import * as predicate from "./Predicate.ts"
 import * as Reducer from "./Reducer.ts"
 
 /**
- * Reference to the global BigInt constructor.
+ * Exposes the global bigint constructor for JavaScript bigint coercion.
+ *
+ * **When to use**
+ *
+ * Use to access native JavaScript bigint constructor coercion from the Effect
+ * module namespace.
+ *
+ * **Gotchas**
+ *
+ * This follows native `BigInt` coercion rules. It throws for invalid strings or
+ * non-integral numbers, and whitespace-only strings coerce to `0n`.
+ *
+ * @see {@link fromString} for parsing strings into an `Option`
+ * @see {@link fromNumber} for converting safe integers into an `Option`
  *
  * **Example** (Constructing bigints)
  *
@@ -39,7 +56,11 @@ const bigint1 = BigInt(1)
 const bigint2 = BigInt(2)
 
 /**
- * Tests if a value is a `bigint`.
+ * Checks whether a value is a `bigint`.
+ *
+ * **When to use**
+ *
+ * Use to validate unknown input and narrow it to `bigint`.
  *
  * **Example** (Checking for bigints)
  *
@@ -59,6 +80,11 @@ export const isBigInt: (u: unknown) => u is bigint = predicate.isBigInt
 /**
  * Provides an addition operation on `bigint`s.
  *
+ * **When to use**
+ *
+ * Use when you need a binary addition function for piping or higher-order APIs
+ * instead of the infix addition operator.
+ *
  * **Example** (Adding bigints)
  *
  * ```ts
@@ -67,6 +93,8 @@ export const isBigInt: (u: unknown) => u is bigint = predicate.isBigInt
  *
  * assert.deepStrictEqual(BigInt.sum(2n, 3n), 5n)
  * ```
+ *
+ * @see {@link sumAll} for summing an iterable of `bigint` values
  *
  * @category math
  * @since 2.0.0
@@ -79,6 +107,10 @@ export const sum: {
 /**
  * Provides a multiplication operation on `bigint`s.
  *
+ * **When to use**
+ *
+ * Use to multiply two `bigint` values.
+ *
  * **Example** (Multiplying bigints)
  *
  * ```ts
@@ -87,6 +119,8 @@ export const sum: {
  *
  * assert.deepStrictEqual(BigInt.multiply(2n, 3n), 6n)
  * ```
+ *
+ * @see {@link multiplyAll} for multiplying an iterable of `bigint` values
  *
  * @category math
  * @since 2.0.0
@@ -98,6 +132,10 @@ export const multiply: {
 
 /**
  * Provides a subtraction operation on `bigint`s.
+ *
+ * **When to use**
+ *
+ * Use to subtract one `bigint` value from another.
  *
  * **Example** (Subtracting bigints)
  *
@@ -117,7 +155,12 @@ export const subtract: {
 } = dual(2, (self: bigint, that: bigint): bigint => self - that)
 
 /**
- * Safely divides one `bigint` by another.
+ * Divides one `bigint` by another safely.
+ *
+ * **When to use**
+ *
+ * Use to divide `bigint` values while representing division by zero as
+ * `Option.none`.
  *
  * **Details**
  *
@@ -134,6 +177,9 @@ export const subtract: {
  * assert.deepStrictEqual(BigInt.divide(6n, 0n), Option.none())
  * ```
  *
+ * @see {@link divideUnsafe} for division that throws when the divisor is `0n`
+ * @see {@link remainder} for the JavaScript remainder operation
+ *
  * @category math
  * @since 2.0.0
  */
@@ -147,6 +193,11 @@ export const divide: {
 
 /**
  * Divides one `bigint` by another, throwing if the divisor is zero.
+ *
+ * **When to use**
+ *
+ * Use to divide `bigint` values where the divisor is known to be non-zero and
+ * division by zero should be a thrown exception.
  *
  * **Details**
  *
@@ -167,6 +218,8 @@ export const divide: {
  * assert.deepStrictEqual(BigInt.divideUnsafe(6n, 4n), 1n)
  * ```
  *
+ * @see {@link divide} for division that returns `Option.none` when the divisor is `0n`
+ *
  * @category math
  * @since 4.0.0
  */
@@ -177,6 +230,10 @@ export const divideUnsafe: {
 
 /**
  * Returns the result of adding `1n` to a `bigint`.
+ *
+ * **When to use**
+ *
+ * Use to increment a `bigint` counter by one.
  *
  * **Example** (Incrementing a bigint)
  *
@@ -195,6 +252,10 @@ export const increment = (n: bigint): bigint => n + bigint1
 /**
  * Returns the result of subtracting `1n` from a `bigint`.
  *
+ * **When to use**
+ *
+ * Use to decrement a `bigint` counter by one.
+ *
  * **Example** (Decrementing a bigint)
  *
  * ```ts
@@ -211,6 +272,11 @@ export const decrement = (n: bigint): bigint => n - bigint1
 
 /**
  * Provides an `Order` instance for `bigint` that allows comparing and sorting BigInt values.
+ *
+ * **When to use**
+ *
+ * Use when you need to sort or compare bigint values through APIs that accept
+ * an ordering instance.
  *
  * **Example** (Comparing bigints with Order)
  *
@@ -232,7 +298,12 @@ export const decrement = (n: bigint): bigint => n - bigint1
 export const Order: order.Order<bigint> = order.BigInt
 
 /**
- * An `Equivalence` instance for bigints using strict equality (`===`).
+ * Equivalence instance for bigints using strict equality (`===`).
+ *
+ * **When to use**
+ *
+ * Use when checking bigint equality through APIs that accept an equivalence
+ * relation.
  *
  * **Example** (Comparing bigints for equivalence)
  *
@@ -250,6 +321,10 @@ export const Equivalence: Equ.Equivalence<bigint> = Equ.BigInt
 
 /**
  * Returns `true` if the first argument is less than the second, otherwise `false`.
+ *
+ * **When to use**
+ *
+ * Use to test whether one `bigint` is strictly less than another.
  *
  * **Example** (Checking less-than comparisons)
  *
@@ -273,6 +348,10 @@ export const isLessThan: {
 /**
  * Returns a function that checks if a given `bigint` is less than or equal to the provided one.
  *
+ * **When to use**
+ *
+ * Use to test whether one `bigint` is less than or equal to another.
+ *
  * **Example** (Checking less-than-or-equal comparisons)
  *
  * ```ts
@@ -294,6 +373,10 @@ export const isLessThanOrEqualTo: {
 
 /**
  * Returns `true` if the first argument is greater than the second, otherwise `false`.
+ *
+ * **When to use**
+ *
+ * Use to test whether one `bigint` is strictly greater than another.
  *
  * **Example** (Checking greater-than comparisons)
  *
@@ -317,6 +400,10 @@ export const isGreaterThan: {
 /**
  * Returns a function that checks if a given `bigint` is greater than or equal to the provided one.
  *
+ * **When to use**
+ *
+ * Use to test whether one `bigint` is greater than or equal to another.
+ *
  * **Example** (Checking greater-than-or-equal comparisons)
  *
  * ```ts
@@ -337,7 +424,11 @@ export const isGreaterThanOrEqualTo: {
 } = order.isGreaterThanOrEqualTo(Order)
 
 /**
- * Checks if a `bigint` is between a `minimum` and `maximum` value (inclusive).
+ * Checks whether a `bigint` is between a `minimum` and `maximum` value (inclusive).
+ *
+ * **When to use**
+ *
+ * Use to test whether a `bigint` falls inside an inclusive range.
  *
  * **Example** (Checking whether a bigint is within bounds)
  *
@@ -351,6 +442,8 @@ export const isGreaterThanOrEqualTo: {
  * assert.deepStrictEqual(between(-1n), false)
  * assert.deepStrictEqual(between(6n), false)
  * ```
+ *
+ * @see {@link clamp} for forcing a `bigint` into an inclusive range
  *
  * @category predicates
  * @since 2.0.0
@@ -369,11 +462,15 @@ export const between: {
 /**
  * Restricts the given `bigint` to be within the range specified by the `minimum` and `maximum` values.
  *
+ * **When to use**
+ *
+ * Use to force a `bigint` into an inclusive range.
+ *
  * **Details**
  *
- * - If the `bigint` is less than the `minimum` value, the function returns the `minimum` value.
- * - If the `bigint` is greater than the `maximum` value, the function returns the `maximum` value.
- * - Otherwise, it returns the original `bigint`.
+ * If the `bigint` is less than the minimum, the function returns the minimum.
+ * If the `bigint` is greater than the maximum, the function returns the
+ * maximum. Otherwise, it returns the original `bigint`.
  *
  * **Example** (Clamping a bigint to bounds)
  *
@@ -387,6 +484,8 @@ export const between: {
  * assert.equal(clamp(0n), 1n)
  * assert.equal(clamp(6n), 5n)
  * ```
+ *
+ * @see {@link between} for checking whether a `bigint` is already inside a range
  *
  * @category math
  * @since 2.0.0
@@ -405,6 +504,10 @@ export const clamp: {
 /**
  * Returns the minimum between two `bigint`s.
  *
+ * **When to use**
+ *
+ * Use to select the smaller of two `bigint` values.
+ *
  * **Example** (Finding the minimum bigint)
  *
  * ```ts
@@ -413,6 +516,8 @@ export const clamp: {
  *
  * assert.deepStrictEqual(BigInt.min(2n, 3n), 2n)
  * ```
+ *
+ * @see {@link max} for selecting the larger value
  *
  * @category math
  * @since 2.0.0
@@ -425,6 +530,10 @@ export const min: {
 /**
  * Returns the maximum between two `bigint`s.
  *
+ * **When to use**
+ *
+ * Use to select the larger of two `bigint` values.
+ *
  * **Example** (Finding the maximum bigint)
  *
  * ```ts
@@ -433,6 +542,8 @@ export const min: {
  *
  * assert.deepStrictEqual(BigInt.max(2n, 3n), 3n)
  * ```
+ *
+ * @see {@link min} for selecting the smaller value
  *
  * @category math
  * @since 2.0.0
@@ -444,6 +555,10 @@ export const max: {
 
 /**
  * Determines the sign of a given `bigint`.
+ *
+ * **When to use**
+ *
+ * Use to classify a `bigint` as negative, zero, or positive.
  *
  * **Example** (Determining bigint signs)
  *
@@ -464,6 +579,10 @@ export const sign = (n: bigint): Ordering => order.BigInt(n, bigint0)
 /**
  * Determines the absolute value of a given `bigint`.
  *
+ * **When to use**
+ *
+ * Use to remove the sign from a `bigint` while preserving its magnitude.
+ *
  * **Example** (Calculating absolute values)
  *
  * ```ts
@@ -483,6 +602,10 @@ export const abs = (n: bigint): bigint => (n < bigint0 ? -n : n)
 /**
  * Determines the greatest common divisor of two `bigint`s.
  *
+ * **When to use**
+ *
+ * Use to compute the greatest common divisor of two integer values.
+ *
  * **Example** (Calculating greatest common divisors)
  *
  * ```ts
@@ -493,6 +616,8 @@ export const abs = (n: bigint): bigint => (n < bigint0 ? -n : n)
  * assert.deepStrictEqual(BigInt.gcd(2n, 4n), 2n)
  * assert.deepStrictEqual(BigInt.gcd(16n, 24n), 8n)
  * ```
+ *
+ * @see {@link lcm} for computing the least common multiple
  *
  * @category math
  * @since 2.0.0
@@ -512,6 +637,10 @@ export const gcd: {
 /**
  * Determines the least common multiple of two `bigint`s.
  *
+ * **When to use**
+ *
+ * Use to compute the least common multiple of two integer values.
+ *
  * **Example** (Calculating least common multiples)
  *
  * ```ts
@@ -523,6 +652,8 @@ export const gcd: {
  * assert.deepStrictEqual(BigInt.lcm(16n, 24n), 48n)
  * ```
  *
+ * @see {@link gcd} for computing the greatest common divisor
+ *
  * @category math
  * @since 2.0.0
  */
@@ -533,6 +664,12 @@ export const lcm: {
 
 /**
  * Returns the integer square root of a non-negative `bigint`.
+ *
+ * **When to use**
+ *
+ * Use when you need to compute an integer square root for a `bigint` that has
+ * already been validated as non-negative, and you want negative input to throw
+ * instead of returning `Option.none`.
  *
  * **Details**
  *
@@ -554,6 +691,8 @@ export const lcm: {
  * assert.deepStrictEqual(BigInt.sqrtUnsafe(16n), 4n)
  * ```
  *
+ * @see {@link sqrt} for returning `Option.none` when the input is negative
+ *
  * @category math
  * @since 4.0.0
  */
@@ -572,7 +711,12 @@ export const sqrtUnsafe = (n: bigint): bigint => {
 }
 
 /**
- * Safely returns the integer square root of a `bigint`.
+ * Computes the integer square root of a `bigint` safely.
+ *
+ * **When to use**
+ *
+ * Use to compute an integer square root while representing negative input as
+ * `Option.none`.
  *
  * **Details**
  *
@@ -591,6 +735,8 @@ export const sqrtUnsafe = (n: bigint): bigint => {
  * BigInt.sqrt(-1n) // Option.none()
  * ```
  *
+ * @see {@link sqrtUnsafe} for square root computation that throws on negative input
+ *
  * @category math
  * @since 2.0.0
  */
@@ -600,6 +746,11 @@ export const sqrt = (n: bigint): Option.Option<bigint> =>
 /**
  * Takes an `Iterable` of `bigint`s and returns their sum as a single `bigint`. Returns `0n` for an empty iterable.
  *
+ * **When to use**
+ *
+ * Use when you want an immediate aggregate from an iterable instead of a
+ * folding reducer owned by another API.
+ *
  * **Example** (Summing iterable bigints)
  *
  * ```ts
@@ -608,6 +759,9 @@ export const sqrt = (n: bigint): Option.Option<bigint> =>
  *
  * assert.deepStrictEqual(BigInt.sumAll([2n, 3n, 4n]), 9n)
  * ```
+ *
+ * @see {@link sum} for adding two `bigint` values
+ * @see {@link ReducerSum} for summing through APIs that consume a `Reducer`
  *
  * @category math
  * @since 2.0.0
@@ -623,6 +777,10 @@ export const sumAll = (collection: Iterable<bigint>): bigint => {
 /**
  * Takes an `Iterable` of `bigint`s and returns their product as a single `bigint`. Returns `1n` for an empty iterable.
  *
+ * **When to use**
+ *
+ * Use to multiply all `bigint` values in an iterable.
+ *
  * **Example** (Multiplying iterable bigints)
  *
  * ```ts
@@ -631,6 +789,9 @@ export const sumAll = (collection: Iterable<bigint>): bigint => {
  *
  * assert.deepStrictEqual(BigInt.multiplyAll([2n, 3n, 4n]), 24n)
  * ```
+ *
+ * @see {@link multiply} for multiplying two `bigint` values
+ * @see {@link ReducerMultiply} for multiplying through APIs that consume a `Reducer`
  *
  * @category math
  * @since 2.0.0
@@ -647,7 +808,12 @@ export const multiplyAll = (collection: Iterable<bigint>): bigint => {
 }
 
 /**
- * Converts a `bigint` to a `number`.
+ * Converts a `bigint` to a `number` safely.
+ *
+ * **When to use**
+ *
+ * Use to convert a `bigint` to a JavaScript number only when it is a safe
+ * integer.
  *
  * **Details**
  *
@@ -664,6 +830,8 @@ export const multiplyAll = (collection: Iterable<bigint>): bigint => {
  * BI.toNumber(BigInt(Number.MIN_SAFE_INTEGER) - 1n) // Option.none()
  * ```
  *
+ * @see {@link fromNumber} for converting a safe integer number to `bigint`
+ *
  * @category converting
  * @since 2.0.0
  */
@@ -675,7 +843,11 @@ export const toNumber = (b: bigint): Option.Option<number> => {
 }
 
 /**
- * Converts a string to a `bigint`.
+ * Parses a string into a `bigint` safely.
+ *
+ * **When to use**
+ *
+ * Use to parse a string as a `bigint` without throwing on invalid input.
  *
  * **Details**
  *
@@ -691,6 +863,8 @@ export const toNumber = (b: bigint): Option.Option<number> => {
  * BigInt.fromString(" ") // Option.none()
  * BigInt.fromString("a") // Option.none()
  * ```
+ *
+ * @see {@link BigInt} for native constructor coercion that throws on invalid input
  *
  * @category converting
  * @since 2.4.12
@@ -708,6 +882,10 @@ export const fromString = (s: string): Option.Option<bigint> => {
 /**
  * Converts a number to a `bigint`.
  *
+ * **When to use**
+ *
+ * Use to convert a JavaScript number to `bigint` only when it is a safe integer.
+ *
  * **Details**
  *
  * If the number is outside the safe integer range for JavaScript
@@ -724,6 +902,9 @@ export const fromString = (s: string): Option.Option<bigint> => {
  * BigInt.fromNumber(Number.MAX_SAFE_INTEGER + 1) // Option.none()
  * BigInt.fromNumber(Number.MIN_SAFE_INTEGER - 1) // Option.none()
  * ```
+ *
+ * @see {@link toNumber} for converting `bigint` values back to safe integer numbers
+ * @see {@link BigInt} for native constructor coercion
  *
  * @category converting
  * @since 2.4.12
@@ -743,10 +924,10 @@ export function fromNumber(n: number): Option.Option<bigint> {
 /**
  * Returns the JavaScript remainder of dividing one `bigint` by another.
  *
- * **Details**
+ * **When to use**
  *
- * The result follows JavaScript `%` semantics, including the sign of the
- * dividend.
+ * Use when you want native remainder semantics, including signed remainders and
+ * a thrown division-by-zero error.
  *
  * **Gotchas**
  *
@@ -762,6 +943,8 @@ export function fromNumber(n: number): Option.Option<bigint> {
  * BigInt.remainder(15n, 4n) // 3n
  * ```
  *
+ * @see {@link divide} for quotient calculation with division-by-zero represented as `Option.none`
+ *
  * @category math
  * @since 4.0.0
  */
@@ -771,7 +954,18 @@ export const remainder: {
 } = dual(2, (self: bigint, divisor: bigint): bigint => self % divisor)
 
 /**
- * A `Reducer` for combining `bigint`s using addition.
+ * Reducer for combining `bigint`s using addition.
+ *
+ * **When to use**
+ *
+ * Use to sum many `bigint` values through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The initial value is `0n`, so `combineAll([])` returns `0n`.
+ *
+ * @see {@link sumAll} for summing an iterable directly
+ * @see {@link ReducerMultiply} for multiplying `bigint` values
  *
  * @category math
  * @since 4.0.0
@@ -779,7 +973,18 @@ export const remainder: {
 export const ReducerSum: Reducer.Reducer<bigint> = Reducer.make((a, b) => a + b, bigint0)
 
 /**
- * A `Reducer` for combining `bigint`s using multiplication.
+ * Reducer for combining `bigint`s using multiplication.
+ *
+ * **When to use**
+ *
+ * Use to multiply many `bigint` values through APIs that consume a `Reducer`.
+ *
+ * **Details**
+ *
+ * The initial value is `1n`, so `combineAll([])` returns `1n`.
+ *
+ * @see {@link multiplyAll} for multiplying an iterable directly
+ * @see {@link ReducerSum} for summing `bigint` values
  *
  * @category math
  * @since 4.0.0
@@ -794,7 +999,14 @@ export const ReducerMultiply: Reducer.Reducer<bigint> = Reducer.make((a, b) => a
 })
 
 /**
- * A `Combiner` that returns the maximum `bigint`.
+ * Combiner that returns the maximum `bigint`.
+ *
+ * **When to use**
+ *
+ * Use to keep the largest `bigint` when an API consumes a `Combiner`.
+ *
+ * @see {@link CombinerMin} for keeping the smallest `bigint`
+ * @see {@link max} for comparing two `bigint` values directly
  *
  * @category math
  * @since 4.0.0
@@ -802,7 +1014,14 @@ export const ReducerMultiply: Reducer.Reducer<bigint> = Reducer.make((a, b) => a
 export const CombinerMax: Combiner.Combiner<bigint> = Combiner.max(Order)
 
 /**
- * A `Combiner` that returns the minimum `bigint`.
+ * Combiner that returns the minimum `bigint`.
+ *
+ * **When to use**
+ *
+ * Use to keep the smallest `bigint` through APIs that consume a `Combiner`.
+ *
+ * @see {@link CombinerMax} for keeping the largest `bigint`
+ * @see {@link min} for comparing two `bigint` values directly
  *
  * @category math
  * @since 4.0.0

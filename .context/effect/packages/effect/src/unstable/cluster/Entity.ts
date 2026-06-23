@@ -1,35 +1,12 @@
 /**
- * The `Entity` module defines sharded, addressable actors for Effect Cluster.
- * An entity type pairs a stable entity name with an RPC protocol and describes
- * how requests for individual entity ids are routed to shard groups and
- * runners.
+ * Defines addressable entity types for Effect Cluster.
  *
- * **Mental model**
- *
- * - An `Entity` is the cluster-facing definition for one logical actor type
- * - Each entity id maps deterministically to a shard group and shard id
- * - Clients are created per entity id and send typed RPC messages through the
- *   cluster sharding layer
- * - Server layers register handlers or mailbox processors for the entity type
- *
- * **Common tasks**
- *
- * - Define an entity protocol with RPCs and create an entity with {@link make}
- * - Send messages to a specific entity id with {@link Entity.client}
- * - Register typed RPC handlers with {@link Entity.toLayer}
- * - Process envelopes directly with {@link Entity.toLayerQueue}
- * - Access the current entity or runner address with {@link CurrentAddress} and
- *   {@link CurrentRunnerAddress}
- *
- * **Gotchas**
- *
- * - Entity ids are part of routing: changing id formats can move work to
- *   different shards
- * - Entity type names should be stable and unique within a cluster deployment
- * - Mailbox capacity and concurrency determine back pressure and duplicate
- *   processing behavior
- * - Persistence, mailbox, and already-processing failures are surfaced through
- *   the generated clients
+ * An entity gives a stable name and RPC protocol to a group of values that are
+ * addressed by id. The cluster uses that information to choose a shard and
+ * route each request to the runner responsible for that id. This module
+ * includes constructors for entity definitions, helpers for creating sharded
+ * clients, layer builders for registering handlers, and services that expose
+ * the current entity address while a request is being handled.
  *
  * @since 4.0.0
  */
@@ -447,6 +424,23 @@ export const fromRpcGroup = <const Type extends string, Rpcs extends Rpc.Any>(
  * Creates a new `Entity` of the specified `type` which will accept messages
  * that adhere to the provided schemas.
  *
+ * **When to use**
+ *
+ * Use to define a cluster entity from individual `Rpc` definitions, giving the
+ * cluster runtime a typed protocol for handlers and per-entity clients.
+ *
+ * **Details**
+ *
+ * The `type` argument is stored as the entity `EntityType`, and the RPC array
+ * is grouped into the entity's `protocol`.
+ *
+ * **Gotchas**
+ *
+ * RPC tags should be unique within the array. If multiple definitions use the
+ * same tag, the resulting protocol keeps the later definition for that tag.
+ *
+ * @see {@link fromRpcGroup} for creating an entity from an existing `RpcGroup`
+ *
  * @category constructors
  * @since 4.0.0
  */
@@ -463,7 +457,12 @@ export const make = <const Type extends string, Rpcs extends ReadonlyArray<Rpc.A
 ): Entity<Type, Rpcs[number]> => fromRpcGroup(type, RpcGroup.make(...protocol))
 
 /**
- * A Context.Tag to access the current entity address.
+ * Service tag for the entity address currently being processed.
+ *
+ * **When to use**
+ *
+ * Use to read the current entity identity and shard address from entity
+ * handlers and keep-alive logic.
  *
  * @category context
  * @since 4.0.0
@@ -474,7 +473,12 @@ export class CurrentAddress extends Context.Service<
 >()("effect/cluster/Entity/EntityAddress") {}
 
 /**
- * A Context.Tag to access the current Runner address.
+ * Service tag for the runner address currently registering entity handlers.
+ *
+ * **When to use**
+ *
+ * Use to read the runner address associated with the current entity handler
+ * registration.
  *
  * @category context
  * @since 4.0.0
@@ -489,7 +493,7 @@ export class CurrentRunnerAddress extends Context.Service<
  *
  * **When to use**
  *
- * Use it to complete an entity request by succeeding, failing, failing with a
+ * Use when you use it to complete an entity request by succeeding, failing, failing with a
  * cause, or supplying an explicit `Exit`.
  *
  * @category Replier
@@ -540,14 +544,14 @@ export declare namespace Replier {
 }
 
 /**
- * Entity request envelope delivered to entity handlers.
+ * Represents an entity request envelope delivered to entity handlers.
  *
  * **Details**
  *
  * It includes the underlying request envelope plus the last stream reply chunk
  * that was sent, allowing handlers to resume chunk sequencing after a restart.
  *
- * @category Request
+ * @category request
  * @since 4.0.0
  */
 export class Request<Rpc extends Rpc.Any> extends Data.Class<
@@ -587,7 +591,7 @@ const shardingTag = Context.Service<Sharding, Sharding["Service"]>("effect/clust
  * The returned function creates a no-serialization RPC client for each entity ID,
  * using a test sharding service instead of the cluster transport.
  *
- * @category Testing
+ * @category testing
  * @since 4.0.0
  */
 export const makeTestClient: <Type extends string, Rpcs extends Rpc.Any, LA, LE, LR>(
@@ -745,7 +749,7 @@ export const keepAlive: (
   ))
 
 /**
- * Internal persisted RPC used to keep an entity active while a resource is held.
+ * RPC used internally to keep an entity active while a resource is held.
  *
  * **Details**
  *

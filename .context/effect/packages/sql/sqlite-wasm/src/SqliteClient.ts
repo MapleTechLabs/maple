@@ -1,29 +1,14 @@
 /**
- * SQLite WASM client implementation for Effect SQL, backed by `@effect/wa-sqlite`.
+ * Connects Effect SQL to SQLite compiled to WebAssembly with
+ * `@effect/wa-sqlite`.
  *
- * This module exposes constructors and layers for providing both the
- * SQLite-specific `SqliteClient` service and the generic Effect `SqlClient`
- * service in browser, worker, and test runtimes. Use it for local-first
- * browser storage, offline caches, client-side migrations, sandboxed test
- * databases, and import/export workflows that snapshot a SQLite database as a
- * `Uint8Array`.
- *
- * `makeMemory` opens an in-memory database through the WASM memory VFS, so data
- * is transient unless the client `export` result is persisted and later passed
- * back to `import`. `make` talks to a scoped `Worker`, `SharedWorker`, or
- * `MessagePort`, which is the path used by the OPFS worker helper for persistent
- * browser storage. Worker-backed queries cross a message boundary, transferable
- * buffers can be supplied with `withTransferables`, and imports transfer the
- * supplied `Uint8Array` buffer to the worker.
- *
- * Both client variants serialize access through a single connection. A
- * transaction holds that connection for the lifetime of its scope, so keep
- * transactions short and use them for multi-statement writes that must commit
- * atomically. OPFS availability depends on the browser and origin, and multiple
- * tabs or workers opening the same OPFS database should coordinate migrations
- * and writes outside this module. Worker-backed clients restart their scoped
- * connection on worker errors, `executeStream` is not implemented there, and
- * SQLite does not support `updateValues`.
+ * This module can create an in-memory SQLite database in the current runtime or
+ * connect to a worker-backed database, such as the OPFS worker from
+ * `OpfsWorker`. Both clients are exposed as `SqliteClient` and the generic
+ * Effect SQL client, serialize access, support database import and export, and
+ * can install reactivity hooks from SQLite update notifications. In-memory
+ * clients can stream query rows; worker-backed clients cannot. `updateValues`
+ * is not supported by this driver.
  *
  * @since 4.0.0
  */
@@ -88,9 +73,9 @@ export interface SqliteClient extends Client.SqlClient {
 }
 
 /**
- * Context service tag for the SQLite WASM client.
+ * Service tag for the SQLite WASM client.
  *
- * @category tags
+ * @category services
  * @since 4.0.0
  */
 export const SqliteClient = Context.Service<SqliteClient>("@effect/sql-sqlite-wasm/SqliteClient")
@@ -473,9 +458,9 @@ const extractObject = (rows: [Array<string>, Array<any>]) => rows[1].map((row) =
 const extractRows = (rows: [Array<string>, Array<any>]) => rows[1]
 
 /**
- * Fiber-local list of transferables to include with worker-backed SQLite WASM query messages.
+ * Fiber reference that stores transferables to include with worker-backed SQLite WASM query messages.
  *
- * @category tranferables
+ * @category transferables
  * @since 4.0.0
  */
 export const Transferables = Context.Reference<ReadonlyArray<Transferable>>(
@@ -486,7 +471,7 @@ export const Transferables = Context.Reference<ReadonlyArray<Transferable>>(
 /**
  * Runs an effect with the supplied transferables attached to worker-backed SQLite WASM query messages.
  *
- * @category tranferables
+ * @category transferables
  * @since 4.0.0
  */
 export const withTransferables =

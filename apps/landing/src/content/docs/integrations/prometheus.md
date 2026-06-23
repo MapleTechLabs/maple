@@ -13,14 +13,14 @@ Scraped metrics land in the metrics explorer and dashboards under the service na
 
 Open **Integrations → Prometheus** in the Maple dashboard and click **Add Target**.
 
-| Field | Notes |
-| --- | --- |
-| **Source** | `Prometheus endpoint` for a plain exposition URL, or a managed integration like [PlanetScale](/docs/integrations/planetscale). |
-| **Name** | Display name; also the default service name. |
-| **Service Name** | Optional. Metrics appear under this service in the explorer and service views. |
-| **URL** | The full endpoint URL, e.g. `https://myapp.com:9090/metrics`. Must be reachable from Maple — loopback, private-range, and cloud-metadata addresses are rejected. |
-| **Scrape Interval** | 5–300 seconds (default 15). |
-| **Authentication** | `None`, `Bearer Token` (`Authorization: Bearer …`), or `Basic Auth` (username + password). Credentials are encrypted at rest and never leave Maple's API — the scrape agent fetches through a server-side proxy. |
+| Field               | Notes                                                                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Source**          | `Prometheus endpoint` for a plain exposition URL, or a managed integration like [PlanetScale](/docs/integrations/planetscale).                                                                                   |
+| **Name**            | Display name; also the default service name.                                                                                                                                                                     |
+| **Service Name**    | Optional. Metrics appear under this service in the explorer and service views.                                                                                                                                   |
+| **URL**             | The full endpoint URL, e.g. `https://myapp.com:9090/metrics`. Must be reachable from Maple — loopback, private-range, and cloud-metadata addresses are rejected.                                                 |
+| **Scrape Interval** | 5–300 seconds (default 15).                                                                                                                                                                                      |
+| **Authentication**  | `None`, `Bearer Token` (`Authorization: Bearer …`), or `Basic Auth` (username + password). Credentials are encrypted at rest and never leave Maple's API — the scrape agent fetches through a server-side proxy. |
 
 Targets can also be managed programmatically via the REST API at `/api/scrape-targets` (create, update, delete, probe, and check history endpoints) using the same fields.
 

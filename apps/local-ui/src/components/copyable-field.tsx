@@ -34,8 +34,15 @@ export function CopyableField({ label, value }: { label: string; value: string }
 					className="select-all font-mono text-xs tracking-wide"
 				/>
 				<InputGroupAddon align="inline-end">
-					<InputGroupButton onClick={handleCopy} aria-label={`Copy ${(label || "command").toLowerCase()}`}>
-						{copied ? <CheckIcon size={14} className="text-severity-info" /> : <CopyIcon size={14} />}
+					<InputGroupButton
+						onClick={handleCopy}
+						aria-label={`Copy ${(label || "command").toLowerCase()}`}
+					>
+						{copied ? (
+							<CheckIcon size={14} className="text-severity-info" />
+						) : (
+							<CopyIcon size={14} />
+						)}
 					</InputGroupButton>
 				</InputGroupAddon>
 			</InputGroup>

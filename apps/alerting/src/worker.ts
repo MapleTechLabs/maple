@@ -20,11 +20,7 @@ import {
 	WarehouseQueryService,
 } from "@maple/api/alerting"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import {
-	runScheduledEffect,
-	WorkerConfigProviderLayer,
-	WorkerEnvironment,
-} from "@maple/effect-cloudflare"
+import { runScheduledEffect, WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
 import { Cause, Effect, Layer, Match } from "effect"
 
 // Module-scope construction; `flush(env)` resolves env on first call. The
@@ -102,7 +98,12 @@ const buildLayer = (_env: Record<string, unknown>) => {
 
 	const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 		Layer.provide(
-			Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EdgeCacheServiceLive, WorkerEnvironment.layer),
+			Layer.mergeAll(
+				BaseLive,
+				WarehouseQueryServiceLive,
+				EdgeCacheServiceLive,
+				WorkerEnvironment.layer,
+			),
 		),
 	)
 
@@ -116,12 +117,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 
 	const OnboardingEmailServiceLive = OnboardingEmailService.layer.pipe(
 		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				EmailServiceLive,
-				OnboardingServiceLive,
-				WarehouseQueryServiceLive,
-			),
+			Layer.mergeAll(BaseLive, EmailServiceLive, OnboardingServiceLive, WarehouseQueryServiceLive),
 		),
 	)
 
@@ -201,9 +197,7 @@ const escalationTick = Effect.gen(function* () {
 }).pipe(
 	Effect.withSpan("alerting.escalation_tick"),
 	Effect.catchCause((cause) =>
-		Effect.logError("Escalation tick failed").pipe(
-			Effect.annotateLogs({ error: Cause.pretty(cause) }),
-		),
+		Effect.logError("Escalation tick failed").pipe(Effect.annotateLogs({ error: Cause.pretty(cause) })),
 	),
 )
 
@@ -239,9 +233,7 @@ const onboardingTick = Effect.gen(function* () {
 }).pipe(
 	Effect.withSpan("alerting.onboarding_tick"),
 	Effect.catchCause((cause) =>
-		Effect.logError("Onboarding tick failed").pipe(
-			Effect.annotateLogs({ error: Cause.pretty(cause) }),
-		),
+		Effect.logError("Onboarding tick failed").pipe(Effect.annotateLogs({ error: Cause.pretty(cause) })),
 	),
 )
 

@@ -1,21 +1,10 @@
 /**
  * SQL-backed persistence for the unstable event-log journal.
  *
- * This module provides an `EventJournal` implementation that stores local
- * entries and remote replication metadata in a `SqlClient` database. It is
- * useful when event-log data needs to survive process restarts, be replayed to
- * rebuild projections, or be synchronized with other journals such as remote
- * servers, peer replicas, or offline clients that later reconnect.
- *
- * The adapter creates the entry and remotes tables with dialect-specific UUID,
- * binary payload, and timestamp column types, but it only performs the minimal
- * `CREATE TABLE IF NOT EXISTS` setup needed by the journal. Applications that
- * customize table names, add indexes, or evolve storage should manage those
- * migrations explicitly and keep encoded payloads compatible with the schemas
- * that will decode historical entries. Remote sequence rows are persisted
- * separately from entries, duplicate imports are ignored by primary key, and
- * conflict checks rely on event name, primary key, and the timestamp derived
- * from the entry id.
+ * This module implements `EventJournal` on top of a `SqlClient`. It stores event
+ * entries as encoded bytes and stores per-remote sequence metadata in separate
+ * tables, giving event-log programs a durable journal that can be replayed after
+ * restart and synchronized with remote journals.
  *
  * @since 4.0.0
  */
@@ -294,6 +283,27 @@ export const make = (options?: {
 /**
  * Provides `EventJournal` using the SQL-backed implementation created by
  * `make`.
+ *
+ * **When to use**
+ *
+ * Use when composing a Layer graph that should provide a persistent SQL-backed
+ * `EventJournal` from an existing `SqlClient` service.
+ *
+ * **Details**
+ *
+ * The layer delegates to `make(options)`, so the same optional `entryTable` and
+ * `remotesTable` settings are used and construction requires `SqlClient` and
+ * may fail with `SqlError`.
+ *
+ * **Gotchas**
+ *
+ * Layer construction performs the same minimal `CREATE TABLE IF NOT EXISTS`
+ * setup as `make`; manage indexes and schema migrations outside this layer when
+ * your SQL schema needs more than the built-in tables.
+ *
+ * @see {@link make} for constructing the SQL-backed service directly
+ * @see {@link EventJournal.layerMemory} for an in-memory `EventJournal` layer
+ * @see {@link EventJournal.layerIndexedDb} for an IndexedDB-backed `EventJournal` layer
  *
  * @category layers
  * @since 4.0.0

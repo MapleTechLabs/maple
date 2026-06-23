@@ -49,7 +49,7 @@ export function ReplaysToolbar({
 
 	return (
 		<div className="flex flex-wrap items-center justify-between gap-3">
-			<InputGroup className="max-w-sm">
+			<InputGroup className="w-full sm:max-w-sm">
 				<InputGroupAddon>
 					<MagnifierIcon />
 				</InputGroupAddon>
@@ -68,10 +68,7 @@ export function ReplaysToolbar({
 			</InputGroup>
 
 			<div
-				className={cn(
-					"flex items-center gap-4 text-sm transition-opacity",
-					waiting && "opacity-60",
-				)}
+				className={cn("flex items-center gap-4 text-sm transition-opacity", waiting && "opacity-60")}
 			>
 				<Stat label="sessions" value={totalSessions} />
 				<span className="flex items-center gap-1.5">

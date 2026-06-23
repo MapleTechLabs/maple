@@ -29,7 +29,7 @@ import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "e
 import { LOGS_BODY_SEARCH_SETTINGS, type QueryProfileName, type WarehouseQuerySettings } from "../profiles"
 import { computeBucketSeconds } from "../datetime"
 import { makeExpandMacros } from "./raw-sql"
-import { decodeEvalPoints, encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
+import { encodeEvalPoints, type BucketGroupObs } from "./evaluate-bucket-codec"
 
 // Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
 // `computeBucketSeconds` from here; the implementation now lives in the pure
@@ -113,10 +113,7 @@ export interface QueryEngineRawSqlEvaluateRequest {
 	readonly windowMinutes: number
 }
 
-export type QueryEngineDirectError =
-	| QueryEngineExecutionError
-	| QueryEngineTimeoutError
-	| WarehouseError
+export type QueryEngineDirectError = QueryEngineExecutionError | QueryEngineTimeoutError | WarehouseError
 
 export type QueryEngineRouteError = QueryEngineValidationError | QueryEngineDirectError
 
@@ -673,7 +670,10 @@ const executeCHUnionQuery = Effect.fnUntraced(function* <
 	profile: QueryProfileName = "aggregation",
 ) {
 	const compiled = CH.compileUnion(query, params)
-	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, { profile, context }), context)
+	return yield* annotateWarehouseError(
+		warehouse.compiledQuery(tenant, compiled, { profile, context }),
+		context,
+	)
 })
 
 const tracesMetricFieldMap = {
@@ -902,9 +902,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		request: QueryEngineExecuteRequest,
 	): Effect.fn.Return<
 		QueryEngineExecuteResponse,
-		| QueryEngineValidationError
-		| QueryEngineExecutionError
-		| WarehouseError
+		QueryEngineValidationError | QueryEngineExecutionError | WarehouseError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.source", request.query.source)
@@ -953,6 +951,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						apdexThresholdMs:
 							request.query.metric === "apdex" ? request.query.apdexThresholdMs : undefined,
 						bucketSeconds: bucketSeconds!,
+						seriesLimit: request.query.seriesLimit,
 					}),
 					{
 						orgId: tenant.orgId,
@@ -983,6 +982,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					apdexThresholdMs:
 						request.query.metric === "apdex" ? request.query.apdexThresholdMs : undefined,
 					bucketSeconds: bucketSeconds!,
+					seriesLimit: request.query.seriesLimit,
 				}),
 				{
 					orgId: tenant.orgId,
@@ -1015,6 +1015,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					matchModes: logsMatchModes(request.query.filters),
 					groupBy: request.query.groupBy as string[] | undefined,
 					bucketSeconds: bucketSeconds!,
+					seriesLimit: request.query.seriesLimit,
 				}),
 				{
 					orgId: tenant.orgId,
@@ -1715,9 +1716,7 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		request: QueryEngineEvaluateRequest,
 	): Effect.fn.Return<
 		ReadonlyArray<GroupedAlertObservation>,
-		| QueryEngineValidationError
-		| QueryEngineExecutionError
-		| WarehouseError
+		QueryEngineValidationError | QueryEngineExecutionError | WarehouseError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.source", request.query.source)
@@ -1899,16 +1898,11 @@ const RawSqlAlertRowSchema = Schema.Struct({
  * and an optional `samples` column carries the sample count (else each row
  * counts as 1). Per group, `value` rows are collapsed with the reducer.
  */
-export const makeQueryEngineEvaluateRawSql = <T extends QueryTenant>(
-	warehouse: QueryEngineWarehouse<T>,
-) =>
+export const makeQueryEngineEvaluateRawSql = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
 	Effect.fn("QueryEngineService.evaluateRawSql")(function* (
 		tenant: T,
 		request: QueryEngineRawSqlEvaluateRequest,
-	): Effect.fn.Return<
-		ReadonlyArray<GroupedAlertObservation>,
-		QueryEngineValidationError | WarehouseError
-	> {
+	): Effect.fn.Return<ReadonlyArray<GroupedAlertObservation>, QueryEngineValidationError | WarehouseError> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.reducer", request.reducer)
 

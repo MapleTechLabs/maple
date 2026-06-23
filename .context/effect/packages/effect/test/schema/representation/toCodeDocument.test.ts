@@ -89,8 +89,20 @@ describe("toCodeDocument", () => {
     })
 
     it("Error", () => {
-      assertSchema({ schema: Schema.Error }, {
-        codes: makeCode(`Schema.Error`, "globalThis.Error")
+      assertSchema({ schema: Schema.Error() }, {
+        codes: makeCode(`Schema.Error()`, "globalThis.Error")
+      })
+    })
+
+    it("Error with stack", () => {
+      assertSchema({ schema: Schema.Error({ includeStack: true }) }, {
+        codes: makeCode(`Schema.Error({"includeStack":true})`, "globalThis.Error")
+      })
+    })
+
+    it("Error with excluded cause", () => {
+      assertSchema({ schema: Schema.Error({ excludeCause: true }) }, {
+        codes: makeCode(`Schema.Error({"excludeCause":true})`, "globalThis.Error")
       })
     })
 
@@ -174,6 +186,27 @@ describe("toCodeDocument", () => {
           artifacts: [{
             _tag: "Import",
             importDeclaration: `import * as Result from "effect/Result"`
+          }]
+        }
+      )
+    })
+
+    it("Redacted options", () => {
+      assertSchema(
+        {
+          schema: Schema.Redacted(Schema.String, {
+            label: "password",
+            disallowJsonEncode: true
+          })
+        },
+        {
+          codes: makeCode(
+            `Schema.Redacted(Schema.String, {"label":"password","disallowJsonEncode":true})`,
+            "Redacted.Redacted<string>"
+          ),
+          artifacts: [{
+            _tag: "Import",
+            importDeclaration: `import * as Redacted from "effect/Redacted"`
           }]
         }
       )
@@ -372,6 +405,15 @@ describe("toCodeDocument", () => {
           { schema: Schema.String.check(Schema.isIncludes("a")) },
           {
             codes: makeCode(`Schema.String.check(Schema.isIncludes("a"))`, "string")
+          }
+        )
+      })
+
+      it("isGUID with annotations", () => {
+        assertSchema(
+          { schema: Schema.String.check(Schema.isGUID({ message: "message" })) },
+          {
+            codes: makeCode(`Schema.String.check(Schema.isGUID({ "message": "message" }))`, "string")
           }
         )
       })
@@ -1200,26 +1242,26 @@ describe("toCodeDocument", () => {
     assertSchema(
       {
         schema: Schema.StructWithRest(Schema.Struct({ a: Schema.Number }), [
-          Schema.Record(Schema.String, Schema.Boolean)
+          Schema.Record(Schema.String, Schema.Number)
         ])
       },
       {
         codes: makeCode(
-          `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Boolean)])`,
-          `{ readonly "a": number, readonly [x: string]: boolean }`
+          `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Number)])`,
+          `{ readonly "a": number, readonly [x: string]: number }`
         )
       }
     )
     assertSchema(
       {
         schema: Schema.StructWithRest(Schema.Struct({ a: Schema.Number }), [
-          Schema.Record(Schema.String, Schema.Boolean)
+          Schema.Record(Schema.String, Schema.Number)
         ]).annotate({ description: "a" })
       },
       {
         codes: makeCode(
-          `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Boolean)]).annotate({ "description": "a" })`,
-          `{ readonly "a": number, readonly [x: string]: boolean }`
+          `Schema.StructWithRest(Schema.Struct({ "a": Schema.Number }), [Schema.Record(Schema.String, Schema.Number)]).annotate({ "description": "a" })`,
+          `{ readonly "a": number, readonly [x: string]: number }`
         )
       }
     )

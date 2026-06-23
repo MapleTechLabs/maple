@@ -139,8 +139,10 @@ describe("MapleFlush.make (server)", () => {
 			yield* Effect.promise(() => telemetry.flush())
 
 			const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
-			expect(traceCall, "expected traces to be POSTed even though the inner span was interrupted")
-				.toBeDefined()
+			expect(
+				traceCall,
+				"expected traces to be POSTed even though the inner span was interrupted",
+			).toBeDefined()
 			const body = traceCall!.body as {
 				resourceSpans: Array<{
 					scopeSpans: Array<{
@@ -253,17 +255,25 @@ describe("MapleFlush.make (server)", () => {
 		const telemetry = make({ ...baseConfig, dropSpanNames: ["internal."] })
 
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("internal.healthcheck"), Effect.provide(telemetry.layer)),
+			Effect.succeed(undefined).pipe(
+				Effect.withSpan("internal.healthcheck"),
+				Effect.provide(telemetry.layer),
+			),
 		)
 		await Effect.runPromise(
-			Effect.succeed(undefined).pipe(Effect.withSpan("public.request"), Effect.provide(telemetry.layer)),
+			Effect.succeed(undefined).pipe(
+				Effect.withSpan("public.request"),
+				Effect.provide(telemetry.layer),
+			),
 		)
 		await telemetry.flush()
 
 		const traceCall = calls.find((c) => c.url.endsWith("/v1/traces"))
 		expect(traceCall).toBeDefined()
 		const names = (
-			traceCall!.body as { resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }> }
+			traceCall!.body as {
+				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ name: string }> }> }>
+			}
 		).resourceSpans[0].scopeSpans[0].spans.map((s) => s.name)
 		expect(names).toEqual(["public.request"])
 	})
@@ -323,7 +333,9 @@ describe("MapleFlush.make (server)", () => {
 
 		const span = (
 			calls.find((c) => c.url.endsWith("/v1/traces"))!.body as {
-				resourceSpans: Array<{ scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }> }>
+				resourceSpans: Array<{
+					scopeSpans: Array<{ spans: Array<{ traceId: string; spanId: string }> }>
+				}>
 			}
 		).resourceSpans[0].scopeSpans[0].spans[0]
 

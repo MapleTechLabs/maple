@@ -1,7 +1,9 @@
 /**
- * OpenAI Embedding Model implementation.
- *
- * Provides an EmbeddingModel implementation for OpenAI-compatible embeddings APIs.
+ * The `OpenAiEmbeddingModel` module adapts OpenAI-compatible embeddings
+ * endpoints to Effect's embedding model service. It sends embedding requests
+ * through {@link OpenAiClient}, exposes constructors for layers and `AiModel`
+ * values, supports scoped request configuration overrides, and checks that the
+ * provider returns one numeric vector for each requested input.
  *
  * @since 4.0.0
  */
@@ -25,7 +27,21 @@ import { OpenAiClient } from "./OpenAiClient.ts"
 export type Model = string
 
 /**
- * Service definition for OpenAI embedding model configuration.
+ * Context service for OpenAI embedding model configuration.
+ *
+ * **When to use**
+ *
+ * Use when you need to provide shared default request options for
+ * OpenAI-compatible embedding operations through the Effect context, such as
+ * `dimensions`, `encoding_format`, or `user`.
+ *
+ * **Details**
+ *
+ * The service stores the embedding request payload without `input`. Requests
+ * combine the selected model, layer or constructor config, and scoped context
+ * config, with scoped context config taking precedence.
+ *
+ * @see {@link withConfigOverride} for scoping embedding request overrides
  *
  * @category context
  * @since 4.0.0
@@ -46,8 +62,15 @@ export class Config extends Context.Service<
 >()("@effect/ai-openai-compat/OpenAiEmbeddingModel/Config") {}
 
 /**
- * Creates an OpenAI-compatible embedding model that can be used with
- * `AiModel.provide`.
+ * Creates an `AiModel` for an OpenAI-compatible embedding model with its configured vector dimensions.
+ *
+ * **When to use**
+ *
+ * Use to provide an OpenAI-compatible `EmbeddingModel` and its `Dimensions`
+ * service to an Effect program.
+ *
+ * @see {@link layer} for providing only the embedding model service
+ * @see {@link withConfigOverride} for scoped request configuration overrides
  *
  * @category constructors
  * @since 4.0.0
@@ -75,7 +98,29 @@ export const model = (
   )
 
 /**
- * Creates an OpenAI embedding model service.
+ * Creates an OpenAI-compatible embedding model service backed by `OpenAiClient`.
+ *
+ * **When to use**
+ *
+ * Use when you need to build or provide an `EmbeddingModel` service directly
+ * from an existing `OpenAiClient`.
+ *
+ * **Details**
+ *
+ * The service sends embedding requests through `OpenAiClient.createEmbedding`.
+ * Request config is merged as the selected model, constructor config, then
+ * scoped `Config`, so scoped overrides take precedence. Provider usage
+ * `prompt_tokens` is exposed as `usage.inputTokens`.
+ *
+ * **Gotchas**
+ *
+ * Provider responses must contain one numeric vector for every requested input
+ * with unique, in-range `index` values; otherwise embedding operations fail with
+ * `AiError.InvalidOutputError`.
+ *
+ * @see {@link model} for the higher-level `AiModel` descriptor that also provides `EmbeddingModel.Dimensions`
+ * @see {@link layer} for providing the service as a `Layer`
+ * @see {@link withConfigOverride} for scoping embedding request overrides
  *
  * @category constructors
  * @since 4.0.0
@@ -101,7 +146,16 @@ export const make = Effect.fnUntraced(function*({ model, config: providerConfig 
 })
 
 /**
- * Creates a layer for the OpenAI embedding model.
+ * Creates a layer for an OpenAI-compatible embedding model service.
+ *
+ * **When to use**
+ *
+ * Use when composing application layers and you want an OpenAI-compatible
+ * embeddings endpoint to satisfy `EmbeddingModel.EmbeddingModel` while
+ * supplying `OpenAiClient` from another layer.
+ *
+ * @see {@link make} for constructing the embedding model service effectfully
+ * @see {@link model} for creating an `AiModel` with configured dimensions
  *
  * @category layers
  * @since 4.0.0
@@ -113,7 +167,21 @@ export const layer = (options: {
   Layer.effect(EmbeddingModel.EmbeddingModel, make(options))
 
 /**
- * Provides config overrides for OpenAI embedding model operations.
+ * Provides scoped request config overrides for OpenAI-compatible embedding model operations.
+ *
+ * **When to use**
+ *
+ * Use to apply embedding request options to one effect without changing the
+ * model's default configuration.
+ *
+ * **Details**
+ *
+ * The overrides are merged with any existing `Config` service for the duration
+ * of the supplied effect. Fields in `overrides` take precedence over existing
+ * config, and the helper supports both `effect.pipe(withConfigOverride(overrides))`
+ * and `withConfigOverride(effect, overrides)`.
+ *
+ * @see {@link Config} for available OpenAI-compatible embedding request configuration fields
  *
  * @category configuration
  * @since 4.0.0
