@@ -46,6 +46,12 @@ export const MUTATING_TOOL_NAMES: ReadonlySet<string> = new Set([
  * taxonomy. Used by the apps/api regression test to fail CI when a tool that
  * looks mutating is missing from {@link MUTATING_TOOL_NAMES}. Keep read-only
  * verbs (find/get/list/search/inspect/describe/query/run/…) out of this list.
+ *
+ * This is a heuristic guard, not a proof: a mutating tool named with a verb NOT
+ * listed here would slip past both the gate and the test. The list is kept broad
+ * to shrink that gap; the structural fix (a `mutating: true` flag declared at
+ * tool registration, deriving the set + gate) is tracked as a follow-up. When
+ * adding a tool with a new mutating verb, add its prefix here.
  */
 export const MUTATING_TOOL_PREFIXES: ReadonlyArray<string> = [
 	"create_",
@@ -76,6 +82,31 @@ export const MUTATING_TOOL_PREFIXES: ReadonlyArray<string> = [
 	"resolve_",
 	"reopen_",
 	"close_",
+	// Additional mutating verbs (defensive — none collide with current read tools).
+	"purge_",
+	"apply_",
+	"submit_",
+	"merge_",
+	"clear_",
+	"bulk_",
+	"send_",
+	"sync_",
+	"cancel_",
+	"revoke_",
+	"grant_",
+	"rotate_",
+	"import_",
+	"retry_",
+	"trigger_",
+	"dispatch_",
+	"move_",
+	"copy_",
+	"duplicate_",
+	"upsert_",
+	"toggle_",
+	"approve_",
+	"deny_",
+	"unassign_",
 ]
 
 /** True when a tool name looks state-changing by Maple's verb_noun convention. */
