@@ -6,7 +6,7 @@ import { withDashboardMutation } from "../lib/dashboard-mutations"
 const TOOL = "remove_dashboard_widget"
 
 export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		TOOL,
 		"Remove a single widget from a dashboard by id. Other widgets and dashboard metadata are left untouched.",
 		Schema.Struct({

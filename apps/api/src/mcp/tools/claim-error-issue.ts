@@ -15,7 +15,7 @@ import { ErrorIssueId } from "@maple/domain/http"
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 
 export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"claim_error_issue",
 		"Claim a lease on an error issue so other agents don't duplicate work. Issues in 'triage' or 'todo' auto-transition to 'in_progress' on claim. Lease defaults to 30 min; call heartbeat_error_issue before it expires or the issue drops back to 'todo'.",
 		Schema.Struct({

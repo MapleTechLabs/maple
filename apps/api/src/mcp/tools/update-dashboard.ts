@@ -18,7 +18,7 @@ const TIME_RANGE_MAP: Record<string, string> = {
 }
 
 export function registerUpdateDashboardTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"update_dashboard",
 		"Update an existing dashboard's top-level metadata (name, description, time_range). For widget-level changes prefer the incremental tools: add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets — they do not require re-sending the whole dashboard. `dashboard_json` is still accepted as an escape hatch for full replacement but is expensive on large dashboards and easy to corrupt.",
 		Schema.Struct({

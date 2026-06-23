@@ -64,6 +64,8 @@ export interface MapleToolDefinition {
 	readonly description: string
 	readonly schema: Schema.Decoder<unknown, never>
 	readonly handler: (params: unknown) => Effect.Effect<McpToolResult, McpToolError, any>
+	/** True for state-changing tools (registered via `mutatingTool`). The `run_code` sandbox refuses these. */
+	readonly mutating: boolean
 }
 
 export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
@@ -75,14 +77,27 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 
 const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
+	const add = (
+		mutating: boolean,
+		name: string,
+		description: string,
+		schema: Schema.Decoder<unknown, never>,
+		handler: unknown,
+	) => {
+		definitions.push({
+			name,
+			description,
+			schema,
+			handler: handler as MapleToolDefinition["handler"],
+			mutating,
+		})
+	}
 	const registrar: McpToolRegistrar = {
 		tool(name, description, schema, handler) {
-			definitions.push({
-				name,
-				description,
-				schema,
-				handler: handler as MapleToolDefinition["handler"],
-			})
+			add(false, name, description, schema, handler)
+		},
+		mutatingTool(name, description, schema, handler) {
+			add(true, name, description, schema, handler)
 		},
 	}
 

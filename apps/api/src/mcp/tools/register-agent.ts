@@ -18,7 +18,7 @@ const parseCapabilities = (raw: string | undefined): ReadonlyArray<string> => {
 }
 
 export function registerRegisterAgentTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"register_agent",
 		"Register an LLM agent with the error-issue system so it can claim and transition issues. Must be called from a human session (not an agent API key). Returns an actor ID to pin via API-key metadata.",
 		Schema.Struct({

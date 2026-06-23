@@ -11,7 +11,19 @@ describe("MUTATING_TOOL_NAMES", () => {
 		}
 	})
 
-	it("gates every conventionally-named mutating tool (run_code's sandbox fails OPEN otherwise)", () => {
+	it("exactly equals the tools registered via mutatingTool (structural flag <-> shared list)", () => {
+		// The flag (set at registration via `server.mutatingTool`) is the structural
+		// truth the run_code gate uses; MUTATING_TOOL_NAMES is the static list the
+		// chat + /chat/apply paths use (they can't read the flag over MCP). This
+		// asserts they can't drift in either direction.
+		const flagged = new Set(mapleToolDefinitions.filter((d) => d.mutating).map((d) => d.name))
+		const flaggedButUnlisted = [...flagged].filter((n) => !MUTATING_TOOL_NAMES.has(n))
+		const listedButUnflagged = [...MUTATING_TOOL_NAMES].filter((n) => !flagged.has(n))
+		expect(flaggedButUnlisted, `registered mutating but absent from MUTATING_TOOL_NAMES: [${flaggedButUnlisted.join(", ")}]`).toEqual([])
+		expect(listedButUnflagged, `in MUTATING_TOOL_NAMES but not registered via mutatingTool: [${listedButUnflagged.join(", ")}]`).toEqual([])
+	})
+
+	it("gates every conventionally-named mutating tool (belt-and-suspenders for an unflagged mutating tool)", () => {
 		// The inverse of the check above, and the safety-critical one: a registry
 		// tool that looks mutating (create_/update_/delete_/…) but is missing from
 		// the set would run its real side effect inside `run_code`. This fails CI so

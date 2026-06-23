@@ -142,7 +142,7 @@ function buildUpdatedRequest(
 }
 
 export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"update_alert_rule",
 		"Update an existing alert rule. Only provide the fields you want to change — every other field keeps its current value. " +
 			"Use list_alert_rules to find rule IDs and destination IDs, or get_alert_rule to inspect the current config first.",

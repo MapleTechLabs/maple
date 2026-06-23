@@ -21,7 +21,7 @@ const TOOL = "replace_dashboard_widgets"
 const decodeWidget = Schema.decodeUnknownEffect(DashboardWidgetSchema)
 
 export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		TOOL,
 		"Replace ALL widgets on a dashboard in one atomic, validated write — the safe middle ground between many incremental `add/update_dashboard_widget` calls and the corruption-prone full `dashboard_json` replace. Pass `widgets_json`: a JSON array of widget objects (same shape as `widgets[]` from get_dashboard). Each widget's query is validated BEFORE anything is persisted — if any widget references a filter/groupBy the engine can't honor, NOTHING is saved and the offending clauses are returned. Per-widget conveniences: `id` is auto-generated when omitted, and `layout` is auto-placed on a 12-column grid when omitted (so you can pass just `{ visualization, dataSource, display }`). Dashboard metadata (name, description, tags, time range) is left untouched. Returns an automatic validation summary; fix any `suspicious`/`broken` widgets and call again.",
 		Schema.Struct({

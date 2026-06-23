@@ -15,7 +15,7 @@ import { ErrorIssueId } from "@maple/domain/http"
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 
 export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"comment_on_error_issue",
 		"Add a comment to the issue's timeline. Use kind='agent_note' for automated reasoning steps (visible in the audit log but styled differently in the UI).",
 		Schema.Struct({

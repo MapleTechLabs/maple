@@ -33,15 +33,21 @@ export const resolveCodeModeCall = async (
 	invoke: (definition: MapleToolDefinition, decoded: unknown) => Promise<McpToolResult>,
 ): Promise<RpcCallResult> => {
 	if (name === RUN_CODE_TOOL_NAME) {
-		// `run_code` is in `mapleToolDefinitions` (registered last) and isn't a
-		// mutating tool, so without this guard a snippet calling maple.run_code(...)
-		// would nest a sandbox inside the running one.
+		// `run_code` is in `mapleToolDefinitions` (registered last), so without this
+		// guard a snippet calling maple.run_code(...) would nest a sandbox.
 		return {
 			ok: false,
 			error: { name: "Blocked", message: "maple.run_code cannot be called from inside code mode." },
 		}
 	}
-	if (MUTATING_TOOL_NAMES.has(name)) {
+	const definition = definitions.find((d) => d.name === name)
+	if (!definition) {
+		return { ok: false, error: { name: "UnknownTool", message: `maple.${name} is not available` } }
+	}
+	// Structural gate: a tool registered via `mutatingTool` carries `mutating: true`,
+	// so a mutating tool can't slip past code mode regardless of its name. (The
+	// shared MUTATING_TOOL_NAMES set is verified to equal this flag in tests.)
+	if (definition.mutating || MUTATING_TOOL_NAMES.has(name)) {
 		return {
 			ok: false,
 			error: {
@@ -49,10 +55,6 @@ export const resolveCodeModeCall = async (
 				message: `maple.${name} mutates state and can't run inside code mode. Call the ${name} tool directly so it goes through approval.`,
 			},
 		}
-	}
-	const definition = definitions.find((d) => d.name === name)
-	if (!definition) {
-		return { ok: false, error: { name: "UnknownTool", message: `maple.${name} is not available` } }
 	}
 	let decoded: unknown
 	try {

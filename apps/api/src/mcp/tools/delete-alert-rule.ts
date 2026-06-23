@@ -8,7 +8,7 @@ import { AlertRuleId } from "@maple/domain"
 const decodeAlertRuleId = Schema.decodeUnknownOption(AlertRuleId)
 
 export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"delete_alert_rule",
 		"Permanently delete an alert rule. This is irreversible and also deletes the rule's incident history, " +
 			"delivery events, and evaluation state. Requires confirm=true. Use list_alert_rules to find rule IDs.",

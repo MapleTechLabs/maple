@@ -38,7 +38,21 @@ export interface McpToolResult {
 }
 
 export interface McpToolRegistrar {
+	/** Register a read-only tool. */
 	tool<TSchema extends Schema.Decoder<unknown, never>>(
+		name: string,
+		description: string,
+		schema: TSchema,
+		handler: (params: TSchema["Type"]) => Effect.Effect<McpToolResult, McpToolError, any>,
+	): void
+	/**
+	 * Register a MUTATING (state-changing) tool. Structurally marks the tool so
+	 * the `run_code` sandbox refuses it and the chat approval-gates it — declared
+	 * here at the tool rather than in a name list, so a copied/new mutating tool
+	 * carries its own gating. The shared `MUTATING_TOOL_NAMES` set is verified to
+	 * equal the set of tools registered this way (see `mutating.test.ts`).
+	 */
+	mutatingTool<TSchema extends Schema.Decoder<unknown, never>>(
 		name: string,
 		description: string,
 		schema: TSchema,

@@ -12,7 +12,7 @@ import { resolveTenant } from "../lib/query-warehouse"
 const TOOL = "update_dashboard_widget"
 
 export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		TOOL,
 		'Replace a single widget on an existing dashboard. Pass the full widget JSON (same shape as one entry in `widgets[]` from get_dashboard) for ONLY the widget you want to change. Other widgets and dashboard metadata are left untouched. The stored widget id is always forced to the widget_id parameter, so any id inside widget_json is ignored.\n\nThe response includes an automatic validation summary (verdict, flags). If `verdict` is `suspicious` or `broken`, fix the widget and call this tool again — the chart will not render meaningful data as-is.\n\nTrace and log queries omit the metric-only fields (`metricName`/`metricType`/`isMonotonic`/`signalSource`) — only `dataSource: "metrics"` queries carry them. `whereClause` is a custom grammar (`=`, `>`, `<`, `>=`, `<=`, `contains`, `exists` joined by ` AND `) — there is NO SQL `IS NULL`/`IS NOT NULL`; use `<key> exists` to require an attribute. See the `maple://instructions` resource for the full widget JSON shape (aggregations per source, groupBy prefixes, units, stat reduceToValue, hideSeries).',
 		Schema.Struct({
