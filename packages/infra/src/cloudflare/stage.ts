@@ -124,7 +124,9 @@ export function resolveD1Name(stage: MapleStage): string {
 export function resolveHyperdriveName(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
-			return "maple-db-prd"
+			// Pre-configured in the Cloudflare dashboard (origin/credentials managed
+			// there); the prod deploy references it by this name. See alchemy.run.ts.
+			return "maple-prd"
 		case "stg":
 			return "maple-db-stg"
 		case "pr":

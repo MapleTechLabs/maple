@@ -3,6 +3,7 @@ import alchemy from "alchemy"
 import {
 	D1Database,
 	Hyperdrive,
+	HyperdriveRef,
 	KVNamespace,
 	Queue,
 	Worker,
@@ -35,32 +36,14 @@ const optionalSecret = (key: string): Record<string, ReturnType<typeof alchemy.s
 	return value ? { [key]: alchemy.secret(value) } : {}
 }
 
-export interface CreateMapleApiOptions {
-	stage: MapleStage
-	domains: MapleDomains
-}
-
-export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) => {
-	// Legacy D1 — unbound rollback snapshot for the Postgres cutover. Kept with
-	// `delete: false` so removing this block later no-ops the API delete; the
-	// resource id MUST stay "MAPLE_DB" (renaming would orphan-delete the
-	// database). migrationsDir is gone: packages/db/drizzle now holds Postgres
-	// SQL. Remove this whole block after the post-cutover rollback window.
-	if (stage.kind === "prd" || stage.kind === "stg") {
-		await D1Database("MAPLE_DB", {
-			name: resolveD1Name(stage),
-			adopt: true,
-			delete: false,
-		})
-	}
-
-	// Single source of truth: MAPLE_PG_URL (a standard Postgres connection
-	// string — direct port 5432). Cloudflare Hyperdrive needs a STRUCTURED origin
-	// (discrete host/user/…), not a URL, so we parse it here. The same env var
-	// drives the CI `drizzle-kit migrate` step and the import scripts. Schema
-	// migrations run in CI before `alchemy deploy` — never at worker boot.
+// Managed Hyperdrive for non-prod stages (stg / per-PR preview / local dev): the
+// origin is pushed from MAPLE_PG_URL (a standard Postgres connection string, direct
+// port 5432) — the same env var the CI `drizzle-kit migrate` step + import scripts
+// use. Cloudflare Hyperdrive needs a STRUCTURED origin (discrete host/user/…), not a
+// URL, so we parse it here. Schema migrations run in CI before deploy, never at boot.
+const makeManagedHyperdrive = (stage: MapleStage) => {
 	const pgUrl = new URL(requireEnv("MAPLE_PG_URL"))
-	const mapleDb = await Hyperdrive("maple-db", {
+	return Hyperdrive("maple-db", {
 		name: resolveHyperdriveName(stage),
 		adopt: true,
 		origin: {
@@ -85,6 +68,36 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			},
 		},
 	})
+}
+
+export interface CreateMapleApiOptions {
+	stage: MapleStage
+	domains: MapleDomains
+}
+
+export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) => {
+	// Legacy D1 — unbound rollback snapshot for the Postgres cutover. Kept with
+	// `delete: false` so removing this block later no-ops the API delete; the
+	// resource id MUST stay "MAPLE_DB" (renaming would orphan-delete the
+	// database). migrationsDir is gone: packages/db/drizzle now holds Postgres
+	// SQL. Remove this whole block after the post-cutover rollback window.
+	if (stage.kind === "prd" || stage.kind === "stg") {
+		await D1Database("MAPLE_DB", {
+			name: resolveD1Name(stage),
+			adopt: true,
+			delete: false,
+		})
+	}
+
+	// Prod binds to the PRE-CONFIGURED Hyperdrive `maple-prd` — its origin and
+	// credentials are managed directly in the Cloudflare dashboard, NOT pushed
+	// from MAPLE_PG_URL. Reference it by name so a deploy never rewrites (or needs
+	// to know) the prod database connection. Other stages manage their own
+	// Hyperdrive from MAPLE_PG_URL below.
+	const mapleDb =
+		stage.kind === "prd"
+			? await HyperdriveRef({ name: resolveHyperdriveName(stage) })
+			: await makeManagedHyperdrive(stage)
 
 	const mcpSessions = await KVNamespace("MCP_SESSIONS", {
 		title: resolveWorkerName("mcp-sessions", stage),
