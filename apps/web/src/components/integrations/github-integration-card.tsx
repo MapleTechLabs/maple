@@ -37,6 +37,7 @@ import {
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
+import { IntegrationEmptyState } from "./integration-empty-state"
 
 /** How often to re-fetch status while the connect flow / background sync is active. */
 const POLL_INTERVAL_MS = 3_000
@@ -354,46 +355,24 @@ function LoadingState() {
 /** First-run empty state: explains the value and offers the single connect action. */
 function NotConnectedState({ busy, onConnect }: { busy: boolean; onConnect: () => void }) {
 	return (
-		<div className="flex flex-col items-center gap-5 rounded-lg border border-border/60 bg-card px-6 py-10 text-center">
-			<IntegrationIconPlate
-				icon={GithubIcon}
-				accent={GITHUB_ACCENT}
-				iconClassName="text-foreground"
-				size={26}
-				plateClassName="size-14 rounded-xl"
-			/>
-
-			<div className="flex max-w-md flex-col gap-1.5">
-				<h3 className="text-base font-semibold">Connect your GitHub organization</h3>
-				<p className="text-sm text-muted-foreground">
-					Install the Maple GitHub App to sync repositories and commit history. Backfill runs in the
-					background once connected.
-				</p>
-			</div>
-
-			<ul className="flex w-full max-w-sm flex-col gap-2 text-left text-sm text-muted-foreground">
-				{[
-					"Sync commit history across your repositories",
-					"Track one branch per repo, backfilled automatically",
-					"Share all repositories or only the ones you pick",
-				].map((feature) => (
-					<li key={feature} className="flex items-start gap-2">
-						<CheckIcon size={16} className="mt-0.5 shrink-0 text-success-foreground" />
-						<span>{feature}</span>
-					</li>
-				))}
-			</ul>
-
-			<div className="flex flex-col items-center gap-2">
-				<Button onClick={onConnect} disabled={busy}>
-					{busy ? <LoaderIcon size={16} className="animate-spin" /> : <GithubIcon size={16} />}
-					Connect GitHub
-				</Button>
-				<p className="text-xs text-muted-foreground">
-					You&apos;ll choose which repositories to share during install.
-				</p>
-			</div>
-		</div>
+		<IntegrationEmptyState
+			icon={GithubIcon}
+			accent={GITHUB_ACCENT}
+			iconClassName="text-foreground"
+			title="Connect your GitHub organization"
+			description="Install the Maple GitHub App to sync repositories and commit history. Backfill runs in the background once connected."
+			features={[
+				"Sync commit history across your repositories",
+				"Track one branch per repo, backfilled automatically",
+				"Share all repositories or only the ones you pick",
+			]}
+			footer="You'll choose which repositories to share during install."
+		>
+			<Button onClick={onConnect} disabled={busy}>
+				{busy ? <LoaderIcon size={16} className="animate-spin" /> : <GithubIcon size={16} />}
+				Connect GitHub
+			</Button>
+		</IntegrationEmptyState>
 	)
 }
 
