@@ -80,7 +80,14 @@ const relativeFmt = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" })
 // by (OrgId, SessionId/TraceId) scans the index of every daily partition. Bounding
 // it to the session's span prunes to the 1-2 partitions that actually hold the rows.
 const WINDOW_MARGIN_MS = 60 * 60 * 1000 // 1h slack on each side (clock skew, late spans)
-const MAX_SESSION_MS = 24 * 60 * 60 * 1000 // cap when the session end is unknown (active sessions)
+// Upper bound when the session end is unknown (still active). This MUST stay >=
+// the browser SDK's session lifetime cap (`MAX_SESSION_MS` in
+// packages/browser/src/session.ts) — the SDK rotates to a fresh session once it
+// exceeds that age, so a session's events provably can't extend past
+// `start + cap`. Both constants are 24h. If the SDK cap is ever raised without
+// raising this one, this window would silently prune out a session's tail events
+// (no failing test would catch it), so keep them in lockstep.
+const MAX_SESSION_MS = 24 * 60 * 60 * 1000
 
 /** A warehouse partition-pruning window, shared by the session-detail atom callers. */
 export interface ReplayPartitionWindow {
