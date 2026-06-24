@@ -16,8 +16,7 @@
 		"db:migrate": "drizzle-kit migrate --config ./drizzle.config.ts",
 		"db:push": "drizzle-kit push --config ./drizzle.config.ts",
 		"db:studio": "drizzle-kit studio --config ./drizzle.config.ts",
-		"ps:apply-schema": "bun scripts/planetscale-apply-schema.ts",
-		"ps:migrate-data": "bun scripts/planetscale-migrate-data.ts"
+		"ps:apply-schema": "bun scripts/planetscale-apply-schema.ts"
 	},
 	"dependencies": {
 		"@electric-sql/pglite": "^0.5.2",

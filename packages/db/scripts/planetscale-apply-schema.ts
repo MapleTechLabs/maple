@@ -14,7 +14,7 @@
  * go through the PSBouncer/Hyperdrive poolers), runs `drizzle-kit migrate`, then
  * revokes the credential. Idempotent: drizzle skips migrations already recorded
  * in `drizzle.__drizzle_migrations`, so re-running is a no-op on an up-to-date
- * branch. Run this BEFORE planetscale-migrate-data.ts (data import needs tables).
+ * branch.
  */
 import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
