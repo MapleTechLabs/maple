@@ -34,9 +34,9 @@ use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEM
 use maple_ingest::metrics;
 use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
-    AttributeMappingRule, ClickHouseTarget, ClickHouseTargetProvider, DatasourceNames,
-    ExportDestination, MappingOperation, MappingSourceContext, PipelineError, SamplingPolicy,
-    TelemetryPipeline, TinybirdConfig,
+    AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
+    DatasourceNames, ExportDestination, MappingOperation, MappingSourceContext, PipelineError,
+    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -255,6 +255,19 @@ impl AppConfig {
                 std::env::var("INGEST_EXPORT_MAX_ATTEMPTS").ok(),
                 20,
             )?,
+            clickhouse_breaker: ClickHouseBreakerConfig {
+                // 0 disables the breaker (full retry budget on every batch).
+                failure_threshold: parse_u32(
+                    "INGEST_CLICKHOUSE_BREAKER_FAILURE_THRESHOLD",
+                    std::env::var("INGEST_CLICKHOUSE_BREAKER_FAILURE_THRESHOLD").ok(),
+                    ClickHouseBreakerConfig::default().failure_threshold,
+                )?,
+                cooldown: Duration::from_millis(parse_u64(
+                    "INGEST_CLICKHOUSE_BREAKER_COOLDOWN_MS",
+                    std::env::var("INGEST_CLICKHOUSE_BREAKER_COOLDOWN_MS").ok(),
+                    ClickHouseBreakerConfig::default().cooldown.as_millis() as u64,
+                )?),
+            },
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_string()),
@@ -4592,6 +4605,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(1),
             export_concurrency_per_shard: 1,
             export_max_attempts: 1,
+            clickhouse_breaker: ClickHouseBreakerConfig::default(),
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),
             datasource_session_replay_events: "session_replay_events".to_string(),
