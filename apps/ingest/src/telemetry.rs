@@ -145,7 +145,11 @@ fn breaker_decision(
     match state.opened_at {
         // Still within the cooldown window → keep shedding.
         Some(opened) if now.duration_since(opened) < cfg.cooldown => BreakerDecision::Shed,
-        // Closed, or cooldown elapsed → allow (a probe, if we just half-opened).
+        // Closed, or cooldown elapsed (half-open) → allow. Note half-open is not
+        // single-probe gated: while cooldown is elapsed, every batch that checks
+        // is allowed, so several lane workers can probe a recovering target
+        // concurrently until one records on_success/on_failure. Harmless here —
+        // the extra probes just re-confirm health or re-open the breaker.
         _ => BreakerDecision::Allow,
     }
 }
@@ -785,6 +789,11 @@ struct ShardedWal {
 }
 
 struct WalShard {
+    /// Real shard this lane belongs to, and its destination — carried so WAL
+    /// metrics stay labelled by `(shard, destination)` rather than leaking the
+    /// flat lane index as a `shard`.
+    shard: usize,
+    destination: ExportDestination,
     path: PathBuf,
     cursor_path: PathBuf,
     max_bytes: u64,
@@ -809,6 +818,8 @@ impl ShardedWal {
                     .map_err(|error| format!("open ingest WAL {path:?}: {error}"))?;
                 debug_assert_eq!(lanes.len(), lane_index(shard, destination));
                 lanes.push(Arc::new(WalShard {
+                    shard,
+                    destination,
                     path,
                     cursor_path,
                     max_bytes: max_bytes_per_lane,
@@ -907,7 +918,7 @@ impl ShardedWal {
                 .seek(SeekFrom::End(0))
                 .map_err(|error| format!("seek WAL: {error}"))?;
             if enforce_cap && start.saturating_add(encoded.len() as u64) > lane_ref.max_bytes {
-                metrics::wal_shard_full(lane);
+                metrics::wal_shard_full(lane_ref.shard, lane_ref.destination.as_str());
                 return Err("Telemetry WAL lane is full".to_string());
             }
             file.write_all(&encoded)
@@ -915,8 +926,12 @@ impl ShardedWal {
             file.sync_data()
                 .map_err(|error| format!("sync WAL: {error}"))?;
             let end = start + encoded.len() as u64;
-            metrics::wal_commit_bytes(lane, encoded.len() as u64);
-            metrics::wal_shard_bytes(lane, end);
+            metrics::wal_commit_bytes(
+                lane_ref.shard,
+                lane_ref.destination.as_str(),
+                encoded.len() as u64,
+            );
+            metrics::wal_shard_bytes(lane_ref.shard, lane_ref.destination.as_str(), end);
             Ok((start, end))
         })
         .await
@@ -958,7 +973,7 @@ impl ShardedWal {
                         .map_err(|error| format!("truncate WAL: {error}"))?;
                     file.sync_all()
                         .map_err(|error| format!("sync WAL truncate: {error}"))?;
-                    metrics::wal_shard_bytes(lane, 0);
+                    metrics::wal_shard_bytes(shard_ref.shard, shard_ref.destination.as_str(), 0);
                     0
                 } else {
                     offset
