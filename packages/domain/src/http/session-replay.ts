@@ -28,6 +28,9 @@ export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListRe
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),
+	// Plain string (not the branded UserId) — matches the other optional filters and
+	// avoids brand validation rejecting partial input the client constructs JS-side.
+	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
@@ -68,6 +71,7 @@ export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("Re
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),
+	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 }) {}

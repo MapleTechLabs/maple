@@ -51,6 +51,8 @@ export interface SessionReplaysListOpts {
 	browser?: string
 	country?: string
 	deviceType?: string
+	/** Exact match on the session's end-user id. */
+	userId?: string
 	/** When true, only sessions with at least one recorded error. */
 	hasErrors?: boolean
 	/** Substring match on the initial page URL. */
@@ -110,6 +112,11 @@ export function sessionReplaysListQuery(opts: SessionReplaysListOpts) {
 			CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 			CH.when(opts.country, (v: string) => $.Country.eq(v)),
 			CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+			// Exact userId match is row-level (pre-GROUP BY). The completed Version=2
+			// row carries the identified UserId, so GROUP BY SessionId still surfaces
+			// each matching session once — same row-level-filter reasoning as
+			// hasErrors/ErrorCount above (see this file's header).
+			CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 			CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 			CH.when(opts.cursor, (v: string) => $.StartTime.lt(v)),
@@ -135,6 +142,8 @@ export interface SessionReplaysFacetsOpts {
 	browser?: string
 	country?: string
 	deviceType?: string
+	/** Exact match on the session's end-user id (narrows every facet branch). */
+	userId?: string
 	hasErrors?: boolean
 	search?: string
 }
@@ -161,6 +170,9 @@ export function sessionReplaysFacetsQuery(
 		exclude === "browser" ? undefined : CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 		exclude === "country" ? undefined : CH.when(opts.country, (v: string) => $.Country.eq(v)),
 		exclude === "device" ? undefined : CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+		// UserId has no facet branch (high cardinality), so it's never excluded — it
+		// narrows every dimension's counts to the selected user.
+		CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 		CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 		CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 	]
@@ -202,6 +214,7 @@ export function sessionReplaysFacetsQuery(
 				CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 				CH.when(opts.country, (v: string) => $.Country.eq(v)),
 				CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+				CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 				CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 				$.ErrorCount.gt(0),
 			]),

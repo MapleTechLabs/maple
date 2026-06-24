@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "@maple-dev/clickhouse-builder"
+import { compileCH, compileUnion } from "@maple-dev/clickhouse-builder"
 import {
 	getSessionReplayQuery,
+	sessionReplaysFacetsQuery,
+	sessionReplaysListQuery,
 	sessionReplayEventsQuery,
 	sessionTraceSummariesQuery,
 } from "./session-replays"
@@ -67,6 +69,46 @@ describe("sessionReplayEventsQuery", () => {
 		const q = sessionReplayEventsQuery()
 		const { sql } = compileCH(q, sessionParams)
 		expect(sql).not.toContain("Timestamp >=")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UserId filter (exact match) — list + facets
+//
+// UserId is high-cardinality identity data, so it's an exact-match filter, not a
+// facet branch. On the list it narrows to one user's sessions; on the facets it
+// narrows every dimension's counts (no facet branch is excluded for it).
+// ---------------------------------------------------------------------------
+
+describe("sessionReplaysListQuery userId filter", () => {
+	it("adds an exact UserId predicate when provided", () => {
+		const q = sessionReplaysListQuery({ userId: "user_123" })
+		const { sql } = compileCH(q, { ...baseParams, ...WINDOW })
+		expect(sql).toContain("UserId = 'user_123'")
+		expect(sql).not.toContain("UserId ILIKE")
+	})
+
+	it("omits the UserId predicate when absent", () => {
+		const q = sessionReplaysListQuery({})
+		const { sql } = compileCH(q, { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("UserId =")
+	})
+})
+
+describe("sessionReplaysFacetsQuery userId filter", () => {
+	it("narrows every facet branch by the exact UserId", () => {
+		const q = sessionReplaysFacetsQuery({ userId: "user_123" })
+		const { sql } = compileUnion(q, { ...baseParams, ...WINDOW })
+		// Branches: service / browser / country / device / error count — userId is
+		// applied to all of them (never excluded, unlike each branch's own dimension).
+		const occurrences = sql.split("UserId = 'user_123'").length - 1
+		expect(occurrences).toBe(5)
+	})
+
+	it("omits the UserId predicate when absent", () => {
+		const q = sessionReplaysFacetsQuery({})
+		const { sql } = compileUnion(q, { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("UserId =")
 	})
 })
 
