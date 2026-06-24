@@ -76,6 +76,74 @@ export function formatTimeInTimezone(
 	return formatter.format(date)
 }
 
+/** Wall-clock components, interpreted within a specific IANA timezone. */
+export interface ZonedWallClock {
+	year: number
+	month: number // 1-12
+	day: number
+	hour: number // 0-23
+	minute: number
+	second: number
+}
+
+const zonedPartsFormatters = new Map<string, Intl.DateTimeFormat>()
+
+function zonedPartsFormatter(timeZone: string): Intl.DateTimeFormat {
+	let formatter = zonedPartsFormatters.get(timeZone)
+	if (!formatter) {
+		formatter = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			hourCycle: "h23",
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			minute: "2-digit",
+			second: "2-digit",
+		})
+		zonedPartsFormatters.set(timeZone, formatter)
+	}
+	return formatter
+}
+
+function extractZonedParts(formatter: Intl.DateTimeFormat, instant: Date): ZonedWallClock {
+	const map: Record<string, number> = {}
+	for (const part of formatter.formatToParts(instant)) {
+		if (part.type !== "literal") map[part.type] = Number(part.value)
+	}
+	// `h23` reports midnight as hour 24 on some engines; fold it back to 0.
+	const hour = map.hour === 24 ? 0 : map.hour
+	return { year: map.year, month: map.month, day: map.day, hour, minute: map.minute, second: map.second }
+}
+
+/**
+ * Offset (in milliseconds) of `timeZone` from UTC at the given instant.
+ * Positive when the zone is ahead of UTC (e.g. +2h → 7_200_000).
+ */
+function timeZoneOffsetMs(instant: Date, timeZone: string): number {
+	const parts = extractZonedParts(zonedPartsFormatter(timeZone), instant)
+	const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second)
+	return asUtc - instant.getTime()
+}
+
+/**
+ * Convert a wall-clock time expressed in `timeZone` to the corresponding UTC
+ * instant. A single offset-correction pass resolves DST correctly outside the
+ * rare ambiguous/skipped hour at a transition boundary.
+ */
+export function zonedWallClockToUtc(wall: ZonedWallClock, timeZone: string): Date {
+	const tz = resolveTimeZone(timeZone)
+	const utcGuessMs = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second)
+	const offset = timeZoneOffsetMs(new Date(utcGuessMs), tz)
+	return new Date(utcGuessMs - offset)
+}
+
+/** Decompose a UTC instant into wall-clock components within `timeZone`. */
+export function utcToZonedWallClock(instant: Date, timeZone: string): ZonedWallClock {
+	const tz = resolveTimeZone(timeZone)
+	return extractZonedParts(zonedPartsFormatter(tz), instant)
+}
+
 export function formatCompactTimeInTimezone(
 	input: TimezoneFormatInput,
 	options: { timeZone: string },

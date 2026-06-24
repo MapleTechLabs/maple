@@ -2,31 +2,56 @@ import { useState } from "react"
 import { Calendar } from "@maple/ui/components/ui/calendar"
 import { Button } from "@maple/ui/components/ui/button"
 import { Input } from "@maple/ui/components/ui/input"
-import { format, parse, isValid, setHours, setMinutes } from "date-fns"
+import { parse, isValid } from "date-fns"
 import type { DateRange } from "react-day-picker"
-import { formatForTinybird } from "@/lib/time-utils"
+import { formatForTinybird, formatZoneOffsetLabel } from "@/lib/time-utils"
+import {
+	normalizeTimestampInput,
+	utcToZonedWallClock,
+	zonedWallClockToUtc,
+	type ZonedWallClock,
+} from "@/lib/timezone-format"
 
 interface CustomRangePickerProps {
 	startTime?: string
 	endTime?: string
+	/** IANA timezone the wall-clock inputs are interpreted in. */
+	timeZone: string
 	onApply: (range: { startTime: string; endTime: string }) => void
 	onCancel: () => void
 }
 
-export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: CustomRangePickerProps) {
+const pad = (value: number) => value.toString().padStart(2, "0")
+
+// Resolve a stored warehouse timestamp into the calendar day + "HH:mm" inputs,
+// projected into `timeZone`. The Calendar tracks days via a Date's *local*
+// y/m/d, so we build a local-midnight Date from the zoned wall-clock day.
+function storedToWallClock(value: string, timeZone: string): { day: Date; time: string } {
+	const parts = utcToZonedWallClock(new Date(normalizeTimestampInput(value)), timeZone)
+	return {
+		day: new Date(parts.year, parts.month - 1, parts.day),
+		time: `${pad(parts.hour)}:${pad(parts.minute)}`,
+	}
+}
+
+export function CustomRangePicker({
+	startTime,
+	endTime,
+	timeZone,
+	onApply,
+	onCancel,
+}: CustomRangePickerProps) {
+	const initialStart = startTime ? storedToWallClock(startTime, timeZone) : undefined
+	const initialEnd = endTime ? storedToWallClock(endTime, timeZone) : undefined
+
 	const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
-		const from = startTime ? new Date(startTime) : undefined
-		const to = endTime ? new Date(endTime) : undefined
+		const from = initialStart?.day
+		const to = initialEnd?.day
 		return from || to ? { from, to } : undefined
 	})
 
-	const [startTimeInput, setStartTimeInput] = useState(() => {
-		return startTime ? format(new Date(startTime), "HH:mm") : "00:00"
-	})
-
-	const [endTimeInput, setEndTimeInput] = useState(() => {
-		return endTime ? format(new Date(endTime), "HH:mm") : "23:59"
-	})
+	const [startTimeInput, setStartTimeInput] = useState(() => initialStart?.time ?? "00:00")
+	const [endTimeInput, setEndTimeInput] = useState(() => initialEnd?.time ?? "23:59")
 
 	const handleApply = () => {
 		if (!dateRange?.from || !dateRange?.to) return
@@ -34,12 +59,29 @@ export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: Cus
 		const [startHour, startMin] = startTimeInput.split(":").map(Number)
 		const [endHour, endMin] = endTimeInput.split(":").map(Number)
 
-		let startDate = setHours(setMinutes(dateRange.from, startMin || 0), startHour || 0)
-		let endDate = setHours(setMinutes(dateRange.to, endMin || 0), endHour || 0)
+		// Combine the selected calendar day (read from the Date's local y/m/d) with
+		// the entered wall-clock time, then resolve that wall-clock *in the chosen
+		// timezone* to a UTC instant. This keeps the round-trip symmetric so the
+		// applied range no longer jumps by the UTC offset.
+		const toWall = (day: Date, hour: number, minute: number): ZonedWallClock => ({
+			year: day.getFullYear(),
+			month: day.getMonth() + 1,
+			day: day.getDate(),
+			hour: hour || 0,
+			minute: minute || 0,
+			second: 0,
+		})
+
+		const a = zonedWallClockToUtc(toWall(dateRange.from, startHour, startMin), timeZone)
+		const b = zonedWallClockToUtc(toWall(dateRange.to, endHour, endMin), timeZone)
+		// The calendar orders days, but the time inputs are independent — a
+		// single-day selection with start time after end time would otherwise
+		// produce a reversed (start > end) range. Order the instants ascending.
+		const [startInstant, endInstant] = a.getTime() <= b.getTime() ? [a, b] : [b, a]
 
 		onApply({
-			startTime: formatForTinybird(startDate),
-			endTime: formatForTinybird(endDate),
+			startTime: formatForTinybird(startInstant),
+			endTime: formatForTinybird(endInstant),
 		})
 	}
 
@@ -86,6 +128,10 @@ export function CustomRangePicker({ startTime, endTime, onApply, onCancel }: Cus
 					/>
 				</div>
 			</div>
+
+			<p className="text-[11px] text-muted-foreground">
+				Times are in {timeZone.replace(/_/g, " ")} ({formatZoneOffsetLabel(timeZone)})
+			</p>
 
 			<div className="flex justify-end gap-2">
 				<Button variant="ghost" size="sm" onClick={onCancel}>
