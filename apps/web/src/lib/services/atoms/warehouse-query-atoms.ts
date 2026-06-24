@@ -7,7 +7,9 @@ import {
 	getCustomChartServiceDetail,
 	getCustomChartServiceSparklines,
 	getCustomChartTimeSeries,
+	getOverviewThroughputRefinement,
 	getOverviewTimeSeries,
+	getServiceDetailThroughputRefinement,
 } from "@/api/warehouse/custom-charts"
 import {
 	getErrorDetailTraces,
@@ -342,6 +344,19 @@ export const getCustomChartServiceDetailResultAtom = makeQueryAtomFamily(getCust
 export const getOverviewTimeSeriesResultAtom = makeQueryAtomFamily(getOverviewTimeSeries, {
 	staleTime: 30_000,
 })
+
+// Non-blocking exact pre-sampling throughput overlays. Keyed (via the encoded
+// input) on `samplingActive`, so they only issue the slow SpanMetrics query once
+// the primary chart confirms sampling is active; otherwise they resolve empty.
+export const getServiceDetailThroughputRefinementResultAtom = makeQueryAtomFamily(
+	getServiceDetailThroughputRefinement,
+	{ staleTime: 30_000 },
+)
+
+export const getOverviewThroughputRefinementResultAtom = makeQueryAtomFamily(
+	getOverviewThroughputRefinement,
+	{ staleTime: 30_000 },
+)
 
 export const getCustomChartTimeSeriesResultAtom = makeQueryAtomFamily(getCustomChartTimeSeries, {
 	staleTime: 30_000,

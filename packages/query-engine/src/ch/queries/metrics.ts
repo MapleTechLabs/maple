@@ -80,6 +80,10 @@ export function metricsTimeseriesQuery(opts: MetricsTimeseriesOpts) {
 
 export interface MetricsRateTimeseriesOpts {
 	metricName?: string
+	// Candidate names matched with `MetricName IN (...)`. When provided (and
+	// non-empty) it replaces the scalar `metricName` equality in the WHERE clause,
+	// so a metric with one of a few known spellings resolves in a single query.
+	metricNames?: ReadonlyArray<string>
 	bucketSeconds?: number
 	serviceName?: string
 	groupByAttributeKey?: string
@@ -100,6 +104,10 @@ const SPAN_METRICS_CALLS_NAMES = new Set(["span.metrics.calls", "calls"])
 
 function canUseSpanMetricsCallsHourly(opts: MetricsRateTimeseriesOpts): boolean {
 	return (
+		// The hourly MV is keyed by a single MetricName; an `IN (...)` candidate set
+		// can't be served from it, so fall back to the raw path. The interactive UI
+		// (sub-hour buckets) never qualifies for this fast path anyway.
+		(opts.metricNames === undefined || opts.metricNames.length <= 1) &&
 		opts.metricName !== undefined &&
 		SPAN_METRICS_CALLS_NAMES.has(opts.metricName) &&
 		opts.bucketSeconds !== undefined &&
@@ -279,7 +287,9 @@ export function metricsTimeseriesRateQuery(
 				}
 			})
 			.where(($) => [
-				$.MetricName.eq(param.string("metricName")),
+				opts.metricNames && opts.metricNames.length > 0
+					? $.MetricName.in_(...opts.metricNames)
+					: $.MetricName.eq(param.string("metricName")),
 				$.OrgId.eq(param.string("orgId")),
 				CH.dynamicColumn<number>("IsMonotonic").eq(1),
 				$.TimeUnix.gte(CH.intervalSub(param.dateTime("startTime"), param.int("bucketSeconds"))),

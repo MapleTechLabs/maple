@@ -24,10 +24,11 @@ import { FirstActionHint } from "@/components/dashboard/first-action-hint"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import {
 	getCustomChartTimeSeriesResultAtom,
+	getOverviewThroughputRefinementResultAtom,
 	getOverviewTimeSeriesResultAtom,
 	getServicesFacetsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-charts"
+import { mergeExactThroughput, type CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-charts"
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -256,12 +257,47 @@ function DashboardContent({
 		(Result.isSuccess(overviewResult) && overviewResult.waiting) ||
 		(Result.isSuccess(logVolumeResult) && logVolumeResult.waiting)
 
+	// Sampling verdict from the loaded overview chart; drives a non-blocking fetch
+	// of the exact pre-sampling request volume (SpanMetrics `calls`) only when
+	// sampling is active. Env-scoped views skip it (handled in the effect).
+	const overviewSamplingActive =
+		canFetch &&
+		Result.builder(overviewResult)
+			.onSuccess((r) => r.data.some((p) => p.hasSampling))
+			.orElse(() => false)
+
+	const throughputRefinement = useAtomValue(
+		getOverviewThroughputRefinementResultAtom({
+			data: {
+				startTime: effectiveStartTime,
+				endTime: effectiveEndTime,
+				environments: environmentFilter,
+				samplingActive: overviewSamplingActive,
+			},
+		}),
+	)
+
+	const exactThroughputByBucket = useMemo(() => {
+		const map = new Map<string, number>()
+		Result.builder(throughputRefinement)
+			.onSuccess((r) => {
+				for (const point of r.data) map.set(point.bucket, point.throughput)
+			})
+			.orElse(() => undefined)
+		return map
+	}, [throughputRefinement])
+
 	// Overview points are typed structs; the chart grid consumes a generic
 	// `Record<string, unknown>[]`. Each point's fields are all primitive, so
-	// spreading widens to the record shape without an `as unknown` round-trip.
-	const overviewPoints: Record<string, unknown>[] = Result.builder(overviewResult)
-		.onSuccess((response) => response.data.map((point) => ({ ...point })))
-		.orElse(() => EMPTY_ARRAY)
+	// spreading widens to the record shape without an `as unknown` round-trip. The
+	// exact SpanMetrics throughput overlay (when present) is merged by ISO bucket.
+	const overviewPoints: Record<string, unknown>[] = useMemo(() => {
+		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(overviewResult)
+			.onSuccess((response) => response.data)
+			.orElse(() => [])
+		if (base.length === 0) return EMPTY_ARRAY
+		return mergeExactThroughput(base, exactThroughputByBucket).map((point) => ({ ...point }))
+	}, [overviewResult, exactThroughputByBucket])
 
 	const logPoints = Result.builder(logVolumeResult)
 		.onSuccess(

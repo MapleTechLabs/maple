@@ -1,6 +1,6 @@
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router"
 import { useCallback, useMemo } from "react"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
@@ -16,8 +16,11 @@ import type {
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import {
 	getCustomChartServiceDetailResultAtom,
+	getServiceDetailThroughputRefinementResultAtom,
 	getServiceReleasesTimelineResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import { mergeExactThroughput } from "@/api/warehouse/custom-charts"
+import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
 import { detectReleaseMarkers } from "@/lib/services/release-markers"
 import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -253,6 +256,37 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		}),
 	)
 
+	// Sampling verdict from the already-loaded primary chart. Drives a separate,
+	// non-blocking fetch of the exact pre-sampling throughput (SpanMetrics `calls`)
+	// — only when sampling is active, so unsampled services never issue the slow
+	// query. `samplingActive` is part of the atom key, so the overlay re-fetches
+	// once the primary resolves and flips it true (no `useEffect`).
+	const samplingActive = Result.builder(detailResult)
+		.onSuccess((r) => r.data.some((p) => p.hasSampling))
+		.orElse(() => false)
+
+	const throughputRefinement = useAtomValue(
+		getServiceDetailThroughputRefinementResultAtom({
+			data: {
+				serviceName,
+				startTime: effectiveStartTime,
+				endTime: effectiveEndTime,
+				environments,
+				samplingActive,
+			},
+		}),
+	)
+
+	const exactThroughputByBucket = useMemo(() => {
+		const map = new Map<string, number>()
+		Result.builder(throughputRefinement)
+			.onSuccess((r) => {
+				for (const point of r.data) map.set(point.bucket, point.throughput)
+			})
+			.orElse(() => undefined)
+		return map
+	}, [throughputRefinement])
+
 	const releaseMarkers: ChartReferenceLine[] = useMemo(() => {
 		const timeline = Result.builder(releasesResult)
 			.onSuccess((r) => r.data)
@@ -294,10 +328,14 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 
 	// ServiceDetail points are typed structs; the chart grid consumes a
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
-	// so this is a safe widening (no `as unknown` round-trip needed).
-	const detailPoints: Record<string, unknown>[] = Result.builder(detailResult)
-		.onSuccess((response) => response.data.map((point) => ({ ...point })))
-		.orElse(() => [])
+	// so this is a safe widening (no `as unknown` round-trip needed). The exact
+	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
+	const detailPoints: Record<string, unknown>[] = useMemo(() => {
+		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(detailResult)
+			.onSuccess((response) => response.data)
+			.orElse(() => [])
+		return mergeExactThroughput(base, exactThroughputByBucket).map((point) => ({ ...point }))
+	}, [detailResult, exactThroughputByBucket])
 
 	const widgetData: Record<string, Record<string, unknown>[]> = {
 		latency: detailPoints,

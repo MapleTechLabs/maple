@@ -1051,6 +1051,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const compiled = CH.compile(
 					CH.metricsTimeseriesRateQuery({
 						metricName: request.query.filters.metricName,
+						metricNames: request.query.filters.metricNames,
 						bucketSeconds: bucketSeconds!,
 						serviceName: request.query.filters.serviceName,
 						groupByAttributeKey,

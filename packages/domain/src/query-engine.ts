@@ -95,6 +95,12 @@ export type ErrorsFilters = Schema.Schema.Type<typeof ErrorsFilters>
 
 export const MetricsFilters = Schema.Struct({
 	metricName: MetricName,
+	// Optional set of candidate names matched with `MetricName IN (...)`, used to
+	// resolve a metric whose exact name is one of a few known spellings (e.g. the
+	// SpanMetrics `calls` counter as `span.metrics.calls` or `calls`) without a
+	// separate catalog round-trip. When present it supersedes the scalar
+	// `metricName` in the WHERE clause; `metricName` stays the required canonical.
+	metricNames: Schema.optional(Schema.Array(MetricName)),
 	metricType: MetricType,
 	serviceName: Schema.optional(ServiceName),
 	groupByAttributeKey: Schema.optional(Schema.String),

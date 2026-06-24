@@ -28,8 +28,6 @@ import {
 	executeQueryEngine,
 	invalidWarehouseInput,
 } from "@/api/warehouse/effect-utils"
-import { listMetrics } from "@/api/warehouse/metrics"
-import { getActiveOrgId } from "@/lib/services/common/auth-headers"
 import type { ServiceDetailTimeSeriesPoint, ServiceTimeSeriesPoint } from "@/api/warehouse/services"
 const dateTimeString = WarehouseDateTimeString
 
@@ -49,81 +47,21 @@ const toEnvFilter = (
 ): ReadonlyArray<DeploymentEnvironment> | undefined =>
 	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
 
-// SpanMetrics connector metric names — try namespaced first, then default
+// SpanMetrics connector metric names — namespaced first, then default. Both are
+// matched in a single `MetricName IN (...)` query (see `querySpanMetricsCalls`),
+// so no separate catalog round-trip is needed to discover which one an org emits.
 const SPANMETRICS_CALLS_CANDIDATES = ["span.metrics.calls", "calls"] as const
-type SpanMetricsCallsMetricName = (typeof SPANMETRICS_CALLS_CANDIDATES)[number]
 
-const SPANMETRICS_AVAILABILITY_CACHE_TTL_MS = 60_000
-const spanMetricsAvailabilityCache = new Map<
-	string,
-	{ readonly expiresAt: number; readonly metricName: SpanMetricsCallsMetricName | null }
->()
-
-function spanMetricsAvailabilityCacheKey(service?: string): string {
-	// Partition by active org. This cache is module-level (shared across every
-	// org an isolate/tab serves), and an org switch invalidates the router but
-	// not module state — without the org prefix, org A's calls-metric
-	// availability would be served to org B for up to the TTL.
-	const org = getActiveOrgId() ?? "unknown-org"
-	const scope = service && service.length > 0 ? `service:${service}` : "all-services"
-	return `${org}::${scope}`
-}
-
-function pickSpanMetricsCallsMetric(
-	rows: ReadonlyArray<{ metricName: string; metricType: string }>,
-): SpanMetricsCallsMetricName | null {
-	const available = new Set(rows.filter((row) => row.metricType === "sum").map((row) => row.metricName))
-	for (const candidate of SPANMETRICS_CALLS_CANDIDATES) {
-		if (available.has(candidate)) return candidate
-	}
-	return null
-}
-
-function resolveSpanMetricsCallsMetric(params: {
-	service?: string
-	start_time?: string
-	end_time?: string
-}): Effect.Effect<SpanMetricsCallsMetricName | null, never> {
-	return Effect.gen(function* () {
-		const now = yield* Clock.currentTimeMillis
-		const cacheKey = spanMetricsAvailabilityCacheKey(params.service)
-		const cached = spanMetricsAvailabilityCache.get(cacheKey)
-		if (cached && cached.expiresAt > now) {
-			return cached.metricName
-		}
-
-		const resolved = yield* listMetrics({
-			data: {
-				limit: 100,
-				service: params.service,
-				metricType: "sum",
-				search: "calls",
-				startTime: params.start_time,
-				endTime: params.end_time,
-			},
-		}).pipe(
-			Effect.map((response) => ({
-				cacheable: true,
-				metricName: pickSpanMetricsCallsMetric(response.data),
-			})),
-			// If the catalog route is unavailable, preserve the old behavior's
-			// canonical-name attempt instead of silently hiding SpanMetrics data.
-			Effect.orElseSucceed(() => ({
-				cacheable: false,
-				metricName: "span.metrics.calls" as const,
-			})),
-		)
-
-		if (resolved.cacheable) {
-			spanMetricsAvailabilityCache.set(cacheKey, {
-				expiresAt: now + SPANMETRICS_AVAILABILITY_CACHE_TTL_MS,
-				metricName: resolved.metricName,
-			})
-		}
-		return resolved.metricName
-	})
-}
-
+/**
+ * Per-bucket exact pre-sampling throughput from the OTel SpanMetrics Connector
+ * `calls` counter. Resolves the counter under either known spelling via a single
+ * `IN (...)` filter (no `listMetrics` preflight). Returns flat
+ * `{ bucket, serviceName, sumValue }` rows; callers aggregate as needed.
+ *
+ * This is the slow path (raw `metrics_sum` window scan at sub-hour buckets), so
+ * it is only ever invoked from the sampling-gated refinement effects below — not
+ * on a chart's first-paint critical path.
+ */
 function querySpanMetricsCalls(params: {
 	service?: string
 	start_time?: string
@@ -131,15 +69,6 @@ function querySpanMetricsCalls(params: {
 	bucket_seconds: number
 }) {
 	return Effect.gen(function* () {
-		const metricName = yield* resolveSpanMetricsCallsMetric({
-			service: params.service,
-			start_time: params.start_time,
-			end_time: params.end_time,
-		})
-		if (!metricName) {
-			return { data: [] as never[] }
-		}
-
 		const response = yield* executeQueryEngine(
 			"queryEngine.spanMetricsCalls",
 			new QueryEngineExecuteRequest({
@@ -154,7 +83,10 @@ function querySpanMetricsCalls(params: {
 					metric: "increase",
 					groupBy: ["service"],
 					filters: {
-						metricName: asMetricName(metricName),
+						// `metricName` is the required canonical; `metricNames` drives the
+						// actual `IN (...)` filter so whichever spelling the org emits matches.
+						metricName: asMetricName(SPANMETRICS_CALLS_CANDIDATES[0]),
+						metricNames: SPANMETRICS_CALLS_CANDIDATES.map((name) => asMetricName(name)),
 						metricType: "sum",
 						serviceName: params.service ? asServiceName(params.service) : undefined,
 						attributeFilters: [{ key: "span.kind", value: "SPAN_KIND_SERVER", mode: "equals" }],
@@ -823,13 +755,6 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 	)
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
-	// When scoped to an environment, the SpanMetrics `calls` counter (a
-	// service-level, all-environment counter — `querySpanMetricsCalls` cannot
-	// filter by `DeploymentEnv`, and its hourly MV doesn't carry it) would plot
-	// all-environment volume next to the env-scoped error rate / latency. Drop it
-	// in that case and let throughput fall back to the env-scoped
-	// `estimatedSpanCount` (sum of SampleRate over the env-filtered root spans).
-	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -839,40 +764,24 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 		environments: toEnvFilter(input.environments),
 	}
 
-	const [allMetricsRes, metricsResult] = yield* Effect.all(
-		[
-			executeQueryEngine(
-				"queryEngine.serviceDetail.allMetrics",
-				makeAllMetricsTimeseriesRequest(reqOpts),
-			),
-			envScoped
-				? Effect.succeed({ data: [] })
-				: querySpanMetricsCalls({
-						service: input.serviceName,
-						start_time: input.startTime,
-						end_time: input.endTime,
-						bucket_seconds: bucketSeconds,
-					}),
-		],
-		{ concurrency: 2 },
+	// Throughput renders immediately from the sampling-aware `estimatedSpanCount`
+	// (sum of SampleRate). The exact pre-sampling SpanMetrics `calls` counter is a
+	// slow window scan, so it's fetched separately by
+	// `getServiceDetailThroughputRefinement` (sampling-gated, off the first-paint
+	// path) and merged client-side via `mergeExactThroughput`.
+	const allMetricsRes = yield* executeQueryEngine(
+		"queryEngine.serviceDetail.allMetrics",
+		makeAllMetricsTimeseriesRequest(reqOpts),
 	)
 
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
-	const metricsMap = new Map(
-		metricsResult.data.map((r) => [toIsoBucket(String(r.bucket)), Number(r.sumValue)]),
-	)
-
-	const allBuckets = new Set<string>()
-	for (const k of allMetrics.keys()) allBuckets.add(k)
-	for (const k of metricsMap.keys()) allBuckets.add(k)
-
-	const points = Array.from(allBuckets)
+	const points = Array.from(allMetrics.keys())
 		.toSorted()
 		.map((bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0
-			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, undefined)
 			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
 			const hasSampling = samplingWeight > 1.01
 
@@ -918,10 +827,6 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 	const input = yield* decodeInput(GetOverviewTimeSeriesInputSchema, data ?? {}, "getOverviewTimeSeries")
 
 	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
-	// All-environment SpanMetrics `calls` can't represent an environment-scoped
-	// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
-	// `estimatedSpanCount` when an environment filter is active.
-	const envScoped = (input.environments?.length ?? 0) > 0
 	const reqOpts = {
 		startTime: input.startTime,
 		endTime: input.endTime,
@@ -930,39 +835,22 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 		environments: input.environments,
 	}
 
-	const [allMetricsRes, metricsResult] = yield* Effect.all(
-		[
-			executeQueryEngine("queryEngine.overview.allMetrics", makeAllMetricsTimeseriesRequest(reqOpts)),
-			envScoped
-				? Effect.succeed({ data: [] })
-				: querySpanMetricsCalls({
-						start_time: input.startTime,
-						end_time: input.endTime,
-						bucket_seconds: bucketSeconds,
-					}),
-		],
-		{ concurrency: 2 },
+	// Throughput renders from the sampling-aware `estimatedSpanCount`; exact
+	// pre-sampling counts come from `getOverviewThroughputRefinement` (sampling-
+	// gated, merged client-side). See `getCustomChartServiceDetail`.
+	const allMetricsRes = yield* executeQueryEngine(
+		"queryEngine.overview.allMetrics",
+		makeAllMetricsTimeseriesRequest(reqOpts),
 	)
 
 	const allMetrics = extractAllMetricsSeries(allMetricsRes)
 
-	// SpanMetrics: aggregate across all services per bucket
-	const metricsMap = new Map<string, number>()
-	for (const r of metricsResult.data) {
-		const key = toIsoBucket(String(r.bucket))
-		metricsMap.set(key, (metricsMap.get(key) ?? 0) + Number(r.sumValue))
-	}
-
-	const allBuckets = new Set<string>()
-	for (const k of allMetrics.keys()) allBuckets.add(k)
-	for (const k of metricsMap.keys()) allBuckets.add(k)
-
-	const points = Array.from(allBuckets)
+	const points = Array.from(allMetrics.keys())
 		.toSorted()
 		.map((bucket): ServiceDetailTimeSeriesPoint => {
 			const m = allMetrics.get(bucket)
 			const rawCount = m?.count ?? 0
-			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, metricsMap.get(bucket))
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, undefined)
 			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
 			const hasSampling = samplingWeight > 1.01
 
@@ -1010,10 +898,6 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 		)
 
 		const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
-		// All-environment SpanMetrics `calls` can't represent an environment-scoped
-		// view (see `getCustomChartServiceDetail`); fall back to the env-scoped
-		// `estimatedSpanCount` when an environment filter is active.
-		const envScoped = (input.environments?.length ?? 0) > 0
 		const reqOpts = {
 			startTime: input.startTime,
 			endTime: input.endTime,
@@ -1024,29 +908,16 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 			groupBy: ["service"] as string[],
 		}
 
-		const [allMetricsRes, metricsResult] = yield* Effect.all(
-			[
-				executeQueryEngine(
-					"queryEngine.sparklines.allMetrics",
-					makeAllMetricsTimeseriesRequest(reqOpts),
-				),
-				envScoped
-					? Effect.succeed({ data: [] })
-					: querySpanMetricsCalls({
-							start_time: input.startTime,
-							end_time: input.endTime,
-							bucket_seconds: bucketSeconds,
-						}),
-			],
-			{ concurrency: 2 },
+		// The services-list sparkline shape uses the sampling-aware
+		// `estimatedSpanCount`, matching how `getServiceOverview` resolves the
+		// headline throughput number (it also avoids the SpanMetrics counter on
+		// per-environment rows). Keeping both on the same basis prevents a
+		// shape/number mismatch and removes the ~11s all-services SpanMetrics scan
+		// the services list used to fire on every load.
+		const allMetricsRes = yield* executeQueryEngine(
+			"queryEngine.sparklines.allMetrics",
+			makeAllMetricsTimeseriesRequest(reqOpts),
 		)
-
-		// SpanMetrics: keyed by "serviceName::bucket"
-		const metricsMap = new Map<string, number>()
-		for (const r of metricsResult.data) {
-			const key = `${String(r.serviceName)}::${toIsoBucket(String(r.bucket))}`
-			metricsMap.set(key, (metricsMap.get(key) ?? 0) + Number(r.sumValue))
-		}
 
 		const allMetricsByService = extractGroupedAllMetricsSeries(allMetricsRes)
 
@@ -1058,9 +929,7 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 
 			for (const [bucket, metrics] of buckets) {
 				const rawCount = metrics.count
-				const metricsKey = `${service}::${bucket}`
-				const metricsThroughput = metricsMap.get(metricsKey)
-				const throughput = resolveThroughput(rawCount, metrics.estimatedSpanCount, metricsThroughput)
+				const throughput = resolveThroughput(rawCount, metrics.estimatedSpanCount, undefined)
 
 				points.push({
 					bucket,
@@ -1082,5 +951,142 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 		)
 
 		return { data: filledGrouped }
+	},
+)
+
+// ---------------------------------------------------------------------------
+// Throughput refinement — exact pre-sampling counts (SpanMetrics `calls`)
+//
+// The primary chart effects above resolve throughput from the sampling-aware
+// `estimatedSpanCount` so they never block on the slow SpanMetrics window scan.
+// These refinement effects fetch the exact pre-sampling counter and are invoked
+// from a separate, non-blocking atom — but only when the already-loaded primary
+// chart shows sampling is active (`samplingActive`), so unsampled services never
+// issue the expensive query at all. Env-scoped views also skip it: the counter
+// is service-level / all-environment and can't be filtered by `DeploymentEnv`.
+// ---------------------------------------------------------------------------
+
+export interface ThroughputRefinementPoint {
+	/** ISO bucket — matches `ServiceDetailTimeSeriesPoint.bucket`. */
+	bucket: string
+	throughput: number
+}
+
+/**
+ * Overlay exact pre-sampling throughput onto already-built chart points, keyed
+ * by ISO bucket. Where an exact value is present (>0) it overrides the estimate
+ * and the sampling weight / flag are recomputed against the traced count. A
+ * value of 0 (or a missing bucket) means "no exact data" — the estimate stays.
+ */
+export function mergeExactThroughput(
+	points: ReadonlyArray<ServiceDetailTimeSeriesPoint>,
+	exactByBucket: ReadonlyMap<string, number>,
+): ServiceDetailTimeSeriesPoint[] {
+	if (exactByBucket.size === 0) return points as ServiceDetailTimeSeriesPoint[]
+	return points.map((point) => {
+		const exact = exactByBucket.get(point.bucket)
+		if (exact == null || exact <= 0) return point
+		const samplingWeight = point.tracedThroughput > 0 ? exact / point.tracedThroughput : 1
+		return { ...point, throughput: exact, samplingWeight, hasSampling: samplingWeight > 1.01 }
+	})
+}
+
+function aggregateSpanMetricsByBucket(
+	rows: ReadonlyArray<Record<string, unknown>>,
+): ThroughputRefinementPoint[] {
+	const byBucket = new Map<string, number>()
+	for (const row of rows) {
+		const key = toIsoBucket(String(row.bucket))
+		byBucket.set(key, (byBucket.get(key) ?? 0) + Number(row.sumValue))
+	}
+	return Array.from(byBucket, ([bucket, throughput]) => ({ bucket, throughput }))
+}
+
+const ThroughputRefinementShared = {
+	startTime: Schema.optional(dateTimeString),
+	endTime: Schema.optional(dateTimeString),
+	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	// The caller's sampling verdict, derived from the already-loaded primary
+	// chart. When false (or absent) the exact query is skipped — the estimate is
+	// already correct. Including it in the input makes it part of the atom key, so
+	// an unsampled window can't inherit a stale exact line.
+	samplingActive: Schema.optional(Schema.Boolean),
+}
+
+const GetServiceDetailThroughputRefinementInputSchema = Schema.Struct({
+	serviceName: ServiceName,
+	...ThroughputRefinementShared,
+})
+
+type GetServiceDetailThroughputRefinementInput =
+	(typeof GetServiceDetailThroughputRefinementInputSchema)["Encoded"]
+
+export function getServiceDetailThroughputRefinement({
+	data,
+}: {
+	data: GetServiceDetailThroughputRefinementInput
+}) {
+	return getServiceDetailThroughputRefinementEffect({ data })
+}
+
+const getServiceDetailThroughputRefinementEffect = Effect.fn(
+	"QueryEngine.getServiceDetailThroughputRefinement",
+)(function* ({ data }: { data: GetServiceDetailThroughputRefinementInput }) {
+	const input = yield* decodeInput(
+		GetServiceDetailThroughputRefinementInputSchema,
+		data,
+		"getServiceDetailThroughputRefinement",
+	)
+
+	const envScoped = (input.environments?.length ?? 0) > 0
+	if (!input.samplingActive || envScoped) {
+		return { data: [] as ThroughputRefinementPoint[] }
+	}
+
+	const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+	const result = yield* querySpanMetricsCalls({
+		service: input.serviceName,
+		start_time: input.startTime,
+		end_time: input.endTime,
+		bucket_seconds: bucketSeconds,
+	})
+	return { data: aggregateSpanMetricsByBucket(result.data) }
+})
+
+const GetOverviewThroughputRefinementInputSchema = Schema.Struct({
+	...ThroughputRefinementShared,
+})
+
+type GetOverviewThroughputRefinementInput = (typeof GetOverviewThroughputRefinementInputSchema)["Encoded"]
+
+export function getOverviewThroughputRefinement({
+	data,
+}: {
+	data: GetOverviewThroughputRefinementInput
+}) {
+	return getOverviewThroughputRefinementEffect({ data })
+}
+
+const getOverviewThroughputRefinementEffect = Effect.fn("QueryEngine.getOverviewThroughputRefinement")(
+	function* ({ data }: { data: GetOverviewThroughputRefinementInput }) {
+		const input = yield* decodeInput(
+			GetOverviewThroughputRefinementInputSchema,
+			data ?? {},
+			"getOverviewThroughputRefinement",
+		)
+
+		const envScoped = (input.environments?.length ?? 0) > 0
+		if (!input.samplingActive || envScoped) {
+			return { data: [] as ThroughputRefinementPoint[] }
+		}
+
+		const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+		// No service filter → aggregate the per-service rows across all services.
+		const result = yield* querySpanMetricsCalls({
+			start_time: input.startTime,
+			end_time: input.endTime,
+			bucket_seconds: bucketSeconds,
+		})
+		return { data: aggregateSpanMetricsByBucket(result.data) }
 	},
 )
