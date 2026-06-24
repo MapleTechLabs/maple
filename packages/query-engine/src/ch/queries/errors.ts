@@ -151,6 +151,14 @@ const TREE_SPAN_ATTR_KEYS = [
 	"cache.name",
 	"cache.operation",
 	"cache.lookup_performed",
+	// Cloudflare Workers Observability — read by `getCloudflareInfo` to mark
+	// Worker spans and render the edge-location + outcome badges in the tree
+	// views. The full set (ray id, cpu/wall time, script version, geo city) is
+	// lazy-loaded per-span by `spanDetailQuery` for the detail panel.
+	"cloud.platform",
+	"cloudflare.colo",
+	"faas.invoked_region",
+	"cloudflare.outcome",
 ] as const
 
 /**
