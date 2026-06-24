@@ -5,7 +5,7 @@ mod autumn;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -4110,6 +4110,9 @@ fn parse_usize(name: &str, raw: Option<String>, default: usize) -> Result<usize,
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `AtomicBool` is only used by the test fakes below; keeping it out of the
+    // top-level import avoids an unused-import warning in non-test bin builds.
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn hash_is_deterministic() {
