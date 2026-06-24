@@ -420,7 +420,7 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 								<CacheSystemIcon system={cacheInfo.system} size={11} />
 								<span className="font-mono truncate">{cacheInfo.system}</span>
 							</span>
-						) : platform?.edge ? (
+						) : platform?.edge && !isCombined ? (
 							<span
 								className="flex items-center gap-1 text-muted-foreground/60 ml-2"
 								title={platform.location ?? undefined}
