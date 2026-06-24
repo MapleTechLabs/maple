@@ -90,6 +90,13 @@ export class ReplaysFacetsResponse extends Schema.Class<ReplaysFacetsResponse>("
 
 export class GetReplayRequest extends Schema.Class<GetReplayRequest>("GetReplayRequest")({
 	sessionId: SessionId,
+	// Optional session time window — lets the warehouse prune daily partitions
+	// instead of scanning the full 30-day retention. The web client derives it
+	// from the `t` (session start) navigation hint; deep-links omit it and fall
+	// back to a full scan. `Schema.optional` (not `optionalKey`) because the
+	// client constructs the payload JS-side and passes explicit `undefined`.
+	windowStart: Schema.optional(TinybirdDateTime),
+	windowEnd: Schema.optional(TinybirdDateTime),
 }) {}
 
 export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetReplayResponse")({
@@ -121,6 +128,9 @@ export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetRepla
 
 export class GetReplayEventsRequest extends Schema.Class<GetReplayEventsRequest>("GetReplayEventsRequest")({
 	sessionId: SessionId,
+	// See GetReplayRequest — optional partition-pruning window.
+	windowStart: Schema.optional(TinybirdDateTime),
+	windowEnd: Schema.optional(TinybirdDateTime),
 }) {}
 
 export const SessionReplayChunk = Schema.Struct({
@@ -167,6 +177,10 @@ export class SessionTraceSummariesRequest extends Schema.Class<SessionTraceSumma
 )({
 	/** The session's correlated trace ids (from the detail response's `traceIds`). */
 	traceIds: Schema.Array(TraceId),
+	// See GetReplayRequest — optional partition-pruning window (the session's
+	// time span; its correlated traces fired within it).
+	windowStart: Schema.optional(TinybirdDateTime),
+	windowEnd: Schema.optional(TinybirdDateTime),
 }) {}
 
 export const SessionTraceSummary = Schema.Struct({
@@ -195,6 +209,9 @@ export class SessionTranscriptRequest extends Schema.Class<SessionTranscriptRequ
 	"SessionTranscriptRequest",
 )({
 	sessionId: SessionId,
+	// See GetReplayRequest — optional partition-pruning window.
+	windowStart: Schema.optional(TinybirdDateTime),
+	windowEnd: Schema.optional(TinybirdDateTime),
 }) {}
 
 export const SessionEventItem = Schema.Struct({

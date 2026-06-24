@@ -3,7 +3,11 @@ import path from "node:path"
 import alchemy from "alchemy"
 import { Ai, DurableObjectNamespace, Worker } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	CLOUDFLARE_WORKER_PLACEMENT,
+	resolveDeploymentEnvironment,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 
 const requireEnv = (key: string): string => {
 	const value = process.env[key]?.trim()
@@ -76,6 +80,7 @@ export const createChatFlueWorker = async ({ stage, domains, mapleApiUrl }: Crea
 		rules: [{ globs: ["**/*.js", "**/*.mjs"] }],
 		compatibilityDate: "2026-06-01",
 		compatibilityFlags: ["nodejs_compat"],
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		// Workers Observability. `traces.enabled` is required for the `tracing.enterSpan`
 		// custom spans in src/agents/maple-chat.ts to emit; the `"maple"` destination
 		// forwards both logs and traces over Cloudflare's native pipeline → Maple ingest

@@ -1,8 +1,12 @@
 import { spawnSync } from "node:child_process"
 import path from "node:path"
 import { Assets, Worker } from "alchemy/cloudflare"
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	CLOUDFLARE_WORKER_PLACEMENT,
+	resolveWorkerName,
+	type MapleDomains,
+	type MapleStage,
+} from "@maple/infra/cloudflare"
 
 export interface CreateLandingWorkerOptions {
 	stage: MapleStage
@@ -27,6 +31,7 @@ export const createLandingWorker = async ({ stage, domains }: CreateLandingWorke
 		cwd: import.meta.dirname,
 		entrypoint: path.join(import.meta.dirname, "src", "worker.ts"),
 		compatibility: "node",
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		url: true,
 		adopt: true,
 		domains: domains.landing ? [{ domainName: domains.landing, adopt: true }] : undefined,

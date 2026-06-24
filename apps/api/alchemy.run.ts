@@ -12,6 +12,7 @@ import {
 } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
+	CLOUDFLARE_WORKER_PLACEMENT,
 	resolveD1Name,
 	resolveDeploymentEnvironment,
 	resolveHyperdriveName,
@@ -152,6 +153,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		entrypoint: path.join(import.meta.dirname, "src", "worker.ts"),
 		compatibility: "node",
 		compatibilityDate: "2026-04-08",
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,

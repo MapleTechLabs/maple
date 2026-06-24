@@ -4,6 +4,7 @@ import { cn } from "@maple/ui/utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getSessionTranscriptResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import type { ReplayPartitionWindow } from "./replay-format"
 import { useReplayPlayer } from "./replay-player-context"
 import { parseChTimestampMs } from "./replay-timeline"
 
@@ -39,15 +40,18 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 export function SessionEventsPanel({
 	sessionId,
 	previewEvents,
+	window,
 	className,
 }: {
 	sessionId: string
 	/** Placeholder-data preview: render these events instead of fetching them. */
 	previewEvents?: ReadonlyArray<EventRow>
+	/** Partition-pruning window; must match the route prefetch key (see $sessionId.tsx). */
+	window?: ReplayPartitionWindow
 	/** Sizing handed down by the layout (the panel fills/scrolls within it). */
 	className?: string
 }) {
-	const result = useAtomValue(getSessionTranscriptResultAtom({ data: { sessionId } }))
+	const result = useAtomValue(getSessionTranscriptResultAtom({ data: { sessionId, ...window } }))
 	const [tab, setTab] = React.useState<Tab>("console")
 	const { timeline, recordingStartEpochMs, realTotalMs, seekDisplay } = useReplayPlayer()
 

@@ -383,6 +383,12 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							}),
 							"serviceHealthBaseline query failed",
 						),
+						// The payload's start/end are floored to the hour upstream
+						// (`floorToHour`) and this is a trailing 7-day baseline that
+						// changes at most hourly, so the cache key already rotates once
+						// an hour — a 1h TTL yields ≤1 recompute/hour per (org, env, ns)
+						// instead of every 15s for an ~900ms query.
+						3600,
 					)
 					return new ServiceHealthBaselineResponse({
 						data: rows.map((row) => ({
@@ -775,6 +781,9 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 							}),
 							"serviceUsage query failed",
 						),
+						// Usage totals (GB / session counts) tolerate a minute of
+						// staleness; a 60s TTL cuts repeat-load recomputes ~4× vs 15s.
+						60,
 					)
 					return new ServiceUsageResponse({ data: rows })
 				}),

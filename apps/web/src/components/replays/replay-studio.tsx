@@ -4,7 +4,7 @@ import { ReplaySurface, ReplayTransport } from "@/components/replays/replay-play
 import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
 import { ReplayEditorTimeline, type SessionTraceSummary } from "@/components/replays/replay-editor-timeline"
 import { SessionEventsPanel, type EventRow } from "@/components/replays/session-events-panel"
-import { formatDuration } from "@/components/replays/replay-format"
+import { formatDuration, type ReplayPartitionWindow } from "@/components/replays/replay-format"
 import { CopyButton, Reveal, SessionIdentityHeader } from "@/components/replays/session-detail-parts"
 
 // ---------------------------------------------------------------------------
@@ -53,11 +53,15 @@ export function ReplayStudio({
 	session,
 	traceIds,
 	preview,
+	window,
 }: {
 	sessionId: string
 	session: ReplayStudioSession
 	traceIds: ReadonlyArray<string>
 	preview?: ReplayStudioPreview
+	/** Partition-pruning window threaded into the detail atoms (matches the
+	 *  route prefetch key). Omitted on the preview route, which bypasses fetches. */
+	window?: ReplayPartitionWindow
 }) {
 	const isActive = session.status === "active"
 	const label = session.userId || "Anonymous session"
@@ -82,7 +86,7 @@ export function ReplayStudio({
 				</div>
 			</Reveal>
 
-			<ReplayPlayerProvider sessionId={sessionId} previewEvents={preview?.rrwebEvents}>
+			<ReplayPlayerProvider sessionId={sessionId} previewEvents={preview?.rrwebEvents} window={window}>
 				{/* Browser chrome + video next to the event stream. The transport is
 				    detached (rendered below) so the events panel matches the height of
 				    the video block exactly — no dead space. */}
@@ -97,6 +101,7 @@ export function ReplayStudio({
 						<SessionEventsPanel
 							sessionId={sessionId}
 							previewEvents={preview?.transcript}
+							window={window}
 							className="h-[clamp(20rem,60vh,28rem)] lg:absolute lg:inset-0 lg:h-auto"
 						/>
 					</div>
@@ -107,7 +112,11 @@ export function ReplayStudio({
 
 				{/* Trace timeline — full width below. */}
 				<Reveal delay={0.08}>
-					<ReplayEditorTimeline traceIds={traceIds} previewSummaries={preview?.traceSummaries} />
+					<ReplayEditorTimeline
+							traceIds={traceIds}
+							previewSummaries={preview?.traceSummaries}
+							window={window}
+						/>
 				</Reveal>
 			</ReplayPlayerProvider>
 		</div>

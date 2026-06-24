@@ -2,7 +2,11 @@ import path from "node:path"
 import alchemy from "alchemy"
 import { Worker, Workflow, type Hyperdrive } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	CLOUDFLARE_WORKER_PLACEMENT,
+	resolveDeploymentEnvironment,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 
 const requireEnv = (key: string): string => {
 	const value = process.env[key]?.trim()
@@ -49,6 +53,7 @@ export const createAlertingWorker = async ({ stage, mapleDb }: CreateAlertingWor
 		entrypoint: path.join(import.meta.dirname, "src", "worker.ts"),
 		compatibility: "node",
 		compatibilityDate: "2026-04-08",
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		adopt: true,
 		crons: ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 9 * * *"],
 		bindings: {

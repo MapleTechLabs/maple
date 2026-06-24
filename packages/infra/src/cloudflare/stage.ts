@@ -17,6 +17,8 @@ export interface MapleDomains {
 	local?: string
 }
 
+export const CLOUDFLARE_WORKER_PLACEMENT = { region: "aws:us-east-1" } as const
+
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
 	api: "api.maple.dev",

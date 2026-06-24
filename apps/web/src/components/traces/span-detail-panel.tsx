@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type ReactNode } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
 	XmarkIcon,
@@ -26,6 +26,8 @@ import { LogDetailSheet } from "@/components/logs/log-detail-sheet"
 import { formatDuration } from "@/lib/format"
 import { cn } from "@maple/ui/utils"
 import { getCacheInfo, cacheResultStyles } from "@maple/ui/lib/cache"
+import { getCloudPlatform, outcomeBadgeStyle } from "@maple/ui/lib/cloud-platforms"
+import { GlobeIcon } from "@maple/ui/components/icons"
 import { getServiceLegendColor } from "@maple/ui/lib/colors"
 import type { SpanNode, SpanDetailResult } from "@/api/warehouse/traces"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
@@ -55,6 +57,23 @@ const kindLabels: Record<string, string> = {
 	SPAN_KIND_PRODUCER: "Producer",
 	SPAN_KIND_CONSUMER: "Consumer",
 	SPAN_KIND_INTERNAL: "Internal",
+}
+
+function PlatformRow({
+	label,
+	children,
+	className,
+}: {
+	label: string
+	children: ReactNode
+	className?: string
+}) {
+	return (
+		<div className={cn("flex items-center justify-between gap-2 min-w-0", className)}>
+			<span className="text-muted-foreground shrink-0">{label}</span>
+			<span className="font-mono truncate text-right">{children}</span>
+		</div>
+	)
 }
 
 const severityStyles: Record<string, string> = {
@@ -275,6 +294,11 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 	const infraAttrs = detailAttrs?.resourceAttributes ?? span.resourceAttributes
 	const hasInfra = getActiveInfraCorrelations(infraAttrs).length > 0
 
+	// Serverless/cloud platform annotations (Cloudflare, Vercel, …). The
+	// hierarchy query only projects a few keys (edge/outcome); the full field set
+	// arrives with the lazily-loaded detail attrs.
+	const platform = getCloudPlatform(detailAttrs?.spanAttributes ?? span.spanAttributes)
+
 	return (
 		<div className="flex flex-col h-full border-l bg-background overflow-hidden">
 			{/* Header */}
@@ -348,6 +372,53 @@ export function SpanDetailPanel({ span, services, onClose }: SpanDetailPanelProp
 							{cacheInfo.name}
 						</span>
 					)}
+				</div>
+			)}
+
+			{/* Cloud platform summary (Cloudflare, Vercel, …) */}
+			{platform && (
+				<div className="border-b px-3 py-2 text-xs shrink-0 space-y-1.5">
+					<div className="flex items-center gap-1.5">
+						<platform.Icon size={12} className={cn("shrink-0", platform.accentClassName)} />
+						<span className="font-medium">{platform.label}</span>
+						{platform.outcome && (
+							<Badge
+								variant="outline"
+								className={cn(
+									"text-[10px] font-medium ml-auto",
+									outcomeBadgeStyle(platform.outcome.bad),
+								)}
+							>
+								{platform.outcome.value}
+							</Badge>
+						)}
+					</div>
+					<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+						{platform.edge && (
+							<PlatformRow label="Edge">
+								<span className="inline-flex items-center gap-1">
+									<GlobeIcon size={10} className="shrink-0" />
+									{platform.edge}
+								</span>
+							</PlatformRow>
+						)}
+						{platform.location && <PlatformRow label="Location">{platform.location}</PlatformRow>}
+						{platform.fields.map((field) => (
+							<PlatformRow
+								key={field.label}
+								label={field.label}
+								className={field.wide ? "col-span-2" : undefined}
+							>
+								{field.copyable ? (
+									<CopyableValue value={field.value}>
+										{field.display ?? field.value}
+									</CopyableValue>
+								) : (
+									(field.display ?? field.value)
+								)}
+							</PlatformRow>
+						))}
+					</div>
 				</div>
 			)}
 
