@@ -12,7 +12,7 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { type DisplayMarker, useReplayPlayer, type ReplayPlayerContextValue } from "./replay-player-context"
 import { spanDisplayRange, type Timeline } from "./replay-timeline"
-import { formatClock, MARKER_STYLES } from "./replay-format"
+import { formatClock, MARKER_STYLES, type ReplayPartitionWindow } from "./replay-format"
 import {
 	ChevronRightIcon,
 	ChevronDownIcon,
@@ -76,10 +76,13 @@ export interface SessionTraceSummary {
 export function ReplayEditorTimeline({
 	traceIds,
 	previewSummaries,
+	window,
 }: {
 	traceIds: ReadonlyArray<string>
 	/** Placeholder-data preview: render these summaries instead of fetching them. */
 	previewSummaries?: ReadonlyArray<SessionTraceSummary>
+	/** Partition-pruning window for the trace-summaries query (the session's span). */
+	window?: ReplayPartitionWindow
 }) {
 	const player = useReplayPlayer()
 
@@ -116,7 +119,12 @@ export function ReplayEditorTimeline({
 					<ActivityTrack player={player} />
 					<ScrubSurface player={player} />
 				</div>
-				<TracesTrack traceIds={traceIds} seek={seek} previewSummaries={previewSummaries} />
+				<TracesTrack
+						traceIds={traceIds}
+						seek={seek}
+						previewSummaries={previewSummaries}
+						window={window}
+					/>
 				<Playhead player={player} />
 			</div>
 		</section>
@@ -309,12 +317,14 @@ const TracesTrack = React.memo(function TracesTrack({
 	traceIds,
 	seek,
 	previewSummaries,
+	window,
 }: {
 	traceIds: ReadonlyArray<string>
 	seek: SeekContext
 	previewSummaries?: ReadonlyArray<SessionTraceSummary>
+	window?: ReplayPartitionWindow
 }) {
-	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds } }))
+	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds, ...window } }))
 
 	const header = (count: number | null) => (
 		<div className="flex items-center gap-2 border-b border-border/60 bg-muted/20 px-3 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-muted-foreground">

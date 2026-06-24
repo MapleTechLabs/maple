@@ -68,6 +68,17 @@ type ActiveRow = typeof orgClickHouseSettings.$inferSelect
 const ORG_CH_CONFIG_BUCKET = "org-clickhouse-config"
 const ORG_CH_CONFIG_TTL_SECONDS = 300
 
+// In-isolate value cache in front of the edge cache for the same lookup. Even a
+// Cache-API hit is an async round-trip, and a miss pays the full Postgres read
+// over Hyperdrive (observed at 0.85–2.4s in production traces, dominating the
+// session-replay list load). Workers reuse an isolate across many requests, so a
+// module-scoped memo lets a warm isolate resolve config with ZERO network. TTL
+// is far tighter than the edge TTL, so cross-isolate staleness after a config
+// change (rare — BYO-CH onboarding/rotation) is bounded to seconds; the mutating
+// isolate also clears its own entry on write (see invalidateRuntimeConfigCache).
+const ORG_CH_CONFIG_MEMO_TTL_MS = 30_000
+const runtimeConfigMemo = new Map<string, { value: CachedChSettings | null; expiresAt: number }>()
+
 /**
  * JSON-safe projection of the settings row cached cross-request by
  * `resolveRuntimeConfig`. Holds the ENCRYPTED password material
@@ -689,18 +700,19 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			return Option.fromNullishOr(rows[0])
 		})
 
-		// Bust the cross-request edge entry for an org's runtime config after any
-		// write to its settings row, so the next warehouse query re-resolves rather
-		// than serving the ≤5-min-stale value. The edge cache is optional (absent
-		// in tests / non-worker contexts) — a no-op when unavailable.
+		// Bust the cached runtime config for an org after any write to its settings
+		// row, so the next warehouse query re-resolves rather than serving a stale
+		// value. Clears both the in-isolate memo (this isolate only — other isolates
+		// fall off within ORG_CH_CONFIG_MEMO_TTL_MS) and the cross-request edge entry
+		// (optional — absent in tests / non-worker contexts, a no-op when unavailable).
 		const invalidateRuntimeConfigCache = (orgId: OrgId): Effect.Effect<void> =>
-			Effect.serviceOption(EdgeCacheService).pipe(
-				Effect.flatMap((cache) =>
-					Option.isNone(cache)
-						? Effect.void
-						: cache.value.invalidate({ bucket: ORG_CH_CONFIG_BUCKET, key: orgId }),
-				),
-			)
+			Effect.gen(function* () {
+				runtimeConfigMemo.delete(orgId)
+				const cache = yield* Effect.serviceOption(EdgeCacheService)
+				if (Option.isSome(cache)) {
+					yield* cache.value.invalidate({ bucket: ORG_CH_CONFIG_BUCKET, key: orgId })
+				}
+			})
 
 		const requireActiveRow = Effect.fn("OrgClickHouseSettingsService.requireActiveRow")(function* (
 			orgId: OrgId,
@@ -1079,33 +1091,48 @@ export class OrgClickHouseSettingsService extends Context.Service<
 			function* (orgId: OrgId) {
 				// `selectActiveRow` is a Postgres round-trip on the hot path of EVERY
 				// warehouse SQL execution, and the bucket-cache fan-out re-runs it once
-				// per missing range. Wrap it in the shared edge cache: its in-flight
-				// single-flight collapses the concurrent fan-out into one lookup, and the
-				// 5-min KV entry removes the cold round-trip on repeat loads. We cache the
-				// ENCRYPTED row projection (or `null`) and decrypt per-request below, so
-				// plaintext credentials never enter the cache.
-				const edgeCache = yield* Effect.serviceOption(EdgeCacheService)
-				const lookup = selectActiveRow(orgId).pipe(
-					Effect.map((row) => (Option.isSome(row) ? toCachedChSettings(row.value) : null)),
-				)
-				const cached = Option.isNone(edgeCache)
-					? yield* lookup
-					: yield* edgeCache.value
-							.getOrCompute(
-								{
-									bucket: ORG_CH_CONFIG_BUCKET,
-									key: orgId,
-									ttlSeconds: ORG_CH_CONFIG_TTL_SECONDS,
-									schema: CachedChSettingsOrNull,
-								},
-								lookup,
-							)
-							.pipe(
-								Effect.tap((result) =>
-									Effect.annotateCurrentSpan("clickhouse.config.cacheHit", result.hit),
-								),
-								Effect.map((result) => result.value),
-							)
+				// per missing range. Two cache layers sit in front: a module-scoped
+				// in-isolate memo (zero network on a warm isolate) and, on a memo miss,
+				// the shared edge cache (its in-flight single-flight collapses the
+				// concurrent fan-out into one lookup; the 5-min entry removes the cold
+				// round-trip on repeat loads). Both store the ENCRYPTED row projection
+				// (or `null`) and decrypt per-request below, so plaintext credentials
+				// never enter a cache.
+				const nowMs = yield* Clock.currentTimeMillis
+				const memoized = runtimeConfigMemo.get(orgId)
+				let cached: CachedChSettings | null
+				if (memoized !== undefined && memoized.expiresAt > nowMs) {
+					yield* Effect.annotateCurrentSpan("clickhouse.config.memoHit", true)
+					cached = memoized.value
+				} else {
+					yield* Effect.annotateCurrentSpan("clickhouse.config.memoHit", false)
+					const edgeCache = yield* Effect.serviceOption(EdgeCacheService)
+					const lookup = selectActiveRow(orgId).pipe(
+						Effect.map((row) => (Option.isSome(row) ? toCachedChSettings(row.value) : null)),
+					)
+					cached = Option.isNone(edgeCache)
+						? yield* lookup
+						: yield* edgeCache.value
+								.getOrCompute(
+									{
+										bucket: ORG_CH_CONFIG_BUCKET,
+										key: orgId,
+										ttlSeconds: ORG_CH_CONFIG_TTL_SECONDS,
+										schema: CachedChSettingsOrNull,
+									},
+									lookup,
+								)
+								.pipe(
+									Effect.tap((result) =>
+										Effect.annotateCurrentSpan("clickhouse.config.cacheHit", result.hit),
+									),
+									Effect.map((result) => result.value),
+								)
+					runtimeConfigMemo.set(orgId, {
+						value: cached,
+						expiresAt: nowMs + ORG_CH_CONFIG_MEMO_TTL_MS,
+					})
+				}
 
 				if (cached === null) {
 					return Option.none<RuntimeBackendConfig>()
