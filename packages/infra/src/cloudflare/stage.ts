@@ -110,19 +110,6 @@ export function resolveMapleDomains(stage: MapleStage): MapleDomains {
 	}
 }
 
-export function resolveD1Name(stage: MapleStage): string {
-	switch (stage.kind) {
-		case "prd":
-			return "maple-api"
-		case "stg":
-			return "maple-api-stg"
-		case "pr":
-			return `maple-api-pr-${stage.prNumber}`
-		case "dev":
-			return `maple-api-dev-${stage.name}`
-	}
-}
-
 export function resolveHyperdriveName(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
