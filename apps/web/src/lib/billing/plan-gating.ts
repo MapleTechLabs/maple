@@ -1,4 +1,5 @@
 import { useCustomer } from "autumn-js/react"
+import { isActivePlanSubscription } from "@maple/domain/billing"
 
 type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
 
@@ -24,11 +25,6 @@ export interface FeatureQuota {
 	level: QuotaLevel
 }
 
-function isLegacyFreePlan(sub: Subscription): boolean {
-	if (sub.planId.toLowerCase() === "free") return true
-	return sub.plan?.name?.toLowerCase() === "free"
-}
-
 // Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
 // body is an `autumn_api_error` from a failed response validation) as `data`
 // rather than `error`. Those payloads have no `subscriptions`/`balances`, so a
@@ -41,14 +37,7 @@ export function isUsableCustomer(customer: Customer | null | undefined): custome
 
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-
-	return (
-		customer.subscriptions.find((sub) => {
-			if (sub.addOn || sub.autoEnable) return false
-			if (isLegacyFreePlan(sub)) return false
-			return sub.status === "active"
-		}) ?? null
-	)
+	return customer.subscriptions.find((sub) => isActivePlanSubscription(sub)) ?? null
 }
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {

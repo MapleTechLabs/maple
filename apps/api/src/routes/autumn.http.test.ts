@@ -1,11 +1,39 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { makeEdgeCacheService, makeMemoryBackend } from "@maple/query-engine/caching"
-import { CUSTOMER_CACHE_BUCKET, readCustomerCached } from "./autumn.http"
+import { type EdgeCacheBackend, makeEdgeCacheService, makeMemoryBackend } from "@maple/query-engine/caching"
+import {
+	CUSTOMER_CACHE_BUCKET,
+	CUSTOMER_CACHE_TTL_SECONDS,
+	CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS,
+	readCustomerCached,
+	responseHasActivePlan,
+} from "./autumn.http"
 
 const ORG = "org_test_123"
 
 const makeCache = () => makeEdgeCacheService(makeMemoryBackend())
+
+// Wrap the real memory backend so caching/expiry still works, but record the
+// TTL handed to each `put` — lets us assert the content-dependent TTL policy.
+const makeRecordingBackend = () => {
+	const inner = makeMemoryBackend()
+	const puts: number[] = []
+	const backend: EdgeCacheBackend = {
+		get: inner.get,
+		put: (bucket, hash, value, ttlSeconds, nowMs) => {
+			puts.push(ttlSeconds)
+			return inner.put(bucket, hash, value, ttlSeconds, nowMs)
+		},
+		delete: inner.delete,
+	}
+	return { cache: makeEdgeCacheService(backend), puts }
+}
+
+const activePlanResponse = {
+	id: ORG,
+	subscriptions: [{ planId: "startup", status: "active", trialEndsAt: 9_999_999_999_000, addOn: false }],
+}
+const noPlanResponse = { id: ORG, subscriptions: [] }
 
 describe("readCustomerCached", () => {
 	it.effect("caches a 200 response: 2nd call hits the cache, upstream runs once", () =>
@@ -81,4 +109,60 @@ describe("readCustomerCached", () => {
 			assert.strictEqual(calls, 2)
 		}),
 	)
+
+	it.effect("caches an active-plan customer for the full TTL", () =>
+		Effect.gen(function* () {
+			const { cache, puts } = makeRecordingBackend()
+			const run = Effect.succeed({ statusCode: 200, response: activePlanResponse })
+			yield* readCustomerCached(cache, ORG, run)
+			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_TTL_SECONDS])
+		}),
+	)
+
+	it.effect("caches a planless customer for the short TTL so the gate re-checks soon", () =>
+		Effect.gen(function* () {
+			const { cache, puts } = makeRecordingBackend()
+			const run = Effect.succeed({ statusCode: 200, response: noPlanResponse })
+			yield* readCustomerCached(cache, ORG, run)
+			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
+		}),
+	)
+
+	it.effect("treats an error-shaped 200 (no subscriptions array) as unsettled → short TTL", () =>
+		Effect.gen(function* () {
+			const { cache, puts } = makeRecordingBackend()
+			const run = Effect.succeed({ statusCode: 200, response: { error: "autumn_api_error" } })
+			yield* readCustomerCached(cache, ORG, run)
+			assert.deepStrictEqual(puts, [CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS])
+		}),
+	)
+})
+
+describe("responseHasActivePlan", () => {
+	it("is true for an active (trialing) base-plan subscription", () => {
+		assert.isTrue(responseHasActivePlan(activePlanResponse))
+	})
+
+	it("is false with no subscriptions, an empty list, or a non-active status", () => {
+		assert.isFalse(responseHasActivePlan(noPlanResponse))
+		assert.isFalse(responseHasActivePlan({ id: ORG }))
+		assert.isFalse(responseHasActivePlan({ subscriptions: [{ planId: "startup", status: "expired" }] }))
+	})
+
+	it("ignores add-on, auto-enabled, and legacy free plans", () => {
+		assert.isFalse(
+			responseHasActivePlan({ subscriptions: [{ planId: "byoc", status: "active", addOn: true }] }),
+		)
+		assert.isFalse(
+			responseHasActivePlan({ subscriptions: [{ planId: "starter", status: "active", autoEnable: true }] }),
+		)
+		assert.isFalse(responseHasActivePlan({ subscriptions: [{ planId: "free", status: "active" }] }))
+	})
+
+	it("is false for non-object / error-shaped payloads", () => {
+		assert.isFalse(responseHasActivePlan(null))
+		assert.isFalse(responseHasActivePlan(undefined))
+		assert.isFalse(responseHasActivePlan("nope"))
+		assert.isFalse(responseHasActivePlan({ error: "boom" }))
+	})
 })

@@ -1,6 +1,13 @@
 import { useCustomer } from "autumn-js/react"
+import { hasSelectedPlan } from "@/lib/billing/plan-gating"
 
 type UseCustomerParams = Parameters<typeof useCustomer>[0]
+
+// Settled on a plan: cache 5 min (matches the API edge cache; off the hot path).
+const SETTLED_STALE_MS = 1000 * 60 * 5
+// No plan yet (onboarding / post-checkout sync window): stay stale and poll so
+// the gate releases a just-subscribed user fast. Auto-stops once a plan is active.
+const UNSETTLED_POLL_MS = 1000 * 5
 
 // Autumn's `AutumnProvider` builds its own internal QueryClient with
 // `retry: false` hard-coded (and bundles its own @tanstack/react-query, so a
@@ -19,11 +26,10 @@ export function useMapleCustomer(params?: UseCustomerParams) {
 		queryOptions: {
 			retry: 3,
 			retryDelay: (attempt: number) => Math.min(250 * 2 ** attempt, 1000),
-			// getOrCreateCustomer is on the whole-app hot path; the API edge-caches
-			// it per org for 5 min and invalidates on billing mutations, so refetch
-			// on every navigation is wasted. Match that window here (autumn-js still
-			// force-refetches on its own attach/updateSubscription invalidations).
-			staleTime: 1000 * 60 * 5,
+			// Long cache once settled on a plan; stale + polling while planless.
+			staleTime: (query) =>
+				hasSelectedPlan(query.state.data) ? SETTLED_STALE_MS : UNSETTLED_POLL_MS,
+			refetchInterval: (query) => (hasSelectedPlan(query.state.data) ? false : UNSETTLED_POLL_MS),
 			...params?.queryOptions,
 		},
 	})

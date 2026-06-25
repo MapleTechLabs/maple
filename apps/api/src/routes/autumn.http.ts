@@ -3,6 +3,7 @@ import { Effect, Option, Redacted, Schema } from "effect"
 import { autumnHandler, type CustomerData } from "autumn-js/backend"
 import { EdgeCacheService, type EdgeCacheServiceShape } from "@maple/query-engine/caching"
 import { UnauthorizedError } from "@maple/domain/http"
+import { isActivePlanSubscription } from "@maple/domain/billing"
 import { Env } from "../lib/Env"
 import { AuthService } from "../services/AuthService"
 
@@ -42,12 +43,30 @@ class UncacheableAutumnResult extends Schema.TaggedErrorClass<UncacheableAutumnR
 export const CUSTOMER_CACHE_BUCKET = "autumn-customer"
 export const CUSTOMER_CACHE_TTL_SECONDS = 300
 
+// Short TTL for a customer with no active plan: caching that "no plan" snapshot
+// for the full 5 min would strand a just-subscribed user on the /quick-start
+// gate until the post-checkout Stripe→Autumn sync lands. Re-check soon instead.
+export const CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS = 5
+
+/**
+ * Does this raw `getOrCreateCustomer` response carry an active, non-add-on,
+ * non-free plan? Delegates to the shared `isActivePlanSubscription` gate
+ * (@maple/domain/billing) so the cache TTL can't drift from the web redirect gate.
+ */
+export const responseHasActivePlan = (response: unknown): boolean => {
+	if (typeof response !== "object" || response === null) return false
+	const subscriptions = (response as { subscriptions?: unknown }).subscriptions
+	if (!Array.isArray(subscriptions)) return false
+	return subscriptions.some((sub) => isActivePlanSubscription(sub))
+}
+
 /**
  * Run `getOrCreateCustomer` through the per-org edge cache. Only 200 responses
  * are cached — anything else (Autumn error / transient) fails the compute via a
  * sentinel so `getOrCompute` never stores it, and is then recovered so the
- * caller still gets the real response. Returns the resolved result plus whether
- * it came from the cache (for span annotation). Exported for unit tests.
+ * caller still gets the real response. Active-plan 200s get the full TTL,
+ * planless ones a short one. Returns the result + whether it was a cache hit
+ * (for span annotation). Exported for unit tests.
  */
 export const readCustomerCached = (
 	edgeCache: Pick<EdgeCacheServiceShape, "getOrCompute">,
@@ -56,7 +75,14 @@ export const readCustomerCached = (
 ): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, AutumnRequestError> =>
 	edgeCache
 		.getOrCompute(
-			{ bucket: CUSTOMER_CACHE_BUCKET, key: orgId, ttlSeconds: CUSTOMER_CACHE_TTL_SECONDS },
+			{
+				bucket: CUSTOMER_CACHE_BUCKET,
+				key: orgId,
+				ttlSeconds: (result: AutumnResult) =>
+					responseHasActivePlan(result.response)
+						? CUSTOMER_CACHE_TTL_SECONDS
+						: CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS,
+			},
 			runAutumn.pipe(
 				Effect.flatMap((res) =>
 					res.statusCode === 200
