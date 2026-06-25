@@ -4,7 +4,6 @@ import { encodeKey } from "@/lib/cache-key"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
 import {
-	getCustomChartServiceDetail,
 	getCustomChartServiceSparklines,
 	getCustomChartTimeSeries,
 	getOverviewThroughputRefinement,
@@ -49,19 +48,11 @@ import {
 	getServiceDependenciesBundle,
 	getServiceMap,
 	getServiceMapDbEdges,
-	getServiceMapDbEdgesForService,
 	getServiceDbQuerySummary,
-	getServiceMapForService,
 	getServicePlatforms,
 } from "@/api/warehouse/service-map"
-import { getServiceExternalEdges } from "@/api/warehouse/service-external-edges"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
-import {
-	getServiceHealthBaseline,
-	getServiceOverview,
-	getServiceReleasesTimeline,
-	getServicesFacets,
-} from "@/api/warehouse/services"
+import { getServiceHealthBaseline, getServiceOverview, getServicesFacets } from "@/api/warehouse/services"
 import {
 	getResourceAttributeKeys,
 	getResourceAttributeValues,
@@ -335,14 +326,6 @@ export const workloadFacetsResultAtom = makeQueryAtomFamily(getWorkloadFacets, {
 	staleTime: 30_000,
 })
 
-export const getServiceReleasesTimelineResultAtom = makeQueryAtomFamily(getServiceReleasesTimeline, {
-	staleTime: 60_000,
-})
-
-export const getCustomChartServiceDetailResultAtom = makeQueryAtomFamily(getCustomChartServiceDetail, {
-	staleTime: 30_000,
-})
-
 // Service-detail Overview tab bundle: primary chart + releases timeline +
 // environments in one fetch. The chart grid and the environment switcher read
 // this atom with the same input key, so they share a single round-trip.
@@ -379,10 +362,6 @@ export const getServiceMapResultAtom = makeQueryAtomFamily(getServiceMap, {
 	staleTime: 15_000,
 })
 
-export const getServiceMapForServiceResultAtom = makeQueryAtomFamily(getServiceMapForService, {
-	staleTime: 15_000,
-})
-
 // Service-detail Dependencies tab bundle: service edges + DB edges + external
 // edges in one fetch (replaces the three separate *ForService atoms).
 export const getServiceDependenciesBundleResultAtom = makeQueryAtomFamily(getServiceDependenciesBundle, {
@@ -393,16 +372,8 @@ export const getServiceMapDbEdgesResultAtom = makeQueryAtomFamily(getServiceMapD
 	staleTime: 15_000,
 })
 
-export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(getServiceMapDbEdgesForService, {
-	staleTime: 15_000,
-})
-
 export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
 	staleTime: 15_000,
-})
-
-export const getServiceExternalEdgesResultAtom = makeQueryAtomFamily(getServiceExternalEdges, {
-	staleTime: 30_000,
 })
 
 export const getServicePlatformsResultAtom = makeQueryAtomFamily(getServicePlatforms, {
