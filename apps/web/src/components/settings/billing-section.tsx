@@ -6,9 +6,12 @@ import { format } from "date-fns"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
+import { Badge } from "@maple/ui/components/ui/badge"
 import { getPlanLimits, type PlanLimits } from "@/lib/billing/plans"
 import type { AggregatedUsage } from "@/lib/billing/usage"
+import { getOverageSummary } from "@/lib/billing/plan-gating"
 import { UsageMeters } from "./usage-meters"
+import { OverageSummary } from "./overage-summary"
 import { useTrialStatus } from "@/hooks/use-trial-status"
 import { cn } from "@maple/ui/utils"
 
@@ -25,13 +28,23 @@ function limitsFromCustomer(balances: CustomerBalances): PlanLimits | null {
 	}
 }
 
-function DataPoint({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function DataPoint({
+	label,
+	value,
+	accent,
+	className,
+}: {
+	label: string
+	value: string
+	accent?: boolean
+	className?: string
+}) {
 	return (
 		<div className="flex flex-col gap-0.5">
 			<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
 				{label}
 			</span>
-			<span className={cn("text-sm tabular-nums", accent && "text-primary")}>{value}</span>
+			<span className={cn("text-sm tabular-nums", accent && "text-primary", className)}>{value}</span>
 		</div>
 	)
 }
@@ -48,7 +61,8 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 }
 
 function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string }) {
-	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLoading } = useTrialStatus()
+	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLegacy, isLoading } =
+		useTrialStatus()
 	const { openCustomerPortal } = useMapleCustomer()
 
 	if (isLoading) {
@@ -81,7 +95,14 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 		<div>
 			<div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
 				<div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-					<DataPoint label="Plan" value={planName} />
+					<div className="flex items-center gap-2">
+						<DataPoint label="Plan" value={planName} className="capitalize" />
+						{isLegacy && (
+							<Badge variant="secondary" className="text-[10px] font-medium">
+								Legacy plan
+							</Badge>
+						)}
+					</div>
 					<DataPoint label="Status" value={statusValue} accent={isTrialing} />
 					<DataPoint label="Period" value={billingPeriodLabel} />
 				</div>
@@ -93,6 +114,12 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 					Manage billing
 				</Button>
 			</div>
+			{isLegacy && (
+				<p className="mt-3 text-xs text-muted-foreground">
+					You're on a legacy plan that's no longer offered. Switch to a current plan below for the
+					latest pricing and features.
+				</p>
+			)}
 			{isTrialing && trialEndsAt && (
 				<p className="mt-3 text-xs text-muted-foreground">
 					Card charges when trial ends on {format(trialEndsAt, "MMM d")}. Cancel anytime before to
@@ -148,6 +175,7 @@ export function BillingSection() {
 		metricsGB: total?.metrics?.sum ?? 0,
 		browserSessions: total?.browser_sessions?.sum ?? 0,
 	}
+	const overage = getOverageSummary(customer, usage)
 
 	return (
 		<div>
@@ -158,6 +186,7 @@ export function BillingSection() {
 				<div className="mt-5">
 					{isLoading ? <UsageSkeleton /> : <UsageMeters usage={usage} limits={limits} />}
 				</div>
+				{!isLoading && <OverageSummary summary={overage} />}
 			</section>
 
 			<section className="mt-12">

@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
-import { getActivePlan } from "@/lib/billing/plan-gating"
+import { getActivePlan, isLegacyPlan } from "@/lib/billing/plan-gating"
 
 export function useTrialStatus() {
 	const { data: customer, isLoading } = useMapleCustomer()
@@ -16,6 +16,7 @@ export function useTrialStatus() {
 				planName: null,
 				planId: null,
 				planStatus: null,
+				isLegacy: false,
 				isLoading,
 			}
 		}
@@ -37,6 +38,7 @@ export function useTrialStatus() {
 			planName: sub.plan?.name ?? sub.planId,
 			planId: sub.planId,
 			planStatus: sub.status,
+			isLegacy: isLegacyPlan(sub),
 			isLoading,
 		}
 	}, [customer, isLoading])

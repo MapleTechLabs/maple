@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest"
 import { useCustomer } from "autumn-js/react"
 import {
 	getFeatureQuotas,
+	getLegacyPlanInfo,
+	getOverageSummary,
+	getPastDueSubscription,
 	getQuotaStatus,
 	hasBringYourOwnCloudAddOn,
 	hasSelectedPlan,
+	isLegacyPlan,
 	isUsableCustomer,
 	isUsageBasedPlan,
 } from "./plan-gating"
+import type { AggregatedUsage } from "./usage"
 
 type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
 type Subscription = Customer["subscriptions"][number]
@@ -83,6 +88,48 @@ function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
 		...partial,
 	}
 }
+
+type Plan = NonNullable<Subscription["plan"]>
+type Item = Plan["items"][number]
+
+function buildPlanItem(featureId: string, included: number, amount: number | null): Item {
+	return {
+		featureId,
+		included,
+		unlimited: false,
+		reset: { interval: "month" },
+		price:
+			amount == null
+				? null
+				: {
+						amount,
+						billingUnits: 1,
+						interval: "month",
+					},
+	} as Item
+}
+
+function buildPlan(partial: Partial<Plan> = {}): Plan {
+	return {
+		id: "startup",
+		name: "Startup",
+		description: null,
+		group: null,
+		version: 1,
+		addOn: false,
+		autoEnable: false,
+		price: { amount: 39, interval: "month" },
+		items: [],
+		createdAt: Date.now(),
+		env: "sandbox",
+		archived: false,
+		baseVariantId: null,
+		config: { ignorePastDue: false },
+		...partial,
+	}
+}
+
+const ZERO_USAGE: AggregatedUsage = { logsGB: 0, tracesGB: 0, metricsGB: 0, browserSessions: 0 }
 
 describe("hasSelectedPlan", () => {
 	it("returns false when customer is missing", () => {
@@ -271,5 +318,132 @@ describe("getQuotaStatus / getFeatureQuotas", () => {
 		})
 		expect(getFeatureQuotas(customer)).toHaveLength(0)
 		expect(getQuotaStatus(customer)).toBe("ok")
+	})
+})
+
+describe("getPastDueSubscription", () => {
+	it("returns null when customer is missing or error-shaped", () => {
+		expect(getPastDueSubscription(null)).toBeNull()
+		expect(getPastDueSubscription(buildCustomer([]))).toBeNull()
+	})
+
+	it("returns the past-due subscription", () => {
+		const sub = buildSubscription({ pastDue: true })
+		expect(getPastDueSubscription(buildCustomer([sub]))?.id).toBe(sub.id)
+	})
+
+	it("returns null when no subscription is past due", () => {
+		expect(getPastDueSubscription(buildCustomer([buildSubscription()]))).toBeNull()
+	})
+
+	it("ignores add-on subscriptions", () => {
+		const addOn = buildSubscription({ addOn: true, pastDue: true })
+		expect(getPastDueSubscription(buildCustomer([addOn]))).toBeNull()
+	})
+})
+
+describe("isLegacyPlan / getLegacyPlanInfo", () => {
+	it("flags archived plans", () => {
+		const sub = buildSubscription({ plan: buildPlan({ archived: true }) })
+		expect(isLegacyPlan(sub)).toBe(true)
+	})
+
+	it("flags the legacy free tier (by id or name)", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "free" }))).toBe(true)
+		expect(
+			isLegacyPlan(buildSubscription({ planId: "old", plan: buildPlan({ name: "Free" }) })),
+		).toBe(true)
+	})
+
+	it("does not flag a current active plan", () => {
+		expect(isLegacyPlan(buildSubscription())).toBe(false)
+	})
+
+	it("getLegacyPlanInfo reflects the active plan", () => {
+		const archived = buildCustomer([
+			buildSubscription({ plan: buildPlan({ name: "Old Startup", archived: true }) }),
+		])
+		expect(getLegacyPlanInfo(archived)).toEqual({ isLegacy: true, planName: "Old Startup" })
+
+		const current = buildCustomer([buildSubscription({ plan: buildPlan({ name: "Startup" }) })])
+		expect(getLegacyPlanInfo(current)).toEqual({ isLegacy: false, planName: "Startup" })
+
+		expect(getLegacyPlanInfo(buildCustomer([]))).toEqual({ isLegacy: false, planName: null })
+	})
+})
+
+describe("getOverageSummary", () => {
+	const startupPlan = buildPlan({
+		items: [
+			buildPlanItem("logs", 100, 0.3),
+			buildPlanItem("traces", 100, 0.3),
+			buildPlanItem("metrics", 100, 0.3),
+			buildPlanItem("browser_sessions", 5000, 0.003),
+		],
+	})
+
+	it("is empty when there is no usable customer", () => {
+		expect(getOverageSummary(null, ZERO_USAGE)).toEqual({
+			features: [],
+			total: 0,
+			hasOverage: false,
+		})
+	})
+
+	it("computes per-feature overage from balances, usage, and live plan rates", () => {
+		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
+			balances: {
+				logs: buildBalance("logs", { granted: 100, overageAllowed: true }),
+				traces: buildBalance("traces", { granted: 100, overageAllowed: true }),
+				browser_sessions: buildBalance("browser_sessions", {
+					granted: 5000,
+					overageAllowed: true,
+				}),
+			},
+		})
+		const usage: AggregatedUsage = {
+			logsGB: 150,
+			tracesGB: 100, // exactly at cap → no overage
+			metricsGB: 0,
+			browserSessions: 6000,
+		}
+
+		const summary = getOverageSummary(customer, usage)
+		expect(summary.hasOverage).toBe(true)
+		expect(summary.features.map((f) => f.featureId)).toEqual(["logs", "browser_sessions"])
+
+		const logs = summary.features.find((f) => f.featureId === "logs")
+		expect(logs).toMatchObject({ overageUnits: 50, rate: 0.3, cost: 15 })
+
+		const sessions = summary.features.find((f) => f.featureId === "browser_sessions")
+		expect(sessions).toMatchObject({ overageUnits: 1000, rate: 0.003 })
+		expect(sessions?.cost).toBeCloseTo(3, 5)
+
+		expect(summary.total).toBeCloseTo(18, 5)
+	})
+
+	it("excludes features that do not allow overage", () => {
+		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
+			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: false }) },
+		})
+		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 200 }
+		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
+	})
+
+	it("excludes features under their included grant", () => {
+		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
+			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: true }) },
+		})
+		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 80 }
+		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
+	})
+
+	it("excludes features whose plan item has no per-unit price", () => {
+		const plan = buildPlan({ items: [buildPlanItem("logs", 100, null)] })
+		const customer = buildCustomer([buildSubscription({ plan })], {
+			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: true }) },
+		})
+		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 200 }
+		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
 	})
 })
