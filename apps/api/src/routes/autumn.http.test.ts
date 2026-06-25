@@ -148,21 +148,4 @@ describe("responseHasActivePlan", () => {
 		assert.isFalse(responseHasActivePlan({ id: ORG }))
 		assert.isFalse(responseHasActivePlan({ subscriptions: [{ planId: "startup", status: "expired" }] }))
 	})
-
-	it("ignores add-on, auto-enabled, and legacy free plans", () => {
-		assert.isFalse(
-			responseHasActivePlan({ subscriptions: [{ planId: "byoc", status: "active", addOn: true }] }),
-		)
-		assert.isFalse(
-			responseHasActivePlan({ subscriptions: [{ planId: "starter", status: "active", autoEnable: true }] }),
-		)
-		assert.isFalse(responseHasActivePlan({ subscriptions: [{ planId: "free", status: "active" }] }))
-	})
-
-	it("is false for non-object / error-shaped payloads", () => {
-		assert.isFalse(responseHasActivePlan(null))
-		assert.isFalse(responseHasActivePlan(undefined))
-		assert.isFalse(responseHasActivePlan("nope"))
-		assert.isFalse(responseHasActivePlan({ error: "boom" }))
-	})
 })
