@@ -113,11 +113,11 @@ export interface TinybirdInstanceHealth {
 }
 
 const SqlResponseSchema = Schema.Struct({
-	data: Schema.optionalKey(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
+	data: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
 })
 
 const WorkspaceProbeSchema = Schema.Struct({
-	name: Schema.optionalKey(Schema.String),
+	name: Schema.optional(Schema.String),
 })
 
 export class TinybirdSyncRejectedError extends Schema.TaggedErrorClass<TinybirdSyncRejectedError>()(
