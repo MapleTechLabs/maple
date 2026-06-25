@@ -4,6 +4,7 @@ import {
 	ServiceDbEdgesForServiceRequest,
 	ServiceDbEdgesRequest,
 	ServiceDbQuerySummaryRequest,
+	ServiceDependenciesBundleRequest,
 	ServiceDependenciesForServiceRequest,
 	ServiceDependenciesRequest,
 	ServiceName,
@@ -12,6 +13,7 @@ import {
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { summarizeSampling } from "@/lib/sampling"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
+import { transformExternalEdge } from "@/api/warehouse/service-external-edges"
 
 export interface ServiceEdge {
 	sourceService: string
@@ -203,6 +205,45 @@ export const getServiceMapForService = Effect.fn("QueryEngine.getServiceMapForSe
 
 	return {
 		edges: result.data.map((row) => transformEdge(row, durationSeconds)),
+	}
+})
+
+// Service-detail Dependencies tab in one request: the service-map edges, the
+// DB edges, and the external edges run server-side under a single tenant/config
+// resolution (see the `serviceDependenciesBundle` handler), replacing three
+// independent browser→Worker round-trips with one shared fetch.
+export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDependenciesBundle")(function* ({
+	data,
+}: {
+	data: GetServiceMapForServiceInput
+}) {
+	const input = yield* decodeInput(GetServiceMapForServiceInputSchema, data, "getServiceDependenciesBundle")
+	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const startTime = input.startTime ?? fallback.startTime
+	const endTime = input.endTime ?? fallback.endTime
+
+	const result = yield* runWarehouseQuery("serviceDependenciesBundle", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceDependenciesBundle({
+				payload: new ServiceDependenciesBundleRequest({
+					serviceName: input.serviceName,
+					startTime,
+					endTime,
+					deploymentEnv: input.deploymentEnv,
+				}),
+			})
+		}),
+	)
+
+	const startMs = new Date(startTime.replace(" ", "T") + "Z").getTime()
+	const endMs = new Date(endTime.replace(" ", "T") + "Z").getTime()
+	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
+
+	return {
+		serviceEdges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
+		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		externalEdges: result.externalEdges.map((row) => transformExternalEdge(row, durationSeconds)),
 	}
 })
 

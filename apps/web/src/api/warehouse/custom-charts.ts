@@ -18,6 +18,7 @@ import {
 	CommitSha,
 	DeploymentEnvironment,
 	MetricName,
+	ServiceDetailOverviewRequest,
 	ServiceName,
 	ServiceNamespace,
 	SpanName,
@@ -27,7 +28,9 @@ import {
 	decodeInput,
 	executeQueryEngine,
 	invalidWarehouseInput,
+	runWarehouseQuery,
 } from "@/api/warehouse/effect-utils"
+import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import type { ServiceDetailTimeSeriesPoint, ServiceTimeSeriesPoint } from "@/api/warehouse/services"
 const dateTimeString = WarehouseDateTimeString
 
@@ -743,6 +746,47 @@ function extractGroupedAllMetricsSeries(
 	return services
 }
 
+// Shared point-builder for the service-detail chart: turns an all-metrics
+// timeseries response into filled `ServiceDetailTimeSeriesPoint`s. Used by both
+// the standalone chart fetch and the `serviceDetailOverview` bundle so the two
+// paths can't drift.
+function buildServiceDetailPoints(
+	allMetricsRes: QueryEngineExecuteResponse,
+	startTime: string | undefined,
+	endTime: string | undefined,
+	bucketSeconds: number,
+	nowMs: number,
+): ServiceDetailTimeSeriesPoint[] {
+	const allMetrics = extractAllMetricsSeries(allMetricsRes)
+
+	const points = Array.from(allMetrics.keys())
+		.toSorted()
+		.map((bucket): ServiceDetailTimeSeriesPoint => {
+			const m = allMetrics.get(bucket)
+			const rawCount = m?.count ?? 0
+			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, undefined)
+			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
+			const hasSampling = samplingWeight > 1.01
+
+			return {
+				bucket,
+				throughput,
+				tracedThroughput: rawCount,
+				hasSampling,
+				samplingWeight,
+				errorRate: m?.errorRate ?? 0,
+				p50LatencyMs: m?.p50 ?? 0,
+				p95LatencyMs: m?.p95 ?? 0,
+				p99LatencyMs: m?.p99 ?? 0,
+				apdexScore: m?.apdexScore ?? 0,
+				totalCount: rawCount,
+				partial: false,
+			}
+		})
+
+	return fillServiceDetailPoints(points, startTime, endTime, bucketSeconds, nowMs)
+}
+
 const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartServiceDetail")(function* ({
 	data,
 }: {
@@ -774,37 +818,76 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 		makeAllMetricsTimeseriesRequest(reqOpts),
 	)
 
-	const allMetrics = extractAllMetricsSeries(allMetricsRes)
-
-	const points = Array.from(allMetrics.keys())
-		.toSorted()
-		.map((bucket): ServiceDetailTimeSeriesPoint => {
-			const m = allMetrics.get(bucket)
-			const rawCount = m?.count ?? 0
-			const throughput = resolveThroughput(rawCount, m?.estimatedSpanCount ?? 0, undefined)
-			const samplingWeight = rawCount > 0 ? throughput / rawCount : 1
-			const hasSampling = samplingWeight > 1.01
-
-			return {
-				bucket,
-				throughput,
-				tracedThroughput: rawCount,
-				hasSampling,
-				samplingWeight,
-				errorRate: m?.errorRate ?? 0,
-				p50LatencyMs: m?.p50 ?? 0,
-				p95LatencyMs: m?.p95 ?? 0,
-				p99LatencyMs: m?.p99 ?? 0,
-				apdexScore: m?.apdexScore ?? 0,
-				totalCount: rawCount,
-				partial: false,
-			}
-		})
-
 	const nowMs = yield* Clock.currentTimeMillis
 	return {
-		data: fillServiceDetailPoints(points, input.startTime, input.endTime, bucketSeconds, nowMs),
+		data: buildServiceDetailPoints(allMetricsRes, input.startTime, input.endTime, bucketSeconds, nowMs),
 	}
+})
+
+/**
+ * Service-detail Overview tab in one request: the primary all-metrics chart,
+ * the releases timeline, and the service's distinct environments — run
+ * server-side under a single tenant/config resolution (see the
+ * `serviceDetailOverview` handler). The environment switcher and the chart grid
+ * read the SAME atom key, so this fires once for the whole tab instead of three
+ * independent browser→Worker round-trips.
+ */
+export interface ServiceDetailOverviewResult {
+	data: ServiceDetailTimeSeriesPoint[]
+	releases: ReadonlyArray<{ bucket: string; commitSha: CommitSha; count: number }>
+	environments: string[]
+}
+
+export function getServiceDetailOverview({ data }: { data: GetCustomChartServiceDetailInput }) {
+	return getServiceDetailOverviewEffect({ data })
+}
+
+const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOverview")(function* ({
+	data,
+}: {
+	data: GetCustomChartServiceDetailInput
+}) {
+	const input = yield* decodeInput(GetCustomChartServiceDetailInputSchema, data, "getServiceDetailOverview")
+
+	const nowMs = yield* Clock.currentTimeMillis
+	const fmt = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 19)
+	const startTime = input.startTime ?? fmt(nowMs - 24 * 60 * 60 * 1000)
+	const endTime = input.endTime ?? fmt(nowMs)
+	const bucketSeconds = computeBucketSeconds(startTime, endTime)
+
+	const timeseriesRequest = makeAllMetricsTimeseriesRequest({
+		startTime,
+		endTime,
+		bucketSeconds,
+		serviceName: input.serviceName,
+		rootSpansOnly: true,
+		environments: toEnvFilter(input.environments),
+	})
+
+	const result = yield* runWarehouseQuery("serviceDetailOverview", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleApiAtomClient
+			return yield* client.queryEngine.serviceDetailOverview({
+				payload: new ServiceDetailOverviewRequest({
+					serviceName: input.serviceName,
+					startTime,
+					endTime,
+					timeseries: timeseriesRequest,
+					releasesBucketSeconds: bucketSeconds,
+				}),
+			})
+		}),
+	)
+
+	return {
+		data: buildServiceDetailPoints(result.timeseries, startTime, endTime, bucketSeconds, nowMs),
+		releases: result.releases.map((row) => ({
+			bucket: toIsoBucket(row.bucket),
+			commitSha: row.commitSha,
+			count: Number(row.count),
+		})),
+		environments: [...result.environments],
+	} satisfies ServiceDetailOverviewResult
 })
 
 const GetOverviewTimeSeriesInputSchema = Schema.Struct({
@@ -1059,11 +1142,7 @@ const GetOverviewThroughputRefinementInputSchema = Schema.Struct({
 
 type GetOverviewThroughputRefinementInput = (typeof GetOverviewThroughputRefinementInputSchema)["Encoded"]
 
-export function getOverviewThroughputRefinement({
-	data,
-}: {
-	data: GetOverviewThroughputRefinementInput
-}) {
+export function getOverviewThroughputRefinement({ data }: { data: GetOverviewThroughputRefinementInput }) {
 	return getOverviewThroughputRefinementEffect({ data })
 }
 

@@ -15,9 +15,8 @@ import type {
 } from "@maple/ui/components/charts/_shared/chart-types"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import {
-	getCustomChartServiceDetailResultAtom,
+	getServiceDetailOverviewResultAtom,
 	getServiceDetailThroughputRefinementResultAtom,
-	getServiceReleasesTimelineResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { mergeExactThroughput } from "@/api/warehouse/custom-charts"
 import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
@@ -183,6 +182,7 @@ function ServiceDetailContent() {
 							serviceName={serviceName}
 							startTime={effectiveStartTime}
 							endTime={effectiveEndTime}
+							environments={search.environments}
 							value={search.environments?.[0]}
 							onChange={handleEnvironmentChange}
 						/>
@@ -235,8 +235,11 @@ interface OverviewTabProps {
 }
 
 function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
-	const detailResult = useRetainedRefreshableResultValue(
-		getCustomChartServiceDetailResultAtom({
+	// One fetch for the whole Overview tab — primary chart, releases timeline, and
+	// the environment switcher's options (the switcher reads this same atom key, so
+	// it shares this round-trip instead of issuing its own overview query).
+	const overviewResult = useRetainedRefreshableResultValue(
+		getServiceDetailOverviewResultAtom({
 			data: {
 				serviceName,
 				startTime: effectiveStartTime,
@@ -246,22 +249,12 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		}),
 	)
 
-	const releasesResult = useRetainedRefreshableResultValue(
-		getServiceReleasesTimelineResultAtom({
-			data: {
-				serviceName,
-				startTime: effectiveStartTime,
-				endTime: effectiveEndTime,
-			},
-		}),
-	)
-
 	// Sampling verdict from the already-loaded primary chart. Drives a separate,
 	// non-blocking fetch of the exact pre-sampling throughput (SpanMetrics `calls`)
 	// — only when sampling is active, so unsampled services never issue the slow
 	// query. `samplingActive` is part of the atom key, so the overlay re-fetches
 	// once the primary resolves and flips it true (no `useEffect`).
-	const samplingActive = Result.builder(detailResult)
+	const samplingActive = Result.builder(overviewResult)
 		.onSuccess((r) => r.data.some((p) => p.hasSampling))
 		.orElse(() => false)
 
@@ -288,8 +281,8 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 	}, [throughputRefinement])
 
 	const releaseMarkers: ChartReferenceLine[] = useMemo(() => {
-		const timeline = Result.builder(releasesResult)
-			.onSuccess((r) => r.data)
+		const timeline = Result.builder(overviewResult)
+			.onSuccess((r) => r.releases)
 			.orElse(() => [])
 		return detectReleaseMarkers(timeline).map((m) => ({
 			x: m.bucket,
@@ -300,7 +293,7 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 			color: "var(--muted-foreground)",
 			strokeDasharray: "6 4",
 		}))
-	}, [releasesResult])
+	}, [overviewResult])
 
 	// Each deploy marker is a full-line hover hitbox with a flag at the top: the flag
 	// shows the release commit's message (resolved when the repo is connected/synced,
@@ -311,25 +304,25 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		[],
 	)
 
-	const isWaiting = Result.isSuccess(detailResult) && detailResult.waiting
+	const isWaiting = Result.isSuccess(overviewResult) && overviewResult.waiting
 
 	// Cold load (no retained data yet) → drive each chart's loading skeleton so
 	// the grid shows `ChartSkeleton` until the warehouse query resolves, rather
 	// than rendering an empty chart with `[]` while the data is still in flight.
 	// On a refresh the retained hook returns `Success(waiting: true)` (not
 	// `Initial`), so this stays false and the stale-data dim (`opacity-60`) wins.
-	const isDetailLoading = Result.isInitial(detailResult)
+	const isDetailLoading = Result.isInitial(overviewResult)
 
 	// ServiceDetail points are typed structs; the chart grid consumes a
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
 	// so this is a safe widening (no `as unknown` round-trip needed). The exact
 	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
 	const detailPoints: Record<string, unknown>[] = useMemo(() => {
-		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(detailResult)
+		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(overviewResult)
 			.onSuccess((response) => response.data)
 			.orElse(() => [])
 		return mergeExactThroughput(base, exactThroughputByBucket).map((point) => ({ ...point }))
-	}, [detailResult, exactThroughputByBucket])
+	}, [overviewResult, exactThroughputByBucket])
 
 	const widgetData: Record<string, Record<string, unknown>[]> = {
 		latency: detailPoints,

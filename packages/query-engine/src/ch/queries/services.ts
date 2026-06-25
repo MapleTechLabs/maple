@@ -148,6 +148,42 @@ export function serviceReleasesTimelineQuery(opts: ServiceReleasesTimelineOpts) 
 }
 
 // ---------------------------------------------------------------------------
+// Service environments
+//
+// Distinct non-empty deployment environments a single service reports in the
+// window. Backs the service-detail environment switcher, replacing an
+// all-services overview scan that fetched every service's rows just to extract
+// one service's environments. Service-scoped + time-windowed so ClickHouse
+// prunes both the service and the date partitions.
+// ---------------------------------------------------------------------------
+
+export interface ServiceEnvironmentsOpts {
+	serviceName: string
+}
+
+export interface ServiceEnvironmentsOutput {
+	readonly environment: string
+}
+
+export function serviceEnvironmentsQuery(opts: ServiceEnvironmentsOpts) {
+	return from(ServiceOverviewSpans)
+		.select(($) => ({
+			environment: $.DeploymentEnv,
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.ServiceName.eq(opts.serviceName),
+			$.DeploymentEnv.neq(""),
+			$.Timestamp.gte(param.dateTime("startTime")),
+			$.Timestamp.lte(param.dateTime("endTime")),
+		])
+		.groupBy("environment")
+		.orderBy(["environment", "asc"])
+		.limit(100)
+		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
 // Service Apdex time series
 // ---------------------------------------------------------------------------
 

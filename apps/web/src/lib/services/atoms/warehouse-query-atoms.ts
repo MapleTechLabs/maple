@@ -9,6 +9,7 @@ import {
 	getCustomChartTimeSeries,
 	getOverviewThroughputRefinement,
 	getOverviewTimeSeries,
+	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
 } from "@/api/warehouse/custom-charts"
 import {
@@ -45,6 +46,7 @@ import {
 } from "@/api/warehouse/infra"
 import { getServiceUsage } from "@/api/warehouse/service-usage"
 import {
+	getServiceDependenciesBundle,
 	getServiceMap,
 	getServiceMapDbEdges,
 	getServiceMapDbEdgesForService,
@@ -341,6 +343,13 @@ export const getCustomChartServiceDetailResultAtom = makeQueryAtomFamily(getCust
 	staleTime: 30_000,
 })
 
+// Service-detail Overview tab bundle: primary chart + releases timeline +
+// environments in one fetch. The chart grid and the environment switcher read
+// this atom with the same input key, so they share a single round-trip.
+export const getServiceDetailOverviewResultAtom = makeQueryAtomFamily(getServiceDetailOverview, {
+	staleTime: 30_000,
+})
+
 export const getOverviewTimeSeriesResultAtom = makeQueryAtomFamily(getOverviewTimeSeries, {
 	staleTime: 30_000,
 })
@@ -371,6 +380,12 @@ export const getServiceMapResultAtom = makeQueryAtomFamily(getServiceMap, {
 })
 
 export const getServiceMapForServiceResultAtom = makeQueryAtomFamily(getServiceMapForService, {
+	staleTime: 15_000,
+})
+
+// Service-detail Dependencies tab bundle: service edges + DB edges + external
+// edges in one fetch (replaces the three separate *ForService atoms).
+export const getServiceDependenciesBundleResultAtom = makeQueryAtomFamily(getServiceDependenciesBundle, {
 	staleTime: 15_000,
 })
 

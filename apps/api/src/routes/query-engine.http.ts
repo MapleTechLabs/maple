@@ -21,6 +21,8 @@ import {
 	ServiceDbEdgesResponse,
 	ServiceDbQuerySummaryResponse,
 	ServiceExternalEdgesResponse,
+	ServiceDetailOverviewResponse,
+	ServiceDependenciesBundleResponse,
 	ServicePlatformsResponse,
 	ServiceWorkloadsResponse,
 	ServiceUsageResponse,
@@ -549,6 +551,133 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						"serviceDbEdgesForService query failed",
 					)
 					return new ServiceDbEdgesResponse({ data: rows })
+				}),
+			)
+			.handle("serviceDetailOverview", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+
+					const releasesCompiled = CH.compile(
+						CH.serviceReleasesTimelineQuery({ serviceName: payload.serviceName }),
+						{
+							orgId: tenant.orgId,
+							startTime: payload.startTime,
+							endTime: payload.endTime,
+							bucketSeconds: payload.releasesBucketSeconds ?? 300,
+						},
+					)
+					const environmentsCompiled = CH.compile(
+						CH.serviceEnvironmentsQuery({ serviceName: payload.serviceName }),
+						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+					)
+
+					// One Worker invocation for the whole Overview tab: per-org config
+					// resolves once (the first sub-query warms the in-isolate memo) and
+					// the three queries run concurrently, replacing three separate
+					// browser->Worker round-trips. The primary chart keeps its own
+					// execute-path cache; releases is uncached (mirrors the standalone
+					// handler); environments is edge-cached on a service-scoped key.
+					const [timeseries, releaseRows, environmentRows] = yield* Effect.all(
+						[
+							queryEngine.execute(tenant, payload.timeseries),
+							mapExecError(
+								warehouse.compiledQuery(tenant, releasesCompiled, {
+									profile: "list",
+									context: "serviceReleases",
+								}),
+								"serviceReleases query failed",
+							),
+							queryEngine.cachedDirect(
+								tenant,
+								"serviceEnvironments",
+								{
+									serviceName: payload.serviceName,
+									startTime: payload.startTime,
+									endTime: payload.endTime,
+								},
+								mapExecError(
+									warehouse.compiledQuery(tenant, environmentsCompiled, {
+										profile: "discovery",
+										context: "serviceEnvironments",
+									}),
+									"serviceEnvironments query failed",
+								),
+							),
+						],
+						{ concurrency: 3 },
+					)
+
+					return new ServiceDetailOverviewResponse({
+						timeseries,
+						releases: releaseRows.map((row) => ({
+							bucket: String(row.bucket),
+							commitSha: decodeCommitSha(row.commitSha),
+							count: Number(row.count),
+						})),
+						environments: environmentRows
+							.map((row) => String(row.environment ?? ""))
+							.filter((env) => env !== ""),
+					})
+				}),
+			)
+			.handle("serviceDependenciesBundle", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+
+					const dependenciesCompiled = CH.compile(
+						CH.serviceDependenciesForServiceQuery({
+							serviceName: payload.serviceName,
+							deploymentEnv: payload.deploymentEnv,
+						}),
+						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+					)
+					const dbEdgesCompiled = CH.compile(
+						CH.serviceDbEdgesForServiceQuery({
+							serviceName: payload.serviceName,
+							deploymentEnv: payload.deploymentEnv,
+						}),
+						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+					)
+					const externalEdgesCompiled = CH.serviceExternalEdgesSQL(
+						{ deploymentEnv: payload.deploymentEnv, serviceName: payload.serviceName },
+						{ orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime },
+					)
+
+					// Dependencies tab in one Worker invocation: the three service-map
+					// edge queries run concurrently and share a single config
+					// resolution, replacing three independent round-trips.
+					const [dependencyRows, dbEdgeRows, externalEdgeRows] = yield* Effect.all(
+						[
+							mapExecError(
+								warehouse.compiledQuery(tenant, dependenciesCompiled, {
+									profile: "aggregation",
+									context: "serviceDependenciesForService",
+								}),
+								"serviceDependenciesForService query failed",
+							),
+							mapExecError(
+								warehouse.compiledQuery(tenant, dbEdgesCompiled, {
+									profile: "aggregation",
+									context: "serviceDbEdgesForService",
+								}),
+								"serviceDbEdgesForService query failed",
+							),
+							mapExecError(
+								warehouse.compiledQuery(tenant, externalEdgesCompiled, {
+									profile: "aggregation",
+									context: "serviceExternalEdges",
+								}),
+								"serviceExternalEdges query failed",
+							),
+						],
+						{ concurrency: 3 },
+					)
+
+					return new ServiceDependenciesBundleResponse({
+						dependencies: dependencyRows.map((row) => ({ ...row })),
+						dbEdges: dbEdgeRows.map((row) => ({ ...row })),
+						externalEdges: externalEdgeRows.map((row) => ({ ...row })),
+					})
 				}),
 			)
 			.handle("serviceDbQuerySummary", ({ payload }) =>

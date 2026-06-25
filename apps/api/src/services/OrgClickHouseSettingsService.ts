@@ -63,20 +63,24 @@ type ActiveRow = typeof orgClickHouseSettings.$inferSelect
 
 // Edge-cache bucket + TTL for the per-org runtime ClickHouse config lookup.
 // `resolveRuntimeConfig` runs on the hot path of every warehouse SQL execution
-// (and once per missing bucket in the cache fan-out), so a 5-min cross-request
-// entry removes the repeated Postgres round-trip.
+// (and once per missing bucket in the cache fan-out), so a long-lived
+// cross-request entry removes the repeated Postgres round-trip. The config only
+// changes on BYO-CH onboarding/rotation, and every mutation busts both this edge
+// entry and the in-isolate memo (see invalidateRuntimeConfigCache), so a 1h TTL
+// loses no correctness while cutting cold Postgres handshakes ~12× vs the prior
+// 5-min entry.
 const ORG_CH_CONFIG_BUCKET = "org-clickhouse-config"
-const ORG_CH_CONFIG_TTL_SECONDS = 300
+const ORG_CH_CONFIG_TTL_SECONDS = 3_600
 
 // In-isolate value cache in front of the edge cache for the same lookup. Even a
 // Cache-API hit is an async round-trip, and a miss pays the full Postgres read
 // over Hyperdrive (observed at 0.85–2.4s in production traces, dominating the
 // session-replay list load). Workers reuse an isolate across many requests, so a
 // module-scoped memo lets a warm isolate resolve config with ZERO network. TTL
-// is far tighter than the edge TTL, so cross-isolate staleness after a config
-// change (rare — BYO-CH onboarding/rotation) is bounded to seconds; the mutating
+// is tighter than the edge TTL, so cross-isolate staleness after a config
+// change (rare — BYO-CH onboarding/rotation) is bounded to minutes; the mutating
 // isolate also clears its own entry on write (see invalidateRuntimeConfigCache).
-const ORG_CH_CONFIG_MEMO_TTL_MS = 30_000
+const ORG_CH_CONFIG_MEMO_TTL_MS = 300_000
 const runtimeConfigMemo = new Map<string, { value: CachedChSettings | null; expiresAt: number }>()
 
 /**
@@ -836,7 +840,9 @@ export class OrgClickHouseSettingsService extends Context.Service<
 							schemaVersion: Option.isSome(existingRow)
 								? existingRow.value.schemaVersion
 								: null,
-							createdAt: Option.isSome(existingRow) ? existingRow.value.createdAt : new Date(now),
+							createdAt: Option.isSome(existingRow)
+								? existingRow.value.createdAt
+								: new Date(now),
 							updatedAt: new Date(now),
 							createdBy: Option.isSome(existingRow) ? existingRow.value.createdBy : userId,
 							updatedBy: userId,
