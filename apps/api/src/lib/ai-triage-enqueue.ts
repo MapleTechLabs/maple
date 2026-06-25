@@ -3,7 +3,7 @@ import type { AiTriageIncidentKind, ErrorIssueId, OrgId } from "@maple/domain/ht
 import { AiTriageRunId } from "@maple/domain/primitives"
 import { aiTriageRuns, aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
 import { and, eq, gte, sql } from "drizzle-orm"
-import { Cause, Clock, Data, Effect, Schema } from "effect"
+import { Cause, Clock, Effect, Schema } from "effect"
 import { Database } from "./DatabaseLive"
 
 // Cloudflare Workflow binding that runs the headless triage agent. Hosted by
@@ -69,10 +69,13 @@ export interface MaybeEnqueueTriageResult {
 	readonly reason?: "disabled" | "daily_cap" | "duplicate" | "no_binding" | "error"
 }
 
-class AiTriageWorkflowCreateError extends Data.TaggedError("AiTriageWorkflowCreateError")<{
-	readonly message: string
-	readonly cause: unknown
-}> {}
+class AiTriageWorkflowCreateError extends Schema.TaggedErrorClass<AiTriageWorkflowCreateError>()(
+	"AiTriageWorkflowCreateError",
+	{
+		message: Schema.String,
+		cause: Schema.Unknown,
+	},
+) {}
 
 /**
  * Gate, record, and kick off an AI triage run for a freshly opened incident.

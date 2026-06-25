@@ -139,46 +139,78 @@ export class VcsCommitService extends Context.Service<VcsCommitService, VcsCommi
 				sha: GitCommitSha,
 				installations: ReadonlyArray<VcsInstallation>,
 			) {
+				// `reposProbed` accumulates across the whole walk; it's reported in both
+				// the resolved and not-found outcomes. `found` carries the first repo that
+				// resolves and, once set, makes every later iteration a no-op — so no extra
+				// `fetchCommit` runs after a hit and the counter stops advancing, preserving
+				// the original early-`return` semantics exactly (forEach merely walks, but
+				// skips, the remaining items).
 				let reposProbed = 0
-				for (const installation of installations) {
-					const provider = yield* registry
-						.resolve(installation.provider)
-						.pipe(Effect.mapError((e) => new IntegrationsUpstreamError({ message: e.message })))
-					const repos = yield* asPersistence(
-						repo.listRepositoriesByInstallation(installation.id, "active"),
-					)
-					for (const repository of repos) {
-						reposProbed += 1
-						const outcome = yield* Effect.result(
-							provider.fetchCommit(
-								installation,
-								{
-									externalRepoId: repository.externalRepoId,
-									owner: repository.owner,
-									name: repository.name,
-								},
-								sha,
-							),
+				const hit: {
+					current: {
+						readonly normalized: CommitUpsertInput
+						readonly repository: VcsRepo
+						readonly reposProbed: number
+					} | null
+				} = { current: null }
+
+				yield* Effect.forEach(installations, (installation) =>
+					Effect.gen(function* () {
+						if (hit.current !== null) return
+						const provider = yield* registry
+							.resolve(installation.provider)
+							.pipe(
+								Effect.mapError(
+									(e) => new IntegrationsUpstreamError({ message: e.message }),
+								),
+							)
+						const repos = yield* asPersistence(
+							repo.listRepositoriesByInstallation(installation.id, "active"),
 						)
+						yield* Effect.forEach(repos, (repository) =>
+							Effect.gen(function* () {
+								if (hit.current !== null) return
+								reposProbed += 1
+								const outcome = yield* Effect.result(
+									provider.fetchCommit(
+										installation,
+										{
+											externalRepoId: repository.externalRepoId,
+											owner: repository.owner,
+											name: repository.name,
+										},
+										sha,
+									),
+								)
 
-						if (Result.isFailure(outcome)) {
-							// Best-effort: skip repos that error; another may have the commit.
-							continue
-						}
-						if (Option.isNone(outcome.success)) continue
+								if (Result.isFailure(outcome)) {
+									// Best-effort: skip repos that error; another may have the commit.
+									return
+								}
+								if (Option.isNone(outcome.success)) return
 
-						yield* Effect.annotateCurrentSpan({
-							"vcs.commit.repos_probed": reposProbed,
-							"vcs.commit.provider": installation.provider,
-							"vcs.commit.outcome": "resolved",
-							"vcs.repository.id": repository.id,
-						})
-						return {
-							_tag: "resolved" as const,
-							normalized: outcome.success.value,
-							repository,
-							reposProbed,
-						}
+								yield* Effect.annotateCurrentSpan({
+									"vcs.commit.repos_probed": reposProbed,
+									"vcs.commit.provider": installation.provider,
+									"vcs.commit.outcome": "resolved",
+									"vcs.repository.id": repository.id,
+								})
+								hit.current = {
+									normalized: outcome.success.value,
+									repository,
+									reposProbed,
+								}
+							}),
+						)
+					}),
+				)
+
+				if (hit.current !== null) {
+					return {
+						_tag: "resolved" as const,
+						normalized: hit.current.normalized,
+						repository: hit.current.repository,
+						reposProbed: hit.current.reposProbed,
 					}
 				}
 

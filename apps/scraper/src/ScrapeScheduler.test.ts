@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Layer, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
@@ -121,9 +121,9 @@ describe("ScrapeScheduler", () => {
 			const aCalls = harness.scrapeCalls.filter((id) => id === TARGET_A).length
 			const bCalls = harness.scrapeCalls.filter((id) => id === TARGET_B).length
 			// 5s interval: scrape at t=0,5,...,55 → 12 within the first minute.
-			expect(aCalls).toBe(12)
+			assert.strictEqual(aCalls, 12)
 			// 300s interval: only the initial scrape.
-			expect(bCalls).toBe(1)
+			assert.strictEqual(bCalls, 1)
 		}),
 	)
 
@@ -135,8 +135,8 @@ describe("ScrapeScheduler", () => {
 			// One scrape happened; flush loop fires at t=10s.
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.ingestCalls).toHaveLength(1)
-			expect(harness.ingestCalls[0]?.ingestKey).toBe("maple_pk_org_a")
+			assert.lengthOf(harness.ingestCalls, 1)
+			assert.strictEqual(harness.ingestCalls[0]?.ingestKey, "maple_pk_org_a")
 
 			const resource = harness.ingestCalls[0]!.request.resourceMetrics[0]!
 			const resourceAttrs = Object.fromEntries(
@@ -144,13 +144,13 @@ describe("ScrapeScheduler", () => {
 			)
 			// Org attribution comes from the ingest key at the gateway — the
 			// scraper must not claim it client-side.
-			expect(resourceAttrs).not.toHaveProperty("maple_org_id")
-			expect(resourceAttrs.maple_scrape_target_id).toBe(TARGET_A)
-			expect(resource.scopeMetrics[0]!.metrics[0]!.name).toBe("up")
+			assert.notProperty(resourceAttrs, "maple_org_id")
+			assert.strictEqual(resourceAttrs.maple_scrape_target_id, TARGET_A)
+			assert.strictEqual(resource.scopeMetrics[0]!.metrics[0]!.name, "up")
 
-			expect(harness.reportedResults).toHaveLength(1)
-			expect(harness.reportedResults[0]?.targetId).toBe(TARGET_A)
-			expect(harness.reportedResults[0]?.error).toBeNull()
+			assert.lengthOf(harness.reportedResults, 1)
+			assert.strictEqual(harness.reportedResults[0]?.targetId, TARGET_A)
+			assert.isNull(harness.reportedResults[0]?.error)
 		}),
 	)
 
@@ -162,9 +162,9 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.ingestCalls).toEqual([])
+			assert.deepStrictEqual(harness.ingestCalls, [])
 			// The scrape itself succeeded.
-			expect(harness.reportedResults[0]?.error).toBeNull()
+			assert.isNull(harness.reportedResults[0]?.error)
 		}),
 	)
 
@@ -176,9 +176,9 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.ingestCalls).toEqual([])
-			expect(harness.reportedResults).toHaveLength(1)
-			expect(harness.reportedResults[0]?.error).toContain("HTTP 503")
+			assert.deepStrictEqual(harness.ingestCalls, [])
+			assert.lengthOf(harness.reportedResults, 1)
+			assert.include(harness.reportedResults[0]?.error ?? "", "HTTP 503")
 		}),
 	)
 
@@ -194,13 +194,13 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.reportedResults).toHaveLength(1)
+			assert.lengthOf(harness.reportedResults, 1)
 			const report = harness.reportedResults[0]!
-			expect(report.error).toBeNull()
-			expect(report.durationMs).toBe(2000)
+			assert.isNull(report.error)
+			assert.strictEqual(report.durationMs, 2000)
 			// GAUGE_BODY exposes a single `up 1` sample → one gauge data point.
-			expect(report.samplesScraped).toBe(1)
-			expect(report.samplesPostMetricRelabeling).toBe(1)
+			assert.strictEqual(report.samplesScraped, 1)
+			assert.strictEqual(report.samplesPostMetricRelabeling, 1)
 		}),
 	)
 
@@ -212,12 +212,12 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.reportedResults).toHaveLength(1)
+			assert.lengthOf(harness.reportedResults, 1)
 			const report = harness.reportedResults[0]!
-			expect(report.error).toContain("HTTP 503")
-			expect(report.durationMs).toBe(0)
-			expect(report.samplesScraped).toBeUndefined()
-			expect(report.samplesPostMetricRelabeling).toBeUndefined()
+			assert.include(report.error ?? "", "HTTP 503")
+			assert.strictEqual(report.durationMs, 0)
+			assert.strictEqual(report.samplesScraped, undefined)
+			assert.strictEqual(report.samplesPostMetricRelabeling, undefined)
 		}),
 	)
 
@@ -235,8 +235,8 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 
-			expect(harness.reportedResults).toHaveLength(1)
-			expect(harness.reportedResults[0]?.error).toContain("billing limit")
+			assert.lengthOf(harness.reportedResults, 1)
+			assert.include(harness.reportedResults[0]?.error ?? "", "billing limit")
 		}),
 	)
 
@@ -254,14 +254,14 @@ describe("ScrapeScheduler", () => {
 			const aCalls = harness.scrapeCalls.filter((id) => id === TARGET_A).length
 			const bCalls = harness.scrapeCalls.filter((id) => id === TARGET_B).length
 			// The failing target keeps being retried on its interval…
-			expect(aCalls).toBeGreaterThanOrEqual(3)
+			assert.isAtLeast(aCalls, 3)
 			// …and the healthy target keeps scraping and ingesting.
-			expect(bCalls).toBeGreaterThanOrEqual(3)
-			expect(harness.ingestCalls.length).toBeGreaterThanOrEqual(3)
+			assert.isAtLeast(bCalls, 3)
+			assert.isAtLeast(harness.ingestCalls.length, 3)
 
 			const aResults = harness.reportedResults.filter((r) => r.targetId === TARGET_A)
-			expect(aResults.length).toBeGreaterThan(0)
-			expect(aResults[0]?.error).toContain("boom")
+			assert.isAbove(aResults.length, 0)
+			assert.include(aResults[0]?.error ?? "", "boom")
 		}),
 	)
 
@@ -277,13 +277,13 @@ describe("ScrapeScheduler", () => {
 
 			const branch1 = harness.subCalls.filter((c) => c.subTargetKey === "branch-1").length
 			const branch2 = harness.subCalls.filter((c) => c.subTargetKey === "branch-2").length
-			expect(branch1).toBeGreaterThanOrEqual(3)
-			expect(branch2).toBeGreaterThanOrEqual(3)
+			assert.isAtLeast(branch1, 3)
+			assert.isAtLeast(branch2, 3)
 
 			// Result reports carry the sub-target key for branch-level attribution.
 			const reportedKeys = new Set(harness.reportedResults.map((r) => r.subTargetKey))
-			expect(reportedKeys.has("branch-1")).toBe(true)
-			expect(reportedKeys.has("branch-2")).toBe(true)
+			assert.isTrue(reportedKeys.has("branch-1"))
+			assert.isTrue(reportedKeys.has("branch-2"))
 
 			// Discovery drops branch-2 → only its loop is interrupted.
 			harness.targets = [
@@ -293,10 +293,12 @@ describe("ScrapeScheduler", () => {
 			const branch2AfterRemoval = harness.subCalls.filter((c) => c.subTargetKey === "branch-2").length
 			yield* TestClock.adjust(Duration.seconds(30))
 
-			expect(harness.subCalls.filter((c) => c.subTargetKey === "branch-2").length).toBe(
+			assert.strictEqual(
+				harness.subCalls.filter((c) => c.subTargetKey === "branch-2").length,
 				branch2AfterRemoval,
 			)
-			expect(harness.subCalls.filter((c) => c.subTargetKey === "branch-1").length).toBeGreaterThan(
+			assert.isAbove(
+				harness.subCalls.filter((c) => c.subTargetKey === "branch-1").length,
 				branch1,
 			)
 		}),
@@ -309,7 +311,7 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(30))
 			const aCallsBefore = harness.scrapeCalls.filter((id) => id === TARGET_A).length
-			expect(aCallsBefore).toBeGreaterThanOrEqual(3)
+			assert.isAtLeast(aCallsBefore, 3)
 
 			// Swap A out for B before the next reconcile (every 60s).
 			harness.targets = [mkTarget(TARGET_B, 10)]
@@ -318,14 +320,14 @@ describe("ScrapeScheduler", () => {
 			const aCallsAfterSwap = harness.scrapeCalls.filter((id) => id === TARGET_A).length
 			yield* TestClock.adjust(Duration.seconds(30))
 
-			expect(harness.scrapeCalls.filter((id) => id === TARGET_A).length).toBe(aCallsAfterSwap)
-			expect(harness.scrapeCalls.filter((id) => id === TARGET_B).length).toBeGreaterThanOrEqual(3)
+			assert.strictEqual(harness.scrapeCalls.filter((id) => id === TARGET_A).length, aCallsAfterSwap)
+			assert.isAtLeast(harness.scrapeCalls.filter((id) => id === TARGET_B).length, 3)
 
 			// A rotated ingest key → fingerprint change → loop restarted with the new key.
 			harness.targets = [mkTarget(TARGET_B, 10, { ingestKey: "maple_pk_rotated" })]
 			yield* TestClock.adjust(Duration.seconds(60))
 			yield* TestClock.adjust(Duration.seconds(10))
-			expect(harness.ingestCalls.at(-1)?.ingestKey).toBe("maple_pk_rotated")
+			assert.strictEqual(harness.ingestCalls.at(-1)?.ingestKey, "maple_pk_rotated")
 		}),
 	)
 
@@ -362,12 +364,12 @@ describe("ScrapeScheduler", () => {
 
 			yield* TestClock.adjust(Duration.seconds(10))
 			const before = harness.scrapeCalls.length
-			expect(before).toBeGreaterThanOrEqual(2)
+			assert.isAtLeast(before, 2)
 
 			// Two failed reconciles later, the existing loop is still scraping.
 			yield* TestClock.adjust(Duration.seconds(120))
-			expect(listCalls).toBeGreaterThanOrEqual(3)
-			expect(harness.scrapeCalls.length).toBeGreaterThan(before)
+			assert.isAtLeast(listCalls, 3)
+			assert.isAbove(harness.scrapeCalls.length, before)
 		}),
 	)
 
@@ -404,12 +406,12 @@ describe("ScrapeScheduler", () => {
 
 			// First flush at t=10s fails; the result must be retried later.
 			yield* TestClock.adjust(Duration.seconds(15))
-			expect(harness.reportedResults).toEqual([])
+			assert.deepStrictEqual(harness.reportedResults, [])
 
 			failReports = false
 			yield* TestClock.adjust(Duration.seconds(10))
-			expect(harness.reportedResults).toHaveLength(1)
-			expect(harness.reportedResults[0]?.targetId).toBe(TARGET_A)
+			assert.lengthOf(harness.reportedResults, 1)
+			assert.strictEqual(harness.reportedResults[0]?.targetId, TARGET_A)
 		}),
 	)
 })

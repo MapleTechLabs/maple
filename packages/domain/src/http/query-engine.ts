@@ -1182,7 +1182,7 @@ export class QueryEngineExecutionError extends Schema.TaggedErrorClass<QueryEngi
 	{
 		message: Schema.String,
 		causeMessage: Schema.optional(Schema.String),
-		pipe: Schema.optional(Schema.String),
+		pipeName: Schema.optional(Schema.String),
 	},
 	{ httpApiStatus: 502 },
 ) {}

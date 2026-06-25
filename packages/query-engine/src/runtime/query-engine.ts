@@ -1472,18 +1472,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		// ---- Attribute Values ----
 		if (request.query.kind === "attributeValues") {
-			const queryFn = (() => {
-				switch (request.query.scope) {
-					case "resource":
-						return CH.resourceAttributeValuesQuery
-					case "log":
-						return CH.logAttributeValuesQuery
-					case "metric":
-						return CH.metricAttributeValuesQuery
-					default:
-						return CH.spanAttributeValuesQuery
-				}
-			})()
+			const queryFn = Match.value(request.query.scope).pipe(
+				Match.when("resource", () => CH.resourceAttributeValuesQuery),
+				Match.when("log", () => CH.logAttributeValuesQuery),
+				Match.when("metric", () => CH.metricAttributeValuesQuery),
+				Match.orElse(() => CH.spanAttributeValuesQuery),
+			)
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,

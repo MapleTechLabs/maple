@@ -113,11 +113,11 @@ export interface TinybirdInstanceHealth {
 }
 
 const SqlResponseSchema = Schema.Struct({
-	data: Schema.optional(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
+	data: Schema.optionalKey(Schema.Array(Schema.Record(Schema.String, Schema.Unknown))),
 })
 
 const WorkspaceProbeSchema = Schema.Struct({
-	name: Schema.optional(Schema.String),
+	name: Schema.optionalKey(Schema.String),
 })
 
 export class TinybirdSyncRejectedError extends Schema.TaggedErrorClass<TinybirdSyncRejectedError>()(
@@ -696,7 +696,7 @@ export class TinybirdProjectSync extends Context.Service<TinybirdProjectSync, Ti
 				cleanupOwnedDeployment,
 				fetchInstanceHealth,
 				getCurrentProjectRevision,
-			}
+			} satisfies TinybirdProjectSyncShape
 		}),
 	},
 ) {

@@ -111,7 +111,7 @@ describe("getSessionTraces", () => {
 				sqlQuery: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({
-							pipe: "session_traces",
+							pipeName: "session_traces",
 							message: "ClickHouse exploded",
 							upstreamStatus: 503,
 						}),
@@ -119,7 +119,7 @@ describe("getSessionTraces", () => {
 				compiledQuery: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({
-							pipe: "session_traces",
+							pipeName: "session_traces",
 							message: "ClickHouse exploded",
 							upstreamStatus: 503,
 						}),
@@ -127,7 +127,7 @@ describe("getSessionTraces", () => {
 				compiledQueryFirst: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({
-							pipe: "session_traces",
+							pipeName: "session_traces",
 							message: "ClickHouse exploded",
 							upstreamStatus: 503,
 						}),

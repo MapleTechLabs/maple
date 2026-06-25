@@ -203,22 +203,30 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 				const current = yield* Ref.get(fibersRef)
 				const next = new Map<string, TargetEntry>()
 
-				for (const target of targets) {
-					const key = targetKey(target)
-					const fingerprint = targetFingerprint(target)
-					const existing = current.get(key)
-					if (existing && existing.fingerprint === fingerprint) {
-						next.set(key, existing)
-						continue
-					}
-					if (existing) yield* Fiber.interrupt(existing.fiber)
-					const fiber = yield* Effect.forkChild(targetLoop(target))
-					next.set(key, { fingerprint, fiber })
-				}
+				yield* Effect.forEach(
+					targets,
+					(target) =>
+						Effect.gen(function* () {
+							const key = targetKey(target)
+							const fingerprint = targetFingerprint(target)
+							const existing = current.get(key)
+							if (existing && existing.fingerprint === fingerprint) {
+								next.set(key, existing)
+								return
+							}
+							if (existing) yield* Fiber.interrupt(existing.fiber)
+							const fiber = yield* Effect.forkChild(targetLoop(target))
+							next.set(key, { fingerprint, fiber })
+						}),
+					{ discard: true },
+				)
 
-				for (const [id, entry] of current) {
-					if (!next.has(id)) yield* Fiber.interrupt(entry.fiber)
-				}
+				yield* Effect.forEach(
+					current,
+					([id, entry]) =>
+						next.has(id) ? Effect.void : Fiber.interrupt(entry.fiber),
+					{ discard: true },
+				)
 
 				yield* Ref.set(fibersRef, next)
 				yield* Ref.set(lastReconcileRef, yield* Clock.currentTimeMillis)

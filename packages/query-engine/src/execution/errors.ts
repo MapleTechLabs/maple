@@ -74,7 +74,7 @@ const extractUpstreamStatus = (message: string): number | undefined => {
 
 /** Fields shared by every warehouse error, built once per classification. */
 type ClassifiedBase = {
-	readonly pipe: string
+	readonly pipeName: string
 	readonly message: string
 	readonly cause: unknown
 	readonly clickhouseCode: string | undefined
@@ -151,7 +151,7 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 export const toWarehouseQueryError = (pipe: string, error: unknown) =>
 	new WarehouseQueryError({
 		message: cleanErrorMessage(unknownToMessage(error, "Warehouse query failed")),
-		pipe,
+		pipeName: pipe,
 		cause: error,
 	})
 
@@ -159,7 +159,7 @@ export const mapWarehouseError = (pipe: string, error: unknown): WarehouseSqlErr
 	const { message: rawMessage, code, type } = getClickHouseErrorDetails(error)
 	const message = cleanErrorMessage(rawMessage)
 	const base: ClassifiedBase = {
-		pipe,
+		pipeName: pipe,
 		message,
 		cause: error,
 		clickhouseCode: code,

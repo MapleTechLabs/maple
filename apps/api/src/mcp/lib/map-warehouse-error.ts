@@ -22,7 +22,7 @@ const enrich = (error: WarehouseError): string =>
 export const toMcpQueryError =
 	(pipe: string) =>
 	(error: WarehouseError): McpQueryError =>
-		new McpQueryError({ message: enrich(error), pipe, cause: error })
+		new McpQueryError({ message: enrich(error), pipeName: pipe, cause: error })
 
 /**
  * Pipe combinator that converts every warehouse error tag into an

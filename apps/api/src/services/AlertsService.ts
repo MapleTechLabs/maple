@@ -3822,37 +3822,37 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 									"@maple/http/errors/WarehouseQuotaExceededError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_quota", {
 											quotaSetting: error.setting,
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseUpstreamError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_upstream", {
 											upstreamStatus: error.upstreamStatus,
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseAuthError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_auth", {
 											upstreamStatus: error.upstreamStatus,
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseConfigError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_config", {
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseClientError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_client", {
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseSchemaDriftError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_schema_drift", {
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseValidationError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_validation", {
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 									"@maple/http/errors/WarehouseQueryError": (error) =>
 										recordEvaluationFailure(row, error, "tinybird_query", {
-											pipe: error.pipe,
+											pipe: error.pipeName,
 										}),
 								}),
 							)

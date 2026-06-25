@@ -218,7 +218,7 @@ export class ObservabilityApiError extends Schema.TaggedErrorClass<Observability
 	"@maple/http/errors/ObservabilityApiError",
 	{
 		message: Schema.String,
-		pipe: Schema.optionalKey(Schema.String),
+		pipeName: Schema.optionalKey(Schema.String),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 	{ httpApiStatus: 500 },

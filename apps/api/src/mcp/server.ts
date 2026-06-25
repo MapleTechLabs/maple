@@ -3,6 +3,10 @@ import { Effect, Layer, Schema, Context } from "effect"
 import { mapleToolDefinitions, toInputSchema, type MapleToolDefinition } from "./tools/registry"
 import type { McpToolResult } from "./tools/types"
 
+class McpDecodeError extends Schema.TaggedErrorClass<McpDecodeError>()("@maple/mcp/decode-error", {
+	errorMessage: Schema.String,
+}) {}
+
 const toErrorMessage = (error: unknown): string => {
 	if (error instanceof Error && "error" in error && (error as any).error != null) {
 		const inner = (error as any).error
@@ -39,46 +43,48 @@ export const McpToolsLive = Layer.effectDiscard(
 					inputSchema: toInputSchema(definition.schema),
 				}),
 				annotations: Context.empty(),
-				handle: (payload) =>
-					Effect.gen(function* () {
+				handle: Effect.fn("McpTool.handle")(
+					function* (payload) {
 						yield* Effect.annotateCurrentSpan({ tool: definition.name })
 						const decoded = yield* Effect.try({
 							try: () => Schema.decodeUnknownSync(definition.schema)(payload),
 							catch: (error) => error,
 						}).pipe(
-							Effect.mapError((error) => {
-								const errorMessage = toDecodeErrorMessage(definition, error)
-								return { _tag: "@maple/mcp/decode-error" as const, errorMessage }
-							}),
+							Effect.mapError(
+								(error) =>
+									new McpDecodeError({
+										errorMessage: toDecodeErrorMessage(definition, error),
+									}),
+							),
 						)
 
 						return yield* definition.handler(decoded).pipe(
 							Effect.tap(() => Effect.logInfo("Tool completed")),
 							Effect.map(toCallToolResult),
 						)
-					}).pipe(
-						Effect.catchTag("@maple/mcp/decode-error", (error) =>
-							Effect.logWarning("Invalid parameters").pipe(
-								Effect.annotateLogs({ error: error.errorMessage }),
-								Effect.as(
-									toCallToolResult({
-										isError: true,
-										content: [
-											{
-												type: "text",
-												text: `Invalid parameters: ${error.errorMessage}`,
-											},
-										],
-									}),
-								),
+					},
+					Effect.catchTag("@maple/mcp/decode-error", (error) =>
+						Effect.logWarning("Invalid parameters").pipe(
+							Effect.annotateLogs({ error: error.errorMessage }),
+							Effect.as(
+								toCallToolResult({
+									isError: true,
+									content: [
+										{
+											type: "text",
+											text: `Invalid parameters: ${error.errorMessage}`,
+										},
+									],
+								}),
 							),
 						),
-						Effect.catchTags({
+					),
+					Effect.catchTags({
 							"@maple/mcp/errors/McpQueryError": (error) =>
 								Effect.logError(`Tool error: ${error.message}`).pipe(
 									Effect.annotateLogs({
 										errorTag: error._tag,
-										pipe: error.pipe,
+										pipe: error.pipeName,
 									}),
 									Effect.as(
 										toCallToolResult({
@@ -154,7 +160,6 @@ export const McpToolsLive = Layer.effectDiscard(
 							),
 						),
 						Effect.annotateLogs({ tool: definition.name }),
-						Effect.withSpan("McpTool.handle"),
 					),
 			}),
 		)

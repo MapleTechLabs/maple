@@ -2,10 +2,24 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstab
 import { Effect, Option, Redacted, Schema } from "effect"
 import { autumnHandler, type CustomerData } from "autumn-js/backend"
 import { EdgeCacheService, type EdgeCacheServiceShape } from "@maple/query-engine/caching"
+import { UnauthorizedError } from "@maple/domain/http"
 import { Env } from "../lib/Env"
 import { AuthService } from "../services/AuthService"
 
 type AutumnResult = Awaited<ReturnType<typeof autumnHandler>>
+
+/**
+ * Tagged wrapper for a failed upstream Autumn SDK call. Carries the original
+ * message so the handler's catch-all can surface it to the client; tagging it
+ * (vs a bare `Error`) keeps the handler's error channel explicit so the
+ * UnauthorizedError 401 path can be split out via `catchTag`.
+ */
+class AutumnRequestError extends Schema.TaggedErrorClass<AutumnRequestError>()(
+	"@maple/api/autumn/AutumnRequestError",
+	{
+		message: Schema.String,
+	},
+) {}
 
 /**
  * Sentinel used to keep non-200 Autumn responses out of the edge cache: the
@@ -38,8 +52,8 @@ export const CUSTOMER_CACHE_TTL_SECONDS = 300
 export const readCustomerCached = (
 	edgeCache: Pick<EdgeCacheServiceShape, "getOrCompute">,
 	orgId: string,
-	runAutumn: Effect.Effect<AutumnResult, Error>,
-): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, Error> =>
+	runAutumn: Effect.Effect<AutumnResult, AutumnRequestError>,
+): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, AutumnRequestError> =>
 	edgeCache
 		.getOrCompute(
 			{ bucket: CUSTOMER_CACHE_BUCKET, key: orgId, ttlSeconds: CUSTOMER_CACHE_TTL_SECONDS },
@@ -133,7 +147,10 @@ export const AutumnRouter = HttpRouter.use((router) =>
 							customerData,
 							clientOptions: { secretKey },
 						}),
-					catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+					catch: (error) =>
+						new AutumnRequestError({
+							message: error instanceof Error ? error.message : String(error),
+						}),
 				})
 
 				let result: AutumnResult
@@ -172,24 +189,19 @@ export const AutumnRouter = HttpRouter.use((router) =>
 				// on every page load — including during sign-up before a Clerk org is
 				// active, where resolveTenant raises UnauthorizedError — so always
 				// return a JSON body with a sensible status.
-				Effect.catch((error: unknown) => {
-					const tag =
-						typeof error === "object" && error !== null && "_tag" in error
-							? (error as { _tag?: unknown })._tag
-							: undefined
-					const isUnauthorized = tag === "@maple/http/errors/UnauthorizedError"
-					const message =
-						typeof error === "object" && error !== null && "message" in error
-							? String((error as { message?: unknown }).message)
-							: String(error)
-					const status = isUnauthorized ? 401 : 500
-					return Effect.flatMap(
-						isUnauthorized
-							? Effect.void
-							: Effect.logError("[autumn] handler failed", { route, error: message }),
-						() => HttpServerResponse.json({ error: message }, { status }),
-					)
-				}),
+				//
+				// UnauthorizedError is the expected sign-up-before-org case: 401, no
+				// log. Anything else is a genuine handler failure: 500 + logError.
+				Effect.catchTag("@maple/http/errors/UnauthorizedError", (error) =>
+					HttpServerResponse.json({ error: error.message }, { status: 401 }),
+				),
+				Effect.catch((error) =>
+					Effect.logError("[autumn] handler failed", { route, error: error.message }).pipe(
+						Effect.flatMap(() =>
+							HttpServerResponse.json({ error: error.message }, { status: 500 }),
+						),
+					),
+				),
 			)
 
 		const routes = [

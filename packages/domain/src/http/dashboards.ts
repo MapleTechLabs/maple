@@ -28,34 +28,34 @@ const StringRecord = Schema.Record(Schema.String, Schema.String)
 
 export const WidgetDataSourceSchema = Schema.Struct({
 	endpoint: Schema.String,
-	params: Schema.optional(UnknownRecord),
-	transform: Schema.optional(
+	params: Schema.optionalKey(UnknownRecord),
+	transform: Schema.optionalKey(
 		Schema.Struct({
-			fieldMap: Schema.optional(StringRecord),
-			hideSeries: Schema.optional(
+			fieldMap: Schema.optionalKey(StringRecord),
+			hideSeries: Schema.optionalKey(
 				Schema.Struct({
 					baseNames: Schema.Array(Schema.String),
 				}),
 			),
-			flattenSeries: Schema.optional(
+			flattenSeries: Schema.optionalKey(
 				Schema.Struct({
 					valueField: Schema.String,
 				}),
 			),
-			reduceToValue: Schema.optional(
+			reduceToValue: Schema.optionalKey(
 				Schema.Struct({
 					field: Schema.String,
-					aggregate: Schema.optional(Schema.String),
+					aggregate: Schema.optionalKey(Schema.String),
 				}),
 			),
-			computeRatio: Schema.optional(
+			computeRatio: Schema.optionalKey(
 				Schema.Struct({
 					numeratorName: Schema.String,
 					denominatorNames: Schema.Array(Schema.String),
 				}),
 			),
-			limit: Schema.optional(Schema.Number),
-			sortBy: Schema.optional(
+			limit: Schema.optionalKey(Schema.Number),
+			sortBy: Schema.optionalKey(
 				Schema.Struct({
 					field: Schema.String,
 					direction: Schema.String,
@@ -68,11 +68,11 @@ export const WidgetDataSourceSchema = Schema.Struct({
 const WidgetDisplayColumnSchema = Schema.Struct({
 	field: Schema.String,
 	header: Schema.String,
-	unit: Schema.optional(Schema.String),
-	width: Schema.optional(Schema.Number),
-	align: Schema.optional(Schema.Literals(["left", "center", "right"])),
-	hidden: Schema.optional(Schema.Boolean),
-	thresholds: Schema.optional(
+	unit: Schema.optionalKey(Schema.String),
+	width: Schema.optionalKey(Schema.Number),
+	align: Schema.optionalKey(Schema.Literals(["left", "center", "right"])),
+	hidden: Schema.optionalKey(Schema.Boolean),
+	thresholds: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({
 				value: Schema.Number,
@@ -83,118 +83,118 @@ const WidgetDisplayColumnSchema = Schema.Struct({
 })
 
 export const WidgetDisplayConfigSchema = Schema.Struct({
-	title: Schema.optional(Schema.String),
-	description: Schema.optional(Schema.String),
-	chartId: Schema.optional(Schema.String),
-	chartPresentation: Schema.optional(
+	title: Schema.optionalKey(Schema.String),
+	description: Schema.optionalKey(Schema.String),
+	chartId: Schema.optionalKey(Schema.String),
+	chartPresentation: Schema.optionalKey(
 		Schema.Struct({
-			legend: Schema.optional(Schema.Literals(["visible", "hidden", "right"])),
-			seriesStats: Schema.optional(Schema.Boolean),
-			tooltip: Schema.optional(Schema.Literals(["visible", "hidden"])),
-			showPoints: Schema.optional(Schema.Boolean),
-			fillNulls: Schema.optional(Schema.Union([Schema.Number, Schema.Literal(false)])),
-			compareToPreviousPeriod: Schema.optional(Schema.Boolean),
+			legend: Schema.optionalKey(Schema.Literals(["visible", "hidden", "right"])),
+			seriesStats: Schema.optionalKey(Schema.Boolean),
+			tooltip: Schema.optionalKey(Schema.Literals(["visible", "hidden"])),
+			showPoints: Schema.optionalKey(Schema.Boolean),
+			fillNulls: Schema.optionalKey(Schema.Union([Schema.Number, Schema.Literal(false)])),
+			compareToPreviousPeriod: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
-	xAxis: Schema.optional(
+	xAxis: Schema.optionalKey(
 		Schema.Struct({
-			label: Schema.optional(Schema.String),
-			unit: Schema.optional(Schema.String),
-			visible: Schema.optional(Schema.Boolean),
+			label: Schema.optionalKey(Schema.String),
+			unit: Schema.optionalKey(Schema.String),
+			visible: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
-	yAxis: Schema.optional(
+	yAxis: Schema.optionalKey(
 		Schema.Struct({
-			label: Schema.optional(Schema.String),
-			unit: Schema.optional(Schema.String),
-			min: Schema.optional(Schema.Number),
-			max: Schema.optional(Schema.Number),
-			softMin: Schema.optional(Schema.Number),
-			softMax: Schema.optional(Schema.Number),
-			logScale: Schema.optional(Schema.Boolean),
+			label: Schema.optionalKey(Schema.String),
+			unit: Schema.optionalKey(Schema.String),
+			min: Schema.optionalKey(Schema.Number),
+			max: Schema.optionalKey(Schema.Number),
+			softMin: Schema.optionalKey(Schema.Number),
+			softMax: Schema.optionalKey(Schema.Number),
+			logScale: Schema.optionalKey(Schema.Boolean),
 			// When true, the y-axis lower bound follows the minimum of the
 			// displayed data (with padding) instead of being pinned at zero,
 			// making small fluctuations between series easier to see. Ignored
 			// when `softMin`/`min` or `logScale` are set.
-			fitYAxisToData: Schema.optional(Schema.Boolean),
-			visible: Schema.optional(Schema.Boolean),
+			fitYAxisToData: Schema.optionalKey(Schema.Boolean),
+			visible: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
-	seriesMapping: Schema.optional(StringRecord),
-	colorOverrides: Schema.optional(StringRecord),
-	stacked: Schema.optional(Schema.Boolean),
-	curveType: Schema.optional(Schema.Literals(["linear", "monotone"])),
-	unit: Schema.optional(Schema.String),
-	thresholds: Schema.optional(
+	seriesMapping: Schema.optionalKey(StringRecord),
+	colorOverrides: Schema.optionalKey(StringRecord),
+	stacked: Schema.optionalKey(Schema.Boolean),
+	curveType: Schema.optionalKey(Schema.Literals(["linear", "monotone"])),
+	unit: Schema.optionalKey(Schema.String),
+	thresholds: Schema.optionalKey(
 		Schema.Array(
 			Schema.Struct({
 				value: Schema.Number,
 				color: Schema.String,
-				label: Schema.optional(Schema.String),
+				label: Schema.optionalKey(Schema.String),
 			}),
 		),
 	),
-	prefix: Schema.optional(Schema.String),
-	suffix: Schema.optional(Schema.String),
-	sparkline: Schema.optional(
+	prefix: Schema.optionalKey(Schema.String),
+	suffix: Schema.optionalKey(Schema.String),
+	sparkline: Schema.optionalKey(
 		Schema.Struct({
 			enabled: Schema.Boolean,
-			dataSource: Schema.optional(WidgetDataSourceSchema),
+			dataSource: Schema.optionalKey(WidgetDataSourceSchema),
 		}),
 	),
-	columns: Schema.optional(Schema.Array(WidgetDisplayColumnSchema)),
+	columns: Schema.optionalKey(Schema.Array(WidgetDisplayColumnSchema)),
 
 	// List-specific
-	listDataSource: Schema.optional(Schema.String),
-	listWhereClause: Schema.optional(Schema.String),
-	listLimit: Schema.optional(Schema.Number),
-	listRootOnly: Schema.optional(Schema.Boolean),
+	listDataSource: Schema.optionalKey(Schema.String),
+	listWhereClause: Schema.optionalKey(Schema.String),
+	listLimit: Schema.optionalKey(Schema.Number),
+	listRootOnly: Schema.optionalKey(Schema.Boolean),
 
 	// Pie-specific
-	pie: Schema.optional(
+	pie: Schema.optionalKey(
 		Schema.Struct({
-			donut: Schema.optional(Schema.Boolean),
-			innerRadius: Schema.optional(Schema.Number),
-			showLabels: Schema.optional(Schema.Boolean),
-			showPercent: Schema.optional(Schema.Boolean),
+			donut: Schema.optionalKey(Schema.Boolean),
+			innerRadius: Schema.optionalKey(Schema.Number),
+			showLabels: Schema.optionalKey(Schema.Boolean),
+			showPercent: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
 
 	// Funnel-specific
-	funnel: Schema.optional(
+	funnel: Schema.optionalKey(
 		Schema.Struct({
-			showStepPercent: Schema.optional(Schema.Boolean),
+			showStepPercent: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
 
 	// Histogram-specific
-	histogram: Schema.optional(
+	histogram: Schema.optionalKey(
 		Schema.Struct({
-			bucketCount: Schema.optional(Schema.Number),
-			bucketWidth: Schema.optional(Schema.Number),
-			logScaleY: Schema.optional(Schema.Boolean),
+			bucketCount: Schema.optionalKey(Schema.Number),
+			bucketWidth: Schema.optionalKey(Schema.Number),
+			logScaleY: Schema.optionalKey(Schema.Boolean),
 		}),
 	),
 
 	// Heatmap-specific
-	heatmap: Schema.optional(
+	heatmap: Schema.optionalKey(
 		Schema.Struct({
-			colorScale: Schema.optional(Schema.Literals(["viridis", "magma", "cividis", "blues", "reds"])),
-			scaleType: Schema.optional(Schema.Literals(["linear", "log"])),
+			colorScale: Schema.optionalKey(Schema.Literals(["viridis", "magma", "cividis", "blues", "reds"])),
+			scaleType: Schema.optionalKey(Schema.Literals(["linear", "log"])),
 		}),
 	),
 
 	// Gauge-specific
-	gauge: Schema.optional(
+	gauge: Schema.optionalKey(
 		Schema.Struct({
-			min: Schema.optional(Schema.Number),
-			max: Schema.optional(Schema.Number),
-			style: Schema.optional(Schema.Literals(["radial", "bar"])),
+			min: Schema.optionalKey(Schema.Number),
+			max: Schema.optionalKey(Schema.Number),
+			style: Schema.optionalKey(Schema.Literals(["radial", "bar"])),
 		}),
 	),
 
 	// Markdown-specific
-	markdown: Schema.optional(
+	markdown: Schema.optionalKey(
 		Schema.Struct({
 			content: Schema.String,
 		}),
@@ -206,10 +206,10 @@ export const WidgetLayoutSchema = Schema.Struct({
 	y: Schema.Number,
 	w: Schema.Number,
 	h: Schema.Number,
-	minW: Schema.optional(Schema.Number),
-	minH: Schema.optional(Schema.Number),
-	maxW: Schema.optional(Schema.Number),
-	maxH: Schema.optional(Schema.Number),
+	minW: Schema.optionalKey(Schema.Number),
+	minH: Schema.optionalKey(Schema.Number),
+	maxW: Schema.optionalKey(Schema.Number),
+	maxH: Schema.optionalKey(Schema.Number),
 })
 
 export const DashboardWidgetSchema = Schema.Struct({

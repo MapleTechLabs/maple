@@ -79,10 +79,13 @@ const REPOSITORY_URL_ENV_KEYS = [
 /** Resolve the repository URL via the ConfigProvider (see resolveRepositoryUrl). */
 export const repositoryUrl = Effect.gen(function* () {
 	const values = new Map<string, string>()
-	for (const key of REPOSITORY_URL_ENV_KEYS) {
-		const value = yield* Config.option(Config.string(key))
-		if (Option.isSome(value)) values.set(key, value.value)
-	}
+	yield* Effect.forEach(REPOSITORY_URL_ENV_KEYS, (key) =>
+		Config.option(Config.string(key)).pipe(
+			Effect.map((value) => {
+				if (Option.isSome(value)) values.set(key, value.value)
+			}),
+		),
+	)
 	return resolveRepositoryUrl((key) => values.get(key))
 })
 

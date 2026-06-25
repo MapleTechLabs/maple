@@ -39,7 +39,7 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "list_error_issue_events",
+								pipeName: "list_error_issue_events",
 								cause: error,
 							}),
 					),

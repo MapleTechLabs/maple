@@ -48,7 +48,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 							(cause) =>
 								new McpQueryError({
 									message: "Invalid dashboard JSON",
-									pipe: "update_dashboard",
+									pipeName: "update_dashboard",
 									cause,
 								}),
 						),
@@ -112,7 +112,7 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "update_dashboard",
+								pipeName: "update_dashboard",
 								cause: error,
 							}),
 					),

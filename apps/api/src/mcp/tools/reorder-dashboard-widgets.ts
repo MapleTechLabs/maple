@@ -77,7 +77,7 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: `Invalid layouts_json: ${String(error)}`,
-							pipe: TOOL,
+							pipeName: TOOL,
 							cause: error,
 						}),
 				),
@@ -120,7 +120,7 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 						return yield* Effect.fail(
 							new McpQueryError({
 								message: `Unknown widget ids in layouts_json: ${unknownIds.join(", ")}. Use get_dashboard to see existing widget ids.`,
-								pipe: TOOL,
+								pipeName: TOOL,
 							}),
 						)
 					}

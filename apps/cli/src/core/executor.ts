@@ -18,7 +18,7 @@ const LOCAL_ORG_ID = Schema.decodeUnknownSync(OrgId)("local")
 const toWarehouseError = (pipe: string) => (error: unknown) =>
 	new WarehouseQueryError({
 		message: error instanceof Error ? error.message : String(error),
-		pipe,
+		pipeName: pipe,
 	})
 
 // Cap `db.query.text` at 16 KB to match apps/api's WarehouseQueryService span.
@@ -91,7 +91,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 						(error) =>
 							new WarehouseSchemaDriftError({
 								message: error.message,
-								pipe: "compiledQuery",
+								pipeName: "compiledQuery",
 								cause: error,
 							}),
 					),
@@ -125,7 +125,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 						(error) =>
 							new WarehouseSchemaDriftError({
 								message: error.message,
-								pipe: "compiledQueryFirst",
+								pipeName: "compiledQueryFirst",
 								cause: error,
 							}),
 					),
@@ -149,7 +149,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 				if (!compiled) {
 					return yield* new WarehouseValidationError({
 						message: `Unsupported pipe in local mode: ${pipe}`,
-						pipe,
+						pipeName: pipe,
 					})
 				}
 				yield* Effect.annotateCurrentSpan({
@@ -170,7 +170,7 @@ export const makeLocalWarehouseExecutorShape = (baseUrl: string): WarehouseExecu
 						(error) =>
 							new WarehouseSchemaDriftError({
 								message: error.message,
-								pipe,
+								pipeName: pipe,
 								cause: error,
 							}),
 					),

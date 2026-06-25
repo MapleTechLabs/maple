@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { OtlpIngest } from "./OtlpIngest"
@@ -87,11 +87,11 @@ describe("OtlpIngest", () => {
 				),
 			)
 
-			expect(recorded[0]?.url).toBe("http://ingest.test/v1/metrics")
-			expect(recorded[0]?.method).toBe("POST")
-			expect(recorded[0]?.headers.authorization).toBe("Bearer maple_pk_test_key")
-			expect(recorded[0]?.headers["content-type"]).toBe("application/json")
-			expect(JSON.parse(recorded[0]?.body ?? "{}")).toEqual(SAMPLE_REQUEST)
+			assert.strictEqual(recorded[0]?.url, "http://ingest.test/v1/metrics")
+			assert.strictEqual(recorded[0]?.method, "POST")
+			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer maple_pk_test_key")
+			assert.strictEqual(recorded[0]?.headers["content-type"], "application/json")
+			assert.deepStrictEqual(JSON.parse(recorded[0]?.body ?? "{}"), SAMPLE_REQUEST)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -105,9 +105,9 @@ describe("OtlpIngest", () => {
 				),
 				Effect.flip,
 			)
-			expect(error._tag).toBe("@maple/scraper/OtlpIngestError")
-			expect(error.status).toBe(402)
-			expect(error.message).toContain("billing limit")
+			assert.strictEqual(error._tag, "@maple/scraper/OtlpIngestError")
+			assert.strictEqual(error.status, 402)
+			assert.include(error.message, "billing limit")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -121,7 +121,7 @@ describe("OtlpIngest", () => {
 				),
 				Effect.flip,
 			)
-			expect(error.status).toBe(401)
+			assert.strictEqual(error.status, 401)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 })

@@ -217,40 +217,38 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 		)
 	})
 
-	const rawGet = <A>(bucket: string, key: string): Effect.Effect<Option.Option<A>, EdgeCacheIOError> =>
-		Effect.gen(function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			return yield* Effect.tryPromise({
-				try: () => backend.get(bucket, key, nowMs),
-				catch: (cause) =>
-					new EdgeCacheIOError({
-						op: "get",
-						bucket,
-						key,
-						cause: cause instanceof Error ? cause.message : String(cause),
-					}),
-			}).pipe(Effect.map((value) => (value === undefined ? Option.none<A>() : Option.some(value as A))))
-		})
+	const rawGet = Effect.fn("EdgeCache.rawGet")(function* <A>(bucket: string, key: string) {
+		const nowMs = yield* Clock.currentTimeMillis
+		return yield* Effect.tryPromise({
+			try: () => backend.get(bucket, key, nowMs),
+			catch: (cause) =>
+				new EdgeCacheIOError({
+					op: "get",
+					bucket,
+					key,
+					cause: cause instanceof Error ? cause.message : String(cause),
+				}),
+		}).pipe(Effect.map((value) => (value === undefined ? Option.none<A>() : Option.some(value as A))))
+	})
 
-	const rawPut = (
+	const rawPut = Effect.fn("EdgeCache.rawPut")(function* (
 		bucket: string,
 		key: string,
 		value: unknown,
 		ttlSeconds: number,
-	): Effect.Effect<void, EdgeCacheIOError> =>
-		Effect.gen(function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			return yield* Effect.tryPromise({
-				try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
-				catch: (cause) =>
-					new EdgeCacheIOError({
-						op: "put",
-						bucket,
-						key,
-						cause: cause instanceof Error ? cause.message : String(cause),
-					}),
-			})
+	) {
+		const nowMs = yield* Clock.currentTimeMillis
+		return yield* Effect.tryPromise({
+			try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
+			catch: (cause) =>
+				new EdgeCacheIOError({
+					op: "put",
+					bucket,
+					key,
+					cause: cause instanceof Error ? cause.message : String(cause),
+				}),
 		})
+	})
 
 	return { getOrCompute, invalidate, rawGet, rawPut } satisfies EdgeCacheServiceShape
 }

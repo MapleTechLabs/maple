@@ -22,7 +22,9 @@ export const preloadSession = (kv: SessionsBinding, sessionId: string): Promise<
 		if (value) sessionStore.set(sessionId, value as SessionPayload)
 	}).pipe(
 		Effect.catchCause((cause) =>
-			Effect.logError("[mcp-session-kv] preload failed", { sessionId, cause }),
+			Effect.logError("[mcp-session-kv] preload failed").pipe(
+				Effect.annotateLogs({ sessionId, cause }),
+			),
 		),
 		Effect.runPromise,
 	)
@@ -33,7 +35,11 @@ export const persistSession = (kv: SessionsBinding, sessionId: string): Promise<
 	return Effect.tryPromise(() =>
 		kv.put(sessionId, JSON.stringify(payload), { expirationTtl: SESSION_TTL_SECONDS }),
 	).pipe(
-		Effect.catchCause((cause) => Effect.logError("[mcp-session-kv] put failed", { sessionId, cause })),
+		Effect.catchCause((cause) =>
+			Effect.logError("[mcp-session-kv] put failed").pipe(
+				Effect.annotateLogs({ sessionId, cause }),
+			),
+		),
 		Effect.runPromise,
 	)
 }

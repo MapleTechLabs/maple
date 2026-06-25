@@ -1,7 +1,7 @@
 import type { AlertDestinationRow } from "@maple/db"
 import { AlertDeliveryError } from "@maple/domain/http"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
-import { describe, expect, it } from "vitest"
 import {
 	buildDiscordEmbedsFromTemplate,
 	buildSlackBlocksFromTemplate,
@@ -40,34 +40,34 @@ describe("buildTemplateContext", () => {
 	const ctx = buildTemplateContext(baseContext, LINK, CHAT)
 
 	it("exposes pre-formatted variables", () => {
-		expect(ctx["rule.name"]).toBe("Checkout error rate")
-		expect(ctx.severity).toBe("critical")
-		expect(ctx["signal.label"]).toBe("Error Rate")
-		expect(ctx["event.label"]).toBe("Triggered")
-		expect(ctx["comparator.label"]).toBe(">")
+		assert.strictEqual(ctx["rule.name"], "Checkout error rate")
+		assert.strictEqual(ctx.severity, "critical")
+		assert.strictEqual(ctx["signal.label"], "Error Rate")
+		assert.strictEqual(ctx["event.label"], "Triggered")
+		assert.strictEqual(ctx["comparator.label"], ">")
 		// error_rate values render as percentages
-		expect(ctx.value).toBe("8%")
-		expect(ctx.threshold).toBe("5%")
-		expect(ctx["observed.summary"]).toBe("8% > 5%")
-		expect(ctx.window).toBe("5m")
-		expect(ctx.group).toBe("all")
-		expect(ctx["links.app"]).toBe(LINK)
-		expect(ctx["links.chat"]).toBe(CHAT)
-		expect(ctx.sentAt).toBe("2026-06-02T00:00:00.000Z")
+		assert.strictEqual(ctx.value, "8%")
+		assert.strictEqual(ctx.threshold, "5%")
+		assert.strictEqual(ctx["observed.summary"], "8% > 5%")
+		assert.strictEqual(ctx.window, "5m")
+		assert.strictEqual(ctx.group, "all")
+		assert.strictEqual(ctx["links.app"], LINK)
+		assert.strictEqual(ctx["links.chat"], CHAT)
+		assert.strictEqual(ctx.sentAt, "2026-06-02T00:00:00.000Z")
 	})
 
 	it("leaves thresholdUpper empty for non-range comparators", () => {
-		expect(ctx.thresholdUpper).toBe("")
+		assert.strictEqual(ctx.thresholdUpper, "")
 	})
 
 	it("renders the default templates without any missing variables", () => {
 		const title = renderTemplate(DEFAULT_TITLE_TEMPLATE, ctx)
 		const body = renderTemplate(DEFAULT_BODY_TEMPLATE, ctx)
-		expect(title.missing).toEqual([])
-		expect(body.missing).toEqual([])
-		expect(title.text).toContain("Checkout error rate")
-		expect(title.text).toContain("Triggered")
-		expect(body.text).toContain("*Observed:* 8% > 5%")
+		assert.deepStrictEqual(title.missing, [])
+		assert.deepStrictEqual(body.missing, [])
+		assert.include(title.text, "Checkout error rate")
+		assert.include(title.text, "Triggered")
+		assert.include(body.text, "*Observed:* 8% > 5%")
 	})
 })
 
@@ -82,20 +82,20 @@ describe("buildSlackBlocksFromTemplate", () => {
 		)
 		const header = blocks[0] as { type: string; text: { text: string } }
 		const section = blocks[1] as { type: string; text: { type: string; text: string } }
-		expect(header.type).toBe("header")
-		expect(header.text.text).toBe("My Title")
-		expect(section.type).toBe("section")
-		expect(section.text.type).toBe("mrkdwn")
+		assert.strictEqual(header.type, "header")
+		assert.strictEqual(header.text.text, "My Title")
+		assert.strictEqual(section.type, "section")
+		assert.strictEqual(section.text.type, "mrkdwn")
 		// **bold** → *bold*, [link](url) → <url|link>
-		expect(section.text.text).toBe("*bold* and <https://x.test|link>")
-		expect(blocks.some((b) => (b as { type: string }).type === "actions")).toBe(true)
+		assert.strictEqual(section.text.text, "*bold* and <https://x.test|link>")
+		assert.isTrue(blocks.some((b) => (b as { type: string }).type === "actions"))
 	})
 
 	it("truncates an over-long Slack header", () => {
 		const long = "x".repeat(200)
 		const blocks = buildSlackBlocksFromTemplate(long, "body", baseContext, LINK, CHAT)
 		const header = blocks[0] as { text: { text: string } }
-		expect(header.text.text.length).toBeLessThanOrEqual(150)
+		assert.isAtMost(header.text.text.length, 150)
 	})
 })
 
@@ -107,11 +107,11 @@ describe("buildDiscordEmbedsFromTemplate", () => {
 			color: number
 			url: string
 		}>
-		expect(embed.title).toBe("T")
-		expect(embed.description).toBe("B")
-		expect(embed.url).toBe(LINK)
+		assert.strictEqual(embed.title, "T")
+		assert.strictEqual(embed.description, "B")
+		assert.strictEqual(embed.url, LINK)
 		// critical (non-resolve) → red
-		expect(embed.color).toBe(0xe01e5a)
+		assert.strictEqual(embed.color, 0xe01e5a)
 	})
 })
 
@@ -158,19 +158,21 @@ describe("dispatchDelivery", () => {
 		sentAtMs: Date.parse("2026-06-02T00:00:00.000Z"),
 	}
 
-	it("includes the provider's response body in the delivery error", async () => {
-		const body =
-			'{"status":"invalid event","message":"Event object is invalid","errors":["routing_key is invalid"]}'
-		const fetchFn: typeof fetch = async () => new Response(body, { status: 400 })
+	it.effect("includes the provider's response body in the delivery error", () =>
+		Effect.gen(function* () {
+			const body =
+				'{"status":"invalid event","message":"Event object is invalid","errors":["routing_key is invalid"]}'
+			const fetchFn: typeof fetch = async () => new Response(body, { status: 400 })
 
-		const error = await Effect.runPromise(
-			Effect.flip(dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT)),
-		)
+			const error = yield* Effect.flip(
+				dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT),
+			)
 
-		expect(error).toBeInstanceOf(AlertDeliveryError)
-		expect(error.destinationType).toBe("pagerduty")
-		expect(error.message).toContain("PagerDuty delivery failed with 400")
-		// The PagerDuty rejection reason is now surfaced instead of swallowed.
-		expect(error.message).toContain("routing_key is invalid")
-	})
+			assert.instanceOf(error, AlertDeliveryError)
+			assert.strictEqual(error.destinationType, "pagerduty")
+			assert.include(error.message, "PagerDuty delivery failed with 400")
+			// The PagerDuty rejection reason is now surfaced instead of swallowed.
+			assert.include(error.message, "routing_key is invalid")
+		}),
+	)
 })

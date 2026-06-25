@@ -13,7 +13,7 @@ import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { McpQueryError } from "@/mcp/tools/types"
 
-const decodeDashboardId = Schema.decodeUnknownSync(DashboardId)
+const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
 export type DashboardWidget = typeof DashboardWidgetSchema.Type
 
@@ -29,7 +29,7 @@ const LayoutFromJson = Schema.fromJsonString(WidgetLayoutSchema)
 const jsonDecodeError = (field: string, tool: string) => (error: unknown) =>
 	new McpQueryError({
 		message: `Invalid ${field}: ${String(error)}`,
-		pipe: tool,
+		pipeName: tool,
 		cause: error,
 	})
 
@@ -127,7 +127,16 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 	// the not-found case into the structured `notFound` return shape that
 	// callers already render to the user, and map the remaining persistence
 	// error tags onto `McpQueryError`.
-	const dashboardIdBranded = decodeDashboardId(dashboardId)
+	const dashboardIdBranded = yield* decodeDashboardId(dashboardId).pipe(
+		Effect.mapError(
+			(cause) =>
+				new McpQueryError({
+					message: `Invalid dashboard_id: ${dashboardId}. Use list_dashboards to find available dashboard IDs.`,
+					pipeName: tool,
+					cause,
+				}),
+		),
+	)
 
 	return yield* persistence
 		.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
@@ -163,11 +172,11 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 			),
 			Effect.catchTags({
 				"@maple/http/errors/DashboardPersistenceError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipe: tool, cause: error })),
+					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
 				"@maple/http/errors/DashboardConcurrencyError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipe: tool, cause: error })),
+					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
 				"@maple/http/errors/DashboardValidationError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipe: tool, cause: error })),
+					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
 			}),
 		)
 })

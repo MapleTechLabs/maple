@@ -134,7 +134,7 @@ describe("findSlowTraces", () => {
 				query: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({
-							pipe: "find_slow_traces",
+							pipeName: "find_slow_traces",
 							message: "ClickHouse exploded",
 							upstreamStatus: 503,
 						}),

@@ -94,7 +94,7 @@ class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("@maple/w
 // The error union surfaced to atom consumers: the structured query errors plus
 // any tagged backend error, all normalized through `QueryAtomError`'s shape for
 // anything that is not already a known tagged error.
-type QueryAtomFailure = QueryError | QueryAtomError
+export type QueryAtomFailure = QueryError | QueryAtomError
 
 const isTaggedBackendError = (error: QueryError): boolean => error._tag.startsWith("@maple/http/errors/")
 

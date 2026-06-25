@@ -37,7 +37,7 @@ export const WarehouseExecutorFromMode = Layer.effect(
 							? makeLocalWarehouseExecutorShape(m.baseUrl)
 							: makeRemoteWarehouseExecutorShape(m.apiUrl, m.token, m.orgId ?? ""),
 				),
-				Effect.mapError((e) => new WarehouseConfigError({ message: e.message, pipe: "mode" })),
+				Effect.mapError((e) => new WarehouseConfigError({ message: e.message, pipeName: "mode" })),
 			),
 		)
 		return WarehouseExecutor.of({

@@ -198,7 +198,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const [overviewResponse, usageResponse, topErrors] = yield* Effect.all(
 				[
 					warehouse.query(systemTenant, {
-						pipe: "service_overview_compare",
+						pipeName: "service_overview_compare",
 						params: {
 							current_start_time: currentStart,
 							current_end_time: currentEnd,
@@ -207,7 +207,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						},
 					}),
 					warehouse.query(systemTenant, {
-						pipe: "get_service_usage_compare",
+						pipeName: "get_service_usage_compare",
 						params: {
 							current_start_time: currentStart,
 							current_end_time: currentEnd,
@@ -216,7 +216,7 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						},
 					}),
 					warehouse.query(systemTenant, {
-						pipe: "errors_by_type",
+						pipeName: "errors_by_type",
 						params: {
 							start_time: currentStart,
 							end_time: currentEnd,

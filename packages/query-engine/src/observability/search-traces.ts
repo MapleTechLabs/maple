@@ -49,7 +49,7 @@ export const searchTraces = Effect.fn("Observability.searchTraces")(function* (i
 	const rootMode = !(input.spanName && !input.rootOnly)
 	if (rootMode && (input.attributeFilters?.length ?? 0) > 1) {
 		return yield* new WarehouseValidationError({
-			pipe: "search_traces",
+			pipeName: "search_traces",
 			message:
 				"Root-level trace search supports at most one attribute filter. Provide spanName for span-level search to use multiple filters.",
 		})

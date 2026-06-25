@@ -52,7 +52,7 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "register_agent",
+								pipeName: "register_agent",
 								cause: error,
 							}),
 					),

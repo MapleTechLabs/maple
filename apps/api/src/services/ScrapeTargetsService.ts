@@ -685,29 +685,35 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 					Math.max(1_000, (row.value.scrapeIntervalSeconds - 1) * 1000),
 				)
 
+				// `safeFetch` is retained for its SSRF protection + per-hop redirect
+				// re-validation (the Effect HttpClient transport has neither). The manual
+				// AbortController/setTimeout is replaced by the interruption-aware signal
+				// from `Effect.tryPromise` plus `Effect.timeout`: on timeout the fiber is
+				// interrupted, which aborts the in-flight fetch via that signal.
 				return yield* Effect.tryPromise({
-					try: async () => {
-						const controller = new AbortController()
-						const timeout = setTimeout(() => controller.abort(), timeoutMs)
-						try {
-							const response = await safeFetch(scrapeUrl, {
-								method: "GET",
-								headers,
-								signal: controller.signal,
-							})
-							return {
-								status: response.status,
-								body: await response.text(),
-								contentType:
-									response.headers.get("content-type") ??
-									"text/plain; version=0.0.4; charset=utf-8",
-							} satisfies ScrapeTargetProxyResponse
-						} finally {
-							clearTimeout(timeout)
-						}
+					try: async (signal) => {
+						const response = await safeFetch(scrapeUrl, {
+							method: "GET",
+							headers,
+							signal,
+						})
+						return {
+							status: response.status,
+							body: await response.text(),
+							contentType:
+								response.headers.get("content-type") ??
+								"text/plain; version=0.0.4; charset=utf-8",
+						} satisfies ScrapeTargetProxyResponse
 					},
 					catch: toPersistenceError,
-				})
+				}).pipe(
+					Effect.timeout(timeoutMs),
+					// A timeout surfaces as the same persistence error a fetch abort
+					// produced before, so callers see no new error type.
+					Effect.catchTag("TimeoutError", () =>
+						Effect.fail(toPersistenceError(new Error("The operation was aborted"))),
+					),
+				)
 			})
 
 			const pruneChecks = Effect.fn("ScrapeTargetsService.pruneChecks")(function* (
@@ -730,33 +736,38 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 
 				// Cap backstop for misconfigured/very short intervals: drop everything
 				// older than the Nth-newest row per target.
-				for (const targetId of targetIds) {
-					const capBoundary = yield* database
-						.execute((db) =>
-							db
-								.select({ checkedAt: scrapeTargetChecks.checkedAt })
-								.from(scrapeTargetChecks)
-								.where(eq(scrapeTargetChecks.targetId, targetId))
-								.orderBy(desc(scrapeTargetChecks.checkedAt))
-								.limit(1)
-								.offset(CHECK_MAX_ROWS_PER_TARGET - 1),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-					const boundary = capBoundary[0]
-					if (boundary === undefined) continue
-					yield* database
-						.execute((db) =>
-							db
-								.delete(scrapeTargetChecks)
-								.where(
-									and(
-										eq(scrapeTargetChecks.targetId, targetId),
-										lt(scrapeTargetChecks.checkedAt, boundary.checkedAt),
-									),
-								),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-				}
+				yield* Effect.forEach(
+					targetIds,
+					(targetId) =>
+						Effect.gen(function* () {
+							const capBoundary = yield* database
+								.execute((db) =>
+									db
+										.select({ checkedAt: scrapeTargetChecks.checkedAt })
+										.from(scrapeTargetChecks)
+										.where(eq(scrapeTargetChecks.targetId, targetId))
+										.orderBy(desc(scrapeTargetChecks.checkedAt))
+										.limit(1)
+										.offset(CHECK_MAX_ROWS_PER_TARGET - 1),
+								)
+								.pipe(Effect.mapError(toPersistenceError))
+							const boundary = capBoundary[0]
+							if (boundary === undefined) return
+							yield* database
+								.execute((db) =>
+									db
+										.delete(scrapeTargetChecks)
+										.where(
+											and(
+												eq(scrapeTargetChecks.targetId, targetId),
+												lt(scrapeTargetChecks.checkedAt, boundary.checkedAt),
+											),
+										),
+								)
+								.pipe(Effect.mapError(toPersistenceError))
+						}),
+					{ discard: true },
+				)
 			})
 
 			const recordScrapeResults = Effect.fn("ScrapeTargetsService.recordScrapeResults")(function* (
@@ -771,37 +782,41 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				}>,
 				options?: { readonly recordChecks?: boolean },
 			) {
-				for (const result of results) {
-					// Rollup for discovered sub-targets: any branch success advances
-					// lastScrapeAt; any branch failure surfaces (branch-prefixed) as
-					// lastScrapeError. Per-branch health stays visible in check history
-					// via the per-branch `instance`.
-					const error =
-						result.error !== null && result.subTargetKey
-							? `[branch:${result.subTargetKey}] ${result.error}`
-							: result.error
-					yield* database
-						.execute((db) =>
-							db
-								.update(scrapeTargets)
-								.set(
-									error === null
-										? {
-												lastScrapeAt: new Date(result.scrapedAt),
-												lastScrapeError: null,
-												updatedAt: new Date(result.scrapedAt),
-											}
-										: // Failure keeps lastScrapeAt at the last good scrape so data
-											// gaps stay visible alongside the error.
-											{
-												lastScrapeError: error,
-												updatedAt: new Date(result.scrapedAt),
-											},
-								)
-								.where(eq(scrapeTargets.id, result.targetId)),
-						)
-						.pipe(Effect.mapError(toPersistenceError))
-				}
+				yield* Effect.forEach(
+					results,
+					(result) => {
+						// Rollup for discovered sub-targets: any branch success advances
+						// lastScrapeAt; any branch failure surfaces (branch-prefixed) as
+						// lastScrapeError. Per-branch health stays visible in check history
+						// via the per-branch `instance`.
+						const error =
+							result.error !== null && result.subTargetKey
+								? `[branch:${result.subTargetKey}] ${result.error}`
+								: result.error
+						return database
+							.execute((db) =>
+								db
+									.update(scrapeTargets)
+									.set(
+										error === null
+											? {
+													lastScrapeAt: new Date(result.scrapedAt),
+													lastScrapeError: null,
+													updatedAt: new Date(result.scrapedAt),
+												}
+											: // Failure keeps lastScrapeAt at the last good scrape so data
+												// gaps stay visible alongside the error.
+												{
+													lastScrapeError: error,
+													updatedAt: new Date(result.scrapedAt),
+												},
+									)
+									.where(eq(scrapeTargets.id, result.targetId)),
+							)
+							.pipe(Effect.mapError(toPersistenceError))
+					},
+					{ discard: true },
+				)
 
 				if (options?.recordChecks === false || results.length === 0) return
 
@@ -882,25 +897,29 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const headers = yield* authHeadersForRow(row)
 
 				const now = yield* Clock.currentTimeMillis
+				// `safeFetch` is retained for SSRF protection + redirect re-validation. The
+				// manual AbortController/setTimeout is replaced by the interruption-aware
+				// signal plus a fixed 10s `Effect.timeout`; the timeout lands as a failure
+				// in the captured Exit (→ success: false), matching the old abort path.
 				const requestExit = yield* Effect.tryPromise({
-					try: async () => {
-						const controller = new AbortController()
-						const timeout = setTimeout(() => controller.abort(), 10_000)
-						try {
-							const response = await safeFetch(row.url, {
-								method: "GET",
-								headers,
-								signal: controller.signal,
-							})
-							if (!response.ok) {
-								throw new Error(`HTTP ${response.status} ${response.statusText}`)
-							}
-						} finally {
-							clearTimeout(timeout)
+					try: async (signal) => {
+						const response = await safeFetch(row.url, {
+							method: "GET",
+							headers,
+							signal,
+						})
+						if (!response.ok) {
+							throw new Error(`HTTP ${response.status} ${response.statusText}`)
 						}
 					},
 					catch: (error) => (error instanceof Error ? error : new Error("Connection failed")),
-				}).pipe(Effect.exit)
+				}).pipe(
+					Effect.timeout(10_000),
+					Effect.catchTag("TimeoutError", () =>
+						Effect.fail(new Error("Connection failed")),
+					),
+					Effect.exit,
+				)
 
 				// Manual probes update lastScrapeAt/lastScrapeError but must not
 				// fabricate scheduled-check history rows.

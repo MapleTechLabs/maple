@@ -1061,35 +1061,37 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 						type Point = { bucket: string; series: Record<string, number> }
 						const perQueryPoints: Array<{ name: string; points: Point[] }> = []
 
-						for (const query of enabledQueries) {
-							const built = buildTimeseriesQuerySpec(query)
-							for (const w of built.warnings) allWarnings.push(`${query.name}: ${w}`)
+						yield* Effect.forEach(enabledQueries, (query) =>
+							Effect.gen(function* () {
+								const built = buildTimeseriesQuerySpec(query)
+								for (const w of built.warnings) allWarnings.push(`${query.name}: ${w}`)
 
-							if (!built.query) {
-								if (built.error) allWarnings.push(`${query.name}: ${built.error}`)
-								continue
-							}
+								if (!built.query) {
+									if (built.error) allWarnings.push(`${query.name}: ${built.error}`)
+									return
+								}
 
-							const request = new QueryEngineExecuteRequest({
-								startTime: payload.startTime,
-								endTime: payload.endTime,
-								query: built.query,
-							})
+								const request = new QueryEngineExecuteRequest({
+									startTime: payload.startTime,
+									endTime: payload.endTime,
+									query: built.query,
+								})
 
-							const response = yield* queryEngine.execute(tenant, request)
-							if (response.result.kind !== "timeseries") {
-								allWarnings.push(`${query.name}: unexpected non-timeseries result`)
-								continue
-							}
+								const response = yield* queryEngine.execute(tenant, request)
+								if (response.result.kind !== "timeseries") {
+									allWarnings.push(`${query.name}: unexpected non-timeseries result`)
+									return
+								}
 
-							perQueryPoints.push({
-								name: query.legend?.trim() || query.name,
-								points: response.result.data.map((p) => ({
-									bucket: p.bucket,
-									series: { ...p.series },
-								})),
-							})
-						}
+								perQueryPoints.push({
+									name: query.legend?.trim() || query.name,
+									points: response.result.data.map((p) => ({
+										bucket: p.bucket,
+										series: { ...p.series },
+									})),
+								})
+							}),
+						)
 
 						const multiQuery = perQueryPoints.length > 1
 						const rowsByBucket = new Map<string, Record<string, number>>()

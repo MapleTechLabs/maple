@@ -24,6 +24,7 @@
 import { dirname, resolve } from "node:path"
 import { randomUUID } from "node:crypto"
 import {
+	Clock,
 	Config,
 	Console,
 	Context,
@@ -562,9 +563,9 @@ interface FetchConfig {
 const fetchHandler = Effect.fn("bench.fetch")(function* (config: FetchConfig) {
 	const tinybird = yield* Tinybird
 	const sinceMs = yield* parseRelativeDuration(config.since)
-	const now = new Date()
-	const startTime = formatCHDateTime(new Date(now.getTime() - sinceMs))
-	const endTime = formatCHDateTime(now)
+	const nowMs = yield* Clock.currentTimeMillis
+	const startTime = formatCHDateTime(new Date(nowMs - sinceMs))
+	const endTime = formatCHDateTime(new Date(nowMs))
 	const topN = config.top
 	const orgId = yield* Option.match(config.org, {
 		onNone: () => tinybird.internalOrgId,
@@ -665,57 +666,71 @@ const benchmarkSample = Effect.fn("bench.sample")(function* (
 	const replaySql = stripTrailingSemi(sample.sampleSql)
 
 	const result = yield* Effect.gen(function* () {
-		for (let w = 0; w < warmupRuns; w++) {
-			const warm = yield* ch.run(replaySql)
-			if (warm.status !== 200) {
-				return yield* Effect.fail(
-					new UpstreamStatusError({
-						source: "ClickHouse",
-						status: warm.status,
-						message: warm.body.slice(0, 200),
-					}),
-				)
-			}
-		}
+		// Sequential by default — timing is measured inside each `ch.run`, so the
+		// per-iteration wall/server stats are unaffected. A non-200 short-circuits
+		// the run (forEach stops on the first failure), as the old `for` loop did.
+		yield* Effect.forEach(
+			Array.from({ length: warmupRuns }),
+			() =>
+				Effect.gen(function* () {
+					const warm = yield* ch.run(replaySql)
+					if (warm.status !== 200) {
+						return yield* Effect.fail(
+							new UpstreamStatusError({
+								source: "ClickHouse",
+								status: warm.status,
+								message: warm.body.slice(0, 200),
+							}),
+						)
+					}
+				}),
+			{ discard: true },
+		)
 
-		const runs: RunMetrics[] = []
-		for (let r = 0; r < runsPerQuery; r++) {
-			const res = yield* ch.run(replaySql)
-			if (res.status !== 200) {
-				return yield* Effect.fail(
-					new UpstreamStatusError({
-						source: "ClickHouse",
-						status: res.status,
-						message: res.body.slice(0, 200),
-					}),
-				)
-			}
-			const log = yield* ch.queryLog(res.queryId)
-			const fromSummary = (key: string) =>
-				Option.match(res.summary, {
-					onNone: () => null,
-					onSome: (s) => (s[key] !== undefined ? Number(s[key]) : null),
-				})
-			runs.push({
-				wallMs: res.wallMs,
-				serverElapsedMs: Option.match(log, {
-					onNone: () => {
-						const ns = fromSummary("elapsed_ns")
-						return ns == null ? null : ns / 1e6
-					},
-					onSome: (l) => l.queryDurationMs,
+		const runs: RunMetrics[] = yield* Effect.forEach(
+			Array.from({ length: runsPerQuery }),
+			() =>
+				Effect.gen(function* () {
+					const res = yield* ch.run(replaySql)
+					if (res.status !== 200) {
+						return yield* Effect.fail(
+							new UpstreamStatusError({
+								source: "ClickHouse",
+								status: res.status,
+								message: res.body.slice(0, 200),
+							}),
+						)
+					}
+					const log = yield* ch.queryLog(res.queryId)
+					const fromSummary = (key: string) =>
+						Option.match(res.summary, {
+							onNone: () => null,
+							onSome: (s) => (s[key] !== undefined ? Number(s[key]) : null),
+						})
+					return {
+						wallMs: res.wallMs,
+						serverElapsedMs: Option.match(log, {
+							onNone: () => {
+								const ns = fromSummary("elapsed_ns")
+								return ns == null ? null : ns / 1e6
+							},
+							onSome: (l) => l.queryDurationMs,
+						}),
+						readRows: Option.match(log, {
+							onNone: () => fromSummary("read_rows"),
+							onSome: (l) => l.readRows,
+						}),
+						readBytes: Option.match(log, {
+							onNone: () => fromSummary("read_bytes"),
+							onSome: (l) => l.readBytes,
+						}),
+						memoryUsage: Option.match(log, {
+							onNone: () => null,
+							onSome: (l) => l.memoryUsage,
+						}),
+					} satisfies RunMetrics
 				}),
-				readRows: Option.match(log, {
-					onNone: () => fromSummary("read_rows"),
-					onSome: (l) => l.readRows,
-				}),
-				readBytes: Option.match(log, {
-					onNone: () => fromSummary("read_bytes"),
-					onSome: (l) => l.readBytes,
-				}),
-				memoryUsage: Option.match(log, { onNone: () => null, onSome: (l) => l.memoryUsage }),
-			})
-		}
+		)
 
 		const wallValues = runs.map((r) => r.wallMs)
 		return {
@@ -830,20 +845,25 @@ const inspectHandler = Effect.fn("bench.inspect")(function* (config: { readonly 
 			yield* Console.log(`${sample.context}  ${sample.fingerprint}  (profile=${sample.profile || "—"})`)
 			yield* Console.log("━".repeat(80))
 
-			for (const variant of ["EXPLAIN", "EXPLAIN PIPELINE"] as const) {
-				const res = yield* ch.run(`${variant} ${baseSql} FORMAT TabSeparatedRaw`)
-				yield* Console.log(`\n── ${variant} ───────────────────────────────`)
-				if (res.status !== 200) {
-					yield* Console.log(`  ERROR (${res.status}): ${res.body.slice(0, 500)}`)
-				} else {
-					const indented = res.body
-						.trimEnd()
-						.split("\n")
-						.map((l) => `  ${l}`)
-						.join("\n")
-					yield* Console.log(indented || "  (empty)")
-				}
-			}
+			yield* Effect.forEach(
+				["EXPLAIN", "EXPLAIN PIPELINE"] as const,
+				(variant) =>
+					Effect.gen(function* () {
+						const res = yield* ch.run(`${variant} ${baseSql} FORMAT TabSeparatedRaw`)
+						yield* Console.log(`\n── ${variant} ───────────────────────────────`)
+						if (res.status !== 200) {
+							yield* Console.log(`  ERROR (${res.status}): ${res.body.slice(0, 500)}`)
+						} else {
+							const indented = res.body
+								.trimEnd()
+								.split("\n")
+								.map((l) => `  ${l}`)
+								.join("\n")
+							yield* Console.log(indented || "  (empty)")
+						}
+					}),
+				{ discard: true },
+			)
 		}),
 	)
 })

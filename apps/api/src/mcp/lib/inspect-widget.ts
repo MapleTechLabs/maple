@@ -243,7 +243,7 @@ const metricExistsInCatalog = Effect.fn("metricExistsInCatalog")(function* (
 	const warehouse = yield* WarehouseQueryService
 	return yield* warehouse
 		.query(tenant, {
-			pipe: "list_metrics",
+			pipeName: "list_metrics",
 			params: {
 				start_time: startTime,
 				end_time: endTime,
@@ -723,15 +723,15 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 					return { startTime: fallback.st, endTime: fallback.et, source: "fallback" as const }
 				})()
 
-		const outcomes = yield* Effect.all(
-			toInspect.map((widget) =>
+		const outcomes = yield* Effect.forEach(
+			toInspect,
+			(widget) =>
 				inspectWidget({
 					tenant,
 					dashboardName: dashboard.name,
 					widget,
 					timeRange,
 				}),
-			),
 			{ concurrency: maxConcurrent },
 		)
 

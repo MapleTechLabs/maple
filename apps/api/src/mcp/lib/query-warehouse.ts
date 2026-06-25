@@ -30,7 +30,7 @@ export const queryWarehouse = Effect.fn("queryWarehouse")(function* <T = any>(
 	const tenant = yield* resolveTenant
 	const service = yield* WarehouseQueryService
 	const response = yield* service
-		.query(tenant, { pipe, params })
+		.query(tenant, { pipeName: pipe, params })
 		.pipe(Effect.mapError(toMcpQueryError(pipe)))
 
 	return { data: response.data as T[] }

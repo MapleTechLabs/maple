@@ -57,7 +57,7 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "propose_fix",
+								pipeName: "propose_fix",
 								cause: error,
 							}),
 					),

@@ -1,5 +1,4 @@
-import { afterEach, describe, it } from "@effect/vitest"
-import { expect } from "vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { CreateScrapeTargetRequest, OrgId, ScrapeIntervalSeconds, ScrapeTargetId } from "@maple/domain/http"
@@ -76,11 +75,11 @@ describe("ScrapeTargetsService", () => {
 
 			const response = yield* service.scrapeForCollector(target.id)
 
-			expect(response.status).toBe(200)
-			expect(response.body).toBe("up 1\n")
-			expect(response.contentType).toBe("text/plain; version=0.0.4")
-			expect(calls.some((call) => call.url === "https://metrics.example.com/metrics")).toBe(true)
-			expect(calls.every((call) => call.authorization === "Bearer stored-token")).toBe(true)
+			assert.strictEqual(response.status, 200)
+			assert.strictEqual(response.body, "up 1\n")
+			assert.strictEqual(response.contentType, "text/plain; version=0.0.4")
+			assert.isTrue(calls.some((call) => call.url === "https://metrics.example.com/metrics"))
+			assert.isTrue(calls.every((call) => call.authorization === "Bearer stored-token"))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -102,8 +101,8 @@ describe("ScrapeTargetsService", () => {
 			yield* service.recordScrapeResults([{ targetId: target.id, scrapedAt, error: null }])
 
 			const updated = yield* service.get(orgId, target.id)
-			expect(updated.lastScrapeAt).toBe(new Date(scrapedAt).toISOString())
-			expect(updated.lastScrapeError).toBeNull()
+			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
+			assert.isNull(updated.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -130,16 +129,16 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const updated = yield* service.get(orgId, target.id)
-			expect(updated.lastScrapeAt).toBe(new Date(goodScrapeAt).toISOString())
-			expect(updated.lastScrapeError).toBe("HTTP 503")
+			assert.strictEqual(updated.lastScrapeAt, new Date(goodScrapeAt).toISOString())
+			assert.strictEqual(updated.lastScrapeError, "HTTP 503")
 
 			// A later success clears the error again.
 			yield* service.recordScrapeResults([
 				{ targetId: target.id, scrapedAt: goodScrapeAt + 30_000, error: null },
 			])
 			const recovered = yield* service.get(orgId, target.id)
-			expect(recovered.lastScrapeAt).toBe(new Date(goodScrapeAt + 30_000).toISOString())
-			expect(recovered.lastScrapeError).toBeNull()
+			assert.strictEqual(recovered.lastScrapeAt, new Date(goodScrapeAt + 30_000).toISOString())
+			assert.isNull(recovered.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -165,7 +164,7 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const updated = yield* service.get(orgId, target.id)
-			expect(updated.lastScrapeAt).toBe(new Date(scrapedAt).toISOString())
+			assert.strictEqual(updated.lastScrapeAt, new Date(scrapedAt).toISOString())
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -184,13 +183,13 @@ describe("ScrapeTargetsService", () => {
 				}),
 			)
 
-			expect(target.targetType).toBe("planetscale")
-			expect(target.organization).toBe("my-org")
-			expect(target.url).toBe("https://api.planetscale.com/v1/organizations/my-org/metrics")
-			expect(target.authType).toBe("token")
-			expect(target.hasCredentials).toBe(true)
+			assert.strictEqual(target.targetType, "planetscale")
+			assert.strictEqual(target.organization, "my-org")
+			assert.strictEqual(target.url, "https://api.planetscale.com/v1/organizations/my-org/metrics")
+			assert.strictEqual(target.authType, "token")
+			assert.isTrue(target.hasCredentials)
 			// PlanetScale's documented default scrape interval.
-			expect(target.scrapeIntervalSeconds).toBe(30)
+			assert.strictEqual(target.scrapeIntervalSeconds, 30)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -210,7 +209,7 @@ describe("ScrapeTargetsService", () => {
 					}),
 				)
 				.pipe(Effect.flip)
-			expect(missingOrg.message).toContain("organization is required")
+			assert.include(missingOrg.message, "organization is required")
 
 			const withUrl = yield* service
 				.create(
@@ -224,7 +223,7 @@ describe("ScrapeTargetsService", () => {
 					}),
 				)
 				.pipe(Effect.flip)
-			expect(withUrl.message).toContain("do not provide a url")
+			assert.include(withUrl.message, "do not provide a url")
 
 			const badCredentials = yield* service
 				.create(
@@ -237,12 +236,12 @@ describe("ScrapeTargetsService", () => {
 					}),
 				)
 				.pipe(Effect.flip)
-			expect(badCredentials.message).toContain("tokenId")
+			assert.include(badCredentials.message, "tokenId")
 
 			const missingUrl = yield* service
 				.create(orgId, new CreateScrapeTargetRequest({ name: "Prom" }))
 				.pipe(Effect.flip)
-			expect(missingUrl.message).toContain("url is required")
+			assert.include(missingUrl.message, "url is required")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -271,14 +270,14 @@ describe("ScrapeTargetsService", () => {
 				},
 			])
 			const failed = yield* service.get(orgId, target.id)
-			expect(failed.lastScrapeError).toBe("[branch:branch-1] HTTP 503")
+			assert.strictEqual(failed.lastScrapeError, "[branch:branch-1] HTTP 503")
 
 			// Any branch success clears the rollup error.
 			yield* service.recordScrapeResults([
 				{ targetId: target.id, scrapedAt: 1750000015000, error: null, subTargetKey: "branch-2" },
 			])
 			const recovered = yield* service.get(orgId, target.id)
-			expect(recovered.lastScrapeError).toBeNull()
+			assert.isNull(recovered.lastScrapeError)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -317,29 +316,29 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const checks = yield* service.listChecks(orgId, target.id, {})
-			expect(checks).toHaveLength(2)
-			expect(checks[0]?.checkedAt.getTime()).toBe(scrapedAt + 15_000)
-			expect(checks[0]?.error).toBe("target returned HTTP 503")
-			expect(checks[0]?.subTargetKey).toBe("branch-1")
-			expect(checks[0]?.durationMs).toBe(1100)
-			expect(checks[0]?.samplesScraped).toBeNull()
-			expect(checks[1]?.checkedAt.getTime()).toBe(scrapedAt)
-			expect(checks[1]?.error).toBeNull()
-			expect(checks[1]?.subTargetKey).toBe("")
-			expect(checks[1]?.durationMs).toBe(250)
-			expect(checks[1]?.samplesScraped).toBe(120)
-			expect(checks[1]?.samplesPostRelabel).toBe(118)
+			assert.lengthOf(checks, 2)
+			assert.strictEqual(checks[0]?.checkedAt.getTime(), scrapedAt + 15_000)
+			assert.strictEqual(checks[0]?.error, "target returned HTTP 503")
+			assert.strictEqual(checks[0]?.subTargetKey, "branch-1")
+			assert.strictEqual(checks[0]?.durationMs, 1100)
+			assert.isNull(checks[0]?.samplesScraped)
+			assert.strictEqual(checks[1]?.checkedAt.getTime(), scrapedAt)
+			assert.isNull(checks[1]?.error)
+			assert.strictEqual(checks[1]?.subTargetKey, "")
+			assert.strictEqual(checks[1]?.durationMs, 250)
+			assert.strictEqual(checks[1]?.samplesScraped, 120)
+			assert.strictEqual(checks[1]?.samplesPostRelabel, 118)
 
 			// Time-range + limit filtering.
 			const limited = yield* service.listChecks(orgId, target.id, { limit: 1 })
-			expect(limited).toHaveLength(1)
-			expect(limited[0]?.checkedAt.getTime()).toBe(scrapedAt + 15_000)
+			assert.lengthOf(limited, 1)
+			assert.strictEqual(limited[0]?.checkedAt.getTime(), scrapedAt + 15_000)
 			const windowed = yield* service.listChecks(orgId, target.id, {
 				startTime: scrapedAt - 1,
 				endTime: scrapedAt + 1,
 			})
-			expect(windowed).toHaveLength(1)
-			expect(windowed[0]?.checkedAt.getTime()).toBe(scrapedAt)
+			assert.lengthOf(windowed, 1)
+			assert.strictEqual(windowed[0]?.checkedAt.getTime(), scrapedAt)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -360,11 +359,11 @@ describe("ScrapeTargetsService", () => {
 
 			yield* TestClock.setTime(1750000000000)
 			const probed = yield* service.probe(orgId, target.id)
-			expect(probed.success).toBe(true)
-			expect(probed.lastScrapeAt).not.toBeNull()
+			assert.isTrue(probed.success)
+			assert.isNotNull(probed.lastScrapeAt)
 
 			const checks = yield* service.listChecks(orgId, target.id, {})
-			expect(checks).toHaveLength(0)
+			assert.lengthOf(checks, 0)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -390,8 +389,8 @@ describe("ScrapeTargetsService", () => {
 			])
 
 			const checks = yield* service.listChecks(orgId, target.id, {})
-			expect(checks).toHaveLength(1)
-			expect(checks[0]?.checkedAt.getTime()).toBe(now - 60 * 60 * 1000)
+			assert.lengthOf(checks, 1)
+			assert.strictEqual(checks[0]?.checkedAt.getTime(), now - 60 * 60 * 1000)
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -409,7 +408,7 @@ describe("ScrapeTargetsService", () => {
 			)
 
 			const result = yield* service.listChecks(asOrgId("org_2"), target.id, {}).pipe(Effect.exit)
-			expect(Exit.isFailure(result)).toBe(true)
+			assert.isTrue(Exit.isFailure(result))
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 })

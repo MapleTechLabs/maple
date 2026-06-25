@@ -334,7 +334,7 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				catch: (error) =>
 					new McpQueryError({
 						message: `Invalid query specification:\n${String(error)}`,
-						pipe: "query_data",
+						pipeName: "query_data",
 						cause: error,
 					}),
 			})

@@ -3,7 +3,10 @@ import { Result } from "@/lib/effect-atom"
 import { Effect } from "effect"
 
 import { listTraces, type Trace, type TracesResponse } from "@/api/warehouse/traces"
-import { listTracesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	listTracesResultAtom,
+	type QueryAtomFailure,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
 import { useTableRefreshTimeRange } from "@/hooks/use-table-refresh-time-range"
 import type { TracesSearchParams } from "@/routes/traces"
@@ -12,7 +15,7 @@ const PAGE_SIZE = 100
 const FETCH_THRESHOLD = 20
 
 export interface UseInfiniteTracesReturn {
-	firstPageResult: Result.Result<TracesResponse, unknown>
+	firstPageResult: Result.Result<TracesResponse, QueryAtomFailure>
 	allData: Trace[]
 	isFetchingNextPage: boolean
 	hasNextPage: boolean

@@ -50,7 +50,7 @@ export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "claim_error_issue",
+							pipeName: "claim_error_issue",
 							cause: error,
 						}),
 				),

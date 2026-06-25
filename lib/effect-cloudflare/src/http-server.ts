@@ -20,45 +20,51 @@ import { Request as RequestService } from "./request.ts"
  * returns a `Response`. Any uncaught cause is converted into a 500 via
  * `safeHttpEffect`.
  */
-export const serveWebRequest = <Req = never>(
+export const serveWebRequest = Effect.fnUntraced(function* <Req = never>(
 	webRequest: globalThis.Request,
 	handler: HttpEffect<Req>,
 	options: {
 		remoteAddress?: string
 		acceptWebSocket?: (socket: unknown) => void
 	} = {},
-): Effect.Effect<globalThis.Response, never, Exclude<Req, HttpServerRequest.HttpServerRequest | Scope>> =>
-	Effect.gen(function* () {
-		const request = HttpServerRequest.fromWeb(webRequest).modify({
-			remoteAddress: Option.fromUndefinedOr(options.remoteAddress),
-		})
+) {
+	const request = HttpServerRequest.fromWeb(webRequest).modify({
+		remoteAddress: Option.fromUndefinedOr(options.remoteAddress),
+	})
 
-		Object.defineProperty(request, "raw", {
-			get: () =>
-				Object.assign(request.stream, {
-					raw: webRequest.body,
-				}),
-		})
-
-		const response = yield* safeHttpEffect(handler).pipe(
-			Effect.provideService(HttpServerRequest.HttpServerRequest, request),
-			Effect.provideService(RequestService, webRequest),
-			Effect.catchCause((cause) => {
-				const message = Option.match(Cause.findErrorOption(cause), {
-					onNone: () => "Internal Server Error",
-					onSome: (error: unknown) =>
-						error instanceof Error && error.message ? error.message : "Internal Server Error",
-				})
-				return Effect.succeed(
-					HttpServerResponse.text(message, {
-						status: 500,
-						statusText: message,
-					}),
-				)
+	Object.defineProperty(request, "raw", {
+		get: () =>
+			Object.assign(request.stream, {
+				raw: webRequest.body,
 			}),
-		)
+	})
 
-		return HttpServerResponse.toWeb(response, {
-			context: yield* Effect.context(),
-		})
-	}) as Effect.Effect<globalThis.Response, never, Exclude<Req, HttpServerRequest.HttpServerRequest | Scope>>
+	const response = yield* safeHttpEffect(handler).pipe(
+		Effect.provideService(HttpServerRequest.HttpServerRequest, request),
+		Effect.provideService(RequestService, webRequest),
+		Effect.catchCause((cause) => {
+			const message = Option.match(Cause.findErrorOption(cause), {
+				onNone: () => "Internal Server Error",
+				onSome: (error: unknown) =>
+					error instanceof Error && error.message ? error.message : "Internal Server Error",
+			})
+			return Effect.succeed(
+				HttpServerResponse.text(message, {
+					status: 500,
+					statusText: message,
+				}),
+			)
+		}),
+	)
+
+	return HttpServerResponse.toWeb(response, {
+		context: yield* Effect.context(),
+	})
+}) as <Req = never>(
+	webRequest: globalThis.Request,
+	handler: HttpEffect<Req>,
+	options?: {
+		remoteAddress?: string
+		acceptWebSocket?: (socket: unknown) => void
+	},
+) => Effect.Effect<globalThis.Response, never, Exclude<Req, HttpServerRequest.HttpServerRequest | Scope>>

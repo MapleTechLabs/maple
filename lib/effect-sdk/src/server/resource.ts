@@ -93,62 +93,61 @@ export interface ResolvedResource {
  * (`Otlp.layerJson`-based) and the Cloudflare preset (custom flushable
  * tracer/logger) so both stamp identical resources on outgoing telemetry.
  */
-export const resolveResource = (config: ResourceConfigInput): Effect.Effect<ResolvedResource> =>
-	Effect.gen(function* () {
-		const envEndpoint = yield* EnvConfig.endpoint
-		const endpoint = config.endpoint ?? Option.getOrUndefined(envEndpoint) ?? DEFAULT_MAPLE_ENDPOINT
+export const resolveResource = Effect.fn("resolveResource")(function* (config: ResourceConfigInput) {
+	const envEndpoint = yield* EnvConfig.endpoint
+	const endpoint = config.endpoint ?? Option.getOrUndefined(envEndpoint) ?? DEFAULT_MAPLE_ENDPOINT
 
-		const envIngestKey = yield* EnvConfig.ingestKey
-		const ingestKey = config.ingestKey
-			? Redacted.make(config.ingestKey)
-			: Option.getOrUndefined(envIngestKey)
+	const envIngestKey = yield* EnvConfig.ingestKey
+	const ingestKey = config.ingestKey
+		? Redacted.make(config.ingestKey)
+		: Option.getOrUndefined(envIngestKey)
 
-		const envServiceVersion = yield* EnvConfig.serviceVersion
-		const serviceVersion = config.serviceVersion ?? Option.getOrUndefined(envServiceVersion)
+	const envServiceVersion = yield* EnvConfig.serviceVersion
+	const serviceVersion = config.serviceVersion ?? Option.getOrUndefined(envServiceVersion)
 
-		const envRepositoryUrl = yield* EnvConfig.repositoryUrl
-		const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
-		// Prefer the platform-provided commit SHA; fall back to serviceVersion only
-		// when it is itself SHA-shaped. Never shell out to git at runtime.
-		const headRevision =
-			Option.getOrUndefined(envServiceVersion) ??
-			(isCommitSha(serviceVersion) ? serviceVersion : undefined)
+	const envRepositoryUrl = yield* EnvConfig.repositoryUrl
+	const repositoryUrl = config.repositoryUrl ?? envRepositoryUrl
+	// Prefer the platform-provided commit SHA; fall back to serviceVersion only
+	// when it is itself SHA-shaped. Never shell out to git at runtime.
+	const headRevision =
+		Option.getOrUndefined(envServiceVersion) ??
+		(isCommitSha(serviceVersion) ? serviceVersion : undefined)
 
-		const envEnvironment = yield* EnvConfig.environment
-		const environment = config.environment ?? envEnvironment
+	const envEnvironment = yield* EnvConfig.environment
+	const environment = config.environment ?? envEnvironment
 
-		const envOtelServiceName = yield* EnvConfig.otelServiceName
-		const serviceName = config.serviceName ?? Option.getOrUndefined(envOtelServiceName) ?? "unknown"
+	const envOtelServiceName = yield* EnvConfig.otelServiceName
+	const serviceName = config.serviceName ?? Option.getOrUndefined(envOtelServiceName) ?? "unknown"
 
-		const envResourceAttributes = yield* EnvConfig.otelResourceAttributes
+	const envResourceAttributes = yield* EnvConfig.otelResourceAttributes
 
-		const attributes: Record<string, unknown> = {}
-		Object.assign(attributes, getAutoPlatformAttributes())
-		attributes["maple.sdk.type"] = config.sdkType ?? "server"
-		attributes["service.instance.id"] = getServiceInstanceId()
-		if (environment) {
-			// Dual-emit: every Tinybird MV (`service_overview_spans_mv` et al.)
-			// pre-extracts the legacy `deployment.environment` key, but query
-			// consumers in `packages/query-engine/src/ch/queries/infra.ts` already
-			// select on `deployment.environment.name` (the OTel-canonical key).
-			// Emit both until the MVs migrate to `coalesce()`.
-			attributes["deployment.environment"] = environment
-			attributes["deployment.environment.name"] = environment
-		}
-		if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
-		if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
-		if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
-		if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
-		Object.assign(attributes, envResourceAttributes)
-		if (config.attributes) Object.assign(attributes, config.attributes)
+	const attributes: Record<string, unknown> = {}
+	Object.assign(attributes, getAutoPlatformAttributes())
+	attributes["maple.sdk.type"] = config.sdkType ?? "server"
+	attributes["service.instance.id"] = getServiceInstanceId()
+	if (environment) {
+		// Dual-emit: every Tinybird MV (`service_overview_spans_mv` et al.)
+		// pre-extracts the legacy `deployment.environment` key, but query
+		// consumers in `packages/query-engine/src/ch/queries/infra.ts` already
+		// select on `deployment.environment.name` (the OTel-canonical key).
+		// Emit both until the MVs migrate to `coalesce()`.
+		attributes["deployment.environment"] = environment
+		attributes["deployment.environment.name"] = environment
+	}
+	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
+	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
+	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
+	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
+	Object.assign(attributes, envResourceAttributes)
+	if (config.attributes) Object.assign(attributes, config.attributes)
 
-		return {
-			endpoint,
-			ingestKey,
-			environment,
-			resource: { serviceName, serviceVersion, attributes },
-		} satisfies ResolvedResource
-	}).pipe(Effect.orDie)
+	return {
+		endpoint,
+		ingestKey,
+		environment,
+		resource: { serviceName, serviceVersion, attributes },
+	} satisfies ResolvedResource
+}, Effect.orDie)
 
 /**
  * Synchronous resource resolver for environments where reading from a
