@@ -1,11 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { readdir, rename, rm, stat, writeFile } from "node:fs/promises"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { cp, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join, resolve, sep } from "node:path"
 import { Effect, Schema } from "effect"
 import { Chdb } from "./chdb"
 import { SCHEMA_FINGERPRINT } from "./serve"
 import schemaSql from "./schema/local-schema.sql" with { type: "text" }
+import { markStoreClosed, storeMarkerJson, storeMarkerPath } from "./store-version"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 
 export class CheckpointError extends Schema.TaggedErrorClass<CheckpointError>()(
@@ -22,6 +23,8 @@ const checkpointRoot = (dataDir: string): string => join(dataDir, "backups")
 const buildingDir = (dataDir: string): string => join(checkpointRoot(dataDir), "building")
 const currentDir = (dataDir: string): string => join(checkpointRoot(dataDir), "current")
 const previousDir = (dataDir: string): string => join(checkpointRoot(dataDir), "previous")
+const restoreBuildingDir = (dataDir: string): string => `${dataDir}.restore-building`
+const quarantineDir = (dataDir: string): string => `${dataDir}.quarantine-${new Date().toISOString().replace(/[:.]/g, "-")}`
 
 const backupSqlPath = (name: string): string => `backups/${name}/backup`
 
@@ -155,6 +158,43 @@ const validateBackup = async (dataDir: string): Promise<CheckpointManifest["vali
 	}
 }
 
+const restoreIntoScratch = async (
+	sourceDataDir: string,
+	targetDataDir: string,
+	checkpointName: "current" | "building",
+): Promise<CheckpointManifest["validation"]> => {
+	const scratchParent = mkdtempSync(join(tmpdir(), "maple-restore-"))
+	const restoreConfig = join(scratchParent, "config.xml")
+	writeBackupConfig(restoreConfig, sourceDataDir)
+	let db: Chdb | undefined
+	try {
+		db = Chdb.open({
+			dataDir: targetDataDir,
+			schemaSql,
+			configFile: restoreConfig,
+			bootstrapSchema: false,
+		})
+		db.exec("CREATE DATABASE IF NOT EXISTS default")
+		db.exec(
+			`RESTORE DATABASE default FROM Disk('src', '${backupSqlPath(checkpointName)}') ` +
+				"SETTINGS allow_different_database_def=1",
+		)
+		return {
+			validatedAt: new Date().toISOString(),
+			traces: queryCount(db, "SELECT count() FROM traces"),
+			logs: queryCount(db, "SELECT count() FROM logs"),
+			metricsSum: queryCount(db, "SELECT count() FROM metrics_sum"),
+			materializedViews: queryCount(
+				db,
+				"SELECT count() FROM system.tables WHERE database = 'default' AND engine = 'MaterializedView'",
+			),
+		}
+	} finally {
+		db?.close()
+		rmSync(scratchParent, { recursive: true, force: true })
+	}
+}
+
 const promoteBuilding = async (dataDir: string): Promise<void> => {
 	await rm(previousDir(dataDir), { recursive: true, force: true })
 	try {
@@ -195,6 +235,41 @@ export const createCheckpoint = (
 			await writeFile(join(building, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 			await promoteBuilding(options.dataDir)
 			return { path: join(root, "current"), manifest: { ...manifest, backupPath: backupSqlPath("current") } }
+		},
+		catch: (error) =>
+			new CheckpointError({ message: error instanceof Error ? error.message : String(error) }),
+	})
+
+export const restoreCheckpoint = (
+	dataDir: string,
+): Effect.Effect<{ readonly quarantinePath: string; readonly validation: CheckpointManifest["validation"] }, CheckpointError> =>
+	Effect.tryPromise({
+		try: async () => {
+			const sourceBackup = join(currentDir(dataDir), "backup")
+			if (!existsSync(sourceBackup)) {
+				throw new Error(`no checkpoint found at ${sourceBackup}`)
+			}
+
+			const restoreDir = restoreBuildingDir(dataDir)
+			await rm(restoreDir, { recursive: true, force: true })
+			const validation = await restoreIntoScratch(dataDir, restoreDir, "current")
+
+			if (existsSync(join(dataDir, "backups"))) {
+				await cp(join(dataDir, "backups"), join(restoreDir, "backups"), {
+					recursive: true,
+					force: true,
+				})
+			}
+
+			const quarantinePath = quarantineDir(dataDir)
+			await rename(dataDir, quarantinePath)
+			await rename(restoreDir, dataDir)
+			markStoreClosed(dataDir)
+			writeFileSync(
+				storeMarkerPath(dataDir),
+				storeMarkerJson(MAPLE_VERSION, new Date().toISOString(), SCHEMA_FINGERPRINT),
+			)
+			return { quarantinePath, validation }
 		},
 		catch: (error) =>
 			new CheckpointError({ message: error instanceof Error ? error.message : String(error) }),

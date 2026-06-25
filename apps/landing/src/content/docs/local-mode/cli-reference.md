@@ -48,6 +48,7 @@ Start the local ingest + query server (embedded ClickHouse via chDB).
 | `--offline`          | `false`         | Serve the UI bundled in this binary (from `127.0.0.1`) instead of `local.maple.dev` |
 | `--background`, `-d` | `false`         | Run detached (logs to `~/.maple/maple.log`); stop with `maple stop`                 |
 | `--reset`            | `false`         | Wipe the existing store before starting — use after an incompatible upgrade         |
+| `--on-dirty-store <wipe\|fail\|restore-checkpoint>` | `wipe` | Recovery policy when the store was not cleanly closed                              |
 
 ```bash
 maple start                    # foreground, UI from local.maple.dev
@@ -70,6 +71,40 @@ Delete the local chDB store so the next `maple start` bootstraps fresh. Refuses 
 | Flag                | Default         | Description                  |
 | ------------------- | --------------- | ---------------------------- |
 | `--data-dir <path>` | `~/.maple/data` | Store to delete              |
+| `--yes`, `-y`       | `false`         | Skip the confirmation prompt |
+
+### `maple checkpoint`
+
+Create and validate a restorable checkpoint of the local chDB store. The running
+server must have been started with a chDB config that allows ClickHouse backups:
+
+```xml
+<clickhouse>
+  <backups>
+    <allowed_disk>default</allowed_disk>
+    <allowed_path>backups</allowed_path>
+  </backups>
+</clickhouse>
+```
+
+```bash
+maple start --chdb-config-file ./chdb-backups.xml
+maple checkpoint
+```
+
+Checkpoints are written under the data directory at
+`backups/{building,current,previous}`. `building` is never used for restore;
+only a validated checkpoint is promoted to `current`.
+
+### `maple restore`
+
+Restore the local chDB store from the last promoted checkpoint. Refuses to run
+while a server still owns the store. The existing store is moved aside for
+quarantine rather than deleted.
+
+| Flag                | Default         | Description                  |
+| ------------------- | --------------- | ---------------------------- |
+| `--data-dir <path>` | `~/.maple/data` | Store to restore             |
 | `--yes`, `-y`       | `false`         | Skip the confirmation prompt |
 
 ## Services
@@ -197,29 +232,6 @@ maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER 
 ```
 
 > **Local only.** Raw SQL against the multi-tenant cloud warehouse would let a client read other orgs' data, so `maple query` returns a clear error in remote mode. Every other command works in both modes.
-
-### `maple checkpoint`
-
-Create and validate a restorable checkpoint of the local chDB store. The running
-server must have been started with a chDB config that allows ClickHouse backups:
-
-```xml
-<clickhouse>
-  <backups>
-    <allowed_disk>default</allowed_disk>
-    <allowed_path>backups</allowed_path>
-  </backups>
-</clickhouse>
-```
-
-```bash
-maple start --chdb-config-file ./chdb-backups.xml
-maple checkpoint
-```
-
-Checkpoints are written under the data directory at
-`backups/{building,current,previous}`. `building` is never used for restore;
-only a validated checkpoint is promoted to `current`.
 
 ## Analytics
 
