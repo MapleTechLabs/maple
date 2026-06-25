@@ -217,6 +217,15 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const currentStart = toClickHouseDateTime(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
 			const previousStart = toClickHouseDateTime(new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000))
 
+			// Sparkline window: 7 *complete* UTC days. `bucket_seconds: 86_400`
+			// snaps `toStartOfInterval` to UTC midnight, so a rolling now-7d
+			// window would split into 8 partial-day buckets (a duplicated
+			// weekday at the seam). Day-aligning the window keeps it to exactly 7.
+			const DAY_MS = 24 * 60 * 60 * 1000
+			const todayStartMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+			const seriesStart = toClickHouseDateTime(new Date(todayStartMs - 7 * DAY_MS))
+			const seriesEnd = toClickHouseDateTime(new Date(todayStartMs - 1000))
+
 			const systemTenant = {
 				orgId,
 				userId: SYSTEM_DIGEST_USER,
@@ -253,8 +262,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						warehouse.query(systemTenant, {
 							pipeName: "custom_traces_timeseries",
 							params: {
-								start_time: currentStart,
-								end_time: currentEnd,
+								start_time: seriesStart,
+								end_time: seriesEnd,
 								bucket_seconds: 86_400,
 							},
 						}),
@@ -398,6 +407,8 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
 				.slice()
 				.sort((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
+				// Guard against any boundary off-by-one — keep the 7 most recent days.
+				.slice(-7)
 				.map((r) => {
 					const requests = Number(r.count) || 0
 					return {
