@@ -198,6 +198,29 @@ maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER 
 
 > **Local only.** Raw SQL against the multi-tenant cloud warehouse would let a client read other orgs' data, so `maple query` returns a clear error in remote mode. Every other command works in both modes.
 
+### `maple checkpoint`
+
+Create and validate a restorable checkpoint of the local chDB store. The running
+server must have been started with a chDB config that allows ClickHouse backups:
+
+```xml
+<clickhouse>
+  <backups>
+    <allowed_disk>default</allowed_disk>
+    <allowed_path>backups</allowed_path>
+  </backups>
+</clickhouse>
+```
+
+```bash
+maple start --chdb-config-file ./chdb-backups.xml
+maple checkpoint
+```
+
+Checkpoints are written under the data directory at
+`backups/{building,current,previous}`. `building` is never used for restore;
+only a validated checkpoint is promoted to `current`.
+
 ## Analytics
 
 ### `maple timeseries`

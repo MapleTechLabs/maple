@@ -83,6 +83,8 @@ export interface ChdbOptions {
 	readonly schemaSql: string
 	/** Optional ClickHouse config file passed through to chDB. */
 	readonly configFile?: string
+	/** Apply the Maple schema after connect. Defaults to true. */
+	readonly bootstrapSchema?: boolean
 }
 
 /**
@@ -135,7 +137,7 @@ export class Chdb {
 			throw new Error(Chdb.#connectFailure(options.dataDir, "chdb_connect produced a NULL connection"))
 
 		const db = new Chdb(sym, connPtrPtr, conn)
-		db.#bootstrap(options.schemaSql)
+		if (options.bootstrapSchema !== false) db.#bootstrap(options.schemaSql)
 		return db
 	}
 

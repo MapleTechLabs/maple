@@ -15,6 +15,7 @@ import {
 	storeMarkerPath,
 	storeOpenMarkerPath,
 } from "../server/store-version"
+import { createCheckpoint } from "../server/checkpoints"
 import { resolveUiAssets } from "../server/ui-assets"
 import { amber, bold, cyan, dim, green, underline } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
@@ -456,6 +457,28 @@ export const reset = Command.make("reset", { dataDir: dataDirFlag, yes: yesFlag 
 			yield* fs.remove(storeOpenMarkerPath(dataDir), { force: true }).pipe(Effect.ignore)
 			yield* Effect.sync(() =>
 				process.stderr.write(`${green("✓")} reset — removed ${prettyPath(dataDir)}\n`),
+			)
+		}),
+	),
+)
+
+export const checkpoint = Command.make("checkpoint", { dataDir: dataDirFlag, port }).pipe(
+	Command.withDescription("Create and validate a restorable checkpoint of the local chDB store"),
+	Command.withHandler(
+		Effect.fnUntraced(function* (a) {
+			const dataDir = Option.getOrUndefined(a.dataDir) ?? defaultDataDir()
+			const result = yield* createCheckpoint({ dataDir, port: a.port }).pipe(
+				Effect.mapError((e) => new ServerError({ message: e.message })),
+			)
+			yield* Effect.sync(() =>
+				process.stdout.write(
+					`${green("✓")} checkpoint created\n` +
+						`  ${dim("path")}      ${prettyPath(result.path)}\n` +
+						`  ${dim("traces")}    ${result.manifest.validation.traces}\n` +
+						`  ${dim("logs")}      ${result.manifest.validation.logs}\n` +
+						`  ${dim("metrics")}   ${result.manifest.validation.metricsSum}\n` +
+						`  ${dim("views")}     ${result.manifest.validation.materializedViews}\n`,
+				),
 			)
 		}),
 	),
