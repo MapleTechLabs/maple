@@ -343,63 +343,86 @@ describe("getPastDueSubscription", () => {
 })
 
 describe("isLegacyPlan / getLegacyPlanInfo", () => {
-	it("flags archived plans", () => {
-		const sub = buildSubscription({ plan: buildPlan({ archived: true }) })
-		expect(isLegacyPlan(sub)).toBe(true)
-	})
+	// Current catalog from listPlans: only "startup" is offered.
+	const catalog = [buildPlan({ id: "startup", name: "Startup" })]
 
-	it("flags the legacy free tier (by id or name)", () => {
-		expect(isLegacyPlan(buildSubscription({ planId: "free" }))).toBe(true)
+	it("flags the legacy free tier regardless of catalog", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "free" }), catalog)).toBe(true)
 		expect(
-			isLegacyPlan(buildSubscription({ planId: "old", plan: buildPlan({ name: "Free" }) })),
+			isLegacyPlan(buildSubscription({ planId: "old", plan: buildPlan({ name: "Free" }) }), catalog),
 		).toBe(true)
 	})
 
-	it("does not flag a current active plan", () => {
-		expect(isLegacyPlan(buildSubscription())).toBe(false)
+	it("flags a plan that is no longer in the catalog", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), catalog)).toBe(true)
 	})
 
-	it("getLegacyPlanInfo reflects the active plan", () => {
-		const archived = buildCustomer([
-			buildSubscription({ plan: buildPlan({ name: "Old Startup", archived: true }) }),
+	it("flags a catalog plan marked archived", () => {
+		const archivedCatalog = [buildPlan({ id: "startup", archived: true })]
+		expect(isLegacyPlan(buildSubscription({ planId: "startup" }), archivedCatalog)).toBe(true)
+	})
+
+	it("does not flag a current, offered plan", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "startup" }), catalog)).toBe(false)
+	})
+
+	it("does not flag while the catalog is still unknown (loading)", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), null)).toBe(false)
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), [])).toBe(false)
+	})
+
+	it("getLegacyPlanInfo reflects the active plan against the catalog", () => {
+		const legacy = buildCustomer([
+			buildSubscription({ planId: "starter", plan: buildPlan({ id: "starter", name: "Starter" }) }),
 		])
-		expect(getLegacyPlanInfo(archived)).toEqual({ isLegacy: true, planName: "Old Startup" })
+		expect(getLegacyPlanInfo(legacy, catalog)).toEqual({ isLegacy: true, planName: "Starter" })
 
-		const current = buildCustomer([buildSubscription({ plan: buildPlan({ name: "Startup" }) })])
-		expect(getLegacyPlanInfo(current)).toEqual({ isLegacy: false, planName: "Startup" })
+		const current = buildCustomer([
+			buildSubscription({ planId: "startup", plan: buildPlan({ id: "startup", name: "Startup" }) }),
+		])
+		expect(getLegacyPlanInfo(current, catalog)).toEqual({ isLegacy: false, planName: "Startup" })
 
-		expect(getLegacyPlanInfo(buildCustomer([]))).toEqual({ isLegacy: false, planName: null })
+		expect(getLegacyPlanInfo(buildCustomer([]), catalog)).toEqual({ isLegacy: false, planName: null })
+	})
+
+	it("falls back to planId for the name when the subscription has no plan object", () => {
+		// getOrCreateCustomer does not expand subscription.plan in practice.
+		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: undefined })])
+		expect(getLegacyPlanInfo(customer, catalog)).toEqual({ isLegacy: true, planName: "starter" })
 	})
 })
 
 describe("getOverageSummary", () => {
-	const startupPlan = buildPlan({
-		items: [
-			buildPlanItem("logs", 100, 0.3),
-			buildPlanItem("traces", 100, 0.3),
-			buildPlanItem("metrics", 100, 0.3),
-			buildPlanItem("browser_sessions", 5000, 0.003),
-		],
-	})
+	// Live catalog rates: $0.25/GB for the ingest trio, $0.003/session.
+	const startupCatalog = [
+		buildPlan({
+			id: "startup",
+			items: [
+				buildPlanItem("logs", 100, 0.25),
+				buildPlanItem("traces", 100, 0.25),
+				buildPlanItem("metrics", 100, 0.25),
+				buildPlanItem("browser_sessions", 5000, 0.003),
+			],
+		}),
+	]
+
+	function startupCustomer(balances: Customer["balances"]): Customer {
+		return buildCustomer([buildSubscription({ planId: "startup" })], { balances })
+	}
 
 	it("is empty when there is no usable customer", () => {
-		expect(getOverageSummary(null, ZERO_USAGE)).toEqual({
+		expect(getOverageSummary(null, ZERO_USAGE, startupCatalog)).toEqual({
 			features: [],
 			total: 0,
 			hasOverage: false,
 		})
 	})
 
-	it("computes per-feature overage from balances, usage, and live plan rates", () => {
-		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
-			balances: {
-				logs: buildBalance("logs", { granted: 100, overageAllowed: true }),
-				traces: buildBalance("traces", { granted: 100, overageAllowed: true }),
-				browser_sessions: buildBalance("browser_sessions", {
-					granted: 5000,
-					overageAllowed: true,
-				}),
-			},
+	it("computes per-feature overage from balances, usage, and catalog rates", () => {
+		const customer = startupCustomer({
+			logs: buildBalance("logs", { granted: 100, overageAllowed: true }),
+			traces: buildBalance("traces", { granted: 100, overageAllowed: true }),
+			browser_sessions: buildBalance("browser_sessions", { granted: 5000, overageAllowed: true }),
 		})
 		const usage: AggregatedUsage = {
 			logsGB: 150,
@@ -408,42 +431,50 @@ describe("getOverageSummary", () => {
 			browserSessions: 6000,
 		}
 
-		const summary = getOverageSummary(customer, usage)
+		const summary = getOverageSummary(customer, usage, startupCatalog)
 		expect(summary.hasOverage).toBe(true)
 		expect(summary.features.map((f) => f.featureId)).toEqual(["logs", "browser_sessions"])
 
 		const logs = summary.features.find((f) => f.featureId === "logs")
-		expect(logs).toMatchObject({ overageUnits: 50, rate: 0.3, cost: 15 })
+		expect(logs).toMatchObject({ overageUnits: 50, rate: 0.25, cost: 12.5 })
 
 		const sessions = summary.features.find((f) => f.featureId === "browser_sessions")
 		expect(sessions).toMatchObject({ overageUnits: 1000, rate: 0.003 })
 		expect(sessions?.cost).toBeCloseTo(3, 5)
 
-		expect(summary.total).toBeCloseTo(18, 5)
+		expect(summary.total).toBeCloseTo(15.5, 5)
 	})
 
 	it("excludes features that do not allow overage", () => {
-		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
-			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: false }) },
+		const customer = startupCustomer({
+			logs: buildBalance("logs", { granted: 100, overageAllowed: false }),
 		})
 		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 200 }
-		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
+		expect(getOverageSummary(customer, usage, startupCatalog).hasOverage).toBe(false)
 	})
 
 	it("excludes features under their included grant", () => {
-		const customer = buildCustomer([buildSubscription({ plan: startupPlan })], {
-			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: true }) },
+		const customer = startupCustomer({
+			logs: buildBalance("logs", { granted: 100, overageAllowed: true }),
 		})
 		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 80 }
-		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
+		expect(getOverageSummary(customer, usage, startupCatalog).hasOverage).toBe(false)
 	})
 
-	it("excludes features whose plan item has no per-unit price", () => {
-		const plan = buildPlan({ items: [buildPlanItem("logs", 100, null)] })
-		const customer = buildCustomer([buildSubscription({ plan })], {
-			balances: { logs: buildBalance("logs", { granted: 100, overageAllowed: true }) },
+	it("excludes features whose catalog plan item has no per-unit price", () => {
+		const catalog = [buildPlan({ id: "startup", items: [buildPlanItem("logs", 100, null)] })]
+		const customer = startupCustomer({
+			logs: buildBalance("logs", { granted: 100, overageAllowed: true }),
 		})
 		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 200 }
-		expect(getOverageSummary(customer, usage).hasOverage).toBe(false)
+		expect(getOverageSummary(customer, usage, catalog).hasOverage).toBe(false)
+	})
+
+	it("is empty when the active plan is not in the catalog (legacy)", () => {
+		const customer = buildCustomer([buildSubscription({ planId: "starter" })], {
+			balances: { logs: buildBalance("logs", { granted: 50, overageAllowed: true }) },
+		})
+		const usage: AggregatedUsage = { ...ZERO_USAGE, logsGB: 200 }
+		expect(getOverageSummary(customer, usage, startupCatalog).hasOverage).toBe(false)
 	})
 })

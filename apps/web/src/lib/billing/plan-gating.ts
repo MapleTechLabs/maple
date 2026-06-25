@@ -1,4 +1,4 @@
-import { useCustomer } from "autumn-js/react"
+import { useCustomer, useListPlans } from "autumn-js/react"
 import type { AggregatedUsage } from "./usage"
 
 type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
@@ -6,6 +6,12 @@ type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
 type Subscription = Customer["subscriptions"][number]
 
 type Balance = NonNullable<Customer["balances"]>[string]
+
+// A plan from the live `listPlans` catalog — the source of truth for which plans
+// are currently offered and for per-feature overage rates. `getOrCreateCustomer`
+// does NOT expand `subscription.plan`, so neither legacy detection nor overage
+// rates can rely on it; both read the catalog instead.
+export type CatalogPlan = NonNullable<ReturnType<typeof useListPlans>["data"]>[number]
 
 // Metered ingestion features whose usage we surface alerts for. Mirrors the
 // Autumn feature ids defined in apps/api/autumn.config.ts.
@@ -34,11 +40,21 @@ function isLegacyFreePlan(sub: Subscription): boolean {
 	return sub.plan?.name?.toLowerCase() === "free"
 }
 
-// A subscription is "legacy" when its plan is archived (no longer attachable to
-// new customers — i.e. grandfathered) or it's the old free tier. Archived is the
-// canonical, drift-free signal from Autumn.
-export function isLegacyPlan(sub: Subscription): boolean {
-	return sub.plan?.archived === true || isLegacyFreePlan(sub)
+// A subscription is "legacy" when its plan is no longer offered to new customers:
+// it's the old free tier, or its planId isn't in the current `listPlans` catalog,
+// or it maps to a catalog plan flagged archived. We only fall back to the
+// catalog-membership check once the catalog has loaded — an empty/missing catalog
+// means "unknown", not "legacy", so the badge never flickers on during load.
+export function isLegacyPlan(
+	sub: Subscription,
+	plans: ReadonlyArray<CatalogPlan> | null | undefined,
+): boolean {
+	if (isLegacyFreePlan(sub)) return true
+	if (sub.plan?.archived === true) return true
+	if (!plans || plans.length === 0) return false
+	const catalogPlan = plans.find((plan) => plan.id === sub.planId)
+	if (!catalogPlan) return true
+	return catalogPlan.archived === true
 }
 
 // Autumn's `useCustomer` surfaces upstream API failures (e.g. a `200` whose
@@ -131,13 +147,16 @@ export function getPastDueSubscription(customer: Customer | null | undefined): S
 
 // Whether the org's active plan is a legacy/grandfathered one, plus its display
 // name (for the billing badge). Mirrors the plan shown in the subscription strip.
-export function getLegacyPlanInfo(customer: Customer | null | undefined): {
+export function getLegacyPlanInfo(
+	customer: Customer | null | undefined,
+	plans: ReadonlyArray<CatalogPlan> | null | undefined,
+): {
 	isLegacy: boolean
 	planName: string | null
 } {
 	const sub = getActivePlan(customer)
 	if (!sub) return { isLegacy: false, planName: null }
-	return { isLegacy: isLegacyPlan(sub), planName: sub.plan?.name ?? sub.planId }
+	return { isLegacy: isLegacyPlan(sub, plans), planName: sub.plan?.name ?? sub.planId }
 }
 
 export interface FeatureOverage {
@@ -173,10 +192,10 @@ function usageForFeature(featureId: string, usage: AggregatedUsage): number {
 	}
 }
 
-// Per-unit overage price for a feature, read from the active subscription's plan
-// items. Null when the feature isn't priced or uses tiered (amount-less) pricing.
-function overageRateForFeature(sub: Subscription | null, featureId: string): number | null {
-	const price = sub?.plan?.items?.find((item) => item.featureId === featureId)?.price
+// Per-unit overage price for a feature, read from the catalog plan's items. Null
+// when the feature isn't priced or uses tiered (amount-less) pricing.
+function overageRateForFeature(catalogPlan: CatalogPlan | undefined, featureId: string): number | null {
+	const price = catalogPlan?.items?.find((item) => item.featureId === featureId)?.price
 	if (!price || price.amount == null) return null
 	const units = price.billingUnits || 1
 	return price.amount / units
@@ -184,22 +203,25 @@ function overageRateForFeature(sub: Subscription | null, featureId: string): num
 
 // Estimated overage charges accruing this period: for each usage-based metered
 // feature whose usage exceeds the included grant, `(usage − granted) × rate`.
-// Rates come live from the plan (no hardcoded prices). Empty when nothing is over
-// or the org isn't on a usage-based plan.
+// Rates come live from the `listPlans` catalog (no hardcoded prices), matched to
+// the org's active planId. Empty when nothing is over or the org isn't on a
+// usage-based plan in the current catalog.
 export function getOverageSummary(
 	customer: Customer | null | undefined,
 	usage: AggregatedUsage,
+	plans: ReadonlyArray<CatalogPlan> | null | undefined,
 ): OverageSummary {
 	const balances = customer?.balances
 	const activeSub = getActivePlan(customer)
+	const catalogPlan = activeSub ? plans?.find((plan) => plan.id === activeSub.planId) : undefined
 	const features: FeatureOverage[] = []
 
-	if (balances) {
+	if (balances && catalogPlan) {
 		for (const featureId of OVERAGE_FEATURES) {
 			const balance = balances[featureId]
 			if (!balance?.overageAllowed) continue
 
-			const rate = overageRateForFeature(activeSub, featureId)
+			const rate = overageRateForFeature(catalogPlan, featureId)
 			if (rate == null) continue
 
 			const granted = balance.granted ?? 0

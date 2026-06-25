@@ -1,6 +1,7 @@
-import { useMemo } from "react"
-import { useAggregateEvents } from "autumn-js/react"
+import { useMemo, type ReactNode } from "react"
+import { useAggregateEvents, useListPlans } from "autumn-js/react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useLegacyPlan } from "@/hooks/use-legacy-plan"
 import { PricingCards } from "./pricing-cards"
 import { format } from "date-fns"
 
@@ -33,18 +34,26 @@ function DataPoint({
 	value,
 	accent,
 	className,
+	trailing,
 }: {
 	label: string
 	value: string
 	accent?: boolean
 	className?: string
+	/** Rendered inline with the value, on its baseline (e.g. a status badge). */
+	trailing?: ReactNode
 }) {
 	return (
 		<div className="flex flex-col gap-0.5">
 			<span className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
 				{label}
 			</span>
-			<span className={cn("text-sm tabular-nums", accent && "text-primary", className)}>{value}</span>
+			<span className="flex items-center gap-2">
+				<span className={cn("text-sm tabular-nums", accent && "text-primary", className)}>
+					{value}
+				</span>
+				{trailing}
+			</span>
 		</div>
 	)
 }
@@ -61,8 +70,8 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 }
 
 function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string }) {
-	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLegacy, isLoading } =
-		useTrialStatus()
+	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLoading } = useTrialStatus()
+	const { isLegacy } = useLegacyPlan()
 	const { openCustomerPortal } = useMapleCustomer()
 
 	if (isLoading) {
@@ -95,14 +104,18 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 		<div>
 			<div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
 				<div className="flex flex-wrap items-baseline gap-x-8 gap-y-3">
-					<div className="flex items-center gap-2">
-						<DataPoint label="Plan" value={planName} className="capitalize" />
-						{isLegacy && (
-							<Badge variant="secondary" className="text-[10px] font-medium">
-								Legacy plan
-							</Badge>
-						)}
-					</div>
+					<DataPoint
+						label="Plan"
+						value={planName}
+						className="capitalize"
+						trailing={
+							isLegacy ? (
+								<Badge size="sm" variant="warning">
+									Legacy
+								</Badge>
+							) : undefined
+						}
+					/>
 					<DataPoint label="Status" value={statusValue} accent={isTrialing} />
 					<DataPoint label="Period" value={billingPeriodLabel} />
 				</div>
@@ -149,6 +162,7 @@ function UsageSkeleton() {
 
 export function BillingSection() {
 	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
+	const { data: plans } = useListPlans()
 	const { total, isLoading: isUsageLoading } = useAggregateEvents({
 		featureId: ["logs", "traces", "metrics", "browser_sessions"],
 		range: "1bc",
@@ -175,7 +189,7 @@ export function BillingSection() {
 		metricsGB: total?.metrics?.sum ?? 0,
 		browserSessions: total?.browser_sessions?.sum ?? 0,
 	}
-	const overage = getOverageSummary(customer, usage)
+	const overage = getOverageSummary(customer, usage, plans)
 
 	return (
 		<div>
