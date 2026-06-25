@@ -104,6 +104,12 @@ const dataDirFlag = Flag.optional(
 	),
 )
 
+const chdbConfigFileFlag = Flag.optional(
+	Flag.string("chdb-config-file").pipe(
+		Flag.withDescription("Optional ClickHouse config file passed to embedded chDB"),
+	),
+)
+
 const backgroundFlag = Flag.boolean("background").pipe(
 	Flag.withAlias("d"),
 	Flag.withDescription("Run the server detached (logs to ~/.maple/maple.log); stop with `maple stop`"),
@@ -149,7 +155,12 @@ const probeHealth = (addr: string): Effect.Effect<boolean> =>
  * file; we poll `/health` until it binds, then print a summary and return so the
  * parent process exits.
  */
-const startDetached = (port: number, dataDir: string, offline: boolean): Effect.Effect<void, ServerError> =>
+const startDetached = (
+	port: number,
+	dataDir: string,
+	offline: boolean,
+	chdbConfigFile: string | undefined,
+): Effect.Effect<void, ServerError> =>
 	Effect.gen(function* () {
 		const logPath = logFilePath(dataDir)
 		// Rebuild the command explicitly rather than slicing argv: a Bun-compiled
@@ -165,6 +176,7 @@ const startDetached = (port: number, dataDir: string, offline: boolean): Effect.
 			String(port),
 			"--data-dir",
 			dataDir,
+			...(chdbConfigFile ? ["--chdb-config-file", chdbConfigFile] : []),
 			...(offline ? ["--offline"] : []),
 		]
 
@@ -214,6 +226,7 @@ const startDetached = (port: number, dataDir: string, offline: boolean): Effect.
 export const start = Command.make("start", {
 	port,
 	dataDir: dataDirFlag,
+	chdbConfigFile: chdbConfigFileFlag,
 	background: backgroundFlag,
 	offline: offlineFlag,
 	reset: resetFlag,
@@ -298,7 +311,8 @@ export const start = Command.make("start", {
 			}
 
 			// Detached: spawn the same command without --background and exit.
-			if (a.background) return yield* startDetached(a.port, dataDir, a.offline)
+			if (a.background)
+				return yield* startDetached(a.port, dataDir, a.offline, Option.getOrUndefined(a.chdbConfigFile))
 
 			yield* Effect.sync(() =>
 				process.stderr.write(
@@ -325,9 +339,12 @@ export const start = Command.make("start", {
 						}),
 					)
 
-					const { port: boundPort } = yield* startServer({ port: a.port, dataDir, assets }).pipe(
-						Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })),
-					)
+					const { port: boundPort } = yield* startServer({
+						port: a.port,
+						dataDir,
+						configFile: Option.getOrUndefined(a.chdbConfigFile),
+						assets,
+					}).pipe(Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })))
 					started = true
 
 					// Bootstrap succeeded — stamp the store so a later start over an

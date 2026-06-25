@@ -81,6 +81,8 @@ export interface ChdbOptions {
 	readonly dataDir: string
 	/** Full DDL applied once at open (idempotent `IF NOT EXISTS`). */
 	readonly schemaSql: string
+	/** Optional ClickHouse config file passed through to chDB. */
+	readonly configFile?: string
 }
 
 /**
@@ -117,6 +119,7 @@ export class Chdb {
 			"--async_load_databases=0",
 			"--async_load_system_database=0",
 			`--path=${options.dataDir}`,
+			...(options.configFile ? [`--config-file=${options.configFile}`] : []),
 		]
 		const argBufs = args.map(cstr)
 		const argv = new BigUint64Array(args.length)

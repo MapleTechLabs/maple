@@ -26,6 +26,7 @@ export interface AssetResolver {
 export interface ServerOptions {
 	readonly port: number
 	readonly dataDir: string
+	readonly configFile?: string
 	/** Serves the bundled SPA; omit to disable the UI (API-only). */
 	readonly assets?: AssetResolver
 }
@@ -335,7 +336,11 @@ export const startServer = (
 	options: ServerOptions,
 ): Effect.Effect<{ readonly port: number }, ChdbError, Scope.Scope> =>
 	Effect.gen(function* () {
-		const db = yield* acquireChdb({ dataDir: options.dataDir, schemaSql })
+		const db = yield* acquireChdb({
+			dataDir: options.dataDir,
+			schemaSql,
+			configFile: options.configFile,
+		})
 		// A dedicated runtime carrying the OTel tracer for per-request spans: the
 		// Bun.serve handler runs outside Effect, so each request's span effect is
 		// run through this runtime. Disposed on scope close, which flushes any

@@ -44,6 +44,7 @@ Start the local ingest + query server (embedded ClickHouse via chDB).
 | -------------------- | --------------- | ----------------------------------------------------------------------------------- |
 | `--port <int>`       | `4318`          | Port for OTLP/HTTP ingest, the query API, and the bundled UI                        |
 | `--data-dir <path>`  | `~/.maple/data` | Embedded ClickHouse data directory                                                  |
+| `--chdb-config-file <path>` |                 | Optional ClickHouse config file passed to embedded chDB                             |
 | `--offline`          | `false`         | Serve the UI bundled in this binary (from `127.0.0.1`) instead of `local.maple.dev` |
 | `--background`, `-d` | `false`         | Run detached (logs to `~/.maple/maple.log`); stop with `maple stop`                 |
 | `--reset`            | `false`         | Wipe the existing store before starting — use after an incompatible upgrade         |
