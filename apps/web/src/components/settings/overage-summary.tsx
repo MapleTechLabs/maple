@@ -46,7 +46,10 @@ export function OverageSummary({ summary }: { summary: OverageSummaryData }) {
 									{formatUnits(feature.overageUnits)} over × {formatRate(feature.rate)}
 								</span>
 							</span>
-							<span className="tabular-nums text-foreground">{formatCurrency(feature.cost)}</span>
+							{/* formatRate (up to 4 fraction digits) so a sub-cent line item
+							    (e.g. a few browser_sessions at $0.003) doesn't floor to $0.00
+							    while still contributing to the non-zero total above. */}
+							<span className="tabular-nums text-foreground">{formatRate(feature.cost)}</span>
 						</div>
 					)
 				})}

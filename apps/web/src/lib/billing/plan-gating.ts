@@ -271,10 +271,16 @@ export function getOverageSummary(
 			const balance = balances[featureId]
 			if (!balance?.overageAllowed) continue
 
+			// A feature with no finite grant (null/unlimited) has no included
+			// threshold to exceed, so its usage isn't overage. Without this guard a
+			// `granted: null` balance would collapse to `granted = 0` below and bill
+			// the entire metered usage as overage.
+			if (balance.granted == null || balance.unlimited) continue
+
 			const rate = overageRateForFeature(catalogPlan, featureId)
 			if (rate == null) continue
 
-			const granted = balance.granted ?? 0
+			const granted = balance.granted
 			const used = usageForFeature(featureId, usage)
 			const overageUnits = used - granted
 			if (overageUnits <= 0) continue

@@ -148,8 +148,11 @@ export const HttpBillingLive = HttpApiBuilder.group(MapleApi, "billing", (handle
 		})
 		const callAutumn = makeCallAutumn(secretKey)
 
+		// Invalidate on any 2xx, matching `ensureOk` — otherwise a 201/204 from
+		// attach/openCustomerPortal would decode as success yet leave the stale
+		// cached customer in place for up to the TTL.
 		const invalidateCustomer = (orgId: string, result: AutumnResult) =>
-			result.statusCode === 200
+			result.statusCode >= 200 && result.statusCode < 300
 				? edgeCache.invalidate({ bucket: CUSTOMER_CACHE_BUCKET, key: orgId })
 				: Effect.void
 
