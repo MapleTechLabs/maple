@@ -3,7 +3,7 @@ import { Layer } from "effect"
 import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { McpLive } from "./mcp/app"
-import { AutumnRouter } from "./routes/autumn.http"
+import { HttpBillingLive, HttpBillingPublicLive } from "./routes/billing.http"
 import { HttpAiTriageLive } from "./routes/ai-triage.http"
 import { HttpAlertsLive } from "./routes/alerts.http"
 import { HttpAnomaliesLive } from "./routes/anomalies.http"
@@ -190,6 +190,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthLive),
 	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive)),
 	Layer.provide(HttpApiKeysLive),
+	Layer.provide(Layer.mergeAll(HttpBillingLive, HttpBillingPublicLive)),
 	Layer.provide(HttpAlertsLive),
 	Layer.provide(HttpErrorsLive),
 	Layer.provide(HttpCloudflareLogpushLive),
@@ -216,7 +217,6 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 
 export const AllRoutes = Layer.mergeAll(
 	ApiRoutes,
-	AutumnRouter,
 	IntegrationsCallbackRouter,
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,

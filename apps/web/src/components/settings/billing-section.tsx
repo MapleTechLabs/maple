@@ -1,24 +1,31 @@
 import { useMemo, type ReactNode } from "react"
-import { useAggregateEvents, useListPlans } from "autumn-js/react"
-import { useMapleCustomer } from "@/hooks/use-maple-customer"
-import { useLegacyPlan } from "@/hooks/use-legacy-plan"
-import { PricingCards } from "./pricing-cards"
 import { format } from "date-fns"
+import type { BillingCustomer } from "@maple/domain/http"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Button } from "@maple/ui/components/ui/button"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { cn } from "@maple/ui/utils"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import {
+	billingCustomerAtom,
+	billingPlansAtom,
+	billingUsageAtom,
+} from "@/lib/services/atoms/billing-atoms"
+import { useBillingActions } from "@/hooks/use-billing-actions"
+import {
+	getLegacyPlanInfo,
+	getOverageSummary,
+	getTrialStatus,
+	type TrialStatus,
+} from "@/lib/billing/plan-gating"
 import { getPlanLimits, type PlanLimits } from "@/lib/billing/plans"
 import type { AggregatedUsage } from "@/lib/billing/usage"
-import { getOverageSummary } from "@/lib/billing/plan-gating"
 import { UsageMeters } from "./usage-meters"
 import { OverageSummary } from "./overage-summary"
-import { useTrialStatus } from "@/hooks/use-trial-status"
-import { cn } from "@maple/ui/utils"
+import { PricingCards } from "./pricing-cards"
 
-type CustomerBalances = Record<string, { usage?: number; granted?: number; remaining?: number }> | undefined
-
-function limitsFromCustomer(balances: CustomerBalances): PlanLimits | null {
+function limitsFromCustomer(balances: BillingCustomer["balances"]): PlanLimits | null {
 	if (!balances) return null
 	const defaults = getPlanLimits("starter")
 	return {
@@ -69,11 +76,19 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 	)
 }
 
-function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string }) {
-	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus, isLoading } = useTrialStatus()
-	const { isLegacy } = useLegacyPlan()
-	const { openCustomerPortal } = useMapleCustomer()
-
+function SubscriptionStrip({
+	trial,
+	isLegacy,
+	billingPeriodLabel,
+	isLoading,
+	onManageBilling,
+}: {
+	trial: TrialStatus
+	isLegacy: boolean
+	billingPeriodLabel: string
+	isLoading: boolean
+	onManageBilling: () => void
+}) {
 	if (isLoading) {
 		return (
 			<div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
@@ -96,7 +111,8 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 		)
 	}
 
-	if (!planStatus) return null
+	const { isTrialing, daysRemaining, trialEndsAt, planName, planStatus } = trial
+	if (!planStatus || !planName) return null
 
 	const statusValue = isTrialing && daysRemaining != null ? `Trial · ${daysRemaining}d left` : "Active"
 
@@ -119,11 +135,7 @@ function SubscriptionStrip({ billingPeriodLabel }: { billingPeriodLabel: string 
 					<DataPoint label="Status" value={statusValue} accent={isTrialing} />
 					<DataPoint label="Period" value={billingPeriodLabel} />
 				</div>
-				<Button
-					variant="outline"
-					size="sm"
-					onClick={() => openCustomerPortal({ returnUrl: window.location.href })}
-				>
+				<Button variant="outline" size="sm" onClick={onManageBilling}>
 					Manage billing
 				</Button>
 			</div>
@@ -161,14 +173,19 @@ function UsageSkeleton() {
 }
 
 export function BillingSection() {
-	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
-	const { data: plans } = useListPlans()
-	const { total, isLoading: isUsageLoading } = useAggregateEvents({
-		featureId: ["logs", "traces", "metrics", "browser_sessions"],
-		range: "1bc",
-	})
+	const customerResult = useAtomValue(billingCustomerAtom)
+	const plansResult = useAtomValue(billingPlansAtom)
+	const usageResult = useAtomValue(billingUsageAtom)
+	const { openCustomerPortal } = useBillingActions()
 
-	const isLoading = isCustomerLoading || isUsageLoading
+	const customer = Result.isSuccess(customerResult) ? customerResult.value : undefined
+	const plans = Result.isSuccess(plansResult) ? plansResult.value.plans : undefined
+	const usageTotal = Result.isSuccess(usageResult) ? usageResult.value.total : undefined
+
+	const isLoading = Result.isInitial(customerResult) || Result.isInitial(usageResult)
+
+	const trial = getTrialStatus(customer)
+	const { isLegacy } = getLegacyPlanInfo(customer, plans)
 
 	const billingPeriodLabel = useMemo(() => {
 		const activeSub = customer?.subscriptions?.find((s) => s.status === "active")
@@ -184,16 +201,22 @@ export function BillingSection() {
 
 	const limits = limitsFromCustomer(customer?.balances) ?? getPlanLimits("starter")
 	const usage: AggregatedUsage = {
-		logsGB: total?.logs?.sum ?? 0,
-		tracesGB: total?.traces?.sum ?? 0,
-		metricsGB: total?.metrics?.sum ?? 0,
-		browserSessions: total?.browser_sessions?.sum ?? 0,
+		logsGB: usageTotal?.logs?.sum ?? 0,
+		tracesGB: usageTotal?.traces?.sum ?? 0,
+		metricsGB: usageTotal?.metrics?.sum ?? 0,
+		browserSessions: usageTotal?.browser_sessions?.sum ?? 0,
 	}
 	const overage = getOverageSummary(customer, usage, plans)
 
 	return (
 		<div>
-			<SubscriptionStrip billingPeriodLabel={billingPeriodLabel} />
+			<SubscriptionStrip
+				trial={trial}
+				isLegacy={isLegacy}
+				billingPeriodLabel={billingPeriodLabel}
+				isLoading={Result.isInitial(customerResult)}
+				onManageBilling={() => openCustomerPortal({ returnUrl: window.location.href })}
+			/>
 
 			<section className="mt-10">
 				<SectionHeader title="Current usage" subtitle={billingPeriodLabel} />

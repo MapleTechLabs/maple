@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { makeEdgeCacheService, makeMemoryBackend } from "@maple/query-engine/caching"
-import { CUSTOMER_CACHE_BUCKET, readCustomerCached } from "./autumn.http"
+import { CUSTOMER_CACHE_BUCKET, readCustomerCached } from "./billing.http"
 
 const ORG = "org_test_123"
 

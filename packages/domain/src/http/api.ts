@@ -4,6 +4,7 @@ import { AnomaliesApiGroup } from "./anomalies"
 import { ApiKeysApiGroup } from "./api-keys"
 import { AlertsApiGroup } from "./alerts"
 import { AuthApiGroup, AuthPublicApiGroup } from "./auth"
+import { BillingApiGroup, BillingPublicApiGroup } from "./billing"
 import { ChatApiGroup } from "./chat"
 import { CloudflareLogpushApiGroup } from "./cloudflare-logpush"
 import { DashboardsApiGroup } from "./dashboards"
@@ -29,6 +30,8 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(AnomaliesApiGroup)
 	.add(ApiKeysApiGroup)
 	.add(AlertsApiGroup)
+	.add(BillingApiGroup)
+	.add(BillingPublicApiGroup)
 	.add(ChatApiGroup)
 	.add(CloudflareLogpushApiGroup)
 	.add(DashboardsApiGroup)

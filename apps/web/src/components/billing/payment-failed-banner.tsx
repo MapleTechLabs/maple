@@ -1,4 +1,5 @@
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useBillingActions } from "@/hooks/use-billing-actions"
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
@@ -20,7 +21,8 @@ function previewPastDue(): boolean {
  * until the payment is resolved.
  */
 export function PaymentFailedBanner() {
-	const { data: customer, openCustomerPortal } = useMapleCustomer()
+	const { data: customer } = useMapleCustomer()
+	const { openCustomerPortal } = useBillingActions()
 	const pastDue = previewPastDue() || getPastDueSubscription(customer) !== null
 
 	if (!pastDue) return null

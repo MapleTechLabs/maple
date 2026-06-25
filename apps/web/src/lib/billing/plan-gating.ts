@@ -1,17 +1,22 @@
-import { useCustomer, useListPlans } from "autumn-js/react"
+import type {
+	BillingBalance,
+	BillingCustomer,
+	BillingSubscription,
+	CatalogPlan,
+} from "@maple/domain/http"
 import type { AggregatedUsage } from "./usage"
 
-type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
+type Customer = BillingCustomer
 
-type Subscription = Customer["subscriptions"][number]
+type Subscription = BillingSubscription
 
-type Balance = NonNullable<Customer["balances"]>[string]
+type Balance = BillingBalance
 
 // A plan from the live `listPlans` catalog — the source of truth for which plans
 // are currently offered and for per-feature overage rates. `getOrCreateCustomer`
 // does NOT expand `subscription.plan`, so neither legacy detection nor overage
 // rates can rely on it; both read the catalog instead.
-export type CatalogPlan = NonNullable<ReturnType<typeof useListPlans>["data"]>[number]
+export type { CatalogPlan }
 
 // Metered ingestion features whose usage we surface alerts for. Mirrors the
 // Autumn feature ids defined in apps/api/autumn.config.ts.
@@ -81,6 +86,51 @@ export function getActivePlan(customer: Customer | null | undefined): Subscripti
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {
 	return getActivePlan(customer) !== null
+}
+
+export interface TrialStatus {
+	isTrialing: boolean
+	daysRemaining: number | null
+	trialEndsAt: Date | null
+	planName: string | null
+	planId: string | null
+	planStatus: string | null
+}
+
+// Trial standing for the org's active plan, derived purely from the customer.
+// `isTrialing` when the active sub carries a future `trialEndsAt`. Drives the
+// billing subscription strip and the pricing cards' trial badges.
+export function getTrialStatus(customer: Customer | null | undefined): TrialStatus {
+	const sub = getActivePlan(customer)
+	if (!sub) {
+		return {
+			isTrialing: false,
+			daysRemaining: null,
+			trialEndsAt: null,
+			planName: null,
+			planId: null,
+			planStatus: null,
+		}
+	}
+
+	const isTrialing = sub.trialEndsAt != null && sub.trialEndsAt > Date.now()
+	let daysRemaining: number | null = null
+	let trialEndsAt: Date | null = null
+
+	if (isTrialing && sub.trialEndsAt) {
+		trialEndsAt = new Date(sub.trialEndsAt)
+		const msRemaining = trialEndsAt.getTime() - Date.now()
+		daysRemaining = msRemaining > 0 ? Math.ceil(msRemaining / (1000 * 60 * 60 * 24)) : 0
+	}
+
+	return {
+		isTrialing,
+		daysRemaining,
+		trialEndsAt,
+		planName: sub.plan?.name ?? sub.planId,
+		planId: sub.planId,
+		planStatus: sub.status,
+	}
 }
 
 export function hasBringYourOwnCloudAddOn(customer: Customer | null | undefined): boolean {

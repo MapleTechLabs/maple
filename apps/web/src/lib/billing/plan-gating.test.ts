@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { useCustomer } from "autumn-js/react"
+import type {
+	BillingBalance,
+	BillingCustomer,
+	BillingSubscription,
+	CatalogPlan,
+	CatalogPlanItem,
+} from "@maple/domain/http"
 import {
 	getFeatureQuotas,
 	getLegacyPlanInfo,
@@ -14,20 +20,21 @@ import {
 } from "./plan-gating"
 import type { AggregatedUsage } from "./usage"
 
-type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
-type Subscription = Customer["subscriptions"][number]
-type Balance = NonNullable<Customer["balances"]>[string]
+// The mock builders construct only the consumed subset of each domain schema;
+// `as` casts keep them terse (all fields are optional in the schemas anyway).
+type Customer = BillingCustomer
+type Subscription = BillingSubscription
+type Balance = BillingBalance
+type Plan = CatalogPlan
+type Item = CatalogPlanItem
 
-function buildBalance(featureId: string, partial: Partial<Balance> = {}): Balance {
+function buildBalance(_featureId: string, partial: Partial<Balance> = {}): Balance {
 	return {
-		featureId,
 		granted: 50,
 		remaining: 50,
 		usage: 0,
 		unlimited: false,
 		overageAllowed: false,
-		maxPurchase: null,
-		nextResetAt: null,
 		...partial,
 	} as Balance
 }
@@ -38,74 +45,34 @@ function buildCustomer(
 ): Customer {
 	return {
 		id: "cus_1",
-		createdAt: Date.now(),
-		name: "Test",
-		email: "test@maple.dev",
-		fingerprint: null,
-		stripeId: null,
-		env: "sandbox" as Customer["env"],
-		metadata: {},
-		sendEmailReceipts: false,
-		billingControls: {},
 		subscriptions,
-		purchases: [],
 		balances: overrides.balances ?? {},
 		flags: overrides.flags ?? {},
-	}
+	} as Customer
 }
 
 function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
 	return {
-		id: "sub_1",
 		planId: "starter",
-		plan: {
-			id: "starter",
-			name: "Starter",
-			description: null,
-			group: null,
-			version: 1,
-			addOn: false,
-			autoEnable: false,
-			price: null,
-			items: [],
-			createdAt: Date.now(),
-			env: "sandbox",
-			archived: false,
-			baseVariantId: null,
-			config: { ignorePastDue: false },
-		},
+		plan: { name: "Starter", archived: false },
 		autoEnable: false,
 		addOn: false,
-		status: "active" as Subscription["status"],
+		status: "active",
 		pastDue: false,
-		canceledAt: null,
-		expiresAt: null,
 		trialEndsAt: null,
-		startedAt: Date.now(),
 		currentPeriodStart: null,
 		currentPeriodEnd: null,
 		quantity: 1,
 		...partial,
-	}
+	} as Subscription
 }
-
-type Plan = NonNullable<Subscription["plan"]>
-type Item = Plan["items"][number]
 
 function buildPlanItem(featureId: string, included: number, amount: number | null): Item {
 	return {
 		featureId,
 		included,
 		unlimited: false,
-		reset: { interval: "month" },
-		price:
-			amount == null
-				? null
-				: {
-						amount,
-						billingUnits: 1,
-						interval: "month",
-					},
+		price: amount == null ? null : { amount, billingUnits: 1, interval: "month" },
 	} as Item
 }
 
@@ -114,19 +81,13 @@ function buildPlan(partial: Partial<Plan> = {}): Plan {
 		id: "startup",
 		name: "Startup",
 		description: null,
-		group: null,
-		version: 1,
 		addOn: false,
 		autoEnable: false,
 		price: { amount: 39, interval: "month" },
 		items: [],
-		createdAt: Date.now(),
-		env: "sandbox",
 		archived: false,
-		baseVariantId: null,
-		config: { ignorePastDue: false },
 		...partial,
-	}
+	} as Plan
 }
 
 const ZERO_USAGE: AggregatedUsage = { logsGB: 0, tracesGB: 0, metricsGB: 0, browserSessions: 0 }
@@ -153,22 +114,7 @@ describe("hasSelectedPlan", () => {
 		const freeCustomer = buildCustomer([
 			buildSubscription({
 				planId: "free",
-				plan: {
-					id: "free",
-					name: "Free",
-					description: null,
-					group: null,
-					version: 1,
-					addOn: false,
-					autoEnable: true,
-					price: null,
-					items: [],
-					createdAt: Date.now(),
-					env: "sandbox",
-					archived: false,
-					baseVariantId: null,
-					config: { ignorePastDue: false },
-				},
+				plan: { name: "Free", archived: false },
 			}),
 		])
 		const addOnCustomer = buildCustomer([buildSubscription({ addOn: true })])
@@ -328,8 +274,8 @@ describe("getPastDueSubscription", () => {
 	})
 
 	it("returns the past-due subscription", () => {
-		const sub = buildSubscription({ pastDue: true })
-		expect(getPastDueSubscription(buildCustomer([sub]))?.id).toBe(sub.id)
+		const sub = buildSubscription({ planId: "past_due_plan", pastDue: true })
+		expect(getPastDueSubscription(buildCustomer([sub]))?.planId).toBe("past_due_plan")
 	})
 
 	it("returns null when no subscription is past due", () => {
