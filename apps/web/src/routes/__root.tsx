@@ -9,9 +9,12 @@ import {
 	useRouterState,
 } from "@tanstack/react-router"
 import { toast } from "sonner"
+import { selectedPlanKnownAtomFor } from "@/atoms/selected-plan-atoms"
+import { useAtom } from "@/lib/effect-atom"
 import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
+import { Spinner } from "@maple/ui/components/ui/spinner"
 import { AttributesProvider } from "@maple/ui/components/attributes"
 import { renderAttributeValue } from "@/components/attributes/commit-sha-attribute"
 import { highlightCode } from "@/lib/sugar-high"
@@ -21,6 +24,10 @@ import { captureChatReferrer } from "@/components/chat/auto-contexts"
 import { GlobalShortcuts } from "@/components/command-palette/global-shortcuts"
 
 const PUBLIC_PATHS = new Set(["/sign-in", "/sign-up", "/org-required", "/service-map-bench"])
+
+// Routes that render their own onboarding/billing UI and so must never be
+// gated on plan selection (neither redirected away nor blocked while loading).
+const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start"]
 
 // Stable references so the AttributesProvider context value never changes
 // identity across renders (avoids re-rendering every CopyableValue consumer).
@@ -48,6 +55,18 @@ export const Route = createRootRouteWithContext<{ auth: RouterAuthContext }>()({
 	},
 	component: RootComponent,
 })
+
+// Full-screen loading state for the brief window where we're waiting on the
+// customer query before we know whether to render the dashboard or bounce to
+// onboarding (first load in a browser / right after unsubscribing). Beats a
+// blank screen. See MAP-45.
+function RootLoading() {
+	return (
+		<main className="flex min-h-screen items-center justify-center bg-background">
+			<Spinner className="size-6 text-muted-foreground" />
+		</main>
+	)
+}
 
 function AppFrame() {
 	const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -102,6 +121,31 @@ function ClerkReverseRedirects() {
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)
 
+	// Per-org, localStorage-backed memory (effect-atom KVS) of whether this org
+	// was last seen on an active selected plan. Drives the optimistic "render the
+	// dashboard while the plan is still loading" fast path below. Falls back to an
+	// inert in-memory atom while there's no org (org-less / still-settling auth).
+	const [knownSelectedPlan, setKnownSelectedPlan] = useAtom(selectedPlanKnownAtomFor(orgId))
+
+	// Once the customer query settles to a usable payload, record whether this
+	// org holds an active selected plan, so the flag only ever reflects a
+	// genuinely-known plan state — skip while loading or on an error/unusable
+	// payload so a transient blip can't flip it. A planless settle (e.g.
+	// unsubscribe) clears it here, ending the optimistic flash. See MAP-45.
+	useEffect(() => {
+		if (!isSignedIn || !orgId || isCustomerLoading) return
+		if (customerError || !isUsableCustomer(customer)) return
+		setKnownSelectedPlan(selectedPlan)
+	}, [
+		isSignedIn,
+		orgId,
+		isCustomerLoading,
+		customerError,
+		customer,
+		selectedPlan,
+		setKnownSelectedPlan,
+	])
+
 	if (isSignedIn && pathname === "/sign-in") {
 		const target = getRedirectTarget(searchStr)
 		return <Navigate to={target.pathname} search={target.search} replace />
@@ -132,20 +176,27 @@ function ClerkReverseRedirects() {
 			import.meta.env.DEV &&
 			typeof window !== "undefined" &&
 			window.location.search.includes("quota_preview")
-		// Apply plan-gating only once the customer query has settled. While it's
-		// still loading/retrying, fall through and render the dashboard instead of
-		// blanking the screen (`return null`) — the redirect, if any, fires on the
-		// next render once we actually know the plan, so we never bounce a paying
-		// user to /quick-start before their plan is known.
-		if (!isCustomerLoading || quotaPreview) {
-			const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start"]
-			if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
-				return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+		// Plan not yet known (query still loading/retrying). Allowed-without-plan
+		// routes render their own onboarding UI, so let them through. For every
+		// other route, only optimistically render the dashboard when this browser
+		// already knows the org holds a selected plan — otherwise show a loading
+		// screen until the query settles, so we never flash the dashboard before
+		// bouncing a planless user to /quick-start. The flag is cleared on
+		// unsubscribe, so that case flashes once and then takes the wait path.
+		if (isCustomerLoading && !quotaPreview) {
+			if (ALLOWED_WITHOUT_PLAN.includes(pathname) || knownSelectedPlan) {
+				return <AppFrame />
 			}
-			if (selectedPlan && pathname === "/select-plan") {
-				const target = getRedirectTarget(searchStr)
-				return <Navigate to={target.pathname} search={target.search} replace />
-			}
+			return <RootLoading />
+		}
+
+		// Plan known (or dev quota preview): apply the gate.
+		if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
+			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+		}
+		if (selectedPlan && pathname === "/select-plan") {
+			const target = getRedirectTarget(searchStr)
+			return <Navigate to={target.pathname} search={target.search} replace />
 		}
 	}
 
