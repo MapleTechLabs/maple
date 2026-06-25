@@ -25,7 +25,7 @@ export type WarehouseQuerySettings = {
 	 * ~100KB) the default 65536 produces ~256MB chunks × 9 read threads — an
 	 * instant `max_memory_usage` breach for any query whose filter has to read
 	 * the column (`Body ILIKE '%…%'`). Capping rows-per-block bounds peak
-	 * memory while keeping full read parallelism: benchmarked on the superwall
+	 * memory while keeping full read parallelism: benchmarked on the maple
 	 * cluster, `512` turned both OOMing log-search shapes into sub-2s queries
 	 * at ~260-420MB peak. BYO-ClickHouse-only — stripped for the managed Tinybird
 	 * backend (Tinybird SDK or its ClickHouse-compatible gateway).

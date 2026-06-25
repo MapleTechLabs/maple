@@ -36,7 +36,7 @@ type Client struct {
 
 // ClientOptions for constructing a Client.
 type ClientOptions struct {
-	Endpoint string        // e.g. "https://ch.superwall.dev" — no trailing slash.
+	Endpoint string        // e.g. "https://maple.dev" — no trailing slash.
 	User     string        // basic auth username.
 	Password string        // basic auth password.
 	Database string        // ClickHouse database (e.g. "default").
