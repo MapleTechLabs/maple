@@ -776,7 +776,10 @@ function DbQueryActivityChart({
 	return (
 		<ChartContainer config={DB_QUERY_CHART_CONFIG} className="h-44 w-full">
 			<BarChart data={data} margin={{ top: 8, right: 4, bottom: 0, left: 0 }}>
-				<CartesianGrid vertical={false} strokeDasharray="3 3" />
+				{/* recharts v3 only draws grid lines for a matching axis id; this chart's
+				    Y axes are "count"/"latency" (no default id=0), so pin the horizontal
+				    lines to the primary "count" axis. */}
+				<CartesianGrid yAxisId="count" vertical={false} strokeDasharray="3 3" />
 				<XAxis
 					dataKey="bucket"
 					axisLine={false}

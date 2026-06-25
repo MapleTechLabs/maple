@@ -284,7 +284,9 @@ export function ThroughputAreaChart({
 						strokeWidth={2}
 						strokeDasharray="4 4"
 						dot={false}
-						connectNulls
+						// recharts v3 renders connectNulls gaps as 0; this incomplete overlay
+						// has leading nulls before the bridge, so keep them as gaps (matches v2).
+						connectNulls={false}
 						legendType="none"
 						isAnimationActive={false}
 					/>
@@ -299,7 +301,9 @@ export function ThroughputAreaChart({
 						strokeDasharray="3 3"
 						strokeOpacity={0.5}
 						dot={false}
-						connectNulls
+						// recharts v3 renders connectNulls gaps as 0; this incomplete overlay
+						// has leading nulls before the bridge, so keep them as gaps (matches v2).
+						connectNulls={false}
 						legendType="none"
 						isAnimationActive={false}
 					/>
