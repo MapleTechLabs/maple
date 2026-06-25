@@ -88,7 +88,7 @@
 			"@xyflow/react": "^12.11.0",
 			"class-variance-authority": "^0.7.1",
 			"clsx": "^2.1.1",
-			"recharts": "2.15.4"
+			"recharts": "^3.9.0"
 		}
 	},
 	"patchedDependencies": {

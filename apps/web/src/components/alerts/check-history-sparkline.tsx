@@ -165,13 +165,17 @@ export function CheckHistorySparkline({
 							stroke={color}
 							strokeWidth={1.5}
 							dot={(props) => {
+								// recharts v3 passes DotItemDotProps (extra non-SVG fields
+								// like points/value/dataKey that don't belong on <Dot>), so
+								// pass through only the geometry + our breach styling.
 								const point = props.payload as ChartPoint
 								const status = statusLookup.get(`${point.t}|${key}`)
 								const isBreached = status === "breached"
 								const dotColor = isBreached ? "var(--destructive)" : color
 								return (
 									<Dot
-										{...props}
+										cx={props.cx}
+										cy={props.cy}
 										r={isBreached ? 3 : 1.5}
 										fill={dotColor}
 										stroke={dotColor}

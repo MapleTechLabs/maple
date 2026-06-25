@@ -76,9 +76,9 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 	const bucketSecondsRef = useRef(300)
 
 	const handleMouseDown = useCallback(
-		(nextState: { activeLabel?: string }) => {
-			if (nextState.activeLabel && onTimeRangeSelect) {
-				setRefAreaLeft(nextState.activeLabel)
+		(nextState: { activeLabel?: string | number }) => {
+			if (nextState.activeLabel != null && onTimeRangeSelect) {
+				setRefAreaLeft(String(nextState.activeLabel))
 				setRefAreaRight(null)
 				setIsSelecting(true)
 			}
@@ -87,9 +87,9 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 	)
 
 	const handleMouseMove = useCallback(
-		(nextState: { activeLabel?: string }) => {
-			if (isSelecting && nextState.activeLabel) {
-				setRefAreaRight(nextState.activeLabel)
+		(nextState: { activeLabel?: string | number }) => {
+			if (isSelecting && nextState.activeLabel != null) {
+				setRefAreaRight(String(nextState.activeLabel))
 			}
 		},
 		[isSelecting],
@@ -265,6 +265,10 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 									strokeOpacity={0.3}
 									fill="hsl(var(--primary))"
 									fillOpacity={0.15}
+									// recharts v3 layers ReferenceArea below bars by default
+									// (zIndex 100 vs 300); lift the drag-selection overlay above
+									// the bars so the highlight stays visible.
+									zIndex={400}
 								/>
 							)}
 						</BarChart>
