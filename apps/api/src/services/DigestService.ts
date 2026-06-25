@@ -16,7 +16,7 @@ import { createClerkClient } from "@clerk/backend"
 import { render } from "@react-email/components"
 import { and, eq, inArray, isNull, lt, or } from "drizzle-orm"
 import { Clock, Array as Arr, Cause, Effect, Layer, Option, Redacted, Ref, Context } from "effect"
-import { WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
+import { deriveDigestStatus, WeeklyDigest, type WeeklyDigestProps } from "@maple/email/weekly-digest"
 import { Database } from "../lib/DatabaseLive"
 import { dateToMs } from "../lib/time"
 import { EmailService } from "../lib/EmailService"
@@ -66,9 +66,19 @@ interface ServiceUsageCompareRow extends ServiceUsageRow {
 }
 
 interface ErrorsByTypeRow {
-	errorType: string
+	fingerprintHash: string
+	errorLabel: string
 	sampleMessage: string
 	count: number
+	affectedServicesCount: number
+	firstSeen: string
+	lastSeen: string
+}
+
+interface TracesTimeseriesRow {
+	bucket: string
+	count: number
+	errorRate: number
 }
 
 export class DigestService extends Context.Service<DigestService>()("@maple/api/services/DigestService", {
@@ -172,6 +182,28 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
+		/**
+		 * Resolve a human-friendly org name via Clerk. Best-effort: a digest
+		 * must never fail because a name lookup did — falls back to the raw
+		 * orgId on any error or when Clerk isn't configured.
+		 */
+		const resolveOrgName = Effect.fn("DigestService.resolveOrgName")(function* (orgId: OrgId) {
+			if (env.MAPLE_AUTH_MODE.toLowerCase() !== "clerk") return String(orgId)
+			if (Option.isNone(env.CLERK_SECRET_KEY)) return String(orgId)
+
+			const clerk = createClerkClient({
+				secretKey: Redacted.value(env.CLERK_SECRET_KEY.value),
+			})
+
+			return yield* Effect.tryPromise({
+				try: () => clerk.organizations.getOrganization({ organizationId: orgId }),
+				catch: (error) => error,
+			}).pipe(
+				Effect.map((org) => org.name || String(orgId)),
+				Effect.orElseSucceed(() => String(orgId)),
+			)
+		})
+
 		const generateDigestData = Effect.fn("DigestService.generateDigestData")(function* (orgId: OrgId) {
 			yield* Effect.annotateCurrentSpan("orgId", orgId)
 
@@ -195,37 +227,56 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 			// Query all data in parallel. service_overview and get_service_usage
 			// use the *_compare pipes which UNION ALL current + previous windows
 			// into a single Tinybird query, tagging rows with a `period` column.
-			const [overviewResponse, usageResponse, topErrors] = yield* Effect.all(
-				[
-					warehouse.query(systemTenant, {
-						pipeName: "service_overview_compare",
-						params: {
-							current_start_time: currentStart,
-							current_end_time: currentEnd,
-							previous_start_time: previousStart,
-							previous_end_time: currentStart,
-						},
-					}),
-					warehouse.query(systemTenant, {
-						pipeName: "get_service_usage_compare",
-						params: {
-							current_start_time: currentStart,
-							current_end_time: currentEnd,
-							previous_start_time: previousStart,
-							previous_end_time: currentStart,
-						},
-					}),
-					warehouse.query(systemTenant, {
-						pipeName: "errors_by_type",
-						params: {
-							start_time: currentStart,
-							end_time: currentEnd,
-							limit: 5,
-						},
-					}),
-				],
-				{ concurrency: 4 },
-			).pipe(
+			// The daily timeseries drives the trend sparkline; the previous-week
+			// errors give us a fingerprint set so we can flag genuinely NEW errors.
+			const [overviewResponse, usageResponse, seriesResponse, topErrors, prevErrorsResponse] =
+				yield* Effect.all(
+					[
+						warehouse.query(systemTenant, {
+							pipeName: "service_overview_compare",
+							params: {
+								current_start_time: currentStart,
+								current_end_time: currentEnd,
+								previous_start_time: previousStart,
+								previous_end_time: currentStart,
+							},
+						}),
+						warehouse.query(systemTenant, {
+							pipeName: "get_service_usage_compare",
+							params: {
+								current_start_time: currentStart,
+								current_end_time: currentEnd,
+								previous_start_time: previousStart,
+								previous_end_time: currentStart,
+							},
+						}),
+						warehouse.query(systemTenant, {
+							pipeName: "custom_traces_timeseries",
+							params: {
+								start_time: currentStart,
+								end_time: currentEnd,
+								bucket_seconds: 86_400,
+							},
+						}),
+						warehouse.query(systemTenant, {
+							pipeName: "errors_by_type",
+							params: {
+								start_time: currentStart,
+								end_time: currentEnd,
+								limit: 5,
+							},
+						}),
+						warehouse.query(systemTenant, {
+							pipeName: "errors_by_type",
+							params: {
+								start_time: previousStart,
+								end_time: currentStart,
+								limit: 100,
+							},
+						}),
+					],
+					{ concurrency: 5 },
+				).pipe(
 				Effect.mapError(
 					(error) =>
 						new DigestPersistenceError({
@@ -304,28 +355,63 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 
 			const formatDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
 
+			// Per-service WoW deltas: match current rows against the previous window.
+			const prevThroughputByService = new Map<string, number>()
+			for (const s of prevOverviewData) {
+				prevThroughputByService.set(String(s.serviceName), Number(s.throughput) || 0)
+			}
+
 			const services = curOverviewData
+				.slice()
 				.sort((a, b) => (Number(b.throughput) || 0) - (Number(a.throughput) || 0))
 				.slice(0, 10)
-				.map((s) => ({
-					name: String(s.serviceName),
-					requests: Number(s.throughput) || 0,
-					errorRate:
-						(Number(s.throughput) || 0) > 0
-							? ((Number(s.errorCount) || 0) / (Number(s.throughput) || 0)) * 100
-							: 0,
-					p95Ms: Number(s.p95LatencyMs) || 0,
-				}))
+				.map((s) => {
+					const requests = Number(s.throughput) || 0
+					return {
+						name: String(s.serviceName),
+						requests,
+						errorRate: requests > 0 ? ((Number(s.errorCount) || 0) / requests) * 100 : 0,
+						p95Ms: Number(s.p95LatencyMs) || 0,
+						requestsDelta: delta(requests, prevThroughputByService.get(String(s.serviceName)) ?? 0),
+					}
+				})
+				// Float the unhealthiest services to the top so problems surface
+				// first. Array.sort is stable, so ties keep their throughput order.
+				.sort((a, b) => b.errorRate - a.errorRate)
 
+			// Flag errors absent from the previous week's top fingerprints as NEW.
+			const prevErrorFingerprints = new Set(
+				(prevErrorsResponse.data as Array<ErrorsByTypeRow>).map((e) => String(e.fingerprintHash)),
+			)
 			const errorsData = (topErrors.data as Array<ErrorsByTypeRow>).slice(0, 5).map((e) => ({
-				message: String(e.errorType || e.sampleMessage || "Unknown"),
+				message: String(e.errorLabel || e.sampleMessage || "Unknown error"),
 				count: Number(e.count) || 0,
+				affectedServices: Number(e.affectedServicesCount) || 0,
+				isNew: e.fingerprintHash ? !prevErrorFingerprints.has(String(e.fingerprintHash)) : false,
 			}))
 
+			// Daily request/error buckets (one row per UTC day) for the sparkline.
+			const weekdayInitial = (bucket: string) => {
+				const d = new Date(`${String(bucket).slice(0, 10)}T00:00:00Z`)
+				return Number.isNaN(d.getTime()) ? "" : ["S", "M", "T", "W", "T", "F", "S"][d.getUTCDay()]
+			}
+			const series = (seriesResponse.data as Array<TracesTimeseriesRow>)
+				.slice()
+				.sort((a, b) => String(a.bucket).localeCompare(String(b.bucket)))
+				.map((r) => {
+					const requests = Number(r.count) || 0
+					return {
+						label: weekdayInitial(r.bucket),
+						requests,
+						errors: Math.round(requests * (Number(r.errorRate) || 0)),
+					}
+				})
+
+			const orgName = yield* resolveOrgName(orgId)
 			const startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
 			const props: WeeklyDigestProps = {
-				orgName: orgId,
+				orgName,
 				dateRange: {
 					start: formatDate(startDate),
 					end: formatDate(now),
@@ -348,11 +434,13 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 						delta: delta(curUsage.totalBytes, prevUsage.totalBytes),
 					},
 				},
+				series,
 				services,
 				topErrors: errorsData,
 				ingestion: curUsage,
+				baseUrl: env.MAPLE_APP_BASE_URL,
 				dashboardUrl: `${env.MAPLE_APP_BASE_URL}`,
-				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings`,
+				unsubscribeUrl: `${env.MAPLE_APP_BASE_URL}/settings/notifications`,
 			}
 
 			yield* Effect.annotateCurrentSpan("totalRequests", totalRequests)
@@ -653,33 +741,28 @@ export class DigestService extends Context.Service<DigestService>()("@maple/api/
 							return []
 						}
 						const html = yield* renderDigestHtml(props)
+						const subject = deriveDigestStatus(props).subject
 
 						const sendResults = yield* Effect.forEach(
 							orgSubs,
 							(sub) =>
-								email
-									.send(
-										sub.email,
-										`Maple Weekly Digest — ${props.dateRange.start} to ${props.dateRange.end}`,
-										html,
-									)
-									.pipe(
-										Effect.tap(() =>
-											Effect.gen(function* () {
-												const lastSentAt = yield* Clock.currentTimeMillis
-												yield* database.execute((db) =>
-													db
-														.update(digestSubscriptions)
-														.set({ lastSentAt: new Date(lastSentAt) })
-														.where(eq(digestSubscriptions.id, sub.id)),
-												)
-											}),
-										),
-										Effect.match({
-											onSuccess: () => ({ sent: true }),
-											onFailure: () => ({ sent: false }),
+								email.send(sub.email, subject, html).pipe(
+									Effect.tap(() =>
+										Effect.gen(function* () {
+											const lastSentAt = yield* Clock.currentTimeMillis
+											yield* database.execute((db) =>
+												db
+													.update(digestSubscriptions)
+													.set({ lastSentAt: new Date(lastSentAt) })
+													.where(eq(digestSubscriptions.id, sub.id)),
+											)
 										}),
 									),
+									Effect.match({
+										onSuccess: () => ({ sent: true }),
+										onFailure: () => ({ sent: false }),
+									}),
+								),
 							{ concurrency: 1 },
 						)
 
