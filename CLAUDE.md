@@ -15,6 +15,25 @@ Sign in at `https://web.localhost` with the Clerk test account:
 
 Use this when you need an authenticated browser session to verify UI flows end-to-end.
 
+## Toolchain (mise)
+
+Tool versions (bun, node, rust, python) are pinned in the root [`mise.toml`](mise.toml) via
+[mise-en-place](https://mise.en.dev) — one source of truth shared by local dev and CI (CI installs
+them with `jdx/mise-action`). mise also auto-loads `.env.local` into your shell.
+
+First-time setup:
+
+```bash
+curl https://mise.run | sh                        # install mise
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc     # activate (bash/fish supported too); restart shell
+mise trust                                         # trust this repo's config (it defines env + tasks)
+mise run setup                                     # install tools + JS deps + .env.local + portless CA
+```
+
+mise is optional — `bun dev` / `bun test` / etc. still work without it (you just don't get pinned
+versions or env auto-load). When upgrading a runtime, bump it in `mise.toml` (keep `bun` in sync with
+`packageManager` in `package.json`); CI follows automatically.
+
 ## Commands
 
 ```bash

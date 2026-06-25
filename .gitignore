@@ -12,6 +12,9 @@
 .env.local
 *.local
 
+# mise per-developer overrides (machine-specific tool/env tweaks); mise.toml is committed
+mise.local.toml
+
 node_modules
 .DS_Store
 dist
