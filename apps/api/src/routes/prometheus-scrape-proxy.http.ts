@@ -56,7 +56,14 @@ export const PrometheusScrapeProxyRouter = HttpRouter.use((router) =>
 						Effect.succeed(
 							HttpServerResponse.text(response.body, {
 								status: response.status,
-								headers: { "content-type": response.contentType },
+								headers: {
+									"content-type": response.contentType,
+									// Forward the upstream rate-limit hint so the scraper can
+									// back off precisely on 429/503.
+									...(response.retryAfterSeconds !== null
+										? { "retry-after": String(response.retryAfterSeconds) }
+										: {}),
+								},
 							}),
 						),
 					),
