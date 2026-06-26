@@ -1,3 +1,4 @@
+import { isActivePlanSubscription } from "@maple/domain/billing"
 import type {
 	BillingBalance,
 	BillingCustomer,
@@ -69,14 +70,7 @@ export function isUsableCustomer(customer: Customer | null | undefined): custome
 
 export function getActivePlan(customer: Customer | null | undefined): Subscription | null {
 	if (!isUsableCustomer(customer)) return null
-
-	return (
-		customer.subscriptions.find((sub) => {
-			if (sub.addOn || sub.autoEnable) return false
-			if (isLegacyFreePlan(sub)) return false
-			return sub.status === "active"
-		}) ?? null
-	)
+	return customer.subscriptions.find((sub) => isActivePlanSubscription(sub)) ?? null
 }
 
 export function hasSelectedPlan(customer: Customer | null | undefined): boolean {

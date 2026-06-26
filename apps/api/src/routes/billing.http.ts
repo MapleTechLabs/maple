@@ -3,6 +3,7 @@ import { HttpServerRequest } from "effect/unstable/http"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { autumnHandler, type CustomerData } from "autumn-js/backend"
 import { EdgeCacheService, type EdgeCacheServiceShape } from "@maple/query-engine/caching"
+import { isActivePlanSubscription } from "@maple/domain/billing"
 import {
 	AttachResult,
 	BillingCustomer,
@@ -33,6 +34,23 @@ const AUTUMN_PATH_PREFIX = "/api/autumn"
 export const CUSTOMER_CACHE_BUCKET = "autumn-customer"
 export const CUSTOMER_CACHE_TTL_SECONDS = 300
 
+// Short TTL for a customer with no active plan: caching that "no plan" snapshot
+// for the full 5 min would strand a just-subscribed user on the /quick-start
+// gate until the post-checkout Stripe→Autumn sync lands. Re-check soon instead.
+export const CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS = 5
+
+/**
+ * Does this raw `getOrCreateCustomer` response carry an active, non-add-on,
+ * non-free plan? Delegates to the shared `isActivePlanSubscription` gate
+ * (@maple/domain/billing) so the cache TTL can't drift from the web redirect gate.
+ */
+export const responseHasActivePlan = (response: unknown): boolean => {
+	if (typeof response !== "object" || response === null) return false
+	const subscriptions = (response as { subscriptions?: unknown }).subscriptions
+	if (!Array.isArray(subscriptions)) return false
+	return subscriptions.some((sub) => isActivePlanSubscription(sub))
+}
+
 // Sentinel keeping non-200 Autumn responses out of the edge cache: the compute
 // fails with this so `getOrCompute` never stores it, then the caller recovers it
 // into the normal path. Mirrors `AutumnHandlerResult` so `.result` stays typed.
@@ -44,8 +62,10 @@ class UncacheableAutumnResult extends Schema.TaggedErrorClass<UncacheableAutumnR
 ) {}
 
 /**
- * Run `getOrCreateCustomer` through the per-org edge cache (200-only). Returns
- * the resolved result plus whether it came from the cache (for span annotation).
+ * Run `getOrCreateCustomer` through the per-org edge cache (200-only). Active-plan
+ * 200s get the full TTL; planless ones a short TTL so the gate re-checks soon
+ * after a post-checkout sync. Returns the resolved result plus whether it came
+ * from the cache (for span annotation).
  */
 export const readCustomerCached = (
 	edgeCache: Pick<EdgeCacheServiceShape, "getOrCompute">,
@@ -54,7 +74,14 @@ export const readCustomerCached = (
 ): Effect.Effect<{ readonly result: AutumnResult; readonly hit: boolean }, BillingUpstreamError> =>
 	edgeCache
 		.getOrCompute(
-			{ bucket: CUSTOMER_CACHE_BUCKET, key: orgId, ttlSeconds: CUSTOMER_CACHE_TTL_SECONDS },
+			{
+				bucket: CUSTOMER_CACHE_BUCKET,
+				key: orgId,
+				ttlSeconds: (result: AutumnResult) =>
+					responseHasActivePlan(result.response)
+						? CUSTOMER_CACHE_TTL_SECONDS
+						: CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS,
+			},
 			runAutumn.pipe(
 				Effect.flatMap((res) =>
 					res.statusCode === 200
