@@ -16,6 +16,7 @@ import { useState, type KeyboardEvent, type ReactNode } from "react"
 import { Exit, Schema } from "effect"
 import { toast } from "sonner"
 
+import { Alert, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -48,11 +49,13 @@ import { Label } from "@maple/ui/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Switch } from "@maple/ui/components/ui/switch"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	BoltIcon,
 	CircleCheckIcon,
 	CircleInfoIcon,
+	CircleWarningIcon,
 	CircleXmarkIcon,
 	DotsVerticalIcon,
 	ExternalLinkIcon,
@@ -66,6 +69,7 @@ import {
 } from "@/components/icons"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { formatDuration, formatNumber, formatRelativeTime } from "@/lib/format"
+import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { catalogEntry } from "../integrations/integration-catalog"
 import { IntegrationEmptyState } from "../integrations/integration-empty-state"
 
@@ -864,16 +868,32 @@ function ScrapeTargetRow({
 					)}
 				</div>
 				{latestCheck?.message && !latestCheck.success && (
-					<div className="mt-1.5 flex items-center gap-1.5 text-xs text-destructive">
-						<CircleXmarkIcon size={12} className="shrink-0" />
-						<span className="truncate">{latestCheck.message}</span>
-					</div>
+					<Tooltip>
+						<TooltipTrigger
+							render={<div />}
+							className="mt-1.5 flex items-center gap-1.5 text-xs text-destructive"
+						>
+							<CircleXmarkIcon size={12} className="shrink-0" />
+							<span className="truncate">{latestCheck.message}</span>
+						</TooltipTrigger>
+						<TooltipContent className="max-w-xs font-mono text-xs">
+							{latestCheck.message}
+						</TooltipContent>
+					</Tooltip>
 				)}
 				{target.lastScrapeError && (
-					<div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-						<CircleInfoIcon size={12} className="shrink-0" />
-						<span className="truncate">Last scrape: {target.lastScrapeError}</span>
-					</div>
+					<Tooltip>
+						<TooltipTrigger
+							render={<div />}
+							className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"
+						>
+							<CircleInfoIcon size={12} className="shrink-0" />
+							<span className="truncate">Last scrape: {target.lastScrapeError}</span>
+						</TooltipTrigger>
+						<TooltipContent className="max-w-xs font-mono text-xs">
+							{target.lastScrapeError}
+						</TooltipContent>
+					</Tooltip>
 				)}
 			</div>
 
@@ -956,6 +976,12 @@ function ScrapeTargetDetails({
 	const status = scheduledStatus(target, latestCheck, Result.isInitial(checksResult))
 	const labels = labelEntries(target.labelsJson)
 
+	// Diagnose the freshest failure: the latest failed check, falling back to the
+	// target-level rollup error. Healthy targets show no banner.
+	const failureMessage =
+		latestCheck && !latestCheck.success ? latestCheck.message : target.lastScrapeError
+	const diagnosis = diagnoseScrapeError(failureMessage, target.targetType)
+
 	return (
 		<aside className="rounded-lg border bg-card">
 			<div className="space-y-3 border-b p-4">
@@ -994,6 +1020,29 @@ function ScrapeTargetDetails({
 			</div>
 
 			<div className="space-y-5 p-4">
+				{diagnosis && (
+					<Alert variant={diagnosis.severity}>
+						<CircleWarningIcon size={16} />
+						<AlertTitle>{diagnosis.title}</AlertTitle>
+						<AlertDescription>
+							<p>{diagnosis.summary}</p>
+							<div className="space-y-1">
+								<p className="font-medium text-foreground">How to fix</p>
+								<ul className="list-disc space-y-0.5 pl-4">
+									{diagnosis.fixes.map((fix) => (
+										<li key={fix}>{fix}</li>
+									))}
+								</ul>
+							</div>
+							{failureMessage && (
+								<p className="font-mono text-[0.7rem] text-muted-foreground/80">
+									{failureMessage}
+								</p>
+							)}
+						</AlertDescription>
+					</Alert>
+				)}
+
 				<section className="space-y-2">
 					<div className="flex items-center gap-2 text-xs font-medium uppercase text-muted-foreground">
 						<PulseIcon size={13} />
@@ -1132,7 +1181,17 @@ function ChecksTable({ result, checks }: { result: ScrapeTargetChecksResult; che
 						<div className="min-w-0">
 							<div className="truncate font-mono">{formatDateTime(check.timestamp)}</div>
 							{check.message && (
-								<div className="text-muted-foreground mt-0.5 truncate">{check.message}</div>
+								<Tooltip>
+									<TooltipTrigger
+										render={<div />}
+										className="text-muted-foreground mt-0.5 cursor-default truncate"
+									>
+										{check.message}
+									</TooltipTrigger>
+									<TooltipContent className="max-w-xs font-mono text-xs">
+										{check.message}
+									</TooltipContent>
+								</Tooltip>
 							)}
 						</div>
 						<div className="flex items-center gap-1.5">

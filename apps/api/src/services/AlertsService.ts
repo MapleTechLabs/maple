@@ -78,7 +78,7 @@ import {
 	type AlertRuleRow,
 	alertRuleStates,
 } from "@maple/db"
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm"
 import {
 	Array as Arr,
 	Cause,
@@ -2727,12 +2727,12 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 				or(
 					and(
 						eq(alertDeliveryEvents.status, "queued"),
-						sql`${alertDeliveryEvents.scheduledAt} <= ${new Date(currentTime)}`,
+						lte(alertDeliveryEvents.scheduledAt, new Date(currentTime)),
 					),
 					and(
 						eq(alertDeliveryEvents.status, "processing"),
-						sql`${alertDeliveryEvents.claimExpiresAt} IS NOT NULL`,
-						sql`${alertDeliveryEvents.claimExpiresAt} <= ${new Date(currentTime)}`,
+						isNotNull(alertDeliveryEvents.claimExpiresAt),
+						lte(alertDeliveryEvents.claimExpiresAt, new Date(currentTime)),
 					),
 				)
 
@@ -3637,7 +3637,10 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceS
 						.where(
 							and(
 								eq(alertRules.id, ruleId),
-								sql`(${alertRules.lastScheduledAt} IS NULL OR ${alertRules.lastScheduledAt} < ${new Date(timestamp - SCHEDULER_LOCK_TTL_MS)})`,
+								or(
+									isNull(alertRules.lastScheduledAt),
+									lt(alertRules.lastScheduledAt, new Date(timestamp - SCHEDULER_LOCK_TTL_MS)),
+								),
 							),
 						)
 						.returning({ id: alertRules.id }),

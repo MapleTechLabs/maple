@@ -38,6 +38,19 @@ interface ScrapeTargetProxyResponse {
 	readonly status: number
 	readonly body: string
 	readonly contentType: string
+	/**
+	 * Upstream `Retry-After` in seconds (delta-seconds form only), surfaced so
+	 * the scraper can back off precisely on 429/503. `null` when absent or in
+	 * the HTTP-date form we don't parse.
+	 */
+	readonly retryAfterSeconds: number | null
+}
+
+/** Parse a `Retry-After` header value, honoring only the delta-seconds form. */
+const parseRetryAfterSeconds = (value: string | null): number | null => {
+	if (value === null) return null
+	const seconds = Number(value.trim())
+	return Number.isFinite(seconds) && seconds >= 0 ? seconds : null
 }
 
 export interface ScrapeTargetsServiceShape {
@@ -703,6 +716,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							contentType:
 								response.headers.get("content-type") ??
 								"text/plain; version=0.0.4; charset=utf-8",
+							retryAfterSeconds: parseRetryAfterSeconds(
+								response.headers.get("retry-after"),
+							),
 						} satisfies ScrapeTargetProxyResponse
 					},
 					catch: toPersistenceError,
