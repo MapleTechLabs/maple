@@ -40,6 +40,7 @@ describe("compilePipeQuery", () => {
 			"metric_attribute_keys",
 			"span_attribute_values",
 			"resource_attribute_values",
+			"metric_attribute_values",
 			"custom_traces_timeseries",
 			"custom_traces_breakdown",
 			"top_operations",
@@ -68,6 +69,18 @@ describe("compilePipeQuery", () => {
 	it("returns undefined for unknown pipes", () => {
 		const result = compilePipeQuery("nonexistent_pipe", baseParams())
 		expect(result).toBeUndefined()
+	})
+
+	it("metric_attribute_values reads metric-scoped values for the given key", () => {
+		const result = compilePipeQuery("metric_attribute_values", {
+			...baseParams(),
+			attribute_key: "group",
+			limit: 50,
+		})
+		expect(result).toBeDefined()
+		expect(result!.sql).toContain("attribute_values_hourly")
+		expect(result!.sql).toContain("'metric'")
+		expect(result!.sql).toContain("group")
 	})
 
 	describe("logs free-text search param", () => {

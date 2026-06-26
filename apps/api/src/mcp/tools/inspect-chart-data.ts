@@ -9,7 +9,8 @@ import { Effect, Schema } from "effect"
 import { resolveTenant } from "@/mcp/lib/query-warehouse"
 import { DashboardPersistenceService } from "@/services/DashboardPersistenceService"
 import { createDualContent } from "../lib/structured-output"
-import { inspectWidget, type InspectWidgetTimeRange } from "../lib/inspect-widget"
+import { inspectWidget, type InspectWidgetTimeRange, type RawSqlInspectionData } from "../lib/inspect-widget"
+import { formatTable, truncate } from "../lib/format"
 import { resolveDashboardTimeRange, type DashboardTimeRangeInput } from "../lib/resolve-dashboard-time-range"
 import { resolveTimeRange } from "../lib/time"
 import type { InspectChartDataData, InspectChartQueryResult } from "@maple/domain"
@@ -94,6 +95,53 @@ function unsupportedEndpointResult(
 	return { content: [{ type: "text" as const, text }] }
 }
 
+function rawSqlCell(value: unknown): string {
+	if (value === null || value === undefined) return "null"
+	if (typeof value === "object") return truncate(JSON.stringify(value), 60)
+	return truncate(String(value), 60)
+}
+
+function renderRawSqlInspection(
+	data: RawSqlInspectionData,
+	widget: { id: string; visualization: string; display: { title?: string } },
+	dashboardName: string,
+): string {
+	const lines: string[] = [
+		`## Widget inspection: ${widget.display.title ?? widget.id}`,
+		`Dashboard: ${dashboardName}`,
+		`Visualization: ${widget.visualization} | Endpoint: ${data.endpoint}`,
+		`Time range: ${data.timeRange.startTime} → ${data.timeRange.endTime} (source: ${data.timeRange.source})`,
+		``,
+	]
+
+	if (data.status === "error") {
+		lines.push(`### Verdict: BROKEN`)
+		lines.push(`Error: ${data.error ?? "unknown error"}`)
+		lines.push(``)
+		lines.push(`Fix the SQL via update_dashboard_widget and re-run inspect_chart_data to verify.`)
+		return lines.join("\n")
+	}
+
+	lines.push(`### Verdict: ${data.rowCount === 0 ? "SUSPICIOUS (no rows)" : "OK"}`)
+	lines.push(
+		`Rows: ${data.rowCount}${data.truncated ? ` (showing first ${data.rows.length})` : ""} | Columns: ${data.columns.length}`,
+	)
+	lines.push(``)
+
+	if (data.rowCount === 0) {
+		lines.push("Query executed successfully but returned no rows. Check filters and the time range.")
+	} else {
+		lines.push(
+			formatTable(
+				[...data.columns],
+				data.rows.map((row) => data.columns.map((col) => rawSqlCell(row[col]))),
+			),
+		)
+		if (data.truncated) lines.push(``, `… +${data.rowCount - data.rows.length} more rows`)
+	}
+	return lines.join("\n")
+}
+
 function renderInspectionMarkdown(data: InspectChartDataData, dashboardName: string): string {
 	const lines: string[] = []
 	lines.push(`## Widget inspection: ${data.widget.title ?? data.widget.id}`)
@@ -134,8 +182,9 @@ const inspectChartDataDescription =
 	"Use this tool to re-verify a widget after fixing it, or to inspect any existing widget on demand. " +
 	"Returns row counts, series statistics, sample data points, and sanity flags (EMPTY, ALL_ZEROS, FLAT_LINE, UNIT_MISMATCH, NEGATIVE_VALUES, UNREALISTIC_MAGNITUDE, SINGLE_SERIES_DOMINATES, CARDINALITY_EXPLOSION, SUSPICIOUS_GAP, BROKEN_BREAKDOWN, SINGLE_POINT, ALL_NULLS, BUILDER_WARNINGS). " +
 	"The verdict is one of `looks_healthy`, `suspicious`, or `broken`. **If the verdict is not `looks_healthy`, fix the widget via update_dashboard_widget and re-inspect.** " +
-	"Limitations: only supports custom_query_builder_timeseries and custom_query_builder_breakdown widgets; formula expressions in `formulas[]` are NOT evaluated server-side — only the base queries are inspected; " +
-	"checks only the requested window without the dashboard UI's auto-fallback. For predefined-endpoint widgets (service_overview, errors_summary, etc.), this tool returns guidance to use `query_data` directly with the widget's params."
+	"Supports custom_query_builder_timeseries, custom_query_builder_breakdown, and raw_sql_chart widgets (raw SQL is executed and its rows returned). " +
+	"Limitations: formula expressions in `formulas[]` are NOT evaluated server-side — only the base queries are inspected; " +
+	"checks only the requested window without the dashboard UI's auto-fallback. For other predefined-endpoint widgets (service_overview, errors_summary, etc.), this tool returns guidance to use `query_data` directly with the widget's params."
 
 export function registerInspectChartDataTool(server: McpToolRegistrar) {
 	server.tool(
@@ -238,6 +287,38 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 					},
 					dashboard.name,
 				)
+			}
+
+			if (outcome.kind === "raw_sql") {
+				return {
+					content: createDualContent(
+						renderRawSqlInspection(
+							outcome.data,
+							{
+								id: widget.id,
+								visualization: widget.visualization,
+								display: {
+									...(widget.display.title !== undefined && { title: widget.display.title }),
+								},
+							},
+							dashboard.name,
+						),
+						{
+							tool: "run_sql",
+							data: {
+								expandedSql: outcome.data.expandedSql ?? outcome.data.sql,
+								rowCount: outcome.data.rowCount,
+								columns: outcome.data.columns,
+								rows: outcome.data.rows,
+								truncated: outcome.data.truncated,
+								timeRange: {
+									start: outcome.data.timeRange.startTime,
+									end: outcome.data.timeRange.endTime,
+								},
+							},
+						},
+					),
+				}
 			}
 
 			if (outcome.kind === "skipped") {
