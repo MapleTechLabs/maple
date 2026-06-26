@@ -477,6 +477,48 @@
 	z-index: 5;
 }
 
+/* Infra honeycomb — flat severity tiles.
+   Maple is a flat system: no shadows, no gradients, no glow. Each cell points
+   `--tone` at a severity token and fills flat. Per the design system, inactive
+   cells stay calm (tone mixed toward --card); hover/selected lift to the full
+   token — depth by tone, never by shadow. */
+@keyframes honeycomb-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+.honeycomb-cell {
+	--tone: var(--muted-foreground);
+	background-color: color-mix(in oklab, var(--tone) 66%, var(--card));
+	/* Opacity-only entrance: animating transform would pin it via fill-mode and
+	   block the :hover scale. */
+	animation: honeycomb-in 240ms ease-out both;
+	transition:
+		background-color 150ms ease,
+		transform 150ms ease;
+}
+.honeycomb-cell:hover,
+.honeycomb-cell:focus-visible {
+	background-color: var(--tone);
+}
+/* Not-reporting cells read as a calm neutral tile, not a severity tone. */
+.honeycomb-cell[data-tone="stale"] {
+	background-color: color-mix(in oklab, var(--muted-foreground) 24%, var(--card));
+}
+.honeycomb-cell[data-tone="stale"]:hover,
+.honeycomb-cell[data-tone="stale"]:focus-visible {
+	background-color: color-mix(in oklab, var(--muted-foreground) 42%, var(--card));
+}
+@media (prefers-reduced-motion: reduce) {
+	.honeycomb-cell {
+		animation: none;
+		transition: none;
+	}
+}
+
 /* Infra "Operations Terminal" — shared primitives */
 @keyframes severity-pulse {
 	0% {
