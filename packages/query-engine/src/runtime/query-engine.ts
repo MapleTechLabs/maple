@@ -355,6 +355,25 @@ const validateTraceAttributeFilters = Effect.fn("QueryEngineService.validateTrac
 	},
 )
 
+const validateMetricsAttributeFilters = Effect.fn(
+	"QueryEngineService.validateMetricsAttributeFilters",
+)(function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+	if (query.source !== "metrics") return
+	if (query.kind !== "timeseries" && query.kind !== "breakdown") return
+
+	// `groupBy` is an array for timeseries, a single literal for breakdown.
+	const groupBy = query.groupBy
+	const wantsAttribute = Array.isArray(groupBy) ? groupBy.includes("attribute") : groupBy === "attribute"
+	if (wantsAttribute && !query.filters.groupByAttributeKey) {
+		// Mirror the traces guard: never silently downgrade an attribute grouping
+		// to a service grouping — the agent asked for a label breakdown.
+		return yield* new QueryEngineValidationError({
+			message: "Invalid metrics attribute grouping",
+			details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+		})
+	}
+})
+
 const validatePointBudget = Effect.fn("QueryEngineService.validatePointBudget")(function* (
 	request: QueryEngineExecuteRequest,
 	range: TimeRangeBounds,
@@ -599,6 +618,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
 	const range = yield* validateTimeRange(request)
 	yield* validateTraceAttributeFilters(request.query)
+	yield* validateMetricsAttributeFilters(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
 	yield* validateBreakdownQuery(request, range)
@@ -610,6 +630,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 ): Effect.fn.Return<TimeRangeBounds, QueryEngineValidationError> {
 	const range = yield* validateTimeRange(request)
 	yield* validateTraceAttributeFilters(request.query)
+	yield* validateMetricsAttributeFilters(request.query)
 	return range
 })
 
