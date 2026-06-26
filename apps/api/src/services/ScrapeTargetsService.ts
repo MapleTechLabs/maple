@@ -238,16 +238,17 @@ const decodeDiscoveryConfig = (discoveryConfigJson: unknown) => {
 	}
 }
 
-const rowToResponse = (row: ScrapeTargetRow): ScrapeTargetResponse =>
-	new ScrapeTargetResponse({
+const rowToResponse = (row: ScrapeTargetRow): ScrapeTargetResponse => {
+	const discoveryConfig = decodeDiscoveryConfig(row.discoveryConfigJson)
+	return new ScrapeTargetResponse({
 		id: decodeTargetIdSync(row.id),
 		name: row.name,
 		serviceName: row.serviceName ?? null,
 		url: row.url,
 		targetType: decodeScrapeTargetTypeSync(row.targetType),
-		organization: decodeDiscoveryConfig(row.discoveryConfigJson)?.organization ?? null,
-		includeBranches: decodeDiscoveryConfig(row.discoveryConfigJson)?.includeBranches ?? [],
-		excludeBranches: decodeDiscoveryConfig(row.discoveryConfigJson)?.excludeBranches ?? [],
+		organization: discoveryConfig?.organization ?? null,
+		includeBranches: discoveryConfig?.includeBranches ?? [],
+		excludeBranches: discoveryConfig?.excludeBranches ?? [],
 		scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 		labelsJson: row.labelsJson == null ? null : JSON.stringify(row.labelsJson),
 		authType: decodeScrapeAuthTypeSync(row.authType),
@@ -260,6 +261,7 @@ const rowToResponse = (row: ScrapeTargetRow): ScrapeTargetResponse =>
 		createdAt: decodeIsoDateTimeStringSync(row.createdAt.toISOString()),
 		updatedAt: decodeIsoDateTimeStringSync(row.updatedAt.toISOString()),
 	})
+}
 
 const MIN_SCRAPE_INTERVAL = 5
 const MAX_SCRAPE_INTERVAL = 300
