@@ -383,6 +383,24 @@ describe("ScrapeScheduler", () => {
 		}),
 	)
 
+	it.effect("holds start-to-start cadence even when scrapes are slow", () =>
+		Effect.gen(function* () {
+			const harness = makeHarness([mkTarget(TARGET_A, 10)])
+			// Each scrape takes 2s; the period must stay 10s start-to-start, not 12s.
+			harness.scrapeImpl = () =>
+				Effect.sleep(Duration.seconds(2)).pipe(
+					Effect.as(proxyResponse({ status: 200, body: GAUGE_BODY })),
+				)
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+
+			yield* TestClock.adjust(Duration.seconds(59))
+
+			// Start-to-start 10s → scrapes start at t=0,10,20,30,40,50 → 6.
+			// A naive sleep-after-scrape (period 12s) would yield only 5.
+			assert.strictEqual(harness.scrapeCalls.length, 6)
+		}),
+	)
+
 	it.effect("backs off a rate-limited target instead of scraping every interval", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness([mkTarget(TARGET_A, 10)])

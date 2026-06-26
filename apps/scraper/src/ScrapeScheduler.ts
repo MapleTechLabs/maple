@@ -39,10 +39,12 @@ export interface ScrapeOutcome {
 }
 
 /**
- * Delay before a target's next scrape. The happy path holds the configured
- * interval (start-to-start cadence is preserved); a rate-limited scrape escalates
- * exponentially — honoring `Retry-After` when it is longer — capped at
- * {@link MAX_BACKOFF_MS} so the target keeps probing for recovery.
+ * The target period before a target's next scrape. The happy path returns the
+ * configured interval; the caller ({@link ScrapeScheduler}'s target loop)
+ * subtracts the scrape's own elapsed time so the happy-path cadence stays
+ * start-to-start. A rate-limited scrape escalates exponentially — honoring
+ * `Retry-After` when it is longer — capped at {@link MAX_BACKOFF_MS} so the
+ * target keeps probing for recovery; that delay runs from scrape end.
  */
 export const nextScrapeDelayMs = ({
 	baseMs,
@@ -54,9 +56,11 @@ export const nextScrapeDelayMs = ({
 	readonly consecutiveRateLimits: number
 }): number => {
 	if (!outcome.rateLimited) return baseMs
+	// exponential is always >= baseMs (consecutiveRateLimits >= 0), so baseMs
+	// never needs to be a floor here.
 	const exponential = baseMs * 2 ** consecutiveRateLimits
 	const retryAfter = outcome.retryAfterMs ?? 0
-	return Math.min(MAX_BACKOFF_MS, Math.max(exponential, retryAfter, baseMs))
+	return Math.min(MAX_BACKOFF_MS, Math.max(exponential, retryAfter))
 }
 
 const hostFromUrl = (url: string): string => {
@@ -243,7 +247,9 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 				const baseMs = target.scrapeIntervalSeconds * 1000
 				const loop = (consecutiveRateLimits: number): Effect.Effect<never> =>
 					Effect.gen(function* () {
+						const startedAt = yield* Clock.currentTimeMillis
 						const outcome = yield* scrapeOnce(target)
+						const elapsedMs = (yield* Clock.currentTimeMillis) - startedAt
 						const delayMs = nextScrapeDelayMs({ baseMs, outcome, consecutiveRateLimits })
 						if (outcome.rateLimited) {
 							yield* Effect.logWarning("Scrape rate-limited, backing off").pipe(
@@ -257,7 +263,11 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 								}),
 							)
 						}
-						yield* Effect.sleep(Duration.millis(delayMs))
+						// Happy path: subtract the scrape's own elapsed time so cadence
+						// stays start-to-start (matching the old Schedule.fixed). Backoff
+						// runs the full delay from scrape end so Retry-After is honored.
+						const sleepMs = outcome.rateLimited ? delayMs : Math.max(0, delayMs - elapsedMs)
+						yield* Effect.sleep(Duration.millis(sleepMs))
 						return yield* loop(outcome.rateLimited ? consecutiveRateLimits + 1 : 0)
 					})
 				return loop(0)
