@@ -111,6 +111,34 @@ const navSections: SettingsNavSection[] = [
  * /integrations hub (which renders the same sidebar).
  */
 export function useVisibleSettingsSections() {
+	const visibleSections = navSections
+		.map((section) => ({
+			...section,
+			items: section.items.filter((item) => {
+				if (
+					item.id === "organization" ||
+					item.id === "members" ||
+					item.id === "billing" ||
+					item.id === "notifications"
+				) {
+					return isClerkAuthEnabled
+				}
+				return true
+			}),
+		}))
+		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+
+	if (!isClerkAuthEnabled) {
+		return {
+			visibleSections,
+			visibleItems: visibleSections.flatMap((s) => s.items),
+			isAdmin: true,
+			canAccessDataPlatform: true,
+			canAccessAi: true,
+			isLoading: false,
+		}
+	}
+
 	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
 	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { organization } = useOrganization()
@@ -122,17 +150,10 @@ export function useVisibleSettingsSections() {
 	const hasAiMetadataFlag = organization?.publicMetadata?.bringyourownai === true
 	const canAccessAi = isAdmin && hasAiMetadataFlag
 
-	const visibleSections = navSections
+	const dataSections = navSections
 		.map((section) => ({
 			...section,
 			items: section.items.filter((item) => {
-				if (
-					item.id === "organization" ||
-					item.id === "members" ||
-					item.id === "billing" ||
-					item.id === "notifications"
-				)
-					return isClerkAuthEnabled
 				if (item.id === "data-platform") return canAccessDataPlatform
 				if (item.id === "ai") return canAccessAi
 				return true
@@ -140,11 +161,9 @@ export function useVisibleSettingsSections() {
 		}))
 		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
 
-	const visibleItems = visibleSections.flatMap((s) => s.items)
-
 	return {
-		visibleSections,
-		visibleItems,
+		visibleSections: dataSections,
+		visibleItems: dataSections.flatMap((s) => s.items),
 		isAdmin,
 		canAccessDataPlatform,
 		canAccessAi,

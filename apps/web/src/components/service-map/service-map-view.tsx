@@ -100,6 +100,7 @@ import {
 	type ServiceNodeData,
 } from "./service-map-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 
 const nodeTypes = {
 	serviceNode: ServiceMapNode,
@@ -1811,7 +1812,7 @@ export function ServiceMapCanvas({
 }
 
 export function ServiceMapView({ startTime, endTime }: ServiceMapViewProps) {
-	const { orgId } = useAuth()
+	const orgId = useMapleOrganizationId();
 	const infraEnabled = useInfraEnabled()
 	const durationSeconds = useMemo(() => {
 		const ms = new Date(endTime).getTime() - new Date(startTime).getTime()

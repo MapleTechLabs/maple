@@ -15,6 +15,7 @@ import { ChatConversation } from "./chat-conversation"
 import { FlueClientProvider } from "./flue-client-provider"
 import { alertTabId, alertTabTitle, type AlertContext } from "./alert-context"
 import { widgetFixTabId, widgetFixTabTitle, type WidgetFixContext } from "./widget-fix-context"
+import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 
 interface ChatPageProps {
 	urlTabId?: string
@@ -34,8 +35,8 @@ export function ChatPage({
 	sharedTabId,
 	sharedTitle,
 }: ChatPageProps) {
-	const { orgId } = useAuth()
-	if (!orgId) return null
+	const orgId = useMapleOrganizationId();
+	if (!orgId) return null;
 	return (
 		<FlueClientProvider>
 			{sharedTabId ? (
