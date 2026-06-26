@@ -7,7 +7,7 @@ import {
 	CUSTOMER_CACHE_UNSETTLED_TTL_SECONDS,
 	readCustomerCached,
 	responseHasActivePlan,
-} from "./autumn.http"
+} from "./billing.http"
 
 const ORG = "org_test_123"
 

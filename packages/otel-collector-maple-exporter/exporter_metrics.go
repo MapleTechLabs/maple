@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.uber.org/zap"
 
-	"github.com/superwall/maple/packages/otel-collector-maple-exporter/internal"
+	"github.com/makisuo/maple/packages/otel-collector-maple-exporter/internal"
 )
 
 type metricsExporter struct {

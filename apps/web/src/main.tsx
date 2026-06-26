@@ -1,6 +1,5 @@
 import { ClerkProvider, useAuth } from "@clerk/clerk-react"
-import { AutumnProvider } from "autumn-js/react"
-import { Component, StrictMode, useCallback, useEffect, useRef, useState } from "react"
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react"
 import ReactDOM from "react-dom/client"
 import { EffectRouterProvider } from "@effect-router/core/react"
 import { apiBaseUrl } from "./lib/services/common/api-base-url"
@@ -12,6 +11,7 @@ import {
 	subscribeSelfHostedAuthChanges,
 } from "./lib/services/common/self-hosted-auth"
 import { router, type RouterAuthContext } from "./router"
+import { BootSplash } from "./components/boot-splash"
 import { appRegistry } from "./lib/registry"
 import { clearChunkReloadGuard, shouldAttemptChunkReload } from "./lib/chunk-reload"
 import { MapleBrowser } from "@maple-dev/browser"
@@ -69,48 +69,6 @@ if (import.meta.env.DEV && isClerkAuthEnabled && !clerkPublishableKey) {
 }
 
 /**
- * Intercept fetch for Autumn API calls to inject the Clerk bearer token.
- *
- * Autumn SDK v1 removed the `getBearerToken` provider prop and doesn't expose
- * any other extension point for custom auth headers. The SDK's internal client
- * calls `window.fetch` directly, so this interceptor is the only way to attach
- * the Clerk JWT without forking the SDK.
- */
-function useAutumnFetchAuth() {
-	const { getToken } = useAuth()
-	const getTokenRef = useRef(getToken)
-	getTokenRef.current = getToken
-
-	useEffect(() => {
-		const original = window.fetch.bind(window)
-		window.fetch = async (input, init) => {
-			const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
-			if (url.includes("/api/autumn/")) {
-				// getToken() can transiently return null (token still settling right
-				// after sign-in / org creation) or reject; either way, don't reject the
-				// autumn fetch — fall through unauthenticated. React Query retries the
-				// listPlans query, and the backend serves the plan catalog tenant-less.
-				let token: string | null = null
-				try {
-					token = await getTokenRef.current()
-				} catch {
-					token = null
-				}
-				if (token) {
-					const headers = new Headers(init?.headers)
-					headers.set("Authorization", `Bearer ${token}`)
-					return original(input, { ...init, headers })
-				}
-			}
-			return original(input, init)
-		}
-		return () => {
-			window.fetch = original
-		}
-	}, [])
-}
-
-/**
  * Tag the self-recorded replay session with the signed-in Clerk user id once
  * Clerk reports one. `MapleBrowser.init` runs at module load (before Clerk),
  * so the session starts anonymous; `identify` is a no-op when replay isn't
@@ -122,25 +80,6 @@ function MapleIdentify() {
 		if (isSignedIn && userId) MapleBrowser.identify(userId)
 	}, [isSignedIn, userId])
 	return null
-}
-
-function AutumnProviderWithClerk({ children }: { children: React.ReactNode }) {
-	useAutumnFetchAuth()
-
-	return <AutumnProvider backendUrl={apiBaseUrl}>{children}</AutumnProvider>
-}
-
-class AutumnErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
-	state = { hasError: false }
-	static getDerivedStateFromError() {
-		return { hasError: true }
-	}
-	componentDidCatch(error: Error) {
-		console.error("[Autumn] Provider error, bypassing billing:", error)
-	}
-	render() {
-		return this.props.children
-	}
 }
 
 const AUTH_SETTLE_TIMEOUT_MS = 2000
@@ -206,7 +145,7 @@ function ClerkInnerApp() {
 		router.invalidate()
 	}, [settled, isSignedIn, orgId])
 
-	if (!settled) return null
+	if (!settled) return <BootSplash />
 
 	return (
 		<EffectRouterProvider
@@ -240,7 +179,7 @@ function SelfHostedInnerApp() {
 	}, [auth])
 
 	if (!auth) {
-		return null
+		return <BootSplash />
 	}
 
 	return <EffectRouterProvider router={router} registry={appRegistry} context={{ auth }} />
@@ -255,11 +194,7 @@ const app = isClerkAuthEnabled ? (
 	>
 		<ClerkAuthBridge />
 		<MapleIdentify />
-		<AutumnErrorBoundary>
-			<AutumnProviderWithClerk>
-				<ClerkInnerApp />
-			</AutumnProviderWithClerk>
-		</AutumnErrorBoundary>
+		<ClerkInnerApp />
 	</ClerkProvider>
 ) : (
 	<SelfHostedInnerApp />

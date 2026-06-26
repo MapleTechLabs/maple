@@ -28,12 +28,19 @@ export class MapleApiAtomClient extends AtomHttpApi.Service<MapleApiAtomClient>(
 				HttpClient.retry({
 					times: 3,
 					while: (error) => {
-						if (HttpClientError.isHttpClientError(error)) {
-							const status = error.response?.status
-							// Only retry on 500/502/503 — not 504 (timeout) or undefined (network failure)
-							return status !== undefined && status >= 500 && status < 600 && status !== 504
-						}
-
+						if (!HttpClientError.isHttpClientError(error)) return false
+						const status = error.response?.status
+						if (status === undefined) return false
+						// Only retry on 500/502/503 — not 504 (timeout) or undefined (network failure)
+						if (status >= 500 && status < 600 && status !== 504) return true
+						// Billing reads (customer/usage/plans) can fire during the Clerk
+						// token-settle window where getToken() is transiently null → the
+						// request goes out unauthenticated → 401. Unlike the rest of the API
+						// (which only mounts after auth settles), retry 401 *only* for the
+						// billing endpoints so the data self-heals without a refresh. Scoped
+						// by URL so a genuine auth failure elsewhere still fails fast.
+						const url = (error as { request?: { url?: string } }).request?.url
+						if (status === 401 && url?.includes("/api/billing/")) return true
 						return false
 					},
 				}),

@@ -14,8 +14,8 @@ import { useAtom } from "@/lib/effect-atom"
 import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { Toaster } from "@maple/ui/components/ui/sonner"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { AttributesProvider } from "@maple/ui/components/attributes"
+import { BootSplash } from "@/components/boot-splash"
 import { renderAttributeValue } from "@/components/attributes/commit-sha-attribute"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -55,18 +55,6 @@ export const Route = createRootRouteWithContext<{ auth: RouterAuthContext }>()({
 	},
 	component: RootComponent,
 })
-
-// Full-screen loading state for the brief window where we're waiting on the
-// customer query before we know whether to render the dashboard or bounce to
-// onboarding (first load in a browser / right after unsubscribing). Beats a
-// blank screen. See MAP-45.
-function RootLoading() {
-	return (
-		<main className="flex min-h-screen items-center justify-center bg-background">
-			<Spinner className="size-6 text-muted-foreground" />
-		</main>
-	)
-}
 
 function AppFrame() {
 	const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -187,7 +175,7 @@ function ClerkReverseRedirects() {
 			if (ALLOWED_WITHOUT_PLAN.includes(pathname) || knownSelectedPlan) {
 				return <AppFrame />
 			}
-			return <RootLoading />
+			return <BootSplash />
 		}
 
 		// Plan known (or dev quota preview): apply the gate.

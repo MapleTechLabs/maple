@@ -17,6 +17,7 @@ import { useIsMobile } from "@maple/ui/hooks/use-mobile"
 import { LayoutLeftIcon } from "@/components/icons"
 import { ConnectButton } from "@/components/header/connect-button"
 import { QuotaBanner } from "@/components/billing/quota-banner"
+import { PaymentFailedBanner } from "@/components/billing/payment-failed-banner"
 import { Link, defaultParseSearch } from "@tanstack/react-router"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
@@ -130,6 +131,7 @@ export function DashboardLayout({
 							{breadcrumbActions}
 						</div>
 					</header>
+					{isClerkAuthEnabled && <PaymentFailedBanner />}
 					{isClerkAuthEnabled && <QuotaBanner />}
 					<PageLayout.Body>
 						{filterSidebar && (

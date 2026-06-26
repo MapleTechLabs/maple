@@ -1,28 +1,36 @@
 import { describe, expect, it } from "vitest"
-import { useCustomer } from "autumn-js/react"
+import type {
+	BillingBalance,
+	BillingCustomer,
+	BillingSubscription,
+	CatalogPlan,
+} from "@maple/domain/http"
 import {
 	getFeatureQuotas,
+	getLegacyPlanInfo,
+	getPastDueSubscription,
 	getQuotaStatus,
 	hasBringYourOwnCloudAddOn,
 	hasSelectedPlan,
+	isLegacyPlan,
 	isUsableCustomer,
 	isUsageBasedPlan,
 } from "./plan-gating"
 
-type Customer = NonNullable<ReturnType<typeof useCustomer>["data"]>
-type Subscription = Customer["subscriptions"][number]
-type Balance = NonNullable<Customer["balances"]>[string]
+// The mock builders construct only the consumed subset of each domain schema;
+// `as` casts keep them terse (all fields are optional in the schemas anyway).
+type Customer = BillingCustomer
+type Subscription = BillingSubscription
+type Balance = BillingBalance
+type Plan = CatalogPlan
 
-function buildBalance(featureId: string, partial: Partial<Balance> = {}): Balance {
+function buildBalance(_featureId: string, partial: Partial<Balance> = {}): Balance {
 	return {
-		featureId,
 		granted: 50,
 		remaining: 50,
 		usage: 0,
 		unlimited: false,
 		overageAllowed: false,
-		maxPurchase: null,
-		nextResetAt: null,
 		...partial,
 	} as Balance
 }
@@ -33,55 +41,40 @@ function buildCustomer(
 ): Customer {
 	return {
 		id: "cus_1",
-		createdAt: Date.now(),
-		name: "Test",
-		email: "test@maple.dev",
-		fingerprint: null,
-		stripeId: null,
-		env: "sandbox" as Customer["env"],
-		metadata: {},
-		sendEmailReceipts: false,
-		billingControls: {},
 		subscriptions,
-		purchases: [],
 		balances: overrides.balances ?? {},
 		flags: overrides.flags ?? {},
-	}
+	} as Customer
 }
 
 function buildSubscription(partial: Partial<Subscription> = {}): Subscription {
 	return {
-		id: "sub_1",
 		planId: "starter",
-		plan: {
-			id: "starter",
-			name: "Starter",
-			description: null,
-			group: null,
-			version: 1,
-			addOn: false,
-			autoEnable: false,
-			price: null,
-			items: [],
-			createdAt: Date.now(),
-			env: "sandbox",
-			archived: false,
-			baseVariantId: null,
-			config: { ignorePastDue: false },
-		},
+		plan: { name: "Starter", archived: false },
 		autoEnable: false,
 		addOn: false,
-		status: "active" as Subscription["status"],
+		status: "active",
 		pastDue: false,
-		canceledAt: null,
-		expiresAt: null,
 		trialEndsAt: null,
-		startedAt: Date.now(),
 		currentPeriodStart: null,
 		currentPeriodEnd: null,
 		quantity: 1,
 		...partial,
-	}
+	} as Subscription
+}
+
+function buildPlan(partial: Partial<Plan> = {}): Plan {
+	return {
+		id: "startup",
+		name: "Startup",
+		description: null,
+		addOn: false,
+		autoEnable: false,
+		price: { amount: 39, interval: "month" },
+		items: [],
+		archived: false,
+		...partial,
+	} as Plan
 }
 
 describe("hasSelectedPlan", () => {
@@ -106,22 +99,7 @@ describe("hasSelectedPlan", () => {
 		const freeCustomer = buildCustomer([
 			buildSubscription({
 				planId: "free",
-				plan: {
-					id: "free",
-					name: "Free",
-					description: null,
-					group: null,
-					version: 1,
-					addOn: false,
-					autoEnable: true,
-					price: null,
-					items: [],
-					createdAt: Date.now(),
-					env: "sandbox",
-					archived: false,
-					baseVariantId: null,
-					config: { ignorePastDue: false },
-				},
+				plan: { name: "Free", archived: false },
 			}),
 		])
 		const addOnCustomer = buildCustomer([buildSubscription({ addOn: true })])
@@ -271,5 +249,76 @@ describe("getQuotaStatus / getFeatureQuotas", () => {
 		})
 		expect(getFeatureQuotas(customer)).toHaveLength(0)
 		expect(getQuotaStatus(customer)).toBe("ok")
+	})
+})
+
+describe("getPastDueSubscription", () => {
+	it("returns null when customer is missing or error-shaped", () => {
+		expect(getPastDueSubscription(null)).toBeNull()
+		expect(getPastDueSubscription(buildCustomer([]))).toBeNull()
+	})
+
+	it("returns the past-due subscription", () => {
+		const sub = buildSubscription({ planId: "past_due_plan", pastDue: true })
+		expect(getPastDueSubscription(buildCustomer([sub]))?.planId).toBe("past_due_plan")
+	})
+
+	it("returns null when no subscription is past due", () => {
+		expect(getPastDueSubscription(buildCustomer([buildSubscription()]))).toBeNull()
+	})
+
+	it("ignores add-on subscriptions", () => {
+		const addOn = buildSubscription({ addOn: true, pastDue: true })
+		expect(getPastDueSubscription(buildCustomer([addOn]))).toBeNull()
+	})
+})
+
+describe("isLegacyPlan / getLegacyPlanInfo", () => {
+	// Current catalog from listPlans: only "startup" is offered.
+	const catalog = [buildPlan({ id: "startup", name: "Startup" })]
+
+	it("flags the legacy free tier regardless of catalog", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "free" }), catalog)).toBe(true)
+		expect(
+			isLegacyPlan(buildSubscription({ planId: "old", plan: buildPlan({ name: "Free" }) }), catalog),
+		).toBe(true)
+	})
+
+	it("flags a plan that is no longer in the catalog", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), catalog)).toBe(true)
+	})
+
+	it("flags a catalog plan marked archived", () => {
+		const archivedCatalog = [buildPlan({ id: "startup", archived: true })]
+		expect(isLegacyPlan(buildSubscription({ planId: "startup" }), archivedCatalog)).toBe(true)
+	})
+
+	it("does not flag a current, offered plan", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "startup" }), catalog)).toBe(false)
+	})
+
+	it("does not flag while the catalog is still unknown (loading)", () => {
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), null)).toBe(false)
+		expect(isLegacyPlan(buildSubscription({ planId: "starter" }), [])).toBe(false)
+	})
+
+	it("getLegacyPlanInfo reflects the active plan against the catalog", () => {
+		const legacy = buildCustomer([
+			buildSubscription({ planId: "starter", plan: buildPlan({ id: "starter", name: "Starter" }) }),
+		])
+		expect(getLegacyPlanInfo(legacy, catalog)).toEqual({ isLegacy: true, planName: "Starter" })
+
+		const current = buildCustomer([
+			buildSubscription({ planId: "startup", plan: buildPlan({ id: "startup", name: "Startup" }) }),
+		])
+		expect(getLegacyPlanInfo(current, catalog)).toEqual({ isLegacy: false, planName: "Startup" })
+
+		expect(getLegacyPlanInfo(buildCustomer([]), catalog)).toEqual({ isLegacy: false, planName: null })
+	})
+
+	it("falls back to planId for the name when the subscription has no plan object", () => {
+		// getOrCreateCustomer does not expand subscription.plan in practice.
+		const customer = buildCustomer([buildSubscription({ planId: "starter", plan: undefined })])
+		expect(getLegacyPlanInfo(customer, catalog)).toEqual({ isLegacy: true, planName: "starter" })
 	})
 })
