@@ -340,6 +340,7 @@ export function metricsTimeseriesRateQuery(
 
 export interface MetricsBreakdownOpts {
 	metricType: MetricType
+	groupByAttributeKey?: string
 	limit?: number
 }
 
@@ -353,12 +354,14 @@ export interface MetricsBreakdownOutput {
 export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 	const { tbl, isHistogram } = resolveMetricTable(opts.metricType)
 	const limit = opts.limit ?? 10
+	const groupKey = opts.groupByAttributeKey
 
 	return from(tbl as typeof MetricsSum)
 		.select(($) => {
 			const exprs = metricsSelectExprs($, isHistogram)
 			return {
-				name: $.ServiceName,
+				// Break down by a metric label value when requested, otherwise by service.
+				name: groupKey ? $.Attributes.get(groupKey) : $.ServiceName,
 				avgValue: exprs.avgValue,
 				sumValue: exprs.sumValue,
 				count: exprs.dataPointCount,
@@ -369,6 +372,8 @@ export function metricsBreakdownQuery(opts: MetricsBreakdownOpts) {
 			$.OrgId.eq(param.string("orgId")),
 			$.TimeUnix.gte(param.dateTime("startTime")),
 			$.TimeUnix.lte(param.dateTime("endTime")),
+			// Drop datapoints missing the label so an empty bucket doesn't dominate.
+			CH.when(groupKey, (k: string) => $.Attributes.get(k).neq("")),
 		])
 		.groupBy("name")
 		.orderBy(["count", "desc"])

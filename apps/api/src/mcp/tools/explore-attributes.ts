@@ -58,9 +58,11 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 					Effect.mapError(mapError),
 				)
 
+				// Metric labels are their own scope; span/resource scoping only applies to traces.
+				const sourceLabel = params.source === "metrics" ? "metrics" : `${params.source} (${scope})`
 				const lines: string[] = [
 					`## Attribute Values: ${params.key}`,
-					`Source: ${params.source} (${scope})`,
+					`Source: ${sourceLabel}`,
 					`Time range: ${st} — ${et}${formatClampNote(range)}`,
 					``,
 				]
@@ -77,9 +79,15 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				}
 
 				lines.push(
-					formatNextSteps([
-						`\`query_data source="traces" kind="timeseries" attribute_key="${params.key}" attribute_value="<value>"\` — chart traces filtered by this attribute`,
-					]),
+					formatNextSteps(
+						params.source === "metrics"
+							? [
+									`\`query_data source="metrics" kind="breakdown" group_by="attribute" attribute_key="${params.key}"\` — break a metric down by this label`,
+								]
+							: [
+									`\`query_data source="traces" kind="timeseries" attribute_key="${params.key}" attribute_value="<value>"\` — chart traces filtered by this attribute`,
+								],
+					),
 				)
 
 				return {

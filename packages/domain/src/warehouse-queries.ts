@@ -46,6 +46,7 @@ export const warehouseQueries = [
 	"span_attribute_values",
 	"resource_attribute_keys",
 	"resource_attribute_values",
+	"metric_attribute_values",
 ] as const
 
 export type WarehouseQueryName = (typeof warehouseQueries)[number]

@@ -1216,6 +1216,10 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				tenant,
 				CH.metricsBreakdownQuery({
 					metricType: request.query.filters.metricType,
+					...(request.query.groupBy === "attribute" &&
+						request.query.filters.groupByAttributeKey && {
+							groupByAttributeKey: request.query.filters.groupByAttributeKey,
+						}),
 					limit: request.query.limit,
 				}),
 				{

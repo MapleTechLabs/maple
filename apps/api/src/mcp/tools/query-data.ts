@@ -316,12 +316,13 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 						} satisfies MetricsTimeseriesQuery
 					}
 					const metricsMetric = (params.metric ?? "avg") as MetricsBreakdownQuery["metric"]
-					if (!params.group_by) decisions.push(`group_by: defaulted to "service"`)
+					if (!params.group_by)
+						decisions.push(`group_by: defaulted to "service" (available: service, attribute)`)
 					return {
 						kind: "breakdown",
 						source: "metrics",
 						metric: metricsMetric,
-						groupBy: "service",
+						groupBy: params.group_by === "attribute" ? "attribute" : "service",
 						filters,
 						...(params.limit && { limit: params.limit }),
 					} satisfies MetricsBreakdownQuery

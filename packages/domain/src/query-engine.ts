@@ -180,7 +180,7 @@ export const MetricsBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("metrics"),
 	metric: Schema.Literals(["avg", "sum", "count"]),
-	groupBy: Schema.Literal("service"),
+	groupBy: Schema.Literals(["service", "attribute"]),
 	filters: MetricsFilters,
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),
