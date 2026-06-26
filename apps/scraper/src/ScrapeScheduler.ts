@@ -63,6 +63,23 @@ export const nextScrapeDelayMs = ({
 	return Math.min(MAX_BACKOFF_MS, Math.max(exponential, retryAfter))
 }
 
+/**
+ * Deterministic per-target start delay in `[0, baseMs)`. Discovered sub-targets
+ * (PlanetScale branches) share one id and the same interval, so without this
+ * they all scrape on the same tick — a synchronized burst that trips
+ * PlanetScale's per-org rate limit (429). Derived from a stable key (FNV-1a) so
+ * it survives reconciles and needs no random source (keeps tests deterministic).
+ */
+export const initialJitterMs = (key: string, baseMs: number): number => {
+	if (baseMs <= 0) return 0
+	let hash = 0x811c9dc5
+	for (let i = 0; i < key.length; i++) {
+		hash ^= key.charCodeAt(i)
+		hash = Math.imul(hash, 0x01000193)
+	}
+	return (hash >>> 0) % baseMs
+}
+
 const hostFromUrl = (url: string): string => {
 	try {
 		return new URL(url).host
@@ -270,7 +287,12 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 						yield* Effect.sleep(Duration.millis(sleepMs))
 						return yield* loop(outcome.rateLimited ? consecutiveRateLimits + 1 : 0)
 					})
-				return loop(0)
+				// Plain targets have nothing to de-sync against; only stagger the
+				// branches of a discovered (PlanetScale) target so they spread across
+				// the interval instead of bursting together.
+				if (target.subTargetKey == null) return loop(0)
+				const jitterMs = initialJitterMs(targetKey(target), baseMs)
+				return Effect.flatMap(Effect.sleep(Duration.millis(jitterMs)), () => loop(0))
 			}
 
 			const reconcile = Effect.gen(function* () {

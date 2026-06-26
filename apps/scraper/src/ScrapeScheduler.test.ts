@@ -4,7 +4,12 @@ import { TestClock } from "effect/testing"
 import { InternalScrapeTarget, type ScrapeResultReport } from "@maple/domain/http"
 import { ApiClient, ApiRequestError, type ApiClientShape, type ScrapeProxyResponse } from "./ApiClient"
 import { OtlpIngest, OtlpIngestError, type OtlpIngestShape } from "./OtlpIngest"
-import { nextScrapeDelayMs, ScrapeScheduler, type ScrapeOutcome } from "./ScrapeScheduler"
+import {
+	initialJitterMs,
+	nextScrapeDelayMs,
+	ScrapeScheduler,
+	type ScrapeOutcome,
+} from "./ScrapeScheduler"
 import { ScraperEnv, type ScraperEnvShape } from "./Env"
 import type { OtlpExportRequest } from "./prometheus/otlp"
 
@@ -534,5 +539,30 @@ describe("nextScrapeDelayMs", () => {
 			nextScrapeDelayMs({ baseMs: 10_000, outcome: limited(5_000), consecutiveRateLimits: 2 }),
 			40_000,
 		)
+	})
+})
+
+describe("initialJitterMs", () => {
+	it("stays within [0, baseMs) and is deterministic for a key", () => {
+		const baseMs = 30_000
+		const a = initialJitterMs("target_a:branch-1", baseMs)
+		assert.isAtLeast(a, 0)
+		assert.isBelow(a, baseMs)
+		// Same key → same jitter (survives reconciles without a random source).
+		assert.strictEqual(initialJitterMs("target_a:branch-1", baseMs), a)
+	})
+
+	it("de-synchronizes branches of one target so they don't start on the same tick", () => {
+		const baseMs = 30_000
+		const branch1 = initialJitterMs("target_a:branch-1", baseMs)
+		const branch2 = initialJitterMs("target_a:branch-2", baseMs)
+		const branch3 = initialJitterMs("target_a:branch-3", baseMs)
+		assert.notStrictEqual(branch1, branch2)
+		assert.notStrictEqual(branch2, branch3)
+		assert.notStrictEqual(branch1, branch3)
+	})
+
+	it("returns 0 when the interval is non-positive", () => {
+		assert.strictEqual(initialJitterMs("target_a:branch-1", 0), 0)
 	})
 })

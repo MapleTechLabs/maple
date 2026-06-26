@@ -86,6 +86,48 @@ const subTargetsFromGroup = (group: {
 	return { ok, dropped }
 }
 
+/**
+ * Branch name a filter pattern matches against: PlanetScale's http_sd exposes
+ * the human branch name as `planetscale_branch`; older payloads only carry
+ * `planetscale_database_branch_id`. Fall back to the sub-target key so a filter
+ * never silently matches nothing.
+ */
+const branchNameForFilter = (entry: PlanetScaleSubTarget): string =>
+	entry.labels.planetscale_branch ?? entry.labels.planetscale_database_branch_id ?? entry.subTargetKey
+
+/** Glob → anchored RegExp supporting `*` (any run) and `?` (one char). */
+const globToRegExp = (pattern: string): RegExp => {
+	const escaped = pattern
+		.replace(/[.+^${}()|[\]\\]/g, "\\$&")
+		.replace(/\*/g, ".*")
+		.replace(/\?/g, ".")
+	return new RegExp(`^${escaped}$`)
+}
+
+interface BranchFilters {
+	readonly include: ReadonlyArray<string>
+	readonly exclude: ReadonlyArray<string>
+}
+
+/** Read include/exclude branch globs off the row's `discovery_config_json`. */
+const parseBranchFilters = (discoveryConfigJson: unknown): BranchFilters => {
+	const cfg = discoveryConfigJson as
+		| { includeBranches?: unknown; excludeBranches?: unknown }
+		| null
+		| undefined
+	const toList = (value: unknown): string[] =>
+		Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : []
+	return { include: toList(cfg?.includeBranches), exclude: toList(cfg?.excludeBranches) }
+}
+
+/** exclude wins over include; an empty include list means "all branches". */
+const branchPassesFilters = (name: string, filters: BranchFilters): boolean => {
+	if (filters.exclude.some((pattern) => globToRegExp(pattern).test(name))) return false
+	if (filters.include.length > 0 && !filters.include.some((pattern) => globToRegExp(pattern).test(name)))
+		return false
+	return true
+}
+
 export interface PlanetScaleDiscoveryServiceShape {
 	/**
 	 * Resolve a planetscale target row into its discovered sub-targets,
@@ -169,7 +211,27 @@ export class PlanetScaleDiscoveryService extends Context.Service<
 					"Dropped PlanetScale discovered targets failing URL validation",
 				).pipe(Effect.annotateLogs({ scrapeTargetId: row.id, dropped: dropped.join(", ") }))
 			}
-			return entries as ReadonlyArray<PlanetScaleSubTarget>
+
+			// Apply the org's branch include/exclude globs so PR-preview branches
+			// (et al.) aren't scraped — the main lever against PlanetScale 429s from
+			// fanning out across every branch in the org.
+			const filters = parseBranchFilters(row.discoveryConfigJson)
+			if (filters.include.length === 0 && filters.exclude.length === 0) {
+				return entries as ReadonlyArray<PlanetScaleSubTarget>
+			}
+			const kept = entries.filter((entry) =>
+				branchPassesFilters(branchNameForFilter(entry), filters),
+			)
+			if (kept.length < entries.length) {
+				yield* Effect.logInfo("Filtered PlanetScale branches by include/exclude globs").pipe(
+					Effect.annotateLogs({
+						scrapeTargetId: row.id,
+						kept: kept.length,
+						filtered: entries.length - kept.length,
+					}),
+				)
+			}
+			return kept as ReadonlyArray<PlanetScaleSubTarget>
 		})
 
 		const discover = Effect.fn("PlanetScaleDiscoveryService.discover")(function* (row: ScrapeTargetRow) {

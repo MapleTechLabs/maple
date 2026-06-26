@@ -146,7 +146,24 @@ const decodeScrapeTargetTypeSync = Schema.decodeUnknownSync(ScrapeTargetType)
 const ScrapeLabelsSchema = Schema.Record(Schema.String, Schema.String)
 const DiscoveryConfigSchema = Schema.Struct({
 	organization: Schema.String,
+	includeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
+	excludeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
 })
+
+/** Cap pattern lists so a target config stays small and bounded. */
+const MAX_BRANCH_PATTERNS = 50
+const MAX_BRANCH_PATTERN_LENGTH = 200
+
+/** Trim, drop blanks, and de-duplicate a branch glob list from a request. */
+const normalizeBranchPatterns = (patterns: ReadonlyArray<string> | undefined): string[] => {
+	if (!patterns) return []
+	const seen = new Set<string>()
+	for (const raw of patterns) {
+		const pattern = raw.trim()
+		if (pattern.length > 0) seen.add(pattern)
+	}
+	return [...seen]
+}
 
 const parseEncryptionKey = (raw: string): Effect.Effect<Buffer, ScrapeTargetEncryptionError> =>
 	parseBase64Aes256GcmKey(raw, (message) =>
@@ -229,6 +246,8 @@ const rowToResponse = (row: ScrapeTargetRow): ScrapeTargetResponse =>
 		url: row.url,
 		targetType: decodeScrapeTargetTypeSync(row.targetType),
 		organization: decodeDiscoveryConfig(row.discoveryConfigJson)?.organization ?? null,
+		includeBranches: decodeDiscoveryConfig(row.discoveryConfigJson)?.includeBranches ?? [],
+		excludeBranches: decodeDiscoveryConfig(row.discoveryConfigJson)?.excludeBranches ?? [],
 		scrapeIntervalSeconds: decodeScrapeIntervalSecondsSync(row.scrapeIntervalSeconds),
 		labelsJson: row.labelsJson == null ? null : JSON.stringify(row.labelsJson),
 		authType: decodeScrapeAuthTypeSync(row.authType),
@@ -304,6 +323,44 @@ const validateLabelsJson = (labelsJson: string | null | undefined) => {
 		}),
 	)
 }
+
+/**
+ * Normalize + bound a branch glob list. Returns the cleaned patterns, or fails
+ * if the list or an individual pattern exceeds the configured caps.
+ */
+const validateBranchPatterns = (
+	patterns: ReadonlyArray<string> | undefined,
+	field: "includeBranches" | "excludeBranches",
+): Effect.Effect<string[], ScrapeTargetValidationError> => {
+	const normalized = normalizeBranchPatterns(patterns)
+	if (normalized.length > MAX_BRANCH_PATTERNS) {
+		return Effect.fail(
+			new ScrapeTargetValidationError({
+				message: `${field} accepts at most ${MAX_BRANCH_PATTERNS} patterns`,
+			}),
+		)
+	}
+	const tooLong = normalized.find((pattern) => pattern.length > MAX_BRANCH_PATTERN_LENGTH)
+	if (tooLong !== undefined) {
+		return Effect.fail(
+			new ScrapeTargetValidationError({
+				message: `${field} patterns must be at most ${MAX_BRANCH_PATTERN_LENGTH} characters`,
+			}),
+		)
+	}
+	return Effect.succeed(normalized)
+}
+
+/** Assemble the `discovery_config_json` value, omitting empty pattern lists. */
+const buildDiscoveryConfig = (
+	organization: string,
+	includeBranches: ReadonlyArray<string>,
+	excludeBranches: ReadonlyArray<string>,
+): { organization: string; includeBranches?: string[]; excludeBranches?: string[] } => ({
+	organization,
+	...(includeBranches.length > 0 ? { includeBranches: [...includeBranches] } : {}),
+	...(excludeBranches.length > 0 ? { excludeBranches: [...excludeBranches] } : {}),
+})
 
 export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, ScrapeTargetsServiceShape>()(
 	"@maple/api/services/ScrapeTargetsService",
@@ -387,7 +444,9 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				const targetType = request.targetType ?? "prometheus"
 
 				let url: string
-				let discoveryConfigJson: { organization: string } | null = null
+				let discoveryConfigJson:
+					| { organization: string; includeBranches?: string[]; excludeBranches?: string[] }
+					| null = null
 				let authType: string
 
 				if (targetType === "planetscale") {
@@ -415,10 +474,25 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							}),
 						)
 					}
+					const includeBranches = yield* validateBranchPatterns(
+						request.includeBranches,
+						"includeBranches",
+					)
+					const excludeBranches = yield* validateBranchPatterns(
+						request.excludeBranches,
+						"excludeBranches",
+					)
 					url = planetScaleDiscoveryUrl(organization)
-					discoveryConfigJson = { organization }
+					discoveryConfigJson = buildDiscoveryConfig(organization, includeBranches, excludeBranches)
 					authType = "token"
 				} else {
+					if (request.includeBranches !== undefined || request.excludeBranches !== undefined) {
+						return yield* Effect.fail(
+							new ScrapeTargetValidationError({
+								message: "includeBranches/excludeBranches are only valid for PlanetScale targets",
+							}),
+						)
+					}
 					if (!request.url) {
 						return yield* Effect.fail(
 							new ScrapeTargetValidationError({ message: "url is required" }),
@@ -523,6 +597,16 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 						}),
 					)
 				}
+				if (
+					!isPlanetScale &&
+					(request.includeBranches !== undefined || request.excludeBranches !== undefined)
+				) {
+					return yield* Effect.fail(
+						new ScrapeTargetValidationError({
+							message: "includeBranches/excludeBranches are only valid for PlanetScale targets",
+						}),
+					)
+				}
 
 				if (request.url !== undefined && request.url !== null) {
 					yield* validateUrl(request.url)
@@ -536,8 +620,17 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 				if (request.name !== undefined) updates.name = request.name.trim()
 				if (request.url !== undefined && request.url !== null) updates.url = request.url.trim()
 
-				if (isPlanetScale && request.organization !== undefined) {
-					const organization = request.organization?.trim()
+				if (
+					isPlanetScale &&
+					(request.organization !== undefined ||
+						request.includeBranches !== undefined ||
+						request.excludeBranches !== undefined)
+				) {
+					const existingConfig = decodeDiscoveryConfig(existing.discoveryConfigJson)
+					const organization =
+						request.organization !== undefined
+							? request.organization?.trim()
+							: existingConfig?.organization
 					if (!organization) {
 						return yield* Effect.fail(
 							new ScrapeTargetValidationError({
@@ -545,8 +638,21 @@ export class ScrapeTargetsService extends Context.Service<ScrapeTargetsService, 
 							}),
 						)
 					}
+					// Provided lists replace (empty array clears); omitted lists are preserved.
+					const includeBranches =
+						request.includeBranches !== undefined
+							? yield* validateBranchPatterns(request.includeBranches, "includeBranches")
+							: (existingConfig?.includeBranches ?? [])
+					const excludeBranches =
+						request.excludeBranches !== undefined
+							? yield* validateBranchPatterns(request.excludeBranches, "excludeBranches")
+							: (existingConfig?.excludeBranches ?? [])
 					updates.url = planetScaleDiscoveryUrl(organization)
-					updates.discoveryConfigJson = { organization }
+					updates.discoveryConfigJson = buildDiscoveryConfig(
+						organization,
+						includeBranches,
+						excludeBranches,
+					)
 				}
 				if (request.scrapeIntervalSeconds !== undefined) {
 					updates.scrapeIntervalSeconds = request.scrapeIntervalSeconds

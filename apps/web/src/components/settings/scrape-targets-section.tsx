@@ -223,6 +223,8 @@ export function ScrapeTargetsSection({
 	const [formOrganization, setFormOrganization] = useState("")
 	const [formTokenId, setFormTokenId] = useState("")
 	const [formTokenSecret, setFormTokenSecret] = useState("")
+	const [formIncludeBranches, setFormIncludeBranches] = useState("")
+	const [formExcludeBranches, setFormExcludeBranches] = useState("")
 	const [formInterval, setFormInterval] = useState("15")
 	const [formAuthType, setFormAuthType] = useState<ScrapeAuthType>("none")
 	const [formAuthToken, setFormAuthToken] = useState("")
@@ -282,6 +284,8 @@ export function ScrapeTargetsSection({
 		setFormOrganization("")
 		setFormTokenId("")
 		setFormTokenSecret("")
+		setFormIncludeBranches("")
+		setFormExcludeBranches("")
 		setFormInterval(targetType === "planetscale" ? "30" : "15")
 		setFormAuthType("none")
 		setFormAuthToken("")
@@ -299,6 +303,8 @@ export function ScrapeTargetsSection({
 		setFormOrganization(target.organization ?? "")
 		setFormTokenId("")
 		setFormTokenSecret("")
+		setFormIncludeBranches(target.includeBranches.join(", "))
+		setFormExcludeBranches(target.excludeBranches.join(", "))
 		setFormInterval(String(target.scrapeIntervalSeconds))
 		setFormAuthType(target.authType)
 		setFormAuthToken("")
@@ -332,6 +338,13 @@ export function ScrapeTargetsSection({
 			})
 		}
 		return null
+	}
+
+	function parseBranchList(value: string): string[] {
+		return value
+			.split(",")
+			.map((entry) => entry.trim())
+			.filter((entry) => entry.length > 0)
 	}
 
 	async function handleSave() {
@@ -370,6 +383,8 @@ export function ScrapeTargetsSection({
 						? {
 								organization: formOrganization.trim(),
 								authType: "token" as const,
+								includeBranches: parseBranchList(formIncludeBranches),
+								excludeBranches: parseBranchList(formExcludeBranches),
 							}
 						: {
 								url: formUrl.trim(),
@@ -396,6 +411,8 @@ export function ScrapeTargetsSection({
 								targetType: "planetscale" as const,
 								organization: formOrganization.trim(),
 								authType: "token" as const,
+								includeBranches: parseBranchList(formIncludeBranches),
+								excludeBranches: parseBranchList(formExcludeBranches),
 							}
 						: {
 								url: formUrl.trim(),
@@ -635,6 +652,33 @@ export function ScrapeTargetsSection({
 										Create a service token with the{" "}
 										<span className="font-mono">read_metrics_endpoints</span> organization
 										permission.
+									</p>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="scrape-include-branches">Include branches (optional)</Label>
+									<Input
+										id="scrape-include-branches"
+										placeholder="e.g. main, stg"
+										value={formIncludeBranches}
+										onChange={(e) => setFormIncludeBranches(e.target.value)}
+									/>
+									<p className="text-muted-foreground text-xs">
+										Comma-separated branch globs. When set, only matching branches are
+										scraped. Leave blank to scrape all branches.
+									</p>
+								</div>
+								<div className="space-y-2">
+									<Label htmlFor="scrape-exclude-branches">Exclude branches (optional)</Label>
+									<Input
+										id="scrape-exclude-branches"
+										placeholder="e.g. pr-*"
+										value={formExcludeBranches}
+										onChange={(e) => setFormExcludeBranches(e.target.value)}
+									/>
+									<p className="text-muted-foreground text-xs">
+										Comma-separated branch globs to skip — e.g.{" "}
+										<span className="font-mono">pr-*</span> to avoid scraping PR-preview
+										branches (a common source of PlanetScale rate-limit 429s).
 									</p>
 								</div>
 							</>
@@ -1077,7 +1121,21 @@ function ScrapeTargetDetails({
 					<div className="divide-y rounded-md border bg-background/35 text-xs">
 						<DetailRow label="Service" value={target.serviceName ?? target.name} />
 						{target.targetType === "planetscale" ? (
-							<DetailRow label="Organization" value={target.organization ?? "-"} />
+							<>
+								<DetailRow label="Organization" value={target.organization ?? "-"} />
+								{target.includeBranches.length > 0 && (
+									<DetailRow
+										label="Include branches"
+										value={<span className="font-mono">{target.includeBranches.join(", ")}</span>}
+									/>
+								)}
+								{target.excludeBranches.length > 0 && (
+									<DetailRow
+										label="Exclude branches"
+										value={<span className="font-mono">{target.excludeBranches.join(", ")}</span>}
+									/>
+								)}
+							</>
 						) : (
 							<DetailRow label="Instance" value={hostnameFromUrl(target.url)} />
 						)}
