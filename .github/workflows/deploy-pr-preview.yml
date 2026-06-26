@@ -91,14 +91,6 @@ jobs:
               if: ${{ github.event.action != 'closed' && env.PLANETSCALE_SERVICE_TOKEN != '' }}
               run: DATABASE_URL="$MAPLE_PG_URL" bun run --cwd packages/db db:migrate
 
-            # Re-grant the runtime app role after migrate so a table-rebuild
-            # migration can't strip its privileges. Defaults to the MAPLE_PG_URL
-            # user (the per-PR Hyperdrive origin is built from the same URL — a
-            # self-grant no-op) unless MAPLE_PG_RUNTIME_ROLE overrides.
-            - name: Grant runtime DB role
-              if: ${{ github.event.action != 'closed' && env.PLANETSCALE_SERVICE_TOKEN != '' }}
-              run: DATABASE_URL="$MAPLE_PG_URL" bun run --cwd packages/db db:grant
-
             - name: Deploy PR preview stack with Alchemy
               id: deploy
               if: ${{ github.event.action != 'closed' && env.PLANETSCALE_SERVICE_TOKEN != '' }}
