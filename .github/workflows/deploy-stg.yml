@@ -49,20 +49,5 @@ jobs:
             - name: Run database migrations
               run: DATABASE_URL="$MAPLE_PG_URL" bun run --cwd packages/db db:migrate
 
-            # Re-grant the runtime app role on every deploy so a table-rebuild
-            # migration can't strip its privileges (→ "permission denied for
-            # table …"). Defaults to the MAPLE_PG_URL user (the managed
-            # Hyperdrive origin is built from the same URL — a self-grant no-op)
-            # unless MAPLE_PG_RUNTIME_ROLE overrides.
-            #
-            # NOTE: kept here intentionally even though deploy-pr-preview.yml drops
-            # it. PR previews are ephemeral and always run as the single
-            # MAPLE_PG_URL user, so the grant is provably a no-op there. stg is
-            # long-lived and may later set MAPLE_PG_RUNTIME_ROLE to a role distinct
-            # from the migrate user, where this re-grant becomes load-bearing — do
-            # not "clean it up" to match PR-preview.
-            - name: Grant runtime DB role
-              run: DATABASE_URL="$MAPLE_PG_URL" bun run --cwd packages/db db:grant
-
             - name: Deploy STG stack with Alchemy
               run: bun run alchemy:deploy:stg
