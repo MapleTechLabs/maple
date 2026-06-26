@@ -1,14 +1,14 @@
-import { useMemo, useRef, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 
 import { useMountEffect } from "@/hooks/use-mount-effect"
 
 export type HoneycombTone = "ok" | "warn" | "crit" | "stale"
 
-// The cell's gradient fill, bevel highlight, depth shadow, and hover glow all
-// derive from a single `--tone` color set per cell (see `.honeycomb-cell` in
-// styles.css); each tone just points `--tone` at its severity token.
+// The cell's flat fill (calm at rest, full tone on hover) derives from a single
+// `--tone` color set per cell — see `.honeycomb-cell` in styles.css. Each tone
+// just points `--tone` at its severity token.
 const TONE_VAR: Record<HoneycombTone, string> = {
 	ok: "var(--severity-info)",
 	warn: "var(--severity-warn)",
@@ -43,9 +43,9 @@ export interface HoneycombCell {
 	key: string
 	glyph: string
 	tone: HoneycombTone
-	ariaLabel: string
-	/** Open the preview drawer for this entity. */
-	onSelect: () => void
+	/** A ready-built `<Link>` to the entity's detail page — the adapter owns the
+	 *  typed route; Honeycomb only styles it into a hexagon. */
+	link: ReactElement
 	tooltip: ReactNode
 }
 
@@ -109,67 +109,66 @@ export function Honeycomb({ cells }: { cells: ReadonlyArray<HoneycombCell> }) {
 	}, [cells, cols])
 
 	return (
-		<div ref={ref} className="w-full">
-			{rows.map((row, r) => (
-				<div
-					key={row[0]?.key ?? r}
-					className="flex"
-					style={{
-						marginTop: r === 0 ? 0 : ROW_MARGIN_TOP,
-						marginLeft: r % 2 === 1 ? ROW_OFFSET_X : 0,
-					}}
-				>
-					{row.map((cell, c) => (
-						<div
-							key={cell.key}
-							className="flex shrink-0 items-center justify-center"
-							style={{ width: PITCH_X, height: HEX_H }}
-						>
-							<Tooltip>
-								<TooltipTrigger
-									render={
-										<button
-											type="button"
-											onClick={cell.onSelect}
-											aria-label={cell.ariaLabel}
-										/>
-									}
-									data-tone={cell.tone}
-									className={cn(
-										"honeycomb-cell group relative flex cursor-pointer items-center justify-center",
-										"hover:z-10 hover:scale-[1.1]",
-										"focus-visible:z-10 focus-visible:scale-[1.1] focus-visible:outline-none",
-										"motion-reduce:hover:scale-100 motion-reduce:focus-visible:scale-100",
-									)}
-									style={{
-										width: HEX_W,
-										height: HEX_H,
-										clipPath: HEX_CLIP,
-										WebkitClipPath: HEX_CLIP,
-										["--tone" as string]: TONE_VAR[cell.tone],
-										animationDelay: `${Math.min((r * cols + c) * 4, 240)}ms`,
-									}}
-								>
-									<span
-										aria-hidden
+		<TooltipProvider delay={80} closeDelay={0}>
+			<div ref={ref} className="w-full">
+				{rows.map((row, r) => (
+					<div
+						// Rows are positional (pure function of cols + order); keying by index
+						// keeps them stable across re-sorts so only inner cells reconcile and
+						// the honeycomb-in entrance doesn't replay.
+						key={r}
+						className="flex"
+						style={{
+							marginTop: r === 0 ? 0 : ROW_MARGIN_TOP,
+							marginLeft: r % 2 === 1 ? ROW_OFFSET_X : 0,
+						}}
+					>
+						{row.map((cell, c) => (
+							<div
+								key={cell.key}
+								className="flex shrink-0 items-center justify-center"
+								style={{ width: PITCH_X, height: HEX_H }}
+							>
+								<Tooltip>
+									<TooltipTrigger
+										render={cell.link}
+										data-tone={cell.tone}
 										className={cn(
-											"font-mono text-[9px] font-semibold uppercase tracking-tight opacity-0 transition-opacity duration-150",
-											"group-hover:opacity-100 group-focus-visible:opacity-100",
-											GLYPH_TONE[cell.tone],
+											"honeycomb-cell group relative flex cursor-pointer items-center justify-center",
+											"hover:z-10 hover:scale-[1.1]",
+											"focus-visible:z-10 focus-visible:scale-[1.1] focus-visible:outline-none",
+											"motion-reduce:hover:scale-100 motion-reduce:focus-visible:scale-100",
 										)}
+										style={{
+											width: HEX_W,
+											height: HEX_H,
+											clipPath: HEX_CLIP,
+											WebkitClipPath: HEX_CLIP,
+											["--tone" as string]: TONE_VAR[cell.tone],
+											animationDelay: `${Math.min((r * cols + c) * 4, 240)}ms`,
+										}}
 									>
-										{cell.glyph}
-									</span>
-								</TooltipTrigger>
-								<TooltipContent side="top" className="space-y-1 text-xs">
-									{cell.tooltip}
-								</TooltipContent>
-							</Tooltip>
-						</div>
-					))}
-				</div>
-			))}
-		</div>
+										<span
+											aria-hidden
+											className={cn(
+												"font-mono text-[9px] font-semibold uppercase tracking-tight opacity-0 transition-opacity duration-150",
+												"group-hover:opacity-100 group-focus-visible:opacity-100",
+												GLYPH_TONE[cell.tone],
+											)}
+										>
+											{cell.glyph}
+										</span>
+									</TooltipTrigger>
+									<TooltipContent side="top" className="space-y-1 text-xs">
+										{cell.tooltip}
+									</TooltipContent>
+								</Tooltip>
+							</div>
+						))}
+					</div>
+				))}
+			</div>
+		</TooltipProvider>
 	)
 }
 
@@ -220,9 +219,7 @@ export function HoneycombSection({
 				{legend.map((item) => (
 					<LegendDot key={item.tone} tone={item.tone} label={item.label} count={item.count} />
 				))}
-				{footnote && (
-					<span className="ml-auto text-[10px] text-muted-foreground/60">{footnote}</span>
-				)}
+				{footnote && <span className="ml-auto text-[10px] text-muted-foreground/60">{footnote}</span>}
 			</div>
 		</section>
 	)

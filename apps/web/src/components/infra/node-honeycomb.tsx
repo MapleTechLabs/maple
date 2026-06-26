@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { Link } from "@tanstack/react-router"
 
 import { deriveHostStatus, formatRelative, formatUptime, type HostStatus } from "./format"
@@ -8,10 +8,6 @@ import {
 	type HoneycombLegendItem,
 	type HoneycombTone,
 } from "./honeycomb"
-import { EntityPreviewDrawer } from "./honeycomb-preview-drawer"
-import { StatRail, StatRailItem } from "./primitives/stat-rail"
-import { HeroChip } from "./primitives/page-hero"
-import { HostStatusBadge } from "./status-badge"
 import type { NodeRow } from "./node-table"
 
 interface NodeHoneycombProps {
@@ -26,24 +22,26 @@ const STATUS_TONE: Record<HostStatus, HoneycombTone> = {
 	down: "stale",
 }
 
-function nodeCores(node: NodeRow): string {
-	return Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"
-}
-
-function toCell(node: NodeRow, referenceTime: string | undefined, onSelect: () => void): HoneycombCell {
+function toCell(node: NodeRow, referenceTime?: string): HoneycombCell {
 	const status = deriveHostStatus(node.lastSeen, referenceTime)
+	const cores = Number.isFinite(node.cpuUsage) ? node.cpuUsage.toFixed(2) : "—"
 	return {
 		key: node.nodeName,
 		glyph: node.nodeName.charAt(0).toUpperCase() || "·",
 		tone: STATUS_TONE[status],
-		ariaLabel: `${node.nodeName} — ${status}`,
-		onSelect,
+		link: (
+			<Link
+				to="/infra/kubernetes/nodes/$nodeName"
+				params={{ nodeName: node.nodeName }}
+				aria-label={`${node.nodeName} — ${status}`}
+			/>
+		),
 		tooltip: (
 			<>
 				<div className="font-mono font-medium">{node.nodeName}</div>
 				<div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono tabular-nums">
 					<span className="text-muted-foreground">CPU cores</span>
-					<span>{nodeCores(node)}</span>
+					<span>{cores}</span>
 					<span className="text-muted-foreground">Uptime</span>
 					<span>{formatUptime(node.uptime)}</span>
 				</div>
@@ -57,12 +55,7 @@ function toCell(node: NodeRow, referenceTime: string | undefined, onSelect: () =
 }
 
 export function NodeHoneycomb({ nodes, referenceTime }: NodeHoneycombProps) {
-	const [selected, setSelected] = useState<NodeRow | null>(null)
-
-	const cells = useMemo(
-		() => nodes.map((n) => toCell(n, referenceTime, () => setSelected(n))),
-		[nodes, referenceTime],
-	)
+	const cells = useMemo(() => nodes.map((n) => toCell(n, referenceTime)), [nodes, referenceTime])
 
 	const legend = useMemo<HoneycombLegendItem[]>(() => {
 		const c: Record<HostStatus, number> = { active: 0, idle: 0, down: 0 }
@@ -75,43 +68,13 @@ export function NodeHoneycomb({ nodes, referenceTime }: NodeHoneycombProps) {
 	}, [nodes, referenceTime])
 
 	return (
-		<>
-			<HoneycombSection
-				label="Nodes"
-				count={nodes.length}
-				unit="node"
-				cells={cells}
-				legend={legend}
-				footnote="cell = reporting status"
-			/>
-			{selected && (
-				<EntityPreviewDrawer
-					open
-					onOpenChange={(open) => !open && setSelected(null)}
-					title={selected.nodeName}
-					status={<HostStatusBadge lastSeen={selected.lastSeen} referenceTime={referenceTime} />}
-					stats={
-						<StatRail columns={3}>
-							<StatRailItem eyebrow="CPU cores" value={nodeCores(selected)} compact />
-							<StatRailItem eyebrow="Uptime" value={formatUptime(selected.uptime)} compact />
-							<StatRailItem
-								eyebrow="Last seen"
-								value={formatRelative(selected.lastSeen)}
-								compact
-							/>
-						</StatRail>
-					}
-					meta={
-						<>
-							{selected.kubeletVersion && <HeroChip>kubelet {selected.kubeletVersion}</HeroChip>}
-							{selected.clusterName && <HeroChip>cluster {selected.clusterName}</HeroChip>}
-						</>
-					}
-					detailLink={
-						<Link to="/infra/kubernetes/nodes/$nodeName" params={{ nodeName: selected.nodeName }} />
-					}
-				/>
-			)}
-		</>
+		<HoneycombSection
+			label="Nodes"
+			count={nodes.length}
+			unit="node"
+			cells={cells}
+			legend={legend}
+			footnote="cell = reporting status"
+		/>
 	)
 }

@@ -4,8 +4,8 @@ import { cn } from "@maple/ui/lib/utils"
 
 import {
 	deriveHostStatus,
-	formatLoad,
 	formatPercent,
+	formatRelative,
 	severityLevel,
 	type HostStatus,
 } from "./format"
@@ -15,10 +15,6 @@ import {
 	type HoneycombLegendItem,
 	type HoneycombTone,
 } from "./honeycomb"
-import { EntityPreviewDrawer } from "./honeycomb-preview-drawer"
-import { StatRail, StatRailItem } from "./primitives/stat-rail"
-import { HeroChip } from "./primitives/page-hero"
-import { HostStatusBadge } from "./status-badge"
 import type { HostRow } from "./host-table"
 
 interface FleetGridProps {
@@ -73,7 +69,6 @@ function sortHosts(rows: ReadonlyArray<AnnotatedHost>, key: SortKey): AnnotatedH
 
 export function FleetGrid({ hosts }: FleetGridProps) {
 	const [sortKey, setSortKey] = useState<SortKey>("worst")
-	const [selected, setSelected] = useState<HostRow | null>(null)
 
 	const annotated = useMemo(() => hosts.map(annotate), [hosts])
 	const sorted = useMemo(() => sortHosts(annotated, sortKey), [annotated, sortKey])
@@ -84,8 +79,13 @@ export function FleetGrid({ hosts }: FleetGridProps) {
 				key: host.hostName,
 				glyph: host.hostName.charAt(0).toUpperCase() || "·",
 				tone,
-				ariaLabel: `${host.hostName} — ${status}, worst ${formatPercent(worst)}`,
-				onSelect: () => setSelected(host),
+				link: (
+					<Link
+						to="/infra/$hostName"
+						params={{ hostName: host.hostName }}
+						aria-label={`${host.hostName} — ${status}, worst ${formatPercent(worst)}`}
+					/>
+				),
 				tooltip: (
 					<>
 						<div className="font-mono font-medium">{host.hostName}</div>
@@ -96,6 +96,10 @@ export function FleetGrid({ hosts }: FleetGridProps) {
 							<span>{formatPercent(host.memoryPct)}</span>
 							<span className="text-muted-foreground">Disk</span>
 							<span>{formatPercent(host.diskPct)}</span>
+						</div>
+						<div className="border-t pt-1 text-[10px] text-muted-foreground">
+							{status === "active" ? "Active" : status === "idle" ? "Idle" : "Down"} ·{" "}
+							{formatRelative(host.lastSeen)}
 						</div>
 					</>
 				),
@@ -136,57 +140,14 @@ export function FleetGrid({ hosts }: FleetGridProps) {
 	)
 
 	return (
-		<>
-			<HoneycombSection
-				label="Fleet"
-				count={hosts.length}
-				unit="host"
-				cells={cells}
-				legend={legend}
-				footnote="cell = max(cpu, memory, disk)"
-				actions={actions}
-			/>
-			{selected && (
-				<EntityPreviewDrawer
-					open
-					onOpenChange={(open) => !open && setSelected(null)}
-					title={selected.hostName}
-					status={<HostStatusBadge lastSeen={selected.lastSeen} />}
-					stats={
-						<StatRail columns={4}>
-							<StatRailItem
-								eyebrow="CPU"
-								value={formatPercent(selected.cpuPct)}
-								tone={severityLevel(selected.cpuPct ?? 0)}
-								compact
-							/>
-							<StatRailItem
-								eyebrow="Memory"
-								value={formatPercent(selected.memoryPct)}
-								tone={severityLevel(selected.memoryPct ?? 0)}
-								compact
-							/>
-							<StatRailItem
-								eyebrow="Disk"
-								value={formatPercent(selected.diskPct)}
-								tone={severityLevel(selected.diskPct ?? 0)}
-								compact
-							/>
-							<StatRailItem eyebrow="Load 15m" value={formatLoad(selected.load15)} compact />
-						</StatRail>
-					}
-					meta={
-						<>
-							{selected.osType && <HeroChip>{selected.osType}</HeroChip>}
-							{selected.hostArch && <HeroChip>{selected.hostArch}</HeroChip>}
-							{selected.cloudProvider && <HeroChip>{selected.cloudProvider}</HeroChip>}
-						</>
-					}
-					detailLink={
-						<Link to="/infra/$hostName" params={{ hostName: selected.hostName }} />
-					}
-				/>
-			)}
-		</>
+		<HoneycombSection
+			label="Fleet"
+			count={hosts.length}
+			unit="host"
+			cells={cells}
+			legend={legend}
+			footnote="cell = max(cpu, memory, disk)"
+			actions={actions}
+		/>
 	)
 }
