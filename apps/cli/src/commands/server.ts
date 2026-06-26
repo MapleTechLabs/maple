@@ -264,6 +264,19 @@ export const start = Command.make("start", {
 
 			yield* fs.makeDirectory(dataDir, { recursive: true })
 
+			// Refuse to open a store written by an incompatible chDB build: re-loading
+			// its persisted materialized views crashes the C++ runtime natively
+			// (SIGTRAP), which we cannot catch. Fresh/matching stores pass through.
+			const compat = checkStoreCompatible(dataDir)
+			if (!compat.compatible) {
+				return yield* new ServerError({
+					message:
+						`the local store at ${prettyPath(dataDir)} is incompatible with this build's chDB ` +
+						`(store: ${compat.found}; build: ${compat.current}) — loading it would crash chDB. ` +
+						`Wipe it with \`${bold("maple reset")}\`, or start fresh via \`${bold("maple start --reset")}\`.`,
+				})
+			}
+
 			// A store left "open" (the previous server died without running its close
 			// finalizer) may be inconsistent — reopening it can crash chDB natively,
 			// which we cannot catch. Auto-wipe and bootstrap fresh instead of walking
@@ -310,19 +323,6 @@ export const start = Command.make("start", {
 				}
 			}
 
-			// Refuse to open a store written by an incompatible chDB build: re-loading
-			// its persisted materialized views crashes the C++ runtime natively
-			// (SIGTRAP), which we cannot catch. Fresh/matching stores pass through.
-			const compat = checkStoreCompatible(dataDir)
-			if (!compat.compatible) {
-				return yield* new ServerError({
-					message:
-						`the local store at ${prettyPath(dataDir)} is incompatible with this build's chDB ` +
-						`(store: ${compat.found}; build: ${compat.current}) — loading it would crash chDB. ` +
-						`Wipe it with \`${bold("maple reset")}\`, or start fresh via \`${bold("maple start --reset")}\`.`,
-				})
-			}
-
 			// A store bootstrapped from an older bundled schema can't be evolved in
 			// place: `CREATE … IF NOT EXISTS` is a no-op on existing tables, so a
 			// column added to the schema (e.g. ServiceNamespace on trace_list_mv)
@@ -346,7 +346,12 @@ export const start = Command.make("start", {
 
 			// Detached: spawn the same command without --background and exit.
 			if (a.background)
-				return yield* startDetached(a.port, dataDir, a.offline, Option.getOrUndefined(a.chdbConfigFile))
+				return yield* startDetached(
+					a.port,
+					dataDir,
+					a.offline,
+					Option.getOrUndefined(a.chdbConfigFile),
+				)
 
 			yield* Effect.sync(() =>
 				process.stderr.write(
@@ -378,7 +383,9 @@ export const start = Command.make("start", {
 						dataDir,
 						configFile: Option.getOrUndefined(a.chdbConfigFile),
 						assets,
-					}).pipe(Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })))
+					}).pipe(
+						Effect.mapError((e) => new ServerError({ message: `failed to start: ${e.message}` })),
+					)
 					started = true
 
 					// Bootstrap succeeded — stamp the store so a later start over an

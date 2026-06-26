@@ -1,5 +1,5 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { cp, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
+import { cp, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { basename, join, resolve, sep } from "node:path"
 import { Effect, Schema } from "effect"
@@ -19,12 +19,13 @@ export interface CheckpointOptions {
 	readonly port: number
 }
 
-const checkpointRoot = (dataDir: string): string => join(dataDir, "backups")
-const buildingDir = (dataDir: string): string => join(checkpointRoot(dataDir), "building")
-const currentDir = (dataDir: string): string => join(checkpointRoot(dataDir), "current")
-const previousDir = (dataDir: string): string => join(checkpointRoot(dataDir), "previous")
+export const checkpointRoot = (dataDir: string): string => join(dataDir, "backups")
+export const buildingDir = (dataDir: string): string => join(checkpointRoot(dataDir), "building")
+export const currentDir = (dataDir: string): string => join(checkpointRoot(dataDir), "current")
+export const previousDir = (dataDir: string): string => join(checkpointRoot(dataDir), "previous")
 const restoreBuildingDir = (dataDir: string): string => `${dataDir}.restore-building`
-const quarantineDir = (dataDir: string): string => `${dataDir}.quarantine-${new Date().toISOString().replace(/[:.]/g, "-")}`
+const quarantineDir = (dataDir: string): string =>
+	`${dataDir}.quarantine-${new Date().toISOString().replace(/[:.]/g, "-")}`
 
 const backupSqlPath = (name: string): string => `backups/${name}/backup`
 
@@ -41,7 +42,7 @@ const dataDirWithSlash = (dataDir: string): string => {
 	return abs.endsWith(sep) ? abs : `${abs}${sep}`
 }
 
-const writeBackupConfig = (path: string, sourceDataDir?: string): void => {
+export const writeBackupConfig = (path: string, sourceDataDir?: string): void => {
 	const sourceDisk = sourceDataDir
 		? `
   <storage_configuration>
@@ -72,7 +73,9 @@ const postLocalQuery = async (port: number, sql: string): Promise<unknown> => {
 	})
 	if (!response.ok) {
 		const detail = await response.text().catch(() => "")
-		throw new Error(`local query failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`)
+		throw new Error(
+			`local query failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`,
+		)
 	}
 	return response.json()
 }
@@ -122,6 +125,28 @@ interface CheckpointManifest {
 		readonly metricsSum: number
 		readonly materializedViews: number
 	}
+}
+
+export const readCheckpointManifest = async (dataDir: string): Promise<CheckpointManifest> => {
+	const path = join(currentDir(dataDir), "manifest.json")
+	let raw: string
+	try {
+		raw = await readFile(path, "utf8")
+	} catch {
+		throw new Error(`checkpoint manifest not found at ${path}`)
+	}
+	const parsed = JSON.parse(raw) as Partial<CheckpointManifest>
+	if (parsed.chdbVersion !== CHDB_VERSION) {
+		throw new Error(
+			`checkpoint chDB version mismatch (checkpoint: ${parsed.chdbVersion ?? "unknown"}; build: ${CHDB_VERSION})`,
+		)
+	}
+	if (parsed.schemaFingerprint !== SCHEMA_FINGERPRINT) {
+		throw new Error(
+			`checkpoint schema mismatch (checkpoint: ${parsed.schemaFingerprint ?? "unknown"}; build: ${SCHEMA_FINGERPRINT})`,
+		)
+	}
+	return parsed as CheckpointManifest
 }
 
 const validateBackup = async (dataDir: string): Promise<CheckpointManifest["validation"]> => {
@@ -195,7 +220,7 @@ const restoreIntoScratch = async (
 	}
 }
 
-const promoteBuilding = async (dataDir: string): Promise<void> => {
+export const promoteBuilding = async (dataDir: string): Promise<void> => {
 	await rm(previousDir(dataDir), { recursive: true, force: true })
 	try {
 		await rename(currentDir(dataDir), previousDir(dataDir))
@@ -216,10 +241,24 @@ export const createCheckpoint = (
 			if (name !== "building") throw new Error("internal checkpoint path error")
 			await rm(building, { recursive: true, force: true })
 
-			await postLocalQuery(
-				options.port,
-				`BACKUP DATABASE default TO Disk('default', '${backupSqlPath("building")}')`,
-			)
+			try {
+				await postLocalQuery(
+					options.port,
+					`BACKUP DATABASE default TO Disk('default', '${backupSqlPath("building")}')`,
+				)
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error)
+				if (
+					message.includes("backups.allowed_disk") ||
+					message.includes("INVALID_CONFIG_PARAMETER")
+				) {
+					throw new Error(
+						"checkpoints require the local server to be started with `--chdb-config-file` " +
+							"pointing at a ClickHouse backups config",
+					)
+				}
+				throw error
+			}
 
 			const validation = await validateBackup(options.dataDir)
 			const manifest: CheckpointManifest = {
@@ -234,7 +273,10 @@ export const createCheckpoint = (
 			}
 			await writeFile(join(building, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`)
 			await promoteBuilding(options.dataDir)
-			return { path: join(root, "current"), manifest: { ...manifest, backupPath: backupSqlPath("current") } }
+			return {
+				path: join(root, "current"),
+				manifest: { ...manifest, backupPath: backupSqlPath("current") },
+			}
 		},
 		catch: (error) =>
 			new CheckpointError({ message: error instanceof Error ? error.message : String(error) }),
@@ -242,13 +284,17 @@ export const createCheckpoint = (
 
 export const restoreCheckpoint = (
 	dataDir: string,
-): Effect.Effect<{ readonly quarantinePath: string; readonly validation: CheckpointManifest["validation"] }, CheckpointError> =>
+): Effect.Effect<
+	{ readonly quarantinePath: string; readonly validation: CheckpointManifest["validation"] },
+	CheckpointError
+> =>
 	Effect.tryPromise({
 		try: async () => {
 			const sourceBackup = join(currentDir(dataDir), "backup")
 			if (!existsSync(sourceBackup)) {
 				throw new Error(`no checkpoint found at ${sourceBackup}`)
 			}
+			await readCheckpointManifest(dataDir)
 
 			const restoreDir = restoreBuildingDir(dataDir)
 			await rm(restoreDir, { recursive: true, force: true })
