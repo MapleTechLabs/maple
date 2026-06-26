@@ -21,7 +21,7 @@ import { Schema } from "effect"
 // defect; `clickhouse*` carry CH diagnostics extracted by `mapWarehouseError`.
 const warehouseErrorBaseFields = {
 	message: Schema.String,
-	pipe: Schema.String,
+	pipeName: Schema.String,
 	cause: Schema.optionalKey(Schema.Defect()),
 	clickhouseCode: Schema.optional(Schema.String),
 	clickhouseType: Schema.optional(Schema.String),

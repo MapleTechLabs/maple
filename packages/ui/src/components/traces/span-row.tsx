@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronRightIcon, ChevronDownIcon } from "../icons"
+import { ChevronRightIcon, ChevronDownIcon, GlobeIcon } from "../icons"
 
 import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
@@ -8,6 +8,7 @@ import { formatDuration } from "../../lib/format"
 import { getServiceLegendColor } from "../../lib/colors"
 import { getCacheInfo, cacheResultStyles } from "../../lib/cache"
 import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
+import { getCloudPlatform, outcomeBadgeStyle } from "../../lib/cloud-platforms"
 import { PixelDurationBar } from "./pixel-duration-bar"
 import { countDescendants } from "./auto-collapse"
 import type { SpanNode } from "../../lib/types"
@@ -116,6 +117,7 @@ function SpanRowImpl({
 
 	const cacheInfo = getCacheInfo(span.spanAttributes)
 	const httpInfo = getHttpInfo(span)
+	const platform = getCloudPlatform(span.spanAttributes)
 	const statusStyle = statusStyles[span.statusCode] ?? statusStyles.Unset
 	const kindLabel = kindLabels[span.spanKind] ?? span.spanKind?.replace("SPAN_KIND_", "") ?? "Unknown"
 
@@ -167,13 +169,30 @@ function SpanRowImpl({
 					<div className="w-6 shrink-0" />
 				)}
 
-				<Badge variant="outline" className="shrink-0 font-mono text-[10px] px-1.5">
+				<Badge variant="outline" className="shrink-0 font-mono text-[10px] px-1.5 gap-1">
+					{platform && (
+						<platform.Icon
+							size={11}
+							className={cn("shrink-0", platform.accentClassName)}
+							aria-label={platform.label}
+						/>
+					)}
 					<span style={{ color: getServiceLegendColor(span.serviceName, services) }}>
 						{span.serviceName}
 					</span>
 					<span className="text-muted-foreground">·</span>
 					{kindLabel}
 				</Badge>
+
+				{platform?.edge && (
+					<span
+						className="hidden @min-[600px]:inline-flex items-center gap-1 shrink-0 font-mono text-[10px] text-muted-foreground"
+						title={platform.location ?? undefined}
+					>
+						<GlobeIcon size={10} className="shrink-0" />
+						{platform.edge}
+					</span>
+				)}
 
 				{httpInfo ? (
 					<span
@@ -214,6 +233,19 @@ function SpanRowImpl({
 				<span className="w-16 text-right font-mono text-xs text-muted-foreground">
 					{formatDuration(span.durationMs)}
 				</span>
+
+				{platform?.outcome?.bad && (
+					<Badge
+						variant="outline"
+						className={cn(
+							"text-[10px] justify-center font-medium px-1.5 shrink-0",
+							outcomeBadgeStyle(true),
+						)}
+						title={`${platform.label} outcome`}
+					>
+						{platform.outcome.value}
+					</Badge>
+				)}
 
 				{cacheInfo?.result ? (
 					<Badge

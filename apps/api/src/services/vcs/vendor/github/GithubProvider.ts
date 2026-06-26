@@ -15,7 +15,7 @@ import {
 	VcsWebhookParseError,
 	VcsWebhookSignatureError,
 } from "@maple/domain/http"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
 import { Env } from "../../../../lib/Env"
 import type { VcsProviderClient, VcsWebhookRequest } from "../../VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "../../VcsSyncQueue"
@@ -458,25 +458,22 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// `webhookToJobs` span.
 			const mapEvent = (event: string | undefined, parsed: unknown, now: number) =>
 				Effect.gen(function* () {
-					switch (event) {
-						case "push":
-							return yield* mapPush(parsed, now)
-						case "installation":
-							return yield* mapInstallation(parsed)
-						case "installation_repositories":
-							return yield* mapInstallationRepositories(parsed)
-						case "create":
-							return yield* mapRefEvent("created")(parsed)
-						case "delete":
-							return yield* mapRefEvent("deleted")(parsed)
-						default:
+					return yield* Match.value(event).pipe(
+						Match.when("push", () => mapPush(parsed, now)),
+						Match.when("installation", () => mapInstallation(parsed)),
+						Match.when("installation_repositories", () =>
+							mapInstallationRepositories(parsed),
+						),
+						Match.when("create", () => mapRefEvent("created")(parsed)),
+						Match.when("delete", () => mapRefEvent("deleted")(parsed)),
+						Match.orElse(() =>
 							// ping and unhandled events are accepted no-ops.
-							yield* Effect.annotateCurrentSpan({
+							Effect.annotateCurrentSpan({
 								"vcs.webhook.outcome": "skipped",
 								"vcs.webhook.skip_reason": "unhandled_event",
-							})
-							return []
-					}
+							}).pipe(Effect.as([])),
+						),
+					)
 				})
 
 			const webhookToJobs = (input: VcsWebhookRequest) =>

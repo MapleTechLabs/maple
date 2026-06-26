@@ -16,7 +16,8 @@ export class EdgeCacheIOError extends Schema.TaggedErrorClass<EdgeCacheIOError>(
 export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	readonly bucket: string
 	readonly key: string
-	readonly ttlSeconds: number
+	/** Cache TTL (seconds), or a function deriving it from the computed value — run once on write, never on a hit. */
+	readonly ttlSeconds: number | ((value: A) => number)
 	/**
 	 * Optional codec used to (a) encode the value into a JSON-safe form before
 	 * `backend.put`, and (b) decode the cached bytes back into the original
@@ -152,9 +153,11 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 			const stored: unknown = options.schema
 				? yield* Schema.encodeUnknownEffect(options.schema)(value).pipe(Effect.orDie)
 				: value
+			const ttlSeconds =
+				typeof options.ttlSeconds === "function" ? options.ttlSeconds(value) : options.ttlSeconds
 			const writeNowMs = yield* Clock.currentTimeMillis
 			yield* Effect.tryPromise({
-				try: () => backend.put(options.bucket, hash, stored, options.ttlSeconds, writeNowMs),
+				try: () => backend.put(options.bucket, hash, stored, ttlSeconds, writeNowMs),
 				catch: (error) => error,
 			}).pipe(
 				Effect.tapError((error) =>
@@ -217,40 +220,38 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 		)
 	})
 
-	const rawGet = <A>(bucket: string, key: string): Effect.Effect<Option.Option<A>, EdgeCacheIOError> =>
-		Effect.gen(function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			return yield* Effect.tryPromise({
-				try: () => backend.get(bucket, key, nowMs),
-				catch: (cause) =>
-					new EdgeCacheIOError({
-						op: "get",
-						bucket,
-						key,
-						cause: cause instanceof Error ? cause.message : String(cause),
-					}),
-			}).pipe(Effect.map((value) => (value === undefined ? Option.none<A>() : Option.some(value as A))))
-		})
+	const rawGet = Effect.fn("EdgeCache.rawGet")(function* <A>(bucket: string, key: string) {
+		const nowMs = yield* Clock.currentTimeMillis
+		return yield* Effect.tryPromise({
+			try: () => backend.get(bucket, key, nowMs),
+			catch: (cause) =>
+				new EdgeCacheIOError({
+					op: "get",
+					bucket,
+					key,
+					cause: cause instanceof Error ? cause.message : String(cause),
+				}),
+		}).pipe(Effect.map((value) => (value === undefined ? Option.none<A>() : Option.some(value as A))))
+	})
 
-	const rawPut = (
+	const rawPut = Effect.fn("EdgeCache.rawPut")(function* (
 		bucket: string,
 		key: string,
 		value: unknown,
 		ttlSeconds: number,
-	): Effect.Effect<void, EdgeCacheIOError> =>
-		Effect.gen(function* () {
-			const nowMs = yield* Clock.currentTimeMillis
-			return yield* Effect.tryPromise({
-				try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
-				catch: (cause) =>
-					new EdgeCacheIOError({
-						op: "put",
-						bucket,
-						key,
-						cause: cause instanceof Error ? cause.message : String(cause),
-					}),
-			})
+	) {
+		const nowMs = yield* Clock.currentTimeMillis
+		return yield* Effect.tryPromise({
+			try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
+			catch: (cause) =>
+				new EdgeCacheIOError({
+					op: "put",
+					bucket,
+					key,
+					cause: cause instanceof Error ? cause.message : String(cause),
+				}),
 		})
+	})
 
 	return { getOrCompute, invalidate, rawGet, rawPut } satisfies EdgeCacheServiceShape
 }

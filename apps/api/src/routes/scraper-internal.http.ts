@@ -139,57 +139,61 @@ export const ScraperInternalRouter = HttpRouter.use((router) =>
 					})
 
 				const targets: Array<InternalScrapeTarget> = []
-				for (const row of rows) {
-					const ingestKey = yield* ingestKeyForOrg(row.orgId)
-					if (ingestKey === null) {
-						yield* Effect.logWarning("Skipping scrape target (no ingest key)").pipe(
-							Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
-						)
-						continue
-					}
-
-					if (row.targetType === "planetscale") {
-						// Expand the logical target into its discovered per-branch
-						// endpoints. Discovery failure with no cache skips the row this
-						// round; the scheduler re-fetches the list every reconcile.
-						const subTargets = yield* discovery.discover(row).pipe(
-							Effect.catch((error) =>
-								Effect.logWarning("Skipping PlanetScale target (discovery failed)").pipe(
-									Effect.annotateLogs({
-										scrapeTargetId: row.id,
-										orgId: row.orgId,
-										error: error.message,
-									}),
-									Effect.as([] as ReadonlyArray<PlanetScaleSubTarget>),
-								),
-							),
-						)
-						for (const subTarget of subTargets) {
-							const target = yield* toInternalScrapeTarget(row, ingestKey, subTarget)
-							if (Option.isSome(target)) {
-								targets.push(target.value)
-							} else {
-								yield* Effect.logWarning("Skipping scrape sub-target (invalid row)").pipe(
-									Effect.annotateLogs({
-										scrapeTargetId: row.id,
-										orgId: row.orgId,
-										subTargetKey: subTarget.subTargetKey,
-									}),
-								)
-							}
+				yield* Effect.forEach(rows, (row) =>
+					Effect.gen(function* () {
+						const ingestKey = yield* ingestKeyForOrg(row.orgId)
+						if (ingestKey === null) {
+							yield* Effect.logWarning("Skipping scrape target (no ingest key)").pipe(
+								Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
+							)
+							return
 						}
-						continue
-					}
 
-					const target = yield* toInternalScrapeTarget(row, ingestKey)
-					if (Option.isSome(target)) {
-						targets.push(target.value)
-					} else {
-						yield* Effect.logWarning("Skipping scrape target (invalid row)").pipe(
-							Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
-						)
-					}
-				}
+						if (row.targetType === "planetscale") {
+							// Expand the logical target into its discovered per-branch
+							// endpoints. Discovery failure with no cache skips the row this
+							// round; the scheduler re-fetches the list every reconcile.
+							const subTargets = yield* discovery.discover(row).pipe(
+								Effect.catch((error) =>
+									Effect.logWarning("Skipping PlanetScale target (discovery failed)").pipe(
+										Effect.annotateLogs({
+											scrapeTargetId: row.id,
+											orgId: row.orgId,
+											error: error.message,
+										}),
+										Effect.as([] as ReadonlyArray<PlanetScaleSubTarget>),
+									),
+								),
+							)
+							yield* Effect.forEach(subTargets, (subTarget) =>
+								Effect.gen(function* () {
+									const target = yield* toInternalScrapeTarget(row, ingestKey, subTarget)
+									if (Option.isSome(target)) {
+										targets.push(target.value)
+									} else {
+										yield* Effect.logWarning("Skipping scrape sub-target (invalid row)").pipe(
+											Effect.annotateLogs({
+												scrapeTargetId: row.id,
+												orgId: row.orgId,
+												subTargetKey: subTarget.subTargetKey,
+											}),
+										)
+									}
+								}),
+							)
+							return
+						}
+
+						const target = yield* toInternalScrapeTarget(row, ingestKey)
+						if (Option.isSome(target)) {
+							targets.push(target.value)
+						} else {
+							yield* Effect.logWarning("Skipping scrape target (invalid row)").pipe(
+								Effect.annotateLogs({ scrapeTargetId: row.id, orgId: row.orgId }),
+							)
+						}
+					}),
+				)
 
 				return yield* HttpServerResponse.json(targets)
 			}).pipe(Effect.withSpan("ScraperInternal.listTargets"))

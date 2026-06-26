@@ -63,11 +63,19 @@ export interface QueryEngineServiceShape {
 		tenant: TenantContext,
 		request: QueryEngineRawSqlEvaluateRequest,
 	) => Effect.Effect<ReadonlyArray<GroupedAlertObservation>, QueryEngineRouteError>
+	/**
+	 * Edge-cache a direct-route query keyed by `(orgId, routeName, payload)`.
+	 * `ttlSeconds` defaults to 15s (fits "current health" routes like
+	 * `serviceOverview`); pass a longer TTL for slow-moving routes whose payload
+	 * already snaps to a coarse window (e.g. `serviceHealthBaseline`, whose input
+	 * is hour-floored, so a 1h TTL yields ≤1 recompute/hour per key).
+	 */
 	readonly cachedDirect: <A>(
 		tenant: TenantContext,
 		routeName: string,
 		payload: unknown,
 		effect: Effect.Effect<A, QueryEngineDirectError>,
+		ttlSeconds?: number,
 	) => Effect.Effect<A, QueryEngineDirectError>
 }
 export class QueryEngineService extends Context.Service<QueryEngineService, QueryEngineServiceShape>()(
@@ -339,17 +347,19 @@ export class QueryEngineService extends Context.Service<QueryEngineService, Quer
 				routeName: string,
 				payload: unknown,
 				effect: Effect.Effect<A, QueryEngineDirectError>,
+				ttlSeconds = 15,
 			) {
 				return yield* withTimeout(
 					Effect.gen(function* () {
 						const startMs = yield* Clock.currentTimeMillis
 						const key = buildDirectRouteCacheKey(tenant.orgId, routeName, payload)
 						const { value, hit } = yield* edgeCache.getOrCompute(
-							{ bucket: "qe-direct", key, ttlSeconds: 15 },
+							{ bucket: "qe-direct", key, ttlSeconds },
 							effect,
 						)
 						yield* recordCacheOutcome(hit)
 						yield* Effect.annotateCurrentSpan("cache.hit", hit)
+						yield* Effect.annotateCurrentSpan("cache.ttlSeconds", ttlSeconds)
 						yield* Metric.update(
 							QueryEngineMetrics.executeDurationMs,
 							(yield* Clock.currentTimeMillis) - startMs,

@@ -28,7 +28,7 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "get_alert_rule",
+							pipeName: "get_alert_rule",
 							cause: error,
 						}),
 				),

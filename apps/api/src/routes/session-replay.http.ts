@@ -36,6 +36,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							browser: payload.browser,
 							country: payload.country,
 							deviceType: payload.deviceType,
+							userId: payload.userId,
 							hasErrors: payload.hasErrors,
 							search: payload.search,
 							cursor: payload.cursor,
@@ -71,6 +72,7 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							browser: payload.browser,
 							country: payload.country,
 							deviceType: payload.deviceType,
+							userId: payload.userId,
 							hasErrors: payload.hasErrors,
 							search: payload.search,
 						}),
@@ -103,10 +105,16 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						"maple.org_id": tenant.orgId,
 						"maple.session.id": payload.sessionId,
 					})
-					const compiled = CH.compile(CH.getSessionReplayQuery(), {
-						orgId: tenant.orgId,
-						sessionId: payload.sessionId,
-					})
+					const compiled = CH.compile(
+						CH.getSessionReplayQuery({
+							startTime: payload.windowStart,
+							endTime: payload.windowEnd,
+						}),
+						{
+							orgId: tenant.orgId,
+							sessionId: payload.sessionId,
+						},
+					)
 					const maybeData = yield* warehouse.compiledQueryFirst(tenant, compiled, {
 						profile: "discovery",
 						context: "getReplay",
@@ -131,10 +139,16 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						"maple.org_id": tenant.orgId,
 						"maple.session.id": payload.sessionId,
 					})
-					const compiled = CH.compile(CH.sessionReplayEventsQuery(), {
-						orgId: tenant.orgId,
-						sessionId: payload.sessionId,
-					})
+					const compiled = CH.compile(
+						CH.sessionReplayEventsQuery({
+							startTime: payload.windowStart,
+							endTime: payload.windowEnd,
+						}),
+						{
+							orgId: tenant.orgId,
+							sessionId: payload.sessionId,
+						},
+					)
 					const chunks = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "getReplayEvents",
@@ -181,7 +195,11 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						return new SessionTraceSummariesResponse({ data: [] })
 					}
 					const compiled = CH.compile(
-						CH.sessionTraceSummariesQuery({ traceIds: payload.traceIds }),
+						CH.sessionTraceSummariesQuery({
+							traceIds: payload.traceIds,
+							startTime: payload.windowStart,
+							endTime: payload.windowEnd,
+						}),
 						{ orgId: tenant.orgId },
 					)
 					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
@@ -206,10 +224,16 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 						"maple.org_id": tenant.orgId,
 						"maple.session.id": payload.sessionId,
 					})
-					const compiled = CH.compile(CH.sessionTranscriptQuery(), {
-						orgId: tenant.orgId,
-						sessionId: payload.sessionId,
-					})
+					const compiled = CH.compile(
+						CH.sessionTranscriptQuery({
+							startTime: payload.windowStart,
+							endTime: payload.windowEnd,
+						}),
+						{
+							orgId: tenant.orgId,
+							sessionId: payload.sessionId,
+						},
+					)
 					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
 						profile: "list",
 						context: "sessionTranscript",

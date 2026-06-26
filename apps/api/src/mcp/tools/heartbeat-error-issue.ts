@@ -31,7 +31,7 @@ export function registerHeartbeatErrorIssueTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "heartbeat_error_issue",
+							pipeName: "heartbeat_error_issue",
 							cause: error,
 						}),
 				),

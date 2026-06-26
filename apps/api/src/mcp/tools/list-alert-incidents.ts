@@ -32,7 +32,7 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "list_alert_incidents",
+							pipeName: "list_alert_incidents",
 							cause: error,
 						}),
 				),

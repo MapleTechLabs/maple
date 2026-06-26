@@ -8,6 +8,7 @@ import {
 	ChevronLeftIcon,
 	CodeIcon,
 	DatabaseIcon,
+	GlobeIcon,
 } from "../icons"
 import type { IconComponent } from "../icons"
 
@@ -17,6 +18,7 @@ import { getSpanColorStyle, extractClassName } from "../../lib/colors"
 import { getCacheInfo, cacheResultStyles, CACHE_OPERATION_COLORS } from "../../lib/cache"
 import type { CacheInfo } from "../../lib/cache"
 import { getHttpInfo, HTTP_METHOD_COLORS } from "../../lib/http"
+import { getCloudPlatform, outcomeBadgeStyle } from "../../lib/cloud-platforms"
 import type { FlowNodeData, AggregatedDuration } from "./flow-utils"
 
 /**
@@ -165,14 +167,22 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 	const cacheInfo = getCacheInfo(span.spanAttributes)
 	const isCacheSpan = !!cacheInfo
 
+	// Detect a serverless/cloud platform span (Cloudflare, Vercel, …)
+	const platform = getCloudPlatform(span.spanAttributes)
+
 	// Detect error state: respect OTel status as source of truth
 	// Only fall back to HTTP status >= 500 when OTel status is not explicitly "Ok"
 	const isError = span.statusCode === "Error" || (span.statusCode !== "Ok" && (httpInfo?.isError ?? false))
 
 	const colorStyle = isError ? {} : getSpanColorStyle(span.spanName, span.serviceName, services)
 
-	// Get the appropriate icon for this span
-	const SpanIcon = isCacheSpan ? DatabaseIcon : getSpanIcon(span.spanKind, isHttpRequest, isError)
+	// Get the appropriate icon for this span. Platform spans get the provider mark
+	// (unless erroring or a cache span, which keep their more specific icons).
+	const SpanIcon = isCacheSpan
+		? DatabaseIcon
+		: platform && !isError
+			? platform.Icon
+			: getSpanIcon(span.spanKind, isHttpRequest, isError)
 
 	// Extract class and function from span name (for non-HTTP spans)
 	const className = extractClassName(span.spanName)
@@ -210,7 +220,13 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 						<span className="font-semibold truncate">{span.serviceName}</span>
 					</div>
 					<span className="opacity-75 shrink-0">
-						{isCacheSpan ? (cacheInfo.system ?? "cache") : isHttpRequest ? "HTTP" : kindLabel}
+						{isCacheSpan
+							? (cacheInfo.system ?? "cache")
+							: platform
+								? platform.kind
+								: isHttpRequest
+									? "HTTP"
+									: kindLabel}
 					</span>
 				</div>
 
@@ -364,7 +380,17 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 
 					{/* Footer - span status */}
 					<div className="flex items-center justify-between px-3 py-1.5 bg-muted/30 rounded-b-lg border-t border-dashed border-foreground/10 text-[10px]">
-						{isCacheSpan && cacheInfo.result ? (
+						{platform?.outcome?.bad ? (
+							<span
+								className={cn(
+									"px-1.5 py-0.5 rounded text-[10px] font-semibold",
+									outcomeBadgeStyle(true),
+								)}
+								title={`${platform.label} outcome`}
+							>
+								{platform.outcome.value}
+							</span>
+						) : isCacheSpan && cacheInfo.result ? (
 							<span
 								className={cn(
 									"px-1.5 py-0.5 rounded text-[10px] font-semibold",
@@ -393,6 +419,14 @@ export const FlowSpanNode = memo(function FlowSpanNode({ data }: FlowSpanNodePro
 							<span className="flex items-center gap-1 text-muted-foreground/60 ml-2">
 								<CacheSystemIcon system={cacheInfo.system} size={11} />
 								<span className="font-mono truncate">{cacheInfo.system}</span>
+							</span>
+						) : platform?.edge && !isCombined ? (
+							<span
+								className="flex items-center gap-1 text-muted-foreground/60 ml-2"
+								title={platform.location ?? undefined}
+							>
+								<GlobeIcon size={11} className="shrink-0" />
+								<span className="font-mono truncate">{platform.edge}</span>
 							</span>
 						) : isCombined ? (
 							<span className="font-mono text-muted-foreground/60 truncate ml-2">

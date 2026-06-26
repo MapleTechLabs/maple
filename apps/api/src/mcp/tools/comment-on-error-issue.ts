@@ -51,7 +51,7 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "comment_on_error_issue",
+								pipeName: "comment_on_error_issue",
 								cause: error,
 							}),
 					),

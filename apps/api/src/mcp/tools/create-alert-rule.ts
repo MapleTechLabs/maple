@@ -331,7 +331,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: `Invalid alert rule: ${String(error)}`,
-							pipe: "create_alert_rule",
+							pipeName: "create_alert_rule",
 							cause: error,
 						}),
 				),
@@ -345,7 +345,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 					Effect.fail(
 						new McpQueryError({
 							message: `${error._tag}: ${error.message}\n${error.details.join("\n")}`,
-							pipe: "create_alert_rule",
+							pipeName: "create_alert_rule",
 							cause: error,
 						}),
 					),
@@ -355,7 +355,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}`,
-								pipe: "create_alert_rule",
+								pipeName: "create_alert_rule",
 								cause: error,
 							}),
 						),
@@ -363,7 +363,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}`,
-								pipe: "create_alert_rule",
+								pipeName: "create_alert_rule",
 								cause: error,
 							}),
 						),
@@ -371,7 +371,7 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}`,
-								pipe: "create_alert_rule",
+								pipeName: "create_alert_rule",
 								cause: error,
 							}),
 						),

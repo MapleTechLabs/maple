@@ -22,7 +22,7 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "list_dashboards",
+							pipeName: "list_dashboards",
 							cause: error,
 						}),
 				),

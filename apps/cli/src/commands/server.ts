@@ -1,7 +1,8 @@
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as Command from "effect/unstable/cli/Command"
 import * as Flag from "effect/unstable/cli/Flag"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { openSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join } from "node:path"
@@ -132,18 +133,15 @@ const offlineFlag = Flag.boolean("offline").pipe(
 // Log file for `--background` runs, beside the PID file (e.g. ~/.maple/maple.log).
 const logFilePath = (dataDir: string): string => join(dirname(dataDir), "maple.log")
 
-/** Non-fatal `/health` probe used while waiting for a detached server to bind. */
+/** Non-fatal `/health` probe used while waiting for a detached server to bind.
+ *  A transport error or a >300ms timeout collapses to `false` (not yet up). */
 const probeHealth = (addr: string): Effect.Effect<boolean> =>
-	Effect.tryPromise(async () => {
-		const controller = new AbortController()
-		const timer = setTimeout(() => controller.abort(), 300)
-		try {
-			const res = await fetch(`${addr}/health`, { signal: controller.signal })
-			return res.ok
-		} finally {
-			clearTimeout(timer)
-		}
-	}).pipe(Effect.orElseSucceed(() => false))
+	HttpClient.get(`${addr}/health`).pipe(
+		Effect.map((res) => res.status >= 200 && res.status < 300),
+		Effect.timeout("300 millis"),
+		Effect.provide(FetchHttpClient.layer),
+		Effect.orElseSucceed(() => false),
+	)
 
 /**
  * Re-exec `maple start` detached, dropping `--background`/`-d` so the child runs
@@ -334,10 +332,11 @@ export const start = Command.make("start", {
 
 					// Bootstrap succeeded — stamp the store so a later start over an
 					// incompatible binary upgrade is detected instead of crashing.
+					const stampedAtIso = new Date(yield* Clock.currentTimeMillis).toISOString()
 					yield* fs
 						.writeFileString(
 							storeMarkerPath(dataDir),
-							storeMarkerJson(MAPLE_VERSION, new Date().toISOString(), SCHEMA_FINGERPRINT),
+							storeMarkerJson(MAPLE_VERSION, stampedAtIso, SCHEMA_FINGERPRINT),
 						)
 						.pipe(Effect.ignore)
 

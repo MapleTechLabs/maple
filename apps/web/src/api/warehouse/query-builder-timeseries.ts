@@ -21,6 +21,15 @@ import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
 
 type ExecuteError = WarehouseApiError | BackendError
 
+// Discriminate the typed error channel on `_tag` (every member is a tagged
+// error — the local `Warehouse*Error` classes and the backend
+// `@maple/http/errors/Warehouse*` union both carry a `message` field) rather
+// than collapsing it via `instanceof Error`, which loses the tag and the
+// statically-known message.
+function executeErrorMessage(error: ExecuteError, fallback: string): string {
+	return "message" in error && typeof error.message === "string" ? error.message : fallback
+}
+
 const dateTimeString = Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/))
 
 const COMPARISON_MODES = ["none", "previous_period"] as const
@@ -311,7 +320,7 @@ const executeTimeseriesQueryWithFallbackUsing = Effect.fn("QueryEngine.executeTi
 
 			if (Result.isFailure(outcome)) {
 				const error = outcome.failure
-				const message = error instanceof Error ? error.message : "Query execution failed"
+				const message = executeErrorMessage(error, "Query execution failed")
 
 				attempts.push({
 					startTime: window.startTime,
@@ -610,7 +619,7 @@ const runQueryWindow = Effect.fn("QueryEngine.runQueryWindow")(function* (
 						queryName: query.name,
 						source: query.dataSource,
 						status: "error",
-						error: error instanceof Error ? error.message : "Query execution failed",
+						error: executeErrorMessage(error, "Query execution failed"),
 						warnings: built.warnings,
 						data: [],
 					} satisfies QueryRunResult

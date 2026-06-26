@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { Result, useAtomValue } from "@/lib/effect-atom"
+import { CheckIcon, CopyIcon } from "@/components/icons"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/components/ui/hover-card"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -14,6 +15,11 @@ import { cn } from "@maple/ui/utils"
 // data, so a value may be a short SHA, a tag, or arbitrary text — those never
 // open a hover card (and never hit the backend); they render as plain children.
 const FULL_SHA = /^[0-9a-f]{40}$/i
+
+/** Whether `sha` is a full 40-hex git SHA that the VCS endpoint can resolve. */
+export function isResolvableSha(sha: string): boolean {
+	return FULL_SHA.test(sha)
+}
 
 // Card becomes visible after this long a hover; fetch is armed sooner (ARM_DELAY_MS)
 // so the request is already in flight (or cached) when the card opens.
@@ -33,6 +39,25 @@ interface CommitShaHoverCardProps {
 	 * stack as separate popups.
 	 */
 	copy?: { value: string; label: string }
+	/**
+	 * How long (ms) the trigger must be hovered before the card opens. Defaults to
+	 * a snappy 200ms. Deploy markers pass a much longer delay (~1.5s): their hitbox
+	 * spans the whole reference line, so a cursor merely crossing the chart
+	 * shouldn't trip the card open.
+	 */
+	openDelay?: number
+	/** Side the popup opens on, relative to its anchor (default "bottom"). */
+	side?: "top" | "right" | "bottom" | "left"
+	/** Cross-axis alignment of the popup (default "start"). */
+	align?: "start" | "center" | "end"
+	/** Popup distance from its anchor in px (default 6). */
+	sideOffset?: number
+	/**
+	 * Anchor the popup to a specific element rather than the trigger. Deploy markers
+	 * use this to pin the card to the flag at the top of the line while the hover
+	 * hitbox spans the line's full height.
+	 */
+	anchor?: RefObject<HTMLElement | null>
 }
 
 /**
@@ -41,7 +66,17 @@ interface CommitShaHoverCardProps {
  * the fetch is armed after ~20ms of hover, while the card itself only becomes
  * visible after ~200ms — so the card almost always opens onto loaded data.
  */
-export function CommitShaHoverCard({ sha, children, className, copy }: CommitShaHoverCardProps) {
+export function CommitShaHoverCard({
+	sha,
+	children,
+	className,
+	copy,
+	openDelay = OPEN_DELAY_MS,
+	side = "bottom",
+	align = "start",
+	sideOffset = 6,
+	anchor,
+}: CommitShaHoverCardProps) {
 	const isFullSha = FULL_SHA.test(sha)
 	const clipboard = useClipboard()
 	// Once armed we keep it armed: the in-flight/cached result should survive the
@@ -102,7 +137,7 @@ export function CommitShaHoverCard({ sha, children, className, copy }: CommitSha
 			{armed ? <CommitPrefetch sha={sha} /> : null}
 			<HoverCardTrigger
 				render={handleCopy ? <button type="button" onClick={handleCopy} /> : <span />}
-				delay={OPEN_DELAY_MS}
+				delay={openDelay}
 				className={cn(handleCopy ? "cursor-pointer" : "cursor-default", className)}
 				onMouseEnter={arm}
 				onMouseLeave={cancelArm}
@@ -110,16 +145,22 @@ export function CommitShaHoverCard({ sha, children, className, copy }: CommitSha
 			>
 				{children}
 			</HoverCardTrigger>
-			<HoverCardContent side="bottom" align="start" sideOffset={6} className="w-80 p-0">
+			<HoverCardContent
+				side={side}
+				align={align}
+				sideOffset={sideOffset}
+				anchor={anchor}
+				className="w-80 p-0"
+			>
 				<CommitHoverBody sha={sha} />
 			</HoverCardContent>
 		</HoverCard>
 	)
 }
 
-// Per-SHA query atom, memoized by args so the prefetch subscriber and the popup
-// body share one in-flight request + cached result.
-const commitQueryAtom = (sha: string) =>
+// Per-SHA query atom, memoized by args so the prefetch subscriber, the popup body,
+// and the deploy-marker flag all share one in-flight request + cached result.
+export const commitQueryAtom = (sha: string) =>
 	MapleApiAtomClient.query("integrations", "vcsCommitDetail", { params: { sha } })
 
 // Renders nothing — it exists only to mount (and thus run) the query early.
@@ -154,6 +195,11 @@ function CommitCard({ commit }: { commit: VcsCommitDetailResponse }) {
 		(commit.provider === "github" && commit.authorLogin
 			? `https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=64`
 			: null)
+	// Profile and repo links are derived from the commit's own htmlUrl origin, so
+	// they stay correct across providers and self-hosted instances (github.com, GH
+	// Enterprise, GitLab, …) without hardcoding a host.
+	const profileHref = commit.authorLogin ? hrefFromOrigin(commit.htmlUrl, commit.authorLogin) : null
+	const repoHref = commit.repoFullName ? hrefFromOrigin(commit.htmlUrl, commit.repoFullName) : null
 
 	return (
 		<div className="flex flex-col divide-y divide-foreground/10">
@@ -165,18 +211,20 @@ function CommitCard({ commit }: { commit: VcsCommitDetailResponse }) {
 			</div>
 			<div className="flex flex-col gap-2.5 p-3.5">
 				<div className="flex items-center gap-2.5">
-					<CommitAvatar url={avatarUrl} name={author} />
+					<CommitAvatar url={avatarUrl} name={author} href={profileHref} />
 					<div className="flex min-w-0 flex-col leading-tight">
-						<span className="truncate font-medium text-foreground">{author}</span>
+						<ExternalText href={profileHref} className="truncate font-medium text-foreground">
+							{author}
+						</ExternalText>
 						{commit.repoFullName ? (
-							<span className="truncate text-muted-foreground">{commit.repoFullName}</span>
+							<ExternalText href={repoHref} className="truncate text-muted-foreground">
+								{commit.repoFullName}
+							</ExternalText>
 						) : null}
 					</div>
 				</div>
 				<div className="flex items-center justify-between gap-2 text-muted-foreground">
-					<span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80">
-						{commit.sha.slice(0, 7)}
-					</span>
+					<CopyableSha sha={commit.sha} />
 					<span>{formatRelative(commit.committedAt)}</span>
 				</div>
 			</div>
@@ -193,10 +241,100 @@ function CommitCard({ commit }: { commit: VcsCommitDetailResponse }) {
 	)
 }
 
-function CommitAvatar({ url, name }: { url: string | null; name: string }) {
+// Builds an absolute URL from the origin of a known-good commit URL plus a path
+// (an author login, or `owner/repo`). Origin-relative so the path's own slashes
+// are preserved. Returns null if the base URL can't be parsed.
+function hrefFromOrigin(baseUrl: string, path: string): string | null {
+	try {
+		return new URL(`/${path}`, baseUrl).href
+	} catch {
+		return null
+	}
+}
+
+// Text that links out (new tab) when an href is available, else plain text. Used
+// for the author and repo lines so both become clickable when resolvable.
+function ExternalText({
+	href,
+	className,
+	children,
+}: {
+	href: string | null
+	className?: string
+	children: ReactNode
+}) {
+	if (!href) {
+		return <span className={className}>{children}</span>
+	}
+	return (
+		<a
+			href={href}
+			target="_blank"
+			rel="noreferrer noopener"
+			className={cn("transition-colors hover:text-foreground hover:underline", className)}
+		>
+			{children}
+		</a>
+	)
+}
+
+// The short SHA, rendered as a copy button (copies the full SHA). Replaces the
+// bare badge so the value is actually useful instead of just decorative.
+function CopyableSha({ sha }: { sha: string }) {
+	const clipboard = useClipboard()
+	const [copied, setCopied] = useState(false)
+	const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+	useEffect(
+		() => () => {
+			if (resetTimer.current) clearTimeout(resetTimer.current)
+		},
+		[],
+	)
+
+	const handleCopy = async () => {
+		try {
+			await clipboard.copy(sha)
+			setCopied(true)
+			if (resetTimer.current) clearTimeout(resetTimer.current)
+			resetTimer.current = setTimeout(() => setCopied(false), 1200)
+		} catch {
+			toast.error("Failed to copy commit SHA")
+		}
+	}
+
+	return (
+		<button
+			type="button"
+			onClick={handleCopy}
+			aria-label="Copy commit SHA"
+			className="group inline-flex items-center gap-1.5 rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80 transition-colors hover:bg-muted/70"
+		>
+			{sha.slice(0, 7)}
+			{copied ? (
+				<CheckIcon size={11} className="text-success" />
+			) : (
+				<CopyIcon
+					size={11}
+					className="text-muted-foreground transition-colors group-hover:text-foreground/80"
+				/>
+			)}
+		</button>
+	)
+}
+
+function CommitAvatar({
+	url,
+	name,
+	href,
+}: {
+	url: string | null
+	name: string
+	href?: string | null
+}) {
 	const [failed, setFailed] = useState(false)
-	if (url && !failed) {
-		return (
+	const inner =
+		url && !failed ? (
 			<img
 				src={url}
 				alt=""
@@ -205,12 +343,23 @@ function CommitAvatar({ url, name }: { url: string | null; name: string }) {
 				referrerPolicy="no-referrer"
 				onError={() => setFailed(true)}
 			/>
+		) : (
+			<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground">
+				{name.slice(0, 2)}
+			</div>
 		)
-	}
+
+	if (!href) return inner
 	return (
-		<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground">
-			{name.slice(0, 2)}
-		</div>
+		<a
+			href={href}
+			target="_blank"
+			rel="noreferrer noopener"
+			aria-label={`${name}'s profile`}
+			className="shrink-0 rounded-full outline-none transition-opacity hover:opacity-80 focus-visible:ring-2 focus-visible:ring-foreground/30"
+		>
+			{inner}
+		</a>
 	)
 }
 

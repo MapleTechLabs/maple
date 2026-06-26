@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { Result } from "@/lib/effect-atom"
 import { useNavigate } from "@tanstack/react-router"
 
@@ -7,7 +8,15 @@ import {
 	SingleCheckboxFilter,
 	type FilterOption,
 } from "@/components/filters/filter-section"
+import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { Route } from "@/routes/replays"
+import {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+} from "@maple/ui/components/ui/input-group"
+import { Label } from "@maple/ui/components/ui/label"
 import { Separator } from "@maple/ui/components/ui/separator"
 import {
 	FilterSidebarBody,
@@ -64,6 +73,10 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		})
 	}
 
+	const setUserId = (value: string | undefined) => {
+		navigate({ search: (prev) => ({ ...prev, userId: value }) })
+	}
+
 	const clearAllFilters = () => {
 		navigate({
 			search: {
@@ -80,6 +93,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.browser ||
 		!!search.country ||
 		!!search.deviceType ||
+		!!search.userId ||
 		search.hasErrors === true
 
 	return Result.builder(facetsResult)
@@ -102,6 +116,10 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 				<FilterSidebarFrame waiting={result.waiting}>
 					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
 					<FilterSidebarBody>
+						<UserIdFilter value={search.userId} onApply={setUserId} />
+
+						<Separator className="my-2" />
+
 						<SingleCheckboxFilter
 							title="Has errors"
 							checked={search.hasErrors === true}
@@ -167,4 +185,60 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 			)
 		})
 		.render()
+}
+
+// UserId is high-cardinality identity data, so it's a typed exact-match field
+// rather than a facet checklist. Exact match means partial input matches nothing,
+// so the filter commits on Enter (not per-keystroke) — mirrors the toolbar's
+// local-state-synced input. The × clears both the field and the applied filter.
+interface UserIdFilterProps {
+	value: string | undefined
+	onApply: (value: string | undefined) => void
+}
+
+function UserIdFilter({ value, onApply }: UserIdFilterProps) {
+	const [text, setText] = useState(value ?? "")
+
+	// Keep in sync when userId changes elsewhere (Clear all, the active-user chip's ×).
+	useEffect(() => {
+		setText(value ?? "")
+	}, [value])
+
+	const clear = () => {
+		setText("")
+		onApply(undefined)
+	}
+
+	return (
+		<form
+			className="py-2"
+			onSubmit={(e) => {
+				e.preventDefault()
+				onApply(text.trim() || undefined)
+			}}
+		>
+			<Label htmlFor="replays-user-filter" className="mb-2 block text-sm font-medium text-muted-foreground">
+				User
+			</Label>
+			<InputGroup>
+				<InputGroupAddon>
+					<MagnifierIcon />
+				</InputGroupAddon>
+				<InputGroupInput
+					id="replays-user-filter"
+					size="sm"
+					value={text}
+					onChange={(e) => setText(e.target.value)}
+					placeholder="Filter by user ID…"
+				/>
+				{text && (
+					<InputGroupAddon align="inline-end">
+						<InputGroupButton aria-label="Clear user filter" onClick={clear}>
+							<XmarkIcon />
+						</InputGroupButton>
+					</InputGroupAddon>
+				)}
+			</InputGroup>
+		</form>
+	)
 }

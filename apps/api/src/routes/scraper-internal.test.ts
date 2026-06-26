@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Option, Schema } from "effect"
 import { ScrapeResultReportList } from "@maple/domain/http"
 import { isValidInternalBearer } from "../lib/internal-auth"
@@ -6,11 +6,11 @@ import { toInternalScrapeTarget } from "./scraper-internal.http"
 
 describe("internal bearer auth", () => {
 	it("validates internal bearer tokens with exact match", () => {
-		expect(isValidInternalBearer("Bearer secret-token", "secret-token")).toBe(true)
-		expect(isValidInternalBearer("Bearer wrong", "secret-token")).toBe(false)
-		expect(isValidInternalBearer(undefined, "secret-token")).toBe(false)
-		expect(isValidInternalBearer("Bearer secret-token", undefined)).toBe(false)
-		expect(isValidInternalBearer("secret-token", "secret-token")).toBe(false)
+		assert.isTrue(isValidInternalBearer("Bearer secret-token", "secret-token"))
+		assert.isFalse(isValidInternalBearer("Bearer wrong", "secret-token"))
+		assert.isFalse(isValidInternalBearer(undefined, "secret-token"))
+		assert.isFalse(isValidInternalBearer("Bearer secret-token", undefined))
+		assert.isFalse(isValidInternalBearer("secret-token", "secret-token"))
 	})
 })
 
@@ -27,77 +27,84 @@ describe("toInternalScrapeTarget", () => {
 
 	const INGEST_KEY = "maple_pk_test_key"
 
-	it("marshals a row with parsed labels and the org's ingest key", async () => {
-		const result = await Effect.runPromise(toInternalScrapeTarget(baseRow, INGEST_KEY))
-		expect(Option.isSome(result)).toBe(true)
-		if (Option.isNone(result)) return
-		expect(result.value.id).toBe(baseRow.id)
-		expect(result.value.orgId).toBe("org_1")
-		expect(result.value.serviceName).toBe("node")
-		expect(result.value.scrapeIntervalSeconds).toBe(15)
-		expect(result.value.labels).toEqual({ env: "prod" })
-		expect(result.value.ingestKey).toBe(INGEST_KEY)
-	})
+	it.effect("marshals a row with parsed labels and the org's ingest key", () =>
+		Effect.gen(function* () {
+			const result = yield* toInternalScrapeTarget(baseRow, INGEST_KEY)
+			assert.isTrue(Option.isSome(result))
+			if (Option.isNone(result)) return
+			assert.strictEqual(result.value.id, baseRow.id)
+			assert.strictEqual(result.value.orgId, "org_1")
+			assert.strictEqual(result.value.serviceName, "node")
+			assert.strictEqual(result.value.scrapeIntervalSeconds, 15)
+			assert.deepStrictEqual(result.value.labels, { env: "prod" })
+			assert.strictEqual(result.value.ingestKey, INGEST_KEY)
+		}),
+	)
 
-	it("degrades invalid labelsJson to an empty record", async () => {
-		// jsonb drift: the column should hold Record<string, string>, but a row
-		// written by an older deploy (or by hand) may not — the decode guard must
-		// degrade it to {} instead of failing the list.
-		const driftedLabels: unknown = { env: 123 }
-		const result = await Effect.runPromise(
-			toInternalScrapeTarget(
+	it.effect("degrades invalid labelsJson to an empty record", () =>
+		Effect.gen(function* () {
+			// jsonb drift: the column should hold Record<string, string>, but a row
+			// written by an older deploy (or by hand) may not — the decode guard must
+			// degrade it to {} instead of failing the list.
+			const driftedLabels: unknown = { env: 123 }
+			const result = yield* toInternalScrapeTarget(
 				{ ...baseRow, labelsJson: driftedLabels as Record<string, string> },
 				INGEST_KEY,
-			),
-		)
-		expect(Option.isSome(result)).toBe(true)
-		if (Option.isNone(result)) return
-		expect(result.value.labels).toEqual({})
-	})
+			)
+			assert.isTrue(Option.isSome(result))
+			if (Option.isNone(result)) return
+			assert.deepStrictEqual(result.value.labels, {})
+		}),
+	)
 
-	it("handles null labelsJson and null serviceName", async () => {
-		const result = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, labelsJson: null, serviceName: null }, INGEST_KEY),
-		)
-		expect(Option.isSome(result)).toBe(true)
-		if (Option.isNone(result)) return
-		expect(result.value.labels).toEqual({})
-		expect(result.value.serviceName).toBeNull()
-	})
+	it.effect("handles null labelsJson and null serviceName", () =>
+		Effect.gen(function* () {
+			const result = yield* toInternalScrapeTarget(
+				{ ...baseRow, labelsJson: null, serviceName: null },
+				INGEST_KEY,
+			)
+			assert.isTrue(Option.isSome(result))
+			if (Option.isNone(result)) return
+			assert.deepStrictEqual(result.value.labels, {})
+			assert.isNull(result.value.serviceName)
+		}),
+	)
 
-	it("drops rows that violate the schema brands instead of failing the list", async () => {
-		const outOfRange = await Effect.runPromise(
-			toInternalScrapeTarget({ ...baseRow, scrapeIntervalSeconds: 2 }, INGEST_KEY),
-		)
-		expect(Option.isNone(outOfRange)).toBe(true)
-	})
+	it.effect("drops rows that violate the schema brands instead of failing the list", () =>
+		Effect.gen(function* () {
+			const outOfRange = yield* toInternalScrapeTarget({ ...baseRow, scrapeIntervalSeconds: 2 }, INGEST_KEY)
+			assert.isTrue(Option.isNone(outOfRange))
+		}),
+	)
 
-	it("expands a discovered sub-target with its url, key, and merged labels", async () => {
-		const result = await Effect.runPromise(
-			toInternalScrapeTarget(baseRow, INGEST_KEY, {
+	it.effect("expands a discovered sub-target with its url, key, and merged labels", () =>
+		Effect.gen(function* () {
+			const result = yield* toInternalScrapeTarget(baseRow, INGEST_KEY, {
 				url: "https://branch-1.metrics.psdb.cloud/metrics",
 				subTargetKey: "branch-1",
 				labels: { planetscale_database_branch_id: "branch-1", env: "discovery" },
-			}),
-		)
-		expect(Option.isSome(result)).toBe(true)
-		if (Option.isNone(result)) return
-		expect(result.value.id).toBe(baseRow.id)
-		expect(result.value.url).toBe("https://branch-1.metrics.psdb.cloud/metrics")
-		expect(result.value.subTargetKey).toBe("branch-1")
-		// The target's own labelsJson wins over discovery labels on conflicts.
-		expect(result.value.labels).toEqual({
-			planetscale_database_branch_id: "branch-1",
-			env: "prod",
-		})
-	})
+			})
+			assert.isTrue(Option.isSome(result))
+			if (Option.isNone(result)) return
+			assert.strictEqual(result.value.id, baseRow.id)
+			assert.strictEqual(result.value.url, "https://branch-1.metrics.psdb.cloud/metrics")
+			assert.strictEqual(result.value.subTargetKey, "branch-1")
+			// The target's own labelsJson wins over discovery labels on conflicts.
+			assert.deepStrictEqual(result.value.labels, {
+				planetscale_database_branch_id: "branch-1",
+				env: "prod",
+			})
+		}),
+	)
 
-	it("defaults subTargetKey to null for plain targets", async () => {
-		const result = await Effect.runPromise(toInternalScrapeTarget(baseRow, INGEST_KEY))
-		expect(Option.isSome(result)).toBe(true)
-		if (Option.isNone(result)) return
-		expect(result.value.subTargetKey).toBeNull()
-	})
+	it.effect("defaults subTargetKey to null for plain targets", () =>
+		Effect.gen(function* () {
+			const result = yield* toInternalScrapeTarget(baseRow, INGEST_KEY)
+			assert.isTrue(Option.isSome(result))
+			if (Option.isNone(result)) return
+			assert.isNull(result.value.subTargetKey)
+		}),
+	)
 })
 
 describe("ScrapeResultReportList decoding", () => {
@@ -115,9 +122,9 @@ describe("ScrapeResultReportList decoding", () => {
 				samplesPostMetricRelabeling: 118,
 			},
 		])
-		expect(reports[0]?.durationMs).toBe(250)
-		expect(reports[0]?.samplesScraped).toBe(120)
-		expect(reports[0]?.samplesPostMetricRelabeling).toBe(118)
+		assert.strictEqual(reports[0]?.durationMs, 250)
+		assert.strictEqual(reports[0]?.samplesScraped, 120)
+		assert.strictEqual(reports[0]?.samplesPostMetricRelabeling, 118)
 	})
 
 	it("accepts legacy reports without check metadata (older scraper deploys)", () => {
@@ -128,7 +135,7 @@ describe("ScrapeResultReportList decoding", () => {
 				error: "target returned HTTP 503",
 			},
 		])
-		expect(reports[0]?.error).toBe("target returned HTTP 503")
-		expect(reports[0]?.durationMs).toBeUndefined()
+		assert.strictEqual(reports[0]?.error, "target returned HTTP 503")
+		assert.strictEqual(reports[0]?.durationMs, undefined)
 	})
 })

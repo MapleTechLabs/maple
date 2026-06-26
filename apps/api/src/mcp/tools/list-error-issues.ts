@@ -102,7 +102,7 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "list_error_issues",
+								pipeName: "list_error_issues",
 								cause: error,
 							}),
 					),

@@ -4,6 +4,7 @@ import {
 	serviceOverviewQuery,
 	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
+	serviceEnvironmentsQuery,
 	serviceApdexTimeseriesQuery,
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
@@ -108,6 +109,29 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("GROUP BY bucket, commitSha")
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("LIMIT 1000")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// serviceEnvironmentsQuery
+// ---------------------------------------------------------------------------
+
+describe("serviceEnvironmentsQuery", () => {
+	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
+		const q = serviceEnvironmentsQuery({ serviceName: "api" })
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
+		expect(sql).toContain("DeploymentEnv AS environment")
+		// Scoped to the org + this one service (replaces an all-services scan)…
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("ServiceName = 'api'")
+		// …and to the active window so date partitions are pruned.
+		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
+		// Empty env rows are excluded (matches the old switcher's truthy filter).
+		expect(sql).toContain("DeploymentEnv != ''")
+		expect(sql).toContain("GROUP BY environment")
+		expect(sql).toContain("FORMAT JSON")
 	})
 })
 

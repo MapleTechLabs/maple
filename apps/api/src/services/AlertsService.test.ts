@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, it } from "@effect/vitest"
+import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Cause, Clock, ConfigProvider, Duration, Effect, Exit, Layer, Option, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import {
 	AlertDestinationInUseError,
 	AlertForbiddenError,
@@ -31,16 +32,6 @@ const getError = <A, E>(exit: Exit.Exit<A, E>): unknown => {
 
 	return Cause.squash(exit.cause)
 }
-
-/**
- * Runs an Effect-returning test body via `Effect.runPromise`. We deliberately
- * avoid `@effect/vitest`'s `it.effect`/`it.live`: under bun those wrappers never
- * settle real timers (`Effect.sleep`) or macrotask promises, which the embedded
- * DB driver and the delivery dispatcher's `fetch` + `Effect.timeout` depend on.
- * Plain `runPromise` drives the real event loop correctly.
- */
-const itEffect = (name: string, body: () => Effect.Effect<unknown, unknown, never>) =>
-	it(name, () => Effect.runPromise(body()))
 
 const makeConfig = () =>
 	ConfigProvider.layer(
@@ -83,7 +74,7 @@ function makeWarehouseStub(state: {
 	}
 
 	return {
-		query: (_tenant, payload) => Effect.fail(new Error(`Unexpected pipe ${payload.pipe}`)) as never,
+		query: (_tenant, payload) => Effect.fail(new Error(`Unexpected pipe ${payload.pipeName}`)) as never,
 		sqlQuery: sqlQueryStub,
 		compiledQuery: (_tenant, compiled) =>
 			sqlQueryStub().pipe(Effect.flatMap((rows) => compiled.decodeRows(rows).pipe(Effect.orDie))),
@@ -97,44 +88,18 @@ function makeWarehouseStub(state: {
 }
 
 const defaultTestRuntime: AlertRuntimeShape = {
-	// Time is sourced from Effect's Clock (overridden per-test by a manual clock
-	// for deterministic scheduler timestamps).
+	// Time is sourced from Effect's Clock, which `it.effect` swaps for TestClock —
+	// scheduler-timestamp tests drive it deterministically via TestClock.setTime /
+	// TestClock.adjust. Real `fetch`/`Effect.timeout` settle on the live event loop.
 	now: Clock.currentTimeMillis,
 	makeUuid: () => crypto.randomUUID(),
 	fetch: globalThis.fetch,
 	deliveryTimeoutMs: () => 15_000,
 }
 
-/**
- * A controllable clock that backs the `AlertRuntime.now` seam. Time for the
- * alerts domain itself (scheduler timestamps and the per-rule scheduler lock) is
- * fully deterministic: it starts from a fixed epoch and only moves when a test
- * calls `adjust`/`setTime`, mirroring `TestClock` semantics without ever reading
- * wall-clock time (`Date.now`). The runtime clock stays live so the embedded
- * DB driver and the dispatcher's real `fetch` + `Effect.timeout` keep working.
- */
-interface ManualClock {
-	readonly now: Effect.Effect<number>
-	readonly setTime: (epochMs: number) => Effect.Effect<void>
-	readonly adjust: (duration: Duration.Input) => Effect.Effect<void>
-}
-
+// The fixed epoch scheduler tests start TestClock at, mirroring the previous
+// manual clock's default start time.
 const DEFAULT_CLOCK_EPOCH_MS = 1_700_000_000_000
-
-const makeManualClock = (startMs: number = DEFAULT_CLOCK_EPOCH_MS): ManualClock => {
-	let currentMs = startMs
-	return {
-		now: Effect.sync(() => currentMs),
-		setTime: (epochMs) =>
-			Effect.sync(() => {
-				currentMs = epochMs
-			}),
-		adjust: (duration) =>
-			Effect.sync(() => {
-				currentMs += Duration.toMillis(duration)
-			}),
-	}
-}
 
 const makeLayer = (
 	testDb: TestDb,
@@ -294,7 +259,7 @@ const insertDeliveryEventRow = async (
 }
 
 describe("AlertsService", () => {
-	itEffect("opens an incident after consecutive breaches and delivers the webhook notification", () => {
+	it.effect("opens an incident after consecutive breaches and delivers the webhook notification", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
@@ -320,9 +285,8 @@ describe("AlertsService", () => {
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
-		const clock = makeManualClock()
-
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_alerts")
 			const userId = asUserId("user_alerts")
@@ -333,31 +297,32 @@ describe("AlertsService", () => {
 			const incidentsAfterFirstTick = yield* alerts.listIncidents(orgId)
 
 			// Advance past the scheduler lock TTL so the rule can be claimed again.
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 			const incidentsAfterSecondTick = yield* alerts.listIncidents(orgId)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(incidentsAfterFirstTick.incidents).toHaveLength(0)
-			expect(incidentsAfterSecondTick.incidents).toHaveLength(1)
-			expect(incidentsAfterSecondTick.incidents[0]?.status).toBe("open")
-			expect(events.events).toHaveLength(1)
-			expect(events.events[0]?.status).toBe("success")
-			expect(events.events[0]?.eventType).toBe("trigger")
-			expect(requests).toHaveLength(1)
-			expect(requests[0]?.url).toBe("https://example.com/maple-alerts")
-			expect(requests[0]?.headers.get("x-maple-signature")).toBeTruthy()
-			expect(requests[0]?.headers.get("x-maple-event-type")).toBe("trigger")
-			expect(requests[0]?.headers.get("x-maple-delivery-key")).toBe(events.events[0]?.deliveryKey)
-			expect(requests[0]?.headers.get("x-maple-delivery-key")).not.toBe(
+			assert.lengthOf(incidentsAfterFirstTick.incidents, 0)
+			assert.lengthOf(incidentsAfterSecondTick.incidents, 1)
+			assert.strictEqual(incidentsAfterSecondTick.incidents[0]?.status, "open")
+			assert.lengthOf(events.events, 1)
+			assert.strictEqual(events.events[0]?.status, "success")
+			assert.strictEqual(events.events[0]?.eventType, "trigger")
+			assert.lengthOf(requests, 1)
+			assert.strictEqual(requests[0]?.url, "https://example.com/maple-alerts")
+			assert.isNotEmpty(requests[0]?.headers.get("x-maple-signature") ?? "")
+			assert.strictEqual(requests[0]?.headers.get("x-maple-event-type"), "trigger")
+			assert.strictEqual(requests[0]?.headers.get("x-maple-delivery-key"), events.events[0]?.deliveryKey)
+			assert.notStrictEqual(
+				requests[0]?.headers.get("x-maple-delivery-key"),
 				incidentsAfterSecondTick.incidents[0]?.dedupeKey,
 			)
 		}).pipe(
-			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })),
+			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })),
 		)
 	})
 
-	itEffect("snapshots a custom notification template into the delivered payload", () => {
+	it.effect("snapshots a custom notification template into the delivered payload", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
@@ -380,9 +345,8 @@ describe("AlertsService", () => {
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
 
-		const clock = makeManualClock()
-
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_tpl")
 			const userId = asUserId("user_tpl")
@@ -413,35 +377,35 @@ describe("AlertsService", () => {
 			)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			// The custom template is re-read from the rule and surfaces through
 			// get_alert_rule / listRules.
 			const rules = yield* alerts.listRules(orgId)
-			expect(rules.rules[0]?.notificationTemplate?.title).toBe("{{ severity }} on {{ rule.name }}")
+			assert.strictEqual(rules.rules[0]?.notificationTemplate?.title, "{{ severity }} on {{ rule.name }}")
 
 			// The webhook body is the snapshotted delivery payload — it carries the
 			// template so retries and downstream consumers render the same message.
-			expect(bodies).toHaveLength(1)
+			assert.lengthOf(bodies, 1)
 			const payload = JSON.parse(bodies[0]!) as {
 				template?: { title?: string; body?: string }
 			}
-			expect(payload.template?.title).toBe("{{ severity }} on {{ rule.name }}")
-			expect(payload.template?.body).toBe("*Observed:* {{ observed.summary }}")
+			assert.strictEqual(payload.template?.title, "{{ severity }} on {{ rule.name }}")
+			assert.strictEqual(payload.template?.body, "*Observed:* {{ observed.summary }}")
 		}).pipe(
-			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now, fetch: fetchImpl })),
+			Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: fetchImpl })),
 		)
 	})
 
-	itEffect("skips no-data error-rate rules instead of opening incidents", () => {
+	it.effect("skips no-data error-rate rules instead of opening incidents", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: emptyWarehouseRows,
 		}
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_skipped")
 			const userId = asUserId("user_skipped")
@@ -449,25 +413,25 @@ describe("AlertsService", () => {
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(incidents.incidents).toHaveLength(0)
-			expect(events.events).toHaveLength(0)
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now })))
+			assert.lengthOf(incidents.incidents, 0)
+			assert.lengthOf(events.events, 0)
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state))))
 	})
 
-	itEffect("treats no data as a breach for throughput-below-threshold rules", () => {
+	it.effect("treats no data as a breach for throughput-below-threshold rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: emptyWarehouseRows,
 		}
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_throughput")
 			const userId = asUserId("user_throughput")
@@ -495,17 +459,17 @@ describe("AlertsService", () => {
 			)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
-			expect(incidents.incidents).toHaveLength(1)
-			expect(incidents.incidents[0]?.status).toBe("open")
-			expect(incidents.incidents[0]?.signalType).toBe("throughput")
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+			assert.strictEqual(incidents.incidents[0]?.signalType, "throughput")
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
-	itEffect("persists compiled query plans when rules are created", () => {
+	it.effect("persists compiled query plans when rules are created", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
@@ -531,25 +495,28 @@ describe("AlertsService", () => {
 				),
 			)
 
-			expect(row).toBeTruthy()
-			expect(row?.reducer).toBe("identity")
-			expect(row?.sampleCountStrategy).toBe("trace_count")
-			expect(row?.noDataBehavior).toBe("skip")
-			expect(row?.querySpecJson).toMatchObject({
-				kind: "timeseries",
-				source: "traces",
-				metric: "error_rate",
-				groupBy: ["none"],
-				filters: {
-					serviceName: "checkout",
-				},
-			})
+			assert.isOk(row)
+			assert.strictEqual(row?.reducer, "identity")
+			assert.strictEqual(row?.sampleCountStrategy, "trace_count")
+			assert.strictEqual(row?.noDataBehavior, "skip")
+			const spec = row?.querySpecJson as {
+				kind: string
+				source: string
+				metric: string
+				groupBy: ReadonlyArray<string>
+				filters: { serviceName: string }
+			}
+			assert.strictEqual(spec.kind, "timeseries")
+			assert.strictEqual(spec.source, "traces")
+			assert.strictEqual(spec.metric, "error_rate")
+			assert.deepStrictEqual(spec.groupBy, ["none"])
+			assert.strictEqual(spec.filters.serviceName, "checkout")
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
 		)
 	})
 
-	itEffect("resolves an open incident after consecutive healthy evaluations", () => {
+	it.effect("resolves an open incident after consecutive healthy evaluations", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
@@ -566,9 +533,9 @@ describe("AlertsService", () => {
 				},
 			] as ReadonlyArray<Record<string, unknown>>,
 		}
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_resolve")
 			const userId = asUserId("user_resolve")
@@ -576,7 +543,7 @@ describe("AlertsService", () => {
 			yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			state.tracesAggregateRows = [
@@ -593,24 +560,24 @@ describe("AlertsService", () => {
 				},
 			]
 
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(incidents.incidents).toHaveLength(1)
-			expect(incidents.incidents[0]?.status).toBe("resolved")
-			expect(events.events.map((event: { eventType: string }) => event.eventType)).toEqual([
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.status, "resolved")
+			assert.deepStrictEqual(events.events.map((event: { eventType: string }) => event.eventType), [
 				"resolve",
 				"trigger",
 			])
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
-	itEffect("sends signed webhook test notifications", () => {
+	it.effect("sends signed webhook test notifications", () => {
 		const testDb = createTestDb(trackedDbs)
 		const requests: Array<{ headers: Headers; body: string }> = []
 		const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -628,11 +595,11 @@ describe("AlertsService", () => {
 			const destination = yield* createWebhookDestination(alerts, orgId, userId)
 			const response = yield* alerts.testDestination(orgId, userId, adminRoles, destination.id)
 
-			expect(response.success).toBe(true)
-			expect(requests).toHaveLength(1)
-			expect(requests[0]?.headers.get("x-maple-event-type")).toBe("test")
-			expect(requests[0]?.headers.get("x-maple-signature")).toBeTruthy()
-			expect(requests[0]?.body).toContain('"eventType":"test"')
+			assert.isTrue(response.success)
+			assert.lengthOf(requests, 1)
+			assert.strictEqual(requests[0]?.headers.get("x-maple-event-type"), "test")
+			assert.isNotEmpty(requests[0]?.headers.get("x-maple-signature") ?? "")
+			assert.include(requests[0]?.body ?? "", '"eventType":"test"')
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -642,7 +609,7 @@ describe("AlertsService", () => {
 		)
 	})
 
-	itEffect("keeps processing queued deliveries when a rule evaluation fails", () => {
+	it.effect("keeps processing queued deliveries when a rule evaluation fails", () => {
 		const fixedTime = 1_710_000_000_000
 		const testDb = createTestDb(trackedDbs)
 		const requests: Array<{ headers: Headers }> = []
@@ -650,10 +617,10 @@ describe("AlertsService", () => {
 			requests.push({ headers: new Headers(init?.headers) })
 			return new Response("ok", { status: 200 })
 		}) as typeof fetch
-		// Pin the clock to fixedTime so the pre-seeded delivery (scheduledAt: fixedTime - 1) is due.
-		const clock = makeManualClock(fixedTime)
 
 		return Effect.gen(function* () {
+			// Pin the clock to fixedTime so the pre-seeded delivery (scheduledAt: fixedTime - 1) is due.
+			yield* TestClock.setTime(fixedTime)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_eval_failure")
 			const userId = asUserId("user_eval_failure")
@@ -704,22 +671,21 @@ describe("AlertsService", () => {
 			const tick = yield* alerts.runSchedulerTick()
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(tick.evaluationFailureCount).toBe(1)
-			expect(tick.processedCount).toBe(1)
-			expect(tick.deliveryFailureCount).toBe(0)
-			expect(requests).toHaveLength(1)
-			expect(events.events[0]?.status).toBe("success")
+			assert.strictEqual(tick.evaluationFailureCount, 1)
+			assert.strictEqual(tick.processedCount, 1)
+			assert.strictEqual(tick.deliveryFailureCount, 0)
+			assert.lengthOf(requests, 1)
+			assert.strictEqual(events.events[0]?.status, "success")
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
-					now: clock.now,
 					fetch: fetchImpl,
 				}),
 			),
 		)
 	})
 
-	itEffect("suppresses duplicate delivery sends across concurrent service instances", () => {
+	it.effect("suppresses duplicate delivery sends across concurrent service instances", () => {
 		const fixedTime = 1_710_000_100_000
 		const testDb = createTestDb(trackedDbs)
 		let requestCount = 0
@@ -729,11 +695,11 @@ describe("AlertsService", () => {
 		}) as unknown as typeof fetch
 
 		const stub = makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })
-		// One shared clock pinned to fixedTime backs every service instance below.
-		const clock = makeManualClock(fixedTime)
-		const overrides = { now: clock.now, fetch: fetchImpl }
+		const overrides = { fetch: fetchImpl }
 
 		return Effect.gen(function* () {
+			// One shared TestClock pinned to fixedTime backs every service instance below.
+			yield* TestClock.setTime(fixedTime)
 			const setup = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				const orgId = asOrgId("org_dupe_guard")
@@ -803,15 +769,16 @@ describe("AlertsService", () => {
 				return yield* alerts.listDeliveryEvents(setup.orgId)
 			}).pipe(Effect.provide(makeLayer(testDb, stub, overrides)))
 
-			expect(requestCount).toBe(1)
-			expect(tickA.processedCount + tickB.processedCount).toBe(1)
-			expect(events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status).toBe(
+			assert.strictEqual(requestCount, 1)
+			assert.strictEqual(tickA.processedCount + tickB.processedCount, 1)
+			assert.strictEqual(
+				events.events.find((event) => event.deliveryKey === "shared-delivery-key")?.status,
 				"success",
 			)
 		})
 	})
 
-	itEffect("skips duplicate delivery events and still creates the incident", () => {
+	it.effect("skips duplicate delivery events and still creates the incident", () => {
 		const fixedTime = 1_710_000_200_000
 		const testDb = createTestDb(trackedDbs)
 
@@ -830,9 +797,7 @@ describe("AlertsService", () => {
 				},
 			],
 		}
-		const clock = makeManualClock(fixedTime)
 		const overrides = {
-			now: clock.now,
 			...makeUuidSequence(
 				"00000000-0000-4000-8000-000000000001",
 				"00000000-0000-4000-8000-000000000002",
@@ -845,6 +810,7 @@ describe("AlertsService", () => {
 		const layer = makeLayer(testDb, makeWarehouseStub(state), overrides)
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_tx_rollback")
 			const userId = asUserId("user_tx_rollback")
@@ -913,19 +879,18 @@ describe("AlertsService", () => {
 			const incidents = yield* alerts.listIncidents(orgId)
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(tick.evaluationFailureCount).toBe(0)
-			expect(incidents.incidents).toHaveLength(1)
+			assert.strictEqual(tick.evaluationFailureCount, 0)
+			assert.lengthOf(incidents.incidents, 1)
 			// Only the pre-existing event — the duplicate was silently skipped
-			expect(events.events).toHaveLength(1)
-			expect(events.events[0]?.deliveryKey).toContain(":trigger:")
+			assert.lengthOf(events.events, 1)
+			assert.include(events.events[0]?.deliveryKey ?? "", ":trigger:")
 		}).pipe(Effect.provide(layer))
 	})
 
-	itEffect("times out stuck deliveries and enqueues a retry attempt", () => {
+	it.live("times out stuck deliveries and enqueues a retry attempt", () => {
 		const fixedTime = 1_710_000_300_000
 		const testDb = createTestDb(trackedDbs)
 		const hangingFetch = (() => new Promise(() => {})) as unknown as typeof fetch
-		const clock = makeManualClock(fixedTime)
 
 		return Effect.gen(function* () {
 			const alerts = yield* AlertsService
@@ -976,21 +941,21 @@ describe("AlertsService", () => {
 			const tick = yield* alerts.runSchedulerTick()
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(tick.processedCount).toBe(1)
-			expect(tick.deliveryFailureCount).toBe(1)
+			assert.strictEqual(tick.processedCount, 1)
+			assert.strictEqual(tick.deliveryFailureCount, 1)
 			const timeoutEvent = events.events.find(
 				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 1,
 			)
 			const retryEvent = events.events.find(
 				(event) => event.deliveryKey === "timeout-delivery-key" && event.attemptNumber === 2,
 			)
-			expect(timeoutEvent?.status).toBe("failed")
-			expect(timeoutEvent?.errorMessage).toContain("timed out")
-			expect(retryEvent?.status).toBe("queued")
+			assert.strictEqual(timeoutEvent?.status, "failed")
+			assert.include(timeoutEvent?.errorMessage ?? "", "timed out")
+			assert.strictEqual(retryEvent?.status, "queued")
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
-					now: clock.now,
+					now: Effect.succeed(fixedTime),
 					fetch: hangingFetch,
 					deliveryTimeoutMs: () => 10,
 				}),
@@ -998,7 +963,7 @@ describe("AlertsService", () => {
 		)
 	})
 
-	itEffect("marks corrupted queued payloads as failed without blocking later deliveries", () => {
+	it.effect("marks corrupted queued payloads as failed without blocking later deliveries", () => {
 		const fixedTime = 1_710_000_400_000
 		const testDb = createTestDb(trackedDbs)
 		let requestCount = 0
@@ -1006,9 +971,9 @@ describe("AlertsService", () => {
 			requestCount += 1
 			return new Response("ok", { status: 200 })
 		}) as unknown as typeof fetch
-		const clock = makeManualClock(fixedTime)
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(fixedTime)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_payload_isolation")
 			const userId = asUserId("user_payload_isolation")
@@ -1073,30 +1038,31 @@ describe("AlertsService", () => {
 			const tick = yield* alerts.runSchedulerTick()
 			const events = yield* alerts.listDeliveryEvents(orgId)
 
-			expect(tick.processedCount).toBe(2)
-			expect(tick.deliveryFailureCount).toBe(1)
-			expect(requestCount).toBe(1)
-			expect(events.events.find((event) => event.deliveryKey === "bad-payload-key")?.status).toBe(
+			assert.strictEqual(tick.processedCount, 2)
+			assert.strictEqual(tick.deliveryFailureCount, 1)
+			assert.strictEqual(requestCount, 1)
+			assert.strictEqual(
+				events.events.find((event) => event.deliveryKey === "bad-payload-key")?.status,
 				"failed",
 			)
-			expect(events.events.find((event) => event.deliveryKey === "good-payload-key")?.status).toBe(
+			assert.strictEqual(
+				events.events.find((event) => event.deliveryKey === "good-payload-key")?.status,
 				"success",
 			)
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
-					now: clock.now,
 					fetch: fetchImpl,
 				}),
 			),
 		)
 	})
 
-	it("evaluates logs query alerts in testRule without failing validation", async () => {
+	it.effect("evaluates logs query alerts in testRule without failing validation", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const result = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				const orgId = asOrgId("org_logs_test")
 				const userId = asUserId("user_logs_test")
@@ -1137,19 +1103,19 @@ describe("AlertsService", () => {
 						}),
 					),
 				),
-			),
-		)
+			)
 
-		expect(result.status).toBe("breached")
-		expect(result.value).toBe(42)
-		expect(result.sampleCount).toBe(42)
+			assert.strictEqual(result.status, "breached")
+			assert.strictEqual(result.value, 42)
+			assert.strictEqual(result.sampleCount, 42)
+		})
 	})
 
-	it("compiles and evaluates a raw SQL query alert", async () => {
+	it.effect("compiles and evaluates a raw SQL query alert", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const result = await Effect.runPromise(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const result = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				const orgId = asOrgId("org_raw_sql_test")
 				const userId = asUserId("user_raw_sql_test")
@@ -1189,19 +1155,19 @@ describe("AlertsService", () => {
 						}),
 					),
 				),
-			),
-		)
+			)
 
-		expect(result.status).toBe("breached")
-		expect(result.value).toBe(240)
-		expect(result.sampleCount).toBe(20)
+			assert.strictEqual(result.status, "breached")
+			assert.strictEqual(result.value, 240)
+			assert.strictEqual(result.sampleCount, 20)
+		})
 	})
 
-	it("rejects metrics alerts with multiple attr groupBy dimensions", async () => {
+	it.effect("rejects metrics alerts with multiple attr groupBy dimensions", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				const orgId = asOrgId("org_metrics_group_validation")
 				const userId = asUserId("user_metrics_group_validation")
@@ -1230,25 +1196,28 @@ describe("AlertsService", () => {
 						destinationIds: [destination.id],
 					}),
 				)
-			}).pipe(
-				Effect.provide(
-					makeLayer(testDb, makeWarehouseStub({ metricsAggregateRows: emptyWarehouseRows })),
-				),
-			),
-		)
+			})
+				.pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub({ metricsAggregateRows: emptyWarehouseRows })),
+					),
+				)
+				.pipe(Effect.exit)
 
-		const failure = getError(exit)
+			const failure = getError(exit)
 
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(failure).toMatchObject({
-			message: "Metrics alerts support at most one attr.* groupBy dimension",
+			assert.isTrue(Exit.isFailure(exit))
+			assert.strictEqual(
+				(failure as { message: string }).message,
+				"Metrics alerts support at most one attr.* groupBy dimension",
+			)
 		})
 	})
 
 	const VALID_PD_KEY = "e93facc04764012d7bfb002500d5d1a6" // 32 hex chars
 	const REST_API_TOKEN = "u+0123456789abcdefgh" // 20 chars, '+' — the common wrong paste
 
-	it("rejects a PagerDuty key of the wrong shape without calling PagerDuty", async () => {
+	it.effect("rejects a PagerDuty key of the wrong shape without calling PagerDuty", () => {
 		const testDb = createTestDb(trackedDbs)
 		const requests: string[] = []
 		const fetchImpl = (async (input: RequestInfo | URL) => {
@@ -1256,8 +1225,8 @@ describe("AlertsService", () => {
 			return new Response("", { status: 202 })
 		}) as typeof fetch
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_shape"),
@@ -1265,24 +1234,24 @@ describe("AlertsService", () => {
 					adminRoles,
 					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: REST_API_TOKEN },
 				)
-			}).pipe(
-				Effect.provide(
-					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
-						fetch: fetchImpl,
-					}),
-				),
-			),
-		)
+			})
+				.pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+							fetch: fetchImpl,
+						}),
+					),
+				)
+				.pipe(Effect.exit)
 
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(getError(exit)).toMatchObject({
-			message: expect.stringContaining("32-character Events API v2 routing key"),
+			assert.isTrue(Exit.isFailure(exit))
+			assert.include((getError(exit) as { message: string }).message, "32-character Events API v2 routing key")
+			// Format check short-circuits before any network call.
+			assert.lengthOf(requests, 0)
 		})
-		// Format check short-circuits before any network call.
-		expect(requests).toHaveLength(0)
 	})
 
-	it("rejects a well-formed PagerDuty key that PagerDuty reports invalid", async () => {
+	it.effect("rejects a well-formed PagerDuty key that PagerDuty reports invalid", () => {
 		const testDb = createTestDb(trackedDbs)
 		const requests: Array<{ url: string; body: string }> = []
 		const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1297,8 +1266,8 @@ describe("AlertsService", () => {
 			)
 		}) as typeof fetch
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				return yield* alerts.createDestination(
 					asOrgId("org_pd_invalid"),
@@ -1306,26 +1275,26 @@ describe("AlertsService", () => {
 					adminRoles,
 					{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
 				)
-			}).pipe(
-				Effect.provide(
-					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
-						fetch: fetchImpl,
-					}),
-				),
-			),
-		)
+			})
+				.pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
+							fetch: fetchImpl,
+						}),
+					),
+				)
+				.pipe(Effect.exit)
 
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(getError(exit)).toMatchObject({
-			message: expect.stringContaining("Invalid routing key"),
+			assert.isTrue(Exit.isFailure(exit))
+			assert.include((getError(exit) as { message: string }).message, "Invalid routing key")
+			assert.lengthOf(requests, 1)
+			assert.strictEqual(requests[0]?.url, "https://events.pagerduty.com/v2/enqueue")
+			// Validation uses a no-op resolve so it never creates an incident.
+			assert.include(requests[0]?.body ?? "", '"event_action":"resolve"')
 		})
-		expect(requests).toHaveLength(1)
-		expect(requests[0]?.url).toBe("https://events.pagerduty.com/v2/enqueue")
-		// Validation uses a no-op resolve so it never creates an incident.
-		expect(requests[0]?.body).toContain('"event_action":"resolve"')
 	})
 
-	itEffect("accepts a PagerDuty key that PagerDuty confirms", () => {
+	it.effect("accepts a PagerDuty key that PagerDuty confirms", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fetchImpl = (async () => new Response("", { status: 202 })) as typeof fetch
 		return Effect.gen(function* () {
@@ -1336,7 +1305,7 @@ describe("AlertsService", () => {
 				adminRoles,
 				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
 			)
-			expect(destination.type).toBe("pagerduty")
+			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -1346,7 +1315,7 @@ describe("AlertsService", () => {
 		)
 	})
 
-	itEffect("creates the destination when PagerDuty is unreachable (fails open)", () => {
+	it.effect("creates the destination when PagerDuty is unreachable (fails open)", () => {
 		const testDb = createTestDb(trackedDbs)
 		const fetchImpl = (async () => {
 			throw new Error("network down")
@@ -1359,7 +1328,7 @@ describe("AlertsService", () => {
 				adminRoles,
 				{ type: "pagerduty", name: "Paging", enabled: true, integrationKey: VALID_PD_KEY },
 			)
-			expect(destination.type).toBe("pagerduty")
+			assert.strictEqual(destination.type, "pagerduty")
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -1369,7 +1338,7 @@ describe("AlertsService", () => {
 		)
 	})
 
-	itEffect("skips PagerDuty validation on update when the key is left blank", () => {
+	it.effect("skips PagerDuty validation on update when the key is left blank", () => {
 		const testDb = createTestDb(trackedDbs)
 		let calls = 0
 		const fetchImpl = (async () => {
@@ -1386,14 +1355,14 @@ describe("AlertsService", () => {
 				enabled: true,
 				integrationKey: VALID_PD_KEY,
 			})
-			expect(calls).toBe(1) // create validated once
+			assert.strictEqual(calls, 1) // create validated once
 
 			const updated = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
 				type: "pagerduty",
 				name: "Paging renamed",
 			})
-			expect(updated.name).toBe("Paging renamed")
-			expect(calls).toBe(1) // no re-validation when the key is omitted
+			assert.strictEqual(updated.name, "Paging renamed")
+			assert.strictEqual(calls, 1) // no re-validation when the key is omitted
 		}).pipe(
 			Effect.provide(
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
@@ -1403,11 +1372,11 @@ describe("AlertsService", () => {
 		)
 	})
 
-	itEffect("opens per-service incidents for grouped logs query alerts", () => {
+	it.effect("opens per-service incidents for grouped logs query alerts", () => {
 		const testDb = createTestDb(trackedDbs)
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_logs_grouped")
 			const userId = asUserId("user_logs_grouped")
@@ -1450,13 +1419,13 @@ describe("AlertsService", () => {
 			)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
-			expect(incidents.incidents).toHaveLength(1)
-			expect(incidents.incidents[0]?.groupKey).toBe("svc-breach")
-			expect(incidents.incidents[0]?.status).toBe("open")
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.groupKey, "svc-breach")
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
 		}).pipe(
 			Effect.provide(
 				makeLayer(
@@ -1467,17 +1436,17 @@ describe("AlertsService", () => {
 							{ bucket: "2026-01-01 00:00:00", groupName: "svc-healthy", count: 3 },
 						],
 					}),
-					{ now: clock.now, fetch: okFetch },
+					{ fetch: okFetch },
 				),
 			),
 		)
 	})
 
-	it("blocks destination deletion when rules still reference it", async () => {
+	it.effect("blocks destination deletion when rules still reference it", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				const orgId = asOrgId("org_delete_guard")
 				const userId = asUserId("user_delete_guard")
@@ -1486,27 +1455,27 @@ describe("AlertsService", () => {
 				yield* createErrorRateRule(alerts, orgId, userId, destination.id)
 
 				return yield* alerts.deleteDestination(orgId, adminRoles, destination.id)
-			}).pipe(
-				Effect.provide(
-					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
-				),
-			),
-		)
+			})
+				.pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
+					),
+				)
+				.pipe(Effect.exit)
 
-		const failure = getError(exit)
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(failure).toBeInstanceOf(AlertDestinationInUseError)
-		expect(failure).toMatchObject({
-			destinationId: expect.any(String),
-			ruleNames: ["Checkout error rate"],
+			const failure = getError(exit)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.instanceOf(failure, AlertDestinationInUseError)
+			assert.isString((failure as { destinationId: unknown }).destinationId)
+			assert.deepStrictEqual((failure as { ruleNames: ReadonlyArray<string> }).ruleNames, ["Checkout error rate"])
 		})
 	})
 
-	it("rejects destination creation for non-admin members", async () => {
+	it.effect("rejects destination creation for non-admin members", () => {
 		const testDb = createTestDb(trackedDbs)
 
-		const exit = await Effect.runPromiseExit(
-			Effect.gen(function* () {
+		return Effect.gen(function* () {
+			const exit = yield* Effect.gen(function* () {
 				const alerts = yield* AlertsService
 				return yield* alerts.createDestination(
 					asOrgId("org_forbidden"),
@@ -1519,20 +1488,22 @@ describe("AlertsService", () => {
 						url: "https://example.com/member",
 					},
 				)
-			}).pipe(
-				Effect.provide(
-					makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
-				),
-			),
-		)
+			})
+				.pipe(
+					Effect.provide(
+						makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows })),
+					),
+				)
+				.pipe(Effect.exit)
 
-		const failure = getError(exit)
+			const failure = getError(exit)
 
-		expect(Exit.isFailure(exit)).toBe(true)
-		expect(failure).toBeInstanceOf(AlertForbiddenError)
+			assert.isTrue(Exit.isFailure(exit))
+			assert.instanceOf(failure, AlertForbiddenError)
+		})
 	})
 
-	itEffect("dedupes destinationIds on create and update, preserving selection order", () => {
+	it.effect("dedupes destinationIds on create and update, preserving selection order", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
@@ -1575,7 +1546,7 @@ describe("AlertsService", () => {
 					destinationIds: [primary.id, secondary.id, primary.id],
 				}),
 			)
-			expect(created.destinationIds).toEqual([primary.id, secondary.id])
+			assert.deepStrictEqual(created.destinationIds, [primary.id, secondary.id])
 
 			// Updating with duplicates is deduped on the write path too.
 			const updated = yield* alerts.updateRule(
@@ -1588,18 +1559,18 @@ describe("AlertsService", () => {
 					destinationIds: [secondary.id, secondary.id],
 				}),
 			)
-			expect(updated.destinationIds).toEqual([secondary.id])
+			assert.deepStrictEqual(updated.destinationIds, [secondary.id])
 
 			// The persisted row read back is deduped, not just the returned document.
 			const rules = yield* alerts.listRules(orgId)
-			expect(rules.rules).toHaveLength(1)
-			expect(rules.rules[0]?.destinationIds).toEqual([secondary.id])
+			assert.lengthOf(rules.rules, 1)
+			assert.deepStrictEqual(rules.rules[0]?.destinationIds, [secondary.id])
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
 		)
 	})
 
-	itEffect("round-trips and normalizes rule tags through create/update/list", () => {
+	it.effect("round-trips and normalizes rule tags through create/update/list", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		return Effect.gen(function* () {
@@ -1632,11 +1603,11 @@ describe("AlertsService", () => {
 				adminRoles,
 				new AlertRuleUpsertRequest({ ...baseRule, tags: ["Prod", " payments ", "prod", ""] }),
 			)
-			expect(created.tags).toEqual(["prod", "payments"])
+			assert.deepStrictEqual(created.tags, ["prod", "payments"])
 
 			// The normalized tags survive a round-trip through the persisted row.
 			const afterCreate = yield* alerts.listRules(orgId)
-			expect(afterCreate.rules[0]?.tags).toEqual(["prod", "payments"])
+			assert.deepStrictEqual(afterCreate.rules[0]?.tags, ["prod", "payments"])
 
 			// Clearing tags on update persists an empty list, not the prior value.
 			const updated = yield* alerts.updateRule(
@@ -1646,16 +1617,16 @@ describe("AlertsService", () => {
 				created.id,
 				new AlertRuleUpsertRequest({ ...baseRule, tags: [] }),
 			)
-			expect(updated.tags).toEqual([])
+			assert.deepStrictEqual(updated.tags, [])
 
 			const afterClear = yield* alerts.listRules(orgId)
-			expect(afterClear.rules[0]?.tags).toEqual([])
+			assert.deepStrictEqual(afterClear.rules[0]?.tags, [])
 		}).pipe(
 			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
 		)
 	})
 
-	itEffect("opens per-service incidents for multi-service rules", () => {
+	it.effect("opens per-service incidents for multi-service rules", () => {
 		const testDb = createTestDb(trackedDbs)
 		const state = {
 			tracesAggregateRows: [
@@ -1672,9 +1643,9 @@ describe("AlertsService", () => {
 				},
 			],
 		}
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_multi_svc")
 			const userId = asUserId("user_multi_svc")
@@ -1702,18 +1673,18 @@ describe("AlertsService", () => {
 			)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
-			expect(incidents.incidents).toHaveLength(2)
+			assert.lengthOf(incidents.incidents, 2)
 			const groupKeys = incidents.incidents.map((i: { groupKey: string | null }) => i.groupKey).sort()
-			expect(groupKeys).toEqual(["svc-a", "svc-b"])
-			expect(incidents.incidents.every((i: { status: string }) => i.status === "open")).toBe(true)
-		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { now: clock.now, fetch: okFetch })))
+			assert.deepStrictEqual(groupKeys, ["svc-a", "svc-b"])
+			assert.isTrue(incidents.incidents.every((i: { status: string }) => i.status === "open"))
+		}).pipe(Effect.provide(makeLayer(testDb, makeWarehouseStub(state), { fetch: okFetch })))
 	})
 
-	itEffect("opens per-service incidents for groupBy=service rules", () => {
+	it.effect("opens per-service incidents for groupBy=service rules", () => {
 		const testDb = createTestDb(trackedDbs)
 
 		const breachingRow = {
@@ -1753,9 +1724,9 @@ describe("AlertsService", () => {
 			compiledQueryFirst: (_tenant, compiled) =>
 				compiled.decodeFirstRow(alertRows).pipe(Effect.orDie) as never,
 		}
-		const clock = makeManualClock()
 
 		return Effect.gen(function* () {
+			yield* TestClock.setTime(DEFAULT_CLOCK_EPOCH_MS)
 			const alerts = yield* AlertsService
 			const orgId = asOrgId("org_grouped")
 			const userId = asUserId("user_grouped")
@@ -1783,13 +1754,13 @@ describe("AlertsService", () => {
 			)
 
 			yield* alerts.runSchedulerTick()
-			yield* clock.adjust(Duration.minutes(1))
+			yield* TestClock.adjust(Duration.minutes(1))
 			yield* alerts.runSchedulerTick()
 
 			const incidents = yield* alerts.listIncidents(orgId)
-			expect(incidents.incidents).toHaveLength(1)
-			expect(incidents.incidents[0]?.groupKey).toBe("svc-breach")
-			expect(incidents.incidents[0]?.status).toBe("open")
-		}).pipe(Effect.provide(makeLayer(testDb, stub, { now: clock.now, fetch: okFetch })))
+			assert.lengthOf(incidents.incidents, 1)
+			assert.strictEqual(incidents.incidents[0]?.groupKey, "svc-breach")
+			assert.strictEqual(incidents.incidents[0]?.status, "open")
+		}).pipe(Effect.provide(makeLayer(testDb, stub, { fetch: okFetch })))
 	})
 })

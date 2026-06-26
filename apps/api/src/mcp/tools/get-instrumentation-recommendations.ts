@@ -133,7 +133,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "get_instrumentation_recommendations",
+							pipeName: "get_instrumentation_recommendations",
 							cause: error,
 						}),
 				),

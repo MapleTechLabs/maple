@@ -34,7 +34,7 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 			}).pipe(
 				Effect.provide(makeWarehouseExecutorFromTenant(tenant)),
 				Effect.mapError(
-					(e) => new McpQueryError({ message: e.message, pipe: "service_dependencies", cause: e }),
+					(e) => new McpQueryError({ message: e.message, pipeName: "service_dependencies", cause: e }),
 				),
 			)
 
@@ -90,7 +90,6 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 
 			lines.push(formatTable(headers, rows))
 
-			const nextSteps: string[] = []
 			const errorEdges = Arr.sort(
 				Arr.filter(
 					Arr.map(edges, (e) => ({
@@ -102,14 +101,15 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 				Order.mapInput(Order.flip(Order.Number), (e: { errorRate: number }) => e.errorRate),
 			)
 
-			for (const e of Arr.take(errorEdges, 2)) {
-				nextSteps.push(
+			const errorEdgeSteps = Arr.map(
+				Arr.take(errorEdges, 2),
+				(e) =>
 					`\`diagnose_service service_name="${e.service}"\` — investigate high error rate dependency`,
-				)
-			}
-			if (nextSteps.length === 0) {
-				nextSteps.push("`list_services` — see all services with health metrics")
-			}
+			)
+			const nextSteps =
+				errorEdgeSteps.length > 0
+					? errorEdgeSteps
+					: ["`list_services` — see all services with health metrics"]
 			lines.push(formatNextSteps(nextSteps))
 
 			return {

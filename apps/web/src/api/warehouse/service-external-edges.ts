@@ -43,7 +43,10 @@ function coerceTargetType(value: unknown): ServiceExternalTargetType {
 		: "http"
 }
 
-function transformEdge(row: Record<string, unknown>, durationSeconds: number): ServiceExternalEdge {
+export function transformExternalEdge(
+	row: Record<string, unknown>,
+	durationSeconds: number,
+): ServiceExternalEdge {
 	const callCount = Number(row.callCount ?? 0)
 	const errorCount = Number(row.errorCount ?? 0)
 	const estimatedSpanCount = Number(row.estimatedSpanCount ?? 0)
@@ -96,6 +99,6 @@ export const getServiceExternalEdges = Effect.fn("QueryEngine.getServiceExternal
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
-		edges: result.data.map((row) => transformEdge(row, durationSeconds)),
+		edges: result.data.map((row) => transformExternalEdge(row, durationSeconds)),
 	}
 })

@@ -42,7 +42,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 							(error) =>
 								new McpQueryError({
 									message: error.message,
-									pipe: "list_error_incidents",
+									pipeName: "list_error_incidents",
 									cause: error,
 								}),
 						),
@@ -52,7 +52,7 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 							(error) =>
 								new McpQueryError({
 									message: error.message,
-									pipe: "list_error_incidents",
+									pipeName: "list_error_incidents",
 									cause: error,
 								}),
 						),

@@ -1,7 +1,6 @@
 import path from "node:path"
 import alchemy from "alchemy"
 import {
-	D1Database,
 	Hyperdrive,
 	HyperdriveRef,
 	KVNamespace,
@@ -13,7 +12,7 @@ import {
 } from "alchemy/cloudflare"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
-	resolveD1Name,
+	CLOUDFLARE_WORKER_PLACEMENT,
 	resolveDeploymentEnvironment,
 	resolveHyperdriveName,
 	resolveWorkerName,
@@ -77,19 +76,6 @@ export interface CreateMapleApiOptions {
 }
 
 export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) => {
-	// Legacy D1 — unbound rollback snapshot for the Postgres cutover. Kept with
-	// `delete: false` so removing this block later no-ops the API delete; the
-	// resource id MUST stay "MAPLE_DB" (renaming would orphan-delete the
-	// database). migrationsDir is gone: packages/db/drizzle now holds Postgres
-	// SQL. Remove this whole block after the post-cutover rollback window.
-	if (stage.kind === "prd" || stage.kind === "stg") {
-		await D1Database("MAPLE_DB", {
-			name: resolveD1Name(stage),
-			adopt: true,
-			delete: false,
-		})
-	}
-
 	// Prod binds to the PRE-CONFIGURED Hyperdrive `maple-prd` — its origin and
 	// credentials are managed directly in the Cloudflare dashboard, NOT pushed
 	// from MAPLE_PG_URL. Reference it by name so a deploy never rewrites (or needs
@@ -153,6 +139,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		entrypoint: path.join(import.meta.dirname, "src", "worker.ts"),
 		compatibility: "node",
 		compatibilityDate: "2026-04-08",
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,

@@ -1,15 +1,18 @@
+import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { SessionsList } from "@/components/replays/sessions-list"
+import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
 import { BooleanFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useInfiniteReplays } from "@/hooks/use-infinite-replays"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import { replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -25,6 +28,7 @@ const replaysSearchSchema = Schema.Struct({
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),
+	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 	q: Schema.optional(Schema.String),
 })
@@ -43,18 +47,33 @@ function ReplaysPage() {
 		search.timePreset ?? "24h",
 	)
 
-	const filterInputs = {
-		startTime,
-		endTime,
-		serviceName: search.service,
-		browser: search.browser,
-		country: search.country,
-		deviceType: search.deviceType,
-		hasErrors: search.hasErrors,
-		search: search.q,
-	}
+	const filterInputs = useMemo(
+		() => ({
+			startTime,
+			endTime,
+			serviceName: search.service,
+			browser: search.browser,
+			country: search.country,
+			deviceType: search.deviceType,
+			userId: search.userId,
+			hasErrors: search.hasErrors,
+			search: search.q,
+		}),
+		[
+			startTime,
+			endTime,
+			search.service,
+			search.browser,
+			search.country,
+			search.deviceType,
+			search.userId,
+			search.hasErrors,
+			search.q,
+		],
+	)
 
-	const result = useAtomValue(listReplaysResultAtom({ data: filterInputs }))
+	const { firstPageResult, allData, hasNextPage, isFetchingNextPage, fetchNextPage } =
+		useInfiniteReplays(filterInputs)
 	const facetsResult = useAtomValue(replaysFacetsResultAtom({ data: filterInputs }))
 
 	const handleTimeChange = (range: TimeRange, options?: { replace?: boolean }) => {
@@ -68,7 +87,11 @@ function ReplaysPage() {
 		navigate({ search: (prev) => ({ ...prev, q: value }) })
 	}
 
-	const sessions = Result.isSuccess(result) ? result.value.data : []
+	const handleUserFilter = (value: string | undefined) => {
+		navigate({ search: (prev) => ({ ...prev, userId: value }) })
+	}
+
+	const sessions = allData
 	const errorSessions = Result.isSuccess(facetsResult) ? facetsResult.value.errorCount : 0
 
 	const titleContent = <h1 className="truncate text-2xl font-semibold tracking-tight">Session Replays</h1>
@@ -90,7 +113,7 @@ function ReplaysPage() {
 			totalSessions={sessions.length}
 			activeSessions={sessions.filter((s) => s.status === "active").length}
 			errorSessions={errorSessions}
-			waiting={result.waiting}
+			waiting={firstPageResult.waiting}
 		/>
 	)
 
@@ -104,7 +127,14 @@ function ReplaysPage() {
 				filterSidebar={<ReplaysFilterSidebar facetsResult={facetsResult} />}
 				stickyContent={toolbar}
 			>
-				{Result.builder(result)
+				{search.userId && (
+					<ActiveUserFilter
+						userId={search.userId}
+						count={sessions.length}
+						onClear={() => handleUserFilter(undefined)}
+					/>
+				)}
+				{Result.builder(firstPageResult)
 					.onInitial(() => (
 						<div className="space-y-2">
 							{Array.from({ length: 6 }).map((_, i) => (
@@ -115,7 +145,14 @@ function ReplaysPage() {
 					.onError((error) => (
 						<QueryErrorState error={error} titleOverride="Failed to load session replays" />
 					))
-					.onSuccess((data) => <SessionsList sessions={data.data} />)
+					.onSuccess(() => (
+						<SessionsList
+							sessions={allData}
+							hasMore={hasNextPage}
+							loadingMore={isFetchingNextPage}
+							onReachEnd={fetchNextPage}
+						/>
+					))
 					.render()}
 			</DashboardLayout>
 		</PageRefreshProvider>

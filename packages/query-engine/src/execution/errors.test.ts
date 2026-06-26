@@ -15,7 +15,7 @@ describe("mapWarehouseError", () => {
 		it("maps the execution-time code to a quota error", () => {
 			const mapped = mapWarehouseError("testPipe", { message: "took too long", code: "159" })
 			expect(mapped).toBeInstanceOf(WarehouseQuotaExceededError)
-			expect(mapped).toMatchObject({ setting: "max_execution_time", pipe: "testPipe" })
+			expect(mapped).toMatchObject({ setting: "max_execution_time", pipeName: "testPipe" })
 		})
 
 		it("maps the memory code to a quota error", () => {
@@ -148,7 +148,7 @@ describe("toWarehouseQueryError", () => {
 		const mapped = toWarehouseQueryError("testPipe", cause)
 		expect(mapped).toBeInstanceOf(WarehouseQueryError)
 		expect(mapped.message).toBe("DB::Exception: boom")
-		expect(mapped.pipe).toBe("testPipe")
+		expect(mapped.pipeName).toBe("testPipe")
 		expect(mapped.cause).toBe(cause)
 	})
 })

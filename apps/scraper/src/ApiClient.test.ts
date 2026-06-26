@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { ApiClient } from "./ApiClient"
@@ -72,12 +72,12 @@ describe("ApiClient", () => {
 				),
 			)
 
-			expect(recorded[0]?.url).toBe("http://api.test/api/internal/scrape-targets")
-			expect(recorded[0]?.headers.authorization).toBe("Bearer internal-token")
-			expect(targets).toHaveLength(1)
-			expect(targets[0]?.id).toBe(VALID_TARGET.id)
-			expect(targets[0]?.labels).toEqual({ env: "prod" })
-			expect(targets[0]?.ingestKey).toBe("maple_pk_org_1_key")
+			assert.strictEqual(recorded[0]?.url, "http://api.test/api/internal/scrape-targets")
+			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer internal-token")
+			assert.lengthOf(targets, 1)
+			assert.strictEqual(targets[0]?.id, VALID_TARGET.id)
+			assert.deepStrictEqual(targets[0]?.labels, { env: "prod" })
+			assert.strictEqual(targets[0]?.ingestKey, "maple_pk_org_1_key")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -91,8 +91,8 @@ describe("ApiClient", () => {
 				),
 				Effect.flip,
 			)
-			expect(result._tag).toBe("@maple/scraper/ApiRequestError")
-			expect(result.status).toBe(401)
+			assert.strictEqual(result._tag, "@maple/scraper/ApiRequestError")
+			assert.strictEqual(result.status, 401)
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -106,7 +106,7 @@ describe("ApiClient", () => {
 				),
 				Effect.flip,
 			)
-			expect(result.message).toContain("payload mismatch")
+			assert.include(result.message, "payload mismatch")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -121,10 +121,10 @@ describe("ApiClient", () => {
 				),
 			)
 
-			expect(recorded[0]?.url).toBe("http://api.test/api/internal/prometheus-scrape?targetId=target-1")
-			expect(recorded[0]?.headers.authorization).toBe("Bearer internal-token")
-			expect(response.status).toBe(200)
-			expect(response.body).toContain("up 1")
+			assert.strictEqual(recorded[0]?.url, "http://api.test/api/internal/prometheus-scrape?targetId=target-1")
+			assert.strictEqual(recorded[0]?.headers.authorization, "Bearer internal-token")
+			assert.strictEqual(response.status, 200)
+			assert.include(response.body, "up 1")
 		}).pipe(Effect.provide(TestLayer)),
 	)
 
@@ -139,7 +139,8 @@ describe("ApiClient", () => {
 				),
 			)
 
-			expect(recorded[0]?.url).toBe(
+			assert.strictEqual(
+				recorded[0]?.url,
 				"http://api.test/api/internal/prometheus-scrape?targetId=target-1&sub=branch%20a%2F1",
 			)
 		}).pipe(Effect.provide(TestLayer)),
@@ -152,7 +153,7 @@ describe("ApiClient", () => {
 			const fetchStub = stubFetch(recorded, () => Response.json({ recorded: 1 }))
 
 			yield* client.reportResults([]).pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
-			expect(recorded).toHaveLength(0)
+			assert.lengthOf(recorded, 0)
 
 			yield* client
 				.reportResults([
@@ -160,10 +161,10 @@ describe("ApiClient", () => {
 				])
 				.pipe(Effect.provideService(FetchHttpClient.Fetch, fetchStub))
 
-			expect(recorded[0]?.url).toBe("http://api.test/api/internal/scrape-results")
-			expect(recorded[0]?.method).toBe("POST")
-			expect(recorded[0]?.headers["content-type"]).toBe("application/json")
-			expect(JSON.parse(recorded[0]?.body ?? "[]")).toEqual([
+			assert.strictEqual(recorded[0]?.url, "http://api.test/api/internal/scrape-results")
+			assert.strictEqual(recorded[0]?.method, "POST")
+			assert.strictEqual(recorded[0]?.headers["content-type"], "application/json")
+			assert.deepStrictEqual(JSON.parse(recorded[0]?.body ?? "[]"), [
 				{ targetId: VALID_TARGET.id, scrapedAt: 1750000000000, error: null },
 			])
 		}).pipe(Effect.provide(TestLayer)),

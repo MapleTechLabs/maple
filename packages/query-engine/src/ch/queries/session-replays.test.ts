@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "@maple-dev/clickhouse-builder"
-import { sessionTraceSummariesQuery } from "./session-replays"
+import { compileCH, compileUnion } from "@maple-dev/clickhouse-builder"
+import {
+	getSessionReplayQuery,
+	sessionReplaysFacetsQuery,
+	sessionReplaysListQuery,
+	sessionReplayEventsQuery,
+	sessionTraceSummariesQuery,
+} from "./session-replays"
 
 const baseParams = { orgId: "org_1" }
+const sessionParams = { orgId: "org_1", sessionId: "sess_1" }
+const WINDOW = { startTime: "2026-06-24 04:00:00", endTime: "2026-06-25 06:00:00" }
 
 // ---------------------------------------------------------------------------
 // sessionTraceSummariesQuery
@@ -29,5 +37,94 @@ describe("sessionTraceSummariesQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain("TraceId IN ('t1', 't2')")
+	})
+
+	// The table is PARTITION BY toDate(Timestamp); the session window prunes the
+	// daily partitions an unbounded TraceId-IN scan would otherwise touch.
+	it("adds the session time window as a partition-pruning predicate when provided", () => {
+		const q = sessionTraceSummariesQuery({ traceIds: ["t1"], ...WINDOW })
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
+		expect(sql).toContain("Timestamp <= '2026-06-25 06:00:00'")
+	})
+
+	it("omits the time window when absent (deep-link path, unchanged full scan)", () => {
+		const q = sessionTraceSummariesQuery({ traceIds: ["t1"] })
+		const { sql } = compileCH(q, baseParams)
+		expect(sql).not.toContain("Timestamp >=")
+		expect(sql).not.toContain("Timestamp <=")
+	})
+})
+
+describe("sessionReplayEventsQuery", () => {
+	it("adds the session time window as a partition-pruning predicate when provided", () => {
+		const q = sessionReplayEventsQuery(WINDOW)
+		const { sql } = compileCH(q, sessionParams)
+		expect(sql).toContain("FROM session_replay_events")
+		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
+		expect(sql).toContain("Timestamp <= '2026-06-25 06:00:00'")
+	})
+
+	it("omits the time window when absent (full scan)", () => {
+		const q = sessionReplayEventsQuery()
+		const { sql } = compileCH(q, sessionParams)
+		expect(sql).not.toContain("Timestamp >=")
+	})
+})
+
+// ---------------------------------------------------------------------------
+// UserId filter (exact match) — list + facets
+//
+// UserId is high-cardinality identity data, so it's an exact-match filter, not a
+// facet branch. On the list it narrows to one user's sessions; on the facets it
+// narrows every dimension's counts (no facet branch is excluded for it).
+// ---------------------------------------------------------------------------
+
+describe("sessionReplaysListQuery userId filter", () => {
+	it("adds an exact UserId predicate when provided", () => {
+		const q = sessionReplaysListQuery({ userId: "user_123" })
+		const { sql } = compileCH(q, { ...baseParams, ...WINDOW })
+		expect(sql).toContain("UserId = 'user_123'")
+		expect(sql).not.toContain("UserId ILIKE")
+	})
+
+	it("omits the UserId predicate when absent", () => {
+		const q = sessionReplaysListQuery({})
+		const { sql } = compileCH(q, { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("UserId =")
+	})
+})
+
+describe("sessionReplaysFacetsQuery userId filter", () => {
+	it("narrows every facet branch by the exact UserId", () => {
+		const q = sessionReplaysFacetsQuery({ userId: "user_123" })
+		const { sql } = compileUnion(q, { ...baseParams, ...WINDOW })
+		// Branches: service / browser / country / device / error count — userId is
+		// applied to all of them (never excluded, unlike each branch's own dimension).
+		const occurrences = sql.split("UserId = 'user_123'").length - 1
+		expect(occurrences).toBe(5)
+	})
+
+	it("omits the UserId predicate when absent", () => {
+		const q = sessionReplaysFacetsQuery({})
+		const { sql } = compileUnion(q, { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("UserId =")
+	})
+})
+
+describe("getSessionReplayQuery", () => {
+	// session_replays is PARTITION BY toDate(StartTime); StartTime is version-
+	// invariant so the window is safe alongside the ORDER BY Version DESC dedup.
+	it("adds the session time window on StartTime when provided", () => {
+		const q = getSessionReplayQuery(WINDOW)
+		const { sql } = compileCH(q, sessionParams)
+		expect(sql).toContain("StartTime >= '2026-06-24 04:00:00'")
+		expect(sql).toContain("StartTime <= '2026-06-25 06:00:00'")
+	})
+
+	it("omits the time window when absent (full scan)", () => {
+		const q = getSessionReplayQuery()
+		const { sql } = compileCH(q, sessionParams)
+		expect(sql).not.toContain("StartTime >=")
 	})
 })

@@ -41,8 +41,12 @@ interface ServiceHealthProps {
 	endTime?: string
 	timePreset?: string
 	environments?: string[]
-	/** Gate the overview fetch until facets resolve — mirrors the index route. */
-	facetsReady: boolean
+	/**
+	 * Whether the overview/baseline fetches may fire — mirrors the index route's
+	 * gate. True once facets resolve, or earlier when a persisted facets hint lets
+	 * the dashboard fetch optimistically.
+	 */
+	canFetch: boolean
 }
 
 /** Search params that carry the dashboard's current slice over to `/services`. */
@@ -84,9 +88,9 @@ const HEALTH_DOT_COLOR: Record<ServiceHealth, string> = {
  * The overview/alerts atoms are keyed by their params (or module-level), so
  * subscribing from two components dedupes to a single fetch each.
  */
-function useServiceHealthData({ startTime, endTime, environments, facetsReady }: ServiceHealthProps) {
+function useServiceHealthData({ startTime, endTime, environments, canFetch }: ServiceHealthProps) {
 	const overviewResult = useRetainedRefreshableResultValue(
-		facetsReady
+		canFetch
 			? getServiceOverviewResultAtom({ data: { startTime, endTime, environments } })
 			: disabledResultAtom<{ data: ServiceOverview[] }, unknown>(),
 	)
@@ -94,7 +98,7 @@ function useServiceHealthData({ startTime, endTime, environments, facetsReady }:
 	// Trailing-7d latency baseline behind the baseline-relative health badges.
 	// Failure or loading degrades to absolute thresholds — never blocks render.
 	const baselineResult = useAtomValue(
-		facetsReady
+		canFetch
 			? getServiceHealthBaselineResultAtom({ data: { rangeStartTime: startTime, environments } })
 			: disabledResultAtom<ServiceHealthBaselineResult, unknown>(),
 	)

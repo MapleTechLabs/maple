@@ -54,6 +54,27 @@ describe("EdgeCacheService.getOrCompute (no schema)", () => {
 			assert.deepStrictEqual(second.value, { hello: "world", n: 42 })
 		}).pipe(Effect.provide(makeLayer(backend)))
 	})
+
+	it.effect("derives the TTL from the computed value when ttlSeconds is a function", () => {
+		const puts: number[] = []
+		const backend: EdgeCacheBackend = {
+			get: async () => undefined, // force a miss → always computes → always writes
+			put: async (_bucket, _hash, _value, ttlSeconds) => {
+				puts.push(ttlSeconds)
+			},
+			delete: async () => {},
+		}
+		const ttlBySize = (value: { n: number }) => (value.n > 10 ? 300 : 15)
+
+		return Effect.gen(function* () {
+			const cache = yield* EdgeCacheService
+			yield* cache.getOrCompute({ bucket: "ttl", key: "big", ttlSeconds: ttlBySize }, Effect.succeed({ n: 42 }))
+			yield* cache.getOrCompute({ bucket: "ttl", key: "small", ttlSeconds: ttlBySize }, Effect.succeed({ n: 3 }))
+
+			// The resolver runs against each freshly computed value, not a constant.
+			assert.deepStrictEqual(puts, [300, 15])
+		}).pipe(Effect.provide(makeLayer(backend)))
+	})
 })
 
 describe("EdgeCacheService.invalidate", () => {

@@ -1,6 +1,11 @@
 import path from "node:path"
 import { Vite } from "alchemy/cloudflare"
-import { resolveWorkerName, type MapleDomains, type MapleStage } from "@maple/infra/cloudflare"
+import {
+	CLOUDFLARE_WORKER_PLACEMENT,
+	resolveWorkerName,
+	type MapleDomains,
+	type MapleStage,
+} from "@maple/infra/cloudflare"
 
 export interface CreateLocalUiWorkerOptions {
 	stage: MapleStage
@@ -23,6 +28,7 @@ export const createLocalUiWorker = async ({ stage, domains }: CreateLocalUiWorke
 		cwd: import.meta.dirname,
 		entrypoint: path.join(import.meta.dirname, "src", "worker.ts"),
 		assets: "dist",
+		placement: CLOUDFLARE_WORKER_PLACEMENT,
 		domains: domains.local ? [{ domainName: domains.local, adopt: true }] : undefined,
 	})
 

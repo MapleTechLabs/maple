@@ -94,23 +94,22 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			// Point the repo at a new tracked branch: wipe its (old-branch) commits and
 			// enqueue a fresh backfill of the new branch. Used by the engine's automatic
 			// fallback to the default when the tracked branch is deleted upstream.
-			const retargetTrackedBranch = (
+			const retargetTrackedBranch = Effect.fn("VcsSyncService.retargetTrackedBranch")(function* (
 				installation: VcsInstallation,
 				repository: VcsRepo,
 				newBranch: string,
-			) =>
-				Effect.gen(function* () {
-					yield* repo.changeTrackedBranch(repository.orgId, repository.id, newBranch)
-					const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
-					yield* queue.send(backfillJob(installation, repository, newBranch, sinceMs))
-					yield* Effect.logInfo("[VCS] Tracked branch retargeted to default after deletion").pipe(
-						Effect.annotateLogs({
-							provider: installation.provider,
-							externalRepoId: repository.externalRepoId,
-							newBranch,
-						}),
-					)
-				})
+			) {
+				yield* repo.changeTrackedBranch(repository.orgId, repository.id, newBranch)
+				const sinceMs = (yield* Clock.currentTimeMillis) - BACKFILL_WINDOW_MS
+				yield* queue.send(backfillJob(installation, repository, newBranch, sinceMs))
+				yield* Effect.logInfo("[VCS] Tracked branch retargeted to default after deletion").pipe(
+					Effect.annotateLogs({
+						provider: installation.provider,
+						externalRepoId: repository.externalRepoId,
+						newBranch,
+					}),
+				)
+			})
 
 			const syncCommits = (
 				provider: VcsProviderClient,
@@ -450,46 +449,47 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 
 			// Single gate for "should the engine act on this installation?" — rule lives in
 			// isInstallationProcessable. Suspended/disconnected installations are skipped.
-			const ensureProcessable = (installation: VcsInstallation, kind: VcsSyncJob["kind"]) =>
-				Effect.gen(function* () {
-					const processable = isInstallationProcessable(installation)
-					yield* Effect.annotateCurrentSpan({
-						"vcs.installation.status": installation.status,
-						"vcs.installation.processable": processable,
-					})
-					if (!processable) {
-						yield* Effect.annotateCurrentSpan({
-							"vcs.process.outcome": "skipped",
-							"vcs.process.reason": "installation_not_processable",
-						})
-						yield* Effect.logInfo("[VCS] Skipping VCS job: installation not processable").pipe(
-							Effect.annotateLogs({
-								provider: installation.provider,
-								externalInstallationId: installation.externalInstallationId,
-								status: installation.status,
-								kind,
-							}),
-						)
-					}
-					return processable
+			const ensureProcessable = Effect.fn("VcsSyncService.ensureProcessable")(function* (
+				installation: VcsInstallation,
+				kind: VcsSyncJob["kind"],
+			) {
+				const processable = isInstallationProcessable(installation)
+				yield* Effect.annotateCurrentSpan({
+					"vcs.installation.status": installation.status,
+					"vcs.installation.processable": processable,
 				})
+				if (!processable) {
+					yield* Effect.annotateCurrentSpan({
+						"vcs.process.outcome": "skipped",
+						"vcs.process.reason": "installation_not_processable",
+					})
+					yield* Effect.logInfo("[VCS] Skipping VCS job: installation not processable").pipe(
+						Effect.annotateLogs({
+							provider: installation.provider,
+							externalInstallationId: installation.externalInstallationId,
+							status: installation.status,
+							kind,
+						}),
+					)
+				}
+				return processable
+			})
 
 			// Resolve the repo a data job targets (external repo id → entity), applying the
 			// two drop rules every data job shares — logging + annotating each so the drop is
 			// traceable. A `None` result means "drop this job":
 			//  - unknown repo (no local row): nothing to attach to.
 			//  - soft-removed repo: paused until access is re-granted (which flips it active).
-			const resolveRepositoryForJob = (
+			const resolveRepositoryForJob = Effect.fn("VcsSyncService.resolveRepositoryForJob")(function* (
 				installation: VcsInstallation,
 				job: PushJob | SyncCommitsJob | SyncBranchesJob | BranchEventJob,
-			) =>
-				Effect.gen(function* () {
-					const repositoryOpt = yield* repo.resolveRepository(
-						installation.orgId,
-						job.provider,
-						job.externalRepoId,
-					)
-					if (Option.isNone(repositoryOpt)) {
+			) {
+				const repositoryOpt = yield* repo.resolveRepository(
+					installation.orgId,
+					job.provider,
+					job.externalRepoId,
+				)
+				if (Option.isNone(repositoryOpt)) {
 						yield* Effect.annotateCurrentSpan({
 							"vcs.repository.outcome": "dropped",
 							"vcs.repository.reason": "unknown_repository",
@@ -657,45 +657,47 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				})
 			})
 
-			const handleSyncCommits = (
+			const handleSyncCommits = Effect.fn("VcsSyncService.handleSyncCommits")(function* (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: SyncCommitsJob,
-			) =>
-				Effect.gen(function* () {
-					if (!(yield* ensureProcessable(installation, job.kind))) return
-					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
-					if (Option.isNone(repositoryOpt)) return
-					yield* syncCommits(provider, installation, repositoryOpt.value, job)
-				})
+			) {
+				if (!(yield* ensureProcessable(installation, job.kind))) return
+				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+				if (Option.isNone(repositoryOpt)) return
+				yield* syncCommits(provider, installation, repositoryOpt.value, job)
+			})
 
-			const handleSyncBranches = (
+			const handleSyncBranches = Effect.fn("VcsSyncService.handleSyncBranches")(function* (
 				provider: VcsProviderClient,
 				installation: VcsInstallation,
 				job: SyncBranchesJob,
-			) =>
-				Effect.gen(function* () {
-					if (!(yield* ensureProcessable(installation, job.kind))) return
-					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
-					if (Option.isNone(repositoryOpt)) return
-					yield* syncBranches(provider, installation, repositoryOpt.value)
-				})
+			) {
+				if (!(yield* ensureProcessable(installation, job.kind))) return
+				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+				if (Option.isNone(repositoryOpt)) return
+				yield* syncBranches(provider, installation, repositoryOpt.value)
+			})
 
-			const handlePush = (installation: VcsInstallation, job: PushJob) =>
-				Effect.gen(function* () {
-					if (!(yield* ensureProcessable(installation, job.kind))) return
-					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
-					if (Option.isNone(repositoryOpt)) return
-					yield* applyPush(installation, repositoryOpt.value, job)
-				})
+			const handlePush = Effect.fn("VcsSyncService.handlePush")(function* (
+				installation: VcsInstallation,
+				job: PushJob,
+			) {
+				if (!(yield* ensureProcessable(installation, job.kind))) return
+				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+				if (Option.isNone(repositoryOpt)) return
+				yield* applyPush(installation, repositoryOpt.value, job)
+			})
 
-			const handleBranchEvent = (installation: VcsInstallation, job: BranchEventJob) =>
-				Effect.gen(function* () {
-					if (!(yield* ensureProcessable(installation, job.kind))) return
-					const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
-					if (Option.isNone(repositoryOpt)) return
-					yield* applyBranchEvent(installation, repositoryOpt.value, job)
-				})
+			const handleBranchEvent = Effect.fn("VcsSyncService.handleBranchEvent")(function* (
+				installation: VcsInstallation,
+				job: BranchEventJob,
+			) {
+				if (!(yield* ensureProcessable(installation, job.kind))) return
+				const repositoryOpt = yield* resolveRepositoryForJob(installation, job)
+				if (Option.isNone(repositoryOpt)) return
+				yield* applyBranchEvent(installation, repositoryOpt.value, job)
+			})
 
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(

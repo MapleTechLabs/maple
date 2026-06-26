@@ -36,7 +36,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				catch: (cause) =>
 					new McpQueryError({
 						message: `Invalid rule_id: ${rule_id}`,
-						pipe: "list_alert_checks",
+						pipeName: "list_alert_checks",
 						cause,
 					}),
 			})
@@ -53,7 +53,7 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "list_alert_checks",
+								pipeName: "list_alert_checks",
 								cause: error,
 							}),
 					),

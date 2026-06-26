@@ -55,7 +55,7 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "release_error_issue",
+								pipeName: "release_error_issue",
 								cause: error,
 							}),
 					),

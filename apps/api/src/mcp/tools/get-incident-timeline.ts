@@ -49,7 +49,7 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "get_incident_timeline",
+							pipeName: "get_incident_timeline",
 							cause: error,
 						}),
 				),

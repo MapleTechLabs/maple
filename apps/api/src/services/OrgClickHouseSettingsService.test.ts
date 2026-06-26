@@ -1,15 +1,21 @@
-import { describe, expect, it } from "@effect/vitest"
+import { afterEach, describe, expect, it } from "@effect/vitest"
 import {
 	OrgClickHouseSettingsUpstreamRejectedError,
 	OrgClickHouseSettingsUpstreamUnavailableError,
+	OrgId,
+	RoleName,
 } from "@maple/domain/http"
-import { Cause, Effect, Exit, Option } from "effect"
+import { EdgeCacheService, MemoryCacheBackendLive } from "@maple/query-engine/caching"
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import type { TableDiffEntry } from "@maple/domain/clickhouse"
+import { Env } from "../lib/Env"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "../lib/test-pglite"
 import {
 	type ClickHouseExecConfig,
 	execClickHouse,
 	isRetryableUpstream,
+	OrgClickHouseSettingsService,
 	shouldHealSchemaVersion,
 } from "./OrgClickHouseSettingsService"
 
@@ -179,4 +185,102 @@ describe("execClickHouse", () => {
 			expect(state.calls).toBe(1)
 		}),
 	)
+})
+
+// `resolveRuntimeConfig` runs on the hot path of every warehouse SQL execution
+// (and once per missing bucket in the cache fan-out). It now serves the per-org
+// config from the shared edge cache, decrypting per-request. These tests assert
+// (a) a repeat resolve is served from cache (a direct Postgres mutation stays
+// invisible) and (b) a settings write busts the entry.
+describe("resolveRuntimeConfig caching", () => {
+	const cacheTrackedDbs: TestDb[] = []
+	afterEach(async () => {
+		await cleanupTestDbs(cacheTrackedDbs)
+	})
+
+	const asOrgId = Schema.decodeUnknownSync(OrgId)
+	const asRole = Schema.decodeUnknownSync(RoleName)
+
+	const configLive = ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3472",
+			TINYBIRD_HOST: "https://maple-managed.tinybird.co",
+			TINYBIRD_TOKEN: "managed-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: Buffer.alloc(32, 5).toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "lookup-key",
+			MAPLE_INGEST_PUBLIC_URL: "http://127.0.0.1:3474",
+			MAPLE_APP_BASE_URL: "http://127.0.0.1:3471",
+		}),
+	)
+
+	// EdgeCacheService is merged into the RUN context (not just the build) so the
+	// call-time `Effect.serviceOption(EdgeCacheService)` inside resolveRuntimeConfig
+	// resolves it — mirroring prod, where MainLive provides it at top level.
+	const buildLayer = (testDb: TestDb) => {
+		const envLive = Env.layer.pipe(Layer.provide(configLive))
+		const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive))
+		const orgSettingsLive = OrgClickHouseSettingsService.layer.pipe(
+			Layer.provide(Layer.mergeAll(envLive, testDb.layer)),
+		)
+		return Layer.mergeAll(orgSettingsLive, edgeCacheLive)
+	}
+
+	const seedRow = (db: TestDb, orgId: string, chUrl: string) =>
+		executeSql(
+			db,
+			`INSERT INTO org_clickhouse_settings
+				(org_id, ch_url, ch_user, ch_database, sync_status, created_at, updated_at, created_by, updated_by)
+			 VALUES ($1, $2, 'default', 'maple', 'connected', NOW(), NOW(), 'u', 'u')`,
+			[orgId, chUrl],
+		)
+
+	const expectSome = <A>(o: Option.Option<A>): A => {
+		expect(Option.isSome(o)).toBe(true)
+		return (o as Option.Some<A>).value
+	}
+
+	it.effect("serves the config from cache — a direct Postgres mutation stays invisible", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_cache"
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
+
+			const first = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			expect(expectSome(first).url).toBe("https://a.example")
+
+			// Mutate the row directly in Postgres; a cached resolve must NOT see it.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE org_clickhouse_settings SET ch_url = $2 WHERE org_id = $1", [
+					orgId,
+					"https://b.example",
+				]),
+			)
+
+			const second = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			// Still the original URL → proves the second resolve never hit Postgres.
+			expect(expectSome(second).url).toBe("https://a.example")
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
+
+	it.effect("a settings write busts the cached entry", () => {
+		const testDb = createTestDb(cacheTrackedDbs)
+		const orgId = "org_ch_invalidate"
+		return Effect.gen(function* () {
+			yield* Effect.promise(() => seedRow(testDb, orgId, "https://a.example"))
+
+			// Populate the cache.
+			const before = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			expect(Option.isSome(before)).toBe(true)
+
+			// Delete through the service — this invalidates the cached entry.
+			yield* OrgClickHouseSettingsService.delete(asOrgId(orgId), [asRole("org:admin")])
+
+			const after = yield* OrgClickHouseSettingsService.resolveRuntimeConfig(asOrgId(orgId))
+			// Would still be a stale `Some` if the write had not busted the cache.
+			expect(Option.isNone(after)).toBe(true)
+		}).pipe(Effect.provide(buildLayer(testDb)))
+	})
 })

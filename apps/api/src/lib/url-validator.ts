@@ -1,9 +1,12 @@
-import { Data, Effect } from "effect"
+import { Effect, Schema } from "effect"
 
-export class UrlValidationError extends Data.TaggedError("@maple/api/lib/UrlValidationError")<{
-	readonly message: string
-	readonly url?: string
-}> {}
+export class UrlValidationError extends Schema.TaggedErrorClass<UrlValidationError>()(
+	"@maple/api/lib/UrlValidationError",
+	{
+		message: Schema.String,
+		url: Schema.optional(Schema.String),
+	},
+) {}
 
 const BLOCKED_HOSTNAMES = new Set([
 	"localhost",

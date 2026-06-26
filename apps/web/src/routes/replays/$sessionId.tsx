@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
@@ -12,23 +13,38 @@ import {
 } from "@/lib/services/atoms/warehouse-query-atoms"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { ReplayDetailSkeleton } from "@/components/replays/session-detail-parts"
+import { replayPartitionWindow } from "@/components/replays/replay-format"
 
 const detailSearchSchema = Schema.Struct({
+	// Session start (warehouse timestamp), set by the list-row link. Used as a
+	// partition-pruning hint so the detail queries don't scan the full 30-day
+	// retention; absent on deep-links, which then fall back to a full scan.
 	t: Schema.optional(Schema.String),
 })
 
-export const Route = effectRoute(createFileRoute("/replays/$sessionId"), ({ params }) => [
-	getReplayResultAtom({ data: { sessionId: params.sessionId } }),
-	getReplayEventsResultAtom({ data: { sessionId: params.sessionId } }),
-	getSessionTranscriptResultAtom({ data: { sessionId: params.sessionId } }),
-])({
+export const Route = effectRoute(createFileRoute("/replays/$sessionId"), ({ params, search }) => {
+	const window = replayPartitionWindow(typeof search.t === "string" ? search.t : undefined)
+	const data = { sessionId: params.sessionId, ...window }
+	return [
+		getReplayResultAtom({ data }),
+		getReplayEventsResultAtom({ data }),
+		getSessionTranscriptResultAtom({ data }),
+	]
+})({
 	component: ReplayDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(detailSearchSchema),
 })
 
 function ReplayDetailPage() {
 	const { sessionId } = Route.useParams()
-	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId } }))
+	const search = Route.useSearch()
+	// Recompute the same window the loader prefetched with, so every atom read
+	// keys to the identical (prefetched) family entry rather than refetching.
+	// Memoized on `t` so its identity is stable — it threads down to the memoized
+	// TracesTrack, which must not re-render while the playhead scrubs.
+	const t = typeof search.t === "string" ? search.t : undefined
+	const window = useMemo(() => replayPartitionWindow(t), [t])
+	const detailResult = useAtomValue(getReplayResultAtom({ data: { sessionId, ...window } }))
 
 	const breadcrumbs = [{ label: "Session Replays", href: "/replays" }, { label: sessionId.slice(0, 8) }]
 
@@ -61,7 +77,12 @@ function ReplayDetailPage() {
 
 			return (
 				<DashboardLayout breadcrumbs={breadcrumbs} title="Session Replay">
-					<ReplayStudio sessionId={sessionId} session={session} traceIds={session.traceIds} />
+					<ReplayStudio
+							sessionId={sessionId}
+							session={session}
+							traceIds={session.traceIds}
+							window={window}
+						/>
 				</DashboardLayout>
 			)
 		})

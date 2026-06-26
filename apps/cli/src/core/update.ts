@@ -13,7 +13,7 @@
 // rename swaps the directory entry, so the running process keeps its old inode
 // while new invocations pick up the new binary. Keep the triple/URL logic here
 // in sync with install.sh.
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { realpathSync } from "node:fs"
 import { chmod, mkdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
@@ -317,7 +317,7 @@ const printNotice = (current: string, latest: string): void => {
 export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig> = Effect.gen(function* () {
 	if (!shouldRunNotify(process.argv)) return
 	const config = yield* MapleConfig
-	const now = Date.now()
+	const now = yield* Clock.currentTimeMillis
 	let latest = config.latestKnownVersion
 
 	if (shouldCheck(config.lastUpdateCheck, now)) {

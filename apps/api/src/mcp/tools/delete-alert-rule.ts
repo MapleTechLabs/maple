@@ -54,7 +54,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}`,
-								pipe: "delete_alert_rule",
+								pipeName: "delete_alert_rule",
 								cause: error,
 							}),
 						),
@@ -62,7 +62,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}`,
-								pipe: "delete_alert_rule",
+								pipeName: "delete_alert_rule",
 								cause: error,
 							}),
 						),
@@ -70,7 +70,7 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 						Effect.fail(
 							new McpQueryError({
 								message: `${error._tag}: ${error.message}. Use list_alert_rules to find available rule IDs.`,
-								pipe: "delete_alert_rule",
+								pipeName: "delete_alert_rule",
 								cause: error,
 							}),
 						),

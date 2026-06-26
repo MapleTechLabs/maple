@@ -17,6 +17,8 @@ export interface MapleDomains {
 	local?: string
 }
 
+export const CLOUDFLARE_WORKER_PLACEMENT = { region: "aws:us-east-1" } as const
+
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
 	api: "api.maple.dev",
@@ -105,19 +107,6 @@ export function resolveMapleDomains(stage: MapleStage): MapleDomains {
 			return { web: `app-pr-${stage.prNumber}.maple.dev` }
 		case "dev":
 			return {}
-	}
-}
-
-export function resolveD1Name(stage: MapleStage): string {
-	switch (stage.kind) {
-		case "prd":
-			return "maple-api"
-		case "stg":
-			return "maple-api-stg"
-		case "pr":
-			return `maple-api-pr-${stage.prNumber}`
-		case "dev":
-			return `maple-api-dev-${stage.name}`
 	}
 }
 

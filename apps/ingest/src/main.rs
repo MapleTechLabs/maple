@@ -5,7 +5,7 @@ mod autumn;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -34,9 +34,9 @@ use maple_ingest::clickhouse_insert_mappings::SCHEMA_VERSION as CLICKHOUSE_SCHEM
 use maple_ingest::metrics;
 use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
-    AttributeMappingRule, ClickHouseTarget, ClickHouseTargetProvider, DatasourceNames,
-    ExportDestination, MappingOperation, MappingSourceContext, PipelineError, SamplingPolicy,
-    TelemetryPipeline, TinybirdConfig,
+    AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
+    DatasourceNames, ExportDestination, MappingOperation, MappingSourceContext, PipelineError,
+    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -153,16 +153,9 @@ fn uses_forward_path_for(write_mode: WriteMode, destination: ExportDestination) 
 enum KeyStoreBackend {
     // No-DB local backend: every well-formed ingest key resolves to a single
     // override org. Selected for single-tenant local dev so contributors don't
-    // need CF D1 credentials to boot the service.
+    // need database credentials to boot the service.
     Static {
         org_id: String,
-    },
-    // Cloudflare D1 REST backend (legacy — pre-PlanetScale-Postgres). Kept for
-    // the rollback window; new deploys use Postgres.
-    D1 {
-        cf_account_id: String,
-        d1_database_id: String,
-        d1_api_token: String,
     },
     // PlanetScale Postgres backend used in multi-tenant / production deploys.
     // `url` is the standard pg connection string (PSBouncer port 6432, sslmode
@@ -262,6 +255,19 @@ impl AppConfig {
                 std::env::var("INGEST_EXPORT_MAX_ATTEMPTS").ok(),
                 20,
             )?,
+            clickhouse_breaker: ClickHouseBreakerConfig {
+                // 0 disables the breaker (full retry budget on every batch).
+                failure_threshold: parse_u32(
+                    "INGEST_CLICKHOUSE_BREAKER_FAILURE_THRESHOLD",
+                    std::env::var("INGEST_CLICKHOUSE_BREAKER_FAILURE_THRESHOLD").ok(),
+                    ClickHouseBreakerConfig::default().failure_threshold,
+                )?,
+                cooldown: Duration::from_millis(parse_u64(
+                    "INGEST_CLICKHOUSE_BREAKER_COOLDOWN_MS",
+                    std::env::var("INGEST_CLICKHOUSE_BREAKER_COOLDOWN_MS").ok(),
+                    ClickHouseBreakerConfig::default().cooldown.as_millis() as u64,
+                )?),
+            },
             datasources: DatasourceNames::from_env(),
             datasource_session_replays: std::env::var("INGEST_TINYBIRD_DATASOURCE_SESSION_REPLAYS")
                 .unwrap_or_else(|_| "session_replays".to_string()),
@@ -305,9 +311,9 @@ impl AppConfig {
 
         let key_store_backend = resolve_key_store_backend()?;
         let clickhouse_encryption_key = match &key_store_backend {
-            // Both DB backends decrypt BYO-ClickHouse credentials from
-            // org_clickhouse_settings, so both need the encryption key.
-            KeyStoreBackend::D1 { .. } | KeyStoreBackend::Postgres { .. } => {
+            // The Postgres key store decrypts BYO-ClickHouse credentials from
+            // org_clickhouse_settings, so it needs the encryption key.
+            KeyStoreBackend::Postgres { .. } => {
                 let raw = std::env::var("MAPLE_INGEST_KEY_ENCRYPTION_KEY")
                     .map_err(|_| "MAPLE_INGEST_KEY_ENCRYPTION_KEY is required".to_string())?;
                 Some(parse_base64_aes256_gcm_key(&raw)?)
@@ -394,9 +400,9 @@ impl AppConfig {
 }
 
 // Pick a KeyStore backend from env. `INGEST_KEY_STORE_BACKEND`
-// (static|postgres|d1) wins when set; otherwise `MAPLE_SELF_HOSTED_MODE=
+// (static|postgres) wins when set; otherwise `MAPLE_SELF_HOSTED_MODE=
 // single_tenant` implies static; in all other cases we use Postgres (the
-// production backend post-cutover; D1 stays selectable for the rollback window).
+// production backend).
 fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
     let backend_override = std::env::var("INGEST_KEY_STORE_BACKEND")
         .ok()
@@ -412,16 +418,14 @@ fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
     enum Want {
         Static,
         Postgres,
-        D1,
     }
 
     let want = match backend_override.as_deref() {
         Some("static") => Want::Static,
         Some("postgres") | Some("pg") => Want::Postgres,
-        Some("d1") => Want::D1,
         Some(other) => {
             return Err(format!(
-                "INGEST_KEY_STORE_BACKEND must be `static`, `postgres`, or `d1`, got `{other}`"
+                "INGEST_KEY_STORE_BACKEND must be `static` or `postgres`, got `{other}`"
             ));
         }
         None => {
@@ -448,45 +452,16 @@ fn resolve_key_store_backend() -> Result<KeyStoreBackend, String> {
         return Ok(KeyStoreBackend::Static { org_id });
     }
 
-    if want == Want::Postgres {
-        let url = std::env::var("MAPLE_PG_URL")
-            .map_err(|_| "MAPLE_PG_URL is required for the postgres key store backend".to_string())?
-            .trim()
-            .to_string();
-        if url.is_empty() {
-            return Err("MAPLE_PG_URL is required for the postgres key store backend".to_string());
-        }
-        return Ok(KeyStoreBackend::Postgres { url });
-    }
-
-    let cf_account_id = std::env::var("CLOUDFLARE_ACCOUNT_ID")
-        .map_err(|_| "CLOUDFLARE_ACCOUNT_ID is required".to_string())?
+    let url = std::env::var("MAPLE_PG_URL")
+        .map_err(|_| "MAPLE_PG_URL is required for the postgres key store backend".to_string())?
         .trim()
         .to_string();
-    if cf_account_id.is_empty() {
-        return Err("CLOUDFLARE_ACCOUNT_ID is required".to_string());
+    if url.is_empty() {
+        return Err("MAPLE_PG_URL is required for the postgres key store backend".to_string());
     }
 
-    let d1_database_id = std::env::var("MAPLE_DB_ID")
-        .map_err(|_| "MAPLE_DB_ID is required".to_string())?
-        .trim()
-        .to_string();
-    if d1_database_id.is_empty() {
-        return Err("MAPLE_DB_ID is required".to_string());
-    }
-
-    let d1_api_token = std::env::var("CLOUDFLARE_API_TOKEN")
-        .map_err(|_| "CLOUDFLARE_API_TOKEN is required".to_string())?
-        .trim()
-        .to_string();
-    if d1_api_token.is_empty() {
-        return Err("CLOUDFLARE_API_TOKEN is required".to_string());
-    }
-
-    Ok(KeyStoreBackend::D1 {
-        cf_account_id,
-        d1_database_id,
-        d1_api_token,
+    Ok(KeyStoreBackend::Postgres {
+        url,
     })
 }
 
@@ -527,9 +502,9 @@ struct ClickHouseTargetResolver {
 }
 
 /// Database-agnostic surface used by the resolvers. Implementations:
-/// `StaticKeyStore` (local dev / single-tenant) and `D1KeyStore` (Cloudflare
-/// D1 REST in production, where the API service writes ingest-key rows). Both
-/// back the same operations.
+/// `StaticKeyStore` (local dev / single-tenant) and `PostgresKeyStore`
+/// (PlanetScale Postgres in production, where the API service writes ingest-key
+/// rows). Both back the same operations.
 #[async_trait::async_trait]
 trait KeyStore: Send + Sync {
     async fn fetch_ingest_key(
@@ -1126,11 +1101,11 @@ async fn main() {
         }
     };
 
-    // Cloudflare D1 REST backend — the API writes ingest-key rows to D1, so
-    // ingest reads them from the same place. We run a probe query before
-    // accepting traffic; if anything is wrong (auth, schema, network) the
-    // deploy fails here rather than 503'ing forever.
-    let store: Arc<dyn KeyStore> = match build_key_store(&config, http_client.clone()).await {
+    // The API service writes ingest-key rows to PlanetScale Postgres, so ingest
+    // reads them from the same place. We run a probe query before accepting
+    // traffic; if anything is wrong (auth, schema, network) the deploy fails
+    // here rather than 503'ing forever.
+    let store: Arc<dyn KeyStore> = match build_key_store(&config).await {
         Ok(store) => store,
         Err(error) => {
             eprintln!("Key store init error: {error}");
@@ -1138,7 +1113,14 @@ async fn main() {
         }
     };
 
-    let direct_clickhouse_possible = matches!(config.key_store_backend, KeyStoreBackend::D1 { .. });
+    // The Postgres key store resolves BYO-ClickHouse export targets from
+    // org_clickhouse_settings (the Static backend has no DB to resolve from).
+    // This must stay in lockstep with routing: `fetch_org_routing` marks orgs
+    // clickhouse_ready and sends frames down the ClickHouse path, so the export
+    // worker needs a target provider for the same backend or it would drop every
+    // batch with "no ready target resolved".
+    let direct_clickhouse_possible =
+        matches!(config.key_store_backend, KeyStoreBackend::Postgres { .. });
     let clickhouse_target_provider: Option<Arc<dyn ClickHouseTargetProvider>> =
         if direct_clickhouse_possible {
             Some(Arc::new(ClickHouseTargetResolver {
@@ -3583,362 +3565,11 @@ impl ClickHouseTargetProvider for ClickHouseTargetResolver {
     }
 }
 
-/// Cloudflare D1 REST-backed KeyStore. Hits
-/// `POST /accounts/{acct}/d1/database/{db}/query` for every cache miss.
-/// The HMAC-fingerprint canary, the 60s in-process cache, and SQL strings
-/// (which are vanilla SQLite, identical to libsql) all stay the same — only
-/// the transport changes.
-struct D1KeyStore {
-    http: reqwest::Client,
-    endpoint: String,
-    api_token: String,
-}
-
-impl D1KeyStore {
-    fn new(http: reqwest::Client, account_id: &str, database_id: &str, api_token: String) -> Self {
-        Self {
-            http,
-            endpoint: format!(
-                "https://api.cloudflare.com/client/v4/accounts/{account_id}/d1/database/{database_id}/query"
-            ),
-            api_token,
-        }
-    }
-
-    async fn query(
-        &self,
-        sql: &str,
-        params: Vec<serde_json::Value>,
-    ) -> Result<Vec<serde_json::Value>, String> {
-        let body = serde_json::json!({ "sql": sql, "params": params });
-        let response = self
-            .http
-            .post(&self.endpoint)
-            .bearer_auth(&self.api_token)
-            .header(reqwest::header::CONTENT_TYPE, "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|error| format!("D1 request failed: {error}"))?;
-
-        let status = response.status();
-        let payload = response
-            .text()
-            .await
-            .map_err(|error| format!("D1 response read failed: {error}"))?;
-        if !status.is_success() {
-            return Err(format!("D1 HTTP {status}: {payload}"));
-        }
-
-        let parsed: D1Response = serde_json::from_str(&payload)
-            .map_err(|error| format!("D1 response parse failed: {error}: {payload}"))?;
-
-        if !parsed.success {
-            let messages: Vec<String> = parsed
-                .errors
-                .into_iter()
-                .map(|e| format!("[{}] {}", e.code, e.message))
-                .collect();
-            return Err(format!("D1 query failed: {}", messages.join("; ")));
-        }
-
-        // `result` is one entry per statement; we always submit one SQL string,
-        // so take the first. Empty `results` means no rows matched — caller
-        // turns that into `Ok(None)`.
-        let first = parsed
-            .result
-            .into_iter()
-            .next()
-            .ok_or_else(|| "D1 response missing result[0]".to_string())?;
-        Ok(first.results)
-    }
-
-    async fn execute(&self, sql: &str, params: Vec<serde_json::Value>) -> Result<(), String> {
-        let _ = self.query(sql, params).await?;
-        Ok(())
-    }
-
-    /// Startup sanity check: runs the actual production lookup query with a
-    /// stub hash. The row count doesn't matter — we just need CF to accept the
-    /// SQL. A 4xx, a `success:false`, a missing table, a missing column, an
-    /// auth failure: all surface here as an `Err(...)` that the caller turns
-    /// into a hard exit. This is the boot-time gate that prevents shipping a
-    /// binary whose D1 access is broken for any reason.
-    async fn probe(&self) -> Result<(), String> {
-        let sanity_sql = "SELECT k.org_id, \
-                                 CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
-                                 CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
-                          FROM org_ingest_keys k \
-                          LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
-                          WHERE k.private_key_hash = ? LIMIT 1";
-        self.query(
-            sanity_sql,
-            vec![
-                serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
-                serde_json::Value::String("__ingest_probe_no_match__".to_string()),
-            ],
-        )
-        .await
-        .map(|_| ())
-    }
-}
-
-#[derive(serde::Deserialize)]
-struct D1Response {
-    success: bool,
-    #[serde(default)]
-    errors: Vec<D1Error>,
-    #[serde(default)]
-    result: Vec<D1StatementResult>,
-}
-
-#[derive(serde::Deserialize)]
-struct D1Error {
-    code: i64,
-    message: String,
-}
-
-#[derive(serde::Deserialize)]
-struct D1StatementResult {
-    #[serde(default)]
-    results: Vec<serde_json::Value>,
-}
-
-/// Extract a string field from a D1 row JSON object, returning a descriptive
-/// error rather than panicking on a missing/wrong-typed column.
-fn d1_str(row: &serde_json::Value, key: &str) -> Result<String, String> {
-    row.get(key)
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| format!("D1 row missing string field `{key}`: {row}"))
-}
-
-fn d1_optional_str(row: &serde_json::Value, key: &str) -> Option<String> {
-    row.get(key)
-        .and_then(|value| value.as_str())
-        .map(|s| s.to_string())
-        .filter(|value| !value.is_empty())
-}
-
-/// D1's JSON encoder represents the `CASE WHEN ... THEN 1 ELSE 0 END` as an
-/// integer (1/0). Accept either a JSON number or a bool defensively.
-fn d1_truthy(row: &serde_json::Value, key: &str) -> bool {
-    match row.get(key) {
-        Some(serde_json::Value::Number(n)) => n.as_i64().unwrap_or(0) != 0,
-        Some(serde_json::Value::Bool(b)) => *b,
-        _ => false,
-    }
-}
-
-#[async_trait::async_trait]
-impl KeyStore for D1KeyStore {
-    async fn fetch_ingest_key(
-        &self,
-        key_hash: &str,
-        hash_column: &'static str,
-    ) -> Result<Option<KeyRow>, String> {
-        let sql = format!(
-            "SELECT k.org_id, \
-                    CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
-                    CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
-             FROM org_ingest_keys k \
-             LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
-             WHERE k.{hash_column} = ? LIMIT 1"
-        );
-        let rows = self
-            .query(
-                &sql,
-                vec![
-                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
-                    serde_json::Value::String(key_hash.to_string()),
-                ],
-            )
-            .await?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(KeyRow {
-            org_id: d1_str(&row, "org_id")?,
-            self_managed: d1_truthy(&row, "self_managed"),
-            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
-        }))
-    }
-
-    async fn fetch_connector(
-        &self,
-        connector_id: &str,
-        secret_hash: &str,
-    ) -> Result<Option<ConnectorRow>, String> {
-        let sql = "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
-                          CASE WHEN s.sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
-                          CASE WHEN s.sync_status = 'connected' AND s.schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
-                   FROM cloudflare_logpush_connectors c \
-                   LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
-                   WHERE c.id = ? AND c.secret_hash = ? AND c.enabled = 1 LIMIT 1";
-        let rows = self
-            .query(
-                sql,
-                vec![
-                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
-                    serde_json::Value::String(connector_id.to_string()),
-                    serde_json::Value::String(secret_hash.to_string()),
-                ],
-            )
-            .await?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(ConnectorRow {
-            org_id: d1_str(&row, "org_id")?,
-            service_name: d1_str(&row, "service_name")?,
-            zone_name: d1_str(&row, "zone_name")?,
-            dataset: d1_str(&row, "dataset")?,
-            self_managed: d1_truthy(&row, "self_managed"),
-            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
-        }))
-    }
-
-    async fn fetch_sampling_policy(
-        &self,
-        org_id: &str,
-    ) -> Result<Option<SamplingPolicyRow>, String> {
-        let sql = "SELECT trace_sample_ratio, always_keep_error_spans, always_keep_slow_spans_ms \
-                   FROM org_ingest_sampling_policies WHERE org_id = ? LIMIT 1";
-        let rows = self
-            .query(sql, vec![serde_json::Value::String(org_id.to_string())])
-            .await?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(SamplingPolicyRow {
-            trace_sample_ratio: row
-                .get("trace_sample_ratio")
-                .and_then(serde_json::Value::as_f64)
-                .unwrap_or(1.0),
-            always_keep_error_spans: d1_truthy(&row, "always_keep_error_spans"),
-            always_keep_slow_spans_ms: row
-                .get("always_keep_slow_spans_ms")
-                .and_then(serde_json::Value::as_u64),
-        }))
-    }
-
-    async fn fetch_attribute_mappings(
-        &self,
-        org_id: &str,
-    ) -> Result<Vec<AttributeMappingRow>, String> {
-        let sql = "SELECT source_context, source_key, target_key, operation \
-                   FROM org_ingest_attribute_mappings WHERE org_id = ? AND enabled = 1";
-        let rows = self
-            .query(sql, vec![serde_json::Value::String(org_id.to_string())])
-            .await?;
-        rows.into_iter()
-            .map(|row| {
-                Ok(AttributeMappingRow {
-                    source_context: d1_str(&row, "source_context")?,
-                    source_key: d1_str(&row, "source_key")?,
-                    target_key: d1_str(&row, "target_key")?,
-                    operation: d1_str(&row, "operation")?,
-                })
-            })
-            .collect()
-    }
-
-    async fn fetch_clickhouse_target(
-        &self,
-        org_id: &str,
-    ) -> Result<Option<ClickHouseTargetRow>, String> {
-        let sql =
-            "SELECT ch_url, ch_user, ch_password_ciphertext, ch_password_iv, ch_password_tag, \
-                          ch_database, schema_version \
-                   FROM org_clickhouse_settings \
-                   WHERE org_id = ? AND sync_status = 'connected' AND schema_version = ? \
-                   LIMIT 1";
-        let rows = self
-            .query(
-                sql,
-                vec![
-                    serde_json::Value::String(org_id.to_string()),
-                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
-                ],
-            )
-            .await?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(ClickHouseTargetRow {
-            ch_url: d1_str(&row, "ch_url")?,
-            ch_user: d1_str(&row, "ch_user")?,
-            ch_password_ciphertext: d1_optional_str(&row, "ch_password_ciphertext"),
-            ch_password_iv: d1_optional_str(&row, "ch_password_iv"),
-            ch_password_tag: d1_optional_str(&row, "ch_password_tag"),
-            ch_database: d1_str(&row, "ch_database")?,
-            schema_version: d1_str(&row, "schema_version")?,
-        }))
-    }
-
-    async fn fetch_org_routing(&self, org_id: &str) -> Result<Option<OrgRouting>, String> {
-        let sql = "SELECT CASE WHEN sync_status = 'connected' THEN 1 ELSE 0 END AS self_managed, \
-                          CASE WHEN sync_status = 'connected' AND schema_version = ? THEN 1 ELSE 0 END AS clickhouse_ready \
-                   FROM org_clickhouse_settings \
-                   WHERE org_id = ? LIMIT 1";
-        let rows = self
-            .query(
-                sql,
-                vec![
-                    serde_json::Value::String(CLICKHOUSE_SCHEMA_VERSION.to_string()),
-                    serde_json::Value::String(org_id.to_string()),
-                ],
-            )
-            .await?;
-        let Some(row) = rows.into_iter().next() else {
-            return Ok(None);
-        };
-        Ok(Some(OrgRouting {
-            self_managed: d1_truthy(&row, "self_managed"),
-            clickhouse_ready: d1_truthy(&row, "clickhouse_ready"),
-        }))
-    }
-
-    async fn record_connector_success(
-        &self,
-        connector_id: &str,
-        now_ms: i64,
-    ) -> Result<(), String> {
-        self.execute(
-            "UPDATE cloudflare_logpush_connectors SET last_received_at = ?, last_error = NULL, updated_at = ? WHERE id = ?",
-            vec![
-                serde_json::Value::Number(now_ms.into()),
-                serde_json::Value::Number(now_ms.into()),
-                serde_json::Value::String(connector_id.to_string()),
-            ],
-        )
-        .await
-    }
-
-    async fn record_connector_failure(
-        &self,
-        connector_id: &str,
-        error: &str,
-        now_ms: i64,
-    ) -> Result<(), String> {
-        self.execute(
-            "UPDATE cloudflare_logpush_connectors SET last_error = ?, updated_at = ? WHERE id = ?",
-            vec![
-                serde_json::Value::String(error.to_string()),
-                serde_json::Value::Number(now_ms.into()),
-                serde_json::Value::String(connector_id.to_string()),
-            ],
-        )
-        .await
-    }
-}
-
 /// PlanetScale Postgres-backed KeyStore. A pooled direct connection (PSBouncer
-/// 6432, no Hyperdrive — Railway dials PlanetScale). Same queries as the legacy
-/// D1KeyStore, ported to Postgres: `$N` placeholders, native booleans (no
-/// `CASE WHEN ... THEN 1`), and `to_timestamp()` for the epoch-ms connector
-/// timestamps (those columns are now `timestamptz`). The 60s in-process cache
-/// and HMAC fingerprinting upstream are unchanged — only the transport differs.
+/// 6432, no Hyperdrive — Railway dials PlanetScale). Uses `$N` placeholders,
+/// native booleans, and `to_timestamp()` for the epoch-ms connector timestamps
+/// (those columns are `timestamptz`). A 60s in-process cache and HMAC
+/// fingerprinting sit upstream.
 struct PostgresKeyStore {
     pool: deadpool_postgres::Pool,
 }
@@ -3981,9 +3612,9 @@ impl PostgresKeyStore {
             .map_err(|error| format!("postgres pool checkout failed: {error}"))
     }
 
-    /// Startup gate, mirroring D1KeyStore::probe — runs the production lookup
-    /// query with a stub hash so any auth/schema/network/TLS issue exits the
-    /// process instead of 503'ing every request.
+    /// Startup gate — runs the production lookup query with a stub hash so any
+    /// auth/schema/network/TLS issue exits the process instead of 503'ing every
+    /// request.
     async fn probe(&self) -> Result<(), String> {
         let client = self.client().await?;
         client
@@ -4360,10 +3991,7 @@ fn current_time_millis() -> u128 {
 /// (the API service writes to the same D1 database); a probe query runs at
 /// startup so any auth/schema/network issue surfaces here instead of 503'ing
 /// every request.
-async fn build_key_store(
-    config: &AppConfig,
-    http_client: reqwest::Client,
-) -> Result<Arc<dyn KeyStore>, String> {
+async fn build_key_store(config: &AppConfig) -> Result<Arc<dyn KeyStore>, String> {
     match &config.key_store_backend {
         KeyStoreBackend::Static { org_id } => {
             info!(
@@ -4374,30 +4002,6 @@ async fn build_key_store(
             Ok(Arc::new(StaticKeyStore {
                 org_id: org_id.clone(),
             }))
-        }
-        KeyStoreBackend::D1 {
-            cf_account_id,
-            d1_database_id,
-            d1_api_token,
-        } => {
-            info!(
-                backend = "cloudflare-d1",
-                cf_account = %cf_account_id,
-                d1_database = %d1_database_id,
-                "Key store backend selected"
-            );
-            let store = D1KeyStore::new(
-                http_client,
-                cf_account_id,
-                d1_database_id,
-                d1_api_token.clone(),
-            );
-            store
-                .probe()
-                .await
-                .map_err(|error| format!("D1 startup probe failed: {error}"))?;
-            info!("D1 startup probe succeeded");
-            Ok(Arc::new(store))
         }
         KeyStoreBackend::Postgres { url } => {
             info!(backend = "planetscale-postgres", "Key store backend selected");
@@ -4506,6 +4110,9 @@ fn parse_usize(name: &str, raw: Option<String>, default: usize) -> Result<usize,
 #[cfg(test)]
 mod tests {
     use super::*;
+    // `AtomicBool` is only used by the test fakes below; keeping it out of the
+    // top-level import avoids an unused-import warning in non-test bin builds.
+    use std::sync::atomic::AtomicBool;
 
     #[test]
     fn hash_is_deterministic() {
@@ -4755,8 +4362,8 @@ mod tests {
     }
 
     /// In-memory KeyStore used to exercise the resolver's behavior (caching,
-    /// key-type inference, ResolvedIngestKey construction) without HTTP. Keyed
-    /// on the same `(hash, column)` shape the real D1 store sees.
+    /// key-type inference, ResolvedIngestKey construction) without a database.
+    /// Keyed on the same `(hash, column)` shape the real key store sees.
     #[derive(Default)]
     struct FakeKeyStore {
         keys: std::sync::Mutex<std::collections::HashMap<(String, &'static str), KeyRow>>,
@@ -5001,6 +4608,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(1),
             export_concurrency_per_shard: 1,
             export_max_attempts: 1,
+            clickhouse_breaker: ClickHouseBreakerConfig::default(),
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),
             datasource_session_replay_events: "session_replay_events".to_string(),
@@ -5098,10 +4706,8 @@ mod tests {
                 max_request_body_bytes: 1024 * 1024,
                 org_max_in_flight: 100,
                 require_tls: false,
-                key_store_backend: KeyStoreBackend::D1 {
-                    cf_account_id: "test".to_string(),
-                    d1_database_id: "test".to_string(),
-                    d1_api_token: "test".to_string(),
+                key_store_backend: KeyStoreBackend::Static {
+                    org_id: "org_test".to_string(),
                 },
                 clickhouse_encryption_key: None,
                 lookup_hmac_key: "test-hmac-key".to_string(),
@@ -5663,79 +5269,4 @@ mod tests {
         assert!(resolved.is_none());
     }
 
-    #[test]
-    fn d1_response_parses_success_with_rows() {
-        // Canonical Cloudflare D1 response — `result` is an array of one
-        // statement result; `results` inside it is the row list. We always
-        // submit one SQL string so `result[0].results` is the row set.
-        let payload = serde_json::json!({
-            "success": true,
-            "errors": [],
-            "messages": [],
-            "result": [{
-                "results": [
-                    {"org_id": "org_test", "self_managed": 1, "clickhouse_ready": 1}
-                ],
-                "success": true,
-                "meta": {"duration": 4.2}
-            }]
-        })
-        .to_string();
-        let parsed: D1Response = serde_json::from_str(&payload).expect("parses");
-        assert!(parsed.success);
-        let first = parsed.result.into_iter().next().expect("has result[0]");
-        assert_eq!(first.results.len(), 1);
-        let row = &first.results[0];
-        assert_eq!(d1_str(row, "org_id").unwrap(), "org_test");
-        assert!(d1_truthy(row, "self_managed"));
-        assert!(d1_truthy(row, "clickhouse_ready"));
-    }
-
-    #[test]
-    fn d1_response_parses_empty_results_as_no_match() {
-        // No row → caller turns this into Ok(None) and the gateway 401s.
-        let payload = serde_json::json!({
-            "success": true,
-            "errors": [],
-            "messages": [],
-            "result": [{"results": [], "success": true}]
-        })
-        .to_string();
-        let parsed: D1Response = serde_json::from_str(&payload).expect("parses");
-        let first = parsed.result.into_iter().next().expect("has result[0]");
-        assert!(first.results.is_empty());
-    }
-
-    #[test]
-    fn d1_response_parses_failure_with_errors() {
-        // CF returns success=false plus a list of error objects. We surface
-        // these as Err(...) without leaking the API token.
-        let payload = serde_json::json!({
-            "success": false,
-            "errors": [{"code": 7500, "message": "no such table"}],
-            "messages": [],
-            "result": []
-        })
-        .to_string();
-        let parsed: D1Response = serde_json::from_str(&payload).expect("parses");
-        assert!(!parsed.success);
-        assert_eq!(parsed.errors.len(), 1);
-        assert_eq!(parsed.errors[0].code, 7500);
-        assert_eq!(parsed.errors[0].message, "no such table");
-    }
-
-    #[test]
-    fn d1_truthy_accepts_int_and_bool_self_managed() {
-        // The SQL is `CASE WHEN ... THEN 1 ELSE 0 END`; D1 returns it as a JSON
-        // number, but accept JSON bool defensively in case the encoding ever
-        // changes.
-        let int_one = serde_json::json!({"self_managed": 1});
-        let int_zero = serde_json::json!({"self_managed": 0});
-        let bool_true = serde_json::json!({"self_managed": true});
-        let missing = serde_json::json!({});
-        assert!(d1_truthy(&int_one, "self_managed"));
-        assert!(!d1_truthy(&int_zero, "self_managed"));
-        assert!(d1_truthy(&bool_true, "self_managed"));
-        assert!(!d1_truthy(&missing, "self_managed"));
-    }
 }

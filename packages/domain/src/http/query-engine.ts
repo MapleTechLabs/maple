@@ -313,6 +313,66 @@ export class ServiceDbEdgesForServiceRequest extends Schema.Class<ServiceDbEdges
 	deploymentEnv: Schema.optional(DeploymentEnvironment),
 }) {}
 
+// ---------------------------------------------------------------------------
+// Service-detail page bundles
+//
+// The service-detail page used to fan out N independent Worker requests on
+// load — each re-resolving per-org ClickHouse config and paying its own
+// browser→Worker round-trip. These bundle endpoints run a tab's queries in a
+// single Worker invocation (config resolved once, sub-queries in parallel),
+// collapsing the round-trips to 1.
+// ---------------------------------------------------------------------------
+
+export class ServiceDetailOverviewRequest extends Schema.Class<ServiceDetailOverviewRequest>(
+	"ServiceDetailOverviewRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	// Pre-built all-metrics timeseries request. The single source of truth lives
+	// on the client (`makeAllMetricsTimeseriesRequest`, which owns bucket sizing,
+	// group-by and the env/commit filters); the handler forwards this verbatim to
+	// `queryEngine.execute` rather than reconstructing it server-side.
+	timeseries: QueryEngineExecuteRequest,
+	// Bucket size for the releases-timeline sub-query (client-computed alongside
+	// the timeseries bucket).
+	releasesBucketSeconds: Schema.optional(Schema.Number),
+}) {}
+
+export class ServiceDetailOverviewResponse extends Schema.Class<ServiceDetailOverviewResponse>(
+	"ServiceDetailOverviewResponse",
+)({
+	timeseries: QueryEngineExecuteResponse,
+	releases: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			commitSha: CommitSha,
+			count: Schema.Number,
+		}),
+	),
+	// Distinct non-empty deployment environments this service reports in the
+	// window — feeds the environment switcher dropdown (previously an all-services
+	// overview scan).
+	environments: Schema.Array(Schema.String),
+}) {}
+
+export class ServiceDependenciesBundleRequest extends Schema.Class<ServiceDependenciesBundleRequest>(
+	"ServiceDependenciesBundleRequest",
+)({
+	serviceName: ServiceName,
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	deploymentEnv: Schema.optional(DeploymentEnvironment),
+}) {}
+
+export class ServiceDependenciesBundleResponse extends Schema.Class<ServiceDependenciesBundleResponse>(
+	"ServiceDependenciesBundleResponse",
+)({
+	dependencies: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	dbEdges: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+	externalEdges: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)),
+}) {}
+
 export class ServiceDbQuerySummaryRequest extends Schema.Class<ServiceDbQuerySummaryRequest>(
 	"ServiceDbQuerySummaryRequest",
 )({
@@ -1122,7 +1182,7 @@ export class QueryEngineExecutionError extends Schema.TaggedErrorClass<QueryEngi
 	{
 		message: Schema.String,
 		causeMessage: Schema.optional(Schema.String),
-		pipe: Schema.optional(Schema.String),
+		pipeName: Schema.optional(Schema.String),
 	},
 	{ httpApiStatus: 502 },
 ) {}
@@ -1265,6 +1325,21 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("serviceDbEdgesForService", "/service-db-edges-for-service", {
 			payload: ServiceDbEdgesForServiceRequest,
 			success: ServiceDbEdgesResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceDetailOverview", "/service-detail-overview", {
+			payload: ServiceDetailOverviewRequest,
+			success: ServiceDetailOverviewResponse,
+			// Embeds an `execute` sub-query, so it can also surface QueryEngineValidationError.
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("serviceDependenciesBundle", "/service-dependencies-bundle", {
+			payload: ServiceDependenciesBundleRequest,
+			success: ServiceDependenciesBundleResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

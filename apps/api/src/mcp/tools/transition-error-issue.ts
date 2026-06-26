@@ -56,7 +56,7 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 						(error) =>
 							new McpQueryError({
 								message: error.message,
-								pipe: "transition_error_issue",
+								pipeName: "transition_error_issue",
 								cause: error,
 							}),
 					),

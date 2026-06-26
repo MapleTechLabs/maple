@@ -43,7 +43,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				if (!Number.isFinite(center.getTime())) {
 					return yield* new McpQueryError({
 						message: `Invalid around_time: ${around_time}`,
-						pipe: "compare_periods",
+						pipeName: "compare_periods",
 					})
 				}
 				const halfWindow = 30 * 60 * 1000 // 30 minutes
@@ -66,7 +66,7 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				) {
 					return yield* new McpQueryError({
 						message: `Invalid current period: ${current_start ?? "(default)"} to ${current_end ?? "(default)"}`,
-						pipe: "compare_periods",
+						pipeName: "compare_periods",
 					})
 				}
 				const durationMs = currentEndDate.getTime() - currentStartDate.getTime()

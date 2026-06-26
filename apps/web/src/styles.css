@@ -365,6 +365,91 @@
 	animation-delay: 0.32s;
 }
 
+/* Cold-boot splash — branded trace-waterfall loader (see boot-splash.tsx and
+   the inline copy in index.html). The amber mark sits still; a soft amber
+   shimmer sweeps through the span bars in sequence so it reads as spans
+   arriving. Keep this in sync with the inline copy in index.html. */
+.boot-mark {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: linear-gradient(155deg, color-mix(in oklab, var(--primary) 86%, white), var(--primary));
+	box-shadow:
+		0 10px 30px -8px color-mix(in oklab, var(--primary) 50%, transparent),
+		inset 0 1px 0 color-mix(in oklab, white 35%, transparent);
+}
+
+.boot-trace {
+	display: flex;
+	width: 132px;
+	flex-direction: column;
+	gap: 7px;
+}
+
+.boot-span {
+	position: relative;
+	height: 8px;
+	overflow: hidden;
+	border-radius: 9999px;
+	background: color-mix(in oklab, var(--primary) 15%, transparent);
+}
+
+.boot-span::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	background: linear-gradient(
+		90deg,
+		transparent,
+		color-mix(in oklab, var(--primary) 80%, transparent),
+		transparent
+	);
+	transform: translateX(-130%);
+	animation: maple-boot-shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.boot-span--1 {
+	width: 100%;
+}
+
+.boot-span--2 {
+	width: 74%;
+	margin-left: 16px;
+}
+
+.boot-span--2::after {
+	animation-delay: 0.18s;
+}
+
+.boot-span--3 {
+	width: 52%;
+	margin-left: 32px;
+}
+
+.boot-span--3::after {
+	animation-delay: 0.36s;
+}
+
+@keyframes maple-boot-shimmer {
+	0% {
+		transform: translateX(-130%);
+	}
+	60%,
+	100% {
+		transform: translateX(230%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.boot-span::after {
+		display: none;
+	}
+	.boot-span {
+		background: color-mix(in oklab, var(--primary) 38%, transparent);
+	}
+}
+
 /* Accessibility: disable animations for users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
 	.pulse-dot {

@@ -1,12 +1,15 @@
 import { Atom } from "@/lib/effect-atom"
 import { Effect, Schema } from "effect"
 import { encodeKey } from "@/lib/cache-key"
+import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
 import {
-	getCustomChartServiceDetail,
 	getCustomChartServiceSparklines,
 	getCustomChartTimeSeries,
+	getOverviewThroughputRefinement,
 	getOverviewTimeSeries,
+	getServiceDetailOverview,
+	getServiceDetailThroughputRefinement,
 } from "@/api/warehouse/custom-charts"
 import {
 	getErrorDetailTraces,
@@ -42,21 +45,14 @@ import {
 } from "@/api/warehouse/infra"
 import { getServiceUsage } from "@/api/warehouse/service-usage"
 import {
+	getServiceDependenciesBundle,
 	getServiceMap,
 	getServiceMapDbEdges,
-	getServiceMapDbEdgesForService,
 	getServiceDbQuerySummary,
-	getServiceMapForService,
 	getServicePlatforms,
 } from "@/api/warehouse/service-map"
-import { getServiceExternalEdges } from "@/api/warehouse/service-external-edges"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
-import {
-	getServiceHealthBaseline,
-	getServiceOverview,
-	getServiceReleasesTimeline,
-	getServicesFacets,
-} from "@/api/warehouse/services"
+import { getServiceHealthBaseline, getServiceOverview, getServicesFacets } from "@/api/warehouse/services"
 import {
 	getResourceAttributeKeys,
 	getResourceAttributeValues,
@@ -98,7 +94,7 @@ class QueryAtomError extends Schema.TaggedErrorClass<QueryAtomError>()("@maple/w
 // The error union surfaced to atom consumers: the structured query errors plus
 // any tagged backend error, all normalized through `QueryAtomError`'s shape for
 // anything that is not already a known tagged error.
-type QueryAtomFailure = QueryError | QueryAtomError
+export type QueryAtomFailure = QueryError | QueryAtomError
 
 const isTaggedBackendError = (error: QueryError): boolean => error._tag.startsWith("@maple/http/errors/")
 
@@ -118,7 +114,15 @@ function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, o
 	const UnknownFromJson = Schema.fromJsonString(Schema.Unknown)
 
 	const family = Atom.family((key: string) => {
-		let resultAtom = Atom.make(
+		// Build on the mounted `MapleApiAtomClient.runtime` (not bare `Atom.make`,
+		// which runs on the default atom runtime). That runtime owns the Maple OTLP
+		// tracer that actually flushes, so the wrapper span each `query` opens — e.g.
+		// `QueryEngine.getCustomChartServiceDetail`, the composite that fans out to
+		// several `executeQueryEngine` calls — is exported instead of silently
+		// dropped, which is what left traces rootless (a child whose parent never
+		// shipped). The inner query spans already export by re-providing this same
+		// (memoized) layer; this lifts the parent onto the same tracer.
+		let resultAtom = MapleApiAtomClient.runtime.atom(
 			Schema.decodeUnknownEffect(UnknownFromJson)(key).pipe(
 				Effect.flatMap((input) => query(input as Input)),
 				Effect.mapError(toQueryAtomError),
@@ -322,17 +326,29 @@ export const workloadFacetsResultAtom = makeQueryAtomFamily(getWorkloadFacets, {
 	staleTime: 30_000,
 })
 
-export const getServiceReleasesTimelineResultAtom = makeQueryAtomFamily(getServiceReleasesTimeline, {
-	staleTime: 60_000,
-})
-
-export const getCustomChartServiceDetailResultAtom = makeQueryAtomFamily(getCustomChartServiceDetail, {
+// Service-detail Overview tab bundle: primary chart + releases timeline +
+// environments in one fetch. The chart grid and the environment switcher read
+// this atom with the same input key, so they share a single round-trip.
+export const getServiceDetailOverviewResultAtom = makeQueryAtomFamily(getServiceDetailOverview, {
 	staleTime: 30_000,
 })
 
 export const getOverviewTimeSeriesResultAtom = makeQueryAtomFamily(getOverviewTimeSeries, {
 	staleTime: 30_000,
 })
+
+// Non-blocking exact pre-sampling throughput overlays. Keyed (via the encoded
+// input) on `samplingActive`, so they only issue the slow SpanMetrics query once
+// the primary chart confirms sampling is active; otherwise they resolve empty.
+export const getServiceDetailThroughputRefinementResultAtom = makeQueryAtomFamily(
+	getServiceDetailThroughputRefinement,
+	{ staleTime: 30_000 },
+)
+
+export const getOverviewThroughputRefinementResultAtom = makeQueryAtomFamily(
+	getOverviewThroughputRefinement,
+	{ staleTime: 30_000 },
+)
 
 export const getCustomChartTimeSeriesResultAtom = makeQueryAtomFamily(getCustomChartTimeSeries, {
 	staleTime: 30_000,
@@ -346,7 +362,9 @@ export const getServiceMapResultAtom = makeQueryAtomFamily(getServiceMap, {
 	staleTime: 15_000,
 })
 
-export const getServiceMapForServiceResultAtom = makeQueryAtomFamily(getServiceMapForService, {
+// Service-detail Dependencies tab bundle: service edges + DB edges + external
+// edges in one fetch (replaces the three separate *ForService atoms).
+export const getServiceDependenciesBundleResultAtom = makeQueryAtomFamily(getServiceDependenciesBundle, {
 	staleTime: 15_000,
 })
 
@@ -354,16 +372,8 @@ export const getServiceMapDbEdgesResultAtom = makeQueryAtomFamily(getServiceMapD
 	staleTime: 15_000,
 })
 
-export const getServiceMapDbEdgesForServiceResultAtom = makeQueryAtomFamily(getServiceMapDbEdgesForService, {
-	staleTime: 15_000,
-})
-
 export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
 	staleTime: 15_000,
-})
-
-export const getServiceExternalEdgesResultAtom = makeQueryAtomFamily(getServiceExternalEdges, {
-	staleTime: 30_000,
 })
 
 export const getServicePlatformsResultAtom = makeQueryAtomFamily(getServicePlatforms, {

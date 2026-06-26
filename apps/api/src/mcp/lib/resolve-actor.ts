@@ -16,7 +16,7 @@ export const resolveActorId = Effect.fn("resolveActorId")(function* (tenant: Ten
 			(error) =>
 				new McpQueryError({
 					message: error.message,
-					pipe: "resolve_actor",
+					pipeName: "resolve_actor",
 					cause: error,
 				}),
 		),

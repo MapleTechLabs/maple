@@ -1,6 +1,6 @@
 import { Link, useNavigate, createFileRoute } from "@tanstack/react-router"
 import { useCallback, useMemo } from "react"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 
@@ -15,11 +15,13 @@ import type {
 } from "@maple/ui/components/charts/_shared/chart-types"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import {
-	getCustomChartServiceDetailResultAtom,
-	getServiceReleasesTimelineResultAtom,
+	getServiceDetailOverviewResultAtom,
+	getServiceDetailThroughputRefinementResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import { mergeExactThroughput } from "@/api/warehouse/custom-charts"
+import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
 import { detectReleaseMarkers } from "@/lib/services/release-markers"
-import { CommitShaHoverCard } from "@/components/vcs/commit-sha-hover-card"
+import { CommitDeployMarker } from "@/components/vcs/commit-marker"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
@@ -180,6 +182,7 @@ function ServiceDetailContent() {
 							serviceName={serviceName}
 							startTime={effectiveStartTime}
 							endTime={effectiveEndTime}
+							environments={search.environments}
 							value={search.environments?.[0]}
 							onChange={handleEnvironmentChange}
 						/>
@@ -232,8 +235,11 @@ interface OverviewTabProps {
 }
 
 function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, environments }: OverviewTabProps) {
-	const detailResult = useRetainedRefreshableResultValue(
-		getCustomChartServiceDetailResultAtom({
+	// One fetch for the whole Overview tab — primary chart, releases timeline, and
+	// the environment switcher's options (the switcher reads this same atom key, so
+	// it shares this round-trip instead of issuing its own overview query).
+	const overviewResult = useRetainedRefreshableResultValue(
+		getServiceDetailOverviewResultAtom({
 			data: {
 				serviceName,
 				startTime: effectiveStartTime,
@@ -243,61 +249,80 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 		}),
 	)
 
-	const releasesResult = useRetainedRefreshableResultValue(
-		getServiceReleasesTimelineResultAtom({
+	// Sampling verdict from the already-loaded primary chart. Drives a separate,
+	// non-blocking fetch of the exact pre-sampling throughput (SpanMetrics `calls`)
+	// — only when sampling is active, so unsampled services never issue the slow
+	// query. `samplingActive` is part of the atom key, so the overlay re-fetches
+	// once the primary resolves and flips it true (no `useEffect`).
+	const samplingActive = Result.builder(overviewResult)
+		.onSuccess((r) => r.data.some((p) => p.hasSampling))
+		.orElse(() => false)
+
+	const throughputRefinement = useAtomValue(
+		getServiceDetailThroughputRefinementResultAtom({
 			data: {
 				serviceName,
 				startTime: effectiveStartTime,
 				endTime: effectiveEndTime,
+				environments,
+				samplingActive,
 			},
 		}),
 	)
 
+	const exactThroughputByBucket = useMemo(() => {
+		const map = new Map<string, number>()
+		Result.builder(throughputRefinement)
+			.onSuccess((r) => {
+				for (const point of r.data) map.set(point.bucket, point.throughput)
+			})
+			.orElse(() => undefined)
+		return map
+	}, [throughputRefinement])
+
 	const releaseMarkers: ChartReferenceLine[] = useMemo(() => {
-		const timeline = Result.builder(releasesResult)
-			.onSuccess((r) => r.data)
+		const timeline = Result.builder(overviewResult)
+			.onSuccess((r) => r.releases)
 			.orElse(() => [])
 		return detectReleaseMarkers(timeline).map((m) => ({
 			x: m.bucket,
 			label: m.label,
-			// Full SHA so the marker's hover card can resolve the commit; `label`
-			// stays the short form rendered on the flag.
+			// Full SHA so the marker resolves the commit (for the flag's message and
+			// the hover card); `label` is the short-SHA fallback shown until it does.
 			sha: m.commitSha,
 			color: "var(--muted-foreground)",
 			strokeDasharray: "6 4",
 		}))
-	}, [releasesResult])
+	}, [overviewResult])
 
-	// A deploy marker's flag is a commit hover card: hovering it resolves the
-	// release's commit (when the repo is connected/synced) and otherwise falls back
-	// to the short SHA as plain text. Shared across all four synced charts.
+	// Each deploy marker is a full-line hover hitbox with a flag at the top: the flag
+	// shows the release commit's message (resolved when the repo is connected/synced,
+	// falling back to the short SHA), and hovering the line previews the full commit.
+	// Shared across all four synced charts.
 	const renderReferenceMarker = useCallback(
-		(line: ChartReferenceLine) => (
-			<CommitShaHoverCard
-				sha={line.sha ?? ""}
-				className="rounded-full border border-border/60 bg-card/95 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground shadow-sm backdrop-blur transition-colors hover:text-foreground"
-			>
-				{line.label}
-			</CommitShaHoverCard>
-		),
+		(line: ChartReferenceLine) => <CommitDeployMarker line={line} />,
 		[],
 	)
 
-	const isWaiting = Result.isSuccess(detailResult) && detailResult.waiting
+	const isWaiting = Result.isSuccess(overviewResult) && overviewResult.waiting
 
 	// Cold load (no retained data yet) → drive each chart's loading skeleton so
 	// the grid shows `ChartSkeleton` until the warehouse query resolves, rather
 	// than rendering an empty chart with `[]` while the data is still in flight.
 	// On a refresh the retained hook returns `Success(waiting: true)` (not
 	// `Initial`), so this stays false and the stale-data dim (`opacity-60`) wins.
-	const isDetailLoading = Result.isInitial(detailResult)
+	const isDetailLoading = Result.isInitial(overviewResult)
 
 	// ServiceDetail points are typed structs; the chart grid consumes a
 	// generic `Record<string, unknown>[]`. Each point's fields are all primitive,
-	// so this is a safe widening (no `as unknown` round-trip needed).
-	const detailPoints: Record<string, unknown>[] = Result.builder(detailResult)
-		.onSuccess((response) => response.data.map((point) => ({ ...point })))
-		.orElse(() => [])
+	// so this is a safe widening (no `as unknown` round-trip needed). The exact
+	// SpanMetrics throughput overlay (when present) is merged by ISO bucket here.
+	const detailPoints: Record<string, unknown>[] = useMemo(() => {
+		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(overviewResult)
+			.onSuccess((response) => response.data)
+			.orElse(() => [])
+		return mergeExactThroughput(base, exactThroughputByBucket).map((point) => ({ ...point }))
+	}, [overviewResult, exactThroughputByBucket])
 
 	const widgetData: Record<string, Record<string, unknown>[]> = {
 		latency: detailPoints,

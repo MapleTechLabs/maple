@@ -193,6 +193,21 @@ describe("metricsTimeseriesRateQuery", () => {
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).not.toContain("span_metrics_calls_hourly")
 	})
+
+	it("matches a candidate metricNames set with MetricName IN (...)", () => {
+		const q = metricsTimeseriesRateQuery({
+			metricName: "span.metrics.calls",
+			metricNames: ["span.metrics.calls", "calls"],
+			bucketSeconds: 3600,
+		})
+		const { sql } = compileCH(q, { ...baseParams, metricName: "span.metrics.calls" })
+		// A multi-name IN(...) can't be served from the single-name hourly rollup,
+		// so it stays on the raw path with an IN filter (no scalar equality).
+		expect(sql).toContain("MetricName IN ('span.metrics.calls', 'calls')")
+		expect(sql).toContain("FROM metrics_sum")
+		expect(sql).not.toContain("span_metrics_calls_hourly")
+		expect(sql).not.toContain("MetricName = {metricName")
+	})
 })
 
 // ---------------------------------------------------------------------------

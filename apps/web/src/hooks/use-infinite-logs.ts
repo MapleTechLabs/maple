@@ -3,7 +3,10 @@ import { Result } from "@/lib/effect-atom"
 import { Effect } from "effect"
 
 import { listLogs, type Log, type LogsResponse } from "@/api/warehouse/logs"
-import { listLogsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+import {
+	listLogsResultAtom,
+	type QueryAtomFailure,
+} from "@/lib/services/atoms/warehouse-query-atoms"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
 import { useTableRefreshTimeRange } from "@/hooks/use-table-refresh-time-range"
 import type { LogsSearchParams } from "@/routes/logs"
@@ -12,7 +15,7 @@ const PAGE_SIZE = 100
 const FETCH_THRESHOLD = 20
 
 export interface UseInfiniteLogsReturn {
-	firstPageResult: Result.Result<LogsResponse, unknown>
+	firstPageResult: Result.Result<LogsResponse, QueryAtomFailure>
 	allData: Log[]
 	isFetchingNextPage: boolean
 	hasNextPage: boolean

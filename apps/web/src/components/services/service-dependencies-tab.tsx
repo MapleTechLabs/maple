@@ -2,11 +2,7 @@ import { useMemo } from "react"
 import { cn } from "@maple/ui/utils"
 import { Result } from "@/lib/effect-atom"
 import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import {
-	getServiceMapForServiceResultAtom,
-	getServiceMapDbEdgesForServiceResultAtom,
-	getServiceExternalEdgesResultAtom,
-} from "@/lib/services/atoms/warehouse-query-atoms"
+import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { formatLatency } from "@/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
@@ -61,23 +57,11 @@ export function ServiceDependenciesTab({
 	effectiveStartTime,
 	effectiveEndTime,
 }: ServiceDependenciesTabProps) {
-	const servicesResult = useRetainedRefreshableResultValue(
-		getServiceMapForServiceResultAtom({
+	// One fetch for the whole Dependencies tab — service, DB, and external edges in
+	// a single round-trip (was three separate atoms).
+	const bundleResult = useRetainedRefreshableResultValue(
+		getServiceDependenciesBundleResultAtom({
 			data: { serviceName, startTime: effectiveStartTime, endTime: effectiveEndTime },
-		}),
-	)
-	const dbsResult = useRetainedRefreshableResultValue(
-		getServiceMapDbEdgesForServiceResultAtom({
-			data: { serviceName, startTime: effectiveStartTime, endTime: effectiveEndTime },
-		}),
-	)
-	const externalResult = useRetainedRefreshableResultValue(
-		getServiceExternalEdgesResultAtom({
-			data: {
-				serviceName,
-				startTime: effectiveStartTime,
-				endTime: effectiveEndTime,
-			},
 		}),
 	)
 
@@ -90,14 +74,14 @@ export function ServiceDependenciesTab({
 	const rows = useMemo<DependencyRow[]>(() => {
 		const out: DependencyRow[] = []
 
-		const serviceEdges = Result.builder(servicesResult)
-			.onSuccess((r) => r.edges as RawEdge[])
+		const serviceEdges = Result.builder(bundleResult)
+			.onSuccess((r) => r.serviceEdges as RawEdge[])
 			.orElse(() => [] as RawEdge[])
-		const dbEdges = Result.builder(dbsResult)
-			.onSuccess((r) => r.edges as RawEdge[])
+		const dbEdges = Result.builder(bundleResult)
+			.onSuccess((r) => r.dbEdges as RawEdge[])
 			.orElse(() => [] as RawEdge[])
-		const externalEdges = Result.builder(externalResult)
-			.onSuccess((r) => r.edges as RawEdge[])
+		const externalEdges = Result.builder(bundleResult)
+			.onSuccess((r) => r.externalEdges as RawEdge[])
 			.orElse(() => [] as RawEdge[])
 
 		for (const edge of serviceEdges) {
@@ -182,7 +166,7 @@ export function ServiceDependenciesTab({
 		}
 
 		return out
-	}, [servicesResult, dbsResult, externalResult, durationSeconds])
+	}, [bundleResult, durationSeconds])
 
 	// Fold HTTP rows that look like a known internal service into that service's
 	// row. The address-resolutions rollup eventually catches this server-side
@@ -235,10 +219,7 @@ export function ServiceDependenciesTab({
 		})
 	}, [rows])
 
-	const isWaiting =
-		(Result.isSuccess(servicesResult) && servicesResult.waiting) ||
-		(Result.isSuccess(dbsResult) && dbsResult.waiting) ||
-		(Result.isSuccess(externalResult) && externalResult.waiting)
+	const isWaiting = Result.isSuccess(bundleResult) && bundleResult.waiting
 
 	// Aggregate facts for the summary strip. Each datum gets its own muted
 	// label + sharp value so the eye lands on the numbers first, the labels

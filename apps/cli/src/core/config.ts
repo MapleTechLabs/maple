@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, type PlatformError } from "effect"
+import { Clock, Context, Effect, Layer, type PlatformError, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -20,6 +20,13 @@ interface StoredConfig {
 	latestKnownVersion?: string
 }
 
+/** Malformed on-disk config JSON. Caught immediately by `Effect.orElseSucceed`
+ *  (a bad/unreadable file falls back to an empty config), but typed so the error
+ *  channel isn't a bare `Error`. */
+class ConfigParseError extends Schema.TaggedErrorClass<ConfigParseError>()("@maple/cli/ConfigParseError", {
+	message: Schema.String,
+}) {}
+
 const CONFIG_DIR = path.join(os.homedir(), ".maple")
 const CONFIG_PATH = path.join(CONFIG_DIR, "config.json")
 
@@ -34,7 +41,7 @@ const readStored = (fs: FileSystem): Effect.Effect<StoredConfig> =>
 					const parsed = JSON.parse(raw) as unknown
 					return typeof parsed === "object" && parsed !== null ? (parsed as StoredConfig) : {}
 				},
-				catch: () => new Error("invalid config"),
+				catch: () => new ConfigParseError({ message: "invalid config" }),
 			}),
 		),
 		// Missing/unreadable/invalid file → empty config. The CLI still works in
@@ -110,11 +117,14 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigShape>(
 					return rest
 				}),
 			recordUpdateCheck: (latestTag) =>
-				writeMerged(fs, (cur) => ({
-					...cur,
-					lastUpdateCheck: new Date().toISOString(),
-					...(latestTag ? { latestKnownVersion: latestTag } : {}),
-				})),
+				Effect.gen(function* () {
+					const nowIso = new Date(yield* Clock.currentTimeMillis).toISOString()
+					yield* writeMerged(fs, (cur) => ({
+						...cur,
+						lastUpdateCheck: nowIso,
+						...(latestTag ? { latestKnownVersion: latestTag } : {}),
+					}))
+				}),
 		} satisfies MapleConfigShape
 	}),
 }) {

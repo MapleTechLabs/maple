@@ -1,8 +1,13 @@
 import { useMemo } from "react"
 import { useNavigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
-import { Result } from "@/lib/effect-atom"
+import { Result, useAtomValue, useAtomSet } from "@/lib/effect-atom"
 import { Schema } from "effect"
+import { useMountEffect } from "@/hooks/use-mount-effect"
+import {
+	dashboardFacetsHintAtomFamily,
+	type DashboardFacetsHint,
+} from "@/atoms/dashboard-facets-hint-atoms"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
@@ -19,10 +24,11 @@ import { FirstActionHint } from "@/components/dashboard/first-action-hint"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import {
 	getCustomChartTimeSeriesResultAtom,
+	getOverviewThroughputRefinementResultAtom,
 	getOverviewTimeSeriesResultAtom,
 	getServicesFacetsResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import type { CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-charts"
+import { mergeExactThroughput, type CustomChartTimeSeriesResponse } from "@/api/warehouse/custom-charts"
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
@@ -87,6 +93,12 @@ const OVERVIEW_CHARTS: OverviewChartConfig[] = [
 
 function DashboardPage() {
 	const search = Route.useSearch()
+	// `orgId` is guaranteed on this route (root `beforeLoad` redirects to
+	// /org-required otherwise) and comes from the router context, so it's
+	// available in both Clerk and non-Clerk auth modes. Scopes the per-org hint.
+	const { auth } = Route.useRouteContext()
+	const orgKey = auth.orgId ?? "default"
+	const hint = useAtomValue(dashboardFacetsHintAtomFamily(orgKey))
 
 	// Stable 24h range, computed once per mount. Drives the single facets call
 	// shared by `useDefaultPreset` and `DashboardContent` so we issue one HTTP
@@ -105,16 +117,24 @@ function DashboardPage() {
 	const facetsResult = useRetainedRefreshableResultValue(getServicesFacetsResultAtom({ data: facetsRange }))
 
 	const defaultPreset = useMemo(() => {
-		if (!Result.isSuccess(facetsResult)) return "24h"
+		// Before facets resolve, fall back to the persisted hint's preset so the
+		// time picker + downstream queries use the org's likely default (6h for
+		// all-demo orgs, else 24h) instead of always guessing 24h.
+		if (!Result.isSuccess(facetsResult)) return hint.preset
 		const services = facetsResult.value.data.services
 		if (services.length === 0) return "24h"
 		const allDemo = services.every((s) => s.name.startsWith("demo-"))
 		return allDemo ? "6h" : "24h"
-	}, [facetsResult])
+	}, [facetsResult, hint.preset])
 
 	return (
 		<PageRefreshProvider timePreset={search.timePreset ?? defaultPreset}>
-			<DashboardContent defaultPreset={defaultPreset} facetsResult={facetsResult} />
+			<DashboardContent
+				defaultPreset={defaultPreset}
+				facetsResult={facetsResult}
+				orgKey={orgKey}
+				hint={hint}
+			/>
 		</PageRefreshProvider>
 	)
 }
@@ -122,9 +142,13 @@ function DashboardPage() {
 function DashboardContent({
 	defaultPreset,
 	facetsResult,
+	orgKey,
+	hint,
 }: {
 	defaultPreset: string
 	facetsResult: Result.Result<ServicesFacetsResponse, unknown>
+	orgKey: string
+	hint: DashboardFacetsHint
 }) {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
@@ -162,30 +186,43 @@ function DashboardContent({
 		.onSuccess((response) => response.data.environments)
 		.orElse(() => [])
 
-	// Derive effective environment filter — default to "production" if available, without writing to URL
+	const facetsReady = !Result.isInitial(facetsResult)
+
+	// The facets-derived default environment ("production" when present, else
+	// `null` = all). This is what we persist as the hint and use as the optimistic
+	// filter before facets resolve — independent of any explicit `?environment=`.
+	const derivedDefaultEnvironment = facetsReady
+		? environments.some((e) => e.name === "production")
+			? "production"
+			: null
+		: null
+
+	// Derive effective environment filter (no URL writes). Explicit choice wins;
+	// once facets resolve, use the production default; before that, fall back to
+	// the persisted hint so the downstream queries can fetch optimistically.
 	const environmentFilter = (() => {
 		if (search.environment) return [search.environment]
-		const hasProduction = environments.some((e) => e.name === "production")
-		if (hasProduction) return ["production"]
-		return undefined
+		if (facetsReady) return derivedDefaultEnvironment ? [derivedDefaultEnvironment] : undefined
+		return hint.environment ? [hint.environment] : undefined
 	})()
 
 	const selectedEnvironment =
 		search.environment ?? (environments.some((e) => e.name === "production") ? "production" : "__all__")
 
-	// Wait for facets before fetching data to avoid a cascading double-fetch
-	// when environmentFilter changes from undefined → ["production"]
+	// We can fetch downstream as soon as we have a basis for the params: either
+	// facets have resolved, or a prior load left a hint (`seen`). Preserving the
+	// gate only when there's no hint keeps the very first load's behavior
+	// identical (no new undefined → ["production"] double-fetch); every load after
+	// the first fires downstream in parallel with facets instead of waiting.
 	//
-	// The hook is handed a different atom on the `facetsReady` flip (disabled →
-	// real), but both branches yield stable atom identities: the real atom comes
-	// from an `Atom.family` keyed by encoded params, and `disabledResultAtom()`
-	// returns a single module-scoped `keepAlive` atom (same reference every call).
-	// So this is a one-time mount transition, not a per-render churn — no
-	// in-render `Atom.make` and no lost state.
-	const facetsReady = !Result.isInitial(facetsResult)
+	// On the eventual facets resolution the params may change (hint → real); the
+	// atom family re-keys (it's keyed by encoded params) and refetches, and
+	// `useRetainedRefreshableResultValue` keeps the prior value on screen
+	// (`waiting`) so there's no flash to a spinner.
+	const canFetch = facetsReady || hint.seen
 
 	const overviewResult = useRetainedRefreshableResultValue(
-		facetsReady
+		canFetch
 			? getOverviewTimeSeriesResultAtom({
 					data: {
 						startTime: effectiveStartTime,
@@ -198,7 +235,7 @@ function DashboardContent({
 	)
 
 	const logVolumeResult = useRetainedRefreshableResultValue(
-		facetsReady
+		canFetch
 			? getCustomChartTimeSeriesResultAtom({
 					data: {
 						source: "logs",
@@ -220,12 +257,47 @@ function DashboardContent({
 		(Result.isSuccess(overviewResult) && overviewResult.waiting) ||
 		(Result.isSuccess(logVolumeResult) && logVolumeResult.waiting)
 
+	// Sampling verdict from the loaded overview chart; drives a non-blocking fetch
+	// of the exact pre-sampling request volume (SpanMetrics `calls`) only when
+	// sampling is active. Env-scoped views skip it (handled in the effect).
+	const overviewSamplingActive =
+		canFetch &&
+		Result.builder(overviewResult)
+			.onSuccess((r) => r.data.some((p) => p.hasSampling))
+			.orElse(() => false)
+
+	const throughputRefinement = useAtomValue(
+		getOverviewThroughputRefinementResultAtom({
+			data: {
+				startTime: effectiveStartTime,
+				endTime: effectiveEndTime,
+				environments: environmentFilter,
+				samplingActive: overviewSamplingActive,
+			},
+		}),
+	)
+
+	const exactThroughputByBucket = useMemo(() => {
+		const map = new Map<string, number>()
+		Result.builder(throughputRefinement)
+			.onSuccess((r) => {
+				for (const point of r.data) map.set(point.bucket, point.throughput)
+			})
+			.orElse(() => undefined)
+		return map
+	}, [throughputRefinement])
+
 	// Overview points are typed structs; the chart grid consumes a generic
 	// `Record<string, unknown>[]`. Each point's fields are all primitive, so
-	// spreading widens to the record shape without an `as unknown` round-trip.
-	const overviewPoints: Record<string, unknown>[] = Result.builder(overviewResult)
-		.onSuccess((response) => response.data.map((point) => ({ ...point })))
-		.orElse(() => EMPTY_ARRAY)
+	// spreading widens to the record shape without an `as unknown` round-trip. The
+	// exact SpanMetrics throughput overlay (when present) is merged by ISO bucket.
+	const overviewPoints: Record<string, unknown>[] = useMemo(() => {
+		const base: ReadonlyArray<ServiceDetailTimeSeriesPoint> = Result.builder(overviewResult)
+			.onSuccess((response) => response.data)
+			.orElse(() => [])
+		if (base.length === 0) return EMPTY_ARRAY
+		return mergeExactThroughput(base, exactThroughputByBucket).map((point) => ({ ...point }))
+	}, [overviewResult, exactThroughputByBucket])
 
 	const logPoints = Result.builder(logVolumeResult)
 		.onSuccess(
@@ -342,12 +414,24 @@ function DashboardContent({
 					<SetupChecklist />
 				</>
 			)}
+			{/* Persist the facets-derived defaults once facets resolve, so the next
+			    cold load can fetch optimistically. Gated on `facetsReady` and keyed
+			    by the derived hint so it remounts (re-persists) only when the value
+			    actually changes — no bare effect, no per-render writes. */}
+			{facetsReady && (
+				<FacetsHintPersister
+					key={`${derivedDefaultEnvironment ?? "__all__"}:${defaultPreset}`}
+					orgKey={orgKey}
+					environment={derivedDefaultEnvironment}
+					preset={defaultPreset}
+				/>
+			)}
 			<ServiceHealthOverview
 				startTime={effectiveStartTime}
 				endTime={effectiveEndTime}
 				timePreset={search.timePreset ?? defaultPreset}
 				environments={environmentFilter}
-				facetsReady={facetsReady}
+				canFetch={canFetch}
 			/>
 			<ServiceUsageCards startTime={effectiveStartTime} endTime={effectiveEndTime} />
 			<MetricsGrid items={metrics} className="mt-4" waiting={!!isWaiting} syncId="home-overview" />
@@ -356,8 +440,29 @@ function DashboardContent({
 				endTime={effectiveEndTime}
 				timePreset={search.timePreset ?? defaultPreset}
 				environments={environmentFilter}
-				facetsReady={facetsReady}
+				canFetch={canFetch}
 			/>
 		</DashboardLayout>
 	)
+}
+
+/**
+ * Writes the facets-derived defaults to the per-org hint atom on mount. Rendered
+ * only when facets are ready and remounted via `key` when the derived values
+ * change (see call site), so `useMountEffect` is the correct one-shot sync.
+ */
+function FacetsHintPersister({
+	orgKey,
+	environment,
+	preset,
+}: {
+	orgKey: string
+	environment: string | null
+	preset: string
+}) {
+	const setHint = useAtomSet(dashboardFacetsHintAtomFamily(orgKey))
+	useMountEffect(() => {
+		setHint({ environment, preset, seen: true })
+	})
+	return null
 }

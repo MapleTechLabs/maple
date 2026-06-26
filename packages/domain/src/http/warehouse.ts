@@ -17,7 +17,7 @@ const WarehouseQueryNameSchema = Schema.Literals(warehouseQueries)
 const UnknownRecord = Schema.Record(Schema.String, Schema.Unknown)
 
 export class WarehouseQueryRequest extends Schema.Class<WarehouseQueryRequest>("WarehouseQueryRequest")({
-	pipe: WarehouseQueryNameSchema,
+	pipeName: WarehouseQueryNameSchema,
 	params: Schema.optionalKey(UnknownRecord),
 }) {}
 

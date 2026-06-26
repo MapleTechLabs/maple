@@ -41,12 +41,38 @@ pub enum ExportDestination {
 }
 
 impl ExportDestination {
+    /// Every export destination, in lane order. A frame's lane within its WAL
+    /// shard is `shard * LANES_PER_SHARD + destination.lane_ordinal()`, so the
+    /// position in this slice is load-bearing — do not reorder.
+    pub const ALL: [ExportDestination; 2] = [Self::Tinybird, Self::ClickHouse];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Tinybird => "tinybird",
             Self::ClickHouse => "clickhouse",
         }
     }
+
+    /// Offset of this destination's lane within a shard. Must match `ALL`.
+    fn lane_ordinal(self) -> usize {
+        match self {
+            Self::Tinybird => 0,
+            Self::ClickHouse => 1,
+        }
+    }
+}
+
+/// Number of independent export lanes per WAL shard — one per destination. Each
+/// lane has its own WAL file, cursor, bounded channel, and worker so a stalled
+/// destination (e.g. a slow BYO-ClickHouse target) can only back-pressure its
+/// own lane and never head-of-line-blocks a co-sharded org on the other
+/// destination.
+const LANES_PER_SHARD: usize = ExportDestination::ALL.len();
+
+/// Flat lane index for `(shard, destination)`. Lanes are laid out shard-major:
+/// `[shard0:tinybird, shard0:clickhouse, shard1:tinybird, ...]`.
+fn lane_index(shard: usize, destination: ExportDestination) -> usize {
+    shard * LANES_PER_SHARD + destination.lane_ordinal()
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -69,6 +95,128 @@ pub trait ClickHouseTargetProvider: Send + Sync {
 enum ClickHouseExportOutcome {
     Delivered,
     Dropped,
+}
+
+/// Tuning for the per-org ClickHouse circuit breaker.
+#[derive(Clone, Copy, Debug)]
+pub struct ClickHouseBreakerConfig {
+    /// Consecutive export failures that trip the breaker into the open state.
+    /// `0` disables the breaker entirely (every batch is allowed to run its
+    /// full retry budget).
+    pub failure_threshold: u32,
+    /// How long the breaker stays open (fast-shedding batches) before it lets a
+    /// single probe batch through to re-test the target.
+    pub cooldown: Duration,
+}
+
+impl Default for ClickHouseBreakerConfig {
+    fn default() -> Self {
+        Self {
+            failure_threshold: 4,
+            cooldown: Duration::from_secs(30),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BreakerDecision {
+    /// The target looks healthy enough to attempt an export.
+    Allow,
+    /// The target is in the open state; drop the batch immediately instead of
+    /// holding the lane worker through the retry budget.
+    Shed,
+}
+
+#[derive(Debug, Default)]
+struct BreakerState {
+    consecutive_failures: u32,
+    /// When the breaker last tripped open. `None` while closed.
+    opened_at: Option<Instant>,
+}
+
+/// Pure transition: should the next attempt run, given the current state? Kept
+/// free of `Instant::now()` so the state machine is unit-testable with a
+/// synthetic clock.
+fn breaker_decision(
+    state: &BreakerState,
+    cfg: ClickHouseBreakerConfig,
+    now: Instant,
+) -> BreakerDecision {
+    match state.opened_at {
+        // Still within the cooldown window → keep shedding.
+        Some(opened) if now.duration_since(opened) < cfg.cooldown => BreakerDecision::Shed,
+        // Closed, or cooldown elapsed (half-open) → allow. Note half-open is not
+        // single-probe gated: while cooldown is elapsed, every batch that checks
+        // is allowed, so several lane workers can probe a recovering target
+        // concurrently until one records on_success/on_failure. Harmless here —
+        // the extra probes just re-confirm health or re-open the breaker.
+        _ => BreakerDecision::Allow,
+    }
+}
+
+/// Per-org ClickHouse circuit breakers. An org's CH frames may span several
+/// shards (traces shard by trace id), so breaker state is shared across all
+/// lane workers rather than living inside one worker — the first worker to
+/// observe an unhealthy target trips it for the rest.
+struct ClickHouseBreakerRegistry {
+    cfg: ClickHouseBreakerConfig,
+    states: DashMap<String, Arc<Mutex<BreakerState>>>,
+}
+
+impl ClickHouseBreakerRegistry {
+    fn new(cfg: ClickHouseBreakerConfig) -> Self {
+        Self {
+            cfg,
+            states: DashMap::new(),
+        }
+    }
+
+    fn enabled(&self) -> bool {
+        self.cfg.failure_threshold > 0
+    }
+
+    fn state_for(&self, org_id: &str) -> Arc<Mutex<BreakerState>> {
+        self.states
+            .entry(org_id.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(BreakerState::default())))
+            .clone()
+    }
+
+    /// Decide whether to attempt an export for `org_id`. Read-only: never
+    /// allocates breaker state for an org that has only ever succeeded.
+    fn decide(&self, org_id: &str, now: Instant) -> BreakerDecision {
+        if !self.enabled() {
+            return BreakerDecision::Allow;
+        }
+        let Some(state) = self.states.get(org_id) else {
+            return BreakerDecision::Allow;
+        };
+        let guard = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        breaker_decision(&guard, self.cfg, now)
+    }
+
+    fn on_success(&self, org_id: &str) {
+        if !self.enabled() {
+            return;
+        }
+        if let Some(state) = self.states.get(org_id) {
+            let mut guard = state.lock().unwrap_or_else(|poison| poison.into_inner());
+            guard.consecutive_failures = 0;
+            guard.opened_at = None;
+        }
+    }
+
+    fn on_failure(&self, org_id: &str, now: Instant) {
+        if !self.enabled() {
+            return;
+        }
+        let state = self.state_for(org_id);
+        let mut guard = state.lock().unwrap_or_else(|poison| poison.into_inner());
+        guard.consecutive_failures = guard.consecutive_failures.saturating_add(1);
+        if guard.consecutive_failures >= self.cfg.failure_threshold {
+            guard.opened_at = Some(now);
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -144,6 +292,7 @@ pub struct TinybirdConfig {
     pub batch_max_wait: Duration,
     pub export_concurrency_per_shard: usize,
     pub export_max_attempts: u32,
+    pub clickhouse_breaker: ClickHouseBreakerConfig,
     pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
     pub datasource_session_replay_events: String,
@@ -312,12 +461,17 @@ pub struct TelemetryPipeline {
 struct PipelineInner {
     cfg: Arc<TinybirdConfig>,
     wal: Arc<ShardedWal>,
-    shard_senders: Vec<mpsc::Sender<QueuedFrame>>,
+    /// One bounded channel per lane (`shard × destination`), indexed by
+    /// `lane_index`. A full ClickHouse lane can no longer back-pressure the
+    /// co-sharded Tinybird lane.
+    lane_senders: Vec<mpsc::Sender<QueuedFrame>>,
     org_queue_bytes: Arc<DashMap<String, Arc<AtomicU64>>>,
 }
 
 #[derive(Clone, Debug)]
 struct QueuedFrame {
+    /// WAL shard the frame routed to (for metric labelling). The lane it belongs
+    /// to is implied by the worker draining it (one worker per lane).
     shard: usize,
     start: u64,
     end: u64,
@@ -365,29 +519,39 @@ impl TelemetryPipeline {
             .map_err(|error| format!("create ingest WAL dir: {error}"))?;
         let cfg = Arc::new(cfg);
         let wal = Arc::new(ShardedWal::open(&cfg)?);
+        // Relocate any single-file-per-shard WAL left by a pre-lanes binary into
+        // the new per-destination lanes before workers start draining them.
+        wal.migrate_legacy_shards(&cfg).await;
         let org_queue_bytes = Arc::new(DashMap::new());
-        let mut shard_senders = Vec::with_capacity(cfg.wal_shards);
+        let clickhouse_breakers = Arc::new(ClickHouseBreakerRegistry::new(cfg.clickhouse_breaker));
+        let mut lane_senders = Vec::with_capacity(cfg.wal_shards * LANES_PER_SHARD);
 
         for shard in 0..cfg.wal_shards {
-            let (sender, receiver) = mpsc::channel(cfg.queue_channel_capacity);
-            shard_senders.push(sender);
-            let worker = ExportWorker {
-                shard,
-                cfg: Arc::clone(&cfg),
-                wal: Arc::clone(&wal),
-                org_queue_bytes: Arc::clone(&org_queue_bytes),
-                clickhouse_targets: clickhouse_targets.clone(),
-                http: http.clone(),
-                receiver,
-            };
-            tokio::spawn(worker.run());
+            for destination in ExportDestination::ALL {
+                let (sender, receiver) = mpsc::channel(cfg.queue_channel_capacity);
+                debug_assert_eq!(lane_senders.len(), lane_index(shard, destination));
+                lane_senders.push(sender);
+                let worker = ExportWorker {
+                    lane: lane_index(shard, destination),
+                    shard,
+                    destination,
+                    cfg: Arc::clone(&cfg),
+                    wal: Arc::clone(&wal),
+                    org_queue_bytes: Arc::clone(&org_queue_bytes),
+                    clickhouse_breakers: Arc::clone(&clickhouse_breakers),
+                    clickhouse_targets: clickhouse_targets.clone(),
+                    http: http.clone(),
+                    receiver,
+                };
+                tokio::spawn(worker.run());
+            }
         }
 
         let pipeline = Self {
             inner: Arc::new(PipelineInner {
                 cfg,
                 wal,
-                shard_senders,
+                lane_senders,
                 org_queue_bytes,
             }),
         };
@@ -518,22 +682,20 @@ impl TelemetryPipeline {
 
         for mut frame in frames {
             frame.destination = destination;
-            let shard = (frame.routing_key as usize) % self.inner.shard_senders.len();
-            let sender = self.inner.shard_senders[shard].clone();
+            let shard = (frame.routing_key as usize) % self.inner.cfg.wal_shards;
+            // Route to the destination's own lane so a stalled ClickHouse export
+            // cannot fill the Tinybird channel for the same shard (and vice versa).
+            let lane = lane_index(shard, destination);
+            let sender = self.inner.lane_senders[lane].clone();
             let permit = sender
                 .try_reserve_owned()
                 .map_err(|_| PipelineError::Backpressure("Telemetry queue is full"))?;
             let queued_bytes = frame.payload.len() as u64;
             self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)?;
-            let (start, end) = self
-                .inner
-                .wal
-                .append(shard, &frame)
-                .await
-                .map_err(|error| {
-                    self.release_org_queue_bytes(&frame.org_id, queued_bytes);
-                    PipelineError::QueueUnavailable(error)
-                })?;
+            let (start, end) = self.inner.wal.append(lane, &frame).await.map_err(|error| {
+                self.release_org_queue_bytes(&frame.org_id, queued_bytes);
+                PipelineError::QueueUnavailable(error)
+            })?;
             permit.send(QueuedFrame {
                 shard,
                 start,
@@ -590,11 +752,11 @@ impl TelemetryPipeline {
     }
 
     async fn replay_committed_frames(&self) {
-        for shard in 0..self.inner.shard_senders.len() {
-            let frames = match self.inner.wal.replay(shard).await {
+        for lane in 0..self.inner.lane_senders.len() {
+            let frames = match self.inner.wal.replay(lane).await {
                 Ok(frames) => frames,
                 Err(error) => {
-                    error!(shard, error = %error, "Failed to replay ingest WAL shard");
+                    error!(lane, error = %error, "Failed to replay ingest WAL lane");
                     continue;
                 }
             };
@@ -602,7 +764,7 @@ impl TelemetryPipeline {
                 continue;
             }
             info!(
-                shard,
+                lane,
                 frames = frames.len(),
                 "Replaying committed ingest WAL frames"
             );
@@ -612,8 +774,8 @@ impl TelemetryPipeline {
                     &frame.org_id,
                     frame.queued_bytes,
                 );
-                if self.inner.shard_senders[shard].send(frame).await.is_err() {
-                    error!(shard, "Ingest WAL replay worker stopped");
+                if self.inner.lane_senders[lane].send(frame).await.is_err() {
+                    error!(lane, "Ingest WAL replay worker stopped");
                     break;
                 }
             }
@@ -622,10 +784,16 @@ impl TelemetryPipeline {
 }
 
 struct ShardedWal {
-    shards: Vec<Arc<WalShard>>,
+    /// One WAL file per lane (`shard × destination`), indexed by `lane_index`.
+    lanes: Vec<Arc<WalShard>>,
 }
 
 struct WalShard {
+    /// Real shard this lane belongs to, and its destination — carried so WAL
+    /// metrics stay labelled by `(shard, destination)` rather than leaking the
+    /// flat lane index as a `shard`.
+    shard: usize,
+    destination: ExportDestination,
     path: PathBuf,
     cursor_path: PathBuf,
     max_bytes: u64,
@@ -634,75 +802,158 @@ struct WalShard {
 
 impl ShardedWal {
     fn open(cfg: &TinybirdConfig) -> Result<Self, String> {
-        let mut shards = Vec::with_capacity(cfg.wal_shards);
-        let max_bytes_per_shard = (cfg.queue_max_bytes / cfg.wal_shards as u64).max(1);
+        let num_lanes = cfg.wal_shards * LANES_PER_SHARD;
+        let mut lanes = Vec::with_capacity(num_lanes);
+        let max_bytes_per_lane = (cfg.queue_max_bytes / num_lanes as u64).max(1);
         for shard in 0..cfg.wal_shards {
-            let path = cfg.queue_dir.join(format!("shard-{shard:03}.wal"));
-            let cursor_path = cfg.queue_dir.join(format!("shard-{shard:03}.cursor"));
-            let file = OpenOptions::new()
-                .create(true)
-                .read(true)
-                .append(true)
-                .open(&path)
-                .map_err(|error| format!("open ingest WAL {path:?}: {error}"))?;
-            shards.push(Arc::new(WalShard {
-                path,
-                cursor_path,
-                max_bytes: max_bytes_per_shard,
-                file: Mutex::new(file),
-            }));
+            for destination in ExportDestination::ALL {
+                let dest = destination.as_str();
+                let path = cfg.queue_dir.join(format!("shard-{shard:03}-{dest}.wal"));
+                let cursor_path = cfg.queue_dir.join(format!("shard-{shard:03}-{dest}.cursor"));
+                let file = OpenOptions::new()
+                    .create(true)
+                    .read(true)
+                    .append(true)
+                    .open(&path)
+                    .map_err(|error| format!("open ingest WAL {path:?}: {error}"))?;
+                debug_assert_eq!(lanes.len(), lane_index(shard, destination));
+                lanes.push(Arc::new(WalShard {
+                    shard,
+                    destination,
+                    path,
+                    cursor_path,
+                    max_bytes: max_bytes_per_lane,
+                    file: Mutex::new(file),
+                }));
+            }
         }
-        Ok(Self { shards })
+        Ok(Self { lanes })
     }
 
-    async fn append(&self, shard: usize, frame: &EncodedFrame) -> Result<(u64, u64), String> {
-        let shard_ref = Arc::clone(
-            self.shards
-                .get(shard)
-                .ok_or_else(|| format!("invalid WAL shard {shard}"))?,
+    /// Migrate any pre-lanes WAL (a single `shard-NNN.wal` per shard, mixing both
+    /// destinations) into the per-destination lane files. Each surviving frame is
+    /// durably re-appended to its destination's lane, then the legacy file + cursor
+    /// are removed. Best-effort: a failed shard is logged and left in place so the
+    /// next boot retries it — startup never wedges and no frame is dropped.
+    async fn migrate_legacy_shards(&self, cfg: &TinybirdConfig) {
+        for shard in 0..cfg.wal_shards {
+            let legacy_path = cfg.queue_dir.join(format!("shard-{shard:03}.wal"));
+            let legacy_cursor = cfg.queue_dir.join(format!("shard-{shard:03}.cursor"));
+            if !legacy_path.exists() {
+                continue;
+            }
+            let read_path = legacy_path.clone();
+            let read_cursor = legacy_cursor.clone();
+            let frames =
+                match tokio::task::spawn_blocking(move || read_legacy_frames(&read_path, &read_cursor))
+                    .await
+                {
+                    Ok(Ok(frames)) => frames,
+                    Ok(Err(error)) => {
+                        warn!(shard, error = %error, "Skipping unreadable legacy ingest WAL shard");
+                        continue;
+                    }
+                    Err(error) => {
+                        warn!(shard, error = %error, "Failed to read legacy ingest WAL shard");
+                        continue;
+                    }
+                };
+            let count = frames.len();
+            let mut migrated = true;
+            for frame in frames {
+                let lane = lane_index(shard, frame.destination);
+                let encoded = EncodedFrame {
+                    routing_key: 0, // unused by append; the frame stays in `shard`
+                    org_id: frame.org_id,
+                    signal: frame.signal,
+                    destination: frame.destination,
+                    datasource: frame.datasource,
+                    row_count: frame.row_count,
+                    payload: frame.payload,
+                };
+                // Bypass the per-lane byte cap: these frames were already accepted
+                // and are merely being relocated, so we must not reject them.
+                if let Err(error) = self.append_inner(lane, &encoded, false).await {
+                    warn!(shard, error = %error, "Failed to migrate legacy ingest WAL frame; will retry next boot");
+                    migrated = false;
+                    break;
+                }
+            }
+            if migrated {
+                let _ = std::fs::remove_file(&legacy_path);
+                let _ = std::fs::remove_file(&legacy_cursor);
+                if count > 0 {
+                    info!(
+                        shard,
+                        frames = count,
+                        "Migrated legacy ingest WAL shard into per-destination lanes"
+                    );
+                }
+            }
+        }
+    }
+
+    async fn append(&self, lane: usize, frame: &EncodedFrame) -> Result<(u64, u64), String> {
+        self.append_inner(lane, frame, true).await
+    }
+
+    async fn append_inner(
+        &self,
+        lane: usize,
+        frame: &EncodedFrame,
+        enforce_cap: bool,
+    ) -> Result<(u64, u64), String> {
+        let lane_ref = Arc::clone(
+            self.lanes
+                .get(lane)
+                .ok_or_else(|| format!("invalid WAL lane {lane}"))?,
         );
         let encoded = encode_wal_frame(frame)?;
         tokio::task::spawn_blocking(move || {
-            let mut file = shard_ref
+            let mut file = lane_ref
                 .file
                 .lock()
-                .map_err(|_| "WAL shard mutex poisoned".to_string())?;
+                .map_err(|_| "WAL lane mutex poisoned".to_string())?;
             let start = file
                 .seek(SeekFrom::End(0))
                 .map_err(|error| format!("seek WAL: {error}"))?;
-            if start.saturating_add(encoded.len() as u64) > shard_ref.max_bytes {
-                metrics::wal_shard_full(shard);
-                return Err("Telemetry WAL shard is full".to_string());
+            if enforce_cap && start.saturating_add(encoded.len() as u64) > lane_ref.max_bytes {
+                metrics::wal_shard_full(lane_ref.shard, lane_ref.destination.as_str());
+                return Err("Telemetry WAL lane is full".to_string());
             }
             file.write_all(&encoded)
                 .map_err(|error| format!("write WAL: {error}"))?;
             file.sync_data()
                 .map_err(|error| format!("sync WAL: {error}"))?;
             let end = start + encoded.len() as u64;
-            metrics::wal_commit_bytes(shard, encoded.len() as u64);
-            metrics::wal_shard_bytes(shard, end);
+            metrics::wal_commit_bytes(
+                lane_ref.shard,
+                lane_ref.destination.as_str(),
+                encoded.len() as u64,
+            );
+            metrics::wal_shard_bytes(lane_ref.shard, lane_ref.destination.as_str(), end);
             Ok((start, end))
         })
         .await
         .map_err(|error| format!("join WAL append: {error}"))?
     }
 
-    async fn replay(&self, shard: usize) -> Result<Vec<QueuedFrame>, String> {
-        let shard_ref = Arc::clone(
-            self.shards
-                .get(shard)
-                .ok_or_else(|| format!("invalid WAL shard {shard}"))?,
+    async fn replay(&self, lane: usize) -> Result<Vec<QueuedFrame>, String> {
+        let lane_ref = Arc::clone(
+            self.lanes
+                .get(lane)
+                .ok_or_else(|| format!("invalid WAL lane {lane}"))?,
         );
-        tokio::task::spawn_blocking(move || replay_shard(shard, &shard_ref))
+        tokio::task::spawn_blocking(move || replay_shard(lane, &lane_ref))
             .await
             .map_err(|error| format!("join WAL replay: {error}"))?
     }
 
-    async fn mark_exported(&self, shard: usize, offset: u64) -> Result<(), String> {
+    async fn mark_exported(&self, lane: usize, offset: u64) -> Result<(), String> {
         let shard_ref = Arc::clone(
-            self.shards
-                .get(shard)
-                .ok_or_else(|| format!("invalid WAL shard {shard}"))?,
+            self.lanes
+                .get(lane)
+                .ok_or_else(|| format!("invalid WAL lane {lane}"))?,
         );
         tokio::task::spawn_blocking(move || {
             // If the cursor has caught up to the end of the shard file, free the disk
@@ -722,7 +973,7 @@ impl ShardedWal {
                         .map_err(|error| format!("truncate WAL: {error}"))?;
                     file.sync_all()
                         .map_err(|error| format!("sync WAL truncate: {error}"))?;
-                    metrics::wal_shard_bytes(shard, 0);
+                    metrics::wal_shard_bytes(shard_ref.shard, shard_ref.destination.as_str(), 0);
                     0
                 } else {
                     offset
@@ -753,15 +1004,16 @@ fn read_cursor(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
-fn replay_shard(shard: usize, shard_ref: &WalShard) -> Result<Vec<QueuedFrame>, String> {
+fn replay_shard(lane: usize, lane_ref: &WalShard) -> Result<Vec<QueuedFrame>, String> {
     let mut file = OpenOptions::new()
         .read(true)
-        .open(&shard_ref.path)
+        .open(&lane_ref.path)
         .map_err(|error| format!("open WAL replay: {error}"))?;
-    let mut offset = read_cursor(&shard_ref.cursor_path);
+    let mut offset = read_cursor(&lane_ref.cursor_path);
     file.seek(SeekFrom::Start(offset))
         .map_err(|error| format!("seek WAL replay: {error}"))?;
 
+    let shard = lane / LANES_PER_SHARD;
     let mut frames = Vec::new();
     loop {
         let start = offset;
@@ -781,6 +1033,30 @@ fn replay_shard(shard: usize, shard_ref: &WalShard) -> Result<Vec<QueuedFrame>, 
             payload: frame.payload,
         });
         offset = frame.end;
+    }
+    Ok(frames)
+}
+
+/// Read every surviving frame from a legacy single-file-per-shard WAL, starting
+/// at its persisted cursor. Returns an empty vec if the file is absent. Used by
+/// `migrate_legacy_shards` to relocate frames into the per-destination lanes.
+fn read_legacy_frames(path: &Path, cursor_path: &Path) -> Result<Vec<DecodedWalFrame>, String> {
+    let mut file = match OpenOptions::new().read(true).open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("open legacy WAL: {error}")),
+    };
+    let mut offset = read_cursor(cursor_path);
+    file.seek(SeekFrom::Start(offset))
+        .map_err(|error| format!("seek legacy WAL: {error}"))?;
+    let mut frames = Vec::new();
+    loop {
+        let start = offset;
+        let Some(frame) = read_wal_frame(&mut file, start)? else {
+            break;
+        };
+        offset = frame.end;
+        frames.push(frame);
     }
     Ok(frames)
 }
@@ -1020,10 +1296,15 @@ fn release_org_queue_bytes(
 }
 
 struct ExportWorker {
+    /// This worker's lane (`lane_index(shard, destination)`). Drives one channel,
+    /// one WAL file, and exactly one destination.
+    lane: usize,
     shard: usize,
+    destination: ExportDestination,
     cfg: Arc<TinybirdConfig>,
     wal: Arc<ShardedWal>,
     org_queue_bytes: Arc<DashMap<String, Arc<AtomicU64>>>,
+    clickhouse_breakers: Arc<ClickHouseBreakerRegistry>,
     clickhouse_targets: Option<Arc<dyn ClickHouseTargetProvider>>,
     http: Client,
     receiver: mpsc::Receiver<QueuedFrame>,
@@ -1059,6 +1340,14 @@ impl ExportWorker {
         if frames.is_empty() {
             return Ok(());
         }
+        // A lane only ever carries one destination, so the cursor (a single
+        // offset per lane) tracks a single export stream. This invariant is what
+        // lets Tinybird and ClickHouse drain independently.
+        debug_assert!(
+            frames.iter().all(|frame| frame.destination == self.destination),
+            "lane {} received a frame for the wrong destination",
+            self.lane
+        );
         let mut by_tinybird: BTreeMap<String, Vec<&QueuedFrame>> = BTreeMap::new();
         let mut by_clickhouse: BTreeMap<(String, String), Vec<&QueuedFrame>> = BTreeMap::new();
         for frame in &frames {
@@ -1102,7 +1391,7 @@ impl ExportWorker {
         }
 
         let end = frames.iter().map(|frame| frame.end).max().unwrap_or(0);
-        self.wal.mark_exported(self.shard, end).await?;
+        self.wal.mark_exported(self.lane, end).await?;
         for frame in &frames {
             release_org_queue_bytes(&self.org_queue_bytes, &frame.org_id, frame.queued_bytes);
         }
@@ -1207,8 +1496,30 @@ impl ExportWorker {
         let compressed = bytes::Bytes::from(gzip(body)?);
         let max_attempts = self.cfg.export_max_attempts;
         let mut attempt = 0u32;
+        // Set on every retryable failure; only read when the retry budget is
+        // exhausted (which can only happen after at least one failure).
+        let mut last_status: String;
 
         loop {
+            // Fast-shed before doing any work: if this org's target has been
+            // failing, drop the batch instead of holding the lane worker through
+            // the retry budget. This bounds how long one unhealthy BYO-ClickHouse
+            // target can starve co-sharded ClickHouse orgs.
+            if self.clickhouse_breakers.decide(org_id, Instant::now()) == BreakerDecision::Shed {
+                metrics::clickhouse_export_dropped(datasource, "circuit_open", rows as u64);
+                warn!(
+                    org_id,
+                    datasource, rows, attempt, "Shedding ClickHouse batch: target circuit breaker open"
+                );
+                return Ok(ClickHouseExportOutcome::Dropped);
+            }
+            // Backoff is taken here (before the attempt) so that when the breaker
+            // trips mid-batch the shed-check above can bail without first sleeping
+            // out the previous failure's backoff.
+            if attempt > 0 {
+                backoff(attempt).await;
+            }
+
             let started = Instant::now();
             let target = match self.resolve_clickhouse_target(org_id).await {
                 Ok(Some(target)) => target,
@@ -1220,6 +1531,7 @@ impl ExportWorker {
                         attempt,
                         "Retrying ClickHouse batch because no ready target resolved"
                     );
+                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         metrics::clickhouse_export_dropped(
@@ -1236,7 +1548,6 @@ impl ExportWorker {
                         );
                         return Ok(ClickHouseExportOutcome::Dropped);
                     }
-                    backoff(attempt).await;
                     continue;
                 }
                 Err(error) => {
@@ -1248,6 +1559,7 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after target resolution error"
                     );
+                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
                     attempt = attempt.saturating_add(1);
                     if attempt >= max_attempts {
                         metrics::clickhouse_export_dropped(
@@ -1265,7 +1577,6 @@ impl ExportWorker {
                         );
                         return Ok(ClickHouseExportOutcome::Dropped);
                     }
-                    backoff(attempt).await;
                     continue;
                 }
             };
@@ -1321,7 +1632,7 @@ impl ExportWorker {
             }
 
             let response = request.send().await;
-            let retry_status = match response {
+            match response {
                 Ok(response) if response.status().is_success() => {
                     let bucket = status_bucket(response.status().as_u16());
                     metrics::clickhouse_export_succeeded(
@@ -1330,6 +1641,7 @@ impl ExportWorker {
                         started.elapsed().as_secs_f64(),
                         rows as u64,
                     );
+                    self.clickhouse_breakers.on_success(org_id);
                     return Ok(ClickHouseExportOutcome::Delivered);
                 }
                 Ok(response) => {
@@ -1338,6 +1650,8 @@ impl ExportWorker {
                     let bucket = status_bucket(status_code);
                     let body = response.text().await.unwrap_or_default();
                     if !is_retryable_clickhouse_status(status_code) {
+                        // Non-retryable (4xx) is the batch's fault, not the
+                        // target's health — drop it without tripping the breaker.
                         metrics::clickhouse_export_dropped(datasource, bucket, rows as u64);
                         warn!(
                             org_id,
@@ -1358,7 +1672,8 @@ impl ExportWorker {
                         body = %body,
                         "Retrying ClickHouse batch"
                     );
-                    bucket.to_string()
+                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    last_status = bucket.to_string();
                 }
                 Err(error) => {
                     metrics::clickhouse_export_retry(datasource, "transport");
@@ -1369,9 +1684,10 @@ impl ExportWorker {
                         error = %error,
                         "Retrying ClickHouse batch after transport error"
                     );
-                    "transport".to_string()
+                    self.clickhouse_breakers.on_failure(org_id, Instant::now());
+                    last_status = "transport".to_string();
                 }
-            };
+            }
 
             attempt = attempt.saturating_add(1);
             if attempt >= max_attempts {
@@ -1381,12 +1697,12 @@ impl ExportWorker {
                     datasource,
                     rows,
                     attempts = attempt,
-                    last_status = %retry_status,
+                    last_status = %last_status,
                     "Dropping ClickHouse batch after exhausting retry budget"
                 );
                 return Ok(ClickHouseExportOutcome::Dropped);
             }
-            backoff(attempt).await;
+            // backoff happens at the loop top, gated by the breaker shed-check.
         }
     }
 
@@ -2262,6 +2578,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(10),
             export_concurrency_per_shard: 1,
             export_max_attempts: 20,
+            clickhouse_breaker: ClickHouseBreakerConfig::default(),
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),
             datasource_session_replay_events: "session_replay_events".to_string(),
@@ -2382,9 +2699,14 @@ mod tests {
         StatusCode::OK
     }
 
-    async fn wait_for_export_drain(queue_dir: PathBuf, shard: usize) {
-        let cursor_path = queue_dir.join(format!("shard-{shard:03}.cursor"));
-        let shard_path = queue_dir.join(format!("shard-{shard:03}.wal"));
+    async fn wait_for_export_drain(
+        queue_dir: PathBuf,
+        shard: usize,
+        destination: ExportDestination,
+    ) {
+        let dest = destination.as_str();
+        let cursor_path = queue_dir.join(format!("shard-{shard:03}-{dest}.cursor"));
+        let shard_path = queue_dir.join(format!("shard-{shard:03}-{dest}.wal"));
         tokio::time::timeout(Duration::from_secs(2), async move {
             loop {
                 // Success is either (a) cursor ahead of zero while writer is
@@ -2795,7 +3117,7 @@ mod tests {
         assert_eq!(row["trace_id"], "cccccccccccccccccccccccccccccccc");
         assert_eq!(row["span_id"], "dddddddddddddddd");
 
-        wait_for_export_drain(queue_dir.clone(), 0).await;
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
         let _ = std::fs::remove_dir_all(queue_dir);
     }
 
@@ -2996,7 +3318,7 @@ mod tests {
             .await
             .unwrap();
 
-        wait_for_export_drain(queue_dir.clone(), 0).await;
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
         assert!(
             ch_rx.try_recv().is_err(),
             "passworded http ClickHouse target should be dropped before sending"
@@ -3005,6 +3327,328 @@ mod tests {
             tb_rx.try_recv().is_err(),
             "ClickHouse-routed frames should not fall back to Tinybird"
         );
+
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    /// Holds the request open ~forever so the ClickHouse lane worker stays
+    /// blocked in-flight, mimicking a slow/stalled BYO-ClickHouse target.
+    async fn slow_clickhouse_handler(_body: Bytes) -> StatusCode {
+        sleep(Duration::from_secs(30)).await;
+        StatusCode::OK
+    }
+
+    /// Always-503 (retryable) ClickHouse target that counts how many requests
+    /// actually reached it, so a test can assert the breaker sheds.
+    async fn counting_failing_clickhouse_handler(
+        State(count): State<Arc<std::sync::atomic::AtomicUsize>>,
+        _body: Bytes,
+    ) -> StatusCode {
+        count.fetch_add(1, Ordering::SeqCst);
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+
+    #[tokio::test]
+    async fn slow_clickhouse_lane_does_not_block_cosharded_tinybird_org() {
+        // Regression for the 2026-06-24 incident: a stalled BYO-ClickHouse export
+        // head-of-line-blocked co-sharded Tinybird orgs because both destinations
+        // shared one shard channel + worker. With per-destination lanes a slow
+        // ClickHouse target can only back-pressure its own lane, so a Tinybird org
+        // on the same shard drains independently.
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new().route("/", post(slow_clickhouse_handler));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let (tb_tx, mut tb_rx) = mpsc::unbounded_channel();
+        let tb_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let tb_addr = tb_listener.local_addr().unwrap();
+        let tb_app = Router::new()
+            .route("/v0/events", post(fake_tinybird_import))
+            .with_state(tb_tx);
+        tokio::spawn(async move {
+            axum::serve(tb_listener, tb_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("hol-blocking");
+        let mut cfg = test_cfg();
+        cfg.endpoint = format!("http://{tb_addr}");
+        cfg.queue_dir = queue_dir.clone();
+        // One shard forces both orgs to co-shard; only the per-destination lane
+        // split keeps them isolated.
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_string(),
+                password: String::new(),
+                database: "maple".to_string(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(120))
+                .build()
+                .unwrap(),
+            Some(provider),
+        )
+        .await
+        .unwrap();
+
+        // Wedge the ClickHouse lane first, then wait long enough that its worker
+        // is parked in the in-flight POST to the slow target before the Tinybird
+        // frame is enqueued. This is what makes the test reproduce the original
+        // bug: on the pre-lanes single-channel design the Tinybird frame would
+        // queue behind the blocked worker and never drain within the window.
+        pipeline
+            .accept_logs_to(
+                "org_byo_ch",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(250)).await;
+        // ...now enqueue a co-sharded managed (Tinybird) org.
+        pipeline
+            .accept_logs_to(
+                "org_managed",
+                &populated_log_request(),
+                ExportDestination::Tinybird,
+            )
+            .await
+            .unwrap();
+
+        // The Tinybird org must drain promptly despite the ClickHouse lane being
+        // stuck on the slow target — pre-fix this timed out.
+        let import = tokio::time::timeout(Duration::from_secs(5), tb_rx.recv())
+            .await
+            .expect("co-sharded Tinybird org should drain while the ClickHouse lane is stalled")
+            .expect("fake Tinybird channel should stay open");
+        assert_eq!(import.datasource, "logs");
+
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[tokio::test]
+    async fn clickhouse_breaker_sheds_after_threshold_failures() {
+        // A persistently failing target must not burn the full retry budget on
+        // every batch: after `failure_threshold` failures the breaker bails the
+        // current batch and fast-sheds subsequent batches without touching the
+        // target, bounding how long it can hold the lane worker.
+        let request_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ch_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let ch_addr = ch_listener.local_addr().unwrap();
+        let ch_app = Router::new()
+            .route("/", post(counting_failing_clickhouse_handler))
+            .with_state(Arc::clone(&request_count));
+        tokio::spawn(async move {
+            axum::serve(ch_listener, ch_app).await.unwrap();
+        });
+
+        let queue_dir = unique_test_dir("ch-breaker-sheds");
+        let mut cfg = test_cfg();
+        cfg.endpoint = String::new();
+        cfg.token = String::new();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+        cfg.batch_max_wait = Duration::from_millis(1);
+        // Generous retry budget so the breaker — not the budget — is what stops
+        // the hammering.
+        cfg.export_max_attempts = 20;
+        cfg.clickhouse_breaker = ClickHouseBreakerConfig {
+            failure_threshold: 2,
+            cooldown: Duration::from_secs(30),
+        };
+
+        let provider = Arc::new(StaticClickHouseTargetProvider {
+            target: ClickHouseTarget {
+                endpoint: format!("http://{ch_addr}"),
+                user: "ingest".to_string(),
+                password: String::new(),
+                database: "maple".to_string(),
+            },
+        });
+        let pipeline = TelemetryPipeline::new_with_clickhouse_validation(
+            cfg,
+            Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap(),
+            Some(provider),
+            false,
+        )
+        .await
+        .unwrap();
+
+        pipeline
+            .accept_logs_to(
+                "org_flap",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::ClickHouse).await;
+
+        // The first batch tripped the breaker after exactly `failure_threshold`
+        // attempts instead of running all 20.
+        assert_eq!(
+            request_count.load(Ordering::SeqCst),
+            2,
+            "breaker should bail the batch after the failure threshold, not the full retry budget"
+        );
+
+        // A second batch for the same org sheds at the breaker without a request.
+        pipeline
+            .accept_logs_to(
+                "org_flap",
+                &populated_log_request(),
+                ExportDestination::ClickHouse,
+            )
+            .await
+            .unwrap();
+        sleep(Duration::from_millis(200)).await;
+        assert_eq!(
+            request_count.load(Ordering::SeqCst),
+            2,
+            "breaker-open batches must shed without hitting the target"
+        );
+
+        let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[test]
+    fn clickhouse_breaker_trips_sheds_and_recovers() {
+        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold: 3,
+            cooldown: Duration::from_secs(30),
+        });
+        let t0 = Instant::now();
+
+        // Unknown org: allowed, and no state is allocated.
+        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+
+        // Below threshold stays closed.
+        registry.on_failure("org", t0);
+        registry.on_failure("org", t0);
+        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+
+        // Threshold-th failure trips it open → shed for the whole cooldown.
+        registry.on_failure("org", t0);
+        assert_eq!(registry.decide("org", t0), BreakerDecision::Shed);
+        assert_eq!(
+            registry.decide("org", t0 + Duration::from_secs(29)),
+            BreakerDecision::Shed
+        );
+
+        // After the cooldown a single probe is allowed (half-open).
+        let after_cooldown = t0 + Duration::from_secs(31);
+        assert_eq!(
+            registry.decide("org", after_cooldown),
+            BreakerDecision::Allow
+        );
+
+        // A failed probe re-opens for another cooldown.
+        registry.on_failure("org", after_cooldown);
+        assert_eq!(
+            registry.decide("org", after_cooldown + Duration::from_secs(1)),
+            BreakerDecision::Shed
+        );
+
+        // Success closes the breaker and resets the failure count, so it takes a
+        // full `failure_threshold` again to re-trip.
+        registry.on_success("org");
+        let recovered = after_cooldown + Duration::from_secs(2);
+        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
+        registry.on_failure("org", recovered);
+        registry.on_failure("org", recovered);
+        assert_eq!(registry.decide("org", recovered), BreakerDecision::Allow);
+    }
+
+    #[test]
+    fn clickhouse_breaker_disabled_when_threshold_zero() {
+        let registry = ClickHouseBreakerRegistry::new(ClickHouseBreakerConfig {
+            failure_threshold: 0,
+            cooldown: Duration::from_secs(30),
+        });
+        let t0 = Instant::now();
+        for _ in 0..10 {
+            registry.on_failure("org", t0);
+        }
+        assert_eq!(registry.decide("org", t0), BreakerDecision::Allow);
+    }
+
+    #[tokio::test]
+    async fn migrate_legacy_shard_relocates_frames_into_lanes() {
+        // A pre-lanes binary wrote a single `shard-NNN.wal` mixing destinations.
+        // On startup we must relocate each surviving frame into its destination
+        // lane and remove the legacy file — without dropping anything.
+        let queue_dir = unique_test_dir("legacy-migration");
+        std::fs::create_dir_all(&queue_dir).unwrap();
+        let mut cfg = test_cfg();
+        cfg.queue_dir = queue_dir.clone();
+        cfg.wal_shards = 1;
+
+        let tb_frame = EncodedFrame {
+            routing_key: 0,
+            org_id: "org_a".to_string(),
+            signal: TelemetrySignal::Traces,
+            destination: ExportDestination::Tinybird,
+            datasource: "traces".to_string(),
+            row_count: 1,
+            payload: br#"{"a":1}"#.to_vec(),
+        };
+        let ch_frame = EncodedFrame {
+            routing_key: 0,
+            org_id: "org_b".to_string(),
+            signal: TelemetrySignal::Logs,
+            destination: ExportDestination::ClickHouse,
+            datasource: "logs".to_string(),
+            row_count: 1,
+            payload: br#"{"b":2}"#.to_vec(),
+        };
+        let mut legacy = Vec::new();
+        legacy.extend(encode_wal_frame(&tb_frame).unwrap());
+        legacy.extend(encode_wal_frame(&ch_frame).unwrap());
+        std::fs::write(queue_dir.join("shard-000.wal"), &legacy).unwrap();
+
+        let wal = ShardedWal::open(&cfg).expect("open WAL");
+        wal.migrate_legacy_shards(&cfg).await;
+
+        assert!(
+            !queue_dir.join("shard-000.wal").exists(),
+            "legacy shard file should be removed after a successful migration"
+        );
+
+        let tb_frames = wal
+            .replay(lane_index(0, ExportDestination::Tinybird))
+            .await
+            .unwrap();
+        let ch_frames = wal
+            .replay(lane_index(0, ExportDestination::ClickHouse))
+            .await
+            .unwrap();
+        assert_eq!(tb_frames.len(), 1);
+        assert_eq!(tb_frames[0].org_id, "org_a");
+        assert_eq!(tb_frames[0].destination, ExportDestination::Tinybird);
+        assert_eq!(tb_frames[0].payload, br#"{"a":1}"#);
+        assert_eq!(ch_frames.len(), 1);
+        assert_eq!(ch_frames[0].org_id, "org_b");
+        assert_eq!(ch_frames[0].destination, ExportDestination::ClickHouse);
+        assert_eq!(ch_frames[0].datasource, "logs");
+        assert_eq!(ch_frames[0].payload, br#"{"b":2}"#);
 
         let _ = std::fs::remove_dir_all(queue_dir);
     }
@@ -3841,7 +4485,7 @@ mod tests {
         assert_eq!(row["span_kind"], "Server");
         assert_eq!(row["status_code"], "Ok");
 
-        wait_for_export_drain(queue_dir.clone(), 0).await;
+        wait_for_export_drain(queue_dir.clone(), 0, ExportDestination::Tinybird).await;
         let _ = std::fs::remove_dir_all(queue_dir);
     }
 
@@ -3925,7 +4569,9 @@ mod tests {
         let mut cfg = test_cfg();
         cfg.queue_dir = queue_dir.clone();
         cfg.wal_shards = 1;
-        cfg.queue_max_bytes = 512;
+        // Per-lane budget is queue_max_bytes / LANES_PER_SHARD, so size the total
+        // to leave each lane the ~512-byte budget this test exercises.
+        cfg.queue_max_bytes = 512 * LANES_PER_SHARD as u64;
 
         let wal = ShardedWal::open(&cfg).expect("open WAL");
 
@@ -3951,18 +4597,18 @@ mod tests {
             .err()
             .expect("third append exceeds shard budget");
 
-        // Drain the cursor to EOF — this should truncate the shard file.
+        // Drain the cursor to EOF — this should truncate the lane file.
         wal.mark_exported(0, end_b).await.expect("mark_exported");
 
-        let shard_path = queue_dir.join("shard-000.wal");
+        let shard_path = queue_dir.join("shard-000-tinybird.wal");
         let size_after_drain = std::fs::metadata(&shard_path).unwrap().len();
         assert_eq!(
             size_after_drain, 0,
-            "shard file should be truncated to 0 after full drain"
+            "lane file should be truncated to 0 after full drain"
         );
 
         let cursor_after_drain =
-            std::fs::read_to_string(queue_dir.join("shard-000.cursor")).unwrap();
+            std::fs::read_to_string(queue_dir.join("shard-000-tinybird.cursor")).unwrap();
         assert_eq!(
             cursor_after_drain.trim(),
             "0",
@@ -4011,14 +4657,14 @@ mod tests {
         // unexported (writer is ahead of reader).
         wal.mark_exported(0, end_a).await.unwrap();
 
-        let shard_path = queue_dir.join("shard-000.wal");
+        let shard_path = queue_dir.join("shard-000-tinybird.wal");
         let size_after_partial = std::fs::metadata(&shard_path).unwrap().len();
         assert_eq!(
             size_after_partial, end_b,
-            "shard file must keep unexported bytes when cursor is behind EOF"
+            "lane file must keep unexported bytes when cursor is behind EOF"
         );
         let cursor_after_partial =
-            std::fs::read_to_string(queue_dir.join("shard-000.cursor")).unwrap();
+            std::fs::read_to_string(queue_dir.join("shard-000-tinybird.cursor")).unwrap();
         assert_eq!(cursor_after_partial.trim(), end_a.to_string());
 
         let _ = std::fs::remove_dir_all(queue_dir);

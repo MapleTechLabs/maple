@@ -13,38 +13,44 @@ class BenignError extends Data.TaggedError("BenignError")<{}> {
 class ReportableError extends Data.TaggedError("ReportableError")<{}> {}
 
 const runSpan = (buffer: ReturnType<typeof makeSpanBuffer>, effect: Effect.Effect<unknown, unknown>) =>
-	Effect.runPromise(
-		effect.pipe(Effect.withSpan("http.server GET"), Effect.provide(buffer.tracerLayer), Effect.exit),
-	)
+	effect.pipe(Effect.withSpan("http.server GET"), Effect.provide(buffer.tracerLayer), Effect.exit)
 
 describe("makeSpanBuffer ignored-failure drop", () => {
-	it("drops spans whose failure carries [ErrorReporter.ignore]", async () => {
-		const buffer = makeSpanBuffer()
-		await runSpan(buffer, Effect.fail(new BenignError()))
-		assert.strictEqual(buffer.size(), 0)
-	})
+	it.effect("drops spans whose failure carries [ErrorReporter.ignore]", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* runSpan(buffer, Effect.fail(new BenignError()))
+			assert.strictEqual(buffer.size(), 0)
+		}),
+	)
 
-	it("keeps spans that fail with a reportable error", async () => {
-		const buffer = makeSpanBuffer()
-		await runSpan(buffer, Effect.fail(new ReportableError()))
-		assert.strictEqual(buffer.size(), 1)
-	})
+	it.effect("keeps spans that fail with a reportable error", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* runSpan(buffer, Effect.fail(new ReportableError()))
+			assert.strictEqual(buffer.size(), 1)
+		}),
+	)
 
-	it("keeps successful spans", async () => {
-		const buffer = makeSpanBuffer()
-		await runSpan(buffer, Effect.succeed(undefined))
-		assert.strictEqual(buffer.size(), 1)
-	})
+	it.effect("keeps successful spans", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* runSpan(buffer, Effect.succeed(undefined))
+			assert.strictEqual(buffer.size(), 1)
+		}),
+	)
 
 	// Pins the upstream contract: the actual error HttpRouter raises for an
 	// unmatched route must stay [ErrorReporter.ignore]-flagged, so the drop holds.
-	it("drops the real HttpServerError/RouteNotFound", async () => {
-		const buffer = makeSpanBuffer()
-		const request = HttpServerRequest.fromWeb(new Request("http://localhost/nope"))
-		const error = new HttpServerError.HttpServerError({
-			reason: new HttpServerError.RouteNotFound({ request }),
-		})
-		await runSpan(buffer, Effect.fail(error))
-		assert.strictEqual(buffer.size(), 0)
-	})
+	it.effect("drops the real HttpServerError/RouteNotFound", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			const request = HttpServerRequest.fromWeb(new Request("http://localhost/nope"))
+			const error = new HttpServerError.HttpServerError({
+				reason: new HttpServerError.RouteNotFound({ request }),
+			})
+			yield* runSpan(buffer, Effect.fail(error))
+			assert.strictEqual(buffer.size(), 0)
+		}),
+	)
 })

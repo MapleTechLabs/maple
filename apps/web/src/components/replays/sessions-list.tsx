@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import {
 	GlobeIcon,
@@ -65,8 +66,42 @@ function isMobileDevice(deviceType: string): boolean {
 	return d === "mobile" || d === "tablet" || d === "phone"
 }
 
-export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow> }) {
+interface SessionsListProps {
+	sessions: ReadonlyArray<SessionRow>
+	/** Fetch the next page — invoked when the bottom sentinel scrolls into view. */
+	onReachEnd?: () => void
+	/** Whether more pages remain (renders the sentinel + footer). */
+	hasMore?: boolean
+	/** Whether a next page is currently in flight. */
+	loadingMore?: boolean
+}
+
+export function SessionsList({ sessions, onReachEnd, hasMore = false, loadingMore = false }: SessionsListProps) {
 	const navigate = useNavigate()
+
+	// Auto-load the next page when the bottom sentinel nears the viewport. Guards
+	// live in refs so the observer is created once yet always reads fresh values;
+	// appending a full page pushes the sentinel out of view and re-arms it.
+	const sentinelRef = useRef<HTMLDivElement | null>(null)
+	const onReachEndRef = useRef(onReachEnd)
+	onReachEndRef.current = onReachEnd
+	const canLoadRef = useRef(false)
+	canLoadRef.current = hasMore && !loadingMore
+
+	useEffect(() => {
+		const el = sentinelRef.current
+		if (!el) return
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0]?.isIntersecting && canLoadRef.current) {
+					onReachEndRef.current?.()
+				}
+			},
+			{ rootMargin: "400px 0px" },
+		)
+		observer.observe(el)
+		return () => observer.disconnect()
+	}, [])
 
 	if (sessions.length === 0) {
 		return (
@@ -187,6 +222,15 @@ export function SessionsList({ sessions }: { sessions: ReadonlyArray<SessionRow>
 					</button>
 				)
 			})}
+
+			{hasMore && <div ref={sentinelRef} aria-hidden className="h-px w-full" />}
+
+			{loadingMore && (
+				<div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+					<span className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+					Loading more sessions…
+				</div>
+			)}
 		</div>
 	)
 }

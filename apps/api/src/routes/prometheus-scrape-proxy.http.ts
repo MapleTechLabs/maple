@@ -22,23 +22,6 @@ const errorText = (message: string, status: number) =>
 		headers: { "content-type": "text/plain; charset=utf-8" },
 	})
 
-const statusForProxyError = (error: unknown): number => {
-	const tag =
-		typeof error === "object" && error !== null && "_tag" in error
-			? (error as { _tag?: unknown })._tag
-			: undefined
-	if (tag === "@maple/http/errors/ScrapeTargetNotFoundError") return 404
-	if (tag === "@maple/http/errors/ScrapeTargetEncryptionError") return 500
-	return 502
-}
-
-const messageForProxyError = (error: unknown): string => {
-	if (typeof error === "object" && error !== null && "message" in error) {
-		return String((error as { message?: unknown }).message)
-	}
-	return "Failed to scrape target"
-}
-
 export const PrometheusScrapeProxyRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const env = yield* Env
@@ -73,13 +56,28 @@ export const PrometheusScrapeProxyRouter = HttpRouter.use((router) =>
 						Effect.succeed(
 							HttpServerResponse.text(response.body, {
 								status: response.status,
-								headers: { "content-type": response.contentType },
+								headers: {
+									"content-type": response.contentType,
+									// Forward the upstream rate-limit hint so the scraper can
+									// back off precisely on 429/503.
+									...(response.retryAfterSeconds !== null
+										? { "retry-after": String(response.retryAfterSeconds) }
+										: {}),
+								},
 							}),
 						),
 					),
-					Effect.catch((error: unknown) =>
-						Effect.succeed(errorText(messageForProxyError(error), statusForProxyError(error))),
-					),
+					// Map each concrete scrape error to its HTTP status: missing/disabled
+					// target → 404, decryption failure → 500, persistence/discovery →
+					// 502 (upstream/dependency).
+					Effect.catchTags({
+						"@maple/http/errors/ScrapeTargetNotFoundError": (error) =>
+							Effect.succeed(errorText(error.message, 404)),
+						"@maple/http/errors/ScrapeTargetEncryptionError": (error) =>
+							Effect.succeed(errorText(error.message, 500)),
+						"@maple/http/errors/ScrapeTargetPersistenceError": (error) =>
+							Effect.succeed(errorText(error.message, 502)),
+					}),
 				)
 			})
 

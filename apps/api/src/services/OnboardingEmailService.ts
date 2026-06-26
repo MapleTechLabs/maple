@@ -77,7 +77,7 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 				}
 
 				const response = yield* warehouse.query(systemTenant, {
-					pipe: "service_overview_compare",
+					pipeName: "service_overview_compare",
 					params: {
 						current_start_time: currentStart,
 						current_end_time: currentEnd,
@@ -131,39 +131,42 @@ export class OnboardingEmailService extends Context.Service<OnboardingEmailServi
 
 				const orgs = yield* paginate((params) => clerk.organizations.getOrganizationList(params))
 
-				let ensured = 0
-				for (const org of orgs) {
-					const members = yield* paginate((params) =>
-						clerk.organizations.getOrganizationMembershipList({
-							organizationId: org.id,
-							...params,
-						}),
-					)
-					const firstMember = members.find(
-						(m) => m.publicUserData?.identifier && m.publicUserData?.userId,
-					)
-					if (!firstMember?.publicUserData) continue
+				const ensuredFlags = yield* Effect.forEach(orgs, (org) =>
+					Effect.gen(function* () {
+						const members = yield* paginate((params) =>
+							clerk.organizations.getOrganizationMembershipList({
+								organizationId: org.id,
+								...params,
+							}),
+						)
+						const firstMember = members.find(
+							(m) => m.publicUserData?.identifier && m.publicUserData?.userId,
+						)
+						if (!firstMember?.publicUserData) return false
 
-					const orgId = OrgId.make(org.id)
-					const orgCreatedAt =
-						typeof org.createdAt === "number" ? org.createdAt : yield* Clock.currentTimeMillis
+						const orgId = OrgId.make(org.id)
+						const orgCreatedAt =
+							typeof org.createdAt === "number"
+								? org.createdAt
+								: yield* Clock.currentTimeMillis
 
-					yield* onboarding.ensureRow(
-						orgId,
-						firstMember.publicUserData.userId,
-						firstMember.publicUserData.identifier,
-						{ createdAt: orgCreatedAt },
-					)
+						yield* onboarding.ensureRow(
+							orgId,
+							firstMember.publicUserData.userId,
+							firstMember.publicUserData.identifier,
+							{ createdAt: orgCreatedAt },
+						)
 
-					// Orgs that predate this feature are existing users — never run
-					// the welcome → nudge → activation sequence for them.
-					if (orgCreatedAt < ONBOARDING_LAUNCH_CUTOFF) {
-						yield* onboarding.suppressOnboardingEmails(orgId)
-					}
+						// Orgs that predate this feature are existing users — never run
+						// the welcome → nudge → activation sequence for them.
+						if (orgCreatedAt < ONBOARDING_LAUNCH_CUTOFF) {
+							yield* onboarding.suppressOnboardingEmails(orgId)
+						}
 
-					ensured += 1
-				}
-				return ensured
+						return true
+					}),
+				)
+				return ensuredFlags.filter(Boolean).length
 			})
 
 			const renderEmail = (node: EmailNode) =>

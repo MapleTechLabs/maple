@@ -148,7 +148,7 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 						return yield* Effect.fail(
 							new McpQueryError({
 								message: `Widget id "${newId}" already exists on dashboard ${dashboard_id}. Pass a different widget_id or omit it to auto-generate one.`,
-								pipe: TOOL,
+								pipeName: TOOL,
 							}),
 						)
 					}

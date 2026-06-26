@@ -1,8 +1,17 @@
 import { HttpRouter, type HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { Effect, Option } from "effect"
+import { Data, Effect, Option } from "effect"
 import type { VcsProviderClient } from "../services/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "../services/vcs/VcsProviderRegistry"
 import { VcsSyncQueue } from "../services/vcs/VcsSyncQueue"
+
+/**
+ * In-memory sentinel: lets the span exit Error while the HTTP layer returns a
+ * 500. Failed immediately after the span annotation, then caught outside the
+ * span (never serialized).
+ */
+class EnqueueFailure extends Data.TaggedError("EnqueueFailure")<{
+	readonly message: string
+}> {}
 
 // ---------------------------------------------------------------------------
 // Public webhook receiver, one static route per registered provider
@@ -21,12 +30,6 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 
 		const makeHandler =
 			(provider: VcsProviderClient, route: string) => (req: HttpServerRequest.HttpServerRequest) => {
-				// Sentinel: lets the span exit Error while the HTTP layer returns a 500.
-				class EnqueueFailure {
-					readonly _tag = "EnqueueFailure"
-					constructor(readonly message: string) {}
-				}
-
 				return Effect.gen(function* () {
 					const deliveryId = (req.headers as Record<string, string | undefined>)[
 						"x-github-delivery"
@@ -95,7 +98,9 @@ export const VcsWebhookRouter = HttpRouter.use((router) =>
 											Effect.annotateLogs({ error: error.message }),
 										),
 									),
-									Effect.flatMap(() => Effect.fail(new EnqueueFailure(error.message))),
+									Effect.flatMap(() =>
+								Effect.fail(new EnqueueFailure({ message: error.message })),
+							),
 								),
 						}),
 					)

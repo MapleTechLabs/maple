@@ -3,9 +3,14 @@ import { ReferenceLine } from "recharts"
 
 import type { ChartReferenceLine } from "./chart-types"
 
-// Size of the interactive flag rendered at the top of a deploy/release marker.
-const FLAG_WIDTH = 72
-const FLAG_HEIGHT = 22
+// Fallback height for the marker box when recharts doesn't report the plot height
+// (degrades the hitbox to roughly just the flag).
+const FALLBACK_MARKER_HEIGHT = 22
+// Width of the transparent box hosting the marker. Wide enough that the flag —
+// centered on the line and potentially showing a commit message — isn't clipped
+// by the SVG `<foreignObject>`. The box captures no pointer events; only the marker
+// node (a narrow line hitbox + the flag) does.
+const MARKER_BOX_WIDTH = 176
 
 interface MarkerViewBox {
 	x?: number
@@ -15,27 +20,37 @@ interface MarkerViewBox {
 }
 
 /**
- * Builds the recharts `label` content for a deploy marker: an HTML flag anchored
- * at the top of the vertical reference line. recharts renders chart internals as
- * SVG, so the flag is hosted in a `<foreignObject>` — that lets the host app drop
- * an interactive element (e.g. a commit hover card) onto the marker. recharts
- * calls this with the line's `viewBox` ({x, y, width, height} in pixels).
+ * Builds the recharts `label` content for a deploy marker. recharts renders chart
+ * internals as SVG, so the marker is hosted in a `<foreignObject>` that spans the
+ * FULL height of the vertical reference line — letting the host app drop a
+ * full-line hover hitbox (with a flag at the top) onto the marker. recharts calls
+ * this with the line's `viewBox` ({x, y, width, height} in pixels); for a vertical
+ * line `x` is the line's pixel position and `height` is the plot height.
  */
 function deployMarkerLabel(node: ReactNode) {
 	return (props: { viewBox?: MarkerViewBox }) => {
 		const vb = props.viewBox
 		if (!vb || vb.x == null || vb.y == null) return <g />
+		const height = vb.height && vb.height > 0 ? vb.height : FALLBACK_MARKER_HEIGHT
 		return (
 			<foreignObject
-				x={vb.x - FLAG_WIDTH / 2}
-				y={vb.y + 1}
-				width={FLAG_WIDTH}
-				height={FLAG_HEIGHT}
-				// The line itself shouldn't capture hover; only the flag (the inner div)
-				// re-enables pointer events so the marker stays hoverable.
+				x={vb.x - MARKER_BOX_WIDTH / 2}
+				y={vb.y}
+				width={MARKER_BOX_WIDTH}
+				height={height}
+				// The box itself shouldn't capture hover; only the marker node
+				// re-enables pointer events (on the line hitbox + the flag).
 				style={{ overflow: "visible", pointerEvents: "none" }}
 			>
-				<div className="flex justify-center" style={{ width: FLAG_WIDTH, pointerEvents: "auto" }}>
+				<div
+					style={{
+						display: "flex",
+						justifyContent: "center",
+						width: "100%",
+						height: "100%",
+						pointerEvents: "none",
+					}}
+				>
 					{node}
 				</div>
 			</foreignObject>

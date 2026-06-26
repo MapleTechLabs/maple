@@ -696,7 +696,7 @@ export class TinybirdProjectSync extends Context.Service<TinybirdProjectSync, Ti
 				cleanupOwnedDeployment,
 				fetchInstanceHealth,
 				getCurrentProjectRevision,
-			}
+			} satisfies TinybirdProjectSyncShape
 		}),
 	},
 ) {

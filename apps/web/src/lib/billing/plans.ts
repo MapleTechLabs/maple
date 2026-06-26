@@ -5,11 +5,12 @@ export interface PlanLimits {
 	tracesGB: number
 	metricsGB: number
 	retentionDays: number
+	browserSessions: number
 }
 
 const PLAN_LIMITS: Record<string, PlanLimits> = {
-	starter: { logsGB: 10, tracesGB: 10, metricsGB: 10, retentionDays: 7 },
-	startup: { logsGB: 40, tracesGB: 40, metricsGB: 40, retentionDays: 30 },
+	starter: { logsGB: 10, tracesGB: 10, metricsGB: 10, retentionDays: 7, browserSessions: 5000 },
+	startup: { logsGB: 40, tracesGB: 40, metricsGB: 40, retentionDays: 30, browserSessions: 5000 },
 }
 
 const DEFAULT_PLAN = "starter"

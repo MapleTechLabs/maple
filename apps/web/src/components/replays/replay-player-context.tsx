@@ -4,6 +4,7 @@ import { EventType, IncrementalSource, MouseInteractions, ReplayerEvents } from 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { getReplayEventsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { normalizeEvents } from "./replay-events"
+import type { ReplayPartitionWindow } from "./replay-format"
 import { buildTimeline, type InactiveInterval, type Timeline } from "./replay-timeline"
 
 // ---------------------------------------------------------------------------
@@ -222,6 +223,7 @@ export function ReplayPlayerProvider({
 	sessionId,
 	children,
 	previewEvents,
+	window,
 }: {
 	sessionId: string
 	children: React.ReactNode
@@ -231,11 +233,13 @@ export function ReplayPlayerProvider({
 	 * never pass this, so the atom path below is unchanged.
 	 */
 	previewEvents?: ReadonlyArray<unknown>
+	/** Partition-pruning window; must match the route prefetch key (see $sessionId.tsx). */
+	window?: ReplayPartitionWindow
 }) {
 	// Chunks carry their rrweb events inline (read straight from ClickHouse); parse
 	// + concatenate them in order. Memoized on the (referentially stable) result so
 	// deriveMeta/engine memos hold across the player's frequent re-renders.
-	const eventsResult = useAtomValue(getReplayEventsResultAtom({ data: { sessionId } }))
+	const eventsResult = useAtomValue(getReplayEventsResultAtom({ data: { sessionId, ...window } }))
 
 	const { status, error, events } = React.useMemo<{
 		status: ReplayLoadStatus

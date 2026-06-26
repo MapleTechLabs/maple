@@ -12,7 +12,9 @@ use axum::routing::post;
 use axum::Router;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use flate2::read::GzDecoder;
-use maple_ingest::telemetry::{DatasourceNames, SamplingPolicy, TelemetryPipeline, TinybirdConfig};
+use maple_ingest::telemetry::{
+    ClickHouseBreakerConfig, DatasourceNames, SamplingPolicy, TelemetryPipeline, TinybirdConfig,
+};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, InstrumentationScope, KeyValue};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
@@ -106,6 +108,7 @@ impl BenchFixture {
                 batch_max_wait: Duration::from_millis(10),
                 export_concurrency_per_shard: 1,
                 export_max_attempts: 20,
+                clickhouse_breaker: ClickHouseBreakerConfig::default(),
                 datasources: DatasourceNames::defaults(),
                 datasource_session_replays: "session_replays".to_string(),
                 datasource_session_replay_events: "session_replay_events".to_string(),

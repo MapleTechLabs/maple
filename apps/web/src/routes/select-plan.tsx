@@ -4,6 +4,7 @@ import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
 import { RocketIcon } from "@/components/icons"
+import { BootSplash } from "@/components/boot-splash"
 import { PricingCards } from "@/components/settings/pricing-cards"
 import { hasSelectedPlan } from "@/lib/billing/plan-gating"
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
@@ -41,7 +42,7 @@ function SelectPlanPageInner() {
 	const { redirect_url } = Route.useSearch()
 
 	if (!isLoaded || isCustomerLoading) {
-		return null
+		return <BootSplash />
 	}
 
 	const redirectTarget = resolveRedirectTarget(redirect_url)

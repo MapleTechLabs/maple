@@ -190,34 +190,34 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		payload: WarehouseQueryRequest,
 		options?: SqlQueryOptions,
 	) {
-		yield* Effect.annotateCurrentSpan("pipe", payload.pipe)
+		yield* Effect.annotateCurrentSpan("pipe", payload.pipeName)
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 
 		if (!tenant.orgId || tenant.orgId.trim() === "") {
 			return yield* new WarehouseValidationError({
-				pipe: payload.pipe,
+				pipeName: payload.pipeName,
 				message: "org_id must not be empty",
 			})
 		}
 
-		const compiled = compilePipeQuery(payload.pipe, {
+		const compiled = compilePipeQuery(payload.pipeName, {
 			...payload.params,
 			org_id: tenant.orgId,
 		})
 
 		if (!compiled) {
 			return yield* new WarehouseValidationError({
-				message: `Unsupported pipe: ${payload.pipe}`,
-				pipe: payload.pipe,
+				message: `Unsupported pipe: ${payload.pipeName}`,
+				pipeName: payload.pipeName,
 			})
 		}
 
-		const rows = yield* executeSql(tenant, compiled.sql, payload.pipe, options)
+		const rows = yield* executeSql(tenant, compiled.sql, payload.pipeName, options)
 		const decodedRows = yield* compiled.decodeRows(rows).pipe(
 			Effect.mapError(
 				(error) =>
 					new WarehouseSchemaDriftError({
-						pipe: payload.pipe,
+						pipeName: payload.pipeName,
 						message: error.message,
 						cause: error,
 					}),
@@ -236,13 +236,13 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 	) {
 		if (!tenant.orgId || tenant.orgId.trim() === "") {
 			return yield* new WarehouseValidationError({
-				pipe: "sqlQuery",
+				pipeName: "sqlQuery",
 				message: "org_id must not be empty (sqlQuery)",
 			})
 		}
 		if (!sql.includes("OrgId")) {
 			return yield* new WarehouseValidationError({
-				pipe: "sqlQuery",
+				pipeName: "sqlQuery",
 				message: "SQL query must contain OrgId filter (sqlQuery)",
 			})
 		}
@@ -259,7 +259,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			Effect.mapError(
 				(error) =>
 					new WarehouseSchemaDriftError({
-						pipe: "compiledQuery",
+						pipeName: "compiledQuery",
 						message: error.message,
 						cause: error,
 					}),
@@ -277,7 +277,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			Effect.mapError(
 				(error) =>
 					new WarehouseSchemaDriftError({
-						pipe: "compiledQueryFirst",
+						pipeName: "compiledQueryFirst",
 						message: error.message,
 						cause: error,
 					}),
@@ -335,7 +335,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			params: Record<string, unknown>,
 			options?: ExecutorQueryOptions,
 		) =>
-			query(tenant, { pipe, params }, { ...options, context: `pipe:${pipe}` }).pipe(
+			query(tenant, { pipeName: pipe, params }, { ...options, context: `pipe:${pipe}` }).pipe(
 				Effect.map((response) => ({ data: response.data as unknown as ReadonlyArray<T> })),
 				Effect.withSpan("WarehouseExecutor.query", {
 					attributes: { pipe, orgId: tenant.orgId, "query.profile": options?.profile },

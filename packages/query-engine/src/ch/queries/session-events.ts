@@ -37,6 +37,11 @@ function argMinExpr<T>(value: CH.Expr<T>, ordering: CH.Expr<unknown>): CH.Expr<T
 //
 // (OrgId, SessionId) is the sort-key prefix, so this is a contiguous range
 // scan. Timestamp + Seq give a stable playback/reading order.
+//
+// session_events is PARTITION BY toDate(Timestamp) with a 30-day TTL; without a
+// Timestamp predicate ClickHouse reads the primary index of every daily
+// partition. The optional startTime/endTime bounds (the session's time window)
+// prune to the 1-2 partitions the session spans. Omit to scan all.
 // ---------------------------------------------------------------------------
 
 export interface SessionTranscriptOutput {
@@ -63,6 +68,9 @@ export interface SessionTranscriptOpts {
 	traceId?: string
 	/** Only "things that went wrong": error events, console errors, and failed (>=400) requests. */
 	errorsOnly?: boolean
+	/** Optional session time window — prunes daily partitions. Omit to scan all. */
+	startTime?: string
+	endTime?: string
 	/** Page size. Transcripts are unbounded otherwise — always cap for agents. */
 	limit?: number
 	offset?: number
@@ -89,6 +97,8 @@ export function sessionTranscriptQuery(opts: SessionTranscriptOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.SessionId.eq(param.string("sessionId")),
+			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
 			opts.types && opts.types.length > 0 ? CH.inList($.Type, opts.types) : undefined,
 			CH.when(opts.traceId, (v: string) => $.TraceId.eq(v)),
 			CH.whenTrue(opts.errorsOnly, () =>

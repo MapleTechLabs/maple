@@ -1,5 +1,5 @@
 import { McpQueryError, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
-import { Effect, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { DashboardWidgetSchema } from "@maple/domain/http"
 import { createDualContent } from "../lib/structured-output"
 import {
@@ -33,15 +33,19 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			),
 		}),
 		Effect.fn("McpTool.replaceDashboardWidgets")(function* ({ dashboard_id, widgets_json }) {
-			let parsed: unknown
-			try {
-				parsed = JSON.parse(widgets_json)
-			} catch (e) {
+			const parseResult = yield* Effect.result(
+				Effect.try({
+					try: () => JSON.parse(widgets_json) as unknown,
+					catch: (e) => e,
+				}),
+			)
+			if (Result.isFailure(parseResult)) {
 				return validationError(
-					`widgets_json is not valid JSON: ${String(e)}`,
+					`widgets_json is not valid JSON: ${String(parseResult.failure)}`,
 					'[{ "visualization": "stat", "dataSource": { ... }, "display": { ... } }]',
 				)
 			}
+			const parsed = parseResult.success
 			if (!Array.isArray(parsed)) {
 				return validationError("widgets_json must be a JSON array of widget objects.")
 			}
@@ -77,7 +81,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 						(cause) =>
 							new McpQueryError({
 								message: `widgets_json[${i}] is not a valid widget: ${String(cause)}`,
-								pipe: TOOL,
+								pipeName: TOOL,
 								cause,
 							}),
 					),
@@ -97,11 +101,11 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 
 			// Validate every widget's query before persisting anything — an atomic,
 			// all-or-nothing guard so a single bad widget can't corrupt the board.
-			const blocking: string[] = []
-			for (const w of widgets) {
-				const warns = yield* collectBlockingBuilderWarnings(w.dataSource)
-				for (const warn of warns) blocking.push(`[${w.id}] ${warn}`)
-			}
+			const blocking = yield* Effect.forEach(widgets, (w) =>
+				collectBlockingBuilderWarnings(w.dataSource).pipe(
+					Effect.map((warns) => warns.map((warn) => `[${w.id}] ${warn}`)),
+				),
+			).pipe(Effect.map((nested) => nested.flat()))
 			if (blocking.length > 0) {
 				return validationError(
 					`Some widgets have clauses the engine can't honor — NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,

@@ -15,6 +15,25 @@ Sign in at `https://web.localhost` with the Clerk test account:
 
 Use this when you need an authenticated browser session to verify UI flows end-to-end.
 
+## Toolchain (mise)
+
+Tool versions (bun, node, rust, python) are pinned in the root [`mise.toml`](mise.toml) via
+[mise-en-place](https://mise.en.dev) — one source of truth shared by local dev and CI (CI installs
+them with `jdx/mise-action`). mise also auto-loads `.env.local` into your shell.
+
+First-time setup:
+
+```bash
+curl https://mise.run | sh                        # install mise
+echo 'eval "$(mise activate zsh)"' >> ~/.zshrc     # activate (bash/fish supported too); restart shell
+mise trust                                         # trust this repo's config (it defines env + tasks)
+mise run setup                                     # install tools + JS deps + .env.local + portless CA
+```
+
+mise is optional — `bun dev` / `bun test` / etc. still work without it (you just don't get pinned
+versions or env auto-load). When upgrading a runtime, bump it in `mise.toml` (keep `bun` in sync with
+`packageManager` in `package.json`); CI follows automatically.
+
 ## Commands
 
 ```bash
@@ -142,7 +161,7 @@ Relational app state (issues, alert rules, dashboards, org config, API keys, …
 - **Conventions:** app code keeps epoch-ms numbers and converts at the drizzle boundary (`new Date(ms)` on writes/wheres, `.getTime()`/`.toISOString()` on reads; `msToDate`/`dateToMs` in `apps/api/src/lib/time.ts` for nullables). Domain/HTTP contracts are unchanged (ms numbers / ISO strings). Never read driver write-result shapes — use `.returning()` + length. `count(*)`-style bigint aggregates need `::int` casts (postgres.js returns bigint as string).
 - **Layers:** `DatabasePgLive` (Workers; per-`execute` short-lived postgres.js client — Workers TCP sockets are request-bound, Hyperdrive owns the warm pool) and `DatabasePgliteLive` (embedded PGlite for tests/evals/local non-worker code). Tests use `apps/api/src/lib/test-pglite.ts` (`createTestDb()` → in-memory PGlite + layer; raw SQL helpers take `$1` placeholders).
 - **Migrations:** generated via `bun run --cwd packages/db db:generate`; applied by CI (`drizzle-kit migrate` against the branch's DIRECT port 5432, never a pooler) before `alchemy deploy`. Local wrangler-dev DB: `bun db:up && bun db:migrate:local`. PGlite applies them automatically at layer build.
-- **PlanetScale-CLI scripts** (mint an ephemeral `pscale role` for a branch — `password` is Vitess-only — run, then revoke; uses the `pscale`-configured org unless `PLANETSCALE_ORG` is set; `PLANETSCALE_DATABASE` defaults to `maple`): `bun run --cwd packages/db ps:apply-schema <branch>` (drizzle migrate) and `bun run --cwd packages/db ps:migrate-data <branch> <d1-dump.sql>` (D1→PG import). The shared broker is `packages/db/scripts/planetscale-connection.ts`.
+- **PlanetScale-CLI scripts** (mint an ephemeral `pscale role` for a branch — `password` is Vitess-only — run, then revoke; uses the `pscale`-configured org unless `PLANETSCALE_ORG` is set; `PLANETSCALE_DATABASE` defaults to `maple`): `bun run --cwd packages/db ps:apply-schema <branch>` (drizzle migrate). The shared broker is `packages/db/scripts/planetscale-connection.ts`.
 - **PR previews:** `scripts/planetscale-pr-branch.ts up|down <n>` (mirrors the Tinybird branch script) creates/deletes the `pr-<n>` branch and exports `MAPLE_PG_*` creds; wired into `deploy-pr-preview.yml`. Branch deletion on PR close is mandatory (PS-DEV billing + Hyperdrive config cap).
 - **Ingest gateway** resolves ingest keys from the same Postgres (PSBouncer port 6432, no Hyperdrive) via `INGEST_KEY_STORE_BACKEND=postgres`.
 

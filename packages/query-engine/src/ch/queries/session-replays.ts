@@ -51,6 +51,8 @@ export interface SessionReplaysListOpts {
 	browser?: string
 	country?: string
 	deviceType?: string
+	/** Exact match on the session's end-user id. */
+	userId?: string
 	/** When true, only sessions with at least one recorded error. */
 	hasErrors?: boolean
 	/** Substring match on the initial page URL. */
@@ -110,6 +112,11 @@ export function sessionReplaysListQuery(opts: SessionReplaysListOpts) {
 			CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 			CH.when(opts.country, (v: string) => $.Country.eq(v)),
 			CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+			// Exact userId match is row-level (pre-GROUP BY). The completed Version=2
+			// row carries the identified UserId, so GROUP BY SessionId still surfaces
+			// each matching session once — same row-level-filter reasoning as
+			// hasErrors/ErrorCount above (see this file's header).
+			CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 			CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 			CH.when(opts.cursor, (v: string) => $.StartTime.lt(v)),
@@ -135,6 +142,8 @@ export interface SessionReplaysFacetsOpts {
 	browser?: string
 	country?: string
 	deviceType?: string
+	/** Exact match on the session's end-user id (narrows every facet branch). */
+	userId?: string
 	hasErrors?: boolean
 	search?: string
 }
@@ -161,6 +170,9 @@ export function sessionReplaysFacetsQuery(
 		exclude === "browser" ? undefined : CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 		exclude === "country" ? undefined : CH.when(opts.country, (v: string) => $.Country.eq(v)),
 		exclude === "device" ? undefined : CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+		// UserId has no facet branch (high cardinality), so it's never excluded — it
+		// narrows every dimension's counts to the selected user.
+		CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 		CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 		CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 	]
@@ -202,6 +214,7 @@ export function sessionReplaysFacetsQuery(
 				CH.when(opts.browser, (v: string) => $.BrowserName.eq(v)),
 				CH.when(opts.country, (v: string) => $.Country.eq(v)),
 				CH.when(opts.deviceType, (v: string) => $.DeviceType.eq(v)),
+				CH.when(opts.userId, (v: string) => $.UserId.eq(v)),
 				CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
 				$.ErrorCount.gt(0),
 			]),
@@ -213,7 +226,16 @@ export function sessionReplaysFacetsQuery(
 //
 // (OrgId, SessionId) is the full sort-key prefix, so this is an O(log N)
 // lookup. Dedup the ReplacingMergeTree versions by taking the highest Version.
+//
+// session_replays is PARTITION BY toDate(StartTime); the optional startTime/
+// endTime bounds (version-invariant column, identical across v1/v2) prune the
+// daily partitions a deep-scan would otherwise touch. Omit to scan all.
 // ---------------------------------------------------------------------------
+
+export interface SessionReplayDetailOpts {
+	startTime?: string
+	endTime?: string
+}
 
 export interface SessionReplayDetailOutput {
 	readonly sessionId: string
@@ -237,7 +259,7 @@ export interface SessionReplayDetailOutput {
 	readonly version: number
 }
 
-export function getSessionReplayQuery() {
+export function getSessionReplayQuery(opts: SessionReplayDetailOpts = {}) {
 	return from(SessionReplays)
 		.select(($) => ({
 			version: $.Version,
@@ -260,7 +282,12 @@ export function getSessionReplayQuery() {
 			traceIds: $.TraceIds,
 			resourceAttributes: CH.toJSONString($.ResourceAttributes),
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), $.SessionId.eq(param.string("sessionId"))])
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.SessionId.eq(param.string("sessionId")),
+			CH.when(opts.startTime, (v: string) => $.StartTime.gte(v)),
+			CH.when(opts.endTime, (v: string) => $.StartTime.lte(v)),
+		])
 		.orderBy(["version", "desc"])
 		.limit(1)
 		.format("JSON")
@@ -270,9 +297,21 @@ export function getSessionReplayQuery() {
 // Chunk index for one session (ordered for playback)
 //
 // session_replay_events is a plain MergeTree — each chunk is written exactly
-// once, so no dedup is needed. Sorted by (Timestamp, ChunkSeq) so the player
-// receives chunks in replay order.
+// once, so no dedup is needed. Sorted by (OrgId, SessionId, ChunkSeq) so the
+// player receives chunks in replay order.
+//
+// The table is PARTITION BY toDate(Timestamp) with a 30-day TTL. (OrgId,
+// SessionId) is a perfect sort-key prefix, but without a Timestamp predicate
+// ClickHouse must read the primary index of every daily partition to find this
+// session's chunks. The optional startTime/endTime bounds (the caller passes
+// the session's time window) prune to the 1-2 partitions the session spans.
 // ---------------------------------------------------------------------------
+
+export interface SessionReplayEventsOpts {
+	/** Optional session time window — prunes daily partitions. Omit to scan all. */
+	startTime?: string
+	endTime?: string
+}
 
 export interface SessionReplayEventsOutput {
 	readonly chunkSeq: number
@@ -285,7 +324,7 @@ export interface SessionReplayEventsOutput {
 	readonly isCheckpoint: number
 }
 
-export function sessionReplayEventsQuery() {
+export function sessionReplayEventsQuery(opts: SessionReplayEventsOpts = {}) {
 	return from(SessionReplayEvents)
 		.select(($) => ({
 			chunkSeq: $.ChunkSeq,
@@ -296,7 +335,12 @@ export function sessionReplayEventsQuery() {
 			events: $.Events,
 			isCheckpoint: $.IsCheckpoint,
 		}))
-		.where(($) => [$.OrgId.eq(param.string("orgId")), $.SessionId.eq(param.string("sessionId"))])
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.SessionId.eq(param.string("sessionId")),
+			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+		])
 		.orderBy(["chunkSeq", "asc"])
 		.format("JSON")
 }
@@ -341,15 +385,23 @@ export function sessionsForTraceQuery(opts: SessionsForTraceOpts) {
 // One row per TraceId, used to draw a single bar per trace on the session
 // replay timeline (the expandable span lanes fetch full spans on demand via
 // spanHierarchyQuery). Reads `trace_detail_spans`, whose sort key
-// (OrgId, TraceId, SpanId) makes `TraceId IN (...)` a cheap prefix lookup —
-// no time-window scan needed. The root span (ParentSpanId = '') supplies the
-// trace's name/service/duration, with a fallback for traces whose root span
-// wasn't ingested.
+// (OrgId, TraceId, SpanId) makes `TraceId IN (...)` a cheap prefix lookup
+// WITHIN a part. But the table is PARTITION BY toDate(Timestamp) with a 30-day
+// TTL, so without a Timestamp predicate ClickHouse reads the primary index of
+// every daily partition to find these traces — pure scan fan-out (observed at
+// 7s+ for a handful of matching spans on a high-volume org). The optional
+// startTime/endTime bounds (the session's time window — its correlated traces
+// fired within it) prune to the 1-2 partitions the session spans. The root
+// span (ParentSpanId = '') supplies the trace's name/service/duration, with a
+// fallback for traces whose root span wasn't ingested.
 // ---------------------------------------------------------------------------
 
 export interface SessionTraceSummariesOpts {
 	/** The correlated trace ids to summarize (from session_replays.TraceIds). */
 	traceIds: ReadonlyArray<string>
+	/** Optional session time window — prunes daily partitions. Omit to scan all. */
+	startTime?: string
+	endTime?: string
 	limit?: number
 }
 
@@ -396,7 +448,12 @@ export function sessionTraceSummariesQuery(opts: SessionTraceSummariesOpts) {
 				hasError: CH.if_(CH.countIf($.StatusCode.eq("Error")).gt(0), CH.lit(1), CH.lit(0)),
 			}
 		})
-		.where(($) => [$.OrgId.eq(param.string("orgId")), $.TraceId.in_(...opts.traceIds)])
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.TraceId.in_(...opts.traceIds),
+			CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
+			CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+		])
 		.groupBy("traceId")
 		.orderBy(["startTime", "asc"])
 		.limit(limit)

@@ -58,7 +58,7 @@ export const makeRemoteWarehouseExecutorShape = (
 				catch: (error) =>
 					new WarehouseQueryError({
 						message: error instanceof Error ? error.message : String(error),
-						pipe,
+						pipeName: pipe,
 					}),
 			}).pipe(
 				Effect.tap((result) => Effect.annotateCurrentSpan({ "result.rowCount": result.data.length })),
@@ -73,15 +73,15 @@ export const makeRemoteWarehouseExecutorShape = (
 			),
 		sqlQuery: <T = Record<string, unknown>>(_sql: string, _options?: ExecutorQueryOptions) =>
 			Effect.fail(
-				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "sqlQuery" }),
+				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipeName: "sqlQuery" }),
 			) as Effect.Effect<ReadonlyArray<T>, WarehouseClientError>,
 		compiledQuery: <T>(_compiled: unknown, _options?: ExecutorQueryOptions) =>
 			Effect.fail(
-				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "compiledQuery" }),
+				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipeName: "compiledQuery" }),
 			) as Effect.Effect<ReadonlyArray<T>, WarehouseClientError>,
 		compiledQueryFirst: <T>(_compiled: unknown, _options?: ExecutorQueryOptions) =>
 			Effect.fail(
-				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipe: "compiledQueryFirst" }),
+				new WarehouseClientError({ message: RAW_SQL_REMOTE_MESSAGE, pipeName: "compiledQueryFirst" }),
 			) as Effect.Effect<Option.Option<T>, WarehouseClientError>,
 	}
 }

@@ -24,6 +24,7 @@ const ListReplaysInput = Schema.Struct({
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),
+	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
@@ -55,6 +56,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 					browser: input.browser,
 					country: input.country,
 					deviceType: input.deviceType,
+					userId: input.userId,
 					hasErrors: input.hasErrors,
 					search: input.search,
 					cursor: input.cursor,
@@ -78,6 +80,7 @@ const ReplaysFacetsInput = Schema.Struct({
 	browser: Schema.optional(Schema.String),
 	country: Schema.optional(Schema.String),
 	deviceType: Schema.optional(Schema.String),
+	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 })
@@ -101,6 +104,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					browser: input.browser,
 					country: input.country,
 					deviceType: input.deviceType,
+					userId: input.userId,
 					hasErrors: input.hasErrors,
 					search: input.search,
 				}),
@@ -120,7 +124,13 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 // Session detail
 // ---------------------------------------------------------------------------
 
-const GetReplayInput = Schema.Struct({ sessionId: SessionId })
+const GetReplayInput = Schema.Struct({
+	sessionId: SessionId,
+	// Optional session time window (derived from the `t` navigation hint) so the
+	// warehouse prunes daily partitions instead of scanning the 30-day retention.
+	windowStart: Schema.optional(WarehouseDateTimeString),
+	windowEnd: Schema.optional(WarehouseDateTimeString),
+})
 // Encoded shape (plain strings) — callers pass raw route params; decodeInput brands them.
 export type GetReplayInput = (typeof GetReplayInput)["Encoded"]
 
@@ -134,7 +144,11 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
 			return yield* client.sessionReplays.getReplay({
-				payload: new GetReplayRequest({ sessionId: input.sessionId }),
+				payload: new GetReplayRequest({
+					sessionId: input.sessionId,
+					windowStart: input.windowStart,
+					windowEnd: input.windowEnd,
+				}),
 			})
 		}),
 	)
@@ -145,7 +159,11 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 // Session event chunks (rrweb payloads inline, from ClickHouse, ordered)
 // ---------------------------------------------------------------------------
 
-const GetReplayEventsInput = Schema.Struct({ sessionId: SessionId })
+const GetReplayEventsInput = Schema.Struct({
+	sessionId: SessionId,
+	windowStart: Schema.optional(WarehouseDateTimeString),
+	windowEnd: Schema.optional(WarehouseDateTimeString),
+})
 export type GetReplayEventsInput = (typeof GetReplayEventsInput)["Encoded"]
 
 export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(function* ({
@@ -158,7 +176,11 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
 			return yield* client.sessionReplays.getReplayEvents({
-				payload: new GetReplayEventsRequest({ sessionId: input.sessionId }),
+				payload: new GetReplayEventsRequest({
+					sessionId: input.sessionId,
+					windowStart: input.windowStart,
+					windowEnd: input.windowEnd,
+				}),
 			})
 		}),
 	)
@@ -169,7 +191,11 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 // Distilled session transcript (console / network / errors / nav / clicks)
 // ---------------------------------------------------------------------------
 
-const SessionTranscriptInput = Schema.Struct({ sessionId: SessionId })
+const SessionTranscriptInput = Schema.Struct({
+	sessionId: SessionId,
+	windowStart: Schema.optional(WarehouseDateTimeString),
+	windowEnd: Schema.optional(WarehouseDateTimeString),
+})
 export type SessionTranscriptInput = (typeof SessionTranscriptInput)["Encoded"]
 
 export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript")(function* ({
@@ -182,7 +208,11 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
 			return yield* client.sessionReplays.sessionTranscript({
-				payload: new SessionTranscriptRequest({ sessionId: input.sessionId }),
+				payload: new SessionTranscriptRequest({
+					sessionId: input.sessionId,
+					windowStart: input.windowStart,
+					windowEnd: input.windowEnd,
+				}),
 			})
 		}),
 	)
@@ -226,7 +256,11 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 // Per-trace summaries for a session's correlated traces (timeline bars)
 // ---------------------------------------------------------------------------
 
-const SessionTraceSummariesInput = Schema.Struct({ traceIds: Schema.Array(TraceId) })
+const SessionTraceSummariesInput = Schema.Struct({
+	traceIds: Schema.Array(TraceId),
+	windowStart: Schema.optional(WarehouseDateTimeString),
+	windowEnd: Schema.optional(WarehouseDateTimeString),
+})
 export type SessionTraceSummariesInput = (typeof SessionTraceSummariesInput)["Encoded"]
 
 export const getSessionTraceSummaries = Effect.fn("SessionReplays.traceSummaries")(function* ({
@@ -239,7 +273,11 @@ export const getSessionTraceSummaries = Effect.fn("SessionReplays.traceSummaries
 		Effect.gen(function* () {
 			const client = yield* MapleApiAtomClient
 			return yield* client.sessionReplays.traceSummaries({
-				payload: new SessionTraceSummariesRequest({ traceIds: input.traceIds }),
+				payload: new SessionTraceSummariesRequest({
+					traceIds: input.traceIds,
+					windowStart: input.windowStart,
+					windowEnd: input.windowEnd,
+				}),
 			})
 		}),
 	)

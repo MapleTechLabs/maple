@@ -45,7 +45,7 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 						return yield* Effect.fail(
 							new McpQueryError({
 								message: `Widget not found: ${widget_id}. Use get_dashboard to see existing widget ids.`,
-								pipe: TOOL,
+								pipeName: TOOL,
 							}),
 						)
 					}

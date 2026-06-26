@@ -182,13 +182,16 @@ export function snapWindowForQueryKind(kind: string): number {
 		case "attributeValues":
 			return 60 // 1 min
 		case "facets":
-			// 5 min — environments / commit SHAs / service names rarely change,
-			// and the dashboard route now reuses this cache for demo-detection
-			// (was a heavy `serviceOverview` probe). Wider snap also collapses
+			// 15 min — environments / commit SHAs / service names rarely change,
+			// and the dashboard route reuses this cache for demo-detection + the
+			// environment dropdown (was a heavy `serviceOverview` probe). This is
+			// the gate on the dashboard critical path, so a wider window cuts
+			// cold-miss frequency ~3× vs 5 min; a new service/env appearing up to
+			// 15 min late in the dropdown is fine. Wider snap also collapses
 			// near-simultaneous calls whose `startTime` ISO strings drift by
 			// milliseconds between renders (useEffectiveTimeRange recomputes
 			// `new Date()` per render).
-			return 300
+			return 900
 		default:
 			return CACHE_SNAP_S
 	}
@@ -206,7 +209,7 @@ export function cacheTtlForQueryKind(kind: string): number {
 		case "attributeValues":
 			return 60
 		case "facets":
-			return 300 // matches snapWindowForQueryKind — see comment above
+			return 900 // matches snapWindowForQueryKind — see comment above
 		default:
 			return 15
 	}
@@ -1048,6 +1051,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				const compiled = CH.compile(
 					CH.metricsTimeseriesRateQuery({
 						metricName: request.query.filters.metricName,
+						metricNames: request.query.filters.metricNames,
 						bucketSeconds: bucketSeconds!,
 						serviceName: request.query.filters.serviceName,
 						groupByAttributeKey,
@@ -1468,18 +1472,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		// ---- Attribute Values ----
 		if (request.query.kind === "attributeValues") {
-			const queryFn = (() => {
-				switch (request.query.scope) {
-					case "resource":
-						return CH.resourceAttributeValuesQuery
-					case "log":
-						return CH.logAttributeValuesQuery
-					case "metric":
-						return CH.metricAttributeValuesQuery
-					default:
-						return CH.spanAttributeValuesQuery
-				}
-			})()
+			const queryFn = Match.value(request.query.scope).pipe(
+				Match.when("resource", () => CH.resourceAttributeValuesQuery),
+				Match.when("log", () => CH.logAttributeValuesQuery),
+				Match.when("metric", () => CH.metricAttributeValuesQuery),
+				Match.orElse(() => CH.spanAttributeValuesQuery),
+			)
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,

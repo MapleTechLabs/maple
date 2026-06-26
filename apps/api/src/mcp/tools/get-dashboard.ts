@@ -20,7 +20,7 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 					(error) =>
 						new McpQueryError({
 							message: error.message,
-							pipe: "get_dashboard",
+							pipeName: "get_dashboard",
 							cause: error,
 						}),
 				),

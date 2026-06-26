@@ -407,19 +407,38 @@ pub fn cloudflare_records(dataset: &str, count: u64) {
     CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_string())]);
 }
 
-/// A WAL append was rejected because the shard file is full.
-pub fn wal_shard_full(shard: usize) {
-    WAL_SHARD_FULL_TOTAL.add(1, &[KeyValue::new("shard", shard.to_string())]);
+/// A WAL append was rejected because the lane file is full. `shard` is the real
+/// shard; `destination` distinguishes the per-destination lane within it.
+pub fn wal_shard_full(shard: usize, destination: &str) {
+    WAL_SHARD_FULL_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_string()),
+        ],
+    );
 }
 
 /// Bytes committed in a single WAL append.
-pub fn wal_commit_bytes(shard: usize, bytes: u64) {
-    WAL_COMMIT_BYTES.record(bytes, &[KeyValue::new("shard", shard.to_string())]);
+pub fn wal_commit_bytes(shard: usize, destination: &str, bytes: u64) {
+    WAL_COMMIT_BYTES.record(
+        bytes,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_string()),
+        ],
+    );
 }
 
-/// Current WAL shard file size.
-pub fn wal_shard_bytes(shard: usize, bytes: u64) {
-    WAL_SHARD_BYTES.record(bytes, &[KeyValue::new("shard", shard.to_string())]);
+/// Current WAL lane file size.
+pub fn wal_shard_bytes(shard: usize, destination: &str, bytes: u64) {
+    WAL_SHARD_BYTES.record(
+        bytes,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_string()),
+        ],
+    );
 }
 
 /// Current bytes queued for export for an org.

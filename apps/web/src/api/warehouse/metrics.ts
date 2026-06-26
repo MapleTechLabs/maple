@@ -168,6 +168,10 @@ const getMetricTimeSeriesEffect = Effect.fn("QueryEngine.getMetricTimeSeries")(f
 			},
 		})
 
+	// The five aggregation queries fan out concurrently; wrap them in their own
+	// span so the per-metric work is traceable and annotated, rather than landing
+	// untracked under the parent. orgId is resolved server-side (not available
+	// here), so we annotate the metric identifiers we do have.
 	const [avgRes, sumRes, minRes, maxRes, countRes] = yield* Effect.all(
 		[
 			executeMetricsQueryEngine(makeRequest("avg")),
@@ -177,6 +181,16 @@ const getMetricTimeSeriesEffect = Effect.fn("QueryEngine.getMetricTimeSeries")(f
 			executeMetricsQueryEngine(makeRequest("count")),
 		],
 		{ concurrency: 5 },
+	).pipe(
+		Effect.withSpan("warehouse.metrics.getMetricTimeSeries", {
+			attributes: {
+				metricName: input.metricName,
+				metricType: input.metricType,
+				...(input.service ? { service: input.service } : {}),
+				aggregations: "avg,sum,min,max,count",
+				bucketSeconds,
+			},
+		}),
 	)
 
 	// Build a map of bucket::service -> { avg, sum, min, max, count }

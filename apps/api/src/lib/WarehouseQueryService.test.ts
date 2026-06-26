@@ -583,7 +583,7 @@ describe("WarehouseUpstreamError surfaces transient classification", () => {
 	it("carries upstreamStatus on 503", () => {
 		// Sanity check that the constructor flow we depend on for retry is intact.
 		const err = new WarehouseUpstreamError({
-			pipe: "test",
+			pipeName: "test",
 			message: "upstream",
 			upstreamStatus: 503,
 		})

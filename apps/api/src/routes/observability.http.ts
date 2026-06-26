@@ -14,7 +14,7 @@ import {
 import { makeWarehouseExecutorFromTenant } from "../lib/WarehouseQueryService"
 
 const mapError = (e: WarehouseExecutorError) =>
-	new ObservabilityApiError({ message: e.message, pipe: e.pipe, cause: e })
+	new ObservabilityApiError({ message: e.message, pipeName: e.pipeName, cause: e })
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)

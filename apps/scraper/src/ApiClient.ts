@@ -18,6 +18,8 @@ export class ApiRequestError extends Schema.TaggedErrorClass<ApiRequestError>()(
 export interface ScrapeProxyResponse {
 	readonly status: number
 	readonly body: string
+	/** Upstream `Retry-After` in seconds (delta-seconds form), or `null` when absent. */
+	readonly retryAfterSeconds: number | null
 }
 
 export interface ApiClientShape {
@@ -96,7 +98,12 @@ export class ApiClient extends Context.Service<ApiClient, ApiClientShape>()("@ma
 			)
 			const response = yield* client.execute(request).pipe(Effect.mapError(transportError))
 			const body = yield* response.text.pipe(Effect.mapError(transportError))
-			return { status: response.status, body } satisfies ScrapeProxyResponse
+			const retryAfterRaw = response.headers["retry-after"]
+			const retryAfterSeconds =
+				retryAfterRaw !== undefined && Number.isFinite(Number(retryAfterRaw))
+					? Number(retryAfterRaw)
+					: null
+			return { status: response.status, body, retryAfterSeconds } satisfies ScrapeProxyResponse
 		})
 
 		const reportResults = Effect.fn("ApiClient.reportResults")(function* (

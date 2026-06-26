@@ -1,5 +1,5 @@
 import { describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
 import { strict as assert } from "node:assert"
 import { OrgId, UserId } from "@maple/domain"
 import type { QueryEngineEvaluateRequest } from "@maple/query-engine"
@@ -8,7 +8,11 @@ import { makeQueryEngineEvaluate } from "@maple/query-engine/runtime"
 import { QueryEngineService } from "./QueryEngineService"
 import type { TenantContext } from "./AuthService"
 import { WarehouseQueryService, type WarehouseQueryServiceShape } from "../lib/WarehouseQueryService"
-import { EdgeCacheService, BucketCacheService } from "@maple/query-engine/caching"
+import {
+	EdgeCacheService,
+	BucketCacheService,
+	type EdgeCacheServiceShape,
+} from "@maple/query-engine/caching"
 import { CacheBackendLive } from "../lib/CacheBackendLive"
 
 const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
@@ -194,6 +198,55 @@ describe("QueryEngineService.evaluate via bucket cache", () => {
 			const result = yield* qe.evaluate(tenant, countRequest("sum"))
 			// Same answer as the bucket path.
 			assert.deepStrictEqual(result, [{ groupKey: "all", value: 10, sampleCount: 10, hasData: true }])
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+// --- cachedDirect: per-route TTL plumbing. ---
+
+// Records the `ttlSeconds` of every getOrCompute call so we can assert the
+// per-route TTL reaches the edge cache (and that omitting it defaults to 15s).
+const makeRecordingEdge = (
+	calls: Array<{ bucket: string; ttlSeconds: number }>,
+): EdgeCacheServiceShape => ({
+	getOrCompute: (options, compute) => {
+		calls.push({ bucket: options.bucket, ttlSeconds: options.ttlSeconds })
+		return Effect.map(compute, (value) => ({ value, hit: false }))
+	},
+	invalidate: () => Effect.void,
+	rawGet: () => Effect.succeed(Option.none()),
+	rawPut: () => Effect.void,
+})
+
+describe("QueryEngineService.cachedDirect TTL", () => {
+	it.effect("passes the per-route ttlSeconds to the edge cache and defaults to 15s", () => {
+		const calls: Array<{ bucket: string; ttlSeconds: number }> = []
+		const recordingEdge = Layer.succeed(EdgeCacheService, makeRecordingEdge(calls))
+		const counter = { n: 0 }
+		const layer = QueryEngineService.layer.pipe(
+			Layer.provide(Layer.succeed(WarehouseQueryService, makeFullStub([], counter))),
+			Layer.provide(recordingEdge),
+			Layer.provide(BucketCacheService.layer.pipe(Layer.provide(recordingEdge))),
+			Layer.provide(makeConfig()),
+		)
+
+		return Effect.gen(function* () {
+			const qe = yield* QueryEngineService
+			// Explicit long TTL (the serviceHealthBaseline case).
+			yield* qe.cachedDirect(
+				tenant,
+				"serviceHealthBaseline",
+				{ startTime: "2026-01-01 00:00:00", endTime: "2026-01-08 00:00:00" },
+				Effect.succeed([{ ok: true }]),
+				3600,
+			)
+			// Omitted TTL falls back to the 15s default (the serviceOverview case).
+			yield* qe.cachedDirect(tenant, "serviceOverview", { a: 1 }, Effect.succeed([{ ok: true }]))
+
+			assert.deepStrictEqual(calls, [
+				{ bucket: "qe-direct", ttlSeconds: 3600 },
+				{ bucket: "qe-direct", ttlSeconds: 15 },
+			])
 		}).pipe(Effect.provide(layer))
 	})
 })
