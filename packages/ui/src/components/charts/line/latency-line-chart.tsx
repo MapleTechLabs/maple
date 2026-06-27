@@ -1,8 +1,7 @@
 import { useMemo } from "react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
-import type { BaseChartProps } from "../_shared/chart-types"
-import { renderReferenceLines } from "../_shared/reference-markers"
+import { MARKER_OVERLAY_CLASS, type BaseChartProps } from "../_shared/chart-types"
 import { latencyTimeSeriesData } from "../_shared/sample-data"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
 import {
@@ -28,9 +27,9 @@ export function LatencyLineChart({
 	className,
 	legend,
 	tooltip,
-	referenceLines,
-	renderReferenceMarker,
 	syncId,
+	overlay,
+	yAxisWidth,
 }: BaseChartProps) {
 	const chartData = data ?? latencyTimeSeriesData
 
@@ -54,10 +53,17 @@ export function LatencyLineChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={className}>
-			<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
+		<ChartContainer
+			config={chartConfig}
+			className={overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className}
+		>
+			<LineChart
+				data={processedData}
+				accessibilityLayer
+				syncId={syncId}
+				syncMethod="value"
+			>
 				<CartesianGrid vertical={false} />
-				{renderReferenceLines(referenceLines, renderReferenceMarker)}
 				<XAxis
 					dataKey="bucket"
 					tickLine={false}
@@ -69,7 +75,7 @@ export function LatencyLineChart({
 					tickLine={false}
 					axisLine={false}
 					tickMargin={8}
-					width={70}
+					width={yAxisWidth ?? 70}
 					tickFormatter={(v) => formatLatency(v)}
 				/>
 				{tooltip !== "hidden" && (
@@ -79,17 +85,7 @@ export function LatencyLineChart({
 								labelFormatter={(_, payload) => {
 									if (!payload?.[0]?.payload?.bucket) return ""
 									const bucket = payload[0].payload.bucket as string
-									const release = referenceLines?.find((rl) => rl.x === bucket)
-									return (
-										<span>
-											{formatBucketLabel(bucket, axisContext, "tooltip")}
-											{release?.label && (
-												<span className="ml-2 text-muted-foreground">
-													Deploy: {release.label}
-												</span>
-											)}
-										</span>
-									)
+									return formatBucketLabel(bucket, axisContext, "tooltip")
 								}}
 								formatter={(value, name, item) => {
 									const nameStr = String(name)
@@ -183,6 +179,7 @@ export function LatencyLineChart({
 						isAnimationActive={false}
 					/>
 				)}
+				{overlay}
 			</LineChart>
 		</ChartContainer>
 	)

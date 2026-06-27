@@ -1,8 +1,7 @@
 import { useId, useMemo } from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
-import type { BaseChartProps } from "../_shared/chart-types"
-import { renderReferenceLines } from "../_shared/reference-markers"
+import { MARKER_OVERLAY_CLASS, type BaseChartProps } from "../_shared/chart-types"
 import { apdexTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -27,9 +26,9 @@ export function ApdexAreaChart({
 	className,
 	legend,
 	tooltip,
-	referenceLines,
-	renderReferenceMarker,
 	syncId,
+	overlay,
+	yAxisWidth,
 }: BaseChartProps) {
 	const id = useId()
 	const gradientId = `apdexGradient-${id.replace(/:/g, "")}`
@@ -56,8 +55,16 @@ export function ApdexAreaChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={className}>
-			<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
+		<ChartContainer
+			config={chartConfig}
+			className={overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className}
+		>
+			<AreaChart
+				data={processedData}
+				accessibilityLayer
+				syncId={syncId}
+				syncMethod="value"
+			>
 				<defs>
 					<VerticalGradient id={gradientId} color="var(--color-apdexScore)" />
 					{hasIncomplete && (
@@ -70,7 +77,6 @@ export function ApdexAreaChart({
 					)}
 				</defs>
 				<CartesianGrid vertical={false} />
-				{renderReferenceLines(referenceLines, renderReferenceMarker)}
 				<XAxis
 					dataKey="bucket"
 					tickLine={false}
@@ -78,7 +84,7 @@ export function ApdexAreaChart({
 					tickMargin={8}
 					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick")}
 				/>
-				<YAxis domain={[0, 1]} tickLine={false} axisLine={false} tickMargin={8} width={50} />
+				<YAxis domain={[0, 1]} tickLine={false} axisLine={false} tickMargin={8} width={yAxisWidth ?? 50} />
 				{tooltip !== "hidden" && (
 					<ChartTooltip
 						content={
@@ -86,17 +92,7 @@ export function ApdexAreaChart({
 								labelFormatter={(_, payload) => {
 									if (!payload?.[0]?.payload?.bucket) return ""
 									const bucket = payload[0].payload.bucket as string
-									const release = referenceLines?.find((rl) => rl.x === bucket)
-									return (
-										<span>
-											{formatBucketLabel(bucket, axisContext, "tooltip")}
-											{release?.label && (
-												<span className="ml-2 text-muted-foreground">
-													Deploy: {release.label}
-												</span>
-											)}
-										</span>
-									)
+									return formatBucketLabel(bucket, axisContext, "tooltip")
 								}}
 								formatter={(value, name, item) => {
 									const nameStr = String(name)
@@ -145,6 +141,7 @@ export function ApdexAreaChart({
 						isAnimationActive={false}
 					/>
 				)}
+				{overlay}
 			</AreaChart>
 		</ChartContainer>
 	)

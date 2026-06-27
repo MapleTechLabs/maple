@@ -152,7 +152,7 @@ export function CommitShaHoverCard({
 				anchor={anchor}
 				className="w-80 p-0"
 			>
-				<CommitHoverBody sha={sha} />
+				<CommitDetailBody sha={sha} />
 			</HoverCardContent>
 		</HoverCard>
 	)
@@ -169,49 +169,76 @@ function CommitPrefetch({ sha }: { sha: string }) {
 	return null
 }
 
-function CommitHoverBody({ sha }: { sha: string }) {
+/**
+ * Resolves a commit SHA and renders its detail card — the shared body used by
+ * the hover card and the chart's deploy-marker tooltip. `compact` tightens the
+ * layout for dense stacks (several commits in one tooltip). Non-resolvable
+ * references (short SHAs, tags, arbitrary telemetry) render as plain text and
+ * never hit the backend.
+ */
+export function CommitDetailBody({ sha, compact = false }: { sha: string; compact?: boolean }) {
+	if (!isResolvableSha(sha)) {
+		return <CommitPlain sha={sha} compact={compact} />
+	}
+	return <CommitHoverBody sha={sha} compact={compact} />
+}
+
+function CommitHoverBody({ sha, compact = false }: { sha: string; compact?: boolean }) {
 	// By the time the popup opens (open delay > arm delay) the prefetch has already
 	// armed the same atom; reading it here is a cache hit or a near-complete fetch.
 	const result = useAtomValue(commitQueryAtom(sha))
 
 	return Result.builder(result)
-		.onSuccess((commit) => <CommitCard commit={commit} />)
-		.onError((error) => <CommitMessage {...describeError(error)} />)
-		.orElse(() => <CommitSkeleton />)
+		.onSuccess((commit) => <CommitCard commit={commit} compact={compact} />)
+		.onError((error) => <CommitMessage {...describeError(error)} compact={compact} />)
+		.orElse(() => <CommitSkeleton compact={compact} />)
 }
 
-function CommitCard({ commit }: { commit: VcsCommitDetailResponse }) {
+// A reference Maple can't resolve to a commit (short SHA, tag, arbitrary
+// `deployment.commit_sha` telemetry). Shown in the marker tooltip — which, unlike
+// the hover card, always renders a row for every commit in a bucket.
+function CommitPlain({ sha, compact = false }: { sha: string; compact?: boolean }) {
+	return (
+		<div className={cn("flex flex-col gap-1", compact ? "p-2.5" : "p-3.5")}>
+			<span className="font-mono text-foreground">{sha.length > 16 ? `${sha.slice(0, 16)}…` : sha}</span>
+			<span className="text-muted-foreground">Deployment reference — not a resolvable git commit.</span>
+		</div>
+	)
+}
+
+function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailResponse; compact?: boolean }) {
 	// A git message is a subject line, then an optional body after a blank line.
 	const newlineIdx = commit.message.indexOf("\n")
 	const title = newlineIdx === -1 ? commit.message : commit.message.slice(0, newlineIdx)
 	const body = newlineIdx === -1 ? "" : commit.message.slice(newlineIdx + 1).trim()
 	const providerLabel = commit.provider === "github" ? "GitHub" : commit.provider
 	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
-	// Push-webhook payloads carry no avatar URL (only a username), so commits
-	// ingested that way have a null avatar. GitHub serves a stable avatar for any
-	// login at github.com/<login>.png — derive it as a fallback so those still show.
-	const avatarUrl =
-		commit.authorAvatarUrl ??
-		(commit.provider === "github" && commit.authorLogin
-			? `https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=64`
-			: null)
+	const avatarUrl = deriveAvatarUrl(commit)
 	// Profile and repo links are derived from the commit's own htmlUrl origin, so
 	// they stay correct across providers and self-hosted instances (github.com, GH
 	// Enterprise, GitLab, …) without hardcoding a host.
 	const profileHref = commit.authorLogin ? hrefFromOrigin(commit.htmlUrl, commit.authorLogin) : null
 	const repoHref = commit.repoFullName ? hrefFromOrigin(commit.htmlUrl, commit.repoFullName) : null
 
+	const pad = compact ? "p-2.5" : "p-3.5"
 	return (
 		<div className="flex flex-col divide-y divide-foreground/10">
-			<div className="flex flex-col gap-1.5 p-3.5">
-				<p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">{title}</p>
-				{body ? (
+			<div className={cn("flex flex-col gap-1.5", pad)}>
+				<p
+					className={cn(
+						"font-medium leading-snug text-foreground",
+						compact ? "line-clamp-2 text-[13px]" : "line-clamp-2 text-sm",
+					)}
+				>
+					{title}
+				</p>
+				{body && !compact ? (
 					<p className="line-clamp-4 whitespace-pre-line text-muted-foreground">{body}</p>
 				) : null}
 			</div>
-			<div className="flex flex-col gap-2.5 p-3.5">
+			<div className={cn("flex flex-col", compact ? "gap-2" : "gap-2.5", pad)}>
 				<div className="flex items-center gap-2.5">
-					<CommitAvatar url={avatarUrl} name={author} href={profileHref} />
+					<CommitAvatar url={avatarUrl} name={author} href={profileHref} compact={compact} />
 					<div className="flex min-w-0 flex-col leading-tight">
 						<ExternalText href={profileHref} className="truncate font-medium text-foreground">
 							{author}
@@ -225,18 +252,150 @@ function CommitCard({ commit }: { commit: VcsCommitDetailResponse }) {
 				</div>
 				<div className="flex items-center justify-between gap-2 text-muted-foreground">
 					<CopyableSha sha={commit.sha} />
-					<span>{formatRelative(commit.committedAt)}</span>
+					<span title={formatExact(commit.committedAt)} className="cursor-default">
+						{formatRelative(commit.committedAt)}
+					</span>
 				</div>
 			</div>
 			<a
 				href={commit.htmlUrl}
 				target="_blank"
 				rel="noreferrer noopener"
-				className="flex items-center justify-center gap-1 px-3.5 py-2.5 font-medium text-primary transition-colors hover:bg-muted/60"
+				className={cn(
+					"flex items-center justify-center gap-1 font-medium text-primary transition-colors hover:bg-muted/60",
+					compact ? "px-2.5 py-2" : "px-3.5 py-2.5",
+				)}
 			>
 				View on {providerLabel}
 				<span aria-hidden>↗</span>
 			</a>
+		</div>
+	)
+}
+
+// Push-webhook payloads carry no avatar URL (only a username), so commits
+// ingested that way have a null avatar. GitHub serves a stable avatar for any
+// login at github.com/<login>.png — derive it as a fallback so those still show.
+function deriveAvatarUrl(commit: VcsCommitDetailResponse): string | null {
+	return (
+		commit.authorAvatarUrl ??
+		(commit.provider === "github" && commit.authorLogin
+			? `https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=64`
+			: null)
+	)
+}
+
+// A git message is a subject line, then an optional body after a blank line.
+function firstLine(message: string): string {
+	const idx = message.indexOf("\n")
+	return (idx === -1 ? message : message.slice(0, idx)).trim()
+}
+
+/**
+ * A vertically-dense list of commits for a deploy marker that gathers several of
+ * them. Each commit is ONE row (avatar · subject · short sha · age) instead of a
+ * stack of full `CommitCard`s — so a marker with a dozen commits stays a tidy,
+ * scrollable list rather than a wall of cards. The single-commit case keeps the
+ * rich `CommitDetailBody`; this is only used when there's more than one.
+ */
+export function CommitListBody({ commits }: { commits: ReadonlyArray<{ sha: string }> }) {
+	return (
+		<div className="flex flex-col">
+			{/* Sticky so the count stays visible while the rows scroll. */}
+			<div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/10 bg-background/95 px-2.5 py-1.5 backdrop-blur-sm">
+				<span className="font-medium text-foreground">{commits.length} deploys</span>
+			</div>
+			<div className="flex flex-col divide-y divide-foreground/5">
+				{commits.map((commit) => (
+					<CommitListRow key={commit.sha} sha={commit.sha} />
+				))}
+			</div>
+		</div>
+	)
+}
+
+// One commit row. Non-resolvable references (short sha, tag, arbitrary telemetry)
+// never hit the backend — they render as a muted, label-only row.
+function CommitListRow({ sha }: { sha: string }) {
+	if (!isResolvableSha(sha)) {
+		return (
+			<div className="flex items-center gap-2.5 px-2.5 py-2 text-muted-foreground">
+				<span className="size-5 shrink-0 rounded-full bg-muted" />
+				<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+					<span className="truncate font-mono text-[11px]">
+						{sha.length > 18 ? `${sha.slice(0, 18)}…` : sha}
+					</span>
+					<span className="text-[10px]">Deployment reference</span>
+				</div>
+			</div>
+		)
+	}
+	return <CommitListRowResolved sha={sha} />
+}
+
+function CommitListRowResolved({ sha }: { sha: string }) {
+	const result = useAtomValue(commitQueryAtom(sha))
+	return Result.builder(result)
+		.onSuccess((commit) => <CommitListRowLink commit={commit} />)
+		.onError(() => <CommitListRowFallback sha={sha} note="unavailable" />)
+		.orElse(() => <CommitListRowSkeleton />)
+}
+
+// Only the avatar and the subject are interactive: the avatar → the author's
+// profile, the subject → the commit. The row itself has no hover affordance, so
+// the second line (author · sha · age) stays plain text.
+function CommitListRowLink({ commit }: { commit: VcsCommitDetailResponse }) {
+	const title = firstLine(commit.message)
+	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
+	const profileHref = commit.authorLogin ? hrefFromOrigin(commit.htmlUrl, commit.authorLogin) : null
+	return (
+		<div className="flex items-center gap-2.5 px-2.5 py-2">
+			<CommitAvatar url={deriveAvatarUrl(commit)} name={author} href={profileHref} compact />
+			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+				<a
+					href={commit.htmlUrl}
+					target="_blank"
+					rel="noreferrer noopener"
+					title={title}
+					className="truncate text-foreground transition-colors hover:text-primary hover:underline"
+				>
+					{title}
+				</a>
+				<span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+					<span className="min-w-0 truncate">{author}</span>
+					<span className="shrink-0 font-mono">{commit.sha.slice(0, 7)}</span>
+					<span
+						title={formatExact(commit.committedAt)}
+						className="ml-auto shrink-0 tabular-nums text-muted-foreground/80"
+					>
+						{formatRelativeShort(commit.committedAt)}
+					</span>
+				</span>
+			</div>
+		</div>
+	)
+}
+
+function CommitListRowSkeleton() {
+	return (
+		<div className="flex items-center gap-2.5 px-2.5 py-2">
+			<Skeleton className="size-5 shrink-0 rounded-full" />
+			<div className="flex min-w-0 flex-1 flex-col gap-1">
+				<Skeleton className="h-3 w-3/4" />
+				<Skeleton className="h-2.5 w-1/2" />
+			</div>
+		</div>
+	)
+}
+
+function CommitListRowFallback({ sha, note }: { sha: string; note: string }) {
+	return (
+		<div className="flex items-center gap-2.5 px-2.5 py-2 text-muted-foreground">
+			<span className="size-5 shrink-0 rounded-full bg-muted" />
+			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
+				<span className="truncate font-mono text-[11px]">{sha.slice(0, 12)}</span>
+				<span className="text-[10px]">{note}</span>
+			</div>
 		</div>
 	)
 }
@@ -327,24 +486,32 @@ function CommitAvatar({
 	url,
 	name,
 	href,
+	compact = false,
 }: {
 	url: string | null
 	name: string
 	href?: string | null
+	compact?: boolean
 }) {
 	const [failed, setFailed] = useState(false)
+	const size = compact ? "size-5" : "size-7"
 	const inner =
 		url && !failed ? (
 			<img
 				src={url}
 				alt=""
-				className="size-7 shrink-0 rounded-full ring-1 ring-foreground/10"
+				className={cn(size, "shrink-0 rounded-full ring-1 ring-foreground/10")}
 				loading="lazy"
 				referrerPolicy="no-referrer"
 				onError={() => setFailed(true)}
 			/>
 		) : (
-			<div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground">
+			<div
+				className={cn(
+					size,
+					"flex shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-medium uppercase text-muted-foreground",
+				)}
+			>
 				{name.slice(0, 2)}
 			</div>
 		)
@@ -363,18 +530,18 @@ function CommitAvatar({
 	)
 }
 
-function CommitSkeleton() {
+function CommitSkeleton({ compact = false }: { compact?: boolean }) {
 	return (
-		<div className="flex flex-col gap-3 p-3.5">
+		<div className={cn("flex flex-col", compact ? "gap-2 p-2.5" : "gap-3 p-3.5")}>
 			<Skeleton className="h-4 w-11/12" />
 			<div className="flex items-center gap-2.5">
-				<Skeleton className="size-7 shrink-0 rounded-full" />
+				<Skeleton className={cn("shrink-0 rounded-full", compact ? "size-5" : "size-7")} />
 				<div className="flex flex-1 flex-col gap-1.5">
 					<Skeleton className="h-3 w-1/2" />
-					<Skeleton className="h-3 w-2/3" />
+					{compact ? null : <Skeleton className="h-3 w-2/3" />}
 				</div>
 			</div>
-			<Skeleton className="h-3 w-full" />
+			{compact ? null : <Skeleton className="h-3 w-full" />}
 		</div>
 	)
 }
@@ -388,15 +555,19 @@ function CommitMessage({
 	title,
 	detail,
 	action,
+	compact = false,
 }: {
 	title: string
 	detail?: string
 	action?: CommitMessageAction
+	compact?: boolean
 }) {
 	return (
-		<div className="flex flex-col gap-1.5 p-3.5">
+		<div className={cn("flex flex-col gap-1.5", compact ? "p-2.5" : "p-3.5")}>
 			<p className="font-medium text-foreground">{title}</p>
-			{detail ? <p className="text-muted-foreground">{detail}</p> : null}
+			{detail ? (
+				<p className={cn("text-muted-foreground", compact && "line-clamp-3")}>{detail}</p>
+			) : null}
 			{action === "connect" ? (
 				<Link
 					to="/integrations"
@@ -452,6 +623,29 @@ function describeError(error: unknown): {
 		}
 	}
 	return { title: "Couldn't load commit", detail: "Try again in a moment." }
+}
+
+// Absolute timestamp for the title tooltip on a relative age — e.g.
+// "Jun 27, 2026, 3:42 PM". The relative label stays the at-a-glance value; the
+// exact time is one hover away.
+function formatExact(epochMs: number): string {
+	return new Date(epochMs).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+}
+
+// Compact relative age ("now", "3h", "2d", "5mo") with no "ago" suffix, for the
+// dense commit-list rows where horizontal space is tight.
+function formatRelativeShort(epochMs: number): string {
+	const diff = Date.now() - epochMs
+	if (diff < 60_000) return "now"
+	const minutes = Math.floor(diff / 60_000)
+	if (minutes < 60) return `${minutes}m`
+	const hours = Math.floor(minutes / 60)
+	if (hours < 24) return `${hours}h`
+	const days = Math.floor(hours / 24)
+	if (days < 30) return `${days}d`
+	const months = Math.floor(days / 30)
+	if (months < 12) return `${months}mo`
+	return `${Math.floor(days / 365)}y`
 }
 
 function formatRelative(epochMs: number): string {
