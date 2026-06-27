@@ -107,54 +107,58 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 			.handle("spanHierarchy", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					// `trace_detail_spans` is partitioned by `toDate(Timestamp)`. Without a
-					// time predicate the hierarchy query seeks across every daily partition
-					// (~30) — p95 ~8.8s vs ~2.3s when pruned to one. When the caller has no
-					// timestamp (direct URL, shared link, AI link), resolve one via a cheap
-					// LIMIT-1 probe and derive a ±1h window so the main query can prune.
-					let startTime = payload.startTime
-					let endTime = payload.endTime
-					if (startTime == null || endTime == null) {
-						const probe = yield* mapExecError(
-							warehouse
-								.compiledQueryFirst(
-									tenant,
-									CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId }), {
-										orgId: tenant.orgId,
-									}),
-									{ profile: "discovery", context: "spanHierarchyProbe" },
-								)
-								.pipe(Effect.map(Option.getOrNull)),
-							"spanHierarchy probe failed",
-						)
-						if (probe?.timestamp != null) {
-							const window = partitionWindowAround(probe.timestamp)
-							startTime = window.startTime
-							endTime = window.endTime
-						}
-					}
-					const narrowByTime = startTime != null && endTime != null
-					const compiled = CH.compile(
-						CH.spanHierarchyQuery({
-							traceId: payload.traceId,
-							spanId: payload.spanId,
-							narrowByTime,
-						}),
-						narrowByTime
-							? { orgId: tenant.orgId, startTime, endTime }
-							: { orgId: tenant.orgId },
-					)
 					const rows = yield* queryEngine.cachedDirect(
 						tenant,
 						"spanHierarchy",
 						payload,
-						mapExecError(
-							warehouse.compiledQuery(tenant, compiled, {
-								profile: "list",
-								context: "spanHierarchy",
-							}),
-							"spanHierarchy query failed",
-						),
+						// Wrapped in cachedDirect's effect so the probe only fires on a
+						// cache miss. `trace_detail_spans` is partitioned by
+						// `toDate(Timestamp)`. Without a time predicate the hierarchy query
+						// seeks across every daily partition (~30) — p95 ~8.8s vs ~2.3s when
+						// pruned to one. When the caller has no timestamp (direct URL,
+						// shared link, AI link), resolve one via a cheap LIMIT-1 probe and
+						// derive a ±1h window so the main query can prune.
+						Effect.gen(function* () {
+							let startTime = payload.startTime
+							let endTime = payload.endTime
+							if (startTime == null || endTime == null) {
+								const probe = yield* mapExecError(
+									warehouse
+										.compiledQueryFirst(
+											tenant,
+											CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId }), {
+												orgId: tenant.orgId,
+											}),
+											{ profile: "discovery", context: "spanHierarchyProbe" },
+										)
+										.pipe(Effect.map(Option.getOrNull)),
+									"spanHierarchy probe failed",
+								)
+								if (probe?.timestamp != null) {
+									const window = partitionWindowAround(probe.timestamp)
+									startTime = window.startTime
+									endTime = window.endTime
+								}
+							}
+							const narrowByTime = startTime != null && endTime != null
+							const compiled = CH.compile(
+								CH.spanHierarchyQuery({
+									traceId: payload.traceId,
+									spanId: payload.spanId,
+									narrowByTime,
+								}),
+								narrowByTime
+									? { orgId: tenant.orgId, startTime, endTime }
+									: { orgId: tenant.orgId },
+							)
+							return yield* mapExecError(
+								warehouse.compiledQuery(tenant, compiled, {
+									profile: "list",
+									context: "spanHierarchy",
+								}),
+								"spanHierarchy query failed",
+							)
+						}),
 					)
 					const typedRows = rows.map((row) => ({
 						...row,
