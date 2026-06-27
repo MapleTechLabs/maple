@@ -109,6 +109,14 @@ export const formatAlertComparator = (c: string): string => {
 			return "<"
 		case "lte":
 			return "<="
+		case "eq":
+			return "="
+		case "neq":
+			return "!="
+		case "between":
+			return "between"
+		case "not_between":
+			return "not between"
 		default:
 			return c
 	}
