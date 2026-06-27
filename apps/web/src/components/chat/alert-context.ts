@@ -1,3 +1,4 @@
+import type { AiTriageResult, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
 import { fromBase64Url, toBase64Url } from "@/lib/base64url"
 
 export interface AlertContext {
@@ -37,6 +38,32 @@ const isAlertContext = (value: unknown): value is AlertContext => {
 	if (v.aiSuspectedCause !== undefined && typeof v.aiSuspectedCause !== "string") return false
 	return true
 }
+
+/**
+ * Build the chat `AlertContext` from a rule + the incident under investigation,
+ * optionally folding in a prior triage result so the chat opens already aware of
+ * the AI's findings.
+ */
+export const toAlertContext = (
+	rule: AlertRuleDocument,
+	incident: AlertIncidentDocument,
+	result?: AiTriageResult | null,
+): AlertContext => ({
+	ruleId: rule.id,
+	ruleName: rule.name,
+	incidentId: incident.id,
+	eventType: incident.status === "open" ? "trigger" : "resolve",
+	signalType: rule.signalType,
+	severity: incident.severity,
+	comparator: rule.comparator,
+	threshold: incident.threshold,
+	value: incident.lastObservedValue,
+	windowMinutes: rule.windowMinutes,
+	groupKey: incident.groupKey,
+	sampleCount: incident.lastSampleCount,
+	...(result?.summary ? { aiSummary: result.summary } : {}),
+	...(result?.suspectedCause ? { aiSuspectedCause: result.suspectedCause } : {}),
+})
 
 export const encodeAlertContextToSearchParam = (ctx: AlertContext): string =>
 	toBase64Url(JSON.stringify(ctx))
