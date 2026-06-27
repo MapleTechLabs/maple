@@ -16,6 +16,7 @@ import {
 	toAlertContext,
 	type AlertContext,
 } from "@/components/chat/alert-context"
+import { formatAlertComparator } from "@/components/chat/context-preamble"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { comparatorLabels, formatSignalValue, signalLabels } from "@/lib/alerts/form-utils"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -118,7 +119,7 @@ function AlertIncidentPage() {
 	const isFiring = incident ? incident.status === "open" : alertContext.eventType !== "resolve"
 	const condition = rule
 		? `${signalLabels[rule.signalType]} ${comparatorLabels[rule.comparator]} ${formatSignalValue(rule.signalType, incident?.threshold ?? rule.threshold)} over ${rule.windowMinutes}min`
-		: `${signalLabel(alertContext.signalType)} ${alertContext.comparator} ${alertContext.threshold} over ${alertContext.windowMinutes}min`
+		: `${signalLabel(alertContext.signalType)} ${formatAlertComparator(alertContext.comparator)} ${alertContext.threshold} over ${alertContext.windowMinutes}min`
 
 	return (
 		<DashboardLayout breadcrumbs={breadcrumbs} title={alertContext.ruleName}>

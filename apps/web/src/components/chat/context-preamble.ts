@@ -99,7 +99,7 @@ const formatPageContextBlock = (payload: PageContextPayload): string => {
 	return lines.join("\n")
 }
 
-const formatAlertComparator = (c: string): string => {
+export const formatAlertComparator = (c: string): string => {
 	switch (c) {
 		case "gt":
 			return ">"
