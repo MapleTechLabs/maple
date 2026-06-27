@@ -35,7 +35,13 @@ import {
 	type AlertCheckDocument,
 	type AlertRuleDocument,
 } from "@maple/domain/http"
-import { CheckIcon, PencilIcon, DotsVerticalIcon, CircleWarningIcon } from "@/components/icons"
+import {
+	CheckIcon,
+	PencilIcon,
+	DotsVerticalIcon,
+	CircleWarningIcon,
+	SquareTerminalIcon,
+} from "@/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -394,7 +400,24 @@ function RuleDetailContent() {
 						<h2 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
 							{signalLabels[rule.signalType]}: {rangeLabel}
 						</h2>
-						{chartError != null ? (
+						{rule.signalType === "raw_query" ? (
+							// Raw SQL has no structured preview regardless of window, so the
+							// generic "widen the range" empty-state would mislead — mirror
+							// RuleLiveChartHero and show a raw-SQL hint instead.
+							<div className="flex h-[300px] w-full items-center justify-center rounded-md border border-dashed bg-muted/20 px-6 text-center">
+								<div className="max-w-sm space-y-2">
+									<div className="mx-auto flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
+										<SquareTerminalIcon size={16} />
+									</div>
+									<p className="font-medium text-sm">
+										Live preview unavailable for raw SQL
+									</p>
+									<p className="text-muted-foreground text-xs">
+										Raw SQL rules don't have a structured chart preview.
+									</p>
+								</div>
+							</div>
+						) : chartError != null ? (
 							<div className="flex h-[300px] w-full items-center justify-center rounded-md border border-dashed border-destructive/40 bg-destructive/5 px-6 text-center">
 								<div className="max-w-md space-y-1">
 									<p className="font-medium text-destructive text-sm">
