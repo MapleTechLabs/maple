@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { Result, useAtomValue } from "@/lib/effect-atom"
+import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import { CheckIcon, CopyIcon } from "@/components/icons"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/components/ui/hover-card"
@@ -158,10 +158,30 @@ export function CommitShaHoverCard({
 	)
 }
 
-// Per-SHA query atom, memoized by args so the prefetch subscriber, the popup body,
-// and the deploy-marker flag all share one in-flight request + cached result.
-export const commitQueryAtom = (sha: string) =>
-	MapleApiAtomClient.query("integrations", "vcsCommitDetail", { params: { sha } })
+// Idle TTL for a resolved commit atom: how long after its LAST reader unmounts the
+// cached result is kept before the atom is swept (re-subscribing resets the timer, so
+// a commit in active view never expires). Re-hovering or scrubbing a chart back over
+// the same SHA within the window is an instant cache hit, never a refetch. Commit
+// detail is immutable, so a far longer TTL would be safe for the success case — it's
+// kept modest only to bound how long a transient error (a not-yet-connected repo's
+// not-found, say) lingers before a fresh hover re-probes it.
+const COMMIT_DETAIL_TTL_MS = 5 * 60_000
+
+// Per-SHA query atom. Wrapping `MapleApiAtomClient.query` in `Atom.family` keyed by
+// the SHA *string* is what actually lets the prefetch subscriber, the popup body,
+// the deploy-marker flags, and the commit-list rows share ONE fetch + cached result.
+// `Atom.family` memoizes by value on the string key, whereas calling `.query`
+// directly mints a fresh request object on every call — and the underlying
+// `Atom.family` inside `AtomHttpApi` keys by that object's reference, so each
+// consumer (and every hover) would otherwise get its own atom and refetch. The TTL
+// keeps a resolved commit cached across hovers; re-subscribing resets the idle timer,
+// so hot commits never expire while only truly-idle ones are eventually swept.
+export const commitQueryAtom = Atom.family((sha: string) =>
+	MapleApiAtomClient.query("integrations", "vcsCommitDetail", {
+		params: { sha },
+		timeToLive: COMMIT_DETAIL_TTL_MS,
+	}),
+)
 
 // Renders nothing — it exists only to mount (and thus run) the query early.
 function CommitPrefetch({ sha }: { sha: string }) {
