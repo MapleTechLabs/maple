@@ -77,6 +77,15 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		navigate({ search: (prev) => ({ ...prev, userId: value }) })
 	}
 
+	// Session-time ranges (seconds in the URL; mapped to ms before the query).
+	const setDurationRange = (min: number | undefined, max: number | undefined) => {
+		navigate({ search: (prev) => ({ ...prev, durationMin: min, durationMax: max }) })
+	}
+
+	const setActiveRange = (min: number | undefined, max: number | undefined) => {
+		navigate({ search: (prev) => ({ ...prev, activeMin: min, activeMax: max }) })
+	}
+
 	const clearAllFilters = () => {
 		navigate({
 			search: {
@@ -94,7 +103,11 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.country ||
 		!!search.deviceType ||
 		!!search.userId ||
-		search.hasErrors === true
+		search.hasErrors === true ||
+		search.durationMin != null ||
+		search.durationMax != null ||
+		search.activeMin != null ||
+		search.activeMax != null
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <FilterSidebarLoading sectionCount={5} />)
@@ -125,6 +138,26 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							checked={search.hasErrors === true}
 							onChange={toggleHasErrors}
 							count={facets.errorCount}
+						/>
+
+						<Separator className="my-2" />
+
+						<RangeFilter
+							title="Session time"
+							hint="Total length, in seconds"
+							min={search.durationMin}
+							max={search.durationMax}
+							onApply={setDurationRange}
+						/>
+
+						<Separator className="my-2" />
+
+						<RangeFilter
+							title="Active time"
+							hint="Engaged (non-idle) time, in seconds"
+							min={search.activeMin}
+							max={search.activeMax}
+							onApply={setActiveRange}
 						/>
 
 						{services.length > 0 && (
@@ -239,6 +272,80 @@ function UserIdFilter({ value, onApply }: UserIdFilterProps) {
 					</InputGroupAddon>
 				)}
 			</InputGroup>
+		</form>
+	)
+}
+
+// A min/max numeric range (seconds). Like UserIdFilter, it commits on submit (so
+// partial typing doesn't refetch per keystroke) and syncs back when the applied
+// value changes elsewhere (Clear all). Blank bound = unbounded on that side.
+interface RangeFilterProps {
+	title: string
+	hint: string
+	min: number | undefined
+	max: number | undefined
+	onApply: (min: number | undefined, max: number | undefined) => void
+}
+
+function RangeFilter({ title, hint, min, max, onApply }: RangeFilterProps) {
+	const [minText, setMinText] = useState(min != null ? String(min) : "")
+	const [maxText, setMaxText] = useState(max != null ? String(max) : "")
+
+	useEffect(() => {
+		setMinText(min != null ? String(min) : "")
+	}, [min])
+	useEffect(() => {
+		setMaxText(max != null ? String(max) : "")
+	}, [max])
+
+	// Parse a non-negative number, or undefined for blank/invalid (= unbounded).
+	const parse = (raw: string): number | undefined => {
+		const trimmed = raw.trim()
+		if (trimmed === "") return undefined
+		const n = Number(trimmed)
+		return Number.isFinite(n) && n >= 0 ? n : undefined
+	}
+
+	return (
+		<form
+			className="py-2"
+			onSubmit={(e) => {
+				e.preventDefault()
+				onApply(parse(minText), parse(maxText))
+			}}
+		>
+			<Label className="mb-1 block text-sm font-medium text-muted-foreground">{title}</Label>
+			<p className="mb-2 text-xs text-muted-foreground/70">{hint}</p>
+			<div className="flex items-center gap-2">
+				<InputGroup>
+					<InputGroupInput
+						size="sm"
+						inputMode="numeric"
+						value={minText}
+						onChange={(e) => setMinText(e.target.value)}
+						placeholder="Min"
+						aria-label={`${title} minimum (seconds)`}
+					/>
+					<InputGroupAddon align="inline-end">s</InputGroupAddon>
+				</InputGroup>
+				<span className="text-muted-foreground">–</span>
+				<InputGroup>
+					<InputGroupInput
+						size="sm"
+						inputMode="numeric"
+						value={maxText}
+						onChange={(e) => setMaxText(e.target.value)}
+						placeholder="Max"
+						aria-label={`${title} maximum (seconds)`}
+					/>
+					<InputGroupAddon align="inline-end">s</InputGroupAddon>
+				</InputGroup>
+			</div>
+			{/* Submit is keyboard-driven (Enter); a hidden submit keeps the form
+			    submittable without a visible button cluttering the sidebar. */}
+			<button type="submit" className="sr-only">
+				Apply {title}
+			</button>
 		</form>
 	)
 }

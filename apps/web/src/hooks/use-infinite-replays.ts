@@ -23,6 +23,10 @@ export interface ReplaysFilterInputs {
 	userId?: string
 	hasErrors?: boolean
 	search?: string
+	durationMinMs?: number
+	durationMaxMs?: number
+	activeTimeMinMs?: number
+	activeTimeMaxMs?: number
 }
 
 interface ReplaysPage {

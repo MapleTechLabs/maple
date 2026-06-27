@@ -21,9 +21,10 @@
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { compileFnCall, compileFnCallCond } from "@maple-dev/clickhouse-builder"
 import { param } from "@maple-dev/clickhouse-builder"
-import { from, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/clickhouse-builder"
 import { unionAll, type CHUnionQuery } from "@maple-dev/clickhouse-builder"
 import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
+import { sessionActivityAggregateQuery } from "./session-events"
 
 // argMax(value, ordering) — finalize a ReplacingMergeTree column to its latest
 // version. Generic per call site, so declared here rather than via defineFn.
@@ -59,6 +60,16 @@ export interface SessionReplaysListOpts {
 	search?: string
 	/** Keyset cursor: only sessions with StartTime strictly before this. */
 	cursor?: string
+	/** Min/max wall-clock duration (ms). Filters on the stored DurationMs; only
+	 *  completed (Version=2) sessions carry it, so in-progress sessions are
+	 *  excluded when either bound is set. */
+	durationMinMs?: number
+	durationMaxMs?: number
+	/** Min/max active time (ms), computed from session_events gaps. Setting either
+	 *  bound LEFT JOINs the per-session activity aggregate (the only path that
+	 *  scans session_events — the default list never does). */
+	activeTimeMinMs?: number
+	activeTimeMaxMs?: number
 	limit?: number
 	offset?: number
 }
@@ -82,10 +93,19 @@ export interface SessionReplaysListOutput {
 	readonly traceCount: number
 }
 
-export function sessionReplaysListQuery(opts: SessionReplaysListOpts) {
+// Return type is annotated (not inferred) because the duration/active filters
+// branch into structurally-different sources (the base table vs a wrapping
+// subquery, optionally joined) — all three produce the same row shape, but TS
+// otherwise infers a union that won't unify at the compileCH call site. Mirrors
+// metricsTimeseriesRateQuery's annotation.
+export function sessionReplaysListQuery(
+	opts: SessionReplaysListOpts,
+): CHQuery<any, SessionReplaysListOutput, {}> {
 	const limit = opts.limit ?? 50
+	const needsDurationFilter = opts.durationMinMs != null || opts.durationMaxMs != null
+	const needsActiveFilter = opts.activeTimeMinMs != null || opts.activeTimeMaxMs != null
 
-	return from(SessionReplays)
+	const base = from(SessionReplays)
 		.select(($) => ({
 			sessionId: $.SessionId,
 			startTime: argMax($.StartTime, $.Version),
@@ -122,6 +142,74 @@ export function sessionReplaysListQuery(opts: SessionReplaysListOpts) {
 			CH.when(opts.cursor, (v: string) => $.StartTime.lt(v)),
 		])
 		.groupBy("sessionId")
+
+	// Fast path: no post-aggregate filters → the original grouped query, untouched
+	// (never reads session_events).
+	if (!needsDurationFilter && !needsActiveFilter) {
+		return base.orderBy(["startTime", "desc"]).limit(limit).offset(opts.offset ?? 0).format("JSON")
+	}
+
+	// Duration and active-time bounds are post-aggregate predicates (argMax /
+	// joined column), which the DSL can't put in WHERE/HAVING directly — wrap the
+	// grouped query in a subquery and filter there. The active-time filter LEFT
+	// JOINs the per-session session_events activity aggregate; the duration-only
+	// path skips the join (and the session_events scan) entirely.
+	if (needsActiveFilter) {
+		return fromQuery(base, "s")
+			.leftJoinQuery(sessionActivityAggregateQuery(), "a", (s, a) => s.sessionId.eq(a.sessionId))
+			.select(($) => ({
+				sessionId: $.sessionId,
+				startTime: $.startTime,
+				endTime: $.endTime,
+				durationMs: $.durationMs,
+				status: $.status,
+				userId: $.userId,
+				urlInitial: $.urlInitial,
+				browserName: $.browserName,
+				osName: $.osName,
+				deviceType: $.deviceType,
+				country: $.country,
+				serviceName: $.serviceName,
+				pageViews: $.pageViews,
+				clickCount: $.clickCount,
+				errorCount: $.errorCount,
+				traceCount: $.traceCount,
+			}))
+			.where(($) => [
+				CH.when(opts.durationMinMs, (v: number) => $.durationMs.gte(v)),
+				CH.when(opts.durationMaxMs, (v: number) => $.durationMs.lte(v)),
+				CH.when(opts.activeTimeMinMs, (v: number) => $.a.activeTimeMs.gte(v)),
+				CH.when(opts.activeTimeMaxMs, (v: number) => $.a.activeTimeMs.lte(v)),
+			])
+			.orderBy(["startTime", "desc"])
+			.limit(limit)
+			.offset(opts.offset ?? 0)
+			.format("JSON")
+	}
+
+	return fromQuery(base, "s")
+		.select(($) => ({
+			sessionId: $.sessionId,
+			startTime: $.startTime,
+			endTime: $.endTime,
+			durationMs: $.durationMs,
+			status: $.status,
+			userId: $.userId,
+			urlInitial: $.urlInitial,
+			browserName: $.browserName,
+			osName: $.osName,
+			deviceType: $.deviceType,
+			country: $.country,
+			serviceName: $.serviceName,
+			pageViews: $.pageViews,
+			clickCount: $.clickCount,
+			errorCount: $.errorCount,
+			traceCount: $.traceCount,
+		}))
+		.where(($) => [
+			CH.when(opts.durationMinMs, (v: number) => $.durationMs.gte(v)),
+			CH.when(opts.durationMaxMs, (v: number) => $.durationMs.lte(v)),
+		])
 		.orderBy(["startTime", "desc"])
 		.limit(limit)
 		.offset(opts.offset ?? 0)

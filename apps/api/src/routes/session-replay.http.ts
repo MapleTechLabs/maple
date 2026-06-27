@@ -40,6 +40,10 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							hasErrors: payload.hasErrors,
 							search: payload.search,
 							cursor: payload.cursor,
+							durationMinMs: payload.durationMinMs,
+							durationMaxMs: payload.durationMaxMs,
+							activeTimeMinMs: payload.activeTimeMinMs,
+							activeTimeMaxMs: payload.activeTimeMaxMs,
 							limit: payload.limit,
 							offset: payload.offset,
 						}),
@@ -115,20 +119,48 @@ export const HttpSessionReplaysLive = HttpApiBuilder.group(MapleApi, "sessionRep
 							sessionId: payload.sessionId,
 						},
 					)
-					const maybeData = yield* warehouse.compiledQueryFirst(tenant, compiled, {
-						profile: "discovery",
-						context: "getReplay",
-					})
+					// Active/idle breakdown from session_events gaps. Both reads are
+					// single-session sort-key seeks (`(OrgId, SessionId)` prefix) sharing
+					// the partition-pruning window, so they're cheap and independent — run
+					// them concurrently to keep the detail page to one round-trip of
+					// latency rather than two.
+					const activityCompiled = CH.compile(
+						CH.sessionActivityQuery({
+							startTime: payload.windowStart,
+							endTime: payload.windowEnd,
+						}),
+						{ orgId: tenant.orgId, sessionId: payload.sessionId },
+					)
+					const [maybeData, maybeActivity] = yield* Effect.all(
+						[
+							warehouse.compiledQueryFirst(tenant, compiled, {
+								profile: "discovery",
+								context: "getReplay",
+							}),
+							warehouse.compiledQueryFirst(tenant, activityCompiled, {
+								profile: "discovery",
+								context: "getReplayActivity",
+							}),
+						],
+						{ concurrency: 2 },
+					)
 					const data = Option.getOrNull(maybeData)
+					if (!data) {
+						return new GetReplayResponse({ data: null })
+					}
+					const activity = Option.getOrNull(maybeActivity)
+
 					return new GetReplayResponse({
-						data: data
-							? {
-									...data,
-									sessionId: decodeSessionId(data.sessionId),
-									userId: data.userId ? decodeUserId(data.userId) : null,
-									traceIds: data.traceIds.map((traceId) => decodeTraceId(traceId)),
-								}
-							: null,
+						data: {
+							...data,
+							sessionId: decodeSessionId(data.sessionId),
+							userId: data.userId ? decodeUserId(data.userId) : null,
+							traceIds: data.traceIds.map((traceId) => decodeTraceId(traceId)),
+							// ClickHouse JSON-quotes 64-bit ints as strings; coerce before
+							// Schema.Number validates (see the facets handler).
+							activeTimeMs: activity ? Number(activity.activeTimeMs) : null,
+							idleTimeMs: activity ? Number(activity.idleTimeMs) : null,
+						},
 					})
 				}),
 			)
