@@ -26,15 +26,12 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { AlertWarningIcon, ArrowPathIcon, CheckIcon, CopyIcon, EyeIcon, ShieldIcon } from "@/components/icons"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { maskKey } from "@/components/ingest/copyable-field"
+import { GuidedSetup } from "@/components/ingest/guided-setup"
+import { IngestStatusPanel } from "@/components/ingest/connection-status"
+import { useIngestConnection } from "@/components/ingest/use-ingest-connection"
 import { AttributeMappingsSection } from "./attribute-mappings-section"
 import { RecommendedMappingsSection } from "./recommended-mappings-section"
-
-function maskKey(key: string): string {
-	if (key.length <= 18) return key
-	const prefix = key.slice(0, 14)
-	const suffix = key.slice(-4)
-	return `${prefix}${"•".repeat(key.length - 18)}${suffix}`
-}
 
 interface ApiKeyRowProps {
 	type: "public" | "private"
@@ -128,6 +125,8 @@ export function IngestionSection() {
 	const keysResult = useAtomValue(keysQueryAtom)
 	const refreshKeys = useAtomRefresh(keysQueryAtom)
 
+	const connection = useIngestConnection()
+
 	const rerollPublicMutation = useAtomSet(MapleApiAtomClient.mutation("ingestKeys", "rerollPublic"), {
 		mode: "promiseExit",
 	})
@@ -207,6 +206,19 @@ export function IngestionSection() {
 	return (
 		<>
 			<div className="space-y-4">
+				<Card>
+					<CardHeader>
+						<CardTitle>Send your first telemetry</CardTitle>
+						<CardDescription>
+							Point your OpenTelemetry SDK at Maple, or let Claude Code wire it up for you.
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						<GuidedSetup apiKey={connection.apiKey} />
+						<IngestStatusPanel connection={connection} onTestSent={connection.refresh} />
+					</CardContent>
+				</Card>
+
 				<div className="grid grid-cols-2 gap-4">
 					<Card>
 						<CardHeader>

@@ -1,0 +1,128 @@
+import { useState } from "react"
+
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { ingestUrl } from "@/lib/services/common/ingest-url"
+import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useMountEffect } from "@/hooks/use-mount-effect"
+import { getServiceOverviewResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+
+export interface IngestConnection {
+	/** `connected` once non-demo telemetry is observed in the last hour. */
+	status: "waiting" | "connected"
+	/** Count of real (non-`demo-`) services seen. */
+	serviceCount: number
+	/** First real service name, if any — handy for "we're seeing X" copy. */
+	firstRealService?: string
+	/** The org's public ingest key (empty string until loaded / when denied). */
+	apiKey: string
+	/** Force an immediate re-poll of the service overview. */
+	refresh: () => void
+}
+
+interface UseIngestConnectionOptions {
+	/** Poll the service overview on an interval (default: true). */
+	poll?: boolean
+}
+
+/**
+ * Live ingest-connection state, shared across the Connect popover, ingestion
+ * settings, and the dashboard setup checklist. Polls the service overview and
+ * filters out the seeded `demo-` services so the signal reflects the user's own
+ * telemetry. Reuses the cached `ingestKeys` query for the public key.
+ */
+export function useIngestConnection({ poll = true }: UseIngestConnectionOptions = {}): IngestConnection {
+	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, "1h")
+	const [pollCount, setPollCount] = useState(0)
+
+	const keysResult = useAtomValue(MapleApiAtomClient.query("ingestKeys", "get", {}))
+	const apiKey = Result.isSuccess(keysResult) ? keysResult.value.publicKey : ""
+
+	const overviewResult = useAtomValue(
+		getServiceOverviewResultAtom({
+			data: { startTime, endTime },
+			_poll: pollCount,
+		} as never),
+	)
+
+	useMountEffect(() => {
+		if (!poll) return
+		const interval = setInterval(() => setPollCount((c) => c + 1), 15000)
+		return () => clearInterval(interval)
+	})
+
+	const services = Result.isSuccess(overviewResult) ? overviewResult.value.data : []
+	const realServices = services.filter(
+		(s) => !(typeof s.serviceName === "string" && s.serviceName.startsWith("demo-")),
+	)
+	const firstRealService =
+		typeof realServices[0]?.serviceName === "string" ? (realServices[0].serviceName as string) : undefined
+
+	return {
+		status: realServices.length > 0 ? "connected" : "waiting",
+		serviceCount: realServices.length,
+		firstRealService,
+		apiKey,
+		refresh: () => setPollCount((c) => c + 1),
+	}
+}
+
+function randomHex(byteLength: number): string {
+	const bytes = new Uint8Array(byteLength)
+	crypto.getRandomValues(bytes)
+	return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+const TEST_EVENT_SERVICE = "maple-onboarding-test"
+
+/** POST a single synthetic trace to the ingest gateway to prove the key works. */
+export async function sendTestEvent(apiKey: string): Promise<void> {
+	const now = Date.now()
+	const endNano = `${now}000000`
+	const startNano = `${now - 87}000000`
+	const payload = {
+		resourceSpans: [
+			{
+				resource: {
+					attributes: [
+						{ key: "service.name", value: { stringValue: TEST_EVENT_SERVICE } },
+						{ key: "deployment.environment", value: { stringValue: "development" } },
+					],
+				},
+				scopeSpans: [
+					{
+						scope: { name: "maple-onboarding" },
+						spans: [
+							{
+								traceId: randomHex(16),
+								spanId: randomHex(8),
+								name: "GET /maple/test-event",
+								kind: 2,
+								startTimeUnixNano: startNano,
+								endTimeUnixNano: endNano,
+								attributes: [
+									{ key: "http.request.method", value: { stringValue: "GET" } },
+									{ key: "http.route", value: { stringValue: "/maple/test-event" } },
+									{ key: "http.response.status_code", value: { intValue: 200 } },
+								],
+								status: { code: 1 },
+							},
+						],
+					},
+				],
+			},
+		],
+	}
+
+	const response = await fetch(`${ingestUrl}/v1/traces`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${apiKey}`,
+		},
+		body: JSON.stringify(payload),
+	})
+	if (!response.ok) {
+		throw new Error(`Ingest gateway returned ${response.status}`)
+	}
+}
