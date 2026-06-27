@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -32,15 +32,22 @@ import {
 import {
 	AlertRuleId,
 	IsoDateTimeString,
+	type AiTriageResult,
 	type AlertCheckDocument,
+	type AlertIncidentDocument,
 	type AlertRuleDocument,
 } from "@maple/domain/http"
+import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
+import { AlertChatSheet } from "@/components/alerts/alert-chat-sheet"
+import type { AlertContext } from "@/components/chat/alert-context"
 import {
 	CheckIcon,
 	PencilIcon,
 	DotsVerticalIcon,
 	CircleWarningIcon,
 	SquareTerminalIcon,
+	ChevronDownIcon,
+	ChatBubbleSparkleIcon,
 } from "@/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -160,6 +167,24 @@ function RuleDetailContent() {
 		if (stateFilter === "all") return ruleIncidents
 		return ruleIncidents.filter((i) => i.status === stateFilter)
 	}, [ruleIncidents, stateFilter])
+
+	// Incident the Overview AI-summary card binds to: the open one, else most recent.
+	const overviewIncident = useMemo(
+		() => ruleIncidents.find((i) => i.status === "open") ?? ruleIncidents[0] ?? null,
+		[ruleIncidents],
+	)
+
+	// Integrated alert chat slide-over, seeded with an incident's context.
+	const [chatContext, setChatContext] = useState<AlertContext | null>(null)
+	const [chatOpen, setChatOpen] = useState(false)
+	// History rows lazily mount their own triage card only when expanded.
+	const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null)
+
+	const openAlertChat = (incident: AlertIncidentDocument, result?: AiTriageResult | null) => {
+		if (!rule) return
+		setChatContext(toAlertContext(rule, incident, result))
+		setChatOpen(true)
+	}
 
 	const stats = useMemo(() => computeIncidentStats(ruleIncidents), [ruleIncidents])
 	const maxContributorCount = stats.topContributors.length > 0 ? stats.topContributors[0][1] : 1
@@ -443,6 +468,15 @@ function RuleDetailContent() {
 						)}
 					</div>
 
+					{overviewIncident ? (
+						<AiTriageCard
+							incidentKind="alert"
+							incidentId={overviewIncident.id}
+							issueId={overviewIncident.errorIssueId ?? undefined}
+							onOpenChat={(result) => openAlertChat(overviewIncident, result)}
+						/>
+					) : null}
+
 					<div className="space-y-3">
 						<h2 className="text-lg font-semibold">Configuration</h2>
 						<Card>
@@ -682,8 +716,10 @@ function RuleDetailContent() {
 									<TableBody>
 										{filteredIncidents.map((incident) => {
 											const isOpen = incident.status === "open"
+											const isExpanded = expandedIncidentId === incident.id
 											return (
-												<TableRow key={incident.id}>
+												<Fragment key={incident.id}>
+												<TableRow>
 													<TableCell>
 														<AlertStatusBadge
 															state={isOpen ? "firing" : "resolved"}
@@ -750,29 +786,73 @@ function RuleDetailContent() {
 														)}
 													</TableCell>
 													<TableCell>
-														<DropdownMenu>
-															<DropdownMenuTrigger
-																render={
-																	<Button variant="ghost" size="icon-sm" />
+														<div className="flex items-center justify-end gap-1">
+															<Button
+																variant="ghost"
+																size="icon-sm"
+																aria-label={isExpanded ? "Hide AI summary" : "Show AI summary"}
+																aria-expanded={isExpanded}
+																onClick={() =>
+																	setExpandedIncidentId(
+																		isExpanded ? null : incident.id,
+																	)
 																}
 															>
-																<DotsVerticalIcon size={14} />
-															</DropdownMenuTrigger>
-															<DropdownMenuContent align="end">
-																<DropdownMenuItem
-																	onClick={() =>
-																		navigate({
-																			to: "/alerts",
-																			search: { tab: "monitor" },
-																		})
+																<ChevronDownIcon
+																	size={14}
+																	className={cn(
+																		"transition-transform",
+																		isExpanded && "rotate-180",
+																	)}
+																/>
+															</Button>
+															<DropdownMenu>
+																<DropdownMenuTrigger
+																	render={
+																		<Button variant="ghost" size="icon-sm" />
 																	}
 																>
-																	View all incidents
-																</DropdownMenuItem>
-															</DropdownMenuContent>
-														</DropdownMenu>
+																	<DotsVerticalIcon size={14} />
+																</DropdownMenuTrigger>
+																<DropdownMenuContent align="end">
+																	<DropdownMenuItem
+																		onClick={() =>
+																			setExpandedIncidentId(incident.id)
+																		}
+																	>
+																		<ChatBubbleSparkleIcon size={14} />
+																		AI summary
+																	</DropdownMenuItem>
+																	<DropdownMenuItem
+																		onClick={() =>
+																			navigate({
+																				to: "/alerts",
+																				search: { tab: "monitor" },
+																			})
+																		}
+																	>
+																		View all incidents
+																	</DropdownMenuItem>
+																</DropdownMenuContent>
+															</DropdownMenu>
+														</div>
 													</TableCell>
 												</TableRow>
+												{isExpanded ? (
+													<TableRow className="bg-muted/30 hover:bg-muted/30">
+														<TableCell colSpan={7} className="p-4">
+															<AiTriageCard
+																incidentKind="alert"
+																incidentId={incident.id}
+																issueId={incident.errorIssueId ?? undefined}
+																onOpenChat={(result) =>
+																	openAlertChat(incident, result)
+																}
+															/>
+														</TableCell>
+													</TableRow>
+												) : null}
+												</Fragment>
 											)
 										})}
 									</TableBody>
@@ -809,8 +889,38 @@ function RuleDetailContent() {
 							setStatusFilter={setCheckStatusFilter}
 						/>
 					))}
+
+			<AlertChatSheet open={chatOpen} onOpenChange={setChatOpen} alertContext={chatContext} />
 		</DashboardLayout>
 	)
+}
+
+/**
+ * Build the chat `AlertContext` from a rule + the incident the engineer is
+ * investigating, optionally folding in a prior triage result so the chat opens
+ * already aware of the AI's findings.
+ */
+function toAlertContext(
+	rule: AlertRuleDocument,
+	incident: AlertIncidentDocument,
+	result?: AiTriageResult | null,
+): AlertContext {
+	return {
+		ruleId: rule.id,
+		ruleName: rule.name,
+		incidentId: incident.id,
+		eventType: incident.status === "open" ? "trigger" : "resolve",
+		signalType: rule.signalType,
+		severity: incident.severity,
+		comparator: rule.comparator,
+		threshold: incident.threshold,
+		value: incident.lastObservedValue,
+		windowMinutes: rule.windowMinutes,
+		groupKey: incident.groupKey,
+		sampleCount: incident.lastSampleCount,
+		...(result?.summary ? { aiSummary: result.summary } : {}),
+		...(result?.suspectedCause ? { aiSuspectedCause: result.suspectedCause } : {}),
+	}
 }
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {

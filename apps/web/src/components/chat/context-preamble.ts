@@ -191,5 +191,16 @@ const formatAlertContextBlock = (alert: AlertContext): string => {
 		"- When you recommend dashboards or links, prefer existing Maple routes (services, traces, errors, alerts). Use `get_alert_rule`/`list_alert_incidents` if you need deeper rule history.",
 		"- If the event is `resolve`, focus on root-cause and prevention rather than immediate mitigation.",
 	]
+
+	if (alert.aiSummary || alert.aiSuspectedCause) {
+		lines.push(
+			"",
+			"### Prior AI triage",
+			"An automated triage pass already ran on this incident. Build on it — verify, deepen, or correct it rather than starting from scratch.",
+		)
+		if (alert.aiSummary) lines.push(`- summary: ${alert.aiSummary}`)
+		if (alert.aiSuspectedCause) lines.push(`- suspected_cause: ${alert.aiSuspectedCause}`)
+	}
+
 	return lines.join("\n")
 }
