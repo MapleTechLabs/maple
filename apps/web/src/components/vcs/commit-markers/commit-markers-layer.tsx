@@ -65,10 +65,12 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 		openKeyRef.current = openKey
 	}, [openKey])
 
-	// One card hovered ⇒ hide the chart's own data tooltip (they never co-show).
+	// Only once a card is OPEN do we hide the chart's own data tooltip (they never
+	// co-show). Merely hovering a marker — before the open delay elapses — leaves the
+	// chart tooltip live, so a quick pass over a dash doesn't blink it away.
 	useEffect(() => {
-		setSuppressed(hoverKey !== null)
-	}, [hoverKey, setSuppressed])
+		setSuppressed(openKey !== null)
+	}, [openKey, setSuppressed])
 
 	useEffect(
 		() => () => {
@@ -119,11 +121,11 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 
 	if (!plotArea || groups.length === 0) return null
 
-	// While a card is active (hovered or open), the overlay swallows pointer events
-	// over the whole plot so they never reach the chart underneath — no ghost cursor
-	// or data tooltip fighting the commit card. When idle it stays transparent so the
-	// empty plot area still drives the chart's own tooltip.
-	const blockChart = hoverKey !== null || openKey !== null
+	// Once a card is OPEN, the overlay swallows pointer events over the whole plot so
+	// they never reach the chart underneath — no ghost cursor or data tooltip fighting
+	// the commit card. While merely hovering (before the card opens) or idle it stays
+	// transparent so the plot area still drives the chart's own tooltip.
+	const blockChart = openKey !== null
 	// Capturing pointer events only makes the root the event *target*; recharts still
 	// listens on an ancestor, so the synthetic event bubbles up to it unless we stop
 	// it here (same trick the dashes/labels use via `stop`).

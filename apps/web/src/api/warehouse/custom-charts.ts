@@ -825,22 +825,17 @@ const getCustomChartServiceDetailEffect = Effect.fn("QueryEngine.getCustomChartS
 })
 
 /**
- * Service-detail Overview tab in one request: the primary all-metrics chart and
- * the service's distinct environments — run server-side under a single
- * tenant/config resolution (see the `serviceDetailOverview` handler). The
- * environment switcher and the chart grid read the SAME atom key, so this fires
- * once for the whole tab instead of independent browser→Worker round-trips.
+ * Service-detail Overview tab in one request: the primary all-metrics chart,
+ * the releases timeline, and the service's distinct environments — run
+ * server-side under a single tenant/config resolution (see the
+ * `serviceDetailOverview` handler). The environment switcher and the chart grid
+ * read the SAME atom key, so this fires once for the whole tab instead of three
+ * independent browser→Worker round-trips.
  */
 export interface ServiceDetailOverviewResult {
 	data: ServiceDetailTimeSeriesPoint[]
+	releases: ReadonlyArray<{ bucket: string; commitSha: CommitSha; count: number }>
 	environments: string[]
-	/**
-	 * Per-bucket commit activity (one row per distinct commit SHA seen in a
-	 * bucket). Bucketed at the SAME `bucketSeconds` as `data`, so a release's
-	 * bucket lines up exactly with a chart x-tick. The chart derives the deploy
-	 * markers (first-seen-per-commit) from this on the client.
-	 */
-	releases: { bucket: string; commitSha: string; count: number }[]
 }
 
 export function getServiceDetailOverview({ data }: { data: GetCustomChartServiceDetailInput }) {
@@ -878,8 +873,6 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 					startTime,
 					endTime,
 					timeseries: timeseriesRequest,
-					// Align release buckets to the chart's bucket grid so deploy
-					// markers snap onto the same x-ticks as the series.
 					releasesBucketSeconds: bucketSeconds,
 				}),
 			})
@@ -888,12 +881,12 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 
 	return {
 		data: buildServiceDetailPoints(result.timeseries, startTime, endTime, bucketSeconds, nowMs),
-		environments: [...result.environments],
 		releases: result.releases.map((r) => ({
-			bucket: r.bucket,
+			bucket: toIsoBucket(r.bucket),
 			commitSha: r.commitSha,
-			count: r.count,
+			count: Number(r.count),
 		})),
+		environments: [...result.environments],
 	} satisfies ServiceDetailOverviewResult
 })
 

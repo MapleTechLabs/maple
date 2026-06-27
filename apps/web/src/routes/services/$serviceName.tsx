@@ -226,8 +226,6 @@ function ServiceDetailContent() {
 	)
 }
 
-const EMPTY_RELEASES: ReleasePoint[] = []
-
 interface OverviewTabProps {
 	serviceName: string
 	effectiveStartTime: string
@@ -306,7 +304,7 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 	// own bucket grid so each marker sits on an x-tick.
 	const releases = Result.builder(overviewResult)
 		.onSuccess((response) => response.releases)
-		.orElse(() => EMPTY_RELEASES)
+		.orElse(() => [] as ReleasePoint[])
 	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
 	const { overlay: commitMarkers, resolvers: commitLabelResolvers } = useCommitMarkers(
 		releases,

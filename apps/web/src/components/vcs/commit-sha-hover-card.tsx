@@ -215,7 +215,6 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 	const body = newlineIdx === -1 ? "" : commit.message.slice(newlineIdx + 1).trim()
 	const providerLabel = commit.provider === "github" ? "GitHub" : commit.provider
 	const author = commit.authorLogin ?? commit.authorName ?? "Unknown author"
-	const avatarUrl = deriveAvatarUrl(commit)
 	// Profile and repo links are derived from the commit's own htmlUrl origin, so
 	// they stay correct across providers and self-hosted instances (github.com, GH
 	// Enterprise, GitLab, …) without hardcoding a host.
@@ -240,7 +239,7 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 			</div>
 			<div className={cn("flex flex-col", compact ? "gap-2" : "gap-2.5", pad)}>
 				<div className="flex items-center gap-2.5">
-					<CommitAvatar url={avatarUrl} name={author} href={profileHref} compact={compact} />
+					<CommitAvatar url={commit.authorAvatarUrl} name={author} href={profileHref} compact={compact} />
 					<div className="flex min-w-0 flex-col leading-tight">
 						<ExternalText href={profileHref} className="truncate font-medium text-foreground">
 							{author}
@@ -272,18 +271,6 @@ function CommitCard({ commit, compact = false }: { commit: VcsCommitDetailRespon
 				<span aria-hidden>↗</span>
 			</a>
 		</div>
-	)
-}
-
-// Push-webhook payloads carry no avatar URL (only a username), so commits
-// ingested that way have a null avatar. GitHub serves a stable avatar for any
-// login at github.com/<login>.png — derive it as a fallback so those still show.
-function deriveAvatarUrl(commit: VcsCommitDetailResponse): string | null {
-	return (
-		commit.authorAvatarUrl ??
-		(commit.provider === "github" && commit.authorLogin
-			? `https://github.com/${encodeURIComponent(commit.authorLogin)}.png?size=64`
-			: null)
 	)
 }
 
@@ -352,7 +339,7 @@ function CommitListRowLink({ commit }: { commit: VcsCommitDetailResponse }) {
 	const profileHref = commit.authorLogin ? hrefFromOrigin(commit.htmlUrl, commit.authorLogin) : null
 	return (
 		<div className="flex items-center gap-2.5 px-2.5 py-2">
-			<CommitAvatar url={deriveAvatarUrl(commit)} name={author} href={profileHref} compact />
+			<CommitAvatar url={commit.authorAvatarUrl} name={author} href={profileHref} compact />
 			<div className="flex min-w-0 flex-1 flex-col gap-0.5 leading-tight">
 				<a
 					href={commit.htmlUrl}
