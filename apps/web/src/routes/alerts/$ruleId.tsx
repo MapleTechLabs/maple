@@ -39,7 +39,7 @@ import {
 } from "@maple/domain/http"
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
 import { AlertChatSheet } from "@/components/alerts/alert-chat-sheet"
-import type { AlertContext } from "@/components/chat/alert-context"
+import { toAlertContext, type AlertContext } from "@/components/chat/alert-context"
 import {
 	CheckIcon,
 	PencilIcon,
@@ -895,34 +895,6 @@ function RuleDetailContent() {
 			<AlertChatSheet open={chatOpen} onOpenChange={setChatOpen} alertContext={chatContext} />
 		</DashboardLayout>
 	)
-}
-
-/**
- * Build the chat `AlertContext` from a rule + the incident the engineer is
- * investigating, optionally folding in a prior triage result so the chat opens
- * already aware of the AI's findings.
- */
-function toAlertContext(
-	rule: AlertRuleDocument,
-	incident: AlertIncidentDocument,
-	result?: AiTriageResult | null,
-): AlertContext {
-	return {
-		ruleId: rule.id,
-		ruleName: rule.name,
-		incidentId: incident.id,
-		eventType: incident.status === "open" ? "trigger" : "resolve",
-		signalType: rule.signalType,
-		severity: incident.severity,
-		comparator: rule.comparator,
-		threshold: incident.threshold,
-		value: incident.lastObservedValue,
-		windowMinutes: rule.windowMinutes,
-		groupKey: incident.groupKey,
-		sampleCount: incident.lastSampleCount,
-		...(result?.summary ? { aiSummary: result.summary } : {}),
-		...(result?.suspectedCause ? { aiSuspectedCause: result.suspectedCause } : {}),
-	}
 }
 
 function ConfigRow({ label, children, wide }: { label: string; children: React.ReactNode; wide?: boolean }) {

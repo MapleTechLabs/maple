@@ -3,6 +3,7 @@ import { AlertDeliveryError } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import {
+	buildAlertChatUrl,
 	buildDiscordEmbedsFromTemplate,
 	buildSlackBlocksFromTemplate,
 	buildTemplateContext,
@@ -35,6 +36,22 @@ const baseContext: TemplateRenderContext = {
 
 const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/chat?mode=alert"
+
+describe("buildAlertChatUrl (Ask Maple AI link)", () => {
+	it("targets the incident diagnosis page when an incident exists", () => {
+		const url = buildAlertChatUrl("https://web.localhost", baseContext)
+		assert.isTrue(
+			url.startsWith("https://web.localhost/alerts/incidents/inc_1?alert="),
+			url,
+		)
+	})
+
+	it("falls back to the chat surface when there is no incident row", () => {
+		const url = buildAlertChatUrl("https://web.localhost", { ...baseContext, incidentId: null })
+		assert.isTrue(url.startsWith("https://web.localhost/chat?"), url)
+		assert.include(url, "mode=alert")
+	})
+})
 
 describe("buildTemplateContext", () => {
 	const ctx = buildTemplateContext(baseContext, LINK, CHAT)

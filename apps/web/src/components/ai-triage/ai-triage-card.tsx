@@ -1,7 +1,7 @@
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Link } from "@tanstack/react-router"
 import { Exit } from "effect"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
@@ -82,9 +82,15 @@ export interface AiTriageCardProps {
 	 * completed triage result (if any) so the caller can fold it into the preamble.
 	 */
 	onOpenChat?: (result: AiTriageRunDocument["result"]) => void
+	/**
+	 * Auto-start a diagnosis as soon as the runs query resolves to none — for the
+	 * "Ask Maple AI" landing page, where arriving IS the intent to diagnose. An
+	 * existing run (queued/running/completed/failed) is reused, never re-triggered.
+	 */
+	autoRun?: boolean
 }
 
-export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat }: AiTriageCardProps) {
+export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, autoRun }: AiTriageCardProps) {
 	const reactivityKeys = ["aiTriageRuns", `aiTriage:${incidentKind}:${incidentId ?? issueId ?? ""}`]
 	const runsQueryAtom = MapleApiAtomClient.query("aiTriage", "listRuns", {
 		query:
@@ -132,6 +138,16 @@ export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat }: 
 			toast.error("Couldn't start the diagnosis")
 		}
 	}
+
+	// Auto-start once the runs query resolves to "no run" (Ask-Maple-AI landing).
+	// Ref-guarded so it fires exactly once; any existing run is left untouched.
+	const autoRunStartedRef = useRef(false)
+	useEffect(() => {
+		if (!autoRun || autoRunStartedRef.current) return
+		if (incidentId === null || runsLoading || runsFailed || run !== null) return
+		autoRunStartedRef.current = true
+		void startRun()
+	})
 
 	// --- Loading the run list ------------------------------------------------
 	if (runsLoading) {
