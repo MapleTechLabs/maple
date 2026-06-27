@@ -128,3 +128,78 @@ describe("getSessionReplayQuery", () => {
 		expect(sql).not.toContain("StartTime >=")
 	})
 })
+
+// ---------------------------------------------------------------------------
+// Session-time filters — duration (stored) + active time (session_events gaps)
+//
+// Guardrail: the default list and the duration-only filter must never touch
+// session_events. Active-time filtering joins the per-session activity aggregate
+// (the only path that scans the events table).
+// ---------------------------------------------------------------------------
+
+describe("sessionReplaysListQuery session-time filters", () => {
+	it("keeps the fast path (no subquery, no session_events) when unfiltered", () => {
+		const { sql } = compileCH(sessionReplaysListQuery({}), { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("session_events")
+		// No wrapping subquery: the FROM is the table directly.
+		expect(sql).toContain("FROM session_replays")
+		expect(sql).not.toContain("FROM (SELECT")
+	})
+
+	it("wraps in a subquery to filter on the aggregated duration, without session_events", () => {
+		const { sql } = compileCH(sessionReplaysListQuery({ durationMinMs: 5000, durationMaxMs: 60000 }), {
+			...baseParams,
+			...WINDOW,
+		})
+		expect(sql).not.toContain("session_events")
+		expect(sql).toContain("FROM (SELECT")
+		expect(sql).toContain(") AS s")
+		expect(sql).toContain("durationMs >= 5000")
+		expect(sql).toContain("durationMs <= 60000")
+	})
+
+	it("LEFT JOINs the session_events activity aggregate to filter on active time", () => {
+		const { sql } = compileCH(
+			sessionReplaysListQuery({ activeTimeMinMs: 10000, activeTimeMaxMs: 60000 }),
+			{ ...baseParams, ...WINDOW },
+		)
+		expect(sql).toContain("LEFT JOIN")
+		expect(sql).toContain("FROM session_events")
+		expect(sql).toContain("ON s.sessionId = a.sessionId")
+		// Coalesce to 0 so the LEFT JOIN's NULL (sessions with no distilled events)
+		// is treated as zero activity rather than silently dropped.
+		expect(sql).toContain("coalesce(a.activeTimeMs, 0) >= 10000")
+		expect(sql).toContain("coalesce(a.activeTimeMs, 0) <= 60000")
+		// The activity aggregate scopes session_events to the same org + window.
+		expect(sql).toContain("sumIf(gapMs, (gapMs > 0 AND gapMs <= 15000))")
+	})
+
+	it("keeps zero-activity (no-event) sessions under a max-only or zero bound", () => {
+		// A LEFT-JOIN NULL must satisfy `<= max` and `>= 0`; coalesce(…, 0) makes
+		// `0 <= max` / `0 >= 0` true so rrweb-only sessions aren't dropped. A
+		// min > 0 still excludes them (0 < min), which is intended.
+		const maxOnly = compileCH(sessionReplaysListQuery({ activeTimeMaxMs: 30000 }), {
+			...baseParams,
+			...WINDOW,
+		}).sql
+		expect(maxOnly).toContain("coalesce(a.activeTimeMs, 0) <= 30000")
+
+		const zeroMin = compileCH(sessionReplaysListQuery({ activeTimeMinMs: 0 }), {
+			...baseParams,
+			...WINDOW,
+		}).sql
+		// An explicit 0 bound is still emitted (not skipped as a falsy value).
+		expect(zeroMin).toContain("coalesce(a.activeTimeMs, 0) >= 0")
+	})
+
+	it("scopes the activity aggregate's session_events scan to the list window", () => {
+		const { sql } = compileCH(sessionReplaysListQuery({ activeTimeMinMs: 1000 }), {
+			...baseParams,
+			...WINDOW,
+		})
+		// session_replays filters StartTime; session_events filters Timestamp — both
+		// to the same bound, so the join's scan is partition-pruned identically.
+		expect(sql).toContain("StartTime >= '2026-06-24 04:00:00'")
+		expect(sql).toContain("Timestamp >= '2026-06-24 04:00:00'")
+	})
+})

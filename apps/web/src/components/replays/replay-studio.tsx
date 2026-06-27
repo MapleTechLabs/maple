@@ -30,6 +30,11 @@ interface ReplayStudioSession {
 	readonly urlInitial: string
 	readonly startTime: string
 	readonly durationMs: number | null
+	/** Engaged time (ms), computed server-side from session_events gaps. Omitted
+	 *  on the preview fixture; null when the session has no distilled events. */
+	readonly activeTimeMs?: number | null
+	/** Idle time (ms) — the long-gap complement of active time. */
+	readonly idleTimeMs?: number | null
 	readonly clickCount: number
 	readonly pageViews?: number | null
 	readonly errorCount: number
@@ -123,11 +128,21 @@ export function ReplayStudio({
 	)
 }
 
-/** Unified vitals strip for the header — Duration / Clicks / Pages / Errors,
- *  divided into one cohesive cluster. Only an error count > 0 takes colour. */
+/** Unified vitals strip for the header — Duration / Active / Idle / Clicks /
+ *  Pages / Errors, divided into one cohesive cluster. Active + Idle split the
+ *  wall-clock duration into engaged vs idle time (shown only when the warehouse
+ *  supplied them). Only an error count > 0 takes colour. */
 function StatStrip({ session }: { session: ReplayStudioSession }) {
 	const items = [
 		{ label: "Duration", value: formatDuration(session.durationMs) },
+		// `activeTimeMs === undefined` only on the preview fixture; a real session
+		// with no distilled events sends `null`, which renders as "—".
+		...(session.activeTimeMs !== undefined
+			? [{ label: "Active", value: formatDuration(session.activeTimeMs) }]
+			: []),
+		...(session.idleTimeMs !== undefined
+			? [{ label: "Idle", value: formatDuration(session.idleTimeMs) }]
+			: []),
 		{ label: "Clicks", value: String(session.clickCount) },
 		{ label: "Pages", value: String(session.pageViews || 1) },
 		{ label: "Errors", value: String(session.errorCount), error: session.errorCount > 0 },

@@ -8,7 +8,7 @@ import { SessionsList } from "@/components/replays/sessions-list"
 import { ActiveUserFilter } from "@/components/replays/active-user-filter"
 import { ReplaysFilterSidebar } from "@/components/replays/replays-filter-sidebar"
 import { ReplaysToolbar } from "@/components/replays/replays-toolbar"
-import { BooleanFromStringParam } from "@/lib/search-params"
+import { BooleanFromStringParam, NumberFromStringParam } from "@/lib/search-params"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteReplays } from "@/hooks/use-infinite-replays"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -30,6 +30,13 @@ const replaysSearchSchema = Schema.Struct({
 	deviceType: Schema.optional(Schema.String),
 	userId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
+	// Session-time range filters, in whole seconds (human-friendly URLs). Mapped
+	// to ms before hitting the warehouse. Union accepts a JS-set number or a
+	// URL-parsed string, mirroring hasErrors.
+	durationMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
+	durationMax: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
+	activeMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
+	activeMax: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	q: Schema.optional(Schema.String),
 })
 
@@ -58,6 +65,11 @@ function ReplaysPage() {
 			userId: search.userId,
 			hasErrors: search.hasErrors,
 			search: search.q,
+			// URL params are whole seconds; the warehouse filters in ms.
+			durationMinMs: search.durationMin != null ? search.durationMin * 1000 : undefined,
+			durationMaxMs: search.durationMax != null ? search.durationMax * 1000 : undefined,
+			activeTimeMinMs: search.activeMin != null ? search.activeMin * 1000 : undefined,
+			activeTimeMaxMs: search.activeMax != null ? search.activeMax * 1000 : undefined,
 		}),
 		[
 			startTime,
@@ -69,6 +81,10 @@ function ReplaysPage() {
 			search.userId,
 			search.hasErrors,
 			search.q,
+			search.durationMin,
+			search.durationMax,
+			search.activeMin,
+			search.activeMax,
 		],
 	)
 

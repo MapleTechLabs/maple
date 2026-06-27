@@ -12,7 +12,7 @@
 import * as CH from "@maple-dev/clickhouse-builder/expr"
 import { compileFnCall } from "@maple-dev/clickhouse-builder"
 import { param } from "@maple-dev/clickhouse-builder"
-import { from } from "@maple-dev/clickhouse-builder"
+import { from, fromQuery, type ColumnAccessor } from "@maple-dev/clickhouse-builder"
 import { SessionEvents } from "../tables"
 
 function count(): CH.Expr<number> {
@@ -172,4 +172,112 @@ export function searchSessionsByEventQuery(opts: SearchSessionsByEventOpts) {
 		.limit(limit)
 		.offset(opts.offset ?? 0)
 		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
+// Active / idle time, computed from gaps between distilled events
+//
+// A session's wall-clock duration overstates engagement: a 30s interaction left
+// open in a background tab for 45 minutes reports 45:00. We approximate *active*
+// time from `session_events` — the distilled semantic stream (click / nav /
+// input / console / network / error) — by walking consecutive events per
+// session (ordered by Timestamp, Seq) and measuring the gap to the previous one:
+//
+//   activeTimeMs = Σ gap where 0 < gap ≤ IDLE_GAP_THRESHOLD_MS  (engaged)
+//   idleTimeMs   = Σ gap where gap > IDLE_GAP_THRESHOLD_MS       (idle stretch)
+//
+// (active + idle ≈ last − first event timestamp; both ≤ wall-clock DurationMs.)
+//
+// The first event of each session has no predecessor — `lagInFrame`'s default is
+// the row's own Timestamp, so its gap is 0 and counts as neither active nor idle.
+//
+// IDLE_GAP_THRESHOLD_MS is deliberately larger than the rrweb player's 2s idle
+// threshold (replay-timeline.ts): `session_events` are sparse semantic events
+// (no continuous mouse-move samples), so a 2s threshold would flag nearly every
+// gap as idle. 15s is a heuristic — tune if it proves too coarse/fine.
+// ---------------------------------------------------------------------------
+
+/** Gaps longer than this (ms) between distilled events count as idle, not active. */
+export const IDLE_GAP_THRESHOLD_MS = 15_000
+
+export interface SessionActivityOutput {
+	readonly sessionId: string
+	readonly activeTimeMs: number
+	readonly idleTimeMs: number
+	readonly eventCount: number
+}
+
+export interface SessionActivityOpts {
+	/** Optional session time window — prunes daily partitions. Omit to scan all. */
+	startTime?: string
+	endTime?: string
+}
+
+// Per-event gap (ms) to the previous distilled event in the same session.
+// dateTime64(9) subtraction via nanos, matching the metrics rate query's
+// lagInFrame pattern. Shared by the single-session and aggregate variants.
+function sessionGapSelect($: ColumnAccessor<typeof SessionEvents.columns>) {
+	const onePrecedingFrame = CH.windowSpec({
+		partitionBy: [$.SessionId],
+		orderBy: [
+			[$.Timestamp, "asc"],
+			[$.Seq, "asc"],
+		],
+		frame: CH.rowsBetween(CH.preceding(1), CH.currentRow),
+	})
+	const previousTimestamp = CH.over(CH.lagInFrame($.Timestamp, 1, $.Timestamp), onePrecedingFrame)
+	return {
+		sessionId: $.SessionId,
+		gapMs: CH.toFloat64(
+			CH.toUnixTimestamp64Nano($.Timestamp).sub(CH.toUnixTimestamp64Nano(previousTimestamp)),
+		).div(1_000_000),
+	}
+}
+
+// Aggregate per-session gaps into active / idle totals. Generic over the inner
+// gap subquery so both variants share the threshold split.
+function activeIdleAggregate(inner: ReturnType<typeof sessionActivityGaps>) {
+	return fromQuery(inner, "g")
+		.select(($) => ({
+			sessionId: $.sessionId,
+			activeTimeMs: CH.sumIf($.gapMs, $.gapMs.gt(0).and($.gapMs.lte(IDLE_GAP_THRESHOLD_MS))),
+			idleTimeMs: CH.sumIf($.gapMs, $.gapMs.gt(IDLE_GAP_THRESHOLD_MS)),
+			eventCount: count(),
+		}))
+		.groupBy("sessionId")
+}
+
+function sessionActivityGaps(opts: { single: boolean } & SessionActivityOpts) {
+	return from(SessionEvents)
+		.select(sessionGapSelect)
+		.where(($) =>
+			opts.single
+				? [
+						$.OrgId.eq(param.string("orgId")),
+						$.SessionId.eq(param.string("sessionId")),
+						CH.when(opts.startTime, (v: string) => $.Timestamp.gte(v)),
+						CH.when(opts.endTime, (v: string) => $.Timestamp.lte(v)),
+					]
+				: [
+						$.OrgId.eq(param.string("orgId")),
+						$.Timestamp.gte(param.dateTime("startTime")),
+						$.Timestamp.lte(param.dateTime("endTime")),
+					],
+		)
+}
+
+// Single session (detail page + MCP get_session_traces). Binds `sessionId` as a
+// param; optional startTime/endTime hints prune daily partitions.
+export function sessionActivityQuery(opts: SessionActivityOpts = {}) {
+	return activeIdleAggregate(sessionActivityGaps({ single: true, ...opts }))
+		.limit(1)
+		.format("JSON")
+}
+
+// Every session in the org + time window, keyed by sessionId. Returned as an
+// unformatted builder so the replays list query can LEFT JOIN it to filter by
+// active time. Binds the same `startTime`/`endTime` params as the list query, so
+// they resolve to the same window when compiled together.
+export function sessionActivityAggregateQuery() {
+	return activeIdleAggregate(sessionActivityGaps({ single: false }))
 }

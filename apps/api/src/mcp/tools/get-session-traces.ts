@@ -51,11 +51,15 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 			// Tinybird path returns numbers (see the facets handler in
 			// session-replay.http.ts); coerce every numeric at the edge.
 			const errorCount = Number(session.errorCount)
+			const activeTimeMs = session.activeTimeMs != null ? Number(session.activeTimeMs) : null
+			const idleTimeMs = session.idleTimeMs != null ? Number(session.idleTimeMs) : null
 			const metaParts = [
 				device || "unknown client",
 				session.country || null,
 				errorCount > 0 ? `${errorCount} errors` : "no errors",
-				session.durationMs != null ? `${Math.round(Number(session.durationMs))}ms` : null,
+				session.durationMs != null ? `${Math.round(Number(session.durationMs))}ms total` : null,
+				activeTimeMs != null ? `${Math.round(activeTimeMs)}ms active` : null,
+				idleTimeMs != null ? `${Math.round(idleTimeMs)}ms idle` : null,
 			].filter((p): p is string => Boolean(p))
 
 			const lines: string[] = [`## Session ${session.sessionId}`, metaParts.join(" · ")]
@@ -118,6 +122,8 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 							pageViews: Number(session.pageViews),
 							clickCount: Number(session.clickCount),
 							errorCount,
+							activeTimeMs,
+							idleTimeMs,
 						},
 						totalTraceCount,
 						traces: pipe(

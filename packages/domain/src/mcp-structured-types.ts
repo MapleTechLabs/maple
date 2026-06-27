@@ -826,6 +826,10 @@ export interface GetSessionTracesData {
 		pageViews: number
 		clickCount: number
 		errorCount: number
+		/** Engaged time (ms) from session_events gaps; null if no distilled events. */
+		activeTimeMs: number | null
+		/** Idle time (ms) — the long-gap complement of active time. */
+		idleTimeMs: number | null
 	}
 	totalTraceCount: number
 	traces: ReadonlyArray<{

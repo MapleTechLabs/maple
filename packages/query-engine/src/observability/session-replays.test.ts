@@ -9,50 +9,62 @@ interface Captured {
 	sqls: string[]
 }
 
+interface MockResponses {
+	detail?: ReadonlyArray<Record<string, unknown>>
+	activity?: ReadonlyArray<Record<string, unknown>>
+	summaries?: ReadonlyArray<Record<string, unknown>>
+}
+
 /**
- * Mock executor whose `sqlQuery` records each SQL string. The wrapper always
- * runs the session-detail query first, so the Nth call's rows come from the
- * Nth element of `responses` (detail row(s), then trace-summary row(s)).
+ * Mock executor that records each SQL string and dispatches rows by which query
+ * is running, matched on its source table. This stays correct regardless of the
+ * execution order of the concurrent detail (`session_replays`) and activity
+ * (`session_events`) reads; the trace summaries read `trace_detail_spans`.
  */
-const makeExecutor = (
-	captured: Captured,
-	responses: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>,
-): WarehouseExecutorShape => ({
-	orgId: "org_test",
-	query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
-	sqlQuery: ((sql: string) => {
-		const rows = responses[captured.sqls.length] ?? []
-		captured.sqls.push(sql)
-		return Effect.succeed(rows as ReadonlyArray<never>)
-	}) as WarehouseExecutorShape["sqlQuery"],
-	compiledQuery: ((compiled) => {
-		const rows = responses[captured.sqls.length] ?? []
-		captured.sqls.push(compiled.sql)
-		return compiled.decodeRows(rows).pipe(Effect.orDie)
-	}) as WarehouseExecutorShape["compiledQuery"],
-	compiledQueryFirst: ((compiled) => {
-		const rows = responses[captured.sqls.length] ?? []
-		captured.sqls.push(compiled.sql)
-		return compiled.decodeFirstRow(rows).pipe(Effect.orDie)
-	}) as WarehouseExecutorShape["compiledQueryFirst"],
-})
+const makeExecutor = (captured: Captured, responses: MockResponses): WarehouseExecutorShape => {
+	const rowsFor = (sql: string): ReadonlyArray<Record<string, unknown>> => {
+		if (sql.includes("session_events")) return responses.activity ?? []
+		if (sql.includes("trace_detail_spans")) return responses.summaries ?? []
+		return responses.detail ?? []
+	}
+	return {
+		orgId: "org_test",
+		query: () => Effect.succeed({ data: [] as ReadonlyArray<never> }),
+		sqlQuery: ((sql: string) => {
+			captured.sqls.push(sql)
+			return Effect.succeed(rowsFor(sql) as ReadonlyArray<never>)
+		}) as WarehouseExecutorShape["sqlQuery"],
+		compiledQuery: ((compiled) => {
+			captured.sqls.push(compiled.sql)
+			return compiled.decodeRows(rowsFor(compiled.sql)).pipe(Effect.orDie)
+		}) as WarehouseExecutorShape["compiledQuery"],
+		compiledQueryFirst: ((compiled) => {
+			captured.sqls.push(compiled.sql)
+			return compiled.decodeFirstRow(rowsFor(compiled.sql)).pipe(Effect.orDie)
+		}) as WarehouseExecutorShape["compiledQueryFirst"],
+	}
+}
 
 const makeLayer = (executor: WarehouseExecutorShape) => Layer.succeed(WarehouseExecutor, executor)
 
 const traceIds = (n: number) => Array.from({ length: n }, (_, i) => `trace-${i}`)
 
+/** The recorded SQL for the query that reads `table`, if it ran. */
+const sqlFor = (captured: Captured, table: string) => captured.sqls.find((s) => s.includes(table))
+
 describe("getSessionTraces", () => {
-	it.effect("returns null session and runs only the detail query when none found", () =>
+	it.effect("returns null and runs no summaries query when the session is missing", () =>
 		Effect.gen(function* () {
 			const captured: Captured = { sqls: [] }
 			const out = yield* getSessionTraces({ sessionId: "missing" }).pipe(
-				Effect.provide(makeLayer(makeExecutor(captured, [[]]))),
+				Effect.provide(makeLayer(makeExecutor(captured, { detail: [] }))),
 			)
 
 			assert.isNull(out.session)
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
-			assert.strictEqual(captured.sqls.length, 1)
+			// Detail + activity run concurrently; the summaries query never does.
+			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
 		}),
 	)
 
@@ -60,14 +72,36 @@ describe("getSessionTraces", () => {
 		Effect.gen(function* () {
 			const captured: Captured = { sqls: [] }
 			const out = yield* getSessionTraces({ sessionId: "s1" }).pipe(
-				Effect.provide(makeLayer(makeExecutor(captured, [[{ sessionId: "s1", traceIds: [] }]]))),
+				Effect.provide(
+					makeLayer(makeExecutor(captured, { detail: [{ sessionId: "s1", traceIds: [] }] })),
+				),
 			)
 
 			assert.isNotNull(out.session)
 			assert.deepStrictEqual(out.traces, [])
 			assert.strictEqual(out.totalTraceCount, 0)
-			// Only the detail query ran — `TraceId IN ()` is never compiled.
-			assert.strictEqual(captured.sqls.length, 1)
+			// `TraceId IN ()` is never compiled.
+			assert.isUndefined(sqlFor(captured, "trace_detail_spans"))
+		}),
+	)
+
+	it.effect("merges the active/idle breakdown into the session metadata", () =>
+		Effect.gen(function* () {
+			const captured: Captured = { sqls: [] }
+			const out = yield* getSessionTraces({ sessionId: "s1" }).pipe(
+				Effect.provide(
+					makeLayer(
+						makeExecutor(captured, {
+							detail: [{ sessionId: "s1", traceIds: [] }],
+							activity: [{ sessionId: "s1", activeTimeMs: 21500, idleTimeMs: 8500 }],
+						}),
+					),
+				),
+			)
+
+			assert.isNotNull(out.session)
+			assert.strictEqual(out.session?.activeTimeMs, 21500)
+			assert.strictEqual(out.session?.idleTimeMs, 8500)
 		}),
 	)
 
@@ -76,13 +110,14 @@ describe("getSessionTraces", () => {
 			const captured: Captured = { sqls: [] }
 			const out = yield* getSessionTraces({ sessionId: "s1" }).pipe(
 				Effect.provide(
-					makeLayer(makeExecutor(captured, [[{ sessionId: "s1", traceIds: traceIds(150) }], []])),
+					makeLayer(
+						makeExecutor(captured, { detail: [{ sessionId: "s1", traceIds: traceIds(150) }] }),
+					),
 				),
 			)
 
 			assert.strictEqual(out.totalTraceCount, 150)
-			assert.strictEqual(captured.sqls.length, 2)
-			const summarySql = captured.sqls[1]!
+			const summarySql = sqlFor(captured, "trace_detail_spans")!
 			assert.include(summarySql, "trace-49")
 			assert.notInclude(summarySql, "trace-50")
 		}),
@@ -93,11 +128,13 @@ describe("getSessionTraces", () => {
 			const captured: Captured = { sqls: [] }
 			yield* getSessionTraces({ sessionId: "s1", limit: 999 }).pipe(
 				Effect.provide(
-					makeLayer(makeExecutor(captured, [[{ sessionId: "s1", traceIds: traceIds(150) }], []])),
+					makeLayer(
+						makeExecutor(captured, { detail: [{ sessionId: "s1", traceIds: traceIds(150) }] }),
+					),
 				),
 			)
 
-			const summarySql = captured.sqls[1]!
+			const summarySql = sqlFor(captured, "trace_detail_spans")!
 			assert.include(summarySql, "trace-99")
 			assert.notInclude(summarySql, "trace-100")
 		}),
