@@ -35,8 +35,15 @@ export interface AlertRuleChartState {
  * aggregations, group-bys). Built-in signals keep the canned custom-chart
  * path. Raw SQL has no structured preview (the hero shows a hint instead).
  */
-export function useAlertRuleChart(form: RuleFormState): AlertRuleChartState {
-	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, "24h")
+export function useAlertRuleChart(
+	form: RuleFormState,
+	range?: { startTime: string; endTime: string },
+): AlertRuleChartState {
+	// Callers that own a page-level time window (the rule detail page) pass it in;
+	// the create form + live hero pass nothing and keep the canned last-24h window.
+	const fallback = useEffectiveTimeRange(undefined, undefined, "24h")
+	const startTime = range?.startTime ?? fallback.startTime
+	const endTime = range?.endTime ?? fallback.endTime
 
 	/* ------------------------- builder_query path ------------------------- */
 

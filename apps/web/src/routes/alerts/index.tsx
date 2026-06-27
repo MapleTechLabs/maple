@@ -11,6 +11,7 @@ import { ProviderLogo } from "@/components/alerts/destination-provider"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip, AlertFiringHero } from "@/components/alerts/alert-stat-card"
+import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
 import { AlertTagControls } from "@/components/alerts/alert-tag-controls"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -244,14 +245,21 @@ function MonitorTab({
 	const warningCount = openIncidents.filter((i) => i.severity === "warning").length
 	const enabledRules = rules.filter((r) => r.enabled).length
 
-	// Triggered in the last 24h = incidents whose firstTriggeredAt is within 24h
-	const triggered24h = useMemo(() => {
-		const cutoff = Date.now() - 24 * 60 * 60 * 1000
+	// Triggered window — a quick lens over how recently rules have been firing.
+	const [triggeredWindow, setTriggeredWindow] = useState<"24h" | "7d" | "30d">("24h")
+	const triggeredInWindow = useMemo(() => {
+		const windowMs =
+			triggeredWindow === "24h"
+				? 24 * 60 * 60 * 1000
+				: triggeredWindow === "7d"
+					? 7 * 24 * 60 * 60 * 1000
+					: 30 * 24 * 60 * 60 * 1000
+		const cutoff = Date.now() - windowMs
 		return incidents.filter((i) => {
 			if (!i.firstTriggeredAt) return false
 			return new Date(i.firstTriggeredAt).getTime() >= cutoff
 		}).length
-	}, [incidents])
+	}, [incidents, triggeredWindow])
 
 	const mttr = useMemo(() => {
 		const resolved = incidents.filter((i) => i.resolvedAt && i.firstTriggeredAt)
@@ -420,17 +428,32 @@ function MonitorTab({
 			)}
 
 			{/* Slim summary strip — a secondary glance, sits beneath the incident list */}
-			<AlertStatStrip
-				items={[
-					{
-						label: "Triggered (24h)",
-						value: triggered24h,
-						hint: triggered24h === 1 ? "incident" : "incidents",
-					},
-					{ label: "Avg MTTR", value: mttr, hint: "across resolved" },
-					{ label: "Rules enabled", value: enabledRules, hint: `of ${rules.length} total` },
-				]}
-			/>
+			<div className="space-y-2">
+				<div className="flex justify-end">
+					<AlertSegmentedSelect<"24h" | "7d" | "30d">
+						options={[
+							{ value: "24h", label: "24h" },
+							{ value: "7d", label: "7d" },
+							{ value: "30d", label: "30d" },
+						]}
+						value={triggeredWindow}
+						onChange={setTriggeredWindow}
+						size="sm"
+						aria-label="Triggered window"
+					/>
+				</div>
+				<AlertStatStrip
+					items={[
+						{
+							label: `Triggered (${triggeredWindow})`,
+							value: triggeredInWindow,
+							hint: triggeredInWindow === 1 ? "incident" : "incidents",
+						},
+						{ label: "Avg MTTR", value: mttr, hint: "across resolved" },
+						{ label: "Rules enabled", value: enabledRules, hint: `of ${rules.length} total` },
+					]}
+				/>
+			</div>
 
 			{/* No-activity hint — only when nothing has happened at all */}
 			{openIncidents.length === 0 && deliveryEvents.length === 0 && (
