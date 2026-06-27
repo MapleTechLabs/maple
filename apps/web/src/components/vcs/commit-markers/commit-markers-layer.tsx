@@ -236,7 +236,6 @@ function MarkerGroup({
 						display: "flex",
 						justifyContent: "center",
 						pointerEvents: "auto",
-						cursor: "pointer",
 					}}
 				>
 					<div
@@ -275,10 +274,10 @@ function MarkerGroup({
 					pointerEvents: "auto",
 				}}
 				className={cn(
-					"flex items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-[11px] leading-none transition-colors",
+					"flex cursor-pointer items-center justify-center gap-1 rounded-[5px] border px-1.5 font-mono text-[11px] leading-none backdrop-blur-sm transition-colors",
 					active
-						? "border-border bg-background text-foreground shadow-sm"
-						: "border-border/60 bg-background/85 text-muted-foreground hover:text-foreground",
+						? "border-border bg-popover text-popover-foreground shadow-sm"
+						: "border-border/60 bg-popover/85 text-muted-foreground hover:text-popover-foreground",
 				)}
 			>
 				<span className="min-w-0 truncate" title={group.label}>
@@ -291,7 +290,9 @@ function MarkerGroup({
 							active ? "bg-muted text-foreground" : "bg-muted/70 text-muted-foreground",
 						)}
 					>
-						+{badge}
+						{/* Cap the displayed count so a bucket with 100+ commits can't overflow the
+						    badge's reserved width (BADGE_PX). */}
+						+{Math.min(badge, 99)}
 					</span>
 				) : null}
 			</div>
@@ -334,7 +335,7 @@ function MarkerCard({
 					<TooltipPrimitive.Popup
 						onMouseEnter={onKeep}
 						onMouseLeave={onLeave}
-						className="border-border/60 bg-background max-h-80 w-72 overflow-y-auto rounded-lg border text-xs shadow-xl"
+						className="border-border/60 bg-popover text-popover-foreground max-h-80 w-80 overflow-y-auto rounded-xl border text-xs shadow-xl"
 					>
 						{/* One commit ⇒ the rich card. Several ⇒ a compact one-row-per-commit
 						    list that stays tidy and scrolls cleanly however many there are. */}

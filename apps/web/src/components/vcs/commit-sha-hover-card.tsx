@@ -200,7 +200,9 @@ function CommitHoverBody({ sha, compact = false }: { sha: string; compact?: bool
 function CommitPlain({ sha, compact = false }: { sha: string; compact?: boolean }) {
 	return (
 		<div className={cn("flex flex-col gap-1", compact ? "p-2.5" : "p-3.5")}>
-			<span className="font-mono text-foreground">{sha.length > 16 ? `${sha.slice(0, 16)}…` : sha}</span>
+			<span className="font-mono text-foreground">
+				{sha.length > 16 ? `${sha.slice(0, 16)}…` : sha}
+			</span>
 			<span className="text-muted-foreground">Deployment reference — not a resolvable git commit.</span>
 		</div>
 	)
@@ -286,7 +288,7 @@ function deriveAvatarUrl(commit: VcsCommitDetailResponse): string | null {
 }
 
 // A git message is a subject line, then an optional body after a blank line.
-function firstLine(message: string): string {
+export function firstLine(message: string): string {
 	const idx = message.indexOf("\n")
 	return (idx === -1 ? message : message.slice(0, idx)).trim()
 }
@@ -302,7 +304,7 @@ export function CommitListBody({ commits }: { commits: ReadonlyArray<{ sha: stri
 	return (
 		<div className="flex flex-col">
 			{/* Sticky so the count stays visible while the rows scroll. */}
-			<div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/10 bg-background/95 px-2.5 py-1.5 backdrop-blur-sm">
+			<div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/10 bg-popover/95 px-2.5 py-1.5 backdrop-blur-sm">
 				<span className="font-medium text-foreground">{commits.length} deploys</span>
 			</div>
 			<div className="flex flex-col divide-y divide-foreground/5">
@@ -368,7 +370,7 @@ function CommitListRowLink({ commit }: { commit: VcsCommitDetailResponse }) {
 						title={formatExact(commit.committedAt)}
 						className="ml-auto shrink-0 tabular-nums text-muted-foreground/80"
 					>
-						{formatRelativeShort(commit.committedAt)}
+						{formatRelative(commit.committedAt, { short: true })}
 					</span>
 				</span>
 			</div>
@@ -632,34 +634,30 @@ function formatExact(epochMs: number): string {
 	return new Date(epochMs).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
 }
 
-// Compact relative age ("now", "3h", "2d", "5mo") with no "ago" suffix, for the
-// dense commit-list rows where horizontal space is tight.
-function formatRelativeShort(epochMs: number): string {
+/**
+ * Relative age off a single threshold ladder (s/m/h/d/mo/y).
+ *
+ *  - Default: the full "3h ago" form, with a seconds tier and a "just now" floor.
+ *  - `short`: the compact "3h" form (no suffix, sub-minute collapses to "now") for
+ *    the dense commit-list rows where horizontal space is tight.
+ */
+function formatRelative(epochMs: number, { short = false }: { short?: boolean } = {}): string {
 	const diff = Date.now() - epochMs
-	if (diff < 60_000) return "now"
+	const suffix = short ? "" : " ago"
+	if (short) {
+		if (diff < 60_000) return "now"
+	} else {
+		if (diff < 0) return "just now"
+		const seconds = Math.floor(diff / 1000)
+		if (seconds < 60) return `${seconds}s${suffix}`
+	}
 	const minutes = Math.floor(diff / 60_000)
-	if (minutes < 60) return `${minutes}m`
+	if (minutes < 60) return `${minutes}m${suffix}`
 	const hours = Math.floor(minutes / 60)
-	if (hours < 24) return `${hours}h`
+	if (hours < 24) return `${hours}h${suffix}`
 	const days = Math.floor(hours / 24)
-	if (days < 30) return `${days}d`
+	if (days < 30) return `${days}d${suffix}`
 	const months = Math.floor(days / 30)
-	if (months < 12) return `${months}mo`
-	return `${Math.floor(days / 365)}y`
-}
-
-function formatRelative(epochMs: number): string {
-	const diff = Date.now() - epochMs
-	if (diff < 0) return "just now"
-	const seconds = Math.floor(diff / 1000)
-	if (seconds < 60) return `${seconds}s ago`
-	const minutes = Math.floor(seconds / 60)
-	if (minutes < 60) return `${minutes}m ago`
-	const hours = Math.floor(minutes / 60)
-	if (hours < 24) return `${hours}h ago`
-	const days = Math.floor(hours / 24)
-	if (days < 30) return `${days}d ago`
-	const months = Math.floor(days / 30)
-	if (months < 12) return `${months}mo ago`
-	return `${Math.floor(days / 365)}y ago`
+	if (months < 12) return `${months}mo${suffix}`
+	return `${Math.floor(days / 365)}y${suffix}`
 }

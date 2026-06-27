@@ -2,16 +2,11 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
-import { commitQueryAtom, isResolvableSha } from "../commit-sha-hover-card"
+import { commitQueryAtom, firstLine, isResolvableSha } from "../commit-sha-hover-card"
 import { CommitMarkersLayer } from "./commit-markers-layer"
 import { buildCommitMarkers, type ReleasePoint } from "./marker-layout"
 
 const EMPTY_LABELS: ReadonlyMap<string, string> = new Map()
-
-function firstLine(message: string): string {
-	const idx = message.indexOf("\n")
-	return (idx === -1 ? message : message.slice(0, idx)).trim()
-}
 
 /**
  * Derives commit deploy markers from the release timeline and returns the chart

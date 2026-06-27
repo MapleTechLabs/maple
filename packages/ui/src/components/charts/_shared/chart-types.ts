@@ -14,6 +14,20 @@ export type ChartTooltipMode = "visible" | "hidden"
  */
 export const MARKER_OVERLAY_CLASS = "[&_.recharts-surface]:overflow-visible"
 
+/**
+ * Builds a time-series `ChartContainer`'s className, appending
+ * {@link MARKER_OVERLAY_CLASS} when the chart carries an `overlay` so the marker
+ * chip row can overflow above the plot. A no-op (returns `className` as-is) when
+ * there's no overlay. Shared by every time-series chart so the wiring stays
+ * identical across them.
+ */
+export function overlayChartClassName(
+	className: string | undefined,
+	overlay: React.ReactNode,
+): string | undefined {
+	return overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className
+}
+
 export interface ChartThreshold {
 	value: number
 	color: string

@@ -1,7 +1,7 @@
 import { useMemo, useId } from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
-import { MARKER_OVERLAY_CLASS, type BaseChartProps } from "../_shared/chart-types"
+import { overlayChartClassName, type BaseChartProps } from "../_shared/chart-types"
 import { throughputTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -125,16 +125,8 @@ export function ThroughputAreaChart({
 	}, [rateLabel, incompleteKeys, hasSamplingData, hasErrorData, hasIncomplete])
 
 	return (
-		<ChartContainer
-			config={chartConfig}
-			className={overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className}
-		>
-			<AreaChart
-				data={displayData}
-				accessibilityLayer
-				syncId={syncId}
-				syncMethod="value"
-			>
+		<ChartContainer config={chartConfig} className={overlayChartClassName(className, overlay)}>
+			<AreaChart data={displayData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<defs>
 					<VerticalGradient id={gradientId} color="var(--color-throughput)" />
 					{hasIncomplete && (

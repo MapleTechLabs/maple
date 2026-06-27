@@ -1,7 +1,7 @@
 import { useId, useMemo } from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
-import { MARKER_OVERLAY_CLASS, type BaseChartProps } from "../_shared/chart-types"
+import { overlayChartClassName, type BaseChartProps } from "../_shared/chart-types"
 import { apdexTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -55,16 +55,8 @@ export function ApdexAreaChart({
 	)
 
 	return (
-		<ChartContainer
-			config={chartConfig}
-			className={overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className}
-		>
-			<AreaChart
-				data={processedData}
-				accessibilityLayer
-				syncId={syncId}
-				syncMethod="value"
-			>
+		<ChartContainer config={chartConfig} className={overlayChartClassName(className, overlay)}>
+			<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<defs>
 					<VerticalGradient id={gradientId} color="var(--color-apdexScore)" />
 					{hasIncomplete && (
@@ -84,7 +76,13 @@ export function ApdexAreaChart({
 					tickMargin={8}
 					tickFormatter={(v) => formatBucketLabel(v, axisContext, "tick")}
 				/>
-				<YAxis domain={[0, 1]} tickLine={false} axisLine={false} tickMargin={8} width={yAxisWidth ?? 50} />
+				<YAxis
+					domain={[0, 1]}
+					tickLine={false}
+					axisLine={false}
+					tickMargin={8}
+					width={yAxisWidth ?? 50}
+				/>
 				{tooltip !== "hidden" && (
 					<ChartTooltip
 						content={
