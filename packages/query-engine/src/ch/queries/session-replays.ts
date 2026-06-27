@@ -175,12 +175,22 @@ export function sessionReplaysListQuery(
 				errorCount: $.errorCount,
 				traceCount: $.traceCount,
 			}))
-			.where(($) => [
-				CH.when(opts.durationMinMs, (v: number) => $.durationMs.gte(v)),
-				CH.when(opts.durationMaxMs, (v: number) => $.durationMs.lte(v)),
-				CH.when(opts.activeTimeMinMs, (v: number) => $.a.activeTimeMs.gte(v)),
-				CH.when(opts.activeTimeMaxMs, (v: number) => $.a.activeTimeMs.lte(v)),
-			])
+			.where(($) => {
+				// The LEFT JOIN yields NULL activeTimeMs for sessions with no
+				// distilled session_events (the rrweb-only case the detail/MCP path
+				// reports as null). Coalesce to 0 so a max bound — or a min of 0 —
+				// includes those zero-activity sessions instead of silently dropping
+				// them: a NULL comparison is itself NULL, which WHERE excludes. A min
+				// > 0 still (correctly) excludes them, since 0 < min. `!= null` rather
+				// than the truthy CH.when so an explicit 0 bound is still applied.
+				const activeMs = CH.coalesce($.a.activeTimeMs, CH.lit(0))
+				return [
+					opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
+					opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
+					opts.activeTimeMinMs != null ? activeMs.gte(opts.activeTimeMinMs) : undefined,
+					opts.activeTimeMaxMs != null ? activeMs.lte(opts.activeTimeMaxMs) : undefined,
+				]
+			})
 			.orderBy(["startTime", "desc"])
 			.limit(limit)
 			.offset(opts.offset ?? 0)
@@ -207,8 +217,12 @@ export function sessionReplaysListQuery(
 			traceCount: $.traceCount,
 		}))
 		.where(($) => [
-			CH.when(opts.durationMinMs, (v: number) => $.durationMs.gte(v)),
-			CH.when(opts.durationMaxMs, (v: number) => $.durationMs.lte(v)),
+			// durationMs is NULL for in-progress (Version=1-only) sessions; leaving
+			// it NULL deliberately excludes them from a duration filter (an unknown
+			// duration can't be said to fall within a bound). `!= null` rather than
+			// the truthy CH.when so an explicit 0 bound is still applied.
+			opts.durationMinMs != null ? $.durationMs.gte(opts.durationMinMs) : undefined,
+			opts.durationMaxMs != null ? $.durationMs.lte(opts.durationMaxMs) : undefined,
 		])
 		.orderBy(["startTime", "desc"])
 		.limit(limit)
