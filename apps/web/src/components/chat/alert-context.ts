@@ -1,3 +1,5 @@
+import { fromBase64Url, toBase64Url } from "@/lib/base64url"
+
 export interface AlertContext {
 	ruleId: string
 	ruleName: string
@@ -14,20 +16,6 @@ export interface AlertContext {
 	/** Prior AI-triage findings, folded into the chat preamble so the agent starts from them. */
 	aiSummary?: string
 	aiSuspectedCause?: string
-}
-
-const fromBase64Url = (input: string): string => {
-	const padded = input.replace(/-/g, "+").replace(/_/g, "/")
-	const pad = padded.length % 4
-	const full = pad === 0 ? padded : padded + "=".repeat(4 - pad)
-	if (typeof atob !== "undefined") {
-		try {
-			return decodeURIComponent(escape(atob(full)))
-		} catch {
-			return atob(full)
-		}
-	}
-	return Buffer.from(full, "base64").toString("utf8")
 }
 
 const isAlertContext = (value: unknown): value is AlertContext => {
@@ -50,19 +38,8 @@ const isAlertContext = (value: unknown): value is AlertContext => {
 	return true
 }
 
-export const encodeAlertContextToSearchParam = (ctx: AlertContext): string => {
-	const json = JSON.stringify(ctx)
-	if (typeof btoa !== "undefined") {
-		let raw: string
-		try {
-			raw = btoa(unescape(encodeURIComponent(json)))
-		} catch {
-			raw = btoa(json)
-		}
-		return raw.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-	}
-	return Buffer.from(json, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-}
+export const encodeAlertContextToSearchParam = (ctx: AlertContext): string =>
+	toBase64Url(JSON.stringify(ctx))
 
 export const decodeAlertContextFromSearchParam = (raw: string): AlertContext | undefined => {
 	try {

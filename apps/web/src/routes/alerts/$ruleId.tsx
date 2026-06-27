@@ -817,11 +817,13 @@ function RuleDetailContent() {
 																<DropdownMenuContent align="end">
 																	<DropdownMenuItem
 																		onClick={() =>
-																			setExpandedIncidentId(incident.id)
+																			setExpandedIncidentId(
+																				isExpanded ? null : incident.id,
+																			)
 																		}
 																	>
 																		<ChatBubbleSparkleIcon size={14} />
-																		AI summary
+																		{isExpanded ? "Hide AI summary" : "AI summary"}
 																	</DropdownMenuItem>
 																	<DropdownMenuItem
 																		onClick={() =>
