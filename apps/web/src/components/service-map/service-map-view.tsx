@@ -15,7 +15,6 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
-import { useAuth } from "@clerk/clerk-react"
 import { Result, useAtom } from "@/lib/effect-atom"
 import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { Link } from "@tanstack/react-router"

@@ -1,13 +1,14 @@
 import { createOpenTelemetryObserver } from "@flue/opentelemetry"
 import { observe } from "@flue/runtime"
 import { flue } from "@flue/runtime/routing"
-import { env } from "cloudflare:workers"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
 import { instanceIdFromAgentPath, verifyInternalServiceToken, verifyRequest } from "./lib/auth.ts"
 import type { ChatFlueEnv } from "./lib/env.ts"
 import { orgIdFromInstanceId } from "./lib/org.ts"
 import { CHAT_FLUE_SERVICE_NAME, rootContextFromRequest, setupTelemetry } from "./lib/telemetry.ts"
+import { appEnv } from "./lib/app-env.ts"
+import { telemetryEnv } from "./lib/telemetry-env.ts"
 
 // ---------------------------------------------------------------------------
 // Telemetry bridge
@@ -22,11 +23,11 @@ import { CHAT_FLUE_SERVICE_NAME, rootContextFromRequest, setupTelemetry } from "
 // registered UNCONDITIONALLY (below): those lines reach Workers Observability logs
 // (→ Maple) and are the primary signal for the "chat did nothing" failure mode,
 // regardless of whether the OTel export is on.
-const cfEnv = env as unknown as ChatFlueEnv
+const env = await telemetryEnv();
 const tracerProvider = setupTelemetry({
-	ingestKey: cfEnv.MAPLE_INGEST_KEY,
-	endpoint: cfEnv.MAPLE_ENDPOINT,
-	environment: cfEnv.MAPLE_ENVIRONMENT,
+	ingestKey: env.MAPLE_INGEST_KEY,
+	endpoint: env.MAPLE_ENDPOINT,
+	environment: env.MAPLE_ENVIRONMENT,
 })
 
 // Structured error + per-turn outcome logging — registered for EVERY isolate,
@@ -141,7 +142,7 @@ app.get("/health", (c) => c.json({ ok: true }))
 // the addressed `"<orgId>:<tabId>"` instance — so a caller can never reach
 // another org's conversation.
 app.use("/agents/*", async (c, next) => {
-	const verified = await verifyRequest(c.req.raw, c.env)
+	const verified = await verifyRequest(c.req.raw, appEnv(c))
 	if (!verified) return c.json({ error: "Authentication required" }, 401)
 
 	// Deny-by-default: every /agents/* request must carry a resolvable
@@ -164,7 +165,7 @@ app.use("/agents/*", async (c, next) => {
 // requires the internal-service token. Without this guard the route — which can
 // run an org-scoped investigation for any org in the payload — is unauthenticated.
 app.use("/workflows/*", async (c, next) => {
-	if (!verifyInternalServiceToken(c.req.raw, c.env)) {
+	if (!verifyInternalServiceToken(c.req.raw, appEnv(c))) {
 		return c.json({ error: "Authentication required" }, 401)
 	}
 	await next()

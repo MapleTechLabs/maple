@@ -1,5 +1,4 @@
 import { Suspense, useCallback, useEffect, useState } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import { Link } from "@tanstack/react-router"
 import { toast } from "sonner"
 import { AppSidebar } from "@/components/dashboard/app-sidebar"

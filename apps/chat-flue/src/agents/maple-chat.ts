@@ -1,11 +1,11 @@
 import { createAgent, type AgentRouteHandler, type McpServerConnection } from "@flue/runtime"
-import { tracing } from "cloudflare:workers"
 import { applyApprovalGates } from "../lib/approval.ts"
 import { instanceIdFromAgentPath } from "../lib/auth.ts"
 import type { ChatFlueEnv } from "../lib/env.ts"
 import { connectMapleMcp, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
 import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
 import { orgIdFromInstanceId } from "../lib/org.ts"
+import { enterSpan } from "../lib/tracing.ts"
 
 /**
  * Default Workers AI model. EXPERIMENT: trying Z.ai's `@cf/zai-org/glm-5.2`.
@@ -56,7 +56,7 @@ export const route: AgentRouteHandler = async (c, next) => {
 	// `enterSpan` nests by async context: the per-interaction agent factory (and its
 	// `chat.mcp_connect` child) plus the model `AI.run` fetch all run inside `next()`,
 	// so they attach under this span — finally attributing today's anonymous fetches.
-	return tracing.enterSpan("chat.turn", async (span) => {
+	return enterSpan("chat.turn", async (span) => {
 		span.setAttribute("maple.chat.mode", mode)
 		span.setAttribute("gen_ai.request.model", env.MAPLE_CHAT_MODEL ?? DEFAULT_MODEL)
 		if (turnOrgId) span.setAttribute("maple.org_id", turnOrgId)
@@ -88,7 +88,7 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 			// "takes ages to start" suspect — no pooling, 12s timeout) a first-class,
 			// queryable span, and turns the previously-silent failure path into a
 			// span carrying `error`/`error.message` + `maple.mcp.connected=false`.
-			const maple = await tracing.enterSpan("chat.mcp_connect", async (span) => {
+			const maple = await enterSpan("chat.mcp_connect", async (span) => {
 				span.setAttribute("maple.org_id", orgId)
 				span.setAttribute("maple.mcp.timeout_ms", MCP_DEFAULT_TIMEOUT_MS)
 				try {
@@ -113,6 +113,8 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 			)
 		}
 	}
+
+	console.log("ctx.env.MAPLE_CHAT_MODEL", ctx.env.MAPLE_CHAT_MODEL)
 
 	return {
 		model: ctx.env.MAPLE_CHAT_MODEL ?? DEFAULT_MODEL,
