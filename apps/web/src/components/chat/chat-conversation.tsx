@@ -22,6 +22,8 @@ import {
 } from "./auto-contexts"
 import type { ChatContext } from "./context-preamble"
 import { parseToolProposal } from "./tool-proposal"
+import { parseDiagnosisMarker } from "./diagnosis-marker"
+import { DiagnosisReportCard } from "./diagnosis-report-card"
 import { PageContextChips } from "./page-context-chips"
 import {
 	Conversation,
@@ -377,6 +379,20 @@ export function ChatConversation({
 													}
 													if (isToolPart(part)) {
 														const tp = part as ToolPart
+														const diagnosis =
+															tp.state === "output-available"
+																? parseDiagnosisMarker(tp.output)
+																: null
+														if (diagnosis) {
+															flushTools()
+															nodes.push(
+																<DiagnosisReportCard
+																	key={tp.toolCallId ?? `diagnosis-${i}`}
+																	report={diagnosis.report}
+																/>,
+															)
+															continue
+														}
 														const proposal =
 															tp.state === "output-available"
 																? parseToolProposal(tp.output)

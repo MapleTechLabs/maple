@@ -16,6 +16,8 @@ import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
 import { HttpDigestLive } from "./routes/digest.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "./routes/integrations.http"
+import { HttpInvestigationsLive } from "./routes/investigations.http"
+import { InvestigationInternalRouter } from "./routes/investigations-internal.http"
 import { HttpIngestAttributeMappingsLive } from "./routes/ingest-attribute-mappings.http"
 import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
 import { HttpObservabilityLive } from "./routes/observability.http"
@@ -38,6 +40,7 @@ import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/cachin
 import { CacheBackendLive } from "./lib/CacheBackendLive"
 import { ErrorsService } from "./services/ErrorsService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
+import { InvestigationService } from "./services/InvestigationService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
 import { ApiKeysService } from "./services/ApiKeysService"
 import { AuthService } from "./services/AuthService"
@@ -144,6 +147,8 @@ const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 
 const AiTriageServiceLive = AiTriageService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
+const InvestigationServiceLive = InvestigationService.layer.pipe(Layer.provideMerge(CoreServicesLive))
+
 const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
 const DigestServiceLive = DigestService.layer.pipe(
@@ -177,6 +182,7 @@ export const MainLive = Layer.mergeAll(
 	AlertsServiceLive,
 	AnomalyDetectionServiceLive,
 	AiTriageServiceLive,
+	InvestigationServiceLive,
 	ErrorsServiceLive,
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
@@ -188,7 +194,7 @@ export const MainLive = Layer.mergeAll(
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive)),
+	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive, HttpInvestigationsLive)),
 	Layer.provide(HttpApiKeysLive),
 	Layer.provide(Layer.mergeAll(HttpBillingLive, HttpBillingPublicLive)),
 	Layer.provide(HttpAlertsLive),
@@ -221,6 +227,7 @@ export const AllRoutes = Layer.mergeAll(
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,
 	ScraperInternalRouter,
+	InvestigationInternalRouter,
 	VcsWebhookRouter,
 	McpLive,
 	HealthRouter,

@@ -1,0 +1,59 @@
+import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { CurrentTenant, MapleApi } from "@maple/domain/http"
+import { Effect } from "effect"
+import { InvestigationService } from "../services/InvestigationService"
+
+/**
+ * User-facing investigation endpoints (Clerk-authed via the group's
+ * Authorization middleware). The internal `submit_diagnosis` write the chat-flue
+ * agent posts is a separate service-token-guarded router
+ * (`InvestigationInternalRouter`), not part of this group.
+ */
+export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigations", (handlers) =>
+	Effect.gen(function* () {
+		const service = yield* InvestigationService
+
+		return handlers
+			.handle("listInvestigations", ({ query }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					return yield* service.listInvestigations(tenant.orgId, {
+						issueId: query.issueId,
+						incidentKind: query.incidentKind,
+						incidentId: query.incidentId,
+						status: query.status,
+						limit: query.limit,
+					})
+				}).pipe(Effect.withSpan("HttpInvestigations.list")),
+			)
+			.handle("getInvestigation", ({ params }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, investigationId: params.id })
+					return yield* service.getInvestigation(tenant.orgId, params.id)
+				}).pipe(Effect.withSpan("HttpInvestigations.get")),
+			)
+			.handle("createInvestigation", ({ payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						subjectType: payload.subject.type,
+					})
+					return yield* service.createInvestigation(tenant.orgId, tenant.userId, payload)
+				}).pipe(Effect.withSpan("HttpInvestigations.create")),
+			)
+			.handle("updateInvestigationStatus", ({ params, payload }) =>
+				Effect.gen(function* () {
+					const tenant = yield* CurrentTenant.Context
+					yield* Effect.annotateCurrentSpan({
+						orgId: tenant.orgId,
+						investigationId: params.id,
+						status: payload.status,
+					})
+					return yield* service.updateStatus(tenant.orgId, params.id, payload.status)
+				}).pipe(Effect.withSpan("HttpInvestigations.updateStatus")),
+			)
+	}),
+)

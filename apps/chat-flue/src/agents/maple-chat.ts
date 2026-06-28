@@ -5,7 +5,8 @@ import { instanceIdFromAgentPath } from "../lib/auth.ts"
 import type { ChatFlueEnv } from "../lib/env.ts"
 import { connectMapleMcp, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
 import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
-import { orgIdFromInstanceId } from "../lib/org.ts"
+import { investigationIdFromInstanceId, orgIdFromInstanceId } from "../lib/org.ts"
+import { buildSubmitDiagnosisTool } from "../lib/submit-diagnosis.ts"
 
 /**
  * Default Workers AI model. EXPERIMENT: trying Z.ai's `@cf/zai-org/glm-5.2`.
@@ -106,6 +107,15 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 			// Propose-then-apply: mutating tools return a proposal the UI approves
 			// (Flue has no native human-in-the-loop interrupt).
 			tools = applyApprovalGates(maple.tools)
+
+			// Investigate mode: the autonomous diagnostic pass is the session's
+			// first turn, capped off by a (non-gated) `submit_diagnosis` call that
+			// persists the structured report. The id rides in the instance id, so
+			// the agent never chooses which investigation it writes.
+			const investigationId = investigationIdFromInstanceId(ctx.id)
+			if (investigationId) {
+				tools = [...tools, buildSubmitDiagnosisTool(ctx.env, orgId, investigationId)]
+			}
 		} catch (error) {
 			console.error(
 				"[chat-flue] MCP connect failed; continuing without Maple tools:",
