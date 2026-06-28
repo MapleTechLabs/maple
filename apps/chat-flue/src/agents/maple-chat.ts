@@ -114,8 +114,6 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 		}
 	}
 
-	console.log("ctx.env.MAPLE_CHAT_MODEL", ctx.env.MAPLE_CHAT_MODEL)
-
 	return {
 		model: ctx.env.MAPLE_CHAT_MODEL ?? DEFAULT_MODEL,
 		instructions,
