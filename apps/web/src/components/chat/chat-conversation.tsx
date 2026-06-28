@@ -17,7 +17,7 @@ import {
 	type PageContextPayload,
 } from "./auto-contexts"
 import type { ChatContext } from "./context-preamble"
-import { parseToolProposal } from "./tool-proposal"
+import { parseToolProposal, parseToolProposalBatch } from "./tool-proposal"
 import { PageContextChips } from "./page-context-chips"
 import {
 	Conversation,
@@ -372,6 +372,38 @@ export function ChatConversation({
 													}
 													if (isToolPart(part)) {
 														const tp = part as ToolPart
+														// Code Mode: one run_code call can queue several
+														// mutations — render an approval card per proposal,
+														// keyed `${toolCallId}#${i}` so each resolves
+														// independently.
+														const batch =
+															tp.state === "output-available"
+																? parseToolProposalBatch(tp.output)
+																: null
+														if (batch) {
+															flushTools()
+															batch.forEach((proposal, bi) => {
+																const cardKey = `${tp.toolCallId}#${bi}`
+																const resolved = resolvedApprovals.get(cardKey)
+																nodes.push(
+																	<ApprovalCard
+																		key={cardKey}
+																		toolName={proposal.tool}
+																		input={proposal.input}
+																		resolved={resolved}
+																		onApprove={() =>
+																			handleApprove(
+																				cardKey,
+																				proposal.tool,
+																				proposal.input,
+																			)
+																		}
+																		onDeny={() => resolveApproval(cardKey, "denied")}
+																	/>,
+																)
+															})
+															continue
+														}
 														const proposal =
 															tp.state === "output-available"
 																? parseToolProposal(tp.output)

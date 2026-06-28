@@ -16,7 +16,7 @@ const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 const decodeDestinationId = Schema.decodeUnknownEffect(AlertDestinationId)
 
 export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"update_error_notification_policy",
 		"Configure the org-wide error notification policy. Controls whether incidents (first-seen, regression, auto-resolve) dispatch to alert destinations. Omit a field to leave it unchanged.",
 		Schema.Struct({

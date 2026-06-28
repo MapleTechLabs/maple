@@ -16,7 +16,7 @@ const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 const decodeSeverity = Schema.decodeUnknownOption(IssueSeverity)
 
 export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"set_issue_severity",
 		"Set or clear the triage severity of an issue. Severity drives escalation routing (critical/high/medium/low). API-key agents write with 'ai' precedence, so a human's manual severity is never overwritten; human sessions write a sticky manual override.",
 		Schema.Struct({

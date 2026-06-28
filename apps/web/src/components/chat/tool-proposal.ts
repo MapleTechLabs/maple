@@ -26,3 +26,30 @@ export const parseToolProposal = (output: unknown): ToolProposal | null => {
 		? { status: "proposed", tool: v.tool, input: v.input }
 		: null
 }
+
+/**
+ * Code Mode (`run_code`) can queue several mutations in one snippet. Its output
+ * is a `{ status: "proposed_batch", proposals: [...] }` envelope; parse it into
+ * one {@link ToolProposal} per queued change so the UI can render an approval
+ * card for each. Mirrors `formatRunResult` in `@maple/codemode`. Returns `null`
+ * when the output isn't a batch envelope.
+ */
+export const parseToolProposalBatch = (output: unknown): ToolProposal[] | null => {
+	let value: unknown = output
+	if (typeof output === "string") {
+		try {
+			value = JSON.parse(output)
+		} catch {
+			return null
+		}
+	}
+	if (!value || typeof value !== "object") return null
+	const v = value as Record<string, unknown>
+	if (v.status !== "proposed_batch" || !Array.isArray(v.proposals)) return null
+	const proposals = v.proposals
+		.filter((p): p is { tool: string; input: unknown } => {
+			return !!p && typeof p === "object" && typeof (p as Record<string, unknown>).tool === "string"
+		})
+		.map((p) => ({ status: "proposed" as const, tool: p.tool, input: p.input }))
+	return proposals.length > 0 ? proposals : null
+}

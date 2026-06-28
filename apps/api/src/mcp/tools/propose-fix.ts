@@ -22,7 +22,7 @@ const parseArtifactList = (raw: string | undefined): ReadonlyArray<string> => {
 }
 
 export function registerProposeFixTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"propose_fix",
 		"Attach a fix proposal (PR URL, patch summary, artifacts) to an error issue. Transitions the issue to 'in_review'. The human owner can then accept (→ done) or reject.",
 		Schema.Struct({

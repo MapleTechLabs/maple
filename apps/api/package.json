@@ -31,6 +31,7 @@
 		"@effect/platform-bun": "catalog:effect",
 		"@flue/sdk": "1.0.0-beta.1",
 		"@maple-dev/effect-sdk": "workspace:*",
+		"@maple/codemode": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/effect-cloudflare": "workspace:*",

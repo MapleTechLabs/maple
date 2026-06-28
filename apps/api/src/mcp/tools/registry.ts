@@ -43,6 +43,7 @@ import { registerRemoveDashboardWidgetTool } from "./remove-dashboard-widget"
 import { registerReplaceDashboardWidgetsTool } from "./replace-dashboard-widgets"
 import { registerReorderDashboardWidgetsTool } from "./reorder-dashboard-widgets"
 import { registerMineLogPatternsTool } from "./mine-log-patterns"
+import { registerRunCodeTool } from "./run-code"
 import { registerSearchLogsTool } from "./search-logs"
 import { registerSearchTracesTool } from "./search-traces"
 import { registerSearchSessionsTool } from "./search-sessions"
@@ -64,6 +65,8 @@ export interface MapleToolDefinition {
 	readonly description: string
 	readonly schema: Schema.Decoder<unknown, never>
 	readonly handler: (params: unknown) => Effect.Effect<McpToolResult, McpToolError, any>
+	/** True for state-changing tools (registered via `mutatingTool`). The `run_code` sandbox refuses these. */
+	readonly mutating: boolean
 }
 
 export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
@@ -75,14 +78,27 @@ export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
 
 const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	const definitions: MapleToolDefinition[] = []
+	const add = (
+		mutating: boolean,
+		name: string,
+		description: string,
+		schema: Schema.Decoder<unknown, never>,
+		handler: unknown,
+	) => {
+		definitions.push({
+			name,
+			description,
+			schema,
+			handler: handler as MapleToolDefinition["handler"],
+			mutating,
+		})
+	}
 	const registrar: McpToolRegistrar = {
 		tool(name, description, schema, handler) {
-			definitions.push({
-				name,
-				description,
-				schema,
-				handler: handler as MapleToolDefinition["handler"],
-			})
+			add(false, name, description, schema, handler)
+		},
+		mutatingTool(name, description, schema, handler) {
+			add(true, name, description, schema, handler)
 		},
 	}
 
@@ -138,6 +154,11 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRegisterAgentTool(registrar)
 	registerListErrorIncidentsTool(registrar)
 	registerUpdateErrorNotificationPolicyTool(registrar)
+	// Code Mode: a single tool whose sandboxed snippet orchestrates the read-only
+	// tools above. Registered last so it can reference the full set at runtime
+	// (it dispatches via `mapleToolDefinitions`); inert unless the LOADER sandbox
+	// binding is present.
+	registerRunCodeTool(registrar)
 
 	return definitions
 }

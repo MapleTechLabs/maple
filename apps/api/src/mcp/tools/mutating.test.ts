@@ -10,6 +10,19 @@ describe("MUTATING_TOOL_NAMES", () => {
 		}
 	})
 
+	it("exactly equals the tools registered via mutatingTool (structural flag <-> shared list)", () => {
+		// The per-tool `mutating` flag (set at registration via `server.mutatingTool`)
+		// is the structural truth the run_code gate uses; MUTATING_TOOL_NAMES is the
+		// static list the chat + /chat/apply paths use (they can't read the flag over
+		// MCP). This asserts they can't drift in either direction — register a
+		// mutating tool but forget the list (or vice versa) and CI fails.
+		const flagged = new Set(mapleToolDefinitions.filter((d) => d.mutating).map((d) => d.name))
+		const flaggedButUnlisted = [...flagged].filter((n) => !MUTATING_TOOL_NAMES.has(n))
+		const listedButUnflagged = [...MUTATING_TOOL_NAMES].filter((n) => !flagged.has(n))
+		expect(flaggedButUnlisted, `registered mutating but absent from MUTATING_TOOL_NAMES: [${flaggedButUnlisted.join(", ")}]`).toEqual([])
+		expect(listedButUnflagged, `in MUTATING_TOOL_NAMES but not registered via mutatingTool: [${listedButUnflagged.join(", ")}]`).toEqual([])
+	})
+
 	it("excludes read-only tools (so /chat/apply can't run them)", () => {
 		expect(MUTATING_TOOL_NAMES.has("find_errors")).toBe(false)
 		expect(MUTATING_TOOL_NAMES.has("search_traces")).toBe(false)

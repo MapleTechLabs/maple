@@ -16,7 +16,7 @@ const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 const decodeWorkflowState = Schema.decodeUnknownOption(WorkflowState)
 
 export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"transition_error_issue",
 		"Move an error issue to a new workflow state. Valid transitions: triage→(todo|in_progress|cancelled|wontfix); todo→(triage|in_progress|cancelled|wontfix); in_progress→(triage|todo|in_review|cancelled|wontfix); in_review→(triage|in_progress|done|cancelled|wontfix); done→(triage|in_progress|cancelled|wontfix); wontfix→(triage|cancelled).",
 		Schema.Struct({

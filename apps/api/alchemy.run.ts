@@ -6,6 +6,7 @@ import {
 	KVNamespace,
 	Queue,
 	Worker,
+	WorkerLoader,
 	WorkerStub,
 	Workflow,
 } from "alchemy/cloudflare"
@@ -205,6 +206,10 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 			...optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
 			...optionalPlain("GITHUB_API_BASE_URL"),
+			// Code Mode sandbox (Cloudflare Dynamic Workers). The `run_code` MCP tool
+			// runs model-written code in an isolate via this `worker_loader` binding;
+			// its presence activates the tool. Requires Worker Loader beta access.
+			LOADER: WorkerLoader(),
 		},
 	})
 

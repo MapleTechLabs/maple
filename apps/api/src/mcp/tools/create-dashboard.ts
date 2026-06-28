@@ -287,7 +287,7 @@ const TIME_RANGE_MAP: Record<string, string> = {
 export function registerCreateDashboardTool(server: McpToolRegistrar) {
 	const templateList = DASHBOARD_TEMPLATES.map((t) => `  ${t.id} — ${t.description}`).join("\n")
 
-	server.tool(
+	server.mutatingTool(
 		"create_dashboard",
 		"Create a dashboard from a template, simplified widget specs, or custom JSON.\n\n" +
 			"Templates:\n" +

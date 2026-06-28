@@ -15,6 +15,16 @@ export interface ChatFlueEnv {
 	/** Deployment environment label, surfaced on telemetry. */
 	MAPLE_ENVIRONMENT?: string
 
+	// --- Code Mode (Cloudflare Dynamic Workers / Worker Loader) ---
+	/**
+	 * Worker Loader binding (`worker_loader`) used to spin up a fresh sandbox
+	 * isolate per `run_code` call. Its presence is what activates Code Mode: when
+	 * bound, the agent gets a `run_code` tool + the generated `maple.*` API; when
+	 * absent (e.g. local dev), the agent uses the direct tools. Requires
+	 * Cloudflare Worker Loader beta access on the account.
+	 */
+	LOADER?: WorkerLoader
+
 	// --- Telemetry (OpenTelemetry → Maple ingest) ---
 	/**
 	 * Maple ingest key (org-scoped; use the internal-org key, same as `apps/api`).

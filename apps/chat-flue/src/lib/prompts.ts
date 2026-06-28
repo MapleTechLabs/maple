@@ -12,6 +12,53 @@ Maple's tools are exposed over MCP and named \`mcp__maple__<tool>\` (for example
 \`mcp__maple__find_errors\`). This document refers to them by their short names;
 call them by their full \`mcp__maple__\` name.`
 
+/**
+ * Code Mode block (appended when the `run_code` sandbox is bound).
+ * Gives the model a `run_code` tool and the generated `maple.*` API surface so
+ * it can write one snippet that chains/filters many tool calls instead of
+ * round-tripping each. The direct `mcp__maple__*` tools remain available.
+ */
+export const formatCodeModeBlock = (declaration: string): string => `## Code Mode — prefer writing code for multi-step work
+
+You have a \`run_code\` tool that runs a JavaScript snippet in a secure sandbox.
+Inside that snippet you can call Maple through the typed \`maple\` API below. Each
+method maps to a Maple tool and returns the tool's text output.
+
+Prefer \`run_code\` whenever a task needs MORE THAN ONE tool call — e.g. "find the
+worst service then show a sample trace", looping over results, filtering, or
+combining several queries. Writing one snippet that does the whole investigation
+is faster and cheaper than calling the \`mcp__maple__*\` tools one at a time. For a
+single lookup, calling the direct tool is fine.
+
+### The \`maple\` API
+\`\`\`ts
+${declaration}
+\`\`\`
+
+### Rules for the code you write
+- Plain JavaScript only. No \`import\`/\`require\`, no type annotations, no network.
+- \`await maple.<tool>(input)\` returns a STRING: human-readable text followed by a
+  \`Structured content:\` line with JSON. \`JSON.parse\` that JSON block when you need
+  to filter or sort programmatically.
+- A failing call THROWS — wrap risky calls in \`try/catch\` to continue; otherwise
+  the error is reported back to you to fix on the next turn.
+- \`console.log(...)\` anything you want to see; \`return\` a final value. Only your
+  logged/returned output comes back — keep it small (summarize, don't dump).
+- Mutating tools (create/update/delete/transition) only PROPOSE a change: calling
+  one queues it for the user's approval and does NOT take effect. Call it once
+  with the intended arguments; never write Approve/Deny prose.
+
+### Example
+\`\`\`js
+const raw = await maple.list_services({})
+const services = JSON.parse(raw.split("Structured content:")[1]).services ?? []
+const worst = services.sort((a, b) => b.errorRate - a.errorRate)[0]
+if (!worst) return "No services found."
+console.log("Worst service:", worst.name, "errorRate", worst.errorRate)
+const traces = await maple.search_traces({ service: worst.name, only_errors: true, limit: 1 })
+console.log(traces)
+\`\`\``
+
 const APPROVAL_NOTE = `## Mutating actions are approved before they take effect
 Tools that create, update, delete, or transition state (dashboards, alert rules,
 error issues, notification policies, comments, fix proposals) do not take effect

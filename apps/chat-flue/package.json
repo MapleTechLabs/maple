@@ -3,17 +3,23 @@
 	"private": true,
 	"type": "module",
 	"scripts": {
-		"dev": "flue dev --target cloudflare",
+		"dev": "portless",
+		"dev:app": "flue dev --target cloudflare --port ${PORT:-3583} --env ../../.env.local",
 		"build": "flue build --target cloudflare",
 		"deploy": "flue build --target cloudflare && wrangler deploy --config dist/maple_chat_flue/wrangler.json",
 		"connect": "flue connect maple-chat local",
 		"test": "vitest run --passWithNoTests",
 		"typecheck": "tsc --noEmit"
 	},
+	"portless": {
+		"name": "chat-flue",
+		"script": "dev:app"
+	},
 	"dependencies": {
 		"@clerk/backend": "^2.30.1",
 		"@flue/opentelemetry": "1.0.0-beta.1",
 		"@flue/runtime": "1.0.0-beta.2",
+		"@maple/codemode": "workspace:*",
 		"@opentelemetry/api": "^1.9.0",
 		"@opentelemetry/core": "^2.0.0",
 		"@opentelemetry/exporter-trace-otlp-http": "^0.205.0",

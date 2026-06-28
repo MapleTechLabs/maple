@@ -50,6 +50,9 @@
 		"lib/effect-cloudflare": {
 			"ignoreDependencies": ["cloudflare"]
 		},
+		"packages/codemode": {
+			"ignoreDependencies": ["cloudflare"]
+		},
 		"packages/query-engine": {
 			"entry": ["src/ch/expr.ts", "src/drain/index.ts"]
 		}

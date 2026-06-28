@@ -2,6 +2,7 @@ import { createAgent, type AgentRouteHandler, type McpServerConnection } from "@
 import { tracing } from "cloudflare:workers"
 import { applyApprovalGates } from "../lib/approval.ts"
 import { instanceIdFromAgentPath } from "../lib/auth.ts"
+import { buildCodeModeApi, createRunCodeTool, type CodeModeApi } from "../lib/codemode/index.ts"
 import type { ChatFlueEnv } from "../lib/env.ts"
 import { connectMapleMcp, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
 import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
@@ -74,7 +75,6 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 	// the Phase 2 frontend integration point; until then the base prompt for the
 	// mode is used.
 	const mode = modeFromInstanceId(ctx.id)
-	const instructions = buildSystemPrompt({ mode })
 
 	// Connect to Maple's MCP server (all tools). We tolerate connection failures so
 	// the agent still answers on Workers AI when apps/api or INTERNAL_SERVICE_TOKEN
@@ -113,6 +113,22 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 			)
 		}
 	}
+
+	// Code Mode: add a `run_code` tool backed by the SAME gated tools (so mutations
+	// still only propose) and inject the generated `maple.*` API into the prompt.
+	// The direct tools stay available alongside it. Active whenever the Worker
+	// Loader sandbox is bound — i.e. everywhere except local dev, where it degrades
+	// to the direct tools.
+	let codeModeApi: CodeModeApi | undefined
+	if (tools.length > 0 && ctx.env.LOADER) {
+		codeModeApi = buildCodeModeApi(tools)
+		tools = [...tools, createRunCodeTool(ctx.env, codeModeApi)]
+	}
+
+	const instructions = buildSystemPrompt({
+		mode,
+		codeMode: codeModeApi ? { declaration: codeModeApi.declaration } : undefined,
+	})
 
 	return {
 		model: ctx.env.MAPLE_CHAT_MODEL ?? DEFAULT_MODEL,

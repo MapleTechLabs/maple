@@ -16,7 +16,7 @@ const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 const decodeWorkflowState = Schema.decodeUnknownOption(WorkflowState)
 
 export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"release_error_issue",
 		"Release the lease on an error issue you previously claimed, optionally transitioning it to another workflow state (default: 'todo').",
 		Schema.Struct({

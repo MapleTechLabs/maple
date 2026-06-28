@@ -247,7 +247,7 @@ const comparatorLabel: Record<string, string> = {
 }
 
 export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"create_alert_rule",
 		"Create an alert rule. Use a template for common cases (high_error_rate, slow_p95, slow_p99, low_apdex, throughput_drop) or template='custom' for full control. " +
 			"Templates auto-fill signal_type, comparator, and a sensible default threshold. " +

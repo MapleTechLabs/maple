@@ -9,7 +9,7 @@ import { ErrorIssueId } from "@maple/domain/http"
 const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 
 export function registerHeartbeatErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
+	server.mutatingTool(
 		"heartbeat_error_issue",
 		"Extend the lease on a claimed error issue. Call this periodically while you work; if the lease expires, the issue drops back to 'todo' and any actor can re-claim it.",
 		Schema.Struct({
