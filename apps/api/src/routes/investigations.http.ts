@@ -6,8 +6,8 @@ import { InvestigationService } from "../services/InvestigationService"
 /**
  * User-facing investigation endpoints (Clerk-authed via the group's
  * Authorization middleware). The internal `submit_diagnosis` write the chat-flue
- * agent posts is a separate service-token-guarded router
- * (`InvestigationInternalRouter`), not part of this group.
+ * agent posts is a separate service-token-guarded group
+ * (`InvestigationsInternalApiGroup`), not part of this one.
  */
 export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigations", (handlers) =>
 	Effect.gen(function* () {

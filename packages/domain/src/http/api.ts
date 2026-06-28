@@ -14,7 +14,7 @@ import { ErrorsApiGroup } from "./errors"
 import { IngestAttributeMappingsApiGroup } from "./ingest-attribute-mappings"
 import { IngestKeysApiGroup } from "./ingest-keys"
 import { IntegrationsApiGroup } from "./integrations"
-import { InvestigationApiGroup } from "./investigations"
+import { InvestigationApiGroup, InvestigationsInternalApiGroup } from "./investigations"
 import { ObservabilityApiGroup } from "./observability"
 import { OnboardingApiGroup } from "./onboarding"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
@@ -43,6 +43,7 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(IngestKeysApiGroup)
 	.add(IntegrationsApiGroup)
 	.add(InvestigationApiGroup)
+	.add(InvestigationsInternalApiGroup)
 	.add(ObservabilityApiGroup)
 	.add(OnboardingApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)
