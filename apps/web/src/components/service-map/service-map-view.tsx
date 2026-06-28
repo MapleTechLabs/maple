@@ -15,7 +15,6 @@ import {
 } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 
-import { useAuth } from "@clerk/clerk-react"
 import { Result, useAtom } from "@/lib/effect-atom"
 import { serviceMapLayoutAtomFamily } from "@/atoms/service-map-layout-atoms"
 import { Link } from "@tanstack/react-router"
@@ -100,6 +99,7 @@ import {
 	type ServiceNodeData,
 } from "./service-map-utils"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 
 const nodeTypes = {
 	serviceNode: ServiceMapNode,
@@ -1811,7 +1811,7 @@ export function ServiceMapCanvas({
 }
 
 export function ServiceMapView({ startTime, endTime }: ServiceMapViewProps) {
-	const { orgId } = useAuth()
+	const orgId = useMapleOrganizationId();
 	const infraEnabled = useInfraEnabled()
 	const durationSeconds = useMemo(() => {
 		const ms = new Date(endTime).getTime() - new Date(startTime).getTime()
