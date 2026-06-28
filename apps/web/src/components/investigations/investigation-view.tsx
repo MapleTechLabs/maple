@@ -34,8 +34,9 @@ export function InvestigationView({ subject }: { subject: InvestigationSubject }
 	const isWide = useMediaQuery("lg")
 
 	// Arriving here IS the intent to diagnose: once the runs query resolves to
-	// none, mounting the trigger fires a run (mount-effect escape hatch).
-	const showAutoRun = !triage.runsLoading && !triage.runsFailed && triage.run === null
+	// none, mounting the trigger fires a run (mount-effect escape hatch). Only when
+	// a run can actually be started — otherwise the report shows a terminal state.
+	const showAutoRun = !triage.runsLoading && !triage.runsFailed && triage.run === null && triage.canRun
 
 	// Fold the AI's findings into the chat preamble once a run completes.
 	const chatContext: InvestigationContext = useMemo(
@@ -96,6 +97,7 @@ export function InvestigationView({ subject }: { subject: InvestigationSubject }
 					run={triage.run}
 					onRerun={triage.startRun}
 					rerunning={triage.isStarting}
+					canRun={triage.canRun}
 				/>
 			}
 			rightSidebar={isWide ? chat : undefined}

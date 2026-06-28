@@ -29,6 +29,12 @@ export interface AiTriageRunState {
 	result: AiTriageResult | null
 	/** True while a run is queued or running (drives the investigating state + poll). */
 	runActive: boolean
+	/**
+	 * Whether a run can actually be started. False when there's no incident to run
+	 * against (e.g. an error issue that has never opened an incident) — triage needs
+	 * an `incidentId`, so the UI must show a terminal state, not an endless spinner.
+	 */
+	canRun: boolean
 	/** True between clicking "Diagnose"/"Re-run" and the create mutation settling. */
 	isStarting: boolean
 	startRun: () => Promise<void>
@@ -97,6 +103,7 @@ export function useAiTriageRun({ incidentKind, incidentId, issueId }: UseAiTriag
 		run,
 		result: run?.result ?? null,
 		runActive,
+		canRun: incidentId !== null,
 		isStarting,
 		startRun,
 		refreshRuns,

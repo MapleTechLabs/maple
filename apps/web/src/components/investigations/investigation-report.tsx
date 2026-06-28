@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Button } from "@maple/ui/components/ui/button"
 import { Card } from "@maple/ui/components/ui/card"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { AiTriageResult, AiTriageRunDocument } from "@maple/domain/http"
 
@@ -22,7 +23,8 @@ export interface InvestigationReportProps {
  * machine for the center column; the success case is the report itself. Kind-agnostic.
  */
 export function InvestigationReport({ triage }: InvestigationReportProps) {
-	const { runsLoading, runsFailed, run, result, runActive, startRun, isStarting, refreshRuns } = triage
+	const { runsLoading, runsFailed, run, result, runActive, canRun, startRun, isStarting, refreshRuns } =
+		triage
 
 	if (runsLoading) {
 		return (
@@ -50,7 +52,29 @@ export function InvestigationReport({ triage }: InvestigationReportProps) {
 		)
 	}
 
-	// No run yet → the page auto-starts one on arrival, so show the investigating state.
+	// No run, and none can be started (e.g. an error issue with no incident) — a
+	// terminal state, not an endless spinner. The chat rail is still usable.
+	if (run === null && !canRun) {
+		return (
+			<Card className="mx-auto max-w-3xl">
+				<Empty className="py-8">
+					<EmptyHeader>
+						<EmptyMedia variant="icon">
+							<PulseIcon size={18} />
+						</EmptyMedia>
+						<EmptyTitle>No automatic diagnosis yet</EmptyTitle>
+						<EmptyDescription>
+							This issue hasn't opened an incident, so there's nothing to diagnose automatically.
+							You can still ask Maple AI about it in the chat.
+						</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
+			</Card>
+		)
+	}
+
+	// No run yet (but runnable) → the page auto-starts one on arrival, so show the
+	// investigating state, as well as while a run is active.
 	if (run === null || runActive) {
 		return (
 			<div className="mx-auto w-full max-w-3xl">

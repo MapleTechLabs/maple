@@ -19,6 +19,8 @@ export interface InvestigationSidebarProps {
 	run: AiTriageRunDocument | null
 	onRerun: () => void
 	rerunning: boolean
+	/** False when there's no incident to run triage against (disables Re-run). */
+	canRun: boolean
 }
 
 /**
@@ -26,7 +28,14 @@ export interface InvestigationSidebarProps {
  * shows the AI's severity + confidence + the subject's headline stat (breach /
  * deviation / occurrences); the rest renders `subject.groups` generically.
  */
-export function InvestigationSidebar({ subject, result, run, onRerun, rerunning }: InvestigationSidebarProps) {
+export function InvestigationSidebar({
+	subject,
+	result,
+	run,
+	onRerun,
+	rerunning,
+	canRun,
+}: InvestigationSidebarProps) {
 	const investigatedAt = run?.completedAt ?? run?.createdAt ?? null
 
 	return (
@@ -120,7 +129,13 @@ export function InvestigationSidebar({ subject, result, run, onRerun, rerunning 
 			) : null}
 
 			<div className="flex flex-col gap-2 pt-4">
-				<Button size="sm" variant="outline" className="w-full" onClick={onRerun} disabled={rerunning}>
+				<Button
+					size="sm"
+					variant="outline"
+					className="w-full"
+					onClick={onRerun}
+					disabled={rerunning || !canRun}
+				>
 					<ArrowPathIcon className="size-3.5" />
 					Re-run diagnosis
 				</Button>
