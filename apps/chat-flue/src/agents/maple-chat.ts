@@ -88,7 +88,8 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 			// `chat.mcp_connect` makes the per-interaction MCP connect (the leading
 			// "takes ages to start" suspect — no pooling, 12s timeout) a first-class,
 			// queryable span, and turns the previously-silent failure path into a
-			// span carrying `error`/`error.message` + `maple.mcp.connected=false`.
+			// span with status `Error` + `error.type`/`error.message` and
+			// `maple.mcp.connected=false`.
 			const maple = await enterSpan("chat.mcp_connect", async (span) => {
 				span.setAttribute("maple.org_id", orgId)
 				span.setAttribute("maple.mcp.timeout_ms", MCP_DEFAULT_TIMEOUT_MS)
@@ -99,8 +100,10 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 					return connection
 				} catch (error) {
 					span.setAttribute("maple.mcp.connected", false)
-					span.setAttribute("error", true)
-					span.setAttribute("error.message", error instanceof Error ? error.message : String(error))
+					span.setError(
+						error instanceof Error ? error.name : "UnknownError",
+						error instanceof Error ? error.message : String(error),
+					)
 					throw error
 				}
 			})
