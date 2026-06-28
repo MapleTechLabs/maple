@@ -41,6 +41,7 @@ import { Route as ReplaysPreviewRouteImport } from './routes/replays/preview'
 import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
 import { Route as RecommendationsRecommendationKeyRouteImport } from './routes/recommendations/$recommendationKey'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
+import { Route as InvestigationsIdRouteImport } from './routes/investigations/$id'
 import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
 import { Route as ErrorsErrorTypeRouteImport } from './routes/errors/$errorType'
 import { Route as DashboardsTemplatesRouteImport } from './routes/dashboards/templates'
@@ -220,6 +221,11 @@ const LogsLogIdRoute = LogsLogIdRouteImport.update({
   path: '/logs/$logId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvestigationsIdRoute = InvestigationsIdRouteImport.update({
+  id: '/investigations/$id',
+  path: '/investigations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InfraHostNameRoute = InfraHostNameRouteImport.update({
   id: '/infra/$hostName',
   path: '/infra/$hostName',
@@ -339,6 +345,7 @@ export interface FileRoutesByFullPath {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -390,6 +397,7 @@ export interface FileRoutesByTo {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -442,6 +450,7 @@ export interface FileRoutesById {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -495,6 +504,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -546,6 +556,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -597,6 +608,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -649,6 +661,7 @@ export interface RootRouteChildren {
   DashboardsTemplatesRoute: typeof DashboardsTemplatesRoute
   ErrorsErrorTypeRoute: typeof ErrorsErrorTypeRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
+  InvestigationsIdRoute: typeof InvestigationsIdRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
   RecommendationsRecommendationKeyRoute: typeof RecommendationsRecommendationKeyRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
@@ -902,6 +915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsLogIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/investigations/$id': {
+      id: '/investigations/$id'
+      path: '/investigations/$id'
+      fullPath: '/investigations/$id'
+      preLoaderRoute: typeof InvestigationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/infra/$hostName': {
       id: '/infra/$hostName'
       path: '/infra/$hostName'
@@ -1049,6 +1069,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardsTemplatesRoute: DashboardsTemplatesRoute,
   ErrorsErrorTypeRoute: ErrorsErrorTypeRoute,
   InfraHostNameRoute: InfraHostNameRoute,
+  InvestigationsIdRoute: InvestigationsIdRoute,
   LogsLogIdRoute: LogsLogIdRoute,
   RecommendationsRecommendationKeyRoute: RecommendationsRecommendationKeyRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,

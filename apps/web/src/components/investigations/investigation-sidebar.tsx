@@ -7,14 +7,12 @@ import type { AiTriageResult, AiTriageRunDocument } from "@maple/domain/http"
 
 import { ArrowPathIcon, ArrowRightIcon } from "@/components/icons"
 import { ConfidenceMeter, EYEBROW } from "@/components/ai-triage/ai-triage-card"
-import { formatBreach, toAlertComparator, toAlertSignalType } from "@/components/ai-triage/breach"
 import { SEVERITY_LABEL, SEVERITY_TONE } from "@/components/errors/severity-badge"
-import type { AlertContext } from "@/components/chat/alert-context"
-import { comparatorLabels, signalLabels } from "@/lib/alerts/form-utils"
 import { formatRelativeTime } from "@/lib/format"
+import type { InvestigationSubject } from "./subject"
 
-export interface IncidentReportSidebarProps {
-	alertContext: AlertContext
+export interface InvestigationSidebarProps {
+	subject: InvestigationSubject
 	/** Latest completed result (drives the assessed severity + confidence); null while pending. */
 	result: AiTriageResult | null
 	/** Latest run (drives the investigated-at + model lines); null before the first run. */
@@ -24,19 +22,11 @@ export interface IncidentReportSidebarProps {
 }
 
 /**
- * The report's left meta rail: an at-a-glance scorecard (assessed severity, AI
- * confidence, breach magnitude) over the signal facts, blast radius, and timing.
- * Mirrors the anomaly detail sidebar's Group/Row vocabulary.
+ * The investigation report's left meta rail — kind-agnostic. The Assessment block
+ * shows the AI's severity + confidence + the subject's headline stat (breach /
+ * deviation / occurrences); the rest renders `subject.groups` generically.
  */
-export function IncidentReportSidebar({ alertContext, result, run, onRerun, rerunning }: IncidentReportSidebarProps) {
-	const signalType = toAlertSignalType(alertContext.signalType)
-	const comparator = toAlertComparator(alertContext.comparator)
-	const breach =
-		signalType && comparator
-			? formatBreach(signalType, comparator, alertContext.value, alertContext.threshold)
-			: null
-
-	const services = result ? [...new Set(result.evidence.flatMap((e) => e.relatedServices))] : []
+export function InvestigationSidebar({ subject, result, run, onRerun, rerunning }: InvestigationSidebarProps) {
 	const investigatedAt = run?.completedAt ?? run?.createdAt ?? null
 
 	return (
@@ -58,22 +48,19 @@ export function IncidentReportSidebar({ alertContext, result, run, onRerun, reru
 						<span className="text-sm text-muted-foreground/60">Pending</span>
 					)}
 				</Row>
-				{breach ? (
+				{subject.headline ? (
 					<div className="grid grid-cols-[88px_1fr] items-baseline gap-x-3 py-0.5">
-						<span className="text-xs text-muted-foreground">Breach</span>
+						<span className="text-xs text-muted-foreground">{subject.headline.label}</span>
 						<div className="flex min-w-0 flex-col items-end gap-0.5">
-							<span className="font-mono text-sm tabular-nums text-foreground">
-								{breach.observed}{" "}
-								<span className="text-muted-foreground">vs {breach.threshold}</span>
-							</span>
-							{breach.delta ? (
+							<span className="font-mono text-sm tabular-nums text-foreground">{subject.headline.primary}</span>
+							{subject.headline.secondary ? (
 								<span
 									className={cn(
 										"whitespace-nowrap text-xs font-medium tabular-nums",
-										breach.exceedsThreshold ? "text-destructive" : "text-muted-foreground",
+										subject.headline.bad ? "text-destructive" : "text-muted-foreground",
 									)}
 								>
-									{breach.delta}
+									{subject.headline.secondary}
 								</span>
 							) : null}
 						</div>
@@ -81,48 +68,37 @@ export function IncidentReportSidebar({ alertContext, result, run, onRerun, reru
 				) : null}
 			</Group>
 
-			<Group label="Signal">
-				<Row label="Metric">
-					<span className="text-sm text-foreground">
-						{signalType ? signalLabels[signalType] : alertContext.signalType}
-					</span>
-				</Row>
-				<Row label="Condition">
-					<span className="font-mono text-xs tabular-nums text-muted-foreground">
-						{comparator ? comparatorLabels[comparator] : alertContext.comparator} {breach?.threshold ?? alertContext.threshold}
-					</span>
-				</Row>
-				<Row label="Window">
-					<span className="text-sm tabular-nums text-foreground">{alertContext.windowMinutes}min</span>
-				</Row>
-				{alertContext.groupKey ? (
-					<Row label="Group" title={alertContext.groupKey}>
-						<code className="block max-w-full truncate font-mono text-xs text-muted-foreground">
-							{alertContext.groupKey}
-						</code>
-					</Row>
-				) : null}
-				{alertContext.sampleCount !== null ? (
-					<Row label="Samples">
-						<span className="font-mono text-sm tabular-nums text-muted-foreground">
-							{alertContext.sampleCount.toLocaleString()}
-						</span>
-					</Row>
-				) : null}
-			</Group>
+			{subject.groups.map((group) => (
+				<Group key={group.label} label={group.label}>
+					{group.rows.map((row) => (
+						<Row key={row.label} label={row.label} title={row.title}>
+							{row.mono ? (
+								<code className="block max-w-full truncate font-mono text-xs text-muted-foreground">
+									{row.value}
+								</code>
+							) : (
+								<span className="truncate text-sm text-foreground">{row.value}</span>
+							)}
+						</Row>
+					))}
+				</Group>
+			))}
 
 			{result ? (
 				<Group label="Blast radius">
 					<p className="text-sm leading-relaxed text-foreground">{result.affectedScope}</p>
-					{services.length > 0 ? (
-						<div className="flex flex-wrap gap-1 pt-1">
-							{services.map((service) => (
-								<Badge key={service} variant="outline" className="text-[11px]">
-									{service}
-								</Badge>
-							))}
-						</div>
-					) : null}
+					{(() => {
+						const services = [...new Set(result.evidence.flatMap((e) => e.relatedServices))]
+						return services.length > 0 ? (
+							<div className="flex flex-wrap gap-1 pt-1">
+								{services.map((service) => (
+									<Badge key={service} variant="outline" className="text-[11px]">
+										{service}
+									</Badge>
+								))}
+							</div>
+						) : null
+					})()}
 				</Group>
 			) : null}
 
@@ -148,15 +124,18 @@ export function IncidentReportSidebar({ alertContext, result, run, onRerun, reru
 					<ArrowPathIcon className="size-3.5" />
 					Re-run diagnosis
 				</Button>
-				<Button
-					size="sm"
-					variant="ghost"
-					className="w-full text-muted-foreground"
-					render={<Link to="/alerts/$ruleId" params={{ ruleId: alertContext.ruleId }} />}
-				>
-					View alert rule
-					<ArrowRightIcon className="size-3" />
-				</Button>
+				{subject.entityLinks.map((link) => (
+					<Button
+						key={link.href}
+						size="sm"
+						variant="ghost"
+						className="w-full text-muted-foreground"
+						render={<Link to={link.href} />}
+					>
+						{link.label}
+						<ArrowRightIcon className="size-3" />
+					</Button>
+				))}
 			</div>
 		</div>
 	)

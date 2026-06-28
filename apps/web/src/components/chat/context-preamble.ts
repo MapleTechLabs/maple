@@ -1,4 +1,4 @@
-import type { AlertContext } from "./alert-context"
+import type { InvestigationContext, InvestigationKind } from "./investigation-context"
 import type { WidgetFixContext } from "./widget-fix-context"
 import type { AutoContext, PageContextPayload } from "./auto-contexts"
 
@@ -19,8 +19,8 @@ import type { AutoContext, PageContextPayload } from "./auto-contexts"
  */
 
 export interface ChatContext {
-	mode?: "alert" | "widget-fix"
-	alertContext?: AlertContext
+	mode?: "widget-fix" | "investigation"
+	investigationContext?: InvestigationContext
 	widgetFixContext?: WidgetFixContext
 	pageContext?: PageContextPayload
 }
@@ -43,7 +43,9 @@ export const stripContextPreamble = (text: string): string => {
 
 /** Build the context block for a conversation, or "" when there's nothing to attach. */
 export const buildContextPreamble = (ctx: ChatContext): string => {
-	if (ctx.mode === "alert" && ctx.alertContext) return formatAlertContextBlock(ctx.alertContext).trim()
+	if (ctx.mode === "investigation" && ctx.investigationContext) {
+		return formatInvestigationContextBlock(ctx.investigationContext).trim()
+	}
 	if (ctx.mode === "widget-fix" && ctx.widgetFixContext) {
 		return formatWidgetFixContextBlock(ctx.widgetFixContext).trim()
 	}
@@ -99,29 +101,6 @@ const formatPageContextBlock = (payload: PageContextPayload): string => {
 	return lines.join("\n")
 }
 
-export const formatAlertComparator = (c: string): string => {
-	switch (c) {
-		case "gt":
-			return ">"
-		case "gte":
-			return ">="
-		case "lt":
-			return "<"
-		case "lte":
-			return "<="
-		case "eq":
-			return "="
-		case "neq":
-			return "!="
-		case "between":
-			return "between"
-		case "not_between":
-			return "not between"
-		default:
-			return c
-	}
-}
-
 const SIGNAL_TOOL_HINTS: Record<string, string> = {
 	error_rate:
 		"- Prefer `find_errors` and `list_error_issues` for the affected service.\n- Use `search_logs` to surface exception messages in the alert window.",
@@ -165,49 +144,63 @@ const formatWidgetFixContextBlock = (ctx: WidgetFixContext): string => {
 	return lines.join("\n")
 }
 
-const formatAlertContextBlock = (alert: AlertContext): string => {
-	const observedRaw = alert.value === null ? "n/a" : String(alert.value)
-	const thresholdExpr = `${formatAlertComparator(alert.comparator)} ${alert.threshold}`
-	const toolHints =
-		SIGNAL_TOOL_HINTS[alert.signalType] ??
-		"- Use `diagnose_service` and `explore_attributes` on the affected service."
+const KIND_HEADING: Record<InvestigationKind, string> = {
+	alert: "Attached Alert",
+	anomaly: "Attached Anomaly",
+	error: "Attached Error",
+}
 
+const ERROR_TOOL_HINTS =
+	"- Prefer `error_detail`, `find_errors`, and `list_error_issue_events` for this issue.\n- Use `search_logs` and `inspect_trace` on representative occurrences to read stack traces."
+
+const investigationToolHints = (ctx: InvestigationContext): string => {
+	if (ctx.kind === "error") return ERROR_TOOL_HINTS
+	if (ctx.signalType && SIGNAL_TOOL_HINTS[ctx.signalType]) return SIGNAL_TOOL_HINTS[ctx.signalType]!
+	return "- Use `diagnose_service` and `explore_attributes` on the affected service."
+}
+
+/** Generic investigation preamble — alert, anomaly, or error, from normalized facts. */
+const formatInvestigationContextBlock = (ctx: InvestigationContext): string => {
+	const scope = ctx.scope ?? ctx.refs?.serviceName ?? "all"
 	const lines = [
 		"",
-		"## Attached Alert",
-		"The on-call engineer is investigating an alert that has been attached to this conversation as structured context. It is visible to them as a pinned card above the message thread, and it remains attached to every message in this thread.",
+		`## ${KIND_HEADING[ctx.kind]}`,
+		`The on-call engineer is investigating ${ctx.kind === "error" ? "an error issue" : `a${ctx.kind === "anomaly" ? "n" : ""} ${ctx.kind}`} that is attached to this conversation as structured context. It is pinned above the message thread and stays attached to every message.`,
 		"",
 		"```yaml",
-		`rule_id: ${alert.ruleId}`,
-		`rule_name: ${JSON.stringify(alert.ruleName)}`,
-		`incident_id: ${alert.incidentId ?? "null"}`,
-		`event_type: ${alert.eventType}`,
-		`severity: ${alert.severity}`,
-		`signal: ${alert.signalType}`,
-		`threshold: ${thresholdExpr}`,
-		`observed: ${observedRaw}`,
-		`sample_count: ${alert.sampleCount ?? "null"}`,
-		`window_minutes: ${alert.windowMinutes}`,
-		`group_key: ${alert.groupKey === null ? "null" : JSON.stringify(alert.groupKey)}`,
+		`kind: ${ctx.kind}`,
+		`id: ${ctx.id}`,
+		`title: ${JSON.stringify(ctx.title)}`,
+		`severity: ${ctx.severity}`,
+		`status: ${ctx.status}`,
+		...(ctx.signalType ? [`signal: ${ctx.signalType}`] : []),
+		...ctx.facts.map((fact) => `${fact.key}: ${JSON.stringify(fact.value)}`),
+		...(ctx.refs?.serviceName ? [`service: ${ctx.refs.serviceName}`] : []),
+		...(ctx.refs?.ruleId ? [`rule_id: ${ctx.refs.ruleId}`] : []),
+		...(ctx.refs?.detectorKey ? [`detector_key: ${ctx.refs.detectorKey}`] : []),
+		...(ctx.refs?.issueId ? [`error_issue_id: ${ctx.refs.issueId}`] : []),
 		"```",
 		"",
 		"### Investigation guidance",
-		`- Scope every query to service/group \`${alert.groupKey ?? "all"}\` unless the engineer explicitly broadens it.`,
-		`- Default time range: the alert window (${alert.windowMinutes}m ending at the event time) with ~15m of surrounding context. Widen if needed.`,
-		`- Treat the attachment as authoritative — do not ask the engineer to repeat values it already contains. Reference the rule by name, not by ID.`,
-		toolHints,
-		"- When you recommend dashboards or links, prefer existing Maple routes (services, traces, errors, alerts). Use `get_alert_rule`/`list_alert_incidents` if you need deeper rule history.",
-		"- If the event is `resolve`, focus on root-cause and prevention rather than immediate mitigation.",
+		`- Scope every query to \`${scope}\` unless the engineer explicitly broadens it.`,
+		...(ctx.windowMinutes
+			? [
+					`- Default time range: the ${ctx.windowMinutes}m window ending at the event time, with ~15m of surrounding context. Widen if needed.`,
+				]
+			: ["- Default time range: the incident's active window with ~15m of surrounding context."]),
+		"- Treat the attachment as authoritative — do not ask the engineer to repeat values it already contains.",
+		investigationToolHints(ctx),
+		"- Prefer existing Maple routes (services, traces, errors, alerts, anomalies) when you recommend links.",
 	]
 
-	if (alert.aiSummary || alert.aiSuspectedCause) {
+	if (ctx.aiSummary || ctx.aiSuspectedCause) {
 		lines.push(
 			"",
 			"### Prior AI triage",
-			"An automated triage pass already ran on this incident. Build on it — verify, deepen, or correct it rather than starting from scratch.",
+			"An automated triage pass already ran. Build on it — verify, deepen, or correct it rather than starting from scratch.",
 		)
-		if (alert.aiSummary) lines.push(`- summary: ${alert.aiSummary}`)
-		if (alert.aiSuspectedCause) lines.push(`- suspected_cause: ${alert.aiSuspectedCause}`)
+		if (ctx.aiSummary) lines.push(`- summary: ${ctx.aiSummary}`)
+		if (ctx.aiSuspectedCause) lines.push(`- suspected_cause: ${ctx.aiSuspectedCause}`)
 	}
 
 	return lines.join("\n")

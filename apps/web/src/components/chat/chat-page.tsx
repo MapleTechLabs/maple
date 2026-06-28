@@ -13,13 +13,17 @@ import { useChatTabs, type ChatTab } from "@/hooks/use-chat-tabs"
 import { ChatSidebar } from "./chat-sidebar"
 import { ChatConversation } from "./chat-conversation"
 import { FlueClientProvider } from "./flue-client-provider"
-import { alertTabId, alertTabTitle, type AlertContext } from "./alert-context"
+import {
+	investigationTabId,
+	investigationTabTitle,
+	type InvestigationContext,
+} from "./investigation-context"
 import { widgetFixTabId, widgetFixTabTitle, type WidgetFixContext } from "./widget-fix-context"
 
 interface ChatPageProps {
 	urlTabId?: string
-	mode?: "alert" | "widget-fix"
-	alertContext?: AlertContext
+	mode?: "investigation" | "widget-fix"
+	investigationContext?: InvestigationContext
 	widgetFixContext?: WidgetFixContext
 	/** When set, render a read-only view of a teammate's shared conversation. */
 	sharedTabId?: string
@@ -29,7 +33,7 @@ interface ChatPageProps {
 export function ChatPage({
 	urlTabId,
 	mode,
-	alertContext,
+	investigationContext,
 	widgetFixContext,
 	sharedTabId,
 	sharedTitle,
@@ -45,7 +49,7 @@ export function ChatPage({
 					orgId={orgId}
 					urlTabId={urlTabId}
 					mode={mode}
-					alertContext={alertContext}
+					investigationContext={investigationContext}
 					widgetFixContext={widgetFixContext}
 				/>
 			)}
@@ -56,12 +60,12 @@ export function ChatPage({
 interface ChatPageInnerProps {
 	orgId: string
 	urlTabId?: string
-	mode?: "alert" | "widget-fix"
-	alertContext?: AlertContext
+	mode?: "investigation" | "widget-fix"
+	investigationContext?: InvestigationContext
 	widgetFixContext?: WidgetFixContext
 }
 
-function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }: ChatPageInnerProps) {
+function ChatPageInner({ orgId, urlTabId, mode, investigationContext, widgetFixContext }: ChatPageInnerProps) {
 	const { tabs, activeTabId, createTab, closeTab, setActiveTab, renameTab, ensureTab } = useChatTabs(
 		orgId,
 		urlTabId,
@@ -127,9 +131,9 @@ function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }
 	}, [setActiveTab])
 
 	useEffect(() => {
-		if (mode !== "alert" || !alertContext) return
-		ensureTab(alertTabId(alertContext), alertTabTitle(alertContext))
-	}, [mode, alertContext, ensureTab])
+		if (mode !== "investigation" || !investigationContext) return
+		ensureTab(investigationTabId(investigationContext), investigationTabTitle(investigationContext))
+	}, [mode, investigationContext, ensureTab])
 
 	useEffect(() => {
 		if (mode !== "widget-fix" || !widgetFixContext) return
@@ -138,7 +142,8 @@ function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }
 
 	useAppHotkey("chat.newTab", () => createTab())
 
-	const alertTab = mode === "alert" && alertContext ? alertTabId(alertContext) : undefined
+	const investigationTab =
+		mode === "investigation" && investigationContext ? investigationTabId(investigationContext) : undefined
 	const widgetFixTab =
 		mode === "widget-fix" && widgetFixContext ? widgetFixTabId(widgetFixContext) : undefined
 
@@ -147,7 +152,7 @@ function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }
 	const conversationArea = (
 		<div className="relative min-h-0 flex-1 bg-background">
 			{tabs.map((tab) => {
-				const isAlertTab = tab.id === alertTab
+				const isInvestigationTab = tab.id === investigationTab
 				const isWidgetFixTab = tab.id === widgetFixTab
 				return (
 					<div key={tab.id} className={tab.id === activeTabId ? "flex h-full flex-col" : "hidden"}>
@@ -157,8 +162,8 @@ function ChatPageInner({ orgId, urlTabId, mode, alertContext, widgetFixContext }
 								isActive={tab.id === activeTabId}
 								onFirstMessage={(id, text) => renameTab(id, text)}
 								onLoadingChange={handleLoadingChange}
-								mode={isAlertTab ? "alert" : isWidgetFixTab ? "widget-fix" : undefined}
-								alertContext={isAlertTab ? alertContext : undefined}
+								mode={isInvestigationTab ? "investigation" : isWidgetFixTab ? "widget-fix" : undefined}
+								investigationContext={isInvestigationTab ? investigationContext : undefined}
 								widgetFixContext={isWidgetFixTab ? widgetFixContext : undefined}
 							/>
 						</Suspense>

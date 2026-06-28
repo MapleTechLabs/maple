@@ -13,11 +13,14 @@ import { ExternalLinkIcon } from "@/components/icons"
 import { ChatConversation } from "@/components/chat/chat-conversation"
 import { FlueClientProvider } from "@/components/chat/flue-client-provider"
 import {
-	alertTabId,
 	encodeAlertContextToSearchParam,
 	signalLabel,
 	type AlertContext,
 } from "@/components/chat/alert-context"
+import {
+	alertContextToInvestigation,
+	investigationTabId,
+} from "@/components/chat/investigation-context"
 
 export interface AlertChatSheetProps {
 	open: boolean
@@ -27,9 +30,9 @@ export interface AlertChatSheetProps {
 }
 
 /**
- * Right-side slide-over that hosts the full Maple chat (`<ChatConversation>` in
- * `mode="alert"`) seeded with a firing alert's context — so an on-call engineer
- * can keep asking follow-up questions without leaving the alert detail page.
+ * Right-side slide-over that hosts the full Maple chat seeded with a firing
+ * alert's context (mapped onto the unified investigation chat) — so an on-call
+ * engineer can keep asking follow-up questions without leaving the alert page.
  *
  * The conversation is addressed by the stable `alert-<incidentId>` tab id, so
  * this panel and the full `/chat?mode=alert` page are the same thread. We mount
@@ -37,9 +40,10 @@ export interface AlertChatSheetProps {
  * works standalone.
  */
 export function AlertChatSheet({ open, onOpenChange, alertContext }: AlertChatSheetProps) {
+	const investigation = alertContext ? alertContextToInvestigation(alertContext) : null
 	return (
 		<Sheet open={open && alertContext !== null} onOpenChange={onOpenChange}>
-			{alertContext ? (
+			{alertContext && investigation ? (
 				<SheetPopup
 					side="right"
 					className="w-[calc(100%-(--spacing(12)))] sm:max-w-2xl"
@@ -58,7 +62,7 @@ export function AlertChatSheet({ open, onOpenChange, alertContext }: AlertChatSh
 								search={{
 									mode: "alert",
 									alert: encodeAlertContextToSearchParam(alertContext),
-									tab: alertTabId(alertContext),
+									tab: investigationTabId(investigation),
 								}}
 							/>
 						}>
@@ -69,10 +73,10 @@ export function AlertChatSheet({ open, onOpenChange, alertContext }: AlertChatSh
 					<div className="flex min-h-0 flex-1 flex-col">
 						<FlueClientProvider>
 							<ChatConversation
-								tabId={alertTabId(alertContext)}
+								tabId={investigationTabId(investigation)}
 								isActive={open}
-								mode="alert"
-								alertContext={alertContext}
+								mode="investigation"
+								investigationContext={investigation}
 							/>
 						</FlueClientProvider>
 					</div>

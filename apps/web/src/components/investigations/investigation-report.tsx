@@ -12,16 +12,16 @@ import type { AiTriageRunState } from "@/components/ai-triage/use-ai-triage-run"
 import { SectionHeader } from "@/components/layout/section-header"
 import { formatRelativeTime } from "@/lib/format"
 
-export interface IncidentDiagnosisReportProps {
+export interface InvestigationReportProps {
 	triage: AiTriageRunState
 }
 
 /**
- * The report body for the incident page — the AI's verdict as a thesis headline,
+ * The report body for an investigation — the AI's verdict as a thesis headline,
  * lead summary, evidence cards, and a numbered runbook. Drives the full run state
- * machine for the center column; the success case is the report itself.
+ * machine for the center column; the success case is the report itself. Kind-agnostic.
  */
-export function IncidentDiagnosisReport({ triage }: IncidentDiagnosisReportProps) {
+export function InvestigationReport({ triage }: InvestigationReportProps) {
 	const { runsLoading, runsFailed, run, result, runActive, startRun, isStarting, refreshRuns } = triage
 
 	if (runsLoading) {

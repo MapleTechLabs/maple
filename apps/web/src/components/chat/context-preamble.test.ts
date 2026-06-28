@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { buildContextPreamble, stripContextPreamble, wrapContextPreamble } from "./context-preamble"
 import type { AlertContext } from "./alert-context"
+import { alertContextToInvestigation } from "./investigation-context"
 import type { WidgetFixContext } from "./widget-fix-context"
 
 const alert: AlertContext = {
@@ -43,10 +44,14 @@ describe("context preamble", () => {
 		expect(stripContextPreamble(text)).toBe(text)
 	})
 
-	it("builds an alert block", () => {
-		const block = buildContextPreamble({ mode: "alert", alertContext: alert })
+	it("builds an investigation block (alert subject)", () => {
+		const block = buildContextPreamble({
+			mode: "investigation",
+			investigationContext: alertContextToInvestigation(alert),
+		})
 		expect(block).toContain("## Attached Alert")
-		expect(block).toContain('group_key: "checkout-api"')
+		expect(block).toContain("kind: alert")
+		expect(block).toContain('group: "checkout-api"')
 	})
 
 	it("builds a widget-fix block", () => {
