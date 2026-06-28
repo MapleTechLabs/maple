@@ -1,5 +1,5 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { Effect, Schema } from "effect"
+import { Effect, Match, Schema } from "effect"
 import { InvestigationId, SubmitDiagnosisRequest } from "@maple/domain/http"
 import { resolveMcpTenantContext } from "../mcp/lib/resolve-tenant"
 import { InvestigationService } from "../services/InvestigationService"
@@ -30,8 +30,11 @@ export const InvestigationInternalRouter = HttpRouter.use((router) =>
 
 		const submitDiagnosis = Effect.gen(function* () {
 			const req = yield* HttpServerRequest.HttpServerRequest
+			// Map to a string literal (not a bare `Error`): the tagged service errors
+			// below are subtypes of `Error`, so an `Error` in the channel would collapse
+			// the union and erase their tags before `Match` can narrow them.
 			const nativeReq = yield* HttpServerRequest.toWeb(req).pipe(
-				Effect.mapError(() => new Error("request_read_failed")),
+				Effect.mapError(() => "request_read" as const),
 			)
 
 			const tenant = yield* resolveMcpTenantContext(nativeReq).pipe(
@@ -47,32 +50,24 @@ export const InvestigationInternalRouter = HttpRouter.use((router) =>
 			const body = yield* req.json.pipe(Effect.mapError(() => "bad_json" as const))
 			const request = yield* decodeBodyEffect(body).pipe(Effect.mapError(() => "bad_payload" as const))
 
-			yield* service.submitDiagnosis(tenant.orgId, id, request).pipe(
-				Effect.mapError((e) =>
-					e._tag === "@maple/http/investigations/InvestigationNotFoundError"
-						? "not_found"
-						: "persistence",
-				),
-			)
+			yield* service.submitDiagnosis(tenant.orgId, id, request)
 
 			return yield* HttpServerResponse.json({ ok: true })
 		}).pipe(
-			Effect.catch((tag) => {
-				switch (tag) {
-					case "unauthorized":
-						return errorJson("Unauthorized", 401)
-					case "not_found":
-						return errorJson("No such investigation", 404)
-					case "bad_path":
-					case "bad_id":
-						return errorJson("Invalid investigation id", 400)
-					case "bad_json":
-					case "bad_payload":
-						return errorJson("Invalid diagnosis payload", 400)
-					default:
-						return errorJson("Failed to persist diagnosis", 503)
-				}
-			}),
+			// Auth/decode steps fail with string literals; the service surfaces tagged
+			// errors. One matcher narrows both channels: `when` for the string failures,
+			// `tag` for not-found, with persistence/unknown falling through to 503.
+			Effect.catch((error) =>
+				Match.value(error).pipe(
+					Match.when("unauthorized", () => errorJson("Unauthorized", 401)),
+					Match.whenOr("bad_path", "bad_id", () => errorJson("Invalid investigation id", 400)),
+					Match.whenOr("bad_json", "bad_payload", () => errorJson("Invalid diagnosis payload", 400)),
+					Match.tag("@maple/http/investigations/InvestigationNotFoundError", () =>
+						errorJson("No such investigation", 404),
+					),
+					Match.orElse(() => errorJson("Failed to persist diagnosis", 503)),
+				),
+			),
 			Effect.catchCause(() => errorJson("Failed to persist diagnosis", 503)),
 			Effect.withSpan("InvestigationInternal.submitDiagnosis"),
 		)

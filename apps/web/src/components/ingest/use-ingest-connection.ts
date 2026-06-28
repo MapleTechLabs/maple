@@ -1,3 +1,5 @@
+import { Effect } from "effect"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
@@ -105,15 +107,17 @@ export async function sendTestEvent(apiKey: string): Promise<void> {
 		],
 	}
 
-	const response = await fetch(`${ingestUrl}/v1/traces`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Bearer ${apiKey}`,
-		},
-		body: JSON.stringify(payload),
-	})
-	if (!response.ok) {
-		throw new Error(`Ingest gateway returned ${response.status}`)
-	}
+	await Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient
+		const response = yield* client.execute(
+			HttpClientRequest.post(`${ingestUrl}/v1/traces`, {
+				headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+			}).pipe(HttpClientRequest.bodyText(JSON.stringify(payload))),
+		)
+		// HttpClient does not fail on non-2xx, so surface it explicitly — runPromise
+		// rejects, preserving the throw-on-failure contract the click handler relies on.
+		if (response.status < 200 || response.status >= 300) {
+			return yield* Effect.fail(new Error(`Ingest gateway returned ${response.status}`))
+		}
+	}).pipe(Effect.provide(FetchHttpClient.layer), Effect.runPromise)
 }
