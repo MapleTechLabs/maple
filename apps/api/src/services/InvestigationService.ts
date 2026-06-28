@@ -117,11 +117,18 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const iso = (date: Date) => decodeIsoSync(date.toISOString())
 
-			const parseReport = (raw: unknown): AiTriageResult | null => {
+			const parseReport = (raw: unknown, investigationId: string): AiTriageResult | null => {
 				if (raw == null) return null
 				try {
 					return decodeResultSync(raw)
-				} catch {
+				} catch (error) {
+					// A stored report that no longer decodes (e.g. an `AiTriageResult`
+					// schema change) would otherwise blank silently — surface it so the
+					// data loss is observable rather than invisible.
+					console.warn(
+						`[InvestigationService] report_json failed to decode for investigation ${investigationId}; rendering report-less`,
+						error,
+					)
 					return null
 				}
 			}
@@ -131,7 +138,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					id: decodeIdSync(row.id),
 					status: row.status,
 					subject: decodeSubjectSync(row.subjectJson),
-					report: parseReport(row.reportJson),
+					report: parseReport(row.reportJson, row.id),
 					model: row.model ?? null,
 					severity: row.severity ?? null,
 					confidence: row.confidence ?? null,
@@ -151,6 +158,23 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						.select()
 						.from(investigations)
 						.where(and(eq(investigations.orgId, orgId), eq(investigations.id, id)))
+						.limit(1),
+				).pipe(Effect.map((rows) => rows[0]))
+
+			// Look up the single incident-anchored row (the partial unique index key).
+			// Used for both the dedup fast-path and the concurrent-insert race loser.
+			const loadIncidentRow = (orgId: OrgId, incidentKind: AiTriageIncidentKind, incidentId: string) =>
+				dbExecute((db) =>
+					db
+						.select()
+						.from(investigations)
+						.where(
+							and(
+								eq(investigations.orgId, orgId),
+								eq(investigations.incidentKind, incidentKind),
+								eq(investigations.incidentId, incidentId),
+							),
+						)
 						.limit(1),
 				).pipe(Effect.map((rows) => rows[0]))
 
@@ -200,20 +224,8 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// already exists, return it (re-opening the same war-room) instead of
 				// creating a duplicate. Free-form investigations are always new.
 				if (subject.type === "incident") {
-					const existing = yield* dbExecute((db) =>
-						db
-							.select()
-							.from(investigations)
-							.where(
-								and(
-									eq(investigations.orgId, orgId),
-									eq(investigations.incidentKind, subject.incidentKind),
-									eq(investigations.incidentId, subject.incidentId),
-								),
-							)
-							.limit(1),
-					)
-					if (existing[0]) return rowToDocument(existing[0])
+					const existing = yield* loadIncidentRow(orgId, subject.incidentKind, subject.incidentId)
+					if (existing) return rowToDocument(existing)
 				}
 
 				const id = newInvestigationId()
@@ -226,19 +238,39 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							}
 						: { incidentKind: null, incidentId: null, issueId: null }
 
-				yield* dbExecute((db) =>
-					db.insert(investigations).values({
-						id,
-						orgId,
-						status: "investigating",
-						seededBy: userId ? "user" : "system",
-						subjectJson: subject,
-						...incidentColumns,
-						createdBy: userId,
-						createdAt: new Date(nowMs),
-						updatedAt: new Date(nowMs),
-					}),
+				// `onConflictDoNothing` makes the dedup race-safe: two concurrent
+				// incident-open seeds both pass the SELECT above, but the partial unique
+				// index (org, kind, incident_id) lets only one INSERT win. The loser gets
+				// no returned row and re-reads the winner instead of surfacing a 503.
+				const inserted = yield* dbExecute((db) =>
+					db
+						.insert(investigations)
+						.values({
+							id,
+							orgId,
+							status: "investigating",
+							seededBy: userId ? "user" : "system",
+							subjectJson: subject,
+							...incidentColumns,
+							createdBy: userId,
+							createdAt: new Date(nowMs),
+							updatedAt: new Date(nowMs),
+						})
+						.onConflictDoNothing()
+						.returning({ id: investigations.id }),
 				)
+
+				if (inserted.length === 0) {
+					if (subject.type === "incident") {
+						const winner = yield* loadIncidentRow(orgId, subject.incidentKind, subject.incidentId)
+						if (winner) return rowToDocument(winner)
+					}
+					return yield* Effect.fail(
+						new InvestigationPersistenceError({
+							message: "Investigation insert conflicted with no resolvable row",
+						}),
+					)
+				}
 
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
@@ -356,6 +388,9 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 				const env = Option.getOrUndefined(workerEnv)
 				if (env && (request.inputTokens || request.outputTokens)) {
+					// Keyed on the investigation id (one diagnosis per investigation): a
+					// re-diagnosis updates the report but is intentionally NOT re-billed,
+					// matching the once-per-investigation timeline event above.
 					yield* Effect.tryPromise({
 						try: () =>
 							trackTokenUsage(env, {
