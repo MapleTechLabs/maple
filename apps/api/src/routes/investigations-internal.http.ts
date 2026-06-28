@@ -42,11 +42,17 @@ export const InvestigationInternalRouter = HttpRouter.use((router) =>
 			if (!match?.[1]) return yield* Effect.fail("bad_path" as const)
 			const id = yield* decodeIdEffect(match[1]).pipe(Effect.mapError(() => "bad_id" as const))
 
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, investigationId: id })
+
 			const body = yield* req.json.pipe(Effect.mapError(() => "bad_json" as const))
 			const request = yield* decodeBodyEffect(body).pipe(Effect.mapError(() => "bad_payload" as const))
 
 			yield* service.submitDiagnosis(tenant.orgId, id, request).pipe(
-				Effect.mapError((e) => (e._tag.endsWith("NotFoundError") ? "not_found" : "persistence")),
+				Effect.mapError((e) =>
+					e._tag === "@maple/http/investigations/InvestigationNotFoundError"
+						? "not_found"
+						: "persistence",
+				),
 			)
 
 			return yield* HttpServerResponse.json({ ok: true })

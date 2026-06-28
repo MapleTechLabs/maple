@@ -1,5 +1,5 @@
 import { fromBase64Url, toBase64Url } from "@/lib/base64url"
-import { formatBreach, toAlertComparator, toAlertSignalType } from "@/components/ai-triage/breach"
+import { narrowAlertSignal } from "@/components/ai-triage/breach"
 import { signalLabel, type AlertContext } from "./alert-context"
 
 /** The three things Maple can investigate. Kind is carried by the attached resource, not the URL. */
@@ -89,10 +89,7 @@ const capitalize = (s: string): string => (s.length === 0 ? s : `${s[0]!.toUpper
 
 /** Map a legacy alert chat context onto the generic investigation shape (back-compat shim). */
 export const alertContextToInvestigation = (alert: AlertContext): InvestigationContext => {
-	const signalType = toAlertSignalType(alert.signalType)
-	const comparator = toAlertComparator(alert.comparator)
-	const breach =
-		signalType && comparator ? formatBreach(signalType, comparator, alert.value, alert.threshold) : null
+	const { breach } = narrowAlertSignal(alert)
 	const observed = breach ? `${breach.observed} vs ${breach.threshold}` : `${alert.value ?? "n/a"} vs ${alert.threshold}`
 	return {
 		kind: "alert",

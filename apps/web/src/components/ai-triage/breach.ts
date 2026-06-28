@@ -99,3 +99,21 @@ export function formatBreach(
 			return { observed, threshold: thresholdLabel, delta: null, exceedsThreshold: true }
 	}
 }
+
+/**
+ * Narrow an alert's stringly-typed signal/comparator (from the base64 link context)
+ * and format its breach in one pass — the report subject and the chat context both
+ * need this trio, so deriving it once keeps them in sync.
+ */
+export function narrowAlertSignal(alert: {
+	signalType: string
+	comparator: string
+	value: number | null
+	threshold: number
+}): { signalType: AlertSignalType | null; comparator: AlertComparator | null; breach: Breach | null } {
+	const signalType = toAlertSignalType(alert.signalType)
+	const comparator = toAlertComparator(alert.comparator)
+	const breach =
+		signalType && comparator ? formatBreach(signalType, comparator, alert.value, alert.threshold) : null
+	return { signalType, comparator, breach }
+}

@@ -12,7 +12,7 @@ import {
 	type InvestigationContext,
 	type InvestigationKind,
 } from "@/components/chat/investigation-context"
-import { formatBreach, toAlertComparator, toAlertSignalType } from "@/components/ai-triage/breach"
+import { narrowAlertSignal } from "@/components/ai-triage/breach"
 import {
 	deviation,
 	formatSignalValue as formatAnomalyValue,
@@ -91,12 +91,7 @@ export function subjectFromAlertContext(
 	alert: AlertContext,
 	opts?: { issueId?: ErrorIssueId },
 ): InvestigationSubject {
-	const signalType = toAlertSignalType(alert.signalType)
-	const comparator = toAlertComparator(alert.comparator)
-	const breach =
-		signalType && comparator
-			? formatBreach(signalType, comparator, alert.value, alert.threshold)
-			: null
+	const { signalType, comparator, breach } = narrowAlertSignal(alert)
 	const firing = alert.eventType !== "resolve"
 
 	const signalRows: ScorecardRow[] = [

@@ -37,6 +37,7 @@ export function InvestigationSidebar({
 	canRun,
 }: InvestigationSidebarProps) {
 	const investigatedAt = run?.completedAt ?? run?.createdAt ?? null
+	const services = result ? [...new Set(result.evidence.flatMap((e) => e.relatedServices))] : []
 
 	return (
 		<div className="flex min-h-full flex-col">
@@ -96,18 +97,15 @@ export function InvestigationSidebar({
 			{result ? (
 				<Group label="Blast radius">
 					<p className="text-sm leading-relaxed text-foreground">{result.affectedScope}</p>
-					{(() => {
-						const services = [...new Set(result.evidence.flatMap((e) => e.relatedServices))]
-						return services.length > 0 ? (
-							<div className="flex flex-wrap gap-1 pt-1">
-								{services.map((service) => (
-									<Badge key={service} variant="outline" className="text-[11px]">
-										{service}
-									</Badge>
-								))}
-							</div>
-						) : null
-					})()}
+					{services.length > 0 ? (
+						<div className="flex flex-wrap gap-1 pt-1">
+							{services.map((service) => (
+								<Badge key={service} variant="outline" className="text-[11px]">
+									{service}
+								</Badge>
+							))}
+						</div>
+					) : null}
 				</Group>
 			) : null}
 
