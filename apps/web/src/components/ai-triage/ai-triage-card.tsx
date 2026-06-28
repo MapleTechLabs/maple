@@ -1,11 +1,7 @@
-import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Link } from "@tanstack/react-router"
-import { Exit } from "effect"
-import { useState } from "react"
-import { toast } from "sonner"
 
-import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useAiTriageRun } from "@/components/ai-triage/use-ai-triage-run"
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
 import { Badge } from "@maple/ui/components/ui/badge"
@@ -23,10 +19,8 @@ import {
 	CircleWarningIcon,
 	PulseIcon,
 } from "@/components/icons"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { formatRelativeTime } from "@/lib/format"
 import {
-	AiTriageRunCreateRequest,
 	type AiTriageIncidentKind,
 	type AiTriageResult,
 	type AiTriageRunDocument,
@@ -34,12 +28,14 @@ import {
 } from "@maple/domain/http"
 import { SEVERITY_ACCENT, SEVERITY_LABEL, SEVERITY_TONE } from "@/components/errors/severity-badge"
 
-const FAILURE_HINTS: Record<string, string> = {
+/** Maps a failed run's machine error to a human hint. Shared with the incident report body. */
+export const FAILURE_HINTS: Record<string, string> = {
 	no_structured_result: "The agent did not produce a structured result within its budget.",
 	workflow_binding_unavailable: "The triage workflow is not available in this environment.",
 }
 
-const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+/** Tiny uppercase label used for section eyebrows across the triage surfaces. */
+export const EYEBROW = "text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
 
 const INCIDENT_NOUN: Record<AiTriageIncidentKind, string> = {
 	alert: "alert",
@@ -54,11 +50,11 @@ const CONFIDENCE_FILL: Record<string, { count: number; bar: string; text: string
 }
 
 /** Three-segment certainty meter — encodes the AI's own confidence as a real signal. */
-function ConfidenceMeter({ confidence }: { confidence: string }) {
+export function ConfidenceMeter({ confidence, showLabel = true }: { confidence: string; showLabel?: boolean }) {
 	const tone = CONFIDENCE_FILL[confidence] ?? CONFIDENCE_FILL.low
 	return (
 		<div className="flex items-center gap-2" aria-label={`Confidence: ${confidence}`}>
-			<span className={EYEBROW}>Confidence</span>
+			{showLabel ? <span className={EYEBROW}>Confidence</span> : null}
 			<div className="flex items-center gap-0.5" aria-hidden>
 				{[0, 1, 2].map((i) => (
 					<span
@@ -92,53 +88,8 @@ export interface AiTriageCardProps {
 }
 
 export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, autoRun }: AiTriageCardProps) {
-	const reactivityKeys = ["aiTriageRuns", `aiTriage:${incidentKind}:${incidentId ?? issueId ?? ""}`]
-	const runsQueryAtom = MapleApiAtomClient.query("aiTriage", "listRuns", {
-		query:
-			issueId !== undefined
-				? { issueId, limit: 1 }
-				: { incidentKind, incidentId: incidentId ?? "", limit: 1 },
-		reactivityKeys,
-	})
-	const runsResult = useAtomValue(runsQueryAtom)
-	const refreshRuns = useAtomRefresh(runsQueryAtom)
-
-	const createRun = useAtomSet(MapleApiAtomClient.mutation("aiTriage", "createRun"), {
-		mode: "promiseExit",
-	})
-	const [isStarting, setIsStarting] = useState(false)
-
-	const runsFailed = Result.isFailure(runsResult)
-	const runsLoading = Result.isInitial(runsResult)
-	const run: AiTriageRunDocument | null = Result.builder(runsResult)
-		.onSuccess((value) => value.runs[0] ?? null)
-		.orElse(() => null)
-
-	const runActive = run?.status === "queued" || run?.status === "running"
-
-	// Poll the background run while it's active.
-	useIntervalRefresh(refreshRuns, { intervalMs: 3000, enabled: runActive })
-
-	const startRun = async () => {
-		// Block re-entry until the first runs fetch resolves — otherwise a click
-		// during the initial load can race a run that already exists.
-		if (incidentId === null || runsLoading) return
-		setIsStarting(true)
-		const result = await createRun({
-			payload: new AiTriageRunCreateRequest({
-				incidentKind,
-				incidentId,
-				...(issueId !== undefined ? { issueId } : {}),
-			}),
-			reactivityKeys,
-		})
-		setIsStarting(false)
-		if (Exit.isSuccess(result)) {
-			toast.success("Diagnosis started")
-		} else {
-			toast.error("Couldn't start the diagnosis")
-		}
-	}
+	const { runsLoading, runsFailed, run, result, runActive, startRun, isStarting, refreshRuns } =
+		useAiTriageRun({ incidentKind, incidentId, issueId })
 
 	// --- Loading the run list ------------------------------------------------
 	if (runsLoading) {
@@ -202,7 +153,6 @@ export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, au
 		)
 	}
 
-	const result = run.result
 	if (!result) {
 		// Completed without a structured result — shouldn't happen, but degrade gracefully.
 		return (
@@ -223,7 +173,7 @@ export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, au
 }
 
 /** The "investigating…" placeholder, shared by the active-run and auto-start states. */
-function InvestigatingCard() {
+export function InvestigatingCard() {
 	return (
 		<Card className="space-y-3 p-5">
 			<div className="flex items-center gap-2">
