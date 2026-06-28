@@ -18,9 +18,9 @@ WORKDIR /src
 # Copy only what ocb needs to compile. Ordering preserves docker layer cache:
 # the (rarely-changed) builder config + go.mod come first; sources last.
 COPY otel/builder-config.yaml ./builder-config.yaml
-COPY ../packages/otel-collector-maple-exporter/go.mod ./packages/otel-collector-maple-exporter/
-COPY ../packages/otel-collector-maple-exporter/go.sum* ./packages/otel-collector-maple-exporter/
-COPY ../packages/otel-collector-maple-exporter ./packages/otel-collector-maple-exporter
+COPY packages/otel-collector-maple-exporter/go.mod ./packages/otel-collector-maple-exporter/
+COPY packages/otel-collector-maple-exporter/go.sum* ./packages/otel-collector-maple-exporter/
+COPY packages/otel-collector-maple-exporter ./packages/otel-collector-maple-exporter
 
 ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 
