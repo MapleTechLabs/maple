@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router"
 
-import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useAiTriageRun } from "@/components/ai-triage/use-ai-triage-run"
 
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@maple/ui/components/ui/alert"
@@ -79,15 +78,9 @@ export interface AiTriageCardProps {
 	 * completed triage result (if any) so the caller can fold it into the preamble.
 	 */
 	onOpenChat?: (result: AiTriageRunDocument["result"]) => void
-	/**
-	 * Auto-start a diagnosis as soon as the runs query resolves to none — for the
-	 * "Ask Maple AI" landing page, where arriving IS the intent to diagnose. An
-	 * existing run (queued/running/completed/failed) is reused, never re-triggered.
-	 */
-	autoRun?: boolean
 }
 
-export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, autoRun }: AiTriageCardProps) {
+export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat }: AiTriageCardProps) {
 	const { runsLoading, runsFailed, run, result, runActive, startRun, isStarting, refreshRuns } =
 		useAiTriageRun({ incidentKind, incidentId, issueId })
 
@@ -117,14 +110,13 @@ export function AiTriageCard({ incidentKind, incidentId, issueId, onOpenChat, au
 		)
 	}
 
-	// --- No run yet: focused CTA (or auto-start on the Ask-Maple-AI landing) --
+	// --- No run yet: focused "Diagnose" CTA ----------------------------------
 	if (run === null) {
 		return (
 			<AiTriageEmptyState
 				incidentKind={incidentKind}
 				incidentId={incidentId}
 				isStarting={isStarting}
-				autoRun={autoRun ?? false}
 				onDiagnose={startRun}
 			/>
 		)
@@ -190,34 +182,18 @@ export function InvestigatingCard() {
 	)
 }
 
-/**
- * Empty (no-run) state. Mounting here means the runs query already resolved to
- * none, so `autoRun` can kick off a diagnosis on mount (useMountEffect, no raw
- * effect) — that's the "Ask Maple AI" landing behavior. Otherwise it shows the
- * focused "Diagnose" CTA.
- */
+/** Empty (no-run) state — the focused "Diagnose" CTA. */
 function AiTriageEmptyState({
 	incidentKind,
 	incidentId,
 	isStarting,
-	autoRun,
 	onDiagnose,
 }: {
 	incidentKind: AiTriageIncidentKind
 	incidentId: string | null
 	isStarting: boolean
-	autoRun: boolean
 	onDiagnose: () => void
 }) {
-	const shouldAutoRun = autoRun && incidentId !== null
-	useMountEffect(() => {
-		if (shouldAutoRun) onDiagnose()
-	})
-
-	// Once the auto-run fires, show the investigating placeholder rather than
-	// flashing the CTA while the run is being created.
-	if (shouldAutoRun) return <InvestigatingCard />
-
 	return (
 		<Card>
 			<Empty className="py-8">
