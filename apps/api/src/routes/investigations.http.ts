@@ -17,7 +17,7 @@ export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigat
 			.handle("listInvestigations", ({ query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
+					yield* Effect.annotateCurrentSpan({ "maple.org_id": tenant.orgId })
 					return yield* service.listInvestigations(tenant.orgId, {
 						issueId: query.issueId,
 						incidentKind: query.incidentKind,
@@ -30,7 +30,10 @@ export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigat
 			.handle("getInvestigation", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, investigationId: params.id })
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.investigation.id": params.id,
+					})
 					return yield* service.getInvestigation(tenant.orgId, params.id)
 				}).pipe(Effect.withSpan("HttpInvestigations.get")),
 			)
@@ -38,8 +41,8 @@ export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigat
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						subjectType: payload.subject.type,
+						"maple.org_id": tenant.orgId,
+						"maple.investigation.subject_type": payload.subject.type,
 					})
 					return yield* service.createInvestigation(tenant.orgId, tenant.userId, payload)
 				}).pipe(Effect.withSpan("HttpInvestigations.create")),
@@ -48,9 +51,9 @@ export const HttpInvestigationsLive = HttpApiBuilder.group(MapleApi, "investigat
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					yield* Effect.annotateCurrentSpan({
-						orgId: tenant.orgId,
-						investigationId: params.id,
-						status: payload.status,
+						"maple.org_id": tenant.orgId,
+						"maple.investigation.id": params.id,
+						"maple.investigation.status": payload.status,
 					})
 					return yield* service.updateStatus(tenant.orgId, params.id, payload.status)
 				}).pipe(Effect.withSpan("HttpInvestigations.updateStatus")),

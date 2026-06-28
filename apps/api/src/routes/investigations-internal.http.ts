@@ -28,7 +28,10 @@ export const HttpInvestigationsInternalLive = HttpApiBuilder.group(
 			return handlers.handle("submitDiagnosis", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, investigationId: params.id })
+					yield* Effect.annotateCurrentSpan({
+						"maple.org_id": tenant.orgId,
+						"maple.investigation.id": params.id,
+					})
 					return yield* service.submitDiagnosis(tenant.orgId, params.id, payload)
 				}).pipe(Effect.withSpan("HttpInvestigationsInternal.submitDiagnosis")),
 			)

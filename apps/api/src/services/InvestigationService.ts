@@ -18,14 +18,14 @@ import { ErrorIssueEventId, ErrorIssueId, InvestigationId } from "@maple/domain/
 import { errorIssueEvents, investigations, type InvestigationRow } from "@maple/db"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { and, desc, eq } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Cause, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { trackTokenUsage } from "../lib/autumn-tracker"
 import { applyTriageSeverity } from "../lib/issue-severity"
 import { Database, DatabaseError, type DatabaseClient } from "../lib/DatabaseLive"
 
 const decodeIdSync = Schema.decodeUnknownSync(InvestigationId)
 const decodeSubjectSync = Schema.decodeUnknownSync(InvestigationSubject)
-const decodeResultSync = Schema.decodeUnknownSync(AiTriageResult)
+const decodeResultOption = Schema.decodeUnknownOption(AiTriageResult)
 const decodeIsoSync = Schema.decodeUnknownSync(InvestigationDocument.fields.createdAt)
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
@@ -60,15 +60,11 @@ const describeCause = (cause: unknown): string | undefined => {
 	}
 }
 
-const makePersistenceError = (error: unknown): InvestigationPersistenceError => {
-	const message =
-		error instanceof DatabaseError || error instanceof Error
-			? error.message
-			: "Investigation persistence failure"
-	const cause = describeCause(error instanceof Error ? error.cause : error)
+const makePersistenceError = (error: DatabaseError): InvestigationPersistenceError => {
+	const cause = describeCause(error.cause)
 	return cause === undefined
-		? new InvestigationPersistenceError({ message })
-		: new InvestigationPersistenceError({ message, cause })
+		? new InvestigationPersistenceError({ message: error.message })
+		: new InvestigationPersistenceError({ message: error.message, cause })
 }
 
 export interface ListInvestigationsOptions {
@@ -117,28 +113,27 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 			const iso = (date: Date) => decodeIsoSync(date.toISOString())
 
-			const parseReport = (raw: unknown, investigationId: string): AiTriageResult | null => {
+			const parseReport = Effect.fnUntraced(function* (raw: unknown, investigationId: string) {
 				if (raw == null) return null
-				try {
-					return decodeResultSync(raw)
-				} catch (error) {
+				const decoded = decodeResultOption(raw)
+				if (Option.isNone(decoded)) {
 					// A stored report that no longer decodes (e.g. an `AiTriageResult`
-					// schema change) would otherwise blank silently — surface it so the
-					// data loss is observable rather than invisible.
-					console.warn(
-						`[InvestigationService] report_json failed to decode for investigation ${investigationId}; rendering report-less`,
-						error,
+					// schema change) would otherwise blank silently — surface it on the
+					// Effect log/OTLP path so the data loss is observable rather than invisible.
+					yield* Effect.logWarning("report_json failed to decode; rendering report-less").pipe(
+						Effect.annotateLogs({ investigationId }),
 					)
 					return null
 				}
-			}
+				return decoded.value
+			})
 
-			const rowToDocument = (row: InvestigationRow): InvestigationDocument =>
-				new InvestigationDocument({
+			const rowToDocument = Effect.fnUntraced(function* (row: InvestigationRow) {
+				return new InvestigationDocument({
 					id: decodeIdSync(row.id),
 					status: row.status,
 					subject: decodeSubjectSync(row.subjectJson),
-					report: parseReport(row.reportJson, row.id),
+					report: yield* parseReport(row.reportJson, row.id),
 					model: row.model ?? null,
 					severity: row.severity ?? null,
 					confidence: row.confidence ?? null,
@@ -151,6 +146,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					diagnosedAt: row.diagnosedAt ? iso(row.diagnosedAt) : null,
 					updatedAt: iso(row.updatedAt),
 				})
+			})
 
 			const loadRow = (orgId: OrgId, id: InvestigationId) =>
 				dbExecute((db) =>
@@ -181,7 +177,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			const listInvestigations: InvestigationServiceShape["listInvestigations"] = Effect.fn(
 				"InvestigationService.listInvestigations",
 			)(function* (orgId, opts) {
-				yield* Effect.annotateCurrentSpan({ orgId })
+				yield* Effect.annotateCurrentSpan({ "maple.org_id": orgId })
 				const conditions = [
 					eq(investigations.orgId, orgId),
 					opts.issueId ? eq(investigations.issueId, opts.issueId) : undefined,
@@ -197,26 +193,31 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						.orderBy(desc(investigations.createdAt))
 						.limit(opts.limit ?? 50),
 				)
-				return new InvestigationsListResponse({ investigations: rows.map(rowToDocument) })
+				return new InvestigationsListResponse({
+					investigations: yield* Effect.forEach(rows, rowToDocument),
+				})
 			})
 
 			const getInvestigation: InvestigationServiceShape["getInvestigation"] = Effect.fn(
 				"InvestigationService.getInvestigation",
 			)(function* (orgId, id) {
-				yield* Effect.annotateCurrentSpan({ orgId, investigationId: id })
+				yield* Effect.annotateCurrentSpan({ "maple.org_id": orgId, "maple.investigation.id": id })
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
 					return yield* Effect.fail(
 						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
 					)
 				}
-				return rowToDocument(row)
+				return yield* rowToDocument(row)
 			})
 
 			const createInvestigation: InvestigationServiceShape["createInvestigation"] = Effect.fn(
 				"InvestigationService.createInvestigation",
 			)(function* (orgId, userId, request) {
-				yield* Effect.annotateCurrentSpan({ orgId, subjectType: request.subject.type })
+				yield* Effect.annotateCurrentSpan({
+					"maple.org_id": orgId,
+					"maple.investigation.subject_type": request.subject.type,
+				})
 				const nowMs = yield* Clock.currentTimeMillis
 				const subject = request.subject
 
@@ -225,7 +226,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				// creating a duplicate. Free-form investigations are always new.
 				if (subject.type === "incident") {
 					const existing = yield* loadIncidentRow(orgId, subject.incidentKind, subject.incidentId)
-					if (existing) return rowToDocument(existing)
+					if (existing) return yield* rowToDocument(existing)
 				}
 
 				const id = newInvestigationId()
@@ -263,7 +264,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				if (inserted.length === 0) {
 					if (subject.type === "incident") {
 						const winner = yield* loadIncidentRow(orgId, subject.incidentKind, subject.incidentId)
-						if (winner) return rowToDocument(winner)
+						if (winner) return yield* rowToDocument(winner)
 					}
 					return yield* Effect.fail(
 						new InvestigationPersistenceError({
@@ -278,13 +279,17 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						new InvestigationPersistenceError({ message: "Investigation row missing after insert" }),
 					)
 				}
-				return rowToDocument(row)
+				return yield* rowToDocument(row)
 			})
 
 			const updateStatus: InvestigationServiceShape["updateStatus"] = Effect.fn(
 				"InvestigationService.updateStatus",
 			)(function* (orgId, id, status) {
-				yield* Effect.annotateCurrentSpan({ orgId, investigationId: id, status })
+				yield* Effect.annotateCurrentSpan({
+					"maple.org_id": orgId,
+					"maple.investigation.id": id,
+					"maple.investigation.status": status,
+				})
 				const nowMs = yield* Clock.currentTimeMillis
 				const updated = yield* dbExecute((db) =>
 					db
@@ -304,7 +309,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 						new InvestigationNotFoundError({ message: `No such investigation: '${id}'` }),
 					)
 				}
-				return rowToDocument(row)
+				return yield* rowToDocument(row)
 			})
 
 			/**
@@ -317,7 +322,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 			const submitDiagnosis: InvestigationServiceShape["submitDiagnosis"] = Effect.fn(
 				"InvestigationService.submitDiagnosis",
 			)(function* (orgId, id, request) {
-				yield* Effect.annotateCurrentSpan({ orgId, investigationId: id })
+				yield* Effect.annotateCurrentSpan({ "maple.org_id": orgId, "maple.investigation.id": id })
 				const nowMs = yield* Clock.currentTimeMillis
 				const row = yield* loadRow(orgId, id)
 				if (!row) {
@@ -353,36 +358,38 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				const issueId = row.issueId
 				if (issueId) {
 					const decodedIssueId = decodeIssueId(issueId)
-					const applied = yield* dbExecute((db) =>
-						applyTriageSeverity(db, {
-							orgId,
-							issueId: decodedIssueId,
-							runId: id,
-							severity: result.severityAssessment,
-							confidence,
-							timestamp: nowMs,
-							result,
-						}),
-					)
+					// Severity write + timeline event commit atomically: a crash between
+					// them must not leave the issue escalated without its audit event.
 					yield* dbExecute((db) =>
-						db
-							.insert(errorIssueEvents)
-							.values({
-								id: decodeEventId(deterministicEventId(id)),
+						db.transaction(async (tx) => {
+							const applied = await applyTriageSeverity(tx, {
 								orgId,
 								issueId: decodedIssueId,
-								actorId: applied.actorId,
-								type: "ai_triage",
-								payloadJson: {
-									investigationId: id,
-									summary: result.summary,
-									severityAssessment: result.severityAssessment,
-									confidence,
-									applied: applied.applied,
-								},
-								createdAt: new Date(nowMs),
+								runId: id,
+								severity: result.severityAssessment,
+								confidence,
+								timestamp: nowMs,
+								result,
 							})
-							.onConflictDoNothing(),
+							await tx
+								.insert(errorIssueEvents)
+								.values({
+									id: decodeEventId(deterministicEventId(id)),
+									orgId,
+									issueId: decodedIssueId,
+									actorId: applied.actorId,
+									type: "ai_triage",
+									payloadJson: {
+										investigationId: id,
+										summary: result.summary,
+										severityAssessment: result.severityAssessment,
+										confidence,
+										applied: applied.applied,
+									},
+									createdAt: new Date(nowMs),
+								})
+								.onConflictDoNothing()
+						}),
 					)
 				}
 
@@ -390,22 +397,27 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				if (env && (request.inputTokens || request.outputTokens)) {
 					// Keyed on the investigation id (one diagnosis per investigation): a
 					// re-diagnosis updates the report but is intentionally NOT re-billed,
-					// matching the once-per-investigation timeline event above.
-					yield* Effect.tryPromise({
-						try: () =>
-							trackTokenUsage(env, {
-								orgId,
-								inputTokens: request.inputTokens ?? 0,
-								outputTokens: request.outputTokens ?? 0,
-								idempotencyKey: id,
-								source: "triage",
-							}),
-						catch: makePersistenceError,
-					}).pipe(Effect.ignore)
+					// matching the once-per-investigation timeline event above. A tracking
+					// failure must not fail the diagnosis write, but is surfaced as a log.
+					yield* Effect.tryPromise(() =>
+						trackTokenUsage(env, {
+							orgId,
+							inputTokens: request.inputTokens ?? 0,
+							outputTokens: request.outputTokens ?? 0,
+							idempotencyKey: id,
+							source: "triage",
+						}),
+					).pipe(
+						Effect.catchCause((cause) =>
+							Effect.logWarning("token usage tracking failed").pipe(
+								Effect.annotateLogs({ investigationId: id, cause: Cause.pretty(cause) }),
+							),
+						),
+					)
 				}
 
 				const updated = yield* loadRow(orgId, id)
-				return rowToDocument(updated ?? row)
+				return yield* rowToDocument(updated ?? row)
 			})
 
 			return {
