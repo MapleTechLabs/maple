@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import {
@@ -7,9 +8,14 @@ import {
 	InvestigationFreeformSubject,
 	InvestigationIncidentSubject,
 	InvestigationId,
+	InvestigationNotFoundError,
 	OrgId,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
+import { ErrorIssueId } from "@maple/domain/primitives"
+import { errorIssues, errorIssueEvents } from "@maple/db"
+import { createMaplePgliteClient, type MaplePgClient } from "@maple/db/client"
+import { eq } from "drizzle-orm"
 import { Env } from "@/lib/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@/lib/test-pglite"
 import { InvestigationService } from "./InvestigationService"
@@ -33,17 +39,21 @@ const testConfig = () =>
 		}),
 	)
 
-const makeLayer = () => {
+const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
-	return InvestigationService.layer.pipe(
+	const layer = InvestigationService.layer.pipe(
 		Layer.provideMerge(testDb.layer),
 		Layer.provideMerge(Env.layer),
 		Layer.provide(testConfig()),
 	)
+	return { testDb, layer }
 }
+
+const makeLayer = () => makeHarness().layer
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_investigation_test")
 const asInvestigationId = Schema.decodeUnknownSync(InvestigationId)
+const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 
 const freeformRequest = (title: string) =>
 	new InvestigationCreateRequest({
@@ -133,13 +143,89 @@ describe("InvestigationService", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
-	it.effect("getInvestigation fails for an unknown id", () =>
+	it.effect("getInvestigation fails with InvestigationNotFoundError for an unknown id", () =>
 		Effect.gen(function* () {
 			const service = yield* InvestigationService
-			const exit = yield* Effect.exit(
+			const error = yield* Effect.flip(
 				service.getInvestigation(ORG, asInvestigationId("00000000-0000-4000-8000-000000000000")),
 			)
-			assert.strictEqual(exit._tag, "Failure")
+			assert.instanceOf(error, InvestigationNotFoundError)
 		}).pipe(Effect.provide(makeLayer())),
 	)
+
+	it.effect("updateStatus transitions an investigation and persists the new status", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("status flow"))
+			assert.strictEqual(created.status, "investigating")
+
+			const updated = yield* service.updateStatus(ORG, created.id, "resolved")
+			assert.strictEqual(updated.status, "resolved")
+
+			// The change is durable, not just reflected in the return value.
+			const fetched = yield* service.getInvestigation(ORG, created.id)
+			assert.strictEqual(fetched.status, "resolved")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("updateStatus fails with InvestigationNotFoundError for an unknown id", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const error = yield* Effect.flip(
+				service.updateStatus(ORG, asInvestigationId("00000000-0000-4000-8000-000000000001"), "resolved"),
+			)
+			assert.instanceOf(error, InvestigationNotFoundError)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("submit_diagnosis writes the issue-linked ai_triage event exactly once across re-diagnosis", () => {
+		const harness = makeHarness()
+		const raw = createMaplePgliteClient(harness.testDb.pglite) as unknown as MaplePgClient
+		const issueId = asIssueId(randomUUID())
+		return Effect.gen(function* () {
+			const service = yield* InvestigationService
+			// Forcing the service (above) builds the DB layer + runs migrations on the
+			// shared PGlite, so the raw client can now seed the linked error issue.
+			const now = new Date()
+			yield* Effect.promise(() =>
+				raw.insert(errorIssues).values({
+					id: issueId,
+					orgId: ORG,
+					fingerprintHash: "98765432109876543210",
+					serviceName: "checkout-api",
+					exceptionType: "TimeoutError",
+					exceptionMessage: "upstream timed out",
+					topFrame: "",
+					firstSeenAt: now,
+					lastSeenAt: now,
+					createdAt: now,
+					updatedAt: now,
+				}),
+			)
+
+			const created = yield* service.createInvestigation(
+				ORG,
+				null,
+				new InvestigationCreateRequest({
+					subject: new InvestigationIncidentSubject({
+						type: "incident",
+						incidentKind: "error",
+						incidentId: "err_issue_link_1",
+						issueId,
+					}),
+				}),
+			)
+
+			// Two diagnosis writes (retry / re-diagnosis): the deterministic event id +
+			// onConflictDoNothing must collapse them to a single timeline event.
+			yield* service.submitDiagnosis(ORG, created.id, new SubmitDiagnosisRequest({ report: sampleReport() }))
+			yield* service.submitDiagnosis(ORG, created.id, new SubmitDiagnosisRequest({ report: sampleReport() }))
+
+			const events = yield* Effect.promise(() =>
+				raw.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+			)
+			const aiTriageEvents = events.filter((e) => e.type === "ai_triage")
+			assert.strictEqual(aiTriageEvents.length, 1)
+		}).pipe(Effect.provide(harness.layer))
+	})
 })

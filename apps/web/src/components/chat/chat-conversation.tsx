@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Exit } from "effect"
+import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toast } from "sonner"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -225,20 +226,18 @@ export function ChatConversation({
 		sendMessage(text.trim())
 	}
 
-	const widgetFixAutoSentRef = useRef<string | null>(null)
-	useEffect(() => {
-		if (readOnly) return
-		if (!isWidgetFixMode || !isActive) return
-		if (!hasSettled || isLoading) return
-		if (messages.length > 0) return
-		if (widgetFixAutoSentRef.current === tabId) return
-		widgetFixAutoSentRef.current = tabId
-		handleSend(widgetFixAutoPrompt)
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isWidgetFixMode, isActive, hasSettled, isLoading, messages.length, tabId])
+	// Auto-send the fix prompt once a fresh widget-fix conversation is ready.
+	// Mounting the zero-DOM trigger IS the one-shot (see `WidgetFixAutoSendTrigger`):
+	// the gate below decides when to fire, replacing the prior ref-latch +
+	// `eslint-disable` effect. Sending bumps `messages.length`, which unmounts it.
+	const shouldAutoSendWidgetFix =
+		!readOnly && isWidgetFixMode && isActive && hasSettled && !isLoading && messages.length === 0
 
 	return (
 		<div className="flex h-full flex-col">
+			{shouldAutoSendWidgetFix ? (
+				<WidgetFixAutoSendTrigger onFire={() => handleSend(widgetFixAutoPrompt)} />
+			) : null}
 			{isInvestigationMode && <InvestigationAttachmentCard ctx={investigationContext!} />}
 			{isWidgetFixMode && <WidgetFixAttachmentCard ctx={widgetFixContext!} />}
 			<Conversation className="flex-1 min-h-0">
@@ -492,6 +491,18 @@ export function ChatConversation({
 			)}
 		</div>
 	)
+}
+
+/**
+ * Zero-DOM trigger: firing once on mount is how a ready, empty widget-fix
+ * conversation auto-sends its fix prompt. The parent only renders this when the
+ * conditions hold, so mounting is the one-shot (mirrors `AutoRunTrigger`).
+ */
+function WidgetFixAutoSendTrigger({ onFire }: { onFire: () => void }) {
+	useMountEffect(() => {
+		onFire()
+	})
+	return null
 }
 
 function ConversationLoadingSkeleton() {
