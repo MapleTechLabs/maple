@@ -1,4 +1,5 @@
-import type { AiTriageResult } from "@maple/domain/http"
+import { AiTriageResult } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 
 /**
  * Investigate-mode emits the structured report through the local `submit_diagnosis`
@@ -11,12 +12,7 @@ export interface DiagnosisMarker {
 	report: AiTriageResult
 }
 
-const isReport = (value: unknown): value is AiTriageResult =>
-	!!value &&
-	typeof value === "object" &&
-	typeof (value as Record<string, unknown>).summary === "string" &&
-	typeof (value as Record<string, unknown>).suspectedCause === "string" &&
-	Array.isArray((value as Record<string, unknown>).suggestedActions)
+const decodeReport = Schema.decodeUnknownOption(AiTriageResult)
 
 /** Parse a `submit_diagnosis` tool output into a {@link DiagnosisMarker}, or `null`. */
 export const parseDiagnosisMarker = (output: unknown): DiagnosisMarker | null => {
@@ -30,7 +26,9 @@ export const parseDiagnosisMarker = (output: unknown): DiagnosisMarker | null =>
 	}
 	if (!value || typeof value !== "object") return null
 	const v = value as Record<string, unknown>
-	return v.status === "diagnosis" && isReport(v.report)
-		? { status: "diagnosis", report: v.report }
-		: null
+	if (v.status !== "diagnosis") return null
+	return Option.match(decodeReport(v.report), {
+		onNone: () => null,
+		onSome: (report) => ({ status: "diagnosis", report }),
+	})
 }

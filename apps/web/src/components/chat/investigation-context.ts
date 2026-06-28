@@ -1,9 +1,11 @@
+import { Option, Schema } from "effect"
 import { fromBase64Url, toBase64Url } from "@/lib/base64url"
 import { narrowAlertSignal } from "@/components/ai-triage/breach"
 import { signalLabel, type AlertContext } from "./alert-context"
 
 /** The three things Maple can investigate. Kind is carried by the attached resource, not the URL. */
-export type InvestigationKind = "alert" | "anomaly" | "error"
+const InvestigationKindSchema = Schema.Literals(["alert", "anomaly", "error"])
+export type InvestigationKind = typeof InvestigationKindSchema.Type
 
 /** A single labelled fact — shown on the attachment card and folded into the chat preamble. */
 export interface InvestigationFact {
@@ -59,17 +61,23 @@ export interface InvestigationRef {
 	issueId?: string
 }
 
-const isInvestigationKind = (value: unknown): value is InvestigationKind =>
-	value === "alert" || value === "anomaly" || value === "error"
+/** The compact base64url wire shape carried in `/investigations/$id?r=`. */
+const InvestigationRefWireSchema = Schema.Struct({
+	k: InvestigationKindSchema,
+	id: Schema.String,
+	i: Schema.optionalKey(Schema.String),
+})
+const decodeRefWire = Schema.decodeUnknownOption(InvestigationRefWireSchema)
 
 export const encodeInvestigationRef = (ref: InvestigationRef): string =>
 	toBase64Url(JSON.stringify({ k: ref.kind, id: ref.id, ...(ref.issueId ? { i: ref.issueId } : {}) }))
 
 export const decodeInvestigationRef = (raw: string): InvestigationRef | undefined => {
 	try {
-		const parsed = JSON.parse(fromBase64Url(raw)) as { k?: unknown; id?: unknown; i?: unknown }
-		if (!isInvestigationKind(parsed.k) || typeof parsed.id !== "string") return undefined
-		return { kind: parsed.k, id: parsed.id, ...(typeof parsed.i === "string" ? { issueId: parsed.i } : {}) }
+		return Option.match(decodeRefWire(JSON.parse(fromBase64Url(raw))), {
+			onNone: () => undefined,
+			onSome: (w) => ({ kind: w.k, id: w.id, ...(w.i !== undefined ? { issueId: w.i } : {}) }),
+		})
 	} catch {
 		return undefined
 	}

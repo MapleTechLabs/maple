@@ -111,6 +111,14 @@ const navSections: SettingsNavSection[] = [
  * /integrations hub (which renders the same sidebar).
  */
 export function useVisibleSettingsSections() {
+	// Hooks run unconditionally (rules of hooks); their results are only consumed
+	// in the Clerk-auth path below. `isClerkAuthEnabled` is a build-time constant
+	// today, but keeping the hooks above the early return avoids a conditional-hook
+	// hazard if it ever becomes dynamic.
+	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
+	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
+	const { organization } = useOrganization()
+
 	const visibleSections = navSections
 		.map((section) => ({
 			...section,
@@ -138,10 +146,6 @@ export function useVisibleSettingsSections() {
 			isLoading: false,
 		}
 	}
-
-	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
-	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
-	const { organization } = useOrganization()
 
 	const isAdmin = Result.builder(sessionResult)
 		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))

@@ -1,43 +1,28 @@
 import type { AiTriageResult, AlertIncidentDocument, AlertRuleDocument } from "@maple/domain/http"
+import { Option, Schema } from "effect"
 import { fromBase64Url, toBase64Url } from "@/lib/base64url"
 
-export interface AlertContext {
-	ruleId: string
-	ruleName: string
-	incidentId: string | null
-	eventType: string
-	signalType: string
-	severity: string
-	comparator: string
-	threshold: number
-	value: number | null
-	windowMinutes: number
-	groupKey: string | null
-	sampleCount: number | null
+const AlertContextSchema = Schema.Struct({
+	ruleId: Schema.String,
+	ruleName: Schema.String,
+	incidentId: Schema.NullOr(Schema.String),
+	eventType: Schema.String,
+	signalType: Schema.String,
+	severity: Schema.String,
+	comparator: Schema.String,
+	threshold: Schema.Number,
+	value: Schema.NullOr(Schema.Number),
+	windowMinutes: Schema.Number,
+	groupKey: Schema.NullOr(Schema.String),
+	sampleCount: Schema.NullOr(Schema.Number),
 	/** Prior AI-triage findings, folded into the chat preamble so the agent starts from them. */
-	aiSummary?: string
-	aiSuspectedCause?: string
-}
+	aiSummary: Schema.optionalKey(Schema.String),
+	aiSuspectedCause: Schema.optionalKey(Schema.String),
+})
 
-const isAlertContext = (value: unknown): value is AlertContext => {
-	if (!value || typeof value !== "object") return false
-	const v = value as Record<string, unknown>
-	if (typeof v.ruleId !== "string") return false
-	if (typeof v.ruleName !== "string") return false
-	if (v.incidentId !== null && typeof v.incidentId !== "string") return false
-	if (typeof v.eventType !== "string") return false
-	if (typeof v.signalType !== "string") return false
-	if (typeof v.severity !== "string") return false
-	if (typeof v.comparator !== "string") return false
-	if (typeof v.threshold !== "number") return false
-	if (v.value !== null && typeof v.value !== "number") return false
-	if (typeof v.windowMinutes !== "number") return false
-	if (v.groupKey !== null && typeof v.groupKey !== "string") return false
-	if (v.sampleCount !== null && typeof v.sampleCount !== "number") return false
-	if (v.aiSummary !== undefined && typeof v.aiSummary !== "string") return false
-	if (v.aiSuspectedCause !== undefined && typeof v.aiSuspectedCause !== "string") return false
-	return true
-}
+export type AlertContext = typeof AlertContextSchema.Type
+
+const decodeAlertContext = Schema.decodeUnknownOption(AlertContextSchema)
 
 /**
  * Build the chat `AlertContext` from a rule + the incident under investigation,
@@ -70,10 +55,7 @@ export const encodeAlertContextToSearchParam = (ctx: AlertContext): string =>
 
 export const decodeAlertContextFromSearchParam = (raw: string): AlertContext | undefined => {
 	try {
-		const json = fromBase64Url(raw)
-		const parsed = JSON.parse(json) as unknown
-		if (!isAlertContext(parsed)) return undefined
-		return parsed
+		return Option.getOrUndefined(decodeAlertContext(JSON.parse(fromBase64Url(raw))))
 	} catch {
 		return undefined
 	}
