@@ -102,6 +102,9 @@ export const createChatFlueWorker = async ({ stage, domains, mapleApiUrl }: Crea
 			FLUE_REGISTRY: registry,
 			MAPLE_API_URL: mapleApiUrl,
 			INTERNAL_SERVICE_TOKEN: alchemy.secret(requireEnv("INTERNAL_SERVICE_TOKEN")),
+			// OpenRouter API key — backs the `openrouter/*` model provider used by the
+			// chat agent + triage workflow defaults. Bound only when set in the deploy env.
+			...optionalSecret("OPENROUTER_API_KEY"),
 			// OpenTelemetry → Maple ingest. Provide the internal-org ingest key so
 			// chat-flue spans land beside `maple-api`; telemetry no-ops when unset.
 			...optionalSecret("MAPLE_INGEST_KEY"),

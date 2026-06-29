@@ -4,7 +4,12 @@
 # INTERNAL_SERVICE_TOKEN — the Flue agent sends `Bearer maple_svc_<token>`.
 INTERNAL_SERVICE_TOKEN="dev-internal-service-token"
 
-# Optional Workers AI model override (provider id `cloudflare` + @cf model id).
-# Default is cloudflare/@cf/moonshotai/kimi-k2.6 (validated). Confirm any swap
-# against the live Workers AI catalog — deprecated ids return 410.
-# MAPLE_CHAT_MODEL="cloudflare/@cf/moonshotai/kimi-k2.6"
+# OpenRouter API key — backs the `openrouter/*` model provider. Required for the
+# default chat + triage model (openrouter/google/gemini-3.5-flash). Without it,
+# those model specifiers fail at run time.
+OPENROUTER_API_KEY="sk-or-..."
+
+# Optional model override (any Flue provider specifier: `<provider>/<model-id>`).
+# Default is openrouter/google/gemini-3.5-flash. Workers AI is still reachable via
+# the `cloudflare` provider, e.g. cloudflare/@cf/moonshotai/kimi-k2.6.
+# MAPLE_CHAT_MODEL="openrouter/google/gemini-3.5-flash"
