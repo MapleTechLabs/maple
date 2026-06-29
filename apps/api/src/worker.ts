@@ -226,6 +226,15 @@ export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 // so this static export keeps module-scope evaluation light (startup-CPU budget).
 export { CodemodeRuntimeDO } from "./codemode/runtime.do"
 
+// The `@cloudflare/codemode` runtime *facet* class. `createCodemodeRuntime()`
+// (inside CodemodeRuntimeDO) spawns it via `ctx.exports.CodemodeRuntime` +
+// `ctx.facets.get(...)`, so it MUST be exported from the worker entry — without
+// it the library throws "CodemodeRuntime is not exported..." on every run. (The
+// `@cloudflare/codemode/vite` plugin does this automatically; we're on esbuild,
+// so we export it manually.) It's a facet under CodemodeRuntimeDO's storage —
+// no separate DO binding or migration is needed.
+export { CodemodeRuntime } from "@cloudflare/codemode"
+
 // VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
 // as the route graph above) to keep module-scope evaluation light.
 const handleQueue = async (

@@ -85,6 +85,19 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 	// connection lifecycle/pooling is a follow-up.
 	let tools: McpServerConnection["tools"] = []
 	if (orgId) {
+		// Code Mode: the model reaches all READ tools through the single `code` tool
+		// (it writes JS calling `maple.<tool>()` + `codemode.search`/`describe`, run in
+		// apps/api's per-org Worker-Loader sandbox). That collapses multi-step
+		// investigations into one round-trip and keeps the flat read-tool schemas out
+		// of the prompt. The `code` tool posts to apps/api and does NOT depend on the
+		// MCP connect below, so it is added unconditionally — keeping it in lockstep
+		// with the CODE_MODE guidance that's prepended to every system prompt.
+		tools = [buildCodeTool(ctx.env, orgId)]
+
+		// Mutating tools are sourced live from Maple's MCP server and stay DIRECT,
+		// approval-gated (propose-then-apply) so changes keep working via the existing
+		// web approval cards. A connect failure degrades to code-mode reads only
+		// (rather than a toolless agent) — we tolerate it.
 		try {
 			// `chat.mcp_connect` makes the per-interaction MCP connect (the leading
 			// "takes ages to start" suspect — no pooling, 12s timeout) a first-class,
@@ -108,29 +121,21 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 					throw error
 				}
 			})
-			// Code Mode: the model reaches all READ tools through the single `code`
-			// tool (it writes JS calling `maple.<tool>()` + `codemode.search`/`describe`,
-			// run in apps/api's per-org Worker-Loader sandbox). That collapses multi-step
-			// investigations into one round-trip and keeps the flat read-tool schemas out
-			// of the prompt. Mutating tools stay DIRECT, approval-gated (propose-then-apply)
-			// so changes keep working via the existing web approval cards; routing
-			// mutations through Code Mode's own approval runtime is the follow-up.
-			const mutatingTools = applyApprovalGates(filterMcpTools(maple.tools, MUTATING_TOOL_NAMES))
-			tools = [buildCodeTool(ctx.env, orgId), ...mutatingTools]
-
-			// Investigate mode: the autonomous diagnostic pass is the session's
-			// first turn, capped off by a (non-gated) `submit_diagnosis` call that
-			// persists the structured report. The id rides in the instance id, so
-			// the agent never chooses which investigation it writes.
-			const investigationId = investigationIdFromInstanceId(ctx.id)
-			if (investigationId) {
-				tools = [...tools, buildSubmitDiagnosisTool(ctx.env, orgId, investigationId)]
-			}
+			tools = [...tools, ...applyApprovalGates(filterMcpTools(maple.tools, MUTATING_TOOL_NAMES))]
 		} catch (error) {
 			console.error(
-				"[chat-flue] MCP connect failed; continuing without Maple tools:",
+				"[chat-flue] MCP connect failed; mutating tools unavailable (code-mode reads still work):",
 				error instanceof Error ? error.message : error,
 			)
+		}
+
+		// Investigate mode: the autonomous diagnostic pass is the session's first
+		// turn, capped off by a (non-gated) `submit_diagnosis` call that persists the
+		// structured report. The id rides in the instance id, so the agent never
+		// chooses which investigation it writes. Independent of the MCP connect.
+		const investigationId = investigationIdFromInstanceId(ctx.id)
+		if (investigationId) {
+			tools = [...tools, buildSubmitDiagnosisTool(ctx.env, orgId, investigationId)]
 		}
 	}
 

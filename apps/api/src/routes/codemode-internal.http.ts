@@ -16,11 +16,15 @@
  */
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { Effect, Option, Redacted, Schema } from "effect"
+import { OrgId } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/effect-cloudflare/worker-environment"
 import { Env } from "../lib/Env"
 import { isValidInternalBearer } from "../lib/internal-auth"
 import { mapleToolDefinitions } from "../mcp/tools/registry"
+import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { McpToolResult } from "../mcp/tools/types"
+
+const isOrgId = Schema.is(OrgId)
 
 /** Minimal view of the per-org runtime DO namespace + stub (typed against `CodemodeRuntimeDO.run`). */
 interface CodemodeRuntimeStub {
@@ -72,6 +76,12 @@ export const CodemodeInternalRouter = HttpRouter.use((router) =>
 
 			const orgId = request.headers["x-org-id"]
 			if (!orgId) return yield* json({ status: "error", error: "x-org-id header is required" }, 400)
+			// Validate against the OrgId brand before it becomes a DO instance name —
+			// an arbitrary string would spin up (and pollute the namespace with) a
+			// durable instance. Mirrors resolve-tenant.ts.
+			if (!isOrgId(orgId)) {
+				return yield* json({ status: "error", error: "x-org-id is not a valid org id" }, 400)
+			}
 
 			const body = yield* request.json.pipe(Effect.orElseSucceed(() => null))
 			const code = (body as { code?: unknown } | null)?.code
@@ -115,6 +125,21 @@ export const CodemodeInternalRouter = HttpRouter.use((router) =>
 			const args = (body as { arguments?: unknown } | null)?.arguments ?? {}
 			if (typeof name !== "string") {
 				return yield* json(errorResult("InvalidRequest", "Body must include a string `name`"), 400)
+			}
+
+			// Hard gate: mutating tools never run via this route. The sandbox path
+			// can't reach them (the runtime PAUSES mutations before they dispatch),
+			// but `/tool` is independently reachable by any internal-token holder, so
+			// the mutation gate must be enforced here too — not just as connector
+			// metadata. Mutations go through the dedicated approval-gated tools.
+			if (MUTATING_TOOL_NAMES.has(name)) {
+				return yield* json(
+					errorResult(
+						"Forbidden",
+						`Tool "${name}" mutates state and cannot run via code mode; it must go through approval.`,
+					),
+					403,
+				)
 			}
 
 			const definition = mapleToolDefinitions.find((d) => d.name === name)

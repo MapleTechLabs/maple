@@ -42,11 +42,16 @@ export class MapleConnector extends CodemodeConnector {
 	protected tools(): ConnectorTools {
 		const tools: Record<string, ConnectorTool> = {}
 		for (const descriptor of buildMapleCodeModeCatalog()) {
+			// Code Mode exposes READ tools only for now. Mutating tools carry
+			// `requiresApproval`, which makes the runtime PAUSE the run — but this cut
+			// wires no approve/resume path, so a paused run would strand. Mutations go
+			// through the direct, approval-gated chat tools instead. When the Code Mode
+			// approval/resume path lands, drop this filter and pass the flag through.
+			if (descriptor.requiresApproval) continue
 			tools[descriptor.name] = {
 				description: descriptor.description,
 				// `inputSchema` is JSONSchema7; our catalog produces a compatible JSON Schema object.
 				inputSchema: descriptor.inputSchema as ConnectorTool["inputSchema"],
-				requiresApproval: descriptor.requiresApproval,
 				execute: (args) => this.#dispatch(descriptor.name, args),
 			}
 		}
