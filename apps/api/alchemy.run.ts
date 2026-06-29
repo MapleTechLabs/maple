@@ -1,11 +1,13 @@
 import path from "node:path"
 import alchemy from "alchemy"
 import {
+	DurableObjectNamespace,
 	Hyperdrive,
 	HyperdriveRef,
 	KVNamespace,
 	Queue,
 	Worker,
+	WorkerLoader,
 	WorkerStub,
 	Workflow,
 } from "alchemy/cloudflare"
@@ -132,6 +134,21 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		url: false,
 	})
 
+	// Code Mode runtime Durable Object (one instance per org) — owns the execution
+	// log + approval state and runs model snippets in a Worker-Loader isolate.
+	const codemodeRuntime = DurableObjectNamespace("codemode-runtime", {
+		className: "CodemodeRuntimeDO",
+		sqlite: true,
+	})
+
+	// Self service binding: the runtime DO calls back into this worker's internal
+	// tool route to run a tool with the full app layer. Forward-ref by name avoids
+	// the circular dependency on `worker` (created below).
+	const apiSelf = await WorkerStub("api-self-stub", {
+		name: resolveWorkerName("api", stage),
+		url: false,
+	})
+
 	const worker = await Worker("api", {
 		name: resolveWorkerName("api", stage),
 		cwd: import.meta.dirname,
@@ -162,6 +179,11 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			CLICKHOUSE_SCHEMA_APPLY_WORKFLOW: schemaApplyWorkflow,
 			AI_TRIAGE_WORKFLOW: aiTriageWorkflow,
 			CHAT_FLUE: chatFlue,
+			// Code Mode: the Worker Loader isolate runner, the per-org runtime DO, and
+			// a self service binding for the DO's tool-dispatch callback.
+			LOADER: WorkerLoader(),
+			CODEMODE_RUNTIME: codemodeRuntime,
+			SELF: apiSelf,
 			TINYBIRD_HOST: requireEnv("TINYBIRD_HOST"),
 			TINYBIRD_TOKEN: alchemy.secret(requireEnv("TINYBIRD_TOKEN")),
 			...optionalPlain("CLICKHOUSE_URL"),

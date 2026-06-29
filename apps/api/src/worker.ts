@@ -221,6 +221,11 @@ const handle = async (
 export { ClickHouseSchemaApplyWorkflow } from "./workflows/ClickHouseSchemaApplyWorkflow"
 export { AiTriageWorkflow } from "./workflows/AiTriageWorkflow"
 
+// Code Mode runtime Durable Object (one per org). Thin shell — its heavy logic
+// (@cloudflare/codemode + the tool registry) is dynamic-imported inside run(),
+// so this static export keeps module-scope evaluation light (startup-CPU budget).
+export { CodemodeRuntimeDO } from "./codemode/runtime.do"
+
 // VCS sync queue consumer. Dynamic-imported (same startup-CPU-budget discipline
 // as the route graph above) to keep module-scope evaluation light.
 const handleQueue = async (

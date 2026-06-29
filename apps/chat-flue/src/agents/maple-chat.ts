@@ -1,8 +1,9 @@
 import { createAgent, type AgentRouteHandler, type McpServerConnection } from "@flue/runtime"
-import { applyApprovalGates } from "../lib/approval.ts"
+import { applyApprovalGates, MUTATING_TOOL_NAMES } from "../lib/approval.ts"
 import { instanceIdFromAgentPath } from "../lib/auth.ts"
+import { buildCodeTool } from "../lib/code-tool.ts"
 import type { ChatFlueEnv } from "../lib/env.ts"
-import { connectMapleMcp, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
+import { connectMapleMcp, filterMcpTools, MCP_DEFAULT_TIMEOUT_MS } from "../lib/mcp.ts"
 import { buildSystemPrompt, modeFromInstanceId } from "../lib/modes.ts"
 import { investigationIdFromInstanceId, orgIdFromInstanceId } from "../lib/org.ts"
 import { buildSubmitDiagnosisTool } from "../lib/submit-diagnosis.ts"
@@ -107,9 +108,15 @@ export default createAgent<unknown, ChatFlueEnv>(async (ctx) => {
 					throw error
 				}
 			})
-			// Propose-then-apply: mutating tools return a proposal the UI approves
-			// (Flue has no native human-in-the-loop interrupt).
-			tools = applyApprovalGates(maple.tools)
+			// Code Mode: the model reaches all READ tools through the single `code`
+			// tool (it writes JS calling `maple.<tool>()` + `codemode.search`/`describe`,
+			// run in apps/api's per-org Worker-Loader sandbox). That collapses multi-step
+			// investigations into one round-trip and keeps the flat read-tool schemas out
+			// of the prompt. Mutating tools stay DIRECT, approval-gated (propose-then-apply)
+			// so changes keep working via the existing web approval cards; routing
+			// mutations through Code Mode's own approval runtime is the follow-up.
+			const mutatingTools = applyApprovalGates(filterMcpTools(maple.tools, MUTATING_TOOL_NAMES))
+			tools = [buildCodeTool(ctx.env, orgId), ...mutatingTools]
 
 			// Investigate mode: the autonomous diagnostic pass is the session's
 			// first turn, capped off by a (non-gated) `submit_diagnosis` call that

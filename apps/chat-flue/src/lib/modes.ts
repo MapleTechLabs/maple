@@ -233,6 +233,31 @@ export interface BuildSystemPromptArgs {
 }
 
 /**
+ * Code Mode guidance, prepended to every mode's prompt. The base prompts name the
+ * read tools directly (find_errors, search_logs, …); under Code Mode those are
+ * reached through the `code` tool instead, so this block tells the model how to
+ * translate "use find_errors" into a snippet. Mutation tools stay direct.
+ */
+const CODE_MODE_GUIDANCE = [
+	"## Tools: Code Mode",
+	"You investigate observability data by writing JavaScript with the `code` tool, not by",
+	"calling read tools one at a time. Inside a `code` snippet:",
+	"- Call any read tool as `await maple.<tool>(input)` (e.g. `await maple.find_errors({ lookbackMinutes: 60 })`).",
+	"- Discover tools and their inputs on demand: `await codemode.search('slow traces')`, then",
+	"  `await codemode.describe('find_slow_traces')` for the exact input shape.",
+	"- Each call returns text with a `Structured content:` JSON block — `JSON.parse` it to filter and",
+	"  feed the next call. Do the whole multi-step investigation in ONE snippet and `return` the result.",
+	"- When the base instructions below say to \"use\" or \"call\" a read tool (find_errors, search_logs,",
+	"  search_traces, inspect_trace, query_data, diagnose_service, service_map, list_*, get_*, …),",
+	"  do it inside a `code` snippet via `maple.<tool>(...)`.",
+	"",
+	"Tools that CHANGE state — dashboards (create/update/*_widget), alert rules, and error-issue actions",
+	"(claim/transition/comment/…) — are NOT in Code Mode. Call those directly; Maple renders an approval",
+	"card for each. Do not narrate the approval step.",
+	"",
+].join("\n")
+
+/**
  * Assemble the full system prompt for a turn: the base prompt for the mode plus
  * any attached context blocks. Mirrors the legacy assembly in
  * apps/chat-agent/src/index.ts `runChatTurn`.
@@ -240,12 +265,14 @@ export interface BuildSystemPromptArgs {
 export const buildSystemPrompt = (args: BuildSystemPromptArgs): string => {
 	const { mode, alertContext, widgetFixContext, pageContext } = args
 
-	let prompt =
+	const basePrompt =
 		mode === "dashboard-builder"
 			? DASHBOARD_BUILDER_SYSTEM_PROMPT
 			: mode === "investigate"
 				? INVESTIGATE_SYSTEM_PROMPT
 				: SYSTEM_PROMPT
+
+	let prompt = `${CODE_MODE_GUIDANCE}\n${basePrompt}`
 
 	if (mode === "alert" && alertContext) {
 		prompt += `\n${formatAlertContextBlock(alertContext)}`
