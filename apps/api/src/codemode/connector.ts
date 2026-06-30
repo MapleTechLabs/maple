@@ -34,8 +34,8 @@ export class MapleConnector extends CodemodeConnector {
 		return (
 			"Maple observability tools for the current organization. Read tools return " +
 			"human-readable text followed by a `Structured content:` JSON block — parse the " +
-			"JSON to filter and correlate across calls. Tools that mutate state pause for user " +
-			"approval before running."
+			"JSON to filter and correlate across calls. Only read tools are available here; " +
+			"state-changing actions are handled outside Code Mode."
 		)
 	}
 
