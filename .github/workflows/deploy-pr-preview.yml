@@ -51,7 +51,7 @@ jobs:
               with:
                   method: "oidc"
                   identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ secrets.INFISICAL_PROJECT_SLUG }}
+                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
                   env-slug: ${{ env.INFISICAL_ENV_SLUG }}
                   export-type: "env"
                   secret-path: "/"
