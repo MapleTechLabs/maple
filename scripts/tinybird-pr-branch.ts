@@ -14,7 +14,7 @@
  * `down` removes the branch (called on PR close, after `alchemy:destroy:pr`).
  *
  * Auth: the PARENT (prod) workspace host+token arrive via the incoming
- * TINYBIRD_HOST / TINYBIRD_TOKEN (Doppler `pr` config). We use them to drive the
+ * TINYBIRD_HOST / TINYBIRD_TOKEN (Infisical `preview` environment). We use them to drive the
  * `tb` CLI for branch ops, then overwrite the same two vars with the branch's
  * values. `tb` is invoked flag-first (`--cloud --host --token`), matching
  * .github/workflows/tinybird-ci.yml — no `.tinyb` state needed.

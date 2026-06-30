@@ -25,7 +25,7 @@ python = "3.12.13" # Tinybird tooling + .github/scripts/format-ingest-benchmark-
 # pick them up without an explicit --env-file flag. This is ADDITIVE: the apps
 # still load .env.local explicitly (portless --env-file, apps/ingest `source`,
 # scraper `bun --env-file`), so non-mise users and CI are unaffected. In CI there
-# is no .env.local, so this is a no-op there (Doppler/secret injection is untouched).
+# is no .env.local, so this is a no-op there (Infisical/secret injection is untouched).
 _.file = ".env.local"
 
 [tasks.setup]
