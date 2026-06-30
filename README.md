@@ -129,8 +129,13 @@ CI workflows:
 
 Secrets source model (CI):
 
-- GitHub Secrets (only one): `DOPPLER_TOKEN`
-- Doppler configs (`prd`, `stg`, `pr`) must define:
+- Secrets are fetched from **Infisical** via `Infisical/secrets-action` using OIDC
+  (credential-less — GitHub's OIDC token authenticates a machine identity, no long-lived
+  token stored). CI needs:
+    - GitHub repo **variable** `INFISICAL_PROJECT_SLUG` (the Infisical project slug)
+    - GitHub repo **secret** `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
+- Infisical environments (`prod`, `staging`, `preview` — mapped from the old Doppler
+  `prd`/`stg`/`pr` configs) must define:
     - `ALCHEMY_PASSWORD`
     - `ALCHEMY_STATE_TOKEN`
     - `CLOUDFLARE_API_TOKEN`
@@ -147,7 +152,7 @@ Secrets source model (CI):
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
 
-Free/Starter note: when using a personal Doppler token, the workflow must also specify Doppler selectors (`doppler-project`, `doppler-config`). This repo uses `maple` with stage configs `prd`, `stg`, and `pr`.
+Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`staging`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`staging`/`preview`).
 
 Runtime API URL behavior:
 
