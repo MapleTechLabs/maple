@@ -131,9 +131,9 @@ Secrets source model (CI):
 
 - Secrets are fetched from **Infisical** via `Infisical/secrets-action` using OIDC
   (credential-less — GitHub's OIDC token authenticates a machine identity, no long-lived
-  token stored). CI needs:
-    - GitHub repo **variable** `INFISICAL_PROJECT_SLUG` (the Infisical project slug)
-    - GitHub repo **secret** `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
+  token stored). CI needs two GitHub repo **secrets**:
+    - `INFISICAL_PROJECT_SLUG` (the Infisical project slug)
+    - `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
 - Infisical environments (`prod`, `staging`, `preview` — mapped from the old Doppler
   `prd`/`stg`/`pr` configs) must define:
     - `ALCHEMY_PASSWORD`
