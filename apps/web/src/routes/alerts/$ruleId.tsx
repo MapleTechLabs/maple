@@ -126,6 +126,7 @@ function RuleDetailContent() {
 		reactivityKeys: ["alertChecks", ruleId, since, until],
 	})
 	const checksResult = useAtomValue(checksQueryAtom)
+	const refreshChecks = useAtomRefresh(checksQueryAtom)
 
 	const rules = Result.builder(rulesResult)
 		.onSuccess((response) => response.rules)
@@ -564,13 +565,35 @@ function RuleDetailContent() {
 						</Card>
 					</div>
 
-					<ChecksPanel
-						rule={rule}
-						checks={checks}
-						loading={Result.isInitial(checksResult)}
-						statusFilter={checkStatusFilter}
-						setStatusFilter={setCheckStatusFilter}
-					/>
+					{Result.builder(checksResult)
+						.onError((error) => (
+							<div className="space-y-4">
+								<h2 className="text-lg font-semibold">Checks</h2>
+								<Empty className="py-12">
+									<EmptyHeader>
+										<EmptyMedia variant="icon">
+											<CircleWarningIcon size={18} />
+										</EmptyMedia>
+										<EmptyTitle>Failed to load checks</EmptyTitle>
+										<EmptyDescription>
+											{error.message ?? "Try refreshing or check API logs."}
+										</EmptyDescription>
+									</EmptyHeader>
+									<Button variant="outline" size="sm" onClick={() => refreshChecks()}>
+										Retry
+									</Button>
+								</Empty>
+							</div>
+						))
+						.orElse(() => (
+							<ChecksPanel
+								rule={rule}
+								checks={checks}
+								loading={Result.isInitial(checksResult)}
+								statusFilter={checkStatusFilter}
+								setStatusFilter={setCheckStatusFilter}
+							/>
+						))}
 				</div>
 			)}
 
