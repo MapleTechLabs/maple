@@ -42,11 +42,23 @@ export class BillingSubscription extends Schema.Class<BillingSubscription>("Bill
 	quantity: Schema.optionalKey(Schema.Number),
 }) {}
 
+// Present only when the customer is fetched with `expand: ["invoices"]` (the
+// reconcile cron does this to decide "never paid"). Models the consumed subset
+// of Autumn's `GetCustomerInvoice`; `status === "paid"` is the paid-history signal.
+export class BillingInvoice extends Schema.Class<BillingInvoice>("BillingInvoice")({
+	stripeId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	status: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	total: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	createdAt: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	hostedInvoiceUrl: Schema.optionalKey(Schema.NullOr(Schema.String)),
+}) {}
+
 export class BillingCustomer extends Schema.Class<BillingCustomer>("BillingCustomer")({
 	id: Schema.String,
 	subscriptions: Schema.Array(BillingSubscription),
 	balances: Schema.optionalKey(Schema.Record(Schema.String, BillingBalance)),
 	flags: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown)),
+	invoices: Schema.optionalKey(Schema.Array(BillingInvoice)),
 }) {}
 
 // ---- Plan catalog (listPlans) ----

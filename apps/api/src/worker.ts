@@ -236,10 +236,30 @@ const handleQueue = async (
 	}
 }
 
-// Cron handler (every 12h, see wrangler.jsonc `triggers.crons`): enqueue a
-// periodic VCS sync per installation. Single cron expression — no `event.cron`
-// dispatch needed.
-const handleScheduled = async (env: Record<string, unknown>, ctx: ExecutionContext): Promise<void> => {
+// Cron expressions (must match `crons` in alchemy.run.ts). Dispatched on
+// `event.cron` since the worker now registers more than one schedule.
+const BILLING_RECONCILE_CRON = "0 6 * * *"
+
+// Daily billing-suspension reconcile: promote overdue-≥3d-and-never-paid orgs to
+// suspended, clear orgs that have paid.
+const handleBillingReconcile = async (
+	env: Record<string, unknown>,
+	ctx: ExecutionContext,
+): Promise<void> => {
+	const { buildBillingSuspensionLayer, runBillingSuspensionReconcile, flushBillingTelemetry } =
+		await import("./billing-suspension-runtime")
+	try {
+		await runScheduledEffect(buildBillingSuspensionLayer(env), runBillingSuspensionReconcile, ctx)
+	} finally {
+		ctx.waitUntil(flushBillingTelemetry(env))
+	}
+}
+
+// Periodic VCS sync (every 12h): enqueue a refresh per installation.
+const handleVcsScheduledSync = async (
+	env: Record<string, unknown>,
+	ctx: ExecutionContext,
+): Promise<void> => {
 	const { buildVcsScheduledLayer, runScheduledSync, flushVcsTelemetry } = await import("./vcs-sync-runtime")
 	try {
 		await runScheduledEffect(buildVcsScheduledLayer(env), runScheduledSync, ctx)
@@ -248,11 +268,25 @@ const handleScheduled = async (env: Record<string, unknown>, ctx: ExecutionConte
 	}
 }
 
+// Cron handler — route by the firing schedule. The billing reconcile is matched
+// explicitly; every other expression (i.e. the 12h VCS sync) falls through.
+const handleScheduled = async (
+	cron: string,
+	env: Record<string, unknown>,
+	ctx: ExecutionContext,
+): Promise<void> => {
+	if (cron === BILLING_RECONCILE_CRON) {
+		await handleBillingReconcile(env, ctx)
+		return
+	}
+	await handleVcsScheduledSync(env, ctx)
+}
+
 export default {
 	fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handle(request, env, ctx),
 	queue: (batch: MessageBatch<unknown>, env: Record<string, unknown>, ctx: ExecutionContext) =>
 		handleQueue(batch, env, ctx),
-	scheduled: (_event: ScheduledController, env: Record<string, unknown>, ctx: ExecutionContext) =>
-		handleScheduled(env, ctx),
+	scheduled: (event: ScheduledController, env: Record<string, unknown>, ctx: ExecutionContext) =>
+		handleScheduled(event.cron, env, ctx),
 }

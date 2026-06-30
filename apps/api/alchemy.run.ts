@@ -143,8 +143,10 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 		url: true,
 		adopt: true,
 		routes: domains.api ? [{ pattern: `${domains.api}/*`, adopt: true }] : undefined,
-		// Periodic VCS sync backstop (every 12h) — enqueues a refresh per installation; see worker.ts `scheduled`.
-		crons: ["0 */12 * * *"],
+		// Cron schedules — dispatched by `event.cron` in worker.ts `scheduled`:
+		//  - "0 *\/12 * * *": VCS sync backstop (enqueues a refresh per installation).
+		//  - "0 6 * * *":     daily billing-suspension reconcile (overdue ≥3d + never-paid → stop ingest).
+		crons: ["0 */12 * * *", "0 6 * * *"],
 		eventSources: [
 			{
 				queue: vcsSyncQueue,
@@ -195,6 +197,7 @@ export const createMapleApi = async ({ stage, domains }: CreateMapleApiOptions) 
 			...optionalPlain("CLERK_PUBLISHABLE_KEY"),
 			...optionalSecret("CLERK_JWT_KEY"),
 			...optionalSecret("AUTUMN_SECRET_KEY"),
+			...optionalSecret("AUTUMN_WEBHOOK_SECRET"),
 			...optionalSecret("SD_INTERNAL_TOKEN"),
 			...optionalSecret("INTERNAL_SERVICE_TOKEN"),
 			...optionalPlain("HAZEL_API_BASE_URL"),
