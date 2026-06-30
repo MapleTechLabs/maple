@@ -1,0 +1,65 @@
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Schema } from "effect"
+import { MetricName } from "@maple/domain"
+import { QueryEngineEvaluateRequest, type MetricsTimeseriesQuery } from "../query-engine"
+import { validateEvaluate } from "./query-engine"
+
+const makeRequest = (query: MetricsTimeseriesQuery) =>
+	new QueryEngineEvaluateRequest({
+		startTime: "2026-04-01 00:00:00",
+		endTime: "2026-04-01 01:00:00",
+		query,
+		reducer: "avg",
+		sampleCountStrategy: "metric_data_points",
+	})
+
+const baseFilters = { metricName: Schema.decodeUnknownSync(MetricName)("cpu.usage"), metricType: "gauge" as const }
+
+describe("validateMetricsAttributeFilters", () => {
+	it.effect("rejects groupBy=attribute when groupByAttributeKey is missing", () =>
+		Effect.gen(function* () {
+			const exit = yield* validateEvaluate(
+				makeRequest({
+					kind: "timeseries",
+					source: "metrics",
+					metric: "avg",
+					groupBy: ["attribute"],
+					filters: baseFilters,
+				}),
+			).pipe(Effect.exit)
+
+			assert.isTrue(exit._tag === "Failure")
+			assert.include(JSON.stringify(exit), "groupBy=attribute requires filters.groupByAttributeKey")
+		}),
+	)
+
+	it.effect("accepts groupBy=attribute when groupByAttributeKey is present", () =>
+		Effect.gen(function* () {
+			const range = yield* validateEvaluate(
+				makeRequest({
+					kind: "timeseries",
+					source: "metrics",
+					metric: "avg",
+					groupBy: ["attribute"],
+					filters: { ...baseFilters, groupByAttributeKey: "region" },
+				}),
+			)
+			assert.isDefined(range)
+		}),
+	)
+
+	it.effect("accepts groupBy=service without a key", () =>
+		Effect.gen(function* () {
+			const range = yield* validateEvaluate(
+				makeRequest({
+					kind: "timeseries",
+					source: "metrics",
+					metric: "avg",
+					groupBy: ["service"],
+					filters: baseFilters,
+				}),
+			)
+			assert.isDefined(range)
+		}),
+	)
+})

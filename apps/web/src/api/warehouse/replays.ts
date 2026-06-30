@@ -28,6 +28,12 @@ const ListReplaysInput = Schema.Struct({
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
+	// Session-time range filters (ms) — duration is the stored wall-clock time,
+	// activeTime is computed server-side from session_events gaps.
+	durationMinMs: Schema.optional(Schema.Number),
+	durationMaxMs: Schema.optional(Schema.Number),
+	activeTimeMinMs: Schema.optional(Schema.Number),
+	activeTimeMaxMs: Schema.optional(Schema.Number),
 	limit: Schema.optional(Schema.Number),
 	offset: Schema.optional(Schema.Number),
 })
@@ -60,6 +66,10 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 					hasErrors: input.hasErrors,
 					search: input.search,
 					cursor: input.cursor,
+					durationMinMs: input.durationMinMs,
+					durationMaxMs: input.durationMaxMs,
+					activeTimeMinMs: input.activeTimeMinMs,
+					activeTimeMaxMs: input.activeTimeMaxMs,
 					limit: input.limit ?? 50,
 					offset: input.offset ?? 0,
 				}),

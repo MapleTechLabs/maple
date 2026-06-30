@@ -18,6 +18,7 @@ import { FolderIcon, MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { PodTable, PodTableLoading } from "@/components/infra/pod-table"
+import { PodHoneycomb } from "@/components/infra/pod-honeycomb"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
 import { listPodsResultAtom, podFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -200,6 +201,9 @@ function PodsPageContent() {
 										result.waiting ? "opacity-60" : ""
 									}`}
 								>
+									{pods.length >= 4 && (
+										<PodHoneycomb pods={pods} referenceTime={endTime} />
+									)}
 									<div className="flex flex-wrap items-center justify-between gap-3">
 										<InputGroup className="w-64">
 											<InputGroupAddon>

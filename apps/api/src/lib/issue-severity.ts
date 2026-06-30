@@ -9,11 +9,18 @@ import { createHash, randomUUID } from "node:crypto"
 import type { AiTriageResult, IssueSeverity } from "@maple/domain/http"
 import { ActorId, ErrorIssueEventId, ErrorIssueId, OrgId } from "@maple/domain/primitives"
 import { actors, errorIssues, errorIssueEvents, issueEscalations } from "@maple/db"
-import type { MaplePgClient } from "@maple/db/client"
+import type { MapleDatabaseTransaction, MaplePgClient } from "@maple/db/client"
 import { and, eq, ne, isNull, or } from "drizzle-orm"
 import { Schema } from "effect"
 
 export const TRIAGE_AGENT_NAME = "maple-triage-agent"
+
+/**
+ * Accepts either a top-level client or an open transaction so callers can run
+ * the severity write atomically alongside their own writes (e.g. the
+ * `submit_diagnosis` timeline event) in a single transaction.
+ */
+export type TriageSeverityDb = MaplePgClient | MapleDatabaseTransaction
 
 const decodeActorId = Schema.decodeUnknownSync(ActorId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
@@ -63,7 +70,7 @@ export const escalationReasonFor = (
 }
 
 const ensureTriageAgentActor = async (
-	db: MaplePgClient,
+	db: TriageSeverityDb,
 	orgId: OrgId,
 	timestamp: number,
 ): Promise<ActorId> => {
@@ -124,7 +131,7 @@ export interface ApplyTriageSeverityOutcome {
  * escalation-outbox row when the severity newly sets or strictly escalates.
  */
 export const applyTriageSeverity = async (
-	db: MaplePgClient,
+	db: TriageSeverityDb,
 	input: ApplyTriageSeverityInput,
 ): Promise<ApplyTriageSeverityOutcome> => {
 	const issueRows = await db

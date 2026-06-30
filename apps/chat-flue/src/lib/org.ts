@@ -22,3 +22,14 @@ export const tabIdFromInstanceId = (instanceId: string): string => {
 	const sep = instanceId.indexOf(":")
 	return sep === -1 ? "" : instanceId.slice(sep + 1)
 }
+
+/**
+ * Recover the investigation id from an investigate-mode instance id. The web /
+ * apps/api address an investigation's durable session as
+ * `"<orgId>:inv-<investigationId>"`; this strips the `inv-` tab prefix. Returns
+ * `undefined` for a non-investigate id.
+ */
+export const investigationIdFromInstanceId = (instanceId: string): string | undefined => {
+	const tab = tabIdFromInstanceId(instanceId)
+	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
+}

@@ -120,7 +120,16 @@ export function TimeRangePicker({
 					</Button>
 				}
 			/>
-			<PopoverContent align="end" className={tab === "custom" ? "w-auto p-4" : "w-[520px] p-0"}>
+			<PopoverContent
+				align="end"
+				className={
+					// Cap to the viewport so the popover never runs off-screen on
+					// phones (the 520px relative pane is wider than a mobile viewport).
+					tab === "custom"
+						? "w-auto max-w-[calc(100vw-1.5rem)] p-4"
+						: "w-[520px] max-w-[calc(100vw-1.5rem)] p-0"
+				}
+			>
 				{tab === "custom" ? (
 					<CustomRangePicker
 						startTime={startTime}
@@ -140,8 +149,10 @@ export function TimeRangePicker({
 								/>
 							</div>
 
-							{/* Right pane: shorthand input + quick select + recent */}
-							<div className="flex-1 space-y-5 p-4">
+							{/* Right pane: shorthand input + quick select + recent.
+							    min-w-0 lets it shrink below content width on narrow
+							    viewports so the quick-select grid doesn't overflow. */}
+							<div className="min-w-0 flex-1 space-y-5 p-4">
 								<ShorthandInput onApply={handleShorthandApply} />
 								<QuickSelectGrid onSelect={handleQuickSelect} />
 								{recentTimes.length > 0 && (

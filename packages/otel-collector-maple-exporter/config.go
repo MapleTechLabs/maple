@@ -27,7 +27,7 @@ type Config struct {
 
 	// Endpoint is the ClickHouse HTTP base URL — no trailing slash, no path.
 	// Example: "http://clickhouse-clickhouse.clickhouse.svc.cluster.local:8123"
-	// or "https://ch.superwall.dev".
+	// or "https://maple.dev".
 	Endpoint string `mapstructure:"endpoint"`
 
 	// Database is the ClickHouse database holding Maple's schema. Defaults to

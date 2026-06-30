@@ -3,7 +3,7 @@ import { Layer } from "effect"
 import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { McpLive } from "./mcp/app"
-import { AutumnRouter } from "./routes/autumn.http"
+import { HttpBillingLive, HttpBillingPublicLive } from "./routes/billing.http"
 import { HttpAiTriageLive } from "./routes/ai-triage.http"
 import { HttpAlertsLive } from "./routes/alerts.http"
 import { HttpAnomaliesLive } from "./routes/anomalies.http"
@@ -16,6 +16,8 @@ import { HttpDashboardsLive } from "./routes/dashboards.http"
 import { HttpDemoLive } from "./routes/demo.http"
 import { HttpDigestLive } from "./routes/digest.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "./routes/integrations.http"
+import { HttpInvestigationsLive } from "./routes/investigations.http"
+import { HttpInvestigationsInternalLive } from "./routes/investigations-internal.http"
 import { HttpIngestAttributeMappingsLive } from "./routes/ingest-attribute-mappings.http"
 import { HttpIngestKeysLive } from "./routes/ingest-keys.http"
 import { HttpObservabilityLive } from "./routes/observability.http"
@@ -38,10 +40,12 @@ import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/cachin
 import { CacheBackendLive } from "./lib/CacheBackendLive"
 import { ErrorsService } from "./services/ErrorsService"
 import { HazelOAuthService } from "./services/HazelOAuthService"
+import { InvestigationService } from "./services/InvestigationService"
 import { NotificationDispatcher } from "./services/NotificationDispatcher"
 import { ApiKeysService } from "./services/ApiKeysService"
 import { AuthService } from "./services/AuthService"
 import { ApiAuthorizationLayer } from "./services/ApiAuthorizationLayer"
+import { InternalServiceAuthorizationLayer } from "./services/InternalServiceAuthorizationLayer"
 import { CloudflareLogpushService } from "./services/CloudflareLogpushService"
 import { DashboardPersistenceService } from "./services/DashboardPersistenceService"
 import { DemoService } from "./services/DemoService"
@@ -144,6 +148,8 @@ const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
 
 const AiTriageServiceLive = AiTriageService.layer.pipe(Layer.provideMerge(CoreServicesLive))
 
+const InvestigationServiceLive = InvestigationService.layer.pipe(Layer.provideMerge(CoreServicesLive))
+
 const EmailServiceLive = EmailService.layer.pipe(Layer.provide(Env.layer))
 
 const DigestServiceLive = DigestService.layer.pipe(
@@ -177,6 +183,7 @@ export const MainLive = Layer.mergeAll(
 	AlertsServiceLive,
 	AnomalyDetectionServiceLive,
 	AiTriageServiceLive,
+	InvestigationServiceLive,
 	ErrorsServiceLive,
 	RecommendationIssueServiceLive,
 	DigestServiceLive,
@@ -188,8 +195,17 @@ export const MainLive = Layer.mergeAll(
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
 	Layer.provide(HttpAuthLive),
-	Layer.provide(Layer.mergeAll(HttpAiTriageLive, HttpAnomaliesLive, HttpChatLive)),
+	Layer.provide(
+		Layer.mergeAll(
+			HttpAiTriageLive,
+			HttpAnomaliesLive,
+			HttpChatLive,
+			HttpInvestigationsLive,
+			HttpInvestigationsInternalLive,
+		),
+	),
 	Layer.provide(HttpApiKeysLive),
+	Layer.provide(Layer.mergeAll(HttpBillingLive, HttpBillingPublicLive)),
 	Layer.provide(HttpAlertsLive),
 	Layer.provide(HttpErrorsLive),
 	Layer.provide(HttpCloudflareLogpushLive),
@@ -216,7 +232,6 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 
 export const AllRoutes = Layer.mergeAll(
 	ApiRoutes,
-	AutumnRouter,
 	IntegrationsCallbackRouter,
 	OAuthDiscoveryRouter,
 	PrometheusScrapeProxyRouter,
@@ -239,6 +254,15 @@ export const AllRoutes = Layer.mergeAll(
 
 export const ApiAuthLive = ApiAuthorizationLayer.pipe(
 	Layer.provideMerge(ApiKeysService.layer),
+	Layer.provideMerge(Env.layer),
+)
+
+// Internal-service-token middleware (the chat-flue `submit_diagnosis` write).
+// Mirrors ApiAuthLive; AuthService/ApiKeysService/Env are layer-memoized, so this
+// shares instances with MainLive rather than constructing duplicates.
+export const InternalServiceAuthLive = InternalServiceAuthorizationLayer.pipe(
+	Layer.provideMerge(ApiKeysService.layer),
+	Layer.provideMerge(AuthService.layer),
 	Layer.provideMerge(Env.layer),
 )
 

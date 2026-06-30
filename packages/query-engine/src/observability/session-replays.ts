@@ -26,9 +26,18 @@ export interface SessionTracesInput {
 	readonly limit?: number
 }
 
+/** Session metadata plus the active/idle breakdown merged in from a second
+ *  pass over `session_events` (null when the session has no distilled events). */
+export interface SessionWithActivity extends SessionReplayDetailOutput {
+	/** Engaged time (ms): Σ gaps ≤ idle threshold between distilled events. */
+	readonly activeTimeMs: number | null
+	/** Idle time (ms): Σ gaps > idle threshold between distilled events. */
+	readonly idleTimeMs: number | null
+}
+
 export interface SessionTracesOutput {
 	/** The browser session's metadata, or null when no such session exists. */
-	readonly session: SessionReplayDetailOutput | null
+	readonly session: SessionWithActivity | null
 	/** Per-trace summaries for the (clamped) correlated trace ids. */
 	readonly traces: ReadonlyArray<SessionTraceSummaryOutput>
 	/** Full count of trace ids on the session, before the `limit` clamp. */
@@ -52,15 +61,36 @@ export const getSessionTraces = Effect.fn("Observability.getSessionTraces")(func
 	const executor = yield* WarehouseExecutor
 	yield* Effect.annotateCurrentSpan({ orgId: executor.orgId, sessionId: input.sessionId })
 
-	// 1) Session metadata + the full TraceIds array.
+	// 1) Session metadata (+ full TraceIds array) and the active/idle breakdown
+	// from a second pass over session_events. Both are single-session sort-key
+	// seeks (`(OrgId, SessionId)` prefix) and independent, so run them
+	// concurrently — one round-trip of latency, not two.
 	const detailCompiled = CH.compile(CH.getSessionReplayQuery(), {
 		orgId: executor.orgId,
 		sessionId: input.sessionId,
 	})
-	const maybeSession = yield* executor.compiledQueryFirst(detailCompiled, { profile: "discovery" })
-	const session = Option.getOrNull(maybeSession)
-	if (!session) {
+	const activityCompiled = CH.compile(CH.sessionActivityQuery(), {
+		orgId: executor.orgId,
+		sessionId: input.sessionId,
+	})
+	const [maybeSession, maybeActivity] = yield* Effect.all(
+		[
+			executor.compiledQueryFirst(detailCompiled, { profile: "discovery" }),
+			executor.compiledQueryFirst(activityCompiled, { profile: "discovery" }),
+		],
+		{ concurrency: 2 },
+	)
+	const sessionRow = Option.getOrNull(maybeSession)
+	if (!sessionRow) {
 		return { session: null, traces: [], totalTraceCount: 0 } satisfies SessionTracesOutput
+	}
+
+	// `null` active/idle if the session has no distilled events (e.g. rrweb-only).
+	const activity = Option.getOrNull(maybeActivity)
+	const session: SessionWithActivity = {
+		...sessionRow,
+		activeTimeMs: activity ? Number(activity.activeTimeMs) : null,
+		idleTimeMs: activity ? Number(activity.idleTimeMs) : null,
 	}
 
 	const totalTraceCount = session.traceIds.length

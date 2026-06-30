@@ -2,11 +2,17 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Schema } from "effect"
-import { useMemo, useState } from "react"
+import { Fragment, useMemo, useState } from "react"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { formatRelativeTime } from "@/lib/format"
+import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import { applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { presetLabel, formatTimeRangeDisplay } from "@/lib/time-utils"
+import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { AlertPreviewChart } from "@/components/alerts/alert-preview-chart"
 import { CheckHistorySparkline } from "@/components/alerts/check-history-sparkline"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
@@ -23,8 +29,26 @@ import {
 	formatAlertDuration,
 	computeIncidentStats,
 } from "@/lib/alerts/form-utils"
-import { AlertRuleId, type AlertCheckDocument, type AlertRuleDocument } from "@maple/domain/http"
-import { CheckIcon, PencilIcon, DotsVerticalIcon, CircleWarningIcon } from "@/components/icons"
+import {
+	AlertRuleId,
+	IsoDateTimeString,
+	type AiTriageResult,
+	type AlertCheckDocument,
+	type AlertIncidentDocument,
+	type AlertRuleDocument,
+} from "@maple/domain/http"
+import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
+import { AlertChatSheet } from "@/components/alerts/alert-chat-sheet"
+import { toAlertContext, type AlertContext } from "@/components/chat/alert-context"
+import {
+	CheckIcon,
+	PencilIcon,
+	DotsVerticalIcon,
+	CircleWarningIcon,
+	SquareTerminalIcon,
+	ChevronDownIcon,
+	ChatBubbleSparkleIcon,
+} from "@/components/icons"
 import { cn } from "@maple/ui/utils"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
@@ -46,6 +70,9 @@ type RuleDetailTab = (typeof tabValues)[number]
 
 const RuleDetailSearch = Schema.Struct({
 	tab: Schema.optional(Schema.String),
+	startTime: Schema.optional(Schema.String),
+	endTime: Schema.optional(Schema.String),
+	timePreset: Schema.optional(Schema.String),
 })
 
 export const Route = effectRoute(createFileRoute("/alerts/$ruleId"))({
@@ -54,9 +81,36 @@ export const Route = effectRoute(createFileRoute("/alerts/$ruleId"))({
 })
 
 function RuleDetailPage() {
+	const search = Route.useSearch()
+	return (
+		<PageRefreshProvider timePreset={search.timePreset ?? "24h"}>
+			<RuleDetailContent />
+		</PageRefreshProvider>
+	)
+}
+
+function RuleDetailContent() {
 	const { ruleId } = Route.useParams()
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
+
+	// Page-level time window (24h default), shared by the chart, checks, and the
+	// header timeline strip — the standard services/errors wiring.
+	const { startTime, endTime } = useEffectiveTimeRange(
+		search.startTime,
+		search.endTime,
+		search.timePreset ?? "24h",
+	)
+	// listRuleChecks takes ISO `since`/`until`; the effective range is Tinybird
+	// format ("YYYY-MM-DD HH:mm:ss"), so normalize before converting.
+	const since = useMemo(
+		() => IsoDateTimeString.make(new Date(normalizeTimestampInput(startTime)).toISOString()),
+		[startTime],
+	)
+	const until = useMemo(
+		() => IsoDateTimeString.make(new Date(normalizeTimestampInput(endTime)).toISOString()),
+		[endTime],
+	)
 
 	const rulesQueryAtom = MapleApiAtomClient.query("alerts", "listRules", {
 		reactivityKeys: ["alertRules"],
@@ -70,8 +124,8 @@ function RuleDetailPage() {
 	const refreshIncidents = useAtomRefresh(incidentsQueryAtom)
 	const checksQueryAtom = MapleApiAtomClient.query("alerts", "listRuleChecks", {
 		params: { ruleId: ruleId as AlertRuleId },
-		query: {},
-		reactivityKeys: ["alertChecks", ruleId],
+		query: { since, until },
+		reactivityKeys: ["alertChecks", ruleId, since, until],
 	})
 	const checksResult = useAtomValue(checksQueryAtom)
 	const refreshChecks = useAtomRefresh(checksQueryAtom)
@@ -114,6 +168,24 @@ function RuleDetailPage() {
 		return ruleIncidents.filter((i) => i.status === stateFilter)
 	}, [ruleIncidents, stateFilter])
 
+	// Incident the Overview AI-summary card binds to: the open one, else most recent.
+	const overviewIncident = useMemo(
+		() => ruleIncidents.find((i) => i.status === "open") ?? ruleIncidents[0] ?? null,
+		[ruleIncidents],
+	)
+
+	// Integrated alert chat slide-over, seeded with an incident's context.
+	const [chatContext, setChatContext] = useState<AlertContext | null>(null)
+	const [chatOpen, setChatOpen] = useState(false)
+	// History rows lazily mount their own triage card only when expanded.
+	const [expandedIncidentId, setExpandedIncidentId] = useState<string | null>(null)
+
+	const openAlertChat = (incident: AlertIncidentDocument, result?: AiTriageResult | null) => {
+		if (!rule) return
+		setChatContext(toAlertContext(rule, incident, result))
+		setChatOpen(true)
+	}
+
 	const stats = useMemo(() => computeIncidentStats(ruleIncidents), [ruleIncidents])
 	const maxContributorCount = stats.topContributors.length > 0 ? stats.topContributors[0][1] : 1
 
@@ -132,15 +204,25 @@ function RuleDetailPage() {
 		}))
 	}, [ruleIncidents])
 
-	const timelineRange = useMemo(() => {
-		if (timelineSegments.length === 0) return { min: Date.now() - 86_400_000 * 3, max: Date.now() }
-		const starts = timelineSegments.map((s) => s.start)
-		const ends = timelineSegments.map((s) => s.end)
-		return { min: Math.min(...starts), max: Math.max(...ends, Date.now()) }
-	}, [timelineSegments])
+	// The strip frames the selected window so "today" vs "last week" reshapes the
+	// at-a-glance answer; incident segments still paint wherever they fall within it.
+	const timelineRange = useMemo(
+		() => ({
+			min: new Date(normalizeTimestampInput(startTime)).getTime(),
+			max: new Date(normalizeTimestampInput(endTime)).getTime(),
+		}),
+		[startTime, endTime],
+	)
 
 	const formState = useMemo(() => (rule ? ruleToFormState(rule) : defaultRuleForm()), [rule])
-	const { chartData, chartLoading, chartError } = useAlertRuleChart(formState)
+	const { chartData, chartLoading, chartError } = useAlertRuleChart(formState, { startTime, endTime })
+
+	// Mirror the picker's default: a custom range formats its bounds, otherwise the
+	// preset label (falling back to the same "24h" the header + data window use).
+	const rangeLabel =
+		search.startTime && search.endTime
+			? formatTimeRangeDisplay(search.startTime, search.endTime)
+			: presetLabel(search.timePreset ?? "24h")
 
 	if (Result.isInitial(rulesResult)) {
 		return (
@@ -299,14 +381,25 @@ function RuleDetailPage() {
 				</div>
 			}
 			headerActions={
-				<Button
-					variant="outline"
-					size="sm"
-					render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
-				>
-					<PencilIcon size={14} />
-					Edit rule
-				</Button>
+				<div className="flex items-center gap-2">
+					<TimeRangeHeaderControls
+						startTime={search.startTime}
+						endTime={search.endTime}
+						presetValue={search.timePreset ?? "24h"}
+						defaultPreset="24h"
+						onTimeChange={(range) =>
+							navigate({ search: (prev) => applyTimeRangeSearch(prev, range) })
+						}
+					/>
+					<Button
+						variant="outline"
+						size="sm"
+						render={<Link to="/alerts/create" search={{ ruleId: rule.id }} />}
+					>
+						<PencilIcon size={14} />
+						Edit rule
+					</Button>
+				</div>
 			}
 			stickyContent={stickyContent}
 		>
@@ -330,9 +423,26 @@ function RuleDetailPage() {
 					)}
 					<div className="space-y-2">
 						<h2 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-							{signalLabels[rule.signalType]}: Last 24h
+							{signalLabels[rule.signalType]}: {rangeLabel}
 						</h2>
-						{chartError != null ? (
+						{rule.signalType === "raw_query" ? (
+							// Raw SQL has no structured preview regardless of window, so the
+							// generic "widen the range" empty-state would mislead — mirror
+							// RuleLiveChartHero and show a raw-SQL hint instead.
+							<div className="flex h-[300px] w-full items-center justify-center rounded-md border border-dashed bg-muted/20 px-6 text-center">
+								<div className="max-w-sm space-y-2">
+									<div className="mx-auto flex size-9 items-center justify-center rounded-md bg-muted text-muted-foreground">
+										<SquareTerminalIcon size={16} />
+									</div>
+									<p className="font-medium text-sm">
+										Live preview unavailable for raw SQL
+									</p>
+									<p className="text-muted-foreground text-xs">
+										Raw SQL rules don't have a structured chart preview.
+									</p>
+								</div>
+							</div>
+						) : chartError != null ? (
 							<div className="flex h-[300px] w-full items-center justify-center rounded-md border border-dashed border-destructive/40 bg-destructive/5 px-6 text-center">
 								<div className="max-w-md space-y-1">
 									<p className="font-medium text-destructive text-sm">
@@ -340,6 +450,12 @@ function RuleDetailPage() {
 									</p>
 									<p className="line-clamp-3 text-muted-foreground text-xs">{chartError}</p>
 								</div>
+							</div>
+						) : !chartLoading && chartData.length === 0 ? (
+							<div className="flex h-[300px] w-full items-center justify-center rounded-md border border-dashed border-border/60 px-6 text-center">
+								<p className="max-w-md text-muted-foreground text-sm">
+									No data in this window. Try widening the range.
+								</p>
 							</div>
 						) : (
 							<AlertPreviewChart
@@ -351,6 +467,15 @@ function RuleDetailPage() {
 							/>
 						)}
 					</div>
+
+					{overviewIncident ? (
+						<AiTriageCard
+							incidentKind="alert"
+							incidentId={overviewIncident.id}
+							issueId={overviewIncident.errorIssueId ?? undefined}
+							onOpenChat={(result) => openAlertChat(overviewIncident, result)}
+						/>
+					) : null}
 
 					<div className="space-y-3">
 						<h2 className="text-lg font-semibold">Configuration</h2>
@@ -591,8 +716,10 @@ function RuleDetailPage() {
 									<TableBody>
 										{filteredIncidents.map((incident) => {
 											const isOpen = incident.status === "open"
+											const isExpanded = expandedIncidentId === incident.id
 											return (
-												<TableRow key={incident.id}>
+												<Fragment key={incident.id}>
+												<TableRow>
 													<TableCell>
 														<AlertStatusBadge
 															state={isOpen ? "firing" : "resolved"}
@@ -659,29 +786,75 @@ function RuleDetailPage() {
 														)}
 													</TableCell>
 													<TableCell>
-														<DropdownMenu>
-															<DropdownMenuTrigger
-																render={
-																	<Button variant="ghost" size="icon-sm" />
+														<div className="flex items-center justify-end gap-1">
+															<Button
+																variant="ghost"
+																size="icon-sm"
+																aria-label={isExpanded ? "Hide AI summary" : "Show AI summary"}
+																aria-expanded={isExpanded}
+																onClick={() =>
+																	setExpandedIncidentId(
+																		isExpanded ? null : incident.id,
+																	)
 																}
 															>
-																<DotsVerticalIcon size={14} />
-															</DropdownMenuTrigger>
-															<DropdownMenuContent align="end">
-																<DropdownMenuItem
-																	onClick={() =>
-																		navigate({
-																			to: "/alerts",
-																			search: { tab: "monitor" },
-																		})
+																<ChevronDownIcon
+																	size={14}
+																	className={cn(
+																		"transition-transform",
+																		isExpanded && "rotate-180",
+																	)}
+																/>
+															</Button>
+															<DropdownMenu>
+																<DropdownMenuTrigger
+																	render={
+																		<Button variant="ghost" size="icon-sm" />
 																	}
 																>
-																	View all incidents
-																</DropdownMenuItem>
-															</DropdownMenuContent>
-														</DropdownMenu>
+																	<DotsVerticalIcon size={14} />
+																</DropdownMenuTrigger>
+																<DropdownMenuContent align="end">
+																	<DropdownMenuItem
+																		onClick={() =>
+																			setExpandedIncidentId(
+																				isExpanded ? null : incident.id,
+																			)
+																		}
+																	>
+																		<ChatBubbleSparkleIcon size={14} />
+																		{isExpanded ? "Hide AI summary" : "AI summary"}
+																	</DropdownMenuItem>
+																	<DropdownMenuItem
+																		onClick={() =>
+																			navigate({
+																				to: "/alerts",
+																				search: { tab: "monitor" },
+																			})
+																		}
+																	>
+																		View all incidents
+																	</DropdownMenuItem>
+																</DropdownMenuContent>
+															</DropdownMenu>
+														</div>
 													</TableCell>
 												</TableRow>
+												{isExpanded ? (
+													<TableRow className="bg-muted/30 hover:bg-muted/30">
+														<TableCell colSpan={7} className="p-4">
+															<AiTriageCard
+																incidentKind="alert"
+																incidentId={incident.id}
+																issueId={incident.errorIssueId ?? undefined}
+																onOpenChat={(result) =>
+																	openAlertChat(incident, result)
+																}
+															/>
+														</TableCell>
+													</TableRow>
+												) : null}
+												</Fragment>
 											)
 										})}
 									</TableBody>
@@ -718,6 +891,8 @@ function RuleDetailPage() {
 							setStatusFilter={setCheckStatusFilter}
 						/>
 					))}
+
+			<AlertChatSheet open={chatOpen} onOpenChange={setChatOpen} alertContext={chatContext} />
 		</DashboardLayout>
 	)
 }
@@ -780,9 +955,10 @@ function ChecksPanel({
 					<EmptyMedia variant="icon">
 						<CheckIcon size={18} />
 					</EmptyMedia>
-					<EmptyTitle>No checks recorded yet</EmptyTitle>
+					<EmptyTitle>No checks in this window</EmptyTitle>
 					<EmptyDescription>
-						Once this rule is evaluated the scheduler will record one check per minute here.
+						No evaluations were recorded for the selected time range. Try widening the
+						range, or wait for the scheduler to record the next check.
 					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>

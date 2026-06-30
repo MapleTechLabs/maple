@@ -119,9 +119,14 @@ export {
 export {
 	sessionTranscriptQuery,
 	searchSessionsByEventQuery,
+	sessionActivityQuery,
+	sessionActivityAggregateQuery,
+	IDLE_GAP_THRESHOLD_MS,
 	type SessionTranscriptOutput,
 	type SearchSessionsByEventOpts,
 	type SearchSessionsByEventOutput,
+	type SessionActivityOpts,
+	type SessionActivityOutput,
 } from "./queries/session-events"
 
 // Queries — Services
@@ -156,6 +161,7 @@ export {
 	errorsTimeseriesQuery,
 	spanHierarchyQuery,
 	spanDetailQuery,
+	traceTimeProbeQuery,
 	tracesDurationStatsQuery,
 	tracesFacetsQuery,
 	errorsFacetsQuery,
@@ -172,6 +178,7 @@ export {
 	type SpanHierarchyOutput,
 	type SpanDetailOpts,
 	type SpanDetailOutput,
+	type TraceTimeProbeOutput,
 	type TracesDurationStatsOpts,
 	type TracesDurationStatsOutput,
 	type TracesFacetsOpts,

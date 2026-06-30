@@ -1,14 +1,17 @@
 import { useState } from "react"
-import { useListPlans } from "autumn-js/react"
-import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { toast } from "sonner"
+import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 
-type Plan = NonNullable<ReturnType<typeof useListPlans>["data"]>[number]
-type PlanItem = Plan["items"][number]
+import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
+import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
+import { useBillingActions } from "@/hooks/use-billing-actions"
+import { getTrialStatus } from "@/lib/billing/plan-gating"
+
+type Plan = CatalogPlan
+type PlanItem = CatalogPlanItem
 
 import { cn } from "@maple/ui/utils"
 import { TRIAL_DURATION_DAYS, getPlanFeatures, getPlanDescription } from "@/lib/billing/plans"
-import { useTrialStatus } from "@/hooks/use-trial-status"
 import {
 	Card,
 	CardContent,
@@ -206,29 +209,18 @@ interface CheckoutPreview {
 }
 
 export function PricingCards() {
-	// autumn-js's AutumnProvider hard-configures its QueryClient with `retry: false`,
-	// so a single transient 401 (Clerk token still settling during onboarding → the
-	// fetch interceptor sends listPlans unauthenticated) sticks for the 60s stale
-	// window and shows "Unable to load pricing plans." Retry through the gap: by the
-	// first backoff the token has settled and the request succeeds *with* customerId,
-	// preserving per-customer `customerEligibility`.
-	const {
-		data: plans,
-		isLoading,
-		error,
-	} = useListPlans({
-		queryOptions: {
-			retry: 3,
-			retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 4000),
-		},
-	})
-	const { attach, previewAttach, refetch } = useMapleCustomer()
-	const { isTrialing, daysRemaining } = useTrialStatus()
+	const plansResult = useAtomValue(billingPlansAtom)
+	const customerResult = useAtomValue(billingCustomerAtom)
+	const { attach, previewAttach } = useBillingActions()
+	const refreshCustomer = useAtomRefresh(billingCustomerAtom)
+	const { isTrialing, daysRemaining } = getTrialStatus(
+		Result.isSuccess(customerResult) ? customerResult.value : undefined,
+	)
 	const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null)
 	const [confirmDialog, setConfirmDialog] = useState<CheckoutPreview | null>(null)
 	const [isAttaching, setIsAttaching] = useState(false)
 
-	if (isLoading) {
+	if (Result.isInitial(plansResult)) {
 		return (
 			<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				{Array.from({ length: 2 }).map((_, i) => (
@@ -258,9 +250,11 @@ export function PricingCards() {
 		)
 	}
 
-	if (error || !plans) {
+	if (!Result.isSuccess(plansResult)) {
 		return <p className="text-muted-foreground text-sm">Unable to load pricing plans.</p>
 	}
+
+	const plans = plansResult.value.plans
 
 	// Filter out add-on and auto-enabled (free) plans for the main grid
 	const visiblePlans = plans.filter((p) => !p.addOn && !p.autoEnable)
@@ -278,13 +272,13 @@ export function PricingCards() {
 					planId,
 					planName: plan?.name ?? planId,
 					lines: preview.lineItems.map((l) => ({
-						description: l.description,
-						amount: l.total,
+						description: l.description ?? "",
+						amount: l.total ?? 0,
 					})),
-					total: preview.total,
-					currency: preview.currency,
+					total: preview.total ?? 0,
+					currency: preview.currency ?? "usd",
 					nextCycle: preview.nextCycle
-						? { starts_at: preview.nextCycle.startsAt, total: preview.nextCycle.total }
+						? { starts_at: preview.nextCycle.startsAt ?? 0, total: preview.nextCycle.total ?? 0 }
 						: undefined,
 				})
 			} catch (err) {
@@ -307,7 +301,7 @@ export function PricingCards() {
 			}
 
 			toast.success("Plan updated successfully.")
-			await refetch()
+			refreshCustomer()
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
 			toast.error(message)
@@ -326,7 +320,7 @@ export function PricingCards() {
 				return
 			}
 			toast.success("Plan updated successfully.")
-			await refetch()
+			refreshCustomer()
 			setConfirmDialog(null)
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Something went wrong. Please try again."

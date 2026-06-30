@@ -4,6 +4,7 @@ import { AnomaliesApiGroup } from "./anomalies"
 import { ApiKeysApiGroup } from "./api-keys"
 import { AlertsApiGroup } from "./alerts"
 import { AuthApiGroup, AuthPublicApiGroup } from "./auth"
+import { BillingApiGroup, BillingPublicApiGroup } from "./billing"
 import { ChatApiGroup } from "./chat"
 import { CloudflareLogpushApiGroup } from "./cloudflare-logpush"
 import { DashboardsApiGroup } from "./dashboards"
@@ -13,6 +14,7 @@ import { ErrorsApiGroup } from "./errors"
 import { IngestAttributeMappingsApiGroup } from "./ingest-attribute-mappings"
 import { IngestKeysApiGroup } from "./ingest-keys"
 import { IntegrationsApiGroup } from "./integrations"
+import { InvestigationApiGroup, InvestigationsInternalApiGroup } from "./investigations"
 import { ObservabilityApiGroup } from "./observability"
 import { OnboardingApiGroup } from "./onboarding"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
@@ -29,6 +31,8 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(AnomaliesApiGroup)
 	.add(ApiKeysApiGroup)
 	.add(AlertsApiGroup)
+	.add(BillingApiGroup)
+	.add(BillingPublicApiGroup)
 	.add(ChatApiGroup)
 	.add(CloudflareLogpushApiGroup)
 	.add(DashboardsApiGroup)
@@ -38,6 +42,8 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(IngestAttributeMappingsApiGroup)
 	.add(IngestKeysApiGroup)
 	.add(IntegrationsApiGroup)
+	.add(InvestigationApiGroup)
+	.add(InvestigationsInternalApiGroup)
 	.add(ObservabilityApiGroup)
 	.add(OnboardingApiGroup)
 	.add(OrgClickHouseSettingsApiGroup)

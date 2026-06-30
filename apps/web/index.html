@@ -46,7 +46,133 @@
 		</script>
 	</head>
 	<body>
-		<div id="app"></div>
+		<!-- Pre-paint cold-boot splash. The app is client-rendered (createRoot,
+		     no SSR) and styles.css/Geist load with the JS bundle, so the first
+		     paint would otherwise be a blank #app. This self-contained, JS-free
+		     copy of <BootSplash /> (apps/web/src/components/boot-splash.tsx)
+		     paints immediately, themed via the html.dark/.light class the head
+		     script already set. It lives inside #app, so React's first commit
+		     replaces it with the identical-looking React splash — no blank
+		     frame, no flash. Keep it in visual sync with boot-splash.tsx. -->
+		<div id="app">
+			<div class="maple-bootshell" role="status" aria-label="Loading Maple">
+				<style>
+					.maple-bootshell {
+						--boot-bg: oklch(0.207 0.008 67);
+						--boot-amber: oklch(0.714 0.154 59);
+						position: fixed;
+						inset: 0;
+						display: flex;
+						flex-direction: column;
+						align-items: center;
+						justify-content: center;
+						gap: 24px;
+						background: var(--boot-bg);
+					}
+					html.light .maple-bootshell {
+						--boot-bg: #fff;
+						--boot-amber: oklch(0.66 0.16 59);
+					}
+					.maple-bootshell__mark {
+						display: flex;
+						width: 44px;
+						height: 44px;
+						align-items: center;
+						justify-content: center;
+						border-radius: 11px;
+						background: linear-gradient(
+							155deg,
+							color-mix(in oklab, var(--boot-amber) 86%, white),
+							var(--boot-amber)
+						);
+						box-shadow:
+							0 10px 30px -8px color-mix(in oklab, var(--boot-amber) 50%, transparent),
+							inset 0 1px 0 color-mix(in oklab, white 35%, transparent);
+					}
+					.maple-bootshell__trace {
+						display: flex;
+						width: 132px;
+						flex-direction: column;
+						gap: 7px;
+					}
+					.maple-bootshell__span {
+						position: relative;
+						height: 8px;
+						overflow: hidden;
+						border-radius: 9999px;
+						background: color-mix(in oklab, var(--boot-amber) 15%, transparent);
+					}
+					.maple-bootshell__span::after {
+						content: "";
+						position: absolute;
+						inset: 0;
+						border-radius: inherit;
+						background: linear-gradient(
+							90deg,
+							transparent,
+							color-mix(in oklab, var(--boot-amber) 80%, transparent),
+							transparent
+						);
+						transform: translateX(-130%);
+						animation: maple-bootshell-shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+					}
+					.maple-bootshell__span:nth-child(1) {
+						width: 100%;
+					}
+					.maple-bootshell__span:nth-child(2) {
+						width: 74%;
+						margin-left: 16px;
+					}
+					.maple-bootshell__span:nth-child(2)::after {
+						animation-delay: 0.18s;
+					}
+					.maple-bootshell__span:nth-child(3) {
+						width: 52%;
+						margin-left: 32px;
+					}
+					.maple-bootshell__span:nth-child(3)::after {
+						animation-delay: 0.36s;
+					}
+					@keyframes maple-bootshell-shimmer {
+						0% {
+							transform: translateX(-130%);
+						}
+						60%,
+						100% {
+							transform: translateX(230%);
+						}
+					}
+					@media (prefers-reduced-motion: reduce) {
+						.maple-bootshell__span::after {
+							display: none;
+						}
+						.maple-bootshell__span {
+							background: color-mix(in oklab, var(--boot-amber) 38%, transparent);
+						}
+					}
+				</style>
+				<div class="maple-bootshell__mark">
+					<svg
+						viewBox="0 0 24 24"
+						width="24"
+						height="24"
+						fill="none"
+						stroke="#fff"
+						stroke-width="2.4"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M5 18V7l7 7 7-7v11" />
+					</svg>
+				</div>
+				<div class="maple-bootshell__trace" aria-hidden="true">
+					<span class="maple-bootshell__span"></span>
+					<span class="maple-bootshell__span"></span>
+					<span class="maple-bootshell__span"></span>
+				</div>
+			</div>
+		</div>
 		<script type="module" src="/src/main.tsx"></script>
 	</body>
 </html>

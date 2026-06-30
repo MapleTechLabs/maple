@@ -85,7 +85,7 @@ const coerceStatusCode = (value: string): StatusCode =>
 // Build a ±1h partition-pruning window around a ClickHouse datetime string
 // (`YYYY-MM-DD HH:mm:ss[.ffffff]`). Sub-second precision is irrelevant for the
 // window bounds, so the seconds-level prefix is parsed as UTC.
-const logWindowAround = (timestamp: string): { startTime: string; endTime: string } => {
+const partitionWindowAround = (timestamp: string): { startTime: string; endTime: string } => {
 	const ms = Date.parse(`${timestamp.slice(0, 19).replace(" ", "T")}Z`)
 	const fmt = (epoch: number) => new Date(epoch).toISOString().replace("T", " ").slice(0, 19)
 	return { startTime: fmt(ms - 3_600_000), endTime: fmt(ms + 3_600_000) }
@@ -107,28 +107,58 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 			.handle("spanHierarchy", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const narrowByTime = payload.startTime != null && payload.endTime != null
-					const compiled = CH.compile(
-						CH.spanHierarchyQuery({
-							traceId: payload.traceId,
-							spanId: payload.spanId,
-							narrowByTime,
-						}),
-						narrowByTime
-							? { orgId: tenant.orgId, startTime: payload.startTime, endTime: payload.endTime }
-							: { orgId: tenant.orgId },
-					)
 					const rows = yield* queryEngine.cachedDirect(
 						tenant,
 						"spanHierarchy",
 						payload,
-						mapExecError(
-							warehouse.compiledQuery(tenant, compiled, {
-								profile: "list",
-								context: "spanHierarchy",
-							}),
-							"spanHierarchy query failed",
-						),
+						// Wrapped in cachedDirect's effect so the probe only fires on a
+						// cache miss. `trace_detail_spans` is partitioned by
+						// `toDate(Timestamp)`. Without a time predicate the hierarchy query
+						// seeks across every daily partition (~30) — p95 ~8.8s vs ~2.3s when
+						// pruned to one. When the caller has no timestamp (direct URL,
+						// shared link, AI link), resolve one via a cheap LIMIT-1 probe and
+						// derive a ±1h window so the main query can prune.
+						Effect.gen(function* () {
+							let startTime = payload.startTime
+							let endTime = payload.endTime
+							if (startTime == null || endTime == null) {
+								const probe = yield* mapExecError(
+									warehouse
+										.compiledQueryFirst(
+											tenant,
+											CH.compile(CH.traceTimeProbeQuery({ traceId: payload.traceId }), {
+												orgId: tenant.orgId,
+											}),
+											{ profile: "discovery", context: "spanHierarchyProbe" },
+										)
+										.pipe(Effect.map(Option.getOrNull)),
+									"spanHierarchy probe failed",
+								)
+								if (probe?.timestamp != null) {
+									const window = partitionWindowAround(probe.timestamp)
+									startTime = window.startTime
+									endTime = window.endTime
+								}
+							}
+							const narrowByTime = startTime != null && endTime != null
+							const compiled = CH.compile(
+								CH.spanHierarchyQuery({
+									traceId: payload.traceId,
+									spanId: payload.spanId,
+									narrowByTime,
+								}),
+								narrowByTime
+									? { orgId: tenant.orgId, startTime, endTime }
+									: { orgId: tenant.orgId },
+							)
+							return yield* mapExecError(
+								warehouse.compiledQuery(tenant, compiled, {
+									profile: "list",
+									context: "spanHierarchy",
+								}),
+								"spanHierarchy query failed",
+							)
+						}),
 					)
 					const typedRows = rows.map((row) => ({
 						...row,
@@ -970,7 +1000,7 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleApi, "queryEngine",
 					// Bound the scan to a ±1h window around the requested log so
 					// ClickHouse can prune partitions instead of reading every
 					// retained daily partition for an exact-timestamp match.
-					const { startTime, endTime } = logWindowAround(payload.timestamp)
+					const { startTime, endTime } = partitionWindowAround(payload.timestamp)
 					const compiled = CH.compile(
 						CH.getLogByKeyQuery({
 							serviceName: payload.serviceName,

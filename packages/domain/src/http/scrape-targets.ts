@@ -17,6 +17,10 @@ export class ScrapeTargetResponse extends Schema.Class<ScrapeTargetResponse>("Sc
 	targetType: ScrapeTargetType,
 	/** PlanetScale organization name; `null` for plain Prometheus targets. */
 	organization: Schema.NullOr(Schema.String),
+	/** PlanetScale only — glob patterns; only matching branches are scraped (empty = all). */
+	includeBranches: Schema.Array(Schema.String),
+	/** PlanetScale only — glob patterns; matching branches are skipped (e.g. `pr-*`). */
+	excludeBranches: Schema.Array(Schema.String),
 	scrapeIntervalSeconds: ScrapeIntervalSeconds,
 	labelsJson: Schema.NullOr(Schema.String),
 	authType: ScrapeAuthType,
@@ -43,6 +47,10 @@ export class CreateScrapeTargetRequest extends Schema.Class<CreateScrapeTargetRe
 	targetType: Schema.optionalKey(ScrapeTargetType),
 	/** Required for `planetscale` targets. */
 	organization: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** PlanetScale only — branch glob allowlist (omit/empty = scrape all branches). */
+	includeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** PlanetScale only — branch glob denylist (e.g. `pr-*` to skip PR previews). */
+	excludeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
 	scrapeIntervalSeconds: Schema.optionalKey(ScrapeIntervalSeconds),
 	labelsJson: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	authType: Schema.optionalKey(ScrapeAuthType),
@@ -58,6 +66,10 @@ export class UpdateScrapeTargetRequest extends Schema.Class<UpdateScrapeTargetRe
 	url: Schema.optionalKey(Schema.String),
 	/** PlanetScale targets only — updates the organization and re-derives the SD url. */
 	organization: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/** PlanetScale only — branch glob allowlist (empty array clears it; omit = unchanged). */
+	includeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** PlanetScale only — branch glob denylist (empty array clears it; omit = unchanged). */
+	excludeBranches: Schema.optionalKey(Schema.Array(Schema.String)),
 	scrapeIntervalSeconds: Schema.optionalKey(ScrapeIntervalSeconds),
 	labelsJson: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	authType: Schema.optionalKey(ScrapeAuthType),

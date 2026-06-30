@@ -22,7 +22,7 @@ inside ClickHouse.
 ```yaml
 exporters:
     maple:
-        endpoint: https://ch.superwall.dev # ClickHouse HTTP base URL
+        endpoint: https://maple.dev # ClickHouse HTTP base URL
         database: default
         username: maple
         password: ${env:MAPLE_CLICKHOUSE_PASSWORD}

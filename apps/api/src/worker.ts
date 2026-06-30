@@ -75,12 +75,14 @@ const passThroughMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) => httpAp
 // the top level near-empty; the cost moves to the first request, which runs
 // under the far larger per-request CPU budget.
 const buildHandler = async () => {
-	const { AllRoutes, ApiAuthLive, ApiObservabilityLive, MainLive } = await import("./app")
+	const { AllRoutes, ApiAuthLive, InternalServiceAuthLive, ApiObservabilityLive, MainLive } =
+		await import("./app")
 	const { DatabasePgLive } = await import("./lib/DatabasePgLive")
 	return HttpRouter.toWebHandler(
 		AllRoutes.pipe(
 			Layer.provideMerge(MainLive),
 			Layer.provideMerge(ApiAuthLive),
+			Layer.provideMerge(InternalServiceAuthLive),
 			Layer.provideMerge(ApiObservabilityLive),
 			Layer.provideMerge(WorkerPlatformLive),
 			Layer.provideMerge(DatabasePgLive),

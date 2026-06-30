@@ -1,4 +1,4 @@
-module github.com/superwall/maple/packages/otel-collector-maple-exporter
+module github.com/makisuo/maple/packages/otel-collector-maple-exporter
 
 go 1.25.0
 

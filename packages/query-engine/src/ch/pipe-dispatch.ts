@@ -506,6 +506,17 @@ export function compilePipeQuery(pipe: string, params: PipeParams): PipeCompiled
 					),
 				),
 			),
+			Match.when("metric_attribute_values", () =>
+				eraseType(
+					CH.compile(
+						CH.metricAttributeValuesQuery({
+							attributeKey: String(params.attribute_key),
+							limit: int("limit", 50),
+						}),
+						{ orgId, startTime, endTime },
+					),
+				),
+			),
 			// ----- Custom charts -----
 			Match.when("custom_traces_timeseries", () => {
 				const tsOpts = pipeParamsToTracesTimeseriesOpts(params)

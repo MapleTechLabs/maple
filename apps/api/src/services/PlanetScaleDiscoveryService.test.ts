@@ -82,7 +82,10 @@ const stubFetch =
 		return respond()
 	}
 
-const createPlanetScaleTargetRow = (organization: string) =>
+const createPlanetScaleTargetRow = (
+	organization: string,
+	branchFilters?: { includeBranches?: string[]; excludeBranches?: string[] },
+) =>
 	Effect.gen(function* () {
 		const service = yield* ScrapeTargetsService
 		const created = yield* service.create(
@@ -92,6 +95,8 @@ const createPlanetScaleTargetRow = (organization: string) =>
 				targetType: "planetscale",
 				organization,
 				authCredentials: JSON.stringify({ tokenId: "tok_id", tokenSecret: "tok_secret" }),
+				...(branchFilters?.includeBranches ? { includeBranches: branchFilters.includeBranches } : {}),
+				...(branchFilters?.excludeBranches ? { excludeBranches: branchFilters.excludeBranches } : {}),
 			}),
 		)
 		const rows = yield* service.listAllEnabled()
@@ -99,6 +104,15 @@ const createPlanetScaleTargetRow = (organization: string) =>
 		if (!row) return yield* Effect.die("created row not found")
 		return row
 	})
+
+const BRANCHES_SD_PAYLOAD = ["main", "stg", "pr-12", "pr-13"].map((branch) => ({
+	targets: [`${branch}.metrics.psdb.cloud:443`],
+	labels: {
+		__metrics_path__: "/metrics",
+		planetscale_database_branch_id: branch,
+		planetscale_database: "mydb",
+	},
+}))
 
 describe("PlanetScaleDiscoveryService", () => {
 	it.effect("discovers sub-targets with the token auth scheme and strips meta labels", () => {
@@ -127,6 +141,36 @@ describe("PlanetScaleDiscoveryService", () => {
 				planetscale_database_branch_id: "branch-1",
 				planetscale_database: "mydb",
 			})
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("collapses groups that fall back to the same host key into one sub-target", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded: Array<RecordedRequest> = []
+		return Effect.gen(function* () {
+			const discovery = yield* PlanetScaleDiscoveryService
+			const row = yield* createPlanetScaleTargetRow("my-org")
+
+			// Prod hazard: an http_sd payload with several groups that carry no
+			// `planetscale_database_branch_id`, so subTargetKey falls back to the
+			// shared host. Without dedup these become N rows with the SAME
+			// (id, subTargetKey) and the scraper forks a leaking loop fiber per row.
+			const DUP_HOST_PAYLOAD = [
+				{ targets: ["metrics.psdb.cloud:443"], labels: { planetscale_database: "mydb" } },
+				{ targets: ["metrics.psdb.cloud:443"], labels: { planetscale_database: "other" } },
+				{ targets: ["metrics.psdb.cloud:443"], labels: {} },
+			]
+
+			const entries = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(DUP_HOST_PAYLOAD)),
+				),
+			)
+
+			expect(entries).toHaveLength(1)
+			expect(entries[0]?.subTargetKey).toBe("metrics.psdb.cloud:443")
+			expect(entries[0]?.url).toBe("https://metrics.psdb.cloud:443/metrics")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -191,6 +235,42 @@ describe("PlanetScaleDiscoveryService", () => {
 			)
 
 			expect(error.message).toContain("read_metrics_endpoints")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("excludes branches matching an exclude glob (e.g. pr-*)", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded: Array<RecordedRequest> = []
+		return Effect.gen(function* () {
+			const discovery = yield* PlanetScaleDiscoveryService
+			const row = yield* createPlanetScaleTargetRow("my-org", { excludeBranches: ["pr-*"] })
+
+			const entries = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(BRANCHES_SD_PAYLOAD)),
+				),
+			)
+
+			expect(entries.map((entry) => entry.subTargetKey)).toEqual(["main", "stg"])
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
+	it.effect("keeps only branches matching an include glob", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded: Array<RecordedRequest> = []
+		return Effect.gen(function* () {
+			const discovery = yield* PlanetScaleDiscoveryService
+			const row = yield* createPlanetScaleTargetRow("my-org", { includeBranches: ["main", "stg"] })
+
+			const entries = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(BRANCHES_SD_PAYLOAD)),
+				),
+			)
+
+			expect(entries.map((entry) => entry.subTargetKey)).toEqual(["main", "stg"])
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 

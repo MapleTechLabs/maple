@@ -159,6 +159,8 @@ export const PREVIEW_SESSION = {
 	userId: "jordan@acme.dev",
 	urlInitial: INITIAL_URL,
 	durationMs: 30_000,
+	activeTimeMs: 21_500,
+	idleTimeMs: 8_500,
 	browserName: "Chrome 138",
 	osName: "macOS 15",
 	deviceType: "desktop",

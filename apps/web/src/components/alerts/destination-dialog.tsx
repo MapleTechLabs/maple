@@ -560,7 +560,9 @@ export function DestinationDialog({
 											}))
 										}
 										placeholder={
-											isEditing ? "Leave blank to keep current key" : "Routing key"
+											isEditing
+												? "Leave blank to keep current key"
+												: "e.g. R0XXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 										}
 										className="font-mono text-xs"
 									/>
@@ -573,16 +575,17 @@ export function DestinationDialog({
 											</p>
 										)}
 									<p className="text-[11px] text-muted-foreground">
-										Use an{" "}
+										In PagerDuty: open the service → Integrations → add or select an{" "}
 										<a
 											href="https://maple.dev/docs/alerting/notification-destinations#pagerduty"
 											target="_blank"
 											rel="noreferrer"
 											className="underline-offset-2 hover:text-foreground hover:underline"
 										>
-											Events API v2 integration key
+											Events API v2
 										</a>{" "}
-										(32 characters) — a REST API token won't work.
+										integration → copy its Integration Key (32 characters). A REST API
+										token won't work.
 									</p>
 								</div>
 							)}

@@ -14,6 +14,7 @@ export const todoOtelLayer = Maple.layer({
 	serviceNamespace: "examples",
 	environment: "development",
 	endpoint: import.meta.env.VITE_MAPLE_ENDPOINT ?? "http://127.0.0.1:4318",
+	ingestKey: import.meta.env.VITE_MAPLE_INGEST_KEY,
 	tracerExportInterval: "2 seconds",
 	loggerExportInterval: "2 seconds",
 })

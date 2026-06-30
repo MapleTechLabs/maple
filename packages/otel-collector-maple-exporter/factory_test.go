@@ -45,7 +45,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "valid_minimal",
 			mutate: func(c *Config) {
-				c.Endpoint = "https://ch.superwall.dev"
+				c.Endpoint = "https://maple.dev"
 				c.OrgID = "org_x"
 			},
 			wantErr: false,
@@ -53,7 +53,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "missing_org",
 			mutate: func(c *Config) {
-				c.Endpoint = "https://ch.superwall.dev"
+				c.Endpoint = "https://maple.dev"
 			},
 			wantErr: true,
 		},
@@ -76,7 +76,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "zero_timeout",
 			mutate: func(c *Config) {
-				c.Endpoint = "https://ch.superwall.dev"
+				c.Endpoint = "https://maple.dev"
 				c.OrgID = "org_x"
 				c.TimeoutConfig.Timeout = 0
 			},

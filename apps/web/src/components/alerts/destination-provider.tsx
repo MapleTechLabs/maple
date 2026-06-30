@@ -41,7 +41,7 @@ export const PROVIDERS: Record<AlertDestinationType, DestinationProvider> = {
 	pagerduty: {
 		type: "pagerduty",
 		label: "PagerDuty",
-		description: "Trigger incidents through a PagerDuty Events v2 routing key.",
+		description: "Trigger incidents with a PagerDuty Events API v2 integration key.",
 		accent: "#06AC38",
 		accentBg: "rgba(6,172,56,0.16)",
 		brandfetchDomain: "pagerduty.com",

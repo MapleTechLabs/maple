@@ -16,7 +16,8 @@ export class EdgeCacheIOError extends Schema.TaggedErrorClass<EdgeCacheIOError>(
 export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	readonly bucket: string
 	readonly key: string
-	readonly ttlSeconds: number
+	/** Cache TTL (seconds), or a function deriving it from the computed value — run once on write, never on a hit. */
+	readonly ttlSeconds: number | ((value: A) => number)
 	/**
 	 * Optional codec used to (a) encode the value into a JSON-safe form before
 	 * `backend.put`, and (b) decode the cached bytes back into the original
@@ -152,9 +153,11 @@ export const makeEdgeCacheService = (backend: EdgeCacheBackend): EdgeCacheServic
 			const stored: unknown = options.schema
 				? yield* Schema.encodeUnknownEffect(options.schema)(value).pipe(Effect.orDie)
 				: value
+			const ttlSeconds =
+				typeof options.ttlSeconds === "function" ? options.ttlSeconds(value) : options.ttlSeconds
 			const writeNowMs = yield* Clock.currentTimeMillis
 			yield* Effect.tryPromise({
-				try: () => backend.put(options.bucket, hash, stored, options.ttlSeconds, writeNowMs),
+				try: () => backend.put(options.bucket, hash, stored, ttlSeconds, writeNowMs),
 				catch: (error) => error,
 			}).pipe(
 				Effect.tapError((error) =>

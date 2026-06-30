@@ -826,6 +826,10 @@ export interface GetSessionTracesData {
 		pageViews: number
 		clickCount: number
 		errorCount: number
+		/** Engaged time (ms) from session_events gaps; null if no distilled events. */
+		activeTimeMs: number | null
+		/** Idle time (ms) — the long-gap complement of active time. */
+		idleTimeMs: number | null
 	}
 	totalTraceCount: number
 	traces: ReadonlyArray<{
@@ -874,7 +878,20 @@ export interface GetInstrumentationRecommendationsData {
 	total: number
 }
 
+export interface RunSqlData {
+	/** The fully macro-expanded SQL that was executed (org filter + time bounds inlined). */
+	expandedSql: string
+	rowCount: number
+	columns: ReadonlyArray<string>
+	/** Returned rows, capped for the response. */
+	rows: ReadonlyArray<Record<string, unknown>>
+	/** True when `rows` was truncated below the full result set for display. */
+	truncated: boolean
+	timeRange: { start: string; end: string }
+}
+
 export type StructuredToolOutput =
+	| { tool: "run_sql"; data: RunSqlData }
 	| { tool: "search_sessions"; data: SearchSessionsData }
 	| { tool: "get_session_transcript"; data: GetSessionTranscriptData }
 	| { tool: "get_session_traces"; data: GetSessionTracesData }

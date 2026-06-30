@@ -304,6 +304,31 @@ export function spanDetailQuery(opts: SpanDetailOpts) {
 }
 
 // ---------------------------------------------------------------------------
+// Trace timestamp probe — resolve any one span timestamp for a trace
+// ---------------------------------------------------------------------------
+
+export interface TraceTimeProbeOutput {
+	readonly timestamp: string
+}
+
+/**
+ * Cheap timestamp resolver for a trace. `trace_detail_spans` is partitioned by
+ * `toDate(Timestamp)`, so a trace lookup with no time predicate must seek across
+ * every daily partition. When the caller has no timestamp (direct URL, shared
+ * link, AI surface), this probe resolves one: selecting only `Timestamp`, with
+ * no `ORDER BY` and `LIMIT 1`, ClickHouse reads ~one granule per partition and
+ * stops — far cheaper than the full `spanHierarchyQuery` projection. The caller
+ * then derives a ±1h window so the real query can prune partitions.
+ */
+export function traceTimeProbeQuery(opts: { traceId: string }) {
+	return from(TraceDetailSpans)
+		.select(($) => ({ timestamp: $.Timestamp }))
+		.where(($) => [$.TraceId.eq(opts.traceId), $.OrgId.eq(param.string("orgId"))])
+		.limit(1)
+		.format("JSON")
+}
+
+// ---------------------------------------------------------------------------
 // Traces duration stats
 // ---------------------------------------------------------------------------
 

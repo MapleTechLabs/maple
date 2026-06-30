@@ -18,6 +18,7 @@ import { MagnifierIcon, ServerIcon, XmarkIcon } from "@/components/icons"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { useInfraEnabled } from "@/hooks/use-infra-enabled"
 import { NodeTable, NodeTableLoading } from "@/components/infra/node-table"
+import { NodeHoneycomb } from "@/components/infra/node-honeycomb"
 import { NodesFilterSidebarView, type NodeFilters } from "@/components/infra/k8s-filter-sidebar"
 import { listNodesResultAtom, nodeFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
@@ -179,6 +180,9 @@ function NodesPageContent() {
 										result.waiting ? "opacity-60" : ""
 									}`}
 								>
+									{nodes.length >= 4 && (
+										<NodeHoneycomb nodes={nodes} referenceTime={endTime} />
+									)}
 									<div className="flex items-center justify-between gap-3">
 										<InputGroup className="w-64">
 											<InputGroupAddon>

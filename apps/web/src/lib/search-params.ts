@@ -11,6 +11,13 @@ const StringArrayFromJsonString = Schema.mutable(Schema.fromJsonString(Schema.Ar
 export const BooleanFromStringParam = Schema.fromJsonString(Schema.Boolean)
 
 /**
+ * URL search param number field. TanStack Router's parseSearch yields a string
+ * (`?n=30` → `"30"`); this decodes it to a number. Pair with `Schema.Number` in
+ * a Union so a value set JS-side by `navigate` (a real number) round-trips too.
+ */
+export const NumberFromStringParam = Schema.fromJsonString(Schema.Number)
+
+/**
  * Use this for URL search param array fields. Accepts both a real array
  * and a JSON-encoded string, preventing crashes from malformed URLs.
  */

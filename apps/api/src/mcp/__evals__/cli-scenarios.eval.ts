@@ -2,7 +2,7 @@ import { ToolCallScorer } from "vitest-evals"
 import { describeMapleEval, predictToolCalls } from "./utils"
 
 // Investigation scenarios ported from the former `apps/cli/EVALS.md` suite.
-// That file documented real Superwall-production investigations as `maple <cmd>`
+// That file documented real Maple-production investigations as `maple <cmd>`
 // CLI invocations with prose "Expect:" notes — runnable by a human, but never
 // asserted in CI. Each CLI command maps to an MCP tool, so here they become
 // tool-selection evals: given the natural-language investigation, does the model

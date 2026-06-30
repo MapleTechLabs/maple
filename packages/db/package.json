@@ -16,6 +16,7 @@
 		"db:migrate": "drizzle-kit migrate --config ./drizzle.config.ts",
 		"db:push": "drizzle-kit push --config ./drizzle.config.ts",
 		"db:studio": "drizzle-kit studio --config ./drizzle.config.ts",
+		"db:grant": "bun scripts/grant-runtime-role.ts",
 		"ps:apply-schema": "bun scripts/planetscale-apply-schema.ts"
 	},
 	"dependencies": {

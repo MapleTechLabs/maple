@@ -5,6 +5,8 @@ import { effectRoute } from "@effect-router/core"
 import { Exit, Schema } from "effect"
 
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
+import { encodeInvestigationRef } from "@/components/chat/investigation-context"
+import { PulseIcon } from "@/components/icons"
 import { AnomalyHero } from "@/components/anomalies/anomaly-hero"
 import { AnomalyLinkIssueDialog } from "@/components/anomalies/anomaly-link-issue-dialog"
 import { AnomalyLinkedIssueCard } from "@/components/anomalies/anomaly-linked-issue-card"
@@ -181,6 +183,20 @@ function AnomalyDetailBody({
 							"Resolved"
 						)}
 					</Badge>
+					<Button
+						size="sm"
+						variant="outline"
+						render={
+							<Link
+								to="/investigations/$id"
+								params={{ id: incidentId }}
+								search={{ r: encodeInvestigationRef({ kind: "anomaly", id: incidentId }) }}
+							/>
+						}
+					>
+						<PulseIcon className="size-3.5" />
+						Investigate with Maple AI
+					</Button>
 					{isOpen ? (
 						<Button
 							size="sm"

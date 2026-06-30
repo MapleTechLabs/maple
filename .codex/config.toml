@@ -1,0 +1,3 @@
+[mcp_servers.executor]
+type = "http"
+url = "https://executor.sh/maple/mcp"

@@ -4,10 +4,10 @@
 // mode + context in each request body; here `buildSystemPrompt` assembles the
 // instructions and the mode is derived from the agent instance id.
 
-import { DASHBOARD_BUILDER_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts.ts"
+import { DASHBOARD_BUILDER_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts.ts"
 import { tabIdFromInstanceId } from "./org.ts"
 
-export type ChatMode = "default" | "dashboard-builder" | "alert" | "widget-fix"
+export type ChatMode = "default" | "dashboard-builder" | "alert" | "widget-fix" | "investigate"
 
 // ---------------------------------------------------------------------------
 // Page context (auto-detected from the route the user opened chat from)
@@ -219,6 +219,7 @@ export const formatWidgetFixContextBlock = (ctx: WidgetFixContext): string => {
  */
 export const modeFromInstanceId = (instanceId: string): ChatMode => {
 	const tab = tabIdFromInstanceId(instanceId)
+	if (tab.startsWith("inv-")) return "investigate"
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	return "default"
@@ -239,7 +240,12 @@ export interface BuildSystemPromptArgs {
 export const buildSystemPrompt = (args: BuildSystemPromptArgs): string => {
 	const { mode, alertContext, widgetFixContext, pageContext } = args
 
-	let prompt = mode === "dashboard-builder" ? DASHBOARD_BUILDER_SYSTEM_PROMPT : SYSTEM_PROMPT
+	let prompt =
+		mode === "dashboard-builder"
+			? DASHBOARD_BUILDER_SYSTEM_PROMPT
+			: mode === "investigate"
+				? INVESTIGATE_SYSTEM_PROMPT
+				: SYSTEM_PROMPT
 
 	if (mode === "alert" && alertContext) {
 		prompt += `\n${formatAlertContextBlock(alertContext)}`

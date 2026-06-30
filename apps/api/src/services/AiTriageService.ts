@@ -9,6 +9,7 @@ import {
 	AiTriageSettingsDocument,
 	type AiTriageSettingsUpdateRequest,
 	AiTriageValidationError,
+	AlertIncidentId,
 	AnomalyIncidentId,
 	ErrorIncidentId,
 	type ErrorIssueId,
@@ -20,6 +21,8 @@ import {
 	type AiTriageRunRow,
 	aiTriageSettings,
 	type AiTriageSettingsRow,
+	alertIncidents,
+	alertRules,
 	anomalyIncidents,
 	errorIncidents,
 	errorIssues,
@@ -38,6 +41,7 @@ const decodeIsoSync = Schema.decodeUnknownSync(AiTriageRunDocument.fields.create
 const decodeResultSync = Schema.decodeUnknownSync(AiTriageResult)
 const decodeAnomalyIncidentId = Schema.decodeUnknownOption(AnomalyIncidentId)
 const decodeErrorIncidentId = Schema.decodeUnknownOption(ErrorIncidentId)
+const decodeAlertIncidentId = Schema.decodeUnknownOption(AlertIncidentId)
 
 const describeCause = (cause: unknown): string | undefined => {
 	if (cause == null) return undefined
@@ -244,6 +248,57 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 							firstTriggeredAt: incident.firstTriggeredAt.toISOString(),
 							lastTriggeredAt: incident.lastTriggeredAt.toISOString(),
 							status: incident.status,
+						},
+					}
+				}
+
+				if (request.incidentKind === "alert") {
+					const incidentId = Option.getOrUndefined(decodeAlertIncidentId(request.incidentId))
+					const rows = incidentId
+						? yield* dbExecute((db) =>
+								db
+									.select()
+									.from(alertIncidents)
+									.where(
+										and(eq(alertIncidents.orgId, orgId), eq(alertIncidents.id, incidentId)),
+									)
+									.limit(1),
+							)
+						: []
+					const incident = rows[0]
+					if (!incident) {
+						return yield* Effect.fail(
+							new AiTriageNotFoundError({
+								message: `No such alert incident: '${request.incidentId}'`,
+							}),
+						)
+					}
+					const ruleRows = yield* dbExecute((db) =>
+						db
+							.select()
+							.from(alertRules)
+							.where(and(eq(alertRules.orgId, orgId), eq(alertRules.id, incident.ruleId)))
+							.limit(1),
+					)
+					const rule = ruleRows[0]
+					return {
+						issueId: incident.errorIssueId ?? undefined,
+						context: {
+							kind: "alert",
+							ruleName: incident.ruleName,
+							signalType: incident.signalType,
+							comparator: incident.comparator,
+							threshold: incident.threshold,
+							thresholdUpper: incident.thresholdUpper,
+							groupKey: incident.groupKey,
+							observedValue: incident.lastObservedValue,
+							sampleCount: incident.lastSampleCount,
+							windowMinutes: rule?.windowMinutes,
+							serviceNames: rule?.serviceNamesJson?.join(", "),
+							severity: incident.severity,
+							status: incident.status,
+							firstTriggeredAt: incident.firstTriggeredAt.toISOString(),
+							lastTriggeredAt: incident.lastTriggeredAt.toISOString(),
 						},
 					}
 				}

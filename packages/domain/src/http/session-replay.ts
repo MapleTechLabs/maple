@@ -34,6 +34,14 @@ export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListRe
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
+	// Session-time range filters (ms). `durationMin/Max` filter the stored
+	// wall-clock duration; `activeTimeMin/Max` filter active (non-idle) time
+	// computed from session_events gaps (server-side: setting either active bound
+	// joins the activity aggregate). All four are JS-constructed → Schema.optional.
+	durationMinMs: Schema.optional(Schema.Number),
+	durationMaxMs: Schema.optional(Schema.Number),
+	activeTimeMinMs: Schema.optional(Schema.Number),
+	activeTimeMaxMs: Schema.optional(Schema.Number),
 	limit: Schema.optional(Schema.Number),
 	offset: Schema.optional(Schema.Number),
 }) {}
@@ -124,6 +132,10 @@ export class GetReplayResponse extends Schema.Class<GetReplayResponse>("GetRepla
 			errorCount: Schema.Number,
 			traceIds: Schema.Array(TraceId),
 			resourceAttributes: Schema.String,
+			// Active/idle breakdown from session_events gaps (null when the session
+			// has no distilled events). active + idle ≈ event span ≤ durationMs.
+			activeTimeMs: Schema.NullOr(Schema.Number),
+			idleTimeMs: Schema.NullOr(Schema.Number),
 		}),
 	),
 }) {}

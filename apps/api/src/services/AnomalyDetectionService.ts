@@ -33,7 +33,7 @@ import {
 	orgClickHouseSettings,
 	orgIngestKeys,
 } from "@maple/db"
-import { and, desc, eq, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm"
+import { and, desc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from "drizzle-orm"
 import { CH, parseWarehouseDateTime } from "@maple/query-engine"
 import { EdgeCacheService } from "@maple/query-engine/caching"
 import { Array as Arr, Cause, Clock, Context, Effect, Layer, Option, Ref, Schedule, Schema } from "effect"
@@ -1020,7 +1020,10 @@ const make = Effect.gen(function* () {
 				.where(
 					and(
 						eq(anomalyDetectorSettings.orgId, orgId),
-						sql`(${anomalyDetectorSettings.lastTickAt} IS NULL OR ${anomalyDetectorSettings.lastTickAt} < ${new Date(nowMs - ORG_LOCK_TTL_MS)})`,
+						or(
+							isNull(anomalyDetectorSettings.lastTickAt),
+							lt(anomalyDetectorSettings.lastTickAt, new Date(nowMs - ORG_LOCK_TTL_MS)),
+						),
 					),
 				)
 				// The returned row is the claim: empty means another tick holds the lock.

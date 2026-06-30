@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Exit } from "effect"
+import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toast } from "sonner"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import { useFlueChat } from "@/hooks/use-flue-chat"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
-import { alertPromptSuggestions, type AlertContext } from "./alert-context"
-import { AlertAttachmentCard } from "./alert-attachment-card"
+import {
+	investigationNoun,
+	investigationSuggestions,
+	type InvestigationContext,
+} from "./investigation-context"
+import { InvestigationAttachmentCard } from "./investigation-attachment-card"
 import { widgetFixAutoPrompt, widgetFixSuggestions, type WidgetFixContext } from "./widget-fix-context"
 import { WidgetFixAttachmentCard } from "./widget-fix-attachment-card"
 import {
@@ -18,6 +23,8 @@ import {
 } from "./auto-contexts"
 import type { ChatContext } from "./context-preamble"
 import { parseToolProposal } from "./tool-proposal"
+import { parseDiagnosisMarker } from "./diagnosis-marker"
+import { DiagnosisReportCard } from "./diagnosis-report-card"
 import { PageContextChips } from "./page-context-chips"
 import {
 	Conversation,
@@ -91,8 +98,8 @@ interface ChatConversationProps {
 	isActive: boolean
 	onFirstMessage?: (tabId: string, text: string) => void
 	onLoadingChange?: (tabId: string, loading: boolean) => void
-	mode?: "alert" | "widget-fix"
-	alertContext?: AlertContext
+	mode?: "widget-fix" | "investigation"
+	investigationContext?: InvestigationContext
 	widgetFixContext?: WidgetFixContext
 	/** Read-only shared view: render the conversation with no composer. */
 	readOnly?: boolean
@@ -104,7 +111,7 @@ export function ChatConversation({
 	onFirstMessage,
 	onLoadingChange,
 	mode,
-	alertContext,
+	investigationContext,
 	widgetFixContext,
 	readOnly = false,
 }: ChatConversationProps) {
@@ -135,15 +142,16 @@ export function ChatConversation({
 	// adapter (Flue's `agents.send` carries only a message string).
 	const context = useMemo<ChatContext>(() => {
 		const base: ChatContext = {}
-		if (mode === "alert" && alertContext) {
-			base.mode = "alert"
-			base.alertContext = alertContext
+		if (mode === "investigation" && investigationContext) {
+			base.mode = "investigation"
+			base.investigationContext = investigationContext
 		}
 		if (mode === "widget-fix" && widgetFixContext) {
 			base.mode = "widget-fix"
 			base.widgetFixContext = widgetFixContext
 		}
-		if (mode !== "widget-fix" && activeContexts.length > 0 && referrerPath) {
+		// An explicit subject (investigation/widget-fix) supersedes implicit page context.
+		if (mode !== "widget-fix" && mode !== "investigation" && activeContexts.length > 0 && referrerPath) {
 			const payload: PageContextPayload = {
 				pathname: referrerPath,
 				contexts: activeContexts,
@@ -151,7 +159,7 @@ export function ChatConversation({
 			base.pageContext = payload
 		}
 		return base
-	}, [mode, alertContext, widgetFixContext, activeContexts, referrerPath])
+	}, [mode, investigationContext, widgetFixContext, activeContexts, referrerPath])
 
 	const { messages, status, isLoading, sendMessage } = useFlueChat({ tabId, context })
 
@@ -201,14 +209,14 @@ export function ChatConversation({
 	useEffect(() => {
 		return () => onLoadingChange?.(tabId, false)
 	}, [tabId, onLoadingChange])
-	const isAlertMode = mode === "alert" && !!alertContext
+	const isInvestigationMode = mode === "investigation" && !!investigationContext
 	const isWidgetFixMode = mode === "widget-fix" && !!widgetFixContext
 	const suggestions = useMemo(() => {
-		if (isAlertMode) return alertPromptSuggestions(alertContext!)
+		if (isInvestigationMode) return investigationSuggestions(investigationContext!)
 		if (isWidgetFixMode) return widgetFixSuggestions(widgetFixContext!)
 		const routeAware = suggestionsForContexts(activeContexts)
 		return routeAware ?? DEFAULT_SUGGESTIONS
-	}, [isAlertMode, alertContext, isWidgetFixMode, widgetFixContext, activeContexts])
+	}, [isInvestigationMode, investigationContext, isWidgetFixMode, widgetFixContext, activeContexts])
 
 	const handleSend = (text: string) => {
 		if (!text.trim() || isLoading) return
@@ -218,21 +226,19 @@ export function ChatConversation({
 		sendMessage(text.trim())
 	}
 
-	const widgetFixAutoSentRef = useRef<string | null>(null)
-	useEffect(() => {
-		if (readOnly) return
-		if (!isWidgetFixMode || !isActive) return
-		if (!hasSettled || isLoading) return
-		if (messages.length > 0) return
-		if (widgetFixAutoSentRef.current === tabId) return
-		widgetFixAutoSentRef.current = tabId
-		handleSend(widgetFixAutoPrompt)
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isWidgetFixMode, isActive, hasSettled, isLoading, messages.length, tabId])
+	// Auto-send the fix prompt once a fresh widget-fix conversation is ready.
+	// Mounting the zero-DOM trigger IS the one-shot (see `WidgetFixAutoSendTrigger`):
+	// the gate below decides when to fire, replacing the prior ref-latch +
+	// `eslint-disable` effect. Sending bumps `messages.length`, which unmounts it.
+	const shouldAutoSendWidgetFix =
+		!readOnly && isWidgetFixMode && isActive && hasSettled && !isLoading && messages.length === 0
 
 	return (
 		<div className="flex h-full flex-col">
-			{isAlertMode && <AlertAttachmentCard alert={alertContext!} />}
+			{shouldAutoSendWidgetFix ? (
+				<WidgetFixAutoSendTrigger onFire={() => handleSend(widgetFixAutoPrompt)} />
+			) : null}
+			{isInvestigationMode && <InvestigationAttachmentCard ctx={investigationContext!} />}
 			{isWidgetFixMode && <WidgetFixAttachmentCard ctx={widgetFixContext!} />}
 			<Conversation className="flex-1 min-h-0">
 				<ConversationContent className="mx-auto w-full max-w-3xl gap-6 px-4 py-6">
@@ -250,14 +256,14 @@ export function ChatConversation({
 									to.
 								</p>
 							</div>
-						) : isAlertMode ? (
+						) : isInvestigationMode ? (
 							<div className="flex flex-col items-center justify-center gap-2 py-6 text-center">
 								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
 									Ready to investigate
 								</p>
 								<p className="max-w-sm text-sm text-muted-foreground">
-									The alert above is attached to every message in this thread. Start with a
-									suggestion or ask your own question.
+									The {investigationNoun(investigationContext!.kind)} above is attached to every message
+									in this thread. Start with a suggestion or ask your own question.
 								</p>
 							</div>
 						) : isWidgetFixMode ? (
@@ -372,6 +378,20 @@ export function ChatConversation({
 													}
 													if (isToolPart(part)) {
 														const tp = part as ToolPart
+														const diagnosis =
+															tp.state === "output-available"
+																? parseDiagnosisMarker(tp.output)
+																: null
+														if (diagnosis) {
+															flushTools()
+															nodes.push(
+																<DiagnosisReportCard
+																	key={tp.toolCallId ?? `diagnosis-${i}`}
+																	report={diagnosis.report}
+																/>,
+															)
+															continue
+														}
 														const proposal =
 															tp.state === "output-available"
 																? parseToolProposal(tp.output)
@@ -435,14 +455,14 @@ export function ChatConversation({
 
 			{!readOnly && (
 				<div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-					{messages.length === 0 && (isAlertMode || isWidgetFixMode) && (
+					{messages.length === 0 && (isInvestigationMode || isWidgetFixMode) && (
 						<Suggestions className="mb-3">
 							{suggestions.map((s) => (
 								<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
 							))}
 						</Suggestions>
 					)}
-					{!isWidgetFixMode && (
+					{!isWidgetFixMode && !isInvestigationMode && (
 						<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
 					)}
 					<PromptInput
@@ -452,8 +472,8 @@ export function ChatConversation({
 						<PromptInputTextarea
 							ref={textareaRef}
 							placeholder={
-								isAlertMode
-									? "Ask about this alert..."
+								isInvestigationMode
+									? `Ask about this ${investigationNoun(investigationContext!.kind)}...`
 									: isWidgetFixMode
 										? "Ask about this widget..."
 										: "Ask about your system..."
@@ -471,6 +491,18 @@ export function ChatConversation({
 			)}
 		</div>
 	)
+}
+
+/**
+ * Zero-DOM trigger: firing once on mount is how a ready, empty widget-fix
+ * conversation auto-sends its fix prompt. The parent only renders this when the
+ * conditions hold, so mounting is the one-shot (mirrors `AutoRunTrigger`).
+ */
+function WidgetFixAutoSendTrigger({ onFire }: { onFire: () => void }) {
+	useMountEffect(() => {
+		onFire()
+	})
+	return null
 }
 
 function ConversationLoadingSkeleton() {

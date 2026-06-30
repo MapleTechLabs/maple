@@ -240,6 +240,17 @@ describe("metricsBreakdownQuery", () => {
 		const { sql } = compileCH(q, baseParams)
 		expect(sql).toContain("LIMIT 25")
 	})
+
+	it("breaks down by attribute label instead of service when groupByAttributeKey is set", () => {
+		const q = metricsBreakdownQuery({ metricType: "sum", groupByAttributeKey: "region" })
+		const { sql } = compileCH(q, baseParams)
+		// Groups by the label value, not ServiceName...
+		expect(sql).toContain("Attributes['region'] AS name")
+		expect(sql).not.toContain("ServiceName AS name")
+		// ...and drops datapoints missing the label so an empty bucket can't dominate.
+		expect(sql).toContain("Attributes['region'] != ''")
+		expect(sql).toContain("GROUP BY name")
+	})
 })
 
 // ---------------------------------------------------------------------------
