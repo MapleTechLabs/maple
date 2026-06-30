@@ -150,12 +150,13 @@ export function AlertSignalChart({
 	const hasSignal = chartData.length > 0
 
 	// Adaptive time-axis labels reuse the warehouse formatter via an ISO round-trip.
+	// `rangeMs` follows the drawn axis domain (not the data span) so the include-date
+	// decision matches the width the ticks actually cover; `bucketSeconds` stays
+	// data-derived for tick granularity.
 	const axisContext = React.useMemo(() => {
-		if (chartData.length < 2) return { rangeMs: domain.max - domain.min, bucketSeconds: undefined }
-		const first = chartData[0]!.t
-		const second = chartData[1]!.t
-		const last = chartData[chartData.length - 1]!.t
-		return { rangeMs: last - first, bucketSeconds: (second - first) / 1000 }
+		const rangeMs = domain.max - domain.min
+		if (chartData.length < 2) return { rangeMs, bucketSeconds: undefined }
+		return { rangeMs, bucketSeconds: (chartData[1]!.t - chartData[0]!.t) / 1000 }
 	}, [chartData, domain])
 
 	const formatTime = React.useCallback(
