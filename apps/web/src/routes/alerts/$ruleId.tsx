@@ -62,6 +62,8 @@ import {
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { useAlertRuleChart } from "@/hooks/use-alert-rule-chart"
+import { tokenizeSql } from "@/lib/sql-highlight"
+import { formatSql } from "@/lib/sql-format"
 
 const tabValues = ["overview", "history"] as const
 type RuleDetailTab = (typeof tabValues)[number]
@@ -431,7 +433,10 @@ function RuleDetailContent() {
 							comparator={rule.comparator}
 							signalType={rule.signalType}
 							window={timelineRange}
-							loading={chartLoading}
+							loading={
+								chartLoading ||
+								(rule.signalType === "raw_query" && Result.isInitial(checksResult))
+							}
 							chartError={chartError}
 						/>
 					</div>
@@ -543,11 +548,25 @@ function RuleDetailContent() {
 										</>
 									)}
 									{rule.signalType === "raw_query" && rule.rawQuerySql && (
-										<ConfigRow label="Raw SQL" wide>
-											<pre className="max-w-full overflow-x-auto whitespace-pre-wrap text-left font-mono text-xs">
-												{rule.rawQuerySql}
-											</pre>
-										</ConfigRow>
+										<div className="flex flex-col gap-1.5 sm:col-span-2">
+											<dt className="text-muted-foreground">Raw SQL</dt>
+											<dd>
+												<pre className="overflow-x-auto whitespace-pre rounded-md border bg-muted/30 px-3 py-2.5 font-mono text-xs leading-relaxed">
+													<code>
+														{tokenizeSql(formatSql(rule.rawQuerySql)).map(
+															(token) => (
+																<span
+																	key={token.start}
+																	className={token.className}
+																>
+																	{token.text}
+																</span>
+															),
+														)}
+													</code>
+												</pre>
+											</dd>
+										</div>
 									)}
 									<ConfigRow label="Destinations">
 										<span className="font-medium">
