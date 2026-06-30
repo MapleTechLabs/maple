@@ -319,6 +319,35 @@ describe("ScrapeScheduler", () => {
 		}),
 	)
 
+	it.effect("collapses duplicate (id, subTargetKey) rows to a single loop", () =>
+		Effect.gen(function* () {
+			// Rows that all collapse to targetKey "TARGET_A:metrics.psdb.cloud" —
+			// exactly what PlanetScale discovery emitted in prod when the http_sd
+			// payload carries no per-branch label. Without dedup, reconcile forks a
+			// fiber per duplicate row and leaks all but the last every pass, so the
+			// scrape rate balloons. Duplicates must behave identically to one row.
+			const mkDup = () => mkTarget(TARGET_A, 60, { subTargetKey: "metrics.psdb.cloud" })
+			const harness = makeHarness([mkDup(), mkDup(), mkDup()])
+			yield* startScheduler.pipe(Effect.provide(harnessLayer(harness)))
+
+			// A single (deduped) loop starts after its deterministic jitter, then
+			// scrapes every 60s start-to-start. Derive the exact count for ONE fiber
+			// over the window; the leak runs a fiber per duplicate row, inflating it.
+			const baseMs = 60_000
+			const windowMs = 125_000
+			const jitter = initialJitterMs(`${TARGET_A}:metrics.psdb.cloud`, baseMs)
+			const expectedForOneFiber = Math.floor((windowMs - jitter) / baseMs) + 1
+
+			yield* TestClock.adjust(Duration.millis(windowMs))
+
+			assert.strictEqual(
+				harness.scrapeCalls.filter((id) => id === TARGET_A).length,
+				expectedForOneFiber,
+			)
+			assert.isTrue(harness.subCalls.every((c) => c.subTargetKey === "metrics.psdb.cloud"))
+		}),
+	)
+
 	it.effect("reconcile starts new targets, stops removed ones, and restarts changed ones", () =>
 		Effect.gen(function* () {
 			const harness = makeHarness([mkTarget(TARGET_A, 10)])

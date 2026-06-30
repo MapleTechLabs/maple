@@ -144,6 +144,36 @@ describe("PlanetScaleDiscoveryService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
+	it.effect("collapses groups that fall back to the same host key into one sub-target", () => {
+		const testDb = createTestDb(trackedDbs)
+		const recorded: Array<RecordedRequest> = []
+		return Effect.gen(function* () {
+			const discovery = yield* PlanetScaleDiscoveryService
+			const row = yield* createPlanetScaleTargetRow("my-org")
+
+			// Prod hazard: an http_sd payload with several groups that carry no
+			// `planetscale_database_branch_id`, so subTargetKey falls back to the
+			// shared host. Without dedup these become N rows with the SAME
+			// (id, subTargetKey) and the scraper forks a leaking loop fiber per row.
+			const DUP_HOST_PAYLOAD = [
+				{ targets: ["metrics.psdb.cloud:443"], labels: { planetscale_database: "mydb" } },
+				{ targets: ["metrics.psdb.cloud:443"], labels: { planetscale_database: "other" } },
+				{ targets: ["metrics.psdb.cloud:443"], labels: {} },
+			]
+
+			const entries = yield* discovery.discover(row).pipe(
+				Effect.provideService(
+					FetchHttpClient.Fetch,
+					stubFetch(recorded, () => Response.json(DUP_HOST_PAYLOAD)),
+				),
+			)
+
+			expect(entries).toHaveLength(1)
+			expect(entries[0]?.subTargetKey).toBe("metrics.psdb.cloud:443")
+			expect(entries[0]?.url).toBe("https://metrics.psdb.cloud:443/metrics")
+		}).pipe(Effect.provide(makeLayer(testDb)))
+	})
+
 	it.effect("caches discovery for the TTL and refreshes after it elapses", () => {
 		const testDb = createTestDb(trackedDbs)
 		const recorded: Array<RecordedRequest> = []

@@ -300,8 +300,19 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 				const current = yield* Ref.get(fibersRef)
 				const next = new Map<string, TargetEntry>()
 
+				// Collapse the list to one target per `targetKey` (last wins). The
+				// fork decision below reads `existing` from the *previous* map, so
+				// two rows sharing a key would each fork a loop fiber while only the
+				// last is tracked in `next` — the rest leak, uninterrupted, every
+				// reconcile. (Prod hit this: PlanetScale discovery returned many rows
+				// that all collapsed to subTargetKey "metrics.psdb.cloud".) The API
+				// also dedupes now; this keeps the scheduler correct regardless.
+				const deduped = new Map<string, InternalScrapeTarget>()
+				for (const target of targets) deduped.set(targetKey(target), target)
+				const duplicateTargetsDropped = targets.length - deduped.size
+
 				yield* Effect.forEach(
-					targets,
+					deduped.values(),
 					(target) =>
 						Effect.gen(function* () {
 							const key = targetKey(target)
@@ -327,7 +338,12 @@ export class ScrapeScheduler extends Context.Service<ScrapeScheduler, ScrapeSche
 
 				yield* Ref.set(fibersRef, next)
 				yield* Ref.set(lastReconcileRef, yield* Clock.currentTimeMillis)
-				yield* Effect.annotateCurrentSpan({ activeTargets: next.size })
+				yield* Effect.annotateCurrentSpan({ activeTargets: next.size, duplicateTargetsDropped })
+				if (duplicateTargetsDropped > 0) {
+					yield* Effect.logWarning("Dropped duplicate scrape targets sharing one key").pipe(
+						Effect.annotateLogs({ duplicateTargetsDropped, distinctTargets: next.size }),
+					)
+				}
 			}).pipe(
 				Effect.withSpan("scraper.reconcile"),
 				// A failed list fetch keeps the current fibers running untouched.
