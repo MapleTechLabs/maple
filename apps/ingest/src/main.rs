@@ -2066,6 +2066,7 @@ async fn handle_signal(
         otel.name = %otel_name,
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
         "http.request.method" = "POST",
         "http.route" = %route,
         "http.request.body.size" = body_bytes,
@@ -2111,9 +2112,15 @@ async fn handle_signal(
         }
         Err((error, error_kind)) => {
             let status = error.status.as_u16();
+            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error_kind);
-            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_code", otel_status);
+            // 5xx failures carry their message so dashboards label them by cause
+            // instead of bucketing under "Unknown Error".
+            if otel_status == "Error" {
+                span_handle.record("otel.status_description", error.message());
+            }
             metrics::request_completed(signal.path(), "error", error_kind, duration.as_secs_f64());
             error.into_response()
         }
@@ -2140,6 +2147,7 @@ async fn handle_cloudflare_logpush(
         otel.name = %otel_name,
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
         "http.request.method" = "POST",
         "http.route" = "/v1/logpush/cloudflare/http_requests/{connector_id}",
         "http.request.body.size" = body_bytes,
@@ -2183,9 +2191,13 @@ async fn handle_cloudflare_logpush(
         }
         Err((error, error_kind)) => {
             let status = error.status.as_u16();
+            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error_kind);
-            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_code", otel_status);
+            if otel_status == "Error" {
+                span_handle.record("otel.status_description", error.message());
+            }
             metrics::request_completed("logs", "error", error_kind, duration.as_secs_f64());
             if error_kind == "auth" {
                 metrics::cloudflare_auth_failure("http_requests");
