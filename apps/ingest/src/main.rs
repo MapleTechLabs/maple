@@ -869,6 +869,21 @@ impl ApiError {
     fn service_unavailable(message: impl Into<String>) -> Self {
         Self::new(StatusCode::SERVICE_UNAVAILABLE, message)
     }
+
+    /// Stable `error.type` label for this error, by HTTP status. Reuses the same
+    /// vocabulary as `handle_signal_inner` so the native replay/session handlers
+    /// produce categorizable spans instead of "Unknown Error".
+    fn error_kind(&self) -> &'static str {
+        match self.status {
+            StatusCode::UNAUTHORIZED => "auth",
+            StatusCode::BAD_REQUEST => "bad_request",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE => "unsupported_media",
+            StatusCode::PAYLOAD_TOO_LARGE => "payload_too_large",
+            StatusCode::TOO_MANY_REQUESTS => "throttle",
+            StatusCode::SERVICE_UNAVAILABLE => "unavailable",
+            _ => "error",
+        }
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -1633,6 +1648,8 @@ async fn handle_replay_meta(
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionReplays/meta",
         "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
         "maple.signal" = "session_replays",
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
@@ -1644,11 +1661,15 @@ async fn handle_replay_meta(
         .await
     {
         Ok(count) => {
+            span_handle.record("http.response.status_code", 200u16);
             span_handle.record("otel.status_code", "Ok");
             (StatusCode::OK, axum::Json(AcceptedBody { accepted: count })).into_response()
         }
         Err(error) => {
-            span_handle.record("otel.status_code", "Error");
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error.error_kind());
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
             error.into_response()
         }
     }
@@ -1756,6 +1777,8 @@ async fn handle_session_events(
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionEvents",
         "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
         "maple.signal" = "session_events",
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
@@ -1767,11 +1790,15 @@ async fn handle_session_events(
         .await
     {
         Ok(count) => {
+            span_handle.record("http.response.status_code", 200u16);
             span_handle.record("otel.status_code", "Ok");
             (StatusCode::OK, axum::Json(AcceptedBody { accepted: count })).into_response()
         }
         Err(error) => {
-            span_handle.record("otel.status_code", "Error");
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error.error_kind());
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
             error.into_response()
         }
     }
@@ -1856,6 +1883,8 @@ async fn handle_replay_blob(
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionReplays/blob",
         "http.request.body.size" = body.len(),
+        "http.response.status_code" = tracing::field::Empty,
+        "error.type" = tracing::field::Empty,
         "maple.signal" = "session_replays",
         "maple.org_id" = tracing::field::Empty,
         "maple.ingest.clickhouse_ready" = tracing::field::Empty,
@@ -1867,11 +1896,15 @@ async fn handle_replay_blob(
         .await
     {
         Ok(()) => {
+            span_handle.record("http.response.status_code", 200u16);
             span_handle.record("otel.status_code", "Ok");
             StatusCode::OK.into_response()
         }
         Err(error) => {
-            span_handle.record("otel.status_code", "Error");
+            let status = error.status.as_u16();
+            span_handle.record("http.response.status_code", status);
+            span_handle.record("error.type", error.error_kind());
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
             error.into_response()
         }
     }
@@ -4132,6 +4165,28 @@ mod tests {
                                                           // 5xx server faults stay Error (e.g. auth resolver unavailable → 503).
         assert_eq!(otel_status_for_rejection(500), "Error");
         assert_eq!(otel_status_for_rejection(503), "Error");
+    }
+
+    #[test]
+    fn api_error_kind_maps_status_to_stable_label() {
+        // The native replay/session handlers derive `error.type` from this so
+        // their spans are categorizable instead of "Unknown Error".
+        assert_eq!(ApiError::unauthorized("x").error_kind(), "auth");
+        assert_eq!(ApiError::bad_request("x").error_kind(), "bad_request");
+        assert_eq!(
+            ApiError::unsupported_media_type("x").error_kind(),
+            "unsupported_media"
+        );
+        assert_eq!(
+            ApiError::payload_too_large("x").error_kind(),
+            "payload_too_large"
+        );
+        assert_eq!(ApiError::too_many_requests("x").error_kind(), "throttle");
+        assert_eq!(ApiError::service_unavailable("x").error_kind(), "unavailable");
+        assert_eq!(
+            ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "x").error_kind(),
+            "error"
+        );
     }
 
     #[test]
