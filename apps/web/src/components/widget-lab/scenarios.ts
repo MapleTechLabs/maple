@@ -546,6 +546,21 @@ export const stressScenarios: ChartScenario[] = [
 		},
 	},
 	{
+		// Line keeps every series (no "Other" bucketing), so the right legend is
+		// genuinely tall — confirms it scrolls within the card instead of overflowing.
+		label: "Line — 50 series (right legend, scrolls)",
+		chartId: "query-builder-line",
+		chartName: "Query Builder Line",
+		category: "line",
+		dataState: ready(makeManySeries(50)),
+		display: {
+			title: "Latency by service (50, right legend)",
+			chartId: "query-builder-line",
+			unit: "duration_ms",
+			chartPresentation: { legend: "right", seriesStats: true },
+		},
+	},
+	{
 		label: "Pie — 20 slices → Other",
 		chartId: "query-builder-pie",
 		chartName: "Query Builder Pie",
