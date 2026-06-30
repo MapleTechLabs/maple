@@ -884,6 +884,12 @@ impl ApiError {
             _ => "error",
         }
     }
+
+    /// Human-readable failure detail, recorded as the span's `otel.status_description`
+    /// so an Error-status span carries a real label instead of "Unknown Error".
+    fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl IntoResponse for ApiError {
@@ -1645,6 +1651,7 @@ async fn handle_replay_meta(
         otel.name = "POST /v1/sessionReplays/meta",
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionReplays/meta",
         "http.request.body.size" = body.len(),
@@ -1667,9 +1674,15 @@ async fn handle_replay_meta(
         }
         Err(error) => {
             let status = error.status.as_u16();
+            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_code", otel_status);
+            // Give Error-status spans (5xx) a real status message so the error
+            // dashboards label them by cause instead of bucketing as "Unknown Error".
+            if otel_status == "Error" {
+                span_handle.record("otel.status_description", error.message());
+            }
             error.into_response()
         }
     }
@@ -1774,6 +1787,7 @@ async fn handle_session_events(
         otel.name = "POST /v1/sessionEvents",
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionEvents",
         "http.request.body.size" = body.len(),
@@ -1796,9 +1810,15 @@ async fn handle_session_events(
         }
         Err(error) => {
             let status = error.status.as_u16();
+            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_code", otel_status);
+            // Give Error-status spans (5xx) a real status message so the error
+            // dashboards label them by cause instead of bucketing as "Unknown Error".
+            if otel_status == "Error" {
+                span_handle.record("otel.status_description", error.message());
+            }
             error.into_response()
         }
     }
@@ -1880,6 +1900,7 @@ async fn handle_replay_blob(
         otel.name = "POST /v1/sessionReplays/blob",
         otel.kind = "server",
         otel.status_code = tracing::field::Empty,
+        otel.status_description = tracing::field::Empty,
         "http.request.method" = "POST",
         "http.route" = "/v1/sessionReplays/blob",
         "http.request.body.size" = body.len(),
@@ -1902,9 +1923,15 @@ async fn handle_replay_blob(
         }
         Err(error) => {
             let status = error.status.as_u16();
+            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_code", otel_status);
+            // Give Error-status spans (5xx) a real status message so the error
+            // dashboards label them by cause instead of bucketing as "Unknown Error".
+            if otel_status == "Error" {
+                span_handle.record("otel.status_description", error.message());
+            }
             error.into_response()
         }
     }
