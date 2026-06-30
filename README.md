@@ -134,7 +134,7 @@ Secrets source model (CI):
   token stored). CI needs two GitHub repo **secrets**:
     - `INFISICAL_PROJECT_SLUG` (the Infisical project slug)
     - `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
-- Infisical environments (`prod`, `staging`, `preview` — mapped from the old Doppler
+- Infisical environments (`prod`, `staging`, `dev` — mapped from the old Doppler
   `prd`/`stg`/`pr` configs) must define:
     - `ALCHEMY_PASSWORD`
     - `ALCHEMY_STATE_TOKEN`
@@ -152,7 +152,7 @@ Secrets source model (CI):
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
 
-Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`staging`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`staging`/`preview`).
+Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`staging`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`staging`/`dev`).
 
 Runtime API URL behavior:
 

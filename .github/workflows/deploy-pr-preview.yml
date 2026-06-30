@@ -30,7 +30,9 @@ jobs:
             name: pr-preview
             url: ${{ steps.deploy.outputs.web_url }}
         env:
-            INFISICAL_ENV_SLUG: preview
+            # Uses Infisical's default `dev` environment for now; swap to a
+            # dedicated `preview` env later if PR previews need isolated secrets.
+            INFISICAL_ENV_SLUG: dev
             PR_NUMBER: ${{ github.event.pull_request.number }}
             PR_BRANCH: ${{ github.head_ref }}
             # Stamped onto deployed telemetry as `deployment.commit_sha`. Use the PR
@@ -64,7 +66,7 @@ jobs:
 
             # Create/refresh an ephemeral Tinybird branch `pr_<n>` seeded with the
             # latest prod partition, deploy this PR's schema into it, and override
-            # TINYBIRD_HOST/TINYBIRD_TOKEN (from Infisical `preview`) with the branch's
+            # TINYBIRD_HOST/TINYBIRD_TOKEN (from Infisical `dev`) with the branch's
             # values so the Alchemy deploy below binds the whole stack to the branch.
             - name: Create/refresh Tinybird PR branch
               if: ${{ github.event.action != 'closed' }}
@@ -75,7 +77,7 @@ jobs:
               uses: planetscale/setup-pscale-action@v1
 
             # The PlanetScale + Alchemy steps below are gated on
-            # PLANETSCALE_SERVICE_TOKEN: until the `preview` Infisical environment carries the
+            # PLANETSCALE_SERVICE_TOKEN: until the `dev` Infisical environment carries the
             # PlanetScale service token (+ PLANETSCALE_SERVICE_TOKEN_ID,
             # PLANETSCALE_ORG), PR previews can't provision a Postgres branch, so
             # they SKIP cleanly (the check stays green) rather than fail every PR.

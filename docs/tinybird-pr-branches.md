@@ -15,7 +15,7 @@ deploy with two extra steps backed by `scripts/tinybird-pr-branch.ts`:
     - `tb --branch=pr_<n> deploy` — deploys _this PR's_ datasources/materialized views into the
       branch.
     - Resolves the branch's admin token and writes `TINYBIRD_HOST` / `TINYBIRD_TOKEN` to
-      `$GITHUB_ENV`, **overriding** the Infisical `preview` values for the steps that follow.
+      `$GITHUB_ENV`, **overriding** the Infisical `dev` values for the steps that follow.
 2. **`alchemy:deploy:pr`** then binds the whole preview stack (api / web / alerting / chat-agent
    and, if pointed at it, the Rust ingest gateway) to the branch — no app code changes, because
    every `alchemy.run.ts` already reads `TINYBIRD_HOST` / `TINYBIRD_TOKEN` from `process.env`
@@ -34,7 +34,7 @@ in the branch. To add more data to a branch, use the in-app demo seed (`POST /de
 - **Branches share compute with production.** That's why teardown on PR close is mandatory and we
   scope branches to the open-PR set. Avoid leaving stray branches around.
 - Requires a Tinybird plan that supports branches.
-- The Infisical `preview` environment's `TINYBIRD_HOST` / `TINYBIRD_TOKEN` must be the **parent workspace
+- The Infisical `dev` environment's `TINYBIRD_HOST` / `TINYBIRD_TOKEN` must be the **parent workspace
   admin** host+token — the script uses them to create the branch before swapping in the branch's
   own credentials.
 - If the CLI's `token ls` output can't be parsed for the admin token, pin it explicitly with the
