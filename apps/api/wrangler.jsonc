@@ -27,6 +27,18 @@
 			"id": "00000000000000000000000000000000",
 		},
 	],
+	// Code Mode (mirrored from alchemy.run.ts for local `wrangler dev`). Worker Loader
+	// runs in local workerd, so the whole Code Mode path is testable locally:
+	//   - LOADER          the Worker Loader binding (Dynamic Workers) — runs snippets in an isolate.
+	//   - CODEMODE_RUNTIME the per-org runtime DO; the @cloudflare/codemode CodemodeRuntime
+	//                      facet spawns under it (exported from worker.ts — no binding needed).
+	//   - SELF            self service binding the runtime DO uses to call /internal/codemode/tool.
+	"worker_loaders": [{ "binding": "LOADER" }],
+	"durable_objects": {
+		"bindings": [{ "name": "CODEMODE_RUNTIME", "class_name": "CodemodeRuntimeDO" }],
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["CodemodeRuntimeDO"] }],
+	"services": [{ "binding": "SELF", "service": "maple-api" }],
 	"workflows": [
 		{
 			"name": "clickhouse-schema-apply-workflow",
