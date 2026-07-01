@@ -1,4 +1,4 @@
-import { Clock, Effect, Ref, Schedule } from "effect"
+import { Clock, Duration, Effect, Ref, Schedule } from "effect"
 import {
 	type WarehouseQueryRequest,
 	WarehouseQueryResponse,
@@ -51,6 +51,23 @@ const TRANSIENT_RETRY_SCHEDULE = Schedule.exponential("100 millis", 2.0).pipe(
 
 const isTransientUpstreamError = (error: WarehouseSqlError): boolean =>
 	error instanceof WarehouseUpstreamError
+
+// Client-side ceiling for a single query attempt. Tinybird's server-side
+// `max_execution_time` is not always honored — when its query queue is saturated
+// the request sits waiting, then rides the ambient ~30s Cloudflare Worker fetch
+// timeout (observed: a `list`-profile query with `max_execution_time=15` still
+// aborting at 30s). We enforce our own bound derived from the query's cost
+// profile: the server budget plus headroom for queue + network. Queries with no
+// declared budget fall back to a hard 30s cap (no worse than the ambient limit).
+// The timeout maps to a non-transient WarehouseQueryError, so it fails fast
+// instead of feeding the retry loop.
+const CLIENT_TIMEOUT_BUFFER_MS = 5_000
+const MANAGED_QUERY_HARD_TIMEOUT_MS = 30_000
+
+const clientTimeoutMs = (maxExecutionTimeS: number | undefined): number =>
+	maxExecutionTimeS !== undefined
+		? maxExecutionTimeS * 1000 + CLIENT_TIMEOUT_BUFFER_MS
+		: MANAGED_QUERY_HARD_TIMEOUT_MS
 
 /**
  * Build the managed-warehouse executor. Owns SQL execution, retry, error
@@ -143,11 +160,25 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 
 		const cacheKey = resolved.source === "managed" ? "__managed__" : tenant.orgId
 		const client = getCachedOrCreateClient(cacheKey, resolved.config, yield* Clock.currentTimeMillis)
+		const attemptTimeoutMs = clientTimeoutMs(settings?.maxExecutionTime)
 		const retryAttempts = yield* Ref.make(0)
 		const result = yield* Effect.tryPromise({
 			try: () => client.sql(finalSql),
 			catch: (error) => mapWarehouseError(pipe, error),
 		}).pipe(
+			// Bound each attempt: don't let a queued query ride the ambient ~30s
+			// Worker fetch limit past its declared budget. Non-transient, so it
+			// fails fast rather than retrying into a struggling warehouse.
+			Effect.timeoutOrElse({
+				duration: Duration.millis(attemptTimeoutMs),
+				orElse: () =>
+					Effect.fail(
+						toWarehouseQueryError(
+							pipe,
+							new Error(`Warehouse query exceeded ${attemptTimeoutMs}ms client timeout`),
+						),
+					),
+			}),
 			Effect.tapError((error) =>
 				isTransientUpstreamError(error) ? Ref.update(retryAttempts, (n) => n + 1) : Effect.void,
 			),

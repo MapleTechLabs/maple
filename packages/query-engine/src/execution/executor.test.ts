@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Duration, Effect, Ref } from "effect"
+import { TestClock } from "effect/testing"
 import type { OrgId } from "@maple/domain"
 import { compile, listRuleChecksQuery } from "../ch"
 import { makeWarehouseExecutor } from "./executor"
@@ -136,6 +137,43 @@ describe("makeWarehouseExecutor restricted-settings strip", () => {
 				settings: { maxBlockSize: 512 },
 			})
 			expect(sqls[0]).toContain("max_block_size=512")
+		}),
+	)
+})
+
+// A client whose query never resolves — models a Tinybird request stuck in the
+// execution queue (the failure mode behind the 03:00–05:00 timeout storm, where
+// queries rode the ambient ~30s Worker fetch limit despite a server-side budget).
+const makeHangingDeps = (): WarehouseExecutorDeps => ({
+	createClient: () => ({
+		sql: () => new Promise<{ data: never[] }>(() => {}),
+		insert: async () => {},
+	}),
+	resolveConfig: () => Effect.succeed({ config: tinybirdConfig, source: "managed" as const }),
+	resolveIngestConfig: () => Effect.succeed({ config: tinybirdConfig, source: "managed" as const }),
+})
+
+describe("makeWarehouseExecutor client timeout", () => {
+	it.effect("bounds a hung managed query at the profile budget and fails non-transiently", () =>
+		Effect.gen(function* () {
+			const executor = makeWarehouseExecutor(makeHangingDeps())
+			const outcome = yield* Ref.make("pending")
+			// discovery profile ⇒ 5s server budget + 5s buffer = 10s client budget.
+			yield* Effect.forkChild(
+				executor.compiledQuery(tenant, compiled, { profile: "discovery", context: "test" }).pipe(
+					Effect.matchEffect({
+						onFailure: (error) => Ref.set(outcome, error._tag),
+						onSuccess: () => Ref.set(outcome, "success"),
+					}),
+				),
+			)
+			// Before the budget: still pending (not cut off early).
+			yield* TestClock.adjust(Duration.seconds(9))
+			expect(yield* Ref.get(outcome)).toBe("pending")
+			// Past the budget: the timeout fires as a non-transient WarehouseQueryError
+			// (so it is NOT fed back into the retry loop).
+			yield* TestClock.adjust(Duration.seconds(2))
+			expect(yield* Ref.get(outcome)).toBe("@maple/http/errors/WarehouseQueryError")
 		}),
 	)
 })
