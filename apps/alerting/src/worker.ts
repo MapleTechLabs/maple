@@ -92,6 +92,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 			Layer.mergeAll(
 				BaseLive,
 				WarehouseQueryServiceLive,
+				EdgeCacheServiceLive,
 				NotificationDispatcherLive,
 				WorkerEnvironment.layer,
 			),
