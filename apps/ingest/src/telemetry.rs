@@ -233,6 +233,22 @@ pub enum TelemetrySignal {
     SessionReplays,
 }
 
+impl TelemetrySignal {
+    /// Canonical lowercase label for metric/log dimensions, matching the HTTP
+    /// `Signal::path()` vocabulary ("traces"/"logs"/"metrics") and the
+    /// `maple.signal` span attribute ("session_replays") so per-signal metrics
+    /// correlate across the codebase. Prefer this over the `Debug` derive, which
+    /// yields PascalCase.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Traces => "traces",
+            Self::Logs => "logs",
+            Self::Metrics => "metrics",
+            Self::SessionReplays => "session_replays",
+        }
+    }
+}
+
 /// Datasource (ClickHouse/Tinybird table) names the OTLP→NDJSON encoders write
 /// to. This is the entire config surface the encoders depend on — kept separate
 /// so the local chDB path can encode without fabricating a full pipeline config.
@@ -703,7 +719,7 @@ impl TelemetryPipeline {
                     metrics::backpressure_shed(
                         &frame.org_id,
                         frame.destination.as_str(),
-                        &format!("{:?}", frame.signal),
+                        frame.signal.as_str(),
                     );
                     return Err(PipelineError::Backpressure("Telemetry queue is full"));
                 }
@@ -3547,6 +3563,17 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[test]
+    fn telemetry_signal_as_str_is_canonical_lowercase() {
+        // Metric/log dimensions must match the lowercase `signal.path()` /
+        // `maple.signal` vocabulary so `ingest_backpressure_shed_total` correlates
+        // with other per-signal metrics (Debug derive would give PascalCase).
+        assert_eq!(TelemetrySignal::Traces.as_str(), "traces");
+        assert_eq!(TelemetrySignal::Logs.as_str(), "logs");
+        assert_eq!(TelemetrySignal::Metrics.as_str(), "metrics");
+        assert_eq!(TelemetrySignal::SessionReplays.as_str(), "session_replays");
     }
 
     #[test]
