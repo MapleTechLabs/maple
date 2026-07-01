@@ -220,7 +220,11 @@ export function QueryBuilderAreaChart({
 
 	return (
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
-			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
+			<ChartContainer
+				config={chartConfig}
+				className="h-full w-full aspect-auto"
+				hoistLegend={!showLegendBlock}
+			>
 				<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 					<defs>
 						{seriesDefinitions.map((definition) => (
@@ -360,6 +364,7 @@ export function QueryBuilderAreaChart({
 									unit={unit}
 									layout="right"
 									variant={variant}
+									maxHeight={containerHeight}
 								/>
 							}
 						/>

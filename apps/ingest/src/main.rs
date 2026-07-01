@@ -36,7 +36,7 @@ use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
     AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
     DatasourceNames, ExportDestination, MappingOperation, MappingSourceContext, PipelineError,
-    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
+    SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -255,6 +255,11 @@ impl AppConfig {
                 std::env::var("INGEST_EXPORT_MAX_ATTEMPTS").ok(),
                 20,
             )?,
+            clickhouse_export_timeout: Duration::from_millis(parse_u64(
+                "INGEST_CLICKHOUSE_EXPORT_TIMEOUT_MS",
+                std::env::var("INGEST_CLICKHOUSE_EXPORT_TIMEOUT_MS").ok(),
+                3_000,
+            )?),
             clickhouse_breaker: ClickHouseBreakerConfig {
                 // 0 disables the breaker (full retry budget on every batch).
                 failure_threshold: parse_u32(
@@ -884,12 +889,6 @@ impl ApiError {
             _ => "error",
         }
     }
-
-    /// Human-readable failure detail, recorded as the span's `otel.status_description`
-    /// so an Error-status span carries a real label instead of "Unknown Error".
-    fn message(&self) -> &str {
-        &self.message
-    }
 }
 
 impl IntoResponse for ApiError {
@@ -919,6 +918,33 @@ fn otel_status_for_rejection(status: u16) -> &'static str {
         "Error"
     } else {
         "Ok"
+    }
+}
+
+/// Map a telemetry pipeline rejection to the client-facing HTTP error.
+///
+/// Transient queue conditions (`Throttled` = per-org byte cap, `Backpressure` =
+/// lane channel full) are retryable and surface as **429** — via
+/// `otel_status_for_rejection` these become `Ok` spans, so a customer's slow
+/// BYO-ClickHouse target (which backs the lane up) does not flood our error
+/// dashboards as "Unknown Error" 503s. Genuine backend failures
+/// (`QueueUnavailable` = WAL I/O, `Encode`) stay **503** and are labeled via
+/// `otel.status_description` on the handler span.
+///
+/// Single source of truth for both the OTLP signal path and the session-replay
+/// handlers, which previously diverged (the replay paths blanket-mapped every
+/// variant to 503).
+fn api_error_from_pipeline(error: &PipelineError) -> ApiError {
+    match error {
+        PipelineError::Throttled(_) => {
+            ApiError::too_many_requests("Ingest queue full for org, retry shortly")
+        }
+        PipelineError::Backpressure(_) => {
+            ApiError::too_many_requests("Ingest export lane full, retry shortly")
+        }
+        PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
+            ApiError::service_unavailable("Telemetry backend unavailable")
+        }
     }
 }
 
@@ -1674,15 +1700,10 @@ async fn handle_replay_meta(
         }
         Err(error) => {
             let status = error.status.as_u16();
-            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status);
-            // Give Error-status spans (5xx) a real status message so the error
-            // dashboards label them by cause instead of bucketing as "Unknown Error".
-            if otel_status == "Error" {
-                span_handle.record("otel.status_description", error.message());
-            }
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_description", error.message.as_str());
             error.into_response()
         }
     }
@@ -1756,11 +1777,13 @@ async fn handle_replay_meta_inner(
             &org_id,
             state.config.tinybird.datasource_session_replays.clone(),
             rows,
+            TelemetrySignal::SessionReplays,
             destination,
         )
         .await
         .map_err(|e| {
-            ApiError::service_unavailable(format!("failed to enqueue session metadata: {e}"))
+            warn!(org_id = %org_id, error = %e, "session metadata enqueue rejected");
+            api_error_from_pipeline(&e)
         })?;
 
     // Meter browser sessions to Autumn after the rows are safely enqueued, mirroring
@@ -1810,15 +1833,10 @@ async fn handle_session_events(
         }
         Err(error) => {
             let status = error.status.as_u16();
-            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status);
-            // Give Error-status spans (5xx) a real status message so the error
-            // dashboards label them by cause instead of bucketing as "Unknown Error".
-            if otel_status == "Error" {
-                span_handle.record("otel.status_description", error.message());
-            }
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_description", error.message.as_str());
             error.into_response()
         }
     }
@@ -1879,11 +1897,13 @@ async fn handle_session_events_inner(
             &org_id,
             state.config.tinybird.datasource_session_events.clone(),
             rows,
+            TelemetrySignal::SessionEvents,
             destination,
         )
         .await
         .map_err(|e| {
-            ApiError::service_unavailable(format!("failed to enqueue session events: {e}"))
+            warn!(org_id = %org_id, error = %e, "session events enqueue rejected");
+            api_error_from_pipeline(&e)
         })?;
     Ok(count)
 }
@@ -1923,15 +1943,10 @@ async fn handle_replay_blob(
         }
         Err(error) => {
             let status = error.status.as_u16();
-            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error.error_kind());
-            span_handle.record("otel.status_code", otel_status);
-            // Give Error-status spans (5xx) a real status message so the error
-            // dashboards label them by cause instead of bucketing as "Unknown Error".
-            if otel_status == "Error" {
-                span_handle.record("otel.status_description", error.message());
-            }
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_description", error.message.as_str());
             error.into_response()
         }
     }
@@ -2018,11 +2033,13 @@ async fn handle_replay_blob_inner(
                 .datasource_session_replay_events
                 .clone(),
             vec![serialized],
+            TelemetrySignal::SessionReplays,
             destination,
         )
         .await
         .map_err(|e| {
-            ApiError::service_unavailable(format!("failed to enqueue replay events: {e}"))
+            warn!(org_id = %org_id, error = %e, "session replay blob enqueue rejected");
+            api_error_from_pipeline(&e)
         })?;
     Ok(())
 }
@@ -2112,15 +2129,10 @@ async fn handle_signal(
         }
         Err((error, error_kind)) => {
             let status = error.status.as_u16();
-            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error_kind);
-            span_handle.record("otel.status_code", otel_status);
-            // 5xx failures carry their message so dashboards label them by cause
-            // instead of bucketing under "Unknown Error".
-            if otel_status == "Error" {
-                span_handle.record("otel.status_description", error.message());
-            }
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_description", error.message.as_str());
             metrics::request_completed(signal.path(), "error", error_kind, duration.as_secs_f64());
             error.into_response()
         }
@@ -2191,13 +2203,10 @@ async fn handle_cloudflare_logpush(
         }
         Err((error, error_kind)) => {
             let status = error.status.as_u16();
-            let otel_status = otel_status_for_rejection(status);
             span_handle.record("http.response.status_code", status);
             span_handle.record("error.type", error_kind);
-            span_handle.record("otel.status_code", otel_status);
-            if otel_status == "Error" {
-                span_handle.record("otel.status_description", error.message());
-            }
+            span_handle.record("otel.status_code", otel_status_for_rejection(status));
+            span_handle.record("otel.status_description", error.message.as_str());
             metrics::request_completed("logs", "error", error_kind, duration.as_secs_f64());
             if error_kind == "auth" {
                 metrics::cloudflare_auth_failure("http_requests");
@@ -3177,7 +3186,7 @@ async fn forward_to_collector(
             url = %url,
             "Collector forwarding failed"
         );
-        ApiError::service_unavailable("Telemetry backend unavailable")
+        ApiError::service_unavailable("Collector forwarding failed: transport error")
     })?;
 
     let forward_duration = forward_start.elapsed();
@@ -3215,7 +3224,7 @@ async fn forward_to_collector(
             "Collector returned error"
         );
         return Err(ApiError::service_unavailable(
-            "Telemetry backend unavailable",
+            "Collector returned server error",
         ));
     }
 
@@ -3325,17 +3334,7 @@ async fn accept_native_decoded_payload(
         }
     }
     .map_err(|error| {
-        let api_error = match &error {
-            PipelineError::Throttled(_) => {
-                ApiError::too_many_requests("Per-org ingest queue limit exceeded")
-            }
-            PipelineError::Backpressure(_) => {
-                ApiError::service_unavailable("Telemetry backend unavailable")
-            }
-            PipelineError::QueueUnavailable(_) | PipelineError::Encode(_) => {
-                ApiError::service_unavailable("Telemetry backend unavailable")
-            }
-        };
+        let api_error = api_error_from_pipeline(&error);
         error!(
             error = %error,
             signal = signal.path(),
@@ -4229,6 +4228,33 @@ mod tests {
     }
 
     #[test]
+    fn api_error_from_pipeline_maps_variants_to_status() {
+        // Transient queue conditions are retryable → 429 (classified Ok via
+        // otel_status_for_rejection, so a stalled BYO-ClickHouse target backing
+        // the lane up does not flood the error dashboards as "Unknown Error").
+        assert_eq!(
+            api_error_from_pipeline(&PipelineError::Throttled("x")).status,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        assert_eq!(
+            api_error_from_pipeline(&PipelineError::Backpressure("x")).status,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        // Genuine backend failures stay 503 (Error), now labeled via the span's
+        // otel.status_description rather than surfacing as "Unknown Error".
+        assert_eq!(
+            api_error_from_pipeline(&PipelineError::QueueUnavailable("x".into())).status,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            api_error_from_pipeline(&PipelineError::Encode("x".into())).status,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(otel_status_for_rejection(429), "Ok");
+        assert_eq!(otel_status_for_rejection(503), "Error");
+    }
+
+    #[test]
     fn sentinel_token_matches_only_exact_literal() {
         assert!(is_sentinel_token("MAPLE_TEST"));
         assert!(!is_sentinel_token("maple_test"));
@@ -4702,6 +4728,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(1),
             export_concurrency_per_shard: 1,
             export_max_attempts: 1,
+            clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),

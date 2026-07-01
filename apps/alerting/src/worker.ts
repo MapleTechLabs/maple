@@ -109,7 +109,11 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		),
 	)
 
-	const EmailServiceLive = EmailService.layer.pipe(Layer.provide(EnvLive))
+	// EmailService now resolves the Cloudflare Email Service `EMAIL` binding from
+	// WorkerEnvironment (delivery binding) in addition to EnvLive (EMAIL_FROM).
+	const EmailServiceLive = EmailService.layer.pipe(
+		Layer.provide(Layer.mergeAll(EnvLive, WorkerEnvironment.layer)),
+	)
 
 	const DigestServiceLive = DigestService.layer.pipe(
 		Layer.provide(Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EmailServiceLive)),

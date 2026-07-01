@@ -29,8 +29,7 @@ export interface EnvShape {
 	readonly AUTUMN_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly SD_INTERNAL_TOKEN: Option.Option<Redacted.Redacted<string>>
 	readonly INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
-	readonly RESEND_API_KEY: Option.Option<Redacted.Redacted<string>>
-	readonly RESEND_FROM_EMAIL: string
+	readonly EMAIL_FROM: string
 	readonly HAZEL_API_BASE_URL: string
 	readonly HAZEL_OAUTH_DISCOVERY_URL: string
 	readonly HAZEL_OAUTH_CLIENT_ID: Option.Option<string>
@@ -87,8 +86,7 @@ const envConfig = Config.all({
 	AUTUMN_SECRET_KEY: optionalRedacted("AUTUMN_SECRET_KEY"),
 	SD_INTERNAL_TOKEN: optionalRedacted("SD_INTERNAL_TOKEN"),
 	INTERNAL_SERVICE_TOKEN: optionalRedacted("INTERNAL_SERVICE_TOKEN"),
-	RESEND_API_KEY: optionalRedacted("RESEND_API_KEY"),
-	RESEND_FROM_EMAIL: stringWithDefault("RESEND_FROM_EMAIL", "Maple <notifications@maple.dev>"),
+	EMAIL_FROM: stringWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
 	HAZEL_API_BASE_URL: stringWithDefault("HAZEL_API_BASE_URL", "https://api.hazel.sh"),
 	HAZEL_OAUTH_DISCOVERY_URL: stringWithDefault(
 		"HAZEL_OAUTH_DISCOVERY_URL",
