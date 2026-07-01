@@ -176,4 +176,23 @@ describe("makeWarehouseExecutor client timeout", () => {
 			expect(yield* Ref.get(outcome)).toBe("@maple/http/errors/WarehouseQueryError")
 		}),
 	)
+
+	it.effect("does NOT client-timeout an explicitly unbounded query", () =>
+		Effect.gen(function* () {
+			const executor = makeWarehouseExecutor(makeHangingDeps())
+			const outcome = yield* Ref.make("pending")
+			yield* Effect.forkChild(
+				executor.compiledQuery(tenant, compiled, { profile: "unbounded", context: "test" }).pipe(
+					Effect.matchEffect({
+						onFailure: (error) => Ref.set(outcome, error._tag),
+						onSuccess: () => Ref.set(outcome, "success"),
+					}),
+				),
+			)
+			// Well past the 30s hard cap: `unbounded` opts out of the client timeout,
+			// so the query is never cut off (it only rides the ambient Worker limit).
+			yield* TestClock.adjust(Duration.seconds(60))
+			expect(yield* Ref.get(outcome)).toBe("pending")
+		}),
+	)
 })
