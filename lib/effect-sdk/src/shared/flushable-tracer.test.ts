@@ -111,4 +111,24 @@ describe("makeSpanBuffer anticipated-error classification", () => {
 			assert.strictEqual(span!.status.code, 2 /* Error */)
 		}),
 	)
+
+	// An interrupt co-occurring with an anticipated failure is NOT an error:
+	// interrupts are normal fiber control flow, so the span stays Ok (unlike a
+	// defect, which forces Error). Pins the Die-vs-Interrupt asymmetry.
+	it.effect("keeps Ok when an anticipated error is mixed with an interrupt", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer({ anticipatedErrorTags: tags })
+			yield* runSpan(
+				buffer,
+				Effect.fail(new UnauthorizedError()).pipe(Effect.ensuring(Effect.interrupt)),
+			)
+			const [span] = buffer.drain()
+			assert.isDefined(span)
+			assert.strictEqual(span!.status.code, 1 /* Ok */)
+			assert.strictEqual(
+				span!.events.some((event) => event.name === "exception"),
+				false,
+			)
+		}),
+	)
 })
