@@ -228,23 +228,28 @@ pub enum TelemetrySignal {
     Traces,
     Logs,
     Metrics,
-    /// Session-replay metadata + rrweb event rows (NDJSON written directly by
+    /// Session-replay metadata + rrweb event chunks (NDJSON written directly by
     /// the ingest gateway, not derived from OTLP). Events land in ClickHouse.
     SessionReplays,
+    /// Distilled session-event rows (NDJSON written directly by the gateway).
+    /// Carried separately from `SessionReplays` so per-signal metrics label it
+    /// as `session_events` (matching its `maple.signal` span attribute).
+    SessionEvents,
 }
 
 impl TelemetrySignal {
     /// Canonical lowercase label for metric/log dimensions, matching the HTTP
     /// `Signal::path()` vocabulary ("traces"/"logs"/"metrics") and the
-    /// `maple.signal` span attribute ("session_replays") so per-signal metrics
-    /// correlate across the codebase. Prefer this over the `Debug` derive, which
-    /// yields PascalCase.
+    /// `maple.signal` span attribute ("session_replays"/"session_events") so
+    /// per-signal metrics correlate across the codebase. Prefer this over the
+    /// `Debug` derive, which yields PascalCase.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Traces => "traces",
             Self::Logs => "logs",
             Self::Metrics => "metrics",
             Self::SessionReplays => "session_replays",
+            Self::SessionEvents => "session_events",
         }
     }
 }
@@ -670,8 +675,9 @@ impl TelemetryPipeline {
         org_id: &str,
         datasource: String,
         rows: Vec<Vec<u8>>,
+        signal: TelemetrySignal,
     ) -> Result<AcceptStats, PipelineError> {
-        self.accept_rows_to(org_id, datasource, rows, ExportDestination::Tinybird)
+        self.accept_rows_to(org_id, datasource, rows, signal, ExportDestination::Tinybird)
             .await
     }
 
@@ -680,19 +686,14 @@ impl TelemetryPipeline {
         org_id: &str,
         datasource: String,
         rows: Vec<Vec<u8>>,
+        signal: TelemetrySignal,
         destination: ExportDestination,
     ) -> Result<AcceptStats, PipelineError> {
         let stats = AcceptStats {
             rows: rows.len(),
             dropped: 0,
         };
-        let frames = rows_to_frames(
-            org_id,
-            hash64(org_id),
-            TelemetrySignal::SessionReplays,
-            datasource,
-            rows,
-        );
+        let frames = rows_to_frames(org_id, hash64(org_id), signal, datasource, rows);
         self.commit_frames(frames, destination).await?;
         Ok(stats)
     }
@@ -1266,6 +1267,7 @@ fn signal_tag(signal: TelemetrySignal) -> u8 {
         TelemetrySignal::Logs => 2,
         TelemetrySignal::Metrics => 3,
         TelemetrySignal::SessionReplays => 4,
+        TelemetrySignal::SessionEvents => 5,
     }
 }
 
@@ -1275,6 +1277,7 @@ fn signal_from_tag(tag: u8) -> Option<TelemetrySignal> {
         2 => Some(TelemetrySignal::Logs),
         3 => Some(TelemetrySignal::Metrics),
         4 => Some(TelemetrySignal::SessionReplays),
+        5 => Some(TelemetrySignal::SessionEvents),
         _ => None,
     }
 }
@@ -3574,6 +3577,22 @@ mod tests {
         assert_eq!(TelemetrySignal::Logs.as_str(), "logs");
         assert_eq!(TelemetrySignal::Metrics.as_str(), "metrics");
         assert_eq!(TelemetrySignal::SessionReplays.as_str(), "session_replays");
+        assert_eq!(TelemetrySignal::SessionEvents.as_str(), "session_events");
+    }
+
+    #[test]
+    fn signal_tag_round_trips_all_variants() {
+        // WAL on-disk format: every signal must survive tag encode/decode so
+        // committed frames replay to the right signal after a restart.
+        for signal in [
+            TelemetrySignal::Traces,
+            TelemetrySignal::Logs,
+            TelemetrySignal::Metrics,
+            TelemetrySignal::SessionReplays,
+            TelemetrySignal::SessionEvents,
+        ] {
+            assert_eq!(signal_from_tag(signal_tag(signal)), Some(signal));
+        }
     }
 
     #[test]

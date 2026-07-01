@@ -36,7 +36,7 @@ use maple_ingest::otel::{build_resource, forward_client_span, ResourceConfig};
 use maple_ingest::telemetry::{
     AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
     DatasourceNames, ExportDestination, MappingOperation, MappingSourceContext, PipelineError,
-    SamplingPolicy, TelemetryPipeline, TinybirdConfig,
+    SamplingPolicy, TelemetryPipeline, TelemetrySignal, TinybirdConfig,
 };
 use moka::future::Cache;
 use opentelemetry::trace::TracerProvider as _;
@@ -1777,6 +1777,7 @@ async fn handle_replay_meta_inner(
             &org_id,
             state.config.tinybird.datasource_session_replays.clone(),
             rows,
+            TelemetrySignal::SessionReplays,
             destination,
         )
         .await
@@ -1896,6 +1897,7 @@ async fn handle_session_events_inner(
             &org_id,
             state.config.tinybird.datasource_session_events.clone(),
             rows,
+            TelemetrySignal::SessionEvents,
             destination,
         )
         .await
@@ -2031,6 +2033,7 @@ async fn handle_replay_blob_inner(
                 .datasource_session_replay_events
                 .clone(),
             vec![serialized],
+            TelemetrySignal::SessionReplays,
             destination,
         )
         .await
