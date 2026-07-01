@@ -112,7 +112,11 @@ pub struct ClickHouseBreakerConfig {
 impl Default for ClickHouseBreakerConfig {
     fn default() -> Self {
         Self {
-            failure_threshold: 4,
+            // Trip after 2 consecutive failures (not 4) so a stalled BYO-ClickHouse
+            // target enters fast-shed quickly, keeping the single-threaded lane
+            // worker draining instead of holding batches through the retry budget
+            // (which backs the bounded channel up into accept-path 503s).
+            failure_threshold: 2,
             cooldown: Duration::from_secs(30),
         }
     }
@@ -292,6 +296,12 @@ pub struct TinybirdConfig {
     pub batch_max_wait: Duration,
     pub export_concurrency_per_shard: usize,
     pub export_max_attempts: u32,
+    /// Per-attempt timeout for a direct ClickHouse export POST. Kept short and
+    /// separate from `forward_timeout` so a hanging BYO-ClickHouse target fails
+    /// fast and the breaker trips quickly — otherwise the single-threaded lane
+    /// worker holds the batch through the retry budget while new frames back the
+    /// bounded channel up into accept-path backpressure.
+    pub clickhouse_export_timeout: Duration,
     pub clickhouse_breaker: ClickHouseBreakerConfig,
     pub datasources: DatasourceNames,
     pub datasource_session_replays: String,
@@ -687,9 +697,17 @@ impl TelemetryPipeline {
             // cannot fill the Tinybird channel for the same shard (and vice versa).
             let lane = lane_index(shard, destination);
             let sender = self.inner.lane_senders[lane].clone();
-            let permit = sender
-                .try_reserve_owned()
-                .map_err(|_| PipelineError::Backpressure("Telemetry queue is full"))?;
+            let permit = match sender.try_reserve_owned() {
+                Ok(permit) => permit,
+                Err(_) => {
+                    metrics::backpressure_shed(
+                        &frame.org_id,
+                        frame.destination.as_str(),
+                        &format!("{:?}", frame.signal),
+                    );
+                    return Err(PipelineError::Backpressure("Telemetry queue is full"));
+                }
+            };
             let queued_bytes = frame.payload.len() as u64;
             self.reserve_org_queue_bytes(&frame.org_id, queued_bytes)?;
             let (start, end) = self.inner.wal.append(lane, &frame).await.map_err(|error| {
@@ -1622,6 +1640,7 @@ impl ExportWorker {
             let mut request = self
                 .http
                 .post(request_url)
+                .timeout(self.cfg.clickhouse_export_timeout)
                 .header("X-ClickHouse-User", target.user.as_str())
                 .header("X-ClickHouse-Database", target.database.as_str())
                 .header(reqwest::header::CONTENT_TYPE, "application/x-ndjson")
@@ -2578,6 +2597,7 @@ mod tests {
             batch_max_wait: Duration::from_millis(10),
             export_concurrency_per_shard: 1,
             export_max_attempts: 20,
+            clickhouse_export_timeout: Duration::from_secs(5),
             clickhouse_breaker: ClickHouseBreakerConfig::default(),
             datasources: DatasourceNames::defaults(),
             datasource_session_replays: "session_replays".to_string(),
@@ -3527,6 +3547,15 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(queue_dir);
+    }
+
+    #[test]
+    fn breaker_default_failure_threshold_is_two() {
+        // Lowered from 4 → 2 so a stalled BYO-ClickHouse target enters fast-shed
+        // sooner, keeping the single-threaded lane worker draining instead of
+        // holding batches through the retry budget (which backs the bounded
+        // channel up into accept-path backpressure 503s).
+        assert_eq!(ClickHouseBreakerConfig::default().failure_threshold, 2);
     }
 
     #[test]
