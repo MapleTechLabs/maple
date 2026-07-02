@@ -1,4 +1,5 @@
 import {
+	ANTICIPATED_ERROR_TAGS,
 	AlertsService,
 	AnomalyDetectionService,
 	BucketCacheService,
@@ -30,6 +31,7 @@ const telemetry = MapleCloudflareSDK.make({
 	serviceName: "alerting",
 	serviceNamespace: "backend",
 	repositoryUrl: "https://github.com/Makisuo/maple",
+	anticipatedErrorTags: [...ANTICIPATED_ERROR_TAGS],
 })
 
 const buildLayer = (_env: Record<string, unknown>) => {
@@ -90,6 +92,7 @@ const buildLayer = (_env: Record<string, unknown>) => {
 			Layer.mergeAll(
 				BaseLive,
 				WarehouseQueryServiceLive,
+				EdgeCacheServiceLive,
 				NotificationDispatcherLive,
 				WorkerEnvironment.layer,
 			),
@@ -107,7 +110,11 @@ const buildLayer = (_env: Record<string, unknown>) => {
 		),
 	)
 
-	const EmailServiceLive = EmailService.layer.pipe(Layer.provide(EnvLive))
+	// EmailService now resolves the Cloudflare Email Service `EMAIL` binding from
+	// WorkerEnvironment (delivery binding) in addition to EnvLive (EMAIL_FROM).
+	const EmailServiceLive = EmailService.layer.pipe(
+		Layer.provide(Layer.mergeAll(EnvLive, WorkerEnvironment.layer)),
+	)
 
 	const DigestServiceLive = DigestService.layer.pipe(
 		Layer.provide(Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EmailServiceLive)),

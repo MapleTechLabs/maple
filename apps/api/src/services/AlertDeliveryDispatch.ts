@@ -89,6 +89,13 @@ export interface ChatUrlContext {
 const toBase64Url = (raw: string): string =>
 	Buffer.from(raw, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 
+/**
+ * "Ask Maple AI" deep-link. Points at the incident-scoped diagnosis page, which
+ * auto-generates the AI diagnosis and hosts the alert chat alongside it. The
+ * encoded alert context is carried so the page renders + seeds the chat without
+ * a round-trip. When there is no incident row yet (e.g. a `test` notification)
+ * we fall back to the generic chat surface.
+ */
 export const buildAlertChatUrl = (baseUrl: string, context: ChatUrlContext): string => {
 	const alertJson = JSON.stringify({
 		ruleId: context.ruleId,
@@ -105,11 +112,14 @@ export const buildAlertChatUrl = (baseUrl: string, context: ChatUrlContext): str
 		groupKey: context.groupKey,
 		sampleCount: context.sampleCount,
 	})
-	const tabId = `alert-${context.incidentId ?? context.dedupeKey}`
+	const encoded = toBase64Url(alertJson)
+	if (context.incidentId) {
+		return `${baseUrl}/alerts/incidents/${encodeURIComponent(context.incidentId)}?alert=${encoded}`
+	}
 	const params = new URLSearchParams({
 		mode: "alert",
-		tab: tabId,
-		alert: toBase64Url(alertJson),
+		tab: `alert-${context.dedupeKey}`,
+		alert: encoded,
 	})
 	return `${baseUrl}/chat?${params.toString()}`
 }

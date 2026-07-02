@@ -129,16 +129,23 @@ CI workflows:
 
 Secrets source model (CI):
 
-- GitHub Secrets (only one): `DOPPLER_TOKEN`
-- Doppler configs (`prd`, `stg`, `pr`) must define:
+- Secrets are fetched from **Infisical** via `Infisical/secrets-action` using OIDC
+  (credential-less — GitHub's OIDC token authenticates a machine identity, no long-lived
+  token stored). CI needs:
+    - GitHub repo **variable** `INFISICAL_PROJECT_SLUG` (the project slug — a
+      **variable**, not a secret: GitHub masks secret values everywhere, and a
+      slug like `maple` would then blank out the PR-preview deployment URL
+      `app-pr-<n>.maple.dev`)
+    - GitHub repo **secret** `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
+- Infisical environments (`prod`, `staging`, `dev` — mapped from the old Doppler
+  `prd`/`stg`/`pr` configs) must define:
     - `ALCHEMY_PASSWORD`
     - `ALCHEMY_STATE_TOKEN`
     - `CLOUDFLARE_API_TOKEN`
     - `CLOUDFLARE_DEFAULT_ACCOUNT_ID`
     - `TINYBIRD_HOST`
     - `TINYBIRD_TOKEN`
-    - `RESEND_API_KEY`
-    - `RESEND_FROM_EMAIL`
+    - `EMAIL_FROM` (sender address on an onboarded Cloudflare Email Service domain; delivery uses the `EMAIL` worker binding, no API key)
     - `MAPLE_INGEST_KEY_ENCRYPTION_KEY`
     - `MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY`
     - `MAPLE_AUTH_MODE`
@@ -147,7 +154,7 @@ Secrets source model (CI):
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
 
-Free/Starter note: when using a personal Doppler token, the workflow must also specify Doppler selectors (`doppler-project`, `doppler-config`). This repo uses `maple` with stage configs `prd`, `stg`, and `pr`.
+Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`staging`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`staging`/`dev`).
 
 Runtime API URL behavior:
 

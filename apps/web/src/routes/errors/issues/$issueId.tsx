@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { effectRoute } from "@effect-router/core"
 import { Exit, Schema } from "effect"
@@ -6,6 +6,10 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { AiTriageCard } from "@/components/ai-triage/ai-triage-card"
+import { encodeInvestigationRef } from "@/components/chat/investigation-context"
+import { Button } from "@maple/ui/components/ui/button"
+import { CopyIcon, PulseIcon } from "@/components/icons"
+import { agentPromptFromIssue } from "@/components/errors/agent-debug-prompt"
 import { OpenAnomalyBadge, RelatedAnomaliesSection } from "@/components/anomalies/related-anomalies-section"
 import { AlertSourceCard } from "@/components/errors/alert-source-card"
 import { IssueKindBadge } from "@/components/errors/kind-badge"
@@ -216,6 +220,37 @@ function IssueDetailPage() {
 								</Badge>
 							) : null}
 							<OpenAnomalyBadge issueId={issueId} />
+							{issue.kind === "error" ? (
+								<Button
+									size="sm"
+									variant="outline"
+									onClick={() => {
+										void navigator.clipboard
+											.writeText(agentPromptFromIssue(issue))
+											.then(() =>
+												toast.success("Copied agent prompt — paste it into your MCP agent"),
+											)
+											.catch(() => toast.error("Copy failed"))
+									}}
+								>
+									<CopyIcon className="size-3.5" />
+									Copy agent prompt
+								</Button>
+							) : null}
+							<Button
+								size="sm"
+								variant="outline"
+								render={
+									<Link
+										to="/investigations/$id"
+										params={{ id: issueId }}
+										search={{ r: encodeInvestigationRef({ kind: "error", id: issueId, issueId }) }}
+									/>
+								}
+							>
+								<PulseIcon className="size-3.5" />
+								Investigate with Maple AI
+							</Button>
 						</div>
 					}
 					rightSidebar={

@@ -111,16 +111,13 @@ const navSections: SettingsNavSection[] = [
  * /integrations hub (which renders the same sidebar).
  */
 export function useVisibleSettingsSections() {
+	// Hooks run unconditionally (rules of hooks); their results are only consumed
+	// in the Clerk-auth path below. `isClerkAuthEnabled` is a build-time constant
+	// today, but keeping the hooks above the early return avoids a conditional-hook
+	// hazard if it ever becomes dynamic.
 	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
 	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
 	const { organization } = useOrganization()
-
-	const isAdmin = Result.builder(sessionResult)
-		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))
-		.orElse(() => false)
-	const canAccessDataPlatform = isAdmin && hasBringYourOwnCloudAddOn(customer)
-	const hasAiMetadataFlag = organization?.publicMetadata?.bringyourownai === true
-	const canAccessAi = isAdmin && hasAiMetadataFlag
 
 	const visibleSections = navSections
 		.map((section) => ({
@@ -131,8 +128,36 @@ export function useVisibleSettingsSections() {
 					item.id === "members" ||
 					item.id === "billing" ||
 					item.id === "notifications"
-				)
+				) {
 					return isClerkAuthEnabled
+				}
+				return true
+			}),
+		}))
+		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+
+	if (!isClerkAuthEnabled) {
+		return {
+			visibleSections,
+			visibleItems: visibleSections.flatMap((s) => s.items),
+			isAdmin: true,
+			canAccessDataPlatform: true,
+			canAccessAi: true,
+			isLoading: false,
+		}
+	}
+
+	const isAdmin = Result.builder(sessionResult)
+		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))
+		.orElse(() => false)
+	const canAccessDataPlatform = isAdmin && hasBringYourOwnCloudAddOn(customer)
+	const hasAiMetadataFlag = organization?.publicMetadata?.bringyourownai === true
+	const canAccessAi = isAdmin && hasAiMetadataFlag
+
+	const dataSections = navSections
+		.map((section) => ({
+			...section,
+			items: section.items.filter((item) => {
 				if (item.id === "data-platform") return canAccessDataPlatform
 				if (item.id === "ai") return canAccessAi
 				return true
@@ -140,11 +165,9 @@ export function useVisibleSettingsSections() {
 		}))
 		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
 
-	const visibleItems = visibleSections.flatMap((s) => s.items)
-
 	return {
-		visibleSections,
-		visibleItems,
+		visibleSections: dataSections,
+		visibleItems: dataSections.flatMap((s) => s.items),
 		isAdmin,
 		canAccessDataPlatform,
 		canAccessAi,

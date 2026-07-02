@@ -41,6 +41,7 @@ import { Route as ReplaysPreviewRouteImport } from './routes/replays/preview'
 import { Route as ReplaysSessionIdRouteImport } from './routes/replays/$sessionId'
 import { Route as RecommendationsRecommendationKeyRouteImport } from './routes/recommendations/$recommendationKey'
 import { Route as LogsLogIdRouteImport } from './routes/logs/$logId'
+import { Route as InvestigationsIdRouteImport } from './routes/investigations/$id'
 import { Route as InfraHostNameRouteImport } from './routes/infra/$hostName'
 import { Route as ErrorsErrorTypeRouteImport } from './routes/errors/$errorType'
 import { Route as DashboardsTemplatesRouteImport } from './routes/dashboards/templates'
@@ -50,6 +51,7 @@ import { Route as AlertsCreateRouteImport } from './routes/alerts/create'
 import { Route as AlertsRuleIdRouteImport } from './routes/alerts/$ruleId'
 import { Route as ErrorsIssuesIndexRouteImport } from './routes/errors/issues/index'
 import { Route as ErrorsIssuesIssueIdRouteImport } from './routes/errors/issues/$issueId'
+import { Route as AlertsIncidentsIncidentIdRouteImport } from './routes/alerts/incidents/$incidentId'
 import { Route as InfraKubernetesWorkloadsIndexRouteImport } from './routes/infra/kubernetes/workloads/index'
 import { Route as InfraKubernetesPodsIndexRouteImport } from './routes/infra/kubernetes/pods/index'
 import { Route as InfraKubernetesNodesIndexRouteImport } from './routes/infra/kubernetes/nodes/index'
@@ -219,6 +221,11 @@ const LogsLogIdRoute = LogsLogIdRouteImport.update({
   path: '/logs/$logId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvestigationsIdRoute = InvestigationsIdRouteImport.update({
+  id: '/investigations/$id',
+  path: '/investigations/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InfraHostNameRoute = InfraHostNameRouteImport.update({
   id: '/infra/$hostName',
   path: '/infra/$hostName',
@@ -264,6 +271,12 @@ const ErrorsIssuesIssueIdRoute = ErrorsIssuesIssueIdRouteImport.update({
   path: '/errors/issues/$issueId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AlertsIncidentsIncidentIdRoute =
+  AlertsIncidentsIncidentIdRouteImport.update({
+    id: '/alerts/incidents/$incidentId',
+    path: '/alerts/incidents/$incidentId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const InfraKubernetesWorkloadsIndexRoute =
   InfraKubernetesWorkloadsIndexRouteImport.update({
     id: '/infra/kubernetes/workloads/',
@@ -332,6 +345,7 @@ export interface FileRoutesByFullPath {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -347,6 +361,7 @@ export interface FileRoutesByFullPath {
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
+  '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
@@ -382,6 +397,7 @@ export interface FileRoutesByTo {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -397,6 +413,7 @@ export interface FileRoutesByTo {
   '/replays': typeof ReplaysIndexRoute
   '/services': typeof ServicesIndexRoute
   '/traces': typeof TracesIndexRoute
+  '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/errors/issues': typeof ErrorsIssuesIndexRoute
   '/dashboards/$dashboardId/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
@@ -433,6 +450,7 @@ export interface FileRoutesById {
   '/dashboards/templates': typeof DashboardsTemplatesRoute
   '/errors/$errorType': typeof ErrorsErrorTypeRoute
   '/infra/$hostName': typeof InfraHostNameRoute
+  '/investigations/$id': typeof InvestigationsIdRoute
   '/logs/$logId': typeof LogsLogIdRoute
   '/recommendations/$recommendationKey': typeof RecommendationsRecommendationKeyRoute
   '/replays/$sessionId': typeof ReplaysSessionIdRoute
@@ -448,6 +466,7 @@ export interface FileRoutesById {
   '/replays/': typeof ReplaysIndexRoute
   '/services/': typeof ServicesIndexRoute
   '/traces/': typeof TracesIndexRoute
+  '/alerts/incidents/$incidentId': typeof AlertsIncidentsIncidentIdRoute
   '/errors/issues/$issueId': typeof ErrorsIssuesIssueIdRoute
   '/errors/issues/': typeof ErrorsIssuesIndexRoute
   '/dashboards/$dashboardId_/widgets/$widgetId': typeof DashboardsDashboardIdWidgetsWidgetIdRoute
@@ -485,6 +504,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -500,6 +520,7 @@ export interface FileRouteTypes {
     | '/replays/'
     | '/services/'
     | '/traces/'
+    | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/errors/issues/'
     | '/dashboards/$dashboardId/widgets/$widgetId'
@@ -535,6 +556,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -550,6 +572,7 @@ export interface FileRouteTypes {
     | '/replays'
     | '/services'
     | '/traces'
+    | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/errors/issues'
     | '/dashboards/$dashboardId/widgets/$widgetId'
@@ -585,6 +608,7 @@ export interface FileRouteTypes {
     | '/dashboards/templates'
     | '/errors/$errorType'
     | '/infra/$hostName'
+    | '/investigations/$id'
     | '/logs/$logId'
     | '/recommendations/$recommendationKey'
     | '/replays/$sessionId'
@@ -600,6 +624,7 @@ export interface FileRouteTypes {
     | '/replays/'
     | '/services/'
     | '/traces/'
+    | '/alerts/incidents/$incidentId'
     | '/errors/issues/$issueId'
     | '/errors/issues/'
     | '/dashboards/$dashboardId_/widgets/$widgetId'
@@ -636,6 +661,7 @@ export interface RootRouteChildren {
   DashboardsTemplatesRoute: typeof DashboardsTemplatesRoute
   ErrorsErrorTypeRoute: typeof ErrorsErrorTypeRoute
   InfraHostNameRoute: typeof InfraHostNameRoute
+  InvestigationsIdRoute: typeof InvestigationsIdRoute
   LogsLogIdRoute: typeof LogsLogIdRoute
   RecommendationsRecommendationKeyRoute: typeof RecommendationsRecommendationKeyRoute
   ReplaysSessionIdRoute: typeof ReplaysSessionIdRoute
@@ -651,6 +677,7 @@ export interface RootRouteChildren {
   ReplaysIndexRoute: typeof ReplaysIndexRoute
   ServicesIndexRoute: typeof ServicesIndexRoute
   TracesIndexRoute: typeof TracesIndexRoute
+  AlertsIncidentsIncidentIdRoute: typeof AlertsIncidentsIncidentIdRoute
   ErrorsIssuesIssueIdRoute: typeof ErrorsIssuesIssueIdRoute
   ErrorsIssuesIndexRoute: typeof ErrorsIssuesIndexRoute
   DashboardsDashboardIdWidgetsWidgetIdRoute: typeof DashboardsDashboardIdWidgetsWidgetIdRoute
@@ -888,6 +915,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogsLogIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/investigations/$id': {
+      id: '/investigations/$id'
+      path: '/investigations/$id'
+      fullPath: '/investigations/$id'
+      preLoaderRoute: typeof InvestigationsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/infra/$hostName': {
       id: '/infra/$hostName'
       path: '/infra/$hostName'
@@ -949,6 +983,13 @@ declare module '@tanstack/react-router' {
       path: '/errors/issues/$issueId'
       fullPath: '/errors/issues/$issueId'
       preLoaderRoute: typeof ErrorsIssuesIssueIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/alerts/incidents/$incidentId': {
+      id: '/alerts/incidents/$incidentId'
+      path: '/alerts/incidents/$incidentId'
+      fullPath: '/alerts/incidents/$incidentId'
+      preLoaderRoute: typeof AlertsIncidentsIncidentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/infra/kubernetes/workloads/': {
@@ -1028,6 +1069,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardsTemplatesRoute: DashboardsTemplatesRoute,
   ErrorsErrorTypeRoute: ErrorsErrorTypeRoute,
   InfraHostNameRoute: InfraHostNameRoute,
+  InvestigationsIdRoute: InvestigationsIdRoute,
   LogsLogIdRoute: LogsLogIdRoute,
   RecommendationsRecommendationKeyRoute: RecommendationsRecommendationKeyRoute,
   ReplaysSessionIdRoute: ReplaysSessionIdRoute,
@@ -1043,6 +1085,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReplaysIndexRoute: ReplaysIndexRoute,
   ServicesIndexRoute: ServicesIndexRoute,
   TracesIndexRoute: TracesIndexRoute,
+  AlertsIncidentsIncidentIdRoute: AlertsIncidentsIncidentIdRoute,
   ErrorsIssuesIssueIdRoute: ErrorsIssuesIssueIdRoute,
   ErrorsIssuesIndexRoute: ErrorsIssuesIndexRoute,
   DashboardsDashboardIdWidgetsWidgetIdRoute:

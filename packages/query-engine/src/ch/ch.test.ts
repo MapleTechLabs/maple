@@ -6,7 +6,12 @@ import { logsFacetsQuery } from "./queries/logs"
 import { servicesFacetsQuery } from "./queries/services"
 import { sessionReplaysFacetsQuery } from "./queries/session-replays"
 import { metricsSummaryQuery } from "./queries/metrics"
-import { tracesDurationStatsQuery, spanHierarchyQuery, spanDetailQuery } from "./queries/errors"
+import {
+	tracesDurationStatsQuery,
+	spanHierarchyQuery,
+	spanDetailQuery,
+	traceTimeProbeQuery,
+} from "./queries/errors"
 import { unionAll } from "@maple-dev/clickhouse-builder"
 
 // ---------------------------------------------------------------------------
@@ -1245,5 +1250,18 @@ describe("converted queries", () => {
 		})
 		expect(sql).toContain("Timestamp >= '2026-04-15 13:00:00'")
 		expect(sql).toContain("Timestamp <= '2026-04-15 15:00:00'")
+	})
+
+	it("traceTimeProbeQuery is a cheap LIMIT-1 timestamp seek with no ORDER BY", () => {
+		const q = traceTimeProbeQuery({ traceId: "abc123" })
+		const { sql } = compileCH(q, { orgId: "org_1" })
+		expect(sql).toContain("Timestamp AS timestamp")
+		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("TraceId = 'abc123'")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("LIMIT 1")
+		// Must early-terminate per partition — no sort, no full projection.
+		expect(sql).not.toContain("ORDER BY")
+		expect(sql).not.toContain("toJSONString")
 	})
 })

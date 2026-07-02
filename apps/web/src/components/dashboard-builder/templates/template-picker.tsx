@@ -70,8 +70,10 @@ export function TemplatePicker({ templates, disabled = false, submitting, onUse 
 									id={template.id}
 									name={template.name}
 									description={template.description}
+									category={template.category}
 									tags={template.tags}
 									requirements={template.requirements}
+									preview={template.preview}
 									disabled={disabled || submitting}
 									onUse={() => handleUse(template)}
 								/>

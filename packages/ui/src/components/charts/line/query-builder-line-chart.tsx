@@ -229,7 +229,11 @@ export function QueryBuilderLineChart({
 
 	return (
 		<div ref={containerRef} className={cn("h-full w-full", className)}>
-			<ChartContainer config={chartConfig} className="h-full w-full aspect-auto">
+			<ChartContainer
+				config={chartConfig}
+				className="h-full w-full aspect-auto"
+				hoistLegend={!showLegendBlock}
+			>
 				<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 					<CartesianGrid vertical={false} />
 					<XAxis
@@ -321,6 +325,7 @@ export function QueryBuilderLineChart({
 									unit={unit}
 									layout="right"
 									variant={variant}
+									maxHeight={containerHeight}
 								/>
 							}
 						/>

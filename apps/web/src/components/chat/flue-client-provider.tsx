@@ -1,8 +1,8 @@
 import { type ReactNode, useMemo } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import { FlueProvider } from "@flue/react"
 import { createFlueClient } from "@flue/sdk"
 import { flueChatUrl } from "@/lib/services/common/flue-chat-url"
+import { getMapleAuthHeaders } from "@/lib/services/common/auth-headers"
 
 /**
  * Provides a `@flue/sdk` client to the chat hooks. The `headers` resolver runs
@@ -11,17 +11,19 @@ import { flueChatUrl } from "@/lib/services/common/flue-chat-url"
  * verifies it and checks the caller's org owns the addressed instance.
  */
 export function FlueClientProvider({ children }: { children: ReactNode }) {
-	const { getToken } = useAuth()
 	const client = useMemo(
 		() =>
 			createFlueClient({
 				baseUrl: flueChatUrl,
+				fetch: async (input, init) => {
+					return globalThis.fetch(input, init)
+				},
 				headers: async (): Promise<Record<string, string>> => {
-					const token = await getToken()
-					return token ? { Authorization: `Bearer ${token}` } : {}
+					const headers = await getMapleAuthHeaders()
+					return headers.authorization ? { Authorization: headers.authorization } : {}
 				},
 			}),
-		[getToken],
+		[],
 	)
 	return <FlueProvider client={client}>{children}</FlueProvider>
 }

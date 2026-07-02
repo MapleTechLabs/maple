@@ -96,6 +96,9 @@ function useChartTooltipSuppressed(): boolean {
 
 export type ChartLegendItem = { key: string; label: React.ReactNode; color?: string }
 
+/** Stable empty reference so the legend-slot publish effect doesn't churn. */
+const EMPTY_LEGEND_ITEMS: ChartLegendItem[] = []
+
 /**
  * Optional slot for hoisting a chart's legend out of the plot area and into an
  * ancestor (e.g. a card header). When a provider is present, `ChartContainer`
@@ -111,10 +114,18 @@ function ChartContainer({
 	className,
 	children,
 	config,
+	hoistLegend = true,
 	...props
 }: React.ComponentProps<"div"> & {
 	config: ChartConfig
 	children: React.ComponentProps<typeof RechartsPrimitive.ResponsiveContainer>["children"]
+	/**
+	 * When `true` (default) and a {@link ChartLegendSlotContext} ancestor is
+	 * present, the chart's series are published into that slot (e.g. a widget
+	 * header strip). Charts that render their own in-plot legend should pass
+	 * `false` so the header doesn't duplicate it.
+	 */
+	hoistLegend?: boolean
 }) {
 	const uniqueId = React.useId()
 	const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
@@ -132,11 +143,12 @@ function ChartContainer({
 				})),
 		[config],
 	)
+	const publishedItems = hoistLegend ? legendItems : EMPTY_LEGEND_ITEMS
 	React.useEffect(() => {
 		if (!legendSlot) return
-		legendSlot.setItems(legendItems)
+		legendSlot.setItems(publishedItems)
 		return () => legendSlot.setItems([])
-	}, [legendSlot, legendItems])
+	}, [legendSlot, publishedItems])
 
 	return (
 		<ChartContext.Provider value={{ config, containerRef, chartId }}>

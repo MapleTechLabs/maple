@@ -1,6 +1,6 @@
 FROM otel/opentelemetry-collector-contrib:latest
 
-COPY collector-config.yaml /etc/otelcol/config.yaml
+COPY ./otel/collector-config.yaml /etc/otelcol/config.yaml
 
 EXPOSE 4317 4318 13133
 

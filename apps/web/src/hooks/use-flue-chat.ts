@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { useAuth } from "@clerk/clerk-react"
 import { useFlueAgent, type AgentStatus, type UIMessage } from "@flue/react"
 import type { ChatStatus } from "@/components/ai-elements/types"
 import {
@@ -8,6 +7,7 @@ import {
 	type ChatContext,
 } from "@/components/chat/context-preamble"
 import { loadUserLog, mergeUserMessages, saveUserLog, type UserLogEntry } from "./flue-user-log"
+import { useMapleOrganizationId } from "./use-maple-organization"
 
 const AGENT_NAME = "maple-chat"
 
@@ -52,7 +52,7 @@ const toChatStatus = (status: AgentStatus): ChatStatus => {
  * and merge them back into the rendered transcript.
  */
 export function useFlueChat({ tabId, context }: UseFlueChatOptions): UseFlueChatResult {
-	const { orgId } = useAuth()
+	const orgId = useMapleOrganizationId();
 	const conversationId = orgId ? `${orgId}:${tabId}` : undefined
 	const agent = useFlueAgent({ name: AGENT_NAME, id: conversationId, history: "all" })
 

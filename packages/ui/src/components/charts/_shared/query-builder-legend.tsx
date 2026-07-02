@@ -60,6 +60,12 @@ interface QueryBuilderLegendProps {
 	 * per-series Min/Max/Mean/Last columns.
 	 */
 	variant?: "compact" | "stats"
+	/**
+	 * Upper bound (px) on the legend's own height. A right-aligned legend isn't
+	 * height-constrained by Recharts, so a long series list would overflow the
+	 * card; capping it here lets the `overflow-auto` body scroll instead.
+	 */
+	maxHeight?: number
 }
 
 /** Vertical space (px) a bottom-aligned legend block needs. */
@@ -120,12 +126,16 @@ export function QueryBuilderLegend({
 	unit,
 	layout = "bottom",
 	variant = "stats",
+	maxHeight,
 }: QueryBuilderLegendProps) {
 	if (series.length === 0) return null
+
+	const maxHeightStyle = maxHeight != null ? { maxHeight } : undefined
 
 	if (variant === "compact") {
 		return (
 			<div
+				style={maxHeightStyle}
 				className={cn(
 					"h-full overflow-auto text-xs",
 					layout === "right"
@@ -158,7 +168,10 @@ export function QueryBuilderLegend({
 	}
 
 	return (
-		<div className={cn("h-full overflow-auto text-xs", layout === "right" ? "pl-3" : "pt-2")}>
+		<div
+			style={maxHeightStyle}
+			className={cn("h-full overflow-auto text-xs", layout === "right" ? "pl-3" : "pt-2")}
+		>
 			<table className="w-full border-collapse">
 				<thead>
 					<tr className="text-muted-foreground">
