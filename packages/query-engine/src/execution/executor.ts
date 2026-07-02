@@ -109,7 +109,9 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		return client
 	}
 
-	const executeSql = Effect.fn("WarehouseQueryService.executeSql")(function* (
+	// Client-kind is load-bearing: the service-map DB-edge MV
+	// (service_map_db_edges_hourly_mv) only counts SpanKind IN ('Client','Producer').
+	const executeSql = Effect.fn("WarehouseQueryService.executeSql", { kind: "client" })(function* (
 		tenant: ExecutionTenant,
 		sql: string,
 		pipe: string,
@@ -178,6 +180,11 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			try: () => client.sql(finalSql),
 			catch: (error) => mapWarehouseError(pipe, error),
 		})
+		// `db.duration_ms` measures warehouse execution only — captured here, after
+		// config resolution + settings/client-cache preamble, immediately before the
+		// query runs. `startedAtMs` (captured at span entry) feeds the separate
+		// `db.total_duration_ms`, covering the whole executeSql span including preamble.
+		const sqlStartedMs = yield* Clock.currentTimeMillis
 		const result = yield* (
 			// Bound each attempt: don't let a queued query ride the ambient ~30s
 			// Worker fetch limit past its declared budget. Non-transient, so it
@@ -189,6 +196,10 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 						Effect.timeoutOrElse({
 							duration: Duration.millis(attemptTimeoutMs),
 							orElse: () =>
+								// Constructed directly via `toWarehouseQueryError` (non-transient) — this
+								// timeout must never flow through `mapWarehouseError`, whose transient
+								// regex could reclassify a "timeout" message and feed it back into the
+								// retry loop, re-amplifying load on an already-struggling warehouse.
 								Effect.fail(
 									toWarehouseQueryError(
 										pipe,
@@ -207,9 +218,12 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			}),
 			Effect.tapError((error) =>
 				Effect.gen(function* () {
-					const elapsedMs = (yield* Clock.currentTimeMillis) - startedAtMs
+					const nowMs = yield* Clock.currentTimeMillis
+					const elapsedMs = nowMs - sqlStartedMs
+					const totalElapsedMs = nowMs - startedAtMs
 					const attempts = yield* Ref.get(retryAttempts)
 					yield* Effect.annotateCurrentSpan("db.duration_ms", elapsedMs)
+					yield* Effect.annotateCurrentSpan("db.total_duration_ms", totalElapsedMs)
 					yield* Effect.annotateCurrentSpan("db.retry.attempts", attempts)
 					yield* Effect.logError("WarehouseQueryService.executeSql failed", {
 						pipe,
@@ -218,7 +232,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 						backend: resolved.config._tag,
 						durationMs: elapsedMs,
 						retryAttempts: attempts,
-						error: String(error),
+						errorTag: error._tag,
 						message: error.message,
 						sql: truncateSql(finalSql, SQL_LOG_MAX),
 						sqlLength,
@@ -230,7 +244,9 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 		)
 
 		yield* Effect.annotateCurrentSpan("result.rowCount", result.data.length)
-		yield* Effect.annotateCurrentSpan("db.duration_ms", (yield* Clock.currentTimeMillis) - startedAtMs)
+		const completedAtMs = yield* Clock.currentTimeMillis
+		yield* Effect.annotateCurrentSpan("db.duration_ms", completedAtMs - sqlStartedMs)
+		yield* Effect.annotateCurrentSpan("db.total_duration_ms", completedAtMs - startedAtMs)
 		yield* Effect.annotateCurrentSpan("db.retry.attempts", yield* Ref.get(retryAttempts))
 		return result.data
 	})
@@ -371,7 +387,7 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 					datasource,
 					rowCount: rows.length,
 					backend: resolved.config._tag,
-					error: String(error),
+					errorTag: error._tag,
 					message: error.message,
 				}),
 			),
@@ -388,20 +404,33 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 			query(tenant, { pipeName: pipe, params }, { ...options, context: `pipe:${pipe}` }).pipe(
 				Effect.map((response) => ({ data: response.data as unknown as ReadonlyArray<T> })),
 				Effect.withSpan("WarehouseExecutor.query", {
-					attributes: { pipe, orgId: tenant.orgId, "query.profile": options?.profile },
+					attributes: {
+						pipe,
+						orgId: tenant.orgId,
+						"query.profile": options?.profile,
+						"query.context": `pipe:${pipe}`,
+					},
 				}),
 			),
 		sqlQuery: <T>(sql: string, options?: ExecutorQueryOptions) =>
 			sqlQuery(tenant, sql, { ...options, context: "warehouseExecutor.sqlQuery" }).pipe(
 				Effect.map((rows) => rows as unknown as ReadonlyArray<T>),
 				Effect.withSpan("WarehouseExecutor.sqlQuery", {
-					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+					attributes: {
+						orgId: tenant.orgId,
+						"query.profile": options?.profile,
+						"query.context": "warehouseExecutor.sqlQuery",
+					},
 				}),
 			),
 		compiledQuery: <T>(compiled: CompiledQuery<T>, options?: ExecutorQueryOptions) =>
 			compiledQuery(tenant, compiled, { ...options, context: "warehouseExecutor.compiledQuery" }).pipe(
 				Effect.withSpan("WarehouseExecutor.compiledQuery", {
-					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+					attributes: {
+						orgId: tenant.orgId,
+						"query.profile": options?.profile,
+						"query.context": "warehouseExecutor.compiledQuery",
+					},
 				}),
 			),
 		compiledQueryFirst: <T>(compiled: CompiledQuery<T>, options?: ExecutorQueryOptions) =>
@@ -410,7 +439,11 @@ export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQue
 				context: "warehouseExecutor.compiledQueryFirst",
 			}).pipe(
 				Effect.withSpan("WarehouseExecutor.compiledQueryFirst", {
-					attributes: { orgId: tenant.orgId, "query.profile": options?.profile },
+					attributes: {
+						orgId: tenant.orgId,
+						"query.profile": options?.profile,
+						"query.context": "warehouseExecutor.compiledQueryFirst",
+					},
 				}),
 			),
 	})
