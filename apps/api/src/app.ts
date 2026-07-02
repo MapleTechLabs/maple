@@ -47,6 +47,7 @@ import { AuthService } from "./services/AuthService"
 import { ApiAuthorizationLayer } from "./services/ApiAuthorizationLayer"
 import { InternalServiceAuthorizationLayer } from "./services/InternalServiceAuthorizationLayer"
 import { CloudflareLogpushService } from "./services/CloudflareLogpushService"
+import { CloudflareOAuthService } from "./services/CloudflareOAuthService"
 import { DashboardPersistenceService } from "./services/DashboardPersistenceService"
 import { DemoService } from "./services/DemoService"
 import { DigestService } from "./services/DigestService"
@@ -94,6 +95,7 @@ const CoreServicesLive = Layer.mergeAll(
 	AuthService.layer,
 	ApiKeysService.layer,
 	CloudflareLogpushService.layer,
+	CloudflareOAuthService.layer,
 	DashboardPersistenceService.layer,
 	HazelOAuthService.layer,
 	OnboardingService.layer,
