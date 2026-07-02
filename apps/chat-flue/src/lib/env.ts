@@ -4,13 +4,15 @@ import type { CloudflareAIBinding } from "@flue/runtime/cloudflare"
 export interface ChatFlueEnv {
 	/** Workers AI binding. Backs the `cloudflare/*` model provider (env.AI.run). */
 	AI: CloudflareAIBinding
+	/** OpenRouter API key; backs the `openrouter/*` model provider (registered in app.ts). */
+	OPENROUTER_API_KEY?: string
 	/** Base URL of the Maple API worker that hosts the MCP server (`/mcp`). */
 	MAPLE_API_URL: string
 	/** Shared secret for Maple internal-service auth (`Bearer maple_svc_<token>`). */
 	INTERNAL_SERVICE_TOKEN: string
-	/** Optional Workers AI model override, e.g. `cloudflare/@cf/meta/llama-3.3-70b-instruct-fp8-fast`. */
+	/** Optional model override (any Flue provider specifier), e.g. `openrouter/google/gemini-3.5-flash`. */
 	MAPLE_CHAT_MODEL?: string
-	/** Optional Workers AI model override for the headless triage workflow (falls back to MAPLE_CHAT_MODEL). */
+	/** Optional model override for the headless triage workflow (falls back to MAPLE_CHAT_MODEL). */
 	MAPLE_TRIAGE_MODEL?: string
 	/** Deployment environment label, surfaced on telemetry. */
 	MAPLE_ENVIRONMENT?: string

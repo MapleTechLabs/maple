@@ -1,5 +1,5 @@
 import { createOpenTelemetryObserver } from "@flue/opentelemetry"
-import { observe } from "@flue/runtime"
+import { observe, registerProvider } from "@flue/runtime"
 import { flue } from "@flue/runtime/routing"
 import { Hono } from "hono"
 import { cors } from "hono/cors"
@@ -24,6 +24,19 @@ import { telemetryEnv } from "./lib/telemetry-env.ts"
 // (→ Maple) and are the primary signal for the "chat did nothing" failure mode,
 // regardless of whether the OTel export is on.
 const env = await telemetryEnv();
+
+// Model provider: the chat agent + triage workflow default to
+// `openrouter/google/gemini-3.5-flash`, so register the OpenRouter provider with
+// its API key. Runs at module scope in every isolate (worker + DOs), before the
+// Flue-generated `_entry.ts` provider body (which only registers `cloudflare`),
+// so `openrouter` is available to `resolveModel` on the first turn. `openrouter`
+// is a catalog provider, so the key is all that's needed (api + baseUrl default
+// from the catalog). Guarded on the key so module load never throws when it's
+// unset (tests / pre-secret deploys); a missing key surfaces at run time instead.
+if (env.OPENROUTER_API_KEY) {
+	registerProvider("openrouter", { apiKey: env.OPENROUTER_API_KEY })
+}
+
 const tracerProvider = setupTelemetry({
 	ingestKey: env.MAPLE_INGEST_KEY,
 	endpoint: env.MAPLE_ENDPOINT,

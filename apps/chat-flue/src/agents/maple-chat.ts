@@ -9,17 +9,17 @@ import { buildSubmitDiagnosisTool } from "../lib/submit-diagnosis.ts"
 import { enterSpan } from "../lib/tracing.ts"
 
 /**
- * Default Workers AI model. EXPERIMENT: trying Z.ai's `@cf/zai-org/glm-5.2`.
- * `cloudflare/<model-id>` is passed verbatim to `env.AI.run(...)`; an `@cf/*`
- * model is hosted natively on Workers AI — keyless and billed as normal Workers
- * AI usage (neurons + the daily free allocation), no partner/Unified Billing or
- * AI Gateway BYOK.
+ * Default chat model: Google's `gemini-3.5-flash`, reached through OpenRouter.
+ * Flue parses a model specifier as `provider-id/model-id` (split on the first
+ * `/`), so `openrouter/google/gemini-3.5-flash` routes to the `openrouter`
+ * provider with model id `google/gemini-3.5-flash`. The provider is registered
+ * in `app.ts` with `OPENROUTER_API_KEY`; usage is billed to that OpenRouter key
+ * (no longer keyless Workers AI).
  *
- * Previous default: `cloudflare/@cf/moonshotai/kimi-k2.6` (validated). The
- * Workers AI catalog churns, so confirm the id against the live catalog if a
- * call 404s. Override per-org via `MAPLE_CHAT_MODEL`.
+ * Previous default: `cloudflare/@cf/zai-org/glm-5.2` (native Workers AI).
+ * Override per deploy via `MAPLE_CHAT_MODEL` (any Flue provider specifier).
  */
-const DEFAULT_MODEL = "cloudflare/@cf/zai-org/glm-5.2"
+const DEFAULT_MODEL = "openrouter/google/gemini-3.5-flash"
 
 /**
  * The addressable Maple chat agent on Cloudflare Workers AI, with tools sourced

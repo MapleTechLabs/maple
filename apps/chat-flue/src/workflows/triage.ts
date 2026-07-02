@@ -6,8 +6,8 @@ import { AiTriageResultSchema } from "../lib/triage-result.ts"
 
 /**
  * Headless AI-triage as a Flue workflow — the agentic-investigation half of the
- * legacy apps/api `AiTriageWorkflow`. It runs the read-only investigation loop on
- * Workers AI against Maple's MCP tools and returns a structured `AiTriageResult`.
+ * legacy apps/api `AiTriageWorkflow`. It runs the read-only investigation loop
+ * against Maple's MCP tools and returns a structured `AiTriageResult`.
  *
  * Boundary: this workflow owns ONLY the LLM step. The durable incident lifecycle
  * — gate/claim, D1 `ai_triage_runs` persistence, issue severity + timeline,
@@ -20,7 +20,7 @@ import { AiTriageResultSchema } from "../lib/triage-result.ts"
  * model's final structured output is validated against `AiTriageResultSchema`.
  */
 
-const DEFAULT_TRIAGE_MODEL = "cloudflare/@cf/moonshotai/kimi-k2.6"
+const DEFAULT_TRIAGE_MODEL = "openrouter/google/gemini-3.5-flash"
 
 export interface TriagePayload {
 	readonly orgId: string
