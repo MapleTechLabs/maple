@@ -75,6 +75,41 @@ export class HazelDisconnectResponse extends Schema.Class<HazelDisconnectRespons
 	},
 ) {}
 
+// ---- Cloudflare (account OAuth + telemetry auto-provisioning) --------------
+
+/**
+ * Connection state of the Cloudflare integration. `accountId`/`accountName` identify the single
+ * Cloudflare account the OAuth token is scoped to (Maple enforces exactly one account per org).
+ */
+export class CloudflareIntegrationStatus extends Schema.Class<CloudflareIntegrationStatus>(
+	"CloudflareIntegrationStatus",
+)({
+	connected: Schema.Boolean,
+	accountId: Schema.NullOr(Schema.String),
+	accountName: Schema.NullOr(Schema.String),
+	connectedByUserId: Schema.NullOr(UserId),
+	scope: Schema.NullOr(Schema.String),
+}) {}
+
+export class CloudflareStartConnectRequest extends Schema.Class<CloudflareStartConnectRequest>(
+	"CloudflareStartConnectRequest",
+)({
+	returnTo: Schema.optionalKey(Schema.String),
+}) {}
+
+export class CloudflareStartConnectResponse extends Schema.Class<CloudflareStartConnectResponse>(
+	"CloudflareStartConnectResponse",
+)({
+	redirectUrl: Schema.String,
+	state: Schema.String,
+}) {}
+
+export class CloudflareDisconnectResponse extends Schema.Class<CloudflareDisconnectResponse>(
+	"CloudflareDisconnectResponse",
+)({
+	disconnected: Schema.Boolean,
+}) {}
+
 // ---- GitHub (VCS App installation) ----------------------------------------
 
 /** One branch a repo knows about — an option in the tracked-branch picker. */
@@ -299,6 +334,30 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 	.add(
 		HttpApiEndpoint.delete("hazelDisconnect", "/hazel", {
 			success: HazelDisconnectResponse,
+			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("cloudflareStatus", "/cloudflare/status", {
+			success: CloudflareIntegrationStatus,
+			error: IntegrationsPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("cloudflareStart", "/cloudflare/start", {
+			payload: CloudflareStartConnectRequest,
+			success: CloudflareStartConnectResponse,
+			error: [
+				IntegrationsForbiddenError,
+				IntegrationsValidationError,
+				IntegrationsUpstreamError,
+				IntegrationsPersistenceError,
+			],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("cloudflareDisconnect", "/cloudflare", {
+			success: CloudflareDisconnectResponse,
 			error: [IntegrationsForbiddenError, IntegrationsPersistenceError],
 		}),
 	)

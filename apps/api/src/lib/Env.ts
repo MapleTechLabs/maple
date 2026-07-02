@@ -42,6 +42,13 @@ export interface EnvShape {
 	readonly GITHUB_APP_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly GITHUB_APP_WEBHOOK_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly GITHUB_API_BASE_URL: string
+	readonly CLOUDFLARE_OAUTH_CLIENT_ID: Option.Option<string>
+	readonly CLOUDFLARE_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
+	readonly CLOUDFLARE_OAUTH_SCOPES: string
+	readonly CLOUDFLARE_OAUTH_AUTHORIZE_URL: string
+	readonly CLOUDFLARE_OAUTH_TOKEN_URL: string
+	readonly CLOUDFLARE_OAUTH_REVOKE_URL: string
+	readonly CLOUDFLARE_API_BASE_URL: string
 }
 
 const stringWithDefault = (key: string, fallback: string) =>
@@ -105,6 +112,28 @@ const envConfig = Config.all({
 	GITHUB_APP_CLIENT_SECRET: optionalRedacted("GITHUB_APP_CLIENT_SECRET"),
 	GITHUB_APP_WEBHOOK_SECRET: optionalRedacted("GITHUB_APP_WEBHOOK_SECRET"),
 	GITHUB_API_BASE_URL: stringWithDefault("GITHUB_API_BASE_URL", "https://api.github.com"),
+	CLOUDFLARE_OAUTH_CLIENT_ID: optionalString("CLOUDFLARE_OAUTH_CLIENT_ID"),
+	CLOUDFLARE_OAUTH_CLIENT_SECRET: optionalRedacted("CLOUDFLARE_OAUTH_CLIENT_SECRET"),
+	CLOUDFLARE_OAUTH_SCOPES: stringWithDefault(
+		"CLOUDFLARE_OAUTH_SCOPES",
+		"account.settings:read workers_observability:write workers.scripts:read logs:write account_analytics:read offline_access",
+	),
+	CLOUDFLARE_OAUTH_AUTHORIZE_URL: stringWithDefault(
+		"CLOUDFLARE_OAUTH_AUTHORIZE_URL",
+		"https://dash.cloudflare.com/oauth2/auth",
+	),
+	CLOUDFLARE_OAUTH_TOKEN_URL: stringWithDefault(
+		"CLOUDFLARE_OAUTH_TOKEN_URL",
+		"https://dash.cloudflare.com/oauth2/token",
+	),
+	CLOUDFLARE_OAUTH_REVOKE_URL: stringWithDefault(
+		"CLOUDFLARE_OAUTH_REVOKE_URL",
+		"https://dash.cloudflare.com/oauth2/revoke",
+	),
+	CLOUDFLARE_API_BASE_URL: stringWithDefault(
+		"CLOUDFLARE_API_BASE_URL",
+		"https://api.cloudflare.com/client/v4",
+	),
 })
 
 const makeEnv = Effect.gen(function* () {

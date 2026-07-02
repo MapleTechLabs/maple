@@ -22,6 +22,13 @@
       "when": 1782656894999,
       "tag": "0002_bizarre_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1782944140616,
+      "tag": "0003_premium_korg",
+      "breakpoints": true
     }
   ]
 }

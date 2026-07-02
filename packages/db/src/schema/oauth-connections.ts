@@ -35,6 +35,9 @@ export const oauthAuthStates = pgTable(
 		initiatedByUserId: text("initiated_by_user_id").notNull(),
 		redirectUri: text("redirect_uri").notNull(),
 		returnTo: text("return_to"),
+		// PKCE code verifier (RFC 7636). Set for providers that use the Authorization Code + PKCE
+		// flow (e.g. Cloudflare public clients, which carry no client secret); null otherwise.
+		codeVerifier: text("code_verifier"),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
 	},

@@ -1,6 +1,9 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
+	CloudflareDisconnectResponse,
+	CloudflareIntegrationStatus,
+	CloudflareStartConnectResponse,
 	CurrentTenant,
 	ExternalUserId,
 	GithubDeleteRepositoryResponse,
@@ -21,6 +24,7 @@ import {
 } from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { Env } from "../lib/Env"
+import { CloudflareOAuthService } from "../services/CloudflareOAuthService"
 import { GithubConnectService } from "../services/vcs/vendor/github/GithubConnectService"
 import { VcsCommitService } from "../services/vcs/VcsCommitService"
 import { HazelOAuthService } from "../services/HazelOAuthService"
@@ -31,8 +35,10 @@ const asUserId = Schema.decodeUnknownSync(UserId)
 
 const HAZEL_CALLBACK_PATH = "/api/integrations/hazel/callback"
 const GITHUB_CALLBACK_PATH = "/api/integrations/github/callback"
+const CLOUDFLARE_CALLBACK_PATH = "/api/integrations/cloudflare/callback"
 const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
+const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 
 const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
 	const headers = req.headers as Record<string, string | undefined>
@@ -57,6 +63,9 @@ const resolveCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
 const resolveGithubCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
 	`${resolveRequestOrigin(req)}${GITHUB_CALLBACK_PATH}`
 
+const resolveCloudflareCallbackUrl = (req: HttpServerRequest.HttpServerRequest): string =>
+	`${resolveRequestOrigin(req)}${CLOUDFLARE_CALLBACK_PATH}`
+
 const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 	requireAdminRole(
 		roles,
@@ -68,6 +77,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 		const hazel = yield* HazelOAuthService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
+		const cloudflare = yield* CloudflareOAuthService
 
 		return (
 			handlers
@@ -139,6 +149,48 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						yield* requireAdmin(tenant.roles)
 						const result = yield* hazel.disconnect(tenant.orgId)
 						return new HazelDisconnectResponse(result)
+					}),
+				)
+				.handle("cloudflareStatus", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const status = yield* cloudflare.getStatus(tenant.orgId)
+						if (!status.connected) {
+							return new CloudflareIntegrationStatus({
+								connected: false,
+								accountId: null,
+								accountName: null,
+								connectedByUserId: null,
+								scope: null,
+							})
+						}
+						return new CloudflareIntegrationStatus({
+							connected: true,
+							accountId: status.accountId,
+							accountName: status.accountName,
+							connectedByUserId: asUserId(status.connectedByUserId),
+							scope: status.scope,
+						})
+					}),
+				)
+				.handle("cloudflareStart", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const result = yield* cloudflare.startConnect(tenant.orgId, tenant.userId, {
+							callbackUrl: resolveCloudflareCallbackUrl(req),
+							returnTo: payload.returnTo,
+						})
+						return new CloudflareStartConnectResponse(result)
+					}),
+				)
+				.handle("cloudflareDisconnect", () =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* cloudflare.disconnect(tenant.orgId)
+						return new CloudflareDisconnectResponse(result)
 					}),
 				)
 				.handle("githubStatus", () =>
@@ -308,6 +360,7 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
 		const github = yield* GithubConnectService
+		const cloudflare = yield* CloudflareOAuthService
 		const env = yield* Env
 
 		const dashboardTargetOrigin = resolveDashboardTargetOrigin(env.MAPLE_APP_BASE_URL)
@@ -324,6 +377,13 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 				targetOrigin: dashboardTargetOrigin,
 				messageType: GITHUB_MESSAGE_TYPE,
 				label: "GitHub",
+			})
+		const cloudflareCallbackPage = (params: Omit<CallbackPageParams, "targetOrigin">) =>
+			renderCallbackPage({
+				...params,
+				targetOrigin: dashboardTargetOrigin,
+				messageType: CLOUDFLARE_MESSAGE_TYPE,
+				label: "Cloudflare",
 			})
 
 		const handle = (req: HttpServerRequest.HttpServerRequest) =>
@@ -506,5 +566,97 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 			})
 
 		yield* router.add("GET", "/api/integrations/github/callback", handleGithub)
+
+		const handleCloudflare = (req: HttpServerRequest.HttpServerRequest) =>
+			Effect.gen(function* () {
+				const url = new URL(req.url, "http://localhost")
+				const code = url.searchParams.get("code")
+				const state = url.searchParams.get("state")
+				const oauthError = url.searchParams.get("error")
+				const oauthErrorDescription = url.searchParams.get("error_description") ?? oauthError
+
+				if (oauthError) {
+					return htmlResponse(
+						cloudflareCallbackPage({
+							status: "error",
+							message: oauthErrorDescription || "Cloudflare returned an error",
+							returnTo: null,
+						}),
+						400,
+					)
+				}
+
+				if (!code || !state) {
+					return htmlResponse(
+						cloudflareCallbackPage({
+							status: "error",
+							message: "Missing code or state in callback",
+							returnTo: null,
+						}),
+						400,
+					)
+				}
+
+				return yield* cloudflare.completeConnect(code, state).pipe(
+					Effect.map((result) =>
+						htmlResponse(
+							cloudflareCallbackPage({
+								status: "success",
+								message: "You can close this window and return to Maple.",
+								returnTo: result.returnTo,
+							}),
+						),
+					),
+					Effect.catchTag("@maple/http/errors/IntegrationsValidationError", (error) =>
+						Effect.succeed(
+							htmlResponse(
+								cloudflareCallbackPage({
+									status: "error",
+									message: error.message,
+									returnTo: null,
+								}),
+								400,
+							),
+						),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/IntegrationsRevokedError": () =>
+							Effect.succeed(
+								htmlResponse(
+									cloudflareCallbackPage({
+										status: "error",
+										message: "Cloudflare rejected the authorization — reconnect and try again",
+										returnTo: null,
+									}),
+									400,
+								),
+							),
+						"@maple/http/errors/IntegrationsUpstreamError": () =>
+							Effect.succeed(
+								htmlResponse(
+									cloudflareCallbackPage({
+										status: "error",
+										message: "Failed to complete Cloudflare connection",
+										returnTo: null,
+									}),
+									400,
+								),
+							),
+						"@maple/http/errors/IntegrationsPersistenceError": () =>
+							Effect.succeed(
+								htmlResponse(
+									cloudflareCallbackPage({
+										status: "error",
+										message: "Failed to complete Cloudflare connection",
+										returnTo: null,
+									}),
+									400,
+								),
+							),
+					}),
+				)
+			})
+
+		yield* router.add("GET", "/api/integrations/cloudflare/callback", handleCloudflare)
 	}),
 )
