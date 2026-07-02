@@ -4,6 +4,7 @@ import { HttpMiddleware, HttpRouter, HttpServerResponse } from "effect/unstable/
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { McpLive } from "./mcp/app"
 import { HttpBillingLive, HttpBillingPublicLive } from "./routes/billing.http"
+import { BillingWebhookRouter } from "./routes/billing-webhook.http"
 import { HttpAiTriageLive } from "./routes/ai-triage.http"
 import { HttpAlertsLive } from "./routes/alerts.http"
 import { HttpAnomaliesLive } from "./routes/anomalies.http"
@@ -36,6 +37,7 @@ import { HttpWarehouseLive } from "./routes/warehouse.http"
 import { AiTriageService } from "./services/AiTriageService"
 import { AlertRuntime, AlertsService } from "./services/AlertsService"
 import { AnomalyDetectionService } from "./services/AnomalyDetectionService"
+import { BillingSuspensionService } from "./services/BillingSuspensionService"
 import { BucketCacheService, EdgeCacheService } from "@maple/query-engine/caching"
 import { CacheBackendLive } from "./lib/CacheBackendLive"
 import { ErrorsService } from "./services/ErrorsService"
@@ -100,6 +102,7 @@ const CoreServicesLive = Layer.mergeAll(
 	OrgIngestKeysService.layer,
 	OrgClickHouseSettingsService.layer,
 	OrganizationService.layer,
+	BillingSuspensionService.layer,
 	// Shared with ScrapeTargetsService via layer memoization so the proxy and
 	// the internal target list resolve sub-targets from one discovery cache.
 	PlanetScaleDiscoveryService.layer,
@@ -242,6 +245,7 @@ export const AllRoutes = Layer.mergeAll(
 	PrometheusScrapeProxyRouter,
 	ScraperInternalRouter,
 	VcsWebhookRouter,
+	BillingWebhookRouter,
 	McpLive,
 	HealthRouter,
 	McpGetFallback,

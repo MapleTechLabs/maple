@@ -1,7 +1,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"
 import { Effect, Option, Redacted, Schema } from "effect"
-import { autumnHandler, type CustomerData } from "autumn-js/backend"
+import type { CustomerData } from "autumn-js/backend"
 import { EdgeCacheService, type EdgeCacheServiceShape } from "@maple/query-engine/caching"
 import { isActivePlanSubscription } from "@maple/domain/billing"
 import {
@@ -16,15 +16,9 @@ import {
 	MapleApi,
 	PreviewAttachResult,
 } from "@maple/domain/http"
+import { type AutumnResult, decodeUpstream, ensureOk, makeCallAutumn } from "../lib/AutumnClient"
 import { Env } from "../lib/Env"
 import { AuthService, type AuthServiceShape } from "../services/AuthService"
-
-type AutumnResult = Awaited<ReturnType<typeof autumnHandler>>
-
-// `autumnHandler` matches its route by `method` + `path`, always POST against
-// `${DEFAULT_PATH_PREFIX}/${route}` (= /api/autumn/<route>) regardless of which
-// Maple endpoint fronts it, so every call here speaks that internal contract.
-const AUTUMN_PATH_PREFIX = "/api/autumn"
 
 // getOrCreateCustomer fires on every page load (hot path) and its latency is
 // dominated by the upstream Autumn call. Cache its success response per org for
@@ -96,53 +90,6 @@ export const readCustomerCached = (
 				Effect.succeed({ result: error.result, hit: false }),
 			),
 		)
-
-const makeCallAutumn =
-	(secretKey: string | undefined) =>
-	(
-		route: string,
-		body: unknown,
-		customerId: string | undefined,
-		customerData?: CustomerData,
-	): Effect.Effect<AutumnResult, BillingUpstreamError> =>
-		secretKey === undefined
-			? Effect.fail(new BillingUpstreamError({ message: "Billing is not configured" }))
-			: Effect.tryPromise({
-					try: () =>
-						autumnHandler({
-							request: { url: `${AUTUMN_PATH_PREFIX}/${route}`, method: "POST", body },
-							customerId,
-							customerData,
-							clientOptions: { secretKey },
-						}),
-					catch: (error) =>
-						new BillingUpstreamError({
-							message: error instanceof Error ? error.message : String(error),
-						}),
-				})
-
-// Surface a readable message for a non-2xx Autumn response (it carries a
-// `{ message }` / `{ error }` body) so the client error isn't an opaque 502.
-const upstreamMessage = (result: AutumnResult): string => {
-	const body = result.response as { message?: unknown; error?: unknown } | null
-	const message = body?.message ?? body?.error
-	return typeof message === "string" ? message : `Billing request failed (${result.statusCode})`
-}
-
-const ensureOk = (result: AutumnResult): Effect.Effect<unknown, BillingUpstreamError> =>
-	result.statusCode >= 200 && result.statusCode < 300
-		? Effect.succeed(result.response)
-		: Effect.fail(new BillingUpstreamError({ message: upstreamMessage(result) }))
-
-const decodeUpstream = <S extends Schema.Top>(
-	schema: S,
-	value: unknown,
-): Effect.Effect<S["Type"], BillingUpstreamError, S["DecodingServices"]> =>
-	Schema.decodeUnknownEffect(schema)(value).pipe(
-		Effect.mapError(
-			(error) => new BillingUpstreamError({ message: `Unexpected billing response: ${error}` }),
-		),
-	)
 
 // Enrich checkout (attach) with Clerk-resolved identity so the customer is
 // identified before Stripe and the buyer's email is pre-filled. Ported verbatim

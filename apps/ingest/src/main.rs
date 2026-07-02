@@ -557,6 +557,10 @@ struct KeyRow {
     org_id: String,
     self_managed: bool,
     clickhouse_ready: bool,
+    // The owning org's ingestion is suspended for non-payment (a row in
+    // org_billing_suspensions with suspended_at set). Resolved in the same
+    // roundtrip as routing; enforced as a 402 before any payload is accepted.
+    ingest_suspended: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -567,6 +571,7 @@ struct ConnectorRow {
     dataset: String,
     self_managed: bool,
     clickhouse_ready: bool,
+    ingest_suspended: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -599,6 +604,7 @@ impl IngestKeyIdentity {
             key_id: self.key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            ingest_suspended: routing.ingest_suspended,
         }
     }
 }
@@ -624,6 +630,7 @@ impl CloudflareConnectorIdentity {
             secret_key_id: self.secret_key_id,
             self_managed: routing.self_managed,
             clickhouse_ready: routing.clickhouse_ready,
+            ingest_suspended: routing.ingest_suspended,
         }
     }
 }
@@ -632,6 +639,10 @@ impl CloudflareConnectorIdentity {
 struct OrgRouting {
     self_managed: bool,
     clickhouse_ready: bool,
+    // Billing suspension flag (see KeyRow). Lives on routing so it refreshes on
+    // the short org-routing TTL — a paid-up org resumes ingestion quickly, and a
+    // routing fetch failure defaults to false (fail-open, never blocks on a DB blip).
+    ingest_suspended: bool,
 }
 
 impl OrgRouting {
@@ -639,6 +650,7 @@ impl OrgRouting {
         Self {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
+            ingest_suspended: row.ingest_suspended,
         }
     }
 
@@ -646,6 +658,7 @@ impl OrgRouting {
         Self {
             self_managed: row.self_managed,
             clickhouse_ready: row.clickhouse_ready,
+            ingest_suspended: row.ingest_suspended,
         }
     }
 }
@@ -690,6 +703,9 @@ struct ResolvedIngestKey {
     // version (SCHEMA_VERSION) — NOT the Tinybird-coupled PROJECT_REVISION, so a
     // Tinybird-only schema change can't silently un-ready a BYO-CH org.
     clickhouse_ready: bool,
+    // The org is 3+ days overdue and has never paid — ingestion is hard-stopped
+    // with a 402 before any payload is accepted. See org_billing_suspensions.
+    ingest_suspended: bool,
 }
 
 #[derive(Clone)]
@@ -704,6 +720,7 @@ struct ResolvedCloudflareConnector {
     // to the self-managed pool when the owning org has BYO Tinybird active.
     self_managed: bool,
     clickhouse_ready: bool,
+    ingest_suspended: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1586,6 +1603,7 @@ async fn resolve_grpc_ingest_key(
             key_id: "sentinel".to_string(),
             self_managed: false,
             clickhouse_ready: false,
+            ingest_suspended: false,
         });
     }
 
@@ -2277,6 +2295,25 @@ async fn handle_signal_inner(
         "Authenticated"
     );
 
+    // --- Billing suspension (dunning) ---
+    // Hard-stop ingestion for an org that is 3+ days overdue and has never paid.
+    // This flag is computed off-band by the API (Autumn webhook + daily reconcile)
+    // and persisted in org_billing_suspensions; the gateway only reads it. Checked
+    // before the Autumn entitlement gate and independent of AUTUMN_ENFORCE_LIMITS.
+    if resolved_key.ingest_suspended {
+        warn!(
+            org_id = %resolved_key.org_id,
+            "Ingestion suspended: unpaid invoice overdue"
+        );
+        return Err((
+            ApiError::new(
+                StatusCode::PAYMENT_REQUIRED,
+                "Ingestion suspended: unpaid invoice overdue",
+            ),
+            "billing_suspended",
+        ));
+    }
+
     // --- Billing entitlement (per-signal) ---
     // Reject ingestion when the org has no active subscription or has exhausted
     // its hard-capped base-plan allotment for this signal. Fails open on any
@@ -2452,6 +2489,23 @@ async fn handle_cloudflare_logpush_inner(
     Span::current().record("maple.ingest.self_managed", resolved.self_managed);
     Span::current().record("maple.ingest.clickhouse_ready", resolved.clickhouse_ready);
 
+    // Billing suspension (dunning) — same hard-stop as the OTLP path, before the
+    // per-feature entitlement gate and independent of AUTUMN_ENFORCE_LIMITS.
+    if resolved.ingest_suspended {
+        warn!(
+            org_id = %resolved.org_id,
+            connector_id,
+            "Cloudflare logpush suspended: unpaid invoice overdue"
+        );
+        return Err((
+            ApiError::new(
+                StatusCode::PAYMENT_REQUIRED,
+                "Ingestion suspended: unpaid invoice overdue",
+            ),
+            "billing_suspended",
+        ));
+    }
+
     // Logpush bills the `logs` feature — gate it the same way as OTLP logs.
     if let Some(entitlements) = &state.autumn_entitlements {
         if !entitlements.is_allowed(&resolved.org_id, "logs").await {
@@ -2575,6 +2629,7 @@ async fn handle_cloudflare_logpush_inner(
                 key_id: resolved.secret_key_id.clone(),
                 self_managed: resolved.self_managed,
                 clickhouse_ready: resolved.clickhouse_ready,
+                ingest_suspended: resolved.ingest_suspended,
             };
             let decoded = DecodedPayload::Logs(request);
             let response = match process_decoded_payload(
@@ -3716,9 +3771,11 @@ impl KeyStore for PostgresKeyStore {
         let sql = format!(
             "SELECT k.org_id, \
                     COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                    COALESCE(s.sync_status = 'connected' AND s.schema_version = $1, false) AS clickhouse_ready \
+                    COALESCE(s.sync_status = 'connected' AND s.schema_version = $1, false) AS clickhouse_ready, \
+                    (b.suspended_at IS NOT NULL) AS ingest_suspended \
              FROM org_ingest_keys k \
              LEFT JOIN org_clickhouse_settings s ON s.org_id = k.org_id \
+             LEFT JOIN org_billing_suspensions b ON b.org_id = k.org_id \
              WHERE k.{hash_column} = $2 LIMIT 1"
         );
         let client = self.client().await?;
@@ -3733,6 +3790,7 @@ impl KeyStore for PostgresKeyStore {
             org_id: row.get("org_id"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            ingest_suspended: row.get("ingest_suspended"),
         }))
     }
 
@@ -3747,9 +3805,11 @@ impl KeyStore for PostgresKeyStore {
             .query(
                 "SELECT c.org_id, c.service_name, c.zone_name, c.dataset, \
                         COALESCE(s.sync_status = 'connected', false) AS self_managed, \
-                        COALESCE(s.sync_status = 'connected' AND s.schema_version = $1, false) AS clickhouse_ready \
+                        COALESCE(s.sync_status = 'connected' AND s.schema_version = $1, false) AS clickhouse_ready, \
+                        (b.suspended_at IS NOT NULL) AS ingest_suspended \
                  FROM cloudflare_logpush_connectors c \
                  LEFT JOIN org_clickhouse_settings s ON s.org_id = c.org_id \
+                 LEFT JOIN org_billing_suspensions b ON b.org_id = c.org_id \
                  WHERE c.id = $2 AND c.secret_hash = $3 AND c.enabled = true LIMIT 1",
                 &[&revision, &connector_id, &secret_hash],
             )
@@ -3765,6 +3825,7 @@ impl KeyStore for PostgresKeyStore {
             dataset: row.get("dataset"),
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            ingest_suspended: row.get("ingest_suspended"),
         }))
     }
 
@@ -3851,9 +3912,12 @@ impl KeyStore for PostgresKeyStore {
         let client = self.client().await?;
         let rows = client
             .query(
-                "SELECT COALESCE(sync_status = 'connected', false) AS self_managed, \
-                        COALESCE(sync_status = 'connected' AND schema_version = $1, false) AS clickhouse_ready \
-                 FROM org_clickhouse_settings WHERE org_id = $2 LIMIT 1",
+                "SELECT COALESCE(s.sync_status = 'connected', false) AS self_managed, \
+                        COALESCE(s.sync_status = 'connected' AND s.schema_version = $1, false) AS clickhouse_ready, \
+                        (b.suspended_at IS NOT NULL) AS ingest_suspended \
+                 FROM (SELECT $2::text AS org_id) o \
+                 LEFT JOIN org_clickhouse_settings s ON s.org_id = o.org_id \
+                 LEFT JOIN org_billing_suspensions b ON b.org_id = o.org_id LIMIT 1",
                 &[&revision, &org_id],
             )
             .await
@@ -3864,6 +3928,7 @@ impl KeyStore for PostgresKeyStore {
         Ok(Some(OrgRouting {
             self_managed: row.get("self_managed"),
             clickhouse_ready: row.get("clickhouse_ready"),
+            ingest_suspended: row.get("ingest_suspended"),
         }))
     }
 
@@ -3925,6 +3990,7 @@ impl KeyStore for StaticKeyStore {
             org_id: self.org_id.clone(),
             self_managed: false,
             clickhouse_ready: false,
+            ingest_suspended: false,
         }))
     }
 
@@ -4297,6 +4363,7 @@ mod tests {
             key_id: "abc".to_string(),
             self_managed: false,
             clickhouse_ready: false,
+            ingest_suspended: false,
         };
 
         enrich_resource_attributes(&mut attributes, &resolved);
@@ -4384,6 +4451,7 @@ mod tests {
             secret_key_id: "secret".to_string(),
             self_managed: false,
             clickhouse_ready: false,
+            ingest_suspended: false,
         };
         let record = serde_json::from_str::<JsonMap<String, JsonValue>>(
             r#"{
@@ -4504,6 +4572,7 @@ mod tests {
                 OrgRouting {
                     self_managed: row.self_managed,
                     clickhouse_ready: row.clickhouse_ready,
+                    ingest_suspended: row.ingest_suspended,
                 },
             );
             self.keys
@@ -4519,6 +4588,7 @@ mod tests {
                 OrgRouting {
                     self_managed: row.self_managed,
                     clickhouse_ready: row.clickhouse_ready,
+                    ingest_suspended: row.ingest_suspended,
                 },
             );
             self.connectors
@@ -4889,6 +4959,7 @@ mod tests {
                 org_id: "org_shared".to_string(),
                 self_managed: false,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
 
@@ -4912,6 +4983,7 @@ mod tests {
                 org_id: "org_byo".to_string(),
                 self_managed: true,
                 clickhouse_ready: true,
+                ingest_suspended: false,
             },
         );
 
@@ -4927,6 +4999,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn resolve_ingest_key_propagates_ingest_suspended_flag() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_suspended",
+            KeyRow {
+                org_id: "org_overdue".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+                ingest_suspended: true,
+            },
+        );
+
+        let resolved = make_resolver(store)
+            .resolve_ingest_key("maple_sk_test_suspended")
+            .await
+            .expect("resolve should succeed")
+            .expect("key should be found");
+
+        // A suspended org still resolves (auth succeeds) — the 402 is enforced by
+        // handle_signal_inner off this flag, not by dropping the key.
+        assert_eq!(resolved.org_id, "org_overdue");
+        assert!(resolved.ingest_suspended);
+    }
+
+    #[tokio::test]
+    async fn resolve_ingest_key_is_not_suspended_by_default() {
+        let store = Arc::new(FakeKeyStore::default());
+        store.insert_private(
+            "maple_sk_test_paid",
+            KeyRow {
+                org_id: "org_paid".to_string(),
+                self_managed: false,
+                clickhouse_ready: false,
+                ingest_suspended: false,
+            },
+        );
+
+        let resolved = make_resolver(store)
+            .resolve_ingest_key("maple_sk_test_paid")
+            .await
+            .expect("resolve should succeed")
+            .expect("key should be found");
+
+        assert!(!resolved.ingest_suspended);
+    }
+
+    #[tokio::test]
     async fn resolve_ingest_key_keeps_stale_schema_on_managed_native_path() {
         let store = Arc::new(FakeKeyStore::default());
         store.insert_private(
@@ -4935,6 +5054,7 @@ mod tests {
                 org_id: "org_stale".to_string(),
                 self_managed: true,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
 
@@ -4961,6 +5081,7 @@ mod tests {
                 org_id: "org_transition".to_string(),
                 self_managed: false,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
 
@@ -4978,6 +5099,7 @@ mod tests {
             OrgRouting {
                 self_managed: true,
                 clickhouse_ready: true,
+                ingest_suspended: false,
             },
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -5010,6 +5132,7 @@ mod tests {
                 org_id: "org_d1_blip".to_string(),
                 self_managed: false,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
 
@@ -5026,6 +5149,7 @@ mod tests {
             OrgRouting {
                 self_managed: true,
                 clickhouse_ready: true,
+                ingest_suspended: false,
             },
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -5073,6 +5197,7 @@ mod tests {
                 dataset: "http_requests".to_string(),
                 self_managed: false,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
         let routing = make_routing_resolver(Arc::clone(&store), Duration::from_millis(5));
@@ -5100,6 +5225,7 @@ mod tests {
             OrgRouting {
                 self_managed: true,
                 clickhouse_ready: true,
+                ingest_suspended: false,
             },
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
@@ -5154,6 +5280,7 @@ mod tests {
                 org_id: "org_forward_ready".to_string(),
                 self_managed: false,
                 clickhouse_ready: false,
+                ingest_suspended: false,
             },
         );
         let state = test_app_state(
@@ -5194,6 +5321,7 @@ mod tests {
             OrgRouting {
                 self_managed: true,
                 clickhouse_ready: true,
+                ingest_suspended: false,
             },
         );
         store.insert_clickhouse_target(
