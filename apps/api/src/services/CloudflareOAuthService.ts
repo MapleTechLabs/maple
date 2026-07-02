@@ -406,7 +406,9 @@ export class CloudflareOAuthService extends Context.Service<
 
 			const values = {
 				externalUserId: account.id,
-				externalUserEmail: account.name,
+				// Cloudflare has no user email in this flow; the account name is a display label.
+				externalUserEmail: null,
+				externalAccountName: account.name,
 				connectedByUserId: stateRow.initiatedByUserId,
 				scope: tokenResponse.scope ?? config.scopes,
 				accessTokenCiphertext: accessEnc.ciphertext,
@@ -540,7 +542,7 @@ export class CloudflareOAuthService extends Context.Service<
 			return {
 				connected: true,
 				accountId: row.externalUserId,
-				accountName: row.externalUserEmail,
+				accountName: row.externalAccountName,
 				connectedByUserId: row.connectedByUserId,
 				scope: row.scope,
 			} as const

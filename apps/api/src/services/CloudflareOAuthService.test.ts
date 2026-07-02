@@ -174,13 +174,21 @@ describe("CloudflareOAuthService", () => {
 			}
 
 			const row = yield* Effect.promise(() =>
-				queryFirstRow<{ external_user_id: string; access_token_ciphertext: string }>(
+				queryFirstRow<{
+					external_user_id: string
+					external_account_name: string | null
+					external_user_email: string | null
+					access_token_ciphertext: string
+				}>(
 					testDb,
-					"SELECT external_user_id, access_token_ciphertext FROM oauth_connections WHERE org_id = $1 AND provider = 'cloudflare'",
+					"SELECT external_user_id, external_account_name, external_user_email, access_token_ciphertext FROM oauth_connections WHERE org_id = $1 AND provider = 'cloudflare'",
 					["org_a"],
 				),
 			)
 			assert.strictEqual(row?.external_user_id, "acc_1")
+			// Account name lives in the dedicated column; the email column stays null (CF has no email).
+			assert.strictEqual(row?.external_account_name, "Acme Inc")
+			assert.strictEqual(row?.external_user_email, null)
 			// Token is encrypted at rest, never stored verbatim.
 			assert.isTrue(!!row && row.access_token_ciphertext !== "cf-access-token")
 		}).pipe(Effect.provide(Layer.mergeAll(makeLayer(testDb, withOAuthApp), withMockFetch(accounts))))

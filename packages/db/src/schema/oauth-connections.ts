@@ -8,6 +8,9 @@ export const oauthConnections = pgTable(
 		provider: text("provider").notNull(),
 		externalUserId: text("external_user_id").notNull(),
 		externalUserEmail: text("external_user_email"),
+		// Provider-agnostic display label for the connected principal (e.g. a Cloudflare account
+		// name). Kept separate from externalUserEmail so that column only ever holds real emails.
+		externalAccountName: text("external_account_name"),
 		connectedByUserId: text("connected_by_user_id").notNull(),
 		scope: text("scope").notNull().default(""),
 		accessTokenCiphertext: text("access_token_ciphertext").notNull(),

@@ -29,6 +29,13 @@
       "when": 1782944140616,
       "tag": "0003_premium_korg",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782985591733,
+      "tag": "0004_loud_pyro",
+      "breakpoints": true
     }
   ]
 }

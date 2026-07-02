@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_connections" ADD COLUMN "external_account_name" text;
