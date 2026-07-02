@@ -20,7 +20,7 @@ import { Effect, Layer } from "effect"
 import { FetchHttpClient, type HttpClient } from "effect/unstable/http"
 
 /** The Effect context a distilled operation requires: resolved credentials + an HTTP client. */
-export type CloudflareRequirements = Credentials | HttpClient.HttpClient
+type CloudflareRequirements = Credentials | HttpClient.HttpClient
 
 /** Any failure a Cloudflare API call can surface to callers, mapped onto Maple's integration errors. */
 export type CloudflareApiError = IntegrationsUpstreamError | IntegrationsRevokedError
@@ -60,7 +60,7 @@ const readMessage = (error: unknown): string => {
 }
 
 /** Collapse distilled's tagged-error union into a Maple domain error, flagging auth failures as revoked. */
-export const mapCloudflareError = (error: unknown): CloudflareApiError => {
+const mapCloudflareError = (error: unknown): CloudflareApiError => {
 	const status = readStatus(error)
 	const tag = readTag(error)
 	if (status === 401 || status === 403 || tag === "Unauthorized" || tag === "Forbidden") {
@@ -78,15 +78,16 @@ export const mapCloudflareError = (error: unknown): CloudflareApiError => {
 /**
  * Provide the credentials + HTTP layers to a distilled operation and run it. Errors are left untouched
  * so callers that need to branch on a specific tag (e.g. `JobNotFound` for delete idempotency) can do
- * so; most callers pipe the result through {@link runMapped}.
+ * so; most callers pipe the result through {@link runMapped}. Kept internal until a second consumer
+ * (Phase 2 Workers provisioning) needs it exported.
  */
-export const runWithToken = <A, E>(
+const runWithToken = <A, E>(
 	accessToken: string,
 	effect: Effect.Effect<A, E, CloudflareRequirements>,
 ): Effect.Effect<A, E, never> => effect.pipe(Effect.provide(runtimeLayer(accessToken)))
 
 /** Like {@link runWithToken} but collapses the distilled error union to a Maple domain error. */
-export const runMapped = <A, E>(
+const runMapped = <A, E>(
 	accessToken: string,
 	effect: Effect.Effect<A, E, CloudflareRequirements>,
 ): Effect.Effect<A, CloudflareApiError, never> =>
