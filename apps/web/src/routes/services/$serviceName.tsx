@@ -30,6 +30,11 @@ import { ServiceDependenciesTab } from "@/components/services/service-dependenci
 import { ServiceEnvironmentSwitcher } from "@/components/services/service-environment-switcher"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 
+// A stable empty releases array for the non-success render branches. Minting a
+// fresh `[]` in the `.orElse` below would give `useCommitMarkers`' `useMemo` a new
+// dependency identity every render, busting the marker cache.
+const EMPTY_RELEASES: ReadonlyArray<ReleasePoint> = []
+
 const ServiceDetailTab = Schema.Literals(["overview", "dependencies"])
 type ServiceDetailTabValue = Schema.Schema.Type<typeof ServiceDetailTab>
 
@@ -304,12 +309,9 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 	// own bucket grid so each marker sits on an x-tick.
 	const releases = Result.builder(overviewResult)
 		.onSuccess((response) => response.releases)
-		.orElse(() => [] as ReleasePoint[])
+		.orElse(() => EMPTY_RELEASES)
 	const chartBuckets = useMemo(() => detailPoints.map((point) => String(point.bucket)), [detailPoints])
-	const { overlay: commitMarkers, resolvers: commitLabelResolvers } = useCommitMarkers(
-		releases,
-		chartBuckets,
-	)
+	const commitMarkers = useCommitMarkers(releases, chartBuckets)
 
 	const widgetData: Record<string, Record<string, unknown>[]> = {
 		latency: detailPoints,
@@ -331,20 +333,17 @@ function OverviewTab({ serviceName, effectiveStartTime, effectiveEndTime, enviro
 	}))
 
 	return (
-		<>
-			<MetricsGrid
-				items={metrics}
-				waiting={!!isWaiting}
-				syncId={`service-${serviceName}`}
-				overlay={commitMarkers}
-				// Pin every chart's y-axis to one width so their plot areas align — the
-				// synced cursor and the commit markers then line up and group identically
-				// across charts (otherwise each chart's own y-axis width shifts the plot,
-				// and the same commits group differently per chart). 72 fits the widest
-				// of these metrics' tick labels (latency ms).
-				yAxisWidth={72}
-			/>
-			{commitLabelResolvers}
-		</>
+		<MetricsGrid
+			items={metrics}
+			waiting={!!isWaiting}
+			syncId={`service-${serviceName}`}
+			overlay={commitMarkers}
+			// Pin every chart's y-axis to one width so their plot areas align — the
+			// synced cursor and the commit markers then line up and group identically
+			// across charts (otherwise each chart's own y-axis width shifts the plot,
+			// and the same commits group differently per chart). 72 fits the widest
+			// of these metrics' tick labels (latency ms).
+			yAxisWidth={72}
+		/>
 	)
 }

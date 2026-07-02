@@ -28,7 +28,7 @@ const MARKER_Z = 3000
 const LABEL_HEIGHT = 18
 // Distance between the chip's lower edge and the top of the plot. The chip sits ABOVE
 // the plot — it overflows out of the chart's top edge into the card's header/padding
-// gap (the surface is un-clipped via MARKER_OVERLAY_CLASS) rather than reserving an
+// gap (the recharts surface is un-clipped by ChartContainer) rather than reserving an
 // inner margin, so the series keeps its full height. Each dash rises through this gap
 // to meet the chip's underside.
 const LABEL_GAP = 4
@@ -39,6 +39,19 @@ const LABEL_GAP = 4
 const LABEL_OVERHANG = LABEL_HEIGHT + LABEL_GAP
 // Hitbox half-width around a dash (so a thin line is still easy to hover).
 const DASH_HIT = 5
+
+// Freeze the chart cursor while the pointer is over a marker (dash/label) or the
+// overlay is swallowing events: stop the move/press/click from reaching recharts'
+// wrapper handlers, which listen on an ancestor and so receive the synthetic event
+// as it bubbles up the React tree unless we halt it here.
+const stopPropagation = (e: { stopPropagation: () => void }) => e.stopPropagation()
+// Spreadable handler set for the dash/label hitboxes (their propagation is always
+// stopped; the root's is conditional so it stays inline there).
+const stopHandlers = {
+	onMouseMove: stopPropagation,
+	onMouseDown: stopPropagation,
+	onClick: stopPropagation,
+}
 
 export interface CommitMarkersLayerProps {
 	/** Deploy markers, pre-snapped to chart buckets (see `buildCommitMarkers`). */
@@ -57,13 +70,8 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 
 	const [hoverKey, setHoverKey] = useState<string | null>(null)
 	const [openKey, setOpenKey] = useState<string | null>(null)
-	const openKeyRef = useRef<string | null>(null)
 	const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 	const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-	useEffect(() => {
-		openKeyRef.current = openKey
-	}, [openKey])
 
 	// Only once a card is OPEN do we hide the chart's own data tooltip (they never
 	// co-show). Merely hovering a marker — before the open delay elapses — leaves the
@@ -88,8 +96,10 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 			closeTimer.current = null
 		}
 		setHoverKey(key)
-		if (openKeyRef.current === key) return // already open ⇒ keep it
-		if (openKeyRef.current !== null) setOpenKey(null) // switch groups ⇒ drop the old card
+		// Keep this group's own card open; drop a *sibling* group's card immediately.
+		// (Re-arming an already-open group still schedules a `setOpenKey(key)` below,
+		// but it's a no-op when it fires — same behavior as the old early return.)
+		setOpenKey((prev) => (prev === key ? prev : null))
 		if (openTimer.current) clearTimeout(openTimer.current)
 		openTimer.current = setTimeout(() => setOpenKey(key), delay)
 	}, [])
@@ -112,7 +122,7 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 		for (const marker of markers) {
 			const x = xScale(marker.bucket)
 			if (typeof x === "number" && Number.isFinite(x)) {
-				positioned.push({ marker, label: marker.label, x })
+				positioned.push({ marker, x })
 			}
 		}
 		positioned.sort((a, b) => a.x - b.x)
@@ -126,10 +136,6 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 	// the commit card. While merely hovering (before the card opens) or idle it stays
 	// transparent so the plot area still drives the chart's own tooltip.
 	const blockChart = openKey !== null
-	// Capturing pointer events only makes the root the event *target*; recharts still
-	// listens on an ancestor, so the synthetic event bubbles up to it unless we stop
-	// it here (same trick the dashes/labels use via `stop`).
-	const swallow = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
 	return (
 		<ZIndexLayer zIndex={MARKER_Z}>
@@ -148,9 +154,9 @@ export function CommitMarkersLayer({ markers }: CommitMarkersLayerProps) {
 				    so nothing reaches the series; the dashes/labels/card still handle their
 				    own hover on top. */}
 				<div
-					onMouseMove={blockChart ? swallow : undefined}
-					onMouseDown={blockChart ? swallow : undefined}
-					onClick={blockChart ? swallow : undefined}
+					onMouseMove={blockChart ? stopPropagation : undefined}
+					onMouseDown={blockChart ? stopPropagation : undefined}
+					onClick={blockChart ? stopPropagation : undefined}
 					style={{
 						position: "relative",
 						top: LABEL_OVERHANG,
@@ -213,10 +219,6 @@ function MarkerGroup({
 	// not on any one dash, since a merged group has several.
 	const anchorX = group.boxLeft + group.boxWidth / 2
 
-	// Freeze the chart cursor while over a marker: stop the move/press from reaching
-	// recharts' wrapper handlers (they bubble through the React tree).
-	const stop = useCallback((e: { stopPropagation: () => void }) => e.stopPropagation(), [])
-
 	const dashColor = active ? "var(--foreground)" : "var(--muted-foreground)"
 
 	return (
@@ -226,9 +228,7 @@ function MarkerGroup({
 					key={`${group.key}-dash-${i}`}
 					onMouseEnter={onArmLine}
 					onMouseLeave={onLeave}
-					onMouseMove={stop}
-					onMouseDown={stop}
-					onClick={stop}
+					{...stopHandlers}
 					style={{
 						position: "absolute",
 						left: x - DASH_HIT,
@@ -261,9 +261,7 @@ function MarkerGroup({
 			<div
 				onMouseEnter={onArmLabel}
 				onMouseLeave={onLeave}
-				onMouseMove={stop}
-				onMouseDown={stop}
-				onClick={stop}
+				{...stopHandlers}
 				style={{
 					position: "absolute",
 					left: group.boxLeft,

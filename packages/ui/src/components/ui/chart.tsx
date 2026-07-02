@@ -40,10 +40,10 @@ const EMPTY_SUPPRESSORS: ReadonlySet<string> = new Set()
 /**
  * Lets in-chart overlays (e.g. commit deploy markers) temporarily hide the
  * default data tooltip so a marker card and the data tooltip never show at once.
- * Wrap a synced group of charts (e.g. a MetricsGrid) in one provider so a marker
- * card on any chart also quiets the synced tooltips on its siblings;
- * `ChartContainer` mounts one itself when there's no outer provider, so a
- * standalone chart still works. Suppressors are tracked by id (each overlay owns
+ * An overlay's suppression requires a `ChartTooltipSuppressionProvider` above the
+ * chart (e.g. the one MetricsGrid mounts around a synced grid) so a marker card on
+ * any chart also quiets the synced tooltips on its siblings; without one, the
+ * suppression calls are no-ops. Suppressors are tracked by id (each overlay owns
  * one) so concurrent charts don't clobber each other's flag.
  *
  * While suppressed the tooltip stays MOUNTED (rendered transparent) instead of
@@ -119,10 +119,6 @@ function ChartContainer({
 	const uniqueId = React.useId()
 	const chartId = `chart-${id || uniqueId.replace(/:/g, "")}`
 	const containerRef = React.useRef<HTMLDivElement>(null)
-	// Reuse an outer suppression provider (e.g. one wrapping a synced MetricsGrid)
-	// so a marker card quiets every chart in the group; mount our own only when
-	// there's no outer one, so a standalone chart still works.
-	const hasSuppressionProvider = React.use(ChartTooltipSuppressionContext) !== null
 
 	const legendSlot = React.use(ChartLegendSlotContext)
 	const legendItems = React.useMemo<ChartLegendItem[]>(
@@ -142,29 +138,26 @@ function ChartContainer({
 		return () => legendSlot.setItems([])
 	}, [legendSlot, legendItems])
 
-	const content = (
-		<div
-			ref={containerRef}
-			data-slot="chart"
-			data-chart={chartId}
-			className={cn(
-				"[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border flex aspect-video justify-center text-xs [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
-				className,
-			)}
-			{...props}
-		>
-			<ChartStyle id={chartId} config={config} />
-			<RechartsPrimitive.ResponsiveContainer>{children}</RechartsPrimitive.ResponsiveContainer>
-		</div>
-	)
-
 	return (
 		<ChartContext.Provider value={{ config, containerRef, chartId }}>
-			{hasSuppressionProvider ? (
-				content
-			) : (
-				<ChartTooltipSuppressionProvider>{content}</ChartTooltipSuppressionProvider>
-			)}
+			<div
+				ref={containerRef}
+				data-slot="chart"
+				data-chart={chartId}
+				className={cn(
+					// `[&_.recharts-surface]:overflow-visible` un-clips recharts' root <svg> so an
+					// `overlay` (commit deploy markers) can draw its chip row ABOVE the plot,
+					// overflowing into the card's header/padding gap instead of reserving inner top
+					// margin (which would squish the series). Recharts clips series via clip-path, not
+					// surface overflow, so overlay-less charts are unaffected. See `commit-markers-layer.tsx`.
+					"[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border flex aspect-video justify-center text-xs [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden [&_.recharts-surface]:overflow-visible",
+					className,
+				)}
+				{...props}
+			>
+				<ChartStyle id={chartId} config={config} />
+				<RechartsPrimitive.ResponsiveContainer>{children}</RechartsPrimitive.ResponsiveContainer>
+			</div>
 		</ChartContext.Provider>
 	)
 }

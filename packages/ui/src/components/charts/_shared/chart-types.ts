@@ -3,31 +3,6 @@ import type React from "react"
 export type ChartLegendMode = "visible" | "hidden" | "right"
 export type ChartTooltipMode = "visible" | "hidden"
 
-/**
- * Applied to a time-series `ChartContainer` when it carries an `overlay` (commit
- * deploy markers). The marker chip row is drawn ABOVE the plotting area; rather than
- * reserving an inner top margin — which would shrink the series — we let that row
- * overflow upward out of recharts' root <svg> into the card's header/padding gap.
- * This class un-clips that <svg> so the overflow is visible, and the plot keeps its
- * full height (no squish). The chip sits in the otherwise-empty space above the plot
- * (see `commit-markers-layer.tsx`).
- */
-export const MARKER_OVERLAY_CLASS = "[&_.recharts-surface]:overflow-visible"
-
-/**
- * Builds a time-series `ChartContainer`'s className, appending
- * {@link MARKER_OVERLAY_CLASS} when the chart carries an `overlay` so the marker
- * chip row can overflow above the plot. A no-op (returns `className` as-is) when
- * there's no overlay. Shared by every time-series chart so the wiring stays
- * identical across them.
- */
-export function overlayChartClassName(
-	className: string | undefined,
-	overlay: React.ReactNode,
-): string | undefined {
-	return overlay ? `${className ?? ""} ${MARKER_OVERLAY_CLASS}` : className
-}
-
 export interface ChartThreshold {
 	value: number
 	color: string

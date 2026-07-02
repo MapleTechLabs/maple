@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts"
 
-import { overlayChartClassName, type BaseChartProps } from "../_shared/chart-types"
+import type { BaseChartProps } from "../_shared/chart-types"
 import { latencyTimeSeriesData } from "../_shared/sample-data"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
 import {
@@ -53,7 +53,7 @@ export function LatencyLineChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={overlayChartClassName(className, overlay)}>
+		<ChartContainer config={chartConfig} className={className}>
 			<LineChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<CartesianGrid vertical={false} />
 				<XAxis

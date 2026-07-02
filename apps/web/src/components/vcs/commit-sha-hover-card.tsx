@@ -651,20 +651,32 @@ function formatExact(epochMs: number): string {
 function formatRelative(epochMs: number, { short = false }: { short?: boolean } = {}): string {
 	const diff = Date.now() - epochMs
 	const suffix = short ? "" : " ago"
-	if (short) {
-		if (diff < 60_000) return "now"
-	} else {
+	// Sub-minute floor. Default shows a live seconds tier ("Ns ago", "just now" for a
+	// clock-skewed future timestamp); short collapses everything under a minute (incl.
+	// a negative diff) to "now" since the dense list rows have no room for a seconds tier.
+	if (diff < 60_000) {
+		if (short) return "now"
 		if (diff < 0) return "just now"
-		const seconds = Math.floor(diff / 1000)
-		if (seconds < 60) return `${seconds}s${suffix}`
+		return `${Math.floor(diff / 1000)}s${suffix}`
 	}
-	const minutes = Math.floor(diff / 60_000)
-	if (minutes < 60) return `${minutes}m${suffix}`
-	const hours = Math.floor(minutes / 60)
-	if (hours < 24) return `${hours}h${suffix}`
-	const days = Math.floor(hours / 24)
-	if (days < 30) return `${days}d${suffix}`
-	const months = Math.floor(days / 30)
-	if (months < 12) return `${months}mo${suffix}`
+	// Coarsening ladder from minutes up: the first unit whose next boundary the diff
+	// hasn't reached wins (60m→1h, 24h→1d, 30d→1mo, 12mo→1y). `y` uses /365 days, not
+	// /12 months, matching the original.
+	const days = Math.floor(diff / 86_400_000)
+	for (const { limit, div, unit } of RELATIVE_TIERS) {
+		const value = Math.floor(diff / div)
+		if (value < limit) return `${value}${unit}${suffix}`
+	}
 	return `${Math.floor(days / 365)}y${suffix}`
 }
+
+// Minutes-and-up tiers for `formatRelative`, finest unit first. Each entry's
+// `value = floor(diff / div)` is emitted when it's still under `limit` (the point at
+// which the next-coarser unit takes over). The sub-minute tier and the final years
+// fallback are handled inline (they don't fit the uniform `floor(diff/div)` shape).
+const RELATIVE_TIERS = [
+	{ limit: 60, div: 60_000, unit: "m" }, // < 60 minutes
+	{ limit: 24, div: 3_600_000, unit: "h" }, // < 24 hours
+	{ limit: 30, div: 86_400_000, unit: "d" }, // < 30 days
+	{ limit: 12, div: 2_592_000_000, unit: "mo" }, // < 12 months (30-day months)
+] as const

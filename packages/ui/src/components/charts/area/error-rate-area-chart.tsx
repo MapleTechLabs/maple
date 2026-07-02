@@ -1,7 +1,7 @@
 import { useId, useMemo } from "react"
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
 
-import { overlayChartClassName, type BaseChartProps } from "../_shared/chart-types"
+import type { BaseChartProps } from "../_shared/chart-types"
 import { errorRateTimeSeriesData } from "../_shared/sample-data"
 import { VerticalGradient } from "../_shared/svg-patterns"
 import { useIncompleteSegments, extendConfigWithIncomplete } from "../_shared/use-incomplete-segments"
@@ -55,7 +55,7 @@ export function ErrorRateAreaChart({
 	)
 
 	return (
-		<ChartContainer config={chartConfig} className={overlayChartClassName(className, overlay)}>
+		<ChartContainer config={chartConfig} className={className}>
 			<AreaChart data={processedData} accessibilityLayer syncId={syncId} syncMethod="value">
 				<defs>
 					<VerticalGradient id={gradientId} color="var(--color-errorRate)" />

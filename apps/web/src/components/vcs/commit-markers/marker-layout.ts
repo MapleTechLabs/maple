@@ -17,9 +17,10 @@ export interface MarkerCommit {
 
 /** A deploy marker: a bucket where one or more *new* commits were first seen. */
 export interface CommitMarker {
-	/** Stable id — the snapped bucket string. */
-	id: string
-	/** Chart x-category this marker sits on (matches a chart data bucket exactly). */
+	/**
+	 * Chart x-category this marker sits on (matches a chart data bucket exactly).
+	 * Also serves as the marker's stable id (a bucket holds at most one marker).
+	 */
 	bucket: string
 	/**
 	 * Default label for the representative commit: its short sha when it's a 40-hex
@@ -142,7 +143,7 @@ export function buildCommitMarkers(
 	return Array.from(byBucket.entries())
 		.map(([bucket, commits]): CommitMarker => {
 			const ordered = commits.toSorted(byRepresentative)
-			return { id: bucket, bucket, label: shortLabel(ordered[0].sha), commits: ordered }
+			return { bucket, label: shortLabel(ordered[0].sha), commits: ordered }
 		})
 		.sort((a, b) => bucketMs(a.bucket) - bucketMs(b.bucket))
 }
@@ -150,7 +151,6 @@ export function buildCommitMarkers(
 /** A marker resolved to a pixel x (host fills `x` via the chart's x-scale). */
 export interface PositionedMarker {
 	marker: CommitMarker
-	label: string
 	x: number
 }
 
@@ -251,24 +251,32 @@ export function layoutMarkerLabels(
 		if (last && (hitsPrevious || noRoomBeforeEdge)) {
 			last.dashXs.push(p.x)
 			last.commits.push(...p.marker.commits)
-			// Re-place the grown label, clearing the label BEFORE it (groups[-2]).
-			const before = groups[groups.length - 2]
-			const beforeRight = before ? before.boxLeft + before.boxWidth + gap : plotLeft
-			const width = estimateLabelWidth(last.label, last.commits.length)
-			const box = placeLabel(last.dashXs, width, beforeRight, plotLeft, plotRight)
-			last.boxLeft = box.boxLeft
-			last.boxWidth = box.boxWidth
 		} else {
-			const box = placeLabel([p.x], estimateLabelWidth(p.label, 1), prevRight, plotLeft, plotRight)
 			groups.push({
-				key: p.marker.id,
+				key: p.marker.bucket,
 				dashXs: [p.x],
-				label: p.label,
+				label: p.marker.label,
 				commits: [...p.marker.commits],
-				boxLeft: box.boxLeft,
-				boxWidth: box.boxWidth,
+				boxLeft: 0,
+				boxWidth: 0,
 			})
 		}
+		// One shared placement pass for both branches: the just-touched group (grown or
+		// freshly pushed) is re-placed clearing the label BEFORE it (groups[-2]). For a
+		// fresh group `before` is the old `last`, so `beforeRight === prevRight` computed
+		// above — same input the standalone-placement path used.
+		const group = groups[groups.length - 1]
+		const before = groups[groups.length - 2]
+		const beforeRight = before ? before.boxLeft + before.boxWidth + gap : plotLeft
+		const box = placeLabel(
+			group.dashXs,
+			estimateLabelWidth(group.label, group.commits.length),
+			beforeRight,
+			plotLeft,
+			plotRight,
+		)
+		group.boxLeft = box.boxLeft
+		group.boxWidth = box.boxWidth
 	}
 
 	return groups

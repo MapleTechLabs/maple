@@ -111,15 +111,13 @@ describe("buildCommitMarkers", () => {
 })
 
 describe("layoutMarkerLabels", () => {
-	const marker = (id: string, count = 1): PositionedMarker["marker"] => ({
-		id,
+	const marker = (id: string, count = 1, label = "abc1234"): PositionedMarker["marker"] => ({
 		bucket: id,
-		label: "abc1234",
+		label,
 		commits: Array.from({ length: count }, (_, i) => ({ sha: `${id}-${i}`, count: 1 })),
 	})
 	const at = (id: string, x: number, count = 1): PositionedMarker => ({
 		marker: marker(id, count),
-		label: "abc1234",
 		x,
 	})
 
@@ -133,7 +131,7 @@ describe("layoutMarkerLabels", () => {
 		]
 		const layout = (label: string) =>
 			layoutMarkerLabels(
-				positions.map(({ id, x }) => ({ marker: marker(id), label, x })),
+				positions.map(({ id, x }) => ({ marker: marker(id, 1, label), x })),
 				0,
 				600,
 			)
@@ -204,6 +202,16 @@ describe("layoutMarkerLabels", () => {
 		expect(Math.round(g.boxLeft + g.boxWidth / 2)).toBe(300)
 	})
 
+	it("reserves +N badge width for a fresh multi-commit marker (matches the merge path)", () => {
+		// A single bucket holding several commits renders a `+N` badge, so its box must
+		// be estimated with the badge included — the same `commits.length`-aware width
+		// the merge path uses, not the badge-less single-commit width.
+		const [lone] = layoutMarkerLabels([at("a", 300)], 0, 600)
+		const [multi] = layoutMarkerLabels([at("b", 300, 3)], 0, 600)
+		expect(multi.boxWidth).toBe(estimateLabelWidth("abc1234", 3))
+		expect(multi.boxWidth).toBeGreaterThan(lone.boxWidth)
+	})
+
 	it("centers a merged label over its cluster's midpoint (clear of the edges)", () => {
 		// Three close dashes (280, 300, 320) merge; with room on both sides the box
 		// centres on the midpoint (300) and spans every dash so all three connect up.
@@ -241,8 +249,8 @@ describe("layoutMarkerLabels", () => {
 		// Clamped past the previous label it would overflow; instead it must shrink to fit
 		// within bounds while staying clear of the previous label and covering its dash.
 		const positioned: PositionedMarker[] = [
-			{ marker: marker("a"), label: "abc1234", x: 470 },
-			{ marker: marker("b"), label: "a-very-long-resolved-commit-subject-line", x: 595 },
+			{ marker: marker("a", 1, "abc1234"), x: 470 },
+			{ marker: marker("b", 1, "a-very-long-resolved-commit-subject-line"), x: 595 },
 		]
 		const groups = layoutMarkerLabels(positioned, 0, 600)
 		expect(groups).toHaveLength(2)
@@ -262,8 +270,8 @@ describe("layoutMarkerLabels", () => {
 		// less than a minimum-width label of room before the edge (600). Rather than render
 		// a sliver crammed against the edge, `b` folds into `a` (+1).
 		const positioned: PositionedMarker[] = [
-			{ marker: marker("a"), label: "abc1234", x: 518 },
-			{ marker: marker("b"), label: "abc1234", x: 570 },
+			{ marker: marker("a", 1, "abc1234"), x: 518 },
+			{ marker: marker("b", 1, "abc1234"), x: 570 },
 		]
 		const groups = layoutMarkerLabels(positioned, 0, 600)
 		expect(groups).toHaveLength(1)
