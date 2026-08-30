@@ -78,6 +78,9 @@ export const toDrizzleLogger = (onQuery: ((query: string) => void) | undefined) 
  * Cloudflare's own example now suggests `prepare: true`; that only pays off
  * across reuse of one long-lived connection, which a request-lived client by
  * definition does not have. Do not flip it back without measuring.
+ *
+ * celld and wrangler share this path. celld v0.4.1 dials through
+ * `cloudflare:sockets` (`connect()`); do not insert a WebSocket proxy.
  */
 export const createMaplePgSocket = (
 	connectionString: string,

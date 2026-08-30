@@ -1,6 +1,6 @@
 import { FetchHttpClient, HttpClient, HttpClientError } from "effect/unstable/http"
 import { Clock, Duration, Effect, Layer } from "effect"
-import { apiBaseUrl } from "./api-base-url"
+import { isMapleApiRequestUrl } from "./api-base-url"
 import { getMapleAuthHeaders } from "./auth-headers"
 import { noteReachable, noteUnreachable, originOf } from "./peer-reachability"
 
@@ -15,7 +15,7 @@ const resolveRequestUrl = (input: RequestInfo | URL): string => {
 const mapleFetch: typeof globalThis.fetch = async (input, init) => {
 	const headers = new Headers(init?.headers)
 
-	if (resolveRequestUrl(input).startsWith(apiBaseUrl)) {
+	if (isMapleApiRequestUrl(resolveRequestUrl(input))) {
 		const authHeaders = await getMapleAuthHeaders()
 		for (const [name, value] of Object.entries(authHeaders)) {
 			if (!headers.has(name)) {
