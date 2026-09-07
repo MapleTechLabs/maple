@@ -71,6 +71,9 @@
 			// `cloudflare:workers` is a Workers runtime module, not a package.
 			"ignoreDependencies": ["cloudflare"]
 		},
+		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
+		},
 		"lib/alchemy-portless": {
 			// The dev-sidecar entry alchemy loads by URL, not by import.
 			"entry": ["src/Local.ts"]

@@ -52,6 +52,7 @@
         "@effect/platform-bun": "catalog:effect",
         "@maple-dev/clickhouse-builder": "workspace:*",
         "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/ai-model-catalog": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
         "@maple/db": "workspace:*",
@@ -325,6 +326,15 @@
         "tailwindcss": "catalog:tailwind",
         "typescript": "catalog:tooling",
         "vite": "catalog:",
+      },
+    },
+    "lib/ai-model-catalog": {
+      "name": "@maple/ai-model-catalog",
+      "devDependencies": {
+        "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "lib/alchemy-portless": {
@@ -617,6 +627,7 @@
       "dependencies": {
         "@distilled.cloud/aws": "1.0.0-rc.6",
         "@maple-dev/alchemy": "workspace:*",
+        "@maple-dev/effect-sdk": "workspace:*",
         "@maple/alchemy-portless": "workspace:*",
         "@maple/domain": "workspace:*",
         "alchemy": "2.0.0-beta.74",
@@ -1338,6 +1349,8 @@
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 
     "@maple-examples/effect-todo": ["@maple-examples/effect-todo@workspace:examples/effect-todo"],
+
+    "@maple/ai-model-catalog": ["@maple/ai-model-catalog@workspace:lib/ai-model-catalog"],
 
     "@maple/alchemy-portless": ["@maple/alchemy-portless@workspace:lib/alchemy-portless"],
 

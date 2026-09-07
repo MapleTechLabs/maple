@@ -37,6 +37,7 @@
 		"@maple-dev/clickhouse-builder": "workspace:*",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/auth": "workspace:*",
+		"@maple/ai-model-catalog": "workspace:*",
 		"@maple/cache": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
