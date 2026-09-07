@@ -6,7 +6,7 @@
 		"dev": "bun run --silent sync:cli && exec env -u CLAUDECODE astro dev --port ${PORT:-3391} --host ${HOST:-127.0.0.1}",
 		"sync:i18n": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && astro sync",
 		"sync:cli": "mkdir -p public/cli && cp ../../scripts/install.sh public/cli/install && cp ../../scripts/uninstall.sh public/cli/uninstall",
-		"test": "vitest run",
+		"test": "paraglide-js compile --project ./project.inlang --outdir ./src/paraglide --strategy url baseLocale && vitest run",
 		"build": "bun run sync:cli && astro build",
 		"preview": "astro preview",
 		"astro": "astro"
