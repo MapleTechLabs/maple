@@ -18,14 +18,9 @@ export class WorkerEnvironment extends Context.Service<WorkerEnvironment, Record
 	"Cloudflare.Workers.WorkerEnvironment",
 ) {}
 
-/** `WorkerEnvironment` from an env record in hand. */
-export const layerFromEnvRecord = (env: Record<string, unknown>): Layer.Layer<WorkerEnvironment> =>
-	Layer.succeed(WorkerEnvironment, env)
-
-/** Effect's `ConfigProvider` over an env record, so `Config.string("FOO")` resolves against the bindings. */
-export const layerFromEnv = (env: Record<string, unknown>): Layer.Layer<never> =>
-	ConfigProvider.layer(ConfigProvider.fromUnknown(env))
-
-/** Both, for a graph built over one env record. */
+/** The env as `WorkerEnvironment` plus Effect's `ConfigProvider`, so `Config.string("FOO")` resolves against the bindings. */
 export const workerEnvLayer = (env: Record<string, unknown>): Layer.Layer<WorkerEnvironment> =>
-	Layer.mergeAll(layerFromEnvRecord(env), layerFromEnv(env))
+	Layer.mergeAll(
+		Layer.succeed(WorkerEnvironment, env),
+		ConfigProvider.layer(ConfigProvider.fromUnknown(env)),
+	)

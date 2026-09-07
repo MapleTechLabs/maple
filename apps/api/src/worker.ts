@@ -22,6 +22,7 @@ import {
 } from "@maple/infra/cloudflare"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
+import * as AlchemyTelemetry from "alchemy/Telemetry"
 import { Effect, Layer } from "effect"
 import ChatSessionObject from "./chat/ChatSession"
 import { ApiObservabilityLive } from "./http/api-observability"
@@ -43,9 +44,7 @@ import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow
  * or read by name by code the Worker does not own (the LLM shim's `AI`).
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Workers AI (`env.AI`, the v1 `Ai()` binding), driving the AI-triage agent on
-	// `@opencode-ai/ai`. v2 emits the `{ type: "ai" }` binding by attaching an AI Gateway
-	// resource, which also fronts model calls with caching/rate-limits/logging.
+	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
 	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
 	// for this resource.
 	AI: Cloudflare.AI.Gateway("maple-api-ai"),
@@ -112,38 +111,26 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 	"api",
 	props,
 	Effect.gen(function* () {
-		// The Durable Object and the Workflows this Worker hosts. Yielding each
-		// binds it (`ChatSession`, `ClickHouseSchemaApplyWorkflow`,
-		// `InvestigationFanoutWorkflow` — the binding IS the class name),
-		// registers the namespace / physical workflow at plan time and exports
-		// the class from the generated entry; the routes reach them off the
-		// env under those names.
+		// The Durable Object and the Workflows this Worker hosts: yielding each
+		// binds it under the class name, registers it at plan time and exports
+		// the class from the generated entry.
 		yield* ChatSessionObject
 		yield* ClickHouseSchemaApplyWorkflow
 		yield* InvestigationFanoutWorkflow
-		// The queues, the KV namespace, the replay bucket and the rate limiters,
-		// as typed clients: yielding each binds it at plan time and resolves it
-		// from the env in the isolate. The ports the service graph depends on
-		// are built over them (`apiPorts`).
 		const clients = yield* bindApiClients
 		const ports = apiPorts(clients, yield* Cloudflare.WorkerEnvironment)
-		// The service graphs are built on the first event and kept for the
-		// isolate — not here, in init: init also runs at plan time, where alchemy
-		// auto-binds every `Config` it sees read onto the Worker, and this
-		// Worker's env is declared in full by `props`. They build under the
-		// isolate's context, captured before any event exists — never under the
-		// first event's fiber (see `buildIsolateHandler`).
+		// The service graphs are built on the first event, not here: init also
+		// runs at plan time, where alchemy auto-binds every `Config` it sees read
+		// onto the Worker, and this Worker's env is declared in full by `props`.
 		const isolate = yield* Effect.context()
 		const app = yield* cachedRecoverable(buildApp(isolate, ports.layer))
 		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports.layer))
 		yield* registerCrons(ports.layer)
 		yield* registerQueueConsumers(ports.layer)
-		return { fetch: makeFetch(app, ports), ...(yield* makeInternalRpc(rpcServices, ports.database)) }
+		return { fetch: makeFetch(app, ports), ...makeInternalRpc(rpcServices, ports.database) }
 	}).pipe(
-		// The Worker's init IS the entry point: the cron and queue sources need
-		// the host Worker, which only exists here, and the bridge builds the
-		// telemetry — the SDK exporters plus the tracer filter and header
-		// redaction the api's server spans need — into each event's scope.
+		// The init IS the entry point: the cron and queue sources need the host
+		// Worker, which exists only here.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
@@ -154,8 +141,10 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					serviceName: "maple-api",
 					dropSpanNames: ["McpServer/Notifications."],
 					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-					eventLayer: ApiObservabilityLive,
 				}),
+				// The references the bridge's `HttpMiddleware.tracer` reads, built into
+				// every event beside the SDK; they cannot live in the app graph.
+				AlchemyTelemetry.layer(ApiObservabilityLive),
 			),
 		),
 	),

@@ -40,32 +40,32 @@ const WorkerHttpPlatformLive = Layer.effect(
 	}),
 ).pipe(Layer.provideMerge(WorkerFileSystemLive), Layer.provideMerge(Etag.layer))
 
-export const WorkerPlatformLive = Layer.mergeAll(
-	Path.layer,
-	Etag.layer,
-	WorkerFileSystemLive,
-	WorkerHttpPlatformLive,
-)
+export const WorkerPlatformLive = Layer.mergeAll(Path.layer, WorkerHttpPlatformLive)
 
 /**
- * A layer built into a handler for the isolate, under the isolate's own
- * context rather than the fiber that happens to run the build.
+ * A build run under the isolate's context — never the first event's fiber —
+ * on a scope closed only if the build fails (workerd has no teardown).
  *
- * The build runs lazily on the first event, inside that event's fiber. The
- * HttpApi group layers capture the fiber context they are built in and wrap
- * every route handler in it, and that captured context *overrides* the
- * per-request one — so a graph built inside request A served every later
- * request with A's `HttpServerRequest` (its bearer, its content-type, its
- * body), A's execution context and A's already-flushed span exporter. In prod
- * that was a browser 401'd with the Clerk verdict on a curl's garbage bearer,
- * 403'd as an MCP client's API key, and 415'd as a GET without a JSON body.
- * `isolate` is the context the init captured before any event existed: what
- * the bridge hands every event, with nothing that belongs to one of them.
- *
- * `routes` may still carry the router and the per-request markers the router
- * discharges; a layer that needs anything else from the ambient context does
- * not compile, as before, because nothing else is there to be found.
+ * The builds run lazily on the first event, inside that event's fiber, and
+ * the HttpApi group layers capture the fiber context they are built in and
+ * wrap every route handler in it, overriding the per-request one: a graph
+ * built inside request A served every later request with A's
+ * `HttpServerRequest` (its bearer, its content-type, its body), A's execution
+ * context and A's already-flushed span exporter. `isolate` is the context the
+ * init captured before any event existed.
  */
+export const forIsolate =
+	(isolate: Context.Context<never>) =>
+	<A, E>(build: Effect.Effect<A, E, Scope.Scope>): Effect.Effect<A, E> =>
+		Effect.gen(function* () {
+			const scope = yield* Scope.make()
+			return yield* build.pipe(
+				Scope.provide(scope),
+				Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
+			)
+		}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
+
+/** The route graph as the bridge's handler, built for the isolate. */
 export const buildIsolateHandler = <E>(
 	isolate: Context.Context<never>,
 	routes: Layer.Layer<
@@ -73,15 +73,7 @@ export const buildIsolateHandler = <E>(
 		E,
 		HttpRouter.HttpRouter | HttpRouter.Request<"Error" | "GlobalError" | "Requires", unknown>
 	>,
-) =>
-	Effect.gen(function* () {
-		const scope = yield* Scope.make()
-		return yield* HttpRouter.toHttpEffect(routes).pipe(
-			Scope.provide(scope),
-			Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
-			Effect.map(bridgeHandler),
-		)
-	}).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
+) => forIsolate(isolate)(HttpRouter.toHttpEffect(routes)).pipe(Effect.map(bridgeHandler))
 
 /** The route graph as one request handler, built once per isolate on the first request, over the Worker's ports. */
 export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) =>
@@ -104,16 +96,10 @@ export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) 
 	})
 
 /**
- * The router's handler as the bridge serves it.
- *
- * SAFETY: `toHttpEffect` keeps the routes' request-scoped markers in the
- * handler's type — the services they read per request, and the failures they
- * declare — but the context it builds runs them with every service the graph
- * merged (the same services `Layer.provideMerge` put there), and a failure
- * that escapes a route reaches alchemy's boundary, which renders a Respondable
- * as its own response and anything else as an empty 500. The retired entry
- * discharged the same markers by handing `toWebHandler` an empty request
- * context; this is that discharge, in one place.
+ * SAFETY: `toHttpEffect` keeps the routes' error and requirement markers in
+ * the handler's type; the bridge's `safeHttpEffect` renders any escaping cause
+ * (a Respondable as its own response, anything else as a 500), so the markers
+ * are discharged here, once.
  */
 const bridgeHandler = <E, R>(
 	handler: Effect.Effect<
@@ -206,14 +192,9 @@ export const makeFetch = (
 			// re-putting on every call would burn KV write quota for no reason.
 			const responseSessionId = response.headers["mcp-session-id"]
 			if (responseSessionId && responseSessionId !== requestSessionId) {
-				const put = persistSession(ports.mcpSessions, responseSessionId)
-				if (put) {
-					const exec = yield* Cloudflare.WorkerExecutionContext
-					yield* exec.waitUntil(put)
-				}
+				const exec = yield* Cloudflare.WorkerExecutionContext
+				yield* exec.waitUntil(persistSession(ports.mcpSessions, responseSessionId))
 			}
-		}
-		if (isMcp) {
 			const now = yield* Clock.currentTimeMillis
 			yield* Effect.logInfo("MCP request handled").pipe(
 				Effect.annotateLogs({

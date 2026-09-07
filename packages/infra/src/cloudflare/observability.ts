@@ -1,7 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
-import { requiredPlain } from "../env.ts"
+import { plainWithDefault, requiredPlain } from "../env.ts"
 import { MapleStack } from "./stack.ts"
 
 /**
@@ -18,10 +18,8 @@ export const WorkersObservabilityDestinations = Effect.gen(function* () {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 
-	const ingestEndpoint = (process.env.MAPLE_ENDPOINT?.trim() || "https://ingest.maple.dev").replace(
-		/\/+$/,
-		"",
-	)
+	const { MAPLE_ENDPOINT } = yield* plainWithDefault("MAPLE_ENDPOINT", "https://ingest.maple.dev")
+	const ingestEndpoint = MAPLE_ENDPOINT.replace(/\/+$/, "")
 	const headers = { authorization: `Bearer ${yield* requiredPlain("MAPLE_OTEL_INGEST_KEY")}` }
 	const tracesDestination = yield* Cloudflare.Workers.ObservabilityDestination(
 		"workers-observability-traces",

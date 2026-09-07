@@ -7,7 +7,7 @@
  * ~1s startup CPU budget (error 10021). Behind `import()` the top level stays
  * near-empty; the cost moves to the first event, which runs under the far
  * larger per-request CPU budget. The Postgres scope module is deferred for the
- * same reason. `Effect.cached` these once per isolate at the use site.
+ * same reason. The module loader memoizes each import, so these are plain.
  */
 import { Effect } from "effect"
 

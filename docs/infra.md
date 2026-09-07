@@ -19,17 +19,16 @@ put it here instead. Git blame does not survive a refactor of the line it annota
   below).
 - `apps/<app>/alchemy.run.ts` — a `create*` factory, only where the Worker still takes
   another resource as an argument (`web`) or the app is not a Worker (`ingest`, `electric`
-  on ECS), plus `apps/api/alchemy.run.ts` for the one api resource the ingest gateway
-  shares (the replay blob store). Owns that app's resources and bindings and nothing else's.
+  on ECS). Owns that app's resources and bindings and nothing else's. The one api resource the
+  ingest gateway shares (the replay bucket) is `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
     - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
       Pure functions, unit-tested, no cloud calls.
     - `cloudflare/stack.ts` — `MapleStack`, what the root stack tells the Worker classes.
-    - `cloudflare/maple-db.ts` / `cloudflare/observability.ts` — the managed Hyperdrive
-      and the Workers Observability destinations, declared once and yielded from every
-      module that binds them (alchemy registers a resource by id; a second yield returns
-      the first's).
+    - `cloudflare/observability.ts` — the Workers Observability destinations, declared once
+      and yielded from every module that binds them (alchemy registers a resource by id; a
+      second yield returns the first's).
     - `aws/stage.ts` — `MapleRegion`, AWS naming, task sizing, Cloud Map.
     - `env.ts` — the deploy-time env primitives and the shared groups the workers spread.
     - `cloudflare/maple-db.ts` — `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
@@ -62,7 +61,7 @@ bun dev api web     # a subset: api, alerting, electric-sync, web, landing, inge
 ```
 
 The Workers — **api, alerting, electric-sync** — are served by alchemy's local runtime from
-the same `create*` factories that deploy them. Everything that is not a Worker — web, landing
+the same Worker classes that deploy them. Everything that is not a Worker — web, landing
 and local-ui (vite/astro dev servers), ingest (`cargo run`) and scraper — runs as a
 `Command.Dev` child of the same stack: each app's own `dev` script, started by
 `createDevProcess` in `alchemy.run.ts`, kept alive across stack restarts, stopped with the
@@ -119,7 +118,7 @@ Gotchas worth knowing:
 - **The dev Hyperdrive origin must set `sslmode: "disable"`.** Alchemy defaults a local
   origin to `sslmode=prefer` (`Cloudflare/Hyperdrive/ConnectBinding.ts`), the driver then
   attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s with
-  `CONNECT_TIMEOUT` after the dial budget. See `createManagedMapleDb`.
+  `CONNECT_TIMEOUT` after the dial budget. See `ManagedMapleDb`.
 - **`MAPLE_OTEL_INGEST_KEY` is optional on dev stages only** (`selfObservabilityEnv`). The
   local stack resolves the same env contract as a deploy, and no developer has a real
   ingest key; without the exemption the whole stack refuses to start over a key whose only
@@ -361,7 +360,7 @@ instead of at script startup. That stepped the cold dial from ~2s to ~9-11s on 2
 (deploy 2679ba80) and produced the CONNECT_TIMEOUT incident; see the 2026-08-11
 investigation.
 
-The override in `apps/api/alchemy.run.ts` moves that cost back to script startup, off the
+The override in `apps/api/src/worker.ts` moves that cost back to script startup, off the
 request path. If chunking ever regresses into upstream #749 (`ScriptStartupError: Cannot
 access '<minified>' before initialization`), the deploy fails loudly at upload — remove the
 override and warm the DB graph off the request path instead.
@@ -372,8 +371,9 @@ The stack was written against alchemy v1 and migrated to v2. Equivalences worth 
 when reading old code or docs:
 
 - **`HyperdriveRef` has no v2 equivalent.** Binding a dashboard-managed config by ID is
-  done by attaching raw `{ type: "hyperdrive", name, id }` binding metadata after the
-  Worker exists (`worker.bind(...)`) — the same mechanism the env binder uses. No cloud
+  done by attaching raw `{ type: "hyperdrive", name, id }` binding metadata from the Worker's
+  init (`host.bind` inside `MapleDb`, `cloudflare/maple-db.ts`) — the same mechanism the env
+  binder uses. No cloud
   resource is created and the origin credentials stay in the dashboard.
 - **`Ai()` became an AI Gateway resource.** v2 emits the `{ type: "ai" }` binding by
   attaching `Cloudflare.AI.Gateway`, which also fronts model calls with caching,

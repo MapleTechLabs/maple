@@ -6,7 +6,6 @@ import {
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
 import { Context, Effect, Option, Schema } from "effect"
-import type { HttpMiddleware } from "effect/unstable/http"
 import { MapleDbConnection } from "./bindings"
 import type { DatabaseClient, DatabaseError } from "./DatabaseLive"
 import { executeWithSpan, failExecuteWithSpan, toDatabaseError } from "./DatabaseLive"
@@ -253,12 +252,3 @@ export const withPgConnectionScope = <A, E, R>(
 			program,
 		)
 	})
-
-/**
- * HTTP boundary for the scope: one connection per request.
- *
- * Also satisfies the api worker's standing requirement that SOME middleware be
- * present — `POST /mcp` hangs on Workers when `toWebHandler` is given none.
- */
-export const pgConnectionMiddleware: HttpMiddleware.HttpMiddleware = (httpApp) =>
-	withPgConnectionScope(httpApp)

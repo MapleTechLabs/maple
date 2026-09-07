@@ -131,7 +131,7 @@ const event = (
 			input: new Request(`http://api.maple.test${path}`, { method, headers }),
 		})
 		assert.isDefined(fetchEvent)
-		const response: Response = yield* fetchEvent!.pipe(Effect.provide(services), Scope.provide(request))
+		const response: Response = yield* fetchEvent.pipe(Effect.provide(services), Scope.provide(request))
 		const body = yield* Effect.promise(() => response.text())
 		yield* Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 0)))
 		yield* Scope.close(request, Exit.void)

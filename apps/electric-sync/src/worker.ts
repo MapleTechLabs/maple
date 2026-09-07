@@ -42,9 +42,6 @@ const configuredEnv = (stage: MapleStage) =>
 					optionalSecret("ELECTRIC_SECRET"),
 				]),
 		// Self-observability (OTLP export through the ingest gateway).
-		// NOTE: MAPLE_ENVIRONMENT used to be `optionalPlain(…, stageDefault)` here,
-		// which let the environment win — the exact override `api` and `alerting`
-		// both guard against. It is stage-derived now, like theirs.
 		selfObservabilityEnv(stage),
 	)
 

@@ -21,7 +21,7 @@ import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./serv
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const buildAuditEventsLayer = () => {
+export const AuditEventsLive = (() => {
 	const EnvLive = Env.layer
 	const DatabaseLive = layerPg
 	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
@@ -33,7 +33,7 @@ export const buildAuditEventsLayer = () => {
 		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
 	)
 	return WarehouseQueryServiceLive
-}
+})()
 
 /**
  * Must match `maxRetries` on the audit-events consumer in `worker.ts`.

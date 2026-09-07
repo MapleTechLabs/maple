@@ -110,5 +110,3 @@ export class ReplayBlobStore extends Context.Service<ReplayBlobStore, ReplayBlob
 ) {
 	static readonly layer = Layer.effect(this, this.make)
 }
-
-export const ReplayBlobStoreLive = ReplayBlobStore.layer

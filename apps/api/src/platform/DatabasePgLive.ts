@@ -1,5 +1,6 @@
 import { Effect, Layer, Option } from "effect"
 import { MapleDbConnection } from "./bindings"
+import { Env } from "./Env"
 import { Database, type DatabaseClient, DatabaseError, type DatabaseApi } from "./DatabaseLive"
 import { executeOnFreshPgClient, PgConnectionScope } from "./pg-connection-scope"
 
@@ -35,3 +36,6 @@ const makePgDatabase = Effect.gen(function* () {
 })
 
 export const layerPg = Layer.effect(Database, makePgDatabase)
+
+/** What every background event's graph starts from: the config-backed `Env` and the database. */
+export const EventBaseLive = Layer.mergeAll(Env.layer, layerPg)

@@ -15,19 +15,19 @@
  * `readMapleDbBinding` is the runtime side: what a Worker (or a Workflow run)
  * reads off its env under the same name, on every stage.
  */
-import type * as runtime from "@cloudflare/workers-types"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
-import * as Option from "effect/Option"
+import type * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
 import {
 	type MapleDbConsumer,
 	parseMapleStage,
 	resolveDatabaseMode,
-	resolveHyperdriveName,
 	resolveHyperdriveRefId,
+	resolveWorkerName,
 } from "./stage.ts"
 
 /** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
@@ -49,7 +49,7 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 		// A dev stage without its database URL cannot be planned: a defect, not a branch.
 		const pgUrl = new URL(yield* Effect.orDie(requiredPlain("MAPLE_PG_URL")))
 		const props: Cloudflare.Hyperdrive.Props = {
-			name: resolveHyperdriveName(stage),
+			name: resolveWorkerName("db", stage),
 			origin: {
 				scheme: "postgres",
 				host: pgUrl.hostname,
@@ -110,38 +110,18 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 	})
 
 /** What a Worker reads off the `MAPLE_DB` binding: the runtime `Hyperdrive` object's connection facts. */
-export interface MapleDbBinding {
-	readonly connectionString: string
-	readonly host: string
-	readonly port: number
-	readonly database: string
-}
-
-const isHyperdrive = (value: unknown): value is Pick<runtime.Hyperdrive, keyof MapleDbBinding> => {
-	if (typeof value !== "object" || value === null) return false
-	const candidate = value as Record<string, unknown>
-	return (
-		typeof candidate.connectionString === "string" &&
-		candidate.connectionString !== "" &&
-		typeof candidate.host === "string" &&
-		typeof candidate.port === "number" &&
-		typeof candidate.database === "string"
-	)
-}
+const MapleDbBinding = Schema.Struct({
+	connectionString: Schema.String.check(Schema.isNonEmpty()),
+	host: Schema.String,
+	port: Schema.Number,
+	database: Schema.String,
+})
+export type MapleDbBinding = typeof MapleDbBinding.Type
 
 /**
  * The `MAPLE_DB` binding off a Worker env, or `None` on a stage without a
  * database. The one place the binding's shape is checked: a value that is not
  * a Hyperdrive object reads as absent rather than throwing.
  */
-export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> => {
-	const binding = env[MAPLE_DB_BINDING]
-	return isHyperdrive(binding)
-		? Option.some({
-				connectionString: binding.connectionString,
-				host: binding.host,
-				port: binding.port,
-				database: binding.database,
-			})
-		: Option.none()
-}
+export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> =>
+	Schema.decodeUnknownOption(MapleDbBinding)(env[MAPLE_DB_BINDING])

@@ -114,15 +114,13 @@ const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) 
 const replayBlobWriterCredentials = (stage: MapleStage) =>
 	Effect.gen(function* () {
 		if (!stageEnablesReplayBlobs(stage)) return undefined
-		const bucket = yield* ReplayBlobs
+		// Yielded so the token is ordered behind the bucket.
+		yield* ReplayBlobs
 		const bucketName = resolveWorkerName("replay-blobs", stage)
 
 		// Plan-time: it keys the policy map and the endpoint, neither of which
 		// can take a lazy value.
-		const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim()
-		if (!accountId) {
-			throw new Error("CLOUDFLARE_ACCOUNT_ID is required to mint the replay blob store's R2 token.")
-		}
+		const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
 
 		// Bucket-scoped, not account-wide. Minting it needs the DEPLOY token to
 		// carry account-level `API Tokens > Write`, or the deploy fails outright.
@@ -148,8 +146,6 @@ const replayBlobWriterCredentials = (stage: MapleStage) =>
 			/** The API token's id. Only known after the token exists, hence an Output. */
 			accessKeyId: Output.asOutput(token.tokenId),
 			secretAccessKey: deriveSecretAccessKey(Output.asOutput(token.value)),
-			// The declaration is yielded so the token is ordered behind the bucket.
-			bucketResource: bucket,
 		}
 	})
 

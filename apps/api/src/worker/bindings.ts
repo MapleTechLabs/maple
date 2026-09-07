@@ -5,10 +5,6 @@
  * isolate, and the clients become the Maple-owned ports the service graph
  * depends on (`apiPorts`).
  *
- * The clients' methods are colored with alchemy's `RuntimeContext`, a
- * phantom that keeps them out of the init phase at the type level; the ports
- * discharge it with alchemy's own `RuntimeContext.phantom`, the way alchemy's
- * Durable Object helpers do, and map each client's failure onto the port's.
  */
 import { MapleDb } from "@maple/infra/cloudflare"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
@@ -36,6 +32,14 @@ import {
 } from "../platform/bindings"
 import { mapleDbConnectionLayer } from "../platform/pg-connection-source"
 import { McpSessions } from "../resources/mcp-sessions"
+import {
+	API_V2_RATE_LIMIT_PERIOD_SECONDS,
+	API_V2_RATE_LIMIT_REQUESTS,
+} from "../services/auth/ApiV2RateLimiter"
+import {
+	MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS,
+	MCP_TOOLS_RATE_LIMIT_REQUESTS,
+} from "../services/auth/McpToolRateLimiter"
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
 
@@ -58,7 +62,7 @@ export const bindApiClients = Effect.gen(function* () {
 		replayBlobs: yield* Cloudflare.R2.ReadBucket(ReplayBlobs),
 		apiV2RateLimit: yield* Cloudflare.RateLimit("API_V2_RATE_LIMITER", {
 			namespaceId: 2026071801,
-			simple: { limit: 600, period: 60 },
+			simple: { limit: API_V2_RATE_LIMIT_REQUESTS, period: API_V2_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 		cliAuthRateLimit: yield* Cloudflare.RateLimit("CLI_AUTH_RATE_LIMITER", {
 			namespaceId: 2026072101,
@@ -72,12 +76,12 @@ export const bindApiClients = Effect.gen(function* () {
 		// agent loop is cut off in seconds, at twice the v2 API's throughput.
 		mcpToolsRateLimit: yield* Cloudflare.RateLimit("MCP_TOOLS_RATE_LIMITER", {
 			namespaceId: 2026082901,
-			simple: { limit: 120, period: 10 },
+			simple: { limit: MCP_TOOLS_RATE_LIMIT_REQUESTS, period: MCP_TOOLS_RATE_LIMIT_PERIOD_SECONDS },
 		}),
 	}
 })
 
-export type ApiBindingClients = Effect.Success<typeof bindApiClients>
+type ApiBindingClients = Effect.Success<typeof bindApiClients>
 
 /** The binding layers `bindApiClients` needs on the init. */
 export const ApiBindingLayers = Layer.mergeAll(
@@ -93,9 +97,6 @@ const runtime = <A, E>(effect: Effect.Effect<A, E, RuntimeContext>): Effect.Effe
 	// oxlint-disable-next-line effecttsgo/strict-effect-provide
 	Effect.provide(effect, RuntimeContext.phantom)
 
-const failureMessage = (cause: unknown, fallback: string): string =>
-	cause instanceof Error ? cause.message : fallback
-
 /**
  * A producer over the raw queue handle rather than alchemy's `send`: the
  * client's option type omits `delaySeconds`, which the VCS producer needs to
@@ -104,7 +105,7 @@ const failureMessage = (cause: unknown, fallback: string): string =>
 const producer = (client: Cloudflare.Queues.WriteQueueClient): QueueProducer => {
 	const raw = runtime(client.raw)
 	const sendError = (cause: unknown, fallback: string) =>
-		new QueueSendError({ message: failureMessage(cause, fallback), cause })
+		new QueueSendError({ message: cause instanceof Error ? cause.message : fallback, cause })
 	return {
 		send: (body, options) =>
 			raw.pipe(
@@ -176,10 +177,7 @@ const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValue
  */
 export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) => {
 	const partitionValue = env[RATE_LIMIT_PARTITION_ENV]
-	const partition =
-		typeof partitionValue === "string" && partitionValue.trim().length > 0
-			? partitionValue.trim()
-			: undefined
+	const partition = typeof partitionValue === "string" ? partitionValue : undefined
 	const mcpSessions = keyValueStore(clients.mcpSessions)
 	const database = mapleDbConnectionLayer(env)
 	const layer = Layer.mergeAll(

@@ -80,7 +80,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
  * attach MAPLE_DB after the Worker exists, EMAIL is prd-only, and `alchemy
  * dev` emulation does not cover every binding. The configuration vars stay
  * `unknown` on purpose: config is read through the Effect ConfigProvider
- * (`layerFromEnv` → the shared `Env` service), never off `env` directly.
+ * (`workerEnvLayer` → the shared `Env` service), never off `env` directly.
  */
 export type AlertingWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWorkerBindings>>> &
 	Record<string, unknown>
@@ -107,7 +107,7 @@ const configuredEnv = (stage: MapleStage) =>
 		// Non-prod stages skip all crons (they share live org data via the prod DB);
 		// set to "1" on a stage to deliberately exercise crons there.
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
-		// Dev-only escape hatch from per-org BYO rows (see apps/api/alchemy.run.ts).
+		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),

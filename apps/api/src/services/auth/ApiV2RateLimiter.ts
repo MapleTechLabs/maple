@@ -38,13 +38,6 @@ export const shareIpRateLimitKey = (ip: string): string => `shareip:${ip}`
  */
 export const shareOgRateLimitKey = (shareKeyPrefix: string): string => `shareog:${shareKeyPrefix}`
 
-export interface RateLimitCheckConfig {
-	/** Span name for the check, e.g. `"ApiV2RateLimiter.check"`. */
-	readonly spanName: string
-	/** Warn log emitted when the limiter fails open. */
-	readonly failOpenMessage: string
-}
-
 /**
  * The one fail-open check implementation behind every limiter service: allow /
  * limited from the binding, `failed_open` (with `maple.rate_limit.outcome`
@@ -52,7 +45,7 @@ export interface RateLimitCheckConfig {
  */
 export const makeRateLimitCheck = (
 	limiter: Option.Option<RateLimiter>,
-	config: RateLimitCheckConfig,
+	config: { readonly spanName: string; readonly failOpenMessage: string },
 ): RateLimiterApi["check"] => {
 	const warnFailedOpen = (
 		reason: "binding_missing" | "partition_missing" | "binding_error",
@@ -80,7 +73,7 @@ export const makeRateLimitCheck = (
 
 		return yield* limiter.value.limit(makeApiV2RateLimitKey(partition, key)).pipe(
 			Effect.map(({ success }) => (success ? ("allowed" as const) : ("limited" as const))),
-			Effect.catchTag("@maple/api/services/RateLimitBindingError", (error) =>
+			Effect.catchTag("@maple/api/platform/RateLimitBindingError", (error) =>
 				warnFailedOpen("binding_error", error.cause).pipe(Effect.as<RateLimitOutcome>("failed_open")),
 			),
 		)

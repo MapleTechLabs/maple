@@ -1,13 +1,13 @@
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
+import { EventBaseLive } from "@/platform/DatabasePgLive"
 import { Env } from "@/platform/Env"
 import { ApiKeysService } from "./services/org/ApiKeysService"
 import { OAuthStateRepository } from "./services/auth/OAuthStateRepository"
 import { SlackIntegrationService } from "./services/integrations/SlackIntegrationService"
 
 // Slack workspace reconciliation's cron layer graph — mirrors
-// vcs-sync-runtime.ts's `buildScrapeRetentionLayer`, its own light graph
+// vcs-sync-runtime.ts's `ScrapeRetentionLive`, its own light graph
 // (NOT the fetch path's MainLive) so the tick stays within the startup CPU
 // budget. `SlackIntegrationService` needs `ApiKeysService` (to revoke the
 // minted bot key) and `OAuthStateRepository` (unused by this tick, but a
@@ -28,10 +28,8 @@ import { SlackIntegrationService } from "./services/integrations/SlackIntegratio
  */
 export const slackReconcileTelemetry = eventTelemetry({ serviceName: "maple-slack-reconcile" })
 
-export const buildSlackReconcileLayer = () => {
-	const EnvLive = Env.layer
-	const DatabaseLive = layerPg
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
+export const SlackReconcileLive = (() => {
+	const Base = EventBaseLive
 
 	const ApiKeysServiceLive = ApiKeysService.layer.pipe(Layer.provide(Base))
 	const OAuthStateRepositoryLive = OAuthStateRepository.layer.pipe(Layer.provide(Base))
@@ -40,7 +38,7 @@ export const buildSlackReconcileLayer = () => {
 	)
 
 	return SlackIntegrationServiceLive
-}
+})()
 
 /** The cron program: probe every active Slack workspace, revoke locally any Slack confirms are dead. */
 export const runSlackReconciliation = Effect.gen(function* () {

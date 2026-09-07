@@ -55,7 +55,7 @@ export class AuditEventsQueueProducer extends Context.Service<AuditEventsQueuePr
 // ── Rate limits ──────────────────────────────────────────────────────────────
 
 export class RateLimitBindingError extends Schema.TaggedError<RateLimitBindingError>()(
-	"@maple/api/services/RateLimitBindingError",
+	"@maple/api/platform/RateLimitBindingError",
 	{
 		message: Schema.String,
 		cause: Schema.Defect(),

@@ -7,7 +7,7 @@
  */
 import { layerPg } from "@/platform/DatabasePgLive"
 import { withPgConnectionScope } from "@/platform/pg-connection-scope"
-import { MapleDbConnectionLive } from "@/platform/pg-connection-source"
+import { mapleDbConnectionLayer } from "@/platform/pg-connection-source"
 import { MapleDb } from "@maple/infra/cloudflare"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -25,9 +25,10 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 	"ClickHouseSchemaApplyWorkflow",
 	Effect.gen(function* () {
 		// Init: the application database, bound to the host Worker under `MAPLE_DB`
-		// (a run reads it off its env through `MapleDbConnectionLive`).
+		// (a run reads it off its env through `mapleDbConnectionLayer`).
 		yield* MapleDb("api")
 		return Effect.fn("ClickHouseSchemaApplyWorkflow")(function* (payload: SchemaApplyWorkflowPayload) {
+			const env = yield* Cloudflare.WorkerEnvironment
 			return yield* withPgConnectionScope(runClickHouseSchemaApply(payload)).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
 				// and the run's own telemetry, flushed when alchemy closes the run's scope.
@@ -35,7 +36,7 @@ export default class ClickHouseSchemaApplyWorkflow extends Cloudflare.Workflow<C
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				Effect.provide(
 					Layer.mergeAll(layerPg, schemaApplyTelemetry).pipe(
-						Layer.provideMerge(MapleDbConnectionLive),
+						Layer.provideMerge(mapleDbConnectionLayer(env)),
 					),
 				),
 			)

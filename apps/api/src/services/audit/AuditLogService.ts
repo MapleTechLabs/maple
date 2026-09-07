@@ -225,9 +225,6 @@ export class AuditLogService extends Context.Service<AuditLogService, AuditLogSe
 					])
 				})
 
-			// Queue unavailability must not lose the entry: degrade to a direct
-			// write before giving up. Only typed send failures land here — an
-			// interrupt must propagate, not spawn a warehouse write mid-teardown.
 			/**
 			 * One queue send, and that is the whole write path wherever a queue
 			 * exists. It used to fall back to a direct warehouse write when the

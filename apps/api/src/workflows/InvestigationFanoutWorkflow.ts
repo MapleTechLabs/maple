@@ -9,7 +9,7 @@ import ChatSessionObject from "@/chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@/mcp/expected-failures"
 import { layerPg } from "@/platform/DatabasePgLive"
 import { withPgConnectionScope } from "@/platform/pg-connection-scope"
-import { MapleDbConnectionLive } from "@/platform/pg-connection-source"
+import { mapleDbConnectionLayer } from "@/platform/pg-connection-source"
 import { MapleDb } from "@maple/infra/cloudflare"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -38,13 +38,16 @@ export default class InvestigationFanoutWorkflow extends Cloudflare.Workflow<Inv
 		return Effect.fn("InvestigationFanoutWorkflow")(function* (
 			payload: InvestigationFanoutWorkflowPayload,
 		) {
+			const env = yield* Cloudflare.WorkerEnvironment
 			return yield* withPgConnectionScope(runInvestigationFanout(payload, { chatSessions })).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
 				// and the run's own telemetry, flushed when alchemy closes the run's scope.
 				// The Workflow class IS the entry point these layers belong to.
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				Effect.provide(
-					Layer.mergeAll(layerPg, fanoutTelemetry).pipe(Layer.provideMerge(MapleDbConnectionLive)),
+					Layer.mergeAll(layerPg, fanoutTelemetry).pipe(
+						Layer.provideMerge(mapleDbConnectionLayer(env)),
+					),
 				),
 			)
 		})

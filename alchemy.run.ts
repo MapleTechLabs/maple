@@ -77,12 +77,6 @@ const isDevServer = process.env.ALCHEMY_DEV === "true"
 /** The apps this dev run serves; undefined on a deploy, which is never partial. */
 const devApps = isDevServer ? selectedDevApps() : undefined
 
-/**
- * A child process is handed its route's port. A Worker binds its port in
- * `precreate`, before Outputs resolve, so its route follows the Worker instead.
- */
-const createDevRoute = (app: DevApp) => Portless.Route(`${app}-route`, { name: app })
-
 /** Every resource is declared on every run; a subset run only leaves the others unserved. */
 const workerDev = (app: DevApp) =>
 	devApps === undefined ? undefined : devApps.has(app) ? Portless.workerDev(app) : Portless.workerUnserved
@@ -132,7 +126,6 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 		cwd: path.join(import.meta.dirname, "apps", app),
 		env: {
 			PORT: Output.map(Output.asOutput(route.port), String),
-			HOST: "127.0.0.1",
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
 		},
@@ -185,12 +178,6 @@ export default Alchemy.Stack(
 	Effect.gen(function* () {
 		const { stage, domains, urls } = yield* MapleStack
 
-		// Child-process routes; the Workers' routes follow their Workers below.
-		const routes = new Map<DevApp, Portless.Route>()
-		for (const app of DEV_PROCESS_APPS) {
-			if (devApps?.has(app)) routes.set(app, yield* createDevRoute(app))
-		}
-
 		// Geographic instance this deploy belongs to. `us` today; an EU instance is
 		// the same stack deployed with MAPLE_REGION=eu against that instance's own
 		// Tinybird workspace and application database. Guarded here because a
@@ -216,9 +203,6 @@ export default Alchemy.Stack(
 			? yield* createMapleIngest({ stage, domains, region })
 			: undefined
 
-		// Chat and AI triage run inside the api worker (ChatSession Durable Object),
-		// so there is no separate chat worker to sequence against any more. A
-		// single module like the Workers below: its props read `MapleStack`.
 		// The application database. Each Worker binds `MAPLE_DB` from its own init
 		// (`MapleDb` in `@maple/infra/cloudflare`: the managed Hyperdrive on dev
 		// stages, a dashboard-managed config by id on stg/prd, nothing on previews).
@@ -272,10 +256,13 @@ export default Alchemy.Stack(
 		const alerting = yield* Alerting
 		yield* serveWorker("alerting", alerting)
 
-		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper.
+		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
+		// handed its route's port. (A Worker binds its port in `precreate`, before
+		// Outputs resolve, so a Worker's route follows the Worker instead.)
 		for (const app of DEV_PROCESS_APPS) {
-			const route = routes.get(app)
-			if (route) yield* createDevProcess(app, route)
+			if (!devApps?.has(app)) continue
+			const route = yield* Portless.Route(`${app}-route`, { name: app })
+			yield* createDevProcess(app, route)
 		}
 
 		const summary = {
@@ -297,12 +284,10 @@ export default Alchemy.Stack(
 				`web_url=${summary.webUrl}`,
 				`api_url=${summary.apiUrl}`,
 				`sync_url=${summary.electricSyncUrl}`,
-				`landing_url=${summary.landingUrl}`,
 			]),
 		)
 
-		// Reference the remaining workers so nothing is tree-shaken out of the plan
-		// and the summary carries their identity for the CLI output.
+		// The Workers' names, for the CLI summary.
 		return {
 			...summary,
 			// ALB hostname to CNAME `domains.ingest` at, plus the one-time ACM

@@ -2,7 +2,7 @@ import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EdgeCacheService } from "@maple/cache"
 import { CacheBackendLive } from "@/platform/CacheBackendLive"
-import { layerPg } from "@/platform/DatabasePgLive"
+import { EventBaseLive, layerPg } from "@/platform/DatabasePgLive"
 import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgTokenService"
 import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
@@ -43,10 +43,9 @@ import type { QueueBatch } from "@/platform/queue-batch"
  */
 export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
 
-export const buildVcsSyncLayer = () => {
+export const VcsSyncLive = (() => {
 	const EnvLive = Env.layer
-	const DatabaseLive = layerPg
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
+	const Base = EventBaseLive
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
 	const GithubAppClientLive = GithubAppClient.layer.pipe(
@@ -100,15 +99,13 @@ export const buildVcsSyncLayer = () => {
 	)
 
 	return VcsSyncServiceLive
-}
+})()
 
 // The periodic (cron) producer's layer graph. Deliberately lighter than the
 // consumer's: enqueuing installation-sync jobs needs only storage + the queue —
 // NOT the provider registry (the consumer does all provider work).
-export const buildVcsScheduledLayer = () => {
-	const EnvLive = Env.layer
-	const DatabaseLive = layerPg
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
+export const VcsScheduledLive = (() => {
+	const Base = EventBaseLive
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
 	const VcsSyncQueueLive = VcsSyncQueue.layer
@@ -117,12 +114,12 @@ export const buildVcsScheduledLayer = () => {
 	)
 
 	return VcsScheduledSyncServiceLive
-}
+})()
 
 // Scrape-check retention's cron layer — the lightest of the three: the job talks
 // only to Postgres, so it deliberately skips the scrape-targets service and its
 // PlanetScale discovery/OAuth dependencies.
-export const buildScrapeRetentionLayer = () => layerPg
+export const ScrapeRetentionLive = layerPg
 
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {

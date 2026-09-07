@@ -19,7 +19,7 @@ import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/Plane
  */
 export const planetScaleWebhookTelemetry = eventTelemetry({ serviceName: "maple-planetscale-webhooks" })
 
-export const buildPlanetScaleWebhookLayer = () => layerPg
+export const PlanetScaleWebhookLive = layerPg
 
 const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookJob)
 

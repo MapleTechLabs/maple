@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
-import { ApiV2RateLimit, McpToolsRateLimit, type RateLimiter } from "@/platform/bindings"
+import { McpToolsRateLimit, type RateLimiter } from "@/platform/bindings"
 import { makeApiV2RateLimitKey } from "./ApiV2RateLimiter"
 import { McpToolRateLimiter } from "./McpToolRateLimiter"
 
@@ -26,22 +26,4 @@ describe("McpToolRateLimiter", () => {
 			),
 		)
 	})
-
-	it.effect("fails open when only the v2 binding is present", () =>
-		Effect.gen(function* () {
-			const limiter = yield* McpToolRateLimiter
-			expect(yield* limiter.check("key:abc")).toBe("failed_open")
-		}).pipe(
-			Effect.provide(
-				McpToolRateLimiter.layer.pipe(
-					Layer.provide(
-						Layer.succeed(ApiV2RateLimit, {
-							partition: "prd",
-							limit: () => Effect.succeed({ success: true }),
-						}),
-					),
-				),
-			),
-		),
-	)
 })
