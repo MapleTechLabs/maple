@@ -357,8 +357,12 @@ export interface AiSessionPageOutput {
 	readonly agentEnd: string
 	/** Every model any agent span of the session ran on, dialects coalesced. */
 	readonly models: readonly string[]
-	/** Every agent named on any agent span of the session. */
+	/** Every agent named on any agent span of the session, in no order. */
 	readonly agentNames: readonly string[]
+	/** The agent on the session's earliest-starting named span — what the list
+	 *  row calls the session, and what the detail page's heading resolves to
+	 *  from the spans themselves. `''` when no span named an agent. */
+	readonly firstAgentName: string
 	readonly llmCalls: number
 	readonly toolCalls: number
 	/** Failed agent spans — what `hasErrors` tests; not the row's all-span count. */
@@ -476,29 +480,54 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 	const search = opts.search?.trim() || undefined
 	const carries = (cond: CH.Condition) => CH.countIf(cond).gt(0)
 	return from(AiTraceIndex)
-		.select(($) => ({
-			traceId: $.TraceId,
-			rawSessionId: CH.max_($.SessionId),
-			// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
-			// shadows the derived table's column of the same name, so `min(…)` of
-			// it would resolve to the outer `toString(…)` String and fail — see
-			// `traceStart` in `aiSessionListQuery`.
-			traceAgentStart: CH.min_($.Timestamp),
-			traceAgentEnd: CH.max_($.Timestamp),
-			// `Timestamp` is the span's START; the extent ends where the
-			// last-starting agent span ended. Same idiom as `traceEndNanos`.
-			traceAgentEndNanos: CH.max_(CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration))),
-			// Bounded per trace: a row is a list cell, and a trace that somehow
-			// names more models than that is not one the cell can show anyway.
-			models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
-			agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
-			toolCalls: CH.sum($.IsToolCall),
-			errorAgentSpans: CH.sum($.IsError),
-			failedSpans: failedSpansExpr($),
-			// Usage AND model calls travel as reporters: both are counted one level
-			// up, where every trace of the session is in hand — see `ai-span-columns`.
-			usageReporters: usageReportersExpr($),
-		}))
+		.select(($) => {
+			// Ranks the trace's spans for the agent-name `argMin`: a span that
+			// names an agent sorts at its own timestamp, one that does not sorts
+			// at the sentinel and can never win — here, or one level up where the
+			// same column orders the traces. Same idiom as `sessionOrder` in
+			// `aiSessionListQuery`, and the same reason: the DSL has no `argMinIf`.
+			// A trace that names no agent at all ties every span at the sentinel,
+			// and the tie is harmless because every candidate's name is `''`.
+			const agentOrder = CH.if_(
+				$.AgentName.neq(""),
+				$.Timestamp,
+				CH.toDateTime(CH.lit(SESSION_ORDER_SENTINEL)),
+			)
+			return {
+				traceId: $.TraceId,
+				rawSessionId: CH.max_($.SessionId),
+				// Named apart from the page's `agentStart`/`agentEnd`: an outer alias
+				// shadows the derived table's column of the same name, so `min(…)` of
+				// it would resolve to the outer `toString(…)` String and fail — see
+				// `traceStart` in `aiSessionListQuery`.
+				traceAgentStart: CH.min_($.Timestamp),
+				traceAgentEnd: CH.max_($.Timestamp),
+				// `Timestamp` is the span's START; the extent ends where the
+				// last-starting agent span ended. Same idiom as `traceEndNanos`.
+				traceAgentEndNanos: CH.max_(
+					CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration)),
+				),
+				// Bounded per trace: a row is a list cell, and a trace that somehow
+				// names more models than that is not one the cell can show anyway.
+				models: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.Model, $.Model.neq("")),
+				agentNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.AgentName, $.AgentName.neq("")),
+				// The name the session goes by, and when that name first appeared.
+				// `agentNames` is a set — `groupUniqArrayIf`, then `groupUniqArrayArray`
+				// across traces — so its first element is whatever the aggregate
+				// happened to emit, while the detail page's heading is the agent on the
+				// session's earliest-starting named span. Taking the heading from the
+				// set left a multi-agent session titled one thing in the list and
+				// another on its own page.
+				firstAgentName: CH.argMin($.AgentName, agentOrder),
+				firstAgentAt: CH.min_(agentOrder),
+				toolCalls: CH.sum($.IsToolCall),
+				errorAgentSpans: CH.sum($.IsError),
+				failedSpans: failedSpansExpr($),
+				// Usage AND model calls travel as reporters: both are counted one level
+				// up, where every trace of the session is in hand — see `ai-span-columns`.
+				usageReporters: usageReportersExpr($),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.Timestamp.gte(param.dateTimeString(bounds === "window" ? "startTime" : "fanOutStart")),
@@ -598,6 +627,10 @@ export function aiSessionPageQuery(opts: AiSessionPageOpts = {}) {
 			agentEnd: CH.toString_(CH.max_($.traceAgentEnd)),
 			models: CH.groupUniqArrayArray($.models),
 			agentNames: CH.groupUniqArrayArray($.agentNames),
+			// Across traces the same ordering resolves the session's own first
+			// named agent: a trace that named none carries the sentinel and loses
+			// to any trace that did.
+			firstAgentName: CH.argMin($.firstAgentName, $.firstAgentAt),
 			llmCalls: sessionLlmCalls("usageReporters"),
 			toolCalls: CH.sum($.toolCalls),
 			errorAgentSpans: CH.sum($.errorAgentSpans),

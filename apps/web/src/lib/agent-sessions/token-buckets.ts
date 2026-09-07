@@ -15,24 +15,44 @@ import type { SessionTokenTotals } from "./session-summary"
  * replayed from cache, written to it, replied, thought. Shared by the detail
  * page's Tokens rail and the list row's bar, so a session reads the same in
  * both places. Chart tokens rather than new hues, like the rest of the
- * session page's vocabulary (`span-visuals.ts`).
+ * session page's vocabulary (`span-visuals.ts`), but designated ones: the five
+ * are always drawn side by side in a 6px bar, so they need hues spread evenly
+ * rather than the per-theme spacing of the chart-1..5 slots.
  */
 export const TOKEN_BUCKETS = [
-	{ key: "input", label: "Input", fill: "bg-chart-2", text: "text-chart-2", icon: PaperPlaneIcon },
-	{ key: "cacheRead", label: "Cache read", fill: "bg-chart-4", text: "text-chart-4", icon: DatabaseIcon },
+	{
+		key: "input",
+		label: "Input",
+		fill: "bg-chart-tok-input",
+		text: "text-chart-tok-input",
+		icon: PaperPlaneIcon,
+	},
+	{
+		key: "cacheRead",
+		label: "Cache read",
+		fill: "bg-chart-tok-cache-read",
+		text: "text-chart-tok-cache-read",
+		icon: DatabaseIcon,
+	},
 	{
 		key: "cacheWrite",
 		label: "Cache write",
-		fill: "bg-chart-5",
-		text: "text-chart-5",
+		fill: "bg-chart-tok-cache-write",
+		text: "text-chart-tok-cache-write",
 		icon: FloppyDiskIcon,
 	},
-	{ key: "output", label: "Output", fill: "bg-chart-1", text: "text-chart-1", icon: ChatBubbleIcon },
+	{
+		key: "output",
+		label: "Output",
+		fill: "bg-chart-tok-output",
+		text: "text-chart-tok-output",
+		icon: ChatBubbleIcon,
+	},
 	{
 		key: "reasoning",
 		label: "Reasoning",
-		fill: "bg-chart-3",
-		text: "text-chart-3",
+		fill: "bg-chart-tok-reasoning",
+		text: "text-chart-tok-reasoning",
 		icon: ChatBubbleSparkleIcon,
 	},
 ] as const satisfies ReadonlyArray<{
