@@ -14,43 +14,43 @@
 // So the HTTP client the executor runs through tees the response body, reads
 // the first data frame off the copy, and stamps the enclosing model-call span
 // — the one `turn.ts` opens per attempt. Nothing is buffered on the served
-// branch and the copy is cancelled the moment the frame is in hand. This is
-// Maple behaviour at the `Llm.ts` seam, not a wrapper around the package.
+// branch and the copy is cancelled the moment the frame is in hand. The
+// executor's own retries run inside that one span, so a retried attempt
+// simply writes last. This is Maple behaviour at the `Llm.ts` seam, not a
+// wrapper around the package — and it covers what goes out over `fetch`: a
+// call the Workers AI shim answers from the binding never reaches it, and has
+// no broadcasting gateway to be deduped against either.
 
 import { Effect, Layer, Option, Schema } from "effect"
 import type { Tracer } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 
-export interface ResponseIdentity {
-	readonly id?: string
-	readonly model?: string
-}
-
 /** The two top-level fields of an OpenAI-chat chunk this reads; the rest is
  *  the delta, which is the served branch's business. */
-const decodeChunkIdentity = Schema.decodeUnknownOption(
-	Schema.fromJsonString(
-		Schema.Struct({ id: Schema.optionalKey(Schema.String), model: Schema.optionalKey(Schema.String) }),
-	),
-)
+const ChunkIdentity = Schema.Struct({
+	id: Schema.optionalKey(Schema.String),
+	model: Schema.optionalKey(Schema.String),
+})
+
+export type ResponseIdentity = typeof ChunkIdentity.Type
+
+const decodeChunkIdentity = Schema.decodeUnknownOption(Schema.fromJsonString(ChunkIdentity))
 
 /**
- * The identity the first SSE data frame carries, or nothing when no complete
- * data frame in `text` names one. Comment lines (OpenRouter sends
- * `: OPENROUTER PROCESSING` while it routes) and `[DONE]` are skipped; a frame
- * that is not JSON ends the search — the stream is not what this expects.
+ * The identity carried by the first SSE data frame in `text` that names one,
+ * or nothing. Comment lines (OpenRouter sends `: OPENROUTER PROCESSING` while
+ * it routes), `[DONE]`, and frames that do not decode to an id or a model — an
+ * error frame, a keep-alive, a null field — are skipped.
  */
 export const responseIdentityFromSse = (text: string): ResponseIdentity | undefined => {
 	for (const line of text.split("\n")) {
 		if (!line.startsWith("data:")) continue
-		const payload = line.slice("data:".length).trim()
-		if (payload === "" || payload === "[DONE]") continue
-		const chunk = decodeChunkIdentity(payload)
-		if (Option.isNone(chunk)) return undefined
+		const chunk = decodeChunkIdentity(line.slice("data:".length).trim())
+		if (Option.isNone(chunk)) continue
 		const { id, model } = chunk.value
 		const identity: ResponseIdentity = {
-			...(id !== undefined && id !== "" ? { id } : undefined),
-			...(model !== undefined && model !== "" ? { model } : undefined),
+			...(id ? { id } : undefined),
+			...(model ? { model } : undefined),
 		}
 		if (identity.id !== undefined || identity.model !== undefined) return identity
 	}
@@ -95,41 +95,44 @@ export const modelCallSpan = (span: Tracer.AnySpan): Tracer.Span | undefined => 
 	let current: Tracer.AnySpan | undefined = span
 	while (current !== undefined && current._tag === "Span") {
 		if (current.attributes.get("gen_ai.operation.name") === "chat") return current
-		current = Option.isSome(current.parent) ? current.parent.value : undefined
+		current = Option.getOrUndefined(current.parent)
 	}
 	return undefined
 }
 
-/** `fetch` that tees an event stream and stamps `span` with the identity its
- *  first frame carries. Any other response passes through untouched. */
+/** `fetch` that tees a successful event stream and stamps `span` with the
+ *  identity its first frame carries. Any other response passes through
+ *  untouched — OpenRouter serves its error frames as an event stream too, and
+ *  those name no response. */
 const identifyingFetch =
 	(span: Tracer.Span, fetch: typeof globalThis.fetch): typeof globalThis.fetch =>
 	async (input, init) => {
 		const response = await fetch(input, init)
 		const contentType = response.headers.get("content-type") ?? ""
-		if (response.body === null || !contentType.includes("text/event-stream")) return response
+		if (!response.ok || response.body === null || !contentType.includes("text/event-stream")) return response
 		const [served, observed] = response.body.tee()
-		void readIdentity(observed).then(
-			(identity) => {
+		void readIdentity(observed)
+			.then((identity) => {
 				if (identity?.id !== undefined) span.attribute("gen_ai.response.id", identity.id)
 				if (identity?.model !== undefined) span.attribute("gen_ai.response.model", identity.model)
-			},
-			() => undefined,
-		)
+			})
+			.catch(() => undefined)
 		return new Response(served, response)
 	}
 
 /**
  * The client with the identity stamping on: each request resolves the
  * model-call span it runs under, and runs with a `Fetch` bound to it. A request
- * under no model-call span runs exactly as before.
+ * under no model-call span — or under one nothing will export — runs exactly
+ * as before.
  */
 export const withResponseIdentity = (client: HttpClient.HttpClient): HttpClient.HttpClient =>
-	HttpClient.transform(client, (effect) =>
-		Effect.gen(function* () {
-			const current = yield* Effect.option(Effect.currentParentSpan)
-			const span = Option.isSome(current) ? modelCallSpan(current.value) : undefined
-			if (span === undefined) return yield* effect
+	HttpClient.transform(
+		client,
+		Effect.fnUntraced(function* (effect) {
+			const current = Option.getOrUndefined(yield* Effect.option(Effect.currentParentSpan))
+			const span = current === undefined ? undefined : modelCallSpan(current)
+			if (span === undefined || !span.sampled) return yield* effect
 			const fetch = yield* FetchHttpClient.Fetch
 			return yield* Effect.provideService(effect, FetchHttpClient.Fetch, identifyingFetch(span, fetch))
 		}),

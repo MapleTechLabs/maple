@@ -206,8 +206,7 @@ export function buildSessionSummary({
 	const idleMs = idleGaps.reduce((total, gap) => total + gap.durationMs, 0)
 
 	const usage = countableUsageSpans(ordered, byId)
-	const costs = costBySpan(ordered, byId)
-	const calls = countedLlmCalls(ordered, byId, usage.bySpan, costs)
+	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
 	const occupancyTimeline = computeOccupancyTimeline(ordered, startMs, endMs, idleGaps)
 
 	return {
@@ -224,11 +223,10 @@ export function buildSessionSummary({
 		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
 		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
 		serviceNames: byFrequency(ordered.map((span) => span.serviceName)),
-		models: modelUsage(calls, usage.bySpan, costs),
+		models: modelUsage(calls, usage.bySpan, usage.costs),
 		tokens: sumTokens([...usage.bySpan.values()]),
 		tokenReporting: classifyTokenReporting(usage, byId, turns),
-		// An empty map means nothing reported at all — "not measured", not "free".
-		cost: costs.size === 0 ? undefined : sumCosts(costs.values()),
+		cost: usage.costs.size === 0 ? undefined : sumCosts(usage.costs.values()),
 		work: {
 			turns: turns.length,
 			llmCalls: calls.length,
@@ -463,6 +461,9 @@ function tokenTotals(buckets: Omit<SessionTokenTotals, "total">): SessionTokenTo
 interface CountableUsage {
 	/** Dedup-adjusted usage per reporting span; reporters left with nothing are absent. */
 	readonly bySpan: ReadonlyMap<string, SessionTokenTotals>
+	/** Reported cost per span under the same rules; an empty map means nothing
+	 *  reported a cost at all — "not measured", not "free". */
+	readonly costs: ReadonlyMap<string, number>
 	/** Some reporter summed usage that a span beneath it also reported. */
 	readonly rolledUp: boolean
 }
@@ -494,7 +495,8 @@ function countableUsageSpans(
 		const tokens = excessTokens(reported.get(spanId)!, sumTokens(beneath))
 		if (tokens.total > 0) bySpan.set(spanId, tokens)
 	}
-	return { bySpan: collapseObservations(bySpan, byId, (tokens) => tokens.total), rolledUp }
+	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
+	return { bySpan: collapsed.tokens, costs: collapsed.costs, rolledUp }
 }
 
 /**
@@ -503,30 +505,37 @@ function countableUsageSpans(
  * Helicone, …), which lands in the same session as a separate trace, out of
  * reach of the parent/child netting above. The provider's response id is the
  * one fact both observations carry, so the call is counted once, at the
- * larger of the two claims: a gateway prices a call the app's SDK could not.
- * Reporters without an id are kept as they are — the page does not guess. The
- * first claim wins a tie, so `bySpan`'s start order decides.
+ * larger claim: the observation with the most tokens represents it (the
+ * first, on a tie), and it carries the largest cost any of them reported — a
+ * gateway prices a call the app's SDK could not, and the per-model table must
+ * find that price on the same span it finds the tokens. Reporters without an
+ * id are kept as they are — the page does not guess.
  */
-function collapseObservations<T>(
-	bySpan: ReadonlyMap<string, T>,
+function collapseObservations(
+	tokens: ReadonlyMap<string, SessionTokenTotals>,
+	costs: ReadonlyMap<string, number>,
 	byId: ReadonlyMap<string, AiSessionSpan>,
-	claim: (value: T) => number,
-): ReadonlyMap<string, T> {
-	const kept = new Map<string, T>()
-	const keptByResponse = new Map<string, string>()
-	for (const [spanId, value] of bySpan) {
+): { readonly tokens: ReadonlyMap<string, SessionTokenTotals>; readonly costs: ReadonlyMap<string, number> } {
+	const groups = new Map<string, string[]>()
+	for (const spanId of new Set([...tokens.keys(), ...costs.keys()])) {
 		const responseId = byId.get(spanId)?.genAi.responseId
-		if (responseId === undefined || responseId === "") {
-			kept.set(spanId, value)
-			continue
-		}
-		const current = keptByResponse.get(responseId)
-		if (current !== undefined && claim(kept.get(current)!) >= claim(value)) continue
-		if (current !== undefined) kept.delete(current)
-		keptByResponse.set(responseId, spanId)
-		kept.set(spanId, value)
+		if (responseId === undefined || responseId === "") continue
+		groups.set(responseId, [...(groups.get(responseId) ?? []), spanId])
 	}
-	return kept
+	const keptTokens = new Map(tokens)
+	const keptCosts = new Map(costs)
+	for (const group of groups.values()) {
+		const total = (spanId: string) => tokens.get(spanId)?.total ?? 0
+		const representative = group.reduce((best, spanId) => (total(spanId) > total(best) ? spanId : best))
+		const reported = group.flatMap((spanId) => costs.get(spanId) ?? [])
+		for (const spanId of group) {
+			if (spanId === representative) continue
+			keptTokens.delete(spanId)
+			keptCosts.delete(spanId)
+		}
+		if (reported.length > 0) keptCosts.set(representative, Math.max(...reported))
+	}
+	return { tokens: keptTokens, costs: keptCosts }
 }
 
 /**
@@ -621,7 +630,7 @@ function costBySpan(
 	for (const [spanId, beneath] of chargeToNearestReporter(byId, reported)) {
 		bySpan.set(spanId, Math.max(0, reported.get(spanId)! - beneath.reduce((sum, c) => sum + c, 0)))
 	}
-	return collapseObservations(bySpan, byId, (cost) => cost)
+	return bySpan
 }
 
 function sumCosts(costs: Iterable<number>): number {

@@ -46,7 +46,7 @@ const MODULE_ID = "local-0018-to-0019-ai-trace-index-usage-conventions" as const
  *    column — metadata-only, defaulting every existing row to `''`.
  * 2. Replace the view. A materialized view's SELECT is frozen at creation, so
  *    the v18 view is dropped first or it simply survives the bootstrap's
- *    `IF NOT EXISTS`. chDB materializes views as tables, hence `DROP TABLE`.
+ *    `IF NOT EXISTS`.
  *
  * NOTHING IS BACKFILLED, as in 0029: rows materialized under v18 keep their
  * over-counted `Tokens` and an empty `ResponseId` — such a session ranks and
@@ -174,7 +174,7 @@ const prepareTarget = async (
 const apply = async (context: MigrationModuleContext): Promise<V18ToV19Progress> => {
 	await context.openTarget(
 		(db) => {
-			db.exec("DROP TABLE IF EXISTS ai_trace_index_mv")
+			db.exec("DROP VIEW IF EXISTS ai_trace_index_mv")
 			for (const [column, type] of ADDED_COLUMNS) {
 				db.exec(`ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ${column} ${type}`)
 			}

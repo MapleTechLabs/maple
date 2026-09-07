@@ -185,22 +185,27 @@ describe("span classification SQL", () => {
 		)
 	})
 
-	it("sums usage at the session level: children off their parent, one claim per response id", () => {
-		const all = "arrayFlatten(groupArray(usageReporters))"
-		const claims = `arrayMap(r -> tuple(r.5, greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), ${all}))), ${all})`
-		expect(sql(sessionUsageSum("usageReporters", 4))).toBe(
-			`arraySum(n -> if(n.1 = '', n.2, 0.), ${claims}) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), ${claims}), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, ${claims}))))`,
-		)
-	})
+	it.each([3, 4] as const)(
+		"sums usage at the session level: children off their parent, one claim per response id (element %i)",
+		(element) => {
+			const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"
+			const claims = `arrayMap(r -> tuple(r.5, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`
+			expect(sql(sessionUsageSum("usageReporters", element))).toBe(
+				`arraySum(n -> if(n.1 = '', n.2, 0.), ${claims}) + arraySum(id -> arrayMax(n -> if(n.1 = id, n.2, 0.), ${claims}), arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1, ${claims}))))`,
+			)
+		},
+	)
 
 	it("counts a model call at its deepest account, once per response id", () => {
 		const text = sql(sessionLlmCalls("usageReporters"))
 		// A reporting call counts by its netted claim; a non-reporting one by
 		// having no reporting parent.
 		expect(text).toContain(
-			"if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arrayFlatten(groupArray(usageReporters)))) > 0 OR greatest(0., r.4 -",
+			"if((r.3 > 0 OR r.4 > 0), greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000))) > 0 OR greatest(0., r.4 -",
 		)
-		expect(text).toContain("NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arrayFlatten(groupArray(usageReporters))))")
+		expect(text).toContain(
+			"NOT arrayExists(p -> p.1 = r.2 AND (p.3 > 0 OR p.4 > 0), arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)))",
+		)
 		expect(text).toMatch(/^toFloat64\(arraySum\(n -> if\(n\.2 AND n\.1 = '', 1, 0\), /)
 		expect(text).toContain("length(arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> if(n.2, n.1, ''),")
 	})

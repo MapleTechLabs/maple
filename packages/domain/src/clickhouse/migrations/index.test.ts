@@ -691,6 +691,7 @@ describe("migration 0026 — ai_trace_index filter columns", () => {
 		expect(statements.some((stmt) => typeof stmt !== "string" || stmt.includes("INSERT"))).toBe(false)
 	})
 })
+
 describe("migration 0029 — ai_trace_index usage conventions", () => {
 	const migration = migrations.find((entry) => entry.version === 29)!
 
@@ -712,6 +713,14 @@ describe("migration 0029 — ai_trace_index usage conventions", () => {
 			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
 		)
 		expect(create).toContain(") AS Tokens")
+		// Every 0026 column still projected: the view maps to the table by NAME.
+		for (const column of [
+			"DeploymentEnv", "Model", "AgentName", "ToolName", "IsError", "IsLlmCall", "IsToolCall",
+			"Tokens", "Cost", "ResponseId",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+		expect(create).toMatch(/\bSpanId,\s+ParentSpanId,\s+Duration,/)
 	})
 
 	it("does not backfill and does not gate ingest", () => {

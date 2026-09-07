@@ -503,9 +503,11 @@ describe("buildSessionSummary — cache accounting", () => {
 		expect(summary.tokens.total).toBe(110)
 		expect(summary.cost).toBe(0.01)
 		expect(summary.work.llmCalls).toBe(1)
-		expect(summary.models.map((model) => [model.model, model.llmCalls, model.tokens.total])).toEqual([
-			["z-ai/glm-5.3-flash:nitro", 1, 110],
-		])
+		// The app's span represents the call and carries the gateway's price, so
+		// the per-model row adds up to the session's cost.
+		expect(
+			summary.models.map((model) => [model.model, model.llmCalls, model.tokens.total, model.cost]),
+		).toEqual([["z-ai/glm-5.3-flash:nitro", 1, 110, 0.01]])
 	})
 
 	it("counts a failed call that reported no usage, and not a wrapper over calls that did", () => {

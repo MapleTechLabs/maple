@@ -12,7 +12,7 @@
  * `RequestExecutor` already owns retry, backoff and secret redaction, so the HTTP layer underneath
  * is plain `FetchHttpClient.layer` — wrapped by the Workers AI shim, and by the response-identity
  * stamp (`ResponseIdentityHttpClient.ts`) that writes the served id and model to the model-call
- * span, which the package's own protocol drops.
+ * span for what goes out over `fetch`, which the package's own protocol drops.
  *
  * Deliberately NOT imported here: `@opencode-ai/ai/providers/amazon-bedrock`. It is the only path
  * that reaches `aws4fetch` and `@smithy/*`; leaving it unimported keeps both out of the Worker
@@ -371,9 +371,9 @@ export const resolveLensModel = (env: LlmEnv, tags?: LlmCallTags): LanguageModel
 export const layerLlm = (env: LlmEnv): Layer.Layer<LLMClientService> =>
 	LLMClient.layer.pipe(
 		Layer.provide(RequestExecutor.layer),
-		// Outermost, so every model call the executor makes — through the shim or
-		// straight to OpenRouter — stamps its span with the served response's id
-		// and model.
+		// Outermost, so every model call the executor sends over `fetch` stamps
+		// its span with the served response's id and model. A call the shim
+		// answers from the `AI` binding never reaches `fetch` and is not stamped.
 		Layer.provide(layerResponseIdentity),
 		Layer.provide(layerWorkersAi(env)),
 		Layer.provide(FetchHttpClient.layer),

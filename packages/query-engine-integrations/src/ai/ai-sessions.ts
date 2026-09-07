@@ -269,7 +269,7 @@ export interface AiSessionPageOutput {
 	readonly toolCalls: number
 	/** Failed agent spans — what `hasErrors` tests; not the row's all-span count. */
 	readonly errorAgentSpans: number
-	/** Tokens across every bucket, deepest reporter counted — see `deepestReporterSum`. */
+	/** Tokens across every bucket, deepest reporter counted, one claim per response id — see `sessionUsageSum`. */
 	readonly totalTokens: number
 	/** USD as the instrumentation priced it; 0 where nothing reported a cost. */
 	readonly cost: number

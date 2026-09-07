@@ -1,8 +1,9 @@
-// The session's usage and model calls, counted the way the detail page counts
-// them.
+// The session's usage and model calls, counted by the detail page's rules —
+// one level deep, which is the shape every roll-up in production has, where
+// the page walks the whole ancestry.
 //
 // `ai_trace_index` carries every GenAI span's tokens and cost (migration
-// 0026, `@maple/domain/tinybird/gen-ai-columns`) and, since 0027, the
+// 0026, `@maple/domain/tinybird/gen-ai-columns`) and, since 0029, the
 // provider's response id. Three things would otherwise inflate a session:
 //
 // - A wrapper's roll-up: several frameworks stamp `gen_ai.usage.*` on the
@@ -33,10 +34,11 @@ import { compile } from "@maple-dev/clickhouse-builder/sql"
 import { AI_SESSION_SPANS_MAX_SPANS } from "@maple/domain/http"
 
 /**
- * Reporters collected per trace. The detail page reads at most this many spans
- * of a session (`AI_SESSION_SPANS_MAX_SPANS`), so past it the two pages already
- * disagree; the cap bounds the quadratic passes below at a few million
- * comparisons for a pathological trace rather than unbounded.
+ * Reporters collected per trace, and again per session once the traces are
+ * flattened. The detail page reads at most this many spans of a session
+ * (`AI_SESSION_SPANS_MAX_SPANS`), so past it the two pages already disagree;
+ * the cap bounds the quadratic passes below at a few million comparisons per
+ * session rather than unbounded.
  */
 export const MAX_USAGE_REPORTERS_PER_TRACE = AI_SESSION_SPANS_MAX_SPANS
 
@@ -79,9 +81,10 @@ export function usageReportersExpr($: {
 }
 
 /** Every reporter of the session: the per-trace arrays, flattened at the
- *  session level. Span ids are unique across traces, so the parent lookups
- *  below cannot cross into another trace. */
-const sessionReporters = (reporters: string): string => `arrayFlatten(groupArray(${reporters}))`
+ *  session level and capped again. Span ids are unique across traces, so the
+ *  parent lookups below cannot cross into another trace. */
+const sessionReporters = (reporters: string): string =>
+	`arraySlice(arrayFlatten(groupArray(${reporters})), 1, ${MAX_USAGE_REPORTERS_PER_TRACE})`
 
 /** A reporter's own claim for `element` (3 tokens, 4 cost) less what its
  *  reporting children already claimed — zero for a clean roll-up. */
@@ -111,7 +114,8 @@ export function sessionUsageSum(reporters: string, element: 3 | 4): Expr<number>
  * account of its call — it reported usage its children do not already cover,
  * or it reported none and neither did its parent (a failed call still counts;
  * a gateway's provider attempt under the call that reports does not) — and
- * calls sharing a response id count once.
+ * calls sharing a response id count once. One level, like the netting above;
+ * the detail page (`countedLlmCalls`) looks at every ancestor.
  */
 export function sessionLlmCalls(reporters: string): Expr<number> {
 	const all = sessionReporters(reporters)

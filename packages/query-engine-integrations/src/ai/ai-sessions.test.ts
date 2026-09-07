@@ -274,7 +274,7 @@ describe("aiSessionPageQuery", () => {
 		expect(outer).toContain("sum(errorAgentSpans) AS errorAgentSpans")
 		// The session's reporters, every trace's flattened, so a gateway's mirror
 		// trace of a call is in hand next to the app's own span of it.
-		const all = "arrayFlatten(groupArray(usageReporters))"
+		const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"
 		// Deepest reporter: a parent keeps only its excess over its reporting
 		// children; then one claim per response id.
 		expect(outer).toContain(

@@ -1,6 +1,5 @@
 // SAFETY-FILE: the SSE bodies here are test fixtures, parsed by the unit under test.
-import { describe, it } from "@effect/vitest"
-import { assert } from "vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer } from "effect"
 import type { Tracer } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
@@ -27,17 +26,32 @@ describe("responseIdentityFromSse", () => {
 		assert.strictEqual(responseIdentityFromSse("data: [DONE]\n"), undefined)
 	})
 
-	it("skips a frame naming neither, and stops at one that is not JSON", () => {
+	it("skips a frame naming neither, one that is not JSON, and a null id", () => {
 		assert.deepStrictEqual(responseIdentityFromSse('data: {"choices":[]}\ndata: {"id":"gen-2"}\n'), {
 			id: "gen-2",
 		})
-		assert.strictEqual(responseIdentityFromSse("data: not json\ndata: {\"id\":\"gen-2\"}\n"), undefined)
+		assert.deepStrictEqual(responseIdentityFromSse('data: not json\ndata: {"id":"gen-2"}\n'), { id: "gen-2" })
+		assert.deepStrictEqual(responseIdentityFromSse('data: {"id":null,"model":null}\ndata: {"id":"gen-3"}\n'), {
+			id: "gen-3",
+		})
 	})
 })
 
-/** A fetch that answers every request with `body` as an event stream. */
-const sseFetch = (body: string): typeof globalThis.fetch => () =>
-	Promise.resolve(new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } }))
+/** A fetch that answers every request with `body` as an event stream, in
+ *  `chunks` pieces so frames straddle reads the way they do on the wire. */
+const sseFetch =
+	(body: string, { status = 200, chunks = 1 } = {}): typeof globalThis.fetch =>
+	() => {
+		const size = Math.ceil(body.length / chunks)
+		const parts = Array.from({ length: chunks }, (_, i) => body.slice(i * size, (i + 1) * size))
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				for (const part of parts) controller.enqueue(new TextEncoder().encode(part))
+				controller.close()
+			},
+		})
+		return Promise.resolve(new Response(stream, { status, headers: { "content-type": "text/event-stream" } }))
+	}
 
 const jsonFetch: typeof globalThis.fetch = () =>
 	Promise.resolve(new Response('{"id":"resp-1"}', { status: 200, headers: { "content-type": "application/json" } }))
@@ -81,12 +95,21 @@ describe("layerResponseIdentity", () => {
 		}).pipe(withTransport(sseFetch(SSE))),
 	)
 
-	it.live("reaches the model-call span from a span nested under it", () =>
+	it.live("reaches the model-call span from a span nested under it, across chunk boundaries", () =>
 		Effect.gen(function* () {
 			const { span, body } = yield* Effect.withSpan(requestUnderModelCall, "http.client POST")
 			assert.strictEqual(body, SSE)
 			assert.strictEqual(yield* stamped(span, "gen_ai.response.id"), "gen-1")
-		}).pipe(withTransport(sseFetch(SSE))),
+		}).pipe(withTransport(sseFetch(SSE, { chunks: 7 }))),
+	)
+
+	it.live("leaves an event stream that is an error response alone", () =>
+		Effect.gen(function* () {
+			const { span, body } = yield* requestUnderModelCall
+			assert.strictEqual(body, 'data: {"id":"gen-err","error":{}}\n')
+			yield* Effect.sleep("10 millis")
+			assert.strictEqual(span.attributes.has("gen_ai.response.id"), false)
+		}).pipe(withTransport(sseFetch('data: {"id":"gen-err","error":{}}\n', { status: 402 }))),
 	)
 
 	it.live("leaves a response that is not an event stream alone", () =>
@@ -118,9 +141,10 @@ describe("modelCallSpan", () => {
 		Effect.gen(function* () {
 			const inner = yield* Effect.currentSpan.pipe(
 				Effect.withSpan("http.client POST"),
-				Effect.withSpan("chat m", { attributes: { "gen_ai.operation.name": "chat" } }),
+				Effect.withSpan("chat inner", { attributes: { "gen_ai.operation.name": "chat" } }),
+				Effect.withSpan("chat outer", { attributes: { "gen_ai.operation.name": "chat" } }),
 			)
-			assert.strictEqual(modelCallSpan(inner)?.name, "chat m")
+			assert.strictEqual(modelCallSpan(inner)?.name, "chat inner")
 			const outer = yield* Effect.currentSpan.pipe(
 				Effect.withSpan("http.client POST"),
 				Effect.withSpan("invoke_agent a", { attributes: { "gen_ai.operation.name": "invoke_agent" } }),

@@ -656,5 +656,19 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		])
 		assert.deepStrictEqual(facet("agent"), [["slack-agent", 1]])
 		assert.deepStrictEqual(facet("tool"), [["search_traces", 1]])
+		// Any-span counts: the eve session carries eve, the SDK span's vendor and
+		// the gateway mirror's, and the mirror's service — each counted once for
+		// the session, the model above included, although two of its traces name
+		// it. The trace key is resolved over every span of a trace, not the ones
+		// carrying the value.
+		assert.deepStrictEqual(facet("vendor"), [
+			["eve", 1],
+			["openrouter", 1],
+			["vercel_ai_sdk", 2],
+		])
+		assert.deepStrictEqual(facet("service"), [
+			["agent-service", 2],
+			["openrouter", 1],
+		])
 	})
 })
