@@ -1,6 +1,5 @@
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
+import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer } from "effect"
 import { layerPg } from "@/platform/DatabasePgLive"
 import { Env } from "@/platform/Env"
@@ -23,16 +22,14 @@ import { SlackIntegrationService } from "./services/integrations/SlackIntegratio
 // (crash mid-processing, network blip to Maple) and installs that predate
 // this wiring.
 
-const telemetry = MapleCloudflareSDK.make({
-	// Deliberately not `maple-api`: background work sharing the request-facing
-	// service's name skewed its percentiles (p99 32s, 2026-09-04).
-	serviceName: "maple-slack-reconcile",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
+/**
+ * Deliberately not `maple-api`: background work sharing the request-facing
+ * service's name skewed its percentiles (p99 32s, 2026-09-04). Provided by the
+ * Worker around the fire; the layer below carries no tracer of its own.
+ */
+export const slackReconcileTelemetry = eventTelemetry({ serviceName: "maple-slack-reconcile" })
 
-export const buildSlackReconcileLayer = (_env: Record<string, unknown>) => {
+export const buildSlackReconcileLayer = () => {
 	const ConfigLive = WorkerConfigProviderLayer
 	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
@@ -46,12 +43,9 @@ export const buildSlackReconcileLayer = (_env: Record<string, unknown>) => {
 
 	return SlackIntegrationServiceLive.pipe(
 		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(telemetry.layer),
 		Layer.provideMerge(ConfigLive),
 	)
 }
-
-export const flushSlackTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
 
 /** The cron program: probe every active Slack workspace, revoke locally any Slack confirms are dead. */
 export const runSlackReconciliation = Effect.gen(function* () {

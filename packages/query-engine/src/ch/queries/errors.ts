@@ -155,6 +155,9 @@ export interface UnexpectedIdentityFilter {
 export const DEFAULT_ERROR_NAMESPACE_PREFIX = "@maple/"
 
 export const UNEXPECTED_IDENTITY_MARKERS: readonly string[] = [
+	// The SDK's marker for a server span whose handler rendered a 5xx (the
+	// Worker bridge answers a defect that way); the api's own marker before it.
+	"HttpServerErrorResponse",
 	"@maple/api/http/Http5xxResponseError",
 	"@maple/http/v2/UnexpectedError",
 	"@maple/http/v1/V1UnexpectedError",

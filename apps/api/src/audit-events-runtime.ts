@@ -1,7 +1,5 @@
-import type { Message, MessageBatch } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
+import type { Message } from "@cloudflare/workers-types"
 import { EdgeCacheService } from "@maple/cache"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
 import type { OrgId } from "@maple/domain/primitives"
 import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { Cause, Clock, Effect, Layer } from "effect"
@@ -9,6 +7,7 @@ import { CacheBackendLive } from "@/platform/CacheBackendLive"
 import { summarizeCause } from "@/platform/describe-cause"
 import { layerPg } from "@/platform/DatabasePgLive"
 import { Env } from "@/platform/Env"
+import type { QueueBatch } from "@/platform/queue-batch"
 import { systemTenant } from "@/services/alerts/system-tenant"
 import { AUDIT_LOG_DATASOURCE } from "@/services/audit/AuditLogService"
 import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
@@ -16,20 +15,14 @@ import { TinybirdOrgTokenService } from "@/services/integrations/TinybirdOrgToke
 import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
 import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./services/audit/audit-event"
 
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "maple-api",
-	serviceNamespace: "core",
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
 /**
  * The consumer writes through `WarehouseQueryService.ingest`, which pins every
  * write to the managed Tinybird pipeline. The service's read-side dependencies
  * (org ClickHouse settings, the per-org JWT minter) come along because the
- * layer requires them, not because a write ever consults them.
+ * layer requires them, not because a write ever consults them. Its spans are
+ * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const buildAuditEventsLayer = (_env: Record<string, unknown>) => {
+export const buildAuditEventsLayer = () => {
 	const EnvLive = Env.layer.pipe(Layer.provide(WorkerConfigProviderLayer))
 	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
 	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
@@ -41,16 +34,13 @@ export const buildAuditEventsLayer = (_env: Record<string, unknown>) => {
 		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
 	)
 	return WarehouseQueryServiceLive.pipe(
-		Layer.provideMerge(telemetry.layer),
 		Layer.provideMerge(workerEnvironmentLayer),
 		Layer.provideMerge(WorkerConfigProviderLayer),
 	)
 }
 
-export const flushAuditEventsTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
-
 /**
- * Must match `maxRetries` on the audit-events consumer in `alchemy.run.ts`.
+ * Must match `maxRetries` on the audit-events consumer in `worker.ts`.
  * Cloudflare routes the message to the DLQ after this many retries without
  * telling us; the check below is what makes the hand-off visible in logs at
  * the moment it happens.
@@ -110,7 +100,7 @@ const retryOrExhaust = (message: Message<unknown>, cause: unknown) => {
  * time; write failures retry through the queue's policy and, once exhausted,
  * land in `audit-events-dlq` rather than disappearing.
  */
-export const processAuditEventsBatch = (batch: MessageBatch<unknown>) =>
+export const processAuditEventsBatch = (batch: QueueBatch) =>
 	Effect.gen(function* () {
 		const warehouse = yield* WarehouseQueryService
 		const now = yield* Clock.currentTimeMillis
@@ -157,7 +147,9 @@ export const processAuditEventsBatch = (batch: MessageBatch<unknown>) =>
 								for (const { message } of group) message.ack()
 							}),
 						),
-						Effect.withSpan("auditEvents.writeOrgBatch", { attributes: { orgId, rows: group.length } }),
+						Effect.withSpan("auditEvents.writeOrgBatch", {
+							attributes: { orgId, rows: group.length },
+						}),
 						// A failure or a defect is a failed attempt and retries. Interruption
 						// is not: an interrupted batch (a deploy, an isolate torn down)
 						// counted as an attempt would push messages toward the DLQ for
@@ -166,9 +158,13 @@ export const processAuditEventsBatch = (batch: MessageBatch<unknown>) =>
 						Effect.catchCause((cause) =>
 							Cause.hasInterruptsOnly(cause)
 								? Effect.interrupt
-								: Effect.forEach(group, ({ message }) => retryOrExhaust(message, summarizeCause(cause)), {
-										discard: true,
-									}),
+								: Effect.forEach(
+										group,
+										({ message }) => retryOrExhaust(message, summarizeCause(cause)),
+										{
+											discard: true,
+										},
+									),
 						),
 					),
 			{ concurrency: 3, discard: true },

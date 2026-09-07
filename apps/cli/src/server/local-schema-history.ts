@@ -211,18 +211,34 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 	Object.freeze({
-		// v19 rebuilds error_events_mv / error_events_by_time_mv so a span with
-		// no `exception` event is labelled from its exception.* / error.* span
-		// attributes (ClickHouse migration 0029). No part is rewritten and no row
-		// moves; rows already materialized keep their 'Unknown Error' label.
+		// v19: `ai_trace_index` gains `ResponseId`, and `ai_trace_index_mv` is
+		// recreated to fill it and to count `Tokens` under the reporter's usage
+		// convention (ClickHouse migration 0029). Nothing is rewritten and no
+		// row moves; rows materialized under v18 keep their over-counted
+		// `Tokens` and an empty `ResponseId` until raw retention ages them out.
 		//
 		// projectRevision is carried forward deliberately — it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: 19,
-		fingerprint: "de0230b6f51e34a6",
-		digest: "de0230b6f51e34a6a9ae3ae74c900aaa21f882b10edc24b91e146c7b5c11272e",
-		manifestDigest: "e7cc767b9971a1078514fda972c7b1608272a2cef76f29dd51bc5263912891bf",
+		fingerprint: "778888eceae9d6b7",
+		digest: "778888eceae9d6b717004bf2b7cf8b0db84fb0d65c81e2cb72d7cb39a9c3bd74",
+		manifestDigest: "7887f63cadd66a33e495dc3277dc55059285799a1d044a1f1d9bb614f38af3bd",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v20 rebuilds error_events_mv / error_events_by_time_mv so a span with
+		// no `exception` event is labelled from its exception.* / error.* span
+		// attributes (ClickHouse migration 0030). No part is rewritten and no row
+		// moves; rows already materialized keep their 'Unknown Error' label.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 20,
+		fingerprint: "30843d6717974b0d",
+		digest: "30843d6717974b0deb47aad850e630135e4c2eb39e2d476342a824dccd906158",
+		manifestDigest: "c2b1dd31cc7716c806e9f62eb171e24ce00b97622922ad3518fcca8ee91503ee",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
 ] as const)

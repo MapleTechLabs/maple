@@ -362,7 +362,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		configPath,
 		JSON.stringify({
 			name: "maple-api-startup-check",
-			main: join(process.cwd(), "src", "worker.ts"),
+			main: join(process.cwd(), "src", "entry.ts"),
 			compatibility_date: "2026-04-08",
 			compatibility_flags: ["nodejs_compat"],
 		}),
