@@ -273,26 +273,32 @@ describe("aiSessionPageQuery", () => {
 
 		expect(inner).toContain("groupUniqArrayIf(20)(Model, Model != '') AS models")
 		expect(inner).toContain("groupUniqArrayIf(20)(AgentName, AgentName != '') AS agentNames")
-		expect(inner).toContain("sum(IsLlmCall) AS llmCalls")
 		expect(inner).toContain("sum(IsToolCall) AS toolCalls")
 		expect(inner).toContain("sum(IsError) AS errorAgentSpans")
+		// Model calls travel as reporters too: they are counted one level up.
+		expect(inner).not.toContain("AS llmCalls")
 		expect(inner).toContain(
-			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost), (Tokens > 0 OR Cost > 0)) AS usageReporters",
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, Tokens, Cost, ResponseId, IsLlmCall), ((Tokens > 0 OR Cost > 0) OR IsLlmCall = 1)) AS usageReporters",
 		)
 		expect(inner).toContain(
 			"max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) AS traceAgentEndNanos",
 		)
 
 		expect(outer).toContain("groupUniqArrayArray(models) AS models")
-		expect(outer).toContain("sum(llmCalls) AS llmCalls")
 		expect(outer).toContain("sum(errorAgentSpans) AS errorAgentSpans")
-		// Deepest reporter: a parent keeps only its excess over its reporting children.
+		// The session's reporters, every trace's flattened, so a gateway's mirror
+		// trace of a call is in hand next to the app's own span of it.
+		const all = "arraySlice(arrayFlatten(groupArray(usageReporters)), 1, 2000)"
+		// Deepest reporter: a parent keeps only its excess over its reporting
+		// children; then one claim per response id.
 		expect(outer).toContain(
-			"sum(arraySum(r -> greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), usageReporters)), usageReporters)) AS totalTokens",
+			`arrayMap(r -> tuple(r.5, greatest(0., r.3 - arraySum(c -> if(c.2 = r.1, c.3, 0.), ${all}))), ${all})`,
 		)
-		expect(outer).toContain(
-			"sum(arraySum(r -> greatest(0., r.4 - arraySum(c -> if(c.2 = r.1, c.4, 0.), usageReporters)), usageReporters)) AS cost",
-		)
+		expect(outer).toContain("arrayDistinct(arrayFilter(id -> id != '', arrayMap(n -> n.1,")
+		expect(outer).toContain(") AS totalTokens")
+		expect(outer).toContain(") AS cost")
+		expect(outer).toContain("toFloat64(arraySum(n -> if(n.2 AND n.1 = '', 1, 0),")
+		expect(outer).toContain(") AS llmCalls")
 		expect(outer).toContain(
 			"intDiv(max(traceAgentEndNanos) - toUnixTimestamp64Nano(min(traceAgentStart)), 1000000) AS agentDurationMs",
 		)
@@ -614,14 +620,24 @@ describe("aiSessionListQuery", () => {
 	it("splits the usage into the detail page's five buckets, deepest reporter counted", () => {
 		const { sql } = compileUnsafe(aiSessionListQuery(listOpts), listParams)
 
-		// Per trace: the reporters with their buckets, `input` carved of the
-		// cache under the inclusive convention and left whole under Anthropic's.
-		expect(sql).toContain("groupArrayIf(2000)(tuple(SpanId, ParentSpanId, if(")
-		expect(sql).toContain("IN ('anthropic')")
-		expect(sql).toContain("NOT (SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'))")
-		expect(sql).toContain("greatest(0, ")
+		// Per trace: the reporters with their buckets under the shared convention
+		// — the cache carved out of the prompt and the reasoning out of the
+		// completion where the figure nests them (vendor first, then provider),
+		// left whole where it does not — and the response id last.
+		expect(sql).toContain(
+			"groupArrayIf(2000)(tuple(SpanId, ParentSpanId, multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(0, ",
+		)
+		expect(sql).toContain("IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']")
+		expect(sql).toContain(
+			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id'])), multiIf(",
+		)
 		expect(sql).toContain(") AS usageBuckets")
-		// Per session: one deepest-reporter sum per bucket.
+		// Per session: one sum per bucket, children off their parent and one
+		// claim per response id — the tuple's eighth element.
+		const all = "arraySlice(arrayFlatten(groupArray(usageBuckets)), 1, 2000)"
 		for (const [element, name] of [
 			[3, "inputTokens"],
 			[4, "cacheReadTokens"],
@@ -630,8 +646,9 @@ describe("aiSessionListQuery", () => {
 			[7, "reasoningTokens"],
 		] as const) {
 			expect(sql).toContain(
-				`sum(arraySum(r -> greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), usageBuckets)), usageBuckets)) AS ${name}`,
+				`arrayMap(r -> tuple(r.8, greatest(0., r.${element} - arraySum(c -> if(c.2 = r.1, c.${element}, 0.), ${all}))), ${all})`,
 			)
+			expect(sql).toContain(`) AS ${name}`)
 		}
 	})
 
@@ -701,7 +718,8 @@ describe("aiSessionFacetsQuery", () => {
 			["tool", "ToolName"],
 		] as const
 		for (const [facetType, column] of dimensions) {
-			expect(sql).toContain(`groupUniqArray(${column}) AS names`)
+			// Keyed over every span of the trace; the value filter is on the array.
+			expect(sql).toContain(`groupUniqArrayIf(20)(${column}, ${column} != '') AS names`)
 			expect(sql).toContain(`'${facetType}' AS facetType`)
 		}
 		expect(sql.split("arrayJoin(names) AS name").length - 1).toBe(dimensions.length)

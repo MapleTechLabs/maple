@@ -366,10 +366,11 @@ const reportedCost = (usage: LLMResponse["usage"]): number | undefined => {
 }
 
 /**
- * Response identity off the wire — every OpenAI-chat chunk carries the
- * response id and the model that actually served it (OpenRouter routes, so it
- * can differ from `gen_ai.request.model`); the upstream protocol surfaces both
- * on the finish event's `providerMetadata.openai`.
+ * Response identity as the upstream protocol reports it on the finish event's
+ * `providerMetadata.openai` — which, for OpenAI-chat streams, it does not: that
+ * object is the usage, and the chunk's `id`/`model` are dropped. The span gets
+ * them off the wire instead, from `platform/ResponseIdentityHttpClient.ts`;
+ * this stays for a protocol that does surface them.
  */
 const responseIdentity = (response: LLMResponse): { readonly id?: string; readonly model?: string } => {
 	const finish = response.events.find((event) => event.type === "finish")
