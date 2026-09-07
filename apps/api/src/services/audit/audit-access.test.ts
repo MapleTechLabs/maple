@@ -15,7 +15,11 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_audit_access_test")
 const USER = Schema.decodeUnknownSync(UserId)("user_audit_access_test")
 
 /** The `{ group, endpoint }` a security middleware receives for one endpoint. */
-const endpointOf = (api: { readonly groups: Record<string, HttpApiGroup.Top> }, group: string, name: string) => {
+const endpointOf = (
+	api: { readonly groups: Record<string, HttpApiGroup.Top> },
+	group: string,
+	name: string,
+) => {
 	const found = api.groups[group]
 	if (found === undefined) throw new Error(`no group ${group}`)
 	const endpoint = found.endpoints[name] as HttpApiEndpoint.Top | undefined
@@ -71,8 +75,18 @@ describe("withAuditedRead", () => {
 		Effect.gen(function* () {
 			const audit = makeMemoryAuditLog()
 			const ok = Effect.succeed(HttpServerResponse.empty({ status: 200 }))
-			yield* withAuditedRead(audit, request("GET", "/v2/session_replays/s1"), endpointOf(MapleApiV2, "sessionReplays", "retrieve"), subject)(ok)
-			yield* withAuditedRead(audit, request("GET", "/v2/api_keys"), endpointOf(MapleApiV2, "apiKeys", "list"), subject)(ok)
+			yield* withAuditedRead(
+				audit,
+				request("GET", "/v2/session_replays/s1"),
+				endpointOf(MapleApiV2, "sessionReplays", "retrieve"),
+				subject,
+			)(ok)
+			yield* withAuditedRead(
+				audit,
+				request("GET", "/v2/api_keys"),
+				endpointOf(MapleApiV2, "apiKeys", "list"),
+				subject,
+			)(ok)
 
 			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
 			expect(entries.map((entry) => entry.action)).toEqual(["session_replay.read"])
@@ -124,10 +138,12 @@ describe("auditAttribution", () => {
 	})
 
 	it("leaves a dashboard session unlabelled — its name is resolved when the log is read", () => {
-		expect(auditAttribution({ orgId: ORG, userId: USER }, { type: "user", source: "dashboard" })).toEqual({
-			actor: { type: "user", userId: USER },
-			source: "dashboard",
-		})
+		expect(auditAttribution({ orgId: ORG, userId: USER }, { type: "user", source: "dashboard" })).toEqual(
+			{
+				actor: { type: "user", userId: USER },
+				source: "dashboard",
+			},
+		)
 	})
 
 	it("keeps a system token as system regardless of the tenant", () => {
@@ -149,7 +165,10 @@ describe("recordRawSqlAudit", () => {
 				startTime: "2026-08-29 09:00:00",
 				endTime: "2026-08-29 10:00:00",
 			}
-			yield* recordRawSqlAudit({ ...base, result: { _tag: "rejected", reason: "missing $__orgFilter" } })
+			yield* recordRawSqlAudit({
+				...base,
+				result: { _tag: "rejected", reason: "missing $__orgFilter" },
+			})
 			yield* TestClock.adjust("1 second")
 			yield* recordRawSqlAudit({ ...base, result: { _tag: "rows", rowCount: 3 } })
 
@@ -159,7 +178,11 @@ describe("recordRawSqlAudit", () => {
 				["telemetry.sql_executed", "denied"],
 			])
 			expect(entries[1]!.denialReason).toBe("missing $__orgFilter")
-			expect(entries[0]!.metadata).toMatchObject({ sql: "SELECT 1", row_count: 3, context: "mcp.run_sql" })
+			expect(entries[0]!.metadata).toMatchObject({
+				sql: "SELECT 1",
+				row_count: 3,
+				context: "mcp.run_sql",
+			})
 			expect(entries[0]!.source).toBe("mcp")
 		}).pipe(
 			Effect.provideService(CurrentAuditActor, { type: "api_key", source: "mcp" }),

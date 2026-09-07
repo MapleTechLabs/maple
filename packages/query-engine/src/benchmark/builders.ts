@@ -343,8 +343,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "audit-log",
 		name: "auditLogEntriesQuery",
 		label: "default",
-		compile: () =>
-			CH.compileUnsafe(CH.auditLogEntriesQuery({ limit: 50, offset: 0 }), { orgId: ORG_ID }),
+		compile: () => CH.compileUnsafe(CH.auditLogEntriesQuery({ limit: 50, offset: 0 }), { orgId: ORG_ID }),
 	},
 	{
 		// Every optional filter bound at once, including the raw `has(...)` clause.

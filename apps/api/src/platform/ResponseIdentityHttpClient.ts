@@ -109,7 +109,8 @@ const identifyingFetch =
 	async (input, init) => {
 		const response = await fetch(input, init)
 		const contentType = response.headers.get("content-type") ?? ""
-		if (!response.ok || response.body === null || !contentType.includes("text/event-stream")) return response
+		if (!response.ok || response.body === null || !contentType.includes("text/event-stream"))
+			return response
 		const [served, observed] = response.body.tee()
 		void readIdentity(observed)
 			.then((identity) => {

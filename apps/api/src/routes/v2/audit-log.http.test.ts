@@ -38,7 +38,9 @@ describe("actorDisplayName", () => {
 	})
 
 	it("has nothing to name for a system entry", () => {
-		expect(actorDisplayName({ actorLabel: null, userId: null, actorType: "system" }, new Map())).toBeNull()
+		expect(
+			actorDisplayName({ actorLabel: null, userId: null, actorType: "system" }, new Map()),
+		).toBeNull()
 	})
 })
 
