@@ -12,20 +12,24 @@
  */
 import { makeWorkerBridge } from "alchemy/Cloudflare"
 import { env, WorkerEntrypoint } from "cloudflare:workers"
+import { Option, Schema } from "effect"
 import MapleApi from "./worker.ts"
 
-const boundString = (key: string, fallback: string): string => {
-	const value: unknown = Reflect.get(env, key)
-	return typeof value === "string" ? value : fallback
-}
-
-export default makeWorkerBridge(WorkerEntrypoint, {
-	entrypoint: MapleApi,
-	stack: {
-		name: boundString("ALCHEMY_STACK_NAME", "maple"),
-		stage: boundString("ALCHEMY_STAGE", "unknown"),
-	},
+/** The stack identity alchemy binds into every Worker's env at deploy. */
+const StackIdentity = Schema.Struct({
+	ALCHEMY_STACK_NAME: Schema.optionalKey(Schema.String),
+	ALCHEMY_STAGE: Schema.optionalKey(Schema.String),
 })
+
+const stack = Option.match(Schema.decodeUnknownOption(StackIdentity)(env), {
+	onNone: () => ({ name: "maple", stage: "unknown" }),
+	onSome: (identity) => ({
+		name: identity.ALCHEMY_STACK_NAME ?? "maple",
+		stage: identity.ALCHEMY_STAGE ?? "unknown",
+	}),
+})
+
+export default makeWorkerBridge(WorkerEntrypoint, { entrypoint: MapleApi, stack })
 
 // Cloudflare requires Durable Object and Workflow classes to be exported from
 // the entry. Each is a thin shell that dynamic-imports its heavy logic, so

@@ -61,6 +61,10 @@ const statusCodeOf = (span: ExportedSpan | undefined): number | undefined => {
 
 const env = { MAPLE_INGEST_KEY: "maple_sk_test", MAPLE_ENDPOINT: "http://ingest.test" }
 
+class GraphBuildFailure extends Schema.TaggedError<GraphBuildFailure>()("GraphBuildFailure", {
+	message: Schema.String,
+}) {}
+
 /** A route graph that answers everything with 404, as the real one does for an unknown path. */
 const notFoundApp: Effect.Effect<HttpEffect, never> = Effect.succeed(
 	Effect.succeed(HttpServerResponse.text("Not Found", { status: 404 })),
@@ -127,7 +131,7 @@ describe("the api Worker through alchemy's bridge", () => {
 
 	it.effect("a route graph that fails to build answers the v2 envelope and a plain 504 elsewhere", () =>
 		Effect.gen(function* () {
-			const broken = Effect.fail(new Error("binding unavailable"))
+			const broken = Effect.fail(new GraphBuildFailure({ message: "binding unavailable" }))
 			const v2 = yield* event("GET", "/v2/traces", broken)
 			assert.strictEqual(v2.response.status, v2WorkerUnavailableDefinition.status)
 			assert.strictEqual(

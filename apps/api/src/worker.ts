@@ -60,6 +60,7 @@ import {
 	Layer,
 	Path,
 	Predicate,
+	Schema,
 	Scope,
 	Stream,
 } from "effect"
@@ -421,7 +422,7 @@ const buildApp = Effect.gen(function* () {
 		Effect.promise(() => import("./platform/DatabasePgLive")),
 	])
 	const scope = yield* Scope.make()
-	const handler = yield* HttpRouter.toHttpEffect(
+	return yield* HttpRouter.toHttpEffect(
 		AllRoutes.pipe(
 			Layer.provideMerge(HttpServicesLive),
 			Layer.provideMerge(ApiAuthLive),
@@ -433,8 +434,8 @@ const buildApp = Effect.gen(function* () {
 	).pipe(
 		Scope.provide(scope),
 		Effect.onExit((exit) => (Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void)),
+		Effect.map(bridgeHandler),
 	)
-	return bridgeHandler(handler)
 })
 
 /**
@@ -577,6 +578,16 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>) =>
 		return response
 	})
 
+/** The props declared a queue binding the init cannot find on the host — a deploy defect, not a runtime branch. */
+class ApiQueueBindingMissingError extends Schema.TaggedError<ApiQueueBindingMissingError>()(
+	"@maple/api/worker/ApiQueueBindingMissingError",
+	{ binding: Schema.String },
+) {
+	override get message(): string {
+		return `The api Worker's env does not bind the queue "${this.binding}"`
+	}
+}
+
 /**
  * The bound queues, as the init needs them for `consumeQueueMessages`. At plan
  * time the props above already declared them, so they are read back off the
@@ -601,9 +612,11 @@ const boundQueues = (host: Cloudflare.Worker) =>
 		const env: unknown = host.Props.env
 		const bound = (name: string) => {
 			const value = Predicate.hasProperty(env, name) ? env[name] : undefined
-			return Cloudflare.Queues.isQueue(value)
-				? Effect.succeed(value)
-				: Effect.die(new Error(`The api Worker's env does not bind the queue "${name}"`))
+			if (Cloudflare.Queues.isQueue(value)) return Effect.succeed(value)
+			// A binding the props above declare and the host does not carry is a
+			// broken invariant of this module, not a case the init can handle.
+			// oxlint-disable-next-line maple/no-effect-die
+			return Effect.die(new ApiQueueBindingMissingError({ binding: name }))
 		}
 		const dlqName = Predicate.hasProperty(env, "AUDIT_EVENTS_DLQ_NAME")
 			? env.AUDIT_EVENTS_DLQ_NAME
@@ -617,13 +630,25 @@ const boundQueues = (host: Cloudflare.Worker) =>
 	})
 
 /**
+ * An event's program over the layers it owns — its light service graph and,
+ * for background work, its own SDK instance underneath it — built into the
+ * event and released with it. The one place a handler provides a Layer: the
+ * build and the SDK's flush finalizer are scoped to the event on purpose,
+ * which is what flushes the event's telemetry when it ends.
+ */
+const provideEvent =
+	<ROut, E2, RIn>(layers: Layer.Layer<ROut, E2, RIn>) =>
+	<A, E, R>(program: Effect.Effect<A, E, R>) =>
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(program, layers)
+
+/**
  * A fire's outcome: interrupts are isolate teardown (the schedule re-fires) and
  * a failure is logged rather than re-raised — alchemy's cron source reports
- * every fire as successful anyway. Under the fire's own SDK instance, flushed
- * when it returns.
+ * every fire as successful anyway.
  */
 const settleFire =
-	(cron: string, telemetry: Layer.Layer<never, never, Cloudflare.WorkerEnvironment>) =>
+	(cron: string) =>
 	<A, E, R>(fire: Effect.Effect<A, E, R>) =>
 		fire.pipe(
 			Effect.catchCause((cause) =>
@@ -633,10 +658,6 @@ const settleFire =
 							Effect.annotateLogs({ "maple.api.cron": cron }),
 						),
 			),
-			// A per-event layer, on purpose: its scope is the fire, and closing it
-			// is what flushes the fire's telemetry.
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(telemetry),
 		)
 
 // Dispatched by `Cloudflare.Workers.cron` below:
@@ -701,8 +722,8 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					{ withPgConnectionScope },
 				] = yield* Effect.all([vcsSync, pgScope])
 				return yield* withPgConnectionScope(runScheduledSync).pipe(
-					Effect.provide(buildVcsScheduledLayer()),
-					settleFire(VCS_SYNC_CRON, vcsSyncTelemetry),
+					provideEvent(buildVcsScheduledLayer().pipe(Layer.provideMerge(vcsSyncTelemetry))),
+					settleFire(VCS_SYNC_CRON),
 				)
 			}),
 		)
@@ -726,8 +747,8 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 				return yield* withPgConnectionScope(
 					Effect.andThen(runScrapeCheckRetention, runPlanetScaleEventRetention),
 				).pipe(
-					Effect.provide(buildScrapeRetentionLayer()),
-					settleFire(SCRAPE_RETENTION_CRON, vcsSyncTelemetry),
+					provideEvent(buildScrapeRetentionLayer().pipe(Layer.provideMerge(vcsSyncTelemetry))),
+					settleFire(SCRAPE_RETENTION_CRON),
 				)
 			}),
 		)
@@ -738,8 +759,10 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					{ withPgConnectionScope },
 				] = yield* Effect.all([slackReconcile, pgScope])
 				return yield* withPgConnectionScope(runSlackReconciliation).pipe(
-					Effect.provide(buildSlackReconcileLayer()),
-					settleFire(SLACK_RECONCILE_CRON, slackReconcileTelemetry),
+					provideEvent(
+						buildSlackReconcileLayer().pipe(Layer.provideMerge(slackReconcileTelemetry)),
+					),
+					settleFire(SLACK_RECONCILE_CRON),
 				)
 			}),
 		)
@@ -756,8 +779,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					yield* Effect.all([vcsSync, pgScope])
 				const messages = yield* Stream.runCollect(stream)
 				yield* withPgConnectionScope(processBatch({ messages })).pipe(
-					Effect.provide(buildVcsSyncLayer()),
-					Effect.provide(vcsSyncTelemetry),
+					provideEvent(buildVcsSyncLayer().pipe(Layer.provideMerge(vcsSyncTelemetry))),
 				)
 			}),
 		).pipe(renamedFrom({ fqn: "vcs-sync-consumer" }))
@@ -776,8 +798,11 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					] = yield* Effect.all([planetScaleWebhooks, pgScope])
 					const messages = yield* Stream.runCollect(stream)
 					yield* withPgConnectionScope(processPlanetScaleWebhookBatch({ messages })).pipe(
-						Effect.provide(buildPlanetScaleWebhookLayer()),
-						Effect.provide(planetScaleWebhookTelemetry),
+						provideEvent(
+							buildPlanetScaleWebhookLayer().pipe(
+								Layer.provideMerge(planetScaleWebhookTelemetry),
+							),
+						),
 					)
 				}),
 		).pipe(renamedFrom({ fqn: "planetscale-webhooks-consumer" }))
@@ -790,7 +815,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 						yield* Effect.all([auditEvents, pgScope])
 					const messages = yield* Stream.runCollect(stream)
 					yield* withPgConnectionScope(processAuditEventsBatch({ messages })).pipe(
-						Effect.provide(buildAuditEventsLayer()),
+						provideEvent(buildAuditEventsLayer()),
 					)
 				}),
 		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))
@@ -804,7 +829,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 					rpcServices.pipe(Effect.orDie),
 					pgScope,
 				])
-				return yield* withPgConnectionScope(program).pipe(Effect.provide(services))
+				return yield* withPgConnectionScope(program).pipe(Effect.provideContext(services))
 			})
 		const internalRpc = {
 			listMcpTools: () => Effect.flatMap(rpc, ({ listMcpToolsRpc }) => runRpc(listMcpToolsRpc)),
