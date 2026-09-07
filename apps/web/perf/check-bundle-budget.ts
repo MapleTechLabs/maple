@@ -40,7 +40,12 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // loader and adapter had already been trimmed to nothing. main had meanwhile
 // moved to 649.4 KB on its own, so the honest number is this one, not a
 // contract with fields the page needs deleted from it.
-const maxGzipBytes = 652 * 1024
+// 653 KB from #776 (2026-09-07): the AI model detect contract is 0.3 KB of
+// the same kind — a `MapleInternalApi` group every page's client carries —
+// and main had reached 651.7 KB by then. The 33 vendor marks it added cost
+// nothing: the icons chunk hash did not move, they are tree-shaken until a
+// surface renders them.
+const maxGzipBytes = 653 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The
