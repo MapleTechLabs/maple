@@ -321,7 +321,10 @@ describe("host-neutral alert lifecycle parity", () => {
 						reason: "parity",
 						derivedFromNoData: false,
 					},
-					state: row,
+					state: {
+						consecutiveBreaches: row.consecutiveBreaches,
+						consecutiveHealthy: row.consecutiveHealthy,
+					},
 					openIncident: row.incidentOpen
 						? {
 								firstTriggeredAtMs: START_MS,
