@@ -16,7 +16,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { BooleanFromStringParam, NumberFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { resolveEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useInfiniteAiSessions } from "@/hooks/use-infinite-ai-sessions"
 import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -99,13 +99,19 @@ function AgentSessionsPageContent() {
 function AgentSessionsBody() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
-	// Resolved once per mount and snapped to the cache grid, so the atom key
-	// holds still between navigations.
-	const { startTime, endTime } = useEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW)
 	// Memoized on the search by VALUE, not by the reference the router hands
 	// back: the hook keys its accumulated pages on these inputs, and a fresh
 	// object per render would reset them every time.
 	const searchKey = JSON.stringify(search)
+	// The window rolls forward with every navigation — a filter or sort change
+	// re-resolves "the last week" against now, snapped to the cache grid so a
+	// change within the grid interval keeps its key. There is no picker and no
+	// reload button to advance it otherwise; a tab left open sees new sessions
+	// the next time it touches a control.
+	const { startTime, endTime } = useMemo(
+		() => resolveEffectiveTimeRange(undefined, undefined, AGENT_SESSIONS_WINDOW),
+		[searchKey],
+	)
 	const filterInputs = useMemo(
 		() => agentSessionsFilterInputs(search, { startTime, endTime }),
 		[searchKey, startTime, endTime],

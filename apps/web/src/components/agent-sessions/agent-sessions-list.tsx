@@ -323,15 +323,19 @@ function WorkCount({
 /**
  * The detail page's Tokens rail at row height: one segment per non-empty
  * bucket, in that rail's fills, so cached against fresh against generated can
- * be compared down the list. The figures stay in the title; the total beside
- * the bar is the index's, which the sort and filter read.
+ * be compared down the list. The figure beside the bar is the buckets' sum —
+ * the number the detail page's header reaches — and falls back to the index's
+ * total only for a session that reported no buckets. The two can differ: the
+ * index sums the reported figures as stamped, the buckets carve the cache back
+ * out of an inclusive prompt figure, and the sort and filter read the index.
  */
 function TokenBar({ session }: { session: AgentSessionRow }) {
 	const buckets = rowTokenBuckets(session)
 	const drawn = TOKEN_BUCKETS.filter((bucket) => buckets[bucket.key] > 0)
 	const bucketTotal = drawn.reduce((sum, bucket) => sum + buckets[bucket.key], 0)
+	const total = bucketTotal > 0 ? bucketTotal : session.totalTokens
 	const title = [
-		`${session.totalTokens.toLocaleString()} tokens`,
+		`${total.toLocaleString()} tokens`,
 		...drawn.map((bucket) => `${bucket.label}: ${buckets[bucket.key].toLocaleString()}`),
 	].join("\n")
 	return (
@@ -350,7 +354,7 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 				</span>
 			)}
 			<span className="font-mono text-xs tabular-nums text-muted-foreground">
-				{formatCount(session.totalTokens)} tok
+				{formatCount(total)} tok
 			</span>
 		</span>
 	)

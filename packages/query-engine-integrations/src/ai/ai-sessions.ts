@@ -232,6 +232,15 @@ const failedSpansExpr = ($: {
  * failed span whose own child also failed left out: the child is the failure,
  * the parent its echo. `tool` counts the failed tool calls; the rest — failed
  * model calls and turn spans that failed on their own — are the turn's.
+ *
+ * One level, and without the signal, where `shadowedAncestorIds` walks every
+ * ancestor and shadows only a match: the index carries no error signal (its
+ * `IsError` is a flag), and a framework that echoes a failure copies it onto
+ * the span that WRAPS the call, not two levels up — the roll-ups seen in
+ * production are all parent-and-child. The two counts can disagree for a
+ * turn span that fails on its own while a tool beneath it also fails (the
+ * detail counts both, this counts one), which reads as one turn failing
+ * either way; the cost of an exact copy is an error column on the index.
  */
 const deepestFailureCount = (failedSpans: string, kind: "tool" | "turn"): CH.Expr<number> =>
 	CH.rawExpr(

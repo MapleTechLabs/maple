@@ -501,7 +501,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 						</div>
 						{tokenBuckets.map((bucket) => (
 							<div key={bucket.key} className="flex items-center gap-2.5">
-								<span aria-hidden className={cn("size-1.5 rounded-xs", bucket.fill)} />
+								<bucket.icon aria-hidden size={13} className={cn("shrink-0", bucket.text)} />
 								<span className="min-w-0 flex-1 truncate text-xs">{bucket.label}</span>
 								<span className="font-mono text-muted-foreground text-xs tabular-nums">
 									{formatNumber(summary.tokens[bucket.key])}
