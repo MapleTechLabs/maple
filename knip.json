@@ -66,10 +66,6 @@
 			"ignore": ["src/generated/**"],
 			"ignoreDependencies": ["tailwindcss"]
 		},
-		"packages/infra": {
-			// `cloudflare:workers` is a Workers runtime module, not a package.
-			"ignoreDependencies": ["cloudflare"]
-		},
 		"lib/ai-model-catalog": {
 			"entry": ["scripts/**/*.ts"]
 		},

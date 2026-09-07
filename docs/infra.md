@@ -32,9 +32,14 @@ put it here instead. Git blame does not survive a refactor of the line it annota
       the first's).
     - `aws/stage.ts` — `MapleRegion`, AWS naming, task sizing, Cloud Map.
     - `env.ts` — the deploy-time env primitives and the shared groups the workers spread.
-    - `config-helpers.ts` / `cloudflare/worker-runtime.ts` / `cloudflare/workers-cache.ts` /
-      `cloudflare/r2.ts` — the _runtime_ (in-Worker) side, each behind its own subpath
-      export so a worker bundle never reaches the deploy graph through `./cloudflare`.
+    - `cloudflare/maple-db.ts` — `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
+      Worker's init) and the runtime read of the binding (`readMapleDbBinding`).
+    - `config-helpers.ts` / `cloudflare/worker-runtime.ts` / `cloudflare/workers-cache.ts` —
+      the _runtime_ (in-Worker) side, each behind its own subpath export so a worker bundle
+      never reaches the deploy graph through `./cloudflare`. `worker-runtime.ts` is the
+      `WorkerEnvironment` tag (alchemy's key, typed `Record<string, unknown>`) and
+      `workerEnvLayer(env)`, the env plus its `ConfigProvider` for a graph built over one
+      env record — nothing reaches for `cloudflare:workers`.
 
 **Read deploy-time config through `@maple/infra/env`, not `process.env`.** Alchemy resolves
 config through a ConfigProvider built as `fromDotEnv(--env-file ?? ".env")` **orElse**
@@ -194,9 +199,15 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
 - **Assets** (`landing`, `local-ui`): the handler reads `Cloudflare.Workers.Request` and
   `env.ASSETS` and hands the web `Response` back through `HttpServerResponse.fromWeb`.
   landing's negotiation is a plain function in `src/handler.ts` for the same test reason.
-- **The stg/prd Hyperdrive bound by id** (`alerting`, `api`): alchemy has no `env` form for a
-  binding it did not create (its own `Hyperdrive.Connect` attaches the same raw metadata),
-  so the root stack calls `bindMapleDbRef` after the yield.
+- **The application database** (`alerting`, `api`): `yield* MapleDb(consumer)` in the init
+  binds `MAPLE_DB` in the stage's flavor — `Hyperdrive.Connect(ManagedMapleDb)` on dev
+  stages, `host.bind` of the dashboard-managed config by id on stg/prd (alchemy has no `env`
+  form for a Hyperdrive it did not create; its own `ConnectBinding` attaches the same raw
+  metadata), nothing on previews. The api's Workflows yield it too, from their outer phase.
+  The root yields `ManagedMapleDb` first on dev stages so its `MAPLE_PG_URL` read happens
+  outside any init, where alchemy's plan-time ConfigProvider would bind it as a secret. Every
+  Postgres layer reads the `MapleDbConnection` port (`apps/api/src/platform/bindings.ts`),
+  never the env.
 
 Still a factory: `web` (takes `api`, for the service binding); `ingest` and `electric` are
 ECS services. `web` follows once its props can `yield* MapleApi`; until then its
@@ -276,10 +287,14 @@ list of yields. What it composes lives beside it:
   `Effect.serviceOption`. The clients' methods are colored with alchemy's `RuntimeContext`, a
   phantom that keeps them out of the init phase; the ports discharge it with
   `RuntimeContext.phantom`, as alchemy's own runtime helpers do.
-- What stays on `env:`: `AI` (the Gateway resource, read by name by the LLM shim), `MAPLE_DB`
-  on dev stages (stg/prd still `bindMapleDbRef` from the root), the stage partition the rate
-  limiters key under, and `EMAIL` on prd — alchemy's capabilities have no "bound on some
-  stages" form, and the plan/runtime split makes a conditional yield lie on one side.
+- What stays on `env:`: `AI` (the Gateway resource, read by name by the LLM shim), the stage
+  partition the rate limiters key under, and `EMAIL` on prd — alchemy's capabilities have no
+  "bound on some stages" form, and the plan/runtime split makes a conditional yield lie on
+  one side. `MAPLE_DB` is bound from the init (`MapleDb`, above).
+- The Worker env reaches a graph once, through the ports (`workerEnvLayer(env)` in
+  `apiPorts`): the runtime modules (`vcs-sync-runtime.ts`, …) declare `WorkerEnvironment`
+  and `ConfigProvider` as requirements and wire neither; a Durable Object or a Workflow run
+  hands its own env record to the same helper.
 
 ## The retired AWS opt-in flag (`MAPLE_DEPLOY_AWS_INGEST`)
 
@@ -376,19 +391,15 @@ when reading old code or docs:
   apps/api's own DO and Workflows extend `cloudflare:workers` directly). It was deleted; the
   ~250 lines with consumers live in `packages/infra` behind runtime-only subpaths
   (`/worker-runtime`, `/workers-cache`, `/r2`, `/config-helpers`).
-- **Alchemy's runtime services are not importable from a hand-written Worker entry.** The
-  obvious follow-up — drop our `WorkerEnvironment` and import alchemy's — does not work
-  today. Its exports map has no entry finer than a directory (`./Cloudflare/*` →
-  `*/index.ts`), and the `Cloudflare/Workers` barrel re-exports `Source.ts` /
-  `WorkerProvider.ts` / `LocalWorkerProvider.ts` next to the two runtime services, so
-  bundling it pulls `fdir`, rolldown glue and Node builtins: **426 KB minified against 14 KB
-  for the tag alone**, and `node:module` does not exist in workerd. Same for `R2`, `KV` and
-  service-binding clients, which additionally want the deploy-side resource value and the
-  `Worker` service (`makeBucketBinding` indexes `env[bucket.LogicalId]`). All of it comes
-  for free the day api/alerting move to the class-form `Cloudflare.Worker` and let alchemy's
-  bundler generate the entry — that is the migration these are waiting on. Until then
-  `packages/infra/src/cloudflare/worker-env.ts` defines the tag under alchemy's exact key
-  (`"Cloudflare.Workers.WorkerEnvironment"`), so both resolve to the same service.
+- **Alchemy's runtime services were not importable from a hand-written Worker entry**
+  (its exports map has no entry finer than a directory, and the `Cloudflare/Workers` barrel
+  drags `fdir`, rolldown glue and `node:module` into a bundle — 426 KB against 14 KB for the
+  tag alone). That is why `packages/infra` carried its own `WorkerEnvironment` and R2
+  client. With api and alerting on the class form (2026-09-07) the Workers use alchemy's
+  binding capabilities directly (`Queues.WriteQueue`, `KV.ReadWriteNamespace`,
+  `R2.ReadBucket`, `RateLimit`, `Hyperdrive.Connect`), the R2 client is gone, and the
+  `WorkerEnvironment` tag stays only for its stricter type — alchemy's is
+  `Record<string, any>` — under alchemy's exact key, so both resolve to the same service.
 
 ## Cost decisions
 

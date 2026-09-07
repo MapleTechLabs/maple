@@ -10,6 +10,8 @@
  * discharge it with alchemy's own `RuntimeContext.phantom`, the way alchemy's
  * Durable Object helpers do, and map each client's failure onto the port's.
  */
+import { MapleDb } from "@maple/infra/cloudflare"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { RuntimeContext } from "alchemy/RuntimeContext"
 import { Effect, Layer, Option } from "effect"
@@ -32,6 +34,7 @@ import {
 	ReplayBlobBucket,
 	VcsSyncQueueProducer,
 } from "../platform/bindings"
+import { mapleDbConnectionLayer } from "../platform/pg-connection-source"
 import { McpSessions } from "../resources/mcp-sessions"
 import { AuditEventsQueue, PlanetScaleWebhookQueue, VcsSyncQueue } from "../resources/queues"
 import { ReplayBlobs } from "../resources/replay-blobs"
@@ -44,6 +47,8 @@ export const RATE_LIMIT_PARTITION_ENV = "API_V2_RATE_LIMIT_PARTITION"
  * Worker at plan time; in the isolate it resolves the binding from the env.
  */
 export const bindApiClients = Effect.gen(function* () {
+	// `MAPLE_DB`, in the stage's flavor; read back off the env by the port below.
+	yield* MapleDb("api")
 	return {
 		vcsSync: yield* Cloudflare.Queues.WriteQueue(VcsSyncQueue),
 		planetScaleWebhooks: yield* Cloudflare.Queues.WriteQueue(PlanetScaleWebhookQueue),
@@ -76,6 +81,7 @@ export type ApiBindingClients = Effect.Success<typeof bindApiClients>
 
 /** The binding layers `bindApiClients` needs on the init. */
 export const ApiBindingLayers = Layer.mergeAll(
+	Cloudflare.Hyperdrive.ConnectBinding,
 	Cloudflare.Queues.WriteQueueBinding,
 	Cloudflare.KV.ReadWriteNamespaceBinding,
 	Cloudflare.R2.ReadBucketBinding,
@@ -162,9 +168,11 @@ const keyValueStore = (client: Cloudflare.KV.ReadWriteNamespaceClient): KeyValue
 }
 
 /**
- * The ports the service graph depends on, over the clients the init bound.
- * `env` carries the stage partition the props bind — real in the isolate,
- * empty at plan time, where nothing reads it.
+ * The ports the service graph depends on, over the clients the init bound,
+ * plus the env itself as `WorkerEnvironment` and the `ConfigProvider` — the
+ * one place a graph in this Worker gets its env from. `env` carries the stage
+ * partition the props bind and the `MAPLE_DB` binding — real in the isolate,
+ * empty at plan time, where nothing reads them.
  */
 export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown>) => {
 	const partitionValue = env[RATE_LIMIT_PARTITION_ENV]
@@ -173,6 +181,7 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 			? partitionValue.trim()
 			: undefined
 	const mcpSessions = keyValueStore(clients.mcpSessions)
+	const database = mapleDbConnectionLayer(env)
 	const layer = Layer.mergeAll(
 		Layer.succeed(VcsSyncQueueProducer, producer(clients.vcsSync)),
 		Layer.succeed(PlanetScaleWebhookQueueProducer, producer(clients.planetScaleWebhooks)),
@@ -183,8 +192,10 @@ export const apiPorts = (clients: ApiBindingClients, env: Record<string, unknown
 		Layer.succeed(McpToolsRateLimit, limiter(clients.mcpToolsRateLimit, partition)),
 		Layer.succeed(ReplayBlobBucket, objectStore(clients.replayBlobs)),
 		Layer.succeed(McpSessionStore, mcpSessions),
+		database,
+		workerEnvLayer(env),
 	)
-	return { layer, mcpSessions }
+	return { layer, mcpSessions, database }
 }
 
 export type ApiPortsLayer = ReturnType<typeof apiPorts>["layer"]

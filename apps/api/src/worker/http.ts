@@ -2,11 +2,6 @@
  * The api Worker's request path: the route graph built once per isolate on
  * the first request, and the `fetch` handler the bridge serves around it.
  */
-import {
-	WorkerConfigProviderLayer,
-	WorkerEnvironment,
-	workerEnvironmentLayer,
-} from "@maple/infra/worker-runtime"
 import * as Cloudflare from "alchemy/Cloudflare"
 import type { HttpEffect } from "alchemy/Http"
 import { Clock, type Context, Effect, Exit, FileSystem, Layer, Path, Scope } from "effect"
@@ -16,7 +11,7 @@ import * as HttpPlatform from "effect/unstable/http/HttpPlatform"
 import { API_CORS_RESPONSE_HEADERS, apiCorsPreflightResponse } from "../http/api-cors"
 import { v2WorkerUnavailableResponse } from "../http/v2-worker-unavailable"
 import { persistSession, preloadSession } from "../mcp/lib/session-store"
-import type { KeyValueStore } from "../platform/bindings"
+import type { KeyValueStore, MapleDbConnection } from "../platform/bindings"
 import type { ApiPortsLayer } from "./bindings"
 import { pgScopeModule } from "./modules"
 
@@ -103,8 +98,6 @@ export const buildApp = (isolate: Context.Context<never>, ports: ApiPortsLayer) 
 				Layer.provideMerge(ApiAuthLive),
 				Layer.provideMerge(WorkerPlatformLive),
 				Layer.provideMerge(layerPg),
-				Layer.provideMerge(workerEnvironmentLayer),
-				Layer.provideMerge(WorkerConfigProviderLayer),
 				Layer.provide(ports),
 			),
 		)
@@ -157,7 +150,10 @@ const unavailableResponse = (path: string) =>
  * the KV copy behind it is what lets the next isolate find a session this one
  * issued.
  */
-export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, sessions: KeyValueStore) =>
+export const makeFetch = (
+	app: Effect.Effect<HttpEffect, unknown>,
+	ports: { readonly mcpSessions: KeyValueStore; readonly database: Layer.Layer<MapleDbConnection> },
+) =>
 	Effect.gen(function* () {
 		const request = yield* HttpServerRequest.HttpServerRequest
 		const path = pathOf(request.url)
@@ -176,7 +172,6 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, sessions: Key
 		}
 		if (request.method === "OPTIONS") return HttpServerResponse.fromWeb(apiCorsPreflightResponse())
 
-		const env = yield* Cloudflare.WorkerEnvironment
 		const isMcp = request.method === "POST" && path === "/mcp"
 		const requestSessionId = isMcp ? request.headers["mcp-session-id"] : undefined
 		const startedAt = yield* Clock.currentTimeMillis
@@ -188,7 +183,7 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, sessions: Key
 			[
 				Effect.exit(app),
 				pgScopeModule,
-				requestSessionId ? preloadSession(sessions, requestSessionId) : Effect.void,
+				requestSessionId ? preloadSession(ports.mcpSessions, requestSessionId) : Effect.void,
 			],
 			{ concurrency: "unbounded" },
 		)
@@ -200,7 +195,8 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, sessions: Key
 		}
 
 		const response = yield* withPgConnectionScope(built.value).pipe(
-			Effect.provideService(WorkerEnvironment, env),
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the request's connection scope opens on the Worker's `MAPLE_DB` port.
+			Effect.provide(ports.database),
 		)
 
 		if (isMcp) {
@@ -210,7 +206,7 @@ export const makeFetch = (app: Effect.Effect<HttpEffect, unknown>, sessions: Key
 			// re-putting on every call would burn KV write quota for no reason.
 			const responseSessionId = response.headers["mcp-session-id"]
 			if (responseSessionId && responseSessionId !== requestSessionId) {
-				const put = persistSession(sessions, responseSessionId)
+				const put = persistSession(ports.mcpSessions, responseSessionId)
 				if (put) {
 					const exec = yield* Cloudflare.WorkerExecutionContext
 					yield* exec.waitUntil(put)

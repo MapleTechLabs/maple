@@ -42,7 +42,7 @@ import type {
 	InvestigationFanoutWorkflowResult,
 } from "@maple/domain/investigation-fanout"
 import { InvestigationId, OrgId, UserId } from "@maple/domain/primitives"
-import { layerFromEnvRecord, WorkerConfigProviderLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import type { LLMClientService } from "@opencode-ai/ai"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { randomUUID } from "node:crypto"
@@ -163,8 +163,7 @@ export type AgentServices = LLMClientService | McpToolExecutor
 const liveAgentServices = (env: LlmEnv): Layer.Layer<AgentServices, never, Database> =>
 	McpServicesLive.pipe(
 		Layer.provideMerge(layerLlm(env)),
-		Layer.provideMerge(layerFromEnvRecord(env)),
-		Layer.provideMerge(WorkerConfigProviderLayer),
+		Layer.provideMerge(workerEnvLayer(env)),
 		// The graph's build failures are config and validation errors — a deploy
 		// that shipped without its env, which no run can recover from.
 		Layer.orDie,

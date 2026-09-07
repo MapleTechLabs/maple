@@ -14,7 +14,7 @@
  */
 import {
 	CLOUDFLARE_WORKER_PLACEMENT,
-	ManagedMapleDb,
+	MapleDb,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
@@ -45,15 +45,7 @@ import { HttpServerResponse } from "effect/unstable/http"
  * The alerting worker's resource bindings, split from the `Config`-sourced env
  * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
-const makeWorkerBindings = ({
-	stage,
-	mapleDb,
-}: {
-	stage: MapleStage
-	mapleDb: Cloudflare.Hyperdrive.Connection | undefined
-}) => ({
-	// Ref stages attach MAPLE_DB via `bindMapleDbRef` in the root stack.
-	...(mapleDb ? { MAPLE_DB: mapleDb } : undefined),
+const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// Cross-script binding to the investigation fan-out Workflow the api Worker
 	// hosts as an alchemy class. Alert, error, and anomaly ticks start
 	// investigations when incidents open. Bound under the CLASS name because the
@@ -137,10 +129,6 @@ const configuredEnv = (stage: MapleStage) =>
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, workerDev, devEnv } = yield* MapleStack
-	// Dev stages only; stg/prd bind their own Hyperdrive config by id in the
-	// root stack — `alerting` issues ~97% of the workers' Postgres traffic and
-	// was starving the api's connection pool when the two shared one.
-	const mapleDb = yield* ManagedMapleDb
 	const env = yield* configuredEnv(stage)
 	return {
 		main: import.meta.url,
@@ -151,7 +139,7 @@ const props = Effect.gen(function* () {
 		dev: workerDev("alerting"),
 		workersDev: false,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...makeWorkerBindings({ stage, mapleDb }), ...env, ...devEnv },
+		env: { ...makeWorkerBindings({ stage }), ...env, ...devEnv },
 	}
 })
 
@@ -184,6 +172,11 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// carries the whole api layer graph, which has no business in startup
 		// validation or in the deploy process.
 		const scheduled = yield* Effect.cached(Effect.promise(() => import("./scheduled")))
+		// `MAPLE_DB` in the stage's flavor — on stg/prd its own dashboard-managed
+		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
+		// starving the api's connection pool when the two shared one. The ticks
+		// read it off the fire's env.
+		yield* MapleDb("alerting")
 		// Once per isolate, not once per fire.
 		const loggedNonProdSkip = yield* Ref.make(false)
 
@@ -234,6 +227,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
+				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "alerting" }),
 			),

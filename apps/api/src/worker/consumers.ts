@@ -56,7 +56,10 @@ export const registerQueueConsumers = (ports: ApiPortsLayer) =>
 				const messages = yield* Stream.runCollect(stream)
 				yield* withPgConnectionScope(processBatch({ messages })).pipe(
 					provideEvent(
-						buildVcsSyncLayer().pipe(Layer.provideMerge(vcsSyncTelemetry), Layer.provide(ports)),
+						buildVcsSyncLayer().pipe(
+							Layer.provideMerge(vcsSyncTelemetry),
+							Layer.provideMerge(ports),
+						),
 					),
 				)
 			}),
@@ -79,7 +82,7 @@ export const registerQueueConsumers = (ports: ApiPortsLayer) =>
 						provideEvent(
 							buildPlanetScaleWebhookLayer().pipe(
 								Layer.provideMerge(planetScaleWebhookTelemetry),
-								Layer.provide(ports),
+								Layer.provideMerge(ports),
 							),
 						),
 					)
@@ -98,7 +101,7 @@ export const registerQueueConsumers = (ports: ApiPortsLayer) =>
 						yield* Effect.all([auditEvents, pgScope])
 					const messages = yield* Stream.runCollect(stream)
 					yield* withPgConnectionScope(processAuditEventsBatch({ messages })).pipe(
-						provideEvent(buildAuditEventsLayer().pipe(Layer.provide(ports))),
+						provideEvent(buildAuditEventsLayer().pipe(Layer.provideMerge(ports))),
 					)
 				}),
 		).pipe(renamedFrom({ fqn: "audit-events-consumer" }))

@@ -1,73 +1,147 @@
-import type * as Cloudflare from "alchemy/Cloudflare"
+/**
+ * The application database as the `MAPLE_DB` Hyperdrive binding, in the one
+ * shape `resolveDatabaseMode` picks for the stage — bound from the Worker's own
+ * init, the way alchemy's `Hyperdrive.ConnectBinding` binds its resource:
+ *
+ * - `"managed"` (dev stages): `ManagedMapleDb`, the alchemy-managed Hyperdrive
+ *   below, bound through `Hyperdrive.Connect`.
+ * - `"ref"` (stg/prd): a dashboard-managed config, attached by id. Alchemy has
+ *   no `env` form for a Hyperdrive it did not create; its own `ConnectBinding`
+ *   attaches the same raw metadata with `host.bind`, so this does too. The
+ *   origin and credentials live only in the Cloudflare dashboard.
+ * - `"none"` (PR previews): no binding at all; the Worker still boots and
+ *   DB-backed routes 500 while everything else works.
+ *
+ * `readMapleDbBinding` is the runtime side: what a Worker (or a Workflow run)
+ * reads off its env under the same name, on every stage.
+ */
+import type * as runtime from "@cloudflare/workers-types"
+import * as Cloudflare from "alchemy/Cloudflare"
+import { Stage } from "alchemy/Stage"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
-import { Connection } from "alchemy/Cloudflare/Hyperdrive"
 import { requiredPlain } from "../env.ts"
-import { MapleStack } from "./stack.ts"
 import {
 	type MapleDbConsumer,
-	type MapleStage,
+	parseMapleStage,
 	resolveDatabaseMode,
 	resolveHyperdriveName,
 	resolveHyperdriveRefId,
 } from "./stage.ts"
 
-/**
- * The application database as `MAPLE_DB`, in the shape `resolveDatabaseMode`
- * picks for the stage:
- *
- * - `"managed"` (dev stages): the alchemy-managed Hyperdrive below, origin
- *   parsed from `MAPLE_PG_URL` (Hyperdrive wants a structured origin). Declared
- *   here once and yielded from every Worker module that binds it — alchemy
- *   registers a resource by id, so the second yield returns the first's.
- * - `"ref"` (stg/prd): nothing to create; `bindMapleDbRef` attaches the
- *   dashboard-managed config after the Worker exists.
- * - `"none"` (PR previews): no binding at all.
- */
-export const ManagedMapleDb = Effect.gen(function* () {
-	const { stage } = yield* MapleStack
-	if (resolveDatabaseMode(stage) !== "managed") return undefined
-	const pgUrl = new URL(yield* requiredPlain("MAPLE_PG_URL"))
-	return yield* Connection("maple-db", {
-		name: resolveHyperdriveName(stage),
-		origin: {
-			scheme: "postgres",
-			host: pgUrl.hostname,
-			port: Number(pgUrl.port || "5432"),
-			// Connect-time db (`postgres`, the PlanetScale cluster default),
-			// not the PS resource name.
-			database: pgUrl.pathname.replace(/^\//, "") || "postgres",
-			user: decodeURIComponent(pgUrl.username),
-			password: Redacted.make(decodeURIComponent(pgUrl.password)),
-		},
-		// Read-after-write everywhere (alert state CAS, dashboard versioning) —
-		// revisit caching once read paths that tolerate staleness are identified.
-		caching: { disabled: true },
-		dev: {
-			scheme: "postgres",
-			host: "localhost",
-			port: 5499,
-			database: "maple",
-			user: "maple",
-			password: Redacted.make("maple"),
-			// Alchemy defaults dev origins to `sslmode=prefer`; the docker Postgres has
-			// no TLS and the dial would stall until the timeout.
-			sslmode: "disable",
-		},
-	})
-})
+/** The binding's name — also the managed Connection's logical id, so both flavors bind under it. */
+export const MAPLE_DB_BINDING = "MAPLE_DB"
 
 /**
- * stg/prd: bind the dashboard-managed Hyperdrive config by id (v1's
- * `HyperdriveRef`, which v2 lacks). The origin and credentials live only in the
- * Cloudflare dashboard, so deploys never see them and `MAPLE_PG_URL` is not
- * required. Alchemy has no `env` form for a binding it did not create — its own
- * `Hyperdrive.Connect` attaches the same raw metadata — so this runs after the
- * Worker exists. No-op on every other stage.
+ * The alchemy-managed Hyperdrive of dev stages, origin parsed from
+ * `MAPLE_PG_URL` (Hyperdrive wants a structured origin). Declared once here;
+ * the root stack yields it first on managed stages so the `MAPLE_PG_URL` read
+ * happens outside a Worker init, where alchemy's plan-time ConfigProvider
+ * would bind every `Config` it sees onto the Worker as a secret. Plan-time
+ * only: `MapleDb` yields it behind the runtime guard, so these props never run
+ * in the bundle and need no guard of their own.
  */
-export const bindMapleDbRef = (worker: Cloudflare.Worker, stage: MapleStage, consumer: MapleDbConsumer) => {
-	const id = resolveHyperdriveRefId(stage, consumer)
-	return id === undefined
-		? Effect.void
-		: worker.bind("MAPLE_DB", { bindings: [{ type: "hyperdrive", name: "MAPLE_DB", id }] })
+export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
+	MAPLE_DB_BINDING,
+	Effect.gen(function* () {
+		const stage = parseMapleStage(yield* Stage)
+		// A dev stage without its database URL cannot be planned: a defect, not a branch.
+		const pgUrl = new URL(yield* Effect.orDie(requiredPlain("MAPLE_PG_URL")))
+		const props: Cloudflare.Hyperdrive.Props = {
+			name: resolveHyperdriveName(stage),
+			origin: {
+				scheme: "postgres",
+				host: pgUrl.hostname,
+				port: Number(pgUrl.port || "5432"),
+				// Connect-time db (`postgres`, the PlanetScale cluster default),
+				// not the PS resource name.
+				database: pgUrl.pathname.replace(/^\//, "") || "postgres",
+				user: decodeURIComponent(pgUrl.username),
+				password: Redacted.make(decodeURIComponent(pgUrl.password)),
+			},
+			// Read-after-write everywhere (alert state CAS, dashboard versioning) —
+			// revisit caching once read paths that tolerate staleness are identified.
+			caching: { disabled: true },
+			dev: {
+				scheme: "postgres",
+				host: "localhost",
+				port: 5499,
+				database: "maple",
+				user: "maple",
+				password: Redacted.make("maple"),
+				// Alchemy defaults dev origins to `sslmode=prefer`; the docker Postgres has
+				// no TLS and the dial would stall until the timeout.
+				sslmode: "disable",
+			},
+		}
+		return props
+	}),
+)
+
+/**
+ * Bind `MAPLE_DB` to the Worker this runs in, for the stage's flavor. Yield it
+ * from the Worker's init (and from a Workflow's outer phase, which binds the
+ * same name again — alchemy keys bindings by name). Plan-time only: in the
+ * isolate the binding is already on the env, see {@link readMapleDbBinding}.
+ * Needs `Cloudflare.Hyperdrive.ConnectBinding` on the init.
+ */
+export const MapleDb = (consumer: MapleDbConsumer) =>
+	Effect.gen(function* () {
+		if (globalThis.__ALCHEMY_RUNTIME__) return
+		const stage = parseMapleStage(yield* Stage)
+		switch (resolveDatabaseMode(stage)) {
+			case "managed": {
+				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
+				return
+			}
+			case "ref": {
+				const id = resolveHyperdriveRefId(stage, consumer)
+				if (id === undefined) return
+				const host = yield* Cloudflare.Worker
+				yield* host.bind(MAPLE_DB_BINDING, {
+					bindings: [{ type: "hyperdrive", name: MAPLE_DB_BINDING, id }],
+				})
+				return
+			}
+			case "none":
+				return
+		}
+	})
+
+/** What a Worker reads off the `MAPLE_DB` binding: the runtime `Hyperdrive` object's connection facts. */
+export interface MapleDbBinding {
+	readonly connectionString: string
+	readonly host: string
+	readonly port: number
+	readonly database: string
+}
+
+const isHyperdrive = (value: unknown): value is Pick<runtime.Hyperdrive, keyof MapleDbBinding> => {
+	if (typeof value !== "object" || value === null) return false
+	const candidate = value as Record<string, unknown>
+	return (
+		typeof candidate.connectionString === "string" &&
+		candidate.connectionString !== "" &&
+		typeof candidate.host === "string" &&
+		typeof candidate.port === "number" &&
+		typeof candidate.database === "string"
+	)
+}
+
+/**
+ * The `MAPLE_DB` binding off a Worker env, or `None` on a stage without a
+ * database. The one place the binding's shape is checked: a value that is not
+ * a Hyperdrive object reads as absent rather than throwing.
+ */
+export const readMapleDbBinding = (env: Record<string, unknown>): Option.Option<MapleDbBinding> => {
+	const binding = env[MAPLE_DB_BINDING]
+	return isHyperdrive(binding)
+		? Option.some({
+				connectionString: binding.connectionString,
+				host: binding.host,
+				port: binding.port,
+				database: binding.database,
+			})
+		: Option.none()
 }

@@ -9,6 +9,8 @@ import ChatSessionObject from "@/chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "@/mcp/expected-failures"
 import { layerPg } from "@/platform/DatabasePgLive"
 import { withPgConnectionScope } from "@/platform/pg-connection-scope"
+import { MapleDbConnectionLive } from "@/platform/pg-connection-source"
+import { MapleDb } from "@maple/infra/cloudflare"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
@@ -29,18 +31,21 @@ export default class InvestigationFanoutWorkflow extends Cloudflare.Workflow<Inv
 	"InvestigationFanoutWorkflow",
 	Effect.gen(function* () {
 		// Init: the chat Durable Object a run seeds its transcript into, yielded
-		// here so the run gets the typed stubs of the class the Worker hosts.
+		// here so the run gets the typed stubs of the class the Worker hosts, and
+		// the application database, bound to the host Worker under `MAPLE_DB`.
 		const chatSessions = yield* ChatSessionObject
+		yield* MapleDb("api")
 		return Effect.fn("InvestigationFanoutWorkflow")(function* (
 			payload: InvestigationFanoutWorkflowPayload,
 		) {
-			return yield* runInvestigationFanout(payload, { chatSessions }).pipe(
+			return yield* withPgConnectionScope(runInvestigationFanout(payload, { chatSessions })).pipe(
 				// `Database` over one Postgres connection for the run, released with it,
 				// and the run's own telemetry, flushed when alchemy closes the run's scope.
 				// The Workflow class IS the entry point these layers belong to.
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(Layer.mergeAll(layerPg, fanoutTelemetry)),
-				withPgConnectionScope,
+				Effect.provide(
+					Layer.mergeAll(layerPg, fanoutTelemetry).pipe(Layer.provideMerge(MapleDbConnectionLive)),
+				),
 			)
 		})
 	}),

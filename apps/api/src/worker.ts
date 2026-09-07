@@ -16,7 +16,6 @@
 import {
 	CLOUDFLARE_WORKER_PLACEMENT,
 	formatMapleStage,
-	ManagedMapleDb,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
@@ -43,15 +42,7 @@ import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow
  * is bound by stage — alchemy's capabilities have no "on some stages" form —
  * or read by name by code the Worker does not own (the LLM shim's `AI`).
  */
-const makeWorkerBindings = ({
-	stage,
-	mapleDb,
-}: {
-	stage: MapleStage
-	mapleDb: Cloudflare.Hyperdrive.Connection | undefined
-}) => ({
-	// Ref stages attach MAPLE_DB via `bindMapleDbRef` in the root stack.
-	...(mapleDb ? { MAPLE_DB: mapleDb } : undefined),
+const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// Workers AI (`env.AI`, the v1 `Ai()` binding), driving the AI-triage agent on
 	// `@opencode-ai/ai`. v2 emits the `{ type: "ai" }` binding by attaching an AI Gateway
 	// resource, which also fronts model calls with caching/rate-limits/logging.
@@ -81,12 +72,6 @@ const makeWorkerBindings = ({
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, domains, workerDev, devEnv } = yield* MapleStack
-	// MAPLE_DB Hyperdrive comes in two flavors (see `ManagedMapleDb`): dev stages
-	// get the alchemy-managed one yielded here; stg/prd bind a dashboard-managed
-	// config by id after the Worker exists (`bindMapleDbRef` in the root stack);
-	// PR previews get no database binding at all — the worker still boots and
-	// serves, DB-backed routes 500 while everything else works.
-	const mapleDb = yield* ManagedMapleDb
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
 	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
@@ -116,7 +101,7 @@ const props = Effect.gen(function* () {
 		domain: domains.api,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage, mapleDb }),
+			...makeWorkerBindings({ stage }),
 			...configuredEnv,
 			...devEnv,
 		},
@@ -153,7 +138,7 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports.layer))
 		yield* registerCrons(ports.layer)
 		yield* registerQueueConsumers(ports.layer)
-		return { fetch: makeFetch(app, ports.mcpSessions), ...(yield* makeInternalRpc(rpcServices)) }
+		return { fetch: makeFetch(app, ports), ...(yield* makeInternalRpc(rpcServices, ports.database)) }
 	}).pipe(
 		// The Worker's init IS the entry point: the cron and queue sources need
 		// the host Worker, which only exists here, and the bridge builds the

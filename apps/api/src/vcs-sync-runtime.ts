@@ -1,4 +1,3 @@
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
 import { EdgeCacheService } from "@maple/cache"
@@ -30,11 +29,13 @@ import { PullRequestEventSinkLive } from "./services/errors/pull-request-sink-li
 import { summarizeCause } from "@/platform/describe-cause"
 import type { QueueBatch } from "@/platform/queue-batch"
 
-// Per-invocation runtime for the `VCS_SYNC_QUEUE` consumer. Mirrors the
+// Per-invocation runtime for the `vcs-sync` queue consumer. Mirrors the
 // alerting worker's `buildLayer`: its own light layer graph (NOT the fetch
 // path's MainLive) so the queue invocation stays within the startup CPU budget.
 // No tracer or logger of its own: the Worker provides `vcsSyncTelemetry` around
-// the event, and a layer here that carried one would shadow it.
+// the event, and a layer here that carried one would shadow it. The Worker env,
+// its `ConfigProvider` and the binding ports come from the Worker too
+// (`apiPorts`), provided around the event.
 
 /**
  * Deliberately not `maple-api`: background work sharing the request-facing
@@ -43,10 +44,9 @@ import type { QueueBatch } from "@/platform/queue-batch"
 export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
 
 export const buildVcsSyncLayer = () => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, workerEnvironmentLayer)
+	const EnvLive = Env.layer
+	const DatabaseLive = layerPg
+	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
 	const GithubAppClientLive = GithubAppClient.layer.pipe(
@@ -72,9 +72,7 @@ export const buildVcsSyncLayer = () => {
 	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
 		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
 	)
-	const AuditLogServiceLive = AuditLogService.layer.pipe(
-		Layer.provide(Layer.mergeAll(WarehouseQueryServiceLive, workerEnvironmentLayer)),
-	)
+	const AuditLogServiceLive = AuditLogService.layer.pipe(Layer.provide(WarehouseQueryServiceLive))
 	const ErrorIssueWorkflowServiceLive = ErrorIssueWorkflowService.layer.pipe(
 		Layer.provide(Layer.mergeAll(Base, ErrorActorsServiceLive, AuditLogServiceLive)),
 	)
@@ -101,20 +99,16 @@ export const buildVcsSyncLayer = () => {
 		),
 	)
 
-	// `WorkerEnvironment` is merged into the output, not just provided inward, so
-	// `withPgConnectionScope` can resolve the `MAPLE_DB` binding when it opens
-	// the batch's single Postgres socket.
-	return VcsSyncServiceLive.pipe(Layer.provideMerge(workerEnvironmentLayer), Layer.provideMerge(ConfigLive))
+	return VcsSyncServiceLive
 }
 
 // The periodic (cron) producer's layer graph. Deliberately lighter than the
 // consumer's: enqueuing installation-sync jobs needs only storage + the queue —
 // NOT the provider registry (the consumer does all provider work).
 export const buildVcsScheduledLayer = () => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, workerEnvironmentLayer)
+	const EnvLive = Env.layer
+	const DatabaseLive = layerPg
+	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
 
 	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
 	const VcsSyncQueueLive = VcsSyncQueue.layer
@@ -122,21 +116,13 @@ export const buildVcsScheduledLayer = () => {
 		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsSyncQueueLive)),
 	)
 
-	return VcsScheduledSyncServiceLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(ConfigLive),
-	)
+	return VcsScheduledSyncServiceLive
 }
 
 // Scrape-check retention's cron layer — the lightest of the three: the job talks
 // only to Postgres, so it deliberately skips the scrape-targets service and its
 // PlanetScale discovery/OAuth dependencies.
-export const buildScrapeRetentionLayer = () => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-
-	return DatabaseLive.pipe(Layer.provideMerge(workerEnvironmentLayer), Layer.provideMerge(ConfigLive))
-}
+export const buildScrapeRetentionLayer = () => layerPg
 
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {

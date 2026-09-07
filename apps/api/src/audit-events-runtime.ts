@@ -1,7 +1,6 @@
 import type { Message } from "@cloudflare/workers-types"
 import { EdgeCacheService } from "@maple/cache"
 import type { OrgId } from "@maple/domain/primitives"
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { Cause, Clock, Effect, Layer } from "effect"
 import { CacheBackendLive } from "@/platform/CacheBackendLive"
 import { summarizeCause } from "@/platform/describe-cause"
@@ -23,8 +22,8 @@ import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./serv
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
 export const buildAuditEventsLayer = () => {
-	const EnvLive = Env.layer.pipe(Layer.provide(WorkerConfigProviderLayer))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
+	const EnvLive = Env.layer
+	const DatabaseLive = layerPg
 	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const OrgClickHouseSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(EnvLive, DatabaseLive, EdgeCacheServiceLive)),
@@ -33,10 +32,7 @@ export const buildAuditEventsLayer = () => {
 	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
 		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
 	)
-	return WarehouseQueryServiceLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(WorkerConfigProviderLayer),
-	)
+	return WarehouseQueryServiceLive
 }
 
 /**

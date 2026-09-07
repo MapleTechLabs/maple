@@ -5,12 +5,11 @@ import {
 	wrapMaplePgClient,
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
-import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { Context, Effect, Schema } from "effect"
+import { Context, Effect, Option, Schema } from "effect"
 import type { HttpMiddleware } from "effect/unstable/http"
+import { MapleDbConnection } from "./bindings"
 import type { DatabaseClient, DatabaseError } from "./DatabaseLive"
 import { executeWithSpan, failExecuteWithSpan, toDatabaseError } from "./DatabaseLive"
-import { resolveDbConnectionSource } from "./pg-connection-source"
 
 /**
  * Cloudflare's documented value for postgres.js behind Hyperdrive.
@@ -238,20 +237,19 @@ export const withPgConnectionScopeOf = <A, E, R>(
 /**
  * Install a connection scope for the duration of `program`.
  *
- * Stages with no application database resolve to `Unavailable`; those run
+ * Stages with no application database (`MapleDbConnection` is `None`) run
  * unwrapped so `DatabasePgLive` keeps reporting the missing binding per
  * `execute` instead of failing here.
  */
 export const withPgConnectionScope = <A, E, R>(
 	program: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R | WorkerEnvironment> =>
+): Effect.Effect<A, E, R | MapleDbConnection> =>
 	Effect.gen(function* () {
-		const env = yield* WorkerEnvironment
-		const source = resolveDbConnectionSource(env)
-		if (source._tag === "Unavailable") return yield* program
+		const connection = yield* MapleDbConnection
+		if (Option.isNone(connection)) return yield* program
 
 		return yield* withPgConnectionScopeOf(
-			makePgConnectionScope(source.connectionString, source.attributes),
+			makePgConnectionScope(connection.value.connectionString, connection.value.attributes),
 			program,
 		)
 	})

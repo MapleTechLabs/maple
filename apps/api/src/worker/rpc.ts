@@ -7,8 +7,8 @@
  * and throws a defect as-is; one Postgres socket per call, released with it.
  */
 import type { MapleApiRpcContract } from "@maple/domain/internal-rpc"
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { type Context, Effect, Exit, Layer, Scope } from "effect"
+import type { MapleDbConnection } from "../platform/bindings"
 import type { ApiPortsLayer } from "./bindings"
 import { WorkerPlatformLive } from "./http"
 import { pgScopeModule, rpcModule } from "./modules"
@@ -35,8 +35,6 @@ export const buildRpcServices = (isolate: Context.Context<never>, ports: ApiPort
 			InvestigationServicesLive.pipe(
 				Layer.provideMerge(WorkerPlatformLive),
 				Layer.provideMerge(layerPg),
-				Layer.provideMerge(workerEnvironmentLayer),
-				Layer.provideMerge(WorkerConfigProviderLayer),
 				Layer.provide(ports),
 			),
 		).pipe(Effect.updateContext((_: Context.Context<never>) => isolate))
@@ -45,7 +43,10 @@ export const buildRpcServices = (isolate: Context.Context<never>, ports: ApiPort
 type RpcServices = Effect.Success<ReturnType<typeof buildRpcServices>>
 
 /** The RPC methods over the cached service graph, as the init returns them beside `fetch`. */
-export const makeInternalRpc = (rpcServices: Effect.Effect<RpcServices, unknown>) =>
+export const makeInternalRpc = (
+	rpcServices: Effect.Effect<RpcServices, unknown>,
+	database: Layer.Layer<MapleDbConnection>,
+) =>
 	Effect.gen(function* () {
 		const pgScope = yield* Effect.cached(pgScopeModule)
 		const rpc = yield* Effect.cached(rpcModule)
@@ -55,7 +56,11 @@ export const makeInternalRpc = (rpcServices: Effect.Effect<RpcServices, unknown>
 					rpcServices.pipe(Effect.orDie),
 					pgScope,
 				])
-				return yield* withPgConnectionScope(program).pipe(Effect.provideContext(services))
+				return yield* withPgConnectionScope(program).pipe(
+					Effect.provideContext(services),
+					// oxlint-disable-next-line effecttsgo/strict-effect-provide -- the call's connection scope opens on the Worker's `MAPLE_DB` port.
+					Effect.provide(database),
+				)
 			})
 		return {
 			listMcpTools: () => Effect.flatMap(rpc, ({ listMcpToolsRpc }) => runRpc(listMcpToolsRpc)),

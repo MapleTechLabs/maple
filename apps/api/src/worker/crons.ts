@@ -39,7 +39,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 					provideEvent(
 						buildVcsScheduledLayer().pipe(
 							Layer.provideMerge(vcsSyncTelemetry),
-							Layer.provide(ports),
+							Layer.provideMerge(ports),
 						),
 					),
 					settleFire(VCS_SYNC_CRON),
@@ -69,7 +69,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 					provideEvent(
 						buildScrapeRetentionLayer().pipe(
 							Layer.provideMerge(vcsSyncTelemetry),
-							Layer.provide(ports),
+							Layer.provideMerge(ports),
 						),
 					),
 					settleFire(SCRAPE_RETENTION_CRON),
@@ -86,7 +86,7 @@ export const registerCrons = (ports: ApiPortsLayer) =>
 					provideEvent(
 						buildSlackReconcileLayer().pipe(
 							Layer.provideMerge(slackReconcileTelemetry),
-							Layer.provide(ports),
+							Layer.provideMerge(ports),
 						),
 					),
 					settleFire(SLACK_RECONCILE_CRON),

@@ -27,7 +27,7 @@ import {
 	type ChatMessage,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
-import { layerFromEnvRecord, WorkerConfigProviderLayer } from "@maple/infra/worker-runtime"
+import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { LLM, Message, type LanguageModel, type LLMClientService } from "@opencode-ai/ai"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema, Stream } from "effect"
 import type { ChatSession } from "./ChatSession"
@@ -344,6 +344,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const [
 		{ InvestigationServicesLive },
 		{ layerPg },
+		{ mapleDbConnectionLayer },
 		{ layerLlm, resolveTriageModel },
 		loop,
 		{ buildDiagnosisCompletion },
@@ -351,6 +352,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("../platform/DatabasePgLive"),
+		import("../platform/pg-connection-source"),
 		import("../platform/Llm"),
 		import("./loop"),
 		import("./tools"),
@@ -362,9 +364,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
-			Layer.provideMerge(layerFromEnvRecord(input.env)),
+			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
+			Layer.provideMerge(workerEnvLayer(input.env)),
 			Layer.provideMerge(telemetry.layer),
-			Layer.provideMerge(WorkerConfigProviderLayer),
 		),
 	)
 

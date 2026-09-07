@@ -103,6 +103,21 @@ export class ReplayBlobBucket extends Context.Service<ReplayBlobBucket, ObjectSt
 	"@maple/api/platform/ReplayBlobBucket",
 ) {}
 
+// ── Application database (Hyperdrive) ────────────────────────────────────────
+
+/** What the Postgres layers dial: the Hyperdrive connection string and the identity attributes its spans carry. */
+export interface DatabaseConnection {
+	readonly connectionString: string
+	/** Never contains credentials. */
+	readonly attributes: Record<string, unknown>
+}
+
+/** The `MAPLE_DB` Hyperdrive, or `None` on a stage without an application database (PR previews). */
+export class MapleDbConnection extends Context.Service<
+	MapleDbConnection,
+	Option.Option<DatabaseConnection>
+>()("@maple/api/platform/MapleDbConnection") {}
+
 // ── Key-value store (KV) ─────────────────────────────────────────────────────
 
 export class KeyValueStoreError extends Schema.TaggedError<KeyValueStoreError>()(

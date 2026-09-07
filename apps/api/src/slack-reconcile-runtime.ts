@@ -1,4 +1,3 @@
-import { WorkerConfigProviderLayer, workerEnvironmentLayer } from "@maple/infra/worker-runtime"
 import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Effect, Layer } from "effect"
 import { layerPg } from "@/platform/DatabasePgLive"
@@ -30,10 +29,9 @@ import { SlackIntegrationService } from "./services/integrations/SlackIntegratio
 export const slackReconcileTelemetry = eventTelemetry({ serviceName: "maple-slack-reconcile" })
 
 export const buildSlackReconcileLayer = () => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(workerEnvironmentLayer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, workerEnvironmentLayer)
+	const EnvLive = Env.layer
+	const DatabaseLive = layerPg
+	const Base = Layer.mergeAll(EnvLive, DatabaseLive)
 
 	const ApiKeysServiceLive = ApiKeysService.layer.pipe(Layer.provide(Base))
 	const OAuthStateRepositoryLive = OAuthStateRepository.layer.pipe(Layer.provide(Base))
@@ -41,10 +39,7 @@ export const buildSlackReconcileLayer = () => {
 		Layer.provide(Layer.mergeAll(Base, ApiKeysServiceLive, OAuthStateRepositoryLive)),
 	)
 
-	return SlackIntegrationServiceLive.pipe(
-		Layer.provideMerge(workerEnvironmentLayer),
-		Layer.provideMerge(ConfigLive),
-	)
+	return SlackIntegrationServiceLive
 }
 
 /** The cron program: probe every active Slack workspace, revoke locally any Slack confirms are dead. */

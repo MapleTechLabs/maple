@@ -24,11 +24,12 @@ import {
 	stageDeploysIngest,
 } from "@maple/infra/aws"
 import {
-	bindMapleDbRef,
 	formatMapleStage,
+	ManagedMapleDb,
 	MapleStack,
 	type MapleStackContext,
 	parseMapleStage,
+	resolveDatabaseMode,
 	resolveMapleDomains,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
@@ -218,10 +219,14 @@ export default Alchemy.Stack(
 		// Chat and AI triage run inside the api worker (ChatSession Durable Object),
 		// so there is no separate chat worker to sequence against any more. A
 		// single module like the Workers below: its props read `MapleStack`.
+		// The application database. Each Worker binds `MAPLE_DB` from its own init
+		// (`MapleDb` in `@maple/infra/cloudflare`: the managed Hyperdrive on dev
+		// stages, a dashboard-managed config by id on stg/prd, nothing on previews).
+		// The managed declaration is yielded here first so its `MAPLE_PG_URL` read
+		// happens outside any Worker init, where alchemy would bind it as a secret.
+		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
+
 		const api = yield* MapleApi
-		// stg/prd: the dashboard-managed Hyperdrive, by id — attached after the
-		// Worker exists (see the alerting note below).
-		yield* bindMapleDbRef(api, stage, "api")
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd/stg — dev stages use the
@@ -265,10 +270,6 @@ export default Alchemy.Stack(
 		const localUi = isDevServer ? undefined : yield* LocalUi
 
 		const alerting = yield* Alerting
-		// stg/prd: the dashboard-managed Hyperdrive, by id. Not a prop — alchemy has
-		// no `env` form for a binding it did not create — so it is attached here,
-		// after the Worker exists.
-		yield* bindMapleDbRef(alerting, stage, "alerting")
 		yield* serveWorker("alerting", alerting)
 
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper.

@@ -42,6 +42,7 @@ import {
 	TinybirdOrgTokenService,
 	VcsSourceServiceLayer,
 	WarehouseQueryService,
+	mapleDbConnectionLayer,
 	summarizeCause,
 	withPgConnectionScope,
 } from "@maple/api/alerting"
@@ -63,7 +64,9 @@ export const buildLayer = (env: AlertingWorkerEnv) => {
 	const WorkerEnvironmentLive = layerFromEnvRecord(env)
 	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
 
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironmentLive))
+	// `MAPLE_DB` off this fire's env, bound to the Worker by its init (`MapleDb`).
+	const MapleDbConnectionLive = mapleDbConnectionLayer(env)
+	const DatabaseLive = layerPg.pipe(Layer.provide(MapleDbConnectionLive))
 
 	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
 	const AlertRuntimeLive = AlertRuntime.layer
@@ -249,9 +252,10 @@ export const buildLayer = (env: AlertingWorkerEnv) => {
 		FixVerificationTickServiceLive,
 		EscalationServiceLive,
 		ServiceMapRollupServiceLive,
-		// Exposed in the output, not just provided inward: `withPgConnectionScope`
-		// resolves the `MAPLE_DB` binding from it when it opens the tick's socket.
 		WorkerEnvironmentLive,
+		// Exposed in the output, not just provided inward: `withPgConnectionScope`
+		// opens the tick's socket on it.
+		MapleDbConnectionLive,
 	).pipe(Layer.provideMerge(ConfigLive))
 }
 
